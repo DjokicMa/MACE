@@ -1,0 +1,57 @@
+#!/bin/bash
+
+CRYSTALOutPattern="*.out"
+
+if [[ -f "$1" ]]; then
+    MyCRYSTALOut=$1
+else
+    if [[ -d "$1" ]]; then
+	    MyCRYSTALDir=$1
+    else
+	    MyCRYSTALDir='.'	    
+    fi
+
+    if ls $MyCRYSTALDir/$CRYSTALOutPattern &> /dev/null ; then
+	    CRYSTALOutCount=`ls $MyCRYSTALDir/$CRYSTALOutPattern | wc -l`
+	    if [ $CRYSTALOutCount == 1 ]; then
+		MyCRYSTALOut=`find $MyCRYSTALDir/$CRYSTALOutPattern`
+	    else
+		echo "Could not determine which CRYSTAL output file to use. Please specify one:"
+		ls -tr $MyCRYSTALDir/$CRYSTALOutPattern
+		exit 2
+	    fi
+    else
+	    echo "Could not find CRYSTAL output file."
+	    exit 1
+    fi
+fi
+
+echo -e "\nNow looking for the final geometry output from ${MyCRYSTALOut}. If found, the lattice parameters and irreducible atomic coordinates will print."
+
+LastPrimitiveCellLineNumber=$( grep -n "^ PRIMITIVE CELL" $MyCRYSTALOut | cut -f 1 -d : | tail -1 )
+OptimizedStructure=$(echo "$((LastPrimitiveCellLineNumber - 3))p" | sed -nf - $MyCRYSTALOut | grep "COORDINATE AND CELL OPTIMIZATION - POINT" -c)
+HeadingAndUnitCell=$(echo "$((LastPrimitiveCellLineNumber - 4)),$((LastPrimitiveCellLineNumber + 6 ))p" | sed -nf - $MyCRYSTALOut)
+FinalPrintLine=$(echo "$((LastPrimitiveCellLineNumber - 2))p" | sed -nf - $MyCRYSTALOut)
+NAtomsString=$(echo "$((LastPrimitiveCellLineNumber + 4))p" | sed -nf - $MyCRYSTALOut | tr -dc '0-9 ' | tr -s ' ')
+NAtomsMin=$(echo $NAtomsString | cut -f 1 -d " " )
+NAtomsStandard=$(echo $NAtomsString | cut -f 2 -d " " )
+AtomicCoordsFullString=$(echo "$((LastPrimitiveCellLineNumber+7)),$((LastPrimitiveCellLineNumber + 6 + NAtomsStandard))p" | sed -nf - $MyCRYSTALOut )
+AtomicCoordsMinString=$(echo "$AtomicCoordsFullString" | awk -F ' ' '$2=="T"' | awk '{printf "%7s %24s %24s %24s\n", $3,$5, $6, $7 }' )
+
+if [ "$OptimizedStructure" == 1 ]; then
+	echo -e "\nThis structure was produced during geometry optimization (which may or may not have completed).\n"
+	echo "$HeadingAndUnitCell"
+else
+	echo -e "\nNo geometry optimization was detected in this file. Therefore this structure may not be geometrically optimized.\n"
+	echo "$HeadingAndUnitCell" | tail -n +3
+fi
+
+
+if [ `echo "$AtomicCoordsMinString" | wc -l` != "$NAtomsMin" ]; then
+	echo "Error: Script failed to correctly parse the coordinates to display only the minimal symmetric coordinates. Printing full coordinates instead."
+	echo "$AtomicCoordsFullString"
+else
+	echo "$AtomicCoordsMinString"
+fi
+
+echo -e "$FinalPrintLine\n"
