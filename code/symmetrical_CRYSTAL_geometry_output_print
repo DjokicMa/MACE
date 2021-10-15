@@ -26,23 +26,54 @@ else
     fi
 fi
 
-echo -e "\nNow looking for the final geometry output from ${MyCRYSTALOut}. If found, the lattice parameters and irreducible atomic coordinates will print."
+if [ "$2" != "" ]; then
+	if ! [[ "$2" =~ '^[+-]?[0-9]+$' ]] && (( $2 != 0 )); then 
+		StructureIndex=$2
+		echo "Structure Index is $StructureIndex"
+	else       
+		echo "Could not understand structure index '$2' as a nonzero integer."
+		exit 3
+	fi
+else
+	StructureIndex=-1
+fi
 
-LastPrimitiveCellLineNumber=$( grep -n "^ PRIMITIVE CELL" $MyCRYSTALOut | cut -f 1 -d : | tail -1 )
-OptimizedStructure=$(echo "$((LastPrimitiveCellLineNumber - 3))p" | sed -nf - $MyCRYSTALOut | grep "COORDINATE AND CELL OPTIMIZATION - POINT" -c)
-HeadingAndUnitCell=$(echo "$((LastPrimitiveCellLineNumber - 4)),$((LastPrimitiveCellLineNumber + 6 ))p" | sed -nf - $MyCRYSTALOut)
-FinalPrintLine=$(echo "$((LastPrimitiveCellLineNumber - 2))p" | sed -nf - $MyCRYSTALOut)
-NAtomsString=$(echo "$((LastPrimitiveCellLineNumber + 4))p" | sed -nf - $MyCRYSTALOut | tr -dc '0-9 ' | tr -s ' ')
+if [ $StructureIndex == -1 ]; then
+	StructureIndexDescription="the final geometry output"
+elif [ $StructureIndex == 1 ]; then
+	StructureIndexDescription="the initial geometry output"
+else
+	StructureIndexDescription="geometry output # $StructureIndex"
+fi
+
+echo -e "\nNow looking for $StructureIndexDescription from ${MyCRYSTALOut}. If found, the lattice parameters and irreducible atomic coordinates will print."
+
+PrimitiveCellLineNumbers=$( grep -n "^ PRIMITIVE CELL" $MyCRYSTALOut | cut -f 1 -d : )
+StructureCount=$( echo "$PrimitiveCellLineNumbers" | wc -l )
+
+if [ "${StructureIndex#-}" -gt $StructureCount ]; then
+	echo -e "\nStructure # $StructureIndex cannot be found.\n"
+	exit 4
+elif [ $StructureIndex -lt 0 ]; then
+	MyPrimitiveCellLineNumber=$( echo "$PrimitiveCellLineNumbers" | tac | sed -n "${StructureIndex#-}p" )
+else
+	MyPrimitiveCellLineNumber=$( echo "$PrimitiveCellLineNumbers" | sed -n "${StructureIndex}p" )
+fi
+
+OptimizedStructure=$( sed -n "$((MyPrimitiveCellLineNumber - 3))p" $MyCRYSTALOut | grep "COORDINATE AND CELL OPTIMIZATION - POINT" -c)
+HeadingAndUnitCell=$( sed -n "$((MyPrimitiveCellLineNumber - 4)),$((MyPrimitiveCellLineNumber + 6 ))p" $MyCRYSTALOut)
+FinalPrintLine=$( sed -n "$((MyPrimitiveCellLineNumber - 2))p" $MyCRYSTALOut)
+NAtomsString=$( sed -n "$((MyPrimitiveCellLineNumber + 4))p" $MyCRYSTALOut | tr -dc '0-9 ' | tr -s ' ')
 NAtomsMin=$(echo $NAtomsString | cut -f 1 -d " " )
 NAtomsStandard=$(echo $NAtomsString | cut -f 2 -d " " )
-AtomicCoordsFullString=$(echo "$((LastPrimitiveCellLineNumber+7)),$((LastPrimitiveCellLineNumber + 6 + NAtomsStandard))p" | sed -nf - $MyCRYSTALOut )
+AtomicCoordsFullString=$( sed -n "$((MyPrimitiveCellLineNumber+7)),$((MyPrimitiveCellLineNumber + 6 + NAtomsStandard))p" $MyCRYSTALOut )
 AtomicCoordsMinString=$(echo "$AtomicCoordsFullString" | awk -F ' ' '$2=="T"' | awk '{printf "%7s %24s %24s %24s\n", $3,$5, $6, $7 }' )
 
 if [ "$OptimizedStructure" == 1 ]; then
 	echo -e "\nThis structure was produced during geometry optimization (which may or may not have completed).\n"
 	echo "$HeadingAndUnitCell"
 else
-	echo -e "\nNo geometry optimization was detected in this file. Therefore this structure may not be geometrically optimized.\n"
+	echo -e "\nThis structure was not produced during geometry optimization. It may be the initial structure. Therefore its geometry may not be optimized.\n"
 	echo "$HeadingAndUnitCell" | tail -n +3
 fi
 
