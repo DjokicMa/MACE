@@ -7,7 +7,6 @@ from collections import OrderedDict
 This script is meant to get all the shells from all atoms and separate the shells in terms of S,P,D,SP, and F shells. Note that this script shells for each element but does not pick individual atoms
 """
 
-
 """Finds the shells in the output file and then sends them as a list to be organized"""
 def get_unclean_shells(output_lines):
   index_shells = 0
