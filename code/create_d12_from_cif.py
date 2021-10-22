@@ -65,7 +65,7 @@ def CIF2D12(material,struc,path,opt,basisset):
             print("%-8.6f   %-8.6f  %-8.6f  %-6.4f  %-6.4f  %-6.4f"%(a,b,c,alpha,beta,gamma),file=f)
             print(str(ATOMS),file=f)
 
-        ECPs    = [26,34,35,37,38,39,40,41,42] #full.basis        
+        ECPs    = [37,38,39,40,41,42] #full.basis        
         for i in range(0,ATOMS):
             if (an[i] in ECPs) or (an[i] > 43):
                 # Use ELECTRON CORE POTENTIALS 
