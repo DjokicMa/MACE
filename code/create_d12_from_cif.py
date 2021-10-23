@@ -5,9 +5,9 @@ import glob
 
 def basis(num, basisset):
     if basisset == "DZ":
-        dir_bas = "c:/Users/djokicma.CHEMS195/Desktop/COF_Cifs/IRCOF102/full.basis/full.basis/" #Change This Directory to Double Zeta Basis Set Directory
+        dir_bas = "/mnt/home/djokicma/Crystal17/IRCOF102/scripts/code/full.basis.doublezeta/" #Change This Directory to Double Zeta Basis Set Directory
     elif basisset == "TZ":
-        dir_bas = "c:/Users/djokicma.CHEMS195/Desktop/COF_Cifs/IRCOF102/full.basis/full.basis/" #Change This Directory to Triple Zeta Basis Set Directory
+        dir_bas = "/mnt/home/djokicma/Crystal17/IRCOF102/scripts/code/full.basis.triplezeta/" #Change This Directory to Triple Zeta Basis Set Directory
     else: print("ERROR Improper Basis Set")
     f       = open(dir_bas+str(num))
     bs      = f.read() 
@@ -25,7 +25,7 @@ def unique(list):
 def CIF2D12(material,struc,path,opt,basisset):
     mat  = ase.io.read(path+material, format='cif')
     title  = material[:-4]
-    output = title+"_"+struc+"_"+opt+basisset+".d12"
+    output = title+"_"+struc+"_"+opt+"_"+basisset+".d12"
     with open(output,'w') as f: 
         #GET LATTICE PARAMETERS
         u     = mat.get_cell()
@@ -95,9 +95,9 @@ def CIF2D12(material,struc,path,opt,basisset):
         ### Include the Basis Sets for Each element
         for i in ele:
             if struc == "BULK":
-                print(basis(i),basisset,file=f)      
+                print(basis(i,basisset),end='',file=f)      
             elif struc == "SLAB":    
-                print(basis(i),basisset,file=f)
+                print(basis(i,basisset),end='',file=f)
             else: print("ERROR Improper Structure type input")
             
         ks      = [2,3,5,6,10,15,30]
@@ -121,7 +121,7 @@ def CIF2D12(material,struc,path,opt,basisset):
             TAIL    = "99 0\nEND\nDFT\nSPIN\nHSE06-D3\nXLGRID\nEND\nTOLINTEG\n9 9 9 9 18\nTOLDEE\n7\nSHRINK\n0 %d\n %d %d 1\nSCFDIR\nBIPOSIZE\n110000000\nEXCHSIZE\n110000000\nMAXCYCLE\n800\nFMIXING\n%d\nDIIS\nPPAN\nEND"%(nShrink,ka,kb,FM)    
         print(TAIL,file=f)
     return
-DIR     = "c:/Users/djokicma.CHEMS195/Desktop/COF_Cifs/IRCOF102/Metalated/" # Change This Directory to CIF Directory
+DIR     = "/mnt/home/djokicma/Crystal17/IRCOF102/COF_CIF/Simple/" # Change This Directory to CIF Directory
 pathlist = glob.glob(DIR+'*.cif')
 nDIR     = len(DIR)
 ntype    = len(".cif")
@@ -162,9 +162,9 @@ for path in pathlist:
         print('Invalid Input for Option 2. Try again.')
         break
     if option3 == 5:
-        option2  = "DZ"
-    elif option2 == 6:
-        option2  = "TZ"
+        option3  = "DZ"
+    elif option3 == 6:
+        option3  = "TZ"
     else: 
         print('Invalid Input for Option 3. Try again.')
         break
