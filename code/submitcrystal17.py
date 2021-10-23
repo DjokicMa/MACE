@@ -9,11 +9,11 @@ import shutil
 import itertools
 
 """Change the data_folder depending on where your files are"""
-data_folder = r'/mnt/ufs18/home-079/djokicma/Crystal17/IRCOF102/OPT/' 
+data_folder = r'/mnt/home/djokicma/Crystal17/IRCOF102/OPT/SimpleDZ' 
 data_files = os.listdir(data_folder)
 
 """Reads each file given by data_folder and loops through to find the average bond length"""
 for file_name in data_files:
   if ".d12" in file_name:
     submit_name = file_name.split(".d12")[0]
-    os.system("/mnt/ufs18/home-079/djokicma/Crystal17/IRCOF102/OPT/submitcrystal17.sh " + submit_name + " 100")
+    os.system("/mnt/home/djokicma/Crystal17/IRCOF102/OPT/SimpleDZ/submitcrystal17.sh " + submit_name + " 100")

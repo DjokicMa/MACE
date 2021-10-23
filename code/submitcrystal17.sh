@@ -7,6 +7,7 @@ echo '#SBATCH -o '$outfile >> $1.sh
 echo '#SBATCH --cpus-per-task=1' >> $1.sh
 echo '#SBATCH --ntasks=32' >> $1.sh
 echo '#SBATCH -p general-long' >> $1.sh
+echo '#SBATCH -N 1' >> $1.sh
 time=7
 wall=-00:00:00
 timewall=$time$wall
