@@ -5,9 +5,9 @@ import glob
 
 def basis(num, basisset):
     if basisset == "DZ":
-        dir_bas = "/mnt/home/djokicma/Crystal17/IRCOF102/scripts/code/full.basis.doublezeta/" #Change This Directory to Double Zeta Basis Set Directory
+        dir_bas = "/mnt/research/mendozacortes_group/bin/helpscripts/code/full.basis.doublezeta/" #Change This Directory to Double Zeta Basis Set Directory
     elif basisset == "TZ":
-        dir_bas = "/mnt/home/djokicma/Crystal17/IRCOF102/scripts/code/full.basis.triplezeta/" #Change This Directory to Triple Zeta Basis Set Directory
+        dir_bas = "/mnt/research/mendozacortes_group/bin/helpscripts/code/full.basis.triplezeta/" #Change This Directory to Triple Zeta Basis Set Directory
     else: print("ERROR Improper Basis Set")
     f       = open(dir_bas+str(num))
     bs      = f.read() 
