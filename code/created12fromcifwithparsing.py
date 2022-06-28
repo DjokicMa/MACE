@@ -197,17 +197,17 @@ def CIF2D12(material,struc,path,opt,basisset):
                 
         if ka ==0 or kb == 0 or kc == 0: print("ERROR:",ka,kb,kc)
         k_max = max([ka,kb,kc])
-        ka = k_max
-        kb = k_max
-        kc = k_max
+        #ka = k_max
+        #kb = k_max
+        #kc = k_max
         nShrink = k_max*2
         if struc == "BULK":
-            TAIL    = "99 0\nEND\nDFT\nSPIN\nPBE-D3\nXLGRID\nEND\nTOLINTEG\n9 9 9 9 18\nTOLDEE\n7\nMEMOPRT\nSHRINK\n0 %d\n %d %d %d\nSCFDIR\nSAVEWF\nSAVEPRED\nBIPOSIZE\n110000000\nEXCHSIZE\n110000000\nMAXCYCLE\n1600\nFMIXING\n%d\nDIIS\nHISTDIIS\n100\nPPAN\nEND"%(nShrink,ka,kb,kc,FM)    
+            TAIL    = "99 0\nEND\nDFT\nSPIN\nPBE-D3\nXLGRID\nEND\nTOLINTEG\n7 7 7 7 14\nTOLDEE\n7\nMEMOPRT\nSHRINK\n0 %d\n %d %d %d\nSCFDIR\nSAVEWF\nSAVEPRED\nBIPOSIZE\n110000000\nEXCHSIZE\n110000000\nMAXCYCLE\n1600\nFMIXING\n%d\nDIIS\nHISTDIIS\n100\nPPAN\nEND"%(nShrink,ka,kb,kc,FM)    
         if struc == "SLAB":    
             TAIL    = "99 0\nEND\nDFT\nSPIN\nHSE06-D3\nXLGRID\nEND\nTOLINTEG\n9 9 9 9 18\nTOLDEE\n7\nSHRINK\n0 %d\n %d %d 1\nSCFDIR\nBIPOSIZE\n110000000\nEXCHSIZE\n110000000\nMAXCYCLE\n800\nFMIXING\n%d\nDIIS\nPPAN\nEND"%(nShrink,ka,kb,FM)    
         print(TAIL,file=f)
     return 
-DIR     = "/home/marcus/Documents/PORMAKE data/Symmetry/" # Change This Directory to CIF Directory
+DIR     = "/home/marcus/Documents/PORMAKE data/Large/" # Change This Directory to CIF Directory
 pathlist = glob.glob(DIR+'*.cif')
 nDIR     = len(DIR)
 ntype    = len(".cif")
@@ -255,3 +255,4 @@ for path in pathlist:
         print('Invalid Input for Option 3. Try again.')
         break
     CIF2D12(material,option2,DIR,option1,option3)
+    
