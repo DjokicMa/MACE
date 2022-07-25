@@ -87,20 +87,16 @@ def ipBANDS(material,E_l,E_u):
                     continue
                 if alpha_beta_counter == 0: # This is to get alpha electron bands
                     data = line.split()
-                    ne = next(fb)
-                    ne = ne.split()
-                    if len(data) >= 1000 and len(ne) < 1000:
-                        data = np.concatenate([data,ne])
+                    while len(data) != M+1:
+                        data = np.concatenate([data,next(fb).split()])
                     E[i] = float(data[0])
                     for j in range(0,M):
                         BANDS[i,j] = (float(data[j+1])*27.2114)+maxV
                     i = i+1
                 if alpha_beta_counter == 1: # This is to get beta electron bands
                     data = line.split()
-                    ne = next(fb)
-                    ne = ne.split()
-                    if len(data) >= 1000 and len(ne) < 1000:
-                        data = np.concatenate([data,ne])
+                    while len(data) != M+1:
+                        data = np.concatenate([data,next(fb).split()])
                     Ebeta[ib] = float(data[0])
                     for j in range(0,M):
                         BANDSbeta[ib,j] = (float(data[j+1])*27.2114)+maxV
