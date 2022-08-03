@@ -99,7 +99,23 @@ def CIF2D12(material,struc,path,opt,basisset):
                 atom_counter = 0
             elif atom_counter == 1:
                 atom_list.append(i)
-
+                
+    # Specify only requires Lattic Parameters for Space Group
+    if int(spacegroup) >= 1 and int(spacegroup) <= 2: #Triclinic
+        UC = "%-8.6f   %-8.6f  %-8.6f  %-6.4f  %-6.4f  %-6.4f #a,b,c,alpha,beta,gamma Triclinic"%(a,b,c,alpha,beta,gamma)
+    elif int(spacegroup) >= 3 and int(spacegroup) <= 15: #Monoclinic
+        UC = "%-8.6f   %-8.6f  %-8.6f  %-6.4f #a,b,c,beta Monoclinic alpha = gamma = 90"%(a,b,c,beta)
+    elif int(spacegroup) >= 16 and int(spacegroup) <= 74: #Orthorombic
+        UC = "%-8.6f   %-8.6f  %-8.6f #a,b,c Orthorombic alpha = beta = gamma = 90"%(a,b,c)
+    elif int(spacegroup) >= 75 and int(spacegroup) <= 142: #Tetragonal
+        UC = "%-8.6f   %-8.6f #a=b,c Tetragonal alpha = beta = gamma = 90"%(a,c)
+    elif int(spacegroup) >= 143 and int(spacegroup) <= 167: #Trigonal
+        UC = "%-8.6f   %-8.6f #a=b,c Trigonal alpha = beta = 90, gamma = 120"%(a,c)
+    elif int(spacegroup) >= 168 and int(spacegroup) <= 194: #Hexagonal
+        UC = "%-8.6f   %-8.6f #a=b,c Hexagonal alpha = beta = 90, gamma = 120"%(a,c)
+    elif int(spacegroup) >= 195 and int(spacegroup) <= 230: #cubic
+        UC = "%-8.6f #a=b=c cubic alpha = beta = gamma = 90 "%(a)
+    
     
     # parse atom info for fraction unit cell coordinates + name
     true_index = 0
@@ -148,7 +164,7 @@ def CIF2D12(material,struc,path,opt,basisset):
             print("CRYSTAL\n0 0 0",file=f)
             #print(str(sg_bk),file=f)
             print(spacegroup,file=f)
-            print("%-8.6f   %-8.6f  %-8.6f  %-6.4f  %-6.4f  %-6.4f"%(a,b,c,alpha,beta,gamma),file=f)
+            print(UC,file=f)
             print(str(ATOMS),file=f)
 
         ECPs    = [37,38,39,40,41,42] #full.basis        
