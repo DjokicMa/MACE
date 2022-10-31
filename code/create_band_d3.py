@@ -33,7 +33,7 @@ def sym(input_lines, output_lines):
   return sym_num, sym_name, orbital_num
 
 def writed3(sym_num, sym_name, orbital_num, d3_file, output_name):
-  d3_file.write("BAND\n")
+  d3_file.write("NEWK\n48 48\nBAND\n")
   d3_file.write(output_name + "\n")
   d3_lines = []
   #if sym_num == 1:

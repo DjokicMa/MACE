@@ -5,8 +5,6 @@ Created on Mon Oct 17 14:17:47 2022
 
 @author: marcus
 """
-
-
 import glob
 import os
 
@@ -143,6 +141,7 @@ for path in pathlist:
     if material == "":break
     output_content = []
     
+    print(material)
     with open(path, 'r') as f:
        for line in f:
           if "SCF ENDED" in line:
@@ -151,7 +150,7 @@ for path in pathlist:
              output_content.append(line)
              
     max_c, min_v  = get_bands(output_content)
-    print(material + "\n  Bottom of Valence Band: " + min_v + " eV\n  Top of Conduction Band: " + max_c + " eV")
+    print("  Bottom of Valence Band: " + min_v + " eV\n  Top of Conduction Band: " + max_c + " eV")
     cond = round(float(max_c),1) + 1
     val = round(float(min_v),1) - 1
     # murange needs to be 0.5 to 1 eV higher than cond and lower than valence band
