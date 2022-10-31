@@ -43,7 +43,7 @@ def primitive_cell(filename):
       if not line.strip():
          continue
       if re.match(r"^ PRIMITIVE CELL", line):
-         line=cryout.next()
+         line=next(cryout)
       if re.search(r"           ALPHA      BETA       GAMMA", line):
          value= next(cryout).split()
          primitive_cell=value
@@ -52,7 +52,7 @@ def primitive_cell(filename):
    return primitive_cell
 
 """ RETURNS THE CONVENTIONAL UNIT CELL LATTICE PARAMETER"""
-def conventional_cell(filename):
+def conventional_cells(filename):
    #open output file
    cryout = open(str(filename), 'r')
    conventional_cell=[] #store the structure information
@@ -67,7 +67,7 @@ def conventional_cell(filename):
       if not line.strip():
          continue
       if re.match(r"^ CRYSTALLOGRAPHIC CELL", line):
-         line=cryout.next()
+         line=next(cryout)
          if re.search(r"           ALPHA      BETA       GAMMA", line):
             value= next(cryout).split()
             conventional_cell=value
@@ -86,7 +86,7 @@ def get_spacegroup(filename):
    spacegroup=0
    for line in cryout:
       if re.search("CRYSTAL",line):
-         line=cryout.next()
+         line=next(cryout)
          value=next(cryout).split()
          spacegroup=value[0]
 #         spacegroup.append(value[0])
@@ -255,15 +255,15 @@ if __name__ == "__main__":
    #
    data_files = os.listdir((os.getcwd()))
    for file_name in data_files:
-     if "tryCOF102_original_BULK_OPTGEOM_DZ.out" in file_name: #fix this
+     if ".out" in file_name: #fix this
        submit_name = file_name.split(".out")[0]
        outputfile = str(submit_name)+".out"
-       existingd12 = open(submit_name+".d12", 'r')
+       existingd12 = open(str(submit_name)+".d12", 'r')
        newd12  = open(str(submit_name)+"_optimized.d12",'w')
 
        print(outputfile)
        # get conventional unit cell parameter
-       conventional_cell = conventional_cell(outputfile)
+       conventional_cell = conventional_cells(outputfile)
     
     
        #gets the coordinates of the atoms
@@ -281,4 +281,6 @@ if __name__ == "__main__":
     
        existingd12.close()
        newd12.close()
+
+
 
