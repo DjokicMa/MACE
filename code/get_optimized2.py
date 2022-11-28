@@ -4,22 +4,10 @@
 This script will take the optimized geometry of CRYSTAL14/CRYSTAL09 output and edit the input .d12 file
 with the new atom coordinates & unit cell parameter, then save it as a new d12 file named case_new.d12, 
 where case is your job name. 
-
 Requirement: to use this script, please have both CRYSTAL14 output file (case.out) and CRYSTAL14 input file(case.d12)
-
-
-Usage: get_optimize.py [case]
-
-
-example: My calculation is NbAs, so the case name is NbAs, I have NaAs.out from CRYSTAL14 calculation
-         and NbAs.d12 as input. Now, I can get optimized structure from NbAs.out through
-
-         get_optimize.py NbAs
-
-         Finally, you will get a new file called NbAs_optimized.d12
-
+Usage: get_optimize.py 
 Kevin Lucht
-Modified by Wangwei Lan
+Modified by Wangwei Lan, Marcus Djokic, and Danny Maldonado 
 """
 
 import os, sys, math
@@ -152,17 +140,17 @@ def copy_coordinates(filename):
    return opt_geom_total
    
 """FINDS THE ATOM NUMBER OF MN, AND RETURNS A STRING TO PLACE INTO ATOMSPIN"""
-def atomspin(atom_num):
-   list =[]
-   ATOMSPIN = ""
-   Mn = 0
-   for i in range(len(atom_num)):
-      if atom_num[i] == "25" or atom_num[i] == "225":
-         Mn +=1
-         ATOMSPIN = ATOMSPIN + str(i + 1) + " " + "1" + " "
-   list.append(str(Mn))
-   list.append(ATOMSPIN)
-   return list 
+# def atomspin(atom_num):
+#    list =[]
+#    ATOMSPIN = ""
+#    Mn = 0
+#    for i in range(len(atom_num)):
+#       if atom_num[i] == "25" or atom_num[i] == "225":
+#          Mn +=1
+#          ATOMSPIN = ATOMSPIN + str(i + 1) + " " + "1" + " "
+#    list.append(str(Mn))
+#    list.append(ATOMSPIN)
+#    return list 
    
 """CREATES A NEW D12 WITH THE EXISTING D12"""
 def modify_d12(existingd12, newd12, opt_geom_total, conventional_cell, spacegroupNM):
@@ -220,6 +208,12 @@ def modify_d12(existingd12, newd12, opt_geom_total, conventional_cell, spacegrou
          next(existingd12)
          next(existingd12)
          pass
+      elif re.search(r"SUPERCEL", line):
+         next(existingd12)
+         next(existingd12)
+         next(existingd12)
+         next(existingd12)
+         pass
       #Crude fix, we don't want to remove the SCF MAXCYCLE 
       elif re.search(r"EXCHSIZE", line):
          next(existingd12)
@@ -232,16 +226,16 @@ def modify_d12(existingd12, newd12, opt_geom_total, conventional_cell, spacegrou
          pass
       elif re.search(r"FULLOPTG", line):
          pass
-      elif re.search(r"ENDGEOM", line):
+      elif re.search(r"ENDOPT", line):
          pass
-      elif re.search(r"ATOMSPIN", line):
-         ATOMSPIN = atomspin(opt_geom_total[0])
-         newd12.write("ATOMSPIN\n")
-         next(existingd12)
-         next(existingd12)
-         pass
-         for item in ATOMSPIN:
-            newd12.write(item+"\n")
+      # elif re.search(r"ATOMSPIN", line):
+      #    ATOMSPIN = atomspin(opt_geom_total[0])
+      #    newd12.write("ATOMSPIN\n")
+      #    next(existingd12)
+      #    next(existingd12)
+      #    pass
+         # for item in ATOMSPIN:
+         #    newd12.write(item+"\n")
       elif re.search(r"ENDGEOM",line):
          pass
       else:
@@ -265,7 +259,6 @@ if __name__ == "__main__":
        # get conventional unit cell parameter
        conventional_cell = conventional_cells(outputfile)
     
-    
        #gets the coordinates of the atoms
     
        opt_geom_total = copy_coordinates(outputfile)
@@ -281,6 +274,3 @@ if __name__ == "__main__":
     
        existingd12.close()
        newd12.close()
-
-
-
