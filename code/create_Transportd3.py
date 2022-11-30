@@ -62,7 +62,6 @@ def get_bands(output_content):
   elif index_cond > index_alpha and index_cond > index_beta and index_cond > index_direct and index_cond > index_indirect:
     unclean_alpha = [x for x in output_content[index_cond].split(" ") if  x != "" ]
     alpha_val_band.append(unclean_alpha[5].split(';')[0])
-    print(alpha_val_band)
     alpha_cond_band = alpha_val_band
     beta_cond_band = alpha_cond_band
     beta_val_band = alpha_val_band
@@ -70,11 +69,8 @@ def get_bands(output_content):
   elif index_alpha > index_cond and index_alpha > index_direct and index_alpha > index_indirect:
     for index in range(index_alpha+2,index_alpha+7):
       if "TOP OF VALENCE" in output_content[index]:
-        print(index)
         unclean_alpha = [x for x in output_content[index].split(" ") if  x != "" ]
-        print(unclean_alpha)
         alpha_val_band.append(unclean_alpha[10].split(';')[0])
-        print(alpha_val_band)
       if "BOTTOM OF VIRTUAL" in output_content[index]:
         unclean_alpha = [x for x in output_content[index].split(" ") if  x != "" ]
         alpha_cond_band.append(unclean_alpha[10].split(';')[0])
