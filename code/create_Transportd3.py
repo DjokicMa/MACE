@@ -5,7 +5,11 @@ Created on Mon Oct 17 14:17:47 2022
 
 @author: marcus
 """
+
+
 import glob
+import matplotlib
+matplotlib.use('tkagg') # <-- THIS MAKES IT FAST!
 import os
 
 HeV    = 27.2114
@@ -15,14 +19,18 @@ HeV    = 27.2114
 
 #determines the minimum of the cond band in eV and top of valence band in eV
 def get_bands(output_content):
+  #initialize
   index_alpha = 0
   index_beta = 0
   index_direct = 0
   index_cond = 0 
+  index_indirect = 0
   alpha_cond_band =[]
   alpha_val_band =[]
   beta_cond_band = []
   beta_val_band = []
+  
+  #check which keyword applies
   for line in output_content:
     if "ALPHA      ELECTRONS" in line:
       index_alpha = output_content.index(line)
@@ -32,80 +40,107 @@ def get_bands(output_content):
       index_direct = output_content.index(line)
     if "POSSIBLY CONDUCTING STATE" in line:
       index_cond = output_content.index(line)
-      
-  if index_direct > index_alpha and index_direct > index_beta and index_direct > index_cond:
+    if "INDIRECT ENERGY BAND GAP" in line:
+      index_indirect = output_content.index(line)
+  print('alpha line #:' + str(index_alpha))
+  print('beta line #:' + str(index_beta))
+  print('direct line #:' + str(index_direct))
+  print('cond line #:' + str(index_cond))
+  print('indirect line #:' + str(index_indirect))
+  # direct is last
+  if index_direct > index_alpha and index_direct > index_beta and index_direct > index_cond and index_direct > index_indirect:
     for index in range(index_direct-4,index_direct+1):
       if "TOP OF VALENCE" in output_content[index]:
         unclean_alpha = [x for x in output_content[index].split(" ") if  x != "" ]
-        alpha_cond_band.append(unclean_alpha[10].split(';')[0])
+        alpha_val_band.append(unclean_alpha[10].split(';')[0])
       if "BOTTOM OF VIRTUAL" in output_content[index]:
         unclean_alpha = [x for x in output_content[index].split(" ") if  x != "" ]
-        alpha_val_band.append(unclean_alpha[10].split(';')[0])
+        alpha_cond_band.append(unclean_alpha[10].split(';')[0])
     beta_cond_band = alpha_cond_band
     beta_val_band = alpha_val_band
-  elif index_cond > index_alpha and index_cond > index_beta and index_cond > index_direct:
+  #cond is last
+  elif index_cond > index_alpha and index_cond > index_beta and index_cond > index_direct and index_cond > index_indirect:
     unclean_alpha = [x for x in output_content[index_cond].split(" ") if  x != "" ]
     alpha_val_band.append(unclean_alpha[5].split(';')[0])
+    print(alpha_val_band)
     alpha_cond_band = alpha_val_band
     beta_cond_band = alpha_cond_band
     beta_val_band = alpha_val_band
-  else:
+  # alpha/beta is last
+  elif index_alpha > index_cond and index_alpha > index_direct and index_alpha > index_indirect:
     for index in range(index_alpha+2,index_alpha+7):
       if "TOP OF VALENCE" in output_content[index]:
+        print(index)
         unclean_alpha = [x for x in output_content[index].split(" ") if  x != "" ]
-        alpha_cond_band.append(unclean_alpha[10].split(';')[0])
+        print(unclean_alpha)
+        alpha_val_band.append(unclean_alpha[10].split(';')[0])
+        print(alpha_val_band)
       if "BOTTOM OF VIRTUAL" in output_content[index]:
         unclean_alpha = [x for x in output_content[index].split(" ") if  x != "" ]
-        alpha_val_band.append(unclean_alpha[10].split(';')[0])
+        alpha_cond_band.append(unclean_alpha[10].split(';')[0])
     for index in range(index_beta+2,index_beta+7):
       if "TOP OF VALENCE" in output_content[index]:
         unclean_beta = [x for x in output_content[index].split(" ") if  x != "" ]
-        beta_cond_band.append(unclean_beta[10].split(';')[0])
+        beta_val_band.append(unclean_beta[10].split(';')[0])
       if "BOTTOM OF VIRTUAL" in output_content[index]:
         unclean_beta = [x for x in output_content[index].split(" ") if  x != "" ]
-        beta_val_band.append(unclean_beta[10].split(';')[0])
-
-  max_alpha_c = alpha_cond_band[0]
-  min_alpha_v = alpha_val_band[0]
-  max_beta_c = beta_cond_band[0]
-  min_beta_v = beta_val_band[0]
+        beta_cond_band.append(unclean_beta[10].split(';')[0])
+  #indirect is last
+  elif index_indirect > index_direct and index_indirect > index_cond and index_indirect > index_alpha:
+      for index in range(index_indirect-4,index_indirect+1):
+        if "TOP OF VALENCE" in output_content[index]:
+          unclean_alpha = [x for x in output_content[index].split(" ") if  x != "" ]
+          alpha_val_band.append(unclean_alpha[10].split(';')[0])
+        if "BOTTOM OF VIRTUAL" in output_content[index]:
+          unclean_alpha = [x for x in output_content[index].split(" ") if  x != "" ]
+          alpha_cond_band.append(unclean_alpha[10].split(';')[0])
+      beta_cond_band = alpha_cond_band
+      beta_val_band = alpha_val_band  
+  else:
+      print('error, no keyword')
+  # placeholder
+  min_alpha_c = alpha_cond_band[0]
+  max_alpha_v = alpha_val_band[0]
+  min_beta_c = beta_cond_band[0]
+  max_beta_v = beta_val_band[0]
+  # check
   if len(alpha_cond_band) == 1:
-    max_alpha_c = alpha_cond_band[0]
+    min_alpha_c = alpha_cond_band[0]
   else:
     for shell in alpha_cond_band:
-      if float(shell) > float(max_alpha_c):
-        max_alpha_c = shell
+      if float(shell) < float(alpha_cond_band[0]):
+        min_alpha_c = shell
         
   if len(alpha_val_band) == 1:
-    min_alpha_v = alpha_val_band[0]
+    max_alpha_v = alpha_val_band[0]
   else:
     for shell in alpha_val_band:
-      if float(shell) < float(min_alpha_v):
-        min_alpha_v = shell
+      if float(shell) > float(alpha_val_band[0]):
+        max_alpha_v = shell
 
   if len(beta_cond_band) == 1:
-    max_beta_c = beta_cond_band[0]
+    min_beta_c = beta_cond_band[0]
   else:
     for shell in beta_cond_band:
-      if float(shell) > float(max_beta_c):
-        max_beta_c = shell
+      if float(shell) < float(beta_cond_band[0]):
+        min_beta_c = shell
 
   if len(beta_val_band) == 1:
-    min_beta_v = beta_val_band[0]
+    max_beta_v = beta_val_band[0]
   else:
     for shell in beta_val_band:
-      if float(shell) < float(min_beta_v):
-        min_beta_v = shell
+      if float(shell) < float(beta_val_band[0]):
+        max_beta_v = shell
   
-  if float(max_alpha_c) > float(max_beta_c):
-    max_c = max_beta_c
+  if float(min_alpha_c) > float(min_beta_c):
+    min_c = min_beta_c
   else:
-    max_c = max_alpha_c
-  if float(min_alpha_v) > float(min_beta_v):
-    min_v = min_alpha_v
+    min_c = min_alpha_c
+  if float(max_alpha_v) > float(max_beta_v):
+    max_v = max_alpha_v
   else:
-    min_v = min_beta_v
-  return(str(float(max_c)*HeV),str(float(min_v)*HeV))
+    max_v = max_beta_v
+  return(str(float(min_c)*HeV),str(float(max_v)*HeV))
 
 #################################################################################
 
@@ -141,7 +176,6 @@ for path in pathlist:
     if material == "":break
     output_content = []
     
-    print(material)
     with open(path, 'r') as f:
        for line in f:
           if "SCF ENDED" in line:
@@ -149,10 +183,10 @@ for path in pathlist:
           else:
              output_content.append(line)
              
-    max_c, min_v  = get_bands(output_content)
-    print("  Bottom of Valence Band: " + min_v + " eV\n  Top of Conduction Band: " + max_c + " eV")
-    cond = round(float(max_c),1) + 1
-    val = round(float(min_v),1) - 1
+    min_c, max_v  = get_bands(output_content)
+    print(material + "\n  Top of Valence Band: " + max_v + " eV\n  Bottom of Conduction Band: " + min_c + " eV")
+    cond = round(float(min_c)+1,1) 
+    val = round(float(max_v)-1,1) 
     # murange needs to be 0.5 to 1 eV higher than cond and lower than valence band
     
     pathname = path_in_str[0:nDIR]
