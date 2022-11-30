@@ -145,10 +145,15 @@ def get_bands(output_content):
 #################################################################################
 
 # writes the Electronic Transport D3 for PProperty 
-def write_d3(d3_file, val, cond):
+def write_d3(d3_file, val, cond, newk):
     
     d3_file.write("NEWK\n")
-    d3_file.write("48 48\n")
+    if len(newk) == 0:
+        d3_file.write("48 48\n")
+    else:
+        for lines in newk:
+            d3_file.write(lines)
+    #d3_file.write("48 48\n")
     d3_file.write("1 0\n")	 	
     d3_file.write("BOLTZTRA\n")
     d3_file.write("TDFRANGE\n")
@@ -182,7 +187,23 @@ for path in pathlist:
              break
           else:
              output_content.append(line)
-             
+    
+    # check d12 for old shrink
+    d12 =path.replace(".out",".d12")
+    newk_counter = 0
+    newk = []
+    with open(d12,'r') as f12:
+        for line in f12:
+          if newk_counter == 1:
+           if '0' in line:
+            newk.append(line)
+           else:
+            newk_counter = 0
+            newk.append(line)
+          elif 'SHRINK' in line:
+           newk_counter = 1
+           newk = []
+
     min_c, max_v  = get_bands(output_content)
     print(material + "\n  Top of Valence Band: " + max_v + " eV\n  Bottom of Conduction Band: " + min_c + " eV")
     cond = round(float(min_c)+1,1) 
@@ -196,4 +217,4 @@ for path in pathlist:
     os.popen(f"cp {f9_file_name} {new_f9}")
     d3_file_name = pathname + material + "_TRANSPORT.d3"
     with open(d3_file_name, 'w+') as d3_file:
-      write_d3(d3_file, val, cond)
+      write_d3(d3_file, val, cond, newk)
