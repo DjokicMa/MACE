@@ -128,7 +128,6 @@ def ipDOS(material,E_l,E_u):
         if data_vect[0][j] >= E_l+maxV and data_vect[0][j] <= E_u+maxV:
             plot_vect[0].append(data_vect[0][j])
     
-    #print(plot_vect[0],plot_vect[-1])
     E = []
     DOS = []
     for i in range(len(plot_vect[0])):
@@ -165,7 +164,6 @@ def ipDOS(material,E_l,E_u):
     #plot
     ax.fill_betweenx(E_a,total_DOS,color='darkgrey')
     ax.plot(total_DOS,E_a,color='black',alpha=0.3,linewidth=1)
-    #ax.barh(E,DOS,color='darkgrey',height=0.005)
     plt.axhline(maxV,color="black",linestyle='--',lw =1.5,alpha=1)
     plt.axvline(0,color='black',lw=1.5)
 
@@ -181,7 +179,6 @@ def ipDOS(material,E_l,E_u):
 #This is the directory where the files will be saved. Make sure to change this accordingly.
 DIR = (os.getcwd()+'/')
 FIGDIR = DIR
-#FIGDIR = "/home/daniel/Dropbox/Papers/2020_2D_Genome/Successful-Calculations/Chalcogenides-Danny/DOSS/figures/"
 #Necessary variables to execute the for loop
 pathlist = glob.glob(DIR+'*_DOSS.DOSS.dat')
 nDIR = len(DIR)
