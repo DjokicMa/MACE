@@ -8,8 +8,6 @@ python total_DOS.py [E lower limit] [E upper limit]
 Example:
 python total_DOS.py -5 5
 ^ This plots DOS in a range of (+-)5 eV around the fermi level
-
-After this, the program will prompt you to plot any projections
 """
 #LOAD EVERYTHING
 import sys
