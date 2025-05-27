@@ -14,6 +14,6 @@ data_files = os.listdir(data_folder)
 
 """Reads each file given by data_folder and loops through to find the average bond length"""
 for file_name in data_files:
-  if ".d12" in file_name:
-    submit_name = file_name.split(".d12")[0]
-    os.system(data_folder + "/submitcrystal17.sh " + submit_name + " 100")
+  if ".d3" in file_name:
+    submit_name = file_name.split(".d3")[0]
+    os.system(data_folder + "/submit_prop_17.sh " + submit_name + " 100")

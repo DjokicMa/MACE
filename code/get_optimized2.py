@@ -216,7 +216,8 @@ def modify_d12(existingd12, newd12, opt_geom_total, conventional_cell, spacegrou
          pass
       #Crude fix, we don't want to remove the SCF MAXCYCLE 
       elif re.search(r"EXCHSIZE", line):
-         next(existingd12)
+         newd12.write(line)
+         newd12.write(next(existingd12))  # this writes the value like "110000000\n"
          newd12.write("MAXCYCLE\n")
          newd12.write("800\n")
          pass

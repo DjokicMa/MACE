@@ -16,4 +16,4 @@ data_files = os.listdir(data_folder)
 for file_name in data_files:
   if ".d12" in file_name:
     submit_name = file_name.split(".d12")[0]
-    os.system(data_folder + "/submitcrystal17.sh " + submit_name + " 100")
+    os.system(data_folder + "/submitcrystal23.sh " + submit_name + " 100")
