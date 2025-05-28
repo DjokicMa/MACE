@@ -1,1 +1,22 @@
+# ⚛Electronic Structure Analysis Scripts
 
+![license](https://img.shields.io/badge/license-MIT-blue.svg)
+![python](https://img.shields.io/badge/python-3.x-blue.svg)
+
+Automated extraction of **band gap**, **valence/conduction band edges**, and **work function** from electronic structure simulation outputs.
+
+---
+
+## Folder Contents
+
+| Script | Purpose |
+|--------|---------|
+| `band_gap_parser.py` | Extract band gap and band edge data from `.out` files |
+| `work_function_parser.py` | Extract work function and electrostatic potential info from `POTC` files |
+
+---
+
+## Installation
+
+```bash
+pip install numpy matplotlib
