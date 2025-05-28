@@ -23,6 +23,8 @@ Generates:
 - Input Files: `.out` files with keywords like `INDIRECT ENERGY BAND GAP:`, `DIRECT ENERGY BAND GAP:`, `TOP OF VALENCE BANDS`
 - Output File: `CBM_VBM.csv`
 
+[See reference guide for specifics] 
+
 ---
 
 ### `getWF.py`
@@ -43,6 +45,8 @@ Generates:
 - Libraries: `numpy`, `csv`, `os`, `glob`
 - Input Files: `*_POTC.POTC.dat` (potential data) and `*_POTC.out` (contains `FERMI ENERGY`)
 - Output File: `WF.csv`
+
+[See reference guide for specifics] 
 
 ---
 
