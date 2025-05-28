@@ -53,6 +53,4 @@ Generates:
 - `matplotlib` (TkAgg backend enabled)
 
 Install with:
-
-```bash
 pip install numpy matplotlib
