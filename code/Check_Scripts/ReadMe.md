@@ -15,6 +15,9 @@ This folder contains Python scripts used for managing, validating, and updating 
 **Requirements**:
 - Python 3.x
 - Libraries: `os`, `glob`
+- ```updatelist.py``` must exist beforehand
+- `completesp_list.csv` or `complete_list.csv` must exist
+- `done/` directory must be created beforehand
 
 **I/O**:
 - **Input**: Directory of simulation job folders
