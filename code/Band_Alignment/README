@@ -1,22 +1,42 @@
-# ⚛Electronic Structure Analysis Scripts
+# Electronic Structure Analysis Scripts
 
-![license](https://img.shields.io/badge/license-MIT-blue.svg)
-![python](https://img.shields.io/badge/python-3.x-blue.svg)
+This folder contains Python scripts for analyzing electronic structure data from simulation output files, specifically:
+- **Band Gap Extraction** (`CBM_VBM.csv`)
+- **Work Function Computation** (`WF.csv`)
 
-Automated extraction of **band gap**, **valence/conduction band edges**, and **work function** from electronic structure simulation outputs.
+## Scripts Overview
+
+### `band_gap_parser.py`
+Processes `.out` simulation files to extract:
+- Alpha/Beta band gaps
+- VBM (Valence Band Maximum)
+- CBM (Conduction Band Minimum)
+- Gap type (DIRECT / INDIRECT / CONDUCTING)
+
+Generates:
+- `CBM_VBM.csv` summarizing material-wise band edge properties.
+
+### `work_function_parser.py`
+Parses files of the form:
+- `*_POTC.POTC.dat` and `*_POTC.out`
+
+Extracts:
+- Electrostatic potential top/bottom
+- Work functions (from both ends of slab)
+- Fermi energy
+
+Generates:
+- `WF.csv` summarizing potential and work function data.
 
 ---
 
-## Folder Contents
+## 🧱 Requirements
 
-| Script | Purpose |
-|--------|---------|
-| `band_gap_parser.py` | Extract band gap and band edge data from `.out` files |
-| `work_function_parser.py` | Extract work function and electrostatic potential info from `POTC` files |
+- Python 3.x
+- `numpy`
+- `matplotlib` (TkAgg backend enabled)
 
----
-
-## Installation
+Install with:
 
 ```bash
 pip install numpy matplotlib
