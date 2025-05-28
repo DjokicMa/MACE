@@ -4,7 +4,7 @@ This folder contains Python scripts used for managing, validating, and updating 
 
 ---
 
-## 📄 Scripts Overview
+## Scripts Overview
 
 ### `check_completed2.py`
 **Purpose**: Identifies completed simulation jobs.
@@ -85,7 +85,7 @@ This folder contains Python scripts used for managing, validating, and updating 
 
 ---
 
-## ✅ Usage
+## Usage
 
 Ensure all scripts are in the base folder where your jobs are located. Then run:
 
