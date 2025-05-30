@@ -1,3 +1,9 @@
+"""
+This script computes interlayer spacing from bulk geometry and adds ghost atoms above and below slab structures in .d12 files.
+It generates new input files with ghost layers for surface calculations, using consistent atom positions and fractional coordinates.
+"""
+
+
 from pathlib import Path
 import warnings
 import numpy as np
