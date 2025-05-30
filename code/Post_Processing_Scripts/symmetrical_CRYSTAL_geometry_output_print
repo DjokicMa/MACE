@@ -1,4 +1,8 @@
 #!/bin/bash
+: '
+This script extracts lattice parameters and atomic coordinates from a CRYSTAL output file.
+It supports selecting specific geometry steps (e.g., initial, final) and displays either full or minimal atomic coordinates.
+'
 
 CRYSTALOutPattern="*.out"
 
