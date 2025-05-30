@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CRYSTAL23 SLURM Job Queue Manager with robust error handling
+This script manages a SLURM job queue for CRYSTAL23 calculations, with robust error handling and automatic submission of .d12 input files.
 """
 
 import os
