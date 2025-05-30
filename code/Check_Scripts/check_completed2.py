@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
 """
-Moves files associated with completed runs into the 'done/' directory.
+This script moves files listed in 'too_many_scf_list.csv' to a designated 'done' directory, 
+grouping outputs of runs with too many SCF cycles. Run updatelists.py beforehand.
 
 Requires:
 - updatelists.py to be run beforehand
