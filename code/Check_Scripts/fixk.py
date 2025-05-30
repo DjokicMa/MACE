@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+This script scans all .d12 files in the current directory and subdirectories, identifies the SHRINK line,
+and replaces the following line with a uniform k-point mesh using the smallest value found on that line.
+
 Created on Tue Jun 28 09:50:36 2022
 
 @author: marcus
