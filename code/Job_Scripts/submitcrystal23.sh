@@ -1,3 +1,6 @@
+#!/bin/bash --login
+"""This script auto-generates and submits a SLURM batch file for CRYSTAL23 jobs, with queue management support"""
+
 echo '#!/bin/bash --login' > $1.sh
 echo '#SBATCH -J '$1 >> $1.sh
 out=$1
