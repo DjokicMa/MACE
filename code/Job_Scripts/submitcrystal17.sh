@@ -1,3 +1,6 @@
+#!/bin/bash
+# This script auto-generates a SLURM batch script for CRYSTAL17 jobs and submits it
+
 echo '#!/bin/bash' > $1.sh
 echo '#SBATCH -J '$1 >> $1.sh
 out=$1
