@@ -1,3 +1,9 @@
+"""
+This script parses CRYSTAL output files to extract band gap data, VBM/CBM values (for alpha and beta spins),
+and generates a CSV summary (CBM_VBM.csv) containing these electronic properties.
+"""
+
+
 from pathlib import Path
 import warnings
 import numpy as np
