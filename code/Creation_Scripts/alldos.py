@@ -1,11 +1,16 @@
 #!/usr/bin/env python
+
+"""
+This script parses CRYSTAL output files to extract atomic orbital shell information by element and shell type (S, P, D, F, SP),
+constructs a formatted DOSS input file (*.d3), and renames corresponding .f9 files for DOS calculations.  
+Note that this script shells for each element but does not pick individual atoms
+"""
+
 import os, sys, math
 import re
 import linecache
 from collections import OrderedDict
-"""
-This script is meant to get all the shells from all atoms and separate the shells in terms of S,P,D,SP, and F shells. Note that this script shells for each element but does not pick individual atoms
-"""
+
 
 
 """Finds the shells in the output file and then sends them as a list to be organized"""
