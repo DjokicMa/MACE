@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+This script reads CRYSTAL .out and .d12 files to extract band edges, computes an energy range for transport calculations,
+and generates input files (*.d3, *_TRANSPORT.f9) for PProperty Boltzmann transport analysis.
+
 Created on Mon Oct 17 14:17:47 2022
 
 @author: marcus
