@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-This script is in place to try and determine the average bond length of carbons in a unit cell
+This script finds all .d3 files in the current directory and submits them for processing 
+by running submit_prop_17.sh with a parameter of 100 for each file.
 """
 import os, sys, math
 import re
