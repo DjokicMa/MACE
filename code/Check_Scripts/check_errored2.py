@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
 """
-Moves files associated with completed runs into the 'done/' directory.
+This script moves files associated with runs that exceeded SCF limits into the 'done/' directory,
+based on entries from too_many_scf_list.csv. Requires updatelists.py to be run beforehand.
 
 Requires:
 - updatelists.py to be run beforehand
