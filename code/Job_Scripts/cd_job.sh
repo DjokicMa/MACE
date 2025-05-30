@@ -1,7 +1,11 @@
 #!/bin/bash
+"""
+This script navigates to a job's scratch directory by parsing the scratch directory path 
+from SLURM job output files. Takes an optional job output file as argument, or automatically 
+finds it if only one job*.o file exists in the current directory.
+"""
 
 JobFilePattern="job*.o"
-
 if [ "$1" != "" ]; then
     MyJobOutFile=$1
 else
@@ -17,9 +21,7 @@ else
     else
 	    echo "Could not find job output file."
 	    return 1
-
     fi
 fi
-
 ScratchJobDir=$(grep "scratch job directory:" $MyJobOutFile -A 1 | tail -1)
 cd "$ScratchJobDir"
