@@ -1,3 +1,8 @@
+"""
+This script adds ghost atom layers above and below slab structures in CRYSTAL .d12 files, using a user-specified spacing.
+It generates a modified geometry file with inserted ghost atoms for surface calculations.
+"""
+
 from pathlib import Path
 import warnings
 import numpy as np
