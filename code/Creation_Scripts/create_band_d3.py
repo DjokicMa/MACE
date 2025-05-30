@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+"""
+This script generates band structure input files (*.d3) for CRYSTAL based on symmetry info extracted from .d12 and .out files.
+It selects the appropriate high-symmetry path template and renames the corresponding .f9 file for band structure calculations.
+"""
+
 import os, sys, math
 import re
 import linecache
