@@ -21,7 +21,7 @@ This folder contains CRYSTAL-specific utilities for checking, classifying, fixin
   * `unknown_list.csv`
 * Logic: Uses CRYSTAL-specific error messages to classify jobs.
 
-### 2. check\_completed2.py
+### 2. check\_completedV2.py
 
 * Language: Python 3
 * Required Libraries: `os`, `shutil`, `csv`
@@ -29,7 +29,7 @@ This folder contains CRYSTAL-specific utilities for checking, classifying, fixin
 * Input: `complete_list.csv` or `completesp_list.csv`
 * Moves: `.sh`, `.out`, `.d12`, `.f9` (matching job names)
 
-### 3. check\_errored2.py
+### 3. check\_erroredV2.py
 
 * Language: Python 3
 * Required Libraries: `os`, `shutil`, `csv`
