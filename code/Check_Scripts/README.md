@@ -1,102 +1,55 @@
-# Check Scripts
+# Check\_Scripts Folder Documentation
 
-This folder contains Python scripts used for managing, validating, and updating simulation jobs based on output files. These scripts help ensure consistency, detect errors, and automate post-processing cleanup or relaunching.
+This folder contains CRYSTAL-specific utilities for checking, classifying, fixing, and preparing outputs from geometry optimization or single-point CRYSTAL calculations.
 
----
+## Included Scripts
 
-## Scripts Overview
+### 1. updatelists2.py
 
-### `check_completed2.py`
-**Purpose**: Identifies completed simulation jobs.
+* Purpose: Scans all `.out` files and categorizes job status automatically.
+* Output: Generates multiple `.csv` files:
 
-- Checks for required files: `POSCAR`, `OUTCAR`, `CONTCAR`
-- Flags incomplete or corrupted runs
+  * `complete_list.csv`
+  * `completesp_list.csv`
+  * `too_many_scf_list.csv`
+  * `memory_list.csv`
+  * `shrink_error_list.csv`
+  * `geometry_small_dist_list.csv`
+  * `potential_list.csv`
+  * `unknown_list.csv`
+* Logic: Uses CRYSTAL-specific error messages to classify jobs.
 
-**Requirements**:
-- Python 3.x
-- Libraries: `os`, `glob`
-- ```updatelist.py``` must exist beforehand
-- `completesp_list.csv` or `complete_list.csv` must exist
-- `done/` directory must be created beforehand
+### 2. check\_completed2.py
 
-**I/O**:
-- **Input**: Directory of simulation job folders
-- **Output**: Console log of successful completions
+* Purpose: Moves all successfully completed jobs to a `done/` folder.
+* Input: `complete_list.csv` or `completesp_list.csv`
+* Moves: `.sh`, `.out`, `.d12`, `.f9` (matching job names)
 
----
+### 3. check\_errored2.py
 
-### `check_errored2.py`
-**Purpose**: Detects errored or non-converging jobs.
+* Purpose: Moves errored jobs (e.g., SCF cycle exceeded) to an `errored/` folder.
+* Input: `too_many_scf_list.csv` or similar
+* Moves: `.sh`, `.out`, `.d12`, `.f9`
+* Tip: Can create subfolders for different error types for easier bulk-fix workflows.
 
-- Scans for known error strings or convergence issues in `OUTCAR`
+### 4. fixk.py
 
-**Requirements**:
-- Python 3.x
-- Libraries: `os`, `glob`
-- `completesp_list.csv` or `complete_list.csv` must exist
-- `done/` directory must be created beforehand
+* Purpose: Automatically fixes problematic `SHRINK` lines in `.d12` files.
+* Use Case: Apply to files caught by `shrink_error_list.csv`
+* Behavior: Replaces the SHRINK k-point mesh with the smallest value found.
 
-**I/O**:
-- **Input**: Job output folders
-- **Output**: Printed report of failures
+### 5. get\_optimized2.py
 
----
+* Purpose: Generates a new `.d12` using the final optimized geometry from a prior `.out` file.
+* Inputs Required:
 
-### `fixk.py`
-**Purpose**: Repairs faulty `KPOINTS` files.
+  * Original `.d12`
+  * Matching `.out`
+* Output: `*_optimized.d12` with updated coordinates and lattice.
 
-- Edits k-point settings in-place
-- Ensures valid formatting for restarts
+### 6. CRYSTALOptToD12.py
 
-**Requirements**:
-- Python 3.x
-- Libraries: `os`
+* Purpose: Similar to `get_optimized2.py`, but enhanced and modular.
+* Function: Parses the final geometry in a CRYSTAL output and creates a fresh `.d12` for follow-up calculations.
+* Improvement: Intended to replace `get_optimized2.py` with better reliability and clearer structure.
 
-**I/O**:
-- **Input**: Job folders with malformed `KPOINTS`
-- **Output**: Fixed `KPOINTS` file
-
----
-
-### `get_optimized2.py`
-**Purpose**: Extracts relaxed structure from completed jobs.
-
-- Converts `CONTCAR` → `POSCAR`
-- Prepares structures for next job stage
-
-**Requirements**:
-- Python 3.x
-- Libraries: `os`, `shutil`
-
-**I/O**:
-- **Input**: Optimized job folders
-- **Output**: Updated `POSCAR` files
-
----
-
-### `updatelists2.py`
-**Purpose**: Maintains job status tracking files.
-
-- Updates lists that record which jobs are done/pending
-- Automates batch job tracking
-
-**Requirements**:
-- Python 3.x
-- Libraries: `os`
-
-**I/O**:
-- **Input**: Text-based tracking files
-- **Output**: Updated job lists
-
----
-
-## Usage
-
-Ensure all scripts are in the base folder where your jobs are located. Then run:
-
-```bash
-python check_completed2.py
-python check_errored2.py
-python fixk.py
-python get_optimized2.py
-python updatelists2.py
