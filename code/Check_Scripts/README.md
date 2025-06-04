@@ -46,13 +46,6 @@ This folder contains CRYSTAL-specific utilities for checking, classifying, fixin
 * Use Case: Apply to files caught by `shrink_error_list.csv`
 * Behavior: Replaces the SHRINK k-point mesh with the smallest value found.
 
-### 5. CRYSTALOptToD12.py
-
-* Language: Python 3
-* Required Libraries: `os`, `re`, `argparse`, `pathlib`
-* Purpose: Similar to `get_optimized2.py`, but enhanced and modular.
-* Function: Parses the final geometry in a CRYSTAL output and creates a fresh `.d12` for follow-up calculations.
-* Improvement: Intended to replace `get_optimized2.py` with better reliability and clearer structure.
 
 ## Suggested Workflow
 
