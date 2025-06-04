@@ -1,134 +1,128 @@
-D12 Generation and Ghost Atom Insertion Scripts
+# D12 Generation and Ghost Atom Insertion Scripts
 
-This folder contains Python scripts for automating .d12 input file generation and ghost atom insertion for CRYSTAL23 slab simulations. These tools help:
+This folder contains Python scripts for automating `.d12` input file generation and ghost atom insertion for **CRYSTAL23** slab simulations.
 
-    Convert CIF files to .d12 inputs
+---
 
-    Compute or manually define ghost atom spacing
+## Features
 
-    Insert ghost atoms above and below slab surfaces
+- Convert `.cif` files to `.d12` format  
+- Insert ghost atoms above and below slab surfaces  
+- Automatically or manually calculate ghost spacing  
+- Prepare CRYSTAL input files from optimized geometries  
 
-Scripts Overview
-NewCifToD12.py
+---
 
-Converts .cif files to .d12 input format for CRYSTAL23.
+## Scripts Overview
 
-Features:
+### `NewCifToD12.py`
 
-    Interactive and batch modes
+**Purpose:** Converts `.cif` files to `.d12` format.
 
-    Supports multiple dimensionalities (CRYSTAL, SLAB, MOLECULE, etc.)
+**Features:**
 
-    Configurable DFT functional, basis set, symmetry handling, SCF controls
+- Supports SLAB, MOLECULE, and CRYSTAL input modes  
+- Interactive or batch conversion  
+- Customizable DFT functional, SCF, symmetry, and basis options  
 
-    Supports external and internal basis sets
+**Usage:**
 
-Requirements:
-
-    Language: Python 3
-
-    Libraries: numpy, ase, spglib
-
-    Input: .cif files
-
-    Output: *.d12 files
-
-Usage:
-
+```bash
 python NewCifToD12.py --cif_dir /path/to/cif/files
+```
 
-create_d12_w-ghosts.py
+**Inputs:** `.cif`  
+**Outputs:** `*.d12`  
+**Libraries:** `numpy`, `ase`, `spglib`  
 
-Automatically computes interlayer spacing using _bulk.out and _slab.out, and injects ghost atoms into a slab .d12 file.
+---
 
-Features:
+### `create_d12_w-ghosts.py`
 
-    Parses atomic coordinates from output files
+**Purpose:** Automatically adds ghost atoms using geometry from `_bulk.out` and `_slab.out`.
 
-    Calculates spacing from bulk/surface geometry
+**Features:**
 
-    Adds ghost atoms symmetrically on top and bottom of the slab
+- Parses coordinates  
+- Computes spacing from slab/bulk output  
+- Injects ghost atoms top and bottom  
 
-Requirements:
+**Usage:**
 
-    Language: Python 3
-
-    Libraries: numpy, math, matplotlib, glob, os, csv, warnings
-
-    Input: *_slab.out, *_bulk.out, *_slab.d12
-
-    Output: *_ghostatoms_slab.d12
-
-Usage:
-
+```bash
 python create_d12_w-ghosts.py
+```
 
-manual_create_d12_w-ghosts.py
+**Inputs:** `*_slab.out`, `*_bulk.out`, `*_slab.d12`  
+**Outputs:** `*_ghostatoms_slab.d12`  
+**Libraries:** `numpy`, `math`, `matplotlib`, `glob`, `os`, `csv`, `warnings`  
 
-Inserts ghost atoms into slab .d12 based on user-provided spacing.
+---
 
-Features:
+### `manual_create_d12_w-ghosts.py`
 
-    Prompts for ghost atom separation manually
+**Purpose:** Manually inserts ghost atoms with user-defined spacing.
 
-    Duplicates atoms above and below based on the given spacing
+**Features:**
 
-Requirements:
+- Prompts for spacing value  
+- Duplicates atoms symmetrically  
 
-    Language: Python 3
+**Usage:**
 
-    Libraries: numpy, math, matplotlib, glob, os, csv, warnings
-
-    Input: *_slab.d12
-
-    Output: _<spacing>A_ghosts_slab.d12
-
-Usage:
-
+```bash
 python manual_create_d12_w-ghosts.py
+```
 
-CRYSTALOptToD12.py
+**Input:** `*_slab.d12`  
+**Output:** `_<spacing>A_ghosts_slab.d12`  
+**Libraries:** `numpy`, `math`, `matplotlib`, `glob`, `os`, `csv`, `warnings`  
 
-Parses the final geometry in a CRYSTAL output and creates a fresh .d12 for follow-up calculations.
+---
 
-Features:
+### `CRYSTALOptToD12.py`
 
-    Improved modular replacement for get_optimized2.py
+**Purpose:** Extracts optimized geometry from CRYSTAL output and regenerates `.d12`.
 
-    Reads final optimized geometry from .out
+**Features:**
 
-    Generates clean .d12 input for next-step calculations
+- Modular and cleaner replacement for `get_optimized2.py`  
+- Parses final geometry section  
 
-Requirements:
+**Usage:**
 
-    Language: Python 3
+```bash
+python CRYSTALOptToD12.py --input optimized_output.out
+```
 
-    Libraries: os, re, argparse, pathlib
+**Input:** Optimized CRYSTAL `.out`  
+**Output:** `.d12`  
+**Libraries:** `os`, `re`, `argparse`, `pathlib`  
 
-    Input: CRYSTAL output file
+---
 
-    Output: .d12 input file
+## Installation
 
-Requirements
-
-All scripts require:
-
+```bash
 pip install numpy matplotlib ase spglib
+```
 
-Outputs
-.d12 Files
+---
 
-    Generated from .cif files using NewCifToD12.py
+## Outputs
 
-    Enhanced with ghost atoms using create_d12_w-ghosts.py or manual_create_d12_w-ghosts.py
+All scripts generate CRYSTAL23-compatible `.d12` files:
 
-    Post-optimized .d12 regenerated via CRYSTALOptToD12.py
+- From `.cif` via `NewCifToD12.py`  
+- With ghost atoms via `create_d12_w-ghosts.py` or `manual_create_d12_w-ghosts.py`  
+- Post-optimization via `CRYSTALOptToD12.py`  
 
-These .d12 files are CRYSTAL23-ready and suitable for slab models, vacuum simulations, and ghost-augmented surface calculations.
-Notes
+---
 
-    Only P1 symmetry is supported for ghost atom injection
+## Notes
 
-    Ensure necessary _slab.out, _bulk.out, and _slab.d12 files are present in the working directory
+- Only **P1 symmetry** is supported for ghost atom injection  
+- `_slab.out`, `_bulk.out`, and `_slab.d12` must be present in the working directory  
+- Customize basis paths in `NewCifToD12.py` as needed  
 
-    Adjust paths inside NewCifToD12.py if using local basis sets
+---
