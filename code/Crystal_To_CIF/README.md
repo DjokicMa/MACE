@@ -96,6 +96,13 @@ Install with:
 ```bash
 pip install numpy matplotlib ase spglib
 ```
+### `CRYSTALOptToD12.py`
+
+* Language: Python 3
+* Required Libraries: `os`, `re`, `argparse`, `pathlib`
+* Purpose: Similar to `get_optimized2.py`, but enhanced and modular.
+* Function: Parses the final geometry in a CRYSTAL output and creates a fresh `.d12` for follow-up calculations.
+* Improvement: Intended to replace `get_optimized2.py` with better reliability and clearer structure.
 
 ---
 
