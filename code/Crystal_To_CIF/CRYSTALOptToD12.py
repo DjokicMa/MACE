@@ -40,1016 +40,69 @@ import argparse
 import json
 from pathlib import Path
 
-
-class Element:
-    """Element atomic numbers for easy reference"""
-
-    H, He, Li, Be, B, C, N, O, F, Ne, Na, Mg, Al, Si, P = list(range(1, 16))
-    S, Cl, Ar, K, Ca, Sc, Ti, V, Cr, Mn, Fe, Co, Ni, Cu, Zn = list(range(16, 31))
-    Ga, Ge, As, Se, Br, Kr, Rb, Sr, Y, Zr, Nb, Mo, Tc, Ru = list(range(31, 45))
-    Rh, Pd, Ag, Cd, In, Sn, Sb, Te, I, Xe, Cs, Ba, La, Ce = list(range(45, 59))
-    Pr, Nd, Pm, Sm, Eu, Gd, Tb, Dy, Ho, Er, Tm, Yb, Lu, Hf = list(range(59, 73))
-    Ta, W, Re, Os, Ir, Pt, Au, Hg, Tl, Pb, Bi, Po, At, Rn = list(range(73, 87))
-    Fr, Ra, Ac, Th, Pa, U, Np, Pu, Am, Cm, Bk, Cf, Es, Fm = list(range(87, 101))
-    Md, No, Lr, Rf, Db, Sg, Bh, Hs, Mt, Ds, Rg, Cn, Uut = list(range(101, 114))
-    Fl, Uup, Lv, Uus, Uuo = list(range(114, 119))
+# Import shared D12 creation utilities
+try:
+    from d12creation import *
+except ImportError:
+    print("Error: Could not import d12creation module.")
+    print(
+        "Please ensure d12creation.py is in the same directory or in your Python path."
+    )
+    sys.exit(1)
 
 
-# Dictionary mapping element symbols to atomic numbers
-ELEMENT_SYMBOLS = {
-    "H": 1,
-    "He": 2,
-    "Li": 3,
-    "Be": 4,
-    "B": 5,
-    "C": 6,
-    "N": 7,
-    "O": 8,
-    "F": 9,
-    "Ne": 10,
-    "Na": 11,
-    "Mg": 12,
-    "Al": 13,
-    "Si": 14,
-    "P": 15,
-    "S": 16,
-    "Cl": 17,
-    "Ar": 18,
-    "K": 19,
-    "Ca": 20,
-    "Sc": 21,
-    "Ti": 22,
-    "V": 23,
-    "Cr": 24,
-    "Mn": 25,
-    "Fe": 26,
-    "Co": 27,
-    "Ni": 28,
-    "Cu": 29,
-    "Zn": 30,
-    "Ga": 31,
-    "Ge": 32,
-    "As": 33,
-    "Se": 34,
-    "Br": 35,
-    "Kr": 36,
-    "Rb": 37,
-    "Sr": 38,
-    "Y": 39,
-    "Zr": 40,
-    "Nb": 41,
-    "Mo": 42,
-    "Tc": 43,
-    "Ru": 44,
-    "Rh": 45,
-    "Pd": 46,
-    "Ag": 47,
-    "Cd": 48,
-    "In": 49,
-    "Sn": 50,
-    "Sb": 51,
-    "Te": 52,
-    "I": 53,
-    "Xe": 54,
-    "Cs": 55,
-    "Ba": 56,
-    "La": 57,
-    "Ce": 58,
-    "Pr": 59,
-    "Nd": 60,
-    "Pm": 61,
-    "Sm": 62,
-    "Eu": 63,
-    "Gd": 64,
-    "Tb": 65,
-    "Dy": 66,
-    "Ho": 67,
-    "Er": 68,
-    "Tm": 69,
-    "Yb": 70,
-    "Lu": 71,
-    "Hf": 72,
-    "Ta": 73,
-    "W": 74,
-    "Re": 75,
-    "Os": 76,
-    "Ir": 77,
-    "Pt": 78,
-    "Au": 79,
-    "Hg": 80,
-    "Tl": 81,
-    "Pb": 82,
-    "Bi": 83,
-    "Po": 84,
-    "At": 85,
-    "Rn": 86,
-    "Fr": 87,
-    "Ra": 88,
-    "Ac": 89,
-    "Th": 90,
-    "Pa": 91,
-    "U": 92,
-    "Np": 93,
-    "Pu": 94,
-    "Am": 95,
-    "Cm": 96,
-    "Bk": 97,
-    "Cf": 98,
-    "Es": 99,
-    "Fm": 100,
-}
+def display_current_settings(settings):
+    """Display current calculation settings"""
+    print("\n" + "=" * 70)
+    print("EXTRACTED CALCULATION SETTINGS")
+    print("=" * 70)
 
-# Reverse mapping for element symbols
-ATOMIC_NUMBER_TO_SYMBOL = {v: k for k, v in ELEMENT_SYMBOLS.items()}
+    print(f"\nDimensionality: {settings.get('dimensionality', 'CRYSTAL')}")
+    print(f"Space group: {settings.get('spacegroup', 'N/A')}")
+    print(f"Origin setting: {settings.get('origin_setting', '0 0 0')}")
 
-# Space group symbol to number mapping (Hermann-Mauguin symbols)
-SPACEGROUP_SYMBOLS = {
-    # Triclinic
-    "P 1": 1,
-    "P -1": 2,
-    # Monoclinic
-    "P 2": 3,
-    "P 21": 4,
-    "C 2": 5,
-    "P M": 6,
-    "P C": 7,
-    "C M": 8,
-    "C C": 9,
-    "P 2/M": 10,
-    "P 21/M": 11,
-    "C 2/M": 12,
-    "P 2/C": 13,
-    "P 21/C": 14,
-    "C 2/C": 15,
-    # Orthorhombic
-    "P 2 2 2": 16,
-    "P 2 2 21": 17,
-    "P 21 21 2": 18,
-    "P 21 21 21": 19,
-    "C 2 2 21": 20,
-    "C 2 2 2": 21,
-    "F 2 2 2": 22,
-    "I 2 2 2": 23,
-    "I 21 21 21": 24,
-    "P M M 2": 25,
-    "P M C 21": 26,
-    "P C C 2": 27,
-    "P M A 2": 28,
-    "P C A 21": 29,
-    "P N C 2": 30,
-    "P M N 21": 31,
-    "P B A 2": 32,
-    "P N A 21": 33,
-    "P N N 2": 34,
-    "C M M 2": 35,
-    "C M C 21": 36,
-    "C C C 2": 37,
-    "A M M 2": 38,
-    "A B M 2": 39,
-    "A M A 2": 40,
-    "A B A 2": 41,
-    "F M M 2": 42,
-    "F D D 2": 43,
-    "I M M 2": 44,
-    "I B A 2": 45,
-    "I M A 2": 46,
-    "P M M M": 47,
-    "P N N N": 48,
-    "P C C M": 49,
-    "P B A N": 50,
-    "P M M A": 51,
-    "P N N A": 52,
-    "P M N A": 53,
-    "P C C A": 54,
-    "P B A M": 55,
-    "P C C N": 56,
-    "P B C M": 57,
-    "P N N M": 58,
-    "P M M N": 59,
-    "P B C N": 60,
-    "P B C A": 61,
-    "P N M A": 62,
-    "C M C M": 63,
-    "C M C A": 64,
-    "C M M M": 65,
-    "C C C M": 66,
-    "C M M A": 67,
-    "C C C A": 68,
-    "F M M M": 69,
-    "F D D D": 70,
-    "I M M M": 71,
-    "I B A M": 72,
-    "I B C A": 73,
-    "I M M A": 74,
-    # Tetragonal
-    "P 4": 75,
-    "P 41": 76,
-    "P 42": 77,
-    "P 43": 78,
-    "I 4": 79,
-    "I 41": 80,
-    "P -4": 81,
-    "I -4": 82,
-    "P 4/M": 83,
-    "P 42/M": 84,
-    "P 4/N": 85,
-    "P 42/N": 86,
-    "I 4/M": 87,
-    "I 41/A": 88,
-    "P 4 2 2": 89,
-    "P 4 21 2": 90,
-    "P 41 2 2": 91,
-    "P 41 21 2": 92,
-    "P 42 2 2": 93,
-    "P 42 21 2": 94,
-    "P 43 2 2": 95,
-    "P 43 21 2": 96,
-    "I 4 2 2": 97,
-    "I 41 2 2": 98,
-    "P 4 M M": 99,
-    "P 4 B M": 100,
-    "P 42 C M": 101,
-    "P 42 N M": 102,
-    "P 4 C C": 103,
-    "P 4 N C": 104,
-    "P 42 M C": 105,
-    "P 42 B C": 106,
-    "I 4 M M": 107,
-    "I 4 C M": 108,
-    "I 41 M D": 109,
-    "I 41 C D": 110,
-    "P -4 2 M": 111,
-    "P -4 2 C": 112,
-    "P -4 21 M": 113,
-    "P -4 21 C": 114,
-    "P -4 M 2": 115,
-    "P -4 C 2": 116,
-    "P -4 B 2": 117,
-    "P -4 N 2": 118,
-    "I -4 M 2": 119,
-    "I -4 C 2": 120,
-    "I -4 2 M": 121,
-    "I -4 2 D": 122,
-    "P 4/M M M": 123,
-    "P 4/M C C": 124,
-    "P 4/N B M": 125,
-    "P 4/N N C": 126,
-    "P 4/M B M": 127,
-    "P 4/M N C": 128,
-    "P 4/N M M": 129,
-    "P 4/N C C": 130,
-    "P 42/M M C": 131,
-    "P 42/M C M": 132,
-    "P 42/N B C": 133,
-    "P 42/N N M": 134,
-    "P 42/M B C": 135,
-    "P 42/M N M": 136,
-    "P 42/N M C": 137,
-    "P 42/N C M": 138,
-    "I 4/M M M": 139,
-    "I 4/M C M": 140,
-    "I 41/A M D": 141,
-    "I 41/A C D": 142,
-    # Trigonal
-    "P 3": 143,
-    "P 31": 144,
-    "P 32": 145,
-    "R 3": 146,
-    "P -3": 147,
-    "R -3": 148,
-    "P 3 1 2": 149,
-    "P 3 2 1": 150,
-    "P 31 1 2": 151,
-    "P 31 2 1": 152,
-    "P 32 1 2": 153,
-    "P 32 2 1": 154,
-    "R 3 2": 155,
-    "P 3 M 1": 156,
-    "P 3 1 M": 157,
-    "P 3 C 1": 158,
-    "P 3 1 C": 159,
-    "R 3 M": 160,
-    "R 3 C": 161,
-    "P -3 1 M": 162,
-    "P -3 1 C": 163,
-    "P -3 M 1": 164,
-    "P -3 C 1": 165,
-    "R -3 M": 166,
-    "R -3 C": 167,
-    # Hexagonal
-    "P 6": 168,
-    "P 61": 169,
-    "P 65": 170,
-    "P 62": 171,
-    "P 64": 172,
-    "P 63": 173,
-    "P -6": 174,
-    "P 6/M": 175,
-    "P 63/M": 176,
-    "P 6 2 2": 177,
-    "P 61 2 2": 178,
-    "P 65 2 2": 179,
-    "P 62 2 2": 180,
-    "P 64 2 2": 181,
-    "P 63 2 2": 182,
-    "P 6 M M": 183,
-    "P 6 C C": 184,
-    "P 63 C M": 185,
-    "P 63 M C": 186,
-    "P -6 M 2": 187,
-    "P -6 C 2": 188,
-    "P -6 2 M": 189,
-    "P -6 2 C": 190,
-    "P 6/M M M": 191,
-    "P 6/M C C": 192,
-    "P 63/M C M": 193,
-    "P 63/M M C": 194,
-    # Cubic
-    "P 2 3": 195,
-    "F 2 3": 196,
-    "I 2 3": 197,
-    "P 21 3": 198,
-    "I 21 3": 199,
-    "P M 3": 200,
-    "P N 3": 201,
-    "F M 3": 202,
-    "F D 3": 203,
-    "I M 3": 204,
-    "P A 3": 205,
-    "I A 3": 206,
-    "P 4 3 2": 207,
-    "P 42 3 2": 208,
-    "F 4 3 2": 209,
-    "F 41 3 2": 210,
-    "I 4 3 2": 211,
-    "P 43 3 2": 212,
-    "P 41 3 2": 213,
-    "I 41 3 2": 214,
-    "P -4 3 M": 215,
-    "F -4 3 M": 216,
-    "I -4 3 M": 217,
-    "P -4 3 N": 218,
-    "F -4 3 C": 219,
-    "I -4 3 D": 220,
-    "P M 3 M": 221,
-    "P N 3 N": 222,
-    "P M 3 N": 223,
-    "P N 3 M": 224,
-    "F M 3 M": 225,
-    "F M 3 C": 226,
-    "F D 3 M": 227,
-    "F D 3 C": 228,
-    "I M 3 M": 229,
-    "I A 3 D": 230,
-}
-
-# Alternative spellings and common variations
-SPACEGROUP_ALTERNATIVES = {
-    "P1": 1,
-    "P-1": 2,
-    "P2": 3,
-    "P21": 4,
-    "C2": 5,
-    "PM": 6,
-    "PC": 7,
-    "CM": 8,
-    "CC": 9,
-    "P2/M": 10,
-    "P21/M": 11,
-    "C2/M": 12,
-    "P2/C": 13,
-    "P21/C": 14,
-    "C2/C": 15,
-    # Add more as needed
-}
-
-# Space groups with multiple origin settings that need special handling
-MULTI_ORIGIN_SPACEGROUPS = {
-    216: {"name": "F-43m", "default": "Origin 2 (ITA)", "crystal_code": "0 0 0"},
-    218: {"name": "P-43n", "default": "Origin 2 (ITA)", "crystal_code": "0 0 0"},
-    221: {"name": "Pm-3m", "default": "Origin 2 (ITA)", "crystal_code": "0 0 0"},
-    225: {"name": "Fm-3m", "default": "Origin 2 (ITA)", "crystal_code": "0 0 0"},
-    227: {
-        "name": "Fd-3m",
-        "default": "Origin 2 (ITA)",
-        "crystal_code": "0 0 0",
-        "alt": "Origin 1",
-        "alt_crystal_code": "0 0 1",
-        "default_pos": (0.125, 0.125, 0.125),
-        "alt_pos": (0.0, 0.0, 0.0),
-    },
-    228: {"name": "Fd-3c", "default": "Origin 2 (ITA)", "crystal_code": "0 0 0"},
-    229: {"name": "Im-3m", "default": "Origin 2 (ITA)", "crystal_code": "0 0 0"},
-    230: {"name": "Ia-3d", "default": "Origin 2 (ITA)", "crystal_code": "0 0 0"},
-}
-
-RHOMBOHEDRAL_SPACEGROUPS = [146, 148, 155, 160, 161, 166, 167]
-
-# Elements that require ECPs in external basis sets (DZVP-REV2 and TZVP-REV2)
-ECP_ELEMENTS_EXTERNAL = [
-    37,
-    38,
-    39,
-    40,
-    41,
-    42,
-    44,
-    45,
-    46,
-    47,
-    48,
-    49,
-    50,
-    51,
-    52,
-    53,
-    55,
-    56,
-    57,
-    58,
-    59,
-    60,
-    61,
-    62,
-    63,
-    64,
-    65,
-    66,
-    67,
-    68,
-    69,
-    70,
-    71,
-    72,
-    73,
-    74,
-    75,
-    76,
-    77,
-    78,
-    79,
-    80,
-    81,
-    82,
-    83,
-    89,
-    90,
-    91,
-    92,
-    93,
-    94,
-    95,
-    96,
-    97,
-    98,
-    99,
-]
-
-# Available internal basis sets with element ranges and core types
-INTERNAL_BASIS_SETS = {
-    # Standard basis sets (original 7)
-    "STO-3G": {
-        "description": "Pople's standard minimal basis set (3 Gaussian function contractions)",
-        "elements": list(range(1, 54)),  # H to I
-        "all_electron": list(range(1, 54)),
-        "ecp_elements": [],
-        "standard": True,
-    },
-    "STO-6G": {
-        "description": "Pople's standard minimal basis set (6 Gaussian function contractions)",
-        "elements": list(range(1, 37)),  # H to Kr
-        "all_electron": list(range(1, 37)),
-        "ecp_elements": [],
-        "standard": True,
-    },
-    "POB-DZVP": {
-        "description": "POB Double-ζ + polarization basis set",
-        "elements": list(range(1, 36)) + [49, 74],  # H to Br, In, W
-        "all_electron": list(range(1, 19)),  # H to Ar
-        "ecp_elements": list(range(19, 36)) + [49, 74],  # K onwards need ECP
-        "standard": True,
-    },
-    "POB-DZVPP": {
-        "description": "POB Double-ζ + double set of polarization functions",
-        "elements": list(range(1, 36)) + [49, 83],  # H to Br, In, Bi
-        "all_electron": list(range(1, 19)),  # H to Ar
-        "ecp_elements": list(range(19, 36)) + [49, 83],  # K onwards need ECP
-        "standard": True,
-    },
-    "POB-TZVP": {
-        "description": "POB Triple-ζ + polarization basis set",
-        "elements": list(range(1, 36)) + [49, 83],  # H to Br, In, Bi
-        "all_electron": list(range(1, 19)),  # H to Ar
-        "ecp_elements": list(range(19, 36)) + [49, 83],  # K onwards need ECP
-        "standard": True,
-    },
-    "POB-DZVP-REV2": {
-        "description": "POB-REV2 Double-ζ + polarization basis set",
-        "elements": list(range(1, 36)),  # H to Br
-        "all_electron": list(range(1, 19)),  # H to Ar
-        "ecp_elements": list(range(19, 36)),  # K onwards need ECP
-        "standard": True,
-    },
-    "POB-TZVP-REV2": {
-        "description": "POB-REV2 Triple-ζ + polarization basis set",
-        "elements": list(range(1, 36))
-        + list(range(37, 54))
-        + [55, 56]
-        + list(range(72, 85)),  # H-Br, Rb-I, Cs, Ba, Hf-At
-        "all_electron": list(range(1, 19)),  # H to Ar
-        "ecp_elements": list(range(19, 36))
-        + list(range(37, 54))
-        + [55, 56]
-        + list(range(72, 85)),  # K onwards need ECP
-        "standard": True,
-    },
-    # Additional basis sets
-    "MINIS": {
-        "description": "Minimal basis set; primarily for testing and preliminary calculations",
-        "elements": list(range(1, 37)),  # H to Kr
-        "all_electron": list(range(1, 37)),
-        "ecp_elements": [],
-        "standard": False,
-    },
-    "6-31G*": {
-        "description": "Split-valence double-zeta with polarization",
-        "elements": list(range(1, 31)),  # H to Zn
-        "all_electron": list(range(1, 31)),
-        "ecp_elements": [],
-        "standard": False,
-    },
-    "def2-SV(P)": {
-        "description": "Split-valence with polarization on heavy atoms",
-        "elements": list(range(1, 87)),  # H to Rn
-        "all_electron": list(range(1, 37)),  # H to Kr
-        "ecp_elements": list(range(37, 87)),  # Rb onwards need def2-ECP
-        "standard": False,
-    },
-    "def2-SVP": {
-        "description": "Split-valence with polarization; widely used",
-        "elements": list(range(1, 87)),  # H to Rn
-        "all_electron": list(range(1, 37)),  # H to Kr
-        "ecp_elements": list(range(37, 87)),  # Rb onwards need def2-ECP
-        "standard": False,
-    },
-    "def-TZVP": {
-        "description": "Triple-zeta valence with polarization",
-        "elements": list(range(1, 87)),  # H to Rn
-        "all_electron": list(range(1, 37)),  # H to Kr
-        "ecp_elements": list(range(37, 87)),  # Rb onwards need def2-ECP
-        "standard": False,
-    },
-    "def2-TZVP": {
-        "description": "Enhanced triple-zeta valence with polarization",
-        "elements": list(range(1, 87)),  # H to Rn
-        "all_electron": list(range(1, 37)),  # H to Kr
-        "ecp_elements": list(range(37, 87)),  # Rb onwards need def2-ECP
-        "standard": False,
-    },
-}
-
-# Functional categories with complete descriptions
-FUNCTIONAL_CATEGORIES = {
-    "HF": {
-        "name": "Hartree-Fock Methods",
-        "description": "Wave function based methods (no DFT)",
-        "functionals": ["RHF", "UHF", "HF-3C", "HFsol-3C"],
-        "basis_requirements": {"HF-3C": "MINIX", "HFsol-3C": "SOLMINIX"},
-        "descriptions": {
-            "RHF": "Restricted Hartree-Fock (closed shell)",
-            "UHF": "Unrestricted Hartree-Fock (open shell)",
-            "HF-3C": "Minimal basis HF with D3, gCP, and SRB corrections",
-            "HFsol-3C": "HF-3C revised for inorganic solids",
-        },
-    },
-    "LDA": {
-        "name": "LDA/LSD Functionals",
-        "description": "Local (Spin) Density Approximation functionals",
-        "functionals": ["SVWN", "LDA", "VBH"],
-        "descriptions": {
-            "SVWN": "Slater exchange + VWN5 correlation",
-            "LDA": "Local Density Approximation (Dirac-Slater)",
-            "VBH": "von Barth-Hedin LSD functional",
-        },
-    },
-    "GGA": {
-        "name": "GGA Functionals",
-        "description": "Generalized Gradient Approximation functionals",
-        "functionals": [
-            # Becke/LYP
-            "BLYP",
-            # PBE family
-            "PBE",
-            "PBESOL",
-            # PW family
-            "PWGGA",
-            # Others
-            "SOGGA",
-            "WCGGA",
-            "B97",
-        ],
-        "descriptions": {
-            "BLYP": "Becke 88 exchange + Lee-Yang-Parr correlation",
-            "PBE": "Perdew-Burke-Ernzerhof",
-            "PBESOL": "PBE revised for solids",
-            "PWGGA": "Perdew-Wang 1991 GGA",
-            "SOGGA": "Second-order GGA",
-            "WCGGA": "Wu-Cohen GGA",
-            "B97": "Becke's 1997 GGA functional",
-        },
-    },
-    "HYBRID": {
-        "name": "Hybrid Functionals (including range-separated)",
-        "description": "Global and range-separated hybrid functionals",
-        "functionals": [
-            # B3 family
-            "B3LYP",
-            "B3PW",
-            "CAM-B3LYP",
-            # PBE family
-            "PBE0",
-            "PBESOL0",
-            "PBE0-13",
-            # HSE family
-            "HSE06",
-            "HSEsol",
-            # mPW family
-            "mPW1PW91",
-            "mPW1K",
-            # WC family
-            "B1WC",
-            "WC1LYP",
-            # B97 family
-            "B97H",
-            "wB97",
-            "wB97X",
-            # Other global hybrids
-            "SOGGA11X",
-            # Short-range corrected
-            "SC-BLYP",
-            # Middle-range corrected
-            "HISS",
-            # Long-range corrected
-            "RSHXLDA",
-            "LC-wPBE",
-            "LC-wPBEsol",
-            "LC-wBLYP",
-            "LC-BLYP",
-            "LC-PBE",
-        ],
-        "descriptions": {
-            # B3 family
-            "B3LYP": "Becke 3-parameter hybrid (20% HF)",
-            "B3PW": "Becke 3-parameter with PW91 correlation (20% HF)",
-            "CAM-B3LYP": "Coulomb-attenuating method B3LYP",
-            # PBE family
-            "PBE0": "PBE hybrid (25% HF)",
-            "PBESOL0": "PBEsol hybrid for solids (25% HF)",
-            "PBE0-13": "PBE0 with 1/3 HF exchange (33.33% HF)",
-            # HSE family
-            "HSE06": "Heyd-Scuseria-Ernzerhof screened hybrid",
-            "HSEsol": "HSE for solids",
-            # mPW family
-            "mPW1PW91": "Modified PW91 hybrid (25% HF)",
-            "mPW1K": "Modified PW91 for kinetics (42.8% HF)",
-            # WC family
-            "B1WC": "One-parameter WC hybrid (16% HF)",
-            "WC1LYP": "WC exchange with LYP correlation (16% HF)",
-            # B97 family
-            "B97H": "Re-parameterized B97 hybrid",
-            "wB97": "Head-Gordon's range-separated functional",
-            "wB97X": "wB97 with short-range HF exchange",
-            # Other
-            "SOGGA11X": "Second-order GGA hybrid (40.15% HF)",
-            "SC-BLYP": "Short-range corrected BLYP",
-            "HISS": "Middle-range corrected functional",
-            "RSHXLDA": "Long-range corrected LDA",
-            "LC-wPBE": "Long-range corrected PBE",
-            "LC-wPBEsol": "Long-range corrected PBEsol",
-            "LC-wBLYP": "Long-range corrected BLYP",
-            "LC-BLYP": "Long-range corrected BLYP (CAM-style)",
-            "LC-PBE": "Long-range corrected PBE",
-        },
-    },
-    "MGGA": {
-        "name": "meta-GGA Functionals",
-        "description": "Functionals that depend on kinetic energy density",
-        "functionals": [
-            # SCAN family
-            "SCAN",
-            "r2SCAN",
-            "SCAN0",
-            "r2SCANh",
-            "r2SCAN0",
-            "r2SCAN50",
-            # Minnesota functionals
-            "M05",
-            "M052X",
-            "M06",
-            "M062X",
-            "M06HF",
-            "M06L",
-            "revM06",
-            "revM06L",
-            "MN15",
-            "MN15L",
-            # Becke95 correlation based
-            "B1B95",
-            "mPW1B95",
-            "mPW1B1K",
-            "PW6B95",
-            "PWB6K",
-        ],
-        "descriptions": {
-            # SCAN family
-            "SCAN": "Strongly Constrained and Appropriately Normed",
-            "r2SCAN": "Regularized SCAN with improved numerical stability",
-            "SCAN0": "SCAN hybrid (25% HF)",
-            "r2SCANh": "r2SCAN hybrid (10% HF)",
-            "r2SCAN0": "r2SCAN hybrid (25% HF)",
-            "r2SCAN50": "r2SCAN hybrid (50% HF)",
-            # Minnesota functionals
-            "M05": "Minnesota 2005 hybrid (28% HF)",
-            "M052X": "M05 with doubled HF exchange (56% HF)",
-            "M06": "Minnesota 2006 hybrid (27% HF)",
-            "M062X": "M06 with doubled HF exchange (54% HF)",
-            "M06HF": "Full HF exchange meta-GGA (100% HF)",
-            "M06L": "Local meta-GGA for main-group thermochemistry",
-            "revM06": "Revised M06 (40.41% HF)",
-            "revM06L": "Revised M06L with improved performance",
-            "MN15": "Minnesota 2015 hybrid (44% HF)",
-            "MN15L": "Minnesota 2015 local functional",
-            # Becke95 based
-            "B1B95": "One-parameter hybrid with Becke95 correlation (28% HF)",
-            "mPW1B95": "Modified PW91 with B95 correlation (31% HF)",
-            "mPW1B1K": "Modified PW91 with B95 correlation (44% HF)",
-            "PW6B95": "6-parameter functional (28% HF)",
-            "PWB6K": "6-parameter functional for kinetics (46% HF)",
-        },
-    },
-    "3C": {
-        "name": "3c Composite Methods (DFT)",
-        "description": "DFT composite methods with semi-classical corrections (require specific basis sets)",
-        "functionals": [
-            # Molecular crystal oriented
-            "PBEh-3C",
-            "HSE-3C",
-            "B97-3C",
-            # Solid state oriented
-            "PBEsol0-3C",
-            "HSEsol-3C",
-        ],
-        "basis_requirements": {
-            "PBEh-3C": "def2-mSVP",
-            "HSE-3C": "def2-mSVP",
-            "B97-3C": "mTZVP",
-            "PBEsol0-3C": "sol-def2-mSVP",
-            "HSEsol-3C": "sol-def2-mSVP",
-        },
-        "descriptions": {
-            "PBEh-3C": "Modified PBE hybrid (42% HF) with D3 and gCP",
-            "HSE-3C": "Screened exchange hybrid optimized for molecular solids",
-            "B97-3C": "GGA functional with D3 and SRB corrections",
-            "PBEsol0-3C": "PBEsol0 hybrid for solids with D3 and gCP",
-            "HSEsol-3C": "HSEsol with semi-classical corrections for solids",
-        },
-    },
-}
-
-# Functionals available for D3 dispersion correction
-D3_FUNCTIONALS = [
-    "BLYP",
-    "PBE",
-    "B97",
-    "B3LYP",
-    "PBE0",
-    "mPW1PW91",
-    "M06",
-    "HSE06",
-    "HSEsol",
-    "LC-wPBE",
-]
-
-# Available SCF convergence methods
-SCF_METHODS = ["DIIS", "ANDERSON", "BROYDEN"]
-
-# Available DFT grid sizes
-DFT_GRIDS = {
-    "1": "OLDGRID",  # Old default grid from CRYSTAL09, pruned (55,434)
-    "2": "DEFAULT",  # Default grid in CRYSTAL23
-    "3": "LGRID",  # Large grid, pruned (75,434)
-    "4": "XLGRID",  # Extra large grid (default)
-    "5": "XXLGRID",  # Extra extra large grid, pruned (99,1454)
-    "6": "XXXLGRID",  # Ultra extra extra large grid, pruned (150,1454)
-    "7": "HUGEGRID",  # Ultra extra extra large grid for SCAN, pruned (300,1454)
-}
-
-# Available optimization types
-OPT_TYPES = {"1": "FULLOPTG", "2": "CVOLOPT", "3": "CELLONLY", "4": "ATOMONLY"}
-
-# Default geom optimization settings
-DEFAULT_OPT_SETTINGS = {
-    "TOLDEG": 0.00003,  # RMS of the gradient
-    "TOLDEX": 0.00012,  # RMS of the displacement
-    "TOLDEE": 7,  # Energy difference between two steps (10^-n)
-    "MAXCYCLE": 800,  # Max number of optimization steps
-}
-
-# Default frequency calculation settings
-DEFAULT_FREQ_SETTINGS = {
-    "NUMDERIV": 2,  # Numerical derivative level
-    "TOLINTEG": "12 12 12 12 24",  # Tighter tolerance for frequencies
-    "TOLDEE": 12,  # Tighter SCF convergence for frequencies
-}
-
-# Default tolerance settings
-DEFAULT_TOLERANCES = {
-    "TOLINTEG": "7 7 7 7 14",  # Default integration tolerances
-    "TOLDEE": 7,  # SCF energy tolerance (exponent)
-}
-
-# Default recommended settings
-DEFAULT_SETTINGS = {
-    "symmetry_handling": "CIF",
-    "symmetry_tolerance": 1e-5,
-    "reduce_to_asymmetric": False,
-    "trigonal_axes": "AUTO",
-    "origin_setting": "AUTO",
-    "dimensionality": "CRYSTAL",
-    "calculation_type": "OPT",
-    "optimization_type": "FULLOPTG",
-    "optimization_settings": DEFAULT_OPT_SETTINGS.copy(),
-    "basis_set_type": "INTERNAL",
-    "basis_set": "POB-TZVP-REV2",
-    "method": "DFT",
-    "dft_functional": "HSE06",
-    "use_dispersion": True,
-    "dft_grid": "XLGRID",
-    "is_spin_polarized": True,
-    "use_smearing": False,
-    "tolerances": DEFAULT_TOLERANCES.copy(),
-    "scf_method": "DIIS",
-    "scf_maxcycle": 800,
-    "fmixing": 30,
-}
-
-
-def format_crystal_float(value):
-    """
-    Format a floating point value in a way that CRYSTAL23 can interpret.
-    - Use decimal format to avoid scientific notation issues
-
-    Args:
-        value (float): The value to format
-
-    Returns:
-        str: The formatted value
-    """
-    if isinstance(value, int):
-        return str(value)
-
-    abs_value = abs(value)
-    if abs_value == 0.0:
-        return "0.0"
-    elif abs_value < 0.0001:
-        # For very small values, use a decimal with enough precision (avoid scientific notation)
-        return (
-            f"{value:.10f}".rstrip("0").rstrip(".")
-            if "." in f"{value:.10f}"
-            else f"{value:.1f}"
-        )
+    if settings.get("functional"):
+        func = settings["functional"]
+        if settings.get("dispersion"):
+            func += "-D3"
+        print(f"DFT functional: {func}")
+        if settings.get("is_3c_method"):
+            print(f"  (3c composite method)")
     else:
-        # Use decimal format with appropriate precision
-        return (
-            f"{value:.8f}".rstrip("0").rstrip(".")
-            if "." in f"{value:.8f}"
-            else f"{value:.1f}"
+        print(f"Method: Hartree-Fock")
+
+    print(
+        f"Basis set: {settings.get('basis_set', 'N/A')} ({settings.get('basis_set_type', 'INTERNAL')})"
+    )
+    print(f"Spin polarized: {settings.get('spin_polarized', False)}")
+
+    if settings.get("dft_grid"):
+        print(f"DFT grid: {settings.get('dft_grid')}")
+    elif settings.get("functional") and settings["functional"] not in [
+        "HF",
+        "RHF",
+        "UHF",
+    ]:
+        print(f"DFT grid: DEFAULT")
+
+    if settings.get("tolerances"):
+        print(
+            f"Tolerances: TOLINTEG={settings['tolerances'].get('TOLINTEG', 'N/A')}, "
+            f"TOLDEE={settings['tolerances'].get('TOLDEE', 'N/A')}"
         )
 
+    if settings.get("scf_settings"):
+        print(f"SCF method: {settings['scf_settings'].get('method', 'DIIS')}")
+        print(f"SCF max cycles: {settings['scf_settings'].get('maxcycle', 800)}")
+        print(f"FMIXING: {settings['scf_settings'].get('fmixing', 30)}%")
 
-def get_user_input(prompt, options, default=None):
-    """
-    Get validated user input from a list of options
+    if settings.get("k_points"):
+        print(f"K-points: {settings['k_points']}")
 
-    Args:
-        prompt (str): The prompt to display to the user
-        options (list or dict): Valid options
-        default (str, optional): Default value
+    if settings.get("smearing"):
+        print(f"Fermi smearing: Yes (width={settings.get('smearing_width', 0.01)})")
 
-    Returns:
-        str: Valid user input
-    """
-    if isinstance(options, dict):
-        opt_str = "\n".join([f"{key}: {value}" for key, value in options.items()])
-        valid_inputs = options.keys()
-    else:
-        opt_str = "\n".join([f"{i + 1}: {opt}" for i, opt in enumerate(options)])
-        valid_inputs = [str(i + 1) for i in range(len(options))]
-
-    default_str = f" (default: {default})" if default else ""
-
-    while True:
-        print(f"\n{prompt}{default_str}:\n{opt_str}")
-        choice = input("Enter your choice: ").strip()
-
-        if choice == "" and default:
-            return default
-
-        if choice in valid_inputs:
-            return choice
-
-        print(f"Invalid input. Please choose from {', '.join(valid_inputs)}")
-
-
-def yes_no_prompt(prompt, default="yes"):
-    """
-    Prompt for a yes/no response
-
-    Args:
-        prompt (str): The prompt to display
-        default (str): Default value ('yes' or 'no')
-
-    Returns:
-        bool: True for yes, False for no
-    """
-    valid = {"yes": True, "y": True, "no": False, "n": False}
-    if default == "yes":
-        prompt += " [Y/n] "
-    elif default == "no":
-        prompt += " [y/N] "
-    else:
-        raise ValueError(f"Invalid default value: {default}")
-
-    while True:
-        choice = input(prompt).lower() or default
-        if choice in valid:
-            return valid[choice]
-        print("Please respond with 'yes' or 'no' (or 'y' or 'n').")
-
-
-def get_element_info_string(basis_set):
-    """
-    Get a string describing which elements are available for a basis set
-
-    Args:
-        basis_set (str): Name of the internal basis set
-
-    Returns:
-        str: Description of available elements and core treatment
-    """
-    if basis_set not in INTERNAL_BASIS_SETS:
-        return ""
-
-    bs_info = INTERNAL_BASIS_SETS[basis_set]
-    elements = bs_info["elements"]
-    all_electron = bs_info.get("all_electron", [])
-    ecp_elements = bs_info.get("ecp_elements", [])
-
-    # Create element range descriptions
-    def get_range_string(elem_list):
-        if not elem_list:
-            return ""
-
-        ranges = []
-        start = elem_list[0]
-        end = elem_list[0]
-
-        for i in range(1, len(elem_list)):
-            if elem_list[i] == end + 1:
-                end = elem_list[i]
-            else:
-                if start == end:
-                    ranges.append(f"{ATOMIC_NUMBER_TO_SYMBOL.get(start, start)}")
-                else:
-                    ranges.append(
-                        f"{ATOMIC_NUMBER_TO_SYMBOL.get(start, start)}-{ATOMIC_NUMBER_TO_SYMBOL.get(end, end)}"
-                    )
-                start = end = elem_list[i]
-
-        # Add the last range
-        if start == end:
-            ranges.append(f"{ATOMIC_NUMBER_TO_SYMBOL.get(start, start)}")
-        else:
-            ranges.append(
-                f"{ATOMIC_NUMBER_TO_SYMBOL.get(start, start)}-{ATOMIC_NUMBER_TO_SYMBOL.get(end, end)}"
-            )
-
-        return ", ".join(ranges)
-
-    # Build description
-    elem_str = get_range_string(elements)
-
-    # Add core treatment info
-    if not ecp_elements:
-        core_str = "All-electron"
-    elif not all_electron:
-        core_str = "ECP only"
-    else:
-        ae_str = get_range_string(all_electron)
-        ecp_str = get_range_string(ecp_elements)
-        core_str = f"All-electron ({ae_str}), ECP ({ecp_str})"
-
-    return f"Elements: {elem_str} | Core: {core_str}"
+    print("=" * 70)
 
 
 class CrystalOutputParser:
@@ -1633,6 +686,11 @@ class CrystalOutputParser:
                         self.data["dft_grid"] = "XLGRID"
                     else:
                         self.data["dft_grid"] = "XXLGRID"
+                    return
+
+        # If no grid found, set to None (not DEFAULT)
+        # This is important for proper output
+        self.data["dft_grid"] = None
 
     def _extract_dispersion(self, lines):
         """Extract dispersion correction information"""
@@ -1815,160 +873,6 @@ class CrystalInputParser:
                         pass
 
 
-def display_current_settings(settings):
-    """Display current calculation settings"""
-    print("\n" + "=" * 70)
-    print("EXTRACTED CALCULATION SETTINGS")
-    print("=" * 70)
-
-    print(f"\nDimensionality: {settings.get('dimensionality', 'CRYSTAL')}")
-    print(f"Space group: {settings.get('spacegroup', 'N/A')}")
-    print(f"Origin setting: {settings.get('origin_setting', '0 0 0')}")
-
-    if settings.get("functional"):
-        func = settings["functional"]
-        if settings.get("dispersion"):
-            func += "-D3"
-        print(f"DFT functional: {func}")
-        if settings.get("is_3c_method"):
-            print(f"  (3c composite method)")
-    else:
-        print(f"Method: Hartree-Fock")
-
-    print(
-        f"Basis set: {settings.get('basis_set', 'N/A')} ({settings.get('basis_set_type', 'INTERNAL')})"
-    )
-    print(f"Spin polarized: {settings.get('spin_polarized', False)}")
-
-    if settings.get("dft_grid"):
-        print(f"DFT grid: {settings.get('dft_grid', 'XLGRID')}")
-
-    if settings.get("tolerances"):
-        print(
-            f"Tolerances: TOLINTEG={settings['tolerances'].get('TOLINTEG', 'N/A')}, "
-            f"TOLDEE={settings['tolerances'].get('TOLDEE', 'N/A')}"
-        )
-
-    if settings.get("scf_settings"):
-        print(f"SCF method: {settings['scf_settings'].get('method', 'DIIS')}")
-        print(f"SCF max cycles: {settings['scf_settings'].get('maxcycle', 800)}")
-        print(f"FMIXING: {settings['scf_settings'].get('fmixing', 30)}%")
-
-    if settings.get("k_points"):
-        print(f"K-points: {settings['k_points']}")
-
-    if settings.get("smearing"):
-        print(f"Fermi smearing: Yes (width={settings.get('smearing_width', 0.01)})")
-
-    print("=" * 70)
-
-
-def select_functional():
-    """Select DFT functional by category"""
-    # First, select category - ordered to match NewCifToD12.py
-    category_options = {}
-    ordered_categories = ["HF", "LDA", "GGA", "HYBRID", "MGGA", "3C"]
-
-    for i, key in enumerate(ordered_categories, 1):
-        info = FUNCTIONAL_CATEGORIES[key]
-        category_options[str(i)] = key
-        print(f"\n{i}. {info['name']}")
-        print(f"   {info['description']}")
-        # Show appropriate examples for each category
-        if key == "HYBRID":
-            print(f"   Examples: B3LYP, PBE0, HSE06, LC-wPBE")
-        elif key == "3C":
-            print(f"   Examples: HF-3C, PBEh-3C, HSE-3C, B97-3C")
-        else:
-            print(f"   Examples: {', '.join(info['functionals'][:4])}")
-
-    category_choice = get_user_input(
-        "Select functional category", category_options, "4"
-    )  # Default to HYBRID
-    selected_category = category_options[category_choice]
-
-    # Then select specific functional
-    category_info = FUNCTIONAL_CATEGORIES[selected_category]
-    functional_options = {
-        str(i + 1): func for i, func in enumerate(category_info["functionals"])
-    }
-
-    print(f"\nAvailable {category_info['name']}:")
-    for key, func in functional_options.items():
-        # Build the description string
-        desc_parts = []
-
-        # Add functional description if available
-        if "descriptions" in category_info and func in category_info["descriptions"]:
-            desc_parts.append(category_info["descriptions"][func])
-
-        # Add D3 support indicator
-        if func in D3_FUNCTIONALS:
-            desc_parts.append("[D3✓]")
-
-        # Add basis requirement for 3C methods
-        if selected_category in ["3C", "HF"] and "basis_requirements" in category_info:
-            basis = category_info["basis_requirements"].get(func, "")
-            if basis:
-                desc_parts.append(f"(requires {basis})")
-
-        # Print the functional with description
-        if desc_parts:
-            print(f"{key}: {func} - {' '.join(desc_parts)}")
-        else:
-            print(f"{key}: {func}")
-
-    functional_choice = get_user_input(
-        f"Select {category_info['name']}", functional_options, "1"
-    )
-    selected_functional = functional_options[functional_choice]
-
-    # Check if functional has basis set requirement
-    if "basis_requirements" in category_info:
-        required_basis = category_info["basis_requirements"].get(selected_functional)
-        return selected_functional, required_basis
-
-    return selected_functional, None
-
-
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-CRYSTAL17/23 Optimization Output to D12 Converter
--------------------------------------------------
-This script extracts optimized geometries from CRYSTAL17/23 output files
-and creates new D12 input files for follow-up calculations.
-
-DESCRIPTION:
-    Takes the optimized geometry from CRYSTAL17/23 output files and creates
-    new D12 input files with updated coordinates. The script attempts to
-    preserve the original calculation settings and allows the user to
-    modify them interactively.
-
-USAGE:
-    1. Single file processing:
-       python CRYSTALOptToD12.py --out-file file.out --d12-file file.d12
-
-    2. Process all files in a directory:
-       python CRYSTALOptToD12.py --directory /path/to/files
-
-    3. Batch processing with shared settings:
-       python CRYSTALOptToD12.py --directory /path/to/files --shared-settings
-
-    4. Specify output directory:
-       python CRYSTALOptToD12.py --directory /path/to/files --output-dir /path/to/output
-
-    5. Save/load settings:
-       python CRYSTALOptToD12.py --save-options --options-file settings.json
-
-AUTHOR:
-    Original script by Marcus Djokic
-    Contributions by Wangwei Lan, Kevin Lucht, Danny Maldonado
-"""
-
-# ... [Keep all imports and other code until get_calculation_options] ...
-
-
 def get_calculation_options(current_settings, shared_mode=False):
     """Get calculation options from user
 
@@ -2140,8 +1044,14 @@ def get_calculation_options(current_settings, shared_mode=False):
                     options["basis_set_type"] = "INTERNAL"
                     options["basis_set"] = required_basis
                     options["is_3c_method"] = True
+                    # 3C methods already include corrections - no additional dispersion
+                    options["dispersion"] = False
+                    # HF 3C methods don't need DFT grids
+                    options["dft_grid"] = None
                 else:
                     options["is_3c_method"] = False
+                    # HF methods don't use dispersion
+                    options["dispersion"] = False
         else:
             # DFT method
             change_functional = yes_no_prompt(
@@ -2160,6 +1070,10 @@ def get_calculation_options(current_settings, shared_mode=False):
                     options["basis_set_type"] = "INTERNAL"
                     options["basis_set"] = required_basis
                     options["is_3c_method"] = True
+                    # 3C methods already include dispersion
+                    options["dispersion"] = False
+                    # 3C methods have their own grids
+                    options["dft_grid"] = None
                 else:
                     options["is_3c_method"] = False
 
@@ -2239,21 +1153,32 @@ def get_calculation_options(current_settings, shared_mode=False):
                         # Use external basis from original file
                         options["use_original_external_basis"] = True
 
-        # DFT grid
-        if options.get("functional") and options["functional"] not in [
-            "HF",
-            "RHF",
-            "UHF",
-        ]:
+        # DFT grid (only for non-3C DFT methods)
+        if (
+            options.get("functional")
+            and options["functional"] not in ["HF", "RHF", "UHF"]
+            and not options.get("is_3c_method")
+            and "-3C" not in options.get("functional", "")
+            and "3C" not in options.get("functional", "")
+        ):
+            current_grid = (
+                options.get("dft_grid", "XLGRID") or "XLGRID"
+            )  # Default to XLGRID if None
             change_grid = yes_no_prompt(
-                f"Change DFT integration grid (current: {options.get('dft_grid', 'XLGRID')})?",
-                "no",
+                f"Change DFT integration grid (current: {current_grid})?", "no"
             )
             if change_grid:
                 grid_choice = get_user_input(
                     "Select DFT integration grid", DFT_GRIDS, "4"
                 )
                 options["dft_grid"] = DFT_GRIDS[grid_choice]
+            else:
+                # If not changing, ensure a valid grid is set
+                if not options.get("dft_grid"):
+                    options["dft_grid"] = "XLGRID"
+        elif options.get("is_3c_method") or "-3C" in options.get("functional", ""):
+            # 3C methods have their own grids
+            options["dft_grid"] = None
 
         # Spin polarization - UPDATED DEFAULT TO YES
         options["spin_polarized"] = yes_no_prompt(
@@ -2290,6 +1215,18 @@ def get_calculation_options(current_settings, shared_mode=False):
 
                 toldee = input("Enter TOLDEE value (integer, default 7): ").strip()
                 options["tolerances"]["TOLDEE"] = int(toldee) if toldee else 7
+            else:
+                # If not changing tolerances, use current settings or defaults
+                if "tolerances" not in options:
+                    options["tolerances"] = DEFAULT_TOLERANCES.copy()
+                else:
+                    # Ensure all required tolerance keys are present
+                    if "TOLINTEG" not in options["tolerances"]:
+                        options["tolerances"]["TOLINTEG"] = DEFAULT_TOLERANCES[
+                            "TOLINTEG"
+                        ]
+                    if "TOLDEE" not in options["tolerances"]:
+                        options["tolerances"]["TOLDEE"] = DEFAULT_TOLERANCES["TOLDEE"]
 
         # SCF settings
         change_scf = yes_no_prompt("Change SCF settings?", "no")
@@ -2307,6 +1244,22 @@ def get_calculation_options(current_settings, shared_mode=False):
 
             fmixing = input("Enter FMIXING percentage (default 30): ").strip()
             options["scf_settings"]["fmixing"] = int(fmixing) if fmixing else 30
+        else:
+            # If not changing SCF settings, ensure defaults are set
+            if "scf_settings" not in options:
+                options["scf_settings"] = {
+                    "method": "DIIS",
+                    "maxcycle": 800,
+                    "fmixing": 30,
+                }
+            else:
+                # Ensure all required SCF keys are present
+                if "method" not in options["scf_settings"]:
+                    options["scf_settings"]["method"] = "DIIS"
+                if "maxcycle" not in options["scf_settings"]:
+                    options["scf_settings"]["maxcycle"] = 800
+                if "fmixing" not in options["scf_settings"]:
+                    options["scf_settings"]["fmixing"] = 30
 
     # Symmetry handling section
     if options.get("dimensionality") != "MOLECULE":
@@ -2364,102 +1317,25 @@ def get_calculation_options(current_settings, shared_mode=False):
     return options
 
 
-def generate_unit_cell_line(spacegroup, cell_params, dimensionality):
-    """Generate the unit cell line for CRYSTAL23 input"""
-    if dimensionality == "MOLECULE":
-        return ""  # No unit cell for molecules
-
-    a, b, c, alpha, beta, gamma = [float(x) for x in cell_params[:6]]
-
-    if dimensionality == "SLAB":
-        return f"{a:.8f} {b:.8f} {gamma:.6f}"
-    elif dimensionality == "POLYMER":
-        return f"{a:.8f}"
-    elif dimensionality == "CRYSTAL":
-        if spacegroup >= 1 and spacegroup <= 2:  # Triclinic
-            return f"{a:.8f} {b:.8f} {c:.8f} {alpha:.6f} {beta:.6f} {gamma:.6f}"
-        elif spacegroup >= 3 and spacegroup <= 15:  # Monoclinic
-            return f"{a:.8f} {b:.8f} {c:.8f} {beta:.6f}"
-        elif spacegroup >= 16 and spacegroup <= 74:  # Orthorhombic
-            return f"{a:.8f} {b:.8f} {c:.8f}"
-        elif spacegroup >= 75 and spacegroup <= 142:  # Tetragonal
-            return f"{a:.8f} {c:.8f}"
-        elif spacegroup >= 143 and spacegroup <= 167:  # Trigonal
-            return f"{a:.8f} {c:.8f}"
-        elif spacegroup >= 168 and spacegroup <= 194:  # Hexagonal
-            return f"{a:.8f} {c:.8f}"
-        elif spacegroup >= 195 and spacegroup <= 230:  # Cubic
-            return f"{a:.8f}"
-        else:
-            raise ValueError(f"Invalid space group: {spacegroup}")
-
-    return ""
-
-
-def generate_k_points(a, b, c, dimensionality, spacegroup):
+def read_basis_file(basis_dir, atomic_number):
     """
-    Generate Monkhorst-Pack k-point grid based on cell parameters
+    Read a basis set file for a given element
 
     Args:
-        a, b, c (float): Cell parameters
-        dimensionality (str): CRYSTAL, SLAB, POLYMER, or MOLECULE
-        spacegroup (int): Space group number
+        basis_dir (str): Directory containing basis set files
+        atomic_number (int): Element atomic number
 
     Returns:
-        tuple: ka, kb, kc values for shrinking factor
+        str: Content of the basis set file
     """
-    ks = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 16, 18, 20, 24, 30, 36, 40, 45, 48, 60]
-
-    # Initialize defaults
-    ka = kb = kc = 1
-
-    # Find appropriate values based on cell dimensions
-    for k in ks:
-        if k * a > 40.0 and k * a < 80.0 and ka == 1:
-            ka = k
-        if k * b > 40.0 and k * b < 80.0 and kb == 1:
-            kb = k
-        if k * c > 40.0 and k * c < 80.0 and kc == 1:
-            kc = k
-
-    # Adjust based on dimensionality
-    if dimensionality == "SLAB":
-        kc = 1
-    elif dimensionality == "POLYMER":
-        kb = kc = 1
-    elif dimensionality == "MOLECULE":
-        ka = kb = kc = 1
-
-    # Ensure reasonable values
-    if ka == 1 and dimensionality not in ["POLYMER", "MOLECULE"]:
-        ka = 12
-    if kb == 1 and dimensionality not in ["POLYMER", "MOLECULE"]:
-        kb = 12
-    if kc == 1 and dimensionality not in ["SLAB", "POLYMER", "MOLECULE"]:
-        kc = 12
-
-    # For non-P1 symmetry, try to use consistent k-points
-    if spacegroup != 1 and dimensionality == "CRYSTAL":
-        # For high symmetry systems, use a consistent k-point mesh
-        k_values = [k for k in [ka, kb, kc] if k > 1]
-        if k_values:
-            k_avg = round(sum(k_values) / len(k_values))
-            k_avg = min([k for k in ks if k >= k_avg] or [k_avg])
-
-            # Apply the common k value according to crystal system
-            if spacegroup >= 195 and spacegroup <= 230:  # Cubic
-                ka = kb = kc = k_avg
-            elif (
-                spacegroup >= 75 and spacegroup <= 194
-            ):  # Tetragonal, Trigonal, Hexagonal
-                ka = kb = k_avg
-            elif spacegroup >= 16 and spacegroup <= 74:  # Orthorhombic
-                # Keep different values but round to nearest in ks list
-                ka = min([k for k in ks if k >= ka] or [ka])
-                kb = min([k for k in ks if k >= kb] or [kb])
-                kc = min([k for k in ks if k >= kc] or [kc])
-
-    return ka, kb, kc
+    try:
+        with open(os.path.join(basis_dir, str(atomic_number)), "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        print(
+            f"Warning: Basis set file for element {atomic_number} not found in {basis_dir}"
+        )
+        return ""
 
 
 def write_d12_file(output_file, geometry_data, settings, external_basis_data=None):
@@ -2541,31 +1417,19 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         # Calculation-specific section
         if settings["calculation_type"] == "OPT":
             f.write("OPTGEOM\n")
-            f.write(f"{settings.get('optimization_type', 'FULLOPTG')}\n")
-
-            opt_settings = settings.get("optimization_settings", DEFAULT_OPT_SETTINGS)
-            f.write("MAXCYCLE\n")
-            f.write(f"{opt_settings.get('MAXCYCLE', 800)}\n")
-            f.write("TOLDEG\n")
-            f.write(f"{format_crystal_float(opt_settings.get('TOLDEG', 0.00003))}\n")
-            f.write("TOLDEX\n")
-            f.write(f"{format_crystal_float(opt_settings.get('TOLDEX', 0.00012))}\n")
-            f.write("TOLDEE\n")
-            f.write(f"{opt_settings.get('TOLDEE', 7)}\n")
-
-            if "MAXTRADIUS" in opt_settings:
-                f.write("MAXTRADIUS\n")
-                f.write(f"{format_crystal_float(opt_settings['MAXTRADIUS'])}\n")
-
-            f.write("ENDOPT\n")
-        elif settings["calculation_type"] == "FREQ":
-            f.write("FREQCALC\n")
-            freq_settings = settings.get("freq_settings", DEFAULT_FREQ_SETTINGS)
-            f.write("NUMDERIV\n")
-            f.write(f"{freq_settings.get('NUMDERIV', 2)}\n")
+            write_optimization_section(
+                f,
+                settings.get("optimization_type", "FULLOPTG"),
+                settings.get("optimization_settings", DEFAULT_OPT_SETTINGS),
+            )
             f.write("END\n")
-
-        f.write("END\n")
+        elif settings["calculation_type"] == "FREQ":
+            write_frequency_section(
+                f, settings.get("freq_settings", DEFAULT_FREQ_SETTINGS)
+            )
+            f.write("END\n")
+        else:  # Single point
+            f.write("END\n")
 
         # Handle basis sets and method section
         functional = settings.get("functional", "")
@@ -2574,9 +1438,9 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         # Handle 3C methods and basis sets
         if functional in ["HF-3C", "HFsol-3C"]:
             # These are HF methods with corrections, write basis set but no DFT block
-            f.write("BASISSET\n")
-            f.write(f"{settings['basis_set']}\n")
-            f.write("END\n")
+            write_basis_set_section(
+                f, "INTERNAL", settings["basis_set"], coords_to_write
+            )
 
             # Add 3C corrections
             if functional == "HF-3C":
@@ -2587,9 +1451,9 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 f.write("END\n")
         elif functional in ["PBEh-3C", "HSE-3C", "B97-3C", "PBEsol0-3C", "HSEsol-3C"]:
             # DFT 3C methods
-            f.write("BASISSET\n")
-            f.write(f"{settings['basis_set']}\n")
-            f.write("END\n")
+            write_basis_set_section(
+                f, "INTERNAL", settings["basis_set"], coords_to_write
+            )
 
             f.write("DFT\n")
             if settings.get("spin_polarized"):
@@ -2606,13 +1470,15 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                     # Use the external basis from the original file
                     for line in external_basis_data:
                         f.write(f"{line}\n")
+                    f.write("99 0\n")
+                    f.write("END\n")
                 elif settings.get("basis_set_path"):
                     # Read basis sets from specified path
                     f.write(
                         f"# External basis set from: {settings['basis_set_path']}\n"
                     )
                     unique_atoms = set()
-                    for atom in coords:
+                    for atom in coords_to_write:
                         unique_atoms.add(int(atom["atom_number"]))
 
                     # Read basis set files
@@ -2628,13 +1494,16 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                                 f"Warning: Basis set file not found for element {atom_num}"
                             )
 
-                f.write("99 0\n")
-                f.write("END\n")
+                    f.write("99 0\n")
+                    f.write("END\n")
             else:
                 # Internal basis set
-                f.write("BASISSET\n")
-                f.write(f"{settings.get('basis_set', 'POB-TZVP-REV2')}\n")
-                f.write("END\n")
+                write_basis_set_section(
+                    f,
+                    "INTERNAL",
+                    settings.get("basis_set", "POB-TZVP-REV2"),
+                    coords_to_write,
+                )
 
             # Write method section
             if method == "HF":
@@ -2644,105 +1513,41 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 # RHF is default, no keyword needed
             else:
                 # Write DFT section
-                f.write("DFT\n")
-
-                if settings.get("spin_polarized"):
-                    f.write("SPIN\n")
-
-                # Write functional
-                if functional == "mPW1PW91" and settings.get("dispersion"):
-                    f.write("PW1PW-D3\n")
-                else:
-                    # Standard functional
-                    if settings.get("dispersion") and functional in D3_FUNCTIONALS:
-                        f.write(f"{functional}-D3\n")
-                    else:
-                        f.write(f"{functional}\n")
-
-                # Add DFT grid if specified
-                if settings.get("dft_grid") and settings["dft_grid"] != "DEFAULT":
-                    f.write(f"{settings['dft_grid']}\n")
-
-                f.write("ENDDFT\n")
-
-        # SCF parameters
-        # Tolerances
-        tolerances = settings.get("tolerances", DEFAULT_TOLERANCES)
-        f.write("TOLINTEG\n")
-        f.write(f"{tolerances.get('TOLINTEG', '7 7 7 7 14')}\n")
-        f.write("TOLDEE\n")
-        f.write(f"{tolerances.get('TOLDEE', 7)}\n")
-
-        # K-points (for periodic systems)
-        if dimensionality != "MOLECULE":
-            if settings.get("k_points"):
-                # Use extracted k-points
-                f.write("SHRINK\n")
-                f.write("0 24\n")  # Default IS value
-                f.write(f"{settings['k_points']}\n")
-            elif geometry_data.get("conventional_cell"):
-                # Generate k-points based on cell size
-                a, b, c = [float(x) for x in geometry_data["conventional_cell"][:3]]
-                ka, kb, kc = generate_k_points(
-                    a, b, c, dimensionality, settings.get("spacegroup", 1)
+                write_dft_section(
+                    f,
+                    functional,
+                    settings.get("dispersion"),
+                    settings.get("dft_grid", "XLGRID"),
+                    settings.get("spin_polarized"),
                 )
-                n_shrink = max(ka, kb, kc) * 2
 
-                f.write("SHRINK\n")
-                f.write(f"0 {n_shrink}\n")
+        # SCF parameters section
+        atomic_numbers = [int(atom["atom_number"]) for atom in coords_to_write]
 
-                if dimensionality == "CRYSTAL":
-                    f.write(f"{ka} {kb} {kc}\n")
-                elif dimensionality == "SLAB":
-                    f.write(f"{ka} {kb} 1\n")
-                elif dimensionality == "POLYMER":
-                    f.write(f"{ka} 1 1\n")
-            else:
-                # Default k-points
-                f.write("SHRINK\n")
-                f.write("0 24\n")
-                if dimensionality == "CRYSTAL":
-                    f.write("8 8 8\n")
-                elif dimensionality == "SLAB":
-                    f.write("8 8 1\n")
-                elif dimensionality == "POLYMER":
-                    f.write("8 1 1\n")
+        # Prepare k-points
+        if settings.get("k_points"):
+            k_points_info = settings["k_points"]
+        elif geometry_data.get("conventional_cell"):
+            # Generate k-points based on cell size
+            a, b, c = [float(x) for x in geometry_data["conventional_cell"][:3]]
+            k_points_info = generate_k_points(
+                a, b, c, dimensionality, settings.get("spacegroup", 1)
+            )
+        else:
+            k_points_info = None
 
-        # Fermi smearing
-        if settings.get("smearing"):
-            f.write("SMEAR\n")
-            f.write(f"{settings.get('smearing_width', 0.01):.6f}\n")
-
-        # SCF settings
-        f.write("SCFDIR\n")
-
-        # Add BIPOSIZE and EXCHSIZE for large systems
-        if len(coords) > 5:
-            f.write("BIPOSIZE\n")
-            f.write("110000000\n")
-            f.write("EXCHSIZE\n")
-            f.write("110000000\n")
-
-        # SCF convergence
-        scf_settings = settings.get("scf_settings", {})
-        f.write("MAXCYCLE\n")
-        f.write(f"{scf_settings.get('maxcycle', 800)}\n")
-
-        f.write("FMIXING\n")
-        f.write(f"{scf_settings.get('fmixing', 30)}\n")
-
-        scf_method = scf_settings.get("method", "DIIS")
-        f.write(f"{scf_method}\n")
-
-        if scf_method == "DIIS":
-            f.write("HISTDIIS\n")
-            f.write("100\n")
-
-        # Print options
-        f.write("PPAN\n")  # Print Mulliken population analysis
-
-        # End of input
-        f.write("END\n")
+        write_scf_section(
+            f,
+            settings.get("tolerances", DEFAULT_TOLERANCES),
+            k_points_info,
+            dimensionality,
+            settings.get("smearing"),
+            settings.get("smearing_width", 0.01),
+            settings.get("scf_settings", {}).get("method", "DIIS"),
+            settings.get("scf_settings", {}).get("maxcycle", 800),
+            settings.get("scf_settings", {}).get("fmixing", 30),
+            len(atomic_numbers),
+        )
 
 
 def process_files(output_file, input_file=None, shared_settings=None):
@@ -2810,11 +1615,7 @@ def process_files(output_file, input_file=None, shared_settings=None):
 
     # Set default SCF settings if not found
     if not settings.get("scf_settings"):
-        settings["scf_settings"] = {
-            "method": "DIIS",
-            "maxcycle": 800,
-            "fmixing": 30,
-        }
+        settings["scf_settings"] = {"method": "DIIS", "maxcycle": 800, "fmixing": 30}
 
     # Get user options or use shared settings
     if shared_settings:
@@ -2831,6 +1632,20 @@ def process_files(output_file, input_file=None, shared_settings=None):
                 "origin_setting",
             ]:
                 options[key] = value
+
+        # Ensure consistency for 3C methods
+        if options.get("functional") in [
+            "HF-3C",
+            "HFsol-3C",
+            "PBEh-3C",
+            "HSE-3C",
+            "B97-3C",
+            "PBEsol0-3C",
+            "HSEsol-3C",
+        ]:
+            options["dispersion"] = False
+            options["is_3c_method"] = True
+            options["dft_grid"] = None
     else:
         options = get_calculation_options(settings)
 
@@ -2838,7 +1653,14 @@ def process_files(output_file, input_file=None, shared_settings=None):
     base_name = os.path.splitext(output_file)[0]
     calc_type = options["calculation_type"]
     functional = options.get("functional", "HF")
-    if options.get("dispersion"):
+
+    # Don't add -D3 to 3C methods or HF methods or if dispersion is already included in the name
+    if (
+        options.get("dispersion")
+        and "-3C" not in functional
+        and "3C" not in functional
+        and functional not in ["HF", "RHF", "UHF", "HF-3C", "HFsol-3C"]
+    ):
         functional += "-D3"
 
     new_filename = f"{base_name}_{calc_type.lower()}_{functional}_optimized.d12"
