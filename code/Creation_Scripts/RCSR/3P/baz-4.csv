@@ -1,0 +1,4 @@
+,edge,x,y,z,symbolic,Wyckoff,symmetry
+0,E1,0.5,0.0,0.25,"x, 2x, 1/4",6 h,mm2
+1,E2,0.45,0.9,0.125,"x, 2x, z",12 k,m
+2,E3,0.3,0.7,0.25,"x, 1-x, 1/4",6 h,mm2
