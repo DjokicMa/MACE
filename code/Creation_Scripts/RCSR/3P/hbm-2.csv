@@ -1,0 +1,3 @@
+,vertex,cn,x,y,z,symbolic,Wyckoff,symmetry,order
+0,V1,4,0.1729,0.3646,0.0,"x, y, 0",8 p,m,2
+1,V2,4,0.0,0.3645,0.5,"0, y, 1/2",4 n,mm2,4
