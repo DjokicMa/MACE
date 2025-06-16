@@ -43,5 +43,14 @@ cp SIGMA.DAT ${DIR}/${JOB}.SIGMA.DAT
 cp SEEBECK.DAT ${DIR}/${JOB}.SEEBECK.DAT
 cp SIGMAS.DAT ${DIR}/${JOB}.SIGMAS.DAT
 cp KAPPA.DAT ${DIR}/${JOB}.KAPPA.DAT
-cp TDF.DAT ${DIR}/${JOB}.TDF.DAT' >> $1.sh
+cp TDF.DAT ${DIR}/${JOB}.TDF.DAT
+
+# ADDED: Auto-submit new jobs when this one completes
+if [ -f $DIR/enhanced_queue_manager.py ]; then
+    cd $DIR
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+elif [ -f $DIR/crystal_queue_manager.py ]; then
+    cd $DIR
+    ./crystal_queue_manager.py  --max-jobs 250 --reserve 30 --max-submit 5 
+fi' >> $1.sh
 sbatch $1.sh

@@ -1,0 +1,431 @@
+# CRYSTAL Workflow Configuration
+# ==============================
+# Defines calculation workflows and their dependencies, resource requirements,
+# and automated progression rules for the CRYSTAL material tracking system.
+
+# Standard workflow definitions
+workflows:
+  # Complete characterization workflow: OPT -> SP -> BAND/DOSS
+  full_characterization:
+    description: "Complete material characterization with geometry optimization, electronic structure, and properties"
+    steps:
+      - name: "geometry_optimization"
+        calc_type: "OPT"
+        required: true
+        prerequisites: []
+        resources:
+          default_walltime: "12:00:00"
+          default_memory: "32GB"
+          default_cores: 16
+        settings:
+          prioritize_convergence: true
+          enable_symmetry: true
+        next_steps: ["single_point"]
+        
+      - name: "single_point"
+        calc_type: "SP"
+        required: true
+        prerequisites: ["geometry_optimization"]
+        input_generation:
+          method: "CRYSTALOptToD12.py"
+          source_calc_type: "OPT"
+          preserve_settings: true
+        resources:
+          default_walltime: "8:00:00"
+          default_memory: "24GB"
+          default_cores: 16
+        next_steps: ["band_structure", "density_of_states"]
+        
+      - name: "band_structure"
+        calc_type: "BAND"
+        required: false
+        prerequisites: ["single_point"]
+        input_generation:
+          method: "create_band_d3.py"
+          source_calc_type: "SP"
+          requires_f9: true
+        resources:
+          default_walltime: "4:00:00"
+          default_memory: "16GB"
+          default_cores: 8
+        next_steps: []
+        
+      - name: "density_of_states"
+        calc_type: "DOSS"
+        required: false
+        prerequisites: ["single_point"]
+        input_generation:
+          method: "alldos.py"
+          source_calc_type: "SP"
+          requires_f9: true
+        resources:
+          default_walltime: "4:00:00"
+          default_memory: "16GB"
+          default_cores: 8
+        next_steps: []
+
+  # Quick electronic structure workflow: SP -> BAND/DOSS (for pre-optimized structures)
+  electronic_structure:
+    description: "Electronic structure calculation for pre-optimized geometries"
+    steps:
+      - name: "single_point"
+        calc_type: "SP"
+        required: true
+        prerequisites: []
+        resources:
+          default_walltime: "8:00:00"
+          default_memory: "24GB"
+          default_cores: 16
+        next_steps: ["band_structure", "density_of_states"]
+        
+      - name: "band_structure"
+        calc_type: "BAND"
+        required: false
+        prerequisites: ["single_point"]
+        input_generation:
+          method: "create_band_d3.py"
+          source_calc_type: "SP"
+          requires_f9: true
+        resources:
+          default_walltime: "4:00:00"
+          default_memory: "16GB"
+          default_cores: 8
+        next_steps: []
+        
+      - name: "density_of_states"
+        calc_type: "DOSS"
+        required: false
+        prerequisites: ["single_point"]
+        input_generation:
+          method: "alldos.py"
+          source_calc_type: "SP"
+          requires_f9: true
+        resources:
+          default_walltime: "4:00:00"
+          default_memory: "16GB"
+          default_cores: 8
+        next_steps: []
+
+  # Geometry optimization only
+  optimization_only:
+    description: "Geometry optimization workflow for structural refinement"
+    steps:
+      - name: "geometry_optimization"
+        calc_type: "OPT"
+        required: true
+        prerequisites: []
+        resources:
+          default_walltime: "12:00:00"
+          default_memory: "32GB"
+          default_cores: 16
+        settings:
+          prioritize_convergence: true
+          enable_symmetry: true
+        next_steps: []
+
+  # Extended workflow with frequencies
+  full_characterization_with_freq:
+    description: "Complete characterization including vibrational frequencies"
+    steps:
+      - name: "geometry_optimization"
+        calc_type: "OPT"
+        required: true
+        prerequisites: []
+        resources:
+          default_walltime: "12:00:00"
+          default_memory: "32GB"
+          default_cores: 16
+        next_steps: ["single_point"]
+        
+      - name: "single_point"
+        calc_type: "SP"
+        required: true
+        prerequisites: ["geometry_optimization"]
+        input_generation:
+          method: "CRYSTALOptToD12.py"
+          source_calc_type: "OPT"
+          preserve_settings: true
+        resources:
+          default_walltime: "8:00:00"
+          default_memory: "24GB"
+          default_cores: 16
+        next_steps: ["band_structure", "density_of_states", "frequencies"]
+        
+      - name: "frequencies"
+        calc_type: "FREQ"
+        required: false
+        prerequisites: ["single_point"]
+        input_generation:
+          method: "manual"  # Requires manual setup
+          source_calc_type: "SP"
+        resources:
+          default_walltime: "24:00:00"
+          default_memory: "48GB"
+          default_cores: 24
+        next_steps: []
+        
+      - name: "band_structure"
+        calc_type: "BAND"
+        required: false
+        prerequisites: ["single_point"]
+        input_generation:
+          method: "create_band_d3.py"
+          source_calc_type: "SP"
+          requires_f9: true
+        resources:
+          default_walltime: "4:00:00"
+          default_memory: "16GB"
+          default_cores: 8
+        next_steps: []
+        
+      - name: "density_of_states"
+        calc_type: "DOSS"
+        required: false
+        prerequisites: ["single_point"]
+        input_generation:
+          method: "alldos.py"
+          source_calc_type: "SP"
+          requires_f9: true
+        resources:
+          default_walltime: "4:00:00"
+          default_memory: "16GB"
+          default_cores: 8
+        next_steps: []
+
+# Resource scaling rules based on system size and material type
+resource_scaling:
+  # Scale resources based on number of atoms
+  by_system_size:
+    small_systems:  # < 50 atoms
+      atom_limit: 50
+      memory_factor: 1.0
+      walltime_factor: 1.0
+      core_factor: 1.0
+      
+    medium_systems:  # 50-200 atoms
+      atom_limit: 200
+      memory_factor: 2.0
+      walltime_factor: 1.5
+      core_factor: 1.5
+      
+    large_systems:  # > 200 atoms
+      atom_limit: 999999
+      memory_factor: 4.0
+      walltime_factor: 3.0
+      core_factor: 2.0
+
+  # Scale resources based on material type
+  by_material_type:
+    metals:
+      patterns: ["*_Au_*", "*_Pt_*", "*_Cu_*", "*_Fe_*", "*_Ni_*"]
+      memory_factor: 1.5
+      walltime_factor: 1.3
+      special_settings:
+        use_smearing: true
+        smearing_width: 0.01
+        
+    semiconductors:
+      patterns: ["*_Si_*", "*_Ge_*", "*_GaAs_*", "*_InP_*"]
+      memory_factor: 1.2
+      walltime_factor: 1.1
+      
+    insulators:
+      patterns: ["*_Al2O3_*", "*_SiO2_*", "*_MgO_*"]
+      memory_factor: 1.0
+      walltime_factor: 1.0
+      
+    organic_materials:
+      patterns: ["*_C_H_*", "*_organic_*", "*_polymer_*"]
+      memory_factor: 1.3
+      walltime_factor: 1.5
+      special_settings:
+        use_dispersion: true
+        
+    magnetic_materials:
+      patterns: ["*_magnetic_*", "*_ferro_*", "*_antiferro_*"]
+      memory_factor: 2.0
+      walltime_factor: 2.0
+      special_settings:
+        spin_polarized: true
+
+# Automatic workflow assignment rules
+auto_assignment:
+  # Rules for determining default workflow based on material properties
+  rules:
+    - name: "new_structures"
+      conditions:
+        source_type: ["cif", "manual"]
+        has_prior_calculations: false
+      assigned_workflow: "full_characterization"
+      priority: 10
+      
+    - name: "pre_optimized"
+      conditions:
+        source_type: ["optimized_structure"]
+        has_prior_opt: true
+      assigned_workflow: "electronic_structure"
+      priority: 8
+      
+    - name: "benchmark_materials"
+      conditions:
+        material_id_patterns: ["*_benchmark_*", "*_reference_*"]
+      assigned_workflow: "full_characterization_with_freq"
+      priority: 15
+      
+    - name: "quick_screening"
+      conditions:
+        material_id_patterns: ["*_screen_*", "*_test_*"]
+        priority_level: ["low"]
+      assigned_workflow: "optimization_only"
+      priority: 5
+
+# Calculation dependencies and prerequisites
+dependencies:
+  # File dependencies for input generation
+  input_generation:
+    SP:
+      requires_files: ["OPT.out", "OPT.d12"]
+      requires_completion: ["OPT"]
+      generation_script: "CRYSTALOptToD12.py"
+      
+    BAND:
+      requires_files: ["SP.out", "SP.d12", "SP.f9"]
+      requires_completion: ["SP"]
+      generation_script: "create_band_d3.py"
+      isolated_directory: true  # Must run in clean directory
+      
+    DOSS:
+      requires_files: ["SP.out", "SP.d12", "SP.f9"]
+      requires_completion: ["SP"]
+      generation_script: "alldos.py"
+      isolated_directory: true  # Must run in clean directory
+      
+    FREQ:
+      requires_files: ["OPT.out", "OPT.d12"]
+      requires_completion: ["OPT"]
+      generation_script: "manual"  # Requires manual intervention
+      
+  # Logical dependencies
+  calculation_flow:
+    OPT: []  # No prerequisites
+    SP: ["OPT"]  # Requires completed geometry optimization
+    BAND: ["SP"]  # Requires completed single point
+    DOSS: ["SP"]  # Requires completed single point
+    FREQ: ["OPT"]  # Requires completed geometry optimization
+    TRANSPORT: ["SP", "BAND"]  # Requires both SP and BAND
+
+# Queue management settings
+queue_management:
+  # Priority settings for different calculation types
+  priorities:
+    OPT: 100      # High priority - needed for workflow progression
+    SP: 90        # High priority - critical step
+    BAND: 50      # Medium priority - analysis step
+    DOSS: 50      # Medium priority - analysis step
+    FREQ: 30      # Lower priority - expensive calculation
+    TRANSPORT: 40 # Medium priority - specialized calculation
+    
+  # Automatic resubmission settings
+  resubmission:
+    max_attempts: 3
+    delay_between_attempts: 300  # seconds
+    exponential_backoff: true
+    backoff_factor: 2.0
+    
+  # Load balancing
+  load_balancing:
+    max_concurrent_per_type:
+      OPT: 20
+      SP: 15
+      BAND: 10
+      DOSS: 10
+      FREQ: 3
+      TRANSPORT: 5
+      
+    resource_limits:
+      max_total_cores: 500
+      max_total_memory: "2TB"
+      reserve_for_recovery: 50  # Reserve cores for error recovery
+
+# Workflow progression rules
+progression:
+  # Automatic progression settings
+  auto_progression:
+    enabled: true
+    check_interval: 300  # Check for completed calculations every 5 minutes
+    max_new_submissions_per_check: 10
+    
+  # Conditions for progression
+  progression_conditions:
+    require_successful_completion: true
+    allow_progression_with_warnings: false
+    check_output_file_integrity: true
+    verify_required_outputs: true
+    
+  # Parallelization rules
+  parallel_execution:
+    # These calculation types can run in parallel after SP completion
+    parallel_after_sp:
+      - BAND
+      - DOSS
+    
+    # Maximum parallel calculations per material
+    max_parallel_per_material: 3
+    
+    # Resource sharing between parallel calculations
+    shared_resources:
+      BAND_DOSS: true  # BAND and DOSS can share resources
+
+# Error handling during workflow execution
+error_handling:
+  # What to do when a calculation fails
+  on_calculation_failure:
+    stop_workflow: false           # Continue with other branches
+    retry_failed_step: true        # Attempt error recovery
+    notify_on_critical_failure: true
+    
+  # Critical calculations that stop workflow on failure
+  critical_calculations:
+    - OPT  # If OPT fails, cannot proceed
+    - SP   # If SP fails, cannot do BAND/DOSS
+    
+  # Non-critical calculations (failure doesn't stop workflow)
+  non_critical_calculations:
+    - BAND  # DOSS can still proceed if BAND fails
+    - DOSS  # BAND can still proceed if DOSS fails
+    - FREQ  # Optional calculation
+
+# Notification and reporting
+notifications:
+  # When to send notifications
+  notify_on:
+    workflow_completion: true
+    workflow_failure: true
+    critical_error: true
+    resource_limits_reached: true
+    
+  # Notification methods (requires configuration)
+  methods:
+    email: false      # Email notifications
+    slack: false      # Slack integration
+    webhook: false    # HTTP webhook
+    
+  # Notification thresholds
+  thresholds:
+    max_failed_calculations: 5
+    max_pending_time_hours: 48
+    min_success_rate: 0.8
+
+# Advanced workflow features
+advanced:
+  # Workflow optimization
+  optimization:
+    learn_from_history: true        # Adjust resources based on historical data
+    optimize_submission_order: true # Submit calculations in optimal order
+    predict_completion_times: true  # Estimate completion based on system size
+    
+  # Experimental features
+  experimental:
+    adaptive_resources: false       # Dynamically adjust resources during execution
+    intelligent_batching: false     # Group similar calculations for efficiency
+    predictive_scheduling: false    # Schedule based on queue predictions
