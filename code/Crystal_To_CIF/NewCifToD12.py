@@ -523,6 +523,11 @@ def get_calculation_options():
         # If using spglib symmetry analysis
         if options["symmetry_handling"] == "SPGLIB" and SPGLIB_AVAILABLE:
             # Ask about symmetry tolerance
+            print("\nSymmetry tolerance options:")
+            print("  Loose (1e-3): More forgiving, good for experimental structures")
+            print("  Default (1e-5): Standard tolerance for most cases") 
+            print("  Strict (1e-7): High precision, for theoretical/perfect structures")
+            
             tolerance_options = {
                 "1": 1e-3,  # Loose tolerance - more forgiving of deviations
                 "2": 1e-5,  # Default tolerance
@@ -538,12 +543,19 @@ def get_calculation_options():
                 "Reduce structure to asymmetric unit using spglib?", "yes"
             )
             options["reduce_to_asymmetric"] = reduce_atoms
+        elif options["symmetry_handling"] == "CIF":
+            # For CIF mode, use default tolerance but allow user to know about it
+            options["symmetry_tolerance"] = 1e-5
 
         # Ask about atom writing preference for symmetry handling (unified with CRYSTALOptToD12.py)
         if options["symmetry_handling"] in ["CIF", "SPGLIB"]:
+            print("\nAtom writing options:")
+            if not SPGLIB_AVAILABLE:
+                print("Note: spglib not available - asymmetric unit reduction will be limited")
+            
             atom_writing_options = {
-                "1": "Write only unique atoms (asymmetric unit) when available",
-                "2": "Write all atoms",
+                "1": "Write only unique atoms (asymmetric unit) - requires spglib for CIF mode",
+                "2": "Write all atoms (full unit cell)",
             }
             atom_writing_choice = get_user_input(
                 "How should atoms be written in the inputs?", 
@@ -965,15 +977,16 @@ def detect_trigonal_setting(cif_data):
     return "hexagonal_axes"
 
 
-def reduce_to_asymmetric_unit(cif_data):
+def verify_and_reduce_to_asymmetric_unit(cif_data, tolerance=1e-5):
     """
-    Reduce the structure to its asymmetric unit using spglib if available
+    Verify spglib symmetry analysis matches CIF data and reduce to asymmetric unit
 
     Args:
         cif_data (dict): Parsed CIF data
+        tolerance (float): Symmetry tolerance for spglib
 
     Returns:
-        dict: Modified CIF data with only asymmetric unit atoms
+        dict: Modified CIF data with only asymmetric unit atoms, or original if verification fails
     """
     if not SPGLIB_AVAILABLE:
         print("Warning: spglib not available, cannot reduce to asymmetric unit.")
@@ -981,33 +994,127 @@ def reduce_to_asymmetric_unit(cif_data):
         return cif_data
 
     try:
-        # Create a cell structure for spglib
-        lattice = [[cif_data["a"], 0, 0], [0, cif_data["b"], 0], [0, 0, cif_data["c"]]]
+        # Create proper lattice matrix from CIF parameters
+        a, b, c = cif_data["a"], cif_data["b"], cif_data["c"]
+        alpha, beta, gamma = cif_data["alpha"], cif_data["beta"], cif_data["gamma"]
+        
+        # Convert to radians
+        alpha_rad = np.radians(alpha)
+        beta_rad = np.radians(beta)
+        gamma_rad = np.radians(gamma)
+        
+        # Build proper lattice matrix
+        lattice = np.zeros((3, 3))
+        lattice[0, 0] = a
+        lattice[1, 0] = b * np.cos(gamma_rad)
+        lattice[1, 1] = b * np.sin(gamma_rad)
+        lattice[2, 0] = c * np.cos(beta_rad)
+        lattice[2, 1] = c * (np.cos(alpha_rad) - np.cos(beta_rad) * np.cos(gamma_rad)) / np.sin(gamma_rad)
+        lattice[2, 2] = c * np.sqrt(1 - np.cos(alpha_rad)**2 - np.cos(beta_rad)**2 - np.cos(gamma_rad)**2 + 2*np.cos(alpha_rad)*np.cos(beta_rad)*np.cos(gamma_rad)) / np.sin(gamma_rad)
 
-        # If non-orthogonal cell, need to convert to cartesian
-        if cif_data["alpha"] != 90 or cif_data["beta"] != 90 or cif_data["gamma"] != 90:
-            # This is a simplified approach; a proper conversion would be more complex
-            print(
-                "Warning: Non-orthogonal cell detected. Symmetry reduction may not be accurate."
-            )
-
-        positions = cif_data["positions"]
-        numbers = cif_data["atomic_numbers"]
+        positions = np.array(cif_data["positions"])
+        numbers = np.array(cif_data["atomic_numbers"])
 
         cell = (lattice, positions, numbers)
 
-        # Get spacegroup data
-        spacegroup = spglib.get_spacegroup(cell, symprec=1e-5)
-        print(f"Detected space group: {spacegroup}")
-
-        # Get symmetrized cell with dataset
-        dataset = spglib.get_symmetry_dataset(cell, symprec=1e-5)
+        # Get spacegroup data with the specified tolerance
+        spacegroup_info = spglib.get_spacegroup(cell, symprec=tolerance)
+        dataset = spglib.get_symmetry_dataset(cell, symprec=tolerance)
+        
+        if dataset is None:
+            print("Warning: spglib could not analyze the structure symmetry.")
+            print("Using all atoms from the CIF file.")
+            return cif_data
+        
+        detected_spacegroup_num = dataset['number']
+        original_spacegroup_num = cif_data["spacegroup"]
+        
+        print(f"\nSymmetry Analysis Results:")
+        print(f"  CIF space group: {original_spacegroup_num}")
+        print(f"  spglib detected: {detected_spacegroup_num} ({spacegroup_info})")
+        
+        # Check if space groups match
+        spacegroup_match = detected_spacegroup_num == original_spacegroup_num
+        
+        if not spacegroup_match:
+            print(f"\n⚠️  WARNING: Space group mismatch!")
+            print(f"     CIF file specifies space group {original_spacegroup_num}")
+            print(f"     spglib detects space group {detected_spacegroup_num}")
+            print(f"     Current tolerance: {tolerance}")
+            print(f"     This could indicate:")
+            print(f"       - Tolerance issues (try different tolerance)")
+            print(f"       - Incorrect CIF space group assignment")
+            print(f"       - Non-standard atomic positions in CIF")
+            
+            # Offer options to the user
+            print(f"\nOptions:")
+            print(f"  1: Try different tolerance values")
+            print(f"  2: Proceed with spglib space group {detected_spacegroup_num}")
+            print(f"  3: Use original CIF space group {original_spacegroup_num} (no reduction)")
+            
+            choice = get_user_input("Select option", {"1": "tolerance", "2": "spglib", "3": "original"}, "3")
+            
+            if choice == "1":
+                # Try different tolerances
+                for test_tolerance in [1e-3, 1e-4, 1e-6, 1e-7]:
+                    if test_tolerance != tolerance:
+                        print(f"\nTrying tolerance {test_tolerance}...")
+                        test_dataset = spglib.get_symmetry_dataset(cell, symprec=test_tolerance)
+                        if test_dataset and test_dataset['number'] == original_spacegroup_num:
+                            print(f"✓ Match found with tolerance {test_tolerance}!")
+                            use_tolerance = yes_no_prompt(f"Use tolerance {test_tolerance}?", "yes")
+                            if use_tolerance:
+                                return verify_and_reduce_to_asymmetric_unit(cif_data, test_tolerance)
+                
+                print("\nNo tolerance found that matches CIF space group.")
+                final_choice = get_user_input("Final choice", {"1": "spglib", "2": "original"}, "2")
+                if final_choice == "2":
+                    print("Using all atoms from the CIF file without reduction.")
+                    return cif_data
+                else:
+                    print(f"Proceeding with spglib space group {detected_spacegroup_num}")
+                    cif_data["spacegroup"] = detected_spacegroup_num
+                    
+            elif choice == "2":
+                print(f"Proceeding with spglib space group {detected_spacegroup_num}")
+                cif_data["spacegroup"] = detected_spacegroup_num
+            else:
+                print("Using all atoms from the CIF file without reduction.")
+                return cif_data
+        else:
+            print(f"✓ Space group verification successful!")
 
         # Get unique atoms (asymmetric unit)
+        equivalent_atoms = dataset['equivalent_atoms']
         unique_indices = []
-        for i in range(len(numbers)):
-            if i in [dataset["equivalent_atoms"][i] for i in range(len(numbers))]:
+        seen_representatives = set()
+        
+        for i, representative in enumerate(equivalent_atoms):
+            if representative not in seen_representatives:
                 unique_indices.append(i)
+                seen_representatives.add(representative)
+
+        # Verify atom count makes sense
+        original_atom_count = len(numbers)
+        unique_atom_count = len(unique_indices)
+        symmetry_operations = len(dataset['rotations'])
+        
+        print(f"\nAsymmetric Unit Analysis:")
+        print(f"  Original atoms: {original_atom_count}")
+        print(f"  Unique atoms: {unique_atom_count}")
+        print(f"  Symmetry operations: {symmetry_operations}")
+        print(f"  Expected multiplicity: {original_atom_count / unique_atom_count:.1f}")
+        
+        # Check if the reduction makes sense
+        if unique_atom_count >= original_atom_count:
+            print("\n⚠️  WARNING: Asymmetric unit contains all or almost all atoms.")
+            print("     This suggests the structure may already be in the asymmetric unit,")
+            print("     or there's an issue with symmetry detection.")
+            
+            use_reduction = yes_no_prompt("Use the 'reduced' structure anyway?", "yes")
+            if not use_reduction:
+                print("Using all atoms from the CIF file.")
+                return cif_data
 
         # Create new cif_data with only asymmetric unit atoms
         new_cif_data = cif_data.copy()
@@ -1015,15 +1122,69 @@ def reduce_to_asymmetric_unit(cif_data):
         new_cif_data["symbols"] = [cif_data["symbols"][i] for i in unique_indices]
         new_cif_data["positions"] = [positions[i] for i in unique_indices]
 
-        print(
-            f"Reduced from {len(numbers)} atoms to {len(new_cif_data['atomic_numbers'])} atoms in asymmetric unit."
-        )
+        # Verify the positions are reasonable and show mapping
+        print(f"\nAsymmetric unit atoms (with original indices):")
+        for i, idx in enumerate(unique_indices):
+            symbol = cif_data["symbols"][idx]
+            pos = positions[idx]
+            equiv_count = sum(1 for eq in equivalent_atoms if eq == equivalent_atoms[idx])
+            print(f"  {i+1}: {symbol} at ({pos[0]:.6f}, {pos[1]:.6f}, {pos[2]:.6f}) [orig #{idx+1}, {equiv_count} equivalent]")
+        
+        # Show which atoms are equivalent to which
+        if len(unique_indices) < original_atom_count:
+            print(f"\nEquivalence mapping:")
+            for i, representative in enumerate(equivalent_atoms):
+                if i not in unique_indices:
+                    rep_idx = unique_indices.index(representative) if representative in unique_indices else -1
+                    if rep_idx >= 0:
+                        print(f"  Atom {i+1} ({cif_data['symbols'][i]}) → equivalent to asymmetric atom {rep_idx+1}")
+
+        # Optional: Validate that symmetry operations can reconstruct original structure
+        validate_symmetry = yes_no_prompt("\nValidate that symmetry operations reconstruct the original structure?", "no")
+        if validate_symmetry:
+            try:
+                # Apply symmetry operations to asymmetric unit
+                rotations = dataset['rotations']
+                translations = dataset['translations']
+                
+                reconstructed_positions = []
+                reconstructed_numbers = []
+                
+                for i, asym_idx in enumerate(unique_indices):
+                    asym_pos = positions[asym_idx]
+                    asym_num = numbers[asym_idx]
+                    
+                    for rot, trans in zip(rotations, translations):
+                        new_pos = np.dot(rot, asym_pos) + trans
+                        # Wrap to unit cell
+                        new_pos = new_pos % 1.0
+                        reconstructed_positions.append(new_pos)
+                        reconstructed_numbers.append(asym_num)
+                
+                # Check if we get the same number of atoms
+                if len(reconstructed_positions) >= original_atom_count:
+                    print(f"✓ Symmetry validation: Generated {len(reconstructed_positions)} positions from {len(unique_indices)} asymmetric atoms")
+                    print(f"  Original structure had {original_atom_count} atoms")
+                else:
+                    print(f"⚠️  Symmetry validation: Only generated {len(reconstructed_positions)} positions, expected {original_atom_count}")
+                    
+            except Exception as e:
+                print(f"⚠️  Symmetry validation failed: {e}")
+        
+        print(f"\n✓ Successfully reduced structure to asymmetric unit.")
         return new_cif_data
 
     except Exception as e:
-        print(f"Error during symmetry reduction: {e}")
+        print(f"\n❌ Error during symmetry analysis: {e}")
         print("Using all atoms from the CIF file.")
         return cif_data
+
+
+def reduce_to_asymmetric_unit(cif_data):
+    """
+    Legacy function - now calls the enhanced verification function
+    """
+    return verify_and_reduce_to_asymmetric_unit(cif_data)
 
 
 def create_d12_file(cif_data, output_file, options):
@@ -1228,7 +1389,6 @@ def create_d12_file(cif_data, output_file, options):
         # Write calculation-type specific parameters
         if calculation_type == "OPT":
             # For geometry optimization
-            print("OPTGEOM", file=f)
             write_optimization_section(f, optimization_type, optimization_settings)
             print("END", file=f)
         elif calculation_type == "FREQ":
@@ -1370,11 +1530,19 @@ def process_cifs(cif_directory, options, output_directory=None):
             elif options["symmetry_handling"] == "SPGLIB":
                 # If spglib symmetry requested and reduction is enabled
                 if SPGLIB_AVAILABLE and options.get("reduce_to_asymmetric", True):
-                    cif_data = reduce_to_asymmetric_unit(cif_data)
+                    print("\nPerforming spglib symmetry analysis with verification...")
+                    tolerance = options.get("symmetry_tolerance", 1e-5)
+                    cif_data = verify_and_reduce_to_asymmetric_unit(cif_data, tolerance)
             elif options["symmetry_handling"] == "CIF":
                 # For CIF symmetry, optionally reduce to unique atoms based on user preference
                 if options.get("write_only_unique", True):
-                    print("Using CIF symmetry information to identify unique atoms (if available)")
+                    if SPGLIB_AVAILABLE:
+                        print("\nUsing CIF symmetry - verifying with spglib and reducing to asymmetric unit...")
+                        tolerance = options.get("symmetry_tolerance", 1e-5)
+                        cif_data = verify_and_reduce_to_asymmetric_unit(cif_data, tolerance)
+                    else:
+                        print("Warning: Cannot identify unique atoms without spglib. Writing all atoms.")
+                        print("Install spglib to enable asymmetric unit reduction: pip install spglib")
                 else:
                     print("Using CIF symmetry but writing all atoms explicitly")
 

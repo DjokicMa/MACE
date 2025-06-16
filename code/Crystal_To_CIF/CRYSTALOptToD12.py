@@ -1329,6 +1329,11 @@ def get_calculation_options(current_settings, shared_mode=False):
                 )
 
                 options["write_only_unique"] = sym_choice == "1"
+                
+                if options["write_only_unique"]:
+                    print(f"Will write {unique_count} unique atoms (asymmetric unit)")
+                else:
+                    print(f"Will write all {total_count} atoms")
             else:
                 # If no symmetry info detected, assume all atoms should be written
                 options["write_only_unique"] = False
