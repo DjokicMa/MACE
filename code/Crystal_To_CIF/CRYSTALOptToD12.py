@@ -63,13 +63,21 @@ def display_current_settings(settings):
 
     if settings.get("functional"):
         func = settings["functional"]
-        if settings.get("dispersion"):
-            func += "-D3"
-        print(f"DFT functional: {func}")
-        if settings.get("is_3c_method"):
-            print(f"  (3c composite method)")
+        # Determine if this is a Hartree-Fock method or DFT
+        if func in ["RHF", "UHF", "HF-3C", "HFsol-3C"]:
+            print(f"Method: Hartree-Fock ({func})")
+            if settings.get("is_3c_method"):
+                print(f"  (3c composite method)")
+        else:
+            # It's a DFT functional
+            if settings.get("dispersion") and "-D3" not in func:
+                func += "-D3"
+            print(f"Method: DFT")
+            print(f"Functional: {func}")
+            if settings.get("is_3c_method"):
+                print(f"  (3c composite method)")
     else:
-        print(f"Method: Hartree-Fock")
+        print(f"Method: Hartree-Fock (RHF)")
 
     print(
         f"Basis set: {settings.get('basis_set', 'N/A')} ({settings.get('basis_set_type', 'INTERNAL')})"
@@ -416,7 +424,17 @@ class CrystalOutputParser:
     def _extract_functional(self, lines):
         """Extract DFT functional including 3C methods"""
 
-        # First check for specific functional patterns in ENERGY EXPRESSION line
+        # Check for Hartree-Fock methods first
+        for line in lines:
+            if "TYPE OF CALCULATION" in line:
+                if "RESTRICTED CLOSED SHELL" in line and "KOHN-SHAM" not in line:
+                    self.data["functional"] = "RHF"
+                    return
+                elif "UNRESTRICTED OPEN SHELL" in line and "KOHN-SHAM" not in line:
+                    self.data["functional"] = "UHF"
+                    return
+
+        # Check for specific functional patterns in ENERGY EXPRESSION line
         for line in lines:
             if "ENERGY EXPRESSION" in line:
                 # Parse the functional from this line
@@ -432,7 +450,7 @@ class CrystalOutputParser:
                         self.data["functional"] = "PBE0"
                         return
                 elif "HARTREE+FOCK" in line and not "EXCH*" in line:
-                    self.data["functional"] = "HF"
+                    self.data["functional"] = "RHF"
                     return
 
         # Check for 3C methods
@@ -494,16 +512,8 @@ class CrystalOutputParser:
                 if functional_found:
                     break
 
-        # If no DFT functional found, check if it's Hartree-Fock
-        if not functional_found and not self.data["is_3c_method"]:
-            for line in lines:
-                if "TYPE OF CALCULATION" in line:
-                    if "RESTRICTED CLOSED SHELL" in line and "KOHN-SHAM" not in line:
-                        self.data["functional"] = "HF"
-                        break
-                    elif "UNRESTRICTED OPEN SHELL" in line and "KOHN-SHAM" not in line:
-                        self.data["functional"] = "UHF"
-                        break
+        # If no DFT functional found, check if it's Hartree-Fock (already handled above)
+        # This section is now redundant as HF detection moved to the beginning
 
     def _extract_basis_set(self, lines):
         """Extract basis set information"""
@@ -547,6 +557,10 @@ class CrystalOutputParser:
 
     def _extract_tolerances(self, lines):
         """Extract tolerance settings"""
+        # Initialize with default values to prevent KeyError
+        if "tolerances" not in self.data:
+            self.data["tolerances"] = {}
+        
         for i, line in enumerate(lines):
             # Look for TOLINTEG pattern
             if "INFORMATION **** TOLINTEG ****" in line:
@@ -619,6 +633,12 @@ class CrystalOutputParser:
                 match = re.search(r"SCF TOL ON TOTAL ENERGY SET TO\s*(\d+)", line)
                 if match:
                     self.data["tolerances"]["TOLDEE"] = int(match.group(1))
+        
+        # Ensure default values are set if not found
+        if "TOLINTEG" not in self.data["tolerances"] or self.data["tolerances"]["TOLINTEG"] is None:
+            self.data["tolerances"]["TOLINTEG"] = "7 7 7 7 14"
+        if "TOLDEE" not in self.data["tolerances"] or self.data["tolerances"]["TOLDEE"] is None:
+            self.data["tolerances"]["TOLDEE"] = 7
 
     def _extract_scf_settings(self, lines):
         """Extract SCF settings"""
@@ -1261,7 +1281,7 @@ def get_calculation_options(current_settings, shared_mode=False):
                 if "fmixing" not in options["scf_settings"]:
                     options["scf_settings"]["fmixing"] = 30
 
-    # Symmetry handling section
+    # Symmetry handling section - unified with NewCifToD12.py functionality
     if options.get("dimensionality") != "MOLECULE":
         if shared_mode:
             # In shared mode, ask generically without specific counts
@@ -1310,7 +1330,9 @@ def get_calculation_options(current_settings, shared_mode=False):
 
                 options["write_only_unique"] = sym_choice == "1"
             else:
+                # If no symmetry info detected, assume all atoms should be written
                 options["write_only_unique"] = False
+                print("\nNo symmetry information detected. All atoms will be written.")
     else:
         options["write_only_unique"] = False
 
@@ -1391,23 +1413,13 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
 
         for atom in coords_to_write:
             atom_num = int(atom["atom_number"])
-            # Add 200 to atomic number if ECP is required for external basis sets
+            # Add 200 to atomic number ONLY if ECP is required for EXTERNAL basis sets
             if (
                 settings.get("basis_set_type") == "EXTERNAL"
                 and atom_num in ECP_ELEMENTS_EXTERNAL
             ):
                 atom_num += 200
-            elif settings.get("basis_set_type") == "INTERNAL" and settings.get(
-                "basis_set"
-            ):
-                # Check if element needs ECP in this internal basis set
-                basis_set = settings["basis_set"]
-                if basis_set in INTERNAL_BASIS_SETS:
-                    ecp_elements = INTERNAL_BASIS_SETS[basis_set].get(
-                        "ecp_elements", []
-                    )
-                    if int(atom["atom_number"]) in ecp_elements:
-                        atom_num += 200
+            # For internal basis sets, do NOT add 200 - they handle ECP internally
 
             symbol = ATOMIC_NUMBER_TO_SYMBOL.get(int(atom["atom_number"]), "X")
             f.write(
@@ -1416,7 +1428,6 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
 
         # Calculation-specific section
         if settings["calculation_type"] == "OPT":
-            f.write("OPTGEOM\n")
             write_optimization_section(
                 f,
                 settings.get("optimization_type", "FULLOPTG"),
@@ -1433,9 +1444,9 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
 
         # Handle basis sets and method section
         functional = settings.get("functional", "")
-        method = "HF" if functional in ["HF", "RHF", "UHF"] else "DFT"
+        method = "HF" if functional in ["RHF", "UHF", "HF-3C", "HFsol-3C"] else "DFT"
 
-        # Handle 3C methods and basis sets
+        # Handle HF 3C methods and regular HF methods
         if functional in ["HF-3C", "HFsol-3C"]:
             # These are HF methods with corrections, write basis set but no DFT block
             write_basis_set_section(
@@ -1449,6 +1460,45 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             elif functional == "HFsol-3C":
                 f.write("HFSOL3C\n")
                 f.write("END\n")
+        elif functional in ["RHF", "UHF"]:
+            # Standard HF methods
+            if settings.get("basis_set_type") == "EXTERNAL":
+                # Handle external basis sets for HF methods
+                if settings.get("use_original_external_basis") and external_basis_data:
+                    # Use the external basis from the original file
+                    for line in external_basis_data:
+                        f.write(f"{line}\n")
+                    f.write("99 0\n")
+                    f.write("END\n")
+                elif settings.get("basis_set_path"):
+                    # Read basis sets from specified path
+                    f.write(f"# External basis set from: {settings['basis_set_path']}\n")
+                    unique_atoms = set()
+                    for atom in coords_to_write:
+                        unique_atoms.add(int(atom["atom_number"]))
+
+                    # Read basis set files
+                    for atom_num in sorted(unique_atoms):
+                        basis_file = os.path.join(settings["basis_set_path"], str(atom_num))
+                        if os.path.exists(basis_file):
+                            with open(basis_file, "r") as bf:
+                                f.write(bf.read())
+                        else:
+                            print(f"Warning: Basis set file not found for element {atom_num}")
+
+                    f.write("99 0\n")
+                    f.write("END\n")
+            else:
+                # Internal basis set
+                write_basis_set_section(
+                    f, "INTERNAL", 
+                    settings.get("basis_set", "POB-TZVP-REV2"), 
+                    coords_to_write
+                )
+            
+            # For UHF, add the UHF keyword
+            if functional == "UHF":
+                f.write("UHF\n")
         elif functional in ["PBEh-3C", "HSE-3C", "B97-3C", "PBEsol0-3C", "HSEsol-3C"]:
             # DFT 3C methods
             write_basis_set_section(
@@ -1652,14 +1702,14 @@ def process_files(output_file, input_file=None, shared_settings=None):
     # Create output filename
     base_name = os.path.splitext(output_file)[0]
     calc_type = options["calculation_type"]
-    functional = options.get("functional", "HF")
+    functional = options.get("functional", "RHF")
 
     # Don't add -D3 to 3C methods or HF methods or if dispersion is already included in the name
     if (
         options.get("dispersion")
         and "-3C" not in functional
         and "3C" not in functional
-        and functional not in ["HF", "RHF", "UHF", "HF-3C", "HFsol-3C"]
+        and functional not in ["RHF", "UHF", "HF-3C", "HFsol-3C"]
     ):
         functional += "-D3"
 
