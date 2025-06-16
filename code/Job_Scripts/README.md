@@ -6,21 +6,56 @@ This repository contains a comprehensive suite of scripts for managing CRYSTAL q
 
 ### Core Job Management
 
-#### `crystal_queue_manager.py`
+#### `enhanced_queue_manager.py` ⭐ **Phase 2 - Enhanced**
 
-**Primary Features:**
-- Automated SLURM job queue management with robust error handling
-- Tracks job status (pending, running, completed) using JSON persistence
-- Intelligent job submission respecting cluster limits and resource constraints
-- Automatic recovery from file system issues with fallback storage locations
-- Built-in job throttling and reservation system for critical jobs
+**Advanced Features:**
+- **Material Tracking Database**: SQLite-based tracking of materials, calculations, and file records
+- **Callback-Based Architecture**: Event-driven job management avoiding 2-hour runtime limits
+- **Early Failure Detection**: Automatic detection and cancellation of failing jobs
+- **Automated Workflow Progression**: Intelligent OPT → SP → BAND/DOSS job chaining
+- **Organized Calculation Folders**: Efficient calc_type/materials directory layout (quota-friendly)
+- **Enhanced Error Analysis**: Detailed error classification and recovery suggestions
+- **Material ID Consistency**: Handles complex naming from NewCifToD12.py and CRYSTALOptToD12.py
+- **Isolated Script Execution**: Creates clean directories for alldos.py and create_band_d3.py requirements
 
 **Key Capabilities:**
-- Scans directories for `.d12` input files and manages their submission
-- Maintains job state across script executions
-- Implements atomic file operations for data integrity
-- Provides detailed status reporting and logging
-- Self-healing status file management
+- Comprehensive material lifecycle tracking with unique material IDs
+- Property extraction and storage from completed calculations
+- Intelligent job prioritization and resource management
+- Integration with existing SLURM scripts via callback mechanism
+- Backward compatibility with legacy queue manager
+
+**Usage:**
+```bash
+# Callback mode (triggered automatically by SLURM jobs)
+python enhanced_queue_manager.py --callback-mode completion --max-jobs 250 --reserve 30
+
+# Manual operations
+python enhanced_queue_manager.py --status                    # Database status report
+python enhanced_queue_manager.py --submit-file structure.d12 # Submit specific file
+python enhanced_queue_manager.py --callback-mode submit_new  # Submit new jobs if capacity available
+```
+
+**Callback Modes:**
+- `completion`: Handle job completion, check queue, submit new jobs (default for SLURM integration)
+- `status_check`: Update job statuses from SLURM queue
+- `submit_new`: Submit new jobs if under capacity limits
+- `early_failure`: Check for and cancel early-failing jobs
+- `full_check`: Complete monitoring cycle
+
+**Requirements:**
+- Python 3.x with sqlite3 support
+- SLURM environment with `squeue`, `sbatch` commands  
+- Material database dependencies (included: `material_database.py`)
+- Enhanced submission scripts with callback integration
+
+#### `crystal_queue_manager.py` **(Legacy)**
+
+**Primary Features:**
+- Basic SLURM job queue management with JSON persistence
+- Simple job status tracking (pending, running, completed)
+- Continuous monitoring approach with basic throttling
+- Fallback storage for status files
 
 **Usage:**
 ```bash
@@ -28,11 +63,140 @@ This repository contains a comprehensive suite of scripts for managing CRYSTAL q
 ./crystal_queue_manager.py --status  # View current status only
 ```
 
-**Requirements:**
-- Python 3.x
-- SLURM environment with `squeue`, `sbatch` commands
-- Write access to working directory or fallback locations
-- Compatible submission scripts (`submitcrystal23.sh`)
+**Note:** Legacy system maintained for backward compatibility. New deployments should use `enhanced_queue_manager.py`.
+
+---
+
+### Phase 2 Material Tracking Components ⭐ **NEW**
+
+#### `material_database.py`
+
+**Core database engine for material tracking system.**
+
+**Features:**
+- **SQLite + ASE Integration**: Combines structured data with atomic structure storage
+- **Thread-Safe Operations**: Supports concurrent access from multiple queue managers
+- **Material ID Generation**: Consistent material identifiers across complex file naming
+- **Calculation Tracking**: Complete history with prerequisites and workflow relationships
+- **Backup and Recovery**: Automated database maintenance and integrity checking
+
+**Key Methods:**
+```python
+create_material(material_id, formula, source_type, source_file)
+create_calculation(material_id, calc_type, input_file, settings)
+update_calculation_status(calc_id, status, output_file=None)
+get_calculations_by_status(status, calc_type=None, material_id=None)
+get_next_calculation_in_workflow(material_id)
+```
+
+#### `error_recovery.py`
+
+**Automated error detection and recovery system with YAML configuration.**
+
+**Features:**
+- **YAML Configuration**: `recovery_config.yaml` defines error recovery strategies
+- **Integration with fixk.py**: Automatic SHRINK parameter fixes
+- **Memory and Timeout Handling**: Increases resources for failed calculations
+- **Convergence Fixes**: Adjusts SCF parameters for difficult systems
+- **Recovery Tracking**: Prevents infinite retry loops with configurable limits
+
+**Usage:**
+```bash
+# Attempt recovery for all failed calculations
+python error_recovery.py --action recover --max-recoveries 10
+
+# View recovery statistics
+python error_recovery.py --action stats
+
+# Create default configuration
+python error_recovery.py --create-config
+```
+
+#### `workflow_engine.py`
+
+**Orchestrates complete CRYSTAL workflows with file generation and isolation.**
+
+**Features:**
+- **Automated Workflow Progression**: OPT → SP → BAND/DOSS with real script integration
+- **Isolated Directory Management**: Creates clean environments for alldos.py and create_band_d3.py
+- **Script Integration**: Handles CRYSTALOptToD12.py, alldos.py, create_band_d3.py requirements
+- **File Naming Consistency**: Maintains material ID consistency across complex naming
+- **Workflow Configuration**: `workflows.yaml` defines calculation sequences
+
+**Usage:**
+```bash
+# Process completed calculations and trigger next steps
+python workflow_engine.py --action process
+
+# Check workflow status for specific material
+python workflow_engine.py --action status --material-id material_name
+
+# View all workflow progress
+python workflow_engine.py --action workflow
+```
+
+#### `crystal_file_manager.py`
+
+**Organized file management system with material-based organization.**
+
+**Features:**
+- **Directory Organization**: Efficient `calc_type/` structure for file quotas
+- **File Discovery**: Automatic detection and cataloging of calculation files
+- **Integrity Checking**: Checksum validation and file verification
+- **Cleanup Operations**: Archival and removal of old files
+- **Integration with Check Scripts**: Works with existing file organization tools
+
+#### `material_monitor.py`
+
+**Real-time monitoring dashboard and system health checks.**
+
+**Features:**
+- **CLI Dashboard**: Real-time status updates with color-coded indicators
+- **Health Monitoring**: Database, SLURM, and file system health checks
+- **Performance Metrics**: Throughput analysis and bottleneck identification
+- **Alert System**: Configurable alerts for critical issues
+- **Statistics Reporting**: Comprehensive system usage and efficiency metrics
+
+**Usage:**
+```bash
+# Start interactive monitoring dashboard
+python material_monitor.py --action dashboard --interval 30
+
+# Quick system statistics
+python material_monitor.py --action stats
+
+# Database health check
+python material_monitor.py --action health
+```
+
+#### Configuration Files
+
+**`recovery_config.yaml`**: Error recovery strategies
+```yaml
+error_recovery:
+  shrink_error:
+    handler: "fixk_handler"
+    max_retries: 3
+    resubmit_delay: 300
+  memory_error:
+    handler: "memory_handler"
+    memory_factor: 1.5
+    max_memory: "200GB"
+```
+
+**`workflows.yaml`**: Workflow definitions and resource requirements
+```yaml
+workflows:
+  full_characterization:
+    steps:
+      - name: "geometry_optimization"
+        calc_type: "OPT"
+        next_steps: ["single_point"]
+      - name: "single_point"
+        calc_type: "SP"
+        prerequisites: ["geometry_optimization"]
+        next_steps: ["band_structure", "density_of_states"]
+```
 
 ---
 
@@ -46,8 +210,9 @@ SLURM batch script generator for CRYSTAL23 calculations with integrated queue ma
 - Creates dynamic SLURM job scripts with proper resource allocation
 - Configures Intel MPI environment for parallel execution
 - Implements scratch directory management for I/O optimization
-- Auto-triggers queue manager upon job completion for continuous workflow
+- **Enhanced Integration**: Auto-triggers enhanced_queue_manager upon job completion for continuous workflow
 - Supports 32-core parallel execution with 5GB memory per core
+- **Callback System**: Automatically calls back to queue manager when jobs complete (avoids 2-hour runtime limits)
 
 **Generated Job Parameters:**
 - 32 MPI tasks on single node
@@ -73,6 +238,7 @@ Specialized submission scripts for CRYSTAL properties calculations.
 - Transfers multiple output files (band structure, DOS, transport properties)
 - Reduced wall time (2 hours) and adjusted memory allocation (80GB total)
 - Handles `.d3` input files and requires `.f9` wavefunction files
+- **Enhanced Integration**: Includes callback to enhanced_queue_manager for workflow automation
 
 ---
 
@@ -170,7 +336,36 @@ source cd_job.sh [job_output_file]  # Changes to job's scratch directory
 
 ## Usage Workflows
 
-### Basic Workflow: Automated Queue Management
+### Enhanced Workflow: Material Tracking & Automated Management ⭐ **Recommended**
+
+1. **Setup Job Directory:**
+   ```bash
+   # Place all .d12 input files in directory
+   # Ensure enhanced_queue_manager.py and material_database.py are present
+   ```
+
+2. **Start Initial Jobs:**
+   ```bash
+   # Submit a few initial jobs to start the workflow
+   python enhanced_queue_manager.py --callback-mode submit_new --max-jobs 200 --reserve 20
+   ```
+
+3. **Monitor Progress:**
+   ```bash
+   # Check database status and job progress
+   python enhanced_queue_manager.py --status
+   
+   # View material tracking details
+   python -c "from material_database import MaterialDatabase; db = MaterialDatabase(); print(db.get_database_stats())"
+   ```
+
+4. **Automatic Operation:**
+   - Jobs automatically trigger enhanced_queue_manager upon completion
+   - System maintains organized calc_type/materials folder structure (efficient for file quotas)
+   - Database tracks all materials, calculations, and file records
+   - Early failure detection prevents resource waste
+
+### Legacy Workflow: Basic Queue Management
 
 1. **Setup Job Directory:**
    ```bash
@@ -214,7 +409,19 @@ source cd_job.sh [job_output_file]  # Changes to job's scratch directory
 
 ## Configuration Options
 
-### Queue Manager Settings
+### Enhanced Queue Manager Settings
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--max-jobs` | 250 | Maximum concurrent jobs in queue |
+| `--reserve` | 30 | Reserved slots for critical jobs |
+| `--max-submit` | 5 | Limit jobs submitted per callback (prevents overwhelming cluster) |
+| `--d12-dir` | `.` | Directory containing input files |
+| `--db-path` | `materials.db` | SQLite database file for material tracking |
+| `--callback-mode` | `completion` | Callback trigger mode |
+| `--disable-tracking` | False | Disable material tracking (legacy mode) |
+
+### Legacy Queue Manager Settings
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -251,7 +458,14 @@ source cd_job.sh [job_output_file]  # Changes to job's scratch directory
 - **Job outputs**: `jobname-JOBID.o` SLURM standard output
 
 ### Status Tracking
-- **`crystal_job_status.json`**: Persistent job state tracking
+
+**Enhanced System:**
+- **`materials.db`**: SQLite database with comprehensive material tracking
+- **Organized folders**: `calc_type/` directory structure (quota-efficient)
+- **File records**: Complete tracking of all input/output files per calculation
+
+**Legacy System:**
+- **`crystal_job_status.json`**: Basic job state tracking
 - **Backup locations**: `~/`, `/tmp/` for failover
 
 ---
@@ -295,15 +509,33 @@ source cd_job.sh [job_output_file]  # Changes to job's scratch directory
 
 ## Advanced Features
 
+### Enhanced Material Tracking System
+The enhanced queue manager provides comprehensive material lifecycle management:
+- **Unique Material IDs**: Generated from file content for consistent tracking
+- **Calculation Relationships**: Links between OPT → SP → BAND/DOSS workflows  
+- **Property Storage**: Extracted band gaps, energies, and other calculated properties
+- **File Management**: Complete tracking of all input, output, and intermediate files
+
+### Callback-Based Architecture
+**Key Advantages:**
+- **No Runtime Limits**: Avoids 2-hour dev node restrictions by using event-driven callbacks
+- **Resource Efficient**: Runs only when needed (job completions) rather than continuous monitoring
+- **SLURM Integration**: Seamlessly integrates with existing SLURM job scripts
+- **Scalable**: Handles hundreds of concurrent calculations without performance degradation
+
 ### Automatic Job Chaining
-The CRYSTAL23 submission script includes automatic queue management triggering, enabling continuous job processing without manual intervention.
+Enhanced system provides intelligent workflow progression:
+- **Dependency Tracking**: Automatically submits follow-up calculations when prerequisites complete
+- **Early Failure Detection**: Cancels failing jobs early to conserve resources
+- **Load Balancing**: Respects cluster limits with configurable job submission throttling
+- **Error Recovery**: Provides detailed error analysis and recovery suggestions
 
 ### Fault Tolerance
-The queue manager implements multiple layers of error handling:
-- Atomic file operations for status persistence
-- Multiple backup locations for critical data
-- Graceful degradation when file systems are unavailable
-- Automatic recovery from temporary failures
+Multi-layered error handling and recovery:
+- **Database Transactions**: Atomic operations ensure data consistency
+- **Graceful Degradation**: Falls back to legacy mode if database unavailable
+- **Error Classification**: Detailed analysis of CRYSTAL-specific error patterns
+- **Automatic Recovery**: Self-healing capabilities for common failure scenarios
 
 ### Integration Capabilities
 Scripts are designed for integration with:
