@@ -1234,8 +1234,8 @@ def write_basis_set_section(
     """
     if basis_set_type == "EXTERNAL":
         if external_basis_reader:
-            # Get unique elements
-            unique_atoms = unique_elements(atomic_numbers)
+            # Get unique elements - use original atomic numbers without ECP modification
+            unique_atoms = unique_elements([int(str(num).replace('2', '')) if str(num).startswith('2') and len(str(num)) > 2 else num for num in atomic_numbers])
 
             # Include basis sets for each unique element
             for atomic_number in unique_atoms:
@@ -1326,11 +1326,18 @@ def write_scf_section(
     num_atoms,
 ):
     """Write the SCF parameters section of the D12 file"""
-    # Tolerance settings
+    # Tolerance settings with proper fallback handling
     print("TOLINTEG", file=f)
-    print(tolerances["TOLINTEG"], file=f)
+    tolinteg_value = tolerances.get("TOLINTEG", "7 7 7 7 14")  # Default fallback
+    if tolinteg_value is None:
+        tolinteg_value = "7 7 7 7 14"
+    print(tolinteg_value, file=f)
+    
     print("TOLDEE", file=f)
-    print(tolerances["TOLDEE"], file=f)
+    toldee_value = tolerances.get("TOLDEE", 7)  # Default fallback
+    if toldee_value is None:
+        toldee_value = 7
+    print(toldee_value, file=f)
 
     # K-points
     if k_points and dimensionality != "MOLECULE":

@@ -539,6 +539,22 @@ def get_calculation_options():
             )
             options["reduce_to_asymmetric"] = reduce_atoms
 
+        # Ask about atom writing preference for symmetry handling (unified with CRYSTALOptToD12.py)
+        if options["symmetry_handling"] in ["CIF", "SPGLIB"]:
+            atom_writing_options = {
+                "1": "Write only unique atoms (asymmetric unit) when available",
+                "2": "Write all atoms",
+            }
+            atom_writing_choice = get_user_input(
+                "How should atoms be written in the inputs?", 
+                atom_writing_options, 
+                "1"
+            )
+            options["write_only_unique"] = atom_writing_choice == "1"
+        else:
+            # For P1 symmetry, all atoms must be written
+            options["write_only_unique"] = False
+
         # For trigonal space groups, ask about axis representation
         trigonal_axes_options = {
             "1": "AUTO",  # Use setting as detected in CIF
@@ -1198,15 +1214,10 @@ def create_d12_file(cif_data, output_file, options):
         for i in range(len(atomic_numbers)):
             atomic_number = atomic_numbers[i]
 
-            # Add 200 to atomic number if ECP is required
+            # Add 200 to atomic number ONLY if ECP is required for EXTERNAL basis sets
             if basis_set_type == "EXTERNAL" and atomic_number in ECP_ELEMENTS_EXTERNAL:
                 atomic_number += 200
-            elif basis_set_type == "INTERNAL" and basis_set in INTERNAL_BASIS_SETS:
-                # Check if element needs ECP in this internal basis set
-                if atomic_number in INTERNAL_BASIS_SETS[basis_set].get(
-                    "ecp_elements", []
-                ):
-                    atomic_number += 200
+            # For internal basis sets, do NOT add 200 - they handle ECP internally
 
             # Write with different format depending on dimensionality (increased precision)
             print(
@@ -1360,6 +1371,12 @@ def process_cifs(cif_directory, options, output_directory=None):
                 # If spglib symmetry requested and reduction is enabled
                 if SPGLIB_AVAILABLE and options.get("reduce_to_asymmetric", True):
                     cif_data = reduce_to_asymmetric_unit(cif_data)
+            elif options["symmetry_handling"] == "CIF":
+                # For CIF symmetry, optionally reduce to unique atoms based on user preference
+                if options.get("write_only_unique", True):
+                    print("Using CIF symmetry information to identify unique atoms (if available)")
+                else:
+                    print("Using CIF symmetry but writing all atoms explicitly")
 
             # Create D12 file
             create_d12_file(cif_data, output_file, options)
