@@ -382,7 +382,7 @@ class WorkflowPlanner:
         # Run NewCifToD12.py interactively
         cmd = [
             sys.executable, str(script_path),
-            str(sample_cif),
+            "--cif_dir", str(sample_cif.parent),
             "--save_options",
             "--options_file", str(temp_options)
         ]
