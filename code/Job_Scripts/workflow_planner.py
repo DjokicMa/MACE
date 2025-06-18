@@ -1187,7 +1187,7 @@ class WorkflowPlanner:
             
             # Submit jobs using the queue manager
             print(f"\nSubmitting {len(d12_files)} OPT jobs...")
-            queue_manager.submit_new_jobs()
+            queue_manager.process_new_d12_files()
             
             print("Job submission completed!")
             print("Monitor progress with:")
