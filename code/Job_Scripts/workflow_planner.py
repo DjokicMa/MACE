@@ -182,7 +182,7 @@ class WorkflowPlanner:
         print("Configuring CIF to D12 conversion using NewCifToD12.py")
         
         # Ask if user wants to use default settings or customize
-        use_defaults = yes_no_prompt("Use default CIF conversion settings?", "no")
+        use_defaults = yes_no_prompt("Use default CIF conversion settings?", "yes")
         
         if use_defaults:
             # Use sensible defaults
@@ -227,7 +227,16 @@ class WorkflowPlanner:
                 cif_config = self.extract_cif_config_from_output(result.stdout)
             else:
                 print("Error running CIF configuration. Using defaults.")
+                print(f"Error details: {result.stderr}")
+                print(f"Return code: {result.returncode}")
                 cif_config = self.get_default_cif_config()
+            
+            # Clean up temp script
+            try:
+                import os
+                os.unlink(temp_config_script)
+            except:
+                pass
         
         # Save CIF configuration
         cif_config_file = self.configs_dir / "cif_conversion_config.json"
@@ -383,6 +392,7 @@ except ImportError as e:
         
         template_choice = get_user_input("Select workflow template", template_options, "4")
         selected_template = template_options[template_choice]
+        print(f"Selected template: {selected_template}")
         
         if selected_template == "custom":
             return self.design_custom_workflow()
