@@ -61,8 +61,9 @@ class WorkflowPlanner:
         self.configs_dir = self.work_dir / "workflow_configs"
         self.inputs_dir = self.work_dir / "workflow_inputs" 
         self.outputs_dir = self.work_dir / "workflow_outputs"
+        self.temp_dir = self.work_dir / "temp"
         
-        for dir_path in [self.configs_dir, self.inputs_dir, self.outputs_dir]:
+        for dir_path in [self.configs_dir, self.inputs_dir, self.outputs_dir, self.temp_dir]:
             dir_path.mkdir(parents=True, exist_ok=True)
             
         # Available calculation types and their dependencies
