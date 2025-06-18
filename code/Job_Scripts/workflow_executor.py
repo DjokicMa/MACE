@@ -146,12 +146,26 @@ class WorkflowExecutor:
         ]
         
         print(f"    Running: {' '.join(conversion_cmd)}")
-        result = subprocess.run(conversion_cmd, capture_output=True, text=True)
+        print(f"    Working directory: {os.getcwd()}")
+        print(f"    Script path exists: {script_path.exists()}")
+        print(f"    Config file exists: {cif_config_file.exists()}")
+        print(f"    Input directory exists: {Path(plan['input_directory']).exists()}")
+        
+        # Add timeout to prevent hanging
+        try:
+            result = subprocess.run(conversion_cmd, capture_output=True, text=True, timeout=300)  # 5 minute timeout
+        except subprocess.TimeoutExpired:
+            print("    CIF conversion timed out after 5 minutes")
+            raise RuntimeError("CIF conversion timed out")
+        
+        print(f"    Return code: {result.returncode}")
+        if result.stdout:
+            print(f"    STDOUT: {result.stdout}")
+        if result.stderr:
+            print(f"    STDERR: {result.stderr}")
         
         if result.returncode != 0:
             print(f"CIF conversion failed:")
-            print(f"STDOUT: {result.stdout}")
-            print(f"STDERR: {result.stderr}")
             raise RuntimeError("CIF conversion failed")
             
         print(f"    CIF conversion completed. Files in: {cif_output_dir}")
