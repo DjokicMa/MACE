@@ -321,10 +321,30 @@ Cores: 32, Memory: 5G, Walltime: 7-00:00:00, Account: mendoza_q
 ```
 
 #### **Dynamic Script Generation**
-- Calculation-specific SLURM scripts
-- Custom resource allocation per step
-- Dependency management between jobs
-- Automatic queue management integration
+- **Individual SLURM scripts**: Each material gets its own script (e.g., `mat_1_dia.sh`)
+- **Template-based generation**: Uses workflow-generated templates as base
+- **Custom resource allocation**: Per-step resource configuration
+- **Scratch directory management**: `$SCRATCH/{workflow_id}/step_{num}_{type}/{material}/`
+- **Automatic job submission**: Direct `sbatch` execution with job ID tracking
+
+#### **Enhanced Execution Features**
+```bash
+# Automatic material name extraction and cleanup
+1_dia_opt_BULK_OPTGEOM_symm_CRYSTAL_OPT_symm_B3LYP-D3_POB-TZVP-REV2.d12
+  ↓ Cleaned to: mat_1_dia
+
+# Individual folder structure creation
+workflow_outputs/workflow_20250618_160317/step_001_OPT/mat_1_dia/
+├── mat_1_dia.d12     # Material input file
+├── mat_1_dia.sh      # Individual SLURM script
+├── mat_1_dia.out     # CRYSTAL output (after job completion)
+└── mat_1_dia.o12345  # SLURM output file
+
+# Customized SLURM script generation
+--job-name=mat_1_dia_opt
+--output=mat_1_dia_opt.o%j
+export scratch=$SCRATCH/workflow_20250618_160317/step_001_OPT/mat_1_dia
+```
 
 ### Configuration Management
 
@@ -413,21 +433,39 @@ python run_workflow.py --status
 
 ### Directory Structure
 
-The workflow manager creates organized directory structures:
+The workflow manager creates organized directory structures with individual calculation folders:
+
 ```
 working_directory/
 ├── workflow_configs/          # JSON configuration files
 │   ├── cif_conversion_config.json
 │   └── workflow_plan_*.json
-├── workflow_scripts/          # Generated SLURM scripts
+├── workflow_scripts/          # Generated SLURM script templates
 │   ├── submitcrystal23_opt_1.sh
 │   └── submit_prop_band_3.sh
-├── workflow_inputs/           # Organized input files
+├── workflow_inputs/           # Initial input files
 │   └── step_001_OPT/
-├── workflow_outputs/          # Calculation results
-│   └── workflow_*/
+├── workflow_outputs/          # Individual calculation folders
+│   └── workflow_20250618_160317/
+│       └── step_001_OPT/
+│           ├── mat_1_dia/      # Individual material folder
+│           │   ├── mat_1_dia.d12
+│           │   ├── mat_1_dia.sh  # Individual SLURM script
+│           │   └── mat_1_dia.out
+│           ├── mat_2_dia2/     # Individual material folder
+│           │   ├── mat_2_dia2.d12
+│           │   ├── mat_2_dia2.sh
+│           │   └── mat_2_dia2.out
+│           └── ...
 └── temp/                      # Temporary files
 ```
+
+#### Individual Calculation Management
+Each material gets its own isolated calculation environment:
+- **Unique folders**: `mat_1_dia/`, `mat_2_dia2/`, etc.
+- **Individual SLURM scripts**: Generated from templates with material-specific settings
+- **Isolated scratch space**: `$SCRATCH/workflow_ID/step_001_OPT/material_name/`
+- **Independent job submission**: Each material submitted as separate SLURM job
 
 ### Best Practices
 

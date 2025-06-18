@@ -1118,9 +1118,38 @@ class WorkflowPlanner:
             print("Phase 1: Converting CIF files to D12 format...")
             self.convert_cifs_to_d12s(plan)
             
-        # Phase 2: Execute planned calculation sequence
+        # Phase 2: Execute planned calculation sequence using WorkflowExecutor
         print("Phase 2: Executing calculation sequence...")
-        self.execute_calculation_sequence(plan, queue_manager)
+        try:
+            from workflow_executor import WorkflowExecutor
+            executor = WorkflowExecutor(str(self.work_dir), self.db_path)
+            
+            # Create a workflow ID for this execution
+            workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            # Prepare the workflow directory structure for the executor
+            workflow_dir = executor.outputs_dir / workflow_id
+            workflow_dir.mkdir(exist_ok=True)
+            
+            # Set up step_001_OPT directory with D12 files
+            step_001_dir = workflow_dir / "step_001_OPT"
+            step_001_dir.mkdir(exist_ok=True)
+            
+            # Copy D12 files to the workflow directory
+            input_dir = self.inputs_dir / "step_001_OPT"
+            if input_dir.exists():
+                for d12_file in input_dir.glob("*.d12"):
+                    dest_file = step_001_dir / d12_file.name
+                    if not dest_file.exists():
+                        shutil.copy2(d12_file, dest_file)
+                        
+            # Execute the workflow using the proper executor
+            executor.execute_workflow_steps(plan, workflow_id)
+            
+        except Exception as e:
+            print(f"Error executing workflow: {e}")
+            print("Falling back to basic execution...")
+            self.execute_calculation_sequence(plan, queue_manager)
         
     def convert_cifs_to_d12s(self, plan: Dict[str, Any]):
         """Convert CIF files to D12 format using saved configuration"""

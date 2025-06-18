@@ -87,7 +87,7 @@ class WorkflowExecutor:
             self.prepare_input_files(plan, workflow_id)
             
             # Phase 2: Execute calculation sequence
-            self.execute_calculation_sequence(plan, workflow_id)
+            self.execute_workflow_steps(plan, workflow_id)
             
             # Phase 3: Monitor and manage execution
             self.monitor_workflow_execution(workflow_id)
@@ -118,6 +118,295 @@ class WorkflowExecutor:
         # Phase 1c: Generate subsequent calculation inputs
         print("  Pre-generating calculation configurations...")
         self.generate_calculation_configs(plan, workflow_id)
+        
+    def execute_workflow_steps(self, plan: Dict[str, Any], workflow_id: str):
+        """Execute the complete workflow with proper calculation folder structure"""
+        print("Phase 2: Executing workflow calculations...")
+        
+        workflow_dir = self.outputs_dir / workflow_id
+        workflow_sequence = plan['workflow_sequence']
+        
+        # Get initial D12 files (from CIF conversion or existing)
+        step_001_dir = workflow_dir / "step_001_OPT"
+        d12_files = list(step_001_dir.glob("*.d12"))
+        
+        if not d12_files:
+            print("Error: No D12 files found for workflow execution!")
+            return
+            
+        print(f"Found {len(d12_files)} materials to process")
+        print(f"Workflow sequence: {' → '.join(workflow_sequence)}")
+        
+        # Execute first step (always OPT)
+        first_step = workflow_sequence[0]
+        step_dir = workflow_dir / f"step_001_{first_step}"
+        
+        print(f"\nExecuting Step 1: {first_step}")
+        submitted_jobs = self.execute_step(plan, workflow_id, first_step, 1, d12_files, step_dir)
+        
+        if submitted_jobs:
+            print(f"Successfully submitted {len(submitted_jobs)} {first_step} calculations")
+            print("Monitor progress with:")
+            print(f"  python enhanced_queue_manager.py --status")
+            print(f"  squeue -u $USER")
+        else:
+            print(f"Warning: No {first_step} jobs were submitted")
+            
+    def execute_step(self, plan: Dict[str, Any], workflow_id: str, calc_type: str, 
+                    step_num: int, d12_files: List[Path], step_dir: Path) -> List[str]:
+        """Execute a single workflow step with individual calculation folders"""
+        step_dir.mkdir(exist_ok=True)
+        submitted_jobs = []
+        
+        for d12_file in d12_files:
+            # Extract material name from D12 file
+            material_name = self.extract_material_name(d12_file)
+            
+            # Create individual calculation folder
+            calc_dir = step_dir / material_name
+            calc_dir.mkdir(exist_ok=True)
+            
+            # Copy D12 file to calculation folder
+            calc_d12_file = calc_dir / f"{material_name}.d12"
+            shutil.copy2(d12_file, calc_d12_file)
+            
+            # Generate individual SLURM script
+            slurm_script = self.generate_slurm_script(
+                plan, workflow_id, calc_type, step_num, material_name, calc_dir
+            )
+            
+            # Submit job
+            job_id = self.submit_slurm_job(slurm_script, calc_dir)
+            if job_id:
+                submitted_jobs.append(job_id)
+                print(f"  Submitted {material_name}: Job ID {job_id}")
+            else:
+                print(f"  Failed to submit {material_name}")
+                
+        return submitted_jobs
+        
+    def extract_material_name(self, d12_file: Path) -> str:
+        """Extract a clean material name from D12 filename"""
+        # Remove common suffixes and create clean name
+        name = d12_file.stem
+        
+        # Remove common workflow suffixes
+        suffixes_to_remove = [
+            '_CRYSTAL_OPT_symm_B3LYP-D3_POB-TZVP-REV2',
+            '_CRYSTAL_OPT_symm',
+            '_BULK_OPTGEOM_symm',
+            '_BULK_OPTGEOM_TZ_symm',
+            '_BULK_OPTGEOM'
+        ]
+        
+        for suffix in suffixes_to_remove:
+            if name.endswith(suffix):
+                name = name[:-len(suffix)]
+                break
+                
+        # Clean up any remaining problematic characters
+        name = name.replace(',', '_').replace('^', '_').replace(' ', '_')
+        
+        # Ensure it starts with a letter (required for some systems)
+        if name and not name[0].isalpha():
+            name = f"mat_{name}"
+            
+        return name or "unknown_material"
+        
+    def generate_slurm_script(self, plan: Dict[str, Any], workflow_id: str, 
+                             calc_type: str, step_num: int, material_name: str, 
+                             calc_dir: Path) -> Path:
+        """Generate individual SLURM script for a calculation"""
+        
+        # Get step configuration
+        step_key = f"{calc_type}_{step_num}"
+        step_config = plan.get('step_configurations', {}).get(step_key, {})
+        
+        # Determine template script name
+        if calc_type in ['OPT', 'OPT2', 'SP', 'FREQ']:
+            template_name = f"submitcrystal23_{calc_type.lower()}_{step_num}.sh"
+        elif calc_type in ['BAND', 'DOSS']:
+            template_name = f"submit_prop_{calc_type.lower()}_{step_num}.sh"
+        else:
+            template_name = f"submit_{calc_type.lower()}_{step_num}.sh"
+            
+        # Find template script in work directory
+        template_script = self.work_dir / "workflow_scripts" / template_name
+        
+        if not template_script.exists():
+            # Fall back to basic template
+            if calc_type in ['OPT', 'OPT2', 'SP', 'FREQ']:
+                template_script = self.work_dir / "workflow_scripts" / "submitcrystal23_opt_1.sh"
+            else:
+                template_script = self.work_dir / "workflow_scripts" / "submit_prop_band_3.sh"
+                
+        if not template_script.exists():
+            raise FileNotFoundError(f"No SLURM template found for {calc_type}")
+            
+        # Read template content
+        with open(template_script, 'r') as f:
+            template_content = f.read()
+            
+        # Update template with specific values
+        script_content = self.customize_slurm_script(
+            template_content, workflow_id, calc_type, step_num, material_name, calc_dir
+        )
+        
+        # Write individual script
+        script_file = calc_dir / f"{material_name}.sh"
+        with open(script_file, 'w') as f:
+            f.write(script_content)
+            
+        # Make executable
+        script_file.chmod(0o755)
+        
+        return script_file
+        
+    def customize_slurm_script(self, template_content: str, workflow_id: str, 
+                              calc_type: str, step_num: int, material_name: str, 
+                              calc_dir: Path) -> str:
+        """Customize SLURM script template for specific calculation"""
+        
+        # Define scratch directory structure for workflow isolation
+        if calc_type in ['BAND', 'DOSS']:
+            scratch_dir = f"$SCRATCH/{workflow_id}/step_{step_num:03d}_{calc_type}/{material_name}"
+        else:
+            scratch_dir = f"$SCRATCH/{workflow_id}/step_{step_num:03d}_{calc_type}/{material_name}"
+        
+        # Replace placeholders in template following the existing pattern
+        script_content = template_content
+        
+        # Update job name (using SBATCH -J format)
+        script_content = script_content.replace(
+            '#SBATCH -J crystal_opt',
+            f'#SBATCH -J {material_name}_{calc_type.lower()}'
+        )
+        script_content = script_content.replace(
+            '#SBATCH -J crystal_sp',
+            f'#SBATCH -J {material_name}_{calc_type.lower()}'
+        )
+        script_content = script_content.replace(
+            '#SBATCH -J crystal_band',
+            f'#SBATCH -J {material_name}_{calc_type.lower()}'
+        )
+        script_content = script_content.replace(
+            '#SBATCH -J crystal_doss',
+            f'#SBATCH -J {material_name}_{calc_type.lower()}'
+        )
+        script_content = script_content.replace(
+            '#SBATCH -J crystal_freq',
+            f'#SBATCH -J {material_name}_{calc_type.lower()}'
+        )
+        
+        # Update output files (using SBATCH -o format)
+        script_content = script_content.replace(
+            '-o crystal_opt-%J.o',
+            f'-o {material_name}_{calc_type.lower()}-%J.o'
+        )
+        script_content = script_content.replace(
+            '-o crystal_sp-%J.o',
+            f'-o {material_name}_{calc_type.lower()}-%J.o'
+        )
+        script_content = script_content.replace(
+            '-o crystal_band-%J.o',
+            f'-o {material_name}_{calc_type.lower()}-%J.o'
+        )
+        script_content = script_content.replace(
+            '-o crystal_doss-%J.o',
+            f'-o {material_name}_{calc_type.lower()}-%J.o'
+        )
+        script_content = script_content.replace(
+            '-o crystal_freq-%J.o',
+            f'-o {material_name}_{calc_type.lower()}-%J.o'
+        )
+        
+        # Update JOB variable
+        script_content = script_content.replace(
+            'export JOB=input',
+            f'export JOB={material_name}'
+        )
+        
+        # Update scratch directory paths
+        script_content = script_content.replace(
+            'export scratch=$SCRATCH/crys23',
+            f'export scratch={scratch_dir}'
+        )
+        script_content = script_content.replace(
+            'export scratch=$SCRATCH/crys23/prop',
+            f'export scratch={scratch_dir}'
+        )
+        
+        # Update file references
+        script_content = script_content.replace(
+            'input.d12',
+            f'{material_name}.d12'
+        )
+        script_content = script_content.replace(
+            'input.d3',
+            f'{material_name}.d3'
+        )
+        script_content = script_content.replace(
+            'input.f9',
+            f'{material_name}.f9'
+        )
+        script_content = script_content.replace(
+            'output.out',
+            f'{material_name}.out'
+        )
+        
+        # Add workflow metadata as comments at the top
+        metadata_lines = [
+            f"# Generated by CRYSTAL Workflow Manager",
+            f"# Workflow ID: {workflow_id}",
+            f"# Calculation Type: {calc_type}",
+            f"# Step: {step_num}",
+            f"# Material: {material_name}",
+            f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            ""
+        ]
+        
+        # Insert metadata after shebang line
+        lines = script_content.split('\n')
+        if lines[0].startswith('#!/bin/bash'):
+            lines = [lines[0]] + metadata_lines + lines[1:]
+        else:
+            lines = metadata_lines + lines
+            
+        return '\n'.join(lines)
+        
+    def submit_slurm_job(self, script_file: Path, calc_dir: Path) -> Optional[str]:
+        """Submit SLURM job and return job ID"""
+        try:
+            # Change to calculation directory
+            original_cwd = os.getcwd()
+            os.chdir(calc_dir)
+            
+            # Submit job
+            result = subprocess.run(
+                ['sbatch', script_file.name],
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                # Extract job ID from sbatch output
+                # Typical output: "Submitted batch job 12345"
+                output_lines = result.stdout.strip().split('\n')
+                for line in output_lines:
+                    if 'Submitted batch job' in line:
+                        job_id = line.split()[-1]
+                        return job_id
+                        
+            else:
+                print(f"SLURM submission failed: {result.stderr}")
+                
+        except Exception as e:
+            print(f"Error submitting job: {e}")
+            
+        finally:
+            os.chdir(original_cwd)
+            
+        return None
         
     def convert_cifs_with_config(self, plan: Dict[str, Any], workflow_id: str):
         """Convert CIF files using saved configuration"""
