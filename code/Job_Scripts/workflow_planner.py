@@ -211,23 +211,24 @@ class WorkflowPlanner:
             print(f"  Symmetry: Use CIF symmetry information")
         else:
             print("Custom CIF conversion setup:")
-            print("Interactive configuration is not available in workflow mode.")
-            print("Please use NewCifToD12.py directly for full customization.")
-            print("For now, using default settings with common modifications.")
+            print("Choose customization level:")
+            print("  1: Basic (functional + basis set)")
+            print("  2: Advanced (most common settings)")
+            print("  3: Expert (full NewCifToD12.py integration)")
             
-            # Offer some basic customization options
-            print("\nBasic customization options:")
-            functional_choice = input("DFT Functional [HSE06]: ").strip() or "HSE06"
-            basis_choice = input("Basis set [POB-TZVP-REV2]: ").strip() or "POB-TZVP-REV2"
+            level_choice = input("Customization level [1]: ").strip() or "1"
             
-            cif_config = self.get_default_cif_config()
-            cif_config["dft_functional"] = functional_choice
-            cif_config["basis_set"] = basis_choice
-            
-            print(f"Using customized settings:")
-            print(f"  Method: DFT/{functional_choice}")
-            print(f"  Basis set: {basis_choice}")
-            print(f"  Other settings: Using defaults")
+            if level_choice == "1":
+                cif_config = self.get_basic_customization()
+            elif level_choice == "2":
+                cif_config = self.get_advanced_customization()
+            elif level_choice == "3":
+                print("\nLaunching NewCifToD12.py for full configuration...")
+                print("This will run the interactive configuration and save the results.")
+                cif_config = self.run_full_cif_customization(cif_files[0])
+            else:
+                print("Invalid choice. Using basic customization.")
+                cif_config = self.get_basic_customization()
         
         # Save CIF configuration
         cif_config_file = self.configs_dir / "cif_conversion_config.json"
@@ -265,6 +266,146 @@ class WorkflowPlanner:
             "scf_maxcycle": 800,
             "fmixing": 30
         }
+        
+    def get_basic_customization(self) -> Dict[str, Any]:
+        """Get basic CIF customization options"""
+        print("\nBasic customization options:")
+        functional_choice = input("DFT Functional [HSE06]: ").strip() or "HSE06"
+        basis_choice = input("Basis set [POB-TZVP-REV2]: ").strip() or "POB-TZVP-REV2"
+        
+        cif_config = self.get_default_cif_config()
+        cif_config["dft_functional"] = functional_choice
+        cif_config["basis_set"] = basis_choice
+        
+        print(f"Using customized settings:")
+        print(f"  Method: DFT/{functional_choice}")
+        print(f"  Basis set: {basis_choice}")
+        print(f"  Other settings: Using defaults")
+        
+        return cif_config
+        
+    def get_advanced_customization(self) -> Dict[str, Any]:
+        """Get advanced CIF customization options"""
+        print("\nAdvanced customization options:")
+        
+        # Method choice
+        print("Method:")
+        print("  1: DFT")
+        print("  2: HF")
+        method_choice = input("Method [1]: ").strip() or "1"
+        method = "DFT" if method_choice == "1" else "HF"
+        
+        # DFT functional (if DFT)
+        functional = "HSE06"
+        if method == "DFT":
+            print("DFT Functional:")
+            print("  1: HSE06")
+            print("  2: B3LYP")
+            print("  3: PBE0")
+            print("  4: PBE")
+            func_choice = input("Functional [1]: ").strip() or "1"
+            functionals = {"1": "HSE06", "2": "B3LYP", "3": "PBE0", "4": "PBE"}
+            functional = functionals.get(func_choice, "HSE06")
+        
+        # Basis set
+        print("Basis set:")
+        print("  1: POB-TZVP-REV2 (internal)")
+        print("  2: 6-31G* (internal)")
+        print("  3: def2-TZVP (internal)")
+        print("  4: Custom external")
+        basis_choice = input("Basis set [1]: ").strip() or "1"
+        basis_options = {
+            "1": "POB-TZVP-REV2",
+            "2": "6-31G*", 
+            "3": "def2-TZVP",
+            "4": "EXTERNAL"
+        }
+        basis_set = basis_options.get(basis_choice, "POB-TZVP-REV2")
+        basis_type = "EXTERNAL" if basis_choice == "4" else "INTERNAL"
+        
+        # Dispersion correction
+        dispersion = yes_no_prompt("Use dispersion correction (D3)?", "yes")
+        
+        # Spin polarization
+        spin_polarized = yes_no_prompt("Use spin polarization?", "yes")
+        
+        # Optimization type
+        print("Optimization type:")
+        print("  1: FULLOPTG (full optimization)")
+        print("  2: CELLONLY (cell only)")
+        print("  3: ATOMONLY (atomic positions only)")
+        opt_choice = input("Optimization [1]: ").strip() or "1"
+        opt_types = {"1": "FULLOPTG", "2": "CELLONLY", "3": "ATOMONLY"}
+        opt_type = opt_types.get(opt_choice, "FULLOPTG")
+        
+        # Build configuration
+        cif_config = self.get_default_cif_config()
+        cif_config.update({
+            "method": method,
+            "dft_functional": functional,
+            "basis_set": basis_set,
+            "basis_set_type": basis_type,
+            "use_dispersion": dispersion,
+            "is_spin_polarized": spin_polarized,
+            "optimization_type": opt_type
+        })
+        
+        print(f"\nAdvanced configuration:")
+        print(f"  Method: {method}/{functional if method=='DFT' else 'HF'}")
+        print(f"  Basis set: {basis_set} ({basis_type})")
+        print(f"  Dispersion: {'Yes' if dispersion else 'No'}")
+        print(f"  Spin polarized: {'Yes' if spin_polarized else 'No'}")
+        print(f"  Optimization: {opt_type}")
+        
+        return cif_config
+        
+    def run_full_cif_customization(self, sample_cif: Path) -> Dict[str, Any]:
+        """Run full NewCifToD12.py customization"""
+        # Find NewCifToD12.py
+        script_path = Path(__file__).parent.parent / "Crystal_To_CIF" / "NewCifToD12.py"
+        
+        if not script_path.exists():
+            print(f"Error: NewCifToD12.py not found at {script_path}")
+            print("Using advanced customization instead...")
+            return self.get_advanced_customization()
+        
+        print(f"\nRunning NewCifToD12.py with sample file: {sample_cif.name}")
+        print("This will launch the full interactive configuration.")
+        print("At the end, choose to SAVE the configuration for batch processing.")
+        print("Press Enter to continue...")
+        input()
+        
+        # Create temporary options file
+        temp_options = self.temp_dir / "temp_cif_options.json"
+        
+        # Run NewCifToD12.py interactively
+        cmd = [
+            sys.executable, str(script_path),
+            str(sample_cif),
+            "--save_options",
+            "--options_file", str(temp_options)
+        ]
+        
+        print("Launching NewCifToD12.py...")
+        try:
+            # Run interactively (not captured)
+            result = subprocess.run(cmd, cwd=str(sample_cif.parent))
+            
+            if result.returncode == 0 and temp_options.exists():
+                # Load the saved configuration
+                with open(temp_options, 'r') as f:
+                    cif_config = json.load(f)
+                print("Successfully loaded configuration from NewCifToD12.py")
+                return cif_config
+            else:
+                print("NewCifToD12.py configuration failed or was cancelled.")
+                print("Using default configuration...")
+                return self.get_default_cif_config()
+                
+        except Exception as e:
+            print(f"Error running NewCifToD12.py: {e}")
+            print("Using default configuration...")
+            return self.get_default_cif_config()
         
         
         
@@ -622,7 +763,7 @@ class WorkflowPlanner:
             base_resources = {
                 "ntasks": 32,
                 "nodes": 1,
-                "walltime": "7:00:00",
+                "walltime": "7-00:00:00",
                 "memory_per_cpu": "5G",
                 "account": "mendoza_q",
                 "module": "CRYSTAL/23-intel-2023a",
@@ -633,7 +774,7 @@ class WorkflowPlanner:
             base_resources = {
                 "ntasks": 28,
                 "nodes": 1,
-                "walltime": "2:00:00",
+                "walltime": "1-00:00:00",
                 "memory": "80G",
                 "account": "general",
                 "constraint": "intel18",
@@ -660,11 +801,11 @@ class WorkflowPlanner:
         
         # Resource scaling based on workflows.yaml analysis
         scaling_rules = {
-            "OPT": {"walltime_factor": 1.0, "memory_factor": 1.0},  # Standard
-            "SP": {"walltime_factor": 0.8, "memory_factor": 0.8},   # Slightly less
-            "FREQ": {"walltime_factor": 3.0, "memory_factor": 1.5}, # Much longer
-            "BAND": {"walltime_factor": 0.3, "memory_factor": 0.6}, # Shorter
-            "DOSS": {"walltime_factor": 0.3, "memory_factor": 0.6}  # Shorter
+            "OPT": {"walltime_factor": 1.0, "memory_factor": 1.0},  # Standard - 7 days
+            "SP": {"walltime_factor": 0.43, "memory_factor": 0.8}, # 3 days (3/7 ≈ 0.43)
+            "FREQ": {"walltime_factor": 1.0, "memory_factor": 1.5}, # 7 days (same as OPT)
+            "BAND": {"walltime_factor": 1.0, "memory_factor": 0.6}, # 1 day (base is already 1 day)
+            "DOSS": {"walltime_factor": 1.0, "memory_factor": 0.6}  # 1 day (base is already 1 day)
         }
         
         if calc_type in scaling_rules:
@@ -673,9 +814,20 @@ class WorkflowPlanner:
             # Apply walltime scaling
             if "walltime" in resources:
                 current_walltime = resources["walltime"]
-                hours = int(current_walltime.split(":")[0])
-                new_hours = max(1, int(hours * scaling["walltime_factor"]))
-                resources["walltime"] = f"{new_hours}:00:00"
+                if "-" in current_walltime:
+                    # Format: D-HH:MM:SS
+                    days, time_part = current_walltime.split("-")
+                    hours = int(time_part.split(":")[0])
+                    total_hours = int(days) * 24 + hours
+                    new_total_hours = max(1, int(total_hours * scaling["walltime_factor"]))
+                    new_days = new_total_hours // 24
+                    new_hours = new_total_hours % 24
+                    resources["walltime"] = f"{new_days}-{new_hours:02d}:00:00"
+                else:
+                    # Format: H:MM:SS (legacy)
+                    hours = int(current_walltime.split(":")[0])
+                    new_hours = max(1, int(hours * scaling["walltime_factor"]))
+                    resources["walltime"] = f"{new_hours}:00:00"
                 
             # Apply memory scaling
             memory_factor = scaling["memory_factor"]
