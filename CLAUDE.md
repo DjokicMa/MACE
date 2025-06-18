@@ -63,12 +63,39 @@ python crystal_file_manager.py --action organize --material-id material_name
 ```
 
 ### Dependency Installation
+
+#### Core Dependencies (Required)
 ```bash
-# Core dependencies
-pip install numpy matplotlib ase spglib PyPDF2
+# Scientific computing stack
+pip install numpy>=1.21.0 matplotlib>=3.5.0 ase>=3.22.0 spglib>=1.16.0 PyPDF2>=2.0.0
 
 # Material tracking system dependencies (Phase 2)
 pip install pyyaml>=6.0 pandas>=1.3.0
+```
+
+#### One-Line Installation
+```bash
+pip install numpy matplotlib ase spglib PyPDF2 pyyaml pandas
+```
+
+#### Package Purposes
+- **numpy**: Numerical computing and array operations
+- **matplotlib**: Plotting, visualization, and multi-page PDFs
+- **ase**: Atomic Simulation Environment for structure storage and manipulation
+- **spglib**: Space group operations and symmetry analysis
+- **PyPDF2**: PDF processing and generation
+- **pyyaml**: YAML configuration file handling for workflow automation
+- **pandas**: Data analysis and CSV processing
+
+#### Optional Dependencies
+```bash
+# For extended functionality
+pip install scipy>=1.7.0 scikit-learn>=1.0.0
+```
+
+#### Installation Verification
+```bash
+python -c "import numpy, matplotlib, ase, spglib, PyPDF2, yaml, pandas; print('All dependencies installed successfully')"
 ```
 
 ## Architecture Overview
