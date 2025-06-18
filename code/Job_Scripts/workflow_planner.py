@@ -21,7 +21,6 @@ import sys
 import json
 import argparse
 import subprocess
-import tempfile
 import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
@@ -212,31 +211,23 @@ class WorkflowPlanner:
             print(f"  Symmetry: Use CIF symmetry information")
         else:
             print("Custom CIF conversion setup:")
-            print("This will run the NewCifToD12.py configuration workflow...")
+            print("Interactive configuration is not available in workflow mode.")
+            print("Please use NewCifToD12.py directly for full customization.")
+            print("For now, using default settings with common modifications.")
             
-            # Create a temporary script to run NewCifToD12.py configuration
-            temp_cif = cif_files[0]  # Use first CIF as template
-            temp_config_script = self.create_temp_cif_config_script(temp_cif)
+            # Offer some basic customization options
+            print("\nBasic customization options:")
+            functional_choice = input("DFT Functional [HSE06]: ").strip() or "HSE06"
+            basis_choice = input("Basis set [POB-TZVP-REV2]: ").strip() or "POB-TZVP-REV2"
             
-            print(f"Running configuration with sample file: {temp_cif.name}")
-            result = subprocess.run([sys.executable, temp_config_script], 
-                                 capture_output=True, text=True, input="n\ny\n")  # Don't save, but get config
+            cif_config = self.get_default_cif_config()
+            cif_config["dft_functional"] = functional_choice
+            cif_config["basis_set"] = basis_choice
             
-            if result.returncode == 0:
-                # Parse the configuration from the script output or create manually
-                cif_config = self.extract_cif_config_from_output(result.stdout)
-            else:
-                print("Error running CIF configuration. Using defaults.")
-                print(f"Error details: {result.stderr}")
-                print(f"Return code: {result.returncode}")
-                cif_config = self.get_default_cif_config()
-            
-            # Clean up temp script
-            try:
-                import os
-                os.unlink(temp_config_script)
-            except:
-                pass
+            print(f"Using customized settings:")
+            print(f"  Method: DFT/{functional_choice}")
+            print(f"  Basis set: {basis_choice}")
+            print(f"  Other settings: Using defaults")
         
         # Save CIF configuration
         cif_config_file = self.configs_dir / "cif_conversion_config.json"
@@ -275,106 +266,7 @@ class WorkflowPlanner:
             "fmixing": 30
         }
         
-    def create_temp_cif_config_script(self, sample_cif: Path) -> str:
-        """Create temporary script to get CIF configuration"""
-        temp_script = tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False)
         
-        # Find the actual path to NewCifToD12.py
-        current_script_dir = Path(__file__).parent
-        crystal_to_cif_dir = current_script_dir.parent / 'Crystal_To_CIF'
-        
-        # Also check if we're running from a different location
-        if not crystal_to_cif_dir.exists():
-            # Try to find it relative to the current working directory
-            possible_paths = [
-                Path.cwd() / 'Crystal_To_CIF',
-                Path.cwd() / 'code' / 'Crystal_To_CIF',
-                Path.home() / 'bin' / 'CRYSTAL' / 'reorganization' / 'code' / 'Crystal_To_CIF'
-            ]
-            for path in possible_paths:
-                if path.exists():
-                    crystal_to_cif_dir = path
-                    break
-        
-        script_content = f'''
-import sys
-import os
-sys.path.append("{crystal_to_cif_dir}")
-
-try:
-    from NewCifToD12 import get_calculation_options, display_default_settings
-    
-    print("CIF Configuration Setup")
-    print("=" * 50)
-    
-    # Display default settings
-    display_default_settings()
-    
-    # Get user options
-    options = get_calculation_options()
-    
-    # Print configuration in JSON format for parsing
-    print("\\n=== CONFIGURATION OUTPUT ===")
-    import json
-    print(json.dumps(options, indent=2, default=str))
-    
-except ImportError as e:
-    print(f"Error importing NewCifToD12: {{e}}")
-    print("Using default CIF configuration")
-    # Return default config as JSON
-    import json
-    default_config = {{
-        "symmetry_handling": "CIF",
-        "write_only_unique": True,
-        "dimensionality": "CRYSTAL",
-        "calculation_type": "OPT",
-        "optimization_type": "FULLOPTG",
-        "method": "DFT",
-        "dft_functional": "HSE06",
-        "use_dispersion": True,
-        "basis_set_type": "INTERNAL",
-        "basis_set": "POB-TZVP-REV2"
-    }}
-    print("\\n=== CONFIGURATION OUTPUT ===")
-    print(json.dumps(default_config, indent=2))
-'''
-        
-        temp_script.write(script_content)
-        temp_script.close()
-        
-        return temp_script.name
-        
-    def extract_cif_config_from_output(self, output: str) -> Dict[str, Any]:
-        """Extract configuration from NewCifToD12.py output"""
-        try:
-            # Look for the JSON configuration output
-            lines = output.split('\n')
-            json_start = -1
-            for i, line in enumerate(lines):
-                if "=== CONFIGURATION OUTPUT ===" in line:
-                    json_start = i + 1
-                    break
-            
-            if json_start >= 0:
-                # Extract JSON content
-                json_lines = []
-                for i in range(json_start, len(lines)):
-                    line = lines[i].strip()
-                    if line.startswith('{') or line.startswith('"') or line.startswith(' ') or line in ['}', '},']:
-                        json_lines.append(line)
-                    elif line and not line.startswith(' '):
-                        break
-                
-                if json_lines:
-                    json_content = '\n'.join(json_lines)
-                    import json
-                    config = json.loads(json_content)
-                    return config
-        except Exception as e:
-            print(f"Failed to parse CIF configuration output: {e}")
-        
-        # Fallback to default configuration
-        return self.get_default_cif_config()
         
     def plan_workflow_sequence(self) -> List[str]:
         """Plan the complete workflow sequence"""
