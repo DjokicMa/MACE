@@ -1166,12 +1166,39 @@ class WorkflowPlanner:
         """Execute the planned calculation sequence"""
         print("Starting calculation sequence execution...")
         
-        # This would integrate with the enhanced queue manager
-        # to submit jobs according to the planned sequence
+        # Get the input files for the first step
+        input_dir = self.inputs_dir / "step_001_OPT"
+        d12_files = list(input_dir.glob("*.d12"))
         
-        print("Workflow execution started. Monitor progress with:")
-        print(f"  python enhanced_queue_manager.py --status")
-        print(f"  Database: {self.db_path}")
+        if not d12_files:
+            print("Error: No D12 files found for job submission!")
+            return
+            
+        print(f"Found {len(d12_files)} D12 files to submit")
+        
+        # Submit the initial OPT calculations using the enhanced queue manager
+        try:
+            # Copy D12 files to working directory for submission
+            for d12_file in d12_files:
+                dest_file = Path.cwd() / d12_file.name
+                if not dest_file.exists():
+                    shutil.copy2(d12_file, dest_file)
+                    print(f"  Prepared: {d12_file.name}")
+            
+            # Submit jobs using the queue manager
+            print(f"\nSubmitting {len(d12_files)} OPT jobs...")
+            queue_manager.submit_new_jobs()
+            
+            print("Job submission completed!")
+            print("Monitor progress with:")
+            print(f"  python enhanced_queue_manager.py --status")
+            print(f"  Database: {self.db_path}")
+            
+        except Exception as e:
+            print(f"Error during job submission: {e}")
+            print("You can manually submit jobs using:")
+            print(f"  cd {input_dir}")
+            print("  python enhanced_queue_manager.py --max-jobs 200")
         
     def main_interactive_workflow(self):
         """Main interactive workflow planning interface"""
