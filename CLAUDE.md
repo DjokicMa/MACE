@@ -62,6 +62,24 @@ python material_monitor.py --action stats
 python crystal_file_manager.py --action organize --material-id material_name
 ```
 
+### Comprehensive Workflow Manager (NEW - Phase 3)
+```bash
+# Interactive workflow planning (recommended for first use)
+python run_workflow.py --interactive
+
+# Quick start with predefined templates
+python run_workflow.py --quick-start --cif-dir ./cifs --workflow full_electronic
+
+# Execute a saved workflow plan
+python run_workflow.py --execute workflow_plan_20250618_145837.json
+
+# Check workflow status
+python run_workflow.py --status
+
+# Show available templates
+python run_workflow.py --show-templates
+```
+
 ### Dependency Installation
 
 #### Core Dependencies (Required)
@@ -136,6 +154,14 @@ The codebase is organized into distinct workflow stages:
    - Automated phonon band structure plotting from f25 files
    - Crystal symmetry analysis and labeling utilities
 
+6. **Comprehensive Workflow Manager** (`Job_Scripts/run_workflow.py`) **(NEW - Phase 3)**
+   - Complete end-to-end workflow planning and execution system
+   - Interactive configuration with three customization levels
+   - Integration with all existing tools (NewCifToD12.py, CRYSTALOptToD12.py, etc.)
+   - Automated workflow templates and custom sequence design
+   - SLURM resource management with intelligent defaults
+   - JSON-based configuration persistence and reproducibility
+
 ### Key Design Patterns
 
 - **File-based workflows**: Scripts process batches of files in directories
@@ -193,6 +219,245 @@ Scripts implement multiple layers of fault tolerance:
 - Graceful degradation for file system issues
 - Atomic file operations for data integrity
 - Multiple backup locations for critical status files
+
+## Comprehensive Workflow Manager (Phase 3)
+
+The workflow manager (`run_workflow.py`) provides a unified interface for planning and executing complex CRYSTAL calculation workflows. It integrates all existing tools into a cohesive, user-friendly system.
+
+### Core Components
+
+#### **1. Interactive Workflow Planner (`workflow_planner.py`)**
+- **Purpose**: Plan complete calculation sequences with full configuration
+- **Features**:
+  - Input type detection (CIF files, existing D12s, or mixed)
+  - Three-level CIF customization system
+  - Workflow template selection and modification
+  - SLURM resource planning with intelligent defaults
+  - JSON configuration persistence
+
+#### **2. Workflow Executor (`workflow_executor.py`)**
+- **Purpose**: Execute planned workflows with error handling and progress tracking
+- **Features**:
+  - Batch CIF conversion with timeout protection
+  - Dependency-aware job submission
+  - Progress monitoring and error recovery
+  - File organization and cleanup
+
+#### **3. Main Interface (`run_workflow.py`)**
+- **Purpose**: User-friendly entry point for all workflow operations
+- **Modes**:
+  - `--interactive`: Full interactive planning
+  - `--quick-start`: Rapid deployment with templates
+  - `--execute`: Run saved workflow plans
+  - `--status`: Monitor active workflows
+  - `--show-templates`: Display available templates
+
+### Workflow Templates
+
+#### **Pre-defined Templates**
+1. **`basic_opt`**: OPT only
+   - Single geometry optimization
+   - Walltime: 7 days
+   
+2. **`opt_sp`**: OPT → SP
+   - Optimization followed by single point
+   - Walltimes: 7 days (OPT), 3 days (SP)
+   
+3. **`full_electronic`**: OPT → SP → BAND → DOSS
+   - Complete electronic structure characterization
+   - Walltimes: 7d → 3d → 1d → 1d
+   
+4. **`double_opt`**: OPT → OPT2 → SP
+   - Two-stage optimization for difficult systems
+   - Enhanced convergence criteria for OPT2
+   
+5. **`complete`**: OPT → SP → BAND → DOSS → FREQ
+   - Full characterization including vibrational analysis
+   - Comprehensive property extraction
+
+#### **Custom Workflows**
+- Interactive workflow designer
+- Dependency validation
+- Custom calculation sequences
+- Resource optimization per step
+
+### CIF Customization Levels
+
+#### **Level 1: Basic**
+- DFT functional selection
+- Basis set choice
+- Uses sensible defaults for all other settings
+
+#### **Level 2: Advanced**
+- Method selection (DFT/HF)
+- Functional categories (LDA, GGA, Hybrid, meta-GGA)
+- Basis set types (internal/external)
+- Dispersion correction options
+- Spin polarization settings
+- Optimization type selection
+
+#### **Level 3: Expert**
+- Full NewCifToD12.py integration
+- Complete interactive configuration
+- Access to all d12creation.py features
+- Custom tolerances and convergence criteria
+- Advanced symmetry handling options
+
+### SLURM Integration
+
+#### **Intelligent Resource Defaults**
+```bash
+# Optimization calculations
+Cores: 32, Memory: 5G, Walltime: 7-00:00:00, Account: mendoza_q
+
+# Single point calculations  
+Cores: 32, Memory: 4G, Walltime: 3-00:00:00, Account: mendoza_q
+
+# Properties calculations (BAND/DOSS)
+Cores: 28, Memory: 48G, Walltime: 1-00:00:00, Account: general
+
+# Frequency calculations
+Cores: 32, Memory: 5G, Walltime: 7-00:00:00, Account: mendoza_q
+```
+
+#### **Dynamic Script Generation**
+- Calculation-specific SLURM scripts
+- Custom resource allocation per step
+- Dependency management between jobs
+- Automatic queue management integration
+
+### Configuration Management
+
+#### **JSON Persistence**
+All workflow configurations are saved as JSON files for:
+- **Reproducibility**: Exact recreation of workflows
+- **Sharing**: Transfer configurations between users/systems
+- **Version Control**: Track changes in calculation setups
+- **Batch Processing**: Automated execution of saved plans
+
+#### **Configuration Structure**
+```json
+{
+  "created": "2025-06-18T14:58:37",
+  "input_type": "cif",
+  "input_directory": "/path/to/cifs",
+  "workflow_sequence": ["OPT", "SP", "BAND", "DOSS"],
+  "step_configurations": {
+    "OPT_1": { "source": "cif_conversion", ... },
+    "SP_2": { "source": "CRYSTALOptToD12.py", ... }
+  },
+  "cif_conversion_config": { ... },
+  "execution_settings": { ... }
+}
+```
+
+### Integration with Existing Tools
+
+#### **Seamless Integration**
+- **NewCifToD12.py**: CIF → D12 conversion with full configuration
+- **CRYSTALOptToD12.py**: OPT → SP/FREQ generation
+- **create_band_d3.py**: Band structure input generation
+- **alldos.py**: Density of states input generation
+- **Enhanced Queue Manager**: Job submission and monitoring
+- **Material Database**: Calculation tracking and provenance
+
+#### **File Dependencies**
+The workflow manager automatically handles file dependencies:
+```
+CIF → OPT.d12 → OPT.out/.gui → SP.d12 → SP.out/.f9 → BAND.d3/DOSS.d3
+```
+
+### Usage Examples
+
+#### **Interactive Planning**
+```bash
+python run_workflow.py --interactive
+# 1. Select input type (CIF/D12/Mixed)
+# 2. Choose CIF customization level (Basic/Advanced/Expert)  
+# 3. Select workflow template or design custom
+# 4. Configure SLURM resources
+# 5. Save configuration and execute
+```
+
+#### **Quick Start**
+```bash
+# Process CIFs with full electronic workflow
+python run_workflow.py --quick-start --cif-dir ./cifs --workflow full_electronic
+
+# Use existing D12s for optimization only
+python run_workflow.py --quick-start --d12-dir ./d12s --workflow basic_opt
+```
+
+#### **Batch Execution**
+```bash
+# Execute saved workflow plan
+python run_workflow.py --execute workflow_plan_20250618_145837.json
+
+# Monitor progress
+python run_workflow.py --status
+```
+
+### Error Handling and Recovery
+
+#### **Robust Error Management**
+- **CIF Conversion**: Timeout protection, file existence checks
+- **Job Submission**: SLURM integration with retry logic
+- **File Operations**: Atomic operations with rollback capability
+- **Configuration**: Validation and fallback to defaults
+
+#### **Progress Tracking**
+- Real-time workflow status monitoring
+- Integration with material database for provenance
+- Detailed logging and error reporting
+- Recovery from partial failures
+
+### Directory Structure
+
+The workflow manager creates organized directory structures:
+```
+working_directory/
+├── workflow_configs/          # JSON configuration files
+│   ├── cif_conversion_config.json
+│   └── workflow_plan_*.json
+├── workflow_scripts/          # Generated SLURM scripts
+│   ├── submitcrystal23_opt_1.sh
+│   └── submit_prop_band_3.sh
+├── workflow_inputs/           # Organized input files
+│   └── step_001_OPT/
+├── workflow_outputs/          # Calculation results
+│   └── workflow_*/
+└── temp/                      # Temporary files
+```
+
+### Best Practices
+
+#### **Workflow Planning**
+1. **Start with Templates**: Use predefined templates as starting points
+2. **Resource Planning**: Consider walltime requirements for your systems
+3. **Test with Small Sets**: Validate workflows with 1-2 structures first
+4. **Save Configurations**: Persist successful setups for reuse
+
+#### **Execution Management**
+1. **Monitor Progress**: Use `--status` to track workflow execution
+2. **Error Recovery**: Check logs and use error recovery tools
+3. **Resource Optimization**: Adjust SLURM settings based on system performance
+4. **Database Integration**: Leverage material tracking for large studies
+
+### Advanced Features
+
+#### **Custom Workflow Design**
+- Interactive workflow builder
+- Dependency validation
+- Resource optimization suggestions
+- Custom calculation parameters
+
+#### **Batch Processing**
+- Multiple workflow execution
+- Resource sharing and optimization
+- Progress aggregation
+- Parallel execution management
+
+The workflow manager represents the culmination of all CRYSTAL automation tools, providing a comprehensive, user-friendly interface for complex calculation workflows while maintaining the flexibility and power of the underlying components.
 
 ### Material Tracking System (Phase 2 - IMPLEMENTED)
 

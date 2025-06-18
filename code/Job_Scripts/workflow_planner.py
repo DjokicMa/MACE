@@ -1124,29 +1124,43 @@ class WorkflowPlanner:
         
     def convert_cifs_to_d12s(self, plan: Dict[str, Any]):
         """Convert CIF files to D12 format using saved configuration"""
-        cif_config_file = self.configs_dir / "cif_conversion_config.json"
+        # Check if D12 files already exist (skip if already done)
+        input_dir = Path(plan['input_directory'])
+        existing_d12s = list(input_dir.glob("*.d12"))
+        cif_files = list(input_dir.glob("*.cif"))
         
-        if not cif_config_file.exists():
-            print("Error: CIF conversion config not found!")
+        if len(existing_d12s) >= len(cif_files):
+            print(f"Found {len(existing_d12s)} D12 files already exist for {len(cif_files)} CIF files.")
+            print("Skipping CIF conversion - using existing D12 files.")
+            
+            # Copy existing D12s to workflow directory if needed
+            workflow_input_dir = self.inputs_dir / "step_001_OPT"
+            workflow_input_dir.mkdir(exist_ok=True)
+            
+            for d12_file in existing_d12s:
+                dest_file = workflow_input_dir / d12_file.name
+                if not dest_file.exists():
+                    shutil.copy2(d12_file, dest_file)
+                    print(f"  Copied: {d12_file.name}")
+                    
             return
             
-        # Use NewCifToD12.py with batch mode
-        conversion_cmd = [
-            sys.executable, 
-            str(Path(__file__).parent.parent / "Crystal_To_CIF" / "NewCifToD12.py"),
-            "--batch",
-            "--options_file", str(cif_config_file),
-            "--cif_dir", str(plan['input_directory']),
-            "--output_dir", str(self.inputs_dir)
-        ]
-        
-        print("Running CIF conversion...")
-        result = subprocess.run(conversion_cmd, capture_output=True, text=True)
-        
-        if result.returncode == 0:
+        # If we need to convert, use the WorkflowExecutor
+        print("Converting CIF files to D12 format...")
+        try:
+            from workflow_executor import WorkflowExecutor
+            executor = WorkflowExecutor(str(self.work_dir), self.db_path)
+            
+            # Create a temporary workflow ID for this conversion
+            workflow_id = f"temp_conversion_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            # Run the conversion using the proper executor
+            executor.convert_cifs_with_config(plan, workflow_id)
             print("CIF conversion completed successfully!")
-        else:
-            print(f"CIF conversion failed: {result.stderr}")
+            
+        except Exception as e:
+            print(f"CIF conversion failed: {e}")
+            print("Please check the configuration and try again.")
             
     def execute_calculation_sequence(self, plan: Dict[str, Any], queue_manager):
         """Execute the planned calculation sequence"""
