@@ -268,10 +268,11 @@ class WorkflowExecutor:
         """Customize SLURM script template for specific calculation"""
         
         # Define scratch directory structure for workflow isolation
+        # Set scratch to parent directory so that mkdir -p $scratch/$JOB works correctly
         if calc_type in ['BAND', 'DOSS']:
-            scratch_dir = f"$SCRATCH/{workflow_id}/step_{step_num:03d}_{calc_type}/{material_name}"
+            scratch_base_dir = f"$SCRATCH/{workflow_id}/step_{step_num:03d}_{calc_type}"
         else:
-            scratch_dir = f"$SCRATCH/{workflow_id}/step_{step_num:03d}_{calc_type}/{material_name}"
+            scratch_base_dir = f"$SCRATCH/{workflow_id}/step_{step_num:03d}_{calc_type}"
         
         # Replace placeholders in template following the existing pattern
         script_content = template_content
@@ -279,14 +280,16 @@ class WorkflowExecutor:
         # Replace $1 placeholders with material name
         script_content = script_content.replace('$1', material_name)
         
-        # Update scratch directory paths
+        # Update scratch directory paths to use base directory
+        # This preserves the original template pattern of mkdir -p $scratch/$JOB
+        # where $JOB will be the material_name, creating the full path
         script_content = script_content.replace(
             'export scratch=$SCRATCH/crys23',
-            f'export scratch={scratch_dir}'
+            f'export scratch={scratch_base_dir}'
         )
         script_content = script_content.replace(
             'export scratch=$SCRATCH/crys23/prop',
-            f'export scratch={scratch_dir}'
+            f'export scratch={scratch_base_dir}'
         )
         
         # Add workflow metadata as comments at the top
