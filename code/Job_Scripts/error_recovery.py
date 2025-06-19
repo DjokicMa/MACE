@@ -30,8 +30,18 @@ from typing import Dict, List, Optional, Tuple, Any
 import threading
 
 # Import our material database and existing scripts
-from material_database import MaterialDatabase
-from error_detector import CrystalErrorDetector
+# Add script directory to path for imports
+script_dir = os.path.dirname(os.path.abspath(__file__))
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+
+try:
+    from material_database import MaterialDatabase
+    from error_detector import CrystalErrorDetector
+except ImportError as e:
+    print(f"Error importing required modules: {e}")
+    print(f"Make sure all required Python files are in the same directory as {__file__}")
+    sys.exit(1)
 
 
 class ErrorRecoveryEngine:
