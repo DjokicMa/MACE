@@ -1034,8 +1034,22 @@ class WorkflowPlanner:
             "crystal_file_manager.py"
         ]
         
+        # Core dependency scripts from Crystal_To_CIF directory
+        crystal_to_cif_files = [
+            "NewCifToD12.py",
+            "CRYSTALOptToD12.py",
+            "d12creation.py"
+        ]
+        
+        # Analysis scripts from Creation_Scripts directory
+        creation_scripts_files = [
+            "alldos.py",
+            "create_band_d3.py"
+        ]
+        
         copied_files = []
         
+        # Copy workflow management files from bin directory
         for filename in additional_files:
             source_file = bin_dir / filename
             dest_file = self.work_dir / filename
@@ -1049,6 +1063,38 @@ class WorkflowPlanner:
                     print(f"      Exists: {filename}")
             else:
                 print(f"      Missing: {filename} (not found in bin)")
+        
+        # Copy Crystal_To_CIF dependency scripts
+        crystal_to_cif_dir = bin_dir.parent / "Crystal_To_CIF"
+        for filename in crystal_to_cif_files:
+            source_file = crystal_to_cif_dir / filename
+            dest_file = self.work_dir / filename
+            
+            if source_file.exists():
+                if not dest_file.exists() or self.should_update_file(source_file, dest_file):
+                    shutil.copy2(source_file, dest_file)
+                    copied_files.append(filename)
+                    print(f"      Copied: {filename}")
+                else:
+                    print(f"      Exists: {filename}")
+            else:
+                print(f"      Missing: {filename} (not found in Crystal_To_CIF)")
+        
+        # Copy Creation_Scripts dependency scripts
+        creation_scripts_dir = bin_dir.parent / "Creation_Scripts"
+        for filename in creation_scripts_files:
+            source_file = creation_scripts_dir / filename
+            dest_file = self.work_dir / filename
+            
+            if source_file.exists():
+                if not dest_file.exists() or self.should_update_file(source_file, dest_file):
+                    shutil.copy2(source_file, dest_file)
+                    copied_files.append(filename)
+                    print(f"      Copied: {filename}")
+                else:
+                    print(f"      Exists: {filename}")
+            else:
+                print(f"      Missing: {filename} (not found in Creation_Scripts)")
                 
         if copied_files:
             print(f"    Copied {len(copied_files)} additional files")

@@ -53,15 +53,33 @@ class WorkflowEngine:
         
     def get_script_paths(self) -> Dict[str, Path]:
         """Get paths to all the CRYSTAL workflow scripts."""
+        current_dir = Path.cwd()
         base_path = Path(__file__).parent.parent
         
-        return {
-            'crystal_to_d12': base_path / "Crystal_To_CIF" / "CRYSTALOptToD12.py",
-            'newcif_to_d12': base_path / "Crystal_To_CIF" / "NewCifToD12.py",
-            'alldos': base_path / "Creation_Scripts" / "alldos.py",
-            'create_band': base_path / "Creation_Scripts" / "create_band_d3.py",
-            'd12creation': base_path / "Crystal_To_CIF" / "d12creation.py"
+        # Check for local copies first (in current working directory)
+        scripts = {
+            'crystal_to_d12': "CRYSTALOptToD12.py",
+            'newcif_to_d12': "NewCifToD12.py",
+            'alldos': "alldos.py",
+            'create_band': "create_band_d3.py",
+            'd12creation': "d12creation.py"
         }
+        
+        script_paths = {}
+        
+        for key, script_name in scripts.items():
+            # First check local working directory
+            local_path = current_dir / script_name
+            if local_path.exists():
+                script_paths[key] = local_path
+            else:
+                # Fall back to repository location
+                if key in ['crystal_to_d12', 'newcif_to_d12', 'd12creation']:
+                    script_paths[key] = base_path / "Crystal_To_CIF" / script_name
+                elif key in ['alldos', 'create_band']:
+                    script_paths[key] = base_path / "Creation_Scripts" / script_name
+        
+        return script_paths
         
     def extract_core_material_id_from_complex_filename(self, filename: str) -> str:
         """

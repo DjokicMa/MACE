@@ -377,7 +377,12 @@ class WorkflowExecutor:
             json.dump(cif_config, f, indent=2)
             
         # Run NewCifToD12.py in batch mode
-        script_path = Path(__file__).parent.parent / "Crystal_To_CIF" / "NewCifToD12.py"
+        # Check for local copy first
+        local_script_path = self.work_dir / "NewCifToD12.py"
+        if local_script_path.exists():
+            script_path = local_script_path
+        else:
+            script_path = Path(__file__).parent.parent / "Crystal_To_CIF" / "NewCifToD12.py"
         
         conversion_cmd = [
             sys.executable, str(script_path),
@@ -737,7 +742,12 @@ class WorkflowExecutor:
     def run_crystal_opt_conversion(self, output_file: str, input_file: str, 
                                  output_dir: Path, calc_type: str, config: Dict[str, Any]):
         """Run CRYSTALOptToD12.py conversion"""
-        script_path = Path(__file__).parent.parent / "Crystal_To_CIF" / "CRYSTALOptToD12.py"
+        # Check for local copy first
+        local_script_path = self.work_dir / "CRYSTALOptToD12.py"
+        if local_script_path.exists():
+            script_path = local_script_path
+        else:
+            script_path = Path(__file__).parent.parent / "Crystal_To_CIF" / "CRYSTALOptToD12.py"
         
         # Create temporary config for CRYSTALOptToD12.py
         temp_config = self.temp_dir / f"temp_crystal_opt_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
