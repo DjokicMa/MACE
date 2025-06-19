@@ -295,6 +295,16 @@ class WorkflowExecutor:
             f'export scratch={scratch_base_dir}'
         )
         
+        # Add Python module loading for the callback scripts
+        # Find the line with "module load CRYSTAL" and add Python module after it
+        lines = script_content.split('\n')
+        for i, line in enumerate(lines):
+            if line.strip().startswith('module load CRYSTAL'):
+                # Insert Python module load after CRYSTAL module
+                lines.insert(i + 1, 'module load Python/3.11.3-GCCcore-12.3.0')
+                break
+        script_content = '\n'.join(lines)
+        
         # Fix callback mechanism - queue managers are in base workflow directory
         # The relative path from individual calc dir to base is ../../../../
         workflow_base_dir = "../../../../"

@@ -17,6 +17,7 @@ echo $SLURM_SUBMIT_DIR
 
 module purge
 module load CRYSTAL/23-intel-2023a
+module load Python/3.11.3-GCCcore-12.3.0
 
 mkdir -p $scratch/$JOB
 cp $DIR/$JOB.d3 $scratch/$JOB/INPUT
