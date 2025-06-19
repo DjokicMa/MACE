@@ -257,10 +257,11 @@ class EnhancedCrystalQueueManager:
             SLURM job ID if successful, None if failed
         """
         # Determine which submission script to use
+        script_dir = os.path.dirname(os.path.abspath(__file__))
         if calc_type in ['OPT', 'SP', 'FREQ']:
-            submit_script = "submitcrystal23.sh"
+            submit_script = os.path.join(script_dir, "submitcrystal23.sh")
         elif calc_type in ['BAND', 'DOSS', 'TRANSPORT']:
-            submit_script = "submit_prop.sh"
+            submit_script = os.path.join(script_dir, "submit_prop.sh")
         else:
             print(f"Unknown calculation type: {calc_type}")
             return None
@@ -605,44 +606,55 @@ class EnhancedCrystalQueueManager:
         print(f"TODO: Extract properties from {calc['calc_id']}")
         
     def plan_next_calculation(self, material_id: str, completed_calc_id: str):
-        """Plan and submit the next calculation in the workflow."""
+        """Plan and submit the next calculation in the workflow using WorkflowEngine."""
         if not self.enable_tracking:
             return
             
-        # Get next calculation type needed
-        next_calc_type = self.db.get_next_calculation_in_workflow(material_id)
+        print(f"Triggering workflow progression for material {material_id}")
         
-        if not next_calc_type:
-            print(f"Workflow complete for material {material_id}")
-            return
+        try:
+            # Import and use WorkflowEngine for proper workflow handling
+            from workflow_engine import WorkflowEngine
             
-        print(f"Planning next calculation for {material_id}: {next_calc_type}")
-        
-        # Get the completed calculation details
-        completed_calc = next(
-            (c for c in self.db.get_calculations_by_status('completed') 
-             if c['calc_id'] == completed_calc_id), None
-        )
-        
-        if not completed_calc:
-            print(f"Could not find completed calculation {completed_calc_id}")
-            return
+            # Initialize workflow engine with same database
+            workflow_engine = WorkflowEngine(self.db_path, str(self.base_dir))
             
-        # Generate input file for next calculation
-        next_input_file = self.generate_followup_input_file(
-            completed_calc, next_calc_type
-        )
-        
-        if next_input_file:
-            # Submit the next calculation
-            self.submit_calculation(
-                d12_file=next_input_file,
-                calc_type=next_calc_type,
-                material_id=material_id,
-                prerequisite_calc_id=completed_calc_id
-            )
-        else:
-            print(f"Failed to generate input file for {next_calc_type}")
+            # Process completed calculations and generate next steps
+            new_calc_ids = workflow_engine.execute_workflow_step(material_id, completed_calc_id)
+            
+            if new_calc_ids:
+                print(f"Workflow engine initiated {len(new_calc_ids)} new calculations for {material_id}")
+                
+                # If auto-submission is enabled, submit the new calculations
+                if self.auto_submit_followups:
+                    for calc_id in new_calc_ids:
+                        calc = next((c for c in self.db.get_all_calculations() 
+                                   if c['calc_id'] == calc_id), None)
+                        if calc and calc.get('input_file'):
+                            print(f"Auto-submitting generated calculation: {calc_id}")
+                            slurm_job_id = self.submit_to_slurm(
+                                Path(calc['input_file']), 
+                                Path(calc['input_file']).parent,
+                                calc['calc_type']
+                            )
+                            if slurm_job_id:
+                                self.db.update_calculation_status(calc_id, 'submitted', slurm_job_id=slurm_job_id)
+                                print(f"Submitted {calc_id} as SLURM job {slurm_job_id}")
+            else:
+                print(f"No new workflow steps needed for {material_id}")
+                
+        except ImportError as e:
+            print(f"Could not import workflow_engine: {e}")
+            print("Falling back to basic workflow progression")
+            # Fallback to basic next step determination if workflow_engine not available
+            next_calc_type = self.db.get_next_calculation_in_workflow(material_id)
+            if next_calc_type:
+                print(f"Next step needed: {next_calc_type} (manual generation required)")
+            else:
+                print(f"Workflow complete for material {material_id}")
+        except Exception as e:
+            print(f"Error in workflow progression: {e}")
+            print("Workflow progression failed - check logs for details")
             
     def generate_followup_input_file(self, completed_calc: Dict, next_calc_type: str) -> Optional[Path]:
         """

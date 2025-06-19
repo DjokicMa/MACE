@@ -233,7 +233,7 @@ class WorkflowEngine:
             args = [
                 "--directory", str(work_dir),
                 "--output-dir", str(work_dir),
-                "--batch"  # Use batch mode to avoid interactive prompts
+                "--shared-settings"  # Use shared settings to minimize interactive prompts
             ]
             
             success, stdout, stderr = self.run_script_in_isolated_directory(
