@@ -1,6 +1,6 @@
 #!/bin/bash --login
-#SBATCH -J crystal_sp
-#SBATCH -o crystal_sp-%J.o
+#SBATCH -J $1
+#SBATCH -o $1-%J.o
 #SBATCH --cpus-per-task=1
 #SBATCH --ntasks=32
 #SBATCH -A mendoza_q
@@ -8,7 +8,7 @@
 #SBATCH -t 3-00:00:00
 #SBATCH --mem-per-cpu=4G
 
-export JOB=input
+export JOB=$1
 export DIR=$SLURM_SUBMIT_DIR
 export scratch=$SCRATCH/crys23
 
@@ -19,9 +19,18 @@ module purge
 module load CRYSTAL/23-intel-2023a
 
 mkdir -p $scratch/$JOB
-cp $DIR/input.d12 $scratch/$JOB/INPUT
-cp $DIR/input.f9 $scratch/$JOB/fort.9
+cp $DIR/$JOB.d12 $scratch/$JOB/INPUT
+cp $DIR/$JOB.f9 $scratch/$JOB/fort.9
 cd $scratch/$JOB
 
-mpirun -n $SLURM_NTASKS /opt/software-current/2023.06/x86_64/intel/skylake_avx512/software/CRYSTAL/23-intel-2023a/bin/Pcrystal 2>&1 >& $DIR/output.out
-cp fort.9 ${DIR}/input.f9
+mpirun -n $SLURM_NTASKS /opt/software-current/2023.06/x86_64/intel/skylake_avx512/software/CRYSTAL/23-intel-2023a/bin/Pcrystal 2>&1 >& $DIR/${JOB}.out
+cp fort.9 ${DIR}/${JOB}.f9
+
+# ADDED: Auto-submit new jobs when this one completes
+if [ -f $DIR/enhanced_queue_manager.py ]; then
+    cd $DIR
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+elif [ -f $DIR/crystal_queue_manager.py ]; then
+    cd $DIR
+    ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
+fi

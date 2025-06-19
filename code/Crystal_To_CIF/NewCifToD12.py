@@ -446,7 +446,7 @@ def select_dft_functional():
             print(f"   Examples: {', '.join(info['functionals'][:4])}")
 
     category_choice = get_user_input(
-        "Select functional category", category_options, "4"
+        "Select functional category", category_options, "3"
     )  # Default to HYBRID
     selected_category = category_options[category_choice]
 

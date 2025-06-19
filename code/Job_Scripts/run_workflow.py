@@ -218,7 +218,7 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
             "MAXCYCLE": 800
         },
         "method": "DFT",
-        "dft_functional": "HSE06",
+        "dft_functional": "B3LYP",
         "use_dispersion": True,
         "basis_set_type": "INTERNAL",
         "basis_set": "POB-TZVP-REV2",

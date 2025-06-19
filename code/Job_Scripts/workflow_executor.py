@@ -155,7 +155,6 @@ class WorkflowExecutor:
     def execute_step(self, plan: Dict[str, Any], workflow_id: str, calc_type: str, 
                     step_num: int, d12_files: List[Path], step_dir: Path) -> List[str]:
         """Execute a single workflow step with individual calculation folders"""
-        step_dir.mkdir(exist_ok=True)
         submitted_jobs = []
         
         for d12_file in d12_files:
@@ -166,9 +165,10 @@ class WorkflowExecutor:
             calc_dir = step_dir / material_name
             calc_dir.mkdir(exist_ok=True)
             
-            # Copy D12 file to calculation folder
+            # Move (not copy) D12 file to calculation folder to avoid redundancy
             calc_d12_file = calc_dir / f"{material_name}.d12"
-            shutil.copy2(d12_file, calc_d12_file)
+            if not calc_d12_file.exists():
+                shutil.move(str(d12_file), str(calc_d12_file))
             
             # Generate individual SLURM script
             slurm_script = self.generate_slurm_script(
@@ -276,55 +276,8 @@ class WorkflowExecutor:
         # Replace placeholders in template following the existing pattern
         script_content = template_content
         
-        # Update job name (using SBATCH -J format)
-        script_content = script_content.replace(
-            '#SBATCH -J crystal_opt',
-            f'#SBATCH -J {material_name}_{calc_type.lower()}'
-        )
-        script_content = script_content.replace(
-            '#SBATCH -J crystal_sp',
-            f'#SBATCH -J {material_name}_{calc_type.lower()}'
-        )
-        script_content = script_content.replace(
-            '#SBATCH -J crystal_band',
-            f'#SBATCH -J {material_name}_{calc_type.lower()}'
-        )
-        script_content = script_content.replace(
-            '#SBATCH -J crystal_doss',
-            f'#SBATCH -J {material_name}_{calc_type.lower()}'
-        )
-        script_content = script_content.replace(
-            '#SBATCH -J crystal_freq',
-            f'#SBATCH -J {material_name}_{calc_type.lower()}'
-        )
-        
-        # Update output files (using SBATCH -o format)
-        script_content = script_content.replace(
-            '-o crystal_opt-%J.o',
-            f'-o {material_name}_{calc_type.lower()}-%J.o'
-        )
-        script_content = script_content.replace(
-            '-o crystal_sp-%J.o',
-            f'-o {material_name}_{calc_type.lower()}-%J.o'
-        )
-        script_content = script_content.replace(
-            '-o crystal_band-%J.o',
-            f'-o {material_name}_{calc_type.lower()}-%J.o'
-        )
-        script_content = script_content.replace(
-            '-o crystal_doss-%J.o',
-            f'-o {material_name}_{calc_type.lower()}-%J.o'
-        )
-        script_content = script_content.replace(
-            '-o crystal_freq-%J.o',
-            f'-o {material_name}_{calc_type.lower()}-%J.o'
-        )
-        
-        # Update JOB variable
-        script_content = script_content.replace(
-            'export JOB=input',
-            f'export JOB={material_name}'
-        )
+        # Replace $1 placeholders with material name
+        script_content = script_content.replace('$1', material_name)
         
         # Update scratch directory paths
         script_content = script_content.replace(
@@ -334,24 +287,6 @@ class WorkflowExecutor:
         script_content = script_content.replace(
             'export scratch=$SCRATCH/crys23/prop',
             f'export scratch={scratch_dir}'
-        )
-        
-        # Update file references
-        script_content = script_content.replace(
-            'input.d12',
-            f'{material_name}.d12'
-        )
-        script_content = script_content.replace(
-            'input.d3',
-            f'{material_name}.d3'
-        )
-        script_content = script_content.replace(
-            'input.f9',
-            f'{material_name}.f9'
-        )
-        script_content = script_content.replace(
-            'output.out',
-            f'{material_name}.out'
         )
         
         # Add workflow metadata as comments at the top
