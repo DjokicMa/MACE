@@ -332,6 +332,16 @@ class MaterialDatabase:
             query = f"UPDATE calculations SET {', '.join(update_fields)} WHERE calc_id = ?"
             conn.execute(query, update_values)
             
+    def update_calculation_settings(self, calc_id: str, settings: Dict[str, Any]):
+        """Update calculation settings."""
+        settings_json = json.dumps(settings)
+        
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE calculations SET settings_json = ? WHERE calc_id = ?",
+                (settings_json, calc_id)
+            )
+            
     def get_calculation_by_slurm_id(self, slurm_job_id: str) -> Optional[Dict]:
         """Get calculation record by SLURM job ID."""
         with self._get_connection() as conn:
