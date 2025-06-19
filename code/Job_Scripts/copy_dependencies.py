@@ -37,6 +37,7 @@ def copy_dependencies(target_dir: str = "."):
                 "material_monitor.py",
                 "crystal_file_manager.py",
                 "populate_completed_jobs.py",
+                "crystal_queue_manager.py",
                 "workflows.yaml",
                 "recovery_config.yaml"
             ]

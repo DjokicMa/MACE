@@ -176,7 +176,7 @@ class WorkflowEngine:
         return calc_dir
         
     def run_script_in_isolated_directory(self, script_path: Path, work_dir: Path, 
-                                       args: List[str] = None) -> Tuple[bool, str, str]:
+                                       args: List[str] = None, input_data: str = None) -> Tuple[bool, str, str]:
         """
         Run a script in an isolated directory and capture output.
         
@@ -184,6 +184,7 @@ class WorkflowEngine:
             script_path: Path to the script to run
             work_dir: Directory to run the script in
             args: Additional command line arguments
+            input_data: Input data to provide to the script (for interactive scripts)
             
         Returns:
             (success, stdout, stderr)
@@ -201,6 +202,7 @@ class WorkflowEngine:
                 cwd=work_dir,
                 capture_output=True,
                 text=True,
+                input=input_data,
                 timeout=3600  # 1 hour timeout
             )
             
@@ -247,15 +249,32 @@ class WorkflowEngine:
             # Run CRYSTALOptToD12.py in isolated directory
             crystal_to_d12_script = self.script_paths['crystal_to_d12']
             
-            # CRYSTALOptToD12.py arguments for batch processing
+            # Find the specific out and d12 files in the work directory
+            out_files = list(work_dir.glob("*.out"))
+            d12_files = list(work_dir.glob("*.d12"))
+            
+            if not out_files:
+                print(f"No .out file found in {work_dir}")
+                return None
+                
+            out_file = out_files[0]
+            d12_file = d12_files[0] if d12_files else None
+            
+            # Use single file mode with automatic input responses
             args = [
-                "--directory", str(work_dir),
-                "--output-dir", str(work_dir),
-                "--shared-settings"  # Use shared settings to minimize interactive prompts
+                "--out-file", str(out_file),
+                "--output-dir", str(work_dir)
             ]
             
+            if d12_file:
+                args.extend(["--d12-file", str(d12_file)])
+            
+            # Prepare input responses for non-interactive execution
+            # Answers: keep settings? (y), calc type (1=SP), done
+            input_responses = "y\n1\n"
+            
             success, stdout, stderr = self.run_script_in_isolated_directory(
-                crystal_to_d12_script, work_dir, args
+                crystal_to_d12_script, work_dir, args, input_data=input_responses
             )
             
             if not success:
