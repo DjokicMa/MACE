@@ -1438,12 +1438,10 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 settings.get("optimization_type", "FULLOPTG"),
                 settings.get("optimization_settings", DEFAULT_OPT_SETTINGS),
             )
-            f.write("END\n")
         elif settings["calculation_type"] == "FREQ":
             write_frequency_section(
                 f, settings.get("freq_settings", DEFAULT_FREQ_SETTINGS)
             )
-            f.write("END\n")
         else:  # Single point
             f.write("END\n")
 

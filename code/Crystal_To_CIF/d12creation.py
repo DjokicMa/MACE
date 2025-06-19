@@ -834,6 +834,8 @@ DEFAULT_SETTINGS = {
     "symmetry_handling": "CIF",
     "symmetry_tolerance": 1e-5,
     "reduce_to_asymmetric": False,
+    "validate_symmetry": False,
+    "write_only_unique": True,
     "trigonal_axes": "AUTO",
     "origin_setting": "AUTO",
     "dimensionality": "CRYSTAL",
