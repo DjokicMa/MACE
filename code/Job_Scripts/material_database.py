@@ -417,6 +417,14 @@ class MaterialDatabase:
                 SELECT * FROM calculations ORDER BY created_at DESC
             """)
             return [dict(row) for row in cursor.fetchall()]
+    
+    def get_recent_calculations(self, limit: int = 20) -> List[Dict]:
+        """Get recent calculations with detailed information."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT * FROM calculations ORDER BY created_at DESC LIMIT ?
+            """, (limit,))
+            return [dict(row) for row in cursor.fetchall()]
             
     def get_calculation(self, calc_id: str) -> Optional[Dict]:
         """Get calculation record by ID."""

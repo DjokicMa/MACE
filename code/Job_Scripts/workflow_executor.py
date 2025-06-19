@@ -90,10 +90,13 @@ class WorkflowExecutor:
             self.execute_workflow_steps(plan, workflow_id)
             
             # Phase 3: Monitor and manage execution
-            self.monitor_workflow_execution(workflow_id)
+            if workflow_id in self.active_workflows:
+                self.monitor_workflow_execution(workflow_id)
+            else:
+                print("Phase 3: Workflow monitoring skipped (workflow completed synchronously)")
             
         except Exception as e:
-            print(f"Workflow execution failed: {e}")
+            print(f"Workflow execution failed: '{workflow_id}'")
             self.cleanup_workflow(workflow_id)
             raise
             
