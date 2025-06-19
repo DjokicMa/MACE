@@ -1390,13 +1390,10 @@ def create_d12_file(cif_data, output_file, options):
         if calculation_type == "OPT":
             # For geometry optimization
             write_optimization_section(f, optimization_type, optimization_settings)
-            print("END", file=f)
         elif calculation_type == "FREQ":
             # For frequency calculation
             write_frequency_section(f, freq_settings)
-            print("END", file=f)
-        else:  # Single point
-            print("END", file=f)
+        # For single point calculations, no additional sections needed
 
         # Handle HF and DFT methods differently
         if method == "HF":
