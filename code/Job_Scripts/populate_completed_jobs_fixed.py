@@ -1,21 +1,17 @@
 #!/usr/bin/env python3
 """
-Populate Database with Completed Jobs
-------------------------------------
+Populate Database with Completed Jobs - FIXED VERSION
+-----------------------------------------------------
 This script scans for completed CRYSTAL calculations and adds them to the 
 materials database for workflow tracking.
-
-Usage:
-  python populate_completed_jobs.py [--base-dir DIR] [--db-path PATH]
 """
 
 import os
 import sys
-import argparse
 import re
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 # Add script directory to path for imports
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -26,7 +22,6 @@ try:
     from material_database import MaterialDatabase, create_material_id_from_file
 except ImportError as e:
     print(f"Error importing required modules: {e}")
-    print(f"Make sure material_database.py is in the same directory as {__file__}")
     sys.exit(1)
 
 
@@ -140,9 +135,8 @@ def populate_database(completed_calcs: List[Dict], db: MaterialDatabase) -> int:
                 print(f"Creating material record for: {calc['material_id']}")
                 db.create_material(
                     material_id=calc['material_id'],
-                    formula="Unknown",
-                    source_file=calc['input_file'],
-                    source_type='auto_detected',
+                    formula="Unknown",  # Will be updated later
+                    structure_file=calc['input_file'],
                     metadata={'auto_populated': True, 'source': 'populate_completed_jobs.py'}
                 )
             
@@ -157,15 +151,9 @@ def populate_database(completed_calcs: List[Dict], db: MaterialDatabase) -> int:
                 material_id=calc['material_id'],
                 calc_type=calc['calc_type'],
                 input_file=calc['input_file'],
-                work_dir=str(Path(calc['output_file']).parent) if calc['output_file'] else None,
-                settings={'auto_populated': True}
-            )
-            
-            # Update the calculation status to completed
-            db.update_calculation_status(
-                calc_id=calc_id,
+                output_file=calc['output_file'],
                 status='completed',
-                output_file=calc['output_file']
+                completed_at=calc['completed_at']
             )
             
             print(f"  Added {calc['calc_type']} calculation: {calc_id}")
@@ -178,6 +166,8 @@ def populate_database(completed_calcs: List[Dict], db: MaterialDatabase) -> int:
 
 
 def main():
+    import argparse
+    
     parser = argparse.ArgumentParser(description="Populate database with completed CRYSTAL calculations")
     parser.add_argument("--base-dir", default=".", help="Base directory to scan for calculations")
     parser.add_argument("--db-path", default="materials.db", help="Path to materials database")

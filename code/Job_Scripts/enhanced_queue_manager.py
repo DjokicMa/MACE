@@ -52,6 +52,7 @@ class EnhancedCrystalQueueManager:
         self.max_jobs = max_jobs
         self.reserve_slots = reserve_slots
         self.enable_tracking = enable_tracking
+        self.db_path = db_path
         
         # Detect workflow context and setup script paths
         self.is_workflow_context = self._detect_workflow_context()
@@ -172,6 +173,37 @@ class EnhancedCrystalQueueManager:
             print("  Warning: Could not import populate_completed_jobs module")
         except Exception as e:
             print(f"  Error populating completed jobs: {e}")
+            
+    def _trigger_workflow_progression(self):
+        """Trigger workflow progression using the workflow engine."""
+        if not self.enable_tracking:
+            return
+            
+        try:
+            print("  Triggering workflow progression...")
+            
+            # Import and use WorkflowEngine for proper workflow handling
+            from workflow_engine import WorkflowEngine
+            
+            # Initialize workflow engine with same database
+            workflow_engine = WorkflowEngine(self.db_path, str(self.d12_dir))
+            
+            # Process completed calculations and generate next steps
+            new_calc_ids = workflow_engine.process_completed_calculations()
+            
+            if new_calc_ids > 0:
+                print(f"  Workflow engine initiated {new_calc_ids} new workflow steps")
+                print("  Automatic progression to next calculation type initiated")
+            else:
+                print("  No new workflow steps needed at this time")
+                
+        except ImportError as e:
+            print(f"  Could not import workflow_engine: {e}")
+            print("  Falling back to basic queue processing")
+            self.process_new_d12_files()
+        except Exception as e:
+            print(f"  Error in workflow progression: {e}")
+            print("  Check workflow engine and database integrity")
         
     def load_legacy_status(self):
         """Load legacy job status for backward compatibility."""
@@ -865,14 +897,20 @@ class EnhancedCrystalQueueManager:
         print(f"\n=== Queue Manager Callback ({mode}) - {datetime.now()} ===")
         
         if mode == 'completion':
-            # Job completion callback - check status and submit new jobs
+            # Job completion callback - check status and trigger workflow progression
             
             # First, populate database with any completed jobs not yet tracked
             if self.is_workflow_context:
                 self._populate_completed_jobs_from_outputs()
             
             self.check_queue_status()
-            self.process_new_d12_files()
+            
+            # In workflow context, use workflow engine for progression instead of basic D12 processing
+            if self.is_workflow_context and self.workflow_enabled:
+                self._trigger_workflow_progression()
+            else:
+                # Fallback to basic D12 file processing
+                self.process_new_d12_files()
             
         elif mode == 'early_failure':
             # Early failure detection
