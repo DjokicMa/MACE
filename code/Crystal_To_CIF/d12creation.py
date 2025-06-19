@@ -1023,26 +1023,19 @@ def generate_k_points(a, b, c, dimensionality, spacegroup):
     if kc == 1 and dimensionality not in ["SLAB", "POLYMER", "MOLECULE"]:
         kc = 12
 
-    # For non-P1 symmetry, try to use consistent k-points
+    # For non-P1 symmetry, use consistent k-points to preserve symmetry
     if spacegroup != 1 and dimensionality == "CRYSTAL":
-        # For high symmetry systems, use a consistent k-point mesh
+        # For all symmetrized systems, use the maximum k-point value
+        # to ensure symmetry is preserved during calculations
         k_values = [k for k in [ka, kb, kc] if k > 1]
         if k_values:
-            k_avg = round(sum(k_values) / len(k_values))
-            k_avg = min([k for k in ks if k >= k_avg] or [k_avg])
-
-            # Apply the common k value according to crystal system
-            if spacegroup >= 195 and spacegroup <= 230:  # Cubic
-                ka = kb = kc = k_avg
-            elif (
-                spacegroup >= 75 and spacegroup <= 194
-            ):  # Tetragonal, Trigonal, Hexagonal
-                ka = kb = k_avg
-            elif spacegroup >= 16 and spacegroup <= 74:  # Orthorhombic
-                # Keep different values but round to nearest in ks list
-                ka = min([k for k in ks if k >= ka] or [ka])
-                kb = min([k for k in ks if k >= kb] or [kb])
-                kc = min([k for k in ks if k >= kc] or [kc])
+            # Use the maximum value to ensure adequate sampling
+            k_uniform = max(k_values)
+            # Round to nearest available k-point value
+            k_uniform = min([k for k in ks if k >= k_uniform] or [k_uniform])
+            
+            # Apply uniform k-points to all directions for symmetrized structures
+            ka = kb = kc = k_uniform
 
     return ka, kb, kc
 
@@ -1349,17 +1342,25 @@ def write_scf_section(
         else:
             # Tuple of (ka, kb, kc)
             ka, kb, kc = k_points
-            n_shrink = max(ka, kb, kc) * 2
+            
+            # Check if k-points are uniform for simplified SHRINK format
+            if dimensionality == "CRYSTAL" and ka == kb == kc:
+                # Use simplified format: SHRINK k n_shrink
+                n_shrink = ka * 2
+                print("SHRINK", file=f)
+                print(f"{ka} {n_shrink}", file=f)
+            else:
+                # Use directional format: SHRINK 0 n_shrink, then ka kb kc
+                n_shrink = max(ka, kb, kc) * 2
+                print("SHRINK", file=f)
+                print(f"0 {n_shrink}", file=f)
 
-            print("SHRINK", file=f)
-            print(f"0 {n_shrink}", file=f)
-
-            if dimensionality == "CRYSTAL":
-                print(f"{ka} {kb} {kc}", file=f)
-            elif dimensionality == "SLAB":
-                print(f"{ka} {kb} 1", file=f)
-            elif dimensionality == "POLYMER":
-                print(f"{ka} 1 1", file=f)
+                if dimensionality == "CRYSTAL":
+                    print(f"{ka} {kb} {kc}", file=f)
+                elif dimensionality == "SLAB":
+                    print(f"{ka} {kb} 1", file=f)
+                elif dimensionality == "POLYMER":
+                    print(f"{ka} 1 1", file=f)
 
     # Fermi smearing
     if use_smearing:
