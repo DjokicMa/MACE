@@ -563,9 +563,19 @@ def get_calculation_options():
                 "1"
             )
             options["write_only_unique"] = atom_writing_choice == "1"
+            
+            # For modes that use spglib, ask about validation (applies to both CIF and SPGLIB modes)
+            if options["write_only_unique"] and SPGLIB_AVAILABLE:
+                validate_symmetry = yes_no_prompt(
+                    "Validate symmetry operations can reconstruct original structure?", "no"
+                )
+                options["validate_symmetry"] = validate_symmetry
+            else:
+                options["validate_symmetry"] = False
         else:
             # For P1 symmetry, all atoms must be written
             options["write_only_unique"] = False
+            options["validate_symmetry"] = False
 
         # For trigonal space groups, ask about axis representation
         trigonal_axes_options = {
@@ -977,13 +987,14 @@ def detect_trigonal_setting(cif_data):
     return "hexagonal_axes"
 
 
-def verify_and_reduce_to_asymmetric_unit(cif_data, tolerance=1e-5):
+def verify_and_reduce_to_asymmetric_unit(cif_data, tolerance=1e-5, validate_symmetry=False):
     """
     Verify spglib symmetry analysis matches CIF data and reduce to asymmetric unit
 
     Args:
         cif_data (dict): Parsed CIF data
         tolerance (float): Symmetry tolerance for spglib
+        validate_symmetry (bool): Whether to validate that symmetry operations can reconstruct the original structure
 
     Returns:
         dict: Modified CIF data with only asymmetric unit atoms, or original if verification fails
@@ -1140,8 +1151,8 @@ def verify_and_reduce_to_asymmetric_unit(cif_data, tolerance=1e-5):
                         print(f"  Atom {i+1} ({cif_data['symbols'][i]}) → equivalent to asymmetric atom {rep_idx+1}")
 
         # Optional: Validate that symmetry operations can reconstruct original structure
-        validate_symmetry = yes_no_prompt("\nValidate that symmetry operations reconstruct the original structure?", "no")
         if validate_symmetry:
+            print("\nPerforming symmetry validation...")
             try:
                 # Apply symmetry operations to asymmetric unit
                 rotations = dataset['rotations']
@@ -1180,11 +1191,11 @@ def verify_and_reduce_to_asymmetric_unit(cif_data, tolerance=1e-5):
         return cif_data
 
 
-def reduce_to_asymmetric_unit(cif_data):
+def reduce_to_asymmetric_unit(cif_data, validate_symmetry=False):
     """
     Legacy function - now calls the enhanced verification function
     """
-    return verify_and_reduce_to_asymmetric_unit(cif_data)
+    return verify_and_reduce_to_asymmetric_unit(cif_data, 1e-5, validate_symmetry)
 
 
 def create_d12_file(cif_data, output_file, options):
@@ -1529,14 +1540,16 @@ def process_cifs(cif_directory, options, output_directory=None):
                 if SPGLIB_AVAILABLE and options.get("reduce_to_asymmetric", True):
                     print("\nPerforming spglib symmetry analysis with verification...")
                     tolerance = options.get("symmetry_tolerance", 1e-5)
-                    cif_data = verify_and_reduce_to_asymmetric_unit(cif_data, tolerance)
+                    validate_symmetry = options.get("validate_symmetry", False)
+                    cif_data = verify_and_reduce_to_asymmetric_unit(cif_data, tolerance, validate_symmetry)
             elif options["symmetry_handling"] == "CIF":
                 # For CIF symmetry, optionally reduce to unique atoms based on user preference
                 if options.get("write_only_unique", True):
                     if SPGLIB_AVAILABLE:
                         print("\nUsing CIF symmetry - verifying with spglib and reducing to asymmetric unit...")
                         tolerance = options.get("symmetry_tolerance", 1e-5)
-                        cif_data = verify_and_reduce_to_asymmetric_unit(cif_data, tolerance)
+                        validate_symmetry = options.get("validate_symmetry", False)
+                        cif_data = verify_and_reduce_to_asymmetric_unit(cif_data, tolerance, validate_symmetry)
                     else:
                         print("Warning: Cannot identify unique atoms without spglib. Writing all atoms.")
                         print("Install spglib to enable asymmetric unit reduction: pip install spglib")
