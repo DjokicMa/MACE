@@ -270,12 +270,11 @@ class WorkflowEngine:
                 args.extend(["--d12-file", str(d12_file)])
             
             # Prepare input responses for non-interactive execution
-            # The error shows it's asking for symmetry choice, so let's provide specific settings:
-            # 1. Keep settings? → n (no, customize)
+            # 1. Keep settings? → y (yes, keep original DFT/PBE-D3 settings from d12)
             # 2. Calc type → 1 (SP)
             # 3. Symmetry choice → 1 (Write only unique atoms)
             # 4. Additional defaults for any other prompts
-            input_responses = "n\n1\n1\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+            input_responses = "y\n1\n1\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
             
             success, stdout, stderr = self.run_script_in_isolated_directory(
                 crystal_to_d12_script, work_dir, args, input_data=input_responses
@@ -297,9 +296,9 @@ class WorkflowEngine:
                 
             sp_input_file = sp_files[0]
             
-            # Move SP file to appropriate location
-            sp_final_location = self.base_work_dir / "sp" / sp_input_file.name
-            sp_final_location.parent.mkdir(exist_ok=True)
+            # Move SP file to appropriate workflow location
+            sp_final_location = self.base_work_dir / "workflow_inputs" / "step_002_SP" / sp_input_file.name
+            sp_final_location.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(sp_input_file, sp_final_location)
             
             # Create SP calculation record
@@ -383,15 +382,13 @@ class WorkflowEngine:
             # Also check for renamed .f9 file
             doss_f9_files = list(work_dir.glob("*DOSS*.f9"))
             
-            # Move DOSS files to appropriate location
-            doss_dir = self.base_work_dir / "doss"
-            doss_dir.mkdir(exist_ok=True)
-            
-            doss_final_location = doss_dir / doss_input_file.name
+            # Move DOSS files to appropriate workflow location
+            doss_final_location = self.base_work_dir / "workflow_inputs" / "step_004_DOSS" / doss_input_file.name
+            doss_final_location.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(doss_input_file, doss_final_location)
             
             if doss_f9_files:
-                doss_f9_final = doss_dir / doss_f9_files[0].name
+                doss_f9_final = doss_final_location.parent / doss_f9_files[0].name
                 shutil.move(doss_f9_files[0], doss_f9_final)
             
             # Create DOSS calculation record
@@ -475,15 +472,13 @@ class WorkflowEngine:
             # Also check for renamed .f9 file
             band_f9_files = list(work_dir.glob("*BAND*.f9")) + list(work_dir.glob("*band*.f9"))
             
-            # Move BAND files to appropriate location
-            band_dir = self.base_work_dir / "band"
-            band_dir.mkdir(exist_ok=True)
-            
-            band_final_location = band_dir / band_input_file.name
+            # Move BAND files to appropriate workflow location
+            band_final_location = self.base_work_dir / "workflow_inputs" / "step_003_BAND" / band_input_file.name
+            band_final_location.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(band_input_file, band_final_location)
             
             if band_f9_files:
-                band_f9_final = band_dir / band_f9_files[0].name
+                band_f9_final = band_final_location.parent / band_f9_files[0].name
                 shutil.move(band_f9_files[0], band_f9_final)
             
             # Create BAND calculation record
@@ -647,11 +642,7 @@ class WorkflowEngine:
                 # Mark this calculation as workflow processed
                 settings['workflow_processed'] = True
                 settings['workflow_process_timestamp'] = datetime.now().isoformat()
-                self.db.update_calculation_status(
-                    calc['calc_id'], 
-                    calc['status'],
-                    settings_json=json.dumps(settings)
-                )
+                self.db.update_calculation_settings(calc['calc_id'], settings)
                 
         return new_steps
 

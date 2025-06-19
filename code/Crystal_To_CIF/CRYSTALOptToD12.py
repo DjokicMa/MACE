@@ -425,14 +425,23 @@ class CrystalOutputParser:
         """Extract DFT functional including 3C methods"""
 
         # Check for Hartree-Fock methods first
-        for line in lines:
+        for i, line in enumerate(lines):
             if "TYPE OF CALCULATION" in line:
-                if "RESTRICTED CLOSED SHELL" in line and "KOHN-SHAM" not in line:
-                    self.data["functional"] = "RHF"
-                    return
-                elif "UNRESTRICTED OPEN SHELL" in line and "KOHN-SHAM" not in line:
-                    self.data["functional"] = "UHF"
-                    return
+                # Check current line and next few lines for KOHN-SHAM
+                is_dft = False
+                for j in range(i, min(i + 5, len(lines))):
+                    if "KOHN-SHAM" in lines[j]:
+                        is_dft = True
+                        break
+                
+                # Only assign HF if it's definitely not DFT
+                if not is_dft:
+                    if "RESTRICTED CLOSED SHELL" in line:
+                        self.data["functional"] = "RHF"
+                        return
+                    elif "UNRESTRICTED OPEN SHELL" in line:
+                        self.data["functional"] = "UHF"
+                        return
 
         # Check for specific functional patterns in ENERGY EXPRESSION line
         for line in lines:
@@ -789,6 +798,9 @@ class CrystalInputParser:
         # Extract optimization settings
         self._extract_optimization_settings(lines)
 
+        # Extract DFT settings
+        self._extract_dft_settings(lines)
+
         # Extract SCF settings
         for i, line in enumerate(lines):
             if "MAXCYCLE" in line and "OPTGEOM" not in lines[max(0, i - 5) : i]:
@@ -848,49 +860,257 @@ class CrystalInputParser:
     def _extract_optimization_settings(self, lines):
         """Extract optimization settings if present"""
         in_optgeom = False
+        opt_settings = {}
+        
         for i, line in enumerate(lines):
+            stripped = line.strip()
+            
             if "OPTGEOM" in line:
                 in_optgeom = True
+                self.data["calculation_type"] = "OPT"
             elif "ENDOPT" in line:
                 in_optgeom = False
             elif in_optgeom:
-                if line.strip() in OPT_TYPES.values():
-                    self.data["optimization_settings"]["type"] = line.strip()
-                elif "MAXCYCLE" in line and i + 1 < len(lines):
+                # Extract all optimization types from d12creation.py
+                if stripped in ["FULLOPTG", "CVOLOPT", "CELLONLY", "ATOMONLY"]:
+                    opt_settings["type"] = stripped
+                    
+                # Optimization tolerances
+                elif stripped == "MAXCYCLE" and i + 1 < len(lines):
                     try:
-                        self.data["optimization_settings"]["MAXCYCLE"] = int(
-                            lines[i + 1].strip()
-                        )
-                    except:
+                        opt_settings["MAXCYCLE"] = int(lines[i + 1].strip())
+                    except (ValueError, IndexError):
                         pass
-                elif "TOLDEG" in line and i + 1 < len(lines):
+                elif stripped == "TOLDEG" and i + 1 < len(lines):
                     try:
-                        self.data["optimization_settings"]["TOLDEG"] = float(
-                            lines[i + 1].strip()
-                        )
-                    except:
+                        opt_settings["TOLDEG"] = float(lines[i + 1].strip())
+                    except (ValueError, IndexError):
                         pass
-                elif "TOLDEX" in line and i + 1 < len(lines):
+                elif stripped == "TOLDEX" and i + 1 < len(lines):
                     try:
-                        self.data["optimization_settings"]["TOLDEX"] = float(
-                            lines[i + 1].strip()
-                        )
-                    except:
+                        opt_settings["TOLDEX"] = float(lines[i + 1].strip())
+                    except (ValueError, IndexError):
                         pass
-                elif "TOLDEE" in line and i + 1 < len(lines):
+                elif stripped == "TOLDEE" and i + 1 < len(lines):
                     try:
-                        self.data["optimization_settings"]["TOLDEE"] = int(
-                            lines[i + 1].strip()
-                        )
-                    except:
+                        opt_settings["TOLDEE"] = int(lines[i + 1].strip())
+                    except (ValueError, IndexError):
                         pass
-                elif "MAXTRADIUS" in line and i + 1 < len(lines):
+                elif stripped == "MAXTRADIUS" and i + 1 < len(lines):
                     try:
-                        self.data["optimization_settings"]["MAXTRADIUS"] = float(
-                            lines[i + 1].strip()
-                        )
-                    except:
+                        opt_settings["MAXTRADIUS"] = float(lines[i + 1].strip())
+                    except (ValueError, IndexError):
                         pass
+                        
+        # Also check for frequency calculations
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped == "FREQCALC":
+                self.data["calculation_type"] = "FREQ"
+                in_freq = True
+                freq_settings = {}
+                
+                # Look for NUMDERIV setting
+                for j in range(i + 1, min(i + 10, len(lines))):
+                    if lines[j].strip() == "NUMDERIV" and j + 1 < len(lines):
+                        try:
+                            freq_settings["NUMDERIV"] = int(lines[j + 1].strip())
+                        except (ValueError, IndexError):
+                            freq_settings["NUMDERIV"] = 2  # Default
+                        break
+                    elif lines[j].strip() == "END":
+                        break
+                        
+                if freq_settings:
+                    self.data["freq_settings"] = freq_settings
+                break
+                
+        # Store optimization settings if any were found
+        if opt_settings:
+            self.data["optimization_settings"] = opt_settings
+
+    def _extract_dft_settings(self, lines):
+        """Extract DFT functional and settings from input file"""
+        in_dft_block = False
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            
+            # Check for DFT block
+            if stripped == "DFT":
+                in_dft_block = True
+                self.data["method"] = "DFT"
+                continue
+            elif stripped == "ENDDFT":
+                in_dft_block = False
+                continue
+            elif stripped in ["UHF", "RHF"] and not in_dft_block:
+                # Hartree-Fock methods outside DFT block
+                self.data["functional"] = stripped
+                self.data["method"] = "HF"
+                continue
+                
+            if in_dft_block:
+                # Check for all functional categories from d12creation.py
+                
+                # LDA functionals
+                if stripped in ["SVWN", "LDA", "VBH"]:
+                    self.data["functional"] = stripped
+                    
+                # GGA functionals
+                elif stripped in ["BLYP", "PBE", "PBESOL", "PWGGA", "SOGGA", "WCGGA", "B97"]:
+                    self.data["functional"] = stripped
+                    
+                # Hybrid functionals
+                elif stripped in ["B3LYP", "B3PW", "CAM-B3LYP", "PBE0", "PBESOL0", "PBE0-13", 
+                                "HSE06", "HSEsol", "mPW1PW91", "mPW1K", "B1WC", "WC1LYP", 
+                                "B97H", "wB97", "wB97X", "SOGGA11X", "SC-BLYP", "HISS", 
+                                "RSHXLDA", "LC-wPBE", "LC-wPBEsol", "LC-wBLYP", "LC-BLYP", "LC-PBE"]:
+                    self.data["functional"] = stripped
+                    
+                # meta-GGA functionals
+                elif stripped in ["SCAN", "r2SCAN", "SCAN0", "r2SCANh", "r2SCAN0", "r2SCAN50",
+                                "M05", "M052X", "M06", "M062X", "M06HF", "M06L", "revM06", 
+                                "revM06L", "MN15", "MN15L", "B1B95", "mPW1B95", "mPW1B1K", 
+                                "PW6B95", "PWB6K"]:
+                    self.data["functional"] = stripped
+                    
+                # 3C composite methods (remove hyphens for CRYSTAL format)
+                elif stripped in ["PBEh3C", "HSE3C", "B973C", "PBEsol03C", "HSEsol3C"]:
+                    # Convert back to standard naming with hyphens
+                    if stripped == "PBEh3C":
+                        self.data["functional"] = "PBEh-3C"
+                    elif stripped == "HSE3C":
+                        self.data["functional"] = "HSE-3C"  
+                    elif stripped == "B973C":
+                        self.data["functional"] = "B97-3C"
+                    elif stripped == "PBEsol03C":
+                        self.data["functional"] = "PBEsol0-3C"
+                    elif stripped == "HSEsol3C":
+                        self.data["functional"] = "HSEsol-3C"
+                    self.data["is_3c_method"] = True
+                    
+                # Check for D3 dispersion (both explicit and in functional name)
+                elif stripped.endswith("-D3"):
+                    base_functional = stripped[:-3]  # Remove -D3 suffix
+                    self.data["functional"] = base_functional
+                    self.data["dispersion"] = True
+                    
+                # Special cases like PW1PW-D3
+                elif stripped == "PW1PW-D3":
+                    self.data["functional"] = "mPW1PW91"
+                    self.data["dispersion"] = True
+                    
+                # Grid settings
+                elif stripped in ["OLDGRID", "DEFAULT", "LGRID", "XLGRID", "XXLGRID", "XXXLGRID", "HUGEGRID"]:
+                    self.data["dft_grid"] = stripped
+                    
+                # Spin polarization
+                elif stripped == "SPIN":
+                    self.data["spin_polarized"] = True
+                    
+        # Extract smearing settings
+        self._extract_smearing_settings(lines)
+        
+        # Extract tolerance settings  
+        self._extract_tolerance_settings(lines)
+        
+        # Extract k-point settings
+        self._extract_kpoint_settings(lines)
+        
+        # Extract SCF settings
+        self._extract_scf_settings(lines)
+        
+    def _extract_smearing_settings(self, lines):
+        """Extract Fermi smearing settings"""
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped == "SMEAR":
+                self.data["use_smearing"] = True
+                # Check next line for smearing width
+                if i + 1 < len(lines):
+                    try:
+                        self.data["smearing_width"] = float(lines[i + 1].strip())
+                    except (ValueError, IndexError):
+                        self.data["smearing_width"] = 0.005  # Default
+                        
+    def _extract_tolerance_settings(self, lines):
+        """Extract computational tolerance settings"""
+        tolerances = {}
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped == "TOLINTEG":
+                # Next line contains tolerance values
+                if i + 1 < len(lines):
+                    tolerances["TOLINTEG"] = lines[i + 1].strip()
+            elif stripped == "TOLDEE":
+                # Next line contains tolerance value
+                if i + 1 < len(lines):
+                    try:
+                        tolerances["TOLDEE"] = int(lines[i + 1].strip())
+                    except (ValueError, IndexError):
+                        tolerances["TOLDEE"] = 7  # Default
+                        
+        if tolerances:
+            self.data["tolerances"] = tolerances
+            
+    def _extract_kpoint_settings(self, lines):
+        """Extract k-point grid settings"""
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped == "SHRINK":
+                # Next lines contain k-point specification
+                if i + 2 < len(lines):
+                    # Check if it's simplified format (k n_shrink) or directional (0 n_shrink, then ka kb kc)
+                    shrink_line = lines[i + 1].strip().split()
+                    if len(shrink_line) == 2 and shrink_line[0] != "0":
+                        # Simplified format: SHRINK k n_shrink
+                        self.data["k_points"] = (int(shrink_line[0]), int(shrink_line[0]), int(shrink_line[0]))
+                    elif len(shrink_line) == 2 and shrink_line[0] == "0":
+                        # Directional format: SHRINK 0 n_shrink, then ka kb kc
+                        kpoint_line = lines[i + 2].strip().split()
+                        if len(kpoint_line) >= 3:
+                            self.data["k_points"] = (int(kpoint_line[0]), int(kpoint_line[1]), int(kpoint_line[2]))
+                        elif len(kpoint_line) == 1:
+                            # Single k-point value for all directions
+                            k = int(kpoint_line[0])
+                            self.data["k_points"] = (k, k, k)
+                            
+    def _extract_scf_settings(self, lines):
+        """Extract SCF convergence settings"""
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            
+            # SCF method
+            if stripped in ["DIIS", "ANDERSON", "BROYDEN"]:
+                self.data["scf_method"] = stripped
+                
+            # SCF max cycles
+            elif stripped == "MAXCYCLE" and "OPTGEOM" not in " ".join(lines[max(0, i-5):i]):
+                if i + 1 < len(lines):
+                    try:
+                        self.data["scf_maxcycle"] = int(lines[i + 1].strip())
+                    except (ValueError, IndexError):
+                        self.data["scf_maxcycle"] = 800  # Default
+                        
+            # FMIXING percentage
+            elif stripped == "FMIXING":
+                if i + 1 < len(lines):
+                    try:
+                        self.data["fmixing"] = int(lines[i + 1].strip())
+                    except (ValueError, IndexError):
+                        self.data["fmixing"] = 30  # Default
+                        
+            # Additional SCF options
+            elif stripped == "SCFDIR":
+                self.data["scf_direct"] = True
+            elif stripped == "PPAN":
+                self.data["mulliken_analysis"] = True
+            elif stripped == "HISTDIIS":
+                if i + 1 < len(lines):
+                    try:
+                        self.data["diis_history"] = int(lines[i + 1].strip())
+                    except (ValueError, IndexError):
+                        self.data["diis_history"] = 20  # Default
 
 
 def get_calculation_options(current_settings, shared_mode=False):
@@ -1634,10 +1854,19 @@ def process_files(output_file, input_file=None, shared_settings=None):
         try:
             in_data = in_parser.parse()
 
-            # Merge data, preferring output file data but filling in gaps
+            # Merge data, with special handling for DFT settings
             for key, value in in_data.items():
                 if key not in settings or settings[key] is None:
                     settings[key] = value
+                elif key in ["functional", "dispersion", "spin_polarized", "dft_grid", "method", 
+                           "is_3c_method", "use_smearing", "smearing_width", "tolerances", 
+                           "k_points", "scf_method", "scf_maxcycle", "fmixing", "scf_direct",
+                           "mulliken_analysis", "diis_history", "calculation_type", 
+                           "optimization_settings", "freq_settings"]:
+                    # For all calculation settings, prefer input file (.d12) over output file (.out)
+                    # because .d12 contains the original user-specified settings
+                    if value is not None:
+                        settings[key] = value
                 elif key == "scf_settings":
                     # Merge SCF settings
                     if "scf_settings" not in settings:
@@ -1735,8 +1964,9 @@ def find_file_pairs(directory):
     """
     pairs = []
 
-    # Find all .out files
-    out_files = [f for f in os.listdir(directory) if f.endswith(".out")]
+    # Find all .out files, excluding SLURM output files
+    out_files = [f for f in os.listdir(directory) 
+                 if f.endswith(".out") and not f.startswith("slurm-")]
 
     for out_file in out_files:
         base_name = out_file[:-4]  # Remove .out extension
