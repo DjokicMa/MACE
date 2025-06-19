@@ -53,6 +53,10 @@ class EnhancedCrystalQueueManager:
         self.reserve_slots = reserve_slots
         self.enable_tracking = enable_tracking
         
+        # Detect workflow context and setup script paths
+        self.is_workflow_context = self._detect_workflow_context()
+        self.script_paths = self._setup_script_paths()
+        
         # Initialize material tracking database
         if self.enable_tracking:
             self.db = MaterialDatabase(db_path)
@@ -71,6 +75,103 @@ class EnhancedCrystalQueueManager:
         # Workflow settings
         self.workflow_enabled = True
         self.auto_submit_followups = True
+        
+    def _detect_workflow_context(self) -> bool:
+        """Detect if we're running in a workflow context."""
+        cwd = Path.cwd()
+        
+        # Check for workflow indicators
+        workflow_indicators = [
+            cwd / "workflow_scripts",
+            cwd / "workflow_configs", 
+            cwd / "workflow_outputs",
+            cwd / "workflow_inputs"
+        ]
+        
+        return any(indicator.exists() for indicator in workflow_indicators)
+        
+    def _setup_script_paths(self) -> dict:
+        """Setup script paths based on context (workflow vs repository)."""
+        script_paths = {}
+        
+        if self.is_workflow_context:
+            # In workflow context - look for workflow-specific scripts first
+            workflow_scripts_dir = Path.cwd() / "workflow_scripts"
+            if workflow_scripts_dir.exists():
+                script_paths.update({
+                    'submitcrystal23_opt': workflow_scripts_dir / "submitcrystal23_opt_1.sh",
+                    'submitcrystal23_sp': workflow_scripts_dir / "submitcrystal23_sp_2.sh", 
+                    'submit_prop_band': workflow_scripts_dir / "submit_prop_band_3.sh",
+                    'submit_prop_doss': workflow_scripts_dir / "submit_prop_doss_4.sh",
+                    'submitcrystal23_freq': workflow_scripts_dir / "submitcrystal23_freq_5.sh"
+                })
+            
+            # Fallback to repository scripts if workflow scripts don't exist
+            repo_scripts_dir = Path(__file__).parent
+            script_paths.setdefault('submitcrystal23', repo_scripts_dir / "submitcrystal23.sh")
+            script_paths.setdefault('submit_prop', repo_scripts_dir / "submit_prop.sh")
+        else:
+            # In repository context - use original script directory
+            script_dir = Path(__file__).parent
+            script_paths.update({
+                'submitcrystal23': script_dir / "submitcrystal23.sh",
+                'submit_prop': script_dir / "submit_prop.sh"
+            })
+        
+        return script_paths
+        
+    def _get_submit_script_for_calc_type(self, calc_type: str) -> Optional[str]:
+        """Get the appropriate submit script for a calculation type."""
+        if self.is_workflow_context:
+            # In workflow context, use specific workflow scripts
+            if calc_type == 'OPT':
+                return str(self.script_paths.get('submitcrystal23_opt', 
+                          self.script_paths.get('submitcrystal23')))
+            elif calc_type == 'SP':
+                return str(self.script_paths.get('submitcrystal23_sp',
+                          self.script_paths.get('submitcrystal23')))
+            elif calc_type == 'FREQ':
+                return str(self.script_paths.get('submitcrystal23_freq',
+                          self.script_paths.get('submitcrystal23')))
+            elif calc_type == 'BAND':
+                return str(self.script_paths.get('submit_prop_band',
+                          self.script_paths.get('submit_prop')))
+            elif calc_type == 'DOSS':
+                return str(self.script_paths.get('submit_prop_doss',
+                          self.script_paths.get('submit_prop')))
+            elif calc_type in ['TRANSPORT']:
+                return str(self.script_paths.get('submit_prop'))
+        else:
+            # In repository context, use general scripts
+            if calc_type in ['OPT', 'SP', 'FREQ']:
+                return str(self.script_paths.get('submitcrystal23'))
+            elif calc_type in ['BAND', 'DOSS', 'TRANSPORT']:
+                return str(self.script_paths.get('submit_prop'))
+        
+        return None
+        
+    def _populate_completed_jobs_from_outputs(self):
+        """Populate database with completed jobs found in workflow outputs."""
+        if not self.enable_tracking:
+            return
+            
+        try:
+            # Import the population script functionality
+            from populate_completed_jobs import scan_for_completed_calculations, populate_database
+            
+            print("  Scanning for completed calculations...")
+            completed_calcs = scan_for_completed_calculations(Path.cwd())
+            
+            if completed_calcs:
+                print(f"  Found {len(completed_calcs)} completed calculations")
+                added_count = populate_database(completed_calcs, self.db)
+                if added_count > 0:
+                    print(f"  Added {added_count} new calculations to database")
+            
+        except ImportError:
+            print("  Warning: Could not import populate_completed_jobs module")
+        except Exception as e:
+            print(f"  Error populating completed jobs: {e}")
         
     def load_legacy_status(self):
         """Load legacy job status for backward compatibility."""
@@ -256,14 +357,14 @@ class EnhancedCrystalQueueManager:
         Returns:
             SLURM job ID if successful, None if failed
         """
-        # Determine which submission script to use
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        if calc_type in ['OPT', 'SP', 'FREQ']:
-            submit_script = os.path.join(script_dir, "submitcrystal23.sh")
-        elif calc_type in ['BAND', 'DOSS', 'TRANSPORT']:
-            submit_script = os.path.join(script_dir, "submit_prop.sh")
-        else:
+        # Determine which submission script to use based on context
+        submit_script = self._get_submit_script_for_calc_type(calc_type)
+        if not submit_script:
             print(f"Unknown calculation type: {calc_type}")
+            return None
+            
+        if not Path(submit_script).exists():
+            print(f"Submit script not found: {submit_script}")
             return None
             
         # Change to working directory
@@ -765,6 +866,11 @@ class EnhancedCrystalQueueManager:
         
         if mode == 'completion':
             # Job completion callback - check status and submit new jobs
+            
+            # First, populate database with any completed jobs not yet tracked
+            if self.is_workflow_context:
+                self._populate_completed_jobs_from_outputs()
+            
             self.check_queue_status()
             self.process_new_d12_files()
             
