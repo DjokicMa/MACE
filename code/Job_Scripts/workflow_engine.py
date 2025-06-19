@@ -270,8 +270,12 @@ class WorkflowEngine:
                 args.extend(["--d12-file", str(d12_file)])
             
             # Prepare input responses for non-interactive execution
-            # Answers: keep settings? (y), calc type (1=SP), done
-            input_responses = "y\n1\n"
+            # The error shows it's asking for symmetry choice, so let's provide specific settings:
+            # 1. Keep settings? → n (no, customize)
+            # 2. Calc type → 1 (SP)
+            # 3. Symmetry choice → 1 (Write only unique atoms)
+            # 4. Additional defaults for any other prompts
+            input_responses = "n\n1\n1\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
             
             success, stdout, stderr = self.run_script_in_isolated_directory(
                 crystal_to_d12_script, work_dir, args, input_data=input_responses
