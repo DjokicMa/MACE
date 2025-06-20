@@ -51,6 +51,29 @@ class WorkflowEngine:
         self.workflow_dir = self.base_work_dir / "workflow_staging"
         self.workflow_dir.mkdir(exist_ok=True)
         
+    def get_workflow_sequence(self, workflow_id: str) -> Optional[List[str]]:
+        """Get the planned workflow sequence for a workflow ID"""
+        if not workflow_id:
+            return None
+            
+        # Try to find the workflow plan file
+        workflow_configs_dir = self.base_work_dir / "workflow_configs"
+        
+        # Look for plan files that match this workflow ID
+        for plan_file in workflow_configs_dir.glob("workflow_plan_*.json"):
+            try:
+                import json
+                with open(plan_file, 'r') as f:
+                    plan = json.load(f)
+                    
+                if plan.get('workflow_id') == workflow_id:
+                    return plan.get('workflow_sequence', [])
+            except Exception as e:
+                print(f"Error reading workflow plan {plan_file}: {e}")
+                continue
+                
+        return None
+    
     def get_script_paths(self) -> Dict[str, Path]:
         """Get paths to all the CRYSTAL workflow scripts."""
         current_dir = Path.cwd()
@@ -132,27 +155,21 @@ class WorkflowEngine:
     def _customize_slurm_script(self, template_content: str, material_name: str, 
                               calc_type: str, workflow_id: str, step_num: int) -> str:
         """Customize SLURM script template for specific calculation"""
+        import re
         
-        # Replace job name and output file
-        customized = template_content.replace(
-            "#SBATCH --job-name=", 
-            f"#SBATCH --job-name=mat_{material_name}_{calc_type.lower()}_{step_num}"
-        )
+        customized = template_content
         
-        # Update output file name
-        if "--output=" in customized:
-            customized = re.sub(
-                r'--output=[\w\.-]+',
-                f'--output=mat_{material_name}_{calc_type.lower()}.o%j',
-                customized
-            )
+        # Replace $1 placeholders with actual material name
+        customized = customized.replace("$1", material_name)
         
         # Update scratch directory to be workflow-specific
-        scratch_dir = f"$SCRATCH/{workflow_id}/step_{step_num:03d}_{calc_type}/mat_{material_name}"
-        customized = customized.replace(
-            "export scratch=$SCRATCH/$SLURM_JOB_ID",
-            f"export scratch={scratch_dir}"
-        )
+        if "export scratch=" in customized:
+            scratch_dir = f"$SCRATCH/{workflow_id}/step_{step_num:03d}_{calc_type}"
+            customized = re.sub(
+                r'export scratch=\$SCRATCH/[\w/]+',
+                f'export scratch={scratch_dir}',
+                customized
+            )
         
         return customized
     
@@ -470,16 +487,23 @@ class WorkflowEngine:
             
             # Create material-specific directory for SP calculation
             material_clean = self.clean_material_name(material_id)
-            sp_step_dir = workflow_base / "step_002_SP" / f"mat_{material_clean}"
+            # Avoid double mat_ prefix
+            if material_clean.startswith("mat_"):
+                dir_name = material_clean
+            else:
+                dir_name = f"mat_{material_clean}"
+            sp_step_dir = workflow_base / "step_002_SP" / dir_name
             sp_step_dir.mkdir(parents=True, exist_ok=True)
             
             # Move SP file to material's directory
             sp_final_location = sp_step_dir / sp_input_file.name
             shutil.move(sp_input_file, sp_final_location)
             
-            # Create SLURM script for SP calculation
+            # Create SLURM script for SP calculation  
+            # Use the actual D12 file stem for JOB variable to ensure consistency
+            sp_job_name = sp_final_location.stem
             slurm_script_path = self._create_slurm_script_for_calculation(
-                sp_step_dir, material_clean, "SP", 2, workflow_base.name
+                sp_step_dir, sp_job_name, "SP", 2, workflow_base.name
             )
             
             # Create SP calculation record
@@ -577,7 +601,12 @@ class WorkflowEngine:
             
             # Create material-specific directory for DOSS calculation
             material_clean = self.clean_material_name(material_id)
-            doss_step_dir = workflow_base / "step_004_DOSS" / f"mat_{material_clean}"
+            # Avoid double mat_ prefix
+            if material_clean.startswith("mat_"):
+                dir_name = material_clean
+            else:
+                dir_name = f"mat_{material_clean}"
+            doss_step_dir = workflow_base / "step_004_DOSS" / dir_name
             doss_step_dir.mkdir(parents=True, exist_ok=True)
             
             # Move DOSS files to material's directory
@@ -589,8 +618,10 @@ class WorkflowEngine:
                 shutil.move(doss_f9_files[0], doss_f9_final)
             
             # Create SLURM script for DOSS calculation
+            # Use the actual D12 file stem for JOB variable to ensure consistency
+            doss_job_name = doss_final_location.stem
             slurm_script_path = self._create_slurm_script_for_calculation(
-                doss_step_dir, material_clean, "DOSS", 4, workflow_base.name
+                doss_step_dir, doss_job_name, "DOSS", 4, workflow_base.name
             )
             
             # Create DOSS calculation record
@@ -688,7 +719,12 @@ class WorkflowEngine:
             
             # Create material-specific directory for BAND calculation
             material_clean = self.clean_material_name(material_id)
-            band_step_dir = workflow_base / "step_003_BAND" / f"mat_{material_clean}"
+            # Avoid double mat_ prefix
+            if material_clean.startswith("mat_"):
+                dir_name = material_clean
+            else:
+                dir_name = f"mat_{material_clean}"
+            band_step_dir = workflow_base / "step_003_BAND" / dir_name
             band_step_dir.mkdir(parents=True, exist_ok=True)
             
             # Move BAND files to material's directory
@@ -700,8 +736,10 @@ class WorkflowEngine:
                 shutil.move(band_f9_files[0], band_f9_final)
             
             # Create SLURM script for BAND calculation
+            # Use the actual D12 file stem for JOB variable to ensure consistency
+            band_job_name = band_final_location.stem
             slurm_script_path = self._create_slurm_script_for_calculation(
-                band_step_dir, material_clean, "BAND", 3, workflow_base.name
+                band_step_dir, band_job_name, "BAND", 3, workflow_base.name
             )
             
             # Create BAND calculation record
@@ -820,7 +858,12 @@ class WorkflowEngine:
             
             # Create material-specific directory for FREQ calculation
             material_clean = self.clean_material_name(material_id)
-            freq_step_dir = workflow_base / "step_005_FREQ" / f"mat_{material_clean}"
+            # Avoid double mat_ prefix
+            if material_clean.startswith("mat_"):
+                dir_name = material_clean
+            else:
+                dir_name = f"mat_{material_clean}"
+            freq_step_dir = workflow_base / "step_005_FREQ" / dir_name
             freq_step_dir.mkdir(parents=True, exist_ok=True)
             
             # Move FREQ file to material's directory
@@ -828,8 +871,10 @@ class WorkflowEngine:
             shutil.move(freq_input_file, freq_final_location)
             
             # Create SLURM script for FREQ calculation
+            # Use the actual D12 file stem for JOB variable to ensure consistency
+            freq_job_name = freq_final_location.stem
             slurm_script_path = self._create_slurm_script_for_calculation(
-                freq_step_dir, material_clean, "FREQ", 5, workflow_base.name
+                freq_step_dir, freq_job_name, "FREQ", 5, workflow_base.name
             )
             
             # Create FREQ calculation record
@@ -883,26 +928,52 @@ class WorkflowEngine:
         
         print(f"Executing workflow step after {calc_type} completion for {material_id}")
         
-        # Determine next steps based on completed calculation type
+        # Determine next steps based on completed calculation type and workflow plan
+        # Check if workflow metadata exists to determine planned sequence
+        workflow_id = completed_calc.get('metadata', {}).get('workflow_id')
+        planned_sequence = self.get_workflow_sequence(workflow_id) if workflow_id else None
+        
         if calc_type == "OPT":
-            # OPT completed -> generate SP and FREQ (parallel calculations)
-            sp_calc_id = self.generate_sp_from_opt(completed_calc_id)
-            if sp_calc_id:
-                new_calc_ids.append(sp_calc_id)
-            
-            freq_calc_id = self.generate_freq_from_opt(completed_calc_id)
-            if freq_calc_id:
-                new_calc_ids.append(freq_calc_id)
+            # Generate next steps based on workflow plan or default behavior
+            if planned_sequence:
+                # Follow the planned workflow sequence
+                if "SP" in planned_sequence:
+                    sp_calc_id = self.generate_sp_from_opt(completed_calc_id)
+                    if sp_calc_id:
+                        new_calc_ids.append(sp_calc_id)
+                
+                if "FREQ" in planned_sequence:
+                    freq_calc_id = self.generate_freq_from_opt(completed_calc_id)
+                    if freq_calc_id:
+                        new_calc_ids.append(freq_calc_id)
+            else:
+                # Default behavior: generate SP only
+                sp_calc_id = self.generate_sp_from_opt(completed_calc_id)
+                if sp_calc_id:
+                    new_calc_ids.append(sp_calc_id)
                 
         elif calc_type == "SP":
-            # SP completed -> generate both DOSS and BAND
-            doss_calc_id = self.generate_doss_from_sp(completed_calc_id)
-            if doss_calc_id:
-                new_calc_ids.append(doss_calc_id)
-                
-            band_calc_id = self.generate_band_from_sp(completed_calc_id)
-            if band_calc_id:
-                new_calc_ids.append(band_calc_id)
+            # Generate next steps based on workflow plan or default behavior
+            if planned_sequence:
+                # Follow the planned workflow sequence
+                if "DOSS" in planned_sequence:
+                    doss_calc_id = self.generate_doss_from_sp(completed_calc_id)
+                    if doss_calc_id:
+                        new_calc_ids.append(doss_calc_id)
+                        
+                if "BAND" in planned_sequence:
+                    band_calc_id = self.generate_band_from_sp(completed_calc_id)
+                    if band_calc_id:
+                        new_calc_ids.append(band_calc_id)
+            else:
+                # Default behavior: generate both DOSS and BAND
+                doss_calc_id = self.generate_doss_from_sp(completed_calc_id)
+                if doss_calc_id:
+                    new_calc_ids.append(doss_calc_id)
+                    
+                band_calc_id = self.generate_band_from_sp(completed_calc_id)
+                if band_calc_id:
+                    new_calc_ids.append(band_calc_id)
                 
         # Note: DOSS, BAND, and FREQ are typically terminal calculations in the workflow
         

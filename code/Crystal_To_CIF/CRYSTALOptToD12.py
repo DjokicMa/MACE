@@ -1644,7 +1644,14 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             # Check if this space group has special origin settings
             if spacegroup in MULTI_ORIGIN_SPACEGROUPS:
                 spg_info = MULTI_ORIGIN_SPACEGROUPS[spacegroup]
-                f.write(f"{spg_info['crystal_code']}\n")
+                # Preserve the original origin setting if it matches known alternatives
+                if origin_setting == spg_info.get('alt_crystal_code', ''):
+                    f.write(f"{origin_setting}\n")  # Use original alternate origin
+                elif origin_setting == spg_info.get('crystal_code', '0 0 0'):
+                    f.write(f"{origin_setting}\n")  # Use original default origin
+                else:
+                    # Fallback to extracted origin setting to preserve original
+                    f.write(f"{origin_setting}\n")
             else:
                 f.write(f"{origin_setting}\n")
 
@@ -1938,7 +1945,8 @@ def process_files(output_file, input_file=None, shared_settings=None):
                            "is_3c_method", "use_smearing", "smearing_width", "tolerances", 
                            "k_points", "scf_method", "scf_maxcycle", "fmixing", "scf_direct",
                            "mulliken_analysis", "diis_history", "calculation_type", 
-                           "optimization_settings", "freq_settings"]:
+                           "optimization_settings", "freq_settings", "origin_setting", 
+                           "spacegroup", "dimensionality"]:
                     # For all calculation settings, prefer input file (.d12) over output file (.out)
                     # because .d12 contains the original user-specified settings
                     if value is not None:
