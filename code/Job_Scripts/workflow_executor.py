@@ -192,13 +192,20 @@ class WorkflowExecutor:
         # Remove common suffixes and create clean name
         name = d12_file.stem
         
-        # Remove common workflow suffixes
+        # Remove comprehensive list of workflow suffixes (order matters - longest first)
         suffixes_to_remove = [
-            '_CRYSTAL_OPT_symm_B3LYP-D3_POB-TZVP-REV2',
-            '_CRYSTAL_OPT_symm',
+            '_CRYSTAL_OPT_symm_PBE-D3_POB-TZVP-REV2',
+            '_CRYSTAL_OPT_symm_B3LYP-D3_POB-TZVP-REV2', 
+            '_CRYSTAL_OPT_symm_HSE06_POB-TZVP-REV2',
+            '_BULK_OPTGEOM_symm_CRYSTAL_OPT_symm_PBE-D3_POB-TZVP-REV2',
+            '_BULK_OPTGEOM_TZ_symm_CRYSTAL_OPT_symm_PBE-D3_POB-TZVP-REV2',
             '_BULK_OPTGEOM_symm',
             '_BULK_OPTGEOM_TZ_symm',
-            '_BULK_OPTGEOM'
+            '_BULK_OPTGEOM',
+            '_CRYSTAL_OPT_symm',
+            '_CRYSTAL_SCFDIR_P1',
+            '_OPT_symm',
+            '_symm'
         ]
         
         for suffix in suffixes_to_remove:
@@ -206,8 +213,11 @@ class WorkflowExecutor:
                 name = name[:-len(suffix)]
                 break
                 
-        # Clean up any remaining problematic characters
-        name = name.replace(',', '_').replace('^', '_').replace(' ', '_')
+        # Only replace truly problematic characters for filesystem compatibility
+        # Preserve ^ and , as they are commonly used in chemical notation
+        name = name.replace(' ', '_')  # Spaces to underscores
+        name = name.replace('/', '_').replace('\\', '_')  # Path separators
+        # Keep other characters like ^, ,, ., - as they are common in chemical names
         
         # Ensure it starts with a letter (required for some systems)
         if name and not name[0].isalpha():
@@ -347,24 +357,67 @@ fi'''
             original_cwd = os.getcwd()
             os.chdir(calc_dir)
             
-            # Submit job
-            result = subprocess.run(
-                ['sbatch', script_file.name],
-                capture_output=True,
-                text=True
-            )
+            # Check if this is a script generator (template) or actual SLURM script
+            job_name = script_file.stem
             
-            if result.returncode == 0:
-                # Extract job ID from sbatch output
-                # Typical output: "Submitted batch job 12345"
-                output_lines = result.stdout.strip().split('\n')
-                for line in output_lines:
-                    if 'Submitted batch job' in line:
-                        job_id = line.split()[-1]
-                        return job_id
-                        
+            # Check if the script contains script generation logic
+            with open(script_file, 'r') as f:
+                script_content = f.read()
+            
+            if 'echo \'#!/bin/bash --login\' >' in script_content or 'echo "#SBATCH' in script_content:
+                # This is a script generator template - run locally to generate actual script
+                print(f"  Running script generator locally: {script_file.name}")
+                result = subprocess.run(
+                    ['bash', script_file.name, job_name],
+                    capture_output=True,
+                    text=True
+                )
+                
+                if result.returncode == 0:
+                    # Extract job ID from sbatch output (the template runs sbatch at the end)
+                    output_lines = result.stdout.strip().split('\n')
+                    for line in output_lines:
+                        if 'Submitted batch job' in line:
+                            job_id = line.split()[-1]
+                            return job_id
+                    
+                    # Maybe the template just generated the script but didn't submit it
+                    # Look for generated script and submit it manually
+                    generated_script = calc_dir / f"{job_name}.sh"
+                    if generated_script.exists():
+                        print(f"  Found generated script: {generated_script.name}")
+                        result = subprocess.run(
+                            ['sbatch', generated_script.name],
+                            capture_output=True,
+                            text=True
+                        )
+                        if result.returncode == 0:
+                            output_lines = result.stdout.strip().split('\n')
+                            for line in output_lines:
+                                if 'Submitted batch job' in line:
+                                    job_id = line.split()[-1]
+                                    return job_id
+                else:
+                    print(f"Error running script generator: {result.stderr}")
+                    
             else:
-                print(f"SLURM submission failed: {result.stderr}")
+                # This is a regular SLURM script - submit directly
+                print(f"  Submitting SLURM script directly: {script_file.name}")
+                result = subprocess.run(
+                    ['sbatch', script_file.name],
+                    capture_output=True,
+                    text=True
+                )
+                
+                if result.returncode == 0:
+                    # Extract job ID from sbatch output
+                    output_lines = result.stdout.strip().split('\n')
+                    for line in output_lines:
+                        if 'Submitted batch job' in line:
+                            job_id = line.split()[-1]
+                            return job_id
+                else:
+                    print(f"SLURM submission failed: {result.stderr}")
                 
         except Exception as e:
             print(f"Error submitting job: {e}")
