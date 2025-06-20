@@ -374,56 +374,58 @@ class CrystalOutputParser:
             # Look for coordinates with T/F symmetry markers
             found_coords = False
 
-            # First try to find ATOMS IN THE ASYMMETRIC UNIT section
+            # PRIORITY: First try to find COORDINATES IN THE CRYSTALLOGRAPHIC CELL
+            # This is essential for maintaining consistency with lattice parameters
             for i in range(start_idx, min(start_idx + 200, len(lines))):
-                if "ATOMS IN THE ASYMMETRIC UNIT" in lines[i]:
+                if "COORDINATES IN THE CRYSTALLOGRAPHIC CELL" in lines[i]:
                     # Skip header lines
                     j = i + 3
                     while j < len(lines):
                         parts = lines[j].split()
-                        if len(parts) >= 7:
-                            # Check for T/F marker
-                            if parts[1] in ["T", "F"]:
-                                try:
-                                    coord = {
-                                        "atom_number": parts[2],
-                                        "x": parts[4],
-                                        "y": parts[5],
-                                        "z": parts[6],
-                                        "is_unique": parts[1]
-                                        == "T",  # True if T, False if F
-                                    }
-                                    coordinates.append(coord)
-                                except:
-                                    break
-                            else:
-                                break
+                        if len(parts) >= 7 and (parts[1] == "T" or parts[1] == "F"):
+                            coord = {
+                                "atom_number": parts[2],
+                                "x": parts[4],
+                                "y": parts[5],
+                                "z": parts[6],
+                                "is_unique": parts[1] == "T",
+                            }
+                            coordinates.append(coord)
                         elif len(parts) < 6 or not lines[j].strip():
                             break
                         j += 1
                     found_coords = True
                     break
 
-            # If not found, try COORDINATES IN THE CRYSTALLOGRAPHIC CELL
+            # Fallback: If crystallographic coordinates not found, try ATOMS IN THE ASYMMETRIC UNIT
             if not found_coords:
                 for i in range(start_idx, min(start_idx + 200, len(lines))):
-                    if "COORDINATES IN THE CRYSTALLOGRAPHIC CELL" in lines[i]:
+                    if "ATOMS IN THE ASYMMETRIC UNIT" in lines[i]:
                         # Skip header lines
                         j = i + 3
                         while j < len(lines):
                             parts = lines[j].split()
-                            if len(parts) >= 7 and (parts[1] == "T" or parts[1] == "F"):
-                                coord = {
-                                    "atom_number": parts[2],
-                                    "x": parts[4],
-                                    "y": parts[5],
-                                    "z": parts[6],
-                                    "is_unique": parts[1] == "T",
-                                }
-                                coordinates.append(coord)
+                            if len(parts) >= 7:
+                                # Check for T/F marker
+                                if parts[1] in ["T", "F"]:
+                                    try:
+                                        coord = {
+                                            "atom_number": parts[2],
+                                            "x": parts[4],
+                                            "y": parts[5],
+                                            "z": parts[6],
+                                            "is_unique": parts[1]
+                                            == "T",  # True if T, False if F
+                                        }
+                                        coordinates.append(coord)
+                                    except:
+                                        break
+                                else:
+                                    break
                             elif len(parts) < 6 or not lines[j].strip():
                                 break
                             j += 1
+                        found_coords = True
                         break
 
         self.data["coordinates"] = coordinates

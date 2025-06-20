@@ -404,22 +404,62 @@ class EnhancedCrystalQueueManager:
         try:
             os.chdir(work_dir)
             
-            # Submit job
-            cmd = [submit_script, input_file.name]
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            # Check if this is a script generator (template) or actual SLURM script
+            script_path = Path(submit_script)
+            job_name = input_file.stem  # Remove .d12 extension
             
-            if result.returncode == 0:
-                # Extract job ID from sbatch output
-                output = result.stdout.strip()
-                job_id_match = re.search(r'Submitted batch job (\d+)', output)
-                if job_id_match:
-                    return job_id_match.group(1)
+            # Check if the script contains script generation logic
+            with open(script_path, 'r') as f:
+                script_content = f.read()
+            
+            if 'echo \'#!/bin/bash --login\' >' in script_content or 'echo "#SBATCH' in script_content:
+                # This is a script generator template - run locally to generate actual script
+                print(f"  Running script generator: {script_path.name}")
+                cmd = ['bash', str(script_path), job_name]
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                if result.returncode == 0:
+                    # Extract job ID from sbatch output (the template runs sbatch at the end)
+                    output = result.stdout.strip()
+                    job_id_match = re.search(r'Submitted batch job (\d+)', output)
+                    if job_id_match:
+                        return job_id_match.group(1)
+                    else:
+                        print(f"Could not extract job ID from template output: {output}")
+                        # Maybe the template just generated the script but didn't submit it
+                        # Look for generated script and submit it manually
+                        generated_script = work_dir / f"{job_name}.sh"
+                        if generated_script.exists():
+                            print(f"  Found generated script: {generated_script}")
+                            cmd = ['sbatch', str(generated_script)]
+                            result = subprocess.run(cmd, capture_output=True, text=True)
+                            if result.returncode == 0:
+                                job_id_match = re.search(r'Submitted batch job (\d+)', result.stdout)
+                                if job_id_match:
+                                    return job_id_match.group(1)
+                        return None
                 else:
-                    print(f"Could not extract job ID from: {output}")
+                    print(f"Error running script generator: {result.stderr}")
                     return None
+                    
             else:
-                print(f"Error submitting job: {result.stderr}")
-                return None
+                # This is a regular SLURM script - submit directly
+                print(f"  Submitting SLURM script: {script_path.name}")
+                cmd = [str(script_path), job_name]
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                if result.returncode == 0:
+                    # Extract job ID from sbatch output
+                    output = result.stdout.strip()
+                    job_id_match = re.search(r'Submitted batch job (\d+)', output)
+                    if job_id_match:
+                        return job_id_match.group(1)
+                    else:
+                        print(f"Could not extract job ID from: {output}")
+                        return None
+                else:
+                    print(f"Error submitting job: {result.stderr}")
+                    return None
                 
         finally:
             os.chdir(original_cwd)
