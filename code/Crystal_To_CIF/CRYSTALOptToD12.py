@@ -1800,22 +1800,53 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         # SCF parameters section
         atomic_numbers = [int(atom["atom_number"]) for atom in coords_to_write]
 
-        # Prepare k-points
+        # Prepare k-points with same logic as d12creation.py
+        k_points_info = None
         if settings.get("k_points"):
-            k_points_info = settings["k_points"]
-        elif geometry_data.get("conventional_cell"):
-            # Generate k-points based on cell size
+            k_points_raw = settings["k_points"]
+            
+            # Handle different k-points formats from extraction
+            if isinstance(k_points_raw, tuple) and len(k_points_raw) == 3:
+                # Tuple format (ka, kb, kc) from extraction
+                k_points_info = k_points_raw
+            elif isinstance(k_points_raw, str):
+                # String format like "12 12 12" from extraction
+                try:
+                    parts = k_points_raw.split()
+                    if len(parts) == 3:
+                        k_points_info = (int(parts[0]), int(parts[1]), int(parts[2]))
+                    elif len(parts) == 1:
+                        # Single value - apply to all directions
+                        k = int(parts[0])
+                        k_points_info = (k, k, k)
+                except (ValueError, IndexError):
+                    k_points_info = None
+                    
+        # Fallback: Generate k-points based on cell size if not extracted
+        if k_points_info is None and geometry_data.get("conventional_cell"):
             a, b, c = [float(x) for x in geometry_data["conventional_cell"][:3]]
             k_points_info = generate_k_points(
                 a, b, c, dimensionality, settings.get("spacegroup", 1)
             )
-        else:
-            k_points_info = None
+
+        # Enhanced k-points handling with symmetry consideration
+        enhanced_k_points = k_points_info
+        if k_points_info and dimensionality == "CRYSTAL":
+            ka, kb, kc = k_points_info
+            spacegroup = settings.get("spacegroup", 1)
+            
+            # For symmetrized structures (non-P1), prefer uniform k-points
+            # This ensures compatibility with simplified SHRINK format
+            if spacegroup != 1 and (ka != kb or kb != kc or ka != kc):
+                # Use maximum k-point for uniform sampling in symmetrized structures
+                k_max = max(ka, kb, kc)
+                enhanced_k_points = (k_max, k_max, k_max)
+                print(f"Note: Using uniform k-points ({k_max},{k_max},{k_max}) for symmetrized structure (space group {spacegroup})")
 
         write_scf_section(
             f,
             settings.get("tolerances", DEFAULT_TOLERANCES),
-            k_points_info,
+            enhanced_k_points,
             dimensionality,
             settings.get("smearing"),
             settings.get("smearing_width", 0.01),
@@ -1823,6 +1854,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             settings.get("scf_settings", {}).get("maxcycle", 800),
             settings.get("scf_settings", {}).get("fmixing", 30),
             len(atomic_numbers),
+            settings.get("spacegroup", 1),
         )
 
 

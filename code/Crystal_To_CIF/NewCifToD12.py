@@ -1463,6 +1463,7 @@ def create_d12_file(cif_data, output_file, options):
             scf_maxcycle,
             fmixing,
             len(atomic_numbers),
+            spacegroup,
         )
 
 

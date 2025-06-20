@@ -1319,6 +1319,7 @@ def write_scf_section(
     scf_maxcycle,
     fmixing,
     num_atoms,
+    spacegroup=1,
 ):
     """Write the SCF parameters section of the D12 file"""
     # Tolerance settings with proper fallback handling
@@ -1346,7 +1347,17 @@ def write_scf_section(
             ka, kb, kc = k_points
             
             # Check if k-points are uniform for simplified SHRINK format
+            # For symmetrized structures (non-P1), prefer uniform k-points
+            use_simplified = False
             if dimensionality == "CRYSTAL" and ka == kb == kc:
+                use_simplified = True
+            elif dimensionality == "CRYSTAL" and spacegroup != 1:
+                # For symmetrized structures, convert to uniform k-points
+                k_max = max(ka, kb, kc)
+                ka = kb = kc = k_max
+                use_simplified = True
+                
+            if use_simplified:
                 # Use simplified format: SHRINK k n_shrink
                 n_shrink = ka * 2
                 print("SHRINK", file=f)
