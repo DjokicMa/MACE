@@ -79,7 +79,9 @@ class WorkflowExecutor:
         with open(plan_file, 'r') as f:
             plan = json.load(f)
             
-        workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # Use workflow_id from plan, or generate new one if missing
+        workflow_id = plan.get('workflow_id', f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        print(f"Using workflow_id: {workflow_id}")
         
         try:
             # Phase 1: Prepare input files
@@ -187,43 +189,87 @@ class WorkflowExecutor:
                 
         return submitted_jobs
         
-    def extract_material_name(self, d12_file: Path) -> str:
-        """Extract a clean material name from D12 filename"""
-        # Remove common suffixes and create clean name
+    def extract_core_material_name(self, d12_file: Path) -> str:
+        """Extract the core material name by removing ALL workflow-related suffixes"""
         name = d12_file.stem
         
-        # Remove comprehensive list of workflow suffixes (order matters - longest first)
+        # ACTUAL suffixes from NewCifToD12.py, CRYSTALOptToD12.py, and d12creation.py
+        # Based on real filename construction patterns found in the code
         suffixes_to_remove = [
-            '_CRYSTAL_OPT_symm_PBE-D3_POB-TZVP-REV2',
-            '_CRYSTAL_OPT_symm_B3LYP-D3_POB-TZVP-REV2', 
-            '_CRYSTAL_OPT_symm_HSE06_POB-TZVP-REV2',
-            '_BULK_OPTGEOM_symm_CRYSTAL_OPT_symm_PBE-D3_POB-TZVP-REV2',
-            '_BULK_OPTGEOM_TZ_symm_CRYSTAL_OPT_symm_PBE-D3_POB-TZVP-REV2',
-            '_BULK_OPTGEOM_symm',
-            '_BULK_OPTGEOM_TZ_symm',
-            '_BULK_OPTGEOM',
-            '_CRYSTAL_OPT_symm',
-            '_CRYSTAL_SCFDIR_P1',
-            '_OPT_symm',
-            '_symm'
+            # === BASIS SETS (from NewCifToD12.py and d12creation.py) ===
+            '_POB-TZVP-REV2', '_POB-DZVP-REV2', '_POB-TZVP', '_POB-DZVP',
+            '_STO-3G', '_3-21G', '_6-31G', '_6-311G', '_def2-SVP', '_def2-TZVP',
+            '_DZVP-REV2', '_TZVP-REV2',  # External basis directory names
+            
+            # === DFT FUNCTIONALS WITH DISPERSION (from NewCifToD12.py) ===
+            '_HSE06-D3', '_PBE-D3', '_B3LYP-D3', '_PBE0-D3', '_SCAN-D3',
+            '_BLYP-D3', '_BP86-D3', '_wB97X-D3',
+            
+            # === DFT FUNCTIONALS WITHOUT DISPERSION ===
+            '_HSE06', '_PBE', '_B3LYP', '_PBE0', '_SCAN', '_BLYP', '_BP86', '_wB97X',
+            '_LDA', '_VWN', '_PWGGA', '_PW91',
+            
+            # === HARTREE-FOCK METHODS ===
+            '_RHF', '_UHF', '_HF',
+            
+            # === CRYSTALOptToD12.py SPECIFIC SUFFIXES ===
+            '_optimized',  # Always added by CRYSTALOptToD12.py
+            
+            # === CALCULATION TYPES (from NewCifToD12.py pattern) ===
+            '_OPT', '_SP', '_FREQ',
+            
+            # === DIMENSIONALITY (from NewCifToD12.py) ===
+            '_CRYSTAL', '_SLAB', '_POLYMER', '_MOLECULE',
+            
+            # === SYMMETRY SETTINGS (from NewCifToD12.py) ===
+            '_symm', '_P1',
+            
+            # === LOWERCASE CALC TYPES (from CRYSTALOptToD12.py) ===
+            '_opt', '_sp', '_freq',
+            
+            # === WORKFLOW-ADDED SUFFIXES ===
+            '_band', '_doss', '_BAND', '_DOSS'
         ]
         
-        for suffix in suffixes_to_remove:
-            if name.endswith(suffix):
-                name = name[:-len(suffix)]
+        # Remove suffixes iteratively until no more matches
+        original_name = name
+        while True:
+            name_before = name
+            for suffix in suffixes_to_remove:
+                if name.endswith(suffix):
+                    name = name[:-len(suffix)]
+                    break
+            # If no suffix was removed, we're done
+            if name == name_before:
                 break
-                
+        
+        # Final cleanup - remove any trailing underscores or numbers
+        name = name.rstrip('_0123456789')
+        
         # Only replace truly problematic characters for filesystem compatibility
         # Preserve ^ and , as they are commonly used in chemical notation
         name = name.replace(' ', '_')  # Spaces to underscores
         name = name.replace('/', '_').replace('\\', '_')  # Path separators
         # Keep other characters like ^, ,, ., - as they are common in chemical names
         
+        # Ensure we have a valid name
+        if not name or len(name) < 2:
+            # Fallback to a basic version if cleaning removed too much
+            name = original_name.split('_')[0]
+            
         # Ensure it starts with a letter (required for some systems)
         if name and not name[0].isalpha():
             name = f"mat_{name}"
             
         return name or "unknown_material"
+        
+    def extract_material_name(self, d12_file: Path) -> str:
+        """Extract material name with appropriate calculation type suffix"""
+        core_name = self.extract_core_material_name(d12_file)
+        
+        # For OPT calculations, add _opt suffix
+        # This distinguishes from the raw core name
+        return f"{core_name}_opt"
         
     def generate_slurm_script(self, plan: Dict[str, Any], workflow_id: str, 
                              calc_type: str, step_num: int, material_name: str, 
@@ -576,6 +622,7 @@ fi'''
         input_files = []
         
         # First check if there are D12 files in the step directory (created by workflow planner)
+        step_num = 1  # First step is always step 1
         step_dir = self.outputs_dir / workflow_id / f"step_{step_num:03d}_{first_calc_type}"
         if step_dir.exists():
             step_d12_files = list(step_dir.glob("*.d12"))
@@ -667,7 +714,7 @@ fi'''
             
             if calc_id:
                 # Store workflow context in database
-                self.db.update_calculation_metadata(calc_id, {
+                self.db.update_calculation_settings(calc_id, {
                     "workflow_id": workflow_id,
                     "workflow_step": step_num,
                     "workflow_calc_type": calc_type

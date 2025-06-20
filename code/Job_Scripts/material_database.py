@@ -332,8 +332,21 @@ class MaterialDatabase:
             query = f"UPDATE calculations SET {', '.join(update_fields)} WHERE calc_id = ?"
             conn.execute(query, update_values)
             
-    def update_calculation_settings(self, calc_id: str, settings: Dict[str, Any]):
+    def update_calculation_settings(self, calc_id: str, settings: Dict[str, Any], merge: bool = False):
         """Update calculation settings."""
+        if merge:
+            # Get existing settings and merge with new ones
+            existing_calc = self.get_calculation(calc_id)
+            if existing_calc and existing_calc.get('settings_json'):
+                try:
+                    existing_settings = json.loads(existing_calc['settings_json'])
+                    merged_settings = existing_settings.copy()
+                    merged_settings.update(settings)
+                    settings = merged_settings
+                except json.JSONDecodeError:
+                    # If existing settings are invalid JSON, just use new settings
+                    pass
+        
         settings_json = json.dumps(settings)
         
         with self._get_connection() as conn:
