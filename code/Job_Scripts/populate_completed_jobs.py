@@ -62,20 +62,40 @@ def is_calculation_completed(out_file: Path) -> bool:
 def extract_calc_type_from_output(out_file: Path) -> str:
     """Extract calculation type from CRYSTAL output file."""
     try:
+        # First check directory context for better identification
+        file_path_str = str(out_file)
+        
+        # Check directory-based context first (most reliable)
+        if '/step_002_SP/' in file_path_str or '/SP/' in file_path_str:
+            return 'SP'
+        elif '/step_001_OPT/' in file_path_str or '/OPT/' in file_path_str:
+            return 'OPT'
+        elif '/BAND/' in file_path_str or '_band_' in file_path_str:
+            return 'BAND'
+        elif '/DOSS/' in file_path_str or '_doss_' in file_path_str:
+            return 'DOSS'
+        elif '/FREQ/' in file_path_str or '_freq_' in file_path_str:
+            return 'FREQ'
+        
+        # Fallback to content-based detection
         with open(out_file, 'r') as f:
             content = f.read()
-            
-        # Look for calculation type indicators
-        if re.search(r'OPTGEOM|FULLOPTG|GEOMETRY OPTIMIZATION', content, re.IGNORECASE):
-            return 'OPT'
-        elif re.search(r'SINGLE POINT|SCF.*CALCULATION', content, re.IGNORECASE):
+        
+        # Check for specific calculation type keywords in input/output sections    
+        if '_sp_' in out_file.name.lower():
             return 'SP'
+        elif '_freq_' in out_file.name.lower():
+            return 'FREQ'
         elif re.search(r'BAND.*STRUCTURE', content, re.IGNORECASE):
             return 'BAND'
         elif re.search(r'DENSITY.*STATES|NEWK.*DOSS', content, re.IGNORECASE):
             return 'DOSS'
         elif re.search(r'FREQUENCY|PHONON', content, re.IGNORECASE):
             return 'FREQ'
+        elif re.search(r'OPTGEOM|FULLOPTG|GEOMETRY OPTIMIZATION', content, re.IGNORECASE):
+            return 'OPT'
+        elif re.search(r'SINGLE POINT|SCF.*CALCULATION', content, re.IGNORECASE):
+            return 'SP'
         else:
             return 'OPT'  # Default assumption
             

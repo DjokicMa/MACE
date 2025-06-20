@@ -120,10 +120,16 @@ class WorkflowEngine:
         else:
             template_script = base_dir / "workflow_scripts" / "submitcrystal23_opt_1.sh"
         
+        # Debug: Print template path being used
+        print(f"  Using template: {template_script}")
+        print(f"  Template exists: {template_script.exists()}")
+        
         if not template_script.exists():
             # Fall back to basic template
             if calc_type in ["OPT", "SP", "FREQ"]:
                 template_script = base_dir / "submitcrystal23.sh"
+                print(f"  Fallback template: {template_script}")
+                print(f"  Fallback exists: {template_script.exists()}")
             else:
                 template_script = base_dir / "submit_prop.sh"
         
@@ -133,6 +139,13 @@ class WorkflowEngine:
         # Read template content
         with open(template_script, 'r') as f:
             template_content = f.read()
+            
+        # Check if this is an old-style script generator (should be avoided)
+        if 'echo \'#!/bin/bash --login\' >' in template_content:
+            print(f"  WARNING: Template {template_script} appears to be a script generator, not a direct SLURM script")
+            print(f"  This will cause submission issues. Consider using a direct SLURM template.")
+        
+        print(f"  Template content starts with: {template_content[:100]}...")
         
         # Create individual script for this material
         material_script_name = f"mat_{material_name}.sh"
@@ -169,6 +182,39 @@ class WorkflowEngine:
                 r'export scratch=\$SCRATCH/[\w/]+',
                 f'export scratch={scratch_dir}',
                 customized
+            )
+        
+        # Enhance queue manager path resolution to handle workflow directory structure
+        if "# ADDED: Auto-submit new jobs when this one completes" in customized:
+            # Replace the existing queue manager logic with enhanced path resolution
+            queue_manager_logic = '''
+# ADDED: Auto-submit new jobs when this one completes
+# Enhanced path resolution for workflow directory structure
+QUEUE_MANAGER=""
+if [ -f $DIR/enhanced_queue_manager.py ]; then
+    QUEUE_MANAGER="$DIR/enhanced_queue_manager.py"
+elif [ -f $DIR/../../../enhanced_queue_manager.py ]; then
+    QUEUE_MANAGER="$DIR/../../../enhanced_queue_manager.py"
+elif [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
+    QUEUE_MANAGER="$DIR/../../../../enhanced_queue_manager.py"
+elif [ -f $DIR/../../../../../enhanced_queue_manager.py ]; then
+    QUEUE_MANAGER="$DIR/../../../../../enhanced_queue_manager.py"
+fi
+
+if [ ! -z "$QUEUE_MANAGER" ]; then
+    cd $(dirname "$QUEUE_MANAGER")
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+else
+    echo "Warning: enhanced_queue_manager.py not found - workflow progression may not continue automatically"
+fi'''
+            
+            # Replace the entire queue manager section
+            import re
+            customized = re.sub(
+                r'# ADDED: Auto-submit new jobs when this one completes.*?fi',
+                queue_manager_logic.strip(),
+                customized,
+                flags=re.DOTALL
             )
         
         return customized

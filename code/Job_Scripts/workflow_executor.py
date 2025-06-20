@@ -520,18 +520,67 @@ fi'''
         print(f"  Submitting initial {first_calc_type} calculations...")
         
         # Get input files for first step
-        if 'generated_d12s' in plan:
-            input_files = [Path(f) for f in plan['generated_d12s']]
-        elif 'organized_d12s' in plan:
-            input_files = [Path(f) for f in plan['organized_d12s']]
-        elif 'input_directory' in plan:
-            # Look for D12 files in the input directory
-            input_dir = Path(plan['input_directory'])
-            input_files = list(input_dir.glob("*.d12"))
-            if not input_files:
-                print(f"Error: No D12 files found for workflow execution in {input_dir}!")
-                return
-        else:
+        input_files = []
+        
+        # First check if there are D12 files in the step directory (created by workflow planner)
+        step_dir = self.outputs_dir / workflow_id / f"step_{step_num:03d}_{first_calc_type}"
+        if step_dir.exists():
+            step_d12_files = list(step_dir.glob("*.d12"))
+            if step_d12_files:
+                input_files = step_d12_files
+                print(f"  Found {len(input_files)} D12 files in step directory: {step_dir}")
+        
+        # If no files in step directory, check the plan for input file locations
+        if not input_files:
+            if 'generated_d12s' in plan:
+                input_files = [Path(f) for f in plan['generated_d12s']]
+                print(f"  Using generated D12 files: {len(input_files)} files")
+            elif 'organized_d12s' in plan:
+                input_files = [Path(f) for f in plan['organized_d12s']]
+                print(f"  Using organized D12 files: {len(input_files)} files")
+            elif 'input_files' in plan and 'd12' in plan['input_files']:
+                # This is the correct key for workflow planner generated plans
+                input_files = [Path(f) for f in plan['input_files']['d12']]
+                print(f"  Using input D12 files from plan: {len(input_files)} files")
+                
+                # Copy these files to the step directory for organization
+                step_dir.mkdir(parents=True, exist_ok=True)
+                copied_files = []
+                for d12_file in input_files:
+                    if d12_file.exists():
+                        dest_file = step_dir / d12_file.name
+                        if not dest_file.exists():
+                            shutil.copy2(d12_file, dest_file)
+                            print(f"    Copied: {d12_file.name} -> {dest_file}")
+                        copied_files.append(dest_file)
+                    else:
+                        print(f"    Warning: Source file not found: {d12_file}")
+                        
+                # Use the copied files as the input files
+                input_files = [f for f in copied_files if f.exists()]
+                        
+            elif 'input_directory' in plan:
+                # Look for D12 files in the input directory
+                input_dir = Path(plan['input_directory'])
+                input_files = list(input_dir.glob("*.d12"))
+                print(f"  Found {len(input_files)} D12 files in input directory: {input_dir}")
+                
+                if input_files:
+                    # Copy files to step directory for better organization
+                    step_dir.mkdir(parents=True, exist_ok=True)
+                    copied_files = []
+                    for d12_file in input_files:
+                        dest_file = step_dir / d12_file.name
+                        if not dest_file.exists():
+                            shutil.copy2(d12_file, dest_file)
+                            print(f"    Copied: {d12_file.name} -> {dest_file}")
+                        copied_files.append(dest_file)
+                    input_files = copied_files
+                else:
+                    print(f"Error: No D12 files found for workflow execution in {input_dir}!")
+                    return
+        
+        if not input_files:
             print("Error: No input files found for workflow execution!")
             return
             
