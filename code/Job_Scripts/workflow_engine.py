@@ -233,25 +233,67 @@ fi'''
         try:
             os.chdir(work_dir)
             
-            # Submit job using sbatch
-            result = subprocess.run(
-                ['sbatch', str(script_path)], 
-                capture_output=True, 
-                text=True
-            )
+            # Check if this is a script generator (template) or actual SLURM script
+            job_name = script_path.stem
             
-            if result.returncode == 0:
-                # Extract job ID from sbatch output
-                output = result.stdout.strip()
-                job_id_match = re.search(r'Submitted batch job (\d+)', output)
-                if job_id_match:
-                    return job_id_match.group(1)
+            # Check if the script contains script generation logic
+            with open(script_path, 'r') as f:
+                script_content = f.read()
+            
+            if 'echo \'#!/bin/bash --login\' >' in script_content or 'echo "#SBATCH' in script_content:
+                # This is a script generator template - run locally to generate actual script
+                print(f"  Running script generator locally: {script_path.name}")
+                result = subprocess.run(
+                    ['bash', script_path.name, job_name],
+                    capture_output=True,
+                    text=True
+                )
+                
+                if result.returncode == 0:
+                    # Extract job ID from sbatch output (the template runs sbatch at the end)
+                    output = result.stdout.strip()
+                    job_id_match = re.search(r'Submitted batch job (\d+)', output)
+                    if job_id_match:
+                        return job_id_match.group(1)
+                    
+                    # Maybe the template just generated the script but didn't submit it
+                    # Look for generated script and submit it manually
+                    generated_script = work_dir / f"{job_name}.sh"
+                    if generated_script.exists():
+                        print(f"  Found generated script: {generated_script.name}")
+                        result = subprocess.run(
+                            ['sbatch', generated_script.name],
+                            capture_output=True,
+                            text=True
+                        )
+                        if result.returncode == 0:
+                            job_id_match = re.search(r'Submitted batch job (\d+)', result.stdout)
+                            if job_id_match:
+                                return job_id_match.group(1)
                 else:
-                    print(f"Could not extract job ID from: {output}")
-                    return None
+                    print(f"Error running script generator: {result.stderr}")
+                    
             else:
-                print(f"Error submitting job: {result.stderr}")
-                return None
+                # This is a regular SLURM script - submit directly
+                print(f"  Submitting SLURM script directly: {script_path.name}")
+                result = subprocess.run(
+                    ['sbatch', str(script_path)],
+                    capture_output=True,
+                    text=True
+                )
+                
+                if result.returncode == 0:
+                    # Extract job ID from sbatch output
+                    output = result.stdout.strip()
+                    job_id_match = re.search(r'Submitted batch job (\d+)', output)
+                    if job_id_match:
+                        return job_id_match.group(1)
+                    else:
+                        print(f"Could not extract job ID from: {output}")
+                        return None
+                else:
+                    print(f"Error submitting job: {result.stderr}")
+                    return None
                 
         finally:
             os.chdir(original_cwd)
@@ -547,13 +589,15 @@ fi'''
             sp_step_dir = workflow_base / "step_002_SP" / dir_name
             sp_step_dir.mkdir(parents=True, exist_ok=True)
             
-            # Move SP file to material's directory
-            sp_final_location = sp_step_dir / sp_input_file.name
+            # Move SP file to material's directory with a cleaner name
+            # Extract the core material name for cleaner file naming
+            clean_sp_name = f"{dir_name}_sp.d12"
+            sp_final_location = sp_step_dir / clean_sp_name
             shutil.move(sp_input_file, sp_final_location)
             
             # Create SLURM script for SP calculation  
-            # Use the actual D12 file stem for JOB variable to ensure consistency
-            sp_job_name = sp_final_location.stem
+            # Use the clean material name for better job identification
+            sp_job_name = f"{dir_name}_sp"
             slurm_script_path = self._create_slurm_script_for_calculation(
                 sp_step_dir, sp_job_name, "SP", 2, workflow_base.name
             )
@@ -661,17 +705,19 @@ fi'''
             doss_step_dir = workflow_base / "step_004_DOSS" / dir_name
             doss_step_dir.mkdir(parents=True, exist_ok=True)
             
-            # Move DOSS files to material's directory
-            doss_final_location = doss_step_dir / doss_input_file.name
+            # Move DOSS files to material's directory with cleaner names
+            clean_doss_name = f"{dir_name}_doss.d3"
+            doss_final_location = doss_step_dir / clean_doss_name
             shutil.move(doss_input_file, doss_final_location)
             
             if doss_f9_files:
-                doss_f9_final = doss_step_dir / doss_f9_files[0].name
+                clean_f9_name = f"{dir_name}_doss.f9"
+                doss_f9_final = doss_step_dir / clean_f9_name
                 shutil.move(doss_f9_files[0], doss_f9_final)
             
             # Create SLURM script for DOSS calculation
-            # Use the actual D12 file stem for JOB variable to ensure consistency
-            doss_job_name = doss_final_location.stem
+            # Use the clean material name for better job identification
+            doss_job_name = f"{dir_name}_doss"
             slurm_script_path = self._create_slurm_script_for_calculation(
                 doss_step_dir, doss_job_name, "DOSS", 4, workflow_base.name
             )
@@ -779,17 +825,19 @@ fi'''
             band_step_dir = workflow_base / "step_003_BAND" / dir_name
             band_step_dir.mkdir(parents=True, exist_ok=True)
             
-            # Move BAND files to material's directory
-            band_final_location = band_step_dir / band_input_file.name
+            # Move BAND files to material's directory with cleaner names
+            clean_band_name = f"{dir_name}_band.d3"
+            band_final_location = band_step_dir / clean_band_name
             shutil.move(band_input_file, band_final_location)
             
             if band_f9_files:
-                band_f9_final = band_step_dir / band_f9_files[0].name
+                clean_f9_name = f"{dir_name}_band.f9"
+                band_f9_final = band_step_dir / clean_f9_name
                 shutil.move(band_f9_files[0], band_f9_final)
             
             # Create SLURM script for BAND calculation
-            # Use the actual D12 file stem for JOB variable to ensure consistency
-            band_job_name = band_final_location.stem
+            # Use the clean material name for better job identification
+            band_job_name = f"{dir_name}_band"
             slurm_script_path = self._create_slurm_script_for_calculation(
                 band_step_dir, band_job_name, "BAND", 3, workflow_base.name
             )
@@ -918,13 +966,14 @@ fi'''
             freq_step_dir = workflow_base / "step_005_FREQ" / dir_name
             freq_step_dir.mkdir(parents=True, exist_ok=True)
             
-            # Move FREQ file to material's directory
-            freq_final_location = freq_step_dir / freq_input_file.name
+            # Move FREQ file to material's directory with a cleaner name
+            clean_freq_name = f"{dir_name}_freq.d12"
+            freq_final_location = freq_step_dir / clean_freq_name
             shutil.move(freq_input_file, freq_final_location)
             
             # Create SLURM script for FREQ calculation
-            # Use the actual D12 file stem for JOB variable to ensure consistency
-            freq_job_name = freq_final_location.stem
+            # Use the clean material name for better job identification
+            freq_job_name = f"{dir_name}_freq"
             slurm_script_path = self._create_slurm_script_for_calculation(
                 freq_step_dir, freq_job_name, "FREQ", 5, workflow_base.name
             )
