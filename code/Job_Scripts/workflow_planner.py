@@ -559,6 +559,10 @@ class WorkflowPlanner:
                 print("  Using CIF conversion configuration for first OPT step")
                 step_configs[f"{calc_type}_1"] = {"source": "cif_conversion"}
                 
+            elif calc_type == "OPT" and i == 0 and not has_cifs:
+                print("  Using existing D12 files for first OPT step")
+                step_configs[f"{calc_type}_1"] = {"source": "existing_d12"}
+                
             elif calc_type in ["OPT", "OPT2"] and i > 0:
                 # Subsequent optimization - configure via CRYSTALOptToD12.py
                 config = self.configure_optimization_step(calc_type, i+1)
