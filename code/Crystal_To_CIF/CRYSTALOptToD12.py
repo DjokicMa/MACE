@@ -1653,16 +1653,19 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
 
         # Calculation-specific section
         if settings["calculation_type"] == "OPT":
+            # For OPT: No END after coordinates, OPTGEOM follows directly
             write_optimization_section(
                 f,
                 settings.get("optimization_type", "FULLOPTG"),
                 settings.get("optimization_settings", DEFAULT_OPT_SETTINGS),
             )
         elif settings["calculation_type"] == "FREQ":
+            # For FREQ: No END after coordinates, FREQCALC follows directly  
             write_frequency_section(
                 f, settings.get("freq_settings", DEFAULT_FREQ_SETTINGS)
             )
-        else:  # Single point
+        else:
+            # For SP: Write END after coordinates, then proceed to basis set
             f.write("END\n")
 
         # Handle basis sets and method section
