@@ -1185,8 +1185,18 @@ class WorkflowPlanner:
             step_001_dir = workflow_dir / "step_001_OPT"
             step_001_dir.mkdir(exist_ok=True)
             
-            # D12 files will be organized directly in the individual material directories within step_001_dir
-            # No need to copy from a separate input directory since files are placed directly in output structure
+            # Copy D12 files from input directory to step directory
+            input_dir = Path(plan['input_directory'])
+            d12_files = list(input_dir.glob("*.d12"))
+            
+            print(f"  Copying {len(d12_files)} D12 files to workflow step directory...")
+            for d12_file in d12_files:
+                dest_file = step_001_dir / d12_file.name
+                if not dest_file.exists():
+                    shutil.copy2(d12_file, dest_file)
+                    print(f"    Copied: {d12_file.name}")
+                else:
+                    print(f"    Exists: {d12_file.name}")
                         
             # Execute the workflow using the proper executor
             executor.execute_workflow_steps(plan, workflow_id)
