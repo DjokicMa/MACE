@@ -80,6 +80,114 @@ class WorkflowEngine:
                     script_paths[key] = base_path / "Creation_Scripts" / script_name
         
         return script_paths
+    
+    def _create_slurm_script_for_calculation(self, calc_dir: Path, material_name: str, 
+                                           calc_type: str, step_num: int, workflow_id: str) -> Path:
+        """Create SLURM script for a calculation"""
+        import os
+        
+        # Find appropriate template script
+        base_dir = Path.cwd()
+        if calc_type == "SP":
+            template_script = base_dir / "workflow_scripts" / "submitcrystal23_sp_2.sh"
+        elif calc_type == "FREQ":
+            template_script = base_dir / "workflow_scripts" / "submitcrystal23_freq_5.sh"
+        elif calc_type in ["BAND", "DOSS"]:
+            template_script = base_dir / "workflow_scripts" / f"submit_prop_{calc_type.lower()}_{step_num + 2}.sh"
+        else:
+            template_script = base_dir / "workflow_scripts" / "submitcrystal23_opt_1.sh"
+        
+        if not template_script.exists():
+            # Fall back to basic template
+            if calc_type in ["OPT", "SP", "FREQ"]:
+                template_script = base_dir / "submitcrystal23.sh"
+            else:
+                template_script = base_dir / "submit_prop.sh"
+        
+        if not template_script.exists():
+            raise FileNotFoundError(f"No SLURM template found for {calc_type}")
+        
+        # Read template content
+        with open(template_script, 'r') as f:
+            template_content = f.read()
+        
+        # Create individual script for this material
+        material_script_name = f"mat_{material_name}.sh"
+        script_path = calc_dir / material_script_name
+        
+        # Customize script content
+        customized_content = self._customize_slurm_script(
+            template_content, material_name, calc_type, workflow_id, step_num
+        )
+        
+        # Write script
+        with open(script_path, 'w') as f:
+            f.write(customized_content)
+        
+        # Make executable
+        script_path.chmod(0o755)
+        
+        return script_path
+    
+    def _customize_slurm_script(self, template_content: str, material_name: str, 
+                              calc_type: str, workflow_id: str, step_num: int) -> str:
+        """Customize SLURM script template for specific calculation"""
+        
+        # Replace job name and output file
+        customized = template_content.replace(
+            "#SBATCH --job-name=", 
+            f"#SBATCH --job-name=mat_{material_name}_{calc_type.lower()}_{step_num}"
+        )
+        
+        # Update output file name
+        if "--output=" in customized:
+            customized = re.sub(
+                r'--output=[\w\.-]+',
+                f'--output=mat_{material_name}_{calc_type.lower()}.o%j',
+                customized
+            )
+        
+        # Update scratch directory to be workflow-specific
+        scratch_dir = f"$SCRATCH/{workflow_id}/step_{step_num:03d}_{calc_type}/mat_{material_name}"
+        customized = customized.replace(
+            "export scratch=$SCRATCH/$SLURM_JOB_ID",
+            f"export scratch={scratch_dir}"
+        )
+        
+        return customized
+    
+    def _submit_calculation_to_slurm(self, script_path: Path, work_dir: Path) -> Optional[str]:
+        """Submit calculation to SLURM and return job ID"""
+        import subprocess
+        import re
+        import os
+        
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(work_dir)
+            
+            # Submit job using sbatch
+            result = subprocess.run(
+                ['sbatch', str(script_path)], 
+                capture_output=True, 
+                text=True
+            )
+            
+            if result.returncode == 0:
+                # Extract job ID from sbatch output
+                output = result.stdout.strip()
+                job_id_match = re.search(r'Submitted batch job (\d+)', output)
+                if job_id_match:
+                    return job_id_match.group(1)
+                else:
+                    print(f"Could not extract job ID from: {output}")
+                    return None
+            else:
+                print(f"Error submitting job: {result.stderr}")
+                return None
+                
+        finally:
+            os.chdir(original_cwd)
         
     def extract_core_material_id_from_complex_filename(self, filename: str) -> str:
         """
@@ -369,19 +477,33 @@ class WorkflowEngine:
             sp_final_location = sp_step_dir / sp_input_file.name
             shutil.move(sp_input_file, sp_final_location)
             
+            # Create SLURM script for SP calculation
+            slurm_script_path = self._create_slurm_script_for_calculation(
+                sp_step_dir, material_clean, "SP", 2, workflow_base.name
+            )
+            
             # Create SP calculation record
             sp_calc_id = self.db.create_calculation(
                 material_id=material_id,
                 calc_type="SP",
                 input_file=str(sp_final_location),
+                work_dir=str(sp_step_dir),
                 settings={
                     'generated_from_opt': opt_calc_id,
                     'generation_method': 'CRYSTALOptToD12.py',
-                    'workflow_step': True
+                    'workflow_step': True,
+                    'slurm_script': str(slurm_script_path)
                 }
             )
             
-            print(f"Generated SP calculation {sp_calc_id}: {sp_final_location}")
+            # Submit SP calculation
+            slurm_job_id = self._submit_calculation_to_slurm(slurm_script_path, sp_step_dir)
+            if slurm_job_id:
+                self.db.update_calculation_status(sp_calc_id, 'submitted', slurm_job_id=slurm_job_id)
+                print(f"Generated and submitted SP calculation {sp_calc_id}: Job {slurm_job_id}")
+            else:
+                print(f"Generated SP calculation {sp_calc_id} but submission failed: {sp_final_location}")
+            
             return sp_calc_id
             
         finally:
@@ -466,20 +588,34 @@ class WorkflowEngine:
                 doss_f9_final = doss_step_dir / doss_f9_files[0].name
                 shutil.move(doss_f9_files[0], doss_f9_final)
             
+            # Create SLURM script for DOSS calculation
+            slurm_script_path = self._create_slurm_script_for_calculation(
+                doss_step_dir, material_clean, "DOSS", 4, workflow_base.name
+            )
+            
             # Create DOSS calculation record
             doss_calc_id = self.db.create_calculation(
                 material_id=material_id,
                 calc_type="DOSS",
                 input_file=str(doss_final_location),
+                work_dir=str(doss_step_dir),
                 settings={
                     'generated_from_sp': sp_calc_id,
                     'generation_method': 'alldos.py',
                     'workflow_step': True,
-                    'has_f9_file': bool(doss_f9_files)
+                    'has_f9_file': bool(doss_f9_files),
+                    'slurm_script': str(slurm_script_path)
                 }
             )
             
-            print(f"Generated DOSS calculation {doss_calc_id}: {doss_final_location.name}")
+            # Submit DOSS calculation
+            slurm_job_id = self._submit_calculation_to_slurm(slurm_script_path, doss_step_dir)
+            if slurm_job_id:
+                self.db.update_calculation_status(doss_calc_id, 'submitted', slurm_job_id=slurm_job_id)
+                print(f"Generated and submitted DOSS calculation {doss_calc_id}: Job {slurm_job_id}")
+            else:
+                print(f"Generated DOSS calculation {doss_calc_id} but submission failed: {doss_final_location.name}")
+            
             return doss_calc_id
             
         finally:
@@ -563,21 +699,162 @@ class WorkflowEngine:
                 band_f9_final = band_step_dir / band_f9_files[0].name
                 shutil.move(band_f9_files[0], band_f9_final)
             
+            # Create SLURM script for BAND calculation
+            slurm_script_path = self._create_slurm_script_for_calculation(
+                band_step_dir, material_clean, "BAND", 3, workflow_base.name
+            )
+            
             # Create BAND calculation record
             band_calc_id = self.db.create_calculation(
                 material_id=material_id,
                 calc_type="BAND",
                 input_file=str(band_final_location),
+                work_dir=str(band_step_dir),
                 settings={
                     'generated_from_sp': sp_calc_id,
                     'generation_method': 'create_band_d3.py',
                     'workflow_step': True,
-                    'has_f9_file': bool(band_f9_files)
+                    'has_f9_file': bool(band_f9_files),
+                    'slurm_script': str(slurm_script_path)
                 }
             )
             
-            print(f"Generated BAND calculation {band_calc_id}: {band_final_location.name}")
+            # Submit BAND calculation
+            slurm_job_id = self._submit_calculation_to_slurm(slurm_script_path, band_step_dir)
+            if slurm_job_id:
+                self.db.update_calculation_status(band_calc_id, 'submitted', slurm_job_id=slurm_job_id)
+                print(f"Generated and submitted BAND calculation {band_calc_id}: Job {slurm_job_id}")
+            else:
+                print(f"Generated BAND calculation {band_calc_id} but submission failed: {band_final_location.name}")
+            
             return band_calc_id
+            
+        finally:
+            # Clean up isolated directory
+            shutil.rmtree(work_dir, ignore_errors=True)
+            
+    def generate_freq_from_opt(self, opt_calc_id: str) -> Optional[str]:
+        """
+        Generate FREQ calculation from completed OPT using CRYSTALOptToD12.py.
+        
+        Args:
+            opt_calc_id: ID of completed OPT calculation
+            
+        Returns:
+            New FREQ calculation ID if successful, None otherwise
+        """
+        print(f"Generating FREQ calculation from OPT {opt_calc_id}")
+        
+        # Get OPT calculation details
+        opt_calc = self.db.get_calculation(opt_calc_id)
+        if not opt_calc or opt_calc['status'] != 'completed':
+            print(f"OPT calculation {opt_calc_id} not completed")
+            return None
+            
+        material_id = opt_calc['material_id']
+        opt_output_file = Path(opt_calc['output_file'])
+        opt_input_file = Path(opt_calc['input_file'])
+        
+        if not opt_output_file.exists():
+            print(f"OPT output file not found: {opt_output_file}")
+            return None
+            
+        # Create isolated directory for CRYSTALOptToD12.py
+        work_dir = self.create_isolated_calculation_directory(
+            material_id, "FREQ_generation", [opt_output_file, opt_input_file]
+        )
+        
+        try:
+            # Run CRYSTALOptToD12.py in isolated directory
+            crystal_to_d12_script = self.script_paths['crystal_to_d12']
+            
+            # Find the specific out and d12 files in the work directory
+            out_files = list(work_dir.glob("*.out"))
+            d12_files = list(work_dir.glob("*.d12"))
+            
+            if not out_files:
+                print(f"No .out file found in {work_dir}")
+                return None
+                
+            out_file = out_files[0]
+            d12_file = d12_files[0] if d12_files else None
+            
+            # Use single file mode with automatic input responses for FREQ
+            args = [
+                "--out-file", str(out_file),
+                "--output-dir", str(work_dir)
+            ]
+            
+            if d12_file:
+                args.extend(["--d12-file", str(d12_file)])
+            
+            # Prepare input responses for FREQ calculation
+            # 1. Keep settings? → y (yes, keep original settings from d12)
+            # 2. Calc type → 3 (FREQ)
+            # 3. Symmetry choice → 1 (Write only unique atoms)
+            # 4. Additional defaults for any other prompts
+            input_responses = "y\n3\n1\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+            
+            success, stdout, stderr = self.run_script_in_isolated_directory(
+                crystal_to_d12_script, work_dir, args, input_data=input_responses
+            )
+            
+            if not success:
+                print(f"CRYSTALOptToD12.py failed for FREQ: {stderr}")
+                return None
+                
+            # Find generated FREQ .d12 file
+            freq_files = list(work_dir.glob("*FREQ*.d12"))
+            if not freq_files:
+                # Try other patterns
+                freq_files = list(work_dir.glob("*_freq*.d12")) + list(work_dir.glob("*FREQCALC*.d12"))
+                
+            if not freq_files:
+                print("No FREQ input file generated by CRYSTALOptToD12.py")
+                return None
+                
+            freq_input_file = freq_files[0]
+            
+            # Get workflow output directory and create material-specific directory
+            workflow_base = self.get_workflow_output_base(opt_calc)
+            
+            # Create material-specific directory for FREQ calculation
+            material_clean = self.clean_material_name(material_id)
+            freq_step_dir = workflow_base / "step_005_FREQ" / f"mat_{material_clean}"
+            freq_step_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Move FREQ file to material's directory
+            freq_final_location = freq_step_dir / freq_input_file.name
+            shutil.move(freq_input_file, freq_final_location)
+            
+            # Create SLURM script for FREQ calculation
+            slurm_script_path = self._create_slurm_script_for_calculation(
+                freq_step_dir, material_clean, "FREQ", 5, workflow_base.name
+            )
+            
+            # Create FREQ calculation record
+            freq_calc_id = self.db.create_calculation(
+                material_id=material_id,
+                calc_type="FREQ",
+                input_file=str(freq_final_location),
+                work_dir=str(freq_step_dir),
+                settings={
+                    'generated_from_opt': opt_calc_id,
+                    'generation_method': 'CRYSTALOptToD12.py',
+                    'workflow_step': True,
+                    'slurm_script': str(slurm_script_path)
+                }
+            )
+            
+            # Submit FREQ calculation
+            slurm_job_id = self._submit_calculation_to_slurm(slurm_script_path, freq_step_dir)
+            if slurm_job_id:
+                self.db.update_calculation_status(freq_calc_id, 'submitted', slurm_job_id=slurm_job_id)
+                print(f"Generated and submitted FREQ calculation {freq_calc_id}: Job {slurm_job_id}")
+            else:
+                print(f"Generated FREQ calculation {freq_calc_id} but submission failed: {freq_final_location}")
+            
+            return freq_calc_id
             
         finally:
             # Clean up isolated directory
@@ -608,10 +885,14 @@ class WorkflowEngine:
         
         # Determine next steps based on completed calculation type
         if calc_type == "OPT":
-            # OPT completed -> generate SP
+            # OPT completed -> generate SP and FREQ (parallel calculations)
             sp_calc_id = self.generate_sp_from_opt(completed_calc_id)
             if sp_calc_id:
                 new_calc_ids.append(sp_calc_id)
+            
+            freq_calc_id = self.generate_freq_from_opt(completed_calc_id)
+            if freq_calc_id:
+                new_calc_ids.append(freq_calc_id)
                 
         elif calc_type == "SP":
             # SP completed -> generate both DOSS and BAND
@@ -623,7 +904,7 @@ class WorkflowEngine:
             if band_calc_id:
                 new_calc_ids.append(band_calc_id)
                 
-        # Note: DOSS and BAND are typically terminal calculations in the workflow
+        # Note: DOSS, BAND, and FREQ are typically terminal calculations in the workflow
         
         if new_calc_ids:
             print(f"Generated {len(new_calc_ids)} new calculations: {new_calc_ids}")
@@ -684,7 +965,9 @@ class WorkflowEngine:
         if "OPT" in workflow_status["completed_workflow_steps"]:
             if "SP" not in workflow_status["completed_workflow_steps"]:
                 workflow_status["pending_workflow_steps"].append("SP")
-            elif "SP" in workflow_status["completed_workflow_steps"]:
+            if "FREQ" not in workflow_status["completed_workflow_steps"]:
+                workflow_status["pending_workflow_steps"].append("FREQ")
+            if "SP" in workflow_status["completed_workflow_steps"]:
                 if "BAND" not in workflow_status["completed_workflow_steps"]:
                     workflow_status["pending_workflow_steps"].append("BAND")
                 if "DOSS" not in workflow_status["completed_workflow_steps"]:
@@ -692,8 +975,8 @@ class WorkflowEngine:
         else:
             workflow_status["pending_workflow_steps"].append("OPT")
             
-        # Check if basic workflow is complete (OPT -> SP -> BAND/DOSS)
-        if all(step in workflow_status["completed_workflow_steps"] for step in ["OPT", "SP", "BAND", "DOSS"]):
+        # Check if complete workflow is finished (OPT -> SP/FREQ -> BAND/DOSS)
+        if all(step in workflow_status["completed_workflow_steps"] for step in ["OPT", "SP", "BAND", "DOSS", "FREQ"]):
             workflow_status["workflow_complete"] = True
             
         return workflow_status
