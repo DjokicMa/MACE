@@ -524,8 +524,15 @@ fi'''
             input_files = [Path(f) for f in plan['generated_d12s']]
         elif 'organized_d12s' in plan:
             input_files = [Path(f) for f in plan['organized_d12s']]
+        elif 'input_directory' in plan:
+            # Look for D12 files in the input directory
+            input_dir = Path(plan['input_directory'])
+            input_files = list(input_dir.glob("*.d12"))
+            if not input_files:
+                print(f"Error: No D12 files found for workflow execution in {input_dir}!")
+                return
         else:
-            print("No input files available for submission")
+            print("Error: No input files found for workflow execution!")
             return
             
         # Submit jobs for each input file
