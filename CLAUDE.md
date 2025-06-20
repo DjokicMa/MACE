@@ -503,7 +503,7 @@ The enhanced system provides comprehensive material lifecycle tracking:
 
 #### **Core Components**
 - **`material_database.py`**: SQLite database with ASE integration for structure storage
-- **`enhanced_queue_manager.py`**: Extended queue manager with material tracking
+- **`enhanced_queue_manager.py`**: Extended queue manager with material tracking and enhanced callback system
 - **`error_recovery.py`**: Automated error detection and recovery with YAML configuration
 - **`workflow_engine.py`**: Orchestrates OPT → SP → BAND/DOSS workflow progression
 - **`crystal_file_manager.py`**: Organized file management by material ID and calculation type
@@ -514,6 +514,7 @@ The enhanced system provides comprehensive material lifecycle tracking:
 - **Isolated Script Execution**: Creates clean directories for alldos.py and create_band_d3.py requirements
 - **Automated Workflow Progression**: OPT completion triggers SP generation, SP completion triggers BAND/DOSS
 - **Error Recovery**: Configurable fixes for SHRINK errors, memory issues, convergence problems
+- **Enhanced Callback System**: Multi-location queue manager detection checking both local and parent directories
 - **Directory Organization**: `base_dir/calc_type/` structure for efficient file management
 - **Database Integration**: Complete calculation history and provenance tracking
 
@@ -532,6 +533,39 @@ workflow_instances: # Active workflow state tracking
 - **`workflows.yaml`**: Workflow definitions and resource requirements
 - **`materials.db`**: SQLite database for material tracking
 - **`structures.db`**: ASE database for atomic structure storage
+
+#### **Enhanced Callback System**
+All SLURM job scripts now include an enhanced callback mechanism that automatically detects and calls the appropriate queue manager upon job completion:
+
+**Multi-Location Detection:**
+- Checks `$DIR/enhanced_queue_manager.py` first (local directory)
+- Falls back to `$DIR/../../../../enhanced_queue_manager.py` (parent directories)
+- Also checks for `crystal_queue_manager.py` in the same locations
+- Ensures workflows continue regardless of execution context
+
+**Callback Logic:**
+```bash
+# Enhanced callback automatically added to all SLURM scripts
+if [ -f $DIR/enhanced_queue_manager.py ]; then
+    cd $DIR
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+elif [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
+    cd $DIR/../../../../
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+elif [ -f $DIR/crystal_queue_manager.py ]; then
+    cd $DIR
+    ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
+elif [ -f $DIR/../../../../crystal_queue_manager.py ]; then
+    cd $DIR/../../../../
+    ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
+fi
+```
+
+**Benefits:**
+- **Flexible Deployment**: Works with various directory structures and workflow execution contexts
+- **Automatic Queue Management**: No manual intervention required for job progression
+- **Dual Compatibility**: Supports both enhanced and legacy queue managers
+- **Context Awareness**: Adapts to execution environment automatically
 
 ## Development Notes
 

@@ -27,3 +27,19 @@ cd $scratch/$JOB
 mpirun -n $SLURM_NTASKS /opt/software-current/2023.06/x86_64/intel/skylake_avx512/software/CRYSTAL/23-intel-2023a/bin/Pcrystal 2>&1 >& $DIR/output.out
 cp fort.9 ${DIR}/input.f9
 cp fort.80 ${DIR}/input.f80
+
+# ADDED: Auto-submit new jobs when this one completes
+# Check multiple possible locations for queue managers
+if [ -f $DIR/enhanced_queue_manager.py ]; then
+    cd $DIR
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+elif [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
+    cd $DIR/../../../../
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+elif [ -f $DIR/crystal_queue_manager.py ]; then
+    cd $DIR
+    ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
+elif [ -f $DIR/../../../../crystal_queue_manager.py ]; then
+    cd $DIR/../../../../
+    ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
+fi

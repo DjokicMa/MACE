@@ -10,7 +10,7 @@ This repository contains a comprehensive suite of scripts for managing CRYSTAL q
 
 **Advanced Features:**
 - **Material Tracking Database**: SQLite-based tracking of materials, calculations, and file records
-- **Callback-Based Architecture**: Event-driven job management avoiding 2-hour runtime limits
+- **Enhanced Callback Architecture**: Multi-location queue manager detection with flexible script path resolution
 - **Early Failure Detection**: Automatic detection and cancellation of failing jobs
 - **Automated Workflow Progression**: Intelligent OPT → SP → BAND/DOSS job chaining
 - **Organized Calculation Folders**: Efficient calc_type/materials directory layout (quota-friendly)
@@ -212,7 +212,7 @@ SLURM batch script generator for CRYSTAL23 calculations with integrated queue ma
 - Implements scratch directory management for I/O optimization
 - **Enhanced Integration**: Auto-triggers enhanced_queue_manager upon job completion for continuous workflow
 - Supports 32-core parallel execution with 5GB memory per core
-- **Callback System**: Automatically calls back to queue manager when jobs complete (avoids 2-hour runtime limits)
+- **Enhanced Callback System**: Multi-location queue manager detection checking both local ($DIR) and parent ($DIR/../../../../) directories
 
 **Generated Job Parameters:**
 - 32 MPI tasks on single node
@@ -238,7 +238,7 @@ Specialized submission scripts for CRYSTAL properties calculations.
 - Transfers multiple output files (band structure, DOS, transport properties)
 - Reduced wall time (2 hours) and adjusted memory allocation (80GB total)
 - Handles `.d3` input files and requires `.f9` wavefunction files
-- **Enhanced Integration**: Includes callback to enhanced_queue_manager for workflow automation
+- **Enhanced Integration**: Multi-location callback system supporting both enhanced_queue_manager.py and crystal_queue_manager.py
 
 ---
 
@@ -516,9 +516,11 @@ The enhanced queue manager provides comprehensive material lifecycle management:
 - **Property Storage**: Extracted band gaps, energies, and other calculated properties
 - **File Management**: Complete tracking of all input, output, and intermediate files
 
-### Callback-Based Architecture
+### Enhanced Callback Architecture
 **Key Advantages:**
 - **No Runtime Limits**: Avoids 2-hour dev node restrictions by using event-driven callbacks
+- **Multi-Location Detection**: Checks both local ($DIR) and parent ($DIR/../../../../) directories for queue managers
+- **Dual Queue Manager Support**: Compatible with both enhanced_queue_manager.py and crystal_queue_manager.py
 - **Resource Efficient**: Runs only when needed (job completions) rather than continuous monitoring
 - **SLURM Integration**: Seamlessly integrates with existing SLURM job scripts
 - **Scalable**: Handles hundreds of concurrent calculations without performance degradation
