@@ -59,11 +59,10 @@ class WorkflowPlanner:
         
         # Create necessary directories
         self.configs_dir = self.work_dir / "workflow_configs"
-        self.inputs_dir = self.work_dir / "workflow_inputs" 
         self.outputs_dir = self.work_dir / "workflow_outputs"
         self.temp_dir = self.work_dir / "temp"
         
-        for dir_path in [self.configs_dir, self.inputs_dir, self.outputs_dir, self.temp_dir]:
+        for dir_path in [self.configs_dir, self.outputs_dir, self.temp_dir]:
             dir_path.mkdir(parents=True, exist_ok=True)
             
         # Available calculation types and their dependencies
@@ -1186,13 +1185,8 @@ class WorkflowPlanner:
             step_001_dir = workflow_dir / "step_001_OPT"
             step_001_dir.mkdir(exist_ok=True)
             
-            # Copy D12 files to the workflow directory
-            input_dir = self.inputs_dir / "step_001_OPT"
-            if input_dir.exists():
-                for d12_file in input_dir.glob("*.d12"):
-                    dest_file = step_001_dir / d12_file.name
-                    if not dest_file.exists():
-                        shutil.copy2(d12_file, dest_file)
+            # D12 files will be organized directly in the individual material directories within step_001_dir
+            # No need to copy from a separate input directory since files are placed directly in output structure
                         
             # Execute the workflow using the proper executor
             executor.execute_workflow_steps(plan, workflow_id)
@@ -1213,15 +1207,9 @@ class WorkflowPlanner:
             print(f"Found {len(existing_d12s)} D12 files already exist for {len(cif_files)} CIF files.")
             print("Skipping CIF conversion - using existing D12 files.")
             
-            # Copy existing D12s to workflow directory if needed
-            workflow_input_dir = self.inputs_dir / "step_001_OPT"
-            workflow_input_dir.mkdir(exist_ok=True)
-            
-            for d12_file in existing_d12s:
-                dest_file = workflow_input_dir / d12_file.name
-                if not dest_file.exists():
-                    shutil.copy2(d12_file, dest_file)
-                    print(f"  Copied: {d12_file.name}")
+            # D12 files already exist in input directory, no need to copy to separate input directory
+            # They will be used directly by the workflow executor
+            print(f"  Using existing D12 files from: {input_dir}")
                     
             return
             
@@ -1246,8 +1234,8 @@ class WorkflowPlanner:
         """Execute the planned calculation sequence"""
         print("Starting calculation sequence execution...")
         
-        # Get the input files for the first step
-        input_dir = self.inputs_dir / "step_001_OPT"
+        # Get the input files for the first step from the input directory
+        input_dir = Path(plan['input_directory'])
         d12_files = list(input_dir.glob("*.d12"))
         
         if not d12_files:
