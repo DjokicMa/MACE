@@ -148,7 +148,11 @@ class WorkflowEngine:
         print(f"  Template content starts with: {template_content[:100]}...")
         
         # Create individual script for this material
-        material_script_name = f"mat_{material_name}.sh"
+        # Avoid double mat_ prefix
+        if material_name.startswith("mat_"):
+            material_script_name = f"{material_name}.sh"
+        else:
+            material_script_name = f"mat_{material_name}.sh"
         script_path = calc_dir / material_script_name
         
         # Customize script content
@@ -441,9 +445,11 @@ fi'''
         Returns:
             Cleaned material name safe for directories
         """
-        # Replace problematic characters with underscores
-        clean_name = material_id.replace(',', '_').replace('^', '_').replace(' ', '_')
-        clean_name = clean_name.replace('/', '_').replace('\\', '_')
+        # Only replace truly problematic characters for filesystem compatibility
+        # Preserve ^ and , as they are commonly used in chemical notation
+        clean_name = material_id.replace(' ', '_')  # Spaces to underscores
+        clean_name = clean_name.replace('/', '_').replace('\\', '_')  # Path separators
+        # Keep other characters like ^, ,, ., - as they are common in chemical names
         return clean_name
             
     def generate_sp_from_opt(self, opt_calc_id: str) -> Optional[str]:
