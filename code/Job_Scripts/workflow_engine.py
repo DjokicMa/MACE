@@ -115,8 +115,10 @@ class WorkflowEngine:
             template_script = base_dir / "workflow_scripts" / "submitcrystal23_sp_2.sh"
         elif calc_type == "FREQ":
             template_script = base_dir / "workflow_scripts" / "submitcrystal23_freq_5.sh"
-        elif calc_type in ["BAND", "DOSS"]:
-            template_script = base_dir / "workflow_scripts" / f"submit_prop_{calc_type.lower()}_{step_num + 2}.sh"
+        elif calc_type == "BAND":
+            template_script = base_dir / "workflow_scripts" / "submit_prop_band_3.sh"
+        elif calc_type == "DOSS":
+            template_script = base_dir / "workflow_scripts" / "submit_prop_doss_4.sh"
         else:
             template_script = base_dir / "workflow_scripts" / "submitcrystal23_opt_1.sh"
         
@@ -147,27 +149,38 @@ class WorkflowEngine:
         
         print(f"  Template content starts with: {template_content[:100]}...")
         
-        # Create individual script for this material
-        # Avoid double mat_ prefix
-        if material_name.startswith("mat_"):
-            material_script_name = f"{material_name}.sh"
-        else:
+        # Create individual script for this material  
+        # Note: material_name here is the job name (e.g., "3_dia3_doss")
+        # But we want the script file to match the directory/file naming pattern
+        # So we need to determine the full material name with mat_ prefix
+        if not material_name.startswith('mat_'):
             material_script_name = f"mat_{material_name}.sh"
+            full_material_name = f"mat_{material_name}"
+        else:
+            material_script_name = f"{material_name}.sh"
+            full_material_name = material_name
         script_path = calc_dir / material_script_name
         
-        # Customize script content
+        # Customize script content using full material name for file references
         customized_content = self._customize_slurm_script(
-            template_content, material_name, calc_type, workflow_id, step_num
+            template_content, full_material_name, calc_type, workflow_id, step_num
         )
         
         # Write script
-        with open(script_path, 'w') as f:
-            f.write(customized_content)
-        
-        # Make executable
-        script_path.chmod(0o755)
-        
-        return script_path
+        try:
+            with open(script_path, 'w') as f:
+                f.write(customized_content)
+            
+            # Make executable
+            script_path.chmod(0o755)
+            
+            print(f"  Successfully created script: {script_path}")
+            print(f"  Script exists: {script_path.exists()}")
+            
+            return script_path
+        except Exception as e:
+            print(f"  Error creating script {script_path}: {e}")
+            raise
     
     def _customize_slurm_script(self, template_content: str, material_name: str, 
                               calc_type: str, workflow_id: str, step_num: int) -> str:
@@ -233,18 +246,30 @@ fi'''
         try:
             os.chdir(work_dir)
             
-            # Check if this is a script generator (template) or actual SLURM script
+            # Extract job name from the script path
             job_name = script_path.stem
+            if job_name.startswith('mat_'):
+                # Use clean name for template execution but full name for job
+                clean_job_name = job_name[4:]
+                full_job_name = job_name  # Keep mat_ prefix for consistency
+            else:
+                clean_job_name = job_name
+                full_job_name = job_name
+            
+            # Use the script file name relative to work_dir since we changed to work_dir
+            script_filename = script_path.name
             
             # Check if the script contains script generation logic
-            with open(script_path, 'r') as f:
+            print(f"  Reading script file: {script_filename} (from work_dir: {work_dir})")
+            with open(script_filename, 'r') as f:
                 script_content = f.read()
             
             if 'echo \'#!/bin/bash --login\' >' in script_content or 'echo "#SBATCH' in script_content:
                 # This is a script generator template - run locally to generate actual script
-                print(f"  Running script generator locally: {script_path.name}")
+                # Use full job name (with mat_ prefix) so generated script references correct files
+                print(f"  Running script generator locally: {script_filename} with job name: {full_job_name}")
                 result = subprocess.run(
-                    ['bash', script_path.name, job_name],
+                    ['bash', script_filename, full_job_name],
                     capture_output=True,
                     text=True
                 )
@@ -258,7 +283,7 @@ fi'''
                     
                     # Maybe the template just generated the script but didn't submit it
                     # Look for generated script and submit it manually
-                    generated_script = work_dir / f"{job_name}.sh"
+                    generated_script = work_dir / f"{full_job_name}.sh"
                     if generated_script.exists():
                         print(f"  Found generated script: {generated_script.name}")
                         result = subprocess.run(
@@ -477,22 +502,135 @@ fi'''
             workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             return self.base_work_dir / "workflow_outputs" / workflow_id
     
-    def clean_material_name(self, material_id: str) -> str:
-        """
-        Clean material name for use in directory names.
+    def extract_core_material_name(self, material_id: str) -> str:
+        """Extract the core material name by removing ALL workflow-related suffixes"""
+        name = material_id
         
-        Args:
-            material_id: Raw material ID
+        # ACTUAL suffixes from NewCifToD12.py, CRYSTALOptToD12.py, and d12creation.py
+        # Based on real filename construction patterns found in the code
+        suffixes_to_remove = [
+            # === BASIS SETS (from NewCifToD12.py and d12creation.py) ===
+            '_POB-TZVP-REV2', '_POB-DZVP-REV2', '_POB-TZVP', '_POB-DZVP',
+            '_STO-3G', '_3-21G', '_6-31G', '_6-311G', '_def2-SVP', '_def2-TZVP',
+            '_DZVP-REV2', '_TZVP-REV2',  # External basis directory names
             
-        Returns:
-            Cleaned material name safe for directories
-        """
+            # === DFT FUNCTIONALS WITH DISPERSION (from NewCifToD12.py) ===
+            '_HSE06-D3', '_PBE-D3', '_B3LYP-D3', '_PBE0-D3', '_SCAN-D3',
+            '_BLYP-D3', '_BP86-D3', '_wB97X-D3',
+            
+            # === DFT FUNCTIONALS WITHOUT DISPERSION ===
+            '_HSE06', '_PBE', '_B3LYP', '_PBE0', '_SCAN', '_BLYP', '_BP86', '_wB97X',
+            '_LDA', '_VWN', '_PWGGA', '_PW91',
+            
+            # === HARTREE-FOCK METHODS ===
+            '_RHF', '_UHF', '_HF',
+            
+            # === CRYSTALOptToD12.py SPECIFIC SUFFIXES ===
+            '_optimized',  # Always added by CRYSTALOptToD12.py
+            
+            # === CALCULATION TYPES (from NewCifToD12.py pattern) ===
+            '_OPT', '_SP', '_FREQ',
+            
+            # === DIMENSIONALITY (from NewCifToD12.py) ===
+            '_CRYSTAL', '_SLAB', '_POLYMER', '_MOLECULE',
+            
+            # === SYMMETRY SETTINGS (from NewCifToD12.py) ===
+            '_symm', '_P1',
+            
+            # === LOWERCASE CALC TYPES (from CRYSTALOptToD12.py) ===
+            '_opt', '_sp', '_freq',
+            
+            # === WORKFLOW-ADDED SUFFIXES ===
+            '_band', '_doss', '_BAND', '_DOSS'
+        ]
+        
+        # Remove suffixes iteratively until no more matches
+        original_name = name
+        while True:
+            name_before = name
+            for suffix in suffixes_to_remove:
+                if name.endswith(suffix):
+                    name = name[:-len(suffix)]
+                    break
+            # If no suffix was removed, we're done
+            if name == name_before:
+                break
+        
+        # Final cleanup - remove any trailing underscores or numbers
+        name = name.rstrip('_0123456789')
+        
         # Only replace truly problematic characters for filesystem compatibility
         # Preserve ^ and , as they are commonly used in chemical notation
-        clean_name = material_id.replace(' ', '_')  # Spaces to underscores
-        clean_name = clean_name.replace('/', '_').replace('\\', '_')  # Path separators
+        name = name.replace(' ', '_')  # Spaces to underscores
+        name = name.replace('/', '_').replace('\\', '_')  # Path separators
         # Keep other characters like ^, ,, ., - as they are common in chemical names
-        return clean_name
+        
+        # Ensure we have a valid name
+        if not name or len(name) < 2:
+            # Fallback to a basic version if cleaning removed too much
+            name = original_name.split('_')[0]
+            
+        # Ensure it starts with mat_ if it doesn't already
+        if not name.startswith('mat_'):
+            name = f"mat_{name}"
+            
+        return name or "mat_unknown_material"
+    
+    def clean_material_name(self, material_id: str) -> str:
+        """
+        Clean material name for use in directory names - wrapper for backward compatibility
+        """
+        return self.extract_core_material_name(material_id)
+        
+    def get_next_calc_suffix(self, core_name: str, calc_type: str, workflow_base: Path) -> str:
+        """
+        Get the next available suffix for a calculation type (e.g., _sp, _sp2, _sp3)
+        
+        Args:
+            core_name: Core material name (e.g., "1_dia")
+            calc_type: Calculation type ("SP", "OPT", "BAND", "DOSS", "FREQ")
+            workflow_base: Base workflow directory to check for existing calculations
+            
+        Returns:
+            Clean suffix like "_sp", "_sp2", "_opt", "_opt2", etc.
+        """
+        type_suffix = calc_type.lower()
+        
+        # Check what calculation directories already exist
+        existing_dirs = []
+        for step_dir in workflow_base.glob(f"step_*_{calc_type}"):
+            if step_dir.is_dir():
+                for mat_dir in step_dir.glob(f"mat_{core_name}*"):
+                    existing_dirs.append(mat_dir.name)
+        
+        # Determine the next number
+        if not existing_dirs:
+            # First calculation of this type
+            return f"_{type_suffix}"
+        
+        # Find highest existing number
+        max_num = 0
+        for dir_name in existing_dirs:
+            # Look for pattern like mat_1_dia_sp2 or mat_1_dia_sp
+            if f"_{type_suffix}" in dir_name:
+                parts = dir_name.split(f"_{type_suffix}")
+                if len(parts) > 1 and parts[1]:
+                    # Has a number after the type
+                    try:
+                        num = int(parts[1])
+                        max_num = max(max_num, num)
+                    except ValueError:
+                        pass
+                else:
+                    # No number means it's the first one
+                    max_num = max(max_num, 1)
+        
+        # Return next available suffix
+        next_num = max_num + 1
+        if next_num == 1:
+            return f"_{type_suffix}"
+        else:
+            return f"_{type_suffix}{next_num}"
             
     def generate_sp_from_opt(self, opt_calc_id: str) -> Optional[str]:
         """
@@ -579,25 +717,26 @@ fi'''
             # Get workflow output directory and create material-specific directory
             workflow_base = self.get_workflow_output_base(opt_calc)
             
+            # Get core material name and determine SP suffix
+            core_name = self.extract_core_material_name(material_id)
+            sp_suffix = self.get_next_calc_suffix(core_name, "SP", workflow_base)
+            
+            # Create clean job name for templates (without mat_ prefix)
+            clean_job_name = core_name[4:] if core_name.startswith('mat_') else core_name
+            
             # Create material-specific directory for SP calculation
-            material_clean = self.clean_material_name(material_id)
-            # Avoid double mat_ prefix
-            if material_clean.startswith("mat_"):
-                dir_name = material_clean
-            else:
-                dir_name = f"mat_{material_clean}"
+            dir_name = f"{core_name}{sp_suffix}"
             sp_step_dir = workflow_base / "step_002_SP" / dir_name
             sp_step_dir.mkdir(parents=True, exist_ok=True)
             
-            # Move SP file to material's directory with a cleaner name
-            # Extract the core material name for cleaner file naming
-            clean_sp_name = f"{dir_name}_sp.d12"
+            # Move SP file to material's directory with consistent naming
+            clean_sp_name = f"{core_name}{sp_suffix}.d12"
             sp_final_location = sp_step_dir / clean_sp_name
             shutil.move(sp_input_file, sp_final_location)
             
             # Create SLURM script for SP calculation  
-            # Use the clean material name for better job identification
-            sp_job_name = f"{dir_name}_sp"
+            # Use the clean material name for the job (templates expect no mat_ prefix)
+            sp_job_name = f"{clean_job_name}{sp_suffix}"
             slurm_script_path = self._create_slurm_script_for_calculation(
                 sp_step_dir, sp_job_name, "SP", 2, workflow_base.name
             )
@@ -695,29 +834,31 @@ fi'''
             # Get workflow output directory and create material-specific directory
             workflow_base = self.get_workflow_output_base(sp_calc)
             
+            # Get core material name and determine DOSS suffix
+            core_name = self.extract_core_material_name(material_id)
+            doss_suffix = self.get_next_calc_suffix(core_name, "DOSS", workflow_base)
+            
+            # Create clean job name for templates (without mat_ prefix)
+            clean_job_name = core_name[4:] if core_name.startswith('mat_') else core_name
+            
             # Create material-specific directory for DOSS calculation
-            material_clean = self.clean_material_name(material_id)
-            # Avoid double mat_ prefix
-            if material_clean.startswith("mat_"):
-                dir_name = material_clean
-            else:
-                dir_name = f"mat_{material_clean}"
+            dir_name = f"{core_name}{doss_suffix}"
             doss_step_dir = workflow_base / "step_004_DOSS" / dir_name
             doss_step_dir.mkdir(parents=True, exist_ok=True)
             
-            # Move DOSS files to material's directory with cleaner names
-            clean_doss_name = f"{dir_name}_doss.d3"
+            # Move DOSS files to material's directory with consistent naming
+            clean_doss_name = f"{core_name}{doss_suffix}.d3"
             doss_final_location = doss_step_dir / clean_doss_name
             shutil.move(doss_input_file, doss_final_location)
             
             if doss_f9_files:
-                clean_f9_name = f"{dir_name}_doss.f9"
+                clean_f9_name = f"{core_name}{doss_suffix}.f9"
                 doss_f9_final = doss_step_dir / clean_f9_name
                 shutil.move(doss_f9_files[0], doss_f9_final)
             
             # Create SLURM script for DOSS calculation
-            # Use the clean material name for better job identification
-            doss_job_name = f"{dir_name}_doss"
+            # Use the clean material name for the job (templates expect no mat_ prefix)
+            doss_job_name = f"{clean_job_name}{doss_suffix}"
             slurm_script_path = self._create_slurm_script_for_calculation(
                 doss_step_dir, doss_job_name, "DOSS", 4, workflow_base.name
             )
@@ -815,29 +956,31 @@ fi'''
             # Get workflow output directory and create material-specific directory
             workflow_base = self.get_workflow_output_base(sp_calc)
             
+            # Get core material name and determine BAND suffix
+            core_name = self.extract_core_material_name(material_id)
+            band_suffix = self.get_next_calc_suffix(core_name, "BAND", workflow_base)
+            
+            # Create clean job name for templates (without mat_ prefix)
+            clean_job_name = core_name[4:] if core_name.startswith('mat_') else core_name
+            
             # Create material-specific directory for BAND calculation
-            material_clean = self.clean_material_name(material_id)
-            # Avoid double mat_ prefix
-            if material_clean.startswith("mat_"):
-                dir_name = material_clean
-            else:
-                dir_name = f"mat_{material_clean}"
+            dir_name = f"{core_name}{band_suffix}"
             band_step_dir = workflow_base / "step_003_BAND" / dir_name
             band_step_dir.mkdir(parents=True, exist_ok=True)
             
-            # Move BAND files to material's directory with cleaner names
-            clean_band_name = f"{dir_name}_band.d3"
+            # Move BAND files to material's directory with consistent naming
+            clean_band_name = f"{core_name}{band_suffix}.d3"
             band_final_location = band_step_dir / clean_band_name
             shutil.move(band_input_file, band_final_location)
             
             if band_f9_files:
-                clean_f9_name = f"{dir_name}_band.f9"
+                clean_f9_name = f"{core_name}{band_suffix}.f9"
                 band_f9_final = band_step_dir / clean_f9_name
                 shutil.move(band_f9_files[0], band_f9_final)
             
             # Create SLURM script for BAND calculation
-            # Use the clean material name for better job identification
-            band_job_name = f"{dir_name}_band"
+            # Use the clean material name for the job (templates expect no mat_ prefix)
+            band_job_name = f"{clean_job_name}{band_suffix}"
             slurm_script_path = self._create_slurm_script_for_calculation(
                 band_step_dir, band_job_name, "BAND", 3, workflow_base.name
             )
@@ -956,24 +1099,26 @@ fi'''
             # Get workflow output directory and create material-specific directory
             workflow_base = self.get_workflow_output_base(opt_calc)
             
+            # Get core material name and determine FREQ suffix
+            core_name = self.extract_core_material_name(material_id)
+            freq_suffix = self.get_next_calc_suffix(core_name, "FREQ", workflow_base)
+            
+            # Create clean job name for templates (without mat_ prefix)
+            clean_job_name = core_name[4:] if core_name.startswith('mat_') else core_name
+            
             # Create material-specific directory for FREQ calculation
-            material_clean = self.clean_material_name(material_id)
-            # Avoid double mat_ prefix
-            if material_clean.startswith("mat_"):
-                dir_name = material_clean
-            else:
-                dir_name = f"mat_{material_clean}"
+            dir_name = f"{core_name}{freq_suffix}"
             freq_step_dir = workflow_base / "step_005_FREQ" / dir_name
             freq_step_dir.mkdir(parents=True, exist_ok=True)
             
-            # Move FREQ file to material's directory with a cleaner name
-            clean_freq_name = f"{dir_name}_freq.d12"
+            # Move FREQ file to material's directory with consistent naming
+            clean_freq_name = f"{core_name}{freq_suffix}.d12"
             freq_final_location = freq_step_dir / clean_freq_name
             shutil.move(freq_input_file, freq_final_location)
             
             # Create SLURM script for FREQ calculation
-            # Use the clean material name for better job identification
-            freq_job_name = f"{dir_name}_freq"
+            # Use the clean material name for the job (templates expect no mat_ prefix)
+            freq_job_name = f"{clean_job_name}{freq_suffix}"
             slurm_script_path = self._create_slurm_script_for_calculation(
                 freq_step_dir, freq_job_name, "FREQ", 5, workflow_base.name
             )
@@ -1055,19 +1200,23 @@ fi'''
                 
         elif calc_type == "SP":
             # Generate next steps based on workflow plan or default behavior
+            print(f"SP completed. Planned sequence: {planned_sequence}")
             if planned_sequence:
                 # Follow the planned workflow sequence
                 if "DOSS" in planned_sequence:
+                    print("Generating DOSS from planned sequence...")
                     doss_calc_id = self.generate_doss_from_sp(completed_calc_id)
                     if doss_calc_id:
                         new_calc_ids.append(doss_calc_id)
                         
                 if "BAND" in planned_sequence:
+                    print("Generating BAND from planned sequence...")
                     band_calc_id = self.generate_band_from_sp(completed_calc_id)
                     if band_calc_id:
                         new_calc_ids.append(band_calc_id)
             else:
                 # Default behavior: generate both DOSS and BAND
+                print("No planned sequence found. Using default: generating both DOSS and BAND...")
                 doss_calc_id = self.generate_doss_from_sp(completed_calc_id)
                 if doss_calc_id:
                     new_calc_ids.append(doss_calc_id)

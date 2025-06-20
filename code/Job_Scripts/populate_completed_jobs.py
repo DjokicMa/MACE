@@ -172,7 +172,7 @@ def populate_database(completed_calcs: List[Dict], db: MaterialDatabase) -> int:
                 print(f"  Skipping {calc['calc_type']} for {calc['material_id']} - already in database")
                 continue
             
-            # Add calculation record
+            # Add calculation record with auto_populated flag, preserving any existing workflow metadata
             calc_id = db.create_calculation(
                 material_id=calc['material_id'],
                 calc_type=calc['calc_type'],
