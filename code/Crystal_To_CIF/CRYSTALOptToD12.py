@@ -299,8 +299,47 @@ class CrystalOutputParser:
                 break
 
         # If no conventional cell found, use primitive
-        if not self.data["conventional_cell"] and self.data["primitive_cell"]:
+        if not self.data.get("conventional_cell") and self.data.get("primitive_cell"):
             self.data["conventional_cell"] = self.data["primitive_cell"]
+            
+        # Also try to extract lattice parameters from the optimized geometry section
+        if not self.data.get("conventional_cell"):
+            self._extract_optimized_cell_parameters(lines, start_idx)
+    
+    def _extract_optimized_cell_parameters(self, lines, start_idx):
+        """Extract optimized lattice parameters from final geometry section"""
+        # Look for optimized cell parameters near the final geometry
+        for i in range(max(0, start_idx - 50), min(start_idx + 100, len(lines))):
+            line = lines[i].strip()
+            # Look for patterns like "LATTICE PARAMETERS (ANGSTROMS AND DEGREES)"
+            if "LATTICE PARAMETERS" in line and ("ANGSTROM" in line or "DEGREE" in line):
+                # Look for the parameter values in the next few lines
+                for j in range(i + 1, min(i + 10, len(lines))):
+                    parts = lines[j].strip().split()
+                    if len(parts) >= 6:
+                        try:
+                            # Try to parse as 6 floating point numbers (a, b, c, alpha, beta, gamma)
+                            params = [float(p) for p in parts[:6]]
+                            self.data["conventional_cell"] = [str(p) for p in params]
+                            return
+                        except ValueError:
+                            continue
+            
+            # Also look for simpler patterns with just lattice constants
+            if ("A = " in line or "A=" in line) and ("B = " in line or "B=" in line):
+                # Try to extract a, b, c values
+                try:
+                    import re
+                    a_match = re.search(r'A\s*=\s*([0-9.]+)', line)
+                    b_match = re.search(r'B\s*=\s*([0-9.]+)', line)
+                    c_match = re.search(r'C\s*=\s*([0-9.]+)', line)
+                    if a_match and b_match and c_match:
+                        a, b, c = a_match.group(1), b_match.group(1), c_match.group(1)
+                        # Use default angles for simple cases
+                        self.data["conventional_cell"] = [a, b, c, "90.0", "90.0", "90.0"]
+                        return
+                except:
+                    continue
 
     def _extract_coordinates(self, lines, start_idx):
         """Extract atomic coordinates with symmetry information"""
@@ -1665,8 +1704,10 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 f, settings.get("freq_settings", DEFAULT_FREQ_SETTINGS)
             )
         else:
-            # For SP: Write END after coordinates, then proceed to basis set
-            f.write("END\n")
+            # For SP: Only write END if this was an optimization that's now being converted to SP
+            # Plain SP calculations (single point from optimized geometry) should NOT have END
+            # because there's no OPTGEOM/ENDOPT block to terminate
+            pass  # No END for plain SP calculations
 
         # Handle basis sets and method section
         functional = settings.get("functional", "")

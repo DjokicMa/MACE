@@ -54,11 +54,10 @@ class WorkflowExecutor:
         
         # Set up directories
         self.configs_dir = self.work_dir / "workflow_configs"
-        self.inputs_dir = self.work_dir / "workflow_inputs"
         self.outputs_dir = self.work_dir / "workflow_outputs"
         self.temp_dir = self.work_dir / "workflow_temp"
         
-        for dir_path in [self.configs_dir, self.inputs_dir, self.outputs_dir, self.temp_dir]:
+        for dir_path in [self.configs_dir, self.outputs_dir, self.temp_dir]:
             dir_path.mkdir(parents=True, exist_ok=True)
             
         # Initialize queue manager
@@ -297,25 +296,29 @@ class WorkflowExecutor:
         
         # Add Python module loading for the callback scripts
         # Find the line with "module load CRYSTAL" and add Python module after it
-        lines = script_content.split('\n')
-        for i, line in enumerate(lines):
-            if line.strip().startswith('module load CRYSTAL'):
-                # Insert Python module load after CRYSTAL module
-                lines.insert(i + 1, 'module load Python/3.11.3-GCCcore-12.3.0')
-                break
-        script_content = '\n'.join(lines)
+        # Note: Python module loading is already in the base template, no need to add it again
         
-        # Fix callback mechanism - queue managers are in base workflow directory
-        # The relative path from individual calc dir to base is ../../../../
-        workflow_base_dir = "../../../../"
-        script_content = script_content.replace(
-            'if [ -f $DIR/enhanced_queue_manager.py ]; then\n    cd $DIR\n    python enhanced_queue_manager.py',
-            f'if [ -f $DIR/{workflow_base_dir}enhanced_queue_manager.py ]; then\n    cd $DIR/{workflow_base_dir}\n    python enhanced_queue_manager.py'
-        )
-        script_content = script_content.replace(
-            'elif [ -f $DIR/crystal_queue_manager.py ]; then\n    cd $DIR\n    ./crystal_queue_manager.py',
-            f'elif [ -f $DIR/{workflow_base_dir}crystal_queue_manager.py ]; then\n    cd $DIR/{workflow_base_dir}\n    ./crystal_queue_manager.py'
-        )
+        # Fix callback mechanism - check multiple possible locations for queue managers
+        enhanced_callback = '''# ADDED: Auto-submit new jobs when this one completes
+# Check multiple possible locations for queue managers
+if [ -f $DIR/enhanced_queue_manager.py ]; then
+    cd $DIR
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+elif [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
+    cd $DIR/../../../../
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+elif [ -f $DIR/crystal_queue_manager.py ]; then
+    cd $DIR
+    ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
+elif [ -f $DIR/../../../../crystal_queue_manager.py ]; then
+    cd $DIR/../../../../
+    ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
+fi'''
+        
+        # Replace the existing callback section
+        import re
+        callback_pattern = r'# ADDED: Auto-submit new jobs when this one completes.*?fi'
+        script_content = re.sub(callback_pattern, enhanced_callback, script_content, flags=re.DOTALL)
         
         # Add workflow metadata as comments at the top
         metadata_lines = [

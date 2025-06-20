@@ -841,7 +841,13 @@ class EnhancedCrystalQueueManager:
     def process_new_d12_files(self):
         """Process new .d12 files in the directory for submission."""
         # Find .d12 files that haven't been submitted yet
-        d12_files = list(self.d12_dir.glob("*.d12"))
+        # Search both directly in d12_dir and in workflow subdirectories
+        d12_files = list(self.d12_dir.glob("*.d12"))  # Direct files
+        d12_files.extend(list(self.d12_dir.glob("**/*.d12")))  # Recursive search in subdirectories
+        
+        # Remove duplicates (in case a file appears in both searches)
+        d12_files = list(set(d12_files))
+        
         submitted_count = 0
         
         for d12_file in d12_files:

@@ -30,10 +30,17 @@ cp DOSS.DAT ${DIR}/${JOB}.DOSS.DAT
 cp fort.25 ${DIR}/${JOB}.f25
 
 # ADDED: Auto-submit new jobs when this one completes
+# Check multiple possible locations for queue managers
 if [ -f $DIR/enhanced_queue_manager.py ]; then
     cd $DIR
     python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+elif [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
+    cd $DIR/../../../../
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
 elif [ -f $DIR/crystal_queue_manager.py ]; then
     cd $DIR
+    ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
+elif [ -f $DIR/../../../../crystal_queue_manager.py ]; then
+    cd $DIR/../../../../
     ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
 fi

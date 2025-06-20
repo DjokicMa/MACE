@@ -213,6 +213,67 @@ class WorkflowEngine:
             return False, "", "Script execution timed out"
         except Exception as e:
             return False, "", f"Error running script: {e}"
+    
+    def find_workflow_context(self, input_file_path: str) -> Optional[Tuple[str, str]]:
+        """
+        Find the workflow ID and step from a file path.
+        
+        Args:
+            input_file_path: Path to an input file
+            
+        Returns:
+            Tuple of (workflow_id, step_dir) if found, None otherwise
+        """
+        path = Path(input_file_path)
+        
+        # Look for workflow_outputs/workflow_YYYYMMDD_HHMMSS/step_XXX_TYPE pattern
+        for parent in path.parents:
+            if parent.name.startswith("workflow_") and len(parent.name) > 15:
+                # Check if parent's parent is workflow_outputs
+                if parent.parent.name == "workflow_outputs":
+                    workflow_id = parent.name
+                    # Find the step directory
+                    for part in path.parts:
+                        if part.startswith("step_") and "_" in part[5:]:
+                            return workflow_id, part
+        return None
+    
+    def get_workflow_output_base(self, opt_calc: Dict) -> Path:
+        """
+        Get the base workflow output directory for placing new calculations.
+        
+        Args:
+            opt_calc: OPT calculation record
+            
+        Returns:
+            Path to workflow outputs directory
+        """
+        opt_input_file = opt_calc.get('input_file', '')
+        workflow_context = self.find_workflow_context(opt_input_file)
+        
+        if workflow_context:
+            workflow_id, _ = workflow_context
+            return self.base_work_dir / "workflow_outputs" / workflow_id
+        else:
+            # Fall back to creating a new workflow if context not found
+            from datetime import datetime
+            workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            return self.base_work_dir / "workflow_outputs" / workflow_id
+    
+    def clean_material_name(self, material_id: str) -> str:
+        """
+        Clean material name for use in directory names.
+        
+        Args:
+            material_id: Raw material ID
+            
+        Returns:
+            Cleaned material name safe for directories
+        """
+        # Replace problematic characters with underscores
+        clean_name = material_id.replace(',', '_').replace('^', '_').replace(' ', '_')
+        clean_name = clean_name.replace('/', '_').replace('\\', '_')
+        return clean_name
             
     def generate_sp_from_opt(self, opt_calc_id: str) -> Optional[str]:
         """
@@ -296,9 +357,16 @@ class WorkflowEngine:
                 
             sp_input_file = sp_files[0]
             
-            # Move SP file to appropriate workflow location
-            sp_final_location = self.base_work_dir / "workflow_inputs" / "step_002_SP" / sp_input_file.name
-            sp_final_location.parent.mkdir(parents=True, exist_ok=True)
+            # Get workflow output directory and create material-specific directory
+            workflow_base = self.get_workflow_output_base(opt_calc)
+            
+            # Create material-specific directory for SP calculation
+            material_clean = self.clean_material_name(material_id)
+            sp_step_dir = workflow_base / "step_002_SP" / f"mat_{material_clean}"
+            sp_step_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Move SP file to material's directory
+            sp_final_location = sp_step_dir / sp_input_file.name
             shutil.move(sp_input_file, sp_final_location)
             
             # Create SP calculation record
@@ -313,7 +381,7 @@ class WorkflowEngine:
                 }
             )
             
-            print(f"Generated SP calculation {sp_calc_id}: {sp_final_location.name}")
+            print(f"Generated SP calculation {sp_calc_id}: {sp_final_location}")
             return sp_calc_id
             
         finally:
@@ -382,13 +450,20 @@ class WorkflowEngine:
             # Also check for renamed .f9 file
             doss_f9_files = list(work_dir.glob("*DOSS*.f9"))
             
-            # Move DOSS files to appropriate workflow location
-            doss_final_location = self.base_work_dir / "workflow_inputs" / "step_004_DOSS" / doss_input_file.name
-            doss_final_location.parent.mkdir(parents=True, exist_ok=True)
+            # Get workflow output directory and create material-specific directory
+            workflow_base = self.get_workflow_output_base(sp_calc)
+            
+            # Create material-specific directory for DOSS calculation
+            material_clean = self.clean_material_name(material_id)
+            doss_step_dir = workflow_base / "step_004_DOSS" / f"mat_{material_clean}"
+            doss_step_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Move DOSS files to material's directory
+            doss_final_location = doss_step_dir / doss_input_file.name
             shutil.move(doss_input_file, doss_final_location)
             
             if doss_f9_files:
-                doss_f9_final = doss_final_location.parent / doss_f9_files[0].name
+                doss_f9_final = doss_step_dir / doss_f9_files[0].name
                 shutil.move(doss_f9_files[0], doss_f9_final)
             
             # Create DOSS calculation record
@@ -472,13 +547,20 @@ class WorkflowEngine:
             # Also check for renamed .f9 file
             band_f9_files = list(work_dir.glob("*BAND*.f9")) + list(work_dir.glob("*band*.f9"))
             
-            # Move BAND files to appropriate workflow location
-            band_final_location = self.base_work_dir / "workflow_inputs" / "step_003_BAND" / band_input_file.name
-            band_final_location.parent.mkdir(parents=True, exist_ok=True)
+            # Get workflow output directory and create material-specific directory
+            workflow_base = self.get_workflow_output_base(sp_calc)
+            
+            # Create material-specific directory for BAND calculation
+            material_clean = self.clean_material_name(material_id)
+            band_step_dir = workflow_base / "step_003_BAND" / f"mat_{material_clean}"
+            band_step_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Move BAND files to material's directory
+            band_final_location = band_step_dir / band_input_file.name
             shutil.move(band_input_file, band_final_location)
             
             if band_f9_files:
-                band_f9_final = band_final_location.parent / band_f9_files[0].name
+                band_f9_final = band_step_dir / band_f9_files[0].name
                 shutil.move(band_f9_files[0], band_f9_final)
             
             # Create BAND calculation record

@@ -997,11 +997,10 @@ class WorkflowPlanner:
                 modified_lines.append(f"echo '#SBATCH -A {resources['account']}' >> $1.sh")
             elif line.startswith("echo '#SBATCH --constraint=") and "constraint" in resources:
                 modified_lines.append(f"echo '#SBATCH --constraint={resources['constraint']}' >> $1.sh")
-            # Add Python module loading after CRYSTAL module loading
+            # CRYSTAL module loading (Python module already in base template)
             elif "module load CRYSTAL" in line and ">> $1.sh" in line:
                 modified_lines.append(line)
-                # Add Python module load on the next line
-                modified_lines.append("echo 'module load Python/3.11.3-GCCcore-12.3.0' >> $1.sh")
+                # Note: Python module loading is already in the base template
             else:
                 modified_lines.append(line)
                 
