@@ -246,6 +246,87 @@ $SCRATCH/workflow_20250618_160317/step_001_OPT/mat_2_dia2/
 $SCRATCH/workflow_20250618_160317/step_001_OPT/mat_3_4_2T1_CA/
 ```
 
+## SLURM Script Generation Architecture
+
+The workflow system uses a two-stage script generation process that ensures reliable, customized job scripts.
+
+### Stage 1: Workflow Planning (`workflow_planner.py`)
+
+**Source Scripts Used:**
+- **`submitcrystal23.sh`** - Base generator for OPT/SP/FREQ calculations
+- **`submit_prop.sh`** - Base generator for BAND/DOSS/properties calculations
+
+**Process:**
+1. **Read Base Scripts**: Imports the complete script logic from source generators
+2. **Apply Resource Customizations**: Modifies SLURM directives (cores, memory, walltime, account)
+3. **Create Workflow Templates**: Saves customized templates to `workflow_scripts/`
+
+**Generated Templates:**
+```
+workflow_scripts/
+├── submitcrystal23_opt_1.sh    # OPT calculations (step 1)
+├── submitcrystal23_sp_2.sh     # SP calculations (step 2)  
+├── submit_prop_band_3.sh       # BAND calculations (step 3)
+├── submit_prop_doss_4.sh       # DOSS calculations (step 4)
+└── submitcrystal23_freq_5.sh   # FREQ calculations (step 5)
+```
+
+### Stage 2: Workflow Execution (`workflow_executor.py`)
+
+**Process:**
+1. **Read Workflow Templates**: Loads the customized templates from `workflow_scripts/`
+2. **Apply Material-Specific Settings**: Customizes for each individual material
+   - Material names and job IDs
+   - Scratch directory paths
+   - Working directory paths
+   - File references
+
+**Individual Script Generation:**
+Each material gets its own SLURM script:
+```
+workflow_outputs/workflow_20250618_160317/step_001_OPT/
+├── mat_1_dia/
+│   ├── mat_1_dia.d12
+│   └── mat_1_dia.sh          # Individual SLURM script
+├── mat_2_dia2/
+│   ├── mat_2_dia2.d12
+│   └── mat_2_dia2.sh         # Individual SLURM script
+└── ...
+```
+
+### Callback Integration
+
+All generated scripts include robust callback logic for workflow progression:
+
+```bash
+# Multi-location queue manager detection (prefers base directory)
+if [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
+    echo "Using enhanced_queue_manager.py from base directory"
+    cd $DIR/../../../../
+    python enhanced_queue_manager.py --callback-mode completion --max-recovery-attempts 3
+elif [ -f $DIR/enhanced_queue_manager.py ]; then
+    echo "Using enhanced_queue_manager.py from local directory"
+    cd $DIR
+    python enhanced_queue_manager.py --callback-mode completion --max-recovery-attempts 3
+else
+    echo "Warning: No queue manager found"
+fi
+```
+
+**Key Features:**
+- **Base Directory Preference**: Ensures all dependencies are available
+- **Fallback Logic**: Handles different execution environments
+- **Debug Output**: Shows which queue manager path is used
+- **Error Recovery**: Automatic retry and escalation for failed jobs
+- **Workflow Progression**: Triggers next calculation steps upon completion
+
+### Important Notes
+
+- **Do NOT manually edit** `workflow_scripts/` templates - they are auto-generated
+- **To modify defaults**: Edit the source scripts (`submitcrystal23.sh`, `submit_prop.sh`)
+- **For workflow-specific changes**: Use the interactive planning interface
+- **Templates are regenerated** each time you run `python run_workflow.py --interactive`
+
 ## Configuration Management
 
 ### JSON Persistence

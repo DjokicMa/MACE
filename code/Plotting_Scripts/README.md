@@ -1,6 +1,6 @@
-# D12 Generation and Visualization Scripts
+# CRYSTAL Visualization and Analysis Scripts
 
-This folder contains Python scripts designed for CRYSTAL23 simulations. The tools automate the generation of `.d12` input files, insertion of ghost atoms, and provide band structure and DOS plotting utilities.
+This folder contains Python scripts for creating publication-quality visualizations from CRYSTAL quantum chemistry calculations, including band structures, density of states, phonon bands, and comprehensive material analysis reports.
 
 ## Scripts Overview
 

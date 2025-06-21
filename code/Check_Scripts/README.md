@@ -1,6 +1,6 @@
-# Check\_Scripts Folder Documentation
+# CRYSTAL Job Status Analysis and Error Handling
 
-This folder contains CRYSTAL-specific utilities for checking, classifying, fixing, and preparing outputs from geometry optimization or single-point CRYSTAL calculations.
+This folder contains CRYSTAL-specific utilities for automatically analyzing calculation results, classifying job completion status, and implementing targeted error fixes for common CRYSTAL calculation issues.
 
 ## Included Scripts
 
@@ -47,12 +47,45 @@ This folder contains CRYSTAL-specific utilities for checking, classifying, fixin
 * Behavior: Replaces the SHRINK k-point mesh with the smallest value found.
 
 
-## Suggested Workflow
+## Integration with Enhanced Queue Management
 
-1. Run `updatelists2.py` on a batch folder.
-2. Use `check_completed2.py` and `check_errored2.py` to sort jobs.
-3. Fix errors (e.g. using `fixk.py` for shrink errors).
-4. Extract optimized `.d12` files with `get_optimized2.py` or `CRYSTALOptToD12.py`.
-5. Use the cleaned outputs for follow-up SP or postprocessing.
+These scripts are **automatically integrated** with the enhanced queue manager system:
 
-For any questions, contact the maintainer or refer to the CRYSTAL documentation for error string meanings.
+- **`enhanced_queue_manager.py`** uses the error classification logic from `updatelists2.py`
+- **`error_recovery.py`** incorporates `fixk.py` functionality for automated SHRINK parameter fixes
+- **`workflow_engine.py`** automatically triggers appropriate fixes based on error classifications
+
+## Manual Workflow (Legacy Usage)
+
+1. **Analyze Results**: Run `updatelists2.py` on a batch folder to classify all job statuses
+2. **Organize Completed**: Use `check_completedV2.py` to move successful jobs to `done/` folder
+3. **Organize Errors**: Use `check_erroredV2.py` to sort errored jobs by error type
+4. **Apply Fixes**: Use `fixk.py` for SHRINK errors and other targeted fixes
+5. **Extract Geometries**: Use `CRYSTALOptToD12.py` to extract optimized structures
+6. **Continue Workflow**: Submit follow-up SP, BAND, or DOSS calculations
+
+## Error Classification
+
+The scripts recognize specific CRYSTAL error patterns:
+
+- **Complete**: `ENDED - TOTAL CPU TIME` or `FINAL OPTIMIZED GEOMETRY`
+- **SCF Convergence**: `TOO MANY CYCLES IN SCF`
+- **Memory Issues**: `INSUFFICIENT MEMORY`, `ALLOCATION ERROR`
+- **SHRINK Errors**: `SHRINK FACTORS LESS THAN`, `SHRINK VALUE TOO SMALL`
+- **Geometry Issues**: `SMALL INTERATOMIC DISTANCE`, `ATOMS TOO CLOSE`
+- **Potential Problems**: Warning patterns that may indicate issues
+
+## Requirements
+
+- **Python 3.x** with standard libraries (`os`, `glob`, `csv`, `shutil`)
+- **CRYSTAL output files** (`.out`) for analysis
+- **Associated input files** (`.d12`) for error fixing
+
+## Notes
+
+- Scripts are designed for **batch processing** of hundreds of calculations
+- Error classifications are based on **CRYSTAL-specific output patterns**
+- Integration with modern workflow management provides **automated error recovery**
+- Manual usage is maintained for **specialized workflows** and **debugging**
+
+For automated usage, see `enhanced_queue_manager.py` and `error_recovery.py` documentation.

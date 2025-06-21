@@ -4,6 +4,81 @@ This repository contains a comprehensive suite of scripts for managing CRYSTAL q
 
 ## Scripts Overview
 
+### SLURM Script Generation System
+
+This system has two main approaches for generating SLURM job scripts:
+
+#### **Manual Job Submission (Direct Use)**
+**Scripts:** `submitcrystal23.sh`, `submit_prop.sh`, `submitcrystal17.sh`
+
+These are script generators that create customized SLURM scripts for immediate submission:
+
+- **`submitcrystal23.sh`** - Generates OPT/SP calculation scripts
+- **`submit_prop.sh`** - Generates BAND/DOSS/properties calculation scripts  
+- **`submitcrystal17.sh`** - Legacy CRYSTAL17 support
+
+**Usage:**
+```bash
+./submitcrystal23.sh job_name    # Creates job_name.sh and submits via sbatch
+./submit_prop.sh job_name        # Creates job_name.sh and submits via sbatch
+```
+
+**Features:**
+- Dynamic SLURM script generation with resource customization
+- Automatic callback integration for queue management
+- Full path resolution for CRYSTAL executables
+- Multi-location queue manager detection (prefers base directory)
+
+#### **Workflow System (Automated)**
+**Components:** `workflow_planner.py`, `workflow_executor.py`, `run_workflow.py`
+
+The workflow system uses the same base scripts but applies additional customizations:
+
+1. **Planning Phase** (`workflow_planner.py`):
+   - Reads base scripts (`submitcrystal23.sh`, `submit_prop.sh`)
+   - Applies resource customizations (cores, memory, walltime, account)
+   - Creates workflow-specific templates in `workflow_scripts/`
+
+2. **Execution Phase** (`workflow_executor.py`):
+   - Reads workflow templates from `workflow_scripts/`
+   - Applies material-specific customizations (names, directories, scratch paths)
+   - Generates individual scripts for each material calculation
+
+**Template Files in `workflow_scripts/`:**
+- `submitcrystal23_opt_1.sh` - OPT calculations (step 1)
+- `submitcrystal23_sp_2.sh` - SP calculations (step 2)  
+- `submit_prop_band_3.sh` - BAND calculations (step 3)
+- `submit_prop_doss_4.sh` - DOSS calculations (step 4)
+- `submitcrystal23_freq_5.sh` - FREQ calculations (step 5)
+
+**Important Notes:**
+- Workflow templates are **generated from base scripts**, not manually edited
+- Templates include workflow-specific directory structures and callback logic
+- Each material gets an individual SLURM script (e.g., `material_name.sh`)
+- All scripts use multi-location queue manager detection for reliability
+
+#### **Callback Integration**
+All generated scripts include automatic callback logic:
+
+```bash
+# Check multiple possible locations for queue managers (prefer base directory)
+if [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
+    cd $DIR/../../../../
+    python enhanced_queue_manager.py --callback-mode completion --max-recovery-attempts 3
+elif [ -f $DIR/enhanced_queue_manager.py ]; then
+    cd $DIR  
+    python enhanced_queue_manager.py --callback-mode completion --max-recovery-attempts 3
+fi
+```
+
+This ensures:
+- Jobs automatically trigger next workflow steps upon completion
+- Queue manager runs from directory with all dependencies
+- Fallback logic handles different execution environments
+- Error recovery integration for failed calculations
+
+---
+
 ### Core Job Management
 
 #### `enhanced_queue_manager.py` ⭐ **Phase 2 - Enhanced**
