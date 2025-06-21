@@ -743,9 +743,15 @@ fi'''
         # Find the first part that looks like a technical suffix
         core_parts = []
         for i, part in enumerate(parts):
-            # Check if this part is a technical suffix
-            if part.upper() in ['OPT', 'SP', 'FREQ', 'BAND', 'DOSS', 'BULK', 'OPTGEOM', 
-                              'CRYSTAL', 'SLAB', 'POLYMER', 'MOLECULE', 'SYMM', 'TZ', 'DZ', 'SZ']:
+            # Special case: if this is "opt" and we only have one core part so far,
+            # and the core part ends with a number, this might be a calc type rather than material identifier
+            if (part.upper() == 'OPT' and len(core_parts) == 1 and 
+                core_parts[0] and core_parts[0][-1].isdigit()):
+                # This looks like "test1_opt" - the opt is a calc type, not part of material name
+                break
+            # Check if this part is a technical suffix (removed OPT from this list since we handle it specially)
+            elif part.upper() in ['SP', 'FREQ', 'BAND', 'DOSS', 'BULK', 'OPTGEOM', 
+                                'CRYSTAL', 'SLAB', 'POLYMER', 'MOLECULE', 'SYMM', 'TZ', 'DZ', 'SZ']:
                 break
             # Check if this part is a DFT functional
             elif part.upper() in ['PBE', 'B3LYP', 'HSE06', 'PBE0', 'SCAN', 'BLYP', 'BP86']:
