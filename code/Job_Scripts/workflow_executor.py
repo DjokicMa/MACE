@@ -60,11 +60,13 @@ class WorkflowExecutor:
         for dir_path in [self.configs_dir, self.outputs_dir, self.temp_dir]:
             dir_path.mkdir(parents=True, exist_ok=True)
             
-        # Initialize queue manager
+        # Initialize queue manager with error recovery enabled
         self.queue_manager = EnhancedCrystalQueueManager(
             d12_dir=str(self.outputs_dir),
             max_jobs=200,
             enable_tracking=True,
+            enable_error_recovery=True,
+            max_recovery_attempts=3,
             db_path=self.db_path
         )
         
@@ -307,6 +309,49 @@ class WorkflowExecutor:
         # Replace file references
         script_content = script_content.replace('$1', material_id)
         
+        # Fix the queue manager path for workflow structure
+        # From material directory: ~/test/workflow_outputs/workflow_ID/step_XXX_TYPE/material_name/
+        # To base directory: ~/test/ (4 levels up: ../../../../)
+        #
+        # Path breakdown:
+        # 1. material_name/ → step_XXX_TYPE/ (1 level: ../)
+        # 2. step_XXX_TYPE/ → workflow_ID/ (2 levels: ../../)  
+        # 3. workflow_ID/ → workflow_outputs/ (3 levels: ../../../)
+        # 4. workflow_outputs/ → test/ (4 levels: ../../../../)
+        
+        # Update the queue manager detection to use the correct relative path
+        old_queue_manager_section = '''# ADDED: Auto-submit new jobs when this one completes
+if [ -f $DIR/enhanced_queue_manager.py ]; then
+    cd $DIR
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
+elif [ -f $DIR/crystal_queue_manager.py ]; then
+    cd $DIR
+    ./crystal_queue_manager.py  --max-jobs 250 --reserve 30 --max-submit 5
+fi'''
+        
+        new_queue_manager_section = '''# ADDED: Auto-submit new jobs when this one completes
+# Queue manager is in the base working directory (4 levels up from material directory)
+# Current location: ~/test/workflow_outputs/workflow_ID/step_XXX_TYPE/material_name/
+# Queue manager location: ~/test/enhanced_queue_manager.py (../../../../enhanced_queue_manager.py)
+
+if [ -f ../../../../enhanced_queue_manager.py ]; then
+    echo "Found enhanced_queue_manager.py in base directory (../../../../)"
+    cd ../../../../
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
+elif [ -f ../../../../crystal_queue_manager.py ]; then
+    echo "Found crystal_queue_manager.py in base directory (../../../../)"
+    cd ../../../../
+    ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
+else
+    echo "Warning: No queue manager found in base directory (../../../../)"
+    echo "Expected location: ../../../../enhanced_queue_manager.py"
+    echo "Current working directory: $(pwd)"
+    echo "Listing base directory:"
+    ls -la ../../../../ | grep -E "(enhanced_queue_manager|crystal_queue_manager)"
+fi'''
+        
+        script_content = script_content.replace(old_queue_manager_section, new_queue_manager_section)
+        
         return script_content
         
     def submit_slurm_job(self, script_file: Path, calc_dir: Path) -> str:
@@ -439,10 +484,10 @@ class WorkflowExecutor:
 # Check multiple possible locations for queue managers
 if [ -f $DIR/enhanced_queue_manager.py ]; then
     cd $DIR
-    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
 elif [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
     cd $DIR/../../../../
-    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
 elif [ -f $DIR/crystal_queue_manager.py ]; then
     cd $DIR
     ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
@@ -1148,15 +1193,17 @@ fi'''
         try:
             print("  Setting up monitoring scripts in workflow directory...")
             
-            # List of required monitoring scripts
+            # List of required monitoring and workflow scripts
             required_scripts = [
                 "material_database.py",
                 "crystal_file_manager.py", 
                 "error_detector.py",
                 "material_monitor.py",
-                "enhanced_queue_manager.py",
+                "enhanced_queue_manager.py",  # Critical for workflow progression
                 "workflow_engine.py",
-                "error_recovery.py"
+                "error_recovery.py",
+                "recovery_config.yaml",  # Configuration for error recovery
+                "crystal_queue_manager.py"  # Fallback queue manager
             ]
             
             source_dir = Path(__file__).parent  # Current script directory
