@@ -1197,7 +1197,13 @@ class WorkflowPlanner:
             for d12_file in d12_files:
                 # Create clean material ID from dirty filename
                 clean_material_id = self.create_clean_material_id(d12_file)
-                clean_filename = f"{clean_material_id}_opt.d12"
+                
+                # Only add _opt if it doesn't already end with _opt (to avoid _opt_opt)
+                if clean_material_id.endswith('_opt'):
+                    clean_filename = f"{clean_material_id}.d12"
+                else:
+                    clean_filename = f"{clean_material_id}_opt.d12"
+                    
                 dest_file = step_001_dir / clean_filename
                 
                 if not dest_file.exists():
