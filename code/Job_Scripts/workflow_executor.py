@@ -172,10 +172,10 @@ class WorkflowExecutor:
             calc_dir = step_dir / material_id
             calc_dir.mkdir(exist_ok=True)
             
-            # Copy D12 file to calculation folder with same name as the input file
+            # Move D12 file to calculation folder (not copy) to avoid duplicates
             calc_d12_file = calc_dir / d12_file.name
             if not calc_d12_file.exists():
-                shutil.copy2(str(d12_file), str(calc_d12_file))
+                shutil.move(str(d12_file), str(calc_d12_file))
             
             # Submit via workflow-specific queue manager that respects our directory structure
             print(f"  Submitting {material_id} via workflow queue manager...")
@@ -1146,47 +1146,136 @@ fi'''
     def setup_workflow_monitoring(self, workflow_dir: Path):
         """Copy monitoring scripts to workflow directory for easy access."""
         try:
-            # Import and run the monitoring setup
-            from setup_workflow_monitoring import setup_monitoring_scripts
-            
             print("  Setting up monitoring scripts in workflow directory...")
-            copied_count = setup_monitoring_scripts(str(workflow_dir))
             
-            if copied_count > 0:
-                print(f"    ✓ Copied {copied_count} monitoring scripts")
+            # List of required monitoring scripts
+            required_scripts = [
+                "material_database.py",
+                "crystal_file_manager.py", 
+                "error_detector.py",
+                "material_monitor.py",
+                "enhanced_queue_manager.py",
+                "workflow_engine.py",
+                "error_recovery.py"
+            ]
+            
+            source_dir = Path(__file__).parent  # Current script directory
+            copied_count = 0
+            
+            for script in required_scripts:
+                source_path = source_dir / script
+                target_path = workflow_dir / script
                 
-                # Create a README with monitoring instructions
-                readme_content = """# Workflow Monitoring
+                if source_path.exists():
+                    if not target_path.exists():
+                        try:
+                            shutil.copy2(source_path, target_path)
+                            print(f"    ✓ Copied {script}")
+                            copied_count += 1
+                        except Exception as e:
+                            print(f"    ✗ Failed to copy {script}: {e}")
+                    else:
+                        print(f"    - {script} already exists")
+                else:
+                    print(f"    ✗ Source {script} not found")
+            
+            # Create monitoring helper script
+            helper_script = workflow_dir / "monitor_workflow.py"
+            if not helper_script.exists():
+                helper_content = '''#!/usr/bin/env python3
+"""Workflow monitoring helper script"""
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
+
+try:
+    from material_monitor import MaterialMonitor
+    from material_database import MaterialDatabase
+except ImportError as e:
+    print(f"Error: Required monitoring modules not found: {e}")
+    sys.exit(1)
+
+def quick_status():
+    """Show quick status overview."""
+    monitor = MaterialMonitor()
+    stats = monitor.get_quick_stats()
+    
+    print("=== Quick Workflow Status ===")
+    print(f"Materials in database: {stats['materials']}")
+    print(f"Total calculations: {stats['calculations']}")
+    print(f"Database size: {stats['db_size_mb']} MB")
+    print(f"Active queue jobs: {stats['queue_jobs']}")
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Workflow monitoring helper")
+    parser.add_argument("--action", choices=["status", "materials", "calculations", "stats"], 
+                       default="status", help="Action to perform")
+    args = parser.parse_args()
+    
+    if args.action == "status":
+        quick_status()
+    else:
+        print(f"Action '{args.action}' not implemented yet. Use --action status for now.")
+'''
+                
+                with open(helper_script, 'w') as f:
+                    f.write(helper_content)
+                os.chmod(helper_script, 0o755)
+                print(f"    ✓ Created monitor_workflow.py")
+                copied_count += 1
+            
+            # Create README
+            readme_content = f"""# Workflow Monitoring
 
 This directory contains all necessary scripts for monitoring your CRYSTAL workflow.
 
 ## Quick Commands
 
+```bash
 # Check status
 python material_monitor.py --action stats
 
 # Live dashboard (press Ctrl+C to stop)
 python material_monitor.py --action dashboard
 
-# Database queries
-python monitor_workflow.py --action materials
-python monitor_workflow.py --action calculations
+# Quick status helper
+python monitor_workflow.py --action status
 
 # Generate detailed report
 python material_monitor.py --action report
+```
 
-See monitoring_guide.md for complete documentation.
+## Database Queries
+
+```python
+from material_database import MaterialDatabase
+db = MaterialDatabase()
+
+# Get all materials
+materials = db.get_all_materials()
+for mat in materials:
+    print(f"{{mat['material_id']}}: {{mat['formula']}} ({{mat['status']}})")
+
+# Get recent calculations
+recent = db.get_recent_calculations(10)
+for calc in recent:
+    print(f"{{calc['material_id']}} - {{calc['calc_type']}} - {{calc['status']}}")
+```
+
+Total monitoring scripts copied: {copied_count}
 """
-                readme_path = workflow_dir / "MONITORING_README.md"
-                with open(readme_path, 'w') as f:
-                    f.write(readme_content)
-                    
-                print("    ✓ Created monitoring documentation")
-            else:
-                print("    - Monitoring scripts already available")
+            
+            readme_path = workflow_dir / "MONITORING_README.md"
+            with open(readme_path, 'w') as f:
+                f.write(readme_content)
+                
+            print(f"    ✓ Setup complete! Copied {copied_count} monitoring files")
+            print(f"    ✓ Created monitoring documentation")
                 
         except Exception as e:
             print(f"    Warning: Could not setup monitoring scripts: {e}")
+            print(f"    Error details: {type(e).__name__}: {str(e)}")
             print("    You can manually run: python setup_workflow_monitoring.py")
 
 
