@@ -166,27 +166,51 @@ def populate_database(completed_calcs: List[Dict], db: MaterialDatabase) -> int:
                     metadata={'auto_populated': True, 'source': 'populate_completed_jobs.py'}
                 )
             
-            # Check if calculation already exists
-            existing_calcs = db.get_calculations_by_status('completed', calc['calc_type'], calc['material_id'])
-            if any(c['output_file'] == calc['output_file'] for c in existing_calcs):
-                print(f"  Skipping {calc['calc_type']} for {calc['material_id']} - already in database")
+            # First, check if calculation already exists as completed
+            existing_completed_calcs = db.get_calculations_by_status('completed', calc['calc_type'], calc['material_id'])
+            if any(c['output_file'] == calc['output_file'] for c in existing_completed_calcs):
+                print(f"  Skipping {calc['calc_type']} for {calc['material_id']} - already in database as completed")
                 continue
             
-            # Add calculation record with auto_populated flag, preserving any existing workflow metadata
-            calc_id = db.create_calculation(
-                material_id=calc['material_id'],
-                calc_type=calc['calc_type'],
-                input_file=calc['input_file'],
-                work_dir=str(Path(calc['output_file']).parent) if calc['output_file'] else None,
-                settings={'auto_populated': True}
-            )
+            # Look for existing submitted/failed calculations that match this completion
+            work_dir = str(Path(calc['output_file']).parent)
+            existing_calc = None
             
-            # Update the calculation status to completed
-            db.update_calculation_status(
-                calc_id=calc_id,
-                status='completed',
-                output_file=calc['output_file']
-            )
+            # Check for calculations in the same work directory
+            all_calcs = db.get_calculations_by_material(calc['material_id'])
+            for c in all_calcs:
+                if (c['calc_type'] == calc['calc_type'] and 
+                    c['work_dir'] == work_dir and 
+                    c['status'] in ['submitted', 'running', 'failed']):
+                    existing_calc = c
+                    break
+            
+            if existing_calc:
+                # Update existing calculation to completed status
+                print(f"  Updating existing {calc['calc_type']} calculation: {existing_calc['calc_id']} -> completed")
+                db.update_calculation_status(
+                    calc_id=existing_calc['calc_id'],
+                    status='completed',
+                    output_file=calc['output_file']
+                )
+                calc_id = existing_calc['calc_id']
+            else:
+                # Create new calculation record (for cases where submission wasn't tracked)
+                print(f"  Creating new {calc['calc_type']} calculation for {calc['material_id']} (no existing submission found)")
+                calc_id = db.create_calculation(
+                    material_id=calc['material_id'],
+                    calc_type=calc['calc_type'],
+                    input_file=calc['input_file'],
+                    work_dir=work_dir,
+                    settings={'auto_populated': True}
+                )
+                
+                # Update the calculation status to completed
+                db.update_calculation_status(
+                    calc_id=calc_id,
+                    status='completed',
+                    output_file=calc['output_file']
+                )
             
             print(f"  Added {calc['calc_type']} calculation: {calc_id}")
             added_count += 1

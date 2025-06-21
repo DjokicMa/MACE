@@ -169,6 +169,64 @@ python material_monitor.py --action stats
 python material_monitor.py --action health
 ```
 
+#### `input_settings_extractor.py` ⭐ **NEW**
+
+**Comprehensive D12/D3 input settings extraction and storage.**
+
+**Features:**
+- **Complete D12 Analysis**: Extracts CRYSTAL keywords, parameters, functionals, basis sets
+- **D3 Property Parameters**: Captures band structure paths, DOS projections, k-point grids
+- **Database Integration**: Stores settings directly in materials.db calculations.settings_json
+- **Automatic Operation**: Integrated into enhanced_queue_manager for job completion processing
+- **Calculation Provenance**: Preserves complete input parameter history
+
+**Extracted D12 Settings:**
+- CRYSTAL Keywords: OPTGEOM, DFT, EXCHANGE, CORRELAT, SHRINK, etc.
+- Calculation Parameters: SHRINK factors, TOLINTEG, TOLDEE, MAXCYCLE
+- Functional Information: Exchange/correlation functionals, dispersion corrections
+- Basis Set Details: Internal vs external, basis function counts
+- Optimization Settings: Convergence criteria, geometry constraints
+
+**Extracted D3 Settings:**
+- Property Types: BAND, DOSS, NEWK calculations
+- Band Structure: K-point paths and sampling density
+- DOS Parameters: Projection settings and energy ranges
+- Transport Properties: Calculation-specific parameters
+
+**Usage:**
+```bash
+# Manual extraction (testing)
+python input_settings_extractor.py --input-file structure.d12 --extract-only
+
+# Database storage (automatic via queue manager)
+python input_settings_extractor.py --input-file structure.d12 --calc-id calc_001 --db-path materials.db
+```
+
+#### `query_input_settings.py` ⭐ **NEW**
+
+**Query and display stored input settings from materials database.**
+
+**Features:**
+- **Calculation-Specific Queries**: Show complete settings for individual calculations
+- **Material Overview**: Display all settings across calculation sequence
+- **Global Statistics**: Analyze parameter usage across all materials
+- **Settings Comparison**: Compare parameters between different calculations
+
+**Usage:**
+```bash
+# Show settings for specific calculation
+python query_input_settings.py --calc-id calc_diamond_opt_001
+
+# Show all settings for a material
+python query_input_settings.py --material-id diamond
+
+# List all calculations with stored settings
+python query_input_settings.py --list-all
+
+# Global settings summary and statistics
+python query_input_settings.py --settings-summary
+```
+
 #### Configuration Files
 
 **`recovery_config.yaml`**: Error recovery strategies

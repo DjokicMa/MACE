@@ -47,11 +47,14 @@ class EnhancedCrystalQueueManager:
     """
     
     def __init__(self, d12_dir, max_jobs=250, reserve_slots=30, 
-                 db_path="materials.db", enable_tracking=True):
+                 db_path="materials.db", enable_tracking=True, 
+                 enable_error_recovery=True, max_recovery_attempts=3):
         self.d12_dir = Path(d12_dir).resolve()
         self.max_jobs = max_jobs
         self.reserve_slots = reserve_slots
         self.enable_tracking = enable_tracking
+        self.enable_error_recovery = enable_error_recovery
+        self.max_recovery_attempts = max_recovery_attempts
         self.db_path = db_path
         
         # Detect workflow context and setup script paths
@@ -63,6 +66,19 @@ class EnhancedCrystalQueueManager:
             self.db = MaterialDatabase(db_path)
         else:
             self.db = None
+            
+        # Initialize error recovery system
+        self.error_recovery_engine = None
+        if self.enable_error_recovery and self.enable_tracking:
+            try:
+                from error_recovery import ErrorRecoveryEngine
+                self.error_recovery_engine = ErrorRecoveryEngine(db_path)
+                print(f"Error recovery enabled with max {self.max_recovery_attempts} attempts per job")
+            except ImportError as e:
+                print(f"Warning: Error recovery disabled - could not import ErrorRecoveryEngine: {e}")
+                self.enable_error_recovery = False
+        
+        # Input settings extraction is integrated directly into database storage
             
         # Legacy job status for compatibility
         self.legacy_status_file = self.d12_dir / "crystal_job_status.json"
@@ -649,12 +665,17 @@ class EnhancedCrystalQueueManager:
             
         print(f"Handling completed calculation: {calc_id}")
         
+        # Extract and store input settings directly in database
+        self.extract_and_store_input_settings(calc)
+        
         # Update file records
         self.update_file_records(calc)
         
-        # Extract properties if this is a property-generating calculation
-        if calc['calc_type'] in ['OPT', 'SP', 'BAND', 'DOSS']:
-            self.extract_properties(calc)
+        # Extract and store properties from completed calculation
+        self.extract_and_store_properties(calc)
+        
+        # Update material information with formula and space group
+        self.update_material_information(calc)
             
         # Plan next calculation in workflow
         if self.workflow_enabled and self.auto_submit_followups:
@@ -684,8 +705,15 @@ class EnhancedCrystalQueueManager:
             error_message=error_message
         )
         
-        # TODO: Implement error recovery in Phase 2
-        print(f"Error analysis: {error_type} - {error_message}")
+        # Attempt automatic error recovery
+        if self.enable_error_recovery and self.error_recovery_engine:
+            recovery_success = self.attempt_error_recovery(calc, error_type, error_message)
+            if recovery_success:
+                print(f"✅ Error recovery successful for {calc_id} - job resubmitted")
+            else:
+                print(f"❌ Error recovery failed or not applicable for {calc_id}")
+        else:
+            print(f"Error analysis: {error_type} - {error_message}")
         
     def analyze_calculation_error(self, calc: Dict) -> Tuple[str, str]:
         """
@@ -749,6 +777,185 @@ class EnhancedCrystalQueueManager:
         except Exception as e:
             return "file_error", f"Error reading output file: {e}"
             
+    def attempt_error_recovery(self, calc: Dict, error_type: str, error_message: str) -> bool:
+        """
+        Attempt automatic error recovery for a failed calculation.
+        
+        Args:
+            calc: Calculation record from database
+            error_type: Type of error detected
+            error_message: Error message details
+            
+        Returns:
+            bool: True if recovery was successful and job resubmitted, False otherwise
+        """
+        calc_id = calc['calc_id']
+        
+        # Check if error type is recoverable
+        recoverable_errors = ['shrink_error', 'memory_error', 'convergence_error', 'timeout_error', 'scf_error']
+        if error_type not in recoverable_errors:
+            print(f"⚠️  Error type '{error_type}' is not recoverable for {calc_id}")
+            return False
+        
+        # Check recovery attempt limits
+        recovery_count = self.get_recovery_attempt_count(calc_id)
+        if recovery_count >= self.max_recovery_attempts:
+            print(f"⚠️  Max recovery attempts ({self.max_recovery_attempts}) reached for {calc_id}")
+            return False
+        
+        print(f"🔧 Attempting error recovery for {calc_id} (attempt {recovery_count + 1}/{self.max_recovery_attempts})")
+        print(f"   Error: {error_type} - {error_message}")
+        
+        try:
+            # Use ErrorRecoveryEngine to attempt recovery
+            recovered = self.error_recovery_engine.attempt_recovery(calc)
+            
+            if recovered:
+                # Increment recovery attempt count
+                self.increment_recovery_attempt_count(calc_id)
+                
+                # Resubmit the job
+                work_dir = Path(calc['work_dir'])
+                if self.resubmit_fixed_calculation(calc):
+                    print(f"🚀 Successfully resubmitted recovered job for {calc_id}")
+                    return True
+                else:
+                    print(f"❌ Failed to resubmit recovered job for {calc_id}")
+                    return False
+            else:
+                print(f"🔧 Recovery not successful for {calc_id}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Error during recovery attempt for {calc_id}: {e}")
+            return False
+    
+    def get_recovery_attempt_count(self, calc_id: str) -> int:
+        """Get the number of recovery attempts for a calculation."""
+        if not self.db:
+            return 0
+        try:
+            # Query database for recovery attempts
+            result = self.db.execute_query(
+                "SELECT recovery_attempts FROM calculations WHERE calc_id = ?", 
+                (calc_id,)
+            )
+            return result[0]['recovery_attempts'] if result else 0
+        except:
+            return 0
+    
+    def increment_recovery_attempt_count(self, calc_id: str):
+        """Increment the recovery attempt count for a calculation."""
+        if not self.db:
+            return
+        try:
+            current_count = self.get_recovery_attempt_count(calc_id)
+            self.db.execute_query(
+                "UPDATE calculations SET recovery_attempts = ? WHERE calc_id = ?",
+                (current_count + 1, calc_id)
+            )
+        except Exception as e:
+            print(f"Warning: Could not update recovery attempt count for {calc_id}: {e}")
+    
+    def resubmit_fixed_calculation(self, calc: Dict) -> bool:
+        """Resubmit a calculation after error recovery."""
+        try:
+            work_dir = Path(calc['work_dir'])
+            calc_id = calc['calc_id']
+            
+            # Find the D12 file (should be fixed by error recovery)
+            d12_files = list(work_dir.glob("*.d12"))
+            if not d12_files:
+                print(f"❌ No D12 file found in {work_dir} for resubmission")
+                return False
+            
+            d12_file = d12_files[0]
+            
+            # Update database status to 'resubmitted'
+            self.db.update_calculation_status(calc_id, 'resubmitted', 
+                                            error_type=None, error_message="Recovered and resubmitted")
+            
+            # Mark this as a recovery resubmission
+            if hasattr(self.db, 'execute_query'):
+                try:
+                    self.db.execute_query(
+                        "UPDATE calculations SET completion_type = 'recovery_attempt' WHERE calc_id = ?",
+                        (calc_id,)
+                    )
+                except:
+                    pass  # Column might not exist in older databases
+            
+            # Submit the calculation using existing submit logic
+            return self.submit_single_calculation(d12_file, calc['calc_type'])
+            
+        except Exception as e:
+            print(f"❌ Error resubmitting calculation {calc['calc_id']}: {e}")
+            return False
+    
+    def extract_and_store_properties(self, calc: Dict):
+        """Extract properties from completed calculation and store in database."""
+        try:
+            # Import property extractor
+            from crystal_property_extractor import CrystalPropertyExtractor
+            
+            output_file = calc.get('output_file')
+            if not output_file or not Path(output_file).exists():
+                print(f"  ⚠️  No output file found for property extraction: {calc['calc_id']}")
+                return
+            
+            print(f"  🔍 Extracting properties from {Path(output_file).name}")
+            
+            # Initialize property extractor with same database
+            extractor = CrystalPropertyExtractor(self.db_path)
+            
+            # Extract properties
+            properties = extractor.extract_all_properties(
+                Path(output_file),
+                material_id=calc['material_id'],
+                calc_id=calc['calc_id']
+            )
+            
+            if properties:
+                # Save properties to database
+                saved_count = extractor.save_properties_to_database(properties)
+                print(f"  ✅ Extracted and saved {saved_count} properties")
+            else:
+                print(f"  ⚠️  No properties extracted from {Path(output_file).name}")
+                
+        except ImportError:
+            print(f"  ⚠️  Property extractor not available - skipping property extraction")
+        except Exception as e:
+            print(f"  ❌ Error during property extraction for {calc['calc_id']}: {e}")
+    
+    def update_material_information(self, calc: Dict):
+        """Update material information with formula and space group from files."""
+        try:
+            # Import formula extractor
+            from formula_extractor import update_materials_table_info
+            
+            material_id = calc['material_id']
+            input_file = calc.get('input_file')
+            output_file = calc.get('output_file')
+            
+            # Find associated CIF file if available
+            work_dir = Path(calc['work_dir'])
+            cif_files = list(work_dir.glob("*.cif"))
+            cif_file = cif_files[0] if cif_files else None
+            
+            # Update material information
+            update_materials_table_info(
+                self.db,
+                material_id,
+                d12_file=Path(input_file) if input_file else None,
+                cif_file=cif_file,
+                output_file=Path(output_file) if output_file else None
+            )
+            
+        except ImportError:
+            print(f"  ⚠️  Formula extractor not available - skipping material info update")
+        except Exception as e:
+            print(f"  ⚠️  Error updating material information for {calc['calc_id']}: {e}")
+            
     def update_file_records(self, calc: Dict):
         """Update file records for a completed calculation."""
         if not self.enable_tracking:
@@ -776,6 +983,41 @@ class EnhancedCrystalQueueManager:
                         file_path=str(file_path)
                     )
                     
+    def extract_and_store_input_settings(self, calc: Dict):
+        """Extract input settings and store directly in materials database."""
+        if not self.enable_tracking:
+            return
+            
+        try:
+            from input_settings_extractor import extract_and_store_input_settings
+            
+            calc_id = calc['calc_id']
+            input_file = calc.get('input_file')
+            
+            if not input_file:
+                print(f"  ⚠️  No input file found for settings extraction: {calc_id}")
+                return
+            
+            input_path = Path(input_file)
+            if not input_path.exists():
+                print(f"  ⚠️  Input file not found: {input_path}")
+                return
+            
+            print(f"  ⚙️  Extracting input settings from {input_path.name}")
+            
+            # Extract and store settings directly in materials.db
+            success = extract_and_store_input_settings(calc_id, input_path, self.db_path)
+            
+            if success:
+                print(f"  ✅ Input settings stored in materials.db for {calc_id}")
+            else:
+                print(f"  ⚠️  Failed to extract input settings for {calc_id}")
+                
+        except ImportError:
+            print(f"  ⚠️  Input settings extractor not available")
+        except Exception as e:
+            print(f"  ❌ Error extracting input settings for {calc_id}: {e}")
+        
     def extract_properties(self, calc: Dict):
         """Extract properties from completed calculation."""
         # This will be implemented in Phase 3
@@ -1061,6 +1303,17 @@ def main():
         default=5, 
         help="Maximum number of new jobs to submit in one callback (default: 5)"
     )
+    parser.add_argument(
+        "--disable-error-recovery", 
+        action="store_true", 
+        help="Disable automatic error recovery"
+    )
+    parser.add_argument(
+        "--max-recovery-attempts", 
+        type=int, 
+        default=3, 
+        help="Maximum recovery attempts per job (default: 3)"
+    )
     
     args = parser.parse_args()
     
@@ -1070,7 +1323,9 @@ def main():
         max_jobs=args.max_jobs,
         reserve_slots=args.reserve,
         db_path=args.db_path,
-        enable_tracking=not args.disable_tracking
+        enable_tracking=not args.disable_tracking,
+        enable_error_recovery=not args.disable_error_recovery,
+        max_recovery_attempts=args.max_recovery_attempts
     )
     
     manager.max_submit_per_callback = args.max_submit

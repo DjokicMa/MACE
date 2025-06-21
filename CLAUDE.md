@@ -508,6 +508,9 @@ The enhanced system provides comprehensive material lifecycle tracking:
 - **`workflow_engine.py`**: Orchestrates OPT → SP → BAND/DOSS workflow progression
 - **`crystal_file_manager.py`**: Organized file management by material ID and calculation type
 - **`material_monitor.py`**: Real-time monitoring dashboard and health checks
+- **`file_storage_manager.py`**: Comprehensive file storage with settings extraction and provenance tracking
+- **`crystal_property_extractor.py`**: Complete property extraction from CRYSTAL output files
+- **`formula_extractor.py`**: Chemical formula and space group extraction from input/output files
 
 #### **Key Features**
 - **Material ID Consistency**: Handles complex file naming from NewCifToD12.py and CRYSTALOptToD12.py
@@ -566,6 +569,124 @@ fi
 - **Automatic Queue Management**: No manual intervention required for job progression
 - **Dual Compatibility**: Supports both enhanced and legacy queue managers
 - **Context Awareness**: Adapts to execution environment automatically
+
+### Complete File Storage and Provenance System (NEW - Enhanced Phase 2)
+
+The comprehensive file storage system provides complete calculation provenance tracking, addressing the need to store D12/D3 input files with all settings and maintain complete calculation history.
+
+#### **File Storage Manager (`file_storage_manager.py`)**
+
+**Purpose**: Store and manage all calculation files with complete settings extraction and integrity verification.
+
+**Key Features:**
+- **Complete File Preservation**: Stores all calculation files (D12/D3 inputs, outputs, binary files, scripts)
+- **Settings Extraction**: Automatically extracts and parses all CRYSTAL calculation parameters from D12/D3 files
+- **Integrity Verification**: SHA256 checksums ensure file integrity over time
+- **Organized Storage**: Files organized by calculation ID with metadata preservation
+- **Database Integration**: File records and extracted settings stored in materials database
+
+#### **Supported File Types**
+```
+Input Files:     .d12, .d3, .input files with complete settings extraction
+Output Files:    .out, .output, .log files with property extraction coordination
+Binary Files:    .f9, .f25, fort.9, fort.25, .wf, .prop (wavefunction, phonon data)
+Property Files:  .BAND, .DOSS, .OPTC, .ELPH calculation results
+Script Files:    .sh, .slurm, .job SLURM submission scripts
+Plot Files:      .png, .pdf, .eps, .svg generated visualizations
+Data Files:      .csv, .json, .yaml, .xml analysis results
+Config Files:    .conf, .cfg, .ini, .param configuration files
+```
+
+#### **Settings Extraction Capabilities**
+The system automatically extracts comprehensive settings from D12/D3 input files:
+
+**CRYSTAL Keywords**: OPTGEOM, DFT, EXCHANGE, CORRELAT, NONLOCAL, SHRINK, TOLINTEG, etc.
+**Calculation Parameters**: SHRINK factors, TOLINTEG values, TOLDEE, MAXCYCLE, FMIXING
+**Basis Set Information**: Internal vs external basis sets, basis set file references
+**Geometry Settings**: Optimization parameters, convergence criteria
+**Exchange-Correlation**: Functional types, dispersion corrections
+**SCF Parameters**: Convergence thresholds, mixing algorithms
+
+#### **Usage Examples**
+```bash
+# Store files for a completed calculation
+python file_storage_manager.py --store /path/to/calculation --calc-id calc_diamond_opt_001 --material-id diamond --calc-type OPT
+
+# Retrieve all files for a calculation
+python file_storage_manager.py --retrieve /path/to/destination --calc-id calc_diamond_opt_001
+
+# List stored files
+python file_storage_manager.py --list-files --calc-id calc_diamond_opt_001
+
+# Verify file integrity
+python file_storage_manager.py --verify --calc-id calc_diamond_opt_001
+
+# Show extracted settings
+python file_storage_manager.py --settings --calc-id calc_diamond_opt_001
+```
+
+#### **Query Stored Files (`query_stored_files.py`)**
+Comprehensive querying system for stored files and settings:
+
+```bash
+# Query files for specific calculation
+python query_stored_files.py --calc-id calc_diamond_opt_001
+
+# Query all files for a material
+python query_stored_files.py --material-id diamond
+
+# List all stored files in database
+python query_stored_files.py --list-all
+
+# Show settings summary across all calculations
+python query_stored_files.py --settings-summary
+```
+
+#### **Automatic Integration**
+The file storage system is automatically integrated into the enhanced queue manager:
+
+**On Job Completion:**
+1. **File Storage**: All calculation files automatically stored with settings extraction
+2. **Property Extraction**: Properties extracted from output files and stored in database
+3. **Material Updates**: Formula and space group information updated
+4. **Workflow Progression**: Next calculation steps planned and submitted
+
+**Storage Organization:**
+```
+calculation_storage/
+├── calculations/
+│   ├── calc_diamond_opt_001/
+│   │   ├── diamond.d12          # Input file
+│   │   ├── diamond.out          # Output file
+│   │   ├── diamond.sh           # SLURM script
+│   │   ├── fort.9               # Wavefunction
+│   │   ├── fort.25              # Phonon data
+│   │   └── calc_diamond_opt_001_metadata.json
+│   └── calc_diamond_sp_002/
+│       ├── diamond_sp.d12
+│       ├── diamond_sp.out
+│       └── ...
+└── materials/
+    └── diamond/
+        ├── material_metadata.json
+        └── ...
+```
+
+#### **Database Schema Extensions**
+The file storage system extends the existing database schema:
+
+**Files Table**: Complete file tracking with checksums and metadata
+**Settings Storage**: Extracted D12/D3 settings stored in calculations.settings_json
+**File Categories**: Automatic categorization by importance and type
+**Integrity Tracking**: Checksum verification and corruption detection
+
+#### **Benefits**
+- **Complete Provenance**: Every calculation can be exactly reproduced
+- **Settings Analysis**: Parameter analysis across materials and calculation types
+- **Error Debugging**: Access to all files for failed calculation analysis
+- **Data Mining**: Systematic analysis of successful parameter combinations
+- **Backup and Recovery**: Complete calculation reconstruction capability
+- **Research Reproducibility**: Full documentation of all calculation parameters
 
 ## Development Notes
 

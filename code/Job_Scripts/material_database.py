@@ -100,6 +100,8 @@ class MaterialDatabase:
                     exit_code INTEGER,
                     error_type TEXT,
                     error_message TEXT,
+                    recovery_attempts INTEGER DEFAULT 0,  -- Number of recovery attempts
+                    completion_type TEXT DEFAULT 'first_try',  -- first_try, recovered, manual
                     
                     -- Dependencies
                     prerequisite_calc_id TEXT,  -- Which calculation this depends on
@@ -174,6 +176,24 @@ class MaterialDatabase:
                 CREATE INDEX IF NOT EXISTS idx_properties_name ON properties (property_name);
                 CREATE INDEX IF NOT EXISTS idx_files_calc ON files (calc_id);
             """)
+            
+            # Apply any necessary migrations
+            self._apply_migrations()
+            
+    def _apply_migrations(self):
+        """Apply database schema migrations for existing databases."""
+        with self._get_connection() as conn:
+            # Check if recovery_attempts column exists
+            cursor = conn.execute("PRAGMA table_info(calculations)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            if 'recovery_attempts' not in columns:
+                print("Adding recovery_attempts column to calculations table...")
+                conn.execute("ALTER TABLE calculations ADD COLUMN recovery_attempts INTEGER DEFAULT 0")
+                
+            if 'completion_type' not in columns:
+                print("Adding completion_type column to calculations table...")
+                conn.execute("ALTER TABLE calculations ADD COLUMN completion_type TEXT DEFAULT 'first_try'")
             
     @contextmanager
     def _get_connection(self):
