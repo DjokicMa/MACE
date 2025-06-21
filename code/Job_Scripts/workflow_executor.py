@@ -172,40 +172,171 @@ class WorkflowExecutor:
             calc_dir = step_dir / material_id
             calc_dir.mkdir(exist_ok=True)
             
-            # Move (not copy) D12 file to calculation folder to avoid redundancy
-            calc_d12_file = calc_dir / f"{material_id}_{calc_type.lower()}.d12"
+            # Copy D12 file to calculation folder with same name as the input file
+            calc_d12_file = calc_dir / d12_file.name
             if not calc_d12_file.exists():
-                shutil.move(str(d12_file), str(calc_d12_file))
+                shutil.copy2(str(d12_file), str(calc_d12_file))
             
-            # Submit via enhanced queue manager for proper database tracking
-            print(f"  Submitting {material_id} via enhanced queue manager...")
-            calc_id = self.queue_manager.submit_calculation(
+            # Submit via workflow-specific queue manager that respects our directory structure
+            print(f"  Submitting {material_id} via workflow queue manager...")
+            calc_id = self.submit_workflow_calculation(
                 d12_file=calc_d12_file,
                 calc_type=calc_type,
-                material_id=material_id
+                material_id=material_id,
+                workflow_id=workflow_id,
+                step_num=step_num,
+                calc_dir=calc_dir
             )
             
             if calc_id:
-                # Store workflow context in database
-                self.db.update_calculation_settings(calc_id, {
-                    "workflow_id": workflow_id,
-                    "workflow_step": step_num,
-                    "workflow_calc_type": calc_type
-                }, merge=True)
-                
-                # Get the SLURM job ID from the calculation record
-                calc_record = self.db.get_calculation(calc_id)
-                job_id = calc_record.get('slurm_job_id') if calc_record else None
-                
-                if job_id:
-                    submitted_jobs.append(job_id)
-                    print(f"  Submitted {material_id}: Job ID {job_id}")
-                else:
-                    print(f"  Submitted {material_id}: Calc ID {calc_id} (no SLURM job ID)")
+                submitted_jobs.append(calc_id)
+                print(f"  Submitted {material_id}: Job ID {calc_id}")
             else:
                 print(f"  Failed to submit {material_id}")
                 
         return submitted_jobs
+        
+    def submit_workflow_calculation(self, d12_file: Path, calc_type: str, material_id: str,
+                                   workflow_id: str, step_num: int, calc_dir: Path) -> str:
+        """Submit calculation using workflow-specific directory structure and database tracking"""
+        # Create calculation record in database first
+        calc_id = self.db.create_calculation(
+            material_id=material_id,
+            calc_type=calc_type,
+            calc_subtype=None,
+            input_file=str(d12_file),
+            work_dir=str(calc_dir),
+            settings={
+                "workflow_id": workflow_id,
+                "workflow_step": step_num,
+                "workflow_calc_type": calc_type
+            }
+        )
+        
+        # Generate SLURM script in the calculation directory
+        script_file = self.generate_individual_slurm_script(
+            d12_file, calc_type, material_id, calc_dir, workflow_id, step_num
+        )
+        
+        # Submit job
+        job_id = self.submit_slurm_job(script_file, calc_dir)
+        
+        if job_id:
+            # Update calculation with SLURM job ID
+            self.db.update_calculation_status(
+                calc_id, 'submitted', 
+                slurm_job_id=job_id,
+                output_file=str(calc_dir / f"{material_id}.out")
+            )
+            return job_id
+        else:
+            # Mark as failed
+            self.db.update_calculation_status(calc_id, 'failed', error_message="SLURM submission failed")
+            return None
+            
+    def generate_individual_slurm_script(self, d12_file: Path, calc_type: str, 
+                                       material_id: str, calc_dir: Path, 
+                                       workflow_id: str, step_num: int) -> Path:
+        """Generate individual SLURM script for workflow calculation"""
+        # Find appropriate template
+        if calc_type in ['OPT', 'OPT2', 'SP', 'FREQ']:
+            template_name = f"submitcrystal23_{calc_type.lower()}_{step_num}.sh"
+        elif calc_type in ['BAND', 'DOSS']:
+            template_name = f"submit_prop_{calc_type.lower()}_{step_num}.sh"
+        else:
+            template_name = f"submit_{calc_type.lower()}_{step_num}.sh"
+            
+        template_script = self.work_dir / "workflow_scripts" / template_name
+        
+        if not template_script.exists():
+            raise FileNotFoundError(f"Template script not found: {template_script}")
+            
+        # Read and customize template
+        with open(template_script, 'r') as f:
+            template_content = f.read()
+            
+        # Customize for this specific calculation
+        script_content = self.customize_workflow_slurm_script(
+            template_content, d12_file, calc_type, material_id, 
+            calc_dir, workflow_id, step_num
+        )
+        
+        # Write individual script
+        script_file = calc_dir / f"{material_id}.sh"
+        with open(script_file, 'w') as f:
+            f.write(script_content)
+            
+        script_file.chmod(0o755)
+        return script_file
+        
+    def customize_workflow_slurm_script(self, template_content: str, d12_file: Path,
+                                      calc_type: str, material_id: str, calc_dir: Path,
+                                      workflow_id: str, step_num: int) -> str:
+        """Customize SLURM script for workflow calculation"""
+        script_content = template_content
+        
+        # Replace job name
+        script_content = script_content.replace(
+            f'--job-name={calc_type.lower()}',
+            f'--job-name={material_id}_{calc_type.lower()}'
+        )
+        
+        # Replace output file
+        script_content = script_content.replace(
+            f'--output={calc_type.lower()}.o%j',
+            f'--output={material_id}_{calc_type.lower()}.o%j'
+        )
+        
+        # Set working directory to our calculation directory
+        script_content = script_content.replace(
+            'cd ${SLURM_SUBMIT_DIR}',
+            f'cd {calc_dir}'
+        )
+        
+        # Set up scratch directory
+        scratch_dir = f"$SCRATCH/{workflow_id}/step_{step_num:03d}_{calc_type}/{material_id}"
+        script_content = script_content.replace(
+            'export scratch=$SCRATCH/crys23',
+            f'export scratch={scratch_dir}'
+        )
+        script_content = script_content.replace(
+            'export scratch=$SCRATCH/crys23/prop',
+            f'export scratch={scratch_dir}'
+        )
+        
+        # Replace file references
+        script_content = script_content.replace('$1', material_id)
+        
+        return script_content
+        
+    def submit_slurm_job(self, script_file: Path, calc_dir: Path) -> str:
+        """Submit SLURM job and return job ID"""
+        original_cwd = os.getcwd()
+        
+        try:
+            os.chdir(calc_dir)
+            
+            result = subprocess.run(
+                ['sbatch', script_file.name],
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                # Extract job ID from sbatch output
+                for line in result.stdout.strip().split('\n'):
+                    if 'Submitted batch job' in line:
+                        return line.split()[-1]
+            else:
+                print(f"SLURM submission failed: {result.stderr}")
+                
+        except Exception as e:
+            print(f"Error submitting job: {e}")
+            
+        finally:
+            os.chdir(original_cwd)
+            
+        return None
         
     def extract_core_material_name(self, d12_file: Path) -> str:
         """Extract the core material name using smart suffix removal"""
@@ -682,25 +813,26 @@ fi'''
             return None
             
     def create_material_id_from_file(self, file_path: Path) -> str:
-        """Create a material ID from file path using smart suffix removal"""
+        """Create a material ID from file path - for workflow files, use the stem as-is"""
         name = file_path.stem
         
-        # First, extract the core material identifier (before the first technical suffix)
-        # Look for pattern like "materialname_opt_BULK_..." or "materialname_BULK_..."
+        # For workflow-generated files that are already clean (like "1_dia_opt.d12"),
+        # we should use the name as-is since it's already been cleaned by the workflow planner
+        # Only apply suffix removal for complex filenames with technical suffixes
+        
         parts = name.split('_')
         
-        # Find the first part that looks like a technical suffix
+        # If this looks like a simple workflow filename (e.g., "1_dia_opt", "3,4^2T1-CA_opt"),
+        # use it as-is
+        if len(parts) <= 3 and any(part.lower() in ['opt', 'sp', 'band', 'doss', 'freq'] for part in parts[-1:]):
+            return name
+            
+        # For complex filenames with technical suffixes, apply smart removal
         core_parts = []
         for i, part in enumerate(parts):
-            # Special case: if this is "opt" and we only have one core part so far,
-            # and the core part ends with a number, this might be a calc type rather than material identifier
-            if (part.upper() == 'OPT' and len(core_parts) == 1 and 
-                core_parts[0] and core_parts[0][-1].isdigit()):
-                # This looks like "test1_opt" - the opt is a calc type, not part of material name
-                break
-            # Check if this part is a technical suffix (removed OPT from this list since we handle it specially)
-            elif part.upper() in ['SP', 'FREQ', 'BAND', 'DOSS', 'BULK', 'OPTGEOM', 
-                                'CRYSTAL', 'SLAB', 'POLYMER', 'MOLECULE', 'SYMM', 'TZ', 'DZ', 'SZ']:
+            # Check if this part is a technical suffix
+            if part.upper() in ['SP', 'FREQ', 'BAND', 'DOSS', 'BULK', 'OPTGEOM', 
+                              'CRYSTAL', 'SLAB', 'POLYMER', 'MOLECULE', 'SYMM', 'TZ', 'DZ', 'SZ']:
                 break
             # Check if this part is a DFT functional
             elif part.upper() in ['PBE', 'B3LYP', 'HSE06', 'PBE0', 'SCAN', 'BLYP', 'BP86']:
@@ -718,8 +850,8 @@ fi'''
         if core_parts:
             clean_name = '_'.join(core_parts)
         else:
-            # Fallback: just use the first part
-            clean_name = parts[0] if parts else name
+            # Fallback: use the whole name
+            clean_name = name
             
         return clean_name
         
