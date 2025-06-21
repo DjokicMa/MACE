@@ -37,7 +37,12 @@ if script_dir not in sys.path:
 try:
     from material_database import MaterialDatabase
     from crystal_file_manager import CrystalFileManager
-    from error_detector import CrystalErrorDetector
+    try:
+        from error_detector import CrystalErrorDetector
+        HAS_ERROR_DETECTOR = True
+    except ImportError:
+        HAS_ERROR_DETECTOR = False
+        print("Warning: error_detector module not available. Error analysis will be limited.")
 except ImportError as e:
     print(f"Error importing required modules: {e}")
     print(f"Make sure all required Python files are in the same directory as {__file__}")
@@ -61,7 +66,10 @@ class MaterialMonitor:
         # Initialize components
         self.db = MaterialDatabase(db_path)
         self.file_manager = CrystalFileManager(base_dir, db_path)
-        self.error_detector = CrystalErrorDetector(base_dir, db_path)
+        if HAS_ERROR_DETECTOR:
+            self.error_detector = CrystalErrorDetector(base_dir, db_path)
+        else:
+            self.error_detector = None
         
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -239,7 +247,10 @@ class MaterialMonitor:
         
         try:
             # Generate error report for last 24 hours
-            report = self.error_detector.generate_error_report(days_back=1)
+            if self.error_detector:
+                report = self.error_detector.generate_error_report(days_back=1)
+            else:
+                report = {'error_summary': {}, 'trending_errors': {}, 'total_files_analyzed': 0}
             
             errors['recent_count'] = sum(report['error_summary'].values())
             
@@ -514,8 +525,11 @@ class MaterialMonitor:
             
         # Get detailed error analysis
         try:
-            error_report = self.error_detector.generate_error_report(days_back=7)
-            report['error_analysis'] = error_report
+            if self.error_detector:
+                error_report = self.error_detector.generate_error_report(days_back=7)
+                report['error_analysis'] = error_report
+            else:
+                report['error_analysis'] = {'error': 'Error detector not available'}
         except Exception as e:
             report['error_analysis'] = {'error': str(e)}
             

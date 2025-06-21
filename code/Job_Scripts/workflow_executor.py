@@ -109,6 +109,9 @@ class WorkflowExecutor:
         workflow_dir = self.outputs_dir / workflow_id
         workflow_dir.mkdir(exist_ok=True)
         
+        # Copy monitoring scripts to workflow directory
+        self.setup_workflow_monitoring(workflow_dir)
+        
         # Phase 1a: Convert CIFs if needed
         if plan['input_files']['cif']:
             print("  Converting CIF files to D12 format...")
@@ -158,34 +161,49 @@ class WorkflowExecutor:
             
     def execute_step(self, plan: Dict[str, Any], workflow_id: str, calc_type: str, 
                     step_num: int, d12_files: List[Path], step_dir: Path) -> List[str]:
-        """Execute a single workflow step with individual calculation folders"""
+        """Execute a single workflow step with individual calculation folders and database tracking"""
         submitted_jobs = []
         
         for d12_file in d12_files:
-            # Extract material name from D12 file
-            material_name = self.extract_material_name(d12_file)
+            # Extract core material ID for database consistency
+            material_id = self.create_material_id_from_file(d12_file)
             
-            # Create individual calculation folder
-            calc_dir = step_dir / material_name
+            # Create individual calculation folder using material_id
+            calc_dir = step_dir / material_id
             calc_dir.mkdir(exist_ok=True)
             
             # Move (not copy) D12 file to calculation folder to avoid redundancy
-            calc_d12_file = calc_dir / f"{material_name}.d12"
+            calc_d12_file = calc_dir / f"{material_id}_{calc_type.lower()}.d12"
             if not calc_d12_file.exists():
                 shutil.move(str(d12_file), str(calc_d12_file))
             
-            # Generate individual SLURM script
-            slurm_script = self.generate_slurm_script(
-                plan, workflow_id, calc_type, step_num, material_name, calc_dir
+            # Submit via enhanced queue manager for proper database tracking
+            print(f"  Submitting {material_id} via enhanced queue manager...")
+            calc_id = self.queue_manager.submit_calculation(
+                d12_file=calc_d12_file,
+                calc_type=calc_type,
+                material_id=material_id
             )
             
-            # Submit job
-            job_id = self.submit_slurm_job(slurm_script, calc_dir)
-            if job_id:
-                submitted_jobs.append(job_id)
-                print(f"  Submitted {material_name}: Job ID {job_id}")
+            if calc_id:
+                # Store workflow context in database
+                self.db.update_calculation_settings(calc_id, {
+                    "workflow_id": workflow_id,
+                    "workflow_step": step_num,
+                    "workflow_calc_type": calc_type
+                }, merge=True)
+                
+                # Get the SLURM job ID from the calculation record
+                calc_record = self.db.get_calculation(calc_id)
+                job_id = calc_record.get('slurm_job_id') if calc_record else None
+                
+                if job_id:
+                    submitted_jobs.append(job_id)
+                    print(f"  Submitted {material_id}: Job ID {job_id}")
+                else:
+                    print(f"  Submitted {material_id}: Calc ID {calc_id} (no SLURM job ID)")
             else:
-                print(f"  Failed to submit {material_name}")
+                print(f"  Failed to submit {material_id}")
                 
         return submitted_jobs
         
@@ -992,6 +1010,52 @@ fi'''
                 temp_file.unlink()
             except:
                 pass
+                
+    def setup_workflow_monitoring(self, workflow_dir: Path):
+        """Copy monitoring scripts to workflow directory for easy access."""
+        try:
+            # Import and run the monitoring setup
+            from setup_workflow_monitoring import setup_monitoring_scripts
+            
+            print("  Setting up monitoring scripts in workflow directory...")
+            copied_count = setup_monitoring_scripts(str(workflow_dir))
+            
+            if copied_count > 0:
+                print(f"    ✓ Copied {copied_count} monitoring scripts")
+                
+                # Create a README with monitoring instructions
+                readme_content = """# Workflow Monitoring
+
+This directory contains all necessary scripts for monitoring your CRYSTAL workflow.
+
+## Quick Commands
+
+# Check status
+python material_monitor.py --action stats
+
+# Live dashboard (press Ctrl+C to stop)
+python material_monitor.py --action dashboard
+
+# Database queries
+python monitor_workflow.py --action materials
+python monitor_workflow.py --action calculations
+
+# Generate detailed report
+python material_monitor.py --action report
+
+See monitoring_guide.md for complete documentation.
+"""
+                readme_path = workflow_dir / "MONITORING_README.md"
+                with open(readme_path, 'w') as f:
+                    f.write(readme_content)
+                    
+                print("    ✓ Created monitoring documentation")
+            else:
+                print("    - Monitoring scripts already available")
+                
+        except Exception as e:
+            print(f"    Warning: Could not setup monitoring scripts: {e}")
+            print("    You can manually run: python setup_workflow_monitoring.py")
 
 
 def main():
