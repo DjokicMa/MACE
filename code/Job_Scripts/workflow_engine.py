@@ -480,7 +480,12 @@ fi'''
     
     def extract_core_material_name(self, material_id: str) -> str:
         """Extract the core material name using smart suffix removal"""
-        name = material_id
+        # Handle both full filenames and stems
+        from pathlib import Path
+        if material_id.endswith('.d12') or material_id.endswith('.d3'):
+            name = Path(material_id).stem
+        else:
+            name = material_id
         
         # First, extract the core material identifier (before the first technical suffix)
         # Look for pattern like "materialname_opt_BULK_..." or "materialname_BULK_..."

@@ -190,78 +190,9 @@ class WorkflowExecutor:
         return submitted_jobs
         
     def extract_core_material_name(self, d12_file: Path) -> str:
-        """Extract the core material name by removing ALL workflow-related suffixes"""
-        name = d12_file.stem
-        
-        # ACTUAL suffixes from NewCifToD12.py, CRYSTALOptToD12.py, and d12creation.py
-        # Based on real filename construction patterns found in the code
-        suffixes_to_remove = [
-            # === BASIS SETS (from NewCifToD12.py and d12creation.py) ===
-            '_POB-TZVP-REV2', '_POB-DZVP-REV2', '_POB-TZVP', '_POB-DZVP',
-            '_STO-3G', '_3-21G', '_6-31G', '_6-311G', '_def2-SVP', '_def2-TZVP',
-            '_DZVP-REV2', '_TZVP-REV2',  # External basis directory names
-            
-            # === DFT FUNCTIONALS WITH DISPERSION (from NewCifToD12.py) ===
-            '_HSE06-D3', '_PBE-D3', '_B3LYP-D3', '_PBE0-D3', '_SCAN-D3',
-            '_BLYP-D3', '_BP86-D3', '_wB97X-D3',
-            
-            # === DFT FUNCTIONALS WITHOUT DISPERSION ===
-            '_HSE06', '_PBE', '_B3LYP', '_PBE0', '_SCAN', '_BLYP', '_BP86', '_wB97X',
-            '_LDA', '_VWN', '_PWGGA', '_PW91',
-            
-            # === HARTREE-FOCK METHODS ===
-            '_RHF', '_UHF', '_HF',
-            
-            # === CRYSTALOptToD12.py SPECIFIC SUFFIXES ===
-            '_optimized',  # Always added by CRYSTALOptToD12.py
-            
-            # === CALCULATION TYPES (from NewCifToD12.py pattern) ===
-            '_OPT', '_SP', '_FREQ',
-            
-            # === DIMENSIONALITY (from NewCifToD12.py) ===
-            '_CRYSTAL', '_SLAB', '_POLYMER', '_MOLECULE',
-            
-            # === SYMMETRY SETTINGS (from NewCifToD12.py) ===
-            '_symm', '_P1',
-            
-            # === LOWERCASE CALC TYPES (from CRYSTALOptToD12.py) ===
-            '_opt', '_sp', '_freq',
-            
-            # === WORKFLOW-ADDED SUFFIXES ===
-            '_band', '_doss', '_BAND', '_DOSS'
-        ]
-        
-        # Remove suffixes iteratively until no more matches
-        original_name = name
-        while True:
-            name_before = name
-            for suffix in suffixes_to_remove:
-                if name.endswith(suffix):
-                    name = name[:-len(suffix)]
-                    break
-            # If no suffix was removed, we're done
-            if name == name_before:
-                break
-        
-        # Final cleanup - remove any trailing underscores or numbers
-        name = name.rstrip('_0123456789')
-        
-        # Only replace truly problematic characters for filesystem compatibility
-        # Preserve ^ and , as they are commonly used in chemical notation
-        name = name.replace(' ', '_')  # Spaces to underscores
-        name = name.replace('/', '_').replace('\\', '_')  # Path separators
-        # Keep other characters like ^, ,, ., - as they are common in chemical names
-        
-        # Ensure we have a valid name
-        if not name or len(name) < 2:
-            # Fallback to a basic version if cleaning removed too much
-            name = original_name.split('_')[0]
-            
-        # Ensure it starts with a letter (required for some systems)
-        if name and not name[0].isalpha():
-            name = f"m_{name}"
-            
-        return name or "unknown_material"
+        """Extract the core material name using smart suffix removal"""
+        # Use the same logic as create_material_id_from_file for consistency
+        return self.create_material_id_from_file(d12_file)
         
     def extract_material_name(self, d12_file: Path) -> str:
         """Extract material name with appropriate calculation type suffix"""
