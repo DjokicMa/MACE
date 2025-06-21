@@ -33,7 +33,9 @@ python NewCifToD12.py --cif_dir /path/to/cif/files
 
 **Inputs:** `.cif`  
 **Outputs:** `*.d12`  
-**Libraries:** `numpy`, `ase`, `spglib`  
+**Libraries:** `numpy`, `ase`, `spglib`
+
+**Integration:** Fully integrated with `run_workflow.py` for automated workflow execution. Input settings are automatically extracted and stored in the materials database for complete calculation provenance.  
 
 ---
 

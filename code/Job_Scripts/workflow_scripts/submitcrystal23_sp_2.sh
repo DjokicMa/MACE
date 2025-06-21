@@ -31,10 +31,10 @@ cp fort.9 ${DIR}/${JOB}.f9
 # Check multiple possible locations for queue managers
 if [ -f $DIR/enhanced_queue_manager.py ]; then
     cd $DIR
-    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
 elif [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
     cd $DIR/../../../../
-    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
 elif [ -f $DIR/crystal_queue_manager.py ]; then
     cd $DIR
     ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
