@@ -732,7 +732,7 @@ class WorkflowPlanner:
         memory_str = default_resources.get('memory_per_cpu', default_resources.get('memory', 'N/A'))
         print(f"          Memory: {memory_str}")
         print(f"          Walltime: {default_resources['walltime']}")
-        print(f"          Account: {default_resources.get('account', 'general')}")
+        print(f"          Account: {default_resources.get('account', 'mendoza_q')}")
         
         # Ask user if they want to customize
         customize = yes_no_prompt(f"        Customize resources for {calc_type} step {step_num}?", "no")
@@ -780,8 +780,7 @@ class WorkflowPlanner:
                 "nodes": 1,
                 "walltime": "1-00:00:00",
                 "memory": "80G",
-                "account": "general",
-                "constraint": "intel18",
+                "account": "mendoza_q",
                 "module": "CRYSTAL/23-intel-2023a",
                 "scratch_dir": "$SCRATCH/crys23/prop"
             }
@@ -877,7 +876,7 @@ class WorkflowPlanner:
             resources['walltime'] = new_walltime
             
         # Account
-        new_account = input(f"          Account [{resources.get('account', 'general')}]: ").strip()
+        new_account = input(f"          Account [{resources.get('account', 'mendoza_q')}]: ").strip()
         if new_account:
             resources['account'] = new_account
             
