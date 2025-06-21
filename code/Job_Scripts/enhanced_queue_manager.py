@@ -311,9 +311,11 @@ class EnhancedCrystalQueueManager:
         # Extract material information
         if material_id is None:
             material_id, formula, metadata = self.extract_material_info_from_d12(d12_file)
+            print(f"    Enhanced QM: extracted material_id='{material_id}' from {d12_file.name}")
         else:
             formula = extract_formula_from_d12(d12_file)
             metadata = {}
+            print(f"    Enhanced QM: using provided material_id='{material_id}' for {d12_file.name}")
             
         if calc_type is None:
             calc_type = self.determine_calc_type_from_file(d12_file)
@@ -341,6 +343,7 @@ class EnhancedCrystalQueueManager:
         # Create calculation record
         calc_id = None
         if self.enable_tracking:
+            print(f"    Enhanced QM: creating calculation record for {material_id} {calc_type}")
             calc_id = self.db.create_calculation(
                 material_id=material_id,
                 calc_type=calc_type,
@@ -348,6 +351,7 @@ class EnhancedCrystalQueueManager:
                 work_dir=str(calc_dir),
                 prerequisite_calc_id=prerequisite_calc_id
             )
+            print(f"    Enhanced QM: created calc_id='{calc_id}'")
             
         # Submit to SLURM
         slurm_job_id = self.submit_to_slurm(calc_input_file, calc_dir, calc_type)
