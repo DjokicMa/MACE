@@ -259,7 +259,7 @@ class WorkflowExecutor:
             
         # Ensure it starts with a letter (required for some systems)
         if name and not name[0].isalpha():
-            name = f"mat_{name}"
+            name = f"m_{name}"
             
         return name or "unknown_material"
         
@@ -791,7 +791,7 @@ fi'''
                     changed = True
                     break  # Start over with the shortened name
                 
-        # Clean name - DO NOT add mat_ prefix here for cleaner names
+        # Clean name - using minimal prefixes for cleaner names
         # The enhanced queue manager will handle directory/file naming consistently
         return name
         
