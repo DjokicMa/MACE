@@ -150,20 +150,13 @@ class WorkflowEngine:
         print(f"  Template content starts with: {template_content[:100]}...")
         
         # Create individual script for this material  
-        # Note: material_name here is the job name (e.g., "3_dia3_doss")
-        # But we want the script file to match the directory/file naming pattern
-        # So we need to determine the full material name with mat_ prefix
-        if not material_name.startswith('mat_'):
-            material_script_name = f"mat_{material_name}.sh"
-            full_material_name = f"mat_{material_name}"
-        else:
-            material_script_name = f"{material_name}.sh"
-            full_material_name = material_name
+        # Use clean naming without mat_ prefix throughout
+        material_script_name = f"{material_name}.sh"
         script_path = calc_dir / material_script_name
         
-        # Customize script content using full material name for file references
+        # Customize script content using material name for file references
         customized_content = self._customize_slurm_script(
-            template_content, full_material_name, calc_type, workflow_id, step_num
+            template_content, material_name, calc_type, workflow_id, step_num
         )
         
         # Write script
@@ -246,15 +239,8 @@ fi'''
         try:
             os.chdir(work_dir)
             
-            # Extract job name from the script path
+            # Extract job name from the script path (using clean naming throughout)
             job_name = script_path.stem
-            if job_name.startswith('mat_'):
-                # Use clean name for template execution but full name for job
-                clean_job_name = job_name[4:]
-                full_job_name = job_name  # Keep mat_ prefix for consistency
-            else:
-                clean_job_name = job_name
-                full_job_name = job_name
             
             # Use the script file name relative to work_dir since we changed to work_dir
             script_filename = script_path.name
@@ -266,10 +252,9 @@ fi'''
             
             if 'echo \'#!/bin/bash --login\' >' in script_content or 'echo "#SBATCH' in script_content:
                 # This is a script generator template - run locally to generate actual script
-                # Use full job name (with mat_ prefix) so generated script references correct files
-                print(f"  Running script generator locally: {script_filename} with job name: {full_job_name}")
+                print(f"  Running script generator locally: {script_filename} with job name: {job_name}")
                 result = subprocess.run(
-                    ['bash', script_filename, full_job_name],
+                    ['bash', script_filename, job_name],
                     capture_output=True,
                     text=True
                 )
@@ -570,11 +555,8 @@ fi'''
             # Fallback to a basic version if cleaning removed too much
             name = original_name.split('_')[0]
             
-        # Ensure it starts with mat_ if it doesn't already
-        if not name.startswith('mat_'):
-            name = f"mat_{name}"
-            
-        return name or "mat_unknown_material"
+        # Return clean name without mat_ prefix for consistency
+        return name or "unknown_material"
     
     def clean_material_name(self, material_id: str) -> str:
         """
@@ -600,8 +582,8 @@ fi'''
         existing_dirs = []
         for step_dir in workflow_base.glob(f"step_*_{calc_type}"):
             if step_dir.is_dir():
-                for mat_dir in step_dir.glob(f"mat_{core_name}*"):
-                    existing_dirs.append(mat_dir.name)
+                for material_dir in step_dir.glob(f"{core_name}*"):
+                    existing_dirs.append(material_dir.name)
         
         # Determine the next number
         if not existing_dirs:
@@ -611,7 +593,7 @@ fi'''
         # Find highest existing number
         max_num = 0
         for dir_name in existing_dirs:
-            # Look for pattern like mat_1_dia_sp2 or mat_1_dia_sp
+            # Look for pattern like 1_dia_sp2 or 1_dia_sp  
             if f"_{type_suffix}" in dir_name:
                 parts = dir_name.split(f"_{type_suffix}")
                 if len(parts) > 1 and parts[1]:
@@ -721,8 +703,8 @@ fi'''
             core_name = self.extract_core_material_name(material_id)
             sp_suffix = self.get_next_calc_suffix(core_name, "SP", workflow_base)
             
-            # Create clean job name for templates (without mat_ prefix)
-            clean_job_name = core_name[4:] if core_name.startswith('mat_') else core_name
+            # Use core name directly (already clean)
+            clean_job_name = core_name
             
             # Create material-specific directory for SP calculation
             dir_name = f"{core_name}{sp_suffix}"
@@ -735,7 +717,7 @@ fi'''
             shutil.move(sp_input_file, sp_final_location)
             
             # Create SLURM script for SP calculation  
-            # Use the clean material name for the job (templates expect no mat_ prefix)
+            # Use the clean material name for the job
             sp_job_name = f"{clean_job_name}{sp_suffix}"
             slurm_script_path = self._create_slurm_script_for_calculation(
                 sp_step_dir, sp_job_name, "SP", 2, workflow_base.name
@@ -838,8 +820,8 @@ fi'''
             core_name = self.extract_core_material_name(material_id)
             doss_suffix = self.get_next_calc_suffix(core_name, "DOSS", workflow_base)
             
-            # Create clean job name for templates (without mat_ prefix)
-            clean_job_name = core_name[4:] if core_name.startswith('mat_') else core_name
+            # Use core name directly (already clean)
+            clean_job_name = core_name
             
             # Create material-specific directory for DOSS calculation
             dir_name = f"{core_name}{doss_suffix}"
@@ -857,7 +839,7 @@ fi'''
                 shutil.move(doss_f9_files[0], doss_f9_final)
             
             # Create SLURM script for DOSS calculation
-            # Use the clean material name for the job (templates expect no mat_ prefix)
+            # Use the clean material name for the job
             doss_job_name = f"{clean_job_name}{doss_suffix}"
             slurm_script_path = self._create_slurm_script_for_calculation(
                 doss_step_dir, doss_job_name, "DOSS", 4, workflow_base.name
@@ -960,8 +942,8 @@ fi'''
             core_name = self.extract_core_material_name(material_id)
             band_suffix = self.get_next_calc_suffix(core_name, "BAND", workflow_base)
             
-            # Create clean job name for templates (without mat_ prefix)
-            clean_job_name = core_name[4:] if core_name.startswith('mat_') else core_name
+            # Use core name directly (already clean)
+            clean_job_name = core_name
             
             # Create material-specific directory for BAND calculation
             dir_name = f"{core_name}{band_suffix}"
@@ -979,7 +961,7 @@ fi'''
                 shutil.move(band_f9_files[0], band_f9_final)
             
             # Create SLURM script for BAND calculation
-            # Use the clean material name for the job (templates expect no mat_ prefix)
+            # Use the clean material name for the job
             band_job_name = f"{clean_job_name}{band_suffix}"
             slurm_script_path = self._create_slurm_script_for_calculation(
                 band_step_dir, band_job_name, "BAND", 3, workflow_base.name
@@ -1103,8 +1085,8 @@ fi'''
             core_name = self.extract_core_material_name(material_id)
             freq_suffix = self.get_next_calc_suffix(core_name, "FREQ", workflow_base)
             
-            # Create clean job name for templates (without mat_ prefix)
-            clean_job_name = core_name[4:] if core_name.startswith('mat_') else core_name
+            # Use core name directly (already clean)
+            clean_job_name = core_name
             
             # Create material-specific directory for FREQ calculation
             dir_name = f"{core_name}{freq_suffix}"
@@ -1117,7 +1099,7 @@ fi'''
             shutil.move(freq_input_file, freq_final_location)
             
             # Create SLURM script for FREQ calculation
-            # Use the clean material name for the job (templates expect no mat_ prefix)
+            # Use the clean material name for the job
             freq_job_name = f"{clean_job_name}{freq_suffix}"
             slurm_script_path = self._create_slurm_script_for_calculation(
                 freq_step_dir, freq_job_name, "FREQ", 5, workflow_base.name
