@@ -704,6 +704,7 @@ fi'''
         try:
             # Create material ID from file
             material_id = self.create_material_id_from_file(input_file)
+            print(f"  Created material_id: {material_id} from {input_file.name}")
             
             # Submit via queue manager
             calc_id = self.queue_manager.submit_calculation(
@@ -711,14 +712,19 @@ fi'''
                 calc_type=calc_type,
                 material_id=material_id
             )
+            print(f"  Queue manager returned calc_id: {calc_id}")
             
             if calc_id:
                 # Store workflow context in database
+                print(f"  Updating calculation settings with workflow_id: {workflow_id}")
                 self.db.update_calculation_settings(calc_id, {
                     "workflow_id": workflow_id,
                     "workflow_step": step_num,
                     "workflow_calc_type": calc_type
                 })
+                print(f"  Successfully updated workflow metadata for calc_id: {calc_id}")
+            else:
+                print(f"  Warning: No calc_id returned from queue manager for {material_id}")
                 
             return calc_id
             
@@ -727,24 +733,67 @@ fi'''
             return None
             
     def create_material_id_from_file(self, file_path: Path) -> str:
-        """Create a material ID from file path"""
-        # Extract meaningful ID from filename
-        base_name = file_path.stem
+        """Create a material ID from file path using comprehensive suffix removal"""
+        name = file_path.stem
         
-        # Remove common suffixes to get clean material ID
+        # COMPREHENSIVE suffix removal based on actual d12creation patterns
         suffixes_to_remove = [
-            "_OPT", "_SP", "_BAND", "_DOSS", "_FREQ",
-            "_opt", "_sp", "_band", "_doss", "_freq",
-            "_optimized", "_single_point"
+            # === BASIS SETS ===
+            '_POB-TZVP-REV2', '_POB-DZVP-REV2', '_POB-TZVP', '_POB-DZVP',
+            '_STO-3G', '_3-21G', '_6-31G', '_6-311G', '_def2-SVP', '_def2-TZVP',
+            '_DZVP-REV2', '_TZVP-REV2',
+            
+            # === DFT FUNCTIONALS WITH DISPERSION ===
+            '_HSE06-D3', '_PBE-D3', '_B3LYP-D3', '_PBE0-D3', '_SCAN-D3',
+            '_BLYP-D3', '_BP86-D3', '_wB97X-D3',
+            
+            # === DFT FUNCTIONALS WITHOUT DISPERSION ===
+            '_HSE06', '_PBE', '_B3LYP', '_PBE0', '_SCAN', '_BLYP', '_BP86', '_wB97X',
+            '_LDA', '_VWN', '_PWGGA', '_PW91',
+            
+            # === HARTREE-FOCK METHODS ===
+            '_RHF', '_UHF', '_HF',
+            
+            # === CALCULATION TYPES ===
+            '_OPT', '_SP', '_FREQ', '_BAND', '_DOSS',
+            '_opt', '_sp', '_freq', '_band', '_doss',
+            '_optimized', '_single_point',
+            
+            # === DIMENSIONALITY ===
+            '_CRYSTAL', '_SLAB', '_POLYMER', '_MOLECULE',
+            
+            # === SYMMETRY ===
+            '_symm', '_P1', '_nosymm',
+            
+            # === CALCULATION MODES ===
+            '_OPTGEOM', '_SCFDIR', '_FREQCALC',
+            
+            # === BULK/SURFACE DESCRIPTORS ===
+            '_BULK', '_SURFACE', '_SLAB',
+            
+            # === BASIS SET DESCRIPTORS ===
+            '_TZ', '_DZ', '_SZ',  # Triple/Double/Single zeta
+            
+            # === ADDITIONAL DESCRIPTORS ===
+            '_CA', '-CA',  # Often used in topology names
         ]
         
-        clean_name = base_name
-        for suffix in suffixes_to_remove:
-            if clean_name.endswith(suffix):
-                clean_name = clean_name[:-len(suffix)]
-                break
+        # Apply suffix removal iteratively (keep removing until no more matches)
+        # Sort by length (longest first) to avoid partial matches
+        sorted_suffixes = sorted(suffixes_to_remove, key=len, reverse=True)
+        
+        changed = True
+        while changed:
+            changed = False
+            for suffix in sorted_suffixes:
+                if name.endswith(suffix):
+                    name = name[:-len(suffix)]
+                    changed = True
+                    break  # Start over with the shortened name
                 
-        return clean_name
+        # Clean name - DO NOT add mat_ prefix here for cleaner names
+        # The enhanced queue manager will handle directory/file naming consistently
+        return name
         
     def monitor_workflow_execution(self, workflow_id: str):
         """Monitor and manage workflow execution"""
