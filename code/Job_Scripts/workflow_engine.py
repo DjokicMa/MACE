@@ -318,17 +318,8 @@ fi'''
         
         Returns the core material identifier that remains consistent.
         """
-        # Use existing function but enhance it for workflow tracking
-        core_id = create_material_id_from_file(filename)
-        
-        # Additional cleanup for workflow consistency
-        workflow_suffixes = ['_OPT', '_SP', '_BAND', '_DOSS', '_FREQ']
-        for suffix in workflow_suffixes:
-            if core_id.endswith(suffix):
-                core_id = core_id[:-len(suffix)]
-                break
-                
-        return core_id
+        # Use the smart suffix removal function - no additional cleanup needed
+        return create_material_id_from_file(filename)
         
     def get_material_id_from_any_file(self, file_path: Path) -> str:
         """Get material ID from any calculation file, handling complex naming."""
@@ -488,75 +479,52 @@ fi'''
             return self.base_work_dir / "workflow_outputs" / workflow_id
     
     def extract_core_material_name(self, material_id: str) -> str:
-        """Extract the core material name by removing ALL workflow-related suffixes"""
+        """Extract the core material name using smart suffix removal"""
         name = material_id
         
-        # ACTUAL suffixes from NewCifToD12.py, CRYSTALOptToD12.py, and d12creation.py
-        # Based on real filename construction patterns found in the code
-        suffixes_to_remove = [
-            # === BASIS SETS (from NewCifToD12.py and d12creation.py) ===
-            '_POB-TZVP-REV2', '_POB-DZVP-REV2', '_POB-TZVP', '_POB-DZVP',
-            '_STO-3G', '_3-21G', '_6-31G', '_6-311G', '_def2-SVP', '_def2-TZVP',
-            '_DZVP-REV2', '_TZVP-REV2',  # External basis directory names
-            
-            # === DFT FUNCTIONALS WITH DISPERSION (from NewCifToD12.py) ===
-            '_HSE06-D3', '_PBE-D3', '_B3LYP-D3', '_PBE0-D3', '_SCAN-D3',
-            '_BLYP-D3', '_BP86-D3', '_wB97X-D3',
-            
-            # === DFT FUNCTIONALS WITHOUT DISPERSION ===
-            '_HSE06', '_PBE', '_B3LYP', '_PBE0', '_SCAN', '_BLYP', '_BP86', '_wB97X',
-            '_LDA', '_VWN', '_PWGGA', '_PW91',
-            
-            # === HARTREE-FOCK METHODS ===
-            '_RHF', '_UHF', '_HF',
-            
-            # === CRYSTALOptToD12.py SPECIFIC SUFFIXES ===
-            '_optimized',  # Always added by CRYSTALOptToD12.py
-            
-            # === CALCULATION TYPES (from NewCifToD12.py pattern) ===
-            '_OPT', '_SP', '_FREQ',
-            
-            # === DIMENSIONALITY (from NewCifToD12.py) ===
-            '_CRYSTAL', '_SLAB', '_POLYMER', '_MOLECULE',
-            
-            # === SYMMETRY SETTINGS (from NewCifToD12.py) ===
-            '_symm', '_P1',
-            
-            # === LOWERCASE CALC TYPES (from CRYSTALOptToD12.py) ===
-            '_opt', '_sp', '_freq',
-            
-            # === WORKFLOW-ADDED SUFFIXES ===
-            '_band', '_doss', '_BAND', '_DOSS'
-        ]
+        # First, extract the core material identifier (before the first technical suffix)
+        # Look for pattern like "materialname_opt_BULK_..." or "materialname_BULK_..."
+        parts = name.split('_')
         
-        # Remove suffixes iteratively until no more matches
-        original_name = name
-        while True:
-            name_before = name
-            for suffix in suffixes_to_remove:
-                if name.endswith(suffix):
-                    name = name[:-len(suffix)]
-                    break
-            # If no suffix was removed, we're done
-            if name == name_before:
+        # Find the first part that looks like a technical suffix
+        core_parts = []
+        for i, part in enumerate(parts):
+            # Special case: if this is "opt" and we only have one core part so far,
+            # and the core part ends with a number, this might be a calc type rather than material identifier
+            if (part.upper() == 'OPT' and len(core_parts) == 1 and 
+                core_parts[0] and core_parts[0][-1].isdigit()):
+                # This looks like "test1_opt" - the opt is a calc type, not part of material name
                 break
+            # Check if this part is a technical suffix (removed OPT from this list since we handle it specially)
+            elif part.upper() in ['SP', 'FREQ', 'BAND', 'DOSS', 'BULK', 'OPTGEOM', 
+                                'CRYSTAL', 'SLAB', 'POLYMER', 'MOLECULE', 'SYMM', 'TZ', 'DZ', 'SZ']:
+                break
+            # Check if this part is a DFT functional
+            elif part.upper() in ['PBE', 'B3LYP', 'HSE06', 'PBE0', 'SCAN', 'BLYP', 'BP86']:
+                break
+            # Check if this part contains basis set info  
+            elif 'POB' in part.upper() or 'TZVP' in part.upper() or 'DZVP' in part.upper():
+                break
+            # Check if this part is a dispersion correction
+            elif 'D3' in part.upper():
+                break
+            else:
+                core_parts.append(part)
         
-        # Final cleanup - remove any trailing underscores or numbers
-        name = name.rstrip('_0123456789')
-        
+        # If we found core parts, use them
+        if core_parts:
+            clean_name = '_'.join(core_parts)
+        else:
+            # Fallback: just use the first part
+            clean_name = parts[0] if parts else name
+            
         # Only replace truly problematic characters for filesystem compatibility
         # Preserve ^ and , as they are commonly used in chemical notation
-        name = name.replace(' ', '_')  # Spaces to underscores
-        name = name.replace('/', '_').replace('\\', '_')  # Path separators
+        clean_name = clean_name.replace(' ', '_')  # Spaces to underscores
+        clean_name = clean_name.replace('/', '_').replace('\\', '_')  # Path separators
         # Keep other characters like ^, ,, ., - as they are common in chemical names
         
-        # Ensure we have a valid name
-        if not name or len(name) < 2:
-            # Fallback to a basic version if cleaning removed too much
-            name = original_name.split('_')[0]
-            
-        # Return clean name without mat_ prefix for consistency
-        return name or "unknown_material"
+        return clean_name
     
     def clean_material_name(self, material_id: str) -> str:
         """
