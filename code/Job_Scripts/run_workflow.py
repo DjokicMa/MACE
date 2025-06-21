@@ -30,6 +30,46 @@ current_dir = Path(__file__).parent
 sys.path.append(str(current_dir))
 sys.path.append(str(current_dir.parent / "Crystal_To_CIF"))
 
+# Auto-copy dependencies if needed
+def ensure_dependencies():
+    """Ensure all required dependencies are available locally"""
+    required_files = [
+        "enhanced_queue_manager.py",
+        "material_database.py", 
+        "workflow_engine.py",
+        "error_recovery.py",
+        "error_detector.py",
+        "crystal_property_extractor.py",
+        "formula_extractor.py",
+        "input_settings_extractor.py",
+        "query_input_settings.py"
+    ]
+    
+    missing_files = []
+    for filename in required_files:
+        if not (current_dir / filename).exists():
+            missing_files.append(filename)
+    
+    if missing_files:
+        print(f"Missing required dependencies: {missing_files}")
+        print("Auto-copying dependencies...")
+        try:
+            # Import and run copy_dependencies
+            sys.path.append(str(current_dir))
+            from copy_dependencies import copy_dependencies
+            copied, missing = copy_dependencies(str(current_dir))
+            if missing > 0:
+                print(f"Warning: {missing} dependencies could not be copied")
+            else:
+                print("✓ All dependencies copied successfully")
+        except Exception as e:
+            print(f"Error copying dependencies: {e}")
+            print("Please manually run: python copy_dependencies.py")
+            sys.exit(1)
+
+# Ensure dependencies before importing
+ensure_dependencies()
+
 try:
     from workflow_planner import WorkflowPlanner
     from workflow_executor import WorkflowExecutor
@@ -38,6 +78,7 @@ try:
 except ImportError as e:
     print(f"Error importing workflow modules: {e}")
     print("Please ensure all required modules are available")
+    print("Try running: python copy_dependencies.py")
     sys.exit(1)
 
 
