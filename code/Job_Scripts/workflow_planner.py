@@ -1025,92 +1025,47 @@ class WorkflowPlanner:
         return '\n'.join(modified_lines)
         
     def copy_additional_files(self, bin_dir: Path, workflow_id: str):
-        """Copy additional required files from bin directory"""
+        """Copy additional required files using the copy_dependencies system"""
         print("    Copying additional workflow files...")
         
-        # Files to copy from bin directory
-        additional_files = [
-            "workflows.yaml",
-            "recovery_config.yaml", 
-            "enhanced_queue_manager.py",
-            "crystal_queue_manager.py",  # Backup
-            "material_database.py",
-            "workflow_engine.py",
-            "error_recovery.py",
-            "material_monitor.py",
-            "crystal_file_manager.py",
-            "populate_completed_jobs.py"
-        ]
-        
-        # Core dependency scripts from Crystal_To_CIF directory
-        crystal_to_cif_files = [
-            "NewCifToD12.py",
-            "CRYSTALOptToD12.py",
-            "d12creation.py"
-        ]
-        
-        # Analysis scripts from Creation_Scripts directory
-        creation_scripts_files = [
-            "alldos.py",
-            "create_band_d3.py"
-        ]
-        
-        copied_files = []
-        
-        # Copy workflow management files from bin directory
-        for filename in additional_files:
-            source_file = bin_dir / filename
-            dest_file = self.work_dir / filename
+        try:
+            # Import and use the copy_dependencies function
+            sys.path.append(str(bin_dir))
+            from copy_dependencies import copy_dependencies
             
-            if source_file.exists():
-                if not dest_file.exists() or self.should_update_file(source_file, dest_file):
-                    shutil.copy2(source_file, dest_file)
-                    copied_files.append(filename)
-                    print(f"      Copied: {filename}")
-                else:
-                    print(f"      Exists: {filename}")
-            else:
-                print(f"      Missing: {filename} (not found in bin)")
-        
-        # Copy Crystal_To_CIF dependency scripts
-        crystal_to_cif_dir = bin_dir.parent / "Crystal_To_CIF"
-        for filename in crystal_to_cif_files:
-            source_file = crystal_to_cif_dir / filename
-            dest_file = self.work_dir / filename
+            # Use the comprehensive copy_dependencies function
+            copied_count, missing_count = copy_dependencies(str(self.work_dir))
             
-            if source_file.exists():
-                if not dest_file.exists() or self.should_update_file(source_file, dest_file):
-                    shutil.copy2(source_file, dest_file)
-                    copied_files.append(filename)
-                    print(f"      Copied: {filename}")
-                else:
-                    print(f"      Exists: {filename}")
+            if missing_count > 0:
+                print(f"    Warning: {missing_count} dependencies could not be copied")
             else:
-                print(f"      Missing: {filename} (not found in Crystal_To_CIF)")
-        
-        # Copy Creation_Scripts dependency scripts
-        creation_scripts_dir = bin_dir.parent / "Creation_Scripts"
-        for filename in creation_scripts_files:
-            source_file = creation_scripts_dir / filename
-            dest_file = self.work_dir / filename
-            
-            if source_file.exists():
-                if not dest_file.exists() or self.should_update_file(source_file, dest_file):
-                    shutil.copy2(source_file, dest_file)
-                    copied_files.append(filename)
-                    print(f"      Copied: {filename}")
-                else:
-                    print(f"      Exists: {filename}")
-            else:
-                print(f"      Missing: {filename} (not found in Creation_Scripts)")
+                print(f"    ✓ Successfully copied all {copied_count} dependencies")
                 
-        if copied_files:
-            print(f"    Copied {len(copied_files)} additional files")
-        
-        # Make Python scripts executable
-        for filename in copied_files:
-            if filename.endswith('.py'):
-                (self.work_dir / filename).chmod(0o755)
+        except Exception as e:
+            print(f"    Error using copy_dependencies: {e}")
+            print("    Falling back to essential files only...")
+            
+            # Fallback to basic essential files only
+            essential_files = [
+                "enhanced_queue_manager.py",
+                "material_database.py",
+                "error_recovery.py",
+                "workflows.yaml",
+                "recovery_config.yaml"
+            ]
+            
+            copied_count = 0
+            for filename in essential_files:
+                source_file = bin_dir / filename
+                dest_file = self.work_dir / filename
+                
+                if source_file.exists():
+                    if not dest_file.exists() or self.should_update_file(source_file, dest_file):
+                        shutil.copy2(source_file, dest_file)
+                        copied_count += 1
+                        print(f"      Copied: {filename}")
+                        
+            print(f"    Copied {copied_count} essential files (fallback mode)")
                 
     def should_update_file(self, source_file: Path, dest_file: Path) -> bool:
         """Check if we should update the destination file"""
