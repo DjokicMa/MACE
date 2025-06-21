@@ -320,11 +320,12 @@ class WorkflowExecutor:
         # 4. workflow_outputs/ → test/ (4 levels: ../../../../)
         
         # The workflow templates already have correct multi-location callback logic
-        # Just update the max-recovery-attempts parameter if needed
-        script_content = script_content.replace(
-            '--callback-mode completion',
-            '--callback-mode completion --max-recovery-attempts 3'
-        )
+        # Add max-recovery-attempts parameter if not already present
+        if '--max-recovery-attempts' not in script_content:
+            script_content = script_content.replace(
+                '--callback-mode completion',
+                '--callback-mode completion --max-recovery-attempts 3'
+            )
         
         return script_content
         

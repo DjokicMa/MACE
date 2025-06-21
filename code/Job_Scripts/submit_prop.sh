@@ -47,18 +47,24 @@ cp KAPPA.DAT ${DIR}/${JOB}.KAPPA.DAT
 cp TDF.DAT ${DIR}/${JOB}.TDF.DAT
 
 # ADDED: Auto-submit new jobs when this one completes
-# Check multiple possible locations for queue managers
-if [ -f $DIR/enhanced_queue_manager.py ]; then
-    cd $DIR
-    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
-elif [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
+# Check multiple possible locations for queue managers (prefer base directory)
+if [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
+    echo "Using enhanced_queue_manager.py from base directory"
     cd $DIR/../../../../
     python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
-elif [ -f $DIR/crystal_queue_manager.py ]; then
+elif [ -f $DIR/enhanced_queue_manager.py ]; then
+    echo "Using enhanced_queue_manager.py from local directory"
     cd $DIR
-    ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
+    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
 elif [ -f $DIR/../../../../crystal_queue_manager.py ]; then
+    echo "Using crystal_queue_manager.py from base directory"
     cd $DIR/../../../../
     ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
+elif [ -f $DIR/crystal_queue_manager.py ]; then
+    echo "Using crystal_queue_manager.py from local directory"
+    cd $DIR
+    ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
+else
+    echo "Warning: No queue manager found in $DIR or $DIR/../../../../"
 fi' >> $1.sh
 sbatch $1.sh
