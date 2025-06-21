@@ -39,6 +39,10 @@ def copy_dependencies(target_dir: str = "."):
                 "crystal_file_manager.py",
                 "populate_completed_jobs.py",
                 "crystal_queue_manager.py",
+                "input_settings_extractor.py",
+                "query_input_settings.py", 
+                "formula_extractor.py",
+                "crystal_property_extractor.py",
                 "workflows.yaml",
                 "recovery_config.yaml"
             ]

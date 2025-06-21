@@ -319,38 +319,12 @@ class WorkflowExecutor:
         # 3. workflow_ID/ → workflow_outputs/ (3 levels: ../../../)
         # 4. workflow_outputs/ → test/ (4 levels: ../../../../)
         
-        # Update the queue manager detection to use the correct relative path
-        old_queue_manager_section = '''# ADDED: Auto-submit new jobs when this one completes
-if [ -f $DIR/enhanced_queue_manager.py ]; then
-    cd $DIR
-    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
-elif [ -f $DIR/crystal_queue_manager.py ]; then
-    cd $DIR
-    ./crystal_queue_manager.py  --max-jobs 250 --reserve 30 --max-submit 5
-fi'''
-        
-        new_queue_manager_section = '''# ADDED: Auto-submit new jobs when this one completes
-# Queue manager is in the base working directory (4 levels up from material directory)
-# Current location: ~/test/workflow_outputs/workflow_ID/step_XXX_TYPE/material_name/
-# Queue manager location: ~/test/enhanced_queue_manager.py (../../../../enhanced_queue_manager.py)
-
-if [ -f ../../../../enhanced_queue_manager.py ]; then
-    echo "Found enhanced_queue_manager.py in base directory (../../../../)"
-    cd ../../../../
-    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
-elif [ -f ../../../../crystal_queue_manager.py ]; then
-    echo "Found crystal_queue_manager.py in base directory (../../../../)"
-    cd ../../../../
-    ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
-else
-    echo "Warning: No queue manager found in base directory (../../../../)"
-    echo "Expected location: ../../../../enhanced_queue_manager.py"
-    echo "Current working directory: $(pwd)"
-    echo "Listing base directory:"
-    ls -la ../../../../ | grep -E "(enhanced_queue_manager|crystal_queue_manager)"
-fi'''
-        
-        script_content = script_content.replace(old_queue_manager_section, new_queue_manager_section)
+        # The workflow templates already have correct multi-location callback logic
+        # Just update the max-recovery-attempts parameter if needed
+        script_content = script_content.replace(
+            '--callback-mode completion',
+            '--callback-mode completion --max-recovery-attempts 3'
+        )
         
         return script_content
         

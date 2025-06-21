@@ -3,7 +3,7 @@
 #SBATCH -o $1-%J.o
 #SBATCH --cpus-per-task=1
 #SBATCH --ntasks=28
-#SBATCH --constraint=intel18
+#SBATCH -A mendoza_q
 #SBATCH -N 1
 #SBATCH -t 1-00:00:00
 #SBATCH --mem=80G
@@ -24,7 +24,7 @@ cp $DIR/$JOB.d3 $scratch/$JOB/INPUT
 cp $DIR/$JOB.f9 $scratch/$JOB/fort.9
 cd $scratch/$JOB
 
-mpirun -n $SLURM_NTASKS Pproperties 2>&1 >& $DIR/${JOB}.out
+mpirun -n $SLURM_NTASKS /opt/software-current/2023.06/x86_64/intel/skylake_avx512/software/CRYSTAL/23-intel-2023a/bin/Pproperties 2>&1 >& $DIR/${JOB}.out
 cp fort.9 ${DIR}/${JOB}.f9
 cp DOSS.DAT ${DIR}/${JOB}.DOSS.DAT
 cp fort.25 ${DIR}/${JOB}.f25

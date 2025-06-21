@@ -24,6 +24,8 @@ This folder contains Python scripts used for processing quantum chemistry output
 * **Input**: Matching `.d12` and `.out` file pairs in working directory
 * **Output**: `_DOSS.d3` file per job, formatted for CRYSTAL plotting
 
+**Integration**: Fully integrated with `run_workflow.py` and `enhanced_queue_manager.py`. Generated D3 files have their settings automatically extracted and stored in the materials database, including DOS parameters, k-point grids, and projection settings.
+
 ---
 
 ### `create_band_d3.py`
@@ -42,6 +44,8 @@ This folder contains Python scripts used for processing quantum chemistry output
 
 * **Input**: Extracted band structure or CRYSTAL output with AO index data
 * **Output**: `BAND.d3` ready for plotting tools
+
+**Integration**: Fully integrated with `run_workflow.py` and `enhanced_queue_manager.py`. Generated BAND.d3 files have their settings automatically extracted and stored in the materials database, including k-point paths, band structure parameters, and calculation settings.
 
 ---
 
