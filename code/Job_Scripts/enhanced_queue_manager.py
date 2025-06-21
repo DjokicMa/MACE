@@ -239,13 +239,13 @@ class EnhancedCrystalQueueManager:
         """
         Create organized folder structure for calculations.
         
-        Structure: base_dir/calc_type/
-        All materials of the same calculation type stored together.
-        This is more efficient for file quotas and workflow analysis.
+        Structure: base_dir/calc_type/material_id/
+        Each material gets its own directory within the calculation type.
         """
-        calc_dir = self.d12_dir / calc_type.lower()
-        calc_dir.mkdir(parents=True, exist_ok=True)
-        return calc_dir
+        calc_type_dir = self.d12_dir / calc_type.lower()
+        material_dir = calc_type_dir / material_id
+        material_dir.mkdir(parents=True, exist_ok=True)
+        return material_dir
         
     def extract_material_info_from_d12(self, d12_file: Path) -> Tuple[str, str, Dict]:
         """Extract material information from .d12 file."""

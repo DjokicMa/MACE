@@ -1347,66 +1347,43 @@ class WorkflowPlanner:
             print(f"  python workflow_planner.py --execute {plan_file}")
 
     def create_clean_material_id(self, file_path: Path) -> str:
-        """Create a clean material ID from file path using comprehensive suffix removal"""
+        """Create a clean material ID from file path using smart suffix removal"""
         name = file_path.stem
         
-        # COMPREHENSIVE suffix removal based on actual d12creation patterns
-        suffixes_to_remove = [
-            # === BASIS SETS ===
-            '_POB-TZVP-REV2', '_POB-DZVP-REV2', '_POB-TZVP', '_POB-DZVP',
-            '_STO-3G', '_3-21G', '_6-31G', '_6-311G', '_def2-SVP', '_def2-TZVP',
-            '_DZVP-REV2', '_TZVP-REV2',
-            
-            # === DFT FUNCTIONALS WITH DISPERSION ===
-            '_HSE06-D3', '_PBE-D3', '_B3LYP-D3', '_PBE0-D3', '_SCAN-D3',
-            '_BLYP-D3', '_BP86-D3', '_wB97X-D3', '_M06-D3',
-            
-            # === DFT FUNCTIONALS WITHOUT DISPERSION ===
-            '_HSE06', '_PBE', '_B3LYP', '_PBE0', '_SCAN', '_BLYP', '_BP86', '_wB97X',
-            '_LDA', '_VWN', '_PWGGA', '_PW91', '_M06',
-            
-            # === HARTREE-FOCK METHODS ===
-            '_RHF', '_UHF', '_HF',
-            
-            # === CALCULATION TYPES ===
-            '_OPT', '_SP', '_FREQ', '_BAND', '_DOSS',
-            '_opt', '_sp', '_freq', '_band', '_doss',
-            '_optimized', '_single_point',
-            
-            # === DIMENSIONALITY ===
-            '_CRYSTAL', '_SLAB', '_POLYMER', '_MOLECULE',
-            
-            # === SYMMETRY ===
-            '_symm', '_P1', '_nosymm',
-            
-            # === CALCULATION MODES ===
-            '_OPTGEOM', '_SCFDIR', '_FREQCALC',
-            
-            # === BULK/SURFACE DESCRIPTORS ===
-            '_BULK', '_SURFACE', '_SLAB',
-            
-            # === BASIS SET DESCRIPTORS ===
-            '_TZ', '_DZ', '_SZ',  # Triple/Double/Single zeta
-            
-            # === ADDITIONAL DESCRIPTORS ===
-            '_CA', '-CA',  # Often used in topology names
-        ]
+        # First, extract the core material identifier (before the first technical suffix)
+        # Look for pattern like "materialname_opt_BULK_..." or "materialname_BULK_..."
+        parts = name.split('_')
         
-        # Apply suffix removal iteratively (keep removing until no more matches)
-        # Sort by length (longest first) to avoid partial matches
-        sorted_suffixes = sorted(suffixes_to_remove, key=len, reverse=True)
+        # Find the first part that looks like a technical suffix
+        core_parts = []
+        for i, part in enumerate(parts):
+            # Check if this part is a technical suffix
+            if part.upper() in ['OPT', 'SP', 'FREQ', 'BAND', 'DOSS', 'BULK', 'OPTGEOM', 
+                              'CRYSTAL', 'SLAB', 'POLYMER', 'MOLECULE', 'SYMM', 'TZ', 'DZ', 'SZ']:
+                break
+            # Check if this part is a DFT functional
+            elif part.upper() in ['PBE', 'B3LYP', 'HSE06', 'PBE0', 'SCAN', 'BLYP', 'BP86']:
+                break
+            # Check if this part contains basis set info  
+            elif 'POB' in part.upper() or 'TZVP' in part.upper() or 'DZVP' in part.upper():
+                break
+            # Check if this part is a dispersion correction
+            elif 'D3' in part.upper():
+                break
+            else:
+                core_parts.append(part)
         
-        changed = True
-        while changed:
-            changed = False
-            for suffix in sorted_suffixes:
-                if name.endswith(suffix):
-                    name = name[:-len(suffix)]
-                    changed = True
-                    break  # Start over with the shortened name
-                    
-        # Return clean name (workflow executor will handle mat_ prefix consistently)
-        return name
+        # If we found core parts, use them
+        if core_parts:
+            clean_name = '_'.join(core_parts)
+        else:
+            # Fallback: just use the first part
+            clean_name = parts[0] if parts else name
+            
+        # Handle special characters that might need preservation
+        # Don't remove things like numbers, hyphens in material names
+        
+        return clean_name
 
 
 def main():
