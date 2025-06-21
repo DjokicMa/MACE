@@ -573,124 +573,75 @@ class MaterialDatabase:
 # Convenience functions for common operations
 def create_material_id_from_file(file_path: str) -> str:
     """
-    Generate a consistent material ID from input file path.
+    Generate a consistent material ID from input file path using comprehensive suffix removal.
     
     Handles complex CRYSTAL naming conventions with functionals, basis sets,
     and calculation types to extract the core material identifier.
     
     Examples:
-    - '1_dia_opt_BULK_OPTGEOM_symm_CRYSTAL_OPT_P1_LDA_POB-TZVP-REV2.d12' → '1_dia_opt_BULK_OPTGEOM_symm'
-    - '3,4^2T1-CA_BULK_OPTGEOM_TZ_symm_CRYSTAL_OPT_symm_M06-D3_POB-TZVP-REV2.d12' → '3,4^2T1-CA_BULK_OPTGEOM_TZ_symm'
+    - '1_dia_opt_BULK_OPTGEOM_symm_CRYSTAL_OPT_symm_PBE-D3_POB-TZVP-REV2.d12' → '1_dia'
+    - '3,4^2T1-CA_BULK_OPTGEOM_TZ_symm_CRYSTAL_OPT_symm_M06-D3_POB-TZVP-REV2.d12' → '3,4^2T1'
     """
     file_path = Path(file_path)
-    base_name = file_path.stem
+    name = file_path.stem
     
-    # Remove the CRYSTAL-specific suffixes in order (most specific first)
-    # Functional and basis set patterns
-    functional_basis_patterns = [
-        '_CRYSTAL_OPT_P1_LDA_POB-TZVP-REV2',
-        '_CRYSTAL_OPT_symm_M06-D3_POB-TZVP-REV2', 
-        '_CRYSTAL_OPT_P1_PBE_POB-TZVP-REV2',
-        '_CRYSTAL_OPT_symm_PBE_POB-TZVP-REV2',
-        '_CRYSTAL_OPT_P1_HSE06_POB-TZVP-REV2',
-        '_CRYSTAL_OPT_symm_HSE06_POB-TZVP-REV2',
-        '_LDA_POB-TZVP-REV2',
-        '_M06-D3_POB-TZVP-REV2',
-        '_PBE_POB-TZVP-REV2',
-        '_HSE06_POB-TZVP-REV2',
-        '_POB-TZVP-REV2',
-        '_CRYSTAL_OPT',
-        '_CRYSTAL'
+    # COMPREHENSIVE suffix removal based on actual d12creation patterns
+    suffixes_to_remove = [
+        # === BASIS SETS ===
+        '_POB-TZVP-REV2', '_POB-DZVP-REV2', '_POB-TZVP', '_POB-DZVP',
+        '_STO-3G', '_3-21G', '_6-31G', '_6-311G', '_def2-SVP', '_def2-TZVP',
+        '_DZVP-REV2', '_TZVP-REV2',
+        
+        # === DFT FUNCTIONALS WITH DISPERSION ===
+        '_HSE06-D3', '_PBE-D3', '_B3LYP-D3', '_PBE0-D3', '_SCAN-D3',
+        '_BLYP-D3', '_BP86-D3', '_wB97X-D3', '_M06-D3',
+        
+        # === DFT FUNCTIONALS WITHOUT DISPERSION ===
+        '_HSE06', '_PBE', '_B3LYP', '_PBE0', '_SCAN', '_BLYP', '_BP86', '_wB97X',
+        '_LDA', '_VWN', '_PWGGA', '_PW91', '_M06',
+        
+        # === HARTREE-FOCK METHODS ===
+        '_RHF', '_UHF', '_HF',
+        
+        # === CALCULATION TYPES ===
+        '_OPT', '_SP', '_FREQ', '_BAND', '_DOSS',
+        '_opt', '_sp', '_freq', '_band', '_doss',
+        '_optimized', '_single_point',
+        
+        # === DIMENSIONALITY ===
+        '_CRYSTAL', '_SLAB', '_POLYMER', '_MOLECULE',
+        
+        # === SYMMETRY ===
+        '_symm', '_P1', '_nosymm',
+        
+        # === CALCULATION MODES ===
+        '_OPTGEOM', '_SCFDIR', '_FREQCALC',
+        
+        # === BULK/SURFACE DESCRIPTORS ===
+        '_BULK', '_SURFACE', '_SLAB',
+        
+        # === BASIS SET DESCRIPTORS ===
+        '_TZ', '_DZ', '_SZ',  # Triple/Double/Single zeta
+        
+        # === ADDITIONAL DESCRIPTORS ===
+        '_CA', '-CA',  # Often used in topology names
     ]
     
-    # Basis set suffixes
-    basis_suffixes = [
-        '_POB-TZVP-REV2',
-        '_POB-TZVP',
-        '_TZVP',
-        '_DZVP',
-        '_STO-3G',
-        '_6-31G',
-        '_6-311G'
-    ]
+    # Apply suffix removal iteratively (keep removing until no more matches)
+    # Sort by length (longest first) to avoid partial matches
+    sorted_suffixes = sorted(suffixes_to_remove, key=len, reverse=True)
     
-    # Functional suffixes
-    functional_suffixes = [
-        '_LDA',
-        '_PBE',
-        '_PBE0', 
-        '_HSE06',
-        '_B3LYP',
-        '_M06-D3',
-        '_M06'
-    ]
-    
-    # Calculation type suffixes (keep these for material ID)
-    calc_type_suffixes = [
-        '_OPT',
-        '_SP',
-        '_BAND',
-        '_DOSS', 
-        '_FREQ',
-        '_TRANSPORT'
-    ]
-    
-    # Remove patterns in order of specificity
-    for pattern in functional_basis_patterns:
-        if pattern in base_name:
-            base_name = base_name.replace(pattern, '')
-            break  # Only remove the first match
-    
-    # Remove remaining basis set suffixes
-    for suffix in basis_suffixes:
-        base_name = base_name.replace(suffix, '')
-    
-    # Remove functional suffixes
-    for suffix in functional_suffixes:
-        base_name = base_name.replace(suffix, '')
-    
-    # Remove calculation type patterns that should not be part of material ID
-    calc_type_patterns = [
-        '_CRYSTAL_OPTGEOM_',
-        '_CRYSTAL_SCFDIR_',
-        '_CRYSTAL_OPT_',
-        '_OPTGEOM_',
-        '_SCFDIR_',
-        '_BULK_',
-        '_SLAB_',
-        '_POLYMER_',
-        '_MOLECULE_'
-    ]
-    
-    # Replace calc type patterns with consistent versions
-    for pattern in calc_type_patterns:
-        if pattern in base_name:
-            # Extract the core name before the calculation type
-            parts = base_name.split(pattern)
-            if len(parts) >= 2:
-                # Keep the part before the calc type pattern
-                base_name = parts[0]
-                # Add any material-specific suffixes that come after
-                remaining = pattern.join(parts[1:])
-                # Only keep symmetry info
-                if '_symm' in remaining:
-                    base_name += '_symm'
-                elif '_P1' in remaining:
-                    base_name += '_P1'
-                break
-    
-    # Clean up any trailing underscores
-    base_name = base_name.rstrip('_')
-    
-    # If the name is too short after cleaning, preserve more of the original
-    if len(base_name.split('_')) < 2:
-        # Fall back to simpler cleaning - just remove calc types
-        base_name = file_path.stem
-        for suffix in calc_type_suffixes:
-            base_name = base_name.replace(suffix, '')
-        base_name = base_name.rstrip('_')
-    
-    return base_name
+    changed = True
+    while changed:
+        changed = False
+        for suffix in sorted_suffixes:
+            if name.endswith(suffix):
+                name = name[:-len(suffix)]
+                changed = True
+                break  # Start over with the shortened name
+                
+    # Clean name - do not add mat_ prefix at database level
+    return name
 
 
 def find_material_by_similarity(db: 'MaterialDatabase', potential_material_id: str) -> Optional[str]:
