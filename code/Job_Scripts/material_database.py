@@ -478,6 +478,14 @@ class MaterialDatabase:
             row = cursor.fetchone()
             return dict(row) if row else None
             
+    def get_calculations_by_material(self, material_id: str) -> List[Dict]:
+        """Get all calculations for a specific material."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT * FROM calculations WHERE material_id = ? ORDER BY created_at DESC
+            """, (material_id,))
+            return [dict(row) for row in cursor.fetchall()]
+            
     def add_file_record(self, calc_id: str, file_type: str, file_name: str,
                        file_path: str, checksum: str = None):
         """Add a file record associated with a calculation."""
