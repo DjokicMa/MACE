@@ -602,19 +602,56 @@ class WorkflowDatabaseCreator:
                 # Extract k-path labels from BAND d3 files
                 if 'BAND' in content and len(lines) > 3:
                     k_path_labels = []
+                    k_path_segments = []
                     for i, line in enumerate(lines):
                         if i < 3:  # Skip header lines
                             continue
                         if line.strip() == 'END':
                             break
-                        if ' ' in line.strip():
-                            k_points = line.strip().split()
-                            if len(k_points) == 2:
-                                k_path_labels.extend(k_points)
+                        line_clean = line.strip()
+                        if ' ' in line_clean and not line_clean.startswith('#'):
+                            k_points = line_clean.split()
+                            if len(k_points) >= 2:
+                                # Extract k-point labels (typically first two items)
+                                start_point = k_points[0]
+                                end_point = k_points[1]
+                                k_path_labels.extend([start_point, end_point])
+                                k_path_segments.append(f"{start_point} {end_point}")
                     
                     if k_path_labels:
-                        settings['k_path_labels'] = list(set(k_path_labels))  # Remove duplicates
-                        settings['k_path'] = ' -> '.join(k_path_labels[:10])  # Limit display
+                        # Store both individual labels and path segments
+                        unique_labels = list(dict.fromkeys(k_path_labels))  # Preserve order, remove duplicates
+                        settings['k_path_labels'] = unique_labels
+                        settings['k_path_segments'] = k_path_segments
+                        
+                        # Create condensed k-path format with proper continuity handling
+                        # Example: 'X G', 'G L', 'L W', 'W G' -> 'X G L W G'
+                        # Example: 'X G', 'G L', 'G W', 'W G' -> 'X G L|G W G'
+                        condensed_segments = []
+                        current_path = []
+                        
+                        for segment in k_path_segments:
+                            points = segment.split()
+                            if len(points) == 2:
+                                start_point, end_point = points
+                                
+                                # If this is the first segment or continues from previous
+                                if not current_path:
+                                    current_path = [start_point, end_point]
+                                elif current_path[-1] == start_point:
+                                    # Continuous path - just add the end point
+                                    current_path.append(end_point)
+                                else:
+                                    # Discontinuous path - finish current and start new
+                                    condensed_segments.append(' '.join(current_path))
+                                    current_path = [start_point, end_point]
+                        
+                        # Add the final path segment
+                        if current_path:
+                            condensed_segments.append(' '.join(current_path))
+                        
+                        # Join with | for discontinuous segments
+                        settings['k_path_condensed'] = '|'.join(condensed_segments)
                 
                 # For D3 files, mark that settings should be inherited from SP
                 settings['settings_inherited'] = True

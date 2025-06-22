@@ -332,13 +332,48 @@ def update_materials_table_info(db, material_id: str, d12_file: Path = None,
     """
     formula, space_group = extract_material_info_from_files(d12_file, cif_file, output_file)
     
-    if formula or space_group:
+    # Check if material already has a formula - only update if empty or this is an OPT calculation
+    existing_material = None
+    try:
+        with db._get_connection() as conn:
+            cursor = conn.execute("SELECT formula, space_group FROM materials WHERE material_id = ?", (material_id,))
+            result = cursor.fetchone()
+            if result:
+                existing_material = {'formula': result[0], 'space_group': result[1]}
+    except Exception:
+        pass
+    
+    # Only update formula if:
+    # 1. No existing formula, OR
+    # 2. This is an OPT d12 file (not SP/BAND/DOSS), OR  
+    # 3. Current formula is clearly wrong (single letter or very short)
+    should_update_formula = False
+    if formula:
+        if not existing_material or not existing_material.get('formula'):
+            should_update_formula = True
+        elif d12_file and d12_file.exists():
+            # Check if this is an OPT calculation (contains OPTGEOM) and not a property calculation
+            try:
+                with open(d12_file, 'r') as f:
+                    content = f.read()
+                is_opt_calc = 'OPTGEOM' in content.upper() and d12_file.suffix == '.d12'
+                is_property_calc = d12_file.suffix == '.d3' or 'BAND' in content.upper() or 'DOSS' in content.upper()
+                
+                if is_opt_calc and not is_property_calc:
+                    should_update_formula = True
+                elif existing_material.get('formula') and len(existing_material['formula']) <= 2:
+                    # Current formula is suspiciously short - likely wrong
+                    should_update_formula = True
+            except Exception:
+                pass
+    
+    if (should_update_formula and formula) or space_group:
         try:
             with db._get_connection() as conn:
                 update_fields = []
                 update_values = []
                 
-                if formula:
+                if should_update_formula and formula:
                     update_fields.append('formula = ?')
                     update_values.append(formula)
                 
@@ -354,7 +389,8 @@ def update_materials_table_info(db, material_id: str, d12_file: Path = None,
                     query = f"UPDATE materials SET {', '.join(update_fields)} WHERE material_id = ?"
                     conn.execute(query, update_values)
                     
-                    print(f"  📝 Updated material {material_id}: formula={formula}, space_group={space_group}")
+                    updated_formula = formula if should_update_formula else existing_material.get('formula', 'unchanged')
+                    print(f"  📝 Updated material {material_id}: formula={updated_formula}, space_group={space_group}")
                     
         except Exception as e:
             print(f"  ⚠️  Error updating material {material_id}: {e}")

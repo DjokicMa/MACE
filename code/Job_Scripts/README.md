@@ -681,8 +681,251 @@ Scripts are designed for integration with:
 
 ---
 
+## Advanced Features (Latest Updates)
+
+### Enhanced Property Extraction
+
+The system now extracts and analyzes over 30 categories of material properties:
+
+#### **Electronic Properties**
+- **Band Gaps**: Direct/indirect gaps with automatic classification
+- **Effective Mass**: Calculated from band curvature at extrema (see PROPERTIES_THEORY_README.md)
+- **Density of States**: DOS at Fermi level and band edges
+- **Work Functions**: Surface electronic properties
+- **Band Alignment**: Valence and conduction band positions
+
+#### **Transport Properties** 
+- **Carrier Mobility**: Estimated from effective mass and scattering rates
+- **Electrical Conductivity**: Tensor components for anisotropic materials
+- **Seebeck Coefficient**: Thermoelectric voltage response
+- **Thermal Conductivity**: Electronic and lattice contributions
+
+#### **Optical Properties**
+- **Dielectric Constants**: Electronic and ionic contributions
+- **Refractive Index**: Real and imaginary components
+- **Absorption Spectra**: Direct/indirect transition analysis
+- **Optical Conductivity**: Frequency-dependent response
+
+#### **Mechanical Properties**
+- **Elastic Constants**: Full elastic tensor (C_ij)
+- **Bulk/Shear Moduli**: Mechanical strength parameters
+- **Phonon Frequencies**: Vibrational modes and stability
+- **Heat Capacity**: Electronic and vibrational contributions
+
+### OPT2 and SP Customization Levels
+
+Both subsequent optimization (OPT2) and single-point (SP) calculations now support four customization levels:
+
+#### **OPT2 Configuration Options**
+1. **Basic**: Optimization type + enhanced tolerances for refined convergence
+2. **Advanced**: Method/basis modifications + custom tolerances  
+3. **Expert**: Full CRYSTALOptToD12.py integration with JSON templates
+
+#### **SP Configuration Options**  
+0. **Default**: Inherit all settings from previous OPT calculation
+1. **Basic**: Modify DFT functional and/or basis set
+2. **Advanced**: Detailed SCF convergence + DFT grid modifications
+3. **Expert**: Complete customization with interactive CRYSTALOptToD12.py setup
+
+**Example Expert Configuration**:
+```bash
+python run_workflow.py --interactive
+# Select OPT → OPT2 → SP workflow
+# Choose Expert level for OPT2: Creates opt_config_opt2_step_2.json
+# Choose Advanced level for SP: Interactive method/basis/SCF modifications
+```
+
+### Enhanced Input Settings Extraction
+
+The `input_settings_extractor.py` now provides comprehensive extraction from both D12 and D3 files:
+
+#### **D12 File Analysis**
+- Complete DFT functional detection (PBE, B3LYP, HSE06, etc.)
+- Basis set identification (internal/external, quality level)
+- SCF convergence parameters (TOLINTEG, TOLDEE, FMIXING)
+- Optimization settings (TOLDEG, TOLDEX, MAXCYCLE)
+- Dispersion correction detection (-D3, -D4, etc.)
+
+#### **D3 File Analysis (NEW)**
+- **K-path Labels**: Extracts high-symmetry k-point paths from BAND calculations
+  - Individual labels: `["X G", "G L", "L W", "W G"]`
+  - **Condensed format**: `"X G L W G"` (automatic path connectivity)
+- Property calculation types (BAND, DOSS, NEWK parameters)
+- Projection settings for DOS calculations
+
+#### **Database Integration**
+All extracted settings are stored in the `calculations.input_settings_json` field:
+```sql
+SELECT calc_id, input_settings_json FROM calculations WHERE calc_type = 'BAND';
+-- Returns JSON with k_path_labels and k_path_labels_condensed
+```
+
+### Formula Extraction Improvements
+
+Fixed chemical formula extraction with intelligent validation:
+
+#### **Source Priority**
+1. **OPT D12 files**: Primary source for accurate formulas
+2. **CIF files**: Backup source for formula extraction  
+3. **Validation**: Prevents overwriting correct formulas with property calculation artifacts
+
+#### **Anti-Corruption Measures**
+- Detects and prevents formula corruption from SP/BAND/DOSS files
+- Only updates formulas from geometry optimization calculations
+- Preserves correct formulas across workflow progression
+
+**Before Fix**: Materials showing incorrect formulas like `Be`, `BeSnBZr`  
+**After Fix**: Correct formulas like `C`, `C2`, `C3` maintained throughout workflow
+
+### Create Fresh Database Tool
+
+`create_fresh_database.py` now provides complete database reconstruction:
+
+#### **Features**
+- Processes all workflow output files automatically
+- Extracts 1,500+ properties across 11 categories
+- Rebuilds complete calculation history with provenance
+- Validates file integrity and metadata consistency
+
+#### **Usage**
+```bash
+# Create database from workflow outputs
+python create_fresh_database.py --db-path materials.db --workflow-dir workflow_outputs --force
+
+# Statistics reported:
+# Materials: 8, Calculations: 32, Properties: 1541, Files: 202
+```
+
+### Copy Dependencies Enhancement
+
+Updated `copy_dependencies.py` to include all workflow components:
+
+#### **New Dependencies Added**
+- `workflow_planner.py` - Interactive workflow configuration
+- `workflow_executor.py` - Execution engine with individual calculation folders
+- `run_workflow.py` - Main workflow interface
+- `create_fresh_database.py` - Database reconstruction tool
+- `additional_properties_analyzer.py` - Advanced property calculations
+
+#### **Complete Dependency Set**
+All files needed for standalone workflow operation:
+```bash
+python copy_dependencies.py /path/to/working/directory
+# Copies 25+ essential files for full workflow capability
+```
+
+### K-Point Path Analysis
+
+Enhanced band structure analysis with automatic k-point path detection:
+
+#### **Path Extraction**
+```python
+# From BAND d3 files:
+# Input: X G
+#        G L  
+#        L W
+#        W G
+
+# Output: 
+k_path_labels = ["X G", "G L", "L W", "W G"]
+k_path_labels_condensed = "X G L W G"  # Connected path
+```
+
+#### **Applications**
+- Automatic high-symmetry point identification
+- Band structure plotting with proper labels
+- Crystal system classification from k-paths
+- Comparative analysis across materials
+
+### Database Schema Enhancements
+
+#### **New Property Categories**
+```sql
+-- Electronic properties: 487 entries
+-- Lattice properties: 280 entries  
+-- Structural properties: 104 entries
+-- Band structure: 72 entries (includes k-path data)
+-- Population analysis: 64 entries
+-- Density of states: 32 entries
+-- + 6 additional categories
+```
+
+#### **Enhanced Metadata**
+- Complete input settings preservation
+- File provenance tracking with checksums
+- Workflow step progression history
+- Calculation interdependencies
+
+### Theoretical Documentation
+
+Created comprehensive `PROPERTIES_THEORY_README.md` covering:
+
+#### **Advanced Property Theory**
+- **Effective Mass**: Band curvature calculations with second derivatives
+- **Transport Properties**: Boltzmann transport theory and mobility calculations
+- **Optical Properties**: Dielectric functions and Kramers-Kronig relations
+- **Mechanical Properties**: Elastic constants and phonon analysis
+
+#### **Computational Methods**
+- K-point sampling convergence strategies
+- Wannier function interpolation techniques
+- Statistical mechanics for electronic/vibrational properties
+- Accuracy limitations and best practices
+
+#### **Units and Conversions**
+- Complete unit conversion tables
+- Physical constants and relationships
+- Typical accuracy ranges for different properties
+- Quality metrics and convergence criteria
+
+---
+
+## Property Calculation Examples
+
+### Effective Mass Calculation
+```python
+# Theory: 1/m* = (1/ℏ²) * d²E/dk²
+# Implementation in crystal_property_extractor.py:
+
+def calculate_effective_mass(band_structure_data, band_index, k_point):
+    """Calculate effective mass from band curvature"""
+    # 1. Extract E(k) near band extremum
+    energies = extract_band_energies(band_structure_data, band_index)
+    k_points = extract_k_points(band_structure_data)
+    
+    # 2. Fit parabolic function: E(k) = E₀ + (ℏ²k²)/(2m*)
+    curvature = fit_parabolic_band(energies, k_points, k_point)
+    
+    # 3. Calculate effective mass
+    effective_mass = HBAR**2 / (2 * curvature)  # in electron mass units
+    
+    return effective_mass
+```
+
+### Transport Property Integration
+```python
+# Seebeck coefficient from band structure
+# S = (π²k_B²T/3e) * (1/σ) * (dσ/dE)|_{E=E_F}
+
+def calculate_seebeck_coefficient(dos_data, temperature=300):
+    """Calculate Seebeck coefficient using Mott formula"""
+    # Extract DOS and derivative at Fermi level
+    dos_fermi = interpolate_dos_at_fermi(dos_data)
+    dos_derivative = calculate_dos_derivative(dos_data)
+    
+    # Apply Mott formula
+    seebeck = (PI**2 * KB**2 * temperature) / (3 * ELECTRON_CHARGE)
+    seebeck *= dos_derivative / dos_fermi
+    
+    return seebeck  # in μV/K
+```
+
+---
+
 ## License and Support
 
 These scripts are provided as-is for academic and research use. Users should adapt configurations to match their specific cluster environments and requirements.
 
 For CRYSTAL software support, consult the official CRYSTAL documentation and user community.
+
+**New Feature Support**: For issues with advanced property extraction, workflow customization, or database tools, refer to the comprehensive documentation in `PROPERTIES_THEORY_README.md` and `WORKFLOW_MANAGER_README.md`.

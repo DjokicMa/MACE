@@ -33,6 +33,10 @@ def copy_dependencies(target_dir: str = "."):
                 "enhanced_queue_manager.py",
                 "material_database.py", 
                 "workflow_engine.py",
+                "workflow_planner.py",
+                "workflow_executor.py",
+                "run_workflow.py",
+                "create_fresh_database.py",
                 "error_recovery.py",
                 "error_detector.py",
                 "material_monitor.py",
@@ -43,12 +47,16 @@ def copy_dependencies(target_dir: str = "."):
                 "query_input_settings.py", 
                 "formula_extractor.py",
                 "crystal_property_extractor.py",
+                "advanced_electronic_analyzer.py",
                 "workflows.yaml",
                 "recovery_config.yaml",
                 "dat_file_processor.py",
                 "population_analysis_processor.py",
                 "property_analysis_framework.py",
-                "query_input_settings.py"
+                "database_status_report.py",
+                "additional_properties_analyzer.py",
+                "show_properties.py",
+                "copy_dependencies.py"
             ]
         },
         "Crystal_To_CIF": {

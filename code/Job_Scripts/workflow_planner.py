@@ -615,24 +615,251 @@ class WorkflowPlanner:
         return config
         
     def configure_single_point_step(self) -> Dict[str, Any]:
-        """Configure single point calculation"""
+        """Configure single point calculation with customization levels"""
         print("  Configuring single point calculation")
         
-        use_defaults = yes_no_prompt("    Use settings from optimization?", "yes")
+        print("    Choose SP customization level:")
+        print("      0: Default (inherit all settings from previous OPT)")
+        print("      1: Basic (modify method/basis set)")
+        print("      2: Advanced (detailed SCF/convergence settings)")
+        print("      3: Expert (full CRYSTALOptToD12.py integration)")
+        
+        while True:
+            try:
+                level = int(input("    Enter level (0-3): ").strip())
+                if level in [0, 1, 2, 3]:
+                    break
+                print("    Please enter 0, 1, 2, or 3")
+            except ValueError:
+                print("    Please enter a valid number")
         
         config = {
             "calculation_type": "SP",
             "source": "CRYSTALOptToD12.py",
-            "inherit_settings": use_defaults
+            "customization_level": level
         }
         
-        if not use_defaults:
-            # Allow modification of method/basis set
-            modify_method = yes_no_prompt("    Modify DFT method/basis set?", "no")
-            if modify_method:
-                config["custom_settings"] = self.get_custom_sp_settings()
-                
+        if level == 0:
+            # Default: inherit all settings
+            config["inherit_settings"] = True
+        elif level == 1:
+            # Basic: method/basis modifications
+            config.update(self._get_basic_sp_config())
+        elif level == 2:
+            # Advanced: detailed settings
+            config.update(self._get_advanced_sp_config())
+        elif level == 3:
+            # Expert: full customization
+            config.update(self._get_expert_sp_config())
+            
         return config
+        
+    def _get_basic_sp_config(self) -> Dict[str, Any]:
+        """Get basic SP configuration"""
+        print("\n    Basic SP Setup:")
+        
+        config = {
+            "inherit_geometry": True,
+            "inherit_settings": False
+        }
+        
+        # Method modifications
+        modify_method = yes_no_prompt("    Change DFT functional?", "no")
+        if modify_method:
+            config["method_modifications"] = self._get_method_modifications()
+        else:
+            config["inherit_method"] = True
+            
+        # Basis set modifications
+        modify_basis = yes_no_prompt("    Change basis set?", "no")
+        if modify_basis:
+            config["basis_modifications"] = self._get_basis_modifications()
+        else:
+            config["inherit_basis"] = True
+            
+        return config
+        
+    def _get_advanced_sp_config(self) -> Dict[str, Any]:
+        """Get advanced SP configuration"""
+        config = self._get_basic_sp_config()
+        
+        print("\n    Advanced SP Setup:")
+        
+        # SCF modifications
+        modify_scf = yes_no_prompt("    Modify SCF convergence settings?", "no")
+        if modify_scf:
+            config["scf_modifications"] = self._get_scf_modifications()
+            
+        # Grid modifications
+        modify_grid = yes_no_prompt("    Modify DFT integration grid?", "no")  
+        if modify_grid:
+            config["grid_modifications"] = self._get_grid_modifications()
+            
+        return config
+        
+    def _get_expert_sp_config(self) -> Dict[str, Any]:
+        """Get expert SP configuration"""
+        print("\n    Expert SP Setup:")
+        print("    This will create a JSON configuration for full CRYSTALOptToD12.py customization")
+        
+        config_name = f"sp_config_expert.json"
+        config_path = self.working_dir / "workflow_configs" / config_name
+        
+        print(f"    Configuration will be saved as: {config_name}")
+        
+        proceed = yes_no_prompt("    Proceed with expert SP configuration?", "yes")
+        if not proceed:
+            return self._get_advanced_sp_config()
+        
+        expert_config = {
+            "expert_mode": True,
+            "config_file": config_name,
+            "interactive_setup": True,
+            "inherit_geometry": True,
+            "inherit_settings": False
+        }
+        
+        # Create expert template
+        self._create_expert_sp_template(config_path)
+        
+        print(f"    ✅ Expert SP configuration template created: {config_name}")
+        
+        return expert_config
+        
+    def _get_basis_modifications(self) -> Dict[str, Any]:
+        """Get basis set modification settings"""
+        modifications = {}
+        
+        print("      Basis set options:")
+        print("        1: POB-TZVP-REV2 (high quality triple-zeta)")
+        print("        2: def2-TZVP (balanced triple-zeta)")
+        print("        3: Custom basis set")
+        
+        basis_choice = input("      Choose (1-3): ").strip()
+        basis_map = {
+            "1": "POB-TZVP-REV2",
+            "2": "def2-TZVP", 
+            "3": "custom"
+        }
+        
+        if basis_choice in basis_map:
+            modifications["new_basis"] = basis_map[basis_choice]
+            if basis_choice == "3":
+                custom_basis = input("      Enter custom basis set name: ").strip()
+                if custom_basis:
+                    modifications["new_basis"] = custom_basis
+                    
+        return modifications
+        
+    def _get_scf_modifications(self) -> Dict[str, Any]:
+        """Get SCF modification settings"""
+        modifications = {}
+        
+        # TOLDEE
+        modify_toldee = yes_no_prompt("      Change TOLDEE (SCF convergence)?", "no")
+        if modify_toldee:
+            toldee = input("      New TOLDEE value (current: from OPT): ").strip()
+            if toldee:
+                try:
+                    modifications["TOLDEE"] = int(toldee)
+                except ValueError:
+                    print("      Invalid TOLDEE, keeping default")
+                    
+        # FMIXING
+        modify_fmixing = yes_no_prompt("      Change FMIXING (SCF mixing)?", "no")
+        if modify_fmixing:
+            fmixing = input("      New FMIXING value (current: from OPT): ").strip()
+            if fmixing:
+                try:
+                    modifications["FMIXING"] = int(fmixing)
+                except ValueError:
+                    print("      Invalid FMIXING, keeping default")
+                    
+        return modifications
+        
+    def _get_grid_modifications(self) -> Dict[str, Any]:
+        """Get DFT grid modification settings"""
+        modifications = {}
+        
+        print("      DFT integration grid options:")
+        print("        1: XLGRID (extra large, high accuracy)")
+        print("        2: LGRID (large, good accuracy)")
+        print("        3: MGRID (medium, balanced)")
+        
+        grid_choice = input("      Choose grid (1-3): ").strip()
+        grid_map = {
+            "1": "XLGRID",
+            "2": "LGRID",
+            "3": "MGRID"
+        }
+        
+        if grid_choice in grid_map:
+            modifications["new_grid"] = grid_map[grid_choice]
+            
+        return modifications
+        
+    def _create_expert_sp_template(self, config_path: Path):
+        """Create expert SP configuration template"""
+        template = {
+            "calculation_type": "SP",
+            "description": "Expert configuration for single point calculation",
+            "created": datetime.now().isoformat(),
+            
+            # Inheritance settings
+            "inherit_geometry": True,
+            "inherit_basis_set": False,
+            "inherit_method": False,
+            "inherit_scf_settings": False,
+            
+            # Method modifications
+            "method_modifications": {
+                "change_functional": False,
+                "new_functional": "",
+                "change_hybrid_amount": False,
+                "hybrid_amount": 0.25
+            },
+            
+            # Basis set modifications
+            "basis_modifications": {
+                "change_basis": False,
+                "new_basis": "",
+                "basis_type": "internal"
+            },
+            
+            # SCF modifications
+            "scf_modifications": {
+                "change_tolerances": False,
+                "TOLINTEG": "",
+                "TOLDEE": "",
+                "change_mixing": False,
+                "FMIXING": "",
+                "change_cycles": False,
+                "MAXCYCLE": ""
+            },
+            
+            # Grid modifications
+            "grid_modifications": {
+                "change_grid": False,
+                "new_grid": ""
+            },
+            
+            # Instructions
+            "_instructions": {
+                "usage": "Set change_* flags to true and provide new values for customization",
+                "functional_options": "PBE, B3LYP, HSE06, PBE0, SCAN, etc.",
+                "basis_options": "POB-TZVP-REV2, def2-TZVP, cc-pVTZ, etc.",
+                "grid_options": "XLGRID, LGRID, MGRID"
+            }
+        }
+        
+        # Ensure directory exists
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Save template
+        with open(config_path, 'w') as f:
+            json.dump(template, f, indent=2)
+            
+        return template
         
     def configure_analysis_step(self, calc_type: str) -> Dict[str, Any]:
         """Configure band structure or DOS calculation"""
@@ -653,36 +880,316 @@ class WorkflowPlanner:
         return config
         
     def configure_frequency_step(self) -> Dict[str, Any]:
-        """Configure frequency calculation"""
+        """Configure frequency calculation with customization levels"""
         print("  Configuring frequency calculation")
         
-        config = {
-            "calculation_type": "FREQ",
-            "source": "CRYSTALOptToD12.py",
-            "inherit_base_settings": True,
-            "custom_tolerances": {
-                "TOLINTEG": "12 12 12 12 24",
-                "TOLDEE": 12
+        # Ask for customization level
+        print("\n  Frequency Calculation Customization Level:")
+        print("    1. Basic (use sensible defaults)")
+        print("    2. Advanced (customize key parameters)")
+        print("    3. Expert (full control)")
+        
+        while True:
+            try:
+                level = int(input("\n  Select customization level (1-3): "))
+                if 1 <= level <= 3:
+                    break
+                print("  Invalid choice. Please enter 1, 2, or 3.")
+            except ValueError:
+                print("  Invalid input. Please enter a number.")
+        
+        if level == 1:
+            # Basic - use defaults
+            config = {
+                "calculation_type": "FREQ",
+                "source": "CRYSTALOptToD12.py",
+                "inherit_base_settings": True,
+                "frequency_settings": {
+                    "mode": "FREQCALC",
+                    "intensities": True,
+                    "raman": False,
+                    "custom_tolerances": {
+                        "TOLINTEG": "12 12 12 12 24",
+                        "TOLDEE": 12
+                    }
+                }
             }
-        }
+            
+        elif level == 2:
+            # Advanced - customize key parameters
+            config = {
+                "calculation_type": "FREQ",
+                "source": "CRYSTALOptToD12.py",
+                "inherit_base_settings": True,
+                "frequency_settings": {}
+            }
+            
+            # Ask about intensities
+            calc_intensities = input("\n  Calculate IR intensities? [Y/n]: ").strip().lower()
+            config["frequency_settings"]["intensities"] = calc_intensities != 'n'
+            
+            # Ask about Raman
+            calc_raman = input("  Calculate Raman intensities? [y/N]: ").strip().lower()
+            config["frequency_settings"]["raman"] = calc_raman == 'y'
+            
+            # Ask about modes
+            print("\n  Frequency calculation mode:")
+            print("    1. Full frequency calculation (FREQCALC)")
+            print("    2. Partial frequencies (FREQRANGE)")
+            print("    3. Numerical frequencies (NUMFREQ)")
+            
+            mode_choice = input("  Select mode [1]: ").strip() or "1"
+            modes = {
+                "1": "FREQCALC",
+                "2": "FREQRANGE",
+                "3": "NUMFREQ"
+            }
+            config["frequency_settings"]["mode"] = modes.get(mode_choice, "FREQCALC")
+            
+            # Custom tolerances
+            print("\n  Use enhanced tolerances for frequency calculations?")
+            enhanced = input("  [Y/n]: ").strip().lower()
+            if enhanced != 'n':
+                config["frequency_settings"]["custom_tolerances"] = {
+                    "TOLINTEG": "12 12 12 12 24",
+                    "TOLDEE": 12
+                }
+                
+        else:
+            # Expert - run CRYSTALOptToD12.py interactively
+            print("\n  Expert mode: Full interactive configuration")
+            config = {
+                "calculation_type": "FREQ",
+                "source": "CRYSTALOptToD12.py",
+                "interactive": True,
+                "inherit_base_settings": True
+            }
         
         return config
         
     def get_detailed_opt_config(self, calc_type: str, step_num: int) -> Dict[str, Any]:
-        """Get detailed optimization configuration"""
-        # This would integrate with CRYSTALOptToD12.py configuration
-        # For now, return reasonable defaults
-        return {
+        """Get detailed optimization configuration with expert mode"""
+        print(f"    Custom {calc_type} configuration:")
+        print(f"    Choose customization level:")
+        print(f"      1: Basic (optimization type + tolerances)")
+        print(f"      2: Advanced (method + basis set modifications)")
+        print(f"      3: Expert (full CRYSTALOptToD12.py integration)")
+        
+        while True:
+            try:
+                level = int(input("    Enter level (1-3): ").strip())
+                if level in [1, 2, 3]:
+                    break
+                print("    Please enter 1, 2, or 3")
+            except ValueError:
+                print("    Please enter a valid number")
+        
+        config = {
             "calculation_type": "OPT",
-            "optimization_type": "FULLOPTG",
-            "optimization_settings": {
-                "TOLDEG": 0.00003,
-                "TOLDEX": 0.00012,
+            "source": "CRYSTALOptToD12.py",
+            "customization_level": level
+        }
+        
+        if level == 1:
+            # Basic configuration: optimization type and tolerances
+            config.update(self._get_basic_opt_config())
+        elif level == 2:
+            # Advanced configuration: method/basis modifications
+            config.update(self._get_advanced_opt_config())
+        elif level == 3:
+            # Expert configuration: full interactive setup
+            config.update(self._get_expert_opt_config(calc_type, step_num))
+            
+        return config
+    
+    def _get_basic_opt_config(self) -> Dict[str, Any]:
+        """Get basic optimization configuration"""
+        print("\n    Basic Optimization Setup:")
+        
+        # Optimization type
+        print("    Optimization type:")
+        print("      1: FULLOPTG (optimize atoms and cell)")
+        print("      2: ATOMSONLY (optimize atoms only)")
+        print("      3: CELLONLY (optimize cell only)")
+        
+        opt_choice = input("    Choose optimization type (1-3, default 1): ").strip() or "1"
+        opt_types = {"1": "FULLOPTG", "2": "ATOMSONLY", "3": "CELLONLY"}
+        opt_type = opt_types.get(opt_choice, "FULLOPTG")
+        
+        # Enhanced tolerances for subsequent optimizations
+        use_tight = yes_no_prompt("    Use tighter convergence for refined optimization?", "yes")
+        
+        if use_tight:
+            opt_settings = {
+                "TOLDEG": 1.5e-5,   # Tighter than default 3e-5
+                "TOLDEX": 6e-5,     # Tighter than default 1.2e-4  
+                "TOLDEE": 8,        # Tighter than default 7
+                "MAXCYCLE": 1000    # More cycles for convergence
+            }
+        else:
+            opt_settings = {
+                "TOLDEG": 3e-5,
+                "TOLDEX": 1.2e-4,
                 "TOLDEE": 7,
                 "MAXCYCLE": 800
-            },
-            "source": "CRYSTALOptToD12.py"
+            }
+        
+        return {
+            "optimization_type": opt_type,
+            "optimization_settings": opt_settings,
+            "inherit_base_settings": True
         }
+    
+    def _get_advanced_opt_config(self) -> Dict[str, Any]:
+        """Get advanced optimization configuration"""
+        config = self._get_basic_opt_config()
+        
+        print("\n    Advanced Optimization Setup:")
+        
+        # Method modifications
+        modify_method = yes_no_prompt("    Modify DFT method from previous step?", "no")
+        if modify_method:
+            config["modify_method"] = True
+            config["method_settings"] = self._get_method_modifications()
+        
+        # Custom tolerances
+        custom_tolerances = yes_no_prompt("    Set custom TOLINTEG/SCF tolerances?", "no")
+        if custom_tolerances:
+            config["custom_tolerances"] = self._get_custom_tolerances()
+            
+        return config
+    
+    def _get_expert_opt_config(self, calc_type: str, step_num: int) -> Dict[str, Any]:
+        """Get expert optimization configuration with full CRYSTALOptToD12.py integration"""
+        print(f"\n    Expert {calc_type} Setup:")
+        print(f"    This will create a JSON configuration for full CRYSTALOptToD12.py customization")
+        
+        # Create a configuration file name
+        config_name = f"opt_config_{calc_type.lower()}_step_{step_num}.json"
+        config_path = self.working_dir / "workflow_configs" / config_name
+        
+        print(f"    Configuration will be saved as: {config_name}")
+        
+        proceed = yes_no_prompt("    Proceed with expert configuration?", "yes")
+        if not proceed:
+            return self._get_advanced_opt_config()
+        
+        # Expert configuration setup
+        expert_config = {
+            "expert_mode": True,
+            "config_file": config_name,
+            "interactive_setup": True,
+            "inherit_base_settings": False  # Full customization
+        }
+        
+        # Create the expert configuration template
+        self._create_expert_opt_template(config_path, calc_type, step_num)
+        
+        print(f"    ✅ Expert configuration template created: {config_name}")
+        print(f"    This will be used by CRYSTALOptToD12.py for interactive setup")
+        
+        return expert_config
+    
+    def _get_method_modifications(self) -> Dict[str, Any]:
+        """Get DFT method modification settings"""
+        modifications = {}
+        
+        # Functional change
+        change_functional = yes_no_prompt("      Change DFT functional?", "no")
+        if change_functional:
+            print("      Common functional changes for refinement:")
+            print("        1: PBE → HSE06 (hybrid for better band gaps)")
+            print("        2: B3LYP → PBE0 (different hybrid)")
+            print("        3: Custom functional")
+            
+            func_choice = input("      Choose (1-3 or 'n' to skip): ").strip()
+            if func_choice in ["1", "2", "3"]:
+                modifications["change_functional"] = func_choice
+        
+        # Basis set change
+        change_basis = yes_no_prompt("      Change basis set?", "no")
+        if change_basis:
+            modifications["change_basis"] = True
+            
+        return modifications
+    
+    def _get_custom_tolerances(self) -> Dict[str, Any]:
+        """Get custom tolerance settings"""
+        tolerances = {}
+        
+        print("      Custom tolerance settings:")
+        
+        # TOLINTEG
+        custom_tolinteg = input("      TOLINTEG (e.g., '8 8 8 8 16', default: use previous): ").strip()
+        if custom_tolinteg:
+            tolerances["TOLINTEG"] = custom_tolinteg
+            
+        # TOLDEE
+        custom_toldee = input("      TOLDEE (default: use previous): ").strip()
+        if custom_toldee:
+            try:
+                tolerances["TOLDEE"] = int(custom_toldee)
+            except ValueError:
+                print("      Invalid TOLDEE, using previous value")
+        
+        return tolerances
+    
+    def _create_expert_opt_template(self, config_path: Path, calc_type: str, step_num: int):
+        """Create expert configuration template for CRYSTALOptToD12.py"""
+        template = {
+            "calculation_type": "OPT",
+            "step_number": step_num,
+            "optimization_type": "FULLOPTG",
+            "description": f"Expert configuration for {calc_type} step {step_num}",
+            "created": datetime.now().isoformat(),
+            
+            # Base settings to inherit or modify
+            "inherit_geometry": True,
+            "inherit_basis_set": True,
+            "inherit_method": True,
+            
+            # Customizable parameters
+            "optimization_settings": {
+                "TOLDEG": 1.5e-5,
+                "TOLDEX": 6e-5,
+                "TOLDEE": 8,
+                "MAXCYCLE": 1000
+            },
+            
+            # Advanced options (to be filled interactively)
+            "method_modifications": {
+                "change_functional": False,
+                "new_functional": "",
+                "change_basis": False,
+                "new_basis": "",
+                "change_grid": False,
+                "new_grid": ""
+            },
+            
+            "scf_modifications": {
+                "change_tolerances": False,
+                "TOLINTEG": "",
+                "TOLDEE": "",
+                "change_mixing": False,
+                "FMIXING": ""
+            },
+            
+            # Instructions for interactive use
+            "_instructions": {
+                "usage": "This file will be used by CRYSTALOptToD12.py for interactive configuration",
+                "modify": "Set change_* flags to true and provide new values for customization",
+                "inherit": "Set inherit_* flags to false to completely override settings"
+            }
+        }
+        
+        # Ensure directory exists
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Save template
+        with open(config_path, 'w') as f:
+            json.dump(template, f, indent=2)
+        
+        return template
         
     def get_custom_sp_settings(self) -> Dict[str, Any]:
         """Get custom single point settings"""
@@ -714,7 +1221,7 @@ class WorkflowPlanner:
         
     def get_required_scripts(self, calc_type: str) -> List[str]:
         """Determine which SLURM scripts are needed for a calculation type"""
-        if calc_type in ["OPT", "SP", "FREQ"]:
+        if calc_type in ["OPT", "OPT2", "SP", "FREQ"]:
             return ["submitcrystal23.sh"]
         elif calc_type in ["BAND", "DOSS", "TRANSPORT"]:
             return ["submit_prop.sh"]
@@ -805,6 +1312,7 @@ class WorkflowPlanner:
         # Resource scaling based on workflows.yaml analysis
         scaling_rules = {
             "OPT": {"walltime_factor": 1.0, "memory_factor": 1.0},  # Standard - 7 days
+            "OPT2": {"walltime_factor": 1.0, "memory_factor": 1.0}, # Second opt - 7 days
             "SP": {"walltime_factor": 0.43, "memory_factor": 0.8}, # 3 days (3/7 ≈ 0.43)
             "FREQ": {"walltime_factor": 1.0, "memory_factor": 1.5}, # 7 days (same as OPT)
             "BAND": {"walltime_factor": 1.0, "memory_factor": 0.6}, # 1 day (base is already 1 day)
