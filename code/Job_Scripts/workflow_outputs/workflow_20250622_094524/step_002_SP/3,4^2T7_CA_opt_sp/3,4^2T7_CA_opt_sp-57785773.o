@@ -1,0 +1,95 @@
+submit directory: 
+/mnt/ffs24/home/djokicma/test/workflow_outputs/workflow_20250622_094524/step_002_SP/3,4^2T7_CA_opt_sp
+Error recovery enabled with max 3 attempts per job
+
+=== Queue Manager Callback (completion) - 2025-06-22 13:01:39.657175 ===
+  Scanning for completed calculations...
+Found completed OPT: 1_dia_opt
+Found completed OPT: 2_dia2_opt
+Found completed OPT: 3,4^2T1-CA_opt
+Found completed OPT: 3,4^2T7_CA_opt
+Found completed OPT: 3,4^2T9-CA_opt
+Found completed OPT: 3.4^2T137
+Found completed OPT: 3.4^9T2
+Found completed OPT: 3_dia3_opt
+Found completed SP: 1_dia_opt
+Found completed SP: 2_dia2_opt
+Found completed SP: 3,4^2T1-CA_opt
+Found completed SP: 3,4^2T7_CA_opt
+Found completed SP: 3,4^2T9-CA_opt
+  Found 13 completed calculations
+  Skipping OPT for 1_dia_opt - already in database as completed
+  Skipping OPT for 2_dia2_opt - already in database as completed
+  Skipping OPT for 3,4^2T1-CA_opt - already in database as completed
+  Skipping OPT for 3,4^2T7_CA_opt - already in database as completed
+  Skipping OPT for 3,4^2T9-CA_opt - already in database as completed
+  Skipping OPT for 3.4^2T137 - already in database as completed
+  Skipping OPT for 3.4^9T2 - already in database as completed
+  Skipping OPT for 3_dia3_opt - already in database as completed
+  Skipping SP for 1_dia_opt - already in database as completed
+  Skipping SP for 2_dia2_opt - already in database as completed
+  Skipping SP for 3,4^2T1-CA_opt - already in database as completed
+  Updating existing SP calculation: 3,4^2T7_CA_opt_SP_20250622_103208 -> completed
+  Added SP calculation: 3,4^2T7_CA_opt_SP_20250622_103208
+  Skipping SP for 3,4^2T9-CA_opt - already in database as completed
+  Added 1 new calculations to database
+  Checking property extraction for completed calculations...
+  ✅ Skipping 1_dia_opt_OPT_20250622_094524 - properties already extracted
+  ✅ Skipping 2_dia2_opt_OPT_20250622_094525 - properties already extracted
+  ✅ Skipping 3,4^2T1-CA_opt_OPT_20250622_094525 - properties already extracted
+  ✅ Skipping 3,4^2T7_CA_opt_OPT_20250622_094526 - properties already extracted
+  ✅ Skipping 3,4^2T9-CA_opt_OPT_20250622_094526 - properties already extracted
+  ✅ Skipping 3.4^2T137_opt_OPT_20250622_094526 - properties already extracted
+  ✅ Skipping 3.4^9T2_opt_OPT_20250622_094526 - properties already extracted
+  ✅ Skipping 3_dia3_opt_OPT_20250622_094526 - properties already extracted
+  ✅ Skipping 1_dia_opt_SP_20250622_095225 - properties already extracted
+  ✅ Skipping 2_dia2_opt_SP_20250622_095744 - properties already extracted
+  ✅ Skipping 3,4^2T1-CA_opt_SP_20250622_095949 - properties already extracted
+  🔍 Processing completed calculation: 3,4^2T7_CA_opt_SP_20250622_103208
+  🔍 Extracting properties from 3,4^2T7_CA_opt_sp.out
+🔍 Extracting properties from: 3,4^2T7_CA_opt_sp.out
+  ✅ Extracted and saved 70 properties
+  📝 Updated material 3,4^2T7_CA_opt: formula=N, space_group=200
+  ✅ Skipping 3,4^2T9-CA_opt_SP_20250622_104116 - properties already extracted
+  Triggering workflow progression...
+Executing workflow step after SP completion for 3,4^2T7_CA_opt
+SP completed. Planned sequence: None
+No planned sequence found. Using default: generating both DOSS and BAND...
+Generating DOSS calculation
+Copied 3,4^2T7_CA_opt_sp.d12 to isolated directory
+Copied 3,4^2T7_CA_opt_sp.out to isolated directory
+Copied 3,4^2T7_CA_opt_sp.f9 to isolated directory
+  Using template: /mnt/ffs24/home/djokicma/test/workflow_scripts/submit_prop_doss_4.sh
+  Template exists: True
+  WARNING: Template /mnt/ffs24/home/djokicma/test/workflow_scripts/submit_prop_doss_4.sh appears to be a script generator, not a direct SLURM script
+  This will cause submission issues. Consider using a direct SLURM template.
+  Template content starts with: #!/bin/bash
+"""
+This script generates and submits SLURM job scripts for running CRYSTAL23 Ppropertie...
+  Successfully created script: /mnt/ffs24/home/djokicma/test/workflow_outputs/workflow_20250622_094524/step_004_DOSS/3,4^2T7_CA_opt_doss/3,4^2T7_CA_opt_doss.sh
+  Script exists: True
+  Reading script file: 3,4^2T7_CA_opt_doss.sh (from work_dir: /mnt/ffs24/home/djokicma/test/workflow_outputs/workflow_20250622_094524/step_004_DOSS/3,4^2T7_CA_opt_doss)
+  Running script generator locally: 3,4^2T7_CA_opt_doss.sh with job name: 3,4^2T7_CA_opt_doss
+Generated and submitted DOSS calculation 3,4^2T7_CA_opt_DOSS_20250622_130143: Job 57787893
+Generating BAND calculation
+Copied 3,4^2T7_CA_opt_sp.d12 to isolated directory
+Copied 3,4^2T7_CA_opt_sp.out to isolated directory
+Copied 3,4^2T7_CA_opt_sp.f9 to isolated directory
+  Using template: /mnt/ffs24/home/djokicma/test/workflow_scripts/submit_prop_band_3.sh
+  Template exists: True
+  WARNING: Template /mnt/ffs24/home/djokicma/test/workflow_scripts/submit_prop_band_3.sh appears to be a script generator, not a direct SLURM script
+  This will cause submission issues. Consider using a direct SLURM template.
+  Template content starts with: #!/bin/bash
+"""
+This script generates and submits SLURM job scripts for running CRYSTAL23 Ppropertie...
+  Successfully created script: /mnt/ffs24/home/djokicma/test/workflow_outputs/workflow_20250622_094524/step_003_BAND/3,4^2T7_CA_opt_band/3,4^2T7_CA_opt_band.sh
+  Script exists: True
+  Reading script file: 3,4^2T7_CA_opt_band.sh (from work_dir: /mnt/ffs24/home/djokicma/test/workflow_outputs/workflow_20250622_094524/step_003_BAND/3,4^2T7_CA_opt_band)
+  Running script generator locally: 3,4^2T7_CA_opt_band.sh with job name: 3,4^2T7_CA_opt_band
+Generated and submitted BAND calculation 3,4^2T7_CA_opt_BAND_20250622_130144: Job 57787896
+Generated 2 new calculations: ['3,4^2T7_CA_opt_DOSS_20250622_130143', '3,4^2T7_CA_opt_BAND_20250622_130144']
+  Workflow engine initiated 2 new workflow steps
+  Automatic progression to next calculation type initiated
+Database Stats: 8 materials, 28 calculations
+=== Callback Complete ===
+

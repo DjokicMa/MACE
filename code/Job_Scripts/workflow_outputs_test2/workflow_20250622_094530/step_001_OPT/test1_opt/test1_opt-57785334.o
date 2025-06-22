@@ -1,0 +1,32 @@
+submit directory: 
+/mnt/ffs24/home/djokicma/test2/workflow_outputs/workflow_20250622_094530/step_001_OPT/test1_opt
+Error recovery enabled with max 3 attempts per job
+
+=== Queue Manager Callback (completion) - 2025-06-22 11:29:10.914248 ===
+  Scanning for completed calculations...
+Found completed OPT: test1
+  Found 1 completed calculations
+Creating material record for: test1
+  Creating new OPT calculation for test1 (no existing submission found)
+  Added OPT calculation: test1_OPT_20250622_112911
+  Added 1 new calculations to database
+  Checking property extraction for completed calculations...
+  🔍 Processing completed calculation: test1_opt_OPT_20250622_094530
+  🔍 Extracting properties from test1_opt.out
+🔍 Extracting properties from: test1_opt.out
+  ✅ Extracted and saved 102 properties
+  📝 Updated material test1_opt: formula=C, space_group=227
+  Triggering workflow progression...
+Executing workflow step after OPT completion for test1
+Generating SP calculation from OPT test1_OPT_20250622_112911
+Copied test1_opt.out to isolated directory
+Copied test1_opt.d12 to isolated directory
+  Using template: /mnt/ffs24/home/djokicma/test2/workflow_scripts/submitcrystal23_sp_2.sh
+  Template exists: False
+  Fallback template: /mnt/ffs24/home/djokicma/test2/submitcrystal23.sh
+  Fallback exists: False
+  Error in workflow progression: No SLURM template found for SP
+  Check workflow engine and database integrity
+Database Stats: 1 materials, 9 calculations
+=== Callback Complete ===
+

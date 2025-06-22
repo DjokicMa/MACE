@@ -1,0 +1,14 @@
+BAND
+3,4^2T9-CA_opt_sp.out
+10 0 1000 1 216 1 0
+S G
+G T
+T U
+U G
+G R
+R X
+X G
+G Y
+Y Z
+Z G
+END
