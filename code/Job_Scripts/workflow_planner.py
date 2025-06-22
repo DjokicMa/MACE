@@ -535,8 +535,15 @@ class WorkflowPlanner:
                 else:
                     calc = calc_input.upper()
                 
-                # Handle numbered calculations automatically
-                if calc in ["OPT", "SP", "BAND", "DOSS", "FREQ"]:
+                # Check if it's in the available types list (handles numbered versions like OPT2, SP3)
+                if calc in available_types:
+                    if self._validate_numbered_calc_addition(sequence, calc):
+                        sequence.append(calc)
+                        print(f"Added {calc}. Current: {' → '.join(sequence)}")
+                    else:
+                        print(f"Cannot add {calc} - check dependencies")
+                # Handle base calculations (OPT, SP, etc.) - auto-number them
+                elif calc in ["OPT", "SP", "BAND", "DOSS", "FREQ"]:
                     numbered_calc = self._get_next_numbered_calc(sequence, calc)
                     if self._validate_numbered_calc_addition(sequence, numbered_calc):
                         sequence.append(numbered_calc)
@@ -930,12 +937,7 @@ class WorkflowPlanner:
     def _get_expert_sp_config(self) -> Dict[str, Any]:
         """Get expert SP configuration"""
         print("\n    Expert SP Setup:")
-        print("    This will create a JSON configuration for full CRYSTALOptToD12.py customization")
-        
-        config_name = f"sp_config_expert.json"
-        config_path = self.work_dir / "workflow_configs" / config_name
-        
-        print(f"    Configuration will be saved as: {config_name}")
+        print("    This will run CRYSTALOptToD12.py interactively for full customization")
         
         proceed = yes_no_prompt("    Proceed with expert SP configuration?", "yes")
         if not proceed:
@@ -943,16 +945,14 @@ class WorkflowPlanner:
         
         expert_config = {
             "expert_mode": True,
-            "config_file": config_name,
             "interactive_setup": True,
             "inherit_geometry": True,
-            "inherit_settings": False
+            "inherit_settings": False,
+            "run_interactive": True  # This flag will trigger interactive CRYSTALOptToD12.py
         }
         
-        # Create expert template
-        self._create_expert_sp_template(config_path)
-        
-        print(f"    ✅ Expert SP configuration template created: {config_name}")
+        print(f"    ✅ Expert SP configuration will run CRYSTALOptToD12.py interactively during workflow execution")
+        print(f"    You will be prompted for all configuration details when the SP step is reached")
         
         return expert_config
         
@@ -1027,69 +1027,6 @@ class WorkflowPlanner:
             modifications["new_grid"] = grid_map[grid_choice]
             
         return modifications
-        
-    def _create_expert_sp_template(self, config_path: Path):
-        """Create expert SP configuration template"""
-        template = {
-            "calculation_type": "SP",
-            "description": "Expert configuration for single point calculation",
-            "created": datetime.now().isoformat(),
-            
-            # Inheritance settings
-            "inherit_geometry": True,
-            "inherit_basis_set": False,
-            "inherit_method": False,
-            "inherit_scf_settings": False,
-            
-            # Method modifications
-            "method_modifications": {
-                "change_functional": False,
-                "new_functional": "",
-                "change_hybrid_amount": False,
-                "hybrid_amount": 0.25
-            },
-            
-            # Basis set modifications
-            "basis_modifications": {
-                "change_basis": False,
-                "new_basis": "",
-                "basis_type": "internal"
-            },
-            
-            # SCF modifications
-            "scf_modifications": {
-                "change_tolerances": False,
-                "TOLINTEG": "",
-                "TOLDEE": "",
-                "change_mixing": False,
-                "FMIXING": "",
-                "change_cycles": False,
-                "MAXCYCLE": ""
-            },
-            
-            # Grid modifications
-            "grid_modifications": {
-                "change_grid": False,
-                "new_grid": ""
-            },
-            
-            # Instructions
-            "_instructions": {
-                "usage": "Set change_* flags to true and provide new values for customization",
-                "functional_options": "PBE, B3LYP, HSE06, PBE0, SCAN, etc.",
-                "basis_options": "POB-TZVP-REV2, def2-TZVP, cc-pVTZ, etc.",
-                "grid_options": "XLGRID, LGRID, MGRID"
-            }
-        }
-        
-        # Ensure directory exists
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Save template
-        with open(config_path, 'w') as f:
-            json.dump(template, f, indent=2)
-            
-        return template
         
     def configure_analysis_step(self, calc_type: str) -> Dict[str, Any]:
         """Configure band structure or DOS calculation"""

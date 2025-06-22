@@ -57,6 +57,8 @@ def copy_dependencies(target_dir: str = "."):
                 "additional_properties_analyzer.py",
                 "show_properties.py",
                 "workflow_status.py",
+                "workflow_callback.py",
+                "check_workflows.py",
                 "copy_dependencies.py"
             ]
         },

@@ -1084,6 +1084,37 @@ fi'''
         else:
             script_path = Path(__file__).parent.parent / "Crystal_To_CIF" / "CRYSTALOptToD12.py"
         
+        # Check if this should run interactively (expert mode)
+        if config.get("run_interactive", False) or config.get("interactive", False):
+            print(f"      Running CRYSTALOptToD12.py interactively for expert {calc_type} configuration")
+            
+            # Run CRYSTALOptToD12.py interactively
+            cmd = [
+                sys.executable, str(script_path),
+                "--out-file", output_file,
+                "--d12-file", input_file,
+                "--output-dir", str(output_dir),
+                "--calc-type", calc_type if calc_type != "OPT2" else "OPT"
+            ]
+            
+            try:
+                # Run interactively (no capture_output so user can interact)
+                print(f"      Launching interactive configuration...")
+                print(f"      Command: {' '.join(cmd)}")
+                result = subprocess.run(cmd)
+                if result.returncode == 0:
+                    print(f"      Successfully generated {calc_type} input interactively")
+                    
+                    # Fix naming for OPT2 files
+                    if calc_type == "OPT2":
+                        self._fix_opt2_naming(output_dir, Path(output_file).stem)
+                else:
+                    print(f"      Interactive {calc_type} generation failed or was cancelled")
+            except Exception as e:
+                print(f"      Error running interactive mode: {e}")
+            return
+        
+        # Non-interactive mode (batch with config file)
         # Create temporary config for CRYSTALOptToD12.py
         temp_config = self.temp_dir / f"temp_crystal_opt_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         
