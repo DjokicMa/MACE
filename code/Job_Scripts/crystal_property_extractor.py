@@ -81,6 +81,9 @@ class CrystalPropertyExtractor:
         # Add electronic classification based on band gap
         properties.update(self._classify_electronic_properties(properties))
         
+        # Advanced electronic analysis using BAND/DOSS data if available
+        properties.update(self._extract_advanced_band_dos_analysis(output_file, properties))
+        
         # Add metadata
         properties['_metadata'] = {
             'material_id': material_id,
@@ -301,6 +304,76 @@ class CrystalPropertyExtractor:
             if indirect_match:
                 props['indirect_band_gap'] = float(indirect_match.group(1))
                 props['band_gap_type'] = 'indirect'
+        
+        # Add advanced electronic properties
+        props.update(self._extract_advanced_electronic_properties(content))
+        
+        return props
+    
+    def _extract_advanced_electronic_properties(self, content: str) -> Dict[str, Any]:
+        """Extract advanced electronic properties like effective mass and transport properties."""
+        props = {}
+        
+        # Effective mass estimation from band gaps
+        # This is a simplified estimation - real effective mass requires band structure data
+        if 'band_gap' in content.lower():
+            gap_matches = re.findall(r'(?:DIRECT|INDIRECT)?\s*(?:ENERGY\s+)?BAND GAP:\s*([\d.]+)\s*eV', content)
+            if gap_matches:
+                band_gap = float(gap_matches[-1])
+                
+                # Simplified effective mass estimation (placeholder for now)
+                # Real implementation would analyze band curvature from BAND calculations
+                if band_gap > 0:
+                    # Rough estimation: smaller gaps often correlate with lighter masses
+                    # This is very approximate and should be replaced with real band structure analysis
+                    estimated_electron_mass = 0.1 + (band_gap / 10.0)  # in m_e units
+                    estimated_hole_mass = 0.2 + (band_gap / 8.0)       # in m_e units
+                    
+                    props.update({
+                        'estimated_electron_effective_mass': estimated_electron_mass,
+                        'estimated_hole_effective_mass': estimated_hole_mass,
+                        'effective_mass_method': 'gap_based_estimation'
+                    })
+        
+        # Carrier mobility estimation (very simplified)
+        if 'estimated_electron_effective_mass' in props:
+            # Simple mobility estimation using μ = qτ/m* with assumed scattering time
+            # This is a placeholder - real mobility requires detailed scattering analysis
+            assumed_scattering_time = 1e-14  # seconds (rough assumption)
+            electron_charge = 1.602e-19      # Coulombs
+            electron_mass_kg = 9.109e-31     # kg
+            
+            m_star_electron = props['estimated_electron_effective_mass'] * electron_mass_kg
+            m_star_hole = props['estimated_hole_effective_mass'] * electron_mass_kg
+            
+            # Mobility in cm²/(V·s)
+            electron_mobility = (electron_charge * assumed_scattering_time / m_star_electron) * 1e4
+            hole_mobility = (electron_charge * assumed_scattering_time / m_star_hole) * 1e4
+            
+            props.update({
+                'estimated_electron_mobility': electron_mobility,
+                'estimated_hole_mobility': hole_mobility,
+                'mobility_method': 'effective_mass_estimation'
+            })
+        
+        # Conductivity type from band gap
+        if 'band_gap' in content.lower():
+            gap_matches = re.findall(r'(?:DIRECT|INDIRECT)?\s*(?:ENERGY\s+)?BAND GAP:\s*([\d.]+)\s*eV', content)
+            if gap_matches:
+                band_gap = float(gap_matches[-1])
+                if band_gap < 0.1:
+                    props['conductivity_classification'] = 'metallic'
+                elif band_gap < 3.0:
+                    props['conductivity_classification'] = 'semiconducting'
+                else:
+                    props['conductivity_classification'] = 'insulating'
+        
+        # Dielectric properties (placeholder - would need specific CRYSTAL output)
+        # This would be extracted from frequency calculations or dielectric tensor output
+        props.update({
+            'has_dielectric_data': False,
+            'dielectric_extraction_note': 'requires_frequency_calculation'
+        })
         
         return props
     
@@ -1342,26 +1415,55 @@ class CrystalPropertyExtractor:
     
     def _get_property_unit(self, prop_name: str) -> str:
         """Get the appropriate unit for a property."""
+        prop_lower = prop_name.lower()
         
-        # Energy properties
-        if any(x in prop_name.lower() for x in ['energy', 'gap']) and prop_name.endswith('_ev'):
+        # Energy properties (check specific patterns first)
+        if any(x in prop_lower for x in ['energy', 'gap']) and prop_name.endswith('_ev'):
             return 'eV'
-        elif any(x in prop_name.lower() for x in ['energy', 'gap']) and prop_name.endswith('_au'):
+        elif any(x in prop_lower for x in ['energy', 'gap']) and prop_name.endswith('_au'):
             return 'Hartree'
-        elif 'band_gap' in prop_name.lower() or 'gap' in prop_name.lower():
+        elif 'band_gap' in prop_lower:
+            return 'eV'
+        elif 'fermi_energy' in prop_lower:
+            return 'eV'
+        elif prop_lower.endswith('_energy') and not 'lattice' in prop_lower:
             return 'eV'
         
-        # Lattice parameters
-        elif any(x in prop_name.lower() for x in ['primitive_a', 'primitive_b', 'primitive_c', 'crystallographic_a', 'crystallographic_b', 'crystallographic_c']):
-            return 'Å'
-        elif any(x in prop_name.lower() for x in ['alpha', 'beta', 'gamma']) and 'primitive' in prop_name:
+        # Angles MUST come before length parameters to avoid conflicts
+        elif any(x in prop_lower for x in ['alpha', 'beta', 'gamma']) and any(y in prop_lower for y in ['primitive', 'crystallographic', 'cell']):
             return 'degrees'
-        elif 'volume' in prop_name.lower():
+        
+        # Volumes MUST come before length parameters
+        elif 'volume' in prop_lower:
             return 'Å³'
-        elif 'density' in prop_name.lower():
+        
+        # Density
+        elif 'density' in prop_lower:
             return 'g/cm³'
-        elif 'distance' in prop_name.lower():
+        
+        # Length parameters (lattice constants, distances)
+        elif any(x in prop_lower for x in ['primitive_a', 'primitive_b', 'primitive_c', 'crystallographic_a', 'crystallographic_b', 'crystallographic_c']):
             return 'Å'
+        elif 'distance' in prop_lower:
+            return 'Å'
+        
+        # Advanced electronic properties
+        elif 'effective_mass' in prop_lower:
+            return 'm_e'  # electron mass units
+        elif 'mobility' in prop_lower:
+            return 'cm²/(V·s)'
+        elif 'conductivity' in prop_lower and 'classification' not in prop_lower:
+            return 'S/m'  # Siemens per meter
+        elif 'seebeck' in prop_lower:
+            return 'μV/K'  # microvolts per Kelvin
+        elif 'thermal_conductivity' in prop_lower:
+            return 'W/(m·K)'
+        elif 'dielectric' in prop_lower and 'constant' in prop_lower:
+            return 'dimensionless'
+        elif 'refractive_index' in prop_lower:
+            return 'dimensionless'
+        elif 'absorption' in prop_lower:
+            return 'cm⁻¹'
         
         # Count properties (dimensionless)
         elif any(x in prop_name.lower() for x in ['atoms_count', 'coordination_number', 'atoms_in_unit_cell', 'shells']):
@@ -1432,6 +1534,117 @@ class CrystalPropertyExtractor:
         # Default for unknown properties
         else:
             return 'dimensionless'
+
+
+    def _extract_advanced_band_dos_analysis(self, output_file: Path, properties: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract advanced electronic properties using BAND/DOSS data analysis.
+        
+        Uses sophisticated DOS/BAND analysis for accurate effective mass and classification.
+        """
+        advanced_props = {}
+        
+        try:
+            from advanced_electronic_analyzer import AdvancedElectronicAnalyzer
+            
+            # Look for BAND.DAT and DOSS.DAT files in the same directory
+            output_dir = output_file.parent
+            
+            # Find BAND and DOSS data files
+            band_files = list(output_dir.glob("*.BAND.DAT")) + list(output_dir.glob("*_band.BAND.DAT"))
+            doss_files = list(output_dir.glob("*.DOSS.DAT")) + list(output_dir.glob("*_doss.DOSS.DAT"))
+            
+            band_file = band_files[0] if band_files else None
+            doss_file = doss_files[0] if doss_files else None
+            
+            if not band_file and not doss_file:
+                # No advanced data available
+                advanced_props['advanced_analysis_available'] = False
+                advanced_props['advanced_analysis_note'] = 'No BAND.DAT or DOSS.DAT files found'
+                return advanced_props
+            
+            # Perform advanced analysis
+            analyzer = AdvancedElectronicAnalyzer()
+            analysis_results = analyzer.analyze_material(band_file, doss_file)
+            
+            # Map results to our property naming convention
+            advanced_props['advanced_analysis_available'] = True
+            advanced_props['advanced_analysis_method'] = analysis_results.get('analysis_method', 'unknown')
+            
+            # Electronic classification (override basic classification if we have better data)
+            if 'electronic_classification' in analysis_results:
+                advanced_props['electronic_classification_advanced'] = analysis_results['electronic_classification']
+                
+                # Update the main classification if we have better data
+                if band_file and doss_file:
+                    # We have both BAND and DOSS - this is the most accurate
+                    advanced_props['electronic_classification'] = analysis_results['electronic_classification']
+                    advanced_props['classification_gap_source'] = analysis_results.get('gap_source', 'unknown')
+            
+            # Real effective masses from band structure
+            if analysis_results.get('has_real_effective_mass'):
+                if analysis_results.get('electron_effective_mass') is not None:
+                    advanced_props['real_electron_effective_mass'] = analysis_results['electron_effective_mass']
+                if analysis_results.get('hole_effective_mass') is not None:
+                    advanced_props['real_hole_effective_mass'] = analysis_results['hole_effective_mass']
+                if analysis_results.get('average_effective_mass') is not None:
+                    advanced_props['real_average_effective_mass'] = analysis_results['average_effective_mass']
+                
+                advanced_props['effective_mass_calculation_method'] = analysis_results.get('calculation_method', 'unknown')
+            
+            # Semimetal detection
+            advanced_props['is_semimetal_advanced'] = analysis_results.get('is_semimetal', False)
+            
+            # DOS analysis results
+            if analysis_results.get('dos_data_available'):
+                advanced_props['dos_at_fermi_level'] = analysis_results.get('dos_at_fermi', 0.0)
+                advanced_props['dos_threshold'] = analysis_results.get('dos_threshold', 0.0)
+                advanced_props['dos_mean'] = analysis_results.get('dos_mean', 0.0)
+                advanced_props['dos_analysis_gcrit_factor'] = analysis_results.get('gcrit_factor', 0.0)
+            
+            # Band structure analysis results
+            if analysis_results.get('band_data_available'):
+                advanced_props['band_structure_k_points'] = analysis_results.get('band_k_points', 0)
+                if 'band_structure_range' in analysis_results:
+                    k_range = analysis_results['band_structure_range']
+                    advanced_props['band_structure_k_range_min'] = k_range[0]
+                    advanced_props['band_structure_k_range_max'] = k_range[1]
+            
+            # Enhanced transport properties
+            if 'electron_mobility_estimate' in analysis_results:
+                advanced_props['real_electron_mobility'] = analysis_results['electron_mobility_estimate']
+            if 'hole_mobility_estimate' in analysis_results:
+                advanced_props['real_hole_mobility'] = analysis_results['hole_mobility_estimate']
+            
+            advanced_props['conductivity_type_advanced'] = analysis_results.get('conductivity_type', 'unknown')
+            advanced_props['conductivity_estimate_advanced'] = analysis_results.get('conductivity_estimate', 'unknown')
+            
+            # Gap information with source tracking
+            if 'gap_ev' in analysis_results:
+                advanced_props['band_gap_advanced_ev'] = analysis_results['gap_ev']
+            if 'gap_hartree' in analysis_results:
+                advanced_props['band_gap_advanced_ha'] = analysis_results['gap_hartree']
+            
+            # Analysis metadata
+            files_analyzed = analysis_results.get('files_analyzed', {})
+            if files_analyzed.get('band_file'):
+                advanced_props['band_file_analyzed'] = files_analyzed['band_file']
+            if files_analyzed.get('doss_file'):
+                advanced_props['doss_file_analyzed'] = files_analyzed['doss_file']
+                
+            print(f"      🚀 Advanced analysis: {analysis_results['electronic_classification']} classification")
+            if analysis_results.get('has_real_effective_mass'):
+                print(f"      📊 Real effective masses calculated from band structure")
+            
+        except ImportError:
+            advanced_props['advanced_analysis_available'] = False
+            advanced_props['advanced_analysis_note'] = 'AdvancedElectronicAnalyzer not available'
+        except Exception as e:
+            advanced_props['advanced_analysis_available'] = False
+            advanced_props['advanced_analysis_error'] = str(e)
+            print(f"      ⚠️  Advanced analysis failed: {e}")
+        
+        return advanced_props
 
 
 def main():

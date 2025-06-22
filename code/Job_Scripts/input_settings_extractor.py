@@ -286,8 +286,11 @@ def _extract_functional_info(content: str) -> Dict[str, Any]:
             
     elif 'HYBRID' in content.upper():
         functional_info['method'] = 'Hybrid'
-    else:
-        functional_info['method'] = 'HF'
+    elif 'HF' in content.upper() or 'HARTREE' in content.upper():
+        # Only assign HF if it's clearly a Hartree-Fock calculation, not D3 property files
+        if not any(prop_type in content.upper() for prop_type in ['BAND', 'DOSS', 'NEWK']):
+            functional_info['method'] = 'HF'
+    # For D3 files, don't assign method - settings inherited from previous calculation
     
     return functional_info
 
@@ -314,6 +317,66 @@ def _extract_property_parameters(content: str) -> Dict[str, Any]:
     if newk_match:
         k_values = [int(x) for x in newk_match.group(1).split()]
         prop_params['k_path_points'] = k_values
+    
+    # Extract k-path labels for BAND calculations
+    if 'BAND' in content.upper():
+        k_path_labels = []
+        k_path_segments = []
+        lines = content.split('\n')
+        in_kpath_section = False
+        
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if line.upper() == 'BAND':
+                in_kpath_section = True
+                continue
+            elif line.upper() == 'END' and in_kpath_section:
+                break
+            elif in_kpath_section and line and not line.endswith('.out'):
+                # Skip the first few lines (typically parameters) and find k-point labels
+                if i > 2 and ' ' in line and not line.startswith('#'):
+                    k_points = line.split()
+                    if len(k_points) >= 2:
+                        # Extract k-point labels (typically first two items)
+                        start_point = k_points[0]
+                        end_point = k_points[1]
+                        k_path_labels.extend([start_point, end_point])
+                        k_path_segments.append(f"{start_point} {end_point}")
+        
+        if k_path_labels:
+            # Store both individual labels and path segments
+            unique_labels = list(dict.fromkeys(k_path_labels))  # Preserve order, remove duplicates
+            prop_params['k_path_labels'] = unique_labels
+            prop_params['k_path_segments'] = k_path_segments
+            
+            # Create condensed k-path format with proper continuity handling
+            # Example: 'X G', 'G L', 'L W', 'W G' -> 'X G L W G'
+            # Example: 'X G', 'G L', 'G W', 'W G' -> 'X G L|G W G'
+            condensed_segments = []
+            current_path = []
+            
+            for segment in k_path_segments:
+                points = segment.split()
+                if len(points) == 2:
+                    start_point, end_point = points
+                    
+                    # If this is the first segment or continues from previous
+                    if not current_path:
+                        current_path = [start_point, end_point]
+                    elif current_path[-1] == start_point:
+                        # Continuous path - just add the end point
+                        current_path.append(end_point)
+                    else:
+                        # Discontinuous path - finish current and start new
+                        condensed_segments.append(' '.join(current_path))
+                        current_path = [start_point, end_point]
+            
+            # Add the final path segment
+            if current_path:
+                condensed_segments.append(' '.join(current_path))
+            
+            # Join with | for discontinuous segments
+            prop_params['k_path_condensed'] = '|'.join(condensed_segments)
     
     # Extract DOSS parameters
     doss_match = re.search(r'DOSS\s+([\d\s.-]+)', content.upper())

@@ -128,6 +128,26 @@ class WorkflowExecutor:
         print("  Pre-generating calculation configurations...")
         self.generate_calculation_configs(plan, workflow_id)
         
+    def organize_existing_d12s(self, plan: Dict[str, Any], workflow_id: str):
+        """Organize existing D12 files into workflow structure"""
+        workflow_dir = self.outputs_dir / workflow_id
+        step_001_dir = workflow_dir / "step_001_OPT"
+        step_001_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Just reference that files should be copied to step directory
+        print(f"    D12 files should be organized in: {step_001_dir}")
+        
+    def generate_calculation_configs(self, plan: Dict[str, Any], workflow_id: str):
+        """Generate configuration files for each workflow step"""
+        step_configs = plan.get('step_configurations', {})
+        
+        for step_key, step_config in step_configs.items():
+            # Create a configuration file for each step
+            config_file = self.temp_dir / f"{workflow_id}_{step_key}_config.json"
+            with open(config_file, 'w') as f:
+                json.dump(step_config, f, indent=2)
+            print(f"    Generated config for {step_key}: {config_file.name}")
+        
     def execute_workflow_steps(self, plan: Dict[str, Any], workflow_id: str):
         """Execute the complete workflow with proper calculation folder structure"""
         print("Phase 2: Executing workflow calculations...")
@@ -240,8 +260,11 @@ class WorkflowExecutor:
                                        material_id: str, calc_dir: Path, 
                                        workflow_id: str, step_num: int) -> Path:
         """Generate individual SLURM script for workflow calculation"""
-        # Find appropriate template
-        if calc_type in ['OPT', 'OPT2', 'SP', 'FREQ']:
+        # Find appropriate template - handle OPT2 as a special case of OPT
+        if calc_type == 'OPT2':
+            # OPT2 uses OPT template since it's just another optimization
+            template_name = f"submitcrystal23_opt_{step_num}.sh"
+        elif calc_type in ['OPT', 'SP', 'FREQ']:
             template_name = f"submitcrystal23_{calc_type.lower()}_{step_num}.sh"
         elif calc_type in ['BAND', 'DOSS']:
             template_name = f"submit_prop_{calc_type.lower()}_{step_num}.sh"
@@ -250,6 +273,15 @@ class WorkflowExecutor:
             
         template_script = self.work_dir / "workflow_scripts" / template_name
         
+        if not template_script.exists():
+            # Try without step number
+            if calc_type == 'OPT2':
+                template_script = self.work_dir / "workflow_scripts" / "submitcrystal23_opt_1.sh"
+            elif calc_type in ['OPT', 'SP', 'FREQ']:
+                template_script = self.work_dir / "workflow_scripts" / "submitcrystal23.sh"
+            elif calc_type in ['BAND', 'DOSS']:
+                template_script = self.work_dir / "workflow_scripts" / "submit_prop.sh"
+                
         if not template_script.exists():
             raise FileNotFoundError(f"Template script not found: {template_script}")
             
@@ -380,8 +412,11 @@ class WorkflowExecutor:
         step_key = f"{calc_type}_{step_num}"
         step_config = plan.get('step_configurations', {}).get(step_key, {})
         
-        # Determine template script name
-        if calc_type in ['OPT', 'OPT2', 'SP', 'FREQ']:
+        # Determine template script name - handle OPT2 as a special case of OPT
+        if calc_type == 'OPT2':
+            # OPT2 uses OPT template since it's just another optimization
+            template_name = f"submitcrystal23_opt_{step_num}.sh"
+        elif calc_type in ['OPT', 'SP', 'FREQ']:
             template_name = f"submitcrystal23_{calc_type.lower()}_{step_num}.sh"
         elif calc_type in ['BAND', 'DOSS']:
             template_name = f"submit_prop_{calc_type.lower()}_{step_num}.sh"
@@ -393,7 +428,9 @@ class WorkflowExecutor:
         
         if not template_script.exists():
             # Fall back to basic template
-            if calc_type in ['OPT', 'OPT2', 'SP', 'FREQ']:
+            if calc_type == 'OPT2':
+                template_script = self.work_dir / "workflow_scripts" / "submitcrystal23_opt_1.sh"
+            elif calc_type in ['OPT', 'SP', 'FREQ']:
                 template_script = self.work_dir / "workflow_scripts" / "submitcrystal23_opt_1.sh"
             else:
                 template_script = self.work_dir / "workflow_scripts" / "submit_prop_band_3.sh"
@@ -1050,10 +1087,26 @@ fi'''
         # Create temporary config for CRYSTALOptToD12.py
         temp_config = self.temp_dir / f"temp_crystal_opt_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         
+        # Ensure we pass the correct calculation type (OPT for OPT2, not SP)
+        actual_calc_type = "OPT" if calc_type == "OPT2" else calc_type
+        
         crystal_opt_config = {
-            "calculation_type": calc_type,
+            "calculation_type": actual_calc_type,
             "keep_current_settings": config.get("inherit_settings", True)
         }
+        
+        # Add optimization-specific settings if provided
+        if calc_type in ["OPT", "OPT2"] and "optimization_settings" in config:
+            crystal_opt_config["optimization_settings"] = config["optimization_settings"]
+        if calc_type in ["OPT", "OPT2"] and "optimization_type" in config:
+            crystal_opt_config["optimization_type"] = config["optimization_type"]
+            
+        # Add frequency-specific settings if provided
+        if calc_type == "FREQ" and "frequency_settings" in config:
+            crystal_opt_config["frequency_settings"] = config["frequency_settings"]
+            # Pass custom tolerances if defined
+            if "custom_tolerances" in config.get("frequency_settings", {}):
+                crystal_opt_config["custom_tolerances"] = config["frequency_settings"]["custom_tolerances"]
         
         with open(temp_config, 'w') as f:
             json.dump(crystal_opt_config, f)
@@ -1071,6 +1124,10 @@ fi'''
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
             if result.returncode == 0:
                 print(f"      Generated {calc_type} input from {Path(output_file).name}")
+                
+                # Fix naming for OPT2 files (CRYSTALOptToD12.py generates files with _opt suffix)
+                if calc_type == "OPT2":
+                    self._fix_opt2_naming(output_dir, Path(output_file).stem)
             else:
                 print(f"      Failed to generate {calc_type} input: {result.stderr}")
         except subprocess.TimeoutExpired:
@@ -1078,7 +1135,27 @@ fi'''
         finally:
             if temp_config.exists():
                 temp_config.unlink()
+    
+    def _fix_opt2_naming(self, output_dir: Path, base_name: str):
+        """Fix naming for OPT2 files generated by CRYSTALOptToD12.py"""
+        # CRYSTALOptToD12.py might generate files with patterns like material_opt_opt.d12
+        # We want to rename them to material_opt2.d12
+        
+        for file_path in output_dir.glob("*.d12"):
+            if "_opt_opt" in file_path.name or "_opt.d12" in file_path.name:
+                # Extract material name
+                material_name = file_path.stem
+                if material_name.endswith("_opt"):
+                    material_name = material_name[:-4]  # Remove _opt suffix
+                    
+                # Create new name with opt2
+                new_name = f"{material_name}_opt2.d12"
+                new_path = output_dir / new_name
                 
+                if not new_path.exists():
+                    file_path.rename(new_path)
+                    print(f"        Renamed: {file_path.name} → {new_name}")
+                    
     def generate_inputs_with_analysis_script(self, workflow_id: str, step_num: int,
                                             calc_type: str, config: Dict[str, Any]):
         """Generate inputs using analysis scripts (create_band_d3.py, alldos.py)"""
