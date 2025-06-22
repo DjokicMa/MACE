@@ -184,11 +184,77 @@ class EnhancedCrystalQueueManager:
                 added_count = populate_database(completed_calcs, self.db)
                 if added_count > 0:
                     print(f"  Added {added_count} new calculations to database")
+                
+                # Extract properties for all completed calculations (new and existing without properties)
+                print("  Checking property extraction for completed calculations...")
+                self._extract_properties_for_completed_jobs(completed_calcs)
             
         except ImportError:
             print("  Warning: Could not import populate_completed_jobs module")
         except Exception as e:
             print(f"  Error populating completed jobs: {e}")
+    
+    def _extract_properties_for_completed_jobs(self, completed_calcs: List[Dict]):
+        """Extract and store properties for completed calculations."""
+        for calc_info in completed_calcs:
+            try:
+                # Find the calculation in the database by matching output file
+                output_file = calc_info.get('output_file')
+                if not output_file:
+                    continue
+                
+                # Find database calculation by output file
+                calc = self._find_calculation_by_output_file(output_file)
+                if not calc:
+                    print(f"  ⚠️  No database record found for {Path(output_file).name}")
+                    continue
+                
+                calc_id = calc['calc_id']
+                
+                # Check if this calculation already has properties extracted
+                has_properties = self._calculation_has_properties(calc_id)
+                
+                if not has_properties:
+                    print(f"  🔍 Processing completed calculation: {calc_id}")
+                    
+                    # Extract and store properties
+                    self.extract_and_store_properties(calc)
+                    
+                    # Update material information 
+                    self.update_material_information(calc)
+                else:
+                    print(f"  ✅ Skipping {calc_id} - properties already extracted")
+                
+            except Exception as e:
+                material_id = calc_info.get('material_id', 'unknown')
+                calc_type = calc_info.get('calc_type', 'unknown')
+                print(f"  ❌ Error processing {material_id}_{calc_type}: {e}")
+    
+    def _find_calculation_by_output_file(self, output_file: str) -> Optional[Dict]:
+        """Find a calculation in the database by its output file path."""
+        try:
+            with self.db._get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT * FROM calculations WHERE output_file = ?",
+                    (output_file,)
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except:
+            return None
+    
+    def _calculation_has_properties(self, calc_id: str) -> bool:
+        """Check if a calculation already has properties extracted."""
+        try:
+            with self.db._get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT COUNT(*) FROM properties WHERE calc_id = ?",
+                    (calc_id,)
+                )
+                count = cursor.fetchone()[0]
+                return count > 0
+        except:
+            return False
             
     def _trigger_workflow_progression(self):
         """Trigger workflow progression using the workflow engine."""
@@ -1248,6 +1314,89 @@ class EnhancedCrystalQueueManager:
             report['database_stats'] = self.db.get_database_stats()
             
         return report
+
+
+    def store_workflow_configuration_as_template(self, workflow_config_file: Path = None):
+        """Store current workflow configuration as a template in the database."""
+        if not self.enable_tracking:
+            return
+            
+        try:
+            # Find workflow configuration file if not provided
+            if not workflow_config_file:
+                config_dir = Path.cwd() / "workflow_configs"
+                config_files = list(config_dir.glob("workflow_plan_*.json"))
+                if not config_files:
+                    print("  ⚠️  No workflow configuration files found")
+                    return
+                workflow_config_file = sorted(config_files)[-1]  # Use most recent
+            
+            if not workflow_config_file.exists():
+                print(f"  ⚠️  Workflow config file not found: {workflow_config_file}")
+                return
+                
+            print(f"  📋 Storing workflow configuration as template: {workflow_config_file.name}")
+            
+            # Load workflow configuration
+            with open(workflow_config_file, 'r') as f:
+                config = json.load(f)
+            
+            # Extract template information
+            template_id = f"template_{config['created'].replace(':', '').replace('-', '').replace('.', '_')}"
+            template_name = f"{config['input_type'].upper()} → {' → '.join(config['workflow_sequence'])}"
+            description = f"Auto-generated from {workflow_config_file.name}"
+            
+            # Convert workflow steps to template format
+            workflow_steps = []
+            for step_num, calc_type in enumerate(config['workflow_sequence'], 1):
+                step_key = f"{calc_type}_{step_num}"
+                step_config = config['step_configurations'].get(step_key, {})
+                
+                workflow_steps.append({
+                    'step_number': step_num,
+                    'calc_type': calc_type,
+                    'source': step_config.get('source', 'unknown'),
+                    'slurm_config': step_config.get('slurm_config', {}),
+                    'dependencies': [step_num - 1] if step_num > 1 else []
+                })
+            
+            # Store template in database
+            self.db.create_workflow_template(
+                template_id=template_id,
+                template_name=template_name,
+                workflow_steps=workflow_steps,
+                description=description
+            )
+            
+            print(f"  ✅ Stored workflow template: {template_id}")
+            return template_id
+            
+        except Exception as e:
+            print(f"  ❌ Error storing workflow template: {e}")
+            return None
+    
+    def create_workflow_instance_for_material(self, material_id: str, template_id: str = None):
+        """Create a workflow instance for a material."""
+        if not self.enable_tracking:
+            return None
+            
+        try:
+            # Use most recent template if not specified
+            if not template_id:
+                templates = self.db.get_all_workflow_templates()
+                if not templates:
+                    print(f"  ⚠️  No workflow templates found")
+                    return None
+                template_id = templates[0]['template_id']
+            
+            # Create workflow instance
+            instance_id = self.db.create_workflow_instance(material_id, template_id)
+            print(f"  📋 Created workflow instance: {instance_id}")
+            return instance_id
+            
+        except Exception as e:
+            print(f"  ❌ Error creating workflow instance for {material_id}: {e}")
+            return None
 
 
 def main():

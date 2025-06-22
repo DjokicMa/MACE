@@ -155,11 +155,13 @@ class MaterialDatabase:
                 CREATE TABLE IF NOT EXISTS workflow_instances (
                     instance_id TEXT PRIMARY KEY,
                     material_id TEXT NOT NULL,
-                    template_id TEXT NOT NULL,
+                    template_id TEXT,  -- Optional: NULL for runtime workflows
                     status TEXT DEFAULT 'active',  -- active, completed, failed, paused
                     current_step INTEGER DEFAULT 0,
                     started_at TEXT NOT NULL,
                     completed_at TEXT,
+                    workflow_config_json TEXT,  -- Full workflow configuration JSON
+                    workflow_scripts_json TEXT,  -- Generated SLURM scripts and metadata
                     
                     FOREIGN KEY (material_id) REFERENCES materials (material_id),
                     FOREIGN KEY (template_id) REFERENCES workflow_templates (template_id)
@@ -183,17 +185,33 @@ class MaterialDatabase:
     def _apply_migrations(self):
         """Apply database schema migrations for existing databases."""
         with self._get_connection() as conn:
-            # Check if recovery_attempts column exists
+            # Check if recovery_attempts column exists in calculations table
             cursor = conn.execute("PRAGMA table_info(calculations)")
-            columns = [row[1] for row in cursor.fetchall()]
+            calc_columns = [row[1] for row in cursor.fetchall()]
             
-            if 'recovery_attempts' not in columns:
+            if 'recovery_attempts' not in calc_columns:
                 print("Adding recovery_attempts column to calculations table...")
                 conn.execute("ALTER TABLE calculations ADD COLUMN recovery_attempts INTEGER DEFAULT 0")
                 
-            if 'completion_type' not in columns:
+            if 'completion_type' not in calc_columns:
                 print("Adding completion_type column to calculations table...")
                 conn.execute("ALTER TABLE calculations ADD COLUMN completion_type TEXT DEFAULT 'first_try'")
+            
+            if 'input_settings_json' not in calc_columns:
+                print("Adding input_settings_json column to calculations table...")
+                conn.execute("ALTER TABLE calculations ADD COLUMN input_settings_json TEXT")
+            
+            # Check if workflow config columns exist in workflow_instances table
+            cursor = conn.execute("PRAGMA table_info(workflow_instances)")
+            workflow_columns = [row[1] for row in cursor.fetchall()]
+            
+            if 'workflow_config_json' not in workflow_columns:
+                print("Adding workflow_config_json column to workflow_instances table...")
+                conn.execute("ALTER TABLE workflow_instances ADD COLUMN workflow_config_json TEXT")
+                
+            if 'workflow_scripts_json' not in workflow_columns:
+                print("Adding workflow_scripts_json column to workflow_instances table...")
+                conn.execute("ALTER TABLE workflow_instances ADD COLUMN workflow_scripts_json TEXT")
             
     @contextmanager
     def _get_connection(self):
@@ -547,6 +565,344 @@ class MaterialDatabase:
                 )
             """)
             
+    # ============================================================================
+    # Workflow Templates and Instances Management
+    # ============================================================================
+    
+    def create_workflow_template(self, template_id: str, template_name: str, 
+                                workflow_steps: List[Dict], description: str = None) -> str:
+        """
+        Create a new workflow template.
+        
+        Args:
+            template_id: Unique identifier for the template
+            template_name: Human-readable name
+            workflow_steps: List of calculation steps (type, settings, dependencies)
+            description: Optional description
+            
+        Returns:
+            template_id of the created template
+        """
+        now = datetime.now().isoformat()
+        workflow_steps_json = json.dumps(workflow_steps)
+        
+        with self._get_connection() as conn:
+            conn.execute("""
+                INSERT INTO workflow_templates (
+                    template_id, template_name, description, workflow_steps_json, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+            """, (template_id, template_name, description, workflow_steps_json, now))
+            
+        return template_id
+    
+    def get_workflow_template(self, template_id: str) -> Optional[Dict]:
+        """Get a workflow template by ID."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM workflow_templates WHERE template_id = ?",
+                (template_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                template = dict(row)
+                template['workflow_steps'] = json.loads(template['workflow_steps_json'])
+                return template
+            return None
+    
+    def get_all_workflow_templates(self) -> List[Dict]:
+        """Get all workflow templates."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("SELECT * FROM workflow_templates ORDER BY created_at DESC")
+            templates = []
+            for row in cursor.fetchall():
+                template = dict(row)
+                template['workflow_steps'] = json.loads(template['workflow_steps_json'])
+                templates.append(template)
+            return templates
+    
+    def create_workflow_instance(self, material_id: str, template_id: str = None, 
+                                workflow_config: Dict = None, workflow_scripts: Dict = None) -> str:
+        """
+        Create a new workflow instance for a material.
+        
+        Args:
+            material_id: Material to run workflow on
+            template_id: Template to use (optional)
+            workflow_config: Complete workflow configuration from workflow planner
+            workflow_scripts: Generated SLURM scripts and metadata
+            
+        Returns:
+            instance_id of the created instance
+        """
+        instance_id = f"{material_id}_workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        now = datetime.now().isoformat()
+        
+        workflow_config_json = json.dumps(workflow_config) if workflow_config else None
+        workflow_scripts_json = json.dumps(workflow_scripts) if workflow_scripts else None
+        
+        with self._get_connection() as conn:
+            conn.execute("""
+                INSERT INTO workflow_instances (
+                    instance_id, material_id, template_id, status, 
+                    current_step, started_at, workflow_config_json, workflow_scripts_json
+                ) VALUES (?, ?, ?, 'active', 0, ?, ?, ?)
+            """, (instance_id, material_id, template_id, now, workflow_config_json, workflow_scripts_json))
+            
+        return instance_id
+    
+    def update_workflow_instance_status(self, instance_id: str, status: str, 
+                                       current_step: int = None, completed_at: str = None,
+                                       workflow_config: Dict = None, workflow_scripts: Dict = None):
+        """Update workflow instance status, progress, and configuration data."""
+        with self._get_connection() as conn:
+            update_fields = ['status = ?']
+            update_values = [status]
+            
+            if current_step is not None:
+                update_fields.append('current_step = ?')
+                update_values.append(current_step)
+                
+            if completed_at:
+                update_fields.append('completed_at = ?')
+                update_values.append(completed_at)
+                
+            if workflow_config:
+                update_fields.append('workflow_config_json = ?')
+                update_values.append(json.dumps(workflow_config))
+                
+            if workflow_scripts:
+                update_fields.append('workflow_scripts_json = ?')
+                update_values.append(json.dumps(workflow_scripts))
+                
+            update_values.append(instance_id)
+            
+            query = f"UPDATE workflow_instances SET {', '.join(update_fields)} WHERE instance_id = ?"
+            conn.execute(query, update_values)
+    
+    def get_workflow_instance(self, instance_id: str) -> Optional[Dict]:
+        """Get a workflow instance by ID with parsed JSON fields."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM workflow_instances WHERE instance_id = ?",
+                (instance_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                instance = dict(row)
+                # Parse JSON fields
+                if instance.get('workflow_config_json'):
+                    try:
+                        instance['workflow_config'] = json.loads(instance['workflow_config_json'])
+                    except json.JSONDecodeError:
+                        instance['workflow_config'] = None
+                        
+                if instance.get('workflow_scripts_json'):
+                    try:
+                        instance['workflow_scripts'] = json.loads(instance['workflow_scripts_json'])
+                    except json.JSONDecodeError:
+                        instance['workflow_scripts'] = None
+                        
+                return instance
+            return None
+    
+    def get_workflow_instances_by_material(self, material_id: str) -> List[Dict]:
+        """Get all workflow instances for a material."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM workflow_instances WHERE material_id = ? ORDER BY started_at DESC",
+                (material_id,)
+            )
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def get_active_workflow_instances(self) -> List[Dict]:
+        """Get all active workflow instances."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM workflow_instances WHERE status = 'active' ORDER BY started_at"
+            )
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def get_all_workflow_instances(self) -> List[Dict]:
+        """Get all workflow instances with parsed JSON fields."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("SELECT * FROM workflow_instances ORDER BY started_at DESC")
+            instances = []
+            for row in cursor.fetchall():
+                instance = dict(row)
+                # Parse JSON fields
+                if instance.get('workflow_config_json'):
+                    try:
+                        instance['workflow_config'] = json.loads(instance['workflow_config_json'])
+                    except json.JSONDecodeError:
+                        instance['workflow_config'] = None
+                        
+                if instance.get('workflow_scripts_json'):
+                    try:
+                        instance['workflow_scripts'] = json.loads(instance['workflow_scripts_json'])
+                    except json.JSONDecodeError:
+                        instance['workflow_scripts'] = None
+                        
+                instances.append(instance)
+            return instances
+    
+    def capture_workflow_execution_data(self, workflow_id: str, workflow_configs_dir: str = "workflow_configs", 
+                                       workflow_scripts_dir: str = "workflow_scripts") -> Optional[str]:
+        """
+        Capture workflow configuration and scripts from filesystem and store in database.
+        
+        Args:
+            workflow_id: ID of the workflow (e.g., 'workflow_20250621_170313')
+            workflow_configs_dir: Directory containing workflow config JSON files
+            workflow_scripts_dir: Directory containing generated SLURM scripts
+            
+        Returns:
+            instance_id if workflow data was captured successfully, None otherwise
+        """
+        from pathlib import Path
+        
+        # Look for workflow config file
+        config_dir = Path(workflow_configs_dir)
+        script_dir = Path(workflow_scripts_dir)
+        
+        workflow_config = None
+        workflow_scripts = {}
+        
+        # Find and load workflow config JSON
+        config_pattern = f"workflow_plan_{workflow_id.replace('workflow_', '')}.json"
+        config_files = list(config_dir.glob(config_pattern))
+        
+        if config_files:
+            config_file = config_files[0]
+            try:
+                with open(config_file, 'r') as f:
+                    workflow_config = json.load(f)
+                print(f"📋 Loaded workflow config: {config_file.name}")
+            except Exception as e:
+                print(f"❌ Error loading workflow config {config_file}: {e}")
+                return None
+        else:
+            print(f"⚠️ No workflow config found for pattern: {config_pattern}")
+            return None
+        
+        # Collect all workflow scripts
+        if script_dir.exists():
+            for script_file in script_dir.glob("*.sh"):
+                try:
+                    with open(script_file, 'r') as f:
+                        script_content = f.read()
+                    
+                    workflow_scripts[script_file.name] = {
+                        'file_path': str(script_file),
+                        'content': script_content,
+                        'size': script_file.stat().st_size,
+                        'created': script_file.stat().st_mtime
+                    }
+                    print(f"📝 Captured script: {script_file.name}")
+                except Exception as e:
+                    print(f"❌ Error reading script {script_file}: {e}")
+        
+        # Extract material IDs from workflow config
+        if workflow_config and 'input_files' in workflow_config:
+            input_files = workflow_config['input_files']
+            
+            # Process materials from the workflow
+            for file_type, file_list in input_files.items():
+                for file_path in file_list:
+                    material_id = create_material_id_from_file(file_path)
+                    
+                    # Create or update workflow instance for this material
+                    instance_id = self.create_workflow_instance(
+                        material_id=material_id,
+                        template_id=None,  # No predefined template
+                        workflow_config=workflow_config,
+                        workflow_scripts=workflow_scripts
+                    )
+                    print(f"💾 Stored workflow data for material: {material_id} (instance: {instance_id})")
+                    
+            return instance_id
+        else:
+            print("❌ No input files found in workflow config")
+            return None
+
+    def get_material_calculation_summary(self, material_id: str = None) -> Dict:
+        """
+        Get calculation type tracking for materials.
+        
+        Args:
+            material_id: Specific material ID, or None for all materials
+            
+        Returns:
+            Dictionary with calculation type summaries per material
+        """
+        with self._get_connection() as conn:
+            if material_id:
+                # Get calculation types for specific material
+                cursor = conn.execute("""
+                    SELECT calc_type, status, COUNT(*) as count 
+                    FROM calculations 
+                    WHERE material_id = ?
+                    GROUP BY calc_type, status
+                    ORDER BY calc_type, status
+                """, (material_id,))
+                
+                results = cursor.fetchall()
+                summary = {
+                    'material_id': material_id,
+                    'calculation_types': {},
+                    'total_calculations': 0
+                }
+                
+                for calc_type, status, count in results:
+                    if calc_type not in summary['calculation_types']:
+                        summary['calculation_types'][calc_type] = {}
+                    summary['calculation_types'][calc_type][status] = count
+                    summary['total_calculations'] += count
+                    
+                # Add completed calculation types list
+                completed_types = []
+                for calc_type, statuses in summary['calculation_types'].items():
+                    if statuses.get('completed', 0) > 0:
+                        completed_types.append(calc_type)
+                summary['completed_types'] = sorted(completed_types)
+                
+                return summary
+            else:
+                # Get calculation types for all materials
+                cursor = conn.execute("""
+                    SELECT material_id, calc_type, status, COUNT(*) as count 
+                    FROM calculations 
+                    GROUP BY material_id, calc_type, status
+                    ORDER BY material_id, calc_type, status
+                """)
+                
+                results = cursor.fetchall()
+                summaries = {}
+                
+                for material_id, calc_type, status, count in results:
+                    if material_id not in summaries:
+                        summaries[material_id] = {
+                            'material_id': material_id,
+                            'calculation_types': {},
+                            'total_calculations': 0,
+                            'completed_types': []
+                        }
+                    
+                    if calc_type not in summaries[material_id]['calculation_types']:
+                        summaries[material_id]['calculation_types'][calc_type] = {}
+                    
+                    summaries[material_id]['calculation_types'][calc_type][status] = count
+                    summaries[material_id]['total_calculations'] += count
+                
+                # Calculate completed types for each material
+                for material_id, summary in summaries.items():
+                    completed_types = []
+                    for calc_type, statuses in summary['calculation_types'].items():
+                        if statuses.get('completed', 0) > 0:
+                            completed_types.append(calc_type)
+                    summary['completed_types'] = sorted(completed_types)
+                
+                return summaries
+
     def get_database_stats(self) -> Dict:
         """Get statistics about the database contents."""
         with self._get_connection() as conn:

@@ -73,6 +73,13 @@ class CrystalPropertyExtractor:
         properties.update(self._extract_energy_properties(content))
         properties.update(self._extract_geometry_optimization(content))
         properties.update(self._extract_crystallographic_info(content))
+        properties.update(self._extract_neighbor_information(content))
+        properties.update(self._extract_computational_properties(content))
+        properties.update(self._extract_band_structure_properties(content, output_file))
+        properties.update(self._extract_dos_properties(content, output_file))
+        
+        # Add electronic classification based on band gap
+        properties.update(self._classify_electronic_properties(properties))
         
         # Add metadata
         properties['_metadata'] = {
@@ -82,6 +89,30 @@ class CrystalPropertyExtractor:
             'extracted_at': datetime.now().isoformat(),
             'extractor_version': '1.0'
         }
+        
+        # Process population analysis data if available
+        try:
+            from population_analysis_processor import PopulationAnalysisProcessor
+            processor = PopulationAnalysisProcessor()
+            
+            # Check if we have population analysis data to process
+            pop_data = {}
+            for key, value in properties.items():
+                if 'mulliken' in key or 'overlap' in key:
+                    pop_data[key] = value
+            
+            if pop_data:
+                processed_pop = processor.process_population_data(pop_data)
+                
+                # Add processed data as new properties
+                for key, value in processed_pop.items():
+                    if key != 'error':
+                        properties[f'processed_{key}'] = value
+                        
+        except ImportError:
+            pass  # Population processor not available
+        except Exception as e:
+            print(f"Warning: Error processing population analysis: {e}")
         
         return properties
     
@@ -177,7 +208,8 @@ class CrystalPropertyExtractor:
         # Extract initial atomic positions
         initial_positions = self._extract_atomic_positions(content, search_final=False)
         if initial_positions:
-            props['atomic_positions'] = initial_positions
+            props['initial_atomic_positions'] = initial_positions
+            props['initial_atoms_count'] = len(initial_positions)
         
         return props
     
@@ -227,6 +259,10 @@ class CrystalPropertyExtractor:
             # Extract final atomic positions
             final_positions = self._extract_atomic_positions(content, search_final=True)
             if final_positions:
+                props['final_atomic_positions'] = final_positions
+                props['final_atoms_count'] = len(final_positions)
+                
+                # Set default atomic positions to final (for backward compatibility)
                 props['atomic_positions'] = final_positions
         
         return props
@@ -345,25 +381,43 @@ class CrystalPropertyExtractor:
         """Extract Mulliken population analysis."""
         props = {}
         
-        # Find alpha+beta and alpha-beta sections
-        alpha_beta_section = self._extract_mulliken_section(content, "ALPHA+BETA ELECTRONS")
-        alpha_minus_beta_section = self._extract_mulliken_section(content, "ALPHA-BETA ELECTRONS")
+        # Check for spin-resolved sections (both alpha+beta and alpha-beta)
+        has_alpha_beta = "ALPHA+BETA ELECTRONS" in content
+        has_alpha_minus_beta = "ALPHA-BETA ELECTRONS" in content
+        is_spin_polarized = has_alpha_beta and has_alpha_minus_beta
         
-        if alpha_beta_section:
-            props['mulliken_alpha_plus_beta'] = alpha_beta_section
+        # Extract alpha+beta populations when available (even if not fully spin-polarized)
+        if has_alpha_beta:
+            alpha_beta_mulliken = self._extract_mulliken_section(content, "ALPHA+BETA ELECTRONS")
+            alpha_beta_overlap = self._extract_overlap_populations(content, "ALPHA+BETA ELECTRONS")
             
-        if alpha_minus_beta_section:
-            props['mulliken_alpha_minus_beta'] = alpha_minus_beta_section
+            if alpha_beta_mulliken:
+                props['mulliken_alpha_plus_beta'] = alpha_beta_mulliken
+            if alpha_beta_overlap:
+                props['overlap_population_alpha_plus_beta'] = alpha_beta_overlap
         
-        # Extract overlap populations
-        overlap_alpha_beta = self._extract_overlap_populations(content, "ALPHA+BETA ELECTRONS")
-        overlap_alpha_minus_beta = self._extract_overlap_populations(content, "ALPHA-BETA ELECTRONS")
-        
-        if overlap_alpha_beta:
-            props['overlap_population_alpha_plus_beta'] = overlap_alpha_beta
+        # Extract alpha-beta populations when available
+        if has_alpha_minus_beta:
+            alpha_minus_beta_mulliken = self._extract_mulliken_section(content, "ALPHA-BETA ELECTRONS")
+            alpha_minus_beta_overlap = self._extract_overlap_populations(content, "ALPHA-BETA ELECTRONS")
             
-        if overlap_alpha_minus_beta:
-            props['overlap_population_alpha_minus_beta'] = overlap_alpha_minus_beta
+            if alpha_minus_beta_mulliken:
+                props['mulliken_alpha_minus_beta'] = alpha_minus_beta_mulliken
+            if alpha_minus_beta_overlap:
+                props['overlap_population_alpha_minus_beta'] = alpha_minus_beta_overlap
+        
+        # Always try to extract general populations as fallback
+        # This ensures we get overlap data even if spin-resolved extraction fails
+        general_mulliken = self._extract_general_mulliken_section(content)
+        if general_mulliken and not has_alpha_beta:  # Only use general if no alpha+beta
+            props['mulliken_population'] = general_mulliken
+            
+        # Extract general overlap populations as fallback
+        general_overlap = self._extract_general_overlap_populations(content)
+        if general_overlap and not has_alpha_beta:  # Only use general if no alpha+beta
+            props['overlap_population'] = general_overlap
+        
+        props['is_spin_polarized'] = is_spin_polarized
         
         return props
     
@@ -426,6 +480,128 @@ class CrystalPropertyExtractor:
         
         return props
     
+    def _extract_neighbor_information(self, content: str) -> Dict[str, Any]:
+        """Extract neighbor information from CRYSTAL output."""
+        props = {}
+        
+        # Look for neighbor analysis section (take the first occurrence)
+        neighbor_section_match = re.search(
+            r'NEIGHBORS OF THE NON-EQUIVALENT ATOMS.*?N = NUMBER OF NEIGHBORS AT DISTANCE R\s*\n\s*ATOM\s+N\s+R/ANG\s+R/AU\s+NEIGHBORS.*?\n(.*?)(?=\n\s*SYMMETRY|\n\s*TTTT|\n\s*MMMM|\n\s*[A-Z]{3,}|$)',
+            content, re.DOTALL
+        )
+        
+        if not neighbor_section_match:
+            return props
+        
+        neighbor_content = neighbor_section_match.group(1).strip()
+        neighbors_data = []
+        coordination_numbers = []
+        bond_distances = []
+        
+        # Parse each line for neighbor information
+        # Pattern: ATOM_NUM ELEMENT N_NEIGHBORS DISTANCE_ANG DISTANCE_AU NEIGHBOR_LIST
+        lines = neighbor_content.split('\n')
+        current_atom = None
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Check if this line starts with atom number and element
+            parts = line.split()
+            if len(parts) >= 5 and parts[0].isdigit() and parts[1].isalpha():
+                try:
+                    atom_num = int(parts[0])
+                    element = parts[1]
+                    n_neighbors = int(parts[2])
+                    dist_ang = float(parts[3])
+                    dist_au = float(parts[4])
+                    
+                    # Find or create atom entry
+                    current_atom = None
+                    for atom in neighbors_data:
+                        if atom['atom_number'] == atom_num:
+                            current_atom = atom
+                            break
+                    
+                    if current_atom is None:
+                        current_atom = {
+                            'atom_number': atom_num,
+                            'element': element,
+                            'neighbor_shells': []
+                        }
+                        neighbors_data.append(current_atom)
+                    
+                    # Add this neighbor shell
+                    neighbor_info = ' '.join(parts[5:]) if len(parts) > 5 else ''
+                    neighbors = self._parse_neighbor_list(neighbor_info)
+                    
+                    shell = {
+                        'n_neighbors': n_neighbors,
+                        'distance_ang': dist_ang,
+                        'distance_au': dist_au,
+                        'neighbors': neighbors
+                    }
+                    current_atom['neighbor_shells'].append(shell)
+                    
+                    # Track statistics
+                    coordination_numbers.append(n_neighbors)
+                    if dist_ang > 0:
+                        bond_distances.append(dist_ang)
+                        
+                except (ValueError, IndexError):
+                    continue
+            
+            elif current_atom is not None and line and not line.startswith(' ' * 50):
+                # This might be a continuation line with more neighbors
+                if current_atom['neighbor_shells']:
+                    last_shell = current_atom['neighbor_shells'][-1]
+                    neighbors = self._parse_neighbor_list(line)
+                    last_shell['neighbors'].extend(neighbors)
+        
+        if neighbors_data:
+            props['neighbor_analysis'] = neighbors_data
+            
+            # Extract summary statistics
+            if coordination_numbers:
+                props['max_coordination_number'] = max(coordination_numbers)
+                props['total_coordination_shells'] = len(coordination_numbers)
+            
+            if bond_distances:
+                props['min_bond_distance_ang'] = min(bond_distances)
+                props['max_bond_distance_ang'] = max(bond_distances)
+        
+        return props
+    
+    def _parse_neighbor_list(self, neighbor_text: str) -> List[Dict]:
+        """Parse neighbor list from text like '2 C 0 0 0 2 C 1 0 0'."""
+        neighbors = []
+        parts = neighbor_text.split()
+        
+        # Process in groups of 5: atom_num element i j k
+        i = 0
+        while i + 4 < len(parts):
+            try:
+                atom_num = int(parts[i])
+                element = parts[i + 1]
+                cell_i = int(parts[i + 2])
+                cell_j = int(parts[i + 3])
+                cell_k = int(parts[i + 4])
+                
+                neighbors.append({
+                    'neighbor_atom_number': atom_num,
+                    'neighbor_element': element,
+                    'cell_indices': [cell_i, cell_j, cell_k]
+                })
+                
+                i += 5
+            except (ValueError, IndexError):
+                i += 1
+                continue
+        
+        return neighbors
+    
     def _extract_atomic_positions(self, content: str, search_final: bool = True) -> List[Dict]:
         """Extract atomic positions from geometry."""
         positions = []
@@ -469,7 +645,21 @@ class CrystalPropertyExtractor:
                 continue
             
             parts = line.split()
-            if len(parts) >= 6:
+            if len(parts) >= 7:  # Need at least 7 parts for CRYSTAL format
+                try:
+                    # CRYSTAL format: ATOM_NUM ATOM_TYPE ATOMIC_NUM ELEMENT X Y Z
+                    positions.append({
+                        'atom_number': int(parts[0]),
+                        'atom_type': parts[1],
+                        'atomic_number': int(parts[2]),
+                        'element': parts[3],
+                        'x': float(parts[4]),
+                        'y': float(parts[5]),
+                        'z': float(parts[6])
+                    })
+                except (ValueError, IndexError):
+                    continue
+            elif len(parts) >= 6:  # Fallback for simpler format
                 try:
                     positions.append({
                         'atom_number': int(parts[0]),
@@ -486,7 +676,9 @@ class CrystalPropertyExtractor:
     
     def _extract_mulliken_section(self, content: str, section_type: str) -> Dict[str, Any]:
         """Extract Mulliken population analysis for a specific section."""
-        pattern = f'{section_type}.*?MULLIKEN POPULATION ANALYSIS.*?NO. OF ELECTRONS\\s+([\\d.]+)(.*?)(?=MMMMM|TTTTTT|$)'
+        # Escape special regex characters in section_type
+        escaped_section = re.escape(section_type)
+        pattern = f'{escaped_section}.*?MULLIKEN POPULATION ANALYSIS.*?NO. OF ELECTRONS\\s+([\\d.-]+)(.*?)(?=MMMMM|TTTTTT|$)'
         match = re.search(pattern, content, re.DOTALL)
         
         if not match:
@@ -523,51 +715,209 @@ class CrystalPropertyExtractor:
         }
     
     def _extract_overlap_populations(self, content: str, section_type: str) -> List[Dict]:
-        """Extract overlap population data."""
-        # Find the overlap population section
-        pattern = f'{section_type}.*?OVERLAP POPULATION CONDENSED TO ATOMS(.*?)(?=MMMMM|TTTTTT|$)'
-        match = re.search(pattern, content, re.DOTALL)
+        """Extract overlap population data for spin-resolved sections."""
+        # First, check if we're in a spin-resolved section
+        if section_type in content:
+            # Find the section and then look for overlap population after it
+            section_start = content.find(section_type)
+            remaining_content = content[section_start:]
+            
+            # Look for overlap population section in the remaining content
+            overlap_match = re.search(r'OVERLAP POPULATION CONDENSED TO ATOMS(.*?)(?=EIGENVECTORS|MMMMM|TTTTTT|ALPHA|BETA|$)', 
+                                    remaining_content, re.DOTALL)
+        else:
+            # Fallback to general search
+            overlap_match = re.search(r'OVERLAP POPULATION CONDENSED TO ATOMS(.*?)(?=EIGENVECTORS|MMMMM|TTTTTT|$)', 
+                                    content, re.DOTALL)
         
-        if not match:
+        if not overlap_match:
             return []
         
-        overlap_content = match.group(1)
+        overlap_content = overlap_match.group(1)
         overlaps = []
         
-        # Extract overlap data
-        overlap_matches = re.finditer(
-            r'ATOM A\s+(\d+)\s+(\w+)\s+ATOM B.*?\n((?:\s+\d+\s+\w+.*?\n)+)',
-            overlap_content, re.DOTALL
-        )
+        # Parse overlap data with improved pattern
+        # Look for ATOM A lines followed by neighbor data
+        atom_pattern = r'ATOM A\s+(\d+)\s+(\w+)\s+ATOM B.*?\n(.*?)(?=ATOM A|\Z)'
+        atom_matches = re.finditer(atom_pattern, overlap_content, re.DOTALL)
         
-        for overlap_match in overlap_matches:
-            atom_a_num = int(overlap_match.group(1))
-            atom_a_element = overlap_match.group(2)
-            neighbor_data = overlap_match.group(3)
+        for atom_match in atom_matches:
+            atom_a_num = int(atom_match.group(1))
+            atom_a_element = atom_match.group(2)
+            neighbor_section = atom_match.group(3)
             
-            # Parse neighbor interactions
+            # Parse neighbor interactions with more flexible parsing
             neighbors = []
-            neighbor_lines = neighbor_data.strip().split('\n')
+            neighbor_lines = neighbor_section.strip().split('\n')
+            
             for line in neighbor_lines:
+                line = line.strip()
+                if not line or 'ATOM' in line or 'CELL' in line:
+                    continue
+                
+                # Look for neighbor line format: ATOM_NUM ELEMENT (CELL_I CELL_J CELL_K) DIST_AU DIST_ANG OVERLAP
+                # or format: ATOM_NUM ELEMENT CELL_I CELL_J CELL_K DIST_AU DIST_ANG OVERLAP
                 parts = line.split()
-                if len(parts) >= 8:
+                if len(parts) >= 6:
                     try:
-                        neighbors.append({
-                            'atom_b_number': int(parts[0]),
-                            'atom_b_element': parts[1],
-                            'cell_indices': [int(parts[2]), int(parts[3]), int(parts[4])],
-                            'distance_au': float(parts[5]),
-                            'distance_ang': float(parts[6]),
-                            'overlap_population': float(parts[7])
-                        })
+                        # Handle format with parentheses: 2 C ( 0 0 0) 2.922 1.546 0.293
+                        if '(' in line and ')' in line:
+                            cell_match = re.search(r'\(\s*([-\d]+)\s+([-\d]+)\s+([-\d]+)\s*\)', line)
+                            if cell_match:
+                                atom_b_num = int(parts[0])
+                                atom_b_element = parts[1]
+                                cell_i = int(cell_match.group(1))
+                                cell_j = int(cell_match.group(2))
+                                cell_k = int(cell_match.group(3))
+                                
+                                # Find numeric values after the parentheses
+                                after_paren = line.split(')')[1].strip().split()
+                                if len(after_paren) >= 3:
+                                    distance_au = float(after_paren[0])
+                                    distance_ang = float(after_paren[1])
+                                    overlap_pop = float(after_paren[2])
+                                    
+                                    neighbors.append({
+                                        'atom_b_number': atom_b_num,
+                                        'atom_b_element': atom_b_element,
+                                        'cell_indices': [cell_i, cell_j, cell_k],
+                                        'distance_au': distance_au,
+                                        'distance_ang': distance_ang,
+                                        'overlap_population': overlap_pop
+                                    })
+                        
+                        # Handle format without parentheses: ATOM_NUM ELEMENT CELL_I CELL_J CELL_K DIST_AU DIST_ANG OVERLAP
+                        elif len(parts) >= 8:
+                            neighbors.append({
+                                'atom_b_number': int(parts[0]),
+                                'atom_b_element': parts[1],
+                                'cell_indices': [int(parts[2]), int(parts[3]), int(parts[4])],
+                                'distance_au': float(parts[5]),
+                                'distance_ang': float(parts[6]),
+                                'overlap_population': float(parts[7])
+                            })
                     except (ValueError, IndexError):
                         continue
             
-            overlaps.append({
-                'atom_a_number': atom_a_num,
-                'atom_a_element': atom_a_element,
-                'neighbors': neighbors
-            })
+            if neighbors:  # Only add atoms that have neighbor data
+                overlaps.append({
+                    'atom_a_number': atom_a_num,
+                    'atom_a_element': atom_a_element,
+                    'neighbors': neighbors
+                })
+        
+        return overlaps
+    
+    def _extract_general_mulliken_section(self, content: str) -> Dict[str, Any]:
+        """Extract general Mulliken population analysis for non-spin-polarized calculations."""
+        # Look for the general Mulliken section
+        pattern = r'MULLIKEN POPULATION ANALYSIS - NO\. OF ELECTRONS\s+([\d.-]+)(.*?)(?=OVERLAP POPULATION|EIGENVECTORS|$)'
+        match = re.search(pattern, content, re.DOTALL)
+        
+        if not match:
+            return None
+        
+        total_electrons = float(match.group(1))
+        section_content = match.group(2)
+        
+        # Extract atomic charges and populations
+        atoms = []
+        
+        # Look for ATOM Z CHARGE A.O. POPULATION section
+        ao_pattern = r'ATOM\s+Z\s+CHARGE\s+A\.O\.\s+POPULATION(.*?)(?=ATOM\s+Z\s+CHARGE\s+SHELL|$)'
+        ao_match = re.search(ao_pattern, section_content, re.DOTALL)
+        
+        if ao_match:
+            ao_content = ao_match.group(1)
+            # Parse individual atoms
+            atom_lines = [line.strip() for line in ao_content.split('\n') if line.strip()]
+            
+            for line in atom_lines:
+                parts = line.split()
+                if len(parts) >= 4 and parts[0].isdigit():
+                    try:
+                        atom_num = int(parts[0])
+                        element = parts[1]
+                        atomic_num = int(parts[2])
+                        charge = float(parts[3])
+                        
+                        # Extract orbital populations (remaining numbers)
+                        orbitals = [float(x) for x in parts[4:] if x.replace('.', '').replace('-', '').isdigit()]
+                        
+                        atoms.append({
+                            'atom_number': atom_num,
+                            'element': element,
+                            'atomic_number': atomic_num,
+                            'mulliken_charge': charge,
+                            'orbital_populations': orbitals
+                        })
+                    except (ValueError, IndexError):
+                        continue
+        
+        return {
+            'total_electrons': total_electrons,
+            'atoms': atoms
+        }
+    
+    def _extract_general_overlap_populations(self, content: str) -> List[Dict]:
+        """Extract general overlap populations for non-spin-polarized calculations."""
+        overlaps = []
+        
+        # Look for the overlap population section
+        pattern = r'OVERLAP POPULATION CONDENSED TO ATOMS.*?ATOM A\s+(\d+)\s+(\w+)\s+ATOM B.*?\n((?:.*?\([^)]*\).*?\n)+)'
+        matches = re.finditer(pattern, content, re.DOTALL)
+        
+        for match in matches:
+            atom_a_num = int(match.group(1))
+            atom_a_element = match.group(2)
+            overlap_data = match.group(3)
+            
+            # Parse neighbor interactions
+            neighbors = []
+            overlap_lines = overlap_data.strip().split('\n')
+            
+            for line in overlap_lines:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                # Look for pattern: ATOM_NUM ELEMENT (CELL) DISTANCE_AU DISTANCE_ANG OVERLAP
+                parts = line.split()
+                if len(parts) >= 6:
+                    try:
+                        # Extract cell indices from parentheses
+                        cell_match = re.search(r'\(\s*([\d-]+)\s+([\d-]+)\s+([\d-]+)\s*\)', line)
+                        if cell_match:
+                            atom_b_num = int(parts[0])
+                            atom_b_element = parts[1]
+                            cell_i = int(cell_match.group(1))
+                            cell_j = int(cell_match.group(2))
+                            cell_k = int(cell_match.group(3))
+                            
+                            # Find distances and overlap in remaining parts
+                            numeric_parts = [p for p in parts[2:] if p.replace('.', '').replace('-', '').isdigit()]
+                            if len(numeric_parts) >= 3:
+                                distance_au = float(numeric_parts[0])
+                                distance_ang = float(numeric_parts[1])
+                                overlap_pop = float(numeric_parts[2])
+                                
+                                neighbors.append({
+                                    'atom_b_number': atom_b_num,
+                                    'atom_b_element': atom_b_element,
+                                    'cell_indices': [cell_i, cell_j, cell_k],
+                                    'distance_au': distance_au,
+                                    'distance_ang': distance_ang,
+                                    'overlap_population': overlap_pop
+                                })
+                    except (ValueError, IndexError):
+                        continue
+            
+            if neighbors:
+                overlaps.append({
+                    'atom_a_number': atom_a_num,
+                    'atom_a_element': atom_a_element,
+                    'neighbors': neighbors
+                })
         
         return overlaps
     
@@ -665,9 +1015,311 @@ class CrystalPropertyExtractor:
         
         return saved_count
     
+    def _extract_computational_properties(self, content: str) -> Dict[str, Any]:
+        """Extract computational performance and timing properties."""
+        props = {}
+        
+        # CPU time extraction
+        cpu_time_match = re.search(r'TOTAL CPU TIME\s*[=:]\s*([\d.]+)', content, re.IGNORECASE)
+        if cpu_time_match:
+            props['total_cpu_time'] = float(cpu_time_match.group(1))
+        
+        # Alternative CPU time patterns
+        cpu_patterns = [
+            r'CPU TIME\s*[=:]\s*([\d.]+)',
+            r'ELAPSED TIME\s*[=:]\s*([\d.]+)', 
+            r'WALL TIME\s*[=:]\s*([\d.]+)'
+        ]
+        
+        for pattern in cpu_patterns:
+            match = re.search(pattern, content, re.IGNORECASE)
+            if match and 'total_cpu_time' not in props:
+                props['cpu_time'] = float(match.group(1))
+                break
+        
+        # Fermi energy extraction - including SP calculation conducting state format
+        fermi_patterns = [
+            r'FERMI ENERGY\s*[=:]\s*([-\d.]+)',
+            r'FERMI LEVEL\s*[=:]\s*([-\d.]+)',
+            r'CHEMICAL POTENTIAL\s*[=:]\s*([-\d.]+)',
+            r'EFERMI\(AU\)\s+([-\d.E+\-]+)',  # SP calculation conducting state: "EFERMI(AU) -9.9423732E-02"
+            r'POSSIBLY CONDUCTING STATE.*?EFERMI\(AU\)\s+([-\d.E+\-]+)'  # Full conducting state pattern
+        ]
+        
+        for pattern in fermi_patterns:
+            match = re.search(pattern, content, re.IGNORECASE)
+            if match:
+                props['fermi_energy'] = float(match.group(1))
+                break
+        
+        # SCF cycles
+        scf_match = re.search(r'SCF FIELD CONVERGENCE IN\s*(\d+)\s*CYCLES', content, re.IGNORECASE)
+        if scf_match:
+            props['scf_cycles'] = int(scf_match.group(1))
+        
+        # Memory usage (if available)
+        memory_patterns = [
+            r'MEMORY USAGE\s*[=:]\s*([\d.]+)\s*MB',
+            r'MAX MEMORY\s*[=:]\s*([\d.]+)',
+            r'TOTAL MEMORY\s*[=:]\s*([\d.]+)'
+        ]
+        
+        for pattern in memory_patterns:
+            match = re.search(pattern, content, re.IGNORECASE)
+            if match:
+                props['memory_usage'] = float(match.group(1))
+                break
+        
+        return props
+    
+    def _extract_band_structure_properties(self, content: str, output_file: Path) -> Dict[str, Any]:
+        """Extract band structure specific properties from BAND calculations."""
+        props = {}
+        
+        # Check if this is a BAND calculation
+        if 'BAND STRUCTURE' not in content.upper() and 'FROM BAND' not in content:
+            return props
+            
+        # Extract k-point information
+        kpoint_match = re.search(r'TOTAL OF\s*(\d+)\s*K-POINTS ALONG THE PATH', content, re.IGNORECASE)
+        if kpoint_match:
+            props['total_kpoints'] = int(kpoint_match.group(1))
+        
+        # Extract band range information
+        band_range_match = re.search(r'FROM BAND\s*(\d+)\s*TO BAND\s*(\d+)', content, re.IGNORECASE)
+        if band_range_match:
+            props['band_start'] = int(band_range_match.group(1))
+            props['band_end'] = int(band_range_match.group(2))
+            props['total_bands'] = int(band_range_match.group(2)) - int(band_range_match.group(1)) + 1
+            
+        # Extract Fermi energy from BAND calculation
+        fermi_patterns = [
+            r'FERMI ENERGY\s*[=:]\s*([-\d.]+)',
+            r'FERMI LEVEL\s*[=:]\s*([-\d.]+)',
+            r'EF\s*[=:]\s*([-\d.]+)',
+            r'FERMI ENERGY\s+([-\d.E+\-]+)',  # CRYSTAL format: "FERMI ENERGY -0.123E+00"
+        ]
+        
+        for pattern in fermi_patterns:
+            match = re.search(pattern, content, re.IGNORECASE)
+            if match:
+                props['fermi_energy_band'] = float(match.group(1))
+                break
+                
+        # Check for BAND.DAT file and extract information
+        band_dat_file = output_file.parent / "BAND.DAT"
+        if band_dat_file.exists():
+            props['band_dat_exists'] = True
+            props['band_dat_size'] = band_dat_file.stat().st_size
+            
+            # Try to extract information from DAT file using existing processor
+            try:
+                from dat_file_processor import DatFileProcessor
+                processor = DatFileProcessor()
+                dat_info = processor.process_band_dat_file(band_dat_file)
+                if dat_info:
+                    props.update(dat_info)
+            except ImportError:
+                pass  # DAT file processor not available
+            except Exception as e:
+                print(f"Warning: Could not process BAND.DAT file: {e}")
+        
+        # Extract band gap information specific to BAND calculations
+        if 'BAND GAP' in content:
+            # Look for VBM/CBM information
+            vbm_match = re.search(r'TOP OF VALENCE BANDS\s*[^\d]*(-?[\d.]+)', content, re.IGNORECASE)
+            if vbm_match:
+                props['vbm_energy'] = float(vbm_match.group(1))
+                
+            cbm_match = re.search(r'BOTTOM OF CONDUCTION BANDS\s*[^\d]*(-?[\d.]+)', content, re.IGNORECASE)
+            if cbm_match:
+                props['cbm_energy'] = float(cbm_match.group(1))
+        
+        # Mark this as a band structure calculation
+        if props:
+            props['calculation_type'] = 'BAND'
+            props['has_band_structure'] = True
+            
+        return props
+    
+    def _extract_dos_properties(self, content: str, output_file: Path) -> Dict[str, Any]:
+        """Extract density of states specific properties from DOSS calculations."""
+        props = {}
+        
+        # Check if this is a DOSS calculation
+        if 'DENSITY OF STATES' not in content.upper() and 'DOSS' not in content.upper():
+            return props
+            
+        # Extract DOS energy range
+        dos_range_match = re.search(r'ENERGY RANGE\s*FROM\s*([-\d.]+)\s*TO\s*([-\d.]+)', content, re.IGNORECASE)
+        if dos_range_match:
+            props['dos_energy_min'] = float(dos_range_match.group(1))
+            props['dos_energy_max'] = float(dos_range_match.group(2))
+            props['dos_energy_range'] = float(dos_range_match.group(2)) - float(dos_range_match.group(1))
+        
+        # Extract number of energy points
+        points_match = re.search(r'NUMBER OF ENERGY POINTS\s*[=:]\s*(\d+)', content, re.IGNORECASE)
+        if points_match:
+            props['dos_energy_points'] = int(points_match.group(1))
+            
+        # Extract DOS broadening
+        broadening_match = re.search(r'BROADENING\s*[=:]\s*([\d.]+)', content, re.IGNORECASE)
+        if broadening_match:
+            props['dos_broadening'] = float(broadening_match.group(1))
+        
+        # Extract Fermi energy from DOSS calculation
+        fermi_patterns = [
+            r'FERMI ENERGY\s*[=:]\s*([-\d.]+)',
+            r'FERMI LEVEL\s*[=:]\s*([-\d.]+)',
+            r'EF\s*[=:]\s*([-\d.]+)',
+            r'FERMI ENERGY\s+([-\d.E+\-]+)',  # CRYSTAL format: "FERMI ENERGY -0.123E+00"
+        ]
+        
+        for pattern in fermi_patterns:
+            match = re.search(pattern, content, re.IGNORECASE)
+            if match:
+                props['fermi_energy_dos'] = float(match.group(1))
+                break
+                
+        # Check for DOSS.DAT file and extract information
+        doss_dat_file = output_file.parent / "DOSS.DAT"
+        alt_doss_dat = output_file.parent / f"{output_file.stem}.DOSS.DAT"
+        
+        dat_file = None
+        if doss_dat_file.exists():
+            dat_file = doss_dat_file
+        elif alt_doss_dat.exists():
+            dat_file = alt_doss_dat
+            
+        if dat_file:
+            props['doss_dat_exists'] = True
+            props['doss_dat_size'] = dat_file.stat().st_size
+            
+            # Try to extract information from DAT file using existing processor
+            try:
+                from dat_file_processor import DatFileProcessor
+                processor = DatFileProcessor()
+                dat_info = processor.process_doss_dat_file(dat_file)
+                if dat_info:
+                    props.update(dat_info)
+            except ImportError:
+                pass  # DAT file processor not available
+            except Exception as e:
+                print(f"Warning: Could not process DOSS.DAT file: {e}")
+        
+        # Extract total DOS at Fermi level
+        dos_fermi_match = re.search(r'DOS AT FERMI LEVEL\s*[=:]\s*([\d.]+)', content, re.IGNORECASE)
+        if dos_fermi_match:
+            props['dos_at_fermi'] = float(dos_fermi_match.group(1))
+        
+        # Mark this as a DOS calculation
+        if props:
+            props['calculation_type'] = 'DOSS'
+            props['has_dos'] = True
+            
+        return props
+    
+    def _classify_electronic_properties(self, properties: Dict[str, Any]) -> Dict[str, Any]:
+        """Classify electronic properties based on band gap values."""
+        classification = {}
+        
+        # Find the primary band gap value
+        band_gap = None
+        gap_source = None
+        
+        # Priority order for band gap sources
+        gap_sources = [
+            ('band_gap', 'general'),
+            ('indirect_band_gap', 'indirect'),
+            ('direct_band_gap', 'direct'),
+            ('band_gap_from_dos', 'dos_analysis'),
+            ('alpha_band_gap', 'alpha_spin'),
+            ('beta_band_gap', 'beta_spin')
+        ]
+        
+        for gap_prop, source in gap_sources:
+            if gap_prop in properties and properties[gap_prop] is not None:
+                try:
+                    gap_value = float(properties[gap_prop])
+                    if gap_value >= 0:  # Valid band gap
+                        band_gap = gap_value
+                        gap_source = source
+                        break
+                except (ValueError, TypeError):
+                    continue
+        
+        if band_gap is not None:
+            # Electronic classification based on band gap
+            if band_gap > 2.0:
+                electronic_type = 'insulator'
+            elif band_gap > 0.0:
+                electronic_type = 'semiconductor'
+            else:
+                electronic_type = 'conductor'
+            
+            classification.update({
+                'electronic_classification': electronic_type,
+                'classification_band_gap': band_gap,
+                'classification_gap_source': gap_source
+            })
+            
+            # Additional detailed classification
+            if electronic_type == 'insulator':
+                if band_gap > 5.0:
+                    classification['insulator_type'] = 'wide_band_gap'
+                elif band_gap > 3.0:
+                    classification['insulator_type'] = 'medium_band_gap'
+                else:
+                    classification['insulator_type'] = 'narrow_band_gap'
+            
+            elif electronic_type == 'semiconductor':
+                if band_gap > 1.5:
+                    classification['semiconductor_type'] = 'wide_band_gap'
+                elif band_gap > 1.0:
+                    classification['semiconductor_type'] = 'medium_band_gap'
+                else:
+                    classification['semiconductor_type'] = 'narrow_band_gap'
+        
+        # Magnetic classification for spin-polarized systems
+        if properties.get('is_spin_polarized', False):
+            classification['magnetic_classification'] = 'spin_polarized'
+            
+            # Check for magnetic moment if available
+            alpha_gap = properties.get('alpha_band_gap')
+            beta_gap = properties.get('beta_band_gap')
+            
+            if alpha_gap is not None and beta_gap is not None:
+                try:
+                    alpha_val = float(alpha_gap)
+                    beta_val = float(beta_gap)
+                    gap_difference = abs(alpha_val - beta_val)
+                    
+                    if gap_difference > 0.5:
+                        classification['magnetic_type'] = 'strong_magnetic'
+                    elif gap_difference > 0.1:
+                        classification['magnetic_type'] = 'weak_magnetic'
+                    else:
+                        classification['magnetic_type'] = 'non_magnetic'
+                        
+                except (ValueError, TypeError):
+                    pass
+        else:
+            classification['magnetic_classification'] = 'non_magnetic'
+        
+        # Metallic vs non-metallic classification
+        if band_gap is not None:
+            if band_gap <= 0.0:
+                classification['conductivity_type'] = 'metallic'
+            else:
+                classification['conductivity_type'] = 'non_metallic'
+        
+        return classification
+    
     def _categorize_property(self, prop_name: str) -> str:
         """Categorize a property based on its name."""
-        if any(x in prop_name.lower() for x in ['lattice', 'cell', 'volume', 'density', 'atomic', 'position']):
+        if any(x in prop_name.lower() for x in ['primitive_a', 'primitive_b', 'primitive_c', 'primitive_alpha', 'primitive_beta', 'primitive_gamma']):
+            return 'lattice'
+        elif any(x in prop_name.lower() for x in ['cell', 'volume', 'density', 'atomic', 'position']):
             return 'structural'
         elif any(x in prop_name.lower() for x in ['band_gap', 'energy', 'gap', 'electronic']):
             return 'electronic'
@@ -677,29 +1329,109 @@ class CrystalPropertyExtractor:
             return 'optimization'
         elif any(x in prop_name.lower() for x in ['space_group', 'crystal_system', 'centering']):
             return 'crystallographic'
+        elif any(x in prop_name.lower() for x in ['cpu_time', 'scf_cycles', 'memory', 'fermi_energy']):
+            return 'computational'
+        elif any(x in prop_name.lower() for x in ['band_', 'total_kpoints', 'total_bands', 'vbm_', 'cbm_', 'has_band_structure']):
+            return 'band_structure'
+        elif any(x in prop_name.lower() for x in ['dos_', 'doss_', 'has_dos']):
+            return 'density_of_states'
+        elif any(x in prop_name.lower() for x in ['electronic_classification', 'classification_', 'insulator_type', 'semiconductor_type', 'magnetic_', 'conductivity_type']):
+            return 'electronic_classification'
         else:
             return 'other'
     
     def _get_property_unit(self, prop_name: str) -> str:
-        """Get the unit for a property based on its name."""
-        if 'au' in prop_name.lower():
+        """Get the appropriate unit for a property."""
+        
+        # Energy properties
+        if any(x in prop_name.lower() for x in ['energy', 'gap']) and prop_name.endswith('_ev'):
+            return 'eV'
+        elif any(x in prop_name.lower() for x in ['energy', 'gap']) and prop_name.endswith('_au'):
             return 'Hartree'
-        elif 'ev' in prop_name.lower():
+        elif 'band_gap' in prop_name.lower() or 'gap' in prop_name.lower():
             return 'eV'
-        elif any(x in prop_name.lower() for x in ['gap', 'band_gap']):
-            return 'eV'
+        
+        # Lattice parameters
+        elif any(x in prop_name.lower() for x in ['primitive_a', 'primitive_b', 'primitive_c', 'crystallographic_a', 'crystallographic_b', 'crystallographic_c']):
+            return 'Å'
+        elif any(x in prop_name.lower() for x in ['alpha', 'beta', 'gamma']) and 'primitive' in prop_name:
+            return 'degrees'
         elif 'volume' in prop_name.lower():
             return 'Å³'
         elif 'density' in prop_name.lower():
             return 'g/cm³'
-        elif any(x in prop_name.lower() for x in ['_a', '_b', '_c', 'distance']):
+        elif 'distance' in prop_name.lower():
             return 'Å'
-        elif any(x in prop_name.lower() for x in ['alpha', 'beta', 'gamma']):
-            return 'degrees'
-        elif 'charge' in prop_name.lower():
-            return 'e'
+        
+        # Count properties (dimensionless)
+        elif any(x in prop_name.lower() for x in ['atoms_count', 'coordination_number', 'atoms_in_unit_cell', 'shells']):
+            return 'dimensionless'
+        
+        # Population analysis
+        elif 'mulliken' in prop_name.lower():
+            return 'electrons'
+        elif 'overlap_population' in prop_name.lower():
+            return 'dimensionless'
+        
+        # Boolean properties
+        elif any(x in prop_name.lower() for x in ['converged', 'polarized']):
+            return 'boolean'
+        
+        # Cycles and iterations
+        elif 'cycles' in prop_name.lower():
+            return 'cycles'
+        
+        # Gradients
+        elif 'gradient' in prop_name.lower():
+            return 'Hartree/Bohr'
+        
+        # Codes and identifiers
+        elif any(x in prop_name.lower() for x in ['code', 'centering']):
+            return 'code'
+        elif 'space_group' in prop_name.lower():
+            return 'number'
+        
+        # Positions and coordinates
+        elif 'position' in prop_name.lower():
+            return 'coordinates'
+        
+        # Complex data (JSON)
+        elif any(x in prop_name.lower() for x in ['processed_', 'neighbor_analysis']):
+            return 'JSON'
+        
+        # Computational properties
+        elif 'cpu_time' in prop_name.lower() or 'time' in prop_name.lower():
+            return 'seconds'
+        elif 'fermi_energy' in prop_name.lower():
+            return 'eV'
+        elif 'scf_cycles' in prop_name.lower():
+            return 'cycles'
+        elif 'memory' in prop_name.lower():
+            return 'MB'
+        
+        # Band structure properties
+        elif any(x in prop_name.lower() for x in ['fermi_energy_band', 'fermi_energy_dos', 'vbm_energy', 'cbm_energy']):
+            return 'eV'
+        elif any(x in prop_name.lower() for x in ['total_kpoints', 'total_bands', 'band_start', 'band_end', 'dos_energy_points']):
+            return 'dimensionless'
+        elif any(x in prop_name.lower() for x in ['dos_energy_min', 'dos_energy_max', 'dos_energy_range', 'dos_broadening']):
+            return 'eV'
+        elif any(x in prop_name.lower() for x in ['dos_at_fermi']):
+            return 'states/eV'
+        elif any(x in prop_name.lower() for x in ['band_dat_size', 'doss_dat_size']):
+            return 'bytes'
+        elif any(x in prop_name.lower() for x in ['band_dat_exists', 'doss_dat_exists', 'has_band_structure', 'has_dos']):
+            return 'boolean'
+        
+        # Electronic classification properties
+        elif any(x in prop_name.lower() for x in ['electronic_classification', 'insulator_type', 'semiconductor_type', 'magnetic_classification', 'magnetic_type', 'conductivity_type', 'classification_gap_source']):
+            return 'category'
+        elif 'classification_band_gap' in prop_name.lower():
+            return 'eV'
+        
+        # Default for unknown properties
         else:
-            return ''
+            return 'dimensionless'
 
 
 def main():
