@@ -1057,6 +1057,100 @@ fi'''
             # Clean up isolated directory
             shutil.rmtree(work_dir, ignore_errors=True)
             
+    def _check_and_trigger_pending_calculations(self, material_id: str, planned_sequence: List[str]) -> List[str]:
+        """
+        Check for any calculations in the planned sequence that should have been triggered
+        but haven't been yet. This handles cases where workflow steps might have been missed.
+        
+        Returns:
+            List of new calculation IDs created
+        """
+        new_calc_ids = []
+        
+        if not planned_sequence:
+            return new_calc_ids
+            
+        # Get all calculations for this material
+        all_calcs = self.db.get_calculations_by_status(material_id=material_id)
+        
+        # Build a map of completed calculations by type
+        completed_by_type = {}
+        for calc in all_calcs:
+            if calc['status'] == 'completed':
+                calc_type = calc['calc_type']
+                if calc_type not in completed_by_type:
+                    completed_by_type[calc_type] = []
+                completed_by_type[calc_type].append(calc)
+        
+        # Check if any pending calculations can now be started
+        for planned_type in planned_sequence:
+            base_type, type_num = self._parse_calc_type(planned_type)
+            
+            # Skip if already completed or in progress
+            existing = [c for c in all_calcs if c['calc_type'] == planned_type]
+            if existing:
+                continue
+                
+            # Check dependencies
+            can_start = False
+            source_calc_id = None
+            
+            if base_type == "SP":
+                # SP depends on corresponding OPT
+                opt_type = f"OPT{type_num}" if type_num > 1 else "OPT"
+                if opt_type in completed_by_type:
+                    can_start = True
+                    source_calc_id = completed_by_type[opt_type][-1]['calc_id']
+                    
+            elif base_type == "FREQ":
+                # FREQ depends on corresponding OPT
+                opt_type = f"OPT{type_num}" if type_num > 1 else "OPT"
+                if opt_type in completed_by_type:
+                    can_start = True
+                    source_calc_id = completed_by_type[opt_type][-1]['calc_id']
+                    
+            elif base_type in ["BAND", "DOSS"]:
+                # BAND/DOSS depend on corresponding SP (or OPT if no SP)
+                sp_type = f"SP{type_num}" if type_num > 1 else "SP"
+                opt_type = f"OPT{type_num}" if type_num > 1 else "OPT"
+                
+                if sp_type in completed_by_type:
+                    can_start = True
+                    source_calc_id = completed_by_type[sp_type][-1]['calc_id']
+                elif opt_type in completed_by_type:
+                    can_start = True
+                    source_calc_id = completed_by_type[opt_type][-1]['calc_id']
+                    
+            elif base_type == "OPT" and type_num > 1:
+                # OPT2+ depends on previous SP
+                prev_sp_type = f"SP{type_num-1}" if type_num > 2 else "SP"
+                if prev_sp_type in completed_by_type:
+                    can_start = True
+                    source_calc_id = completed_by_type[prev_sp_type][-1]['calc_id']
+            
+            # Trigger the calculation if dependencies are met
+            if can_start and source_calc_id:
+                print(f"Triggering pending {planned_type} calculation...")
+                
+                if base_type == "SP":
+                    calc_id = self.generate_numbered_calculation(source_calc_id, planned_type)
+                elif base_type == "FREQ":
+                    if type_num > 1:
+                        calc_id = self.generate_numbered_calculation(source_calc_id, planned_type)
+                    else:
+                        calc_id = self.generate_freq_from_opt(source_calc_id)
+                elif base_type in ["BAND", "DOSS"]:
+                    calc_id = self.generate_property_calculation(source_calc_id, planned_type)
+                elif base_type == "OPT":
+                    calc_id = self.generate_numbered_calculation(source_calc_id, planned_type)
+                else:
+                    calc_id = None
+                    
+                if calc_id:
+                    new_calc_ids.append(calc_id)
+                    
+        return new_calc_ids
+
     def execute_workflow_step(self, material_id: str, completed_calc_id: str) -> List[str]:
         """
         Execute the next workflow step(s) for a material.
@@ -1095,7 +1189,7 @@ fi'''
             if planned_sequence:
                 # Find current position in sequence and get next step
                 current_index = self._find_calc_position_in_sequence(calc_type, completed_calc, planned_sequence)
-                next_steps = self._get_next_steps_from_sequence(current_index, planned_sequence)
+                next_steps = self._get_next_steps_from_sequence(current_index, planned_sequence, calc_type)
                 
                 for next_calc_type in next_steps:
                     next_base_type, next_num = self._parse_calc_type(next_calc_type)
@@ -1110,14 +1204,22 @@ fi'''
                         if sp_calc_id:
                             new_calc_ids.append(sp_calc_id)
                     elif next_base_type == "FREQ":
-                        freq_calc_id = self.generate_freq_from_opt(completed_calc_id)
+                        # Generate FREQ with correct numbering
+                        if next_num > 1:
+                            freq_calc_id = self.generate_numbered_calculation(completed_calc_id, next_calc_type)
+                        else:
+                            freq_calc_id = self.generate_freq_from_opt(completed_calc_id)
                         if freq_calc_id:
                             new_calc_ids.append(freq_calc_id)
             else:
-                # Default behavior: generate SP only
+                # Default behavior: generate SP and FREQ in parallel
                 sp_calc_id = self.generate_sp_from_opt(completed_calc_id)
                 if sp_calc_id:
                     new_calc_ids.append(sp_calc_id)
+                # Also generate FREQ from OPT (runs in parallel with SP)
+                freq_calc_id = self.generate_freq_from_opt(completed_calc_id)
+                if freq_calc_id:
+                    new_calc_ids.append(freq_calc_id)
         
         elif base_type == "SP":
             # Generate next steps based on workflow plan or default behavior
@@ -1125,11 +1227,11 @@ fi'''
             if planned_sequence:
                 # Find current position and get next steps
                 current_index = self._find_calc_position_in_sequence(calc_type, completed_calc, planned_sequence)
-                next_steps = self._get_next_steps_from_sequence(current_index, planned_sequence)
+                next_steps = self._get_next_steps_from_sequence(current_index, planned_sequence, calc_type)
                 
                 # Generate calculations for all next steps (which may be parallel)
                 for next_calc_type in next_steps:
-                    next_base_type, _ = self._parse_calc_type(next_calc_type)
+                    next_base_type, next_num = self._parse_calc_type(next_calc_type)
                     
                     if next_base_type == "DOSS":
                         print(f"Generating {next_calc_type} from planned sequence...")
@@ -1141,11 +1243,6 @@ fi'''
                         band_calc_id = self.generate_property_calculation(completed_calc_id, next_calc_type)
                         if band_calc_id:
                             new_calc_ids.append(band_calc_id)
-                    elif next_base_type == "FREQ":
-                        print(f"Generating {next_calc_type} from planned sequence...")
-                        freq_calc_id = self.generate_freq_from_sp(completed_calc_id)
-                        if freq_calc_id:
-                            new_calc_ids.append(freq_calc_id)
                     elif next_base_type == "OPT":
                         # Generate another optimization from SP
                         print(f"Generating {next_calc_type} from SP...")
@@ -1170,6 +1267,13 @@ fi'''
                     new_calc_ids.append(band_calc_id)
                 
         # Note: DOSS, BAND, and FREQ are typically terminal calculations in the workflow
+        
+        # Also check for any pending calculations that should have been triggered earlier
+        if planned_sequence:
+            pending_calc_ids = self._check_and_trigger_pending_calculations(material_id, planned_sequence)
+            if pending_calc_ids:
+                print(f"Also triggered {len(pending_calc_ids)} pending calculations from the workflow plan")
+                new_calc_ids.extend(pending_calc_ids)
         
         if new_calc_ids:
             print(f"Generated {len(new_calc_ids)} new calculations: {new_calc_ids}")
@@ -1216,39 +1320,70 @@ fi'''
             # Not found in sequence, return end
             return len(planned_sequence) - 1
                 
-    def _get_next_steps_from_sequence(self, current_index: int, planned_sequence: List[str]) -> List[str]:
+    def _get_next_steps_from_sequence(self, current_index: int, planned_sequence: List[str], 
+                                     completed_calc_type: str) -> List[str]:
         """
-        Get the next calculation steps from the planned sequence.
+        Get the next calculation steps from the planned sequence based on what just completed.
         
-        Returns all immediately following steps that should run in parallel.
+        Implements proper dependency logic:
+        - OPT completion triggers: SP and FREQ (in parallel)
+        - SP completion triggers: BAND, DOSS, and any subsequent OPT (e.g., OPT2)
+        - FREQ depends only on OPT (not SP)
+        - Subsequent OPTs (OPT2, OPT3) depend on the previous SP
+        
+        Args:
+            current_index: Current position in the sequence
+            planned_sequence: The full planned calculation sequence
+            completed_calc_type: The type of calculation that just completed
+            
+        Returns:
+            List of calculation types that can now be started in parallel
         """
-        if current_index >= len(planned_sequence) - 1:
-            # We're at the end of the sequence
+        if not planned_sequence:
             return []
             
         next_steps = []
-        next_index = current_index + 1
+        completed_base, completed_num = self._parse_calc_type(completed_calc_type)
         
-        # Get the next step
-        if next_index < len(planned_sequence):
-            next_type = planned_sequence[next_index]
-            next_steps.append(next_type)
+        # Scan the entire sequence for calculations that depend on what just completed
+        # Don't limit to after current_index since dependencies can be complex
+        for i, next_type in enumerate(planned_sequence):
+            next_base, next_num = self._parse_calc_type(next_type)
             
-            # Check if there are parallel steps (e.g., BAND, DOSS, FREQ after SP)
-            # These can run in parallel if they all depend on the same previous step
-            parallel_base_types = ['BAND', 'DOSS', 'FREQ']
-            next_base, _ = self._parse_calc_type(next_type)
+            # Skip if already in our list or if it's the completed calculation itself
+            if next_type in next_steps or next_type == completed_calc_type:
+                continue
             
-            if next_base in parallel_base_types:
-                # Look for other parallel types immediately following
-                for i in range(next_index + 1, len(planned_sequence)):
-                    following_base, _ = self._parse_calc_type(planned_sequence[i])
-                    if following_base in parallel_base_types:
-                        next_steps.append(planned_sequence[i])
-                    else:
-                        # Stop when we hit a non-parallel type
-                        break
-                        
+            # Skip if this calculation has already been started
+            # This check would need to be done by querying the database, but for now
+            # we'll rely on the workflow engine to handle duplicate prevention
+            
+            # Determine if this calculation can start based on dependencies
+            can_start = False
+            
+            if completed_base == "OPT":
+                # OPT completion can trigger SP and FREQ with same number
+                if next_base == "SP" and next_num == completed_num:
+                    # SP with same number as OPT (e.g., OPT -> SP, OPT2 -> SP2)
+                    can_start = True
+                elif next_base == "FREQ" and next_num == completed_num:
+                    # FREQ with same number as OPT
+                    can_start = True
+                    
+            elif completed_base == "SP":
+                # SP completion can trigger BAND, DOSS with same number, and next OPT
+                if next_base in ["BAND", "DOSS"]:
+                    # BAND and DOSS with same number as SP
+                    if next_num == completed_num:
+                        can_start = True
+                elif next_base == "OPT" and next_num == completed_num + 1:
+                    # Next OPT (e.g., SP -> OPT2, SP2 -> OPT3)
+                    can_start = True
+                    
+            # If this calculation can start, add it to the list
+            if can_start:
+                next_steps.append(next_type)
+        
         return next_steps
         
     def _parse_calc_type(self, calc_type: str) -> Tuple[str, int]:

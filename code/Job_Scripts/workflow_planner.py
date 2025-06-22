@@ -943,18 +943,18 @@ class WorkflowPlanner:
         if not proceed:
             return self._get_advanced_sp_config()
         
-        expert_config = {
-            "expert_mode": True,
-            "interactive_setup": True,
-            "inherit_geometry": True,
-            "inherit_settings": False,
-            "run_interactive": True  # This flag will trigger interactive CRYSTALOptToD12.py
-        }
+        # Copy required scripts early so we can use them
+        self._copy_required_scripts_for_expert_mode()
         
-        print(f"    ✅ Expert SP configuration will run CRYSTALOptToD12.py interactively during workflow execution")
-        print(f"    You will be prompted for all configuration details when the SP step is reached")
+        # Run CRYSTALOptToD12.py interactively NOW during planning
+        expert_config = self._run_interactive_crystal_opt_config("SP")
         
-        return expert_config
+        if expert_config:
+            print(f"    ✅ Expert SP configuration completed successfully")
+            return expert_config
+        else:
+            print(f"    ❌ Expert SP configuration failed, falling back to advanced mode")
+            return self._get_advanced_sp_config()
         
     def _get_basis_modifications(self) -> Dict[str, Any]:
         """Get basis set modification settings"""
@@ -1125,12 +1125,34 @@ class WorkflowPlanner:
         else:
             # Expert - run CRYSTALOptToD12.py interactively
             print("\n  Expert mode: Full interactive configuration")
-            config = {
-                "calculation_type": "FREQ",
-                "source": "CRYSTALOptToD12.py",
-                "interactive": True,
-                "inherit_base_settings": True
-            }
+            
+            # Copy required scripts early
+            self._copy_required_scripts_for_expert_mode()
+            
+            # Run CRYSTALOptToD12.py interactively for FREQ configuration
+            expert_config = self._run_interactive_crystal_opt_config("FREQ")
+            
+            if expert_config:
+                print("  ✅ Expert FREQ configuration completed successfully")
+                return expert_config
+            else:
+                print("  ❌ Expert FREQ configuration failed, using advanced settings")
+                # Fall back to advanced settings
+                config = {
+                    "calculation_type": "FREQ",
+                    "source": "CRYSTALOptToD12.py",
+                    "inherit_base_settings": True,
+                    "frequency_settings": {
+                        "mode": "FREQCALC",
+                        "intensities": True,
+                        "raman": True,
+                        "custom_tolerances": {
+                            "TOLINTEG": "12 12 12 12 24",
+                            "TOLDEE": 12
+                        }
+                    }
+                }
+                return config
         
         return config
         
@@ -1229,33 +1251,29 @@ class WorkflowPlanner:
     def _get_expert_opt_config(self, calc_type: str, step_num: int) -> Dict[str, Any]:
         """Get expert optimization configuration with full CRYSTALOptToD12.py integration"""
         print(f"\n    Expert {calc_type} Setup:")
-        print(f"    This will create a JSON configuration for full CRYSTALOptToD12.py customization")
-        
-        # Create a configuration file name
-        config_name = f"opt_config_{calc_type.lower()}_step_{step_num}.json"
-        config_path = self.work_dir / "workflow_configs" / config_name
-        
-        print(f"    Configuration will be saved as: {config_name}")
+        print(f"    This will run CRYSTALOptToD12.py interactively for full customization")
         
         proceed = yes_no_prompt("    Proceed with expert configuration?", "yes")
         if not proceed:
             return self._get_advanced_opt_config()
         
-        # Expert configuration setup
-        expert_config = {
-            "expert_mode": True,
-            "config_file": config_name,
-            "interactive_setup": True,
-            "inherit_base_settings": False  # Full customization
-        }
+        # Copy required scripts early so we can use them
+        self._copy_required_scripts_for_expert_mode()
         
-        # Create the expert configuration template
-        self._create_expert_opt_template(config_path, calc_type, step_num)
+        # Run CRYSTALOptToD12.py interactively NOW during planning
+        # For OPT2, OPT3 etc., we pass "OPT" as calc type to CRYSTALOptToD12.py
+        crystal_calc_type = "OPT" if calc_type.startswith("OPT") else calc_type
+        expert_config = self._run_interactive_crystal_opt_config(crystal_calc_type)
         
-        print(f"    ✅ Expert configuration template created: {config_name}")
-        print(f"    This will be used by CRYSTALOptToD12.py for interactive setup")
-        
-        return expert_config
+        if expert_config:
+            # Add step-specific information
+            expert_config["step_num"] = step_num
+            expert_config["workflow_calc_type"] = calc_type  # Keep original OPT2, OPT3 etc.
+            print(f"    ✅ Expert {calc_type} configuration completed successfully")
+            return expert_config
+        else:
+            print(f"    ❌ Expert {calc_type} configuration failed, falling back to advanced mode")
+            return self._get_advanced_opt_config()
     
     def _get_method_modifications(self) -> Dict[str, Any]:
         """Get DFT method modification settings"""
@@ -1357,6 +1375,124 @@ class WorkflowPlanner:
             json.dump(template, f, indent=2)
         
         return template
+        
+    def _copy_required_scripts_for_expert_mode(self):
+        """Copy required scripts early for expert mode configuration"""
+        print("      Copying required scripts for expert configuration...")
+        
+        # Scripts we need for expert mode
+        required_scripts = [
+            "CRYSTALOptToD12.py",
+            "d12creation.py",
+            "StructureClass.py"
+        ]
+        
+        # Source directory
+        source_dir = Path(__file__).parent.parent / "Crystal_To_CIF"
+        
+        # Copy scripts to working directory
+        for script_name in required_scripts:
+            source_file = source_dir / script_name
+            dest_file = self.work_dir / script_name
+            
+            if source_file.exists() and not dest_file.exists():
+                shutil.copy2(source_file, dest_file)
+                print(f"        Copied: {script_name}")
+            elif dest_file.exists():
+                print(f"        Already exists: {script_name}")
+            else:
+                print(f"        Warning: Source not found: {script_name}")
+    
+    def _run_interactive_crystal_opt_config(self, calc_type: str) -> Optional[Dict[str, Any]]:
+        """Run CRYSTALOptToD12.py interactively for expert configuration"""
+        # Find CRYSTALOptToD12.py
+        local_script = self.work_dir / "CRYSTALOptToD12.py"
+        if local_script.exists():
+            script_path = local_script
+        else:
+            script_path = Path(__file__).parent.parent / "Crystal_To_CIF" / "CRYSTALOptToD12.py"
+            
+        if not script_path.exists():
+            print(f"      Error: CRYSTALOptToD12.py not found")
+            return None
+            
+        # Create a temporary output and D12 file for configuration
+        temp_dir = self.temp_dir / f"expert_config_{calc_type.lower()}"
+        temp_dir.mkdir(exist_ok=True)
+        
+        # Create minimal sample files for CRYSTALOptToD12.py to read
+        sample_out = temp_dir / "sample.out"
+        sample_d12 = temp_dir / "sample.d12"
+        
+        # Write minimal valid files
+        with open(sample_out, 'w') as f:
+            f.write("CRYSTAL23 OUTPUT\n")
+            f.write("FINAL OPTIMIZED GEOMETRY - DIMENSIONALITY OF THE SYSTEM      3\n")
+            f.write("LATTICE PARAMETERS (ANGSTROMS AND DEGREES) - BOHR = 0.5291772083 ANGSTROM\n")
+            f.write("A              B              C           ALPHA      BETA       GAMMA\n")
+            f.write("5.0000         5.0000         5.0000      90.000     90.000     90.000\n")
+            
+        with open(sample_d12, 'w') as f:
+            f.write("Sample D12 for configuration\n")
+            f.write("CRYSTAL\n")
+            f.write("0 0 0\n")
+            f.write("1\n")
+            f.write("5.0 5.0 5.0 90.0 90.0 90.0\n")
+            f.write("1\n")
+            f.write("1 0.0 0.0 0.0\n")
+            f.write("END\n")
+            f.write("99 0\n")
+            f.write("END\n")
+            f.write("DFT\n")
+            f.write("HSE06\n")
+            f.write("END\n")
+            
+        # Create a JSON config file to save the results
+        config_file = temp_dir / f"{calc_type.lower()}_expert_config.json"
+        
+        print(f"\n      Launching CRYSTALOptToD12.py for {calc_type} configuration...")
+        print(f"      Note: This is for configuration only - actual files will be processed during execution")
+        print("")
+        
+        # Build command
+        cmd = [
+            sys.executable, str(script_path),
+            "--out-file", str(sample_out),
+            "--d12-file", str(sample_d12),
+            "--output-dir", str(temp_dir),
+            "--save-options",
+            "--options-file", str(config_file)
+        ]
+        
+        try:
+            # Run interactively (no capture_output so user can interact)
+            result = subprocess.run(cmd, cwd=str(self.work_dir))
+            
+            if result.returncode == 0 and config_file.exists():
+                # Load the saved configuration
+                with open(config_file, 'r') as f:
+                    saved_config = json.load(f)
+                    
+                # Convert to our workflow config format
+                expert_config = {
+                    "expert_mode": True,
+                    "interactive_setup": False,  # Already done
+                    "crystal_opt_config": saved_config,
+                    "source": "CRYSTALOptToD12.py",
+                    "calculation_type": calc_type,
+                    "inherit_geometry": True,
+                    "config_file": str(config_file),
+                    "options_file": str(config_file)  # Store path to saved options
+                }
+                
+                return expert_config
+            else:
+                print(f"      CRYSTALOptToD12.py configuration failed or was cancelled")
+                return None
+                
+        except Exception as e:
+            print(f"      Error running CRYSTALOptToD12.py: {e}")
+            return None
         
     def get_custom_sp_settings(self) -> Dict[str, Any]:
         """Get custom single point settings"""
