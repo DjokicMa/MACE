@@ -1084,8 +1084,47 @@ fi'''
         else:
             script_path = Path(__file__).parent.parent / "Crystal_To_CIF" / "CRYSTALOptToD12.py"
         
-        # Check if this should run interactively (expert mode)
-        if config.get("run_interactive", False) or config.get("interactive", False):
+        # Check if expert mode was already configured during planning
+        if config.get("expert_mode", False) and config.get("crystal_opt_config"):
+            print(f"      Using expert configuration from planning phase for {calc_type}")
+            # Use the saved configuration from planning phase
+            saved_config = config.get("crystal_opt_config", {})
+            
+            # Create a temporary config file with the saved settings
+            temp_config = self.temp_dir / f"expert_{calc_type.lower()}_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            with open(temp_config, 'w') as f:
+                json.dump(saved_config, f, indent=2)
+            
+            # Run CRYSTALOptToD12.py with the saved configuration
+            cmd = [
+                sys.executable, str(script_path),
+                "--out-file", output_file,
+                "--d12-file", input_file,
+                "--output-dir", str(output_dir),
+                "--options-file", str(temp_config)
+            ]
+            
+            try:
+                print(f"      Running CRYSTALOptToD12.py with expert configuration...")
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode == 0:
+                    print(f"      Successfully generated {calc_type} input with expert settings")
+                    
+                    # Fix naming for OPT2 files
+                    if calc_type == "OPT2":
+                        self._fix_opt2_naming(output_dir, Path(output_file).stem)
+                else:
+                    print(f"      Error generating {calc_type} input: {result.stderr}")
+            except Exception as e:
+                print(f"      Error running with expert config: {e}")
+            
+            # Clean up temp config
+            if temp_config.exists():
+                temp_config.unlink()
+            return
+            
+        # Check if this should run interactively (fallback for old configs)
+        elif config.get("run_interactive", False) or config.get("interactive", False):
             print(f"      Running CRYSTALOptToD12.py interactively for expert {calc_type} configuration")
             
             # Run CRYSTALOptToD12.py interactively
