@@ -235,6 +235,18 @@ class WorkflowExecutor:
             }
         )
         
+        
+        # Create workflow metadata file for callback tracking
+        metadata = {
+            'workflow_id': workflow_id,
+            'step_num': step_num,
+            'calc_type': calc_type,
+            'material_id': material_id,
+            'calc_id': calc_id
+        }
+        metadata_file = calc_dir / '.workflow_metadata.json'
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=2)
         # Generate SLURM script in the calculation directory
         script_file = self.generate_individual_slurm_script(
             d12_file, calc_type, material_id, calc_dir, workflow_id, step_num

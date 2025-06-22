@@ -73,6 +73,18 @@ class WorkflowEngine:
                 continue
                 
         return None
+    def get_workflow_id_from_calculation(self, calc_dir: Path) -> Optional[str]:
+        """Get workflow ID from calculation directory metadata"""
+        metadata_file = calc_dir / '.workflow_metadata.json'
+        if metadata_file.exists():
+            try:
+                with open(metadata_file, 'r') as f:
+                    metadata = json.load(f)
+                    return metadata.get('workflow_id')
+            except Exception as e:
+                print(f"Error reading workflow metadata: {e}")
+        return None
+    
     
     def get_script_paths(self) -> Dict[str, Path]:
         """Get paths to all the CRYSTAL workflow scripts."""
@@ -1178,7 +1190,12 @@ fi'''
         # Look for workflow_id in settings (where it's stored) or metadata
         settings = json.loads(completed_calc.get('settings_json', '{}'))
         workflow_id = settings.get('workflow_id') or completed_calc.get('metadata', {}).get('workflow_id')
+        
+        print(f"DEBUG: Extracted workflow_id: {workflow_id}")
+        print(f"DEBUG: Settings: {settings}")
+        
         planned_sequence = self.get_workflow_sequence(workflow_id) if workflow_id else None
+        print(f"DEBUG: Planned sequence: {planned_sequence}")
         
         # Parse current calculation type to handle numbered types
         base_type, type_num = self._parse_calc_type(calc_type)
@@ -1558,15 +1575,27 @@ fi'''
                 calc_type=target_calc_type,
                 input_file=str(final_location),
                 work_dir=str(step_dir),
-                status='pending',
-                parent_calc_id=source_calc_id,
-                metadata={
+                settings={
                     'workflow_id': workflow_base.name,
                     'step_number': step_num,
                     'generated_from': source_calc_id,
-                    'generation_method': 'CRYSTALOptToD12.py'
+                    'generation_method': 'CRYSTALOptToD12.py',
+                    'parent_calc_id': source_calc_id
                 }
             )
+            
+            # Create workflow metadata file for callback tracking
+            metadata = {
+                'workflow_id': workflow_base.name,
+                'step_num': step_num,
+                'calc_type': target_calc_type,
+                'material_id': material_id,
+                'calc_id': calc_id,
+                'generated_from': source_calc_id
+            }
+            metadata_file = step_dir / '.workflow_metadata.json'
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
             
             # Submit if auto-submission is enabled
             if hasattr(self, 'auto_submit') and self.auto_submit:
