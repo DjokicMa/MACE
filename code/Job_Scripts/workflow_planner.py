@@ -1263,7 +1263,8 @@ class WorkflowPlanner:
         # Run CRYSTALOptToD12.py interactively NOW during planning
         # For OPT2, OPT3 etc., we pass "OPT" as calc type to CRYSTALOptToD12.py
         crystal_calc_type = "OPT" if calc_type.startswith("OPT") else calc_type
-        expert_config = self._run_interactive_crystal_opt_config(crystal_calc_type)
+        # Pass the full calc_type (e.g., OPT2, OPT3) instead of just "OPT"
+        expert_config = self._run_interactive_crystal_opt_config(calc_type)
         
         if expert_config:
             # Add step-specific information
