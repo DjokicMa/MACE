@@ -182,20 +182,90 @@ def extract_space_group_from_output(output_file: Path) -> Optional[int]:
     except:
         return None
     
-    # Look for space group information
-    patterns = [
+    # First try to find explicit space group numbers
+    number_patterns = [
         r'SPACE GROUP NUMBER\s+(\d+)',
         r'SPACE GROUP:\s+(\d+)',
         r'S\.G\.\s+(\d+)',
         r'SYMMOPS - SPACE GROUP\s+(\d+)'
     ]
     
-    for pattern in patterns:
+    for pattern in number_patterns:
         match = re.search(pattern, content, re.IGNORECASE)
         if match:
             sg_num = int(match.group(1))
             if 1 <= sg_num <= 230:  # Valid space group range
                 return sg_num
+    
+    # If no number found, try to map space group symbols to numbers
+    symbol_pattern = r'SPACE GROUP.*:\s*([A-Z0-9\s/-]{1,20})'
+    match = re.search(symbol_pattern, content, re.IGNORECASE)
+    if match:
+        sg_symbol = match.group(1).strip()
+        # Take only the first line if there are line breaks
+        sg_symbol = sg_symbol.split('\n')[0].strip()
+        # Remove extra spaces and normalize
+        sg_symbol = ' '.join(sg_symbol.split()).upper()
+        return _space_group_symbol_to_number(sg_symbol)
+    
+    return None
+
+
+def _space_group_symbol_to_number(symbol: str) -> Optional[int]:
+    """Map space group symbol to number."""
+    # Common space group mappings (Hermann-Mauguin symbols)
+    symbol_to_number = {
+        'P1': 1, 'P-1': 2, 'P2': 3, 'P21': 4, 'C2': 5, 'PM': 6, 'PC': 7, 'CM': 8, 'CC': 9,
+        'P2/M': 10, 'P21/M': 11, 'C2/M': 12, 'P2/C': 13, 'P21/C': 14, 'C2/C': 15,
+        'P222': 16, 'P2221': 17, 'P21212': 18, 'P212121': 19, 'C2221': 20, 'C222': 21, 'F222': 22,
+        'I222': 23, 'I212121': 24, 'PMM2': 25, 'PMC21': 26, 'PCC2': 27, 'PMA2': 28, 'PCA21': 29,
+        'PNC2': 30, 'PMN21': 31, 'PBA2': 32, 'PNA21': 33, 'PNN2': 34, 'CMM2': 35, 'CMC21': 36,
+        'CCC2': 37, 'AMM2': 38, 'AEM2': 39, 'AMA2': 40, 'AEA2': 41, 'FMM2': 42, 'FDD2': 43,
+        'IMM2': 44, 'IBA2': 45, 'IMA2': 46, 'PMMM': 47, 'PNNN': 48, 'PCCM': 49, 'PBAN': 50,
+        'PMMA': 51, 'PNNA': 52, 'PMNA': 53, 'PCCA': 54, 'PBAM': 55, 'PCCN': 56, 'PBCM': 57,
+        'PNNM': 58, 'PMMN': 59, 'PBCN': 60, 'PBCA': 61, 'PNMA': 62, 'CMCM': 63, 'CMCE': 64,
+        'CMMM': 65, 'CCCM': 66, 'CMME': 67, 'CCCE': 68, 'FMMM': 69, 'FDDD': 70, 'IMMM': 71,
+        'IBAM': 72, 'IBCA': 73, 'IMMA': 74, 'P4': 75, 'P41': 76, 'P42': 77, 'P43': 78,
+        'I4': 79, 'I41': 80, 'P-4': 81, 'I-4': 82, 'P4/M': 83, 'P42/M': 84, 'P4/N': 85,
+        'P42/N': 86, 'I4/M': 87, 'I41/A': 88, 'P422': 89, 'P4212': 90, 'P4122': 91,
+        'P41212': 92, 'P4222': 93, 'P42212': 94, 'P4322': 95, 'P43212': 96, 'I422': 97,
+        'I4122': 98, 'P4MM': 99, 'P4BM': 100, 'P42CM': 101, 'P42NM': 102, 'P4CC': 103,
+        'P4NC': 104, 'P42MC': 105, 'P42BC': 106, 'I4MM': 107, 'I4CM': 108, 'I41MD': 109,
+        'I41CD': 110, 'P-42M': 111, 'P-42C': 112, 'P-421M': 113, 'P-421C': 114, 'P-4M2': 115,
+        'P-4C2': 116, 'P-4B2': 117, 'P-4N2': 118, 'I-4M2': 119, 'I-4C2': 120, 'I-42M': 121,
+        'I-42D': 122, 'P4/MMM': 123, 'P4/MCC': 124, 'P4/NBM': 125, 'P4/NNC': 126, 'P4/MBM': 127,
+        'P4/MNC': 128, 'P4/NMM': 129, 'P4/NCC': 130, 'P42/MMC': 131, 'P42/MCM': 132, 'P42/NBC': 133,
+        'P42/NNM': 134, 'P42/MBC': 135, 'P42/MNM': 136, 'P42/NMC': 137, 'P42/NCM': 138, 'I4/MMM': 139,
+        'I4/MCM': 140, 'I41/AMD': 141, 'I41/ACD': 142, 'P3': 143, 'P31': 144, 'P32': 145,
+        'R3': 146, 'P-3': 147, 'R-3': 148, 'P312': 149, 'P321': 150, 'P3112': 151,
+        'P3121': 152, 'P3212': 153, 'P3221': 154, 'R32': 155, 'P3M1': 156, 'P31M': 157,
+        'P3C1': 158, 'P31C': 159, 'R3M': 160, 'R3C': 161, 'P-31M': 162, 'P-31C': 163,
+        'P-3M1': 164, 'P-3C1': 165, 'R-3M': 166, 'R-3C': 167, 'P6': 168, 'P61': 169,
+        'P65': 170, 'P62': 171, 'P64': 172, 'P63': 173, 'P-6': 174, 'P6/M': 175,
+        'P63/M': 176, 'P622': 177, 'P6122': 178, 'P6522': 179, 'P6222': 180, 'P6422': 181,
+        'P6322': 182, 'P6MM': 183, 'P6CC': 184, 'P63CM': 185, 'P63MC': 186, 'P-6M2': 187,
+        'P-6C2': 188, 'P-62M': 189, 'P-62C': 190, 'P6/MMM': 191, 'P6/MCC': 192, 'P63/MCM': 193,
+        'P63/MMC': 194, 'P23': 195, 'F23': 196, 'I23': 197, 'P213': 198, 'I213': 199,
+        'PM-3': 200, 'PN-3': 201, 'FM-3': 202, 'FD-3': 203, 'IM-3': 204, 'PA-3': 205,
+        'IA-3': 206, 'P432': 207, 'P4232': 208, 'F432': 209, 'F4132': 210, 'I432': 211,
+        'P4332': 212, 'P4132': 213, 'I4132': 214, 'P-43M': 215, 'F-43M': 216, 'I-43M': 217,
+        'P-43N': 218, 'F-43C': 219, 'I-43D': 220, 'PM-3M': 221, 'PN-3N': 222, 'PM-3N': 223,
+        'PN-3M': 224, 'FM-3M': 225, 'FM-3C': 226, 'FD-3M': 227, 'FD-3C': 228, 'IM-3M': 229, 'IA-3D': 230
+    }
+    
+    # Try different variations of the symbol
+    variations = [
+        symbol,  # Original with spaces
+        symbol.replace(' ', ''),  # No spaces: "FD3M"
+        symbol.replace(' ', '-'),  # All spaces to dashes: "F-D-3-M"
+        symbol.replace(' ', '/'),  # Spaces to slashes: "F/D/3/M"
+        re.sub(r'(\d)', r'-\1', symbol.replace(' ', '')),  # Insert dash before numbers: "FD-3M"
+        re.sub(r'(\d)', r'/\1', symbol.replace(' ', '')),  # Insert slash before numbers: "FD/3M"
+    ]
+    
+    for var in variations:
+        if var in symbol_to_number:
+            return symbol_to_number[var]
     
     return None
 

@@ -44,7 +44,11 @@ def copy_dependencies(target_dir: str = "."):
                 "formula_extractor.py",
                 "crystal_property_extractor.py",
                 "workflows.yaml",
-                "recovery_config.yaml"
+                "recovery_config.yaml",
+                "dat_file_processor.py",
+                "population_analysis_processor.py",
+                "property_analysis_framework.py",
+                "query_input_settings.py"
             ]
         },
         "Crystal_To_CIF": {

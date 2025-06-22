@@ -359,7 +359,7 @@ def extract_and_store_input_settings(calc_id: str, input_file: Path,
             # Update the calculation with extracted settings
             conn.execute("""
                 UPDATE calculations 
-                SET settings_json = ?
+                SET input_settings_json = ?
                 WHERE calc_id = ?
             """, (json.dumps(settings), calc_id))
             

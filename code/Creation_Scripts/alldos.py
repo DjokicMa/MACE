@@ -258,22 +258,40 @@ for file_name in data_files:
         input_file = open(input_file_name, "r+")
         input_lines = []
         newk = []
-        newk_counter = 0
+        
+        # Read all lines first
         for line in input_file.readlines():
             if "\n" in line:
                 clean_line = line.replace("\n", "")
                 input_lines.append(clean_line)
             else:
                 input_lines.append(line)
-            if newk_counter == 1:
-                if "0" in line:
-                    newk.append(line)
-                else:
-                    newk_counter = 0
-                    newk.append(line)
-            elif "SHRINK" in line:
-                newk_counter = 1
-                newk = []
+        
+        # Extract SHRINK parameters with robust parsing
+        for i, line in enumerate(input_lines):
+            if "SHRINK" in line:
+                # Parse SHRINK parameters correctly
+                if i + 1 < len(input_lines):
+                    next_line = input_lines[i + 1].strip()
+                    parts = next_line.split()
+                    
+                    if len(parts) == 2:
+                        # Could be symmetric (ka kb) or unsymmetric first line (0 kb)
+                        val1, val2 = map(int, parts)
+                        
+                        if val1 == 0:
+                            # Unsymmetric format: 0 kb followed by ka ka kc
+                            newk.append(next_line + "\n")
+                            if i + 2 < len(input_lines):
+                                second_line = input_lines[i + 2].strip()
+                                newk.append(second_line + "\n")
+                        else:
+                            # Symmetric format: ka kb (only one line needed)
+                            newk.append(next_line + "\n")
+                    elif len(parts) == 3:
+                        # Direct format: ka kb kc (only one line needed)
+                        newk.append(next_line + "\n")
+                break
         output_name = file_name.replace(".d12", ".out")
         output_file_name = os.path.join(data_folder, output_name)
         output_file = open(output_file_name, "r+")
