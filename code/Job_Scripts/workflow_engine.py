@@ -479,7 +479,7 @@ fi'''
             return self.base_work_dir / "workflow_outputs" / workflow_id
     
     def extract_core_material_name(self, material_id: str) -> str:
-        """Extract the core material name using smart suffix removal"""
+        """Extract the core material name with proper handling of numbered materials"""
         # Handle both full filenames and stems
         from pathlib import Path
         if material_id.endswith('.d12') or material_id.endswith('.d3'):
@@ -487,42 +487,41 @@ fi'''
         else:
             name = material_id
         
-        # First, extract the core material identifier (before the first technical suffix)
-        # Look for pattern like "materialname_opt_BULK_..." or "materialname_BULK_..."
-        parts = name.split('_')
+        # Strategy: Remove known calculation suffixes from the end
+        calc_suffixes = ['_opt', '_sp', '_freq', '_band', '_doss', 
+                         '_opt2', '_sp2', '_freq2', '_band2', '_doss2',
+                         '_opt3', '_sp3', '_freq3', '_band3', '_doss3']
         
-        # Find the first part that looks like a technical suffix
-        core_parts = []
-        for i, part in enumerate(parts):
-            # Special case: if this is "opt" and we only have one core part so far,
-            # and the core part ends with a number, this might be a calc type rather than material identifier
-            if (part.upper() == 'OPT' and len(core_parts) == 1 and 
-                core_parts[0] and core_parts[0][-1].isdigit()):
-                # This looks like "test1_opt" - the opt is a calc type, not part of material name
+        # Remove calc suffix if present
+        clean_name = name
+        for suffix in calc_suffixes:
+            if clean_name.endswith(suffix):
+                clean_name = clean_name[:-len(suffix)]
                 break
-            # Check if this part is a technical suffix (removed OPT from this list since we handle it specially)
-            elif part.upper() in ['SP', 'FREQ', 'BAND', 'DOSS', 'BULK', 'OPTGEOM', 
-                                'CRYSTAL', 'SLAB', 'POLYMER', 'MOLECULE', 'SYMM', 'TZ', 'DZ', 'SZ']:
-                break
-            # Check if this part is a DFT functional
-            elif part.upper() in ['PBE', 'B3LYP', 'HSE06', 'PBE0', 'SCAN', 'BLYP', 'BP86']:
-                break
-            # Check if this part contains basis set info  
-            elif 'POB' in part.upper() or 'TZVP' in part.upper() or 'DZVP' in part.upper():
-                break
-            # Check if this part is a dispersion correction
-            elif 'D3' in part.upper():
-                break
-            else:
-                core_parts.append(part)
         
-        # If we found core parts, use them
-        if core_parts:
-            clean_name = '_'.join(core_parts)
-        else:
-            # Fallback: just use the first part
-            clean_name = parts[0] if parts else name
+        # If name still contains technical keywords, extract the core
+        if any(keyword in clean_name.upper() for keyword in ['BULK', 'OPTGEOM', 'CRYSTAL', 'PBE', 'B3LYP']):
+            # Use the original logic for complex names
+            parts = clean_name.split('_')
+            core_parts = []
             
+            for part in parts:
+                # Stop at technical keywords
+                if part.upper() in ['BULK', 'OPTGEOM', 'CRYSTAL', 'SLAB', 'POLYMER', 
+                                   'MOLECULE', 'SYMM', 'TZ', 'DZ', 'SZ', 'PBE', 'B3LYP', 
+                                   'HSE06', 'PBE0', 'SCAN', 'BLYP', 'BP86']:
+                    break
+                elif 'POB' in part.upper() or 'TZVP' in part.upper() or 'DZVP' in part.upper():
+                    break
+                elif 'D3' in part.upper():
+                    break
+                else:
+                    core_parts.append(part)
+                    
+            if core_parts:
+                clean_name = '_'.join(core_parts)
+        
+        return clean_name
         # Only replace truly problematic characters for filesystem compatibility
         # Preserve ^ and , as they are commonly used in chemical notation
         clean_name = clean_name.replace(' ', '_')  # Spaces to underscores
@@ -1323,13 +1322,10 @@ fi'''
     def _get_next_steps_from_sequence(self, current_index: int, planned_sequence: List[str], 
                                      completed_calc_type: str) -> List[str]:
         """
-        Get the next calculation steps from the planned sequence based on what just completed.
+        Get the next calculation steps from the planned sequence.
         
-        Implements proper dependency logic:
-        - OPT completion triggers: SP and FREQ (in parallel)
-        - SP completion triggers: BAND, DOSS, and any subsequent OPT (e.g., OPT2)
-        - FREQ depends only on OPT (not SP)
-        - Subsequent OPTs (OPT2, OPT3) depend on the previous SP
+        Simply returns the next step(s) in the sequence, with special handling for
+        known parallel execution cases (BAND+DOSS, SP+OPT3, etc.)
         
         Args:
             current_index: Current position in the sequence
@@ -1337,52 +1333,47 @@ fi'''
             completed_calc_type: The type of calculation that just completed
             
         Returns:
-            List of calculation types that can now be started in parallel
+            List of calculation types that should be started next
         """
-        if not planned_sequence:
+        if not planned_sequence or current_index >= len(planned_sequence) - 1:
             return []
-            
-        next_steps = []
-        completed_base, completed_num = self._parse_calc_type(completed_calc_type)
         
-        # Scan the entire sequence for calculations that depend on what just completed
-        # Don't limit to after current_index since dependencies can be complex
-        for i, next_type in enumerate(planned_sequence):
-            next_base, next_num = self._parse_calc_type(next_type)
+        # Get the immediate next step
+        next_index = current_index + 1
+        next_steps = []
+        
+        if next_index < len(planned_sequence):
+            next_calc = planned_sequence[next_index]
+            next_steps.append(next_calc)
             
-            # Skip if already in our list or if it's the completed calculation itself
-            if next_type in next_steps or next_type == completed_calc_type:
-                continue
+            # Check for special parallel execution cases
+            completed_base, _ = self._parse_calc_type(completed_calc_type)
+            next_base, _ = self._parse_calc_type(next_calc)
             
-            # Skip if this calculation has already been started
-            # This check would need to be done by querying the database, but for now
-            # we'll rely on the workflow engine to handle duplicate prevention
-            
-            # Determine if this calculation can start based on dependencies
-            can_start = False
-            
-            if completed_base == "OPT":
-                # OPT completion can trigger SP and FREQ with same number
-                if next_base == "SP" and next_num == completed_num:
-                    # SP with same number as OPT (e.g., OPT -> SP, OPT2 -> SP2)
-                    can_start = True
-                elif next_base == "FREQ" and next_num == completed_num:
-                    # FREQ with same number as OPT
-                    can_start = True
-                    
-            elif completed_base == "SP":
-                # SP completion can trigger BAND, DOSS with same number, and next OPT
-                if next_base in ["BAND", "DOSS"]:
-                    # BAND and DOSS with same number as SP
-                    if next_num == completed_num:
-                        can_start = True
-                elif next_base == "OPT" and next_num == completed_num + 1:
-                    # Next OPT (e.g., SP -> OPT2, SP2 -> OPT3)
-                    can_start = True
-                    
-            # If this calculation can start, add it to the list
-            if can_start:
-                next_steps.append(next_type)
+            # After OPT2, both SP and OPT3 can run in parallel
+            if completed_calc_type == "OPT2":
+                # Look ahead for OPT3
+                for i in range(next_index + 1, len(planned_sequence)):
+                    if planned_sequence[i] == "OPT3":
+                        next_steps.append("OPT3")
+                        break
+                        
+            # After OPT3, both SP2 and FREQ can run in parallel
+            elif completed_calc_type == "OPT3":
+                # Look ahead for FREQ
+                for i in range(next_index + 1, len(planned_sequence)):
+                    if planned_sequence[i] == "FREQ":
+                        next_steps.append("FREQ")
+                        break
+                        
+            # BAND and DOSS run in parallel
+            elif next_calc == "BAND" and next_index + 1 < len(planned_sequence):
+                if planned_sequence[next_index + 1] == "DOSS":
+                    next_steps.append("DOSS")
+            elif next_calc == "DOSS" and next_index > 0:
+                if planned_sequence[next_index - 1] == "BAND" and "BAND" not in next_steps:
+                    # If we're at DOSS but BAND hasn't been added yet
+                    next_steps = ["BAND", "DOSS"]
         
         return next_steps
         

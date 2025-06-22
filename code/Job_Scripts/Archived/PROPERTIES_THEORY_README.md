@@ -1,369 +1,279 @@
-# Advanced Material Properties: Theory and Calculations
+# Advanced Properties Theory Documentation
 
-## Overview
+## Electronic Properties Calculations
 
-This document explains the theoretical background and calculation methods for advanced material properties extracted by the CRYSTAL workflow system. These properties provide deep insights into electronic, optical, and transport characteristics of materials.
+### Effective Mass (m*)
 
-## Electronic Properties
+**Theory**: The effective mass is related to the curvature of the energy bands near critical points (band edges). It's defined as:
 
-### 1. Effective Mass (m*)
-
-**Theory**: The effective mass represents how an electron or hole responds to external forces in a crystal lattice. It differs from the free electron mass due to the periodic potential of the crystal.
-
-**Mathematical Definition**:
 ```
-1/m* = (1/ℏ²) * d²E/dk²
+1/m* = (1/ℏ²) × (d²E/dk²)
 ```
 
 Where:
-- E(k) is the energy as a function of wave vector k
-- ℏ is the reduced Planck constant
-- The second derivative is evaluated at band extrema (valence band maximum or conduction band minimum)
+- `E` is the energy of the band
+- `k` is the wave vector  
+- `ℏ` is the reduced Planck constant
 
-**Calculation Method**:
-1. Extract band structure data from CRYSTAL BAND calculations
-2. Identify band extrema (VBM and CBM) in k-space
-3. Fit parabolic functions to E(k) near extrema
-4. Calculate second derivatives numerically
-5. Apply the effective mass formula
+**Implementation**: 
+- **Estimation Method**: We estimate effective mass from band gap and energy scale
+- **Hole Effective Mass**: `m_h* ≈ 0.5 × (E_gap/1.0 eV) × m_e` 
+- **Electron Effective Mass**: `m_e* ≈ 0.3 × (E_gap/1.0 eV) × m_e`
+- **Average Effective Mass**: `m_avg* = (m_h* × m_e*)^0.5`
 
-**Physical Significance**:
-- **Light effective mass**: High carrier mobility, good for electronics
-- **Heavy effective mass**: Low mobility, useful for thermoelectrics
-- **Anisotropic masses**: Direction-dependent transport properties
+**Units**: `m_e` (electron mass units)
 
-**Units**: Electron mass units (m_e = 9.109 × 10⁻³¹ kg)
+**Note**: This is an approximation. Real effective mass calculation requires second derivatives of the band structure at specific k-points.
 
-### 2. Band Gap Types and Characteristics
+### Electronic Classification
 
-**Direct vs. Indirect Gaps**:
+**Categories**:
+1. **Metal**: Finite density of states at Fermi level above threshold
+2. **Semimetal**: Near-zero band gap with low DOS at Fermi level
+3. **Semiconductor**: Clear band gap (0.1 - 4.0 eV)
+4. **Insulator**: Large band gap (> 4.0 eV)
 
-**Direct Gap**: VBM and CBM occur at the same k-point
-- Efficient optical transitions
-- Good for optoelectronic applications
-- Formula: E_gap = E_CBM(k₀) - E_VBM(k₀)
-
-**Indirect Gap**: VBM and CBM occur at different k-points
-- Requires phonon assistance for optical transitions
-- Common in semiconductors like Si, Ge
-- Formula: E_gap = E_CBM(k₁) - E_VBM(k₂)
-
-**Calculation**: Automated detection from band structure data:
-1. Find global VBM and CBM positions
-2. Compare k-point locations
-3. Calculate optical and fundamental gaps
-
-### 3. Density of States (DOS) Analysis
-
-**Theory**: DOS describes the number of electronic states per unit energy at each energy level.
-
-**Mathematical Definition**:
-```
-g(E) = Σ_k δ(E - E_k)
+**Classification Logic**:
+```python
+if band_gap > 4.0:
+    return "insulator"
+elif band_gap > 0.1:
+    return "semiconductor"  
+elif band_gap > 0.0 and effective_mass < 0.1:
+    return "semimetal"
+else:
+    return "metal"
 ```
 
-**Key Parameters**:
-- **DOS at Fermi Level**: N(E_F) - determines metallic behavior
-- **DOS Effective Mass**: m_DOS = (2π²ℏ²/k_B T) * (3n/8π)^(2/3) * N(E_F)
-- **Band Edge DOS**: Important for optical transitions
+### Transport Properties
 
-**Applications**:
-- Electronic heat capacity: C_el = γT where γ ∝ N(E_F)
-- Conductivity calculations: σ ∝ N(E_F) * μ
-- Thermoelectric properties: Seebeck coefficient calculations
+#### Mobility (μ)
 
-## Transport Properties
+**Theory**: Charge carrier mobility relates to how quickly charge carriers move in response to an electric field:
 
-### 1. Carrier Mobility (μ)
-
-**Theory**: Mobility describes how quickly charge carriers move through a material under an electric field.
-
-**Fundamental Equation**:
 ```
 μ = qτ/m*
 ```
 
 Where:
-- q is the carrier charge
-- τ is the scattering relaxation time
-- m* is the effective mass
+- `q` is the charge
+- `τ` is the scattering time
+- `m*` is the effective mass
 
-**Scattering Mechanisms**:
-1. **Acoustic Phonon Scattering**: τ ∝ T⁻¹
-2. **Optical Phonon Scattering**: τ ∝ (exp(ℏω/k_BT) - 1)⁻¹
-3. **Ionized Impurity Scattering**: τ ∝ T^(3/2)
-4. **Alloy Scattering**: τ ∝ constant
-
-**Calculation Approach**:
-1. Extract effective masses from band structure
-2. Estimate scattering rates from material properties
-3. Apply Matthiessen's rule: 1/τ_total = Σ(1/τ_i)
-
-**Units**: cm²/(V·s)
-
-### 2. Conductivity Tensor (σ)
-
-**Theory**: Describes anisotropic electrical conduction in crystals.
-
-**Tensor Form**:
-```
-σ = [σ_xx  σ_xy  σ_xz]
-    [σ_yx  σ_yy  σ_yz]
-    [σ_zx  σ_zy  σ_zz]
+**Implementation**: Estimated using simplified model:
+```python
+mobility_electrons = 1000 / effective_mass_electrons  # cm²/(V·s)
+mobility_holes = 800 / effective_mass_holes          # cm²/(V·s)
 ```
 
-**Drude-Sommerfeld Model**:
+**Units**: `cm²/(V·s)`
+
+#### Conductivity (σ)
+
+**Theory**: Electronic conductivity depends on carrier concentration and mobility:
+
 ```
-σ_ij = (e²/m*) * n * τ_ij
+σ = q × n × μ
 ```
 
-**Boltzmann Transport**:
+**Implementation**: Classified based on band gap and effective mass:
+- **High**: Metals and small-gap semiconductors
+- **Medium**: Regular semiconductors  
+- **Low**: Large-gap semiconductors and insulators
+
+**Units**: `S/m` (Siemens per meter)
+
+#### Seebeck Coefficient (S)
+
+**Theory**: Thermoelectric coefficient relating voltage to temperature difference:
+
 ```
-σ_ij = e² ∫ (-∂f/∂E) * v_i(k) * v_j(k) * τ(k) dk
+S = (k_B/q) × ln(N_c/n)
 ```
 
-Where v_i(k) = (1/ℏ) * ∂E(k)/∂k_i is the group velocity.
-
-### 3. Seebeck Coefficient (S)
-
-**Theory**: Describes the thermoelectric voltage generated by a temperature gradient.
-
-**Mott Formula** (for metals):
-```
-S = (π²k_B²T/3e) * (1/σ) * (dσ/dE)|_E=E_F
+**Implementation**: Estimated from band gap:
+```python
+seebeck_coeff = band_gap_ev * 80  # μV/K
 ```
 
-**General Formula**:
+**Units**: `μV/K` (microvolts per Kelvin)
+
+## Crystallographic Properties
+
+### Space Group Analysis
+
+**Theory**: Space groups describe the symmetry operations of a crystal structure. CRYSTAL outputs the space group number according to the International Tables for Crystallography.
+
+**Extraction**: Parsed from CRYSTAL output lines containing "SPACE GROUP".
+
+### Lattice Parameters
+
+**Theory**: Fundamental geometric parameters describing the unit cell:
+
+- **Primitive Cell**: The smallest repeating unit
+- **Crystallographic Cell**: Conventional unit cell (may be larger than primitive)
+- **Lattice Constants**: a, b, c (lengths) and α, β, γ (angles)
+- **Cell Volume**: V = abc√(1 + 2cosαcosβcosγ - cos²α - cos²β - cos²γ)
+
+**Units**:
+- Lengths: `Å` (Angstroms)
+- Angles: `degrees`
+- Volumes: `Å³` (cubic Angstroms)
+
+### Atomic Positions
+
+**Theory**: Fractional coordinates of atoms within the unit cell. CRYSTAL optimizes these positions during geometry optimization.
+
+**Format**: Stored as JSON arrays with x, y, z coordinates for each atom.
+
+## Electronic Structure Properties
+
+### Band Gap Types
+
+1. **Direct Band Gap**: Valence band maximum and conduction band minimum at same k-point
+2. **Indirect Band Gap**: VBM and CBM at different k-points
+3. **Alpha/Beta Gaps**: For spin-polarized calculations
+
+**Extraction**: Parsed from CRYSTAL output patterns:
+- `INDIRECT ENERGY BAND GAP:`
+- `DIRECT ENERGY BAND GAP:`
+
+### Density of States (DOS)
+
+**Theory**: The density of states g(E) represents the number of electronic states per unit energy at energy E.
+
+**Properties Extracted**:
+- **DOS at Fermi Level**: `g(E_F)` - crucial for metallic behavior
+- **Total DOS**: Integrated over all energies
+- **Energy Range**: Minimum and maximum energies in DOS calculation
+
+**Units**: `states/eV` or `states/Hartree`
+
+### Band Structure
+
+**Theory**: E(k) relationship showing electronic energy as a function of wave vector k.
+
+**Properties Extracted**:
+- **Fermi Energy**: Energy level where probability of occupation = 0.5
+- **Valence Band Maximum (VBM)**: Highest occupied energy level
+- **Conduction Band Minimum (CBM)**: Lowest unoccupied energy level
+- **K-path Labels**: High-symmetry points (Γ, X, L, W, etc.)
+
+## Population Analysis
+
+### Mulliken Population Analysis
+
+**Theory**: Partitions electron density among atoms and bonds:
+
 ```
-S = (1/eT) * ∫ (E-E_F) * σ(E) * (-∂f/∂E) dE / ∫ σ(E) * (-∂f/∂E) dE
+Q_A = Z_A - Σ_μ∈A P_μμ - Σ_μ∈A Σ_ν∉A P_μν S_μν
+```
+
+Where:
+- `Q_A` is the charge on atom A
+- `Z_A` is the nuclear charge
+- `P_μν` is the density matrix element
+- `S_μν` is the overlap matrix element
+
+**Properties**:
+- **Atomic Charges**: Net charge on each atom
+- **Bond Orders**: Electron density in bonds between atoms
+
+**Units**: `electrons` (for charges), `dimensionless` (for overlap populations)
+
+### Overlap Population
+
+**Theory**: Measures covalent bonding character between atoms:
+
+```
+OP_AB = Σ_μ∈A Σ_ν∈B P_μν S_μν
+```
+
+- **Positive values**: Bonding character
+- **Negative values**: Antibonding character
+- **Zero**: No bonding interaction
+
+## Computational Properties
+
+### Optimization Convergence
+
+**Theory**: Geometry optimization seeks the minimum energy configuration by adjusting atomic positions and lattice parameters.
+
+**Convergence Criteria**:
+- **TOLDEE**: Energy convergence threshold
+- **TOLDEG**: Gradient convergence threshold  
+- **TOLDEX**: Displacement convergence threshold
+
+### SCF Convergence
+
+**Theory**: Self-consistent field calculation iteratively solves the Kohn-Sham equations until electronic density converges.
+
+**Properties Tracked**:
+- **SCF Cycles**: Number of iterations required
+- **Final Energy**: Converged total energy
+- **Energy Change**: Final energy difference between cycles
+
+## Advanced Material Classification
+
+### Metal vs. Semimetal Classification
+
+**Based on DOS Analysis**:
+
+```python
+def classify_from_dos(E, g, gcrit_factor=0.05):
+    Ef_index = np.argmin(abs(E))     # closest to E_F = 0
+    g_Ef = g[Ef_index]               # DOS at Fermi level
+    g_mean = g[g > 0].mean()         # Average DOS
+    g_crit = gcrit_factor * g_mean   # Threshold
+
+    if gap > 0:
+        return "semiconductor/insulator"
+    elif g_Ef > g_crit:
+        return "metal"
+    else:
+        return "semimetal"
 ```
 
 **Physical Interpretation**:
-- **Positive S**: Hole-like carriers (p-type)
-- **Negative S**: Electron-like carriers (n-type)
-- **Large |S|**: Good thermoelectric materials
+- **Metals**: High DOS at Fermi level → good electrical conductivity
+- **Semimetals**: Low DOS at Fermi level → poor electrical conductivity despite zero gap
+- **Semiconductors**: Finite gap → activated conductivity
 
-**Units**: μV/K
+### Effective Mass Threshold for Semimetals
 
-## Optical Properties
+**Criterion**: Materials with `m* < 0.1 m_e` and small/zero gaps are classified as semimetals.
 
-### 1. Dielectric Function (ε)
+**Examples**:
+- **Graphene**: Zero gap, very low effective mass → semimetal
+- **Bismuth**: Small gap, low effective mass → semimetal
+- **Silicon**: Moderate gap, moderate effective mass → semiconductor
 
-**Complex Dielectric Function**:
-```
-ε(ω) = ε₁(ω) + iε₂(ω)
-```
+## Implementation Notes
 
-**Real Part (ε₁)**: Related to polarization and refractive index
-**Imaginary Part (ε₂)**: Related to absorption and energy loss
+### Property Extraction Pipeline
 
-**Kramers-Kronig Relations**:
-```
-ε₁(ω) = 1 + (2/π) * P ∫₀^∞ [ω'ε₂(ω')/(ω'²-ω²)] dω'
-```
+1. **CRYSTAL Output Parsing**: Regular expressions extract values from text output
+2. **Unit Assignment**: Intelligent unit detection based on property names
+3. **Data Validation**: Check for reasonable values and physical consistency
+4. **Database Storage**: Structured storage with metadata and provenance
 
-**Band Structure Calculation**:
-```
-ε₂(ω) = (e²/ε₀m²ω²) * Σ_cv ∫ |⟨c,k|p|v,k⟩|² * δ(E_c(k)-E_v(k)-ℏω) dk
-```
+### Approximations and Limitations
 
-### 2. Refractive Index (n) and Extinction Coefficient (κ)
+1. **Effective Mass**: Current implementation uses empirical scaling laws rather than band structure derivatives
+2. **Transport Properties**: Simplified models without full Boltzmann transport calculation  
+3. **Classification**: Based on band gaps and DOS, doesn't include temperature effects
+4. **Scattering**: Transport calculations assume simplified scattering mechanisms
 
-**Complex Refractive Index**:
-```
-ñ = n + iκ = √ε(ω)
-```
+### Future Enhancements
 
-**Relationships**:
-```
-n² - κ² = ε₁
-2nκ = ε₂
-```
-
-**Optical Conductivity**:
-```
-σ(ω) = (ε₀ω/4π) * ε₂(ω)
-```
-
-### 3. Absorption Coefficient (α)
-
-**Beer-Lambert Law**:
-```
-I = I₀ * exp(-αt)
-```
-
-**Relationship to Extinction Coefficient**:
-```
-α = 4πκ/λ = 2ωκ/c
-```
-
-**Direct/Indirect Transitions**:
-- **Direct**: α ∝ (ℏω - E_g)^(1/2)
-- **Indirect**: α ∝ (ℏω - E_g)²
-
-## Mechanical Properties
-
-### 1. Elastic Constants (C_ij)
-
-**Hooke's Law (generalized)**:
-```
-σ_i = C_ij * ε_j
-```
-
-**For cubic crystals**:
-- C₁₁, C₁₂, C₄₄ are independent constants
-- Bulk modulus: B = (C₁₁ + 2C₁₂)/3
-- Shear modulus: G = C₄₄
-
-**Born Stability Criteria** (cubic):
-- C₁₁ > 0
-- C₄₄ > 0
-- C₁₁ > |C₁₂|
-- C₁₁ + 2C₁₂ > 0
-
-### 2. Phonon Properties
-
-**Dynamical Matrix**:
-```
-D_αβ(q) = (1/√(M_α M_β)) * Σ_R C_αβ(R) * exp(iq·R)
-```
-
-**Phonon Frequencies**:
-```
-ω²(q,j) = eigenvalues of D(q)
-```
-
-**Heat Capacity** (phononic):
-```
-C_v = k_B * Σ_j ∫ (ℏω_j(q)/k_BT)² * exp(ℏω_j/k_BT) / [exp(ℏω_j/k_BT)-1]² * dq
-```
-
-**Thermal Conductivity** (lattice):
-```
-κ_lat = (1/3) * Σ_j ∫ C_v(q,j) * v²(q,j) * τ(q,j) dq
-```
-
-## Statistical Mechanics and Thermodynamics
-
-### 1. Electronic Heat Capacity
-
-**Sommerfeld Model**:
-```
-C_el = γT where γ = (π²k_B²/3) * N(E_F)
-```
-
-**Temperature Dependence**:
-- **Low T**: C_el ∝ T (electronic)
-- **High T**: C_el ∝ T³ (phononic dominates)
-
-### 2. Free Energy and Entropy
-
-**Electronic Entropy**:
-```
-S_el = -k_B * Σ_k [f(k)*ln(f(k)) + (1-f(k))*ln(1-f(k))]
-```
-
-**Vibrational Entropy**:
-```
-S_vib = k_B * Σ_j ∫ [(n_j+1)*ln(n_j+1) - n_j*ln(n_j)] dq
-```
-
-Where n_j = 1/(exp(ℏω_j/k_BT)-1) is the Bose-Einstein distribution.
-
-## Computational Methods
-
-### 1. K-Point Sampling
-
-**Monkhorst-Pack Grid**: Systematic sampling of the Brillouin zone
-```
-k = (2i₁-N₁-1)/(2N₁) * b₁ + (2i₂-N₂-1)/(2N₂) * b₂ + (2i₃-N₃-1)/(2N₃) * b₃
-```
-
-**Convergence**: Properties converge with increasing k-point density
-- **Metals**: Require denser grids due to Fermi surface
-- **Insulators**: Converge faster due to energy gaps
-
-### 2. Interpolation Methods
-
-**Wannier Function Interpolation**: 
-1. Calculate band structure on coarse k-grid
-2. Construct maximally localized Wannier functions
-3. Interpolate to fine k-grids for transport properties
-
-**Fourier Interpolation**: For smooth functions like effective mass
-
-### 3. Integration Techniques
-
-**Gaussian Quadrature**: For smooth integrands
-**Tetrahedron Method**: For singular integrands (Fermi surfaces)
-**Adaptive Mesh Refinement**: For sharp features
-
-## Property Units and Conversions
-
-### Energy Units
-- **eV** (electron volts): 1 eV = 1.602 × 10⁻¹⁹ J
-- **Hartree**: 1 Ha = 27.211 eV
-- **Rydberg**: 1 Ry = 13.606 eV
-- **cm⁻¹**: 1 eV = 8065.5 cm⁻¹
-
-### Length Units
-- **Bohr** (a₀): 1 a₀ = 0.529 Å
-- **Angstrom** (Å): 1 Å = 10⁻¹⁰ m
-
-### Transport Units
-- **Mobility**: cm²/(V·s) = 10⁻⁴ m²/(V·s)
-- **Conductivity**: S/m = (Ω·m)⁻¹
-- **Resistivity**: Ω·m = V·m/A
-
-### Thermal Units
-- **Thermal Conductivity**: W/(m·K)
-- **Heat Capacity**: J/(mol·K)
-- **Seebeck Coefficient**: μV/K = 10⁻⁶ V/K
-
-## Accuracy and Limitations
-
-### DFT Limitations
-1. **Band Gap Problem**: DFT typically underestimates band gaps
-2. **Self-Interaction Error**: Affects strongly correlated systems
-3. **Van der Waals**: Standard functionals miss dispersion
-
-### Approximations
-1. **Rigid Band Approximation**: Assumes constant band structure
-2. **Constant Relaxation Time**: Simplifies transport calculations
-3. **Harmonic Approximation**: For phonons at low temperatures
-
-### Typical Accuracies
-- **Lattice Parameters**: ±1-3%
-- **Band Gaps** (PBE): -30 to -50% error
-- **Band Gaps** (HSE06): ±10-20% error
-- **Effective Masses**: ±20-50%
-- **Phonon Frequencies**: ±5-15%
-
-## Best Practices
-
-### 1. Convergence Testing
-- **k-point convergence**: Test increasing k-point density
-- **Energy cutoff**: Ensure plane-wave convergence
-- **Cell size**: For defects and surfaces
-
-### 2. Functional Selection
-- **PBE**: Good for structural properties
-- **HSE06**: Better band gaps, expensive
-- **PBE+U**: For strongly correlated systems
-- **van der Waals**: For layered materials
-
-### 3. Quality Metrics
-- **SCF Convergence**: Energy tolerance < 10⁻⁶ eV
-- **Force Convergence**: < 0.01 eV/Å
-- **Stress Convergence**: < 0.1 GPa
-- **Phonon Sum Rules**: Acoustic modes at Γ = 0
+1. **Real Effective Mass**: Calculate from actual band structure curvature
+2. **Full BoltzTraP**: Integrate Boltzmann transport calculations
+3. **Temperature Dependence**: Include thermal effects in transport properties
+4. **Anisotropy**: Account for directional dependence in transport properties
 
 ## References
 
-1. **Solid State Physics**: Ashcroft & Mermin
-2. **Electronic Structure**: Martin
-3. **Computational Materials Science**: Sholl & Steckel
-4. **CRYSTAL Manual**: Dovesi et al.
-5. **Wannier90 User Guide**: Mostofi et al.
-
-This theoretical foundation enables accurate interpretation of computed material properties and guides optimization of electronic, optical, and thermal characteristics for targeted applications.
+1. Ashcroft, N. W. & Mermin, N. D. "Solid State Physics" (1976)
+2. Kittel, C. "Introduction to Solid State Physics" (2004)  
+3. Martin, R. M. "Electronic Structure: Basic Theory and Practical Methods" (2004)
+4. Madsen, G. K. H. & Singh, D. J. "BoltzTraP. A code for calculating band-structure dependent quantities" Comput. Phys. Commun. 175, 67 (2006)
