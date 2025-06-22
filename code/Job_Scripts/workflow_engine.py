@@ -1082,7 +1082,9 @@ fi'''
         
         # Determine next steps based on completed calculation type and workflow plan
         # Check if workflow metadata exists to determine planned sequence
-        workflow_id = completed_calc.get('metadata', {}).get('workflow_id')
+        # Look for workflow_id in settings (where it's stored) or metadata
+        settings = json.loads(completed_calc.get('settings_json', '{}'))
+        workflow_id = settings.get('workflow_id') or completed_calc.get('metadata', {}).get('workflow_id')
         planned_sequence = self.get_workflow_sequence(workflow_id) if workflow_id else None
         
         # Parse current calculation type to handle numbered types
@@ -1203,9 +1205,10 @@ fi'''
             if seq_base == base_type:
                 type_positions.append(i)
         
-        # Return the position corresponding to this occurrence
-        if completed_count < len(type_positions):
-            return type_positions[completed_count]
+        # Return the position corresponding to the just-completed calculation
+        # completed_count = 1 means we just finished the first OPT, so we're at position 0
+        if completed_count > 0 and completed_count <= len(type_positions):
+            return type_positions[completed_count - 1]
         elif type_positions:
             # We've done more than planned, return last position of this type
             return type_positions[-1]

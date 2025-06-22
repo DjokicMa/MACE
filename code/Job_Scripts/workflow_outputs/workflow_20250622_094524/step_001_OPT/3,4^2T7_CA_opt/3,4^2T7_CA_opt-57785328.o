@@ -1,0 +1,49 @@
+submit directory: 
+/mnt/ffs24/home/djokicma/test/workflow_outputs/workflow_20250622_094524/step_001_OPT/3,4^2T7_CA_opt
+Error recovery enabled with max 3 attempts per job
+
+=== Queue Manager Callback (completion) - 2025-06-22 10:31:52.074922 ===
+  Scanning for completed calculations...
+Found completed OPT: 1_dia_opt
+Found completed OPT: 2_dia2_opt
+Found completed OPT: 3,4^2T1-CA_opt
+Found completed OPT: 3,4^2T7_CA_opt
+  Found 4 completed calculations
+  Skipping OPT for 1_dia_opt - already in database as completed
+  Skipping OPT for 2_dia2_opt - already in database as completed
+  Skipping OPT for 3,4^2T1-CA_opt - already in database as completed
+Creating material record for: 3,4^2T7_CA_opt
+  Updating existing OPT calculation: 3,4^2T7_CA_opt_OPT_20250622_094526 -> completed
+  Added OPT calculation: 3,4^2T7_CA_opt_OPT_20250622_094526
+  Added 1 new calculations to database
+  Checking property extraction for completed calculations...
+  ✅ Skipping 1_dia_opt_OPT_20250622_094524 - properties already extracted
+  ✅ Skipping 2_dia2_opt_OPT_20250622_094525 - properties already extracted
+  ✅ Skipping 3,4^2T1-CA_opt_OPT_20250622_094525 - properties already extracted
+  🔍 Processing completed calculation: 3,4^2T7_CA_opt_OPT_20250622_094526
+  🔍 Extracting properties from 3,4^2T7_CA_opt.out
+🔍 Extracting properties from: 3,4^2T7_CA_opt.out
+  ✅ Extracted and saved 88 properties
+  📝 Updated material 3,4^2T7_CA_opt: formula=C3, space_group=200
+  Triggering workflow progression...
+Executing workflow step after OPT completion for 3,4^2T7_CA_opt
+Generating SP calculation from OPT 3,4^2T7_CA_opt_OPT_20250622_094526
+Copied 3,4^2T7_CA_opt.out to isolated directory
+Copied 3,4^2T7_CA_opt.d12 to isolated directory
+  Using template: /mnt/ffs24/home/djokicma/test/workflow_scripts/submitcrystal23_sp_2.sh
+  Template exists: True
+  WARNING: Template /mnt/ffs24/home/djokicma/test/workflow_scripts/submitcrystal23_sp_2.sh appears to be a script generator, not a direct SLURM script
+  This will cause submission issues. Consider using a direct SLURM template.
+  Template content starts with: #!/bin/bash --login
+"""This script auto-generates and submits a SLURM batch file for CRYSTAL23 jobs,...
+  Successfully created script: /mnt/ffs24/home/djokicma/test/workflow_outputs/workflow_20250622_094524/step_002_SP/3,4^2T7_CA_opt_sp/3,4^2T7_CA_opt_sp.sh
+  Script exists: True
+  Reading script file: 3,4^2T7_CA_opt_sp.sh (from work_dir: /mnt/ffs24/home/djokicma/test/workflow_outputs/workflow_20250622_094524/step_002_SP/3,4^2T7_CA_opt_sp)
+  Running script generator locally: 3,4^2T7_CA_opt_sp.sh with job name: 3,4^2T7_CA_opt_sp
+Generated and submitted SP calculation 3,4^2T7_CA_opt_SP_20250622_103208: Job 57785773
+Generated 1 new calculations: ['3,4^2T7_CA_opt_SP_20250622_103208']
+  Workflow engine initiated 1 new workflow steps
+  Automatic progression to next calculation type initiated
+Database Stats: 4 materials, 12 calculations
+=== Callback Complete ===
+

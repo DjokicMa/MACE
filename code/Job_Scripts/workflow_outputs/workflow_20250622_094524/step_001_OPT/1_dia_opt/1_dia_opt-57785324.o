@@ -1,0 +1,40 @@
+submit directory: 
+/mnt/ffs24/home/djokicma/test/workflow_outputs/workflow_20250622_094524/step_001_OPT/1_dia_opt
+Error recovery enabled with max 3 attempts per job
+
+=== Queue Manager Callback (completion) - 2025-06-22 09:52:16.958300 ===
+  Scanning for completed calculations...
+Found completed OPT: 1_dia_opt
+  Found 1 completed calculations
+Creating material record for: 1_dia_opt
+  Updating existing OPT calculation: 1_dia_opt_OPT_20250622_094524 -> completed
+  Added OPT calculation: 1_dia_opt_OPT_20250622_094524
+  Added 1 new calculations to database
+  Checking property extraction for completed calculations...
+  🔍 Processing completed calculation: 1_dia_opt_OPT_20250622_094524
+  🔍 Extracting properties from 1_dia_opt.out
+🔍 Extracting properties from: 1_dia_opt.out
+  ✅ Extracted and saved 102 properties
+  📝 Updated material 1_dia_opt: formula=C, space_group=227
+  Triggering workflow progression...
+Executing workflow step after OPT completion for 1_dia_opt
+Generating SP calculation from OPT 1_dia_opt_OPT_20250622_094524
+Copied 1_dia_opt.out to isolated directory
+Copied 1_dia_opt.d12 to isolated directory
+  Using template: /mnt/ffs24/home/djokicma/test/workflow_scripts/submitcrystal23_sp_2.sh
+  Template exists: True
+  WARNING: Template /mnt/ffs24/home/djokicma/test/workflow_scripts/submitcrystal23_sp_2.sh appears to be a script generator, not a direct SLURM script
+  This will cause submission issues. Consider using a direct SLURM template.
+  Template content starts with: #!/bin/bash --login
+"""This script auto-generates and submits a SLURM batch file for CRYSTAL23 jobs,...
+  Successfully created script: /mnt/ffs24/home/djokicma/test/workflow_outputs/workflow_20250622_094524/step_002_SP/1_dia_opt_sp/1_dia_opt_sp.sh
+  Script exists: True
+  Reading script file: 1_dia_opt_sp.sh (from work_dir: /mnt/ffs24/home/djokicma/test/workflow_outputs/workflow_20250622_094524/step_002_SP/1_dia_opt_sp)
+  Running script generator locally: 1_dia_opt_sp.sh with job name: 1_dia_opt_sp
+Generated and submitted SP calculation 1_dia_opt_SP_20250622_095225: Job 57785356
+Generated 1 new calculations: ['1_dia_opt_SP_20250622_095225']
+  Workflow engine initiated 1 new workflow steps
+  Automatic progression to next calculation type initiated
+Database Stats: 1 materials, 9 calculations
+=== Callback Complete ===
+

@@ -1,0 +1,47 @@
+submit directory: 
+/mnt/ffs24/home/djokicma/test2/workflow_outputs/workflow_20250622_094530/step_001_OPT/test6-CA_opt
+Error recovery enabled with max 3 attempts per job
+
+=== Queue Manager Callback (completion) - 2025-06-22 12:16:05.062616 ===
+  Scanning for completed calculations...
+Found completed OPT: test1
+Found completed OPT: test2
+Found completed OPT: test3-RCSR-ums_opt
+Found completed OPT: test4-CA_opt
+Found completed OPT: test5_CA_opt
+Found completed OPT: test6-CA_opt
+  Found 6 completed calculations
+  Skipping OPT for test1 - already in database as completed
+  Skipping OPT for test2 - already in database as completed
+  Skipping OPT for test3-RCSR-ums_opt - already in database as completed
+  Skipping OPT for test4-CA_opt - already in database as completed
+  Skipping OPT for test5_CA_opt - already in database as completed
+Creating material record for: test6-CA_opt
+  Updating existing OPT calculation: test6-CA_opt_OPT_20250622_094600 -> completed
+  Added OPT calculation: test6-CA_opt_OPT_20250622_094600
+  Added 1 new calculations to database
+  Checking property extraction for completed calculations...
+  ✅ Skipping test1_opt_OPT_20250622_094530 - properties already extracted
+  ✅ Skipping test2_opt_OPT_20250622_094542 - properties already extracted
+  ✅ Skipping test3-RCSR-ums_opt_OPT_20250622_094543 - properties already extracted
+  ✅ Skipping test4-CA_opt_OPT_20250622_094546 - properties already extracted
+  ✅ Skipping test5_CA_opt_OPT_20250622_094558 - properties already extracted
+  🔍 Processing completed calculation: test6-CA_opt_OPT_20250622_094600
+  🔍 Extracting properties from test6-CA_opt.out
+🔍 Extracting properties from: test6-CA_opt.out
+  ✅ Extracted and saved 87 properties
+  📝 Updated material test6-CA_opt: formula=C3, space_group=26
+  Triggering workflow progression...
+Executing workflow step after OPT completion for test2
+Generating SP calculation from OPT test2_OPT_20250622_113358
+Copied test2_opt.out to isolated directory
+Copied test2_opt.d12 to isolated directory
+  Using template: /mnt/ffs24/home/djokicma/test2/workflow_scripts/submitcrystal23_sp_2.sh
+  Template exists: False
+  Fallback template: /mnt/ffs24/home/djokicma/test2/submitcrystal23.sh
+  Fallback exists: False
+  Error in workflow progression: No SLURM template found for SP
+  Check workflow engine and database integrity
+Database Stats: 6 materials, 10 calculations
+=== Callback Complete ===
+

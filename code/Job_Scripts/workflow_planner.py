@@ -60,21 +60,24 @@ class WorkflowPlanner:
         # Create necessary directories
         self.configs_dir = self.work_dir / "workflow_configs"
         self.outputs_dir = self.work_dir / "workflow_outputs"
-        self.temp_dir = self.work_dir / "temp"
+        self.temp_dir = self.work_dir / "workflow_temp"
+        self.scripts_dir = self.work_dir / "workflow_scripts"
         
-        for dir_path in [self.configs_dir, self.outputs_dir, self.temp_dir]:
+        for dir_path in [self.configs_dir, self.outputs_dir, self.temp_dir, self.scripts_dir]:
             dir_path.mkdir(parents=True, exist_ok=True)
             
         # Available calculation types and their dependencies
+        # Note: This only includes base types - numbered versions are handled dynamically
         self.calc_types = {
             "OPT": {"name": "Geometry Optimization", "depends_on": [], "generates": ["optimized_geometry"]},
-            "OPT2": {"name": "Second Optimization", "depends_on": ["OPT"], "generates": ["refined_geometry"]},
             "SP": {"name": "Single Point", "depends_on": ["OPT"], "generates": ["electronic_structure", "wavefunction"]},
             "BAND": {"name": "Band Structure", "depends_on": ["SP"], "generates": ["band_structure"]},
             "DOSS": {"name": "Density of States", "depends_on": ["SP"], "generates": ["density_of_states"]},
             "FREQ": {"name": "Frequencies", "depends_on": ["OPT"], "generates": ["vibrational_modes"]},
-            "TRANSPORT": {"name": "Transport Properties", "depends_on": ["SP", "BAND"], "generates": ["transport"]},
         }
+        
+        # Numbered calculations (OPT2, SP2, etc.) are handled dynamically
+        # They have the same dependencies as their base types
         
         # Predefined workflow templates
         self.workflow_templates = {
@@ -449,26 +452,36 @@ class WorkflowPlanner:
             deps = " (depends on: " + ", ".join(info["depends_on"]) + ")" if info["depends_on"] else ""
             print(f"  {calc_type}: {info['name']}{deps}")
             
-        print("\nBuild your workflow sequence:")
+        print("\nNOTE: Numbered calculations (OPT2, SP2, BAND2, etc.) will be automatically assigned")
+        print("when you add multiple calculations of the same type.\n")
+        
+        print("Build your workflow sequence:")
         print("Enter calculation types in order (e.g., OPT SP BAND DOSS)")
         print("Type 'help' for more information")
         
         sequence = []
         while True:
-            current = " → ".join(sequence) if sequence else "Empty"
-            user_input = input(f"\nCurrent sequence: {current}\nNext calculation (or 'done'): ").strip().upper()
+            # Display current sequence
+            if sequence:
+                self._display_workflow_sequence(sequence)
+            else:
+                print("\nCurrent sequence: Empty")
+                
+            user_input = input("\nNext calculation (or 'done'): ").strip().upper()
             
             if user_input == "DONE":
                 break
             elif user_input == "HELP":
                 self.show_workflow_help()
             elif user_input in self.calc_types:
-                if self.validate_calc_addition(sequence, user_input):
-                    sequence.append(user_input)
-                    print(f"Added {user_input}. Current: {' → '.join(sequence)}")
+                # Get properly numbered version
+                numbered_calc = self._get_next_numbered_calc(sequence, user_input)
+                if self._validate_numbered_calc_addition(sequence, numbered_calc):
+                    sequence.append(numbered_calc)
+                    print(f"✅ Added {numbered_calc}")
                 else:
                     deps = ", ".join(self.calc_types[user_input]["depends_on"])
-                    print(f"Cannot add {user_input}. Missing dependencies: {deps}")
+                    print(f"❌ Cannot add {user_input}. Missing dependencies: {deps}")
             else:
                 print(f"Unknown calculation type: {user_input}")
                 print("Available types:", ", ".join(self.calc_types.keys()))
@@ -488,38 +501,227 @@ class WorkflowPlanner:
             print("1: Add calculation")
             print("2: Remove calculation") 
             print("3: Insert calculation")
-            print("4: Done")
+            print("4: Show current sequence")
+            print("5: Done")
             
             choice = input("Select option: ").strip()
             
             if choice == "1":
-                calc = input("Add calculation type: ").strip().upper()
-                if calc in self.calc_types and self.validate_calc_addition(sequence, calc):
-                    sequence.append(calc)
-                    print(f"Added {calc}. Current: {' → '.join(sequence)}")
+                # Show available calculation types with smart numbering
+                print("\nAvailable calculation types to add:")
+                available_types = self._get_available_calc_types(sequence)
+                for i, calc_type in enumerate(available_types, 1):
+                    base = calc_type.rstrip('0123456789')
+                    desc = {
+                        'OPT': 'Geometry Optimization',
+                        'SP': 'Single Point Energy',
+                        'BAND': 'Band Structure',
+                        'DOSS': 'Density of States',
+                        'FREQ': 'Vibrational Frequencies'
+                    }.get(base, base)
+                    print(f"  {i}. {calc_type} - {desc}")
+                print("\nEnter number or type name directly")
+                    
+                calc_input = input("\nAdd calculation: ").strip()
+                
+                # Handle numeric input
+                if calc_input.isdigit():
+                    idx = int(calc_input) - 1
+                    if 0 <= idx < len(available_types):
+                        calc = available_types[idx]
+                    else:
+                        print("Invalid number")
+                        continue
+                else:
+                    calc = calc_input.upper()
+                
+                # Handle numbered calculations automatically
+                if calc in ["OPT", "SP", "BAND", "DOSS", "FREQ"]:
+                    numbered_calc = self._get_next_numbered_calc(sequence, calc)
+                    if self._validate_numbered_calc_addition(sequence, numbered_calc):
+                        sequence.append(numbered_calc)
+                        print(f"Added {numbered_calc}. Current: {' → '.join(sequence)}")
+                    else:
+                        print(f"Cannot add {numbered_calc} - check dependencies")
+                else:
+                    print(f"Unknown calculation type: {calc}")
                     
             elif choice == "2":
                 if sequence:
-                    calc = input("Remove calculation type: ").strip().upper()
+                    print(f"\nCurrent sequence: {' → '.join(sequence)}")
+                    print("Enter the exact calculation to remove (e.g., OPT2, SP, BAND2):")
+                    calc = input("Remove: ").strip().upper()
                     if calc in sequence:
                         sequence.remove(calc)
                         print(f"Removed {calc}. Current: {' → '.join(sequence)}")
+                    else:
+                        print(f"{calc} not found in sequence")
                         
             elif choice == "3":
-                calc = input("Insert calculation type: ").strip().upper()
-                pos = input("Insert at position (1-based): ").strip()
-                try:
-                    pos = int(pos) - 1
-                    if 0 <= pos <= len(sequence) and calc in self.calc_types:
-                        sequence.insert(pos, calc)
-                        print(f"Inserted {calc}. Current: {' → '.join(sequence)}")
-                except ValueError:
-                    print("Invalid position")
+                print("\nAvailable calculation types to insert:")
+                available_types = self._get_available_calc_types(sequence)
+                for calc_type in available_types:
+                    print(f"  {calc_type}")
                     
+                calc = input("\nInsert calculation type: ").strip().upper()
+                
+                # Handle numbered calculations
+                if calc in ["OPT", "SP", "BAND", "DOSS", "FREQ"]:
+                    numbered_calc = self._get_next_numbered_calc(sequence, calc)
+                    
+                    print(f"\nCurrent sequence: {' → '.join(sequence)}")
+                    print("Positions:")
+                    for i in range(len(sequence) + 1):
+                        if i == 0:
+                            print(f"  1: Before {sequence[0]}")
+                        elif i == len(sequence):
+                            print(f"  {i+1}: After {sequence[-1]}")
+                        else:
+                            print(f"  {i+1}: Between {sequence[i-1]} and {sequence[i]}")
+                            
+                    pos = input("Insert at position: ").strip()
+                    try:
+                        pos = int(pos) - 1
+                        if 0 <= pos <= len(sequence):
+                            if self._validate_numbered_calc_addition(sequence[:pos] + sequence[pos:], numbered_calc):
+                                sequence.insert(pos, numbered_calc)
+                                print(f"Inserted {numbered_calc}. Current: {' → '.join(sequence)}")
+                            else:
+                                print(f"Cannot insert {numbered_calc} at this position - check dependencies")
+                    except ValueError:
+                        print("Invalid position")
+                        
             elif choice == "4":
+                self._display_workflow_sequence(sequence)
+                
+            elif choice == "5":
+                if not sequence:
+                    print("\nError: Cannot have empty workflow!")
+                    continue
                 break
                 
         return sequence
+        
+    def _get_available_calc_types(self, current_sequence: List[str]) -> List[str]:
+        """Get list of available calculation types with proper numbering"""
+        available = []
+        base_types = ["OPT", "SP", "BAND", "DOSS", "FREQ"]
+        
+        for base_type in base_types:
+            # Count how many of this type already exist
+            count = sum(1 for calc in current_sequence if calc.startswith(base_type))
+            
+            if count == 0:
+                # First instance doesn't need a number
+                available.append(base_type)
+            else:
+                # Subsequent instances need numbers
+                available.append(f"{base_type}{count + 1}")
+                
+        return available
+        
+    def _get_next_numbered_calc(self, sequence: List[str], base_type: str) -> str:
+        """Get the next numbered version of a calculation type"""
+        # Count existing instances of this base type
+        count = 0
+        for calc in sequence:
+            if calc == base_type or calc.startswith(base_type) and calc[len(base_type):].isdigit():
+                count += 1
+                
+        if count == 0:
+            return base_type
+        else:
+            return f"{base_type}{count + 1}"
+            
+    def _display_workflow_sequence(self, sequence: List[str]):
+        """Display the workflow sequence with details"""
+        print(f"\nCurrent workflow sequence ({len(sequence)} steps):")
+        print("─" * 70)
+        
+        if not sequence:
+            print("  (Empty workflow)")
+            return
+            
+        # Create visual representation
+        for i, calc in enumerate(sequence):
+            # Parse calculation type
+            base = calc.rstrip('0123456789')
+            num = calc[len(base):] or '1'
+            
+            # Get description
+            desc = {
+                'OPT': 'Geometry Optimization',
+                'SP': 'Single Point Energy',
+                'BAND': 'Band Structure',
+                'DOSS': 'Density of States', 
+                'FREQ': 'Vibrational Frequencies'
+            }.get(base, base)
+            
+            # Determine source
+            if i == 0:
+                source = "Input files"
+            elif base == "OPT":
+                source = f"From step {i}"
+            elif base == "SP":
+                # Find most recent OPT
+                for j in range(i-1, -1, -1):
+                    if sequence[j].startswith("OPT"):
+                        source = f"From {sequence[j]} (step {j+1})"
+                        break
+                else:
+                    source = "From previous step"
+            elif base in ["BAND", "DOSS"]:
+                # Find most recent SP or OPT
+                for j in range(i-1, -1, -1):
+                    if sequence[j].startswith("SP") or sequence[j].startswith("OPT"):
+                        source = f"From {sequence[j]} (step {j+1})"
+                        break
+                else:
+                    source = "From previous step"
+            elif base == "FREQ":
+                # Find most recent OPT
+                for j in range(i-1, -1, -1):
+                    if sequence[j].startswith("OPT"):
+                        source = f"From {sequence[j]} (step {j+1})"
+                        break
+                else:
+                    source = "From previous step"
+            else:
+                source = "From previous step"
+                
+            # Print step info
+            print(f"  Step {i+1}: {calc:<8} - {desc:<25} [{source}]")
+            
+            if i < len(sequence) - 1:
+                print("    ↓")
+                
+        print("─" * 70)
+        
+    def _validate_numbered_calc_addition(self, sequence: List[str], new_calc: str) -> bool:
+        """Validate addition of numbered calculation types"""
+        # Parse the calculation type
+        import re
+        match = re.match(r'^([A-Z]+)(\d*)$', new_calc)
+        if not match:
+            return False
+            
+        base_type = match.group(1)
+        
+        # Check dependencies based on base type
+        if base_type == "SP":
+            # SP needs at least one OPT
+            return any(calc.startswith("OPT") for calc in sequence)
+        elif base_type in ["BAND", "DOSS"]:
+            # BAND/DOSS need at least one SP or OPT
+            return any(calc.startswith("SP") or calc.startswith("OPT") for calc in sequence)
+        elif base_type == "FREQ":
+            # FREQ needs at least one OPT
+            return any(calc.startswith("OPT") for calc in sequence)
+        elif base_type == "OPT":
+            # OPT can always be added
+            return True
+            
+        return False
         
     def validate_calc_addition(self, current_sequence: List[str], new_calc: str) -> bool:
         """Validate that a calculation can be added to the sequence"""
@@ -540,10 +742,16 @@ class WorkflowPlanner:
         print("  Analysis: OPT SP BAND DOSS")
         print("  Complete: OPT SP BAND DOSS FREQ")
         print("  Double opt: OPT OPT2 SP")
+        print("\nAdvanced patterns:")
+        print("  Multi-stage: OPT SP BAND DOSS OPT2 OPT3 SP2 BAND2 DOSS2 FREQ")
+        print("  Iterative opt: OPT OPT2 OPT3 SP")
+        print("  Multiple properties: OPT SP BAND DOSS BAND2 DOSS2")
         print("\nDependencies:")
         for calc, info in self.calc_types.items():
             if info["depends_on"]:
                 print(f"  {calc} requires: {', '.join(info['depends_on'])}")
+        print("\nNOTE: Numbered calculations (OPT2, SP2, etc.) are automatically assigned")
+        print("      when you add multiple calculations of the same type.")
                 
     def configure_workflow_steps(self, sequence: List[str], has_cifs: bool) -> Dict[str, Dict[str, Any]]:
         """Configure settings for each workflow step"""
@@ -553,7 +761,13 @@ class WorkflowPlanner:
         step_configs = {}
         
         for i, calc_type in enumerate(sequence):
-            print(f"\nConfiguring {calc_type} ({self.calc_types[calc_type]['name']}):")
+            # Parse calc_type to get base type for looking up info
+            base_type = calc_type.rstrip('0123456789') or calc_type
+            if base_type in self.calc_types:
+                calc_name = self.calc_types[base_type]['name']
+            else:
+                calc_name = calc_type
+            print(f"\nConfiguring {calc_type} ({calc_name}):")
             
             if calc_type == "OPT" and i == 0 and has_cifs:
                 print("  Using CIF conversion configuration for first OPT step")
@@ -563,19 +777,35 @@ class WorkflowPlanner:
                 print("  Using existing D12 files for first OPT step")
                 step_configs[f"{calc_type}_1"] = {"source": "existing_d12"}
                 
-            elif calc_type in ["OPT", "OPT2"] and i > 0:
-                # Subsequent optimization - configure via CRYSTALOptToD12.py
+            elif calc_type == "OPT2":
+                # OPT2 is always configured via CRYSTALOptToD12.py
                 config = self.configure_optimization_step(calc_type, i+1)
                 step_configs[f"{calc_type}_{i+1}"] = config
                 
-            elif calc_type == "SP":
-                # Single point calculation
+            elif calc_type == "OPT" and i > 0:
+                # This shouldn't happen - subsequent OPTs should be OPT2, OPT3, etc.
+                print(f"  Warning: Found duplicate OPT at position {i+1}. This should be OPT2.")
+                config = self.configure_optimization_step(calc_type, i+1)
+                step_configs[f"{calc_type}_{i+1}"] = config
+                
+            elif calc_type.startswith("OPT") and calc_type[3:].isdigit():
+                # Handle OPT3, OPT4, etc.
+                config = self.configure_optimization_step(calc_type, i+1)
+                step_configs[f"{calc_type}_{i+1}"] = config
+                
+            elif calc_type == "SP" or (calc_type.startswith("SP") and calc_type[2:].isdigit()):
+                # Single point calculation (SP, SP2, SP3, etc.)
                 config = self.configure_single_point_step()
                 step_configs[f"{calc_type}_{i+1}"] = config
                 
-            elif calc_type in ["BAND", "DOSS"]:
-                # Analysis calculations
-                config = self.configure_analysis_step(calc_type)
+            elif calc_type.startswith("BAND"):
+                # Band structure calculations (BAND, BAND2, etc.)
+                config = self.configure_analysis_step("BAND")
+                step_configs[f"{calc_type}_{i+1}"] = config
+                
+            elif calc_type.startswith("DOSS"):
+                # DOS calculations (DOSS, DOSS2, etc.)
+                config = self.configure_analysis_step("DOSS")
                 step_configs[f"{calc_type}_{i+1}"] = config
                 
             elif calc_type == "FREQ":
@@ -703,7 +933,7 @@ class WorkflowPlanner:
         print("    This will create a JSON configuration for full CRYSTALOptToD12.py customization")
         
         config_name = f"sp_config_expert.json"
-        config_path = self.working_dir / "workflow_configs" / config_name
+        config_path = self.work_dir / "workflow_configs" / config_name
         
         print(f"    Configuration will be saved as: {config_name}")
         
@@ -1066,7 +1296,7 @@ class WorkflowPlanner:
         
         # Create a configuration file name
         config_name = f"opt_config_{calc_type.lower()}_step_{step_num}.json"
-        config_path = self.working_dir / "workflow_configs" / config_name
+        config_path = self.work_dir / "workflow_configs" / config_name
         
         print(f"    Configuration will be saved as: {config_name}")
         
@@ -1593,7 +1823,12 @@ class WorkflowPlanner:
         with open(plan_file, 'w') as f:
             json.dump(workflow_plan, f, indent=2, default=str)
             
-        print(f"\nWorkflow plan saved to: {plan_file}")
+        print(f"\n✅ Workflow plan saved to: {plan_file}")
+        print(f"\n📁 Configuration locations:")
+        print(f"   Main plan: {plan_file}")
+        print(f"   CIF config: {self.configs_dir}/cif_conversion_config.json")
+        print(f"   Step configs: {self.temp_dir}/workflow_*_step_*.json")
+        print(f"   All configs: {self.configs_dir}/")
         return plan_file
         
     def execute_workflow_plan(self, plan_file: Path):
