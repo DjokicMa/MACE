@@ -219,7 +219,11 @@ class WorkflowPlanner:
             print("  2: Advanced (most common settings)")
             print("  3: Expert (full NewCifToD12.py integration)")
             
-            level_choice = input("Customization level [1]: ").strip() or "1"
+            level_choice = self.get_safe_choice_input(
+                "Customization level", 
+                valid_choices=["1", "2", "3"],
+                default="1"
+            )
             
             if level_choice == "1":
                 cif_config = self.get_basic_customization()
@@ -1661,6 +1665,87 @@ class WorkflowPlanner:
                     
         return resources
         
+    def get_safe_choice_input(self, prompt: str, valid_choices: list, default: str = None) -> str:
+        """Get user choice with validation against a list of valid options"""
+        while True:
+            if default:
+                user_input = input(f"{prompt} [{default}]: ").strip() or default
+            else:
+                user_input = input(f"{prompt}: ").strip()
+                
+            if user_input in valid_choices:
+                return user_input
+            else:
+                print(f"⚠️  Invalid choice '{user_input}'. Valid options: {', '.join(valid_choices)}")
+                continue
+    
+    def get_safe_integer_input(self, prompt: str, default: int, min_val: int = 1, max_val: int = None) -> int:
+        """Get integer input with validation and re-prompting on error"""
+        while True:
+            user_input = input(prompt).strip()
+            if not user_input:
+                return default
+            
+            try:
+                value = int(user_input)
+                if value < min_val:
+                    print(f"          ⚠️  Value must be at least {min_val}. Please try again.")
+                    continue
+                if max_val and value > max_val:
+                    print(f"          ⚠️  Value must be at most {max_val}. Please try again.")
+                    continue
+                return value
+            except ValueError:
+                print(f"          ⚠️  Invalid input '{user_input}'. Please enter a number.")
+                continue
+    
+    def get_safe_memory_input(self, prompt: str, default: str) -> str:
+        """Get memory input with validation"""
+        import re
+        
+        while True:
+            user_input = input(prompt).strip()
+            if not user_input:
+                return default
+            
+            # Valid memory formats: number + optional unit (G, GB, M, MB)
+            pattern = r'^\d+([GMK]B?)?$'
+            
+            if re.match(pattern, user_input, re.IGNORECASE):
+                # Normalize the format
+                if user_input.isdigit():
+                    return f"{user_input}G"  # Default to GB if no unit
+                return user_input.upper()
+            else:
+                print(f"          ⚠️  Invalid memory format '{user_input}'.")
+                print(f"          Valid formats: 4G, 4GB, 4000M, 4000MB")
+                print(f"          Examples: 5G, 48G, 4000M")
+                continue
+    
+    def get_safe_walltime_input(self, prompt: str, default: str) -> str:
+        """Get walltime input with validation"""
+        import re
+        
+        while True:
+            user_input = input(prompt).strip()
+            if not user_input:
+                return default
+            
+            # Valid walltime formats: HH:MM:SS, D-HH:MM:SS, DD-HH:MM:SS
+            patterns = [
+                r'^\d{1,2}:\d{2}:\d{2}$',  # HH:MM:SS
+                r'^\d-\d{1,2}:\d{2}:\d{2}$',  # D-HH:MM:SS
+                r'^\d{1,2}-\d{1,2}:\d{2}:\d{2}$',  # DD-HH:MM:SS
+            ]
+            
+            if any(re.match(pattern, user_input) for pattern in patterns):
+                return user_input
+            else:
+                print(f"          ⚠️  Invalid walltime format '{user_input}'.")
+                print(f"          Valid formats: HH:MM:SS, D-HH:MM:SS, or DD-HH:MM:SS")
+                print(f"          Examples: 24:00:00, 3-00:00:00, 7-00:00:00")
+                continue
+    
     def get_custom_resources(self, default_resources: Dict[str, Any], calc_type: str) -> Dict[str, Any]:
         """Get custom resource settings from user"""
         resources = default_resources.copy()
@@ -1668,24 +1753,30 @@ class WorkflowPlanner:
         print(f"        Customize resources for {calc_type}:")
         
         # Cores
-        new_cores = input(f"          Cores [{resources['ntasks']}]: ").strip()
-        if new_cores:
-            resources['ntasks'] = int(new_cores)
+        resources['ntasks'] = self.get_safe_integer_input(
+            f"          Cores [{resources['ntasks']}]: ",
+            default=resources['ntasks'],
+            min_val=1,
+            max_val=128  # Adjust based on your cluster
+        )
             
         # Memory
         if 'memory_per_cpu' in resources:
-            new_mem = input(f"          Memory per CPU [{resources['memory_per_cpu']}]: ").strip()
-            if new_mem:
-                resources['memory_per_cpu'] = new_mem
+            resources['memory_per_cpu'] = self.get_safe_memory_input(
+                f"          Memory per CPU [{resources['memory_per_cpu']}]: ",
+                default=resources['memory_per_cpu']
+            )
         elif 'memory' in resources:
-            new_mem = input(f"          Total memory [{resources['memory']}]: ").strip()
-            if new_mem:
-                resources['memory'] = new_mem
+            resources['memory'] = self.get_safe_memory_input(
+                f"          Total memory [{resources['memory']}]: ",
+                default=resources['memory']
+            )
                 
         # Walltime
-        new_walltime = input(f"          Walltime [{resources['walltime']}]: ").strip()
-        if new_walltime:
-            resources['walltime'] = new_walltime
+        resources['walltime'] = self.get_safe_walltime_input(
+            f"          Walltime [{resources['walltime']}]: ",
+            default=resources['walltime']
+        )
             
         # Account
         new_account = input(f"          Account [{resources.get('account', 'mendoza_q')}]: ").strip()
@@ -2210,13 +2301,22 @@ def get_user_input(prompt: str, options: Dict[str, str], default: str = "") -> s
             print(f"Invalid choice. Please select from: {', '.join(options.keys())}")
 
 def yes_no_prompt(prompt: str, default: str = "yes") -> bool:
-    """Get yes/no response from user"""
+    """Get yes/no response from user with validation"""
     default_char = "Y/n" if default.lower() == "yes" else "y/N"
-    response = input(f"{prompt} [{default_char}]: ").strip().lower()
     
-    if not response:
-        return default.lower() == "yes"
-    return response in ["y", "yes", "1", "true"]
+    while True:
+        response = input(f"{prompt} [{default_char}]: ").strip().lower()
+        
+        if not response:
+            return default.lower() == "yes"
+        
+        if response in ["y", "yes", "true", "1"]:
+            return True
+        elif response in ["n", "no", "false", "0"]:
+            return False
+        else:
+            print(f"⚠️  Invalid response '{response}'. Please enter yes/no (y/n).")
+            continue
 
 
 if __name__ == "__main__":

@@ -128,71 +128,113 @@ class WorkflowEngine:
         
         # Look for templates with flexible numbering
         template_script = None
-        if calc_type.startswith("SP"):
-            # Parse SP type (SP, SP2, etc.)
-            base_type, type_num = self._parse_calc_type(calc_type)
-            if type_num == 2:
-                # Try SP2 specific templates first
-                for name in ["submitcrystal23_sp2_5.sh", "submitcrystal23_sp2.sh"]:
-                    candidate = workflow_scripts_dir / name
-                    if candidate.exists():
-                        template_script = candidate
+        base_type, type_num = self._parse_calc_type(calc_type)
+        
+        if base_type == "SP":
+            # Try numbered templates first (for SP2, SP3, etc.)
+            if type_num > 1:
+                # Try specific numbered templates
+                numbered_patterns = [
+                    f"submitcrystal23_sp{type_num}_*.sh",
+                    f"submitcrystal23_sp{type_num}.sh"
+                ]
+                for pattern in numbered_patterns:
+                    candidates = list(workflow_scripts_dir.glob(pattern))
+                    if candidates:
+                        template_script = candidates[0]
                         break
             
             # If no specific template found, try general SP templates
             if not template_script:
-                for name in ["submitcrystal23_sp_3.sh", "submitcrystal23_sp_2.sh", "submitcrystal23_sp.sh"]:
-                    candidate = workflow_scripts_dir / name
-                    if candidate.exists():
-                        template_script = candidate
+                for name in ["submitcrystal23_sp_*.sh", "submitcrystal23_sp.sh"]:
+                    candidates = list(workflow_scripts_dir.glob(name))
+                    if candidates:
+                        template_script = candidates[0]
                         break
-        elif calc_type == "FREQ":
-            # Try various FREQ template names
-            for name in ["submitcrystal23_freq_8.sh", "submitcrystal23_freq_5.sh", "submitcrystal23_freq.sh"]:
-                candidate = workflow_scripts_dir / name
-                if candidate.exists():
-                    template_script = candidate
-                    break
-        elif calc_type == "BAND":
-            # Try various BAND template names
-            for name in ["submit_prop_band_6.sh", "submit_prop_band_3.sh", "submit_prop_band.sh"]:
-                candidate = workflow_scripts_dir / name
-                if candidate.exists():
-                    template_script = candidate
-                    break
-        elif calc_type == "DOSS":
-            # Try various DOSS template names
-            for name in ["submit_prop_doss_7.sh", "submit_prop_doss_4.sh", "submit_prop_doss.sh"]:
-                candidate = workflow_scripts_dir / name
-                if candidate.exists():
-                    template_script = candidate
-                    break
-        else:  # OPT, OPT2, OPT3
-            # Parse the calc_type to handle numbered optimizations
-            base_type, type_num = self._parse_calc_type(calc_type)
+        elif base_type == "FREQ":
+            # Try numbered templates first (for FREQ2, FREQ3, etc.)
+            if type_num > 1:
+                # Try specific numbered templates
+                numbered_patterns = [
+                    f"submitcrystal23_freq{type_num}_*.sh",
+                    f"submitcrystal23_freq{type_num}.sh"
+                ]
+                for pattern in numbered_patterns:
+                    candidates = list(workflow_scripts_dir.glob(pattern))
+                    if candidates:
+                        template_script = candidates[0]
+                        break
+            
+            # If no specific template found, try general FREQ templates
+            if not template_script:
+                for pattern in ["submitcrystal23_freq_*.sh", "submitcrystal23_freq.sh"]:
+                    candidates = list(workflow_scripts_dir.glob(pattern))
+                    if candidates:
+                        template_script = candidates[0]
+                        break
+        elif base_type == "BAND":
+            # Try numbered templates first (for BAND2, BAND3, etc.)
+            if type_num > 1:
+                numbered_patterns = [
+                    f"submit_prop_band{type_num}_*.sh",
+                    f"submit_prop_band{type_num}.sh"
+                ]
+                for pattern in numbered_patterns:
+                    candidates = list(workflow_scripts_dir.glob(pattern))
+                    if candidates:
+                        template_script = candidates[0]
+                        break
+            
+            # If no specific template found, try general BAND templates
+            if not template_script:
+                for pattern in ["submit_prop_band_*.sh", "submit_prop_band.sh"]:
+                    candidates = list(workflow_scripts_dir.glob(pattern))
+                    if candidates:
+                        template_script = candidates[0]
+                        break
+        elif base_type == "DOSS":
+            # Try numbered templates first (for DOSS2, DOSS3, etc.)
+            if type_num > 1:
+                numbered_patterns = [
+                    f"submit_prop_doss{type_num}_*.sh",
+                    f"submit_prop_doss{type_num}.sh"
+                ]
+                for pattern in numbered_patterns:
+                    candidates = list(workflow_scripts_dir.glob(pattern))
+                    if candidates:
+                        template_script = candidates[0]
+                        break
+            
+            # If no specific template found, try general DOSS templates
+            if not template_script:
+                for pattern in ["submit_prop_doss_*.sh", "submit_prop_doss.sh"]:
+                    candidates = list(workflow_scripts_dir.glob(pattern))
+                    if candidates:
+                        template_script = candidates[0]
+                        break
+        else:
+            # For other calculation types (OPT, OPTn, etc.)
             if base_type == "OPT":
-                if type_num == 2:
-                    # Try OPT2 specific templates first
-                    for name in ["submitcrystal23_opt2_2.sh", "submitcrystal23_opt2.sh"]:
-                        candidate = workflow_scripts_dir / name
-                        if candidate.exists():
-                            template_script = candidate
-                            break
-                elif type_num == 3:
-                    # Try OPT3 specific templates first
-                    for name in ["submitcrystal23_opt3_4.sh", "submitcrystal23_opt3.sh"]:
-                        candidate = workflow_scripts_dir / name
-                        if candidate.exists():
-                            template_script = candidate
+                # Try numbered templates first (for OPT2, OPT3, etc.)
+                if type_num > 1:
+                    # Try specific numbered templates
+                    numbered_patterns = [
+                        f"submitcrystal23_opt{type_num}_*.sh",
+                        f"submitcrystal23_opt{type_num}.sh"
+                    ]
+                    for pattern in numbered_patterns:
+                        candidates = list(workflow_scripts_dir.glob(pattern))
+                        if candidates:
+                            template_script = candidates[0]
                             break
                     
-            # If no specific template found, try general OPT templates
-            if not template_script:
-                for name in ["submitcrystal23_opt_1.sh", "submitcrystal23_opt.sh", "submitcrystal23.sh"]:
-                    candidate = workflow_scripts_dir / name
-                    if candidate.exists():
-                        template_script = candidate
-                        break
+                # If no specific template found, try general OPT templates
+                if not template_script:
+                    for pattern in ["submitcrystal23_opt_*.sh", "submitcrystal23_opt.sh", "submitcrystal23.sh"]:
+                        candidates = list(workflow_scripts_dir.glob(pattern))
+                        if candidates:
+                            template_script = candidates[0]
+                            break
         
         # If still no template found, use the first available one that matches the pattern
         if not template_script:
@@ -573,9 +615,19 @@ fi'''
         # Strategy: Remove known calculation suffixes from the end
         # IMPORTANT: Check numbered suffixes BEFORE base suffixes to avoid 
         # stripping numbers that are part of the material name (e.g., test2_sp)
-        calc_suffixes = ['_opt2', '_sp2', '_freq2', '_band2', '_doss2',
-                         '_opt3', '_sp3', '_freq3', '_band3', '_doss3',
-                         '_opt', '_sp', '_freq', '_band', '_doss']
+        
+        # Generate suffixes dynamically for any number (up to 99 seems reasonable)
+        calc_suffixes = []
+        base_types = ['opt', 'sp', 'freq', 'band', 'doss']
+        
+        # Add numbered suffixes in reverse order (higher numbers first)
+        for num in range(99, 1, -1):
+            for base in base_types:
+                calc_suffixes.append(f'_{base}{num}')
+        
+        # Then add base suffixes
+        for base in base_types:
+            calc_suffixes.append(f'_{base}')
         
         # Remove calc suffix if present
         clean_name = name
@@ -1180,53 +1232,105 @@ fi'''
             source_calc_id = None
             
             if base_type == "SP":
-                # SP depends on corresponding OPT
-                opt_type = f"OPT{type_num}" if type_num > 1 else "OPT"
-                if opt_type in completed_by_type:
+                # SP calculations depend on their previous step in the workflow sequence
+                # Find what step comes before this SP in the planned sequence
+                prev_step = self._find_dependency_in_sequence(planned_type, planned_sequence)
+                if prev_step and prev_step in completed_by_type:
                     can_start = True
-                    source_calc_id = completed_by_type[opt_type][-1]['calc_id']
+                    source_calc_id = completed_by_type[prev_step][-1]['calc_id']
+                elif not prev_step:
+                    # SP is the first calculation - needs CIF source
+                    can_start = True
+                    source_calc_id = 'CIF'  # Special marker for CIF generation
                     
             elif base_type == "FREQ":
-                # FREQ depends on corresponding OPT
-                opt_type = f"OPT{type_num}" if type_num > 1 else "OPT"
-                if opt_type in completed_by_type:
-                    can_start = True
-                    source_calc_id = completed_by_type[opt_type][-1]['calc_id']
+                # FREQ calculations need an optimized geometry from an OPT calculation
+                # Wait for the dependency step to complete, but use the highest numbered OPT
+                # that has been COMPLETED up to this point (not future OPTs in the sequence)
+                prev_step = self._find_dependency_in_sequence(planned_type, planned_sequence)
+                if prev_step and prev_step in completed_by_type:
+                    # Find the highest numbered OPT calculation that's been completed
+                    # This correctly handles cases like: OPT → OPT2 → SP → OPT3 → FREQ → OPT4
+                    # where FREQ uses OPT3 (not OPT4 which hasn't run yet)
+                    opt_source = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
+                    if opt_source:
+                        can_start = True
+                        source_calc_id = opt_source  # Use highest completed OPT for FREQ generation
                     
             elif base_type in ["BAND", "DOSS"]:
-                # BAND/DOSS depend on corresponding SP (or OPT if no SP)
-                sp_type = f"SP{type_num}" if type_num > 1 else "SP"
-                opt_type = f"OPT{type_num}" if type_num > 1 else "OPT"
-                
-                if sp_type in completed_by_type:
+                # BAND/DOSS calculations depend on their previous step in the workflow sequence
+                # They typically need a wavefunction from SP or OPT
+                prev_step = self._find_dependency_in_sequence(planned_type, planned_sequence)
+                if prev_step and prev_step in completed_by_type:
                     can_start = True
-                    source_calc_id = completed_by_type[sp_type][-1]['calc_id']
-                elif opt_type in completed_by_type:
-                    can_start = True
-                    source_calc_id = completed_by_type[opt_type][-1]['calc_id']
+                    source_calc_id = completed_by_type[prev_step][-1]['calc_id']
                     
-            elif base_type == "OPT" and type_num > 1:
-                # OPT2+ depends on previous SP
-                prev_sp_type = f"SP{type_num-1}" if type_num > 2 else "SP"
-                if prev_sp_type in completed_by_type:
-                    can_start = True
-                    source_calc_id = completed_by_type[prev_sp_type][-1]['calc_id']
+            elif base_type == "OPT":
+                # OPT calculations need appropriate source geometry
+                prev_step = self._find_dependency_in_sequence(planned_type, planned_sequence)
+                if prev_step and prev_step in completed_by_type:
+                    # Check if previous step can provide geometry
+                    prev_base, _ = self._parse_calc_type(prev_step)
+                    
+                    if prev_base in ['OPT', 'SP']:  # These can provide geometry
+                        can_start = True
+                        source_calc_id = completed_by_type[prev_step][-1]['calc_id']
+                    else:
+                        # Previous step can't provide geometry (e.g., FREQ, BAND, DOSS)
+                        # Find the highest numbered OPT completed so far
+                        opt_source = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
+                        if opt_source:
+                            can_start = True
+                            source_calc_id = opt_source  # Use highest completed OPT
+                        elif type_num == 1:
+                            # First OPT with no prior OPT - need CIF source
+                            can_start = True
+                            source_calc_id = 'CIF'  # Special marker for CIF generation
             
             # Trigger the calculation if dependencies are met
             if can_start and source_calc_id:
                 print(f"Triggering pending {planned_type} calculation...")
                 
                 if base_type == "SP":
-                    calc_id = self.generate_numbered_calculation(source_calc_id, planned_type)
-                elif base_type == "FREQ":
-                    if type_num > 1:
-                        calc_id = self.generate_numbered_calculation(source_calc_id, planned_type)
+                    if source_calc_id == 'CIF':
+                        # Generate from CIF
+                        # Find material_id from context or use planned_type to derive it
+                        material_id = None
+                        for calcs in completed_by_type.values():
+                            if calcs:
+                                material_id = calcs[0]['material_id']
+                                break
+                        # If no completed calcs, we need to get material_id from somewhere else
+                        # This would typically come from the workflow context
+                        if material_id:
+                            calc_id = self.generate_calculation_from_cif(material_id, planned_type)
+                        else:
+                            print(f"Cannot determine material_id for CIF generation")
+                            calc_id = None
                     else:
-                        calc_id = self.generate_freq_from_opt(source_calc_id)
+                        calc_id = self.generate_numbered_calculation(source_calc_id, planned_type)
+                elif base_type == "FREQ":
+                    # FREQ always uses generate_freq_from_opt with an OPT calculation
+                    # source_calc_id should already be from an OPT due to fixed dependency logic
+                    calc_id = self.generate_freq_from_opt(source_calc_id)
                 elif base_type in ["BAND", "DOSS"]:
                     calc_id = self.generate_property_calculation(source_calc_id, planned_type)
                 elif base_type == "OPT":
-                    calc_id = self.generate_numbered_calculation(source_calc_id, planned_type)
+                    if source_calc_id == 'CIF':
+                        # Generate from CIF
+                        # Find material_id from any completed calculation
+                        material_id = None
+                        for calcs in completed_by_type.values():
+                            if calcs:
+                                material_id = calcs[0]['material_id']
+                                break
+                        if material_id:
+                            calc_id = self.generate_calculation_from_cif(material_id, planned_type)
+                        else:
+                            print(f"Cannot determine material_id for CIF generation")
+                            calc_id = None
+                    else:
+                        calc_id = self.generate_numbered_calculation(source_calc_id, planned_type)
                 else:
                     calc_id = None
                     
@@ -1293,13 +1397,27 @@ fi'''
                         if sp_calc_id:
                             new_calc_ids.append(sp_calc_id)
                     elif next_base_type == "FREQ":
-                        # Generate FREQ with correct numbering
-                        if next_num > 1:
-                            freq_calc_id = self.generate_numbered_calculation(completed_calc_id, next_calc_type)
+                        # FREQ needs optimized geometry from the highest numbered OPT calculation
+                        all_calcs = self.db.get_calculations_by_status(material_id=material_id)
+                        
+                        # Build completed_by_type dict for finding highest OPT
+                        completed_by_type = {}
+                        for calc in all_calcs:
+                            if calc['status'] == 'completed':
+                                calc_type = calc['calc_type']
+                                if calc_type not in completed_by_type:
+                                    completed_by_type[calc_type] = []
+                                completed_by_type[calc_type].append(calc)
+                        
+                        # Find the highest numbered OPT
+                        opt_calc_id = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
+                        
+                        if opt_calc_id:
+                            freq_calc_id = self.generate_freq_from_opt(opt_calc_id)
+                            if freq_calc_id:
+                                new_calc_ids.append(freq_calc_id)
                         else:
-                            freq_calc_id = self.generate_freq_from_opt(completed_calc_id)
-                        if freq_calc_id:
-                            new_calc_ids.append(freq_calc_id)
+                            print(f"No completed OPT calculation found for FREQ generation")
             else:
                 # Default behavior: generate SP and FREQ in parallel
                 sp_calc_id = self.generate_sp_from_opt(completed_calc_id)
@@ -1333,9 +1451,28 @@ fi'''
                         if band_calc_id:
                             new_calc_ids.append(band_calc_id)
                     elif next_base_type == "OPT":
-                        # Generate another optimization from SP
-                        print(f"Generating {next_calc_type} from SP...")
-                        opt_calc_id = self.generate_numbered_calculation(completed_calc_id, next_calc_type)
+                        # Check if we have a previous OPT to use
+                        all_calcs = self.db.get_calculations_by_status(material_id=material_id)
+                        completed_by_type = {}
+                        for calc in all_calcs:
+                            if calc['status'] == 'completed':
+                                ct = calc['calc_type']
+                                if ct not in completed_by_type:
+                                    completed_by_type[ct] = []
+                                completed_by_type[ct].append(calc)
+                        
+                        # Find any completed OPT
+                        opt_source = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
+                        
+                        if opt_source:
+                            # Use existing OPT as source
+                            print(f"Generating {next_calc_type} from previous OPT...")
+                            opt_calc_id = self.generate_numbered_calculation(opt_source, next_calc_type)
+                        else:
+                            # No OPT exists, generate from CIF
+                            print(f"No previous OPT found. Generating {next_calc_type} from CIF...")
+                            opt_calc_id = self.generate_calculation_from_cif(material_id, next_calc_type)
+                        
                         if opt_calc_id:
                             new_calc_ids.append(opt_calc_id)
                     elif next_base_type == "SP":
@@ -1355,14 +1492,55 @@ fi'''
                 if band_calc_id:
                     new_calc_ids.append(band_calc_id)
                 
-        # Note: DOSS, BAND, and FREQ are typically terminal calculations in the workflow
+        elif base_type in ["FREQ", "BAND", "DOSS"]:
+            # These calculations are often terminal, but sometimes workflow continues
+            if planned_sequence:
+                current_index = self._find_calc_position_in_sequence(calc_type, completed_calc, planned_sequence)
+                next_steps = self._get_next_steps_from_sequence(current_index, planned_sequence, calc_type)
+                
+                for next_calc_type in next_steps:
+                    next_base_type, next_num = self._parse_calc_type(next_calc_type)
+                    
+                    if next_base_type == "OPT":
+                        # OPT after FREQ/BAND/DOSS needs geometry from highest completed OPT
+                        all_calcs = self.db.get_calculations_by_status(material_id=material_id)
+                        completed_by_type = {}
+                        for calc in all_calcs:
+                            if calc['status'] == 'completed':
+                                ct = calc['calc_type']
+                                if ct not in completed_by_type:
+                                    completed_by_type[ct] = []
+                                completed_by_type[ct].append(calc)
+                        
+                        # Find highest completed OPT
+                        opt_source = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
+                        if opt_source:
+                            opt_calc_id = self.generate_numbered_calculation(opt_source, next_calc_type)
+                            if opt_calc_id:
+                                new_calc_ids.append(opt_calc_id)
+                        else:
+                            print(f"No completed OPT found to use as source for {next_calc_type}")
+                    elif next_base_type == "FREQ":
+                        # Another FREQ calculation - also needs OPT geometry
+                        all_calcs = self.db.get_calculations_by_status(material_id=material_id)
+                        completed_by_type = {}
+                        for calc in all_calcs:
+                            if calc['status'] == 'completed':
+                                ct = calc['calc_type']
+                                if ct not in completed_by_type:
+                                    completed_by_type[ct] = []
+                                completed_by_type[ct].append(calc)
+                        
+                        opt_source = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
+                        if opt_source:
+                            freq_calc_id = self.generate_freq_from_opt(opt_source)
+                            if freq_calc_id:
+                                new_calc_ids.append(freq_calc_id)
+                    # Add other calculation types as needed
         
-        # Also check for any pending calculations that should have been triggered earlier
-        if planned_sequence:
-            pending_calc_ids = self._check_and_trigger_pending_calculations(material_id, planned_sequence)
-            if pending_calc_ids:
-                print(f"Also triggered {len(pending_calc_ids)} pending calculations from the workflow plan")
-                new_calc_ids.extend(pending_calc_ids)
+        # Note: We do NOT check for all pending calculations here anymore
+        # The workflow should progress step by step based on actual dependencies
+        # This prevents premature triggering of later steps
         
         if new_calc_ids:
             print(f"Generated {len(new_calc_ids)} new calculations: {new_calc_ids}")
@@ -1414,8 +1592,9 @@ fi'''
         """
         Get the next calculation steps from the planned sequence.
         
-        Simply returns the next step(s) in the sequence, with special handling for
-        known parallel execution cases (BAND+DOSS, SP+OPT3, etc.)
+        Returns only the immediate next step(s) in the sequence. The only exception
+        is for truly parallel calculations that can use the same wavefunction
+        (e.g., BAND and DOSS which both read from the same SP wavefunction).
         
         Args:
             current_index: Current position in the sequence
@@ -1436,34 +1615,20 @@ fi'''
             next_calc = planned_sequence[next_index]
             next_steps.append(next_calc)
             
-            # Check for special parallel execution cases
-            completed_base, _ = self._parse_calc_type(completed_calc_type)
+            # Only handle truly parallel cases where calculations can share the same input
             next_base, _ = self._parse_calc_type(next_calc)
             
-            # After OPT2, both SP and OPT3 can run in parallel
-            if completed_calc_type == "OPT2":
-                # Look ahead for OPT3
-                for i in range(next_index + 1, len(planned_sequence)):
-                    if planned_sequence[i] == "OPT3":
-                        next_steps.append("OPT3")
+            # BAND and DOSS can run in parallel as they both just read the wavefunction
+            if next_base in ["BAND", "DOSS"]:
+                # Check if the other property calculation is also in the sequence
+                other_prop = "DOSS" if next_base == "BAND" else "BAND"
+                # Look for the other property calculation nearby in the sequence
+                for i in range(max(0, next_index - 1), min(len(planned_sequence), next_index + 2)):
+                    if i != next_index and planned_sequence[i] == other_prop:
+                        # Check if it hasn't been started yet
+                        if other_prop not in next_steps:
+                            next_steps.append(other_prop)
                         break
-                        
-            # After OPT3, both SP2 and FREQ can run in parallel
-            elif completed_calc_type == "OPT3":
-                # Look ahead for FREQ
-                for i in range(next_index + 1, len(planned_sequence)):
-                    if planned_sequence[i] == "FREQ":
-                        next_steps.append("FREQ")
-                        break
-                        
-            # BAND and DOSS run in parallel
-            elif next_calc == "BAND" and next_index + 1 < len(planned_sequence):
-                if planned_sequence[next_index + 1] == "DOSS":
-                    next_steps.append("DOSS")
-            elif next_calc == "DOSS" and next_index > 0:
-                if planned_sequence[next_index - 1] == "BAND" and "BAND" not in next_steps:
-                    # If we're at DOSS but BAND hasn't been added yet
-                    next_steps = ["BAND", "DOSS"]
         
         return next_steps
         
@@ -1488,6 +1653,61 @@ fi'''
         else:
             # Fallback for unexpected formats
             return calc_type, 1
+    
+    def _find_dependency_in_sequence(self, calc_type: str, planned_sequence: List[str]) -> Optional[str]:
+        """
+        Find what calculation type this step depends on based on the planned sequence.
+        
+        This looks at the workflow sequence to determine the actual dependency,
+        not making assumptions about what depends on what.
+        
+        Args:
+            calc_type: The calculation type we're checking dependencies for
+            planned_sequence: The full planned calculation sequence
+            
+        Returns:
+            The calculation type this depends on, or None if not found
+        """
+        if not planned_sequence or calc_type not in planned_sequence:
+            return None
+            
+        # Find the position of this calc type in the sequence
+        try:
+            calc_index = planned_sequence.index(calc_type)
+        except ValueError:
+            return None
+            
+        # If it's the first step, it has no dependencies
+        if calc_index == 0:
+            return None
+            
+        # The dependency is the previous completed step
+        # (not necessarily the immediate previous in sequence)
+        return planned_sequence[calc_index - 1]
+    
+    def _find_highest_numbered_calc_of_type(self, completed_by_type: Dict[str, List[Dict]], base_type: str) -> Optional[str]:
+        """
+        Find the highest numbered completed calculation of a given base type.
+        
+        Args:
+            completed_by_type: Dictionary mapping calc_type to list of completed calculations
+            base_type: Base calculation type (e.g., 'OPT', 'SP')
+            
+        Returns:
+            Calculation ID of the highest numbered calc of this type, or None
+        """
+        highest_calc_id = None
+        highest_num = 0
+        
+        # Check all completed calculations
+        for calc_type, calcs in completed_by_type.items():
+            calc_base, calc_num = self._parse_calc_type(calc_type)
+            if calc_base == base_type and calc_num > highest_num:
+                highest_num = calc_num
+                if calcs:  # Make sure there are calculations
+                    highest_calc_id = calcs[-1]['calc_id']  # Take the most recent
+        
+        return highest_calc_id
         
     def generate_opt2_from_opt(self, opt_calc_id: str) -> Optional[str]:
         """
@@ -1500,6 +1720,184 @@ fi'''
             New OPT2 calculation ID if successful, None otherwise
         """
         return self.generate_numbered_calculation(opt_calc_id, "OPT2")
+    
+    def find_original_cif_source(self, material_id: str) -> Optional[Path]:
+        """
+        Find the original CIF file that was used to create this material.
+        
+        Args:
+            material_id: Material identifier
+            
+        Returns:
+            Path to CIF file if found, None otherwise
+        """
+        # Look for CIF in workflow_inputs or workflow configuration
+        workflow_base = self.base_work_dir
+        
+        # Check workflow_inputs directory
+        workflow_inputs = workflow_base / "workflow_inputs"
+        if workflow_inputs.exists():
+            # Look for CIF files that match the material name
+            core_name = self.extract_core_material_name(material_id)
+            cif_patterns = [f"{core_name}.cif", f"*{core_name}*.cif"]
+            
+            for pattern in cif_patterns:
+                cif_files = list(workflow_inputs.glob(pattern))
+                if cif_files:
+                    return cif_files[0]
+        
+        # Check workflow config for CIF directory
+        config_dir = workflow_base / "workflow_configs"
+        if config_dir.exists():
+            # Look for workflow plan files
+            for plan_file in config_dir.glob("workflow_plan_*.json"):
+                try:
+                    with open(plan_file, 'r') as f:
+                        plan = json.load(f)
+                        
+                    if plan.get('input_type') == 'cif' and plan.get('input_directory'):
+                        cif_dir = Path(plan['input_directory'])
+                        if cif_dir.exists():
+                            # Look for matching CIF file
+                            core_name = self.extract_core_material_name(material_id)
+                            for cif_file in cif_dir.glob("*.cif"):
+                                if core_name in cif_file.stem:
+                                    return cif_file
+                except Exception as e:
+                    print(f"Error reading workflow plan {plan_file}: {e}")
+        
+        return None
+    
+    def generate_calculation_from_cif(self, material_id: str, calc_type: str) -> Optional[str]:
+        """
+        Generate a calculation (OPT or SP) from the original CIF file.
+        
+        Args:
+            material_id: Material identifier
+            calc_type: Calculation type to generate (e.g., 'OPT', 'SP')
+            
+        Returns:
+            New calculation ID if successful, None otherwise
+        """
+        print(f"Generating {calc_type} from CIF for {material_id}")
+        
+        # Find the original CIF file
+        cif_file = self.find_original_cif_source(material_id)
+        if not cif_file:
+            print(f"Could not find original CIF file for {material_id}")
+            return None
+        
+        print(f"  Found CIF file: {cif_file}")
+        
+        # Create working directory for CIF conversion
+        work_dir = self.create_isolated_calculation_directory(
+            material_id, f"{calc_type}_from_cif_generation", [cif_file]
+        )
+        
+        try:
+            # Get NewCifToD12.py script
+            newcif_script = self.script_paths.get('newcif_to_d12')
+            if not newcif_script:
+                print("NewCifToD12.py script not found")
+                return None
+            
+            # Prepare arguments for NewCifToD12.py
+            args = [
+                "--cif-file", str(work_dir / cif_file.name),
+                "--output-dir", str(work_dir)
+            ]
+            
+            # Check for CIF conversion config
+            config_file = self.base_work_dir / "workflow_configs" / "cif_conversion_config.json"
+            if config_file.exists():
+                args.extend(["--config-file", str(config_file)])
+                print(f"  Using CIF conversion config: {config_file}")
+            
+            # Determine calculation type for NewCifToD12.py
+            # 1 = OPT, 2 = SP
+            calc_type_num = "1" if calc_type.startswith("OPT") else "2"
+            
+            # Prepare input responses for non-interactive mode
+            # This assumes using config file or defaults
+            input_responses = f"{calc_type_num}\n\n\n\n\n\n\n\n\n\n"
+            
+            success, stdout, stderr = self.run_script_in_isolated_directory(
+                newcif_script, work_dir, args, input_data=input_responses
+            )
+            
+            if not success:
+                print(f"NewCifToD12.py failed: {stderr}")
+                return None
+            
+            # Find generated D12 file
+            d12_files = list(work_dir.glob("*.d12"))
+            if not d12_files:
+                print("No D12 file generated by NewCifToD12.py")
+                return None
+            
+            generated_d12 = d12_files[0]
+            
+            # Get workflow output directory
+            workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            workflow_base = self.base_work_dir / "workflow_outputs" / workflow_id
+            
+            # Determine step number and create directory
+            step_num = self._get_next_step_number(workflow_base, calc_type)
+            core_name = self.extract_core_material_name(material_id)
+            
+            # Parse calc type for numbered calculations
+            base_type, type_num = self._parse_calc_type(calc_type)
+            if type_num > 1:
+                dir_suffix = f"_{base_type.lower()}{type_num}"
+            else:
+                dir_suffix = f"_{base_type.lower()}"
+            
+            dir_name = f"{core_name}{dir_suffix}"
+            calc_dir = workflow_base / f"step_{step_num:03d}_{base_type}" / dir_name
+            calc_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Move D12 file to calculation directory
+            final_d12_name = f"{core_name}{dir_suffix}.d12"
+            final_d12_path = calc_dir / final_d12_name
+            shutil.move(generated_d12, final_d12_path)
+            
+            # Create SLURM script
+            job_name = f"{core_name}{dir_suffix}"
+            slurm_script_path = self._create_slurm_script_for_calculation(
+                calc_dir, job_name, base_type, step_num, workflow_id
+            )
+            
+            # Create calculation record
+            calc_id = self.db.create_calculation(
+                material_id=material_id,
+                calc_type=calc_type,
+                input_file=str(final_d12_path),
+                work_dir=str(calc_dir),
+                settings={
+                    'generated_from': 'CIF',
+                    'generation_method': 'NewCifToD12.py',
+                    'cif_source': str(cif_file),
+                    'workflow_id': workflow_id,
+                    'step_number': step_num
+                }
+            )
+            
+            # Submit if auto-submit is enabled
+            if hasattr(self, 'auto_submit') and self.auto_submit:
+                job_id = self._submit_calculation_to_slurm(slurm_script_path, calc_dir)
+                if job_id:
+                    self.db.update_calculation_status(calc_id, 'submitted', slurm_job_id=job_id)
+                    print(f"Submitted {calc_type} calculation as job {job_id}: {final_d12_path}")
+                else:
+                    print(f"Generated {calc_type} calculation but submission failed: {final_d12_path}")
+            else:
+                print(f"Generated {calc_type} calculation (pending submission): {final_d12_path}")
+            
+            return calc_id
+            
+        finally:
+            # Clean up working directory
+            shutil.rmtree(work_dir, ignore_errors=True)
     
     def generate_numbered_calculation(self, source_calc_id: str, target_calc_type: str) -> Optional[str]:
         """
@@ -1575,6 +1973,15 @@ fi'''
             if expert_config_file and expert_config_file.exists():
                 args.extend(["--config-file", str(expert_config_file)])
                 print(f"  Using expert config file for {target_calc_type}")
+                print(f"  Config file path: {expert_config_file}")
+                # Read and display config contents for debugging
+                try:
+                    with open(expert_config_file, 'r') as f:
+                        config_content = json.load(f)
+                        print(f"  Config functional: {config_content.get('functional', 'N/A')}")
+                        print(f"  Config dispersion: {config_content.get('dispersion', 'N/A')}")
+                except Exception as e:
+                    print(f"  Warning: Could not read config file: {e}")
                 # With config file, we just need to confirm applying it
                 # 1. Apply config? → y (yes)
                 input_responses = "y\n"
@@ -1602,6 +2009,13 @@ fi'''
             if not success:
                 print(f"CRYSTALOptToD12.py failed: {stderr}")
                 return None
+            
+            # Debug: show some output to verify config was applied
+            if expert_config_file and expert_config_file.exists():
+                print(f"  CRYSTALOptToD12.py output (last 10 lines):")
+                output_lines = stdout.strip().split('\n')
+                for line in output_lines[-10:]:
+                    print(f"    {line}")
                 
             # Find generated .d12 file based on target type
             if target_base_type == "OPT":
