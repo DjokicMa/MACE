@@ -500,9 +500,11 @@ fi'''
             name = material_id
         
         # Strategy: Remove known calculation suffixes from the end
-        calc_suffixes = ['_opt', '_sp', '_freq', '_band', '_doss', 
-                         '_opt2', '_sp2', '_freq2', '_band2', '_doss2',
-                         '_opt3', '_sp3', '_freq3', '_band3', '_doss3']
+        # IMPORTANT: Check numbered suffixes BEFORE base suffixes to avoid 
+        # stripping numbers that are part of the material name (e.g., test2_sp)
+        calc_suffixes = ['_opt2', '_sp2', '_freq2', '_band2', '_doss2',
+                         '_opt3', '_sp3', '_freq3', '_band3', '_doss3',
+                         '_opt', '_sp', '_freq', '_band', '_doss']
         
         # Remove calc suffix if present
         clean_name = name
