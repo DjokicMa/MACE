@@ -142,6 +142,17 @@ def scan_for_completed_calculations(base_dir: Path) -> List[Dict]:
                     'completed_at': datetime.fromtimestamp(out_file.stat().st_mtime).isoformat()
                 }
                 
+                # Check for workflow metadata file
+                metadata_file = out_file.parent / '.workflow_metadata.json'
+                if metadata_file.exists():
+                    try:
+                        import json
+                        with open(metadata_file, 'r') as f:
+                            workflow_metadata = json.load(f)
+                            calc_info['workflow_metadata'] = workflow_metadata
+                    except Exception as e:
+                        print(f"  Warning: Could not read workflow metadata: {e}")
+                
                 completed_calcs.append(calc_info)
                 print(f"Found completed {calc_type}: {material_id}")
     
@@ -197,12 +208,17 @@ def populate_database(completed_calcs: List[Dict], db: MaterialDatabase) -> int:
             else:
                 # Create new calculation record (for cases where submission wasn't tracked)
                 print(f"  Creating new {calc['calc_type']} calculation for {calc['material_id']} (no existing submission found)")
+                # Include workflow metadata in settings if available
+                settings = {'auto_populated': True}
+                if 'workflow_metadata' in calc:
+                    settings.update(calc['workflow_metadata'])
+                
                 calc_id = db.create_calculation(
                     material_id=calc['material_id'],
                     calc_type=calc['calc_type'],
                     input_file=calc['input_file'],
                     work_dir=work_dir,
-                    settings={'auto_populated': True}
+                    settings=settings
                 )
                 
                 # Update the calculation status to completed

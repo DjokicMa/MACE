@@ -41,11 +41,12 @@ class WorkflowEngine:
     scripts like alldos.py and create_band_d3.py.
     """
     
-    def __init__(self, db_path: str = "materials.db", base_work_dir: str = None):
+    def __init__(self, db_path: str = "materials.db", base_work_dir: str = None, auto_submit: bool = True):
         self.db = MaterialDatabase(db_path)
         self.base_work_dir = Path(base_work_dir or os.getcwd())
         self.script_paths = self.get_script_paths()
         self.lock = threading.RLock()
+        self.auto_submit = auto_submit  # Enable automatic submission by default
         
         # Create workflow working directories
         self.workflow_dir = self.base_work_dir / "workflow_staging"
@@ -123,16 +124,86 @@ class WorkflowEngine:
         
         # Find appropriate template script
         base_dir = Path.cwd()
-        if calc_type == "SP":
-            template_script = base_dir / "workflow_scripts" / "submitcrystal23_sp_2.sh"
+        workflow_scripts_dir = base_dir / "workflow_scripts"
+        
+        # Look for templates with flexible numbering
+        template_script = None
+        if calc_type.startswith("SP"):
+            # Parse SP type (SP, SP2, etc.)
+            base_type, type_num = self._parse_calc_type(calc_type)
+            if type_num == 2:
+                # Try SP2 specific templates first
+                for name in ["submitcrystal23_sp2_5.sh", "submitcrystal23_sp2.sh"]:
+                    candidate = workflow_scripts_dir / name
+                    if candidate.exists():
+                        template_script = candidate
+                        break
+            
+            # If no specific template found, try general SP templates
+            if not template_script:
+                for name in ["submitcrystal23_sp_3.sh", "submitcrystal23_sp_2.sh", "submitcrystal23_sp.sh"]:
+                    candidate = workflow_scripts_dir / name
+                    if candidate.exists():
+                        template_script = candidate
+                        break
         elif calc_type == "FREQ":
-            template_script = base_dir / "workflow_scripts" / "submitcrystal23_freq_5.sh"
+            # Try various FREQ template names
+            for name in ["submitcrystal23_freq_8.sh", "submitcrystal23_freq_5.sh", "submitcrystal23_freq.sh"]:
+                candidate = workflow_scripts_dir / name
+                if candidate.exists():
+                    template_script = candidate
+                    break
         elif calc_type == "BAND":
-            template_script = base_dir / "workflow_scripts" / "submit_prop_band_3.sh"
+            # Try various BAND template names
+            for name in ["submit_prop_band_6.sh", "submit_prop_band_3.sh", "submit_prop_band.sh"]:
+                candidate = workflow_scripts_dir / name
+                if candidate.exists():
+                    template_script = candidate
+                    break
         elif calc_type == "DOSS":
-            template_script = base_dir / "workflow_scripts" / "submit_prop_doss_4.sh"
-        else:
-            template_script = base_dir / "workflow_scripts" / "submitcrystal23_opt_1.sh"
+            # Try various DOSS template names
+            for name in ["submit_prop_doss_7.sh", "submit_prop_doss_4.sh", "submit_prop_doss.sh"]:
+                candidate = workflow_scripts_dir / name
+                if candidate.exists():
+                    template_script = candidate
+                    break
+        else:  # OPT, OPT2, OPT3
+            # Parse the calc_type to handle numbered optimizations
+            base_type, type_num = self._parse_calc_type(calc_type)
+            if base_type == "OPT":
+                if type_num == 2:
+                    # Try OPT2 specific templates first
+                    for name in ["submitcrystal23_opt2_2.sh", "submitcrystal23_opt2.sh"]:
+                        candidate = workflow_scripts_dir / name
+                        if candidate.exists():
+                            template_script = candidate
+                            break
+                elif type_num == 3:
+                    # Try OPT3 specific templates first
+                    for name in ["submitcrystal23_opt3_4.sh", "submitcrystal23_opt3.sh"]:
+                        candidate = workflow_scripts_dir / name
+                        if candidate.exists():
+                            template_script = candidate
+                            break
+                    
+            # If no specific template found, try general OPT templates
+            if not template_script:
+                for name in ["submitcrystal23_opt_1.sh", "submitcrystal23_opt.sh", "submitcrystal23.sh"]:
+                    candidate = workflow_scripts_dir / name
+                    if candidate.exists():
+                        template_script = candidate
+                        break
+        
+        # If still no template found, use the first available one that matches the pattern
+        if not template_script:
+            if calc_type in ["OPT", "SP", "FREQ"]:
+                pattern = f"submitcrystal23_*{calc_type.lower()}*.sh"
+            else:
+                pattern = f"submit_prop_*{calc_type.lower()}*.sh"
+            
+            templates = list(workflow_scripts_dir.glob(pattern))
+            if templates:
+                template_script = templates[0]
         
         # Debug: Print template path being used
         print(f"  Using template: {template_script}")
@@ -1459,6 +1530,17 @@ fi'''
             
         # Parse target calculation type
         target_base_type, target_num = self._parse_calc_type(target_calc_type)
+        
+        # Check for expert config file for numbered calculations (OPT2/OPT3/SP2/FREQ)
+        expert_config_file = None
+        if (target_base_type in ["OPT", "SP", "FREQ"]) and (target_num > 1 or target_base_type == "FREQ"):
+            # Check for expert config in workflow_temp directory
+            config_dir = self.base_work_dir / "workflow_temp" / f"expert_config_{target_calc_type.lower()}"
+            if config_dir.exists():
+                config_files = list(config_dir.glob("*_expert_config.json"))
+                if config_files:
+                    expert_config_file = config_files[0]
+                    print(f"  Found expert config for {target_calc_type}: {expert_config_file}")
             
         # Create isolated directory for CRYSTALOptToD12.py
         work_dir = self.create_isolated_calculation_directory(
@@ -1489,9 +1571,16 @@ fi'''
             if d12_file:
                 args.extend(["--d12-file", str(d12_file)])
             
+            # If we have an expert config file for OPT2/OPT3, use it
+            if expert_config_file and expert_config_file.exists():
+                args.extend(["--config-file", str(expert_config_file)])
+                print(f"  Using expert config file for {target_calc_type}")
+                # With config file, we just need to confirm applying it
+                # 1. Apply config? → y (yes)
+                input_responses = "y\n"
             # Prepare input responses for non-interactive execution based on target type
             # 1. Keep settings? → y (yes, keep original settings)
-            if target_base_type == "OPT":
+            elif target_base_type == "OPT":
                 # 2. Calc type → 2 (OPT)
                 # 3. Symmetry choice → 1 (Write only unique atoms)
                 input_responses = "y\n2\n1\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
