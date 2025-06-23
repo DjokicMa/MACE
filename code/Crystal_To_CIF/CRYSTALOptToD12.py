@@ -1908,13 +1908,14 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         )
 
 
-def process_files(output_file, input_file=None, shared_settings=None):
+def process_files(output_file, input_file=None, shared_settings=None, config_file=None):
     """Process CRYSTAL output and input files
 
     Args:
         output_file: Path to .out file
         input_file: Path to .d12 file (optional)
         shared_settings: Pre-defined settings to use (optional)
+        config_file: Path to JSON config file (optional)
 
     Returns:
         tuple: (success, settings_used)
@@ -1986,7 +1987,51 @@ def process_files(output_file, input_file=None, shared_settings=None):
         settings["scf_settings"] = {"method": "DIIS", "maxcycle": 800, "fmixing": 30}
 
     # Get user options or use shared settings
-    if shared_settings:
+    if config_file:
+        # Load settings from config file
+        print(f"\nLoading settings from config file: {config_file}")
+        try:
+            with open(config_file, 'r') as f:
+                config_data = json.load(f)
+            
+            # Show config summary
+            print("\n" + "="*70)
+            print("CONFIG FILE SETTINGS")
+            print("="*70)
+            print(f"Calculation type: {config_data.get('calculation_type', 'Not specified')}")
+            print(f"Method: {config_data.get('method', 'Not specified')}")
+            print(f"Functional: {config_data.get('functional', 'Not specified')}")
+            if config_data.get('dispersion'):
+                print(f"Dispersion: Yes")
+            print(f"Basis set: {config_data.get('basis_set', 'Not specified')}")
+            print(f"DFT grid: {config_data.get('dft_grid', 'Not specified')}")
+            print("="*70)
+            
+            # Ask user if they want to apply these settings
+            apply_config = yes_no_prompt("\nApply these settings from config file?", default="yes")
+            
+            if apply_config:
+                # Use settings from config file
+                options = settings.copy()
+                # Override with config file settings
+                for key, value in config_data.items():
+                    if key not in ["coordinates", "primitive_cell", "conventional_cell"]:
+                        options[key] = value
+                
+                # Set write_only_unique if not specified in config
+                if "write_only_unique" not in options:
+                    options["write_only_unique"] = config_data.get("write_only_unique", True)
+                    
+                print("Config file settings applied.")
+            else:
+                # Fall back to interactive mode
+                options = get_calculation_options(settings)
+                
+        except Exception as e:
+            print(f"Error loading config file: {e}")
+            print("Falling back to interactive mode.")
+            options = get_calculation_options(settings)
+    elif shared_settings:
         # Merge shared settings with current settings
         options = settings.copy()
         # Override with shared settings (except geometry-specific data)
@@ -2104,6 +2149,11 @@ def main():
         default="crystal_opt_settings.json",
         help="File to save/load options",
     )
+    parser.add_argument(
+        "--config-file",
+        type=str,
+        help="JSON config file to load calculation settings from (skips interactive prompts)",
+    )
 
     args = parser.parse_args()
 
@@ -2126,7 +2176,7 @@ def main():
             print(f"Error: Output file {args.out_file} not found")
             return
 
-        success, options = process_files(args.out_file, args.d12_file)
+        success, options = process_files(args.out_file, args.d12_file, config_file=args.config_file)
 
         if success and args.save_options:
             with open(args.options_file, "w") as f:
@@ -2201,7 +2251,7 @@ def main():
                 print("No corresponding .d12 file found")
             print("=" * 70)
 
-            success, options = process_files(out_file, d12_file, shared_settings)
+            success, options = process_files(out_file, d12_file, shared_settings, config_file=args.config_file)
             if success:
                 success_count += 1
 
