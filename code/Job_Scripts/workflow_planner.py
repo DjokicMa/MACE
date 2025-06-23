@@ -1949,8 +1949,12 @@ class WorkflowPlanner:
             from workflow_executor import WorkflowExecutor
             executor = WorkflowExecutor(str(self.work_dir), self.db_path)
             
-            # Create a workflow ID for this execution
-            workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            # Use the workflow ID from the plan - CRITICAL for workflow progression!
+            workflow_id = plan.get('workflow_id')
+            if not workflow_id:
+                # Only generate a new one if missing (shouldn't happen)
+                workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                print(f"WARNING: No workflow_id in plan, generated new one: {workflow_id}")
             
             # Prepare the workflow directory structure for the executor
             workflow_dir = executor.outputs_dir / workflow_id
