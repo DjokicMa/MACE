@@ -1408,6 +1408,58 @@ class WorkflowPlanner:
             else:
                 print(f"        Warning: Source not found: {script_name}")
     
+    def _extract_d12_settings(self, d12_file: Path) -> Dict[str, Any]:
+        """Extract basis set and functional settings from a D12 file"""
+        settings = {
+            'basis_set': 'POB-TZVP-REV2',  # Default recommendation when external basis is used
+            'functional': 'PBE-D3',  # Default
+            'dft_grid': 'XLGRID',  # Default
+            'spin': False
+        }
+        
+        if not d12_file.exists():
+            return settings
+            
+        try:
+            with open(d12_file, 'r') as f:
+                content = f.read()
+                
+            # Extract basis set - only if BASISSET keyword exists
+            # If it doesn't exist, it means external basis sets are used, so keep the default
+            if 'BASISSET' in content:
+                lines = content.split('\n')
+                for i, line in enumerate(lines):
+                    if line.strip() == 'BASISSET':
+                        if i + 1 < len(lines):
+                            settings['basis_set'] = lines[i + 1].strip()
+                            break
+            
+            # Extract DFT settings
+            if 'DFT' in content and 'ENDDFT' in content:
+                dft_start = content.find('DFT')
+                dft_end = content.find('ENDDFT')
+                if dft_start != -1 and dft_end != -1:
+                    dft_section = content[dft_start:dft_end]
+                    dft_lines = dft_section.split('\n')
+                    
+                    for line in dft_lines[1:]:  # Skip 'DFT' line
+                        line = line.strip()
+                        if line and not line.startswith('END'):
+                            # Check for SPIN
+                            if line == 'SPIN':
+                                settings['spin'] = True
+                            # Check for grid settings
+                            elif 'GRID' in line:
+                                settings['dft_grid'] = line
+                            # Check for functional (exclude GRID lines)
+                            elif line and 'GRID' not in line and line != 'SPIN':
+                                settings['functional'] = line
+                                
+        except Exception as e:
+            print(f"      Warning: Could not extract settings from D12: {e}")
+            
+        return settings
+    
     def _run_interactive_crystal_opt_config(self, calc_type: str) -> Optional[Dict[str, Any]]:
         """Run CRYSTALOptToD12.py interactively for expert configuration"""
         # Find CRYSTALOptToD12.py
@@ -1429,6 +1481,33 @@ class WorkflowPlanner:
         sample_out = temp_dir / "sample.out"
         sample_d12 = temp_dir / "sample.d12"
         
+        # Try to extract settings from existing D12 files in the working directory
+        extracted_settings = None
+        # Check for D12 files in input directory or working directory
+        d12_search_dirs = [
+            self.work_dir,
+            self.work_dir.parent if self.work_dir.parent.exists() else None,
+            Path.cwd()
+        ]
+        
+        for search_dir in d12_search_dirs:
+            if search_dir and search_dir.exists():
+                d12_files = list(search_dir.glob("*.d12"))
+                if d12_files:
+                    # Use the first D12 file found
+                    print(f"      Extracting settings from: {d12_files[0].name}")
+                    extracted_settings = self._extract_d12_settings(d12_files[0])
+                    break
+        
+        if not extracted_settings:
+            # Use defaults if no D12 file found
+            extracted_settings = {
+                'basis_set': 'POB-TZVP-REV2',
+                'functional': 'PBE-D3',
+                'dft_grid': 'XLGRID',
+                'spin': True
+            }
+        
         # Write minimal valid files
         with open(sample_out, 'w') as f:
             f.write("CRYSTAL23 OUTPUT\n")
@@ -1443,13 +1522,28 @@ class WorkflowPlanner:
             f.write("0 0 0\n")
             f.write("1\n")
             f.write("5.0 5.0 5.0 90.0 90.0 90.0\n")
-            f.write("1\n")
-            f.write("1 0.0 0.0 0.0\n")
-            f.write("END\n")
-            f.write("99 0\n")
-            f.write("END\n")
+            # Use BASISSET instead of atom specification
+            f.write("BASISSET\n")
+            f.write(f"{extracted_settings['basis_set']}\n")
+            if calc_type.upper() == "OPT" or calc_type.upper().startswith("OPT"):
+                f.write("OPTGEOM\n")
+                f.write("FULLOPTG\n")
+                f.write("ENDOPT\n")
+            elif calc_type.upper() == "FREQ":
+                f.write("FREQCALC\n")
+                f.write("NUMDERIV\n")
+                f.write("2\n")
+                f.write("END\n")
             f.write("DFT\n")
-            f.write("HSE06\n")
+            if extracted_settings['spin']:
+                f.write("SPIN\n")
+            f.write(f"{extracted_settings['functional']}\n")
+            f.write(f"{extracted_settings['dft_grid']}\n")
+            f.write("ENDDFT\n")
+            f.write("SHRINK\n")
+            f.write("12 24\n")
+            f.write("TOLDEE\n")
+            f.write("7\n")
             f.write("END\n")
             
         # Create a JSON config file to save the results

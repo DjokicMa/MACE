@@ -77,6 +77,7 @@ class CrystalPropertyExtractor:
         properties.update(self._extract_computational_properties(content))
         properties.update(self._extract_band_structure_properties(content, output_file))
         properties.update(self._extract_dos_properties(content, output_file))
+        properties.update(self._extract_frequency_properties(content))
         
         # Add electronic classification based on band gap
         properties.update(self._classify_electronic_properties(properties))
@@ -1388,6 +1389,236 @@ class CrystalPropertyExtractor:
         
         return classification
     
+    def _extract_frequency_properties(self, content: str) -> Dict[str, Any]:
+        """Extract frequency calculation properties."""
+        props = {}
+        
+        # Check if this is a FREQ calculation
+        if 'FORCE CONSTANT MATRIX' not in content and 'VIBRATIONAL' not in content:
+            return props
+            
+        # Mark as frequency calculation
+        props['calculation_type'] = 'FREQ'
+        props['has_frequency_data'] = True
+        
+        # Extract vibrational frequencies
+        freq_section = re.search(
+            r'MODES\s+EIGV\s+FREQUENCIES\s+IRREP.*?\n\s*\(HARTREE\*\*2\)\s*\(CM\*\*\(-1\)\)\s*\(THZ\).*?\n(.*?)(?=NORMAL MODES|VIBRATIONAL TEMPERATURES|\*{5,})',
+            content, re.DOTALL
+        )
+        
+        if freq_section:
+            freq_data = []
+            freq_lines = freq_section.group(1).strip().split('\n')
+            
+            for line in freq_lines:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                # Parse frequency data lines
+                # Format: MODE_RANGE EIGV FREQ_CM FREQ_THZ (IRREP) IR_ACTIVE (INTENSITY) RAMAN_ACTIVE
+                parts = line.split()
+                if len(parts) >= 3 and parts[0].replace('-', '').isdigit():
+                    try:
+                        mode_match = re.match(r'(\d+)-\s*(\d+)', parts[0])
+                        if mode_match:
+                            mode_start = int(mode_match.group(1))
+                            mode_end = int(mode_match.group(2))
+                        else:
+                            mode_start = mode_end = int(parts[0])
+                        
+                        eigv = float(parts[1])
+                        freq_cm = float(parts[2])
+                        freq_thz = float(parts[3]) if len(parts) > 3 else None
+                        
+                        # Extract irrep
+                        irrep_match = re.search(r'\(([^)]+)\)', line)
+                        irrep = irrep_match.group(1) if irrep_match else None
+                        
+                        # Extract IR/Raman activity
+                        ir_active = 'A' in line.split(')')[-1] if ')' in line else False
+                        raman_active = line.strip().endswith('A')
+                        
+                        # Extract intensity
+                        intensity_match = re.search(r'\(\s*([\d.]+)\s*\)', line.split(')')[-1] if ')' in line else line)
+                        intensity = float(intensity_match.group(1)) if intensity_match else 0.0
+                        
+                        freq_data.append({
+                            'mode_start': mode_start,
+                            'mode_end': mode_end,
+                            'eigenvalue': eigv,
+                            'frequency_cm': freq_cm,
+                            'frequency_thz': freq_thz,
+                            'irrep': irrep,
+                            'ir_active': ir_active,
+                            'raman_active': raman_active,
+                            'ir_intensity': intensity
+                        })
+                    except (ValueError, IndexError):
+                        continue
+            
+            if freq_data:
+                props['vibrational_frequencies'] = freq_data
+                props['num_vibrational_modes'] = len(freq_data)
+                
+                # Extract summary statistics
+                non_zero_freqs = [f['frequency_cm'] for f in freq_data if f['frequency_cm'] > 0.1]
+                if non_zero_freqs:
+                    props['lowest_frequency_cm'] = min(non_zero_freqs)
+                    props['highest_frequency_cm'] = max(non_zero_freqs)
+                    props['num_imaginary_frequencies'] = sum(1 for f in freq_data if f['eigenvalue'] < 0)
+        
+        # Extract vibrational temperatures
+        vib_temp_match = re.search(r'VIBRATIONAL TEMPERATURES \(K\).*?\n\s*TO MODES\s*\n(.*?)(?=\*{5,}|\n\n)', content, re.DOTALL)
+        if vib_temp_match:
+            temps = []
+            temp_lines = vib_temp_match.group(1).strip().split('\n')
+            for line in temp_lines:
+                # Extract temperatures and mode info
+                temp_values = re.findall(r'([\d.]+)\s*\[\s*(\d+);([^]]+)\]', line)
+                for temp, mode, irrep in temp_values:
+                    temps.append({
+                        'temperature_k': float(temp),
+                        'mode_number': int(mode),
+                        'irrep': irrep.strip()
+                    })
+            if temps:
+                props['vibrational_temperatures'] = temps
+        
+        # Extract thermodynamic properties
+        thermo_props = self._extract_thermodynamic_properties(content)
+        props.update(thermo_props)
+        
+        # Calculate enthalpy from other energies
+        if 'zero_point_energy_au' in props and 'thermal_energy_au' in thermo_props and 'pv_term_au' in thermo_props:
+            # Enthalpy = E0 + ET + PV
+            enthalpy_au = props['zero_point_energy_au'] + thermo_props['thermal_energy_au'] + thermo_props['pv_term_au']
+            props['enthalpy_au'] = enthalpy_au
+            props['enthalpy_ev'] = enthalpy_au * 27.2114
+            props['enthalpy_kj_mol'] = enthalpy_au * 2625.5  # Hartree to kJ/mol
+            
+            # Also calculate enthalpy including electronic energy if available
+            if 'total_energy_au' in self._extract_energy_properties(content):
+                el_energy = self._extract_energy_properties(content)['total_energy_au']
+                props['enthalpy_total_au'] = el_energy + enthalpy_au
+                props['enthalpy_total_ev'] = props['enthalpy_total_au'] * 27.2114
+                props['enthalpy_total_kj_mol'] = props['enthalpy_total_au'] * 2625.5
+        
+        # Extract zero-point energy
+        zpe_match = re.search(r'E0\s*:\s*([-\d.E+]+)\s+([-\d.E+]+)\s+([-\d.E+]+)', content)
+        if zpe_match:
+            props['zero_point_energy_au'] = float(zpe_match.group(1))
+            props['zero_point_energy_ev'] = float(zpe_match.group(2))
+            props['zero_point_energy_kj_mol'] = float(zpe_match.group(3))
+        
+        # Extract force constants information
+        force_const_match = re.search(r'FORCE CONSTANT MATRIX.*?MAX ABS\(DGRAD\).*?\n(.*?)(?=GCALCO|\n\n)', content, re.DOTALL)
+        if force_const_match:
+            props['has_force_constants'] = True
+            
+            # Count number of displaced calculations
+            displaced_atoms = len(re.findall(r'^\s*\d+\s+\w+\s+D[XYZ]', force_const_match.group(1), re.MULTILINE))
+            if displaced_atoms > 0:
+                props['num_displaced_calculations'] = displaced_atoms
+        
+        # Extract symmetry-allowed directions
+        symm_dirs_match = re.search(r'SYMMETRY ALLOWED INTERNAL DEGREE\(S\) OF FREEDOM:\s*(\d+)', content)
+        if symm_dirs_match:
+            props['symmetry_allowed_dof'] = int(symm_dirs_match.group(1))
+        else:
+            no_symm_match = re.search(r'THERE ARE NO SYMMETRY ALLOWED DIRECTIONS', content)
+            if no_symm_match:
+                props['symmetry_allowed_dof'] = 0
+        
+        # Extract normal mode displacements if available
+        normal_modes_match = re.search(r'NORMAL MODES NORMALIZED TO CLASSICAL AMPLITUDES.*?\n(.*?)(?=\*{5,}|VIBRATIONAL)', content, re.DOTALL)
+        if normal_modes_match:
+            props['has_normal_mode_displacements'] = True
+        
+        return props
+    
+    def _extract_thermodynamic_properties(self, content: str) -> Dict[str, Any]:
+        """Extract thermodynamic properties from FREQ calculations."""
+        props = {}
+        
+        # Temperature and pressure conditions
+        conditions_match = re.search(r'AT \(T =\s*([\d.]+)\s*K,\s*P =\s*([\d.E+-]+)\s*MPA\)', content)
+        if conditions_match:
+            props['thermodynamic_temperature_k'] = float(conditions_match.group(1))
+            props['thermodynamic_pressure_mpa'] = float(conditions_match.group(2))
+        
+        # Extract thermodynamic functions
+        thermo_section = re.search(
+            r'THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS.*?'
+            r'AU/CELL\s+EV/CELL\s+KJ/MOL\s*\n(.*?)(?=OTHER THERMODYNAMIC|\*{5,})',
+            content, re.DOTALL
+        )
+        
+        if thermo_section:
+            thermo_content = thermo_section.group(1)
+            
+            # ET (thermal energy)
+            et_match = re.search(r'ET\s*:\s*([-\d.E+]+)\s+([-\d.E+]+)\s+([-\d.E+]+)', thermo_content)
+            if et_match:
+                props['thermal_energy_au'] = float(et_match.group(1))
+                props['thermal_energy_ev'] = float(et_match.group(2))
+                props['thermal_energy_kj_mol'] = float(et_match.group(3))
+            
+            # PV
+            pv_match = re.search(r'PV\s*:\s*([-\d.E+]+)\s+([-\d.E+]+)\s+([-\d.E+]+)', thermo_content)
+            if pv_match:
+                props['pv_term_au'] = float(pv_match.group(1))
+                props['pv_term_ev'] = float(pv_match.group(2))
+                props['pv_term_kj_mol'] = float(pv_match.group(3))
+            
+            # TS (entropy term)
+            ts_match = re.search(r'TS\s*:\s*([-\d.E+]+)\s+([-\d.E+]+)\s+([-\d.E+]+)', thermo_content)
+            if ts_match:
+                props['entropy_term_au'] = float(ts_match.group(1))
+                props['entropy_term_ev'] = float(ts_match.group(2))
+                props['entropy_term_kj_mol'] = float(ts_match.group(3))
+            
+            # ET+PV-TS (free energy correction)
+            correction_match = re.search(r'ET\+PV-TS\s*:\s*([-\d.E+]+)\s+([-\d.E+]+)\s+([-\d.E+]+)', thermo_content)
+            if correction_match:
+                props['free_energy_correction_au'] = float(correction_match.group(1))
+                props['free_energy_correction_ev'] = float(correction_match.group(2))
+                props['free_energy_correction_kj_mol'] = float(correction_match.group(3))
+            
+            # Total free energy (EL+E0+ET+PV-TS)
+            total_match = re.search(r'EL\+E0\+ET\+PV-TS:\s*([-\d.E+]+)\s+([-\d.E+]+)\s+([-\d.E+]+)', thermo_content)
+            if total_match:
+                props['gibbs_free_energy_au'] = float(total_match.group(1))
+                props['gibbs_free_energy_ev'] = float(total_match.group(2))
+                props['gibbs_free_energy_kj_mol'] = float(total_match.group(3))
+        
+        # Extract entropy and heat capacity
+        other_thermo = re.search(
+            r'OTHER THERMODYNAMIC FUNCTIONS:.*?'
+            r'mHARTREE/\(CELL\*K\)\s+mEV/\(CELL\*K\)\s+J/\(MOL\*K\)\s*\n(.*?)(?=\*{5,}|TTTT)',
+            content, re.DOTALL
+        )
+        
+        if other_thermo:
+            other_content = other_thermo.group(1)
+            
+            # Entropy
+            entropy_match = re.search(r'ENTROPY\s*:\s*([-\d.E+]+)\s+([-\d.E+]+)\s+([-\d.E+]+)', other_content)
+            if entropy_match:
+                props['entropy_mhartree_cell_k'] = float(entropy_match.group(1))
+                props['entropy_mev_cell_k'] = float(entropy_match.group(2))
+                props['entropy_j_mol_k'] = float(entropy_match.group(3))
+            
+            # Heat capacity
+            heat_cap_match = re.search(r'HEAT CAPACITY\s*:\s*([-\d.E+]+)\s+([-\d.E+]+)\s+([-\d.E+]+)', other_content)
+            if heat_cap_match:
+                props['heat_capacity_mhartree_cell_k'] = float(heat_cap_match.group(1))
+                props['heat_capacity_mev_cell_k'] = float(heat_cap_match.group(2))
+                props['heat_capacity_j_mol_k'] = float(heat_cap_match.group(3))
+        
+        return props
+    
     def _categorize_property(self, prop_name: str) -> str:
         """Categorize a property based on its name."""
         if any(x in prop_name.lower() for x in ['primitive_a', 'primitive_b', 'primitive_c', 'primitive_alpha', 'primitive_beta', 'primitive_gamma']):
@@ -1410,6 +1641,8 @@ class CrystalPropertyExtractor:
             return 'density_of_states'
         elif any(x in prop_name.lower() for x in ['electronic_classification', 'classification_', 'insulator_type', 'semiconductor_type', 'magnetic_', 'conductivity_type']):
             return 'electronic_classification'
+        elif any(x in prop_name.lower() for x in ['freq', 'vibrational', 'thermodynamic', 'entropy', 'heat_capacity', 'zero_point', 'gibbs', 'thermal_energy', 'force_constant']):
+            return 'frequency'
         else:
             return 'other'
     
@@ -1530,6 +1763,44 @@ class CrystalPropertyExtractor:
             return 'category'
         elif 'classification_band_gap' in prop_name.lower():
             return 'eV'
+        
+        # Frequency calculation properties
+        elif 'frequency_cm' in prop_name.lower() or 'frequency_cm' in prop_name.lower():
+            return 'cm⁻¹'
+        elif 'frequency_thz' in prop_name.lower():
+            return 'THz'
+        elif 'vibrational_temperature' in prop_name.lower() or 'temperature_k' in prop_name.lower():
+            return 'K'
+        elif 'zero_point_energy_au' in prop_name.lower():
+            return 'Hartree'
+        elif 'zero_point_energy_ev' in prop_name.lower():
+            return 'eV'
+        elif 'zero_point_energy_kj_mol' in prop_name.lower():
+            return 'kJ/mol'
+        elif any(x in prop_name.lower() for x in ['thermal_energy_au', 'pv_term_au', 'entropy_term_au', 'free_energy_correction_au', 'gibbs_free_energy_au', 'enthalpy_au', 'enthalpy_total_au']):
+            return 'Hartree'
+        elif any(x in prop_name.lower() for x in ['thermal_energy_ev', 'pv_term_ev', 'entropy_term_ev', 'free_energy_correction_ev', 'gibbs_free_energy_ev', 'enthalpy_ev', 'enthalpy_total_ev']):
+            return 'eV'
+        elif any(x in prop_name.lower() for x in ['thermal_energy_kj_mol', 'pv_term_kj_mol', 'entropy_term_kj_mol', 'free_energy_correction_kj_mol', 'gibbs_free_energy_kj_mol', 'enthalpy_kj_mol', 'enthalpy_total_kj_mol']):
+            return 'kJ/mol'
+        elif 'entropy_mhartree_cell_k' in prop_name.lower() or 'heat_capacity_mhartree_cell_k' in prop_name.lower():
+            return 'mHartree/(cell·K)'
+        elif 'entropy_mev_cell_k' in prop_name.lower() or 'heat_capacity_mev_cell_k' in prop_name.lower():
+            return 'meV/(cell·K)'
+        elif 'entropy_j_mol_k' in prop_name.lower() or 'heat_capacity_j_mol_k' in prop_name.lower():
+            return 'J/(mol·K)'
+        elif 'pressure_mpa' in prop_name.lower():
+            return 'MPa'
+        elif 'eigenvalue' in prop_name.lower():
+            return 'Hartree²'
+        elif 'ir_intensity' in prop_name.lower():
+            return 'km/mol'
+        elif any(x in prop_name.lower() for x in ['num_vibrational_modes', 'num_imaginary_frequencies', 'num_displaced_calculations', 'symmetry_allowed_dof', 'mode_number']):
+            return 'dimensionless'
+        elif any(x in prop_name.lower() for x in ['has_frequency_data', 'has_force_constants', 'has_normal_mode_displacements', 'ir_active', 'raman_active']):
+            return 'boolean'
+        elif 'irrep' in prop_name.lower():
+            return 'symmetry_label'
         
         # Default for unknown properties
         else:
