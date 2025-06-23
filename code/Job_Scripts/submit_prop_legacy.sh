@@ -21,35 +21,21 @@ wall=:00:00
 timewall=$time$wall
 echo '#SBATCH -t '$timewall >> $1.sh
 echo '#SBATCH --mem=80G' >> $1.sh
-echo 'UCX_TLS=ud,sm,self' >> $1.sh
 echo 'export JOB='$1 >> $1.sh
 echo 'export DIR=$SLURM_SUBMIT_DIR
 export scratch=$SCRATCH/crys23/prop
-
 echo "submit directory: "
 echo $SLURM_SUBMIT_DIR
 module purge
-
 module load CRYSTAL/23-intel-2023a
 module load Python/3.11.3-GCCcore-12.3.0
 module load Python-bundle-PyPI/2023.06-GCCcore-12.3.0
 mkdir  -p $scratch/$JOB
-
 cp $DIR/$JOB.d3  $scratch/$JOB/INPUT
 cp $DIR/$JOB.f9  $scratch/$JOB/fort.9
 cd $scratch/$JOB
-
-unset FORT_BUFFERED
-export I_MPI_ADJUST_BCAST=3
-#export I_MPI_DEBUG=5
-ulimit -s unlimited
-export OMP_NUM_THREADS=1
-
-export LD_LIBRARY_PATH=/opt/software-current/arm64/UCX/1.12.1-GCCcore-12.2.0/lib64:$LD_LIBRARY_PATH
-
 mpirun -n $SLURM_NTASKS /opt/software-current/2023.06/x86_64/intel/skylake_avx512/software/CRYSTAL/23-intel-2023a/bin/Pproperties 2>&1 >& $DIR/${JOB}.out
 #srun Pproperties 2>&1 >& $DIR/${JOB}.out
-
 cp fort.9  ${DIR}/${JOB}.f9
 cp BAND.DAT  ${DIR}/${JOB}.BAND.DAT
 cp fort.25  ${DIR}/${JOB}.f25
