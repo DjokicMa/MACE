@@ -2046,6 +2046,9 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                     # because .d12 contains the original user-specified settings
                     if value is not None:
                         settings[key] = value
+                        # Debug output for symmetry-related settings
+                        if key in ["origin_setting", "spacegroup", "dimensionality"]:
+                            print(f"  Preserving {key} from D12 file: {value} (was {settings.get(key, 'not set')} from output)")
                 elif key == "scf_settings":
                     # Merge SCF settings
                     if "scf_settings" not in settings:
@@ -2172,6 +2175,9 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
 
     # Write new D12 file
     print(f"\nWriting new D12 file: {new_filename}")
+    # Use optimized geometry from output but with preserved settings
+    # The geometry_data (out_data) contains the optimized coordinates with is_unique flags
+    # The settings (options) contains the preserved symmetry and other settings from D12
     write_d12_file(new_filename, out_data, options, external_basis_data)
 
     print(f"\nSuccessfully created {new_filename}")

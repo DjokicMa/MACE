@@ -1255,6 +1255,18 @@ class WorkflowPlanner:
     def _get_expert_opt_config(self, calc_type: str, step_num: int) -> Dict[str, Any]:
         """Get expert optimization configuration with full CRYSTALOptToD12.py integration"""
         print(f"\n    Expert {calc_type} Setup:")
+        
+        # For OPT2/OPT3, ask if user wants per-material configs
+        if calc_type.startswith("OPT") and calc_type != "OPT":
+            print("    Options:")
+            print("    1. Create individual configuration for each material (preserves exact symmetry)")
+            print("    2. Create one configuration for all materials")
+            
+            config_choice = input("    Choose configuration mode (1/2) [1]: ").strip() or "1"
+            
+            if config_choice == "1":
+                return self._get_per_material_expert_config(calc_type, step_num)
+        
         print(f"    This will run CRYSTALOptToD12.py interactively for full customization")
         
         proceed = yes_no_prompt("    Proceed with expert configuration?", "yes")
@@ -1409,12 +1421,15 @@ class WorkflowPlanner:
                 print(f"        Warning: Source not found: {script_name}")
     
     def _extract_d12_settings(self, d12_file: Path) -> Dict[str, Any]:
-        """Extract basis set and functional settings from a D12 file"""
+        """Extract basis set, functional, and symmetry settings from a D12 file"""
         settings = {
             'basis_set': 'POB-TZVP-REV2',  # Default recommendation when external basis is used
             'functional': 'PBE-D3',  # Default
             'dft_grid': 'XLGRID',  # Default
-            'spin': False
+            'spin': False,
+            'spacegroup': 1,  # Default P1
+            'origin_setting': '0 0 0',  # Default origin
+            'dimensionality': 'CRYSTAL'  # Default
         }
         
         if not d12_file.exists():
@@ -1422,12 +1437,29 @@ class WorkflowPlanner:
             
         try:
             with open(d12_file, 'r') as f:
-                content = f.read()
+                lines = f.readlines()
                 
+            # Extract structure information (skip title line)
+            for i in range(1, len(lines)):
+                line = lines[i].strip()
+                
+                # Check for dimensionality
+                if line in ['CRYSTAL', 'SLAB', 'POLYMER', 'MOLECULE']:
+                    settings['dimensionality'] = line
+                    
+                    # For CRYSTAL, next lines are origin and space group
+                    if line == 'CRYSTAL' and i + 2 < len(lines):
+                        settings['origin_setting'] = lines[i + 1].strip()
+                        try:
+                            settings['spacegroup'] = int(lines[i + 2].strip())
+                        except ValueError:
+                            pass
+                    break
+                    
             # Extract basis set - only if BASISSET keyword exists
             # If it doesn't exist, it means external basis sets are used, so keep the default
+            content = ''.join(lines)
             if 'BASISSET' in content:
-                lines = content.split('\n')
                 for i, line in enumerate(lines):
                     if line.strip() == 'BASISSET':
                         if i + 1 < len(lines):
@@ -1460,6 +1492,195 @@ class WorkflowPlanner:
             
         return settings
     
+    def _create_base_expert_config(self, calc_type: str, template_d12: Path) -> Optional[Dict[str, Any]]:
+        """Create base expert configuration using one D12 as template"""
+        # Create temporary directory
+        temp_dir = self.temp_dir / f"expert_config_{calc_type.lower()}_base"
+        temp_dir.mkdir(exist_ok=True)
+        
+        # Create sample files from template D12
+        sample_out = temp_dir / "sample.out"
+        sample_d12 = temp_dir / "sample.d12"
+        
+        # Copy template D12 with single atom
+        try:
+            with open(template_d12, 'r') as f:
+                lines = f.readlines()
+            
+            with open(sample_d12, 'w') as f:
+                f.write("Sample D12 for configuration\n")
+                
+                i = 1
+                while i < len(lines):
+                    line = lines[i].strip()
+                    f.write(lines[i])
+                    
+                    # After cell parameters, modify atom section
+                    try:
+                        parts = line.split()
+                        if len(parts) >= 6:
+                            [float(p) for p in parts[:6]]
+                            if i + 1 < len(lines):
+                                atom_count = int(lines[i + 1].strip())
+                                f.write("1\n")
+                                if i + 2 < len(lines):
+                                    atom_parts = lines[i + 2].strip().split()
+                                    if atom_parts:
+                                        f.write(f"{atom_parts[0]} 0.0 0.0 0.0\n")
+                                i += 2 + atom_count
+                                while i < len(lines):
+                                    f.write(lines[i])
+                                    i += 1
+                                break
+                    except (ValueError, IndexError):
+                        pass
+                    i += 1
+                    
+        except Exception as e:
+            print(f"      Error processing template D12: {e}")
+            return None
+        
+        # Create output file
+        with open(sample_out, 'w') as f:
+            f.write("CRYSTAL23 OUTPUT\n")
+            f.write("FINAL OPTIMIZED GEOMETRY - DIMENSIONALITY OF THE SYSTEM      3\n")
+            f.write("LATTICE PARAMETERS (ANGSTROMS AND DEGREES) - BOHR = 0.5291772083 ANGSTROM\n")
+            f.write("A              B              C           ALPHA      BETA       GAMMA\n")
+            f.write("5.0000         5.0000         5.0000      90.000     90.000     90.000\n")
+        
+        # Config file
+        base_config_file = temp_dir / f"{calc_type.lower()}_base_config.json"
+        
+        # Find CRYSTALOptToD12.py
+        local_script = self.work_dir / "CRYSTALOptToD12.py"
+        if local_script.exists():
+            script_path = local_script
+        else:
+            script_path = Path(__file__).parent.parent / "Crystal_To_CIF" / "CRYSTALOptToD12.py"
+        
+        # Run CRYSTALOptToD12.py
+        cmd = [
+            sys.executable, str(script_path),
+            "--out-file", str(sample_out),
+            "--d12-file", str(sample_d12),
+            "--output-dir", str(temp_dir),
+            "--save-options",
+            "--options-file", str(base_config_file)
+        ]
+        
+        try:
+            result = subprocess.run(cmd, cwd=str(self.work_dir))
+            
+            if result.returncode == 0 and base_config_file.exists():
+                with open(base_config_file, 'r') as f:
+                    return json.load(f)
+                    
+        except Exception as e:
+            print(f"      Error running CRYSTALOptToD12.py: {e}")
+            
+        return None
+    
+    def _get_per_material_expert_config(self, calc_type: str, step_num: int) -> Dict[str, Any]:
+        """Create individual expert configurations for each material"""
+        print(f"\n    Creating per-material {calc_type} configurations...")
+        
+        # Find D12 files from previous step
+        d12_files = []
+        prev_step = step_num - 1
+        
+        # Look for D12 files in likely locations
+        search_patterns = [
+            f"workflow_outputs/*/step_{prev_step:03d}_*/*/*.d12",
+            f"workflow_inputs/step_{prev_step:03d}_*/*.d12",
+            "*.d12"
+        ]
+        
+        for pattern in search_patterns:
+            found_files = list(self.work_dir.glob(pattern))
+            if found_files:
+                d12_files.extend(found_files)
+                break
+        
+        if not d12_files:
+            print("    No D12 files found. Using single configuration mode.")
+            return self._run_interactive_crystal_opt_config(calc_type)
+        
+        print(f"    Found {len(d12_files)} materials to configure")
+        
+        # Create config directory
+        config_dir = self.work_dir / "workflow_configs" / f"expert_{calc_type.lower()}_configs"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Copy required scripts
+        self._copy_required_scripts_for_expert_mode()
+        
+        # Find CRYSTALOptToD12.py
+        local_script = self.work_dir / "CRYSTALOptToD12.py"
+        if local_script.exists():
+            script_path = local_script
+        else:
+            script_path = Path(__file__).parent.parent / "Crystal_To_CIF" / "CRYSTALOptToD12.py"
+        
+        if not script_path.exists():
+            print("    Error: CRYSTALOptToD12.py not found")
+            return self._get_advanced_opt_config()
+        
+        # First, create base configuration using first D12 as template
+        print("\n    Creating base configuration...")
+        base_config = self._create_base_expert_config(calc_type, d12_files[0])
+        
+        if not base_config:
+            print("    Failed to create base configuration")
+            return self._get_advanced_opt_config()
+        
+        print("    ✅ Base configuration created")
+        
+        # Now create per-material configs by modifying only symmetry fields
+        material_configs = {}
+        
+        print(f"\n    Creating per-material symmetry configurations...")
+        for i, d12_file in enumerate(d12_files):
+            material_name = self.create_material_id_from_file(d12_file)
+            
+            # Extract symmetry settings from this D12
+            symmetry_settings = self._extract_d12_settings(d12_file)
+            
+            # Create material-specific config by updating base config
+            material_config = base_config.copy()
+            material_config.update({
+                'spacegroup': symmetry_settings.get('spacegroup', 1),
+                'origin_setting': symmetry_settings.get('origin_setting', '0 0 0'),
+                'dimensionality': symmetry_settings.get('dimensionality', 'CRYSTAL'),
+                # Set write_only_unique based on space group
+                'write_only_unique': symmetry_settings.get('spacegroup', 1) != 1
+            })
+            
+            # Save material-specific config
+            config_file = config_dir / f"{material_name}_{calc_type.lower()}_expert_config.json"
+            with open(config_file, 'w') as f:
+                json.dump(material_config, f, indent=2)
+            
+            material_configs[material_name] = {
+                "config_file": str(config_file),
+                "source_d12": str(d12_file)
+            }
+            
+            print(f"      ✅ {material_name}: spacegroup={material_config['spacegroup']}, " + 
+                  f"origin={material_config['origin_setting']}")
+        
+        if not material_configs:
+            print("    No configurations created successfully")
+            return self._get_advanced_opt_config()
+        
+        return {
+            "expert_mode": True,
+            "per_material_configs": True,
+            "config_directory": str(config_dir),
+            "material_configs": material_configs,
+            "step_num": step_num,
+            "workflow_calc_type": calc_type
+        }
+    
     def _run_interactive_crystal_opt_config(self, calc_type: str) -> Optional[Dict[str, Any]]:
         """Run CRYSTALOptToD12.py interactively for expert configuration"""
         # Find CRYSTALOptToD12.py
@@ -1481,9 +1702,8 @@ class WorkflowPlanner:
         sample_out = temp_dir / "sample.out"
         sample_d12 = temp_dir / "sample.d12"
         
-        # Try to extract settings from existing D12 files in the working directory
-        extracted_settings = None
-        # Check for D12 files in input directory or working directory
+        # Try to find and copy a real D12 file
+        real_d12_found = False
         d12_search_dirs = [
             self.work_dir,
             self.work_dir.parent if self.work_dir.parent.exists() else None,
@@ -1494,57 +1714,88 @@ class WorkflowPlanner:
             if search_dir and search_dir.exists():
                 d12_files = list(search_dir.glob("*.d12"))
                 if d12_files:
-                    # Use the first D12 file found
-                    print(f"      Extracting settings from: {d12_files[0].name}")
-                    extracted_settings = self._extract_d12_settings(d12_files[0])
-                    break
+                    # Copy the first D12 file found
+                    source_d12 = d12_files[0]
+                    print(f"      Using real D12 as template: {source_d12.name}")
+                    
+                    try:
+                        with open(source_d12, 'r') as f:
+                            lines = f.readlines()
+                        
+                        # Modify the D12 to have just one atom at origin
+                        with open(sample_d12, 'w') as f:
+                            # Keep title
+                            f.write("Sample D12 for configuration\n")
+                            
+                            # Copy everything up to the atom count
+                            i = 1
+                            while i < len(lines):
+                                line = lines[i].strip()
+                                f.write(lines[i])
+                                
+                                # After cell parameters, change atom count to 1
+                                # Check if this line contains cell parameters (6 numbers)
+                                try:
+                                    parts = line.split()
+                                    if len(parts) >= 6:
+                                        # Try to parse as floats
+                                        [float(p) for p in parts[:6]]
+                                        # This is cell parameters, next line should be atom count
+                                        if i + 1 < len(lines):
+                                            f.write("1\n")  # Write 1 atom
+                                            # Find where atoms section ends
+                                            atom_count = int(lines[i + 1].strip())
+                                            # Write one atom at origin
+                                            if i + 2 < len(lines):
+                                                # Parse first atom line to get atom number
+                                                atom_parts = lines[i + 2].strip().split()
+                                                if atom_parts:
+                                                    atom_num = atom_parts[0]
+                                                    f.write(f"{atom_num} 0.0 0.0 0.0\n")
+                                            
+                                            # Skip original atoms section
+                                            i += 2 + atom_count
+                                            
+                                            # Copy rest of file
+                                            while i < len(lines):
+                                                f.write(lines[i])
+                                                i += 1
+                                            break
+                                except (ValueError, IndexError):
+                                    pass
+                                    
+                                i += 1
+                                
+                        real_d12_found = True
+                        break
+                        
+                    except Exception as e:
+                        print(f"      Warning: Could not process D12 file: {e}")
+                        real_d12_found = False
         
-        if not extracted_settings:
-            # Use defaults if no D12 file found
-            extracted_settings = {
-                'basis_set': 'POB-TZVP-REV2',
-                'functional': 'PBE-D3',
-                'dft_grid': 'XLGRID',
-                'spin': True
-            }
+        if not real_d12_found:
+            print("      No real D12 found, using minimal template")
+            # Fall back to minimal template
+            with open(sample_d12, 'w') as f:
+                f.write("Sample D12 for configuration\n")
+                f.write("CRYSTAL\n")
+                f.write("0 0 0\n")
+                f.write("1\n")
+                f.write("5.0 5.0 5.0 90.0 90.0 90.0\n")
+                f.write("1\n")
+                f.write("6 0.0 0.0 0.0\n")
+                f.write("OPTGEOM\n")
+                f.write("FULLOPTG\n")
+                f.write("ENDOPT\n")
+                f.write("END\n")
         
-        # Write minimal valid files
+        # Write minimal output file
         with open(sample_out, 'w') as f:
             f.write("CRYSTAL23 OUTPUT\n")
             f.write("FINAL OPTIMIZED GEOMETRY - DIMENSIONALITY OF THE SYSTEM      3\n")
             f.write("LATTICE PARAMETERS (ANGSTROMS AND DEGREES) - BOHR = 0.5291772083 ANGSTROM\n")
             f.write("A              B              C           ALPHA      BETA       GAMMA\n")
             f.write("5.0000         5.0000         5.0000      90.000     90.000     90.000\n")
-            
-        with open(sample_d12, 'w') as f:
-            f.write("Sample D12 for configuration\n")
-            f.write("CRYSTAL\n")
-            f.write("0 0 0\n")
-            f.write("1\n")
-            f.write("5.0 5.0 5.0 90.0 90.0 90.0\n")
-            # Use BASISSET instead of atom specification
-            f.write("BASISSET\n")
-            f.write(f"{extracted_settings['basis_set']}\n")
-            if calc_type.upper() == "OPT" or calc_type.upper().startswith("OPT"):
-                f.write("OPTGEOM\n")
-                f.write("FULLOPTG\n")
-                f.write("ENDOPT\n")
-            elif calc_type.upper() == "FREQ":
-                f.write("FREQCALC\n")
-                f.write("NUMDERIV\n")
-                f.write("2\n")
-                f.write("END\n")
-            f.write("DFT\n")
-            if extracted_settings['spin']:
-                f.write("SPIN\n")
-            f.write(f"{extracted_settings['functional']}\n")
-            f.write(f"{extracted_settings['dft_grid']}\n")
-            f.write("ENDDFT\n")
-            f.write("SHRINK\n")
-            f.write("12 24\n")
-            f.write("TOLDEE\n")
-            f.write("7\n")
-            f.write("END\n")
             
         # Create a JSON config file to save the results
         config_file = temp_dir / f"{calc_type.lower()}_expert_config.json"
