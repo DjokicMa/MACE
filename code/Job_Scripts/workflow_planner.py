@@ -29,7 +29,7 @@ import yaml
 
 # Import our components
 try:
-    from material_database import MaterialDatabase
+    from material_database import MaterialDatabase, create_material_id_from_file
     from enhanced_queue_manager import EnhancedCrystalQueueManager
     from workflow_engine import WorkflowEngine
     # Add the Crystal_To_CIF directory to path for importing
@@ -103,6 +103,10 @@ class WorkflowPlanner:
         print("  4. Save configurations for reproducibility")
         print("  5. Execute the planned workflow")
         print()
+    
+    def create_material_id_from_file(self, filepath: Path) -> str:
+        """Wrapper for the imported create_material_id_from_file function"""
+        return create_material_id_from_file(str(filepath))
         
     def get_input_type(self) -> str:
         """Determine input type and location"""
