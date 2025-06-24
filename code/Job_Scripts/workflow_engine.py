@@ -1853,7 +1853,7 @@ fi'''
                 dir_suffix = f"_{base_type.lower()}"
             
             dir_name = f"{core_name}{dir_suffix}"
-            calc_dir = workflow_base / f"step_{step_num:03d}_{base_type}" / dir_name
+            calc_dir = workflow_base / f"step_{step_num:03d}_{calc_type}" / dir_name
             calc_dir.mkdir(parents=True, exist_ok=True)
             
             # Move D12 file to calculation directory
@@ -1940,9 +1940,27 @@ fi'''
                     expert_config_file = config_files[0]
                     print(f"  Found expert config for {target_calc_type}: {expert_config_file}")
             
+        # For OPT2/OPT3, we need to find the ORIGINAL input file (from CIF or initial OPT)
+        # to preserve symmetry information
+        original_input_file = None
+        if target_base_type == "OPT" and target_num > 1:
+            # Try to find the original OPT input file
+            all_calcs = self.db.get_calculations_by_status(material_id=material_id)
+            for calc in all_calcs:
+                if calc['calc_type'] == 'OPT' and calc['status'] in ['completed', 'running', 'submitted']:
+                    original_opt_input = Path(calc['input_file'])
+                    if original_opt_input.exists() and original_opt_input != source_input_file:
+                        original_input_file = original_opt_input
+                        print(f"  Found original OPT input for symmetry: {original_input_file.name}")
+                        break
+        
         # Create isolated directory for CRYSTALOptToD12.py
+        files_to_copy = [source_output_file, source_input_file]
+        if original_input_file and original_input_file.exists():
+            files_to_copy.append(original_input_file)
+        
         work_dir = self.create_isolated_calculation_directory(
-            material_id, f"{target_calc_type}_generation", [source_output_file, source_input_file]
+            material_id, f"{target_calc_type}_generation", files_to_copy
         )
         
         try:
@@ -2073,10 +2091,11 @@ fi'''
                 suffix = f"_{target_base_type.lower()}"
             
             # Find the step number for this calculation type
-            step_num = self._get_next_step_number(workflow_base, target_base_type)
+            step_num = self._get_next_step_number(workflow_base, target_calc_type)
             
             dir_name = f"{core_name}{suffix}"
-            step_dir = workflow_base / f"step_{step_num:03d}_{target_base_type}" / dir_name
+            # Use the full calculation type in the step directory name
+            step_dir = workflow_base / f"step_{step_num:03d}_{target_calc_type}" / dir_name
             step_dir.mkdir(parents=True, exist_ok=True)
             
             # Move generated file to material's directory with proper naming
@@ -2141,17 +2160,31 @@ fi'''
             
     def _get_next_step_number(self, workflow_base: Path, calc_type: str) -> int:
         """Get the next available step number for a calculation type."""
-        # Check if a step already exists for this calculation type
+        # For numbered calculations (OPT2, OPT3, SP2, etc.), we need to check the base type
+        # but create separate steps for each numbered variant
+        base_type, type_num = self._parse_calc_type(calc_type)
+        
+        # Check if a step already exists for this EXACT calculation type (including number)
         for step_dir in workflow_base.glob("step_*"):
             if step_dir.is_dir():
                 # Check if the directory name contains this calc_type
                 dir_parts = step_dir.name.split('_')
-                if len(dir_parts) >= 3 and dir_parts[2] == calc_type:
-                    # This step already exists for this calc type, return its number
-                    try:
-                        return int(dir_parts[1])
-                    except ValueError:
-                        pass
+                if len(dir_parts) >= 3:
+                    # For numbered types, match exact type (OPT2, not just OPT)
+                    if type_num > 1:
+                        step_calc_type = '_'.join(dir_parts[2:])  # Handle names like step_002_OPT2
+                        if step_calc_type == calc_type or step_calc_type == base_type + str(type_num):
+                            try:
+                                return int(dir_parts[1])
+                            except ValueError:
+                                pass
+                    else:
+                        # For base types (OPT, SP, etc.), only match if it's the base type
+                        if dir_parts[2] == calc_type:
+                            try:
+                                return int(dir_parts[1])
+                            except ValueError:
+                                pass
         
         # No existing step for this calc type, find the next available number
         existing_steps = []
