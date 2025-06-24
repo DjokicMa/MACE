@@ -1932,13 +1932,28 @@ fi'''
         # Check for expert config file for numbered calculations (OPT2/OPT3/SP2/FREQ)
         expert_config_file = None
         if (target_base_type in ["OPT", "SP", "FREQ"]) and (target_num > 1 or target_base_type == "FREQ"):
-            # Check for expert config in workflow_temp directory
-            config_dir = self.base_work_dir / "workflow_temp" / f"expert_config_{target_calc_type.lower()}"
-            if config_dir.exists():
-                config_files = list(config_dir.glob("*_expert_config.json"))
-                if config_files:
-                    expert_config_file = config_files[0]
+            # First check for material-specific config
+            config_search_paths = [
+                # Material-specific config in workflow_configs
+                self.base_work_dir / "workflow_configs" / f"expert_{target_calc_type.lower()}_configs" / f"{material_id}_{target_calc_type.lower()}_expert_config.json",
+                # Legacy location in workflow_temp (general config)
+                self.base_work_dir / "workflow_temp" / f"expert_config_{target_calc_type.lower()}" / f"{target_calc_type.lower()}_expert_config.json"
+            ]
+            
+            for config_path in config_search_paths:
+                if config_path.exists():
+                    expert_config_file = config_path
                     print(f"  Found expert config for {target_calc_type}: {expert_config_file}")
+                    break
+            
+            # If no material-specific config, look for any config in the directories
+            if not expert_config_file:
+                for config_dir in [p.parent for p in config_search_paths if p.parent.exists()]:
+                    config_files = list(config_dir.glob("*_expert_config.json"))
+                    if config_files:
+                        expert_config_file = config_files[0]
+                        print(f"  Found expert config for {target_calc_type}: {expert_config_file}")
+                        break
             
         # For OPT2/OPT3, we need to find the ORIGINAL input file (from CIF or initial OPT)
         # to preserve symmetry information
