@@ -810,7 +810,7 @@ class WorkflowPlanner:
                 
             elif calc_type == "SP" or (calc_type.startswith("SP") and calc_type[2:].isdigit()):
                 # Single point calculation (SP, SP2, SP3, etc.)
-                config = self.configure_single_point_step()
+                config = self.configure_single_point_step(calc_type, i+1)
                 step_configs[f"{calc_type}_{i+1}"] = config
                 
             elif calc_type.startswith("BAND"):
@@ -825,7 +825,7 @@ class WorkflowPlanner:
                 
             elif calc_type == "FREQ":
                 # Frequency calculation
-                config = self.configure_frequency_step()
+                config = self.configure_frequency_step(calc_type, i+1)
                 step_configs[f"{calc_type}_{i+1}"] = config
             
             # Configure SLURM scripts for this step
@@ -859,9 +859,9 @@ class WorkflowPlanner:
             
         return config
         
-    def configure_single_point_step(self) -> Dict[str, Any]:
+    def configure_single_point_step(self, calc_type: str = "SP", step_num: int = 2) -> Dict[str, Any]:
         """Configure single point calculation with customization levels"""
-        print("  Configuring single point calculation")
+        print(f"  Configuring {calc_type} calculation")
         
         print("    Choose SP customization level:")
         print("      0: Default (inherit all settings from previous OPT)")
@@ -895,7 +895,7 @@ class WorkflowPlanner:
             config.update(self._get_advanced_sp_config())
         elif level == 3:
             # Expert: full customization
-            config.update(self._get_expert_sp_config())
+            config.update(self._get_expert_sp_config(calc_type, step_num))
             
         return config
         
@@ -942,9 +942,20 @@ class WorkflowPlanner:
             
         return config
         
-    def _get_expert_sp_config(self) -> Dict[str, Any]:
+    def _get_expert_sp_config(self, calc_type: str, step_num: int) -> Dict[str, Any]:
         """Get expert SP configuration"""
-        print("\n    Expert SP Setup:")
+        print(f"\n    Expert {calc_type} Setup:")
+        
+        # Ask if user wants per-material configs (to preserve symmetry)
+        print("    Options:")
+        print("    1. Create individual configuration for each material (preserves exact symmetry)")
+        print("    2. Create one configuration for all materials")
+        
+        config_choice = input("    Choose configuration mode (1/2) [1]: ").strip() or "1"
+        
+        if config_choice == "1":
+            return self._get_per_material_expert_config(calc_type, step_num)
+        
         print("    This will run CRYSTALOptToD12.py interactively for full customization")
         
         proceed = yes_no_prompt("    Proceed with expert SP configuration?", "yes")
@@ -1054,9 +1065,9 @@ class WorkflowPlanner:
         
         return config
         
-    def configure_frequency_step(self) -> Dict[str, Any]:
+    def configure_frequency_step(self, calc_type: str = "FREQ", step_num: int = 2) -> Dict[str, Any]:
         """Configure frequency calculation with customization levels"""
-        print("  Configuring frequency calculation")
+        print(f"  Configuring {calc_type} calculation")
         
         # Ask for customization level
         print("\n  Frequency Calculation Customization Level:")
@@ -1133,6 +1144,16 @@ class WorkflowPlanner:
         else:
             # Expert - run CRYSTALOptToD12.py interactively
             print("\n  Expert mode: Full interactive configuration")
+            
+            # Ask if user wants per-material configs (to preserve symmetry)
+            print("  Options:")
+            print("  1. Create individual configuration for each material (preserves exact symmetry)")
+            print("  2. Create one configuration for all materials")
+            
+            config_choice = input("  Choose configuration mode (1/2) [1]: ").strip() or "1"
+            
+            if config_choice == "1":
+                return self._get_per_material_expert_config(calc_type, step_num)
             
             # Copy required scripts early
             self._copy_required_scripts_for_expert_mode()
