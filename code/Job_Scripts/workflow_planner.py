@@ -902,25 +902,18 @@ class WorkflowPlanner:
     def _get_basic_sp_config(self) -> Dict[str, Any]:
         """Get basic SP configuration"""
         print("\n    Basic SP Setup:")
+        print("    (Single point calculation with modified method/basis)")
         
         config = {
             "inherit_geometry": True,
             "inherit_settings": False
         }
         
-        # Method modifications
-        modify_method = yes_no_prompt("    Change DFT functional?", "no")
-        if modify_method:
-            config["method_modifications"] = self._get_method_modifications()
-        else:
-            config["inherit_method"] = True
-            
-        # Basis set modifications
-        modify_basis = yes_no_prompt("    Change basis set?", "no")
-        if modify_basis:
-            config["basis_modifications"] = self._get_basis_modifications()
-        else:
-            config["inherit_basis"] = True
+        # Method modifications - streamlined
+        config["method_modifications"] = self._get_method_modifications()
+        
+        # Basis set modifications - streamlined  
+        config["basis_modifications"] = self._get_basis_modifications()
             
         return config
         
@@ -979,24 +972,38 @@ class WorkflowPlanner:
         """Get basis set modification settings"""
         modifications = {}
         
-        print("      Basis set options:")
-        print("        1: POB-TZVP-REV2 (high quality triple-zeta)")
-        print("        2: def2-TZVP (balanced triple-zeta)")
-        print("        3: Custom basis set")
+        print("\n      Select basis set (will inherit from previous if unchanged):")
+        print("        1: Keep current basis set")
+        print("        2: POB-TZVP-REV2 (high quality triple-zeta, recommended)")
+        print("        3: POB-TZVP (standard triple-zeta)")
+        print("        4: def2-TZVP (alternative triple-zeta)")
+        print("        5: POB-DZVP-REV2 (double-zeta, faster)")
+        print("        6: STO-3G (minimal, very fast)")
+        print("        7: Custom basis set")
         
-        basis_choice = input("      Choose (1-3): ").strip()
-        basis_map = {
-            "1": "POB-TZVP-REV2",
-            "2": "def2-TZVP", 
-            "3": "custom"
-        }
+        while True:
+            basis_choice = input("      Choose basis set (1-7) [1]: ").strip() or "1"
+            if basis_choice in ["1", "2", "3", "4", "5", "6", "7"]:
+                break
+            print("      Please enter a number from 1 to 7")
         
-        if basis_choice in basis_map:
-            modifications["new_basis"] = basis_map[basis_choice]
-            if basis_choice == "3":
+        if basis_choice == "1":
+            modifications["inherit_basis"] = True
+        else:
+            basis_map = {
+                "2": "POB-TZVP-REV2",
+                "3": "POB-TZVP",
+                "4": "def2-TZVP", 
+                "5": "POB-DZVP-REV2",
+                "6": "STO-3G"
+            }
+            
+            if basis_choice == "7":
                 custom_basis = input("      Enter custom basis set name: ").strip()
                 if custom_basis:
                     modifications["new_basis"] = custom_basis
+            else:
+                modifications["new_basis"] = basis_map[basis_choice]
                     
         return modifications
         
@@ -1005,24 +1012,26 @@ class WorkflowPlanner:
         modifications = {}
         
         # TOLDEE
-        modify_toldee = yes_no_prompt("      Change TOLDEE (SCF convergence)?", "no")
-        if modify_toldee:
-            toldee = input("      New TOLDEE value (current: from OPT): ").strip()
-            if toldee:
-                try:
-                    modifications["TOLDEE"] = int(toldee)
-                except ValueError:
-                    print("      Invalid TOLDEE, keeping default")
+        print("\n      SCF convergence threshold (TOLDEE):")
+        print("        Current/inherited: 7 (default)")
+        print("        Common values: 7 (standard), 8 (tighter), 9 (very tight), 10+ (ultra-tight)")
+        toldee = input("      New TOLDEE value [keep current]: ").strip()
+        if toldee:
+            try:
+                modifications["TOLDEE"] = int(toldee)
+            except ValueError:
+                print("      Invalid TOLDEE, keeping current")
                     
         # FMIXING
-        modify_fmixing = yes_no_prompt("      Change FMIXING (SCF mixing)?", "no")
-        if modify_fmixing:
-            fmixing = input("      New FMIXING value (current: from OPT): ").strip()
-            if fmixing:
-                try:
-                    modifications["FMIXING"] = int(fmixing)
-                except ValueError:
-                    print("      Invalid FMIXING, keeping default")
+        print("\n      SCF mixing factor (FMIXING):")
+        print("        Current/inherited: 30 (default)")
+        print("        Common values: 30 (standard), 20 (more stable), 50 (aggressive)")
+        fmixing = input("      New FMIXING value [keep current]: ").strip()
+        if fmixing:
+            try:
+                modifications["FMIXING"] = int(fmixing)
+            except ValueError:
+                print("      Invalid FMIXING, keeping current")
                     
         return modifications
         
@@ -1030,19 +1039,27 @@ class WorkflowPlanner:
         """Get DFT grid modification settings"""
         modifications = {}
         
-        print("      DFT integration grid options:")
-        print("        1: XLGRID (extra large, high accuracy)")
-        print("        2: LGRID (large, good accuracy)")
-        print("        3: MGRID (medium, balanced)")
+        print("\n      DFT integration grid (accuracy vs speed):")
+        print("        Current/inherited: XLGRID (default for properties)")
+        print("        1: Keep current grid")
+        print("        2: XLGRID (extra large, highest accuracy)")
+        print("        3: LGRID (large, good accuracy)")
+        print("        4: MGRID (medium, balanced)")
+        print("        5: DEFAULT (standard CRYSTAL grid)")
         
-        grid_choice = input("      Choose grid (1-3): ").strip()
-        grid_map = {
-            "1": "XLGRID",
-            "2": "LGRID",
-            "3": "MGRID"
-        }
+        while True:
+            grid_choice = input("      Choose grid (1-5) [1]: ").strip() or "1"
+            if grid_choice in ["1", "2", "3", "4", "5"]:
+                break
+            print("      Please enter a number from 1 to 5")
         
-        if grid_choice in grid_map:
+        if grid_choice != "1":
+            grid_map = {
+                "2": "XLGRID",
+                "3": "LGRID",
+                "4": "MGRID",
+                "5": "DEFAULT"
+            }
             modifications["new_grid"] = grid_map[grid_choice]
             
         return modifications
@@ -1086,6 +1103,12 @@ class WorkflowPlanner:
         
         if level == 1:
             # Basic - use defaults
+            print("\n  Using recommended defaults:")
+            print("    - Full frequency calculation (FREQCALC)")
+            print("    - IR intensities: Yes")
+            print("    - Raman intensities: No")
+            print("    - Enhanced tolerances: TOLINTEG 12 12 12 12 24, TOLDEE 12")
+            
             config = {
                 "calculation_type": "FREQ",
                 "source": "CRYSTALOptToD12.py",
@@ -1264,16 +1287,15 @@ class WorkflowPlanner:
         
         print("\n    Advanced Optimization Setup:")
         
-        # Method modifications
-        modify_method = yes_no_prompt("    Modify DFT method from previous step?", "no")
-        if modify_method:
-            config["modify_method"] = True
-            config["method_settings"] = self._get_method_modifications()
+        # Method modifications - always ask
+        config["method_settings"] = self._get_method_modifications()
+        
+        # Basis set modifications  
+        config["basis_settings"] = self._get_basis_modifications()
         
         # Custom tolerances
-        custom_tolerances = yes_no_prompt("    Set custom TOLINTEG/SCF tolerances?", "no")
-        if custom_tolerances:
-            config["custom_tolerances"] = self._get_custom_tolerances()
+        print("\n    Convergence tolerances:")
+        config["custom_tolerances"] = self._get_custom_tolerances()
             
         return config
     
@@ -1321,43 +1343,129 @@ class WorkflowPlanner:
         """Get DFT method modification settings"""
         modifications = {}
         
-        # Functional change
-        change_functional = yes_no_prompt("      Change DFT functional?", "no")
-        if change_functional:
-            print("      Common functional changes for refinement:")
-            print("        1: PBE → HSE06 (hybrid for better band gaps)")
-            print("        2: B3LYP → PBE0 (different hybrid)")
-            print("        3: Custom functional")
-            
-            func_choice = input("      Choose (1-3 or 'n' to skip): ").strip()
-            if func_choice in ["1", "2", "3"]:
-                modifications["change_functional"] = func_choice
+        # Functional change - always ask which functional to use
+        print("      Select DFT functional (will inherit from previous if unchanged):")
+        print("        1: Keep current functional")
+        print("        2: PBE-D3 (GGA, fast and reliable)")
+        print("        3: B3LYP-D3 (hybrid, good for organics)")
+        print("        4: HSE06 (hybrid, accurate band gaps)")
+        print("        5: PBE0 (hybrid, general purpose)")
+        print("        6: M06-2X (meta-GGA, for kinetics)")
+        print("        7: Custom functional (select from full list)")
         
-        # Basis set change
-        change_basis = yes_no_prompt("      Change basis set?", "no")
-        if change_basis:
-            modifications["change_basis"] = True
-            
+        while True:
+            func_choice = input("      Choose functional (1-7) [1]: ").strip() or "1"
+            if func_choice in ["1", "2", "3", "4", "5", "6", "7"]:
+                break
+            print("      Please enter a number from 1 to 7")
+        
+        if func_choice == "1":
+            modifications["inherit_functional"] = True
+        elif func_choice == "7":
+            # Custom functional - show full selection
+            modifications["custom_functional"] = self._select_custom_functional()
+        else:
+            # Map choices to functionals
+            functional_map = {
+                "2": "PBE",
+                "3": "B3LYP",
+                "4": "HSE06",
+                "5": "PBE0",
+                "6": "M06-2X"
+            }
+            modifications["new_functional"] = functional_map[func_choice]
+            # Check if D3 dispersion should be added
+            if func_choice in ["2", "3", "4", "5"]:
+                modifications["use_dispersion"] = True
+        
         return modifications
+    
+    def _select_custom_functional(self) -> str:
+        """Show full functional selection menu"""
+        print("\n      Select functional category:")
+        print("        1: Hartree-Fock methods")
+        print("        2: LDA (Local Density Approximation)")
+        print("        3: GGA (Generalized Gradient Approximation)")
+        print("        4: Hybrid (mix of HF and DFT)")
+        print("        5: Meta-GGA (includes kinetic energy density)")
+        print("        6: 3C Composite methods")
+        
+        category_map = {
+            "1": "HF",
+            "2": "LDA", 
+            "3": "GGA",
+            "4": "HYBRID",
+            "5": "MGGA",
+            "6": "3C"
+        }
+        
+        while True:
+            cat_choice = input("      Choose category (1-6): ").strip()
+            if cat_choice in category_map:
+                break
+            print("      Please enter a number from 1 to 6")
+        
+        category = category_map[cat_choice]
+        
+        # Define functionals by category
+        functionals = {
+            "HF": ["HF", "UHF"],
+            "LDA": ["SVWN", "VWN", "PZ", "PWLDA", "SOGGA"],
+            "GGA": ["PBE", "BLYP", "BP86", "PW91", "PBESOL", "RPBE", "WC", "WCGGA"],
+            "HYBRID": ["B3LYP", "PBE0", "HSE06", "B3PW", "SOGGAXC", "LC-wPBE", "wB97X"],
+            "MGGA": ["M06", "M06-2X", "M06-L", "M06-HF", "M11-L", "MN12-L", "TPSS", "revTPSS"],
+            "3C": ["HF-3C", "PBEh-3C", "HSE-3C", "B97-3C", "PBEsol0-3C", "HSEsol-3C"]
+        }
+        
+        func_list = functionals.get(category, [])
+        
+        print(f"\n      Available {category} functionals:")
+        for i, func in enumerate(func_list, 1):
+            # Add descriptions for common functionals
+            desc = ""
+            if func == "PBE":
+                desc = " - popular GGA, good general purpose"
+            elif func == "B3LYP":
+                desc = " - popular hybrid, good for organics"
+            elif func == "HSE06":
+                desc = " - screened hybrid, accurate band gaps"
+            elif func == "PBE0":
+                desc = " - 25% HF exchange, robust"
+            elif func == "M06-2X":
+                desc = " - 54% HF, good for kinetics"
+            print(f"        {i}: {func}{desc}")
+        
+        while True:
+            try:
+                func_idx = int(input(f"      Choose functional (1-{len(func_list)}): ").strip())
+                if 1 <= func_idx <= len(func_list):
+                    return func_list[func_idx - 1]
+                print(f"      Please enter a number from 1 to {len(func_list)}")
+            except ValueError:
+                print("      Please enter a valid number")
     
     def _get_custom_tolerances(self) -> Dict[str, Any]:
         """Get custom tolerance settings"""
         tolerances = {}
         
-        print("      Custom tolerance settings:")
-        
         # TOLINTEG
-        custom_tolinteg = input("      TOLINTEG (e.g., '8 8 8 8 16', default: use previous): ").strip()
+        print("      TOLINTEG (Coulomb/exchange integral tolerances):")
+        print("        Current/default: 7 7 7 7 14")
+        print("        Tighter: 8 8 8 8 16 or 9 9 9 9 18")
+        custom_tolinteg = input("      New TOLINTEG [keep current]: ").strip()
         if custom_tolinteg:
             tolerances["TOLINTEG"] = custom_tolinteg
             
         # TOLDEE
-        custom_toldee = input("      TOLDEE (default: use previous): ").strip()
+        print("\n      TOLDEE (SCF energy convergence):")
+        print("        Current/default: 7")
+        print("        Tighter: 8, 9, or 10")
+        custom_toldee = input("      New TOLDEE [keep current]: ").strip()
         if custom_toldee:
             try:
                 tolerances["TOLDEE"] = int(custom_toldee)
             except ValueError:
-                print("      Invalid TOLDEE, using previous value")
+                print("      Invalid TOLDEE, keeping current")
         
         return tolerances
     
