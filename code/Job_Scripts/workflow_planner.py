@@ -1457,13 +1457,13 @@ class WorkflowPlanner:
         
         category = category_map[cat_choice]
         
-        # Define functionals by category
+        # Define functionals by category (matching d12creation.py)
         functionals = {
             "HF": ["HF", "UHF"],
-            "LDA": ["SVWN", "VWN", "PZ", "PWLDA", "SOGGA"],
-            "GGA": ["PBE", "BLYP", "BP86", "PW91", "PBESOL", "RPBE", "WC", "WCGGA"],
-            "HYBRID": ["B3LYP", "PBE0", "HSE06", "B3PW", "SOGGAXC", "LC-wPBE", "wB97X"],
-            "MGGA": ["M06", "M06-2X", "M06-L", "M06-HF", "M11-L", "MN12-L", "TPSS", "revTPSS"],
+            "LDA": ["SVWN", "VBH"],
+            "GGA": ["PBE", "BLYP", "PBESOL", "PWGGA", "SOGGA", "WCGGA", "B97"],
+            "HYBRID": ["B3LYP", "PBE0", "HSE06", "B3PW", "CAM-B3LYP", "LC-wPBE", "wB97X"],
+            "MGGA": ["M06", "M06-2X", "M06-L", "M06-HF", "SCAN", "r2SCAN", "MN15", "MN15L"],
             "3C": ["HF-3C", "PBEh-3C", "HSE-3C", "B97-3C", "PBEsol0-3C", "HSEsol-3C"]
         }
         
@@ -1483,6 +1483,14 @@ class WorkflowPlanner:
                 desc = " - 25% HF exchange, robust"
             elif func == "M06-2X":
                 desc = " - 54% HF, good for kinetics"
+            elif func == "PBESOL":
+                desc = " - PBE revised for solids"
+            elif func == "WCGGA":
+                desc = " - Wu-Cohen GGA"
+            elif func == "SCAN":
+                desc = " - strongly constrained meta-GGA"
+            elif func == "SVWN":
+                desc = " - Slater exchange + VWN5 correlation"
             print(f"        {i}: {func}{desc}")
         
         while True:

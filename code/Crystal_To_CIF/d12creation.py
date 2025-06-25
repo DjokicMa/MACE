@@ -629,10 +629,9 @@ FUNCTIONAL_CATEGORIES = {
     "LDA": {
         "name": "LDA/LSD Functionals",
         "description": "Local (Spin) Density Approximation functionals",
-        "functionals": ["SVWN", "LDA", "VBH"],
+        "functionals": ["SVWN", "VBH"],
         "descriptions": {
             "SVWN": "Slater exchange + VWN5 correlation",
-            "LDA": "Local Density Approximation (Dirac-Slater)",
             "VBH": "von Barth-Hedin LSD functional",
         },
     },
@@ -1284,6 +1283,15 @@ def write_dft_section(f, functional, use_dispersion, dft_grid, is_spin_polarized
     if is_spin_polarized:
         print("SPIN", file=f)
 
+    # Map functionals to their correct CRYSTAL keywords
+    functional_keyword_map = {
+        "PBESOL": "PBESOLXC",
+        "SOGGA": "SOGGAXC",
+        "VBH": "VBHLYP",
+        "PWGGA": "PW91GGA",
+        "WCGGA": "WCGGAPBE",
+    }
+
     # Handle special functional keywords
     if functional in ["PBEh-3C", "HSE-3C", "B97-3C", "PBEsol0-3C", "HSEsol-3C"]:
         # These are standalone keywords in CRYSTAL23
@@ -1291,6 +1299,17 @@ def write_dft_section(f, functional, use_dispersion, dft_grid, is_spin_polarized
         # 3C methods have their own grid settings, don't add grid
     elif functional == "mPW1PW91" and use_dispersion:
         print("PW1PW-D3", file=f)
+        # Add DFT grid size only if not default and not None
+        if dft_grid and dft_grid != "DEFAULT":
+            print(dft_grid, file=f)
+    elif functional in functional_keyword_map:
+        # Use the mapped keyword for functionals that need special syntax
+        mapped_functional = functional_keyword_map[functional]
+        if use_dispersion and functional in D3_FUNCTIONALS:
+            print(f"{mapped_functional}-D3", file=f)
+        else:
+            print(f"{mapped_functional}", file=f)
+        
         # Add DFT grid size only if not default and not None
         if dft_grid and dft_grid != "DEFAULT":
             print(dft_grid, file=f)
