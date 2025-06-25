@@ -790,6 +790,8 @@ class WorkflowPlanner:
                 
             elif calc_type == "OPT" and i == 0 and not has_cifs:
                 print("  Using existing D12 files for first OPT step")
+                print("    Settings from D12 files will be used as-is")
+                print("    This includes: functional, basis set, tolerances, grid, etc.")
                 step_configs[f"{calc_type}_1"] = {"source": "existing_d12"}
                 
             elif calc_type == "OPT2":
@@ -864,6 +866,22 @@ class WorkflowPlanner:
         else:
             # Would run CRYSTALOptToD12.py configuration
             config = self.get_detailed_opt_config(calc_type, step_num)
+            
+            # Show summary of selected configuration
+            if config.get("customization_level") == 1:
+                print(f"\n    {calc_type} configuration summary:")
+                print(f"      - Type: {config.get('optimization_type', 'FULLOPTG')}")
+                opt_settings = config.get('optimization_settings', {})
+                print(f"      - TOLDEG: {opt_settings.get('TOLDEG', 3e-5):.1E}")
+                print(f"      - TOLDEX: {opt_settings.get('TOLDEX', 1.2e-4):.1E}")
+                print(f"      - TOLDEE: {opt_settings.get('TOLDEE', 7)}")
+                print(f"      - MAXCYCLE: {opt_settings.get('MAXCYCLE', 800)}")
+                if config.get('custom_tolerances'):
+                    tol = config['custom_tolerances']
+                    if tol.get('TOLINTEG'):
+                        print(f"      - TOLINTEG: {tol['TOLINTEG']}")
+                    if tol.get('TOLDEE'):
+                        print(f"      - SCF TOLDEE: {tol['TOLDEE']}")
             
         return config
         
@@ -1144,6 +1162,9 @@ class WorkflowPlanner:
             
         elif level == 2:
             # Advanced - customize key parameters
+            print("\n    Advanced frequency calculation setup:")
+            print("    Current defaults: IR=Yes, Raman=No, Mode=FREQCALC, Enhanced tolerances")
+            
             config = {
                 "calculation_type": "FREQ",
                 "source": "CRYSTALOptToD12.py",
