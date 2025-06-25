@@ -966,6 +966,7 @@ def create_material_id_from_file(file_path: str) -> str:
     - 'test1_opt_BULK_OPTGEOM_symm_CRYSTAL_OPT_symm_PBE-D3_POB-TZVP-REV2.d12' → 'test1'
     - 'test3-RCSR-ums_BULK_OPTGEOM_TZ_symm_CRYSTAL_OPT_symm_PBE-D3_POB-TZVP-REV2.d12' → 'test3-RCSR-ums'
     """
+    import re
     file_path = Path(file_path)
     name = file_path.stem
     
@@ -981,6 +982,10 @@ def create_material_id_from_file(file_path: str) -> str:
         if (part.upper() == 'OPT' and len(core_parts) == 1 and 
             core_parts[0] and core_parts[0][-1].isdigit()):
             # This looks like "test1_opt" - the opt is a calc type, not part of material name
+            break
+        # Check if this part matches a calculation type with optional number (opt, opt2, opt10, etc.)
+        if re.match(r'^(opt|sp|band|doss|freq)\d*$', part.lower()):
+            # This looks like opt, opt2, sp10, band3, etc. - stop here
             break
         # Check if this part is a technical suffix (removed OPT from this list since we handle it specially)
         elif part.upper() in ['SP', 'FREQ', 'BAND', 'DOSS', 'BULK', 'OPTGEOM', 

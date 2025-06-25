@@ -66,9 +66,16 @@ def extract_calc_type_from_output(out_file: Path) -> str:
         file_path_str = str(out_file)
         
         # Check directory-based context first (most reliable)
-        if '/step_002_SP/' in file_path_str or '/SP/' in file_path_str:
+        # Look for step directories with numbered calc types
+        import re
+        step_match = re.search(r'/step_\d+_([A-Z0-9]+)/', file_path_str)
+        if step_match:
+            return step_match.group(1)  # Returns OPT, OPT2, SP, SP2, etc.
+        
+        # Fallback to simpler directory checks
+        if '/SP/' in file_path_str:
             return 'SP'
-        elif '/step_001_OPT/' in file_path_str or '/OPT/' in file_path_str:
+        elif '/OPT/' in file_path_str:
             return 'OPT'
         elif '/BAND/' in file_path_str or '_band_' in file_path_str:
             return 'BAND'
@@ -81,12 +88,23 @@ def extract_calc_type_from_output(out_file: Path) -> str:
         with open(out_file, 'r') as f:
             content = f.read()
         
-        # Check for specific calculation type keywords in input/output sections    
-        if '_sp_' in out_file.name.lower():
-            return 'SP'
-        elif '_freq_' in out_file.name.lower():
-            return 'FREQ'
-        elif re.search(r'BAND.*STRUCTURE', content, re.IGNORECASE):
+        # Check for specific calculation type keywords in input/output sections
+        # First check for numbered calc types in filename
+        filename_lower = out_file.name.lower()
+        for calc_type in ['opt', 'sp', 'freq', 'band', 'doss']:
+            # Check for numbered versions using regex (opt2, sp2, opt10, etc.)
+            import re
+            pattern = rf'_{calc_type}(\d+)_|_{calc_type}(\d+)\.out$'
+            match = re.search(pattern, filename_lower)
+            if match:
+                num = match.group(1) or match.group(2)
+                return f'{calc_type.upper()}{num}'
+            # Check for base versions
+            if f'_{calc_type}_' in filename_lower or filename_lower.endswith(f'_{calc_type}.out'):
+                return calc_type.upper()
+        
+        # Content-based detection
+        if re.search(r'BAND.*STRUCTURE', content, re.IGNORECASE):
             return 'BAND'
         elif re.search(r'DENSITY.*STATES|NEWK.*DOSS', content, re.IGNORECASE):
             return 'DOSS'
