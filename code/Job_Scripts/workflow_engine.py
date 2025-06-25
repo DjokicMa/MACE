@@ -833,17 +833,37 @@ fi'''
             )
             
             # Create SP calculation record
+            # Extract workflow_id from parent calculation if it exists
+            workflow_id = None
+            workflow_step = None
+            if opt_calc.get('settings_json'):
+                try:
+                    parent_settings = json.loads(opt_calc['settings_json'])
+                    workflow_id = parent_settings.get('workflow_id')
+                    workflow_step = parent_settings.get('workflow_step')
+                except json.JSONDecodeError:
+                    pass
+            
+            # Build settings with workflow_id propagation
+            settings = {
+                'generated_from_opt': opt_calc_id,
+                'generation_method': 'CRYSTALOptToD12.py',
+                'workflow_step': True,
+                'slurm_script': str(slurm_script_path)
+            }
+            
+            # Add workflow_id if it exists
+            if workflow_id:
+                settings['workflow_id'] = workflow_id
+                if workflow_step is not None:
+                    settings['workflow_step'] = workflow_step + 1
+            
             sp_calc_id = self.db.create_calculation(
                 material_id=material_id,
                 calc_type="SP",
                 input_file=str(sp_final_location),
                 work_dir=str(sp_step_dir),
-                settings={
-                    'generated_from_opt': opt_calc_id,
-                    'generation_method': 'CRYSTALOptToD12.py',
-                    'workflow_step': True,
-                    'slurm_script': str(slurm_script_path)
-                }
+                settings=settings
             )
             
             # Submit SP calculation
@@ -1016,18 +1036,38 @@ fi'''
             )
             
             # Create calculation record
+            # Extract workflow_id from parent calculation if it exists
+            workflow_id = None
+            workflow_step = None
+            if wf_calc.get('settings_json'):
+                try:
+                    parent_settings = json.loads(wf_calc['settings_json'])
+                    workflow_id = parent_settings.get('workflow_id')
+                    workflow_step = parent_settings.get('workflow_step')
+                except json.JSONDecodeError:
+                    pass
+            
+            # Build settings with workflow_id propagation
+            settings = {
+                'generated_from_wavefunction': wavefunction_calc_id,
+                'generation_method': script_key,
+                'workflow_step': True,
+                'has_f9_file': bool(f9_files),
+                'slurm_script': str(slurm_script_path)
+            }
+            
+            # Add workflow_id if it exists
+            if workflow_id:
+                settings['workflow_id'] = workflow_id
+                if workflow_step is not None:
+                    settings['workflow_step'] = workflow_step + 1
+            
             calc_id = self.db.create_calculation(
                 material_id=material_id,
                 calc_type=target_calc_type,
                 input_file=str(final_location),
                 work_dir=str(calc_step_dir),
-                settings={
-                    'generated_from_wavefunction': wavefunction_calc_id,
-                    'generation_method': script_key,
-                    'workflow_step': True,
-                    'has_f9_file': bool(f9_files),
-                    'slurm_script': str(slurm_script_path)
-                }
+                settings=settings
             )
             
             # Submit calculation
@@ -1166,17 +1206,37 @@ fi'''
             )
             
             # Create FREQ calculation record
+            # Extract workflow_id from parent calculation if it exists
+            workflow_id = None
+            workflow_step = None
+            if opt_calc.get('settings_json'):
+                try:
+                    parent_settings = json.loads(opt_calc['settings_json'])
+                    workflow_id = parent_settings.get('workflow_id')
+                    workflow_step = parent_settings.get('workflow_step')
+                except json.JSONDecodeError:
+                    pass
+            
+            # Build settings with workflow_id propagation
+            settings = {
+                'generated_from_opt': opt_calc_id,
+                'generation_method': 'CRYSTALOptToD12.py',
+                'workflow_step': True,
+                'slurm_script': str(slurm_script_path)
+            }
+            
+            # Add workflow_id if it exists
+            if workflow_id:
+                settings['workflow_id'] = workflow_id
+                if workflow_step is not None:
+                    settings['workflow_step'] = workflow_step + 1
+            
             freq_calc_id = self.db.create_calculation(
                 material_id=material_id,
                 calc_type="FREQ",
                 input_file=str(freq_final_location),
                 work_dir=str(freq_step_dir),
-                settings={
-                    'generated_from_opt': opt_calc_id,
-                    'generation_method': 'CRYSTALOptToD12.py',
-                    'workflow_step': True,
-                    'slurm_script': str(slurm_script_path)
-                }
+                settings=settings
             )
             
             # Submit FREQ calculation
@@ -2129,23 +2189,45 @@ fi'''
             )
             
             # Create calculation record
+            # Extract workflow_id from parent calculation if it exists
+            workflow_id = None
+            workflow_step = None
+            if source_calc.get('settings_json'):
+                try:
+                    parent_settings = json.loads(source_calc['settings_json'])
+                    workflow_id = parent_settings.get('workflow_id')
+                    workflow_step = parent_settings.get('workflow_step')
+                except json.JSONDecodeError:
+                    pass
+            
+            # Use extracted workflow_id or fallback to workflow_base.name
+            if not workflow_id:
+                workflow_id = workflow_base.name
+            
+            # Build settings with workflow_id propagation
+            settings = {
+                'workflow_id': workflow_id,
+                'step_number': step_num,
+                'generated_from': source_calc_id,
+                'generation_method': 'CRYSTALOptToD12.py',
+                'parent_calc_id': source_calc_id
+            }
+            
+            # Add workflow_step if it exists
+            if workflow_step is not None:
+                settings['workflow_step'] = workflow_step + 1
+            
             calc_id = self.db.create_calculation(
                 material_id=material_id,
                 calc_type=target_calc_type,
                 input_file=str(final_location),
                 work_dir=str(step_dir),
-                settings={
-                    'workflow_id': workflow_base.name,
-                    'step_number': step_num,
-                    'generated_from': source_calc_id,
-                    'generation_method': 'CRYSTALOptToD12.py',
-                    'parent_calc_id': source_calc_id
-                }
+                settings=settings
             )
             
             # Create workflow metadata file for callback tracking
             metadata = {
-                'workflow_id': workflow_base.name,
+                'workflow_id': workflow_id,  # Use the extracted/propagated workflow_id
                 'step_num': step_num,
                 'calc_type': target_calc_type,
                 'material_id': material_id,
