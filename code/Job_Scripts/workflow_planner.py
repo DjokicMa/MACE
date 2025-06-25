@@ -841,6 +841,14 @@ class WorkflowPlanner:
         use_defaults = yes_no_prompt("    Use default optimization settings?", "yes")
         
         if use_defaults:
+            print("    Using default optimization settings:")
+            print("      - Type: FULLOPTG (optimize both atoms and cell)")
+            print("      - TOLDEG: 3.0E-5 (RMS gradient threshold)")
+            print("      - TOLDEX: 1.2E-4 (RMS displacement threshold)")
+            print("      - TOLDEE: 7 (energy convergence 10^-7 Ha)")
+            print("      - MAXCYCLE: 800 (maximum optimization steps)")
+            print("      - Method/basis: inherited from previous step")
+            
             config = {
                 "calculation_type": "OPT",
                 "optimization_type": "FULLOPTG", 
@@ -1040,25 +1048,31 @@ class WorkflowPlanner:
         modifications = {}
         
         print("\n      DFT integration grid (accuracy vs speed):")
-        print("        Current/inherited: XLGRID (default for properties)")
+        print("        Current/default: XLGRID (CRYSTAL23 default for most functionals)")
         print("        1: Keep current grid")
-        print("        2: XLGRID (extra large, highest accuracy)")
-        print("        3: LGRID (large, good accuracy)")
-        print("        4: MGRID (medium, balanced)")
-        print("        5: DEFAULT (standard CRYSTAL grid)")
+        print("        2: XLGRID - Extra large grid (75,974 points/atom) [default]")
+        print("        3: XXLGRID - Extra extra large (99,1454 points/atom)")
+        print("        4: LGRID - Large grid (75,434 points/atom)")
+        print("        5: DEFAULT - Standard CRYSTAL grid")
+        print("        6: OLDGRID - Legacy grid from CRYSTAL09 (55,434 points/atom)")
+        print("        7: XXXLGRID - Ultra large (150,1454 points/atom) for high accuracy")
+        print("        8: HUGEGRID - Huge grid (300,1454 points/atom) for SCAN functional")
         
         while True:
-            grid_choice = input("      Choose grid (1-5) [1]: ").strip() or "1"
-            if grid_choice in ["1", "2", "3", "4", "5"]:
+            grid_choice = input("      Choose grid (1-8) [1]: ").strip() or "1"
+            if grid_choice in ["1", "2", "3", "4", "5", "6", "7", "8"]:
                 break
-            print("      Please enter a number from 1 to 5")
+            print("      Please enter a number from 1 to 8")
         
         if grid_choice != "1":
             grid_map = {
                 "2": "XLGRID",
-                "3": "LGRID",
-                "4": "MGRID",
-                "5": "DEFAULT"
+                "3": "XXLGRID",
+                "4": "LGRID",
+                "5": "DEFAULT",
+                "6": "OLDGRID",
+                "7": "XXXLGRID",
+                "8": "HUGEGRID"
             }
             modifications["new_grid"] = grid_map[grid_choice]
             
@@ -1103,11 +1117,15 @@ class WorkflowPlanner:
         
         if level == 1:
             # Basic - use defaults
-            print("\n  Using recommended defaults:")
-            print("    - Full frequency calculation (FREQCALC)")
-            print("    - IR intensities: Yes")
-            print("    - Raman intensities: No")
-            print("    - Enhanced tolerances: TOLINTEG 12 12 12 12 24, TOLDEE 12")
+            print("\n  Using recommended frequency calculation defaults:")
+            print("    - Mode: FREQCALC (full vibrational analysis)")
+            print("    - IR intensities: Yes (dipole derivatives)")
+            print("    - Raman intensities: No (requires additional time)")
+            print("    - Enhanced tolerances for accurate frequencies:")
+            print("      - TOLINTEG: 12 12 12 12 24 (tighter integrals)")
+            print("      - TOLDEE: 12 (SCF convergence 10^-12 Ha)")
+            print("    - Numerical derivatives: 2-point (default)")
+            print("    - Method/basis: inherited from optimized geometry")
             
             config = {
                 "calculation_type": "FREQ",
@@ -1143,9 +1161,11 @@ class WorkflowPlanner:
             
             # Ask about modes
             print("\n  Frequency calculation mode:")
-            print("    1. Full frequency calculation (FREQCALC)")
-            print("    2. Partial frequencies (FREQRANGE)")
-            print("    3. Numerical frequencies (NUMFREQ)")
+            print("    1. FREQCALC - Full analytical frequencies (recommended)")
+            print("    2. FREQRANGE - Partial frequency range (faster for large systems)")
+            print("    3. NUMFREQ - Purely numerical frequencies (more robust, slower)")
+            print("\n    Note: NUMFREQ uses finite differences and may be more stable")
+            print("          for difficult systems but takes ~6x longer than FREQCALC")
             
             mode_choice = input("  Select mode [1]: ").strip() or "1"
             modes = {
@@ -1156,13 +1176,17 @@ class WorkflowPlanner:
             config["frequency_settings"]["mode"] = modes.get(mode_choice, "FREQCALC")
             
             # Custom tolerances
-            print("\n  Use enhanced tolerances for frequency calculations?")
-            enhanced = input("  [Y/n]: ").strip().lower()
+            print("\n  Tolerance settings for frequency calculations:")
+            print("    Enhanced tolerances are recommended for accurate frequencies")
+            print("    Standard: TOLINTEG 7 7 7 7 14, TOLDEE 7")
+            print("    Enhanced: TOLINTEG 12 12 12 12 24, TOLDEE 12 (recommended)")
+            enhanced = input("  Use enhanced tolerances? [Y/n]: ").strip().lower()
             if enhanced != 'n':
                 config["frequency_settings"]["custom_tolerances"] = {
                     "TOLINTEG": "12 12 12 12 24",
                     "TOLDEE": 12
                 }
+                print("  ✓ Using enhanced tolerances for improved accuracy")
                 
         else:
             # Expert - run CRYSTALOptToD12.py interactively
@@ -1261,6 +1285,11 @@ class WorkflowPlanner:
         use_tight = yes_no_prompt("    Use tighter convergence for refined optimization?", "yes")
         
         if use_tight:
+            print("    Using tighter convergence criteria:")
+            print("      - TOLDEG: 1.5E-5 (2x tighter gradient)")
+            print("      - TOLDEX: 6.0E-5 (2x tighter displacement)")
+            print("      - TOLDEE: 8 (10x tighter energy, 10^-8 Ha)")
+            print("      - MAXCYCLE: 1000 (25% more steps allowed)")
             opt_settings = {
                 "TOLDEG": 1.5e-5,   # Tighter than default 3e-5
                 "TOLDEX": 6e-5,     # Tighter than default 1.2e-4  
