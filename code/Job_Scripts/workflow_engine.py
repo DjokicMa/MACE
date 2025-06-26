@@ -57,23 +57,38 @@ class WorkflowEngine:
         if not workflow_id:
             return None
             
-        # Try to find the workflow plan file
+        # Look for workflow plan file
         workflow_configs_dir = self.base_work_dir / "workflow_configs"
-        
-        # Look for plan files that match this workflow ID
-        for plan_file in workflow_configs_dir.glob("workflow_plan_*.json"):
-            try:
-                import json
-                with open(plan_file, 'r') as f:
-                    plan = json.load(f)
-                    
-                if plan.get('workflow_id') == workflow_id:
-                    return plan.get('workflow_sequence', [])
-            except Exception as e:
-                print(f"Error reading workflow plan {plan_file}: {e}")
-                continue
+        if not workflow_configs_dir.exists():
+            return None
+            
+        workflow_plan_file = workflow_configs_dir / f"workflow_plan_{workflow_id.replace('workflow_', '')}.json"
+        if not workflow_plan_file.exists():
+            return None
+            
+        try:
+            with open(workflow_plan_file, 'r') as f:
+                plan = json.load(f)
+                return plan.get('workflow_sequence', [])
+        except Exception:
+            return None
+    
+    def get_workflow_step_number(self, workflow_id: str, calc_type: str) -> int:
+        """Get the correct step number for a calculation type in the workflow"""
+        workflow_sequence = self.get_workflow_sequence(workflow_id)
+        if not workflow_sequence:
+            # Fallback to hardcoded values if no workflow plan
+            default_steps = {"OPT": 1, "SP": 2, "BAND": 3, "DOSS": 4, "FREQ": 5}
+            base_type = calc_type.rstrip('0123456789')
+            return default_steps.get(base_type, 1)
+            
+        # Find the step number in the workflow sequence
+        for i, step in enumerate(workflow_sequence, 1):
+            if step == calc_type:
+                return i
                 
-        return None
+        # If not found, return next available step
+        return len(workflow_sequence) + 1
     def get_workflow_id_from_calculation(self, calc_dir: Path) -> Optional[str]:
         """Get workflow ID from calculation directory metadata"""
         metadata_file = calc_dir / '.workflow_metadata.json'
@@ -1009,9 +1024,13 @@ fi'''
             # Use core name directly (already clean)
             clean_job_name = core_name
             
-            # Determine step number based on base type
-            step_numbers = {"BAND": 3, "DOSS": 4}
-            step_num = step_numbers.get(base_type, 3)
+            # Determine step number from workflow plan if available
+            if workflow_id:
+                step_num = self.get_workflow_step_number(workflow_id, base_type)
+            else:
+                # Fallback to default step numbers
+                step_numbers = {"BAND": 3, "DOSS": 4}
+                step_num = step_numbers.get(base_type, 3)
             
             # Create material-specific directory for calculation
             dir_name = f"{core_name}{calc_suffix}"
@@ -1181,6 +1200,17 @@ fi'''
             # Get workflow output directory and create material-specific directory
             workflow_base = self.get_workflow_output_base(opt_calc)
             
+            # Extract workflow_id from parent calculation first
+            workflow_id = None
+            workflow_step = None
+            if opt_calc.get('settings_json'):
+                try:
+                    parent_settings = json.loads(opt_calc['settings_json'])
+                    workflow_id = parent_settings.get('workflow_id')
+                    workflow_step = parent_settings.get('workflow_step')
+                except json.JSONDecodeError:
+                    pass
+            
             # Get core material name and determine FREQ suffix
             core_name = self.extract_core_material_name(material_id)
             freq_suffix = self.get_next_calc_suffix(core_name, "FREQ", workflow_base)
@@ -1190,7 +1220,12 @@ fi'''
             
             # Create material-specific directory for FREQ calculation
             dir_name = f"{core_name}{freq_suffix}"
-            freq_step_dir = workflow_base / "step_005_FREQ" / dir_name
+            # Determine step number from workflow plan if available
+            if workflow_id:
+                step_num = self.get_workflow_step_number(workflow_id, "FREQ")
+            else:
+                step_num = 5  # Default for FREQ
+            freq_step_dir = workflow_base / f"step_{step_num:03d}_FREQ" / dir_name
             freq_step_dir.mkdir(parents=True, exist_ok=True)
             
             # Move FREQ file to material's directory with consistent naming
@@ -1202,21 +1237,10 @@ fi'''
             # Use the clean material name for the job
             freq_job_name = f"{clean_job_name}{freq_suffix}"
             slurm_script_path = self._create_slurm_script_for_calculation(
-                freq_step_dir, freq_job_name, "FREQ", 5, workflow_base.name
+                freq_step_dir, freq_job_name, "FREQ", step_num, workflow_base.name
             )
             
             # Create FREQ calculation record
-            # Extract workflow_id from parent calculation if it exists
-            workflow_id = None
-            workflow_step = None
-            if opt_calc.get('settings_json'):
-                try:
-                    parent_settings = json.loads(opt_calc['settings_json'])
-                    workflow_id = parent_settings.get('workflow_id')
-                    workflow_step = parent_settings.get('workflow_step')
-                except json.JSONDecodeError:
-                    pass
-            
             # Build settings with workflow_id propagation
             settings = {
                 'generated_from_opt': opt_calc_id,
@@ -2257,6 +2281,13 @@ fi'''
             
     def _get_next_step_number(self, workflow_base: Path, calc_type: str) -> int:
         """Get the next available step number for a calculation type."""
+        # First try to get from workflow plan
+        workflow_id = workflow_base.name
+        step_num = self.get_workflow_step_number(workflow_id, calc_type)
+        if step_num:
+            return step_num
+            
+        # Fallback to the original logic if no workflow plan
         # For numbered calculations (OPT2, OPT3, SP2, etc.), we need to check the base type
         # but create separate steps for each numbered variant
         base_type, type_num = self._parse_calc_type(calc_type)

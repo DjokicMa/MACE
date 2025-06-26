@@ -14,7 +14,7 @@ echo '#SBATCH --cpus-per-task=1' >> $1.sh
 echo '#SBATCH --ntasks=28' >> $1.sh
 echo '#SBATCH --constraint=intel18' >> $1.sh
 echo '#SBATCH -A mendoza_q' >> $1.sh
-echo '#SBATCH --exclude=amr-163,amr-178,amr-179,acm-028,acm-034' >> $1.sh
+#echo '#SBATCH --exclude=agg-[011-012],amr-[163,178-179]' >> $1.sh
 echo '#SBATCH -N 1' >> $1.sh
 time=2
 wall=:00:00
@@ -38,7 +38,8 @@ cp $DIR/$JOB.d3  $scratch/$JOB/INPUT
 cp $DIR/$JOB.f9  $scratch/$JOB/fort.9
 cd $scratch/$JOB
 
-mpirun -n $SLURM_NTASKS /opt/software-current/2023.06/x86_64/intel/skylake_avx512/software/CRYSTAL/23-intel-2023a/bin/Pproperties 2>&1 >& $DIR/${JOB}.out
+export I_MPI_HYDRA_BOOTSTRAP=ssh
+srun /opt/software-current/2023.06/x86_64/intel/skylake_avx512/software/CRYSTAL/23-intel-2023a/bin/Pproperties 2>&1 >& $DIR/${JOB}.out
 #srun Pproperties 2>&1 >& $DIR/${JOB}.out
 
 cp fort.9  ${DIR}/${JOB}.f9
