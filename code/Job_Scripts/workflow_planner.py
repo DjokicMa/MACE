@@ -840,16 +840,18 @@ class WorkflowPlanner:
         """Configure optimization calculation step"""
         print(f"  Configuring {calc_type} step {step_num}")
         
+        # Show default settings first
+        print("    Default optimization settings:")
+        print("      - Type: FULLOPTG (optimize both atoms and cell)")
+        print("      - TOLDEG: 3.0E-5 (RMS gradient threshold)")
+        print("      - TOLDEX: 1.2E-4 (RMS displacement threshold)")
+        print("      - TOLDEE: 7 (energy convergence 10^-7 Ha)")
+        print("      - MAXCYCLE: 800 (maximum optimization steps)")
+        print("      - Method/basis: inherited from previous step")
+        
         use_defaults = yes_no_prompt("    Use default optimization settings?", "yes")
         
         if use_defaults:
-            print("    Using default optimization settings:")
-            print("      - Type: FULLOPTG (optimize both atoms and cell)")
-            print("      - TOLDEG: 3.0E-5 (RMS gradient threshold)")
-            print("      - TOLDEX: 1.2E-4 (RMS displacement threshold)")
-            print("      - TOLDEE: 7 (energy convergence 10^-7 Ha)")
-            print("      - MAXCYCLE: 800 (maximum optimization steps)")
-            print("      - Method/basis: inherited from previous step")
             
             config = {
                 "calculation_type": "OPT",
@@ -1214,9 +1216,15 @@ class WorkflowPlanner:
             print("\n  Expert mode: Full interactive configuration")
             
             # Ask if user wants per-material configs (to preserve symmetry)
-            print("  Options:")
-            print("  1. Create individual configuration for each material (preserves exact symmetry)")
+            print("  Configuration approach:")
+            print("  1. Create individual configuration for each material")
+            print("     - Preserves exact symmetry for each material")
+            print("     - Allows material-specific settings")
+            print("     - Best for diverse material sets")
             print("  2. Create one configuration for all materials")
+            print("     - Faster setup for uniform calculations")
+            print("     - All materials use identical settings")
+            print("     - Best for similar materials")
             
             config_choice = input("  Choose configuration mode (1/2) [1]: ").strip() or "1"
             
@@ -1303,14 +1311,21 @@ class WorkflowPlanner:
         opt_type = opt_types.get(opt_choice, "FULLOPTG")
         
         # Enhanced tolerances for subsequent optimizations
+        print("\n    Convergence settings:")
+        print("    Standard convergence:")
+        print("      - TOLDEG: 3.0E-5 (RMS gradient threshold)")
+        print("      - TOLDEX: 1.2E-4 (RMS displacement threshold)")
+        print("      - TOLDEE: 7 (energy convergence 10^-7 Ha)")
+        print("      - MAXCYCLE: 800 (maximum optimization steps)")
+        print("    Tighter convergence (recommended for refined optimization):")
+        print("      - TOLDEG: 1.5E-5 (2x tighter gradient)")
+        print("      - TOLDEX: 6.0E-5 (2x tighter displacement)")
+        print("      - TOLDEE: 8 (10x tighter energy, 10^-8 Ha)")
+        print("      - MAXCYCLE: 1000 (25% more steps allowed)")
+        
         use_tight = yes_no_prompt("    Use tighter convergence for refined optimization?", "yes")
         
         if use_tight:
-            print("    Using tighter convergence criteria:")
-            print("      - TOLDEG: 1.5E-5 (2x tighter gradient)")
-            print("      - TOLDEX: 6.0E-5 (2x tighter displacement)")
-            print("      - TOLDEE: 8 (10x tighter energy, 10^-8 Ha)")
-            print("      - MAXCYCLE: 1000 (25% more steps allowed)")
             opt_settings = {
                 "TOLDEG": 1.5e-5,   # Tighter than default 3e-5
                 "TOLDEX": 6e-5,     # Tighter than default 1.2e-4  
