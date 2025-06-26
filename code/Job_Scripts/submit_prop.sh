@@ -12,7 +12,6 @@ outfile=$out$file
 echo '#SBATCH -o '$outfile >> $1.sh
 echo '#SBATCH --cpus-per-task=1' >> $1.sh
 echo '#SBATCH --ntasks=28' >> $1.sh
-echo '#SBATCH --constraint=intel18' >> $1.sh
 echo '#SBATCH -A mendoza_q' >> $1.sh
 #echo '#SBATCH --exclude=agg-[011-012],amr-[163,178-179]' >> $1.sh
 echo '#SBATCH -N 1' >> $1.sh
