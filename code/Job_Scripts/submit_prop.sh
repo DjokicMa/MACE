@@ -37,8 +37,7 @@ cp $DIR/$JOB.d3  $scratch/$JOB/INPUT
 cp $DIR/$JOB.f9  $scratch/$JOB/fort.9
 cd $scratch/$JOB
 
-export I_MPI_HYDRA_BOOTSTRAP=ssh
-srun /opt/software-current/2023.06/x86_64/intel/skylake_avx512/software/CRYSTAL/23-intel-2023a/bin/Pproperties 2>&1 >& $DIR/${JOB}.out
+srun $EBROOTCRYSTAL/bin/Pproperties 2>&1 >& $DIR/${JOB}.out
 #srun Pproperties 2>&1 >& $DIR/${JOB}.out
 
 cp fort.9  ${DIR}/${JOB}.f9
