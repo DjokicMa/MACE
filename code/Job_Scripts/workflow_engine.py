@@ -1024,6 +1024,17 @@ fi'''
             # Use core name directly (already clean)
             clean_job_name = core_name
             
+            # Extract workflow_id from parent calculation first (before using it)
+            workflow_id = None
+            workflow_step = None
+            if wf_calc.get('settings_json'):
+                try:
+                    parent_settings = json.loads(wf_calc['settings_json'])
+                    workflow_id = parent_settings.get('workflow_id')
+                    workflow_step = parent_settings.get('workflow_step')
+                except json.JSONDecodeError:
+                    pass
+            
             # Determine step number from workflow plan if available
             if workflow_id:
                 step_num = self.get_workflow_step_number(workflow_id, base_type)
@@ -1053,18 +1064,6 @@ fi'''
             slurm_script_path = self._create_slurm_script_for_calculation(
                 calc_step_dir, job_name, base_type, step_num, workflow_base.name
             )
-            
-            # Create calculation record
-            # Extract workflow_id from parent calculation if it exists
-            workflow_id = None
-            workflow_step = None
-            if wf_calc.get('settings_json'):
-                try:
-                    parent_settings = json.loads(wf_calc['settings_json'])
-                    workflow_id = parent_settings.get('workflow_id')
-                    workflow_step = parent_settings.get('workflow_step')
-                except json.JSONDecodeError:
-                    pass
             
             # Build settings with workflow_id propagation
             settings = {
