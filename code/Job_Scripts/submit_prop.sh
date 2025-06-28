@@ -37,7 +37,7 @@ cp $DIR/$JOB.d3  $scratch/$JOB/INPUT
 cp $DIR/$JOB.f9  $scratch/$JOB/fort.9
 cd $scratch/$JOB
 
-mpirun -n $EBROOTCRYSTAL/bin/Pproperties 2>&1 >& $DIR/${JOB}.out
+mpirun -n $SLURM_NTASKS $EBROOTCRYSTAL/bin/Pproperties 2>&1 >& $DIR/${JOB}.out
 #srun $EBROOTCRYSTAL/bin/Pproperties 2>&1 >& $DIR/${JOB}.out
 #srun Pproperties 2>&1 >& $DIR/${JOB}.out
 
