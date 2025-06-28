@@ -2095,8 +2095,42 @@ class WorkflowPlanner:
         
         print(f"        Default resources for {calc_type}:")
         print(f"          Cores: {default_resources['ntasks']}")
-        memory_str = default_resources.get('memory_per_cpu', default_resources.get('memory', 'N/A'))
-        print(f"          Memory: {memory_str}")
+        
+        # Display memory with clear indication of per-cpu vs total
+        # This addresses user confusion about memory specifications in SLURM
+        # submitcrystal23.sh uses --mem-per-cpu while submit_prop.sh uses --mem (total)
+        if 'memory_per_cpu' in default_resources:
+            print(f"          Memory per CPU: {default_resources['memory_per_cpu']}")
+            # Try to calculate total memory
+            mem_str = default_resources['memory_per_cpu'].upper()
+            if mem_str.endswith('G') or mem_str.endswith('GB'):
+                mem_val = int(mem_str.rstrip('GB'))
+                total_mem_gb = mem_val * default_resources['ntasks']
+                print(f"          Total Memory: {total_mem_gb}G ({default_resources['ntasks']} cores × {default_resources['memory_per_cpu']})")
+            elif mem_str.endswith('M') or mem_str.endswith('MB'):
+                mem_val = int(mem_str.rstrip('MB'))
+                total_mem_mb = mem_val * default_resources['ntasks']
+                total_mem_gb = total_mem_mb // 1000
+                print(f"          Total Memory: ~{total_mem_gb}G ({default_resources['ntasks']} cores × {default_resources['memory_per_cpu']})")
+        elif 'memory' in default_resources:
+            print(f"          Total Memory: {default_resources['memory']}")
+            # Try to calculate per-cpu memory
+            mem_str = default_resources['memory'].upper()
+            if mem_str.endswith('G') or mem_str.endswith('GB'):
+                mem_val = int(mem_str.rstrip('GB'))
+                per_cpu_gb = mem_val // default_resources['ntasks']
+                print(f"          Memory per CPU: ~{per_cpu_gb}G ({default_resources['memory']} ÷ {default_resources['ntasks']} cores)")
+            elif mem_str.endswith('M') or mem_str.endswith('MB'):
+                mem_val = int(mem_str.rstrip('MB'))
+                per_cpu_mb = mem_val // default_resources['ntasks']
+                per_cpu_gb = per_cpu_mb // 1000
+                if per_cpu_gb > 0:
+                    print(f"          Memory per CPU: ~{per_cpu_gb}G ({default_resources['memory']} ÷ {default_resources['ntasks']} cores)")
+                else:
+                    print(f"          Memory per CPU: ~{per_cpu_mb}M ({default_resources['memory']} ÷ {default_resources['ntasks']} cores)")
+        else:
+            print(f"          Memory: N/A")
+            
         print(f"          Walltime: {default_resources['walltime']}")
         print(f"          Account: {default_resources.get('account', 'mendoza_q')}")
         
