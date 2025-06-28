@@ -167,6 +167,24 @@ class MaterialDatabase:
                     FOREIGN KEY (template_id) REFERENCES workflow_templates (template_id)
                 );
                 
+                -- Workflow states: Independent workflow state tracking
+                CREATE TABLE IF NOT EXISTS workflow_states (
+                    workflow_id TEXT PRIMARY KEY,
+                    material_id TEXT NOT NULL,
+                    planned_sequence TEXT NOT NULL,  -- JSON array of planned steps
+                    completed_steps TEXT NOT NULL,   -- JSON array of completed steps
+                    failed_steps TEXT,               -- JSON array of failed steps
+                    current_step INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'active',    -- active, completed, failed, paused
+                    last_updated TEXT NOT NULL,
+                    error_count INTEGER DEFAULT 0,
+                    recovery_count INTEGER DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    notes TEXT,
+                    
+                    FOREIGN KEY (material_id) REFERENCES materials (material_id)
+                );
+                
                 -- Create indexes for performance
                 CREATE INDEX IF NOT EXISTS idx_materials_formula ON materials (formula);
                 CREATE INDEX IF NOT EXISTS idx_materials_status ON materials (status);
@@ -177,6 +195,8 @@ class MaterialDatabase:
                 CREATE INDEX IF NOT EXISTS idx_properties_material ON properties (material_id);
                 CREATE INDEX IF NOT EXISTS idx_properties_name ON properties (property_name);
                 CREATE INDEX IF NOT EXISTS idx_files_calc ON files (calc_id);
+                CREATE INDEX IF NOT EXISTS idx_workflow_states_material ON workflow_states (material_id);
+                CREATE INDEX IF NOT EXISTS idx_workflow_states_status ON workflow_states (status);
             """)
             
             # Apply any necessary migrations
@@ -744,6 +764,102 @@ class MaterialDatabase:
                         
                 instances.append(instance)
             return instances
+            
+    def create_workflow_state(self, workflow_id: str, material_id: str, 
+                            planned_sequence: List[str]) -> str:
+        """
+        Create a new workflow state record.
+        
+        Args:
+            workflow_id: Unique workflow identifier
+            material_id: Material this workflow is for
+            planned_sequence: List of planned calculation steps
+            
+        Returns:
+            workflow_id
+        """
+        now = datetime.now().isoformat()
+        
+        with self._get_connection() as conn:
+            conn.execute("""
+                INSERT INTO workflow_states (
+                    workflow_id, material_id, planned_sequence, completed_steps,
+                    current_step, status, last_updated, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (workflow_id, material_id, json.dumps(planned_sequence), 
+                  json.dumps([]), 0, 'active', now, now))
+                  
+        return workflow_id
+        
+    def update_workflow_state(self, workflow_id: str, completed_step: str = None,
+                            failed_step: str = None, status: str = None):
+        """Update workflow state after step completion or failure"""
+        with self._get_connection() as conn:
+            # Get current state
+            cursor = conn.execute("""
+                SELECT completed_steps, failed_steps, planned_sequence, current_step
+                FROM workflow_states WHERE workflow_id = ?
+            """, (workflow_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return
+                
+            completed_steps = json.loads(row[0])
+            failed_steps = json.loads(row[1]) if row[1] else []
+            planned_sequence = json.loads(row[2])
+            current_step = row[3]
+            
+            # Update lists
+            if completed_step and completed_step not in completed_steps:
+                completed_steps.append(completed_step)
+                # Update current step index
+                if completed_step in planned_sequence:
+                    current_step = planned_sequence.index(completed_step) + 1
+                    
+            if failed_step and failed_step not in failed_steps:
+                failed_steps.append(failed_step)
+                
+            # Determine status if not provided
+            if not status:
+                if len(completed_steps) == len(planned_sequence):
+                    status = 'completed'
+                elif failed_steps:
+                    status = 'failed'
+                else:
+                    status = 'active'
+                    
+            # Update record
+            now = datetime.now().isoformat()
+            conn.execute("""
+                UPDATE workflow_states SET
+                    completed_steps = ?,
+                    failed_steps = ?,
+                    current_step = ?,
+                    status = ?,
+                    last_updated = ?,
+                    error_count = error_count + ?
+                WHERE workflow_id = ?
+            """, (json.dumps(completed_steps), json.dumps(failed_steps),
+                  current_step, status, now, 1 if failed_step else 0, workflow_id))
+    
+    def get_workflow_state(self, workflow_id: str) -> Optional[Dict]:
+        """Get workflow state record"""
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT * FROM workflow_states WHERE workflow_id = ?
+            """, (workflow_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                state = dict(row)
+                # Parse JSON fields
+                state['planned_sequence'] = json.loads(state['planned_sequence'])
+                state['completed_steps'] = json.loads(state['completed_steps'])
+                state['failed_steps'] = json.loads(state['failed_steps']) if state['failed_steps'] else []
+                return state
+                
+            return None
     
     def capture_workflow_execution_data(self, workflow_id: str, workflow_configs_dir: str = "workflow_configs", 
                                        workflow_scripts_dir: str = "workflow_scripts") -> Optional[str]:

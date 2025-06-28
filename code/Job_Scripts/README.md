@@ -451,6 +451,44 @@ Important logs to check:
 
 ---
 
+## External Dependencies and Integration
+
+### External Scripts Called
+
+The workflow system integrates with several external scripts:
+
+#### From Crystal_To_CIF Directory:
+- **NewCifToD12.py** - Converts CIF files to CRYSTAL D12 format
+- **CRYSTALOptToD12.py** - Generates SP/FREQ inputs from optimized structures  
+- **d12creation.py** - Shared utilities and constants
+
+#### From Creation_Scripts Directory:
+- **create_band_d3.py** - Generates band structure input files
+- **alldos.py** - Generates density of states input files
+
+### Script Location Resolution
+
+The system uses multiple fallback paths to locate scripts:
+1. Current working directory
+2. Parent directories (up to 5 levels)
+3. Hardcoded paths relative to script location
+4. Dynamic sys.path modifications
+
+### Configuration Files
+
+#### Active Configuration:
+- **recovery_config.yaml** - Actively used by error_recovery.py for automated error recovery
+  - Defines recovery strategies for 8+ error types
+  - Customizable retry limits and parameters
+  - Falls back to defaults if not found
+
+#### Note on workflows.yaml:
+- The file `workflows.yaml` exists but is not currently loaded by the system
+- All workflow definitions are hardcoded in the Python scripts
+- This may be implemented in future versions for external workflow configuration
+
+---
+
 ## Best Practices
 
 1. **Start Small**: Test workflows with 1-2 structures first
