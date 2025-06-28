@@ -2080,9 +2080,12 @@ class WorkflowPlanner:
         
     def get_required_scripts(self, calc_type: str) -> List[str]:
         """Determine which SLURM scripts are needed for a calculation type"""
-        if calc_type in ["OPT", "OPT2", "SP", "FREQ"]:
+        # Extract base calculation type (remove numbers)
+        base_type = calc_type.rstrip('0123456789')
+        
+        if base_type in ["OPT", "SP", "FREQ"]:
             return ["submitcrystal23.sh"]
-        elif calc_type in ["BAND", "DOSS", "TRANSPORT"]:
+        elif base_type in ["BAND", "DOSS", "TRANSPORT"]:
             return ["submit_prop.sh"]
         else:
             return ["submitcrystal23.sh"]  # Default
@@ -2202,51 +2205,59 @@ class WorkflowPlanner:
     def apply_calc_type_scaling(self, resources: Dict[str, Any], calc_type: str) -> Dict[str, Any]:
         """Apply calculation-type specific resource scaling"""
         
+        # Extract base calculation type for scaling (handle numbered variants)
+        base_type = calc_type.rstrip('0123456789')
+        
         # Resource scaling based on workflows.yaml analysis
         scaling_rules = {
             "OPT": {"walltime_factor": 1.0, "memory_factor": 1.0},  # Standard - 7 days
-            "OPT2": {"walltime_factor": 1.0, "memory_factor": 1.0}, # Second opt - 7 days
             "SP": {"walltime_factor": 0.43, "memory_factor": 0.8}, # 3 days (3/7 ≈ 0.43)
             "FREQ": {"walltime_factor": 1.0, "memory_factor": 1.5}, # 7 days (same as OPT)
             "BAND": {"walltime_factor": 1.0, "memory_factor": 0.6}, # 1 day (base is already 1 day)
             "DOSS": {"walltime_factor": 1.0, "memory_factor": 0.6}  # 1 day (base is already 1 day)
         }
         
-        if calc_type in scaling_rules:
+        # Use base type for lookup (so BAND2, BAND3 etc use BAND scaling)
+        if base_type in scaling_rules:
+            scaling = scaling_rules[base_type]
+        elif calc_type in scaling_rules:  # Fallback for exact match (like OPT2 if explicitly defined)
             scaling = scaling_rules[calc_type]
+        else:
+            # No scaling if type not found
+            return resources
             
-            # Apply walltime scaling
-            if "walltime" in resources:
-                current_walltime = resources["walltime"]
-                if "-" in current_walltime:
-                    # Format: D-HH:MM:SS
-                    days, time_part = current_walltime.split("-")
-                    hours = int(time_part.split(":")[0])
-                    total_hours = int(days) * 24 + hours
-                    new_total_hours = max(1, int(total_hours * scaling["walltime_factor"]))
-                    new_days = new_total_hours // 24
-                    new_hours = new_total_hours % 24
-                    resources["walltime"] = f"{new_days}-{new_hours:02d}:00:00"
-                else:
-                    # Format: H:MM:SS (legacy)
-                    hours = int(current_walltime.split(":")[0])
-                    new_hours = max(1, int(hours * scaling["walltime_factor"]))
-                    resources["walltime"] = f"{new_hours}:00:00"
-                
-            # Apply memory scaling
-            memory_factor = scaling["memory_factor"]
-            if "memory_per_cpu" in resources:
-                current_mem = resources["memory_per_cpu"]
-                if current_mem.endswith("G"):
-                    mem_val = int(current_mem[:-1])
-                    new_mem = max(1, int(mem_val * memory_factor))
-                    resources["memory_per_cpu"] = f"{new_mem}G"
-            elif "memory" in resources:
-                current_mem = resources["memory"]
-                if current_mem.endswith("G"):
-                    mem_val = int(current_mem[:-1])
-                    new_mem = max(1, int(mem_val * memory_factor))
-                    resources["memory"] = f"{new_mem}G"
+        # Apply walltime scaling
+        if "walltime" in resources:
+            current_walltime = resources["walltime"]
+            if "-" in current_walltime:
+                # Format: D-HH:MM:SS
+                days, time_part = current_walltime.split("-")
+                hours = int(time_part.split(":")[0])
+                total_hours = int(days) * 24 + hours
+                new_total_hours = max(1, int(total_hours * scaling["walltime_factor"]))
+                new_days = new_total_hours // 24
+                new_hours = new_total_hours % 24
+                resources["walltime"] = f"{new_days}-{new_hours:02d}:00:00"
+            else:
+                # Format: H:MM:SS (legacy)
+                hours = int(current_walltime.split(":")[0])
+                new_hours = max(1, int(hours * scaling["walltime_factor"]))
+                resources["walltime"] = f"{new_hours}:00:00"
+            
+        # Apply memory scaling
+        memory_factor = scaling["memory_factor"]
+        if "memory_per_cpu" in resources:
+            current_mem = resources["memory_per_cpu"]
+            if current_mem.endswith("G"):
+                mem_val = int(current_mem[:-1])
+                new_mem = max(1, int(mem_val * memory_factor))
+                resources["memory_per_cpu"] = f"{new_mem}G"
+        elif "memory" in resources:
+            current_mem = resources["memory"]
+            if current_mem.endswith("G"):
+                mem_val = int(current_mem[:-1])
+                new_mem = max(1, int(mem_val * memory_factor))
+                resources["memory"] = f"{new_mem}G"
                     
         return resources
         
