@@ -52,6 +52,9 @@ class WorkflowEngine:
         self.workflow_dir = self.base_work_dir / "workflow_staging"
         self.workflow_dir.mkdir(exist_ok=True)
         
+        # Clean up old workflow staging directories (older than 7 days)
+        self._cleanup_old_workflow_dirs()
+        
     def get_workflow_sequence(self, workflow_id: str) -> Optional[List[str]]:
         """Get the planned workflow sequence for a workflow ID"""
         if not workflow_id:
@@ -89,6 +92,56 @@ class WorkflowEngine:
                 
         # If not found, return next available step
         return len(workflow_sequence) + 1
+        
+    def _cleanup_old_workflow_dirs(self):
+        """Clean up old workflow staging directories to prevent accumulation"""
+        if not self.workflow_dir.exists():
+            return
+            
+        # Clean up directories older than 7 days
+        cutoff_time = datetime.now().timestamp() - (7 * 24 * 60 * 60)
+        
+        for item in self.workflow_dir.iterdir():
+            if item.is_dir():
+                # Check directory age
+                try:
+                    dir_mtime = item.stat().st_mtime
+                    if dir_mtime < cutoff_time:
+                        # Remove old directory
+                        shutil.rmtree(item, ignore_errors=True)
+                        print(f"Cleaned up old workflow directory: {item.name}")
+                except Exception as e:
+                    # Skip if we can't access the directory
+                    pass
+                    
+        # Also clean up failed workflow directories
+        self._cleanup_failed_workflow_dirs()
+                    
+    def _cleanup_failed_workflow_dirs(self):
+        """Clean up workflow directories from failed generation attempts"""
+        workflow_outputs_dir = self.base_work_dir / "workflow_outputs"
+        if not workflow_outputs_dir.exists():
+            return
+            
+        # Look for workflow directories
+        for workflow_dir in workflow_outputs_dir.glob("workflow_*"):
+            if workflow_dir.is_dir():
+                # Check if directory has any successful calculations
+                has_output = any(workflow_dir.rglob("*.out"))
+                has_slurm_output = any(workflow_dir.rglob("*.o*"))
+                
+                # Check age - clean up failed dirs after 1 day
+                try:
+                    dir_mtime = workflow_dir.stat().st_mtime
+                    age_hours = (datetime.now().timestamp() - dir_mtime) / 3600
+                    
+                    if not has_output and not has_slurm_output and age_hours > 24:
+                        shutil.rmtree(workflow_dir, ignore_errors=True)
+                        print(f"Removed failed workflow directory: {workflow_dir.name}")
+                except Exception as e:
+                    # Skip if we can't access the directory
+                    pass
+                    
     def get_workflow_id_from_calculation(self, calc_dir: Path) -> Optional[str]:
         """Get workflow ID from calculation directory metadata"""
         metadata_file = calc_dir / '.workflow_metadata.json'
@@ -367,7 +420,71 @@ fi'''
                 flags=re.DOTALL
             )
         
+        # Ensure memory reporting is correct
+        customized = self._fix_memory_reporting(customized)
+        
         return customized
+    
+    def _fix_memory_reporting(self, script_content: str) -> str:
+        """
+        Fix memory reporting to handle both --mem and --mem-per-cpu formats.
+        Ensure consistent reporting of expected memory usage.
+        """
+        import re
+        
+        # Check which memory format is used
+        mem_per_cpu_match = re.search(r'#SBATCH\s+--mem-per-cpu[=\s]+(\d+)([GMK]?)B?', script_content)
+        mem_total_match = re.search(r'#SBATCH\s+--mem[=\s]+(\d+)([GMK]?)B?', script_content)
+        
+        if mem_per_cpu_match:
+            # Using per-CPU memory
+            value = int(mem_per_cpu_match.group(1))
+            unit = mem_per_cpu_match.group(2) or 'G'
+            
+            # Find number of CPUs/tasks
+            ntasks_match = re.search(r'#SBATCH\s+--ntasks[=\s]+(\d+)', script_content)
+            cpus_match = re.search(r'#SBATCH\s+--cpus-per-task[=\s]+(\d+)', script_content)
+            
+            num_cpus = 1
+            if ntasks_match:
+                num_cpus = int(ntasks_match.group(1))
+            elif cpus_match:
+                num_cpus = int(cpus_match.group(1))
+                
+            # Calculate total memory
+            total_gb = self._convert_to_gb(value * num_cpus, unit)
+            
+            # Add comment with total memory calculation
+            comment = f"\n# Total memory: {value}{unit} per CPU × {num_cpus} CPUs = {total_gb:.1f}GB total\n"
+            script_content = re.sub(
+                r'(#SBATCH\s+--mem-per-cpu[=\s]+\d+[GMK]?B?)',
+                r'\1' + comment,
+                script_content
+            )
+            
+        elif mem_total_match:
+            # Using total memory - add clarifying comment
+            value = int(mem_total_match.group(1))
+            unit = mem_total_match.group(2) or 'G'
+            total_gb = self._convert_to_gb(value, unit)
+            
+            comment = f"\n# Total memory: {total_gb:.1f}GB\n"
+            script_content = re.sub(
+                r'(#SBATCH\s+--mem[=\s]+\d+[GMK]?B?)',
+                r'\1' + comment,
+                script_content
+            )
+            
+        return script_content
+    
+    def _convert_to_gb(self, value: int, unit: str) -> float:
+        """Convert memory value to GB"""
+        if unit == 'M':
+            return value / 1024
+        elif unit == 'K':
+            return value / (1024 * 1024)
+        else:  # G or no unit
+            return float(value)
     
     def _submit_calculation_to_slurm(self, script_path: Path, work_dir: Path) -> Optional[str]:
         """Submit calculation to SLURM and return job ID"""
@@ -934,6 +1051,11 @@ fi'''
         """
         print(f"Generating {target_calc_type} calculation")
         
+        # Validate templates exist before attempting generation
+        if not self._validate_property_templates(target_calc_type):
+            print(f"ERROR: Required templates for {target_calc_type} generation not found")
+            return None
+        
         # Parse target calculation type to get base type and number
         base_type, calc_num = self._parse_calc_type(target_calc_type)
         
@@ -1435,6 +1557,9 @@ fi'''
         """
         new_calc_ids = []
         
+        # Clean up any failed workflow directories proactively
+        self._cleanup_failed_workflow_dirs()
+        
         # Get the completed calculation
         completed_calc = self.db.get_calculation(completed_calc_id)
         if not completed_calc:
@@ -1502,14 +1627,11 @@ fi'''
                         else:
                             print(f"No completed OPT calculation found for FREQ generation")
             else:
-                # Default behavior: generate SP and FREQ in parallel
+                # Default behavior: generate SP only (FREQ should be explicitly requested in workflow)
                 sp_calc_id = self.generate_sp_from_opt(completed_calc_id)
                 if sp_calc_id:
                     new_calc_ids.append(sp_calc_id)
-                # Also generate FREQ from OPT (runs in parallel with SP)
-                freq_calc_id = self.generate_freq_from_opt(completed_calc_id)
-                if freq_calc_id:
-                    new_calc_ids.append(freq_calc_id)
+                # Note: FREQ generation removed from default behavior - should be explicitly in workflow plan
         
         elif base_type == "SP":
             # Generate next steps based on workflow plan or default behavior
@@ -1581,49 +1703,58 @@ fi'''
                 current_index = self._find_calc_position_in_sequence(calc_type, completed_calc, planned_sequence)
                 next_steps = self._get_next_steps_from_sequence(current_index, planned_sequence, calc_type)
                 
-                for next_calc_type in next_steps:
-                    next_base_type, next_num = self._parse_calc_type(next_calc_type)
-                    
-                    if next_base_type == "OPT":
-                        # OPT after FREQ/BAND/DOSS needs geometry from highest completed OPT
-                        all_calcs = self.db.get_calculations_by_status(material_id=material_id)
-                        completed_by_type = {}
-                        for calc in all_calcs:
-                            if calc['status'] == 'completed':
-                                ct = calc['calc_type']
-                                if ct not in completed_by_type:
-                                    completed_by_type[ct] = []
-                                completed_by_type[ct].append(calc)
+                # Only generate next steps if we have them in the plan
+                if next_steps:
+                    for next_calc_type in next_steps:
+                        next_base_type, next_num = self._parse_calc_type(next_calc_type)
                         
-                        # Find highest completed OPT
-                        opt_source = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
-                        if opt_source:
-                            opt_calc_id = self.generate_numbered_calculation(opt_source, next_calc_type)
-                            if opt_calc_id:
-                                new_calc_ids.append(opt_calc_id)
-                        else:
-                            print(f"No completed OPT found to use as source for {next_calc_type}")
-                    elif next_base_type == "FREQ":
-                        # Another FREQ calculation - also needs OPT geometry
-                        all_calcs = self.db.get_calculations_by_status(material_id=material_id)
-                        completed_by_type = {}
-                        for calc in all_calcs:
-                            if calc['status'] == 'completed':
-                                ct = calc['calc_type']
-                                if ct not in completed_by_type:
-                                    completed_by_type[ct] = []
-                                completed_by_type[ct].append(calc)
-                        
-                        opt_source = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
-                        if opt_source:
-                            freq_calc_id = self.generate_freq_from_opt(opt_source)
-                            if freq_calc_id:
-                                new_calc_ids.append(freq_calc_id)
-                    # Add other calculation types as needed
+                        if next_base_type == "OPT":
+                            # OPT after FREQ/BAND/DOSS needs geometry from highest completed OPT
+                            all_calcs = self.db.get_calculations_by_status(material_id=material_id)
+                            completed_by_type = {}
+                            for calc in all_calcs:
+                                if calc['status'] == 'completed':
+                                    ct = calc['calc_type']
+                                    if ct not in completed_by_type:
+                                        completed_by_type[ct] = []
+                                    completed_by_type[ct].append(calc)
+                            
+                            # Find highest completed OPT
+                            opt_source = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
+                            if opt_source:
+                                opt_calc_id = self.generate_numbered_calculation(opt_source, next_calc_type)
+                                if opt_calc_id:
+                                    new_calc_ids.append(opt_calc_id)
+                            else:
+                                print(f"No completed OPT found to use as source for {next_calc_type}")
+                        elif next_base_type == "FREQ":
+                            # Another FREQ calculation - also needs OPT geometry
+                            all_calcs = self.db.get_calculations_by_status(material_id=material_id)
+                            completed_by_type = {}
+                            for calc in all_calcs:
+                                if calc['status'] == 'completed':
+                                    ct = calc['calc_type']
+                                    if ct not in completed_by_type:
+                                        completed_by_type[ct] = []
+                                    completed_by_type[ct].append(calc)
+                            
+                            opt_source = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
+                            if opt_source:
+                                freq_calc_id = self.generate_freq_from_opt(opt_source)
+                                if freq_calc_id:
+                                    new_calc_ids.append(freq_calc_id)
+                        # Add other calculation types as needed
         
         # Note: We do NOT check for all pending calculations here anymore
         # The workflow should progress step by step based on actual dependencies
         # This prevents premature triggering of later steps
+        
+        # Update workflow state if we have a workflow_id
+        if workflow_id:
+            try:
+                self.db.update_workflow_state(workflow_id, completed_step=calc_type)
+            except Exception as e:
+                print(f"Failed to update workflow state: {e}")
         
         if new_calc_ids:
             print(f"Generated {len(new_calc_ids)} new calculations: {new_calc_ids}")
@@ -1715,6 +1846,51 @@ fi'''
         
         return next_steps
         
+    def _validate_property_templates(self, calc_type: str) -> bool:
+        """
+        Validate that required templates exist for property calculations.
+        
+        Args:
+            calc_type: Calculation type (BAND, DOSS, etc.)
+            
+        Returns:
+            True if templates exist, False otherwise
+        """
+        base_type, _ = self._parse_calc_type(calc_type)
+        
+        if base_type == "BAND":
+            # Check for d3_input templates
+            template_dir = Path("/mnt/home/djokicma/bin/d3_input")
+            if not template_dir.exists():
+                print(f"BAND template directory not found: {template_dir}")
+                return False
+                
+            # Check for at least some essential templates
+            essential_templates = ["Cubic_Simple.d3", "Hexagonal.d3", "Tetragonal_Simple.d3"]
+            missing_templates = []
+            for template in essential_templates:
+                if not (template_dir / template).exists():
+                    missing_templates.append(template)
+                    
+            if missing_templates:
+                print(f"Missing BAND templates: {missing_templates}")
+                # Still allow if at least one template exists
+                return len(missing_templates) < len(essential_templates)
+                
+            return True
+            
+        elif base_type == "DOSS":
+            # DOSS uses alldos.py which should generate its own templates
+            # Just check that the script exists
+            alldos_script = self.script_paths.get('alldos')
+            if not alldos_script or not Path(alldos_script).exists():
+                print(f"alldos.py script not found: {alldos_script}")
+                return False
+            return True
+            
+        # Other calculation types don't need special templates
+        return True
+    
     def _parse_calc_type(self, calc_type: str) -> Tuple[str, int]:
         """
         Parse calculation type to extract base type and number.

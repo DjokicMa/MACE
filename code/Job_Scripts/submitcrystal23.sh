@@ -33,7 +33,7 @@ mkdir  -p $scratch/$JOB
 cp $DIR/$JOB.d12  $scratch/$JOB/INPUT
 cd $scratch/$JOB
 
-mpirun -n $SLURM_NTASKS /opt/software-current/2023.06/x86_64/intel/skylake_avx512/software/CRYSTAL/23-intel-2023a/bin/Pcrystal 2>&1 >& $DIR/${JOB}.out
+mpirun -n $SLURM_NTASKS $EBROOTCRYSTAL/bin/Pcrystal 2>&1 >& $DIR/${JOB}.out
 #srun Pcrystal 2>&1 >& $DIR/${JOB}.out
 cp fort.9 ${DIR}/${JOB}.f9 
 
