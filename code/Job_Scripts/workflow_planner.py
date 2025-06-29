@@ -825,8 +825,8 @@ class WorkflowPlanner:
                 config = self.configure_analysis_step("DOSS")
                 step_configs[f"{calc_type}_{i+1}"] = config
                 
-            elif calc_type == "FREQ":
-                # Frequency calculation
+            elif calc_type.startswith("FREQ"):
+                # Frequency calculations (FREQ, FREQ2, FREQ3, etc.)
                 config = self.configure_frequency_step(calc_type, i+1)
                 step_configs[f"{calc_type}_{i+1}"] = config
             
