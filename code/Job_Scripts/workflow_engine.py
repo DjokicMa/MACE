@@ -92,6 +92,93 @@ class WorkflowEngine:
                 
         # If not found, return next available step
         return len(workflow_sequence) + 1
+    
+    def get_workflow_step_config(self, workflow_id: str, calc_type: str) -> Optional[Dict[str, Any]]:
+        """Get workflow step configuration for a specific calculation type"""
+        if not workflow_id:
+            return None
+            
+        # Look for workflow plan file
+        workflow_configs_dir = self.base_work_dir / "workflow_configs"
+        if not workflow_configs_dir.exists():
+            return None
+            
+        workflow_plan_file = workflow_configs_dir / f"workflow_plan_{workflow_id.replace('workflow_', '')}.json"
+        if not workflow_plan_file.exists():
+            return None
+            
+        try:
+            with open(workflow_plan_file, 'r') as f:
+                plan = json.load(f)
+                step_configs = plan.get('step_configurations', {})
+                
+                # Find configuration for this calc type
+                for step_key, config in step_configs.items():
+                    if calc_type in step_key:
+                        return config
+                        
+                return None
+        except Exception:
+            return None
+    
+    def retry_failed_calculation(self, calc_id: str, max_retries: int = 3) -> Optional[str]:
+        """
+        Retry a failed calculation in the same directory.
+        
+        Args:
+            calc_id: ID of the failed calculation
+            max_retries: Maximum number of retry attempts
+            
+        Returns:
+            Job ID if resubmitted successfully, None otherwise
+        """
+        calc = self.db.get_calculation(calc_id)
+        if not calc:
+            print(f"Calculation {calc_id} not found")
+            return None
+            
+        # Check retry count
+        retry_count = calc.get('retry_count', 0)
+        if retry_count >= max_retries:
+            print(f"Max retries ({max_retries}) reached for {calc_id}")
+            return None
+            
+        calc_type = calc['calc_type']
+        work_dir = Path(calc['work_dir'])
+        
+        # Apply error recovery fixes if available
+        if hasattr(self, 'error_recovery') and self.error_recovery:
+            try:
+                fixed = self.error_recovery.fix_calculation_errors(calc_id)
+                if not fixed:
+                    print(f"Could not fix errors for {calc_id}")
+                    return None
+            except Exception as e:
+                print(f"Error recovery failed: {e}")
+                
+        # Find SLURM script in the directory
+        slurm_scripts = list(work_dir.glob("*.sh"))
+        if not slurm_scripts:
+            print(f"No SLURM script found in {work_dir}")
+            return None
+            
+        slurm_script = slurm_scripts[0]
+        
+        # Re-submit the job
+        job_id = self._submit_calculation_to_slurm(slurm_script, work_dir)
+        if job_id:
+            # Update database with new submission
+            self.db.update_calculation_status(calc_id, 'submitted', slurm_job_id=job_id)
+            # Note: update_calculation_retry_count should be added to MaterialDatabase
+            # For now, update the settings
+            settings = json.loads(calc.get('settings_json', '{}'))
+            settings['retry_count'] = retry_count + 1
+            self.db.update_calculation_settings(calc_id, settings)
+            print(f"Retried {calc_type} calculation as job {job_id} (attempt {retry_count + 1}/{max_retries})")
+            return job_id
+        else:
+            print(f"Failed to resubmit {calc_type} calculation")
+            return None
         
     def _cleanup_old_workflow_dirs(self):
         """Clean up old workflow staging directories to prevent accumulation"""
@@ -317,9 +404,10 @@ class WorkflowEngine:
         
         # Debug: Print template path being used
         print(f"  Using template: {template_script}")
-        print(f"  Template exists: {template_script.exists()}")
+        if template_script:
+            print(f"  Template exists: {template_script.exists()}")
         
-        if not template_script.exists():
+        if not template_script or not template_script.exists():
             # Fall back to basic template
             if calc_type in ["OPT", "SP", "FREQ"]:
                 template_script = base_dir / "submitcrystal23.sh"
@@ -664,6 +752,7 @@ fi'''
         Returns:
             (success, stdout, stderr)
         """
+        script_path = Path(script_path)
         if not script_path.exists():
             return False, "", f"Script not found: {script_path}"
             
@@ -1122,13 +1211,26 @@ fi'''
             )
             
             if not success:
-                print(f"{script_key} script failed: {stderr}")
+                print(f"{script_key} script failed")
+                print(f"STDOUT: {stdout}")
+                print(f"STDERR: {stderr}")
+                # Log the contents of the work directory for debugging
+                print(f"Files in work directory {work_dir}:")
+                for f in work_dir.iterdir():
+                    print(f"  - {f.name}")
                 return None
                 
             # Find generated .d3 file
             output_files = list(work_dir.glob(file_pattern)) + list(work_dir.glob(file_pattern2))
             if not output_files:
                 print(f"No {base_type} input file generated by {script_key}")
+                print(f"Looked for patterns: {file_pattern}, {file_pattern2}")
+                print(f"Files in work directory {work_dir}:")
+                for f in work_dir.iterdir():
+                    print(f"  - {f.name}")
+                # Also check stdout for any errors from the script
+                if stdout:
+                    print(f"Script output: {stdout}")
                 return None
                 
             output_input_file = output_files[0]
@@ -1159,7 +1261,7 @@ fi'''
             
             # Determine step number from workflow plan if available
             if workflow_id:
-                step_num = self.get_workflow_step_number(workflow_id, base_type)
+                step_num = self.get_workflow_step_number(workflow_id, target_calc_type)
             else:
                 # Fallback to default step numbers
                 step_numbers = {"BAND": 3, "DOSS": 4}
@@ -1167,7 +1269,8 @@ fi'''
             
             # Create material-specific directory for calculation
             dir_name = f"{core_name}{calc_suffix}"
-            calc_step_dir = workflow_base / f"step_{step_num:03d}_{base_type}" / dir_name
+            # Use target_calc_type (e.g., BAND2) instead of base_type (e.g., BAND) for directory naming
+            calc_step_dir = workflow_base / f"step_{step_num:03d}_{target_calc_type}" / dir_name
             calc_step_dir.mkdir(parents=True, exist_ok=True)
             
             # Move files to material's directory with consistent naming
@@ -1236,167 +1339,20 @@ fi'''
         """
         return self.generate_numbered_calculation(sp_calc_id, "FREQ")
         
-    def generate_freq_from_opt(self, opt_calc_id: str) -> Optional[str]:
+    def generate_freq_from_opt(self, opt_calc_id: str, target_calc_type: str = "FREQ") -> Optional[str]:
         """
         Generate FREQ calculation from completed OPT using CRYSTALOptToD12.py.
+        Supports numbered variants (FREQ, FREQ2, FREQ3, etc.)
         
         Args:
             opt_calc_id: ID of completed OPT calculation
+            target_calc_type: Target calculation type (FREQ, FREQ2, etc.)
             
         Returns:
             New FREQ calculation ID if successful, None otherwise
         """
-        print(f"Generating FREQ calculation from OPT {opt_calc_id}")
-        
-        # Get OPT calculation details
-        opt_calc = self.db.get_calculation(opt_calc_id)
-        if not opt_calc or opt_calc['status'] != 'completed':
-            print(f"OPT calculation {opt_calc_id} not completed")
-            return None
-            
-        material_id = opt_calc['material_id']
-        opt_output_file = Path(opt_calc['output_file'])
-        opt_input_file = Path(opt_calc['input_file'])
-        
-        if not opt_output_file.exists():
-            print(f"OPT output file not found: {opt_output_file}")
-            return None
-            
-        # Create isolated directory for CRYSTALOptToD12.py
-        work_dir = self.create_isolated_calculation_directory(
-            material_id, "FREQ_generation", [opt_output_file, opt_input_file]
-        )
-        
-        try:
-            # Run CRYSTALOptToD12.py in isolated directory
-            crystal_to_d12_script = self.script_paths['crystal_to_d12']
-            
-            # Find the specific out and d12 files in the work directory
-            out_files = list(work_dir.glob("*.out"))
-            d12_files = list(work_dir.glob("*.d12"))
-            
-            if not out_files:
-                print(f"No .out file found in {work_dir}")
-                return None
-                
-            out_file = out_files[0]
-            d12_file = d12_files[0] if d12_files else None
-            
-            # Use single file mode with automatic input responses for FREQ
-            args = [
-                "--out-file", str(out_file),
-                "--output-dir", str(work_dir)
-            ]
-            
-            if d12_file:
-                args.extend(["--d12-file", str(d12_file)])
-            
-            # Prepare input responses for FREQ calculation
-            # 1. Keep settings? → y (yes, keep original settings from d12)
-            # 2. Calc type → 3 (FREQ)
-            # 3. Symmetry choice → 1 (Write only unique atoms)
-            # 4. Additional defaults for any other prompts
-            input_responses = "y\n3\n1\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
-            
-            success, stdout, stderr = self.run_script_in_isolated_directory(
-                crystal_to_d12_script, work_dir, args, input_data=input_responses
-            )
-            
-            if not success:
-                print(f"CRYSTALOptToD12.py failed for FREQ: {stderr}")
-                return None
-                
-            # Find generated FREQ .d12 file
-            freq_files = list(work_dir.glob("*FREQ*.d12"))
-            if not freq_files:
-                # Try other patterns
-                freq_files = list(work_dir.glob("*_freq*.d12")) + list(work_dir.glob("*FREQCALC*.d12"))
-                
-            if not freq_files:
-                print("No FREQ input file generated by CRYSTALOptToD12.py")
-                return None
-                
-            freq_input_file = freq_files[0]
-            
-            # Get workflow output directory and create material-specific directory
-            workflow_base = self.get_workflow_output_base(opt_calc)
-            
-            # Extract workflow_id from parent calculation first
-            workflow_id = None
-            workflow_step = None
-            if opt_calc.get('settings_json'):
-                try:
-                    parent_settings = json.loads(opt_calc['settings_json'])
-                    workflow_id = parent_settings.get('workflow_id')
-                    workflow_step = parent_settings.get('workflow_step')
-                except json.JSONDecodeError:
-                    pass
-            
-            # Get core material name and determine FREQ suffix
-            core_name = self.extract_core_material_name(material_id)
-            freq_suffix = self.get_next_calc_suffix(core_name, "FREQ", workflow_base)
-            
-            # Use core name directly (already clean)
-            clean_job_name = core_name
-            
-            # Create material-specific directory for FREQ calculation
-            dir_name = f"{core_name}{freq_suffix}"
-            # Determine step number from workflow plan if available
-            if workflow_id:
-                step_num = self.get_workflow_step_number(workflow_id, "FREQ")
-            else:
-                step_num = 5  # Default for FREQ
-            freq_step_dir = workflow_base / f"step_{step_num:03d}_FREQ" / dir_name
-            freq_step_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Move FREQ file to material's directory with consistent naming
-            clean_freq_name = f"{core_name}{freq_suffix}.d12"
-            freq_final_location = freq_step_dir / clean_freq_name
-            shutil.move(freq_input_file, freq_final_location)
-            
-            # Create SLURM script for FREQ calculation
-            # Use the clean material name for the job
-            freq_job_name = f"{clean_job_name}{freq_suffix}"
-            slurm_script_path = self._create_slurm_script_for_calculation(
-                freq_step_dir, freq_job_name, "FREQ", step_num, workflow_base.name
-            )
-            
-            # Create FREQ calculation record
-            # Build settings with workflow_id propagation
-            settings = {
-                'generated_from_opt': opt_calc_id,
-                'generation_method': 'CRYSTALOptToD12.py',
-                'workflow_step': True,
-                'slurm_script': str(slurm_script_path)
-            }
-            
-            # Add workflow_id if it exists
-            if workflow_id:
-                settings['workflow_id'] = workflow_id
-                if workflow_step is not None:
-                    settings['workflow_step'] = workflow_step + 1
-            
-            freq_calc_id = self.db.create_calculation(
-                material_id=material_id,
-                calc_type="FREQ",
-                input_file=str(freq_final_location),
-                work_dir=str(freq_step_dir),
-                settings=settings
-            )
-            
-            # Submit FREQ calculation
-            slurm_job_id = self._submit_calculation_to_slurm(slurm_script_path, freq_step_dir)
-            if slurm_job_id:
-                self.db.update_calculation_status(freq_calc_id, 'submitted', slurm_job_id=slurm_job_id)
-                print(f"Generated and submitted FREQ calculation {freq_calc_id}: Job {slurm_job_id}")
-            else:
-                print(f"Generated FREQ calculation {freq_calc_id} but submission failed: {freq_final_location}")
-            
-            return freq_calc_id
-            
-        finally:
-            # Clean up isolated directory
-            shutil.rmtree(work_dir, ignore_errors=True)
+        # Simply delegate to generate_numbered_calculation which handles all types
+        return self.generate_numbered_calculation(opt_calc_id, target_calc_type)
             
     def _check_and_trigger_pending_calculations(self, material_id: str, planned_sequence: List[str]) -> List[str]:
         """
@@ -1517,7 +1473,7 @@ fi'''
                 elif base_type == "FREQ":
                     # FREQ always uses generate_freq_from_opt with an OPT calculation
                     # source_calc_id should already be from an OPT due to fixed dependency logic
-                    calc_id = self.generate_freq_from_opt(source_calc_id)
+                    calc_id = self.generate_freq_from_opt(source_calc_id, planned_type)
                 elif base_type in ["BAND", "DOSS"]:
                     calc_id = self.generate_property_calculation(source_calc_id, planned_type)
                 elif base_type == "OPT":
@@ -1643,49 +1599,62 @@ fi'''
                 
                 # Generate calculations for all next steps (which may be parallel)
                 for next_calc_type in next_steps:
-                    next_base_type, next_num = self._parse_calc_type(next_calc_type)
-                    
-                    if next_base_type == "DOSS":
-                        print(f"Generating {next_calc_type} from planned sequence...")
-                        doss_calc_id = self.generate_property_calculation(completed_calc_id, next_calc_type)
-                        if doss_calc_id:
-                            new_calc_ids.append(doss_calc_id)
-                    elif next_base_type == "BAND":
-                        print(f"Generating {next_calc_type} from planned sequence...")
-                        band_calc_id = self.generate_property_calculation(completed_calc_id, next_calc_type)
-                        if band_calc_id:
-                            new_calc_ids.append(band_calc_id)
-                    elif next_base_type == "OPT":
-                        # Check if we have a previous OPT to use
-                        all_calcs = self.db.get_calculations_by_status(material_id=material_id)
-                        completed_by_type = {}
-                        for calc in all_calcs:
-                            if calc['status'] == 'completed':
-                                ct = calc['calc_type']
-                                if ct not in completed_by_type:
-                                    completed_by_type[ct] = []
-                                completed_by_type[ct].append(calc)
+                    try:
+                        next_base_type, next_num = self._parse_calc_type(next_calc_type)
                         
-                        # Find any completed OPT
-                        opt_source = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
-                        
-                        if opt_source:
-                            # Use existing OPT as source
-                            print(f"Generating {next_calc_type} from previous OPT...")
-                            opt_calc_id = self.generate_numbered_calculation(opt_source, next_calc_type)
-                        else:
-                            # No OPT exists, generate from CIF
-                            print(f"No previous OPT found. Generating {next_calc_type} from CIF...")
-                            opt_calc_id = self.generate_calculation_from_cif(material_id, next_calc_type)
-                        
-                        if opt_calc_id:
-                            new_calc_ids.append(opt_calc_id)
-                    elif next_base_type == "SP":
-                        # Generate another SP from current SP
-                        print(f"Generating {next_calc_type} from SP...")
-                        sp_calc_id = self.generate_numbered_calculation(completed_calc_id, next_calc_type)
-                        if sp_calc_id:
-                            new_calc_ids.append(sp_calc_id)
+                        if next_base_type == "DOSS":
+                            print(f"Generating {next_calc_type} from planned sequence...")
+                            doss_calc_id = self.generate_property_calculation(completed_calc_id, next_calc_type)
+                            if doss_calc_id:
+                                new_calc_ids.append(doss_calc_id)
+                            else:
+                                print(f"Failed to generate {next_calc_type}, continuing with other steps...")
+                        elif next_base_type == "BAND":
+                            print(f"Generating {next_calc_type} from planned sequence...")
+                            band_calc_id = self.generate_property_calculation(completed_calc_id, next_calc_type)
+                            if band_calc_id:
+                                new_calc_ids.append(band_calc_id)
+                            else:
+                                print(f"Failed to generate {next_calc_type}, continuing with other steps...")
+                        elif next_base_type == "OPT":
+                            # Check if we have a previous OPT to use
+                            all_calcs = self.db.get_calculations_by_status(material_id=material_id)
+                            completed_by_type = {}
+                            for calc in all_calcs:
+                                if calc['status'] == 'completed':
+                                    ct = calc['calc_type']
+                                    if ct not in completed_by_type:
+                                        completed_by_type[ct] = []
+                                    completed_by_type[ct].append(calc)
+                            
+                            # Find any completed OPT
+                            opt_source = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
+                            
+                            if opt_source:
+                                # Use existing OPT as source
+                                print(f"Generating {next_calc_type} from previous OPT...")
+                                opt_calc_id = self.generate_numbered_calculation(opt_source, next_calc_type)
+                            else:
+                                # No OPT exists, generate from CIF
+                                print(f"No previous OPT found. Generating {next_calc_type} from CIF...")
+                                opt_calc_id = self.generate_calculation_from_cif(material_id, next_calc_type)
+                            
+                            if opt_calc_id:
+                                new_calc_ids.append(opt_calc_id)
+                            else:
+                                print(f"Failed to generate {next_calc_type}, continuing with other steps...")
+                        elif next_base_type == "SP":
+                            # Generate another SP from current SP
+                            print(f"Generating {next_calc_type} from SP...")
+                            sp_calc_id = self.generate_numbered_calculation(completed_calc_id, next_calc_type)
+                            if sp_calc_id:
+                                new_calc_ids.append(sp_calc_id)
+                            else:
+                                print(f"Failed to generate {next_calc_type}, continuing with other steps...")
+                    except Exception as e:
+                        print(f"Exception generating {next_calc_type}: {e}")
+                        print(f"Continuing with other steps...")
+                        continue
             else:
                 # Default behavior: generate both DOSS and BAND
                 print("No planned sequence found. Using default: generating both DOSS and BAND...")
@@ -1835,14 +1804,18 @@ fi'''
             # BAND and DOSS can run in parallel as they both just read the wavefunction
             if next_base in ["BAND", "DOSS"]:
                 # Check if the other property calculation is also in the sequence
-                other_prop = "DOSS" if next_base == "BAND" else "BAND"
+                other_base = "DOSS" if next_base == "BAND" else "BAND"
                 # Look for the other property calculation nearby in the sequence
                 for i in range(max(0, next_index - 1), min(len(planned_sequence), next_index + 2)):
-                    if i != next_index and planned_sequence[i] == other_prop:
-                        # Check if it hasn't been started yet
-                        if other_prop not in next_steps:
-                            next_steps.append(other_prop)
-                        break
+                    if i != next_index:
+                        # Parse the calculation type at this position
+                        check_base, check_num = self._parse_calc_type(planned_sequence[i])
+                        # If it's the complementary calculation type
+                        if check_base == other_base:
+                            # Check if it hasn't been started yet
+                            if planned_sequence[i] not in next_steps:
+                                next_steps.append(planned_sequence[i])
+                            break
         
         return next_steps
         
@@ -2188,6 +2161,17 @@ fi'''
         # Parse target calculation type
         target_base_type, target_num = self._parse_calc_type(target_calc_type)
         
+        # Extract workflow_id from parent calculation early so we can use it
+        workflow_id = None
+        workflow_step = None
+        if source_calc.get('settings_json'):
+            try:
+                parent_settings = json.loads(source_calc['settings_json'])
+                workflow_id = parent_settings.get('workflow_id')
+                workflow_step = parent_settings.get('workflow_step')
+            except json.JSONDecodeError:
+                pass
+        
         # Check for expert config file for numbered calculations (OPT2/OPT3/SP2/FREQ)
         expert_config_file = None
         if (target_base_type in ["OPT", "SP", "FREQ"]) and (target_num > 1 or target_base_type == "FREQ"):
@@ -2273,7 +2257,25 @@ fi'''
                         print(f"  Config functional: {config_content.get('functional', 'N/A')}")
                         print(f"  Config dispersion: {config_content.get('dispersion', 'N/A')}")
                 except Exception as e:
-                    print(f"  Warning: Could not read config file: {e}")
+                    print(f"  Error reading config file: {e}")
+            elif target_base_type == "OPT" and not expert_config_file:
+                # Check if workflow configuration has optimization settings
+                workflow_config = self.get_workflow_step_config(workflow_id, target_calc_type)
+                if workflow_config and 'optimization_type' in workflow_config:
+                    # Create temporary expert config
+                    temp_config = {
+                        "calculation_type": "OPT",
+                        "optimization_type": workflow_config.get('optimization_type', 'FULLOPTG'),
+                        "optimization_settings": workflow_config.get('optimization_settings', {}),
+                        "inherit_settings": workflow_config.get('inherit_settings', True)
+                    }
+                    # Write to temporary file in work directory
+                    temp_config_file = work_dir / f"{target_calc_type}_temp_config.json"
+                    with open(temp_config_file, 'w') as f:
+                        json.dump(temp_config, f, indent=2)
+                    args.extend(["--config-file", str(temp_config_file)])
+                    print(f"  Created temporary config file for {target_calc_type} with optimization settings")
+                    print(f"  Optimization type: {temp_config['optimization_type']}")
                 # With config file, we just need to confirm applying it
                 # 1. Apply config? → y (yes)
                 input_responses = "y\n"
@@ -2388,16 +2390,7 @@ fi'''
             )
             
             # Create calculation record
-            # Extract workflow_id from parent calculation if it exists
-            workflow_id = None
-            workflow_step = None
-            if source_calc.get('settings_json'):
-                try:
-                    parent_settings = json.loads(source_calc['settings_json'])
-                    workflow_id = parent_settings.get('workflow_id')
-                    workflow_step = parent_settings.get('workflow_step')
-                except json.JSONDecodeError:
-                    pass
+            # workflow_id was already extracted at the beginning of the method
             
             # Use extracted workflow_id or fallback to workflow_base.name
             if not workflow_id:

@@ -2000,7 +2000,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         )
 
 
-def process_files(output_file, input_file=None, shared_settings=None, config_file=None):
+def process_files(output_file, input_file=None, shared_settings=None, config_file=None, non_interactive=False, calc_type=None, opt_type=None, origin_setting="auto"):
     """Process CRYSTAL output and input files
 
     Args:
@@ -2008,6 +2008,10 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         input_file: Path to .d12 file (optional)
         shared_settings: Pre-defined settings to use (optional)
         config_file: Path to JSON config file (optional)
+        non_interactive: Run in non-interactive mode (optional)
+        calc_type: Calculation type for non-interactive mode (optional)
+        opt_type: Optimization type for non-interactive mode (optional)
+        origin_setting: Origin setting for non-interactive mode (optional)
 
     Returns:
         tuple: (success, settings_used)
@@ -2082,7 +2086,52 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         settings["scf_settings"] = {"method": "DIIS", "maxcycle": 800, "fmixing": 30}
 
     # Get user options or use shared settings
-    if config_file:
+    if non_interactive:
+        # Non-interactive mode - use provided options or defaults
+        options = settings.copy()
+        
+        # Set calculation type
+        if calc_type:
+            options["calculation_type"] = calc_type
+        else:
+            # Default to SP if not specified
+            options["calculation_type"] = "SP"
+        
+        # Set optimization type if it's an OPT calculation
+        if options["calculation_type"] == "OPT":
+            if opt_type:
+                options["optimization_type"] = opt_type
+            else:
+                # Default to FULLOPTG
+                options["optimization_type"] = "FULLOPTG"
+        
+        # Handle origin setting
+        if origin_setting == "auto":
+            # Auto-detect based on space group
+            spacegroup = settings.get('spacegroup', 1)
+            if 143 <= spacegroup <= 194:
+                # Hexagonal space groups
+                options["origin_setting"] = "0 1 0"
+            elif spacegroup in [146, 148, 155, 160, 161, 166, 167]:
+                # Rhombohedral space groups that can use hexagonal setting
+                options["origin_setting"] = "0 1 0"
+            else:
+                # Most other space groups use standard setting
+                options["origin_setting"] = "0 0 1"
+        else:
+            options["origin_setting"] = origin_setting
+        
+        # Keep all other settings from the extracted data
+        if "write_only_unique" not in options:
+            options["write_only_unique"] = True
+            
+        print("\nRunning in non-interactive mode with settings:")
+        print(f"  Calculation type: {options['calculation_type']}")
+        if options['calculation_type'] == 'OPT':
+            print(f"  Optimization type: {options['optimization_type']}")
+        print(f"  Origin setting: {options['origin_setting']}")
+        
+    elif config_file:
         # Load settings from config file
         print(f"\nLoading settings from config file: {config_file}")
         try:
@@ -2102,8 +2151,12 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             print(f"DFT grid: {config_data.get('dft_grid', 'Not specified')}")
             print("="*70)
             
-            # Ask user if they want to apply these settings
-            apply_config = yes_no_prompt("\nApply these settings from config file?", default="yes")
+            # Ask user if they want to apply these settings (skip in non-interactive mode)
+            if non_interactive:
+                apply_config = True
+                print("\nApplying config file settings (non-interactive mode).")
+            else:
+                apply_config = yes_no_prompt("\nApply these settings from config file?", default="yes")
             
             if apply_config:
                 # Use settings from config file
@@ -2252,6 +2305,26 @@ def main():
         type=str,
         help="JSON config file to load calculation settings from (skips interactive prompts)",
     )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Run in non-interactive mode (skip all prompts, use defaults or provided options)",
+    )
+    parser.add_argument(
+        "--calc-type",
+        choices=["SP", "OPT", "FREQ"],
+        help="Calculation type for non-interactive mode",
+    )
+    parser.add_argument(
+        "--opt-type",
+        choices=["FULLOPTG", "ATOMONLY", "CELLONLY"],
+        help="Optimization type for OPT calculations in non-interactive mode",
+    )
+    parser.add_argument(
+        "--origin-setting",
+        default="auto",
+        help="Origin setting: 'auto', '0 0 1', '0 1 0', etc. (default: auto-detect)",
+    )
 
     args = parser.parse_args()
 
@@ -2274,7 +2347,15 @@ def main():
             print(f"Error: Output file {args.out_file} not found")
             return
 
-        success, options = process_files(args.out_file, args.d12_file, config_file=args.config_file)
+        success, options = process_files(
+            args.out_file, 
+            args.d12_file, 
+            config_file=args.config_file,
+            non_interactive=args.non_interactive,
+            calc_type=args.calc_type,
+            opt_type=args.opt_type,
+            origin_setting=args.origin_setting
+        )
 
         if success and args.save_options:
             with open(args.options_file, "w") as f:
@@ -2349,7 +2430,16 @@ def main():
                 print("No corresponding .d12 file found")
             print("=" * 70)
 
-            success, options = process_files(out_file, d12_file, shared_settings, config_file=args.config_file)
+            success, options = process_files(
+                out_file, 
+                d12_file, 
+                shared_settings, 
+                config_file=args.config_file,
+                non_interactive=args.non_interactive,
+                calc_type=args.calc_type,
+                opt_type=args.opt_type,
+                origin_setting=args.origin_setting
+            )
             if success:
                 success_count += 1
 
