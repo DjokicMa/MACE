@@ -32,6 +32,7 @@ def copy_dependencies(target_dir: str = "."):
             "files": [
                 "enhanced_queue_manager.py",
                 "material_database.py", 
+                "queue_lock_manager.py",
                 "workflow_engine.py",
                 "workflow_planner.py",
                 "workflow_executor.py",
@@ -47,6 +48,7 @@ def copy_dependencies(target_dir: str = "."):
                 "query_input_settings.py", 
                 "formula_extractor.py",
                 "crystal_property_extractor.py",
+                "file_storage_manager.py",
                 "advanced_electronic_analyzer.py",
                 "recovery_config.yaml",
                 "dat_file_processor.py",

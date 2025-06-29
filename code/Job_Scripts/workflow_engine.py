@@ -23,6 +23,7 @@ import shutil
 import tempfile
 import json
 import re
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Set
@@ -752,9 +753,10 @@ fi'''
         This is critical for scripts like alldos.py and create_band_d3.py which
         expect to run in a clean directory with only the relevant files.
         """
-        # Create unique directory name with timestamp
+        # Create unique directory name with timestamp and UUID to prevent collisions
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        calc_dir_name = f"{material_id}_{calc_type}_{timestamp}"
+        unique_id = str(uuid.uuid4())[:8]
+        calc_dir_name = f"{material_id}_{calc_type}_{timestamp}_{unique_id}"
         calc_dir = self.workflow_dir / calc_dir_name
         calc_dir.mkdir(exist_ok=True)
         
@@ -1104,6 +1106,17 @@ fi'''
             sp_step_dir = workflow_base / "step_002_SP" / dir_name
             sp_step_dir.mkdir(parents=True, exist_ok=True)
             
+            # Create workflow metadata file for this calculation
+            metadata = {
+                'workflow_id': workflow_base.name,
+                'step_num': 2,
+                'calc_type': 'SP',
+                'material_id': material_id
+            }
+            metadata_file = sp_step_dir / '.workflow_metadata.json'
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
+            
             # Move SP file to material's directory with consistent naming
             clean_sp_name = f"{core_name}{sp_suffix}.d12"
             sp_final_location = sp_step_dir / clean_sp_name
@@ -1335,6 +1348,17 @@ fi'''
             # Use target_calc_type (e.g., BAND2) instead of base_type (e.g., BAND) for directory naming
             calc_step_dir = workflow_base / f"step_{step_num:03d}_{target_calc_type}" / dir_name
             calc_step_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Create workflow metadata file for this calculation
+            metadata = {
+                'workflow_id': workflow_base.name,
+                'step_num': step_num,
+                'calc_type': target_calc_type,
+                'material_id': material_id
+            }
+            metadata_file = calc_step_dir / '.workflow_metadata.json'
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
             
             # Move files to material's directory with consistent naming
             clean_name = f"{core_name}{calc_suffix}.d3"
@@ -2325,6 +2349,17 @@ fi'''
             final_d12_name = f"{core_name}{dir_suffix}.d12"
             final_d12_path = calc_dir / final_d12_name
             shutil.move(generated_d12, final_d12_path)
+            
+            # Create workflow metadata file for this calculation
+            metadata = {
+                'workflow_id': workflow_id,
+                'step_num': step_num,
+                'calc_type': calc_type,
+                'material_id': material_id
+            }
+            metadata_file = calc_dir / '.workflow_metadata.json'
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
             
             # Create SLURM script
             job_name = f"{core_name}{dir_suffix}"

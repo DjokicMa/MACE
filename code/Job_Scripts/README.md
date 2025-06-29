@@ -68,6 +68,12 @@ pip install numpy matplotlib ase spglib PyPDF2 pyyaml pandas
 
 # Verify installation
 python -c "import numpy, matplotlib, ase, spglib, PyPDF2, yaml, pandas; print('All dependencies installed successfully')"
+
+# Copy all workflow dependencies to working directory
+python copy_dependencies.py /path/to/working/directory
+
+# Or copy to current directory
+python copy_dependencies.py
 ```
 
 ---
@@ -311,12 +317,30 @@ python error_recovery.py --material-id failing_material --fix shrink_error
 
 ### Race Condition Prevention
 
-The system includes comprehensive race condition fixes:
+The system includes comprehensive race condition protection for simultaneous job completions:
 
-1. **Distributed Locking**: File-based locks prevent multiple queue managers
-2. **Database WAL Mode**: SQLite Write-Ahead Logging for concurrent access
-3. **Unique Directory Generation**: UUID-based naming prevents collisions
-4. **Randomized Callbacks**: Reduces simultaneous callback conflicts
+#### Distributed Locking (`queue_lock_manager.py`)
+- **File-based locks** with automatic expiration and cleanup
+- **Process-safe** mutex for local thread synchronization
+- **Exponential backoff** with randomization for lock acquisition
+- **Automatic cleanup** on process termination (SIGTERM/SIGINT)
+
+#### Database Concurrency
+- **SQLite WAL Mode**: Write-Ahead Logging for safe concurrent access
+- **30-second timeout**: Graceful handling of database locks
+- **64MB cache**: Improved performance under load
+- **Millisecond calc_id**: Prevents ID collisions (was second precision)
+
+#### Callback Management
+- **Throttling**: 0.5-2.0 second randomized delays
+- **Lock timeouts**: 60-second maximum wait for locks
+- **Fallback behavior**: Continues without locks if unavailable
+- **Multi-location detection**: Finds queue manager in parent directories
+
+#### Unique Resource Generation
+- **Directory names**: `{material}_{type}_{timestamp}_{uuid8}`
+- **UUID integration**: 8-character UUID suffix prevents collisions
+- **Atomic operations**: File creation with exclusive locks
 
 ### Expert Configuration
 
@@ -373,6 +397,24 @@ Job_Scripts/
 
 ## Recent Updates
 
+### Race Condition Prevention (Latest)
+
+The system now includes comprehensive race condition fixes for simultaneous job completions:
+
+1. **Distributed Locking** (`queue_lock_manager.py`): File-based locks prevent multiple queue managers from conflicting
+2. **Database WAL Mode**: SQLite Write-Ahead Logging enables safe concurrent access
+3. **Unique ID Generation**: Millisecond precision + UUID prevents directory/calc_id collisions
+4. **Callback Throttling**: Randomized delays (0.5-2.0s) spread out simultaneous callbacks
+5. **Smart Import Fallback**: Queue manager finds dependencies even in nested directories
+
+### Workflow Reliability Improvements
+
+1. **Dependency-Aware Continuation**: Optional calculations (BAND/DOSS/FREQ) can fail without blocking workflow
+2. **Duplicate Job Prevention**: Checks for existing jobs before creating new ones
+3. **Workflow Metadata Persistence**: `.workflow_metadata.json` files maintain context in all directories
+4. **Dynamic Dependency Detection**: Workflows respect actual sequence order, not hardcoded rules
+5. **FREQ2 Configuration Support**: All numbered calculation types properly configured
+
 ### Workflow Engine Enhancements (Phase 3)
 
 1. **Generalized Calculations**: Support for unlimited numbered calculations (OPT1-99, SP1-99)
@@ -383,6 +425,9 @@ Job_Scripts/
 
 ### Key Fixes Applied
 
+- ✅ Race conditions with simultaneous job completions resolved
+- ✅ Workflow metadata properly created for all calculation types
+- ✅ Calc_id collisions eliminated with millisecond precision
 - ✅ Workflow progression follows planned sequence exactly
 - ✅ Expert configurations properly applied to OPT2/OPT3
 - ✅ FREQ calculations use correct OPT source
@@ -408,6 +453,22 @@ module list  # Verify loaded modules
 # If database is locked
 python material_database.py --unlock
 # Or wait for timeout (60 seconds)
+
+# Check for WAL mode
+sqlite3 materials.db "PRAGMA journal_mode;"
+# Should return "wal"
+```
+
+#### Race Condition Issues
+```bash
+# Check lock status
+ls -la .queue_locks/
+
+# Monitor simultaneous callbacks
+tail -f *.o* | grep "Queue Manager Callback"
+
+# Clean stale locks (if needed)
+rm -f .queue_locks/*.lock
 ```
 
 #### Workflow Not Progressing
