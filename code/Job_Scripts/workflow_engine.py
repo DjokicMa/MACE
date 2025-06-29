@@ -25,8 +25,12 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Set
 import threading
+
+# Define which calculations are optional (can fail without blocking workflow)
+# These calculations can fail without preventing the workflow from continuing
+OPTIONAL_CALC_TYPES = {'BAND', 'DOSS', 'FREQ'}
 
 # Import our material database and other components
 from material_database import MaterialDatabase, create_material_id_from_file, extract_formula_from_d12
@@ -60,20 +64,37 @@ class WorkflowEngine:
         if not workflow_id:
             return None
             
-        # Look for workflow plan file
-        workflow_configs_dir = self.base_work_dir / "workflow_configs"
-        if not workflow_configs_dir.exists():
-            return None
-            
-        workflow_plan_file = workflow_configs_dir / f"workflow_plan_{workflow_id.replace('workflow_', '')}.json"
-        if not workflow_plan_file.exists():
+        # Search multiple locations for workflow_configs directory
+        search_paths = [
+            self.base_work_dir / "workflow_configs",
+            Path.cwd() / "workflow_configs",
+            Path.cwd().parent / "workflow_configs",
+            Path.cwd().parent.parent / "workflow_configs",
+            Path.cwd().parent.parent.parent / "workflow_configs",
+            Path.cwd().parent.parent.parent.parent / "workflow_configs"
+        ]
+        
+        workflow_plan_file = None
+        for search_dir in search_paths:
+            if search_dir.exists():
+                candidate = search_dir / f"workflow_plan_{workflow_id.replace('workflow_', '')}.json"
+                if candidate.exists():
+                    workflow_plan_file = candidate
+                    break
+        
+        if not workflow_plan_file:
+            print(f"DEBUG: Could not find workflow plan file for {workflow_id}")
+            print(f"DEBUG: Searched in: {[str(p) for p in search_paths if p.exists()]}")
             return None
             
         try:
             with open(workflow_plan_file, 'r') as f:
                 plan = json.load(f)
-                return plan.get('workflow_sequence', [])
-        except Exception:
+                sequence = plan.get('workflow_sequence', [])
+                print(f"DEBUG: Found workflow sequence: {sequence}")
+                return sequence
+        except Exception as e:
+            print(f"DEBUG: Error reading workflow plan: {e}")
             return None
     
     def get_workflow_step_number(self, workflow_id: str, calc_type: str) -> int:
@@ -98,13 +119,25 @@ class WorkflowEngine:
         if not workflow_id:
             return None
             
-        # Look for workflow plan file
-        workflow_configs_dir = self.base_work_dir / "workflow_configs"
-        if not workflow_configs_dir.exists():
-            return None
-            
-        workflow_plan_file = workflow_configs_dir / f"workflow_plan_{workflow_id.replace('workflow_', '')}.json"
-        if not workflow_plan_file.exists():
+        # Search multiple locations for workflow_configs directory
+        search_paths = [
+            self.base_work_dir / "workflow_configs",
+            Path.cwd() / "workflow_configs",
+            Path.cwd().parent / "workflow_configs",
+            Path.cwd().parent.parent / "workflow_configs",
+            Path.cwd().parent.parent.parent / "workflow_configs",
+            Path.cwd().parent.parent.parent.parent / "workflow_configs"
+        ]
+        
+        workflow_plan_file = None
+        for search_dir in search_paths:
+            if search_dir.exists():
+                candidate = search_dir / f"workflow_plan_{workflow_id.replace('workflow_', '')}.json"
+                if candidate.exists():
+                    workflow_plan_file = candidate
+                    break
+        
+        if not workflow_plan_file:
             return None
             
         try:
@@ -812,17 +845,47 @@ fi'''
         Returns:
             Path to workflow outputs directory
         """
+        # First try to get workflow_id from calculation settings
+        settings = json.loads(opt_calc.get('settings_json', '{}'))
+        workflow_id = settings.get('workflow_id')
+        
+        if workflow_id:
+            return self.base_work_dir / "workflow_outputs" / workflow_id
+        
+        # Try to find from file path context
         opt_input_file = opt_calc.get('input_file', '')
         workflow_context = self.find_workflow_context(opt_input_file)
         
         if workflow_context:
             workflow_id, _ = workflow_context
             return self.base_work_dir / "workflow_outputs" / workflow_id
-        else:
-            # Fall back to creating a new workflow if context not found
-            from datetime import datetime
-            workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            return self.base_work_dir / "workflow_outputs" / workflow_id
+        
+        # Try to find most recent workflow directory for this material
+        material_id = opt_calc.get('material_id')
+        if material_id and (self.base_work_dir / "workflow_outputs").exists():
+            # Look for workflows containing this material
+            workflow_dirs = sorted(
+                [d for d in (self.base_work_dir / "workflow_outputs").iterdir() 
+                 if d.is_dir() and d.name.startswith("workflow_")],
+                key=lambda d: d.stat().st_mtime,
+                reverse=True
+            )
+            
+            for wf_dir in workflow_dirs:
+                # Check if this workflow contains our material
+                for step_dir in wf_dir.iterdir():
+                    if step_dir.is_dir() and step_dir.name.startswith("step_"):
+                        for mat_dir in step_dir.iterdir():
+                            if mat_dir.is_dir() and self.extract_core_material_name(material_id) in mat_dir.name:
+                                print(f"DEBUG: Found existing workflow {wf_dir.name} for material {material_id}")
+                                return wf_dir
+        
+        # Last resort - create new workflow (this should rarely happen)
+        print(f"WARNING: Creating new workflow directory - could not find existing workflow context")
+        print(f"  opt_calc: {opt_calc}")
+        from datetime import datetime
+        workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        return self.base_work_dir / "workflow_outputs" / workflow_id
     
     def extract_core_material_name(self, material_id: str) -> str:
         """Extract the core material name with proper handling of numbered materials"""
@@ -1384,8 +1447,9 @@ fi'''
             base_type, type_num = self._parse_calc_type(planned_type)
             
             # Skip if already completed or in progress
-            existing = [c for c in all_calcs if c['calc_type'] == planned_type]
-            if existing:
+            if self._calculation_already_exists(material_id, planned_type):
+                existing_status = [c['status'] for c in all_calcs if c['calc_type'] == planned_type]
+                print(f"Calculation {planned_type} already exists (status: {existing_status}), skipping...")
                 continue
                 
             # Check dependencies
@@ -1548,7 +1612,27 @@ fi'''
                 current_index = self._find_calc_position_in_sequence(calc_type, completed_calc, planned_sequence)
                 next_steps = self._get_next_steps_from_sequence(current_index, planned_sequence, calc_type)
                 
+                # Track completed and failed calculations for dependency checking
+                all_calcs = self.db.get_calculations_by_status(material_id=material_id)
+                completed_calcs = {calc['calc_type'] for calc in all_calcs if calc['status'] == 'completed'}
+                failed_generations = set()  # Track failures in this execution
+                
                 for next_calc_type in next_steps:
+                    # Check if calculation already exists (submitted, running, or completed)
+                    if self._calculation_already_exists(material_id, next_calc_type):
+                        print(f"Calculation {next_calc_type} already exists for {material_id}, skipping...")
+                        continue
+                    
+                    # Check dependencies first
+                    deps_met, blocking_calc = self._check_dependencies_met(
+                        next_calc_type, material_id, planned_sequence, 
+                        completed_calcs, failed_generations
+                    )
+                    
+                    if not deps_met:
+                        print(f"Skipping {next_calc_type} - dependency {blocking_calc} not met")
+                        continue
+                    
                     next_base_type, next_num = self._parse_calc_type(next_calc_type)
                     
                     if next_base_type == "OPT":
@@ -1556,10 +1640,18 @@ fi'''
                         opt_calc_id = self.generate_numbered_calculation(completed_calc_id, next_calc_type)
                         if opt_calc_id:
                             new_calc_ids.append(opt_calc_id)
+                        else:
+                            failed_generations.add(next_calc_type)
+                            # OPT is usually critical
+                            print(f"CRITICAL: Failed to generate {next_calc_type}")
                     elif next_base_type == "SP":
                         sp_calc_id = self.generate_numbered_calculation(completed_calc_id, next_calc_type)
                         if sp_calc_id:
                             new_calc_ids.append(sp_calc_id)
+                        else:
+                            failed_generations.add(next_calc_type)
+                            # SP is usually critical if BAND/DOSS follow
+                            print(f"CRITICAL: Failed to generate {next_calc_type}")
                     elif next_base_type == "FREQ":
                         # FREQ needs optimized geometry from the highest numbered OPT calculation
                         all_calcs = self.db.get_calculations_by_status(material_id=material_id)
@@ -1577,11 +1669,18 @@ fi'''
                         opt_calc_id = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
                         
                         if opt_calc_id:
-                            freq_calc_id = self.generate_freq_from_opt(opt_calc_id)
+                            freq_calc_id = self.generate_freq_from_opt(opt_calc_id, next_calc_type)
                             if freq_calc_id:
                                 new_calc_ids.append(freq_calc_id)
+                            else:
+                                failed_generations.add(next_calc_type)
+                                if self._is_calculation_optional(next_calc_type):
+                                    print(f"Failed to generate optional {next_calc_type}, continuing...")
+                                else:
+                                    print(f"CRITICAL: Failed to generate {next_calc_type}")
                         else:
-                            print(f"No completed OPT calculation found for FREQ generation")
+                            print(f"No completed OPT calculation found for {next_calc_type} generation")
+                            failed_generations.add(next_calc_type)
             else:
                 # Default behavior: generate SP only (FREQ should be explicitly requested in workflow)
                 sp_calc_id = self.generate_sp_from_opt(completed_calc_id)
@@ -1597,8 +1696,28 @@ fi'''
                 current_index = self._find_calc_position_in_sequence(calc_type, completed_calc, planned_sequence)
                 next_steps = self._get_next_steps_from_sequence(current_index, planned_sequence, calc_type)
                 
+                # Track completed and failed calculations for dependency checking
+                all_calcs = self.db.get_calculations_by_status(material_id=material_id)
+                completed_calcs = {calc['calc_type'] for calc in all_calcs if calc['status'] == 'completed'}
+                failed_generations = set()  # Track failures in this execution
+                
                 # Generate calculations for all next steps (which may be parallel)
                 for next_calc_type in next_steps:
+                    # Check if calculation already exists (submitted, running, or completed)
+                    if self._calculation_already_exists(material_id, next_calc_type):
+                        print(f"Calculation {next_calc_type} already exists for {material_id}, skipping...")
+                        continue
+                    
+                    # Check dependencies first
+                    deps_met, blocking_calc = self._check_dependencies_met(
+                        next_calc_type, material_id, planned_sequence, 
+                        completed_calcs, failed_generations
+                    )
+                    
+                    if not deps_met:
+                        print(f"Skipping {next_calc_type} - dependency {blocking_calc} not met")
+                        continue
+                    
                     try:
                         next_base_type, next_num = self._parse_calc_type(next_calc_type)
                         
@@ -1608,14 +1727,24 @@ fi'''
                             if doss_calc_id:
                                 new_calc_ids.append(doss_calc_id)
                             else:
-                                print(f"Failed to generate {next_calc_type}, continuing with other steps...")
+                                # Generation failed
+                                failed_generations.add(next_calc_type)
+                                if self._is_calculation_optional(next_calc_type):
+                                    print(f"Failed to generate optional {next_calc_type}, continuing...")
+                                else:
+                                    print(f"CRITICAL: Failed to generate {next_calc_type}")
                         elif next_base_type == "BAND":
                             print(f"Generating {next_calc_type} from planned sequence...")
                             band_calc_id = self.generate_property_calculation(completed_calc_id, next_calc_type)
                             if band_calc_id:
                                 new_calc_ids.append(band_calc_id)
                             else:
-                                print(f"Failed to generate {next_calc_type}, continuing with other steps...")
+                                # Generation failed
+                                failed_generations.add(next_calc_type)
+                                if self._is_calculation_optional(next_calc_type):
+                                    print(f"Failed to generate optional {next_calc_type}, continuing...")
+                                else:
+                                    print(f"CRITICAL: Failed to generate {next_calc_type}")
                         elif next_base_type == "OPT":
                             # Check if we have a previous OPT to use
                             all_calcs = self.db.get_calculations_by_status(material_id=material_id)
@@ -1642,7 +1771,12 @@ fi'''
                             if opt_calc_id:
                                 new_calc_ids.append(opt_calc_id)
                             else:
-                                print(f"Failed to generate {next_calc_type}, continuing with other steps...")
+                                # Generation failed
+                                failed_generations.add(next_calc_type)
+                                if self._is_calculation_optional(next_calc_type):
+                                    print(f"Failed to generate optional {next_calc_type}, continuing...")
+                                else:
+                                    print(f"CRITICAL: Failed to generate {next_calc_type}")
                         elif next_base_type == "SP":
                             # Generate another SP from current SP
                             print(f"Generating {next_calc_type} from SP...")
@@ -1650,10 +1784,22 @@ fi'''
                             if sp_calc_id:
                                 new_calc_ids.append(sp_calc_id)
                             else:
-                                print(f"Failed to generate {next_calc_type}, continuing with other steps...")
+                                # Generation failed
+                                failed_generations.add(next_calc_type)
+                                if self._is_calculation_optional(next_calc_type):
+                                    print(f"Failed to generate optional {next_calc_type}, continuing...")
+                                else:
+                                    print(f"CRITICAL: Failed to generate {next_calc_type}")
                     except Exception as e:
                         print(f"Exception generating {next_calc_type}: {e}")
-                        print(f"Continuing with other steps...")
+                        failed_generations.add(next_calc_type)
+                        
+                        # Check if this is a critical calculation
+                        if self._is_calculation_optional(next_calc_type):
+                            print(f"Optional calculation {next_calc_type} failed, continuing...")
+                        else:
+                            print(f"CRITICAL: Required calculation {next_calc_type} failed!")
+                            print(f"This may block dependent calculations.")
                         continue
             else:
                 # Default behavior: generate both DOSS and BAND
@@ -1940,6 +2086,93 @@ fi'''
                     highest_calc_id = calcs[-1]['calc_id']  # Take the most recent
         
         return highest_calc_id
+    
+    def _is_calculation_optional(self, calc_type: str) -> bool:
+        """
+        Check if a calculation type is optional (can fail without blocking workflow).
+        
+        Args:
+            calc_type: Calculation type (e.g., 'BAND', 'BAND2', 'DOSS', 'FREQ2')
+            
+        Returns:
+            True if the calculation is optional
+        """
+        base_type, _ = self._parse_calc_type(calc_type)
+        return base_type in OPTIONAL_CALC_TYPES
+    
+    def _calculation_already_exists(self, material_id: str, calc_type: str) -> bool:
+        """
+        Check if a calculation of this type already exists for the material
+        (in any state: submitted, running, completed, failed).
+        
+        Args:
+            material_id: Material ID
+            calc_type: Calculation type (e.g., 'BAND2', 'OPT3')
+            
+        Returns:
+            True if calculation already exists
+        """
+        all_calcs = self.db.get_calculations_by_status(material_id=material_id)
+        for calc in all_calcs:
+            if calc['calc_type'] == calc_type:
+                # Check if it's not in a terminal failed state that needs retry
+                if calc['status'] in ['submitted', 'running', 'completed']:
+                    return True
+                elif calc['status'] == 'failed':
+                    # Could check if it's eligible for retry, but for now just say it exists
+                    return True
+        return False
+    
+    def _check_dependencies_met(self, calc_type: str, material_id: str, 
+                               planned_sequence: List[str], 
+                               completed_calcs: Set[str],
+                               failed_calcs: Set[str]) -> Tuple[bool, Optional[str]]:
+        """
+        Check if dependencies for a calculation are met based on the workflow sequence.
+        
+        Args:
+            calc_type: The calculation type to check
+            material_id: Material ID
+            planned_sequence: The planned workflow sequence
+            completed_calcs: Set of completed calculation types
+            failed_calcs: Set of failed calculation types in this execution
+            
+        Returns:
+            (dependencies_met, blocking_calc_type)
+        """
+        # Find what this calculation depends on in the sequence
+        dependency = self._find_dependency_in_sequence(calc_type, planned_sequence)
+        
+        if not dependency:
+            # No dependency - this is the first step
+            return True, None
+            
+        # Check if the dependency is completed
+        if dependency in completed_calcs:
+            return True, None
+            
+        # Check if the dependency failed in this execution
+        if dependency in failed_calcs:
+            # Check if the failed dependency was optional
+            if self._is_calculation_optional(dependency):
+                # Optional dependency failed - we might still continue
+                # For BAND/DOSS, we need SP; for others, check sequence
+                base_type, _ = self._parse_calc_type(calc_type)
+                dep_base, _ = self._parse_calc_type(dependency)
+                
+                # Special case: BAND/DOSS really need wavefunction
+                if base_type in ['BAND', 'DOSS'] and dep_base == 'SP':
+                    return False, dependency
+                    
+                # For other cases, try to find alternative source
+                # This will be handled by the existing logic in execute_workflow_step
+                return True, None
+            else:
+                # Critical dependency failed
+                return False, dependency
+                
+        # Dependency not completed yet
+        return False, dependency
         
     def generate_opt2_from_opt(self, opt_calc_id: str) -> Optional[str]:
         """
