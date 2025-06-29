@@ -235,7 +235,7 @@ class MaterialDatabase:
             
     @contextmanager
     def _get_connection(self):
-        """Thread-safe database connection context manager."""
+        """Thread-safe database connection context manager with WAL mode for concurrency."""
         with self.lock:
             conn = sqlite3.connect(
                 str(self.db_path),
@@ -243,6 +243,13 @@ class MaterialDatabase:
                 check_same_thread=False
             )
             conn.row_factory = sqlite3.Row  # Enable column access by name
+            
+            # Enable WAL mode for better concurrent access
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA busy_timeout=30000")  # 30 second timeout
+            conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
+            
             try:
                 yield conn
                 conn.commit()
@@ -304,8 +311,8 @@ class MaterialDatabase:
         Returns:
             calc_id of the created calculation
         """
-        # Generate unique calculation ID
-        calc_id = f"{material_id}_{calc_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # Generate unique calculation ID with microsecond precision to avoid collisions
+        calc_id = f"{material_id}_{calc_type}_{datetime.now().strftime('%Y%m%d_%H%M%S%f')[:-3]}"
         if calc_subtype:
             calc_id += f"_{calc_subtype}"
             

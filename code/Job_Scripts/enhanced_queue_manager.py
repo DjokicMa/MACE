@@ -33,6 +33,41 @@ import threading
 # Import our material database
 from material_database import MaterialDatabase, create_material_id_from_file, extract_formula_from_d12, find_material_by_similarity
 
+# Import lock manager for race condition prevention
+try:
+    from queue_lock_manager import QueueLockManager, CallbackThrottler
+    LOCKING_AVAILABLE = True
+except ImportError:
+    # Try importing from parent directories
+    import sys
+    from pathlib import Path
+    
+    # Try to find queue_lock_manager.py in parent directories
+    current_dir = Path(__file__).parent
+    search_dirs = [
+        current_dir,
+        current_dir.parent,
+        current_dir.parent.parent,
+        current_dir.parent.parent.parent,
+        current_dir.parent.parent.parent.parent
+    ]
+    
+    found = False
+    for search_dir in search_dirs:
+        if (search_dir / "queue_lock_manager.py").exists():
+            sys.path.insert(0, str(search_dir))
+            try:
+                from queue_lock_manager import QueueLockManager, CallbackThrottler
+                LOCKING_AVAILABLE = True
+                found = True
+                break
+            except ImportError:
+                pass
+    
+    if not found:
+        LOCKING_AVAILABLE = False
+        print("Warning: Queue locking not available - race conditions possible with simultaneous callbacks")
+
 
 class EnhancedCrystalQueueManager:
     """
@@ -92,6 +127,20 @@ class EnhancedCrystalQueueManager:
         # Workflow settings
         self.workflow_enabled = True
         self.auto_submit_followups = True
+        
+        # Initialize lock manager for race condition prevention
+        self.lock_manager = None
+        self.throttler = None
+        if LOCKING_AVAILABLE:
+            try:
+                lock_dir = self.d12_dir / ".queue_locks"
+                self.lock_manager = QueueLockManager(lock_dir=lock_dir, lock_timeout=300)
+                self.throttler = CallbackThrottler(min_delay=0.5, max_delay=2.0)
+                print(f"Queue locking enabled - lock directory: {lock_dir}")
+            except Exception as e:
+                print(f"Warning: Could not initialize lock manager: {e}")
+                self.lock_manager = None
+                self.throttler = None
         
     def _detect_workflow_context(self) -> bool:
         """Detect if we're running in a workflow context."""
@@ -1252,6 +1301,34 @@ class EnhancedCrystalQueueManager:
         
     def run_callback_check(self, mode='completion'):
         """Run a single callback check cycle based on trigger mode."""
+        # Apply throttling to reduce simultaneous callbacks
+        if self.throttler:
+            self.throttler.throttle(f"callback_{mode}")
+            
+        # Acquire distributed lock
+        if self.lock_manager:
+            lock_name = f"queue_manager_{mode}"
+            try:
+                # Execute callback with lock
+                self.lock_manager.with_lock(
+                    lock_name,
+                    self._run_callback_check_locked,
+                    mode,
+                    timeout=60
+                )
+            except TimeoutError:
+                print(f"⚠️  Could not acquire lock for {mode} callback - another instance may be running")
+                return
+            except Exception as e:
+                print(f"❌ Error in callback with locking: {e}")
+                # Fall back to running without lock
+                self._run_callback_check_locked(mode)
+        else:
+            # No lock manager available, run directly
+            self._run_callback_check_locked(mode)
+            
+    def _run_callback_check_locked(self, mode='completion'):
+        """Internal callback implementation with lock protection."""
         print(f"\n=== Queue Manager Callback ({mode}) - {datetime.now()} ===")
         
         if mode == 'completion':
