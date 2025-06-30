@@ -64,7 +64,7 @@ def display_current_settings(settings):
     if settings.get("functional"):
         func = settings["functional"]
         # Determine if this is a Hartree-Fock method or DFT
-        if func in ["RHF", "UHF", "HF-3C", "HFsol-3C"]:
+        if func in ["RHF", "UHF", "HF3C", "HFSOL3C"]:
             print(f"Method: Hartree-Fock ({func})")
             if settings.get("is_3c_method"):
                 print(f"  (3c composite method)")
@@ -470,13 +470,13 @@ class CrystalOutputParser:
             # Exchange-Correlation pairs to functional names
             ("WU-COHEN GGA", "PERDEW-WANG GGA"): "B1WC",
             ("BECKE 88", "PERDEW-WANG GGA"): "B3PW",
-            ("B97-3c", "B97-3c"): "B97-3C",
+            ("B97-3c", "B97-3c"): "B973C",
             ("B97-D GGA + GRIMME D2", "B97-D"): "B97-D3",
             ("BECKE 97", "BECKE 97"): "B97H",
             ("BECKE 88", "LEE-YANG-PARR"): "BLYP",
             ("CAM-B3LYP", "LEE-YANG-PARR"): "CAM-B3LYP",
             ("HISS MR/GGA", "PERDEW-BURKE-ERNZERHOF"): "HISS",
-            ("HSE-3c", "PBEh-3c"): "HSE-3C",
+            ("HSE-3c", "PBEh-3c"): "HSE3C",
             ("HSEsol GGA", "PBEsol"): "HSEsol",
             ("LC-BLYP_X", "LEE-YANG-PARR"): "LC-BLYP",
             ("LC-PBE_X", "PERDEW-BURKE-ERNZERHOF"): "LC-PBE",
@@ -492,7 +492,7 @@ class CrystalOutputParser:
             ("MODIFIED PERDEW-WANG 91", "PERDEW-WANG GGA"): "mPW1K",
             ("PERDEW-WANG GGA", "PERDEW-WANG GGA"): "mPW1PW91",
             ("PERDEW-BURKE-ERNZERHOF", "PERDEW-BURKE-ERNZERHOF"): "PBE",
-            ("PBEh-3c", "PBEh-3c"): "PBEh-3C",
+            ("PBEh-3c", "PBEh-3c"): "PBEH3C",
             ("PBEsol GGA", "PBEsol"): "PBEsol",
             ("r2SCAN", "r2SCAN"): "r2SCAN",
             ("revM06-L", "revM06-L"): "revM06L",
@@ -529,31 +529,31 @@ class CrystalOutputParser:
         # Check for 3C methods early
         for line in lines:
             if "HF-3C" in line or "HF3C" in line:
-                self.data["functional"] = "HF-3C"
+                self.data["functional"] = "HF3C"
                 self.data["is_3c_method"] = True
                 return
             elif "PBEH-3C" in line or "PBEH3C" in line:
-                self.data["functional"] = "PBEh-3C"
+                self.data["functional"] = "PBEH3C"
                 self.data["is_3c_method"] = True
                 return
             elif "HSE-3C" in line or "HSE3C" in line:
-                self.data["functional"] = "HSE-3C"
+                self.data["functional"] = "HSE3C"
                 self.data["is_3c_method"] = True
                 return
             elif "B97-3C" in line or "B973C" in line:
-                self.data["functional"] = "B97-3C"
+                self.data["functional"] = "B973C"
                 self.data["is_3c_method"] = True
                 return
             elif "HFSOL-3C" in line or "HFSOL3C" in line:
-                self.data["functional"] = "HFsol-3C"
+                self.data["functional"] = "HFSOL3C"
                 self.data["is_3c_method"] = True
                 return
             elif "PBESOL0-3C" in line or "PBESOL03C" in line:
-                self.data["functional"] = "PBEsol0-3C"
+                self.data["functional"] = "PBESOL03C"
                 self.data["is_3c_method"] = True
                 return
             elif "HSESOL-3C" in line or "HSESOL3C" in line:
-                self.data["functional"] = "HSEsol-3C"
+                self.data["functional"] = "HSESOL3C"
                 self.data["is_3c_method"] = True
                 return
 
@@ -1111,15 +1111,15 @@ class CrystalInputParser:
                 elif stripped in ["PBEh3C", "HSE3C", "B973C", "PBEsol03C", "HSEsol3C"]:
                     # Convert back to standard naming with hyphens
                     if stripped == "PBEh3C":
-                        self.data["functional"] = "PBEh-3C"
+                        self.data["functional"] = "PBEH3C"
                     elif stripped == "HSE3C":
-                        self.data["functional"] = "HSE-3C"  
+                        self.data["functional"] = "HSE3C"  
                     elif stripped == "B973C":
-                        self.data["functional"] = "B97-3C"
+                        self.data["functional"] = "B973C"
                     elif stripped == "PBEsol03C":
-                        self.data["functional"] = "PBEsol0-3C"
+                        self.data["functional"] = "PBESOL03C"
                     elif stripped == "HSEsol3C":
-                        self.data["functional"] = "HSEsol-3C"
+                        self.data["functional"] = "HSESOL3C"
                     self.data["is_3c_method"] = True
                     
                 # Check for D3 dispersion (both explicit and in functional name)
@@ -1812,20 +1812,20 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
 
         # Handle basis sets and method section
         functional = settings.get("functional", "")
-        method = "HF" if functional in ["RHF", "UHF", "HF-3C", "HFsol-3C"] else "DFT"
+        method = "HF" if functional in ["RHF", "UHF", "HF3C", "HFSOL3C"] else "DFT"
 
         # Handle HF 3C methods and regular HF methods
-        if functional in ["HF-3C", "HFsol-3C"]:
+        if functional in ["HF3C", "HFSOL3C"]:
             # These are HF methods with corrections, write basis set but no DFT block
             write_basis_set_section(
                 f, "INTERNAL", settings["basis_set"], coords_to_write
             )
 
             # Add 3C corrections
-            if functional == "HF-3C":
+            if functional == "HF3C":
                 f.write("HF3C\n")
                 f.write("END\n")
-            elif functional == "HFsol-3C":
+            elif functional == "HFSOL3C":
                 f.write("HFSOL3C\n")
                 f.write("END\n")
         elif functional in ["RHF", "UHF"]:
@@ -1867,7 +1867,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             # For UHF, add the UHF keyword
             if functional == "UHF":
                 f.write("UHF\n")
-        elif functional in ["PBEh-3C", "HSE-3C", "B97-3C", "PBEsol0-3C", "HSEsol-3C"]:
+        elif functional in ["PBEH3C", "HSE3C", "B973C", "PBESOL03C", "HSESOL3C"]:
             # DFT 3C methods
             write_basis_set_section(
                 f, "INTERNAL", settings["basis_set"], coords_to_write
@@ -2196,13 +2196,13 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
 
         # Ensure consistency for 3C methods
         if options.get("functional") in [
-            "HF-3C",
-            "HFsol-3C",
-            "PBEh-3C",
-            "HSE-3C",
-            "B97-3C",
-            "PBEsol0-3C",
-            "HSEsol-3C",
+            "HF3C",
+            "HFSOL3C",
+            "PBEH3C",
+            "HSE3C",
+            "B973C",
+            "PBESOL03C",
+            "HSESOL3C",
         ]:
             options["dispersion"] = False
             options["is_3c_method"] = True
@@ -2220,7 +2220,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         options.get("dispersion")
         and "-3C" not in functional
         and "3C" not in functional
-        and functional not in ["RHF", "UHF", "HF-3C", "HFsol-3C"]
+        and functional not in ["RHF", "UHF", "HF3C", "HFSOL3C"]
     ):
         functional += "-D3"
 

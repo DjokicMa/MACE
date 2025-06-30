@@ -708,7 +708,7 @@ def get_calculation_options():
             print(f"\nAvailable {hf_info['name']}:")
             for key, func in functional_options.items():
                 desc = hf_info["descriptions"].get(func, "")
-                if func in ["HF-3C", "HFsol-3C"]:
+                if func in ["HF3C", "HFSOL3C"]:
                     basis = hf_info["basis_requirements"][func]
                     print(f"{key}: {func} - {desc} (requires {basis} basis set)")
                 else:
@@ -728,7 +728,7 @@ def get_calculation_options():
                 print(
                     f"\nNote: {selected_functional} requires {required_basis} basis set. Using it automatically."
                 )
-                # HF-3C methods already include corrections
+                # HF3C methods already include corrections
                 options["use_dispersion"] = False
                 # 3C methods have their own grids (if applicable)
                 options["dft_grid"] = None
@@ -1411,15 +1411,15 @@ def create_d12_file(cif_data, output_file, options):
             hf_method = options.get("hf_method", "RHF")
 
             # Handle 3C methods and basis sets
-            if hf_method in ["HF-3C", "HFsol-3C"]:
+            if hf_method in ["HF3C", "HFSOL3C"]:
                 # These are HF methods with corrections, write basis set
                 write_basis_set_section(f, "INTERNAL", basis_set, atomic_numbers)
 
                 # Add 3C corrections
-                if hf_method == "HF-3C":
+                if hf_method == "HF3C":
                     print("HF3C", file=f)
                     print("END", file=f)
-                elif hf_method == "HFsol-3C":
+                elif hf_method == "HFSOL3C":
                     print("HFSOL3C", file=f)
                     print("END", file=f)
             else:

@@ -1840,7 +1840,8 @@ fi'''
             # These calculations are often terminal, but sometimes workflow continues
             if planned_sequence:
                 current_index = self._find_calc_position_in_sequence(calc_type, completed_calc, planned_sequence)
-                next_steps = self._get_next_steps_from_sequence(current_index, planned_sequence, calc_type)
+                # Use the new function that skips already-existing calculations
+                next_steps = self._get_next_unstarted_steps(current_index, planned_sequence, material_id)
                 
                 # Only generate next steps if we have them in the plan
                 if next_steps:
@@ -1945,9 +1946,9 @@ fi'''
         """
         Get the next calculation steps from the planned sequence.
         
-        Returns only the immediate next step(s) in the sequence. The only exception
-        is for truly parallel calculations that can use the same wavefunction
-        (e.g., BAND and DOSS which both read from the same SP wavefunction).
+        Returns the immediate next step(s) in the sequence. For parallel calculations
+        (e.g., BAND and DOSS which both read from the same SP wavefunction), returns
+        both if they're adjacent in the sequence.
         
         Args:
             current_index: Current position in the sequence
@@ -1986,6 +1987,61 @@ fi'''
                             if planned_sequence[i] not in next_steps:
                                 next_steps.append(planned_sequence[i])
                             break
+        
+        return next_steps
+    
+    def _get_next_unstarted_steps(self, current_index: int, planned_sequence: List[str], 
+                                  material_id: str) -> List[str]:
+        """
+        Get the next unstarted calculation steps from the planned sequence.
+        
+        This function looks ahead in the sequence to find calculations that haven't
+        been started yet, skipping over any that already exist.
+        
+        Args:
+            current_index: Current position in the sequence
+            planned_sequence: The full planned calculation sequence
+            material_id: Material ID to check for existing calculations
+            
+        Returns:
+            List of calculation types that should be started next
+        """
+        if not planned_sequence or current_index >= len(planned_sequence) - 1:
+            return []
+        
+        next_steps = []
+        
+        # Look ahead in the sequence for unstarted calculations
+        for i in range(current_index + 1, len(planned_sequence)):
+            calc_type = planned_sequence[i]
+            
+            # Check if this calculation already exists
+            if self._calculation_already_exists(material_id, calc_type):
+                continue
+                
+            # Add this unstarted calculation
+            next_steps.append(calc_type)
+            
+            # Check if we should also include parallel calculations
+            base_type, _ = self._parse_calc_type(calc_type)
+            
+            # For BAND/DOSS, check if the complementary calculation should also be included
+            if base_type in ["BAND", "DOSS"] and i + 1 < len(planned_sequence):
+                next_calc = planned_sequence[i + 1]
+                next_base, _ = self._parse_calc_type(next_calc)
+                
+                # If the next calculation is the complementary property calculation
+                if (base_type == "BAND" and next_base == "DOSS") or \
+                   (base_type == "DOSS" and next_base == "BAND"):
+                    if not self._calculation_already_exists(material_id, next_calc):
+                        next_steps.append(next_calc)
+                    # Skip the next iteration since we've already processed it
+                    i += 1
+            
+            # For most cases, only return the immediate next unstarted step(s)
+            # Exception: BAND/DOSS parallel execution handled above
+            if next_steps:
+                break
         
         return next_steps
         
@@ -2060,8 +2116,8 @@ fi'''
         """
         Find what calculation type this step depends on based on the planned sequence.
         
-        This looks at the workflow sequence to determine the actual dependency,
-        not making assumptions about what depends on what.
+        This understands the actual computational dependencies, not just sequence order.
+        For example, BAND and DOSS both depend on SP/OPT (for wavefunction), not on each other.
         
         Args:
             calc_type: The calculation type we're checking dependencies for
@@ -2083,9 +2139,68 @@ fi'''
         if calc_index == 0:
             return None
             
-        # The dependency is the previous completed step
-        # (not necessarily the immediate previous in sequence)
-        return planned_sequence[calc_index - 1]
+        base_type, type_num = self._parse_calc_type(calc_type)
+        
+        # Define actual computational dependencies
+        if base_type == "SP":
+            # SP depends on the previous OPT (or previous numbered OPT)
+            # Look backwards for the most recent OPT
+            for i in range(calc_index - 1, -1, -1):
+                prev_base, _ = self._parse_calc_type(planned_sequence[i])
+                if prev_base == "OPT":
+                    return planned_sequence[i]
+            return None
+            
+        elif base_type in ["BAND", "DOSS"]:
+            # BAND and DOSS depend on SP or OPT (for wavefunction)
+            # Look backwards for the most recent SP or OPT
+            for i in range(calc_index - 1, -1, -1):
+                prev_base, _ = self._parse_calc_type(planned_sequence[i])
+                if prev_base in ["SP", "OPT"]:
+                    return planned_sequence[i]
+            return None
+            
+        elif base_type == "FREQ":
+            # FREQ depends on the previous OPT (needs optimized geometry)
+            # Look backwards for the most recent OPT
+            for i in range(calc_index - 1, -1, -1):
+                prev_base, _ = self._parse_calc_type(planned_sequence[i])
+                if prev_base == "OPT":
+                    return planned_sequence[i]
+            return None
+            
+        elif base_type == "OPT":
+            # OPT can depend on:
+            # - Previous OPT (for multi-stage optimization)
+            # - Previous calculation that can provide geometry
+            # - Nothing (if starting from CIF)
+            
+            # For OPT2, OPT3, etc., look for the previous OPT
+            if type_num > 1:
+                # Look for OPT with number = type_num - 1
+                target_type = f"OPT{type_num - 1}" if type_num > 2 else "OPT"
+                if target_type in planned_sequence:
+                    return target_type
+                    
+            # For any OPT after FREQ/BAND/DOSS, it depends on the previous OPT
+            # (since FREQ/BAND/DOSS don't produce new geometries)
+            for i in range(calc_index - 1, -1, -1):
+                prev_base, _ = self._parse_calc_type(planned_sequence[i])
+                if prev_base == "OPT":
+                    return planned_sequence[i]
+                elif prev_base == "SP":
+                    # SP can provide geometry too
+                    return planned_sequence[i]
+                elif prev_base in ["FREQ", "BAND", "DOSS"]:
+                    # These don't provide geometry, keep looking
+                    continue
+                    
+            # No dependency found - this OPT starts from CIF
+            return None
+            
+        else:
+            # For any other calculation type, use the previous step
+            return planned_sequence[calc_index - 1]
     
     def _find_highest_numbered_calc_of_type(self, completed_by_type: Dict[str, List[Dict]], base_type: str) -> Optional[str]:
         """

@@ -281,16 +281,66 @@ class WorkflowPlanner:
     def get_basic_customization(self) -> Dict[str, Any]:
         """Get basic CIF customization options"""
         print("\nBasic customization options:")
-        functional_choice = input("DFT Functional [HSE06]: ").strip() or "HSE06"
-        basis_choice = input("Basis set [POB-TZVP-REV2]: ").strip() or "POB-TZVP-REV2"
+        
+        # Common functionals for quick selection
+        print("Common DFT Functionals:")
+        print("  1: HSE06 (hybrid, good for band gaps)")
+        print("  2: PBE0 (hybrid)")
+        print("  3: B3LYP (hybrid)")
+        print("  4: PBE (GGA)")
+        print("  5: PBESOL (GGA for solids)")
+        print("  6: HF3C (low-cost with corrections)")
+        print("  7: Custom (type any functional name)")
+        
+        func_choice = input("Select functional [1]: ").strip() or "1"
+        func_map = {
+            "1": "HSE06", "2": "PBE0", "3": "B3LYP",
+            "4": "PBE", "5": "PBESOL", "6": "HF3C"
+        }
+        
+        if func_choice == "7":
+            functional_choice = input("Enter functional name: ").strip().upper()
+        else:
+            functional_choice = func_map.get(func_choice, "HSE06")
+        
+        # Map special functionals
+        functional_keyword_map = {"PBESOL": "PBESOLXC", "SOGGA": "SOGGAXC"}
+        crystal_functional = functional_keyword_map.get(functional_choice, functional_choice)
+        
+        # Basis set - handle 3c methods
+        three_c_basis_map = {
+            "HF3C": "MINIX",
+            "HFSOL3C": "SOLMINIX",
+            "PBEH3C": "def2-mSVP",
+            "PBE03C": "def2-mSVP",
+            "HSE3C": "def2-mSVP",
+            "B973C": "mTZVP",
+            "PBESOL03C": "SOLDEF2MSVP",
+            "HSESOL3C": "SOLDEF2MSVP"
+        }
+        
+        if functional_choice in three_c_basis_map:
+            basis_choice = three_c_basis_map[functional_choice]
+            print(f"{functional_choice} requires specific basis set: {basis_choice}")
+        else:
+            basis_choice = input("Basis set [POB-TZVP-REV2]: ").strip() or "POB-TZVP-REV2"
         
         cif_config = self.get_default_cif_config()
-        cif_config["dft_functional"] = functional_choice
+        cif_config["dft_functional"] = crystal_functional
         cif_config["basis_set"] = basis_choice
         
-        print(f"Using customized settings:")
+        # Check D3 support
+        d3_supported = functional_choice in ["BLYP", "PBE", "B97", "B3LYP", "PBE0", 
+                                           "mPW1PW91", "M06", "HSE06", "HSEsol", "LC-wPBE"]
+        if d3_supported and functional_choice not in three_c_basis_map:
+            cif_config["use_dispersion"] = yes_no_prompt(f"Use D3 dispersion? ({functional_choice} supports it)", "yes")
+        elif functional_choice in three_c_basis_map:
+            cif_config["use_dispersion"] = False  # Already included in 3c methods
+        
+        print(f"\nUsing customized settings:")
         print(f"  Method: DFT/{functional_choice}")
         print(f"  Basis set: {basis_choice}")
+        print(f"  Dispersion: {'Yes' if cif_config.get('use_dispersion') else 'No'}")
         print(f"  Other settings: Using defaults")
         
         return cif_config
@@ -309,33 +359,124 @@ class WorkflowPlanner:
         # DFT functional (if DFT)
         functional = "HSE06"
         if method == "DFT":
-            print("DFT Functional:")
-            print("  1: HSE06")
-            print("  2: B3LYP")
-            print("  3: PBE0")
-            print("  4: PBE")
-            func_choice = input("Functional [1]: ").strip() or "1"
-            functionals = {"1": "HSE06", "2": "B3LYP", "3": "PBE0", "4": "PBE"}
-            functional = functionals.get(func_choice, "HSE06")
+            print("\nDFT Functional Categories:")
+            print("  1: Hybrid (HSE06, PBE0, B3LYP, etc.)")
+            print("  2: GGA (PBE, PBESOL, BLYP, etc.)")
+            print("  3: LDA (SVWN, PZ, PWLDA)")
+            print("  4: meta-GGA (SCAN, M06, M06-L)")
+            print("  5: 3c methods (HF-3c, B97-3c, PBE0-3c)")
+            
+            cat_choice = input("Category [1]: ").strip() or "1"
+            
+            if cat_choice == "1":  # Hybrid
+                print("\nHybrid Functionals:")
+                print("  1: HSE06 (recommended for band gaps)")
+                print("  2: PBE0")
+                print("  3: B3LYP")
+                print("  4: PBESOL0")
+                print("  5: HSEsol")
+                print("  6: PBE0-13")
+                func_choice = input("Select [1]: ").strip() or "1"
+                functionals = {
+                    "1": "HSE06", "2": "PBE0", "3": "B3LYP",
+                    "4": "PBESOL0", "5": "HSEsol", "6": "PBE0-13"
+                }
+                functional = functionals.get(func_choice, "HSE06")
+                
+            elif cat_choice == "2":  # GGA
+                print("\nGGA Functionals:")
+                print("  1: PBE")
+                print("  2: PBESOL (for solids)")
+                print("  3: BLYP")
+                print("  4: SOGGA")
+                print("  5: WCGGA")
+                func_choice = input("Select [1]: ").strip() or "1"
+                functionals = {
+                    "1": "PBE", "2": "PBESOL", "3": "BLYP",
+                    "4": "SOGGA", "5": "WCGGA"
+                }
+                functional = functionals.get(func_choice, "PBE")
+                
+            elif cat_choice == "3":  # LDA
+                print("\nLDA Functionals:")
+                print("  1: SVWN")
+                print("  2: PZ")
+                print("  3: PWLDA")
+                func_choice = input("Select [1]: ").strip() or "1"
+                functionals = {"1": "SVWN", "2": "PZ", "3": "PWLDA"}
+                functional = functionals.get(func_choice, "SVWN")
+                
+            elif cat_choice == "4":  # meta-GGA
+                print("\nmeta-GGA Functionals:")
+                print("  1: SCAN")
+                print("  2: M06")
+                print("  3: M06-L")
+                print("  4: M06-2X")
+                func_choice = input("Select [1]: ").strip() or "1"
+                functionals = {"1": "SCAN", "2": "M06", "3": "M06-L", "4": "M06-2X"}
+                functional = functionals.get(func_choice, "SCAN")
+                
+            elif cat_choice == "5":  # 3c methods
+                print("\n3c Methods (include dispersion and BSSE corrections):")
+                print("  1: HF3C (uses MINIX basis)")
+                print("  2: B973C (uses mTZVP basis)")
+                print("  3: PBEH3C / PBE03C (uses def2-mSVP basis)")
+                print("  4: HSE3C (uses def2-mSVP basis)")
+                print("  5: HFSOL3C (for solids, uses SOLMINIX basis)")
+                print("  6: PBESOL03C (for solids, uses SOLDEF2MSVP basis)")
+                print("  7: HSESOL3C (for solids, uses SOLDEF2MSVP basis)")
+                func_choice = input("Select [1]: ").strip() or "1"
+                functionals = {
+                    "1": "HF3C", "2": "B973C", "3": "PBEH3C",
+                    "4": "HSE3C", "5": "HFSOL3C", "6": "PBESOL03C",
+                    "7": "HSESOL3C"
+                }
+                functional = functionals.get(func_choice, "HF3C")
         
         # Basis set
-        print("Basis set:")
-        print("  1: POB-TZVP-REV2 (internal)")
-        print("  2: 6-31G* (internal)")
-        print("  3: def2-TZVP (internal)")
-        print("  4: Custom external")
-        basis_choice = input("Basis set [1]: ").strip() or "1"
-        basis_options = {
-            "1": "POB-TZVP-REV2",
-            "2": "6-31G*", 
-            "3": "def2-TZVP",
-            "4": "EXTERNAL"
+        # Check if 3c method selected - they use specific basis sets
+        three_c_basis_map = {
+            "HF3C": "MINIX",
+            "HFSOL3C": "SOLMINIX",
+            "PBEH3C": "def2-mSVP",
+            "PBE03C": "def2-mSVP",  # PBEH3C and PBE03C are the same
+            "HSE3C": "def2-mSVP",
+            "B973C": "mTZVP",
+            "PBESOL03C": "SOLDEF2MSVP",
+            "HSESOL3C": "SOLDEF2MSVP"
         }
-        basis_set = basis_options.get(basis_choice, "POB-TZVP-REV2")
-        basis_type = "EXTERNAL" if basis_choice == "4" else "INTERNAL"
         
-        # Dispersion correction
-        dispersion = yes_no_prompt("Use dispersion correction (D3)?", "yes")
+        if functional in three_c_basis_map:
+            basis_set = three_c_basis_map[functional]
+            print(f"\n{functional} requires specific basis set: {basis_set}")
+            basis_type = "INTERNAL"
+            # 3c methods include dispersion by design
+            dispersion = False
+        else:
+            print("\nBasis set:")
+            print("  1: POB-TZVP-REV2 (internal)")
+            print("  2: 6-31G* (internal)")
+            print("  3: def2-TZVP (internal)")
+            print("  4: Custom external")
+            basis_choice = input("Basis set [1]: ").strip() or "1"
+            basis_options = {
+                "1": "POB-TZVP-REV2",
+                "2": "6-31G*", 
+                "3": "def2-TZVP",
+                "4": "EXTERNAL"
+            }
+            basis_set = basis_options.get(basis_choice, "POB-TZVP-REV2")
+            basis_type = "EXTERNAL" if basis_choice == "4" else "INTERNAL"
+            
+            # Dispersion correction - check if functional supports D3
+            d3_supported = functional in ["BLYP", "PBE", "B97", "B3LYP", "PBE0", 
+                                        "mPW1PW91", "M06", "HSE06", "HSEsol", "LC-wPBE"]
+            
+            if d3_supported:
+                dispersion = yes_no_prompt(f"\nUse D3 dispersion correction? ({functional} supports D3)", "yes")
+            else:
+                print(f"\nNote: {functional} does not support D3 dispersion correction")
+                dispersion = False
         
         # Spin polarization
         spin_polarized = yes_no_prompt("Use spin polarization?", "yes")
@@ -349,11 +490,20 @@ class WorkflowPlanner:
         opt_types = {"1": "FULLOPTG", "2": "CELLONLY", "3": "ATOMONLY"}
         opt_type = opt_types.get(opt_choice, "FULLOPTG")
         
+        # Map functionals to their correct CRYSTAL keywords
+        functional_keyword_map = {
+            "PBESOL": "PBESOLXC",
+            "SOGGA": "SOGGAXC",
+        }
+        
+        # Apply functional mapping if needed
+        crystal_functional = functional_keyword_map.get(functional, functional)
+        
         # Build configuration
         cif_config = self.get_default_cif_config()
         cif_config.update({
             "method": method,
-            "dft_functional": functional,
+            "dft_functional": crystal_functional,
             "basis_set": basis_set,
             "basis_set_type": basis_type,
             "use_dispersion": dispersion,
@@ -434,7 +584,7 @@ class WorkflowPlanner:
                 
         template_options = {str(i): key for i, key in enumerate(self.workflow_templates.keys(), 1)}
         
-        template_choice = get_user_input("Select workflow template", template_options, "4")
+        template_choice = get_user_input("Select workflow template", template_options, "3")
         selected_template = template_options[template_choice]
         print(f"Selected template: {selected_template}")
         
@@ -2578,7 +2728,9 @@ class WorkflowPlanner:
         
     def save_workflow_plan(self, workflow_plan: Dict[str, Any]) -> Path:
         """Save complete workflow plan to JSON"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Use the workflow_id timestamp to ensure the plan file matches
+        workflow_id = workflow_plan.get("workflow_id", f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        timestamp = workflow_id.replace("workflow_", "")
         plan_file = self.configs_dir / f"workflow_plan_{timestamp}.json"
         
         with open(plan_file, 'w') as f:
