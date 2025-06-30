@@ -1294,7 +1294,7 @@ class WorkflowPlanner:
             print("    - Enhanced tolerances for accurate frequencies:")
             print("      - TOLINTEG: 12 12 12 12 24 (tighter integrals)")
             print("      - TOLDEE: 12 (SCF convergence 10^-12 Ha)")
-            print("    - Numerical derivatives: 2-point (default)")
+            print("    - Numerical derivatives: 2-point (two displacements per atom)")
             print("    - Method/basis: inherited from optimized geometry")
             
             config = {
@@ -1341,7 +1341,12 @@ class WorkflowPlanner:
                 config["frequency_settings"]["mode"] = "CUSTOM"
             
             # Numerical derivative method
-            numderiv = input("\n  Numerical derivative level (1 or 2) [2]: ").strip() or "2"
+            print("\n  Numerical derivative method:")
+            print("    1: One displacement per atom (faster, less accurate)")
+            print("       Uses forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
+            print("    2: Two displacements per atom (recommended)")
+            print("       Uses central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
+            numderiv = input("  Select method (1 or 2) [2]: ").strip() or "2"
             config["frequency_settings"]["numderiv"] = int(numderiv)
             
             # IR intensities

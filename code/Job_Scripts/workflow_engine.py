@@ -1807,8 +1807,32 @@ fi'''
                             sp_calc_id = self.generate_numbered_calculation(completed_calc_id, next_calc_type)
                             if sp_calc_id:
                                 new_calc_ids.append(sp_calc_id)
+                        elif next_base_type == "FREQ":
+                            # FREQ needs optimized geometry from the highest numbered OPT calculation
+                            all_calcs = self.db.get_calculations_by_status(material_id=material_id)
+                            
+                            # Build completed_by_type dict for finding highest OPT
+                            completed_by_type = {}
+                            for calc in all_calcs:
+                                if calc['status'] == 'completed':
+                                    calc_type_temp = calc['calc_type']
+                                    if calc_type_temp not in completed_by_type:
+                                        completed_by_type[calc_type_temp] = []
+                                    completed_by_type[calc_type_temp].append(calc)
+                            
+                            # Find the highest numbered OPT
+                            opt_calc_id = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
+                            
+                            if opt_calc_id:
+                                print(f"Generating {next_calc_type} from OPT...")
+                                freq_calc_id = self.generate_freq_from_opt(opt_calc_id, next_calc_type)
+                                if freq_calc_id:
+                                    new_calc_ids.append(freq_calc_id)
+                                else:
+                                    print(f"Failed to generate {next_calc_type}")
+                                    failed_generations.add(next_calc_type)
                             else:
-                                # Generation failed
+                                print(f"No completed OPT found for {next_calc_type} generation")
                                 failed_generations.add(next_calc_type)
                                 if self._is_calculation_optional(next_calc_type):
                                     print(f"Failed to generate optional {next_calc_type}, continuing...")
