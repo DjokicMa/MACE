@@ -12,6 +12,7 @@ AUTHOR:
 """
 
 import os
+import numpy as np
 
 
 # Element class and atomic data
@@ -1269,10 +1270,457 @@ def write_optimization_section(f, optimization_type, optimization_settings):
 
 
 def write_frequency_section(f, freq_settings):
-    """Write the frequency calculation section of the D12 file"""
+    """
+    Write the frequency calculation section of the D12 file
+    
+    Args:
+        f: File handle
+        freq_settings: Dictionary with frequency calculation settings
+            Required keys:
+            - mode: str - Type of frequency calculation (e.g., "GAMMA", "DISPERSION")
+            
+            Optional keys for basic settings:
+            - numderiv: int - Numerical derivative method (1 or 2, default 2)
+            - intensities: bool - Calculate IR intensities (default False)
+            - ir_method: str - Method for IR intensities: "BERRY" (default), "WANNIER", "CPHF"
+            - raman: bool - Calculate Raman intensities (default False)
+            - dielectric_tensor: list[float] - 3x3 dielectric tensor for LO/TO splitting
+            - dielectric_constant: float - Isotropic dielectric constant (simpler than tensor)
+            - temperature: float - Temperature for thermodynamic analysis (default 298.15 K)
+            - pressure: float - Pressure for thermodynamic analysis (default 0.101325 MPa)
+            - print_modes: bool - Print eigenvectors (default True)
+            - analysis: bool - Analysis of vibrational modes (default False)
+            - restart: bool - Restart from previous calculation (default False)
+            
+            Advanced frequency options:
+            - preoptgeom: bool - Optimize geometry before frequencies (default False)
+            - optgeom_settings: dict - Settings for PREOPTGEOM block
+            - isotopes: dict - Modified isotope masses {atom_label: mass}
+            - stepsize: float - Step size for numerical derivatives (default 0.003 Å)
+            - eckart: bool - Apply Eckart conditions (default True)
+            - fragment: list[int] - Calculate frequencies for atom fragment only
+            - temprange: tuple - (n_temps, t_min, t_max) for temperature range
+            - pressrange: tuple - (n_press, p_min, p_max) for pressure range
+            - neglectfreq: int - Number of lowest frequencies to neglect in thermodynamics
+            - multitask: int - Number of parallel tasks for HPC
+            
+            IR intensity specific options:
+            - born_tensor_norm: bool - Normalize Born tensor to fulfill sum rule
+            - relocalize_wannier: bool - Relocalize Wannier functions at each point
+            - cphf_settings: dict - Settings for CPHF calculation
+            
+            Raman intensity specific options:
+            - ramanexp: tuple - (temperature, laser_wavelength_nm) for experimental conditions
+            - chi2tensor: list[float] - 3x9 second-order dielectric tensor for LO Raman
+            - norenorm: bool - Turn off renormalization to highest peak
+            - tensonly: bool - Only calculate tensors then stop
+            
+            Spectral generation options:
+            - irspec: bool - Generate IR spectrum (default False)
+            - ramspec: bool - Generate Raman spectrum (default False)
+            - spec_range: tuple - (min_freq, max_freq) in cm^-1
+            - spec_step: float - Step size for spectra in cm^-1 (default 1.0)
+            - spec_broadening: float - Peak broadening factor (default 8.0)
+            - spec_voigt: float - Voigt mixing parameter for Raman (0-1, default 1.0)
+            
+            Mode analysis and property options:
+            - scanmode: dict - Scan along normal modes {"modes": [int], "range": (start, end, step)}
+            - combmode: str - Combination modes: "ALL", "IR", "RAMAN", "IRRAMAN" (default)
+            - dispersion: bool - Calculate phonon dispersion (default False)
+            - supercell: tuple - Supercell size for dispersion (Lx, Ly, Lz)
+            - bands: dict - Band structure settings {"path": str, "npoints": int}
+            - pdos: dict - Phonon DOS settings {"max_freq": float, "nbins": int, "projected": bool}
+            - ins: dict - INS spectrum settings {"max_freq": float, "nbins": int, "neutron_type": int}
+            - adp: dict - Anisotropic displacement parameters {"temperature": float, "type": int}
+            - intraphonon: dict - Fourier interpolation settings
+            - wang: list[float] - 3x3 dielectric tensor for polar corrections
+            
+            Anharmonic options:
+            - anharm: int - Atom label for X-H anharmonic stretching
+            - anharm_points: int - Number of points for anharmonic PES (7 or 26)
+            - anhapes: dict - Anharmonic PES settings {"modes": [int], "scheme": int, "step": float}
+            - vscf: dict - VSCF settings {"tolerance": float, "mixing": float}
+            - vci: dict - VCI settings {"quanta": int, "modes": int, "guess": int}
+    """
     print("FREQCALC", file=f)
+    
+    # Handle restart
+    if freq_settings.get("restart", False):
+        print("RESTART", file=f)
+    
+    # Pre-optimization if requested
+    if freq_settings.get("preoptgeom", False):
+        print("PREOPTGEOM", file=f)
+        opt_settings = freq_settings.get("optgeom_settings", {})
+        if opt_settings.get("fulloptg", False):
+            print("FULLOPTG", file=f)
+        # Optimization tolerances
+        if "toldeg" in opt_settings:
+            print("TOLDEG", file=f)
+            print(format_crystal_float(opt_settings["toldeg"]), file=f)
+        if "toldex" in opt_settings:
+            print("TOLDEX", file=f)
+            print(format_crystal_float(opt_settings["toldex"]), file=f)
+        if "finalrun" in opt_settings:
+            print("FINALRUN", file=f)
+            print(opt_settings["finalrun"], file=f)
+        print("END", file=f)
+    
+    # Mode analysis
+    if freq_settings.get("analysis", False):
+        print("ANALYSIS", file=f)
+    elif freq_settings.get("noanalysis", False):
+        print("NOANALYSIS", file=f)
+    
+    # Eckart conditions
+    if not freq_settings.get("eckart", True):
+        print("NOECKART", file=f)
+    
+    # Fragment calculation
+    if "fragment" in freq_settings:
+        fragment_atoms = freq_settings["fragment"]
+        print("FRAGMENT", file=f)
+        print(len(fragment_atoms), file=f)
+        print(" ".join(str(a) for a in fragment_atoms), file=f)
+    
+    # Modified isotopes
+    if "isotopes" in freq_settings:
+        isotopes = freq_settings["isotopes"]
+        print("ISOTOPES", file=f)
+        print(len(isotopes), file=f)
+        for atom_label, mass in isotopes.items():
+            print(f"{atom_label} {mass}", file=f)
+    
+    # Numerical derivative method
+    numderiv = freq_settings.get("numderiv", 2)
     print("NUMDERIV", file=f)
-    print(freq_settings["NUMDERIV"], file=f)
+    print(numderiv, file=f)
+    
+    # Step size for numerical derivatives
+    if "stepsize" in freq_settings:
+        print("STEPSIZE", file=f)
+        print(format_crystal_float(freq_settings["stepsize"]), file=f)
+    
+    # Temperature range
+    if "temprange" in freq_settings:
+        n_temps, t_min, t_max = freq_settings["temprange"]
+        print("TEMPERAT", file=f)
+        print(f"{n_temps} {t_min} {t_max}", file=f)
+    
+    # Pressure range
+    if "pressrange" in freq_settings:
+        n_press, p_min, p_max = freq_settings["pressrange"]
+        print("PRESSURE", file=f)
+        print(f"{n_press} {p_min} {p_max}", file=f)
+    
+    # Neglect lowest frequencies
+    if "neglectfreq" in freq_settings:
+        print("NEGLEFRE", file=f)
+        print(freq_settings["neglectfreq"], file=f)
+    
+    # Multitask for HPC
+    if "multitask" in freq_settings:
+        print("MULTITASK", file=f)
+        print(freq_settings["multitask"], file=f)
+    
+    # Mode printing
+    if not freq_settings.get("print_modes", True):
+        print("NOMODES", file=f)
+    
+    # Frequency scaling
+    if "freqscale" in freq_settings:
+        print("FREQSCAL", file=f)
+        print(format_crystal_float(freq_settings["freqscale"]), file=f)
+    
+    # Dielectric tensor or constant for LO/TO splitting
+    if "dielectric_tensor" in freq_settings:
+        tensor = freq_settings["dielectric_tensor"]
+        print("DIELTENS", file=f)
+        # Print 3x3 tensor (9 values)
+        tensor_str = " ".join(format_crystal_float(v) for v in tensor[:9])
+        print(tensor_str, file=f)
+    elif "dielectric_constant" in freq_settings:
+        print("DIELISO", file=f)
+        print(format_crystal_float(freq_settings["dielectric_constant"]), file=f)
+    
+    # Chi2 tensor for Raman LO modes
+    if "chi2tensor" in freq_settings:
+        tensor = freq_settings["chi2tensor"]
+        print("CHI2TENS", file=f)
+        # Print 3x9 tensor (27 values)
+        for i in range(0, 27, 9):
+            tensor_str = " ".join(format_crystal_float(v) for v in tensor[i:i+9])
+            print(tensor_str, file=f)
+    
+    # IR intensities
+    if freq_settings.get("intensities", False):
+        print("INTENS", file=f)
+        
+        ir_method = freq_settings.get("ir_method", "BERRY").upper()
+        if ir_method == "WANNIER":
+            print("INTLOC", file=f)
+            
+            # Wannier function settings
+            if freq_settings.get("relocalize_wannier", False):
+                print("DIPOMOME", file=f)
+                print("RELOCAL", file=f)
+                print("END", file=f)
+        elif ir_method == "CPHF":
+            print("INTCPHF", file=f)
+            # CPHF settings block
+            cphf_settings = freq_settings.get("cphf_settings", {})
+            if "fmixing" in cphf_settings:
+                print("FMIXING", file=f)
+                print(cphf_settings["fmixing"], file=f)
+            if "tolalpha" in cphf_settings:
+                print("TOLALPHA", file=f)
+                print(cphf_settings["tolalpha"], file=f)
+            if "maxcycle" in cphf_settings:
+                print("MAXCYCLE", file=f)
+                print(cphf_settings["maxcycle"], file=f)
+            print("END", file=f)
+        # else: default is Berry phase (INTPOL), no keyword needed
+        
+        # Born tensor normalization
+        if freq_settings.get("born_tensor_norm", False):
+            print("NORMBORN", file=f)
+    else:
+        print("NOINTENS", file=f)
+    
+    # Raman intensities
+    if freq_settings.get("raman", False):
+        print("INTRAMAN", file=f)
+        
+        # Always need INTCPHF for Raman
+        if not (freq_settings.get("intensities", False) and 
+                freq_settings.get("ir_method", "BERRY").upper() == "CPHF"):
+            print("INTCPHF", file=f)
+            # CPHF settings for Raman
+            cphf_settings = freq_settings.get("cphf_settings", {})
+            if "fmixing2" in cphf_settings:
+                print("FMIXING2", file=f)
+                print(cphf_settings["fmixing2"], file=f)
+            if "tolgamma" in cphf_settings:
+                print("TOLGAMMA", file=f)
+                print(cphf_settings["tolgamma"], file=f)
+            if "maxcycle2" in cphf_settings:
+                print("MAXCYCLE2", file=f)
+                print(cphf_settings["maxcycle2"], file=f)
+            print("END", file=f)
+        
+        # Experimental conditions
+        if "ramanexp" in freq_settings:
+            temp, laser_nm = freq_settings["ramanexp"]
+            print("RAMANEXP", file=f)
+            print(f"{temp} {laser_nm}", file=f)
+        
+        # Other Raman options
+        if freq_settings.get("norenorm", False):
+            print("NORENORM", file=f)
+        if freq_settings.get("tensonly", False):
+            print("TENSONLY", file=f)
+    
+    # Combination modes
+    if "combmode" in freq_settings:
+        print("COMBMODE", file=f)
+        mode_type = freq_settings["combmode"].upper()
+        if mode_type in ["IR", "RAMAN", "ALL"]:
+            print(mode_type, file=f)
+        # IRRAMAN is default, no keyword needed
+        
+        # Frequency range for combination modes
+        if "combmode_range" in freq_settings:
+            print("FREQRANGE", file=f)
+            fmin, fmax = freq_settings["combmode_range"]
+            print(f"{fmin} {fmax}", file=f)
+        print("END", file=f)
+    
+    # Mode scanning
+    if "scanmode" in freq_settings:
+        scan_settings = freq_settings["scanmode"]
+        modes = scan_settings.get("modes", [])
+        if modes:
+            print("SCANMODE", file=f)
+            scan_range = scan_settings.get("range", (-10, 10, 0.2))
+            print(f"{len(modes)} {scan_range[0]} {scan_range[1]} {scan_range[2]}", file=f)
+            print(" ".join(str(m) for m in modes), file=f)
+    
+    # Phonon dispersion
+    if freq_settings.get("dispersion", False):
+        print("DISPERSION", file=f)
+        
+        # Fourier interpolation
+        if "intraphonon" in freq_settings:
+            interp = freq_settings["intraphonon"]
+            print("INTERPHESS", file=f)
+            l_params = interp.get("expand", [2, 2, 2])
+            print(" ".join(str(l) for l in l_params[:3]), file=f)
+            print(interp.get("print", 0), file=f)
+        
+        # Wang correction for polar materials
+        if "wang" in freq_settings:
+            wang_tensor = freq_settings["wang"]
+            print("WANG", file=f)
+            tensor_str = " ".join(format_crystal_float(v) for v in wang_tensor[:9])
+            print(tensor_str, file=f)
+        
+        # Band structure
+        if "bands" in freq_settings:
+            band_settings = freq_settings["bands"]
+            print("BANDS", file=f)
+            print(band_settings.get("shrink", 16), file=f)
+            print(band_settings.get("npoints", 100), file=f)
+            
+            # Band path
+            path = band_settings.get("path", [])
+            print(len(path), file=f)
+            for segment in path:
+                if isinstance(segment, str):
+                    # High symmetry point labels (e.g., "G", "X")
+                    print(f"{segment[0]} {segment[1]}", file=f)
+                else:
+                    # Fractional coordinates
+                    start, end = segment
+                    print(f"{start[0]} {start[1]} {start[2]} {end[0]} {end[1]} {end[2]}", file=f)
+        
+        # Phonon DOS
+        if "pdos" in freq_settings:
+            pdos_settings = freq_settings["pdos"]
+            print("PDOS", file=f)
+            print(f"{pdos_settings.get('max_freq', 2000)} {pdos_settings.get('nbins', 200)}", file=f)
+            print(1 if pdos_settings.get("projected", True) else 0, file=f)
+        
+        # INS spectrum
+        if "ins" in freq_settings:
+            ins_settings = freq_settings["ins"]
+            print("INS", file=f)
+            print(f"{ins_settings.get('max_freq', 3000)} {ins_settings.get('nbins', 300)}", file=f)
+            print(ins_settings.get("neutron_type", 2), file=f)  # 0=coherent, 1=incoherent, 2=both
+    
+    # Anisotropic displacement parameters
+    if "adp" in freq_settings:
+        adp_settings = freq_settings["adp"]
+        print("ADP", file=f)
+        print(f"{adp_settings.get('type', 0)} {adp_settings.get('neglect', 0)}", file=f)
+    
+    # IR spectrum generation
+    if freq_settings.get("irspec", False):
+        print("IRSPEC", file=f)
+        
+        # Spectrum settings
+        if "spec_range" in freq_settings:
+            print("RANGE", file=f)
+            print(f"{freq_settings['spec_range'][0]} {freq_settings['spec_range'][1]}", file=f)
+        if "spec_step" in freq_settings:
+            print("LENSTEP", file=f)
+            print(format_crystal_float(freq_settings["spec_step"]), file=f)
+        if "spec_broadening" in freq_settings:
+            print("DAMPFAC", file=f)
+            print(format_crystal_float(freq_settings["spec_broadening"]), file=f)
+        if freq_settings.get("spec_gaussian", False):
+            print("GAUSS", file=f)
+        if "spec_angle" in freq_settings:
+            print("ANGLE", file=f)
+            print(format_crystal_float(freq_settings["spec_angle"]), file=f)
+        if freq_settings.get("spec_refrind", False):
+            print("REFRIND", file=f)
+        if freq_settings.get("spec_dielfun", False):
+            print("DIELFUN", file=f)
+        
+        print("END", file=f)
+    
+    # Raman spectrum generation
+    if freq_settings.get("ramspec", False):
+        print("RAMSPEC", file=f)
+        
+        # Spectrum settings
+        if "spec_range" in freq_settings:
+            print("RANGE", file=f)
+            print(f"{freq_settings['spec_range'][0]} {freq_settings['spec_range'][1]}", file=f)
+        if "spec_step" in freq_settings:
+            print("LENSTEP", file=f)
+            print(format_crystal_float(freq_settings["spec_step"]), file=f)
+        if "spec_voigt" in freq_settings:
+            print("VOIGT", file=f)
+            print(format_crystal_float(freq_settings["spec_voigt"]), file=f)
+        if "spec_broadening" in freq_settings:
+            print("DAMPFAC", file=f)
+            print(format_crystal_float(freq_settings["spec_broadening"]), file=f)
+        
+        print("END", file=f)
+    
+    # Anharmonic PES calculation
+    if "anhapes" in freq_settings:
+        anha_settings = freq_settings["anhapes"]
+        print("ANHAPES", file=f)
+        modes = anha_settings.get("modes", [])
+        print(len(modes), file=f)
+        print(" ".join(str(m) for m in modes), file=f)
+        print(f"{anha_settings.get('scheme', 3)} {format_crystal_float(anha_settings.get('step', 0.9))}", file=f)
+        
+        # Restart PES
+        if anha_settings.get("restpes", False):
+            print("RESTPES", file=f)
+    
+    # VSCF calculation
+    if "vscf" in freq_settings:
+        vscf_settings = freq_settings["vscf"]
+        print("VSCF", file=f)
+        
+        if "tolerance" in vscf_settings:
+            print("VSCFTOL", file=f)
+            print(int(-np.log10(vscf_settings["tolerance"])), file=f)
+        if "mixing" in vscf_settings:
+            print("VSCFMIX", file=f)
+            print(int(vscf_settings["mixing"]), file=f)
+    
+    # VCI calculation
+    if "vci" in freq_settings:
+        vci_settings = freq_settings["vci"]
+        print("VCI", file=f)
+        print(f"{vci_settings.get('quanta', 6)} {vci_settings.get('modes', 3)}", file=f)
+        print(vci_settings.get("guess", 1), file=f)  # 0=harmonic, 1=VSCF
+    
+    # End FREQCALC block
+    print("END", file=f)
+
+
+def write_anharm_section(f, anharm_settings):
+    """
+    Write anharmonic X-H stretching section (outside FREQCALC)
+    
+    Args:
+        f: File handle
+        anharm_settings: Dictionary with anharmonic settings
+            - atom_label: int - Label of H/D atom to displace
+            - points: int - Number of points (7 or 26, default 7)
+            - isotopes: dict - Modified isotope masses {atom_label: mass}
+            - keepsymm: bool - Keep symmetry by moving all equivalent atoms
+            - noguess: bool - Use atomic densities as SCF guess at each point
+    """
+    print("ANHARM", file=f)
+    print(anharm_settings["atom_label"], file=f)
+    
+    # Modified isotopes
+    if "isotopes" in anharm_settings:
+        isotopes = anharm_settings["isotopes"]
+        print("ISOTOPES", file=f)
+        print(len(isotopes), file=f)
+        for atom_label, mass in isotopes.items():
+            print(f"{atom_label} {mass}", file=f)
+    
+    # Keep symmetry
+    if anharm_settings.get("keepsymm", False):
+        print("KEEPSYMM", file=f)
+    
+    # SCF guess
+    if anharm_settings.get("noguess", False):
+        print("NOGUESS", file=f)
+    
+    # Number of points
+    if anharm_settings.get("points", 7) == 26:
+        print("POINTS26", file=f)
+    
     print("END", file=f)
 
 

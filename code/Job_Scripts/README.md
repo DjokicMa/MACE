@@ -397,7 +397,40 @@ Job_Scripts/
 
 ## Recent Updates
 
-### Race Condition Prevention (Latest)
+### Comprehensive Frequency Calculation Support (Latest)
+
+The system now supports all CRYSTAL23 frequency calculation features:
+
+1. **Enhanced d12creation.py**: Complete rewrite of `write_frequency_section()` supporting all FREQCALC options
+2. **Interactive Configuration**: Three levels of frequency setup (Basic/Advanced/Expert)
+3. **Full Feature Set**:
+   - IR intensities with multiple methods (Berry phase, Wannier, CPHF)
+   - Raman intensities (requires CPHF)
+   - Phonon dispersion and density of states
+   - Spectral generation (IRSPEC, RAMSPEC)
+   - Anharmonic corrections (ANHARM, VSCF, VCI)
+   - Elastic constants calculation
+   - Temperature-dependent thermodynamics
+4. **Workflow Integration**: Frequency settings properly captured and stored in workflow JSON files
+5. **Backward Compatible**: Existing simple frequency calculations continue to work
+
+Example configuration in workflow JSON:
+```json
+{
+  "frequency_settings": {
+    "mode": "GAMMA",
+    "numderiv": 2,
+    "intensities": true,
+    "ir_method": "CPHF",
+    "raman": true,
+    "cphf_max_iter": 50,
+    "ir_spectrum": true,
+    "temperatures": [200, 298.15, 400]
+  }
+}
+```
+
+### Race Condition Prevention
 
 The system now includes comprehensive race condition fixes for simultaneous job completions:
 

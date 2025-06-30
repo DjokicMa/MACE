@@ -1880,7 +1880,7 @@ fi'''
                             
                             opt_source = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
                             if opt_source:
-                                freq_calc_id = self.generate_freq_from_opt(opt_source)
+                                freq_calc_id = self.generate_freq_from_opt(opt_source, next_calc_type)
                                 if freq_calc_id:
                                     new_calc_ids.append(freq_calc_id)
                         # Add other calculation types as needed
@@ -2641,24 +2641,75 @@ fi'''
                         print(f"  Config dispersion: {config_content.get('dispersion', 'N/A')}")
                 except Exception as e:
                     print(f"  Error reading config file: {e}")
-            elif target_base_type == "OPT" and not expert_config_file:
-                # Check if workflow configuration has optimization settings
+            elif not expert_config_file:
+                # Check if workflow configuration has settings for this calculation type
                 workflow_config = self.get_workflow_step_config(workflow_id, target_calc_type)
-                if workflow_config and 'optimization_type' in workflow_config:
-                    # Create temporary expert config
+                if workflow_config:
+                    # Create temporary expert config based on calculation type
                     temp_config = {
-                        "calculation_type": "OPT",
-                        "optimization_type": workflow_config.get('optimization_type', 'FULLOPTG'),
-                        "optimization_settings": workflow_config.get('optimization_settings', {}),
-                        "inherit_settings": workflow_config.get('inherit_settings', True)
+                        "calculation_type": target_base_type,
+                        "inherit_settings": workflow_config.get('inherit_settings', workflow_config.get('inherit_base_settings', True))
                     }
+                    
+                    # Add optimization-specific settings
+                    if target_base_type == "OPT" and 'optimization_type' in workflow_config:
+                        temp_config["optimization_type"] = workflow_config.get('optimization_type', 'FULLOPTG')
+                        temp_config["optimization_settings"] = workflow_config.get('optimization_settings', {})
+                    
+                    # Add frequency-specific settings
+                    if target_base_type == "FREQ" and 'frequency_settings' in workflow_config:
+                        freq_settings = workflow_config['frequency_settings']
+                        # Check if it's the new comprehensive format or old format
+                        if isinstance(freq_settings, dict):
+                            # New comprehensive format - pass through directly
+                            temp_config['freq_settings'] = freq_settings
+                        else:
+                            # Old format compatibility
+                            if 'mode' in freq_settings:
+                                temp_config['freq_mode'] = freq_settings['mode']
+                            if 'intensities' in freq_settings:
+                                temp_config['ir_intensities'] = freq_settings['intensities']
+                            if 'raman' in freq_settings:
+                                temp_config['raman_intensities'] = freq_settings['raman']
+                    
+                    # Add method settings if present
+                    if 'method_settings' in workflow_config:
+                        method_settings = workflow_config['method_settings']
+                        if 'custom_functional' in method_settings:
+                            temp_config['functional'] = method_settings['custom_functional']
+                        elif 'new_functional' in method_settings:
+                            temp_config['functional'] = method_settings['new_functional']
+                            if method_settings.get('use_dispersion'):
+                                temp_config['dispersion'] = True
+                    
+                    # Add basis settings if present
+                    if 'basis_settings' in workflow_config:
+                        basis_settings = workflow_config['basis_settings']
+                        if 'new_basis' in basis_settings:
+                            temp_config['basis_set'] = basis_settings['new_basis']
+                            temp_config['basis_set_type'] = 'INTERNAL'
+                    
+                    # Add custom tolerances if present
+                    if 'custom_tolerances' in workflow_config:
+                        custom_tol = workflow_config['custom_tolerances']
+                        if 'TOLINTEG' in custom_tol:
+                            temp_config['tolinteg'] = custom_tol['TOLINTEG']
+                        if 'TOLDEE' in custom_tol:
+                            temp_config['scf_toldee'] = custom_tol['TOLDEE']
                     # Write to temporary file in work directory
                     temp_config_file = work_dir / f"{target_calc_type}_temp_config.json"
                     with open(temp_config_file, 'w') as f:
                         json.dump(temp_config, f, indent=2)
                     args.extend(["--config-file", str(temp_config_file)])
-                    print(f"  Created temporary config file for {target_calc_type} with optimization settings")
-                    print(f"  Optimization type: {temp_config['optimization_type']}")
+                    print(f"  Created temporary config file for {target_calc_type}")
+                    print(f"  Config contents:")
+                    for key, value in temp_config.items():
+                        if key != 'optimization_settings':
+                            print(f"    {key}: {value}")
+                        else:
+                            print(f"    {key}:")
+                            for k, v in value.items():
+                                print(f"      {k}: {v}")
                 # With config file, we just need to confirm applying it
                 # 1. Apply config? → y (yes)
                 input_responses = "y\n"

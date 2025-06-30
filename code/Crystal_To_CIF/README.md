@@ -24,6 +24,13 @@ This folder contains Python scripts for automating `.d12` input file generation 
 - Supports SLAB, MOLECULE, and CRYSTAL input modes  
 - Interactive or batch conversion  
 - Customizable DFT functional, SCF, symmetry, and basis options  
+- **NEW**: Comprehensive frequency calculation support including:
+  - IR intensities (Berry phase, Wannier functions, CPHF methods)
+  - Raman intensities with CPHF
+  - Phonon dispersion and density of states
+  - Spectral generation (IR/Raman spectra)
+  - Anharmonic calculations (ANHARM, VSCF, VCI)
+  - Temperature-dependent thermodynamic properties  
 
 **Usage:**
 
@@ -90,6 +97,9 @@ python manual_create_d12_w-ghosts.py
 
 - Modular and cleaner replacement for `get_optimized2.py`  
 - Parses final geometry section  
+- **NEW**: Full support for comprehensive frequency calculations
+- Generates SP, FREQ, and other calculation types from optimized geometries
+- Complete integration with workflow system  
 
 **Usage:**
 
@@ -121,10 +131,61 @@ All scripts generate CRYSTAL23-compatible `.d12` files:
 
 ---
 
+## Shared Module: `d12creation.py`
+
+**Purpose:** Shared constants, utilities, and functions for creating D12 input files.
+
+**Key Features:**
+
+- Element class with atomic numbers
+- Basis set definitions (internal and external)
+- DFT functional library with dispersion support
+- **NEW**: Comprehensive `write_frequency_section()` function supporting:
+  - Multiple calculation modes (GAMMA, DISPERSION, CUSTOM)
+  - IR intensity methods (Berry phase, Wannier functions, CPHF)
+  - Raman intensity calculation
+  - Spectral generation with customizable parameters
+  - Phonon dispersion and DOS calculations
+  - Elastic constants
+  - Anharmonic corrections (ANHARM, VSCF, VCI)
+  - Temperature/pressure-dependent properties
+  - Advanced settings (restart, print levels, Hessian storage)
+
+**Frequency Calculation Examples:**
+
+```python
+# Simple gamma point calculation
+freq_settings = {
+    "mode": "GAMMA",
+    "numderiv": 2,
+    "temperatures": [298.15]
+}
+
+# IR and Raman with CPHF
+freq_settings = {
+    "mode": "GAMMA",
+    "intensities": True,
+    "ir_method": "CPHF",
+    "raman": True,
+    "ir_spectrum": True,
+    "raman_spectrum": True
+}
+
+# Phonon dispersion
+freq_settings = {
+    "mode": "DISPERSION",
+    "n_kpoints": 30,
+    "phdos": True
+}
+```
+
+---
+
 ## Notes
 
 - Only **P1 symmetry** is supported for ghost atom injection  
 - `_slab.out`, `_bulk.out`, and `_slab.d12` must be present in the working directory  
 - Customize basis paths in `NewCifToD12.py` as needed  
+- Frequency calculations now support all CRYSTAL23 features through interactive configuration
 
 ---
