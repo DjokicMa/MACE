@@ -1287,10 +1287,10 @@ class WorkflowPlanner:
         
         if level == 1:
             # Basic - use defaults
-            print("\n  Using recommended frequency calculation defaults:")
-            print("    - Mode: FREQCALC (full vibrational analysis)")
-            print("    - IR intensities: Yes (dipole derivatives)")
-            print("    - Raman intensities: No (requires additional time)")
+            print("\n  Using simple frequency calculation defaults:")
+            print("    - Mode: FREQCALC (gamma point vibrational analysis)")
+            print("    - IR intensities: No (faster calculation)")
+            print("    - Raman intensities: No")
             print("    - Enhanced tolerances for accurate frequencies:")
             print("      - TOLINTEG: 12 12 12 12 24 (tighter integrals)")
             print("      - TOLDEE: 12 (SCF convergence 10^-12 Ha)")
@@ -1302,9 +1302,10 @@ class WorkflowPlanner:
                 "source": "CRYSTALOptToD12.py",
                 "inherit_base_settings": True,
                 "frequency_settings": {
-                    "mode": "FREQCALC",
-                    "intensities": True,
-                    "raman": False,
+                    "mode": "GAMMA",
+                    "numderiv": 2,
+                    "intensities": False,
+                    "temperatures": [298.15],
                     "custom_tolerances": {
                         "TOLINTEG": "12 12 12 12 24",
                         "TOLDEE": 12
@@ -1313,9 +1314,8 @@ class WorkflowPlanner:
             }
             
         elif level == 2:
-            # Advanced - customize key parameters
+            # Advanced - comprehensive frequency settings
             print("\n    Advanced frequency calculation setup:")
-            print("    Current defaults: IR=Yes, Raman=No, Mode=FREQCALC, Enhanced tolerances")
             
             config = {
                 "calculation_type": "FREQ",
@@ -1324,33 +1324,93 @@ class WorkflowPlanner:
                 "frequency_settings": {}
             }
             
-            # Ask about intensities
-            calc_intensities = input("\n  Calculate IR intensities? [Y/n]: ").strip().lower()
-            config["frequency_settings"]["intensities"] = calc_intensities != 'n'
-            
-            # Ask about Raman
-            calc_raman = input("  Calculate Raman intensities? [y/N]: ").strip().lower()
-            config["frequency_settings"]["raman"] = calc_raman == 'y'
-            
-            # Ask about modes
+            # Frequency calculation mode
             print("\n  Frequency calculation mode:")
-            print("    1. FREQCALC - Full analytical frequencies (recommended)")
-            print("    2. FREQRANGE - Partial frequency range (faster for large systems)")
-            print("    3. NUMFREQ - Purely numerical frequencies (more robust, slower)")
-            print("\n    Note: NUMFREQ uses finite differences and may be more stable")
-            print("          for difficult systems but takes ~6x longer than FREQCALC")
+            print("    1. Gamma point only (thermodynamic properties)")
+            print("    2. Phonon dispersion (band structure and DOS)")
+            print("    3. Custom k-points")
             
             mode_choice = input("  Select mode [1]: ").strip() or "1"
-            modes = {
-                "1": "FREQCALC",
-                "2": "FREQRANGE",
-                "3": "NUMFREQ"
-            }
-            config["frequency_settings"]["mode"] = modes.get(mode_choice, "FREQCALC")
+            if mode_choice == "1":
+                config["frequency_settings"]["mode"] = "GAMMA"
+            elif mode_choice == "2":
+                config["frequency_settings"]["mode"] = "DISPERSION"
+                n_kpoints = input("  Number of k-points for dispersion [20]: ").strip()
+                config["frequency_settings"]["n_kpoints"] = int(n_kpoints) if n_kpoints else 20
+            else:
+                config["frequency_settings"]["mode"] = "CUSTOM"
             
-            # Custom tolerances
+            # Numerical derivative method
+            numderiv = input("\n  Numerical derivative level (1 or 2) [2]: ").strip() or "2"
+            config["frequency_settings"]["numderiv"] = int(numderiv)
+            
+            # IR intensities
+            calc_ir = input("\n  Calculate IR intensities? [Y/n]: ").strip().lower()
+            if calc_ir != 'n':
+                config["frequency_settings"]["intensities"] = True
+                
+                print("\n  IR intensity calculation method:")
+                print("    1. Berry phase (default, fast)")
+                print("    2. Wannier functions (localized)")
+                print("    3. CPHF (most accurate, required for Raman)")
+                
+                ir_method = input("  Select method [1]: ").strip() or "1"
+                ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
+                config["frequency_settings"]["ir_method"] = ir_methods.get(ir_method, "BERRY")
+                
+                # CPHF settings if selected
+                if config["frequency_settings"]["ir_method"] == "CPHF":
+                    max_iter = input("  CPHF max iterations [30]: ").strip()
+                    config["frequency_settings"]["cphf_max_iter"] = int(max_iter) if max_iter else 30
+                    tol = input("  CPHF convergence (10^-x) [6]: ").strip()
+                    config["frequency_settings"]["cphf_tolerance"] = int(tol) if tol else 6
+            
+            # Raman intensities (requires CPHF)
+            calc_raman = input("\n  Calculate Raman intensities? (requires CPHF) [y/N]: ").strip().lower()
+            if calc_raman == 'y':
+                config["frequency_settings"]["raman"] = True
+                config["frequency_settings"]["intensities"] = True
+                config["frequency_settings"]["ir_method"] = "CPHF"
+                if "cphf_max_iter" not in config["frequency_settings"]:
+                    config["frequency_settings"]["cphf_max_iter"] = 30
+                if "cphf_tolerance" not in config["frequency_settings"]:
+                    config["frequency_settings"]["cphf_tolerance"] = 6
+            
+            # Spectral generation
+            if config["frequency_settings"].get("intensities") or config["frequency_settings"].get("raman"):
+                gen_spectra = input("\n  Generate IR/Raman spectra? [Y/n]: ").strip().lower()
+                if gen_spectra != 'n':
+                    if config["frequency_settings"].get("intensities"):
+                        config["frequency_settings"]["ir_spectrum"] = True
+                        width = input("  IR peak width (cm^-1) [10]: ").strip()
+                        config["frequency_settings"]["ir_spectrum_width"] = float(width) if width else 10
+                    if config["frequency_settings"].get("raman"):
+                        config["frequency_settings"]["raman_spectrum"] = True
+                        width = input("  Raman peak width (cm^-1) [10]: ").strip()
+                        config["frequency_settings"]["raman_spectrum_width"] = float(width) if width else 10
+            
+            # Anharmonic calculations
+            calc_anharm = input("\n  Include anharmonic corrections? [y/N]: ").strip().lower()
+            if calc_anharm == 'y':
+                config["frequency_settings"]["anharmonic"] = True
+                print("\n  Anharmonic calculation type:")
+                print("    1. ANHARM (basic X-H stretches)")
+                print("    2. VSCF (Vibrational SCF)")
+                print("    3. VCI (Vibrational CI)")
+                anharm_type = input("  Select type [1]: ").strip() or "1"
+                anharm_types = {"1": "ANHARM", "2": "VSCF", "3": "VCI"}
+                config["frequency_settings"]["anharm_type"] = anharm_types.get(anharm_type, "ANHARM")
+            
+            # Temperature list
+            if config["frequency_settings"].get("mode") == "GAMMA":
+                temp_input = input("\n  Temperatures (K) space-separated [298.15]: ").strip()
+                if temp_input:
+                    config["frequency_settings"]["temperatures"] = [float(t) for t in temp_input.split()]
+                else:
+                    config["frequency_settings"]["temperatures"] = [298.15]
+            
+            # Enhanced tolerances
             print("\n  Tolerance settings for frequency calculations:")
-            print("    Enhanced tolerances are recommended for accurate frequencies")
             print("    Standard: TOLINTEG 7 7 7 7 14, TOLDEE 7")
             print("    Enhanced: TOLINTEG 12 12 12 12 24, TOLDEE 12 (recommended)")
             enhanced = input("  Use enhanced tolerances? [Y/n]: ").strip().lower()
@@ -1398,9 +1458,14 @@ class WorkflowPlanner:
                     "source": "CRYSTALOptToD12.py",
                     "inherit_base_settings": True,
                     "frequency_settings": {
-                        "mode": "FREQCALC",
+                        "mode": "GAMMA",
+                        "numderiv": 2,
                         "intensities": True,
+                        "ir_method": "CPHF",
                         "raman": True,
+                        "cphf_max_iter": 30,
+                        "cphf_tolerance": 6,
+                        "temperatures": [298.15],
                         "custom_tolerances": {
                             "TOLINTEG": "12 12 12 12 24",
                             "TOLDEE": 12
@@ -1578,7 +1643,16 @@ class WorkflowPlanner:
             modifications["inherit_functional"] = True
         elif func_choice == "7":
             # Custom functional - show full selection
-            modifications["custom_functional"] = self._select_custom_functional()
+            selected_functional = self._select_custom_functional()
+            modifications["custom_functional"] = selected_functional
+            
+            # Ask about dispersion for non-3C methods
+            if selected_functional and "3C" not in selected_functional.upper():
+                print(f"\n      Add dispersion correction to {selected_functional}?")
+                print("        Dispersion correction (D3) improves description of van der Waals interactions")
+                use_d3 = yes_no_prompt("      Use D3 dispersion correction?", "yes")
+                if use_d3:
+                    modifications["custom_functional"] = f"{selected_functional}-D3"
         else:
             # Map choices to functionals
             functional_map = {
