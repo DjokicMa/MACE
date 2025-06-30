@@ -1281,8 +1281,10 @@ def get_advanced_frequency_settings():
     
     # Numerical derivative method
     print("\nNumerical derivative method:")
-    print("1: First derivatives only (faster, less accurate)")
-    print("2: Second derivatives (default, recommended)")
+    print("1: One displacement per atom (faster, less accurate)")
+    print("   Uses forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
+    print("2: Two displacements per atom (default, recommended)")
+    print("   Uses central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
     
     numderiv = input("Select method (1-2) [2]: ").strip() or "2"
     freq_settings["numderiv"] = int(numderiv)
