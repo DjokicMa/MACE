@@ -617,13 +617,13 @@ FUNCTIONAL_CATEGORIES = {
     "HF": {
         "name": "Hartree-Fock Methods",
         "description": "Wave function based methods (no DFT)",
-        "functionals": ["RHF", "UHF", "HF-3C", "HFsol-3C"],
-        "basis_requirements": {"HF-3C": "MINIX", "HFsol-3C": "SOLMINIX"},
+        "functionals": ["RHF", "UHF", "HF3C", "HFSOL3C"],
+        "basis_requirements": {"HF3C": "MINIX", "HFSOL3C": "SOLMINIX"},
         "descriptions": {
             "RHF": "Restricted Hartree-Fock (closed shell)",
             "UHF": "Unrestricted Hartree-Fock (open shell)",
-            "HF-3C": "Minimal basis HF with D3, gCP, and SRB corrections",
-            "HFsol-3C": "HF-3C revised for inorganic solids",
+            "HF3C": "Minimal basis HF with D3, gCP, and SRB corrections",
+            "HFSOL3C": "HF3C revised for inorganic solids",
         },
     },
     "LDA": {
@@ -758,20 +758,20 @@ FUNCTIONAL_CATEGORIES = {
     "3C": {
         "name": "3c Composite Methods (DFT)",
         "description": "DFT composite methods with semi-classical corrections (require specific basis sets)",
-        "functionals": ["PBEh-3C", "HSE-3C", "B97-3C", "PBEsol0-3C", "HSEsol-3C"],
+        "functionals": ["PBEH3C", "HSE3C", "B973C", "PBESOL03C", "HSESOL3C"],
         "basis_requirements": {
-            "PBEh-3C": "def2-mSVP",
-            "HSE-3C": "def2-mSVP",
-            "B97-3C": "mTZVP",
-            "PBEsol0-3C": "sol-def2-mSVP",
-            "HSEsol-3C": "sol-def2-mSVP",
+            "PBEH3C": "def2-mSVP",
+            "HSE3C": "def2-mSVP",
+            "B973C": "mTZVP",
+            "PBESOL03C": "SOLDEF2MSVP",
+            "HSESOL3C": "SOLDEF2MSVP",
         },
         "descriptions": {
-            "PBEh-3C": "Modified PBE hybrid (42% HF) with D3 and gCP",
-            "HSE-3C": "Screened exchange hybrid optimized for molecular solids",
-            "B97-3C": "GGA functional with D3 and SRB corrections",
-            "PBEsol0-3C": "PBEsol0 hybrid for solids with D3 and gCP",
-            "HSEsol-3C": "HSEsol with semi-classical corrections for solids",
+            "PBEH3C": "Modified PBE hybrid (42% HF) with D3 and gCP",
+            "HSE3C": "Screened exchange hybrid optimized for molecular solids",
+            "B973C": "GGA functional with D3 and SRB corrections",
+            "PBESOL03C": "PBEsol0 hybrid for solids with D3 and gCP",
+            "HSESOL3C": "HSEsol with semi-classical corrections for solids",
         },
     },
 }
@@ -1293,9 +1293,9 @@ def write_dft_section(f, functional, use_dispersion, dft_grid, is_spin_polarized
     }
 
     # Handle special functional keywords
-    if functional in ["PBEh-3C", "HSE-3C", "B97-3C", "PBEsol0-3C", "HSEsol-3C"]:
+    if functional in ["PBEH3C", "HSE3C", "B973C", "PBESOL03C", "HSESOL3C"]:
         # These are standalone keywords in CRYSTAL23
-        print(f"{functional.replace('-', '')}", file=f)  # Remove hyphen for CRYSTAL23
+        print(f"{functional}", file=f)
         # 3C methods have their own grid settings, don't add grid
     elif functional == "mPW1PW91" and use_dispersion:
         print("PW1PW-D3", file=f)
