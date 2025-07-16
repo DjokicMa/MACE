@@ -495,146 +495,247 @@ def select_dft_functional():
 
 def get_advanced_frequency_settings():
     """Get advanced frequency calculation settings from user"""
+    from d12creation import FREQ_TEMPLATES
+    
     freq_settings = {}
     
     print("\n=== FREQUENCY CALCULATION SETTINGS ===")
     
-    # Mode selection
-    print("\nFrequency calculation modes:")
-    print("1: Gamma point only (default) - Thermodynamic properties")
-    print("2: Phonon dispersion - Band structure and DOS")
-    print("3: Custom k-points - Specific points in Brillouin zone")
+    # First, ask if they want to use a template
+    print("\nFrequency calculation templates:")
+    print("1: Basic frequencies only")
+    print("2: IR spectrum")
+    print("3: Raman spectrum")
+    print("4: IR + Raman spectra")
+    print("5: Thermodynamic properties")
+    print("6: Phonon band structure")
+    print("7: Phonon density of states")
+    print("8: Custom settings")
     
-    mode_choice = input("Select mode (1-3) [1]: ").strip() or "1"
+    template_choice = input("Select template (1-8) [1]: ").strip() or "1"
     
-    if mode_choice == "1":
-        freq_settings["mode"] = "GAMMA"
-    elif mode_choice == "2":
-        freq_settings["mode"] = "DISPERSION"
-        # Ask for dispersion details
-        n_kpoints = int(input("Number of k-points for dispersion [20]: ") or 20)
-        freq_settings["n_kpoints"] = n_kpoints
+    template_map = {
+        "1": "basic",
+        "2": "ir_spectrum",
+        "3": "raman_spectrum",
+        "4": "ir_raman",
+        "5": "thermodynamics",
+        "6": "phonon_bands",
+        "7": "phonon_dos",
+    }
+    
+    if template_choice in template_map:
+        # Use template as base
+        template_name = template_map[template_choice]
+        freq_settings = FREQ_TEMPLATES[template_name].copy()
         
-        # Ask if they want to specify a path or use automatic
-        use_auto_path = yes_no_prompt("Use automatic k-path generation?", "yes")
-        if not use_auto_path:
-            print("Enter k-points path (e.g., 'G-X-M-G' or custom coordinates)")
-            print("Note: Custom path specification will be added to TODO list")
-            # TODO: Implement custom k-path specification
-    else:
-        freq_settings["mode"] = "CUSTOM"
-        # TODO: Implement custom k-points input
-        print("Custom k-points mode not yet fully implemented")
-    
-    # Numerical derivative method
-    print("\nNumerical derivative method:")
-    print("1: One displacement per atom (faster, less accurate)")
-    print("   Uses forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
-    print("2: Two displacements per atom (default, recommended)")
-    print("   Uses central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
-    
-    numderiv = input("Select method (1-2) [2]: ").strip() or "2"
-    freq_settings["numderiv"] = int(numderiv)
-    
-    # IR intensities
-    calc_ir = yes_no_prompt("\nCalculate IR intensities?", "no")
-    if calc_ir:
-        freq_settings["intensities"] = True
+        print(f"\nUsing '{template_name}' template as base.")
         
-        print("\nIR intensity calculation method:")
-        print("1: Berry phase (default, fast)")
-        print("2: Wannier functions (localized, good for molecules)")
-        print("3: CPHF (most accurate, expensive)")
-        
-        ir_method_choice = input("Select method (1-3) [1]: ").strip() or "1"
-        ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
-        freq_settings["ir_method"] = ir_methods[ir_method_choice]
-        
-        if freq_settings["ir_method"] == "CPHF":
-            # CPHF specific options
-            print("\nCPHF calculation options:")
-            max_iter = int(input("Maximum CPHF iterations [30]: ") or 30)
-            freq_settings["cphf_max_iter"] = max_iter
-            
-            tol = float(input("CPHF convergence tolerance (10^-x) [6]: ") or 6)
-            freq_settings["cphf_tolerance"] = tol
-    
-    # Raman intensities (requires CPHF)
-    calc_raman = yes_no_prompt("\nCalculate Raman intensities? (requires CPHF)", "no")
-    if calc_raman:
-        freq_settings["raman"] = True
-        freq_settings["intensities"] = True  # IR is required for Raman
-        freq_settings["ir_method"] = "CPHF"  # Force CPHF for Raman
-        
-        # Set CPHF parameters if not already set
-        if "cphf_max_iter" not in freq_settings:
-            freq_settings["cphf_max_iter"] = 30
-        if "cphf_tolerance" not in freq_settings:
-            freq_settings["cphf_tolerance"] = 6
-    
-    # Spectral generation
-    if freq_settings.get("intensities") or freq_settings.get("raman"):
-        gen_spectra = yes_no_prompt("\nGenerate IR/Raman spectra?", "yes")
-        if gen_spectra:
-            if freq_settings.get("intensities"):
-                freq_settings["ir_spectrum"] = True
-                width = float(input("IR peak width (cm^-1) [10]: ") or 10)
-                freq_settings["ir_spectrum_width"] = width
+        # Allow some customization even with templates
+        if template_choice in ["2", "3", "4"]:
+            # Spectral templates - ask about range
+            print("\nSpectral range settings:")
+            custom_range = yes_no_prompt("Customize spectral range?", "no")
+            if custom_range:
+                min_freq = float(input("Minimum frequency (cm⁻¹) [0]: ") or 0)
+                max_freq = float(input("Maximum frequency (cm⁻¹) [4000]: ") or 4000)
+                freq_settings["spec_range"] = [min_freq, max_freq]
                 
-            if freq_settings.get("raman"):
-                freq_settings["raman_spectrum"] = True
-                width = float(input("Raman peak width (cm^-1) [10]: ") or 10)
-                freq_settings["raman_spectrum_width"] = width
-    
-    # Anharmonic calculations
-    calc_anharm = yes_no_prompt("\nInclude anharmonic corrections (X-H stretches)?", "no")
-    if calc_anharm:
-        freq_settings["anharmonic"] = True
+        elif template_choice == "5":
+            # Thermodynamics - ask about temperature range
+            print("\nThermodynamic settings:")
+            custom_temp = yes_no_prompt("Customize temperature range?", "no")
+            if custom_temp:
+                n_temps = int(input("Number of temperature points [20]: ") or 20)
+                t_min = float(input("Minimum temperature (K) [0]: ") or 0)
+                t_max = float(input("Maximum temperature (K) [400]: ") or 400)
+                freq_settings["temprange"] = (n_temps, t_min, t_max)
+                
+    else:
+        # Custom settings
+        print("\n=== CUSTOM FREQUENCY SETTINGS ===")
         
-        print("\nAnharmonic calculation type:")
-        print("1: ANHARM - Basic anharmonic for X-H")
-        print("2: VSCF - Vibrational SCF")
-        print("3: VCI - Vibrational CI (most accurate)")
+        # Mode selection
+        print("\nFrequency calculation modes:")
+        print("1: Gamma point only (default)")
+        print("2: Phonon dispersion")
         
-        anharm_choice = input("Select type (1-3) [1]: ").strip() or "1"
-        anharm_types = {"1": "ANHARM", "2": "VSCF", "3": "VCI"}
-        freq_settings["anharm_type"] = anharm_types[anharm_choice]
+        mode_choice = input("Select mode (1-2) [1]: ").strip() or "1"
         
-        if freq_settings["anharm_type"] in ["VSCF", "VCI"]:
-            # VSCF/VCI specific options
-            max_quanta = int(input("Maximum quanta per mode [4]: ") or 4)
-            freq_settings["vscf_max_quanta"] = max_quanta
-            
-            if freq_settings["anharm_type"] == "VCI":
-                max_coupled = int(input("Maximum coupled modes [2]: ") or 2)
-                freq_settings["vci_max_coupled"] = max_coupled
-    
-    # Temperature for thermodynamic properties
-    if freq_settings.get("mode") == "GAMMA":
-        print("\nThermodynamic properties calculation:")
-        temp_list = input("Enter temperatures (K) separated by spaces [298.15]: ").strip()
-        if temp_list:
-            freq_settings["temperatures"] = [float(t) for t in temp_list.split()]
+        if mode_choice == "1":
+            freq_settings["mode"] = "GAMMA"
         else:
-            freq_settings["temperatures"] = [298.15]
+            freq_settings["mode"] = "DISPERSION"
+            # Ask for dispersion details
+            n_kpoints = int(input("Number of k-points for dispersion [20]: ") or 20)
+            freq_settings["n_kpoints"] = n_kpoints
+            
+            # Ask for band structure calculation
+            calc_bands = yes_no_prompt("Calculate phonon band structure?", "yes")
+            if calc_bands:
+                freq_settings["bands"] = True
+                freq_settings["band_path"] = "AUTO"  # Will be determined by crystal system
+                freq_settings["npoints"] = int(input("Points per band segment [100]: ") or 100)
+            
+            # Ask for DOS calculation
+            calc_dos = yes_no_prompt("Calculate phonon density of states?", "yes")
+            if calc_dos:
+                freq_settings["pdos"] = True
+                max_freq = float(input("Maximum frequency for DOS (cm⁻¹) [1000]: ") or 1000)
+                n_bins = int(input("Number of DOS bins [200]: ") or 200)
+                freq_settings["dos_range"] = [0, max_freq]
+                freq_settings["dos_bins"] = n_bins
+                freq_settings["projected"] = yes_no_prompt("Calculate atom-projected DOS?", "yes")
+        
+        # Numerical derivative method
+        print("\nNumerical derivative method:")
+        print("1: One displacement per atom (faster, less accurate)")
+        print("   Uses forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
+        print("2: Two displacements per atom (default, recommended)")
+        print("   Uses central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
+        
+        numderiv = input("Select method (1-2) [2]: ").strip() or "2"
+        freq_settings["numderiv"] = int(numderiv)
+        
+        # IR intensities
+        calc_ir = yes_no_prompt("\nCalculate IR intensities?", "no")
+        if calc_ir:
+            freq_settings["intensities"] = True
+            
+            print("\nIR intensity calculation method:")
+            print("1: Berry phase (default, fast)")
+            print("2: Wannier functions (localized, good for molecules)")
+            print("3: CPHF (most accurate, expensive)")
+            
+            ir_method_choice = input("Select method (1-3) [1]: ").strip() or "1"
+            ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
+            freq_settings["ir_method"] = ir_methods[ir_method_choice]
+            
+            if freq_settings["ir_method"] == "CPHF":
+                # CPHF specific options
+                print("\nCPHF calculation options:")
+                max_iter = int(input("Maximum CPHF iterations [30]: ") or 30)
+                freq_settings["cphf_max_iter"] = max_iter
+                
+                tol = float(input("CPHF convergence tolerance (10^-x) [6]: ") or 6)
+                freq_settings["cphf_tolerance"] = tol
+        
+        # Raman intensities (requires CPHF)
+        calc_raman = yes_no_prompt("\nCalculate Raman intensities? (requires CPHF)", "no")
+        if calc_raman:
+            freq_settings["raman"] = True
+            freq_settings["intensities"] = True  # IR is required for Raman
+            freq_settings["ir_method"] = "CPHF"  # Force CPHF for Raman
+            
+            # Set CPHF parameters if not already set
+            if "cphf_max_iter" not in freq_settings:
+                freq_settings["cphf_max_iter"] = 30
+            if "cphf_tolerance" not in freq_settings:
+                freq_settings["cphf_tolerance"] = 6
+        
+        # Spectral generation
+        if freq_settings.get("intensities") or freq_settings.get("raman"):
+            gen_spectra = yes_no_prompt("\nGenerate IR/Raman spectra?", "yes")
+            if gen_spectra:
+                # Spectral range
+                print("\nSpectral range settings:")
+                min_freq = float(input("Minimum frequency (cm⁻¹) [0]: ") or 0)
+                max_freq = float(input("Maximum frequency (cm⁻¹) [4000]: ") or 4000)
+                freq_settings["spec_range"] = [min_freq, max_freq]
+                
+                # Step size
+                step = float(input("Frequency step (cm⁻¹) [1]: ") or 1)
+                freq_settings["spec_step"] = step
+                
+                # Peak width
+                width = float(input("Peak width/damping factor (cm⁻¹) [8]: ") or 8)
+                freq_settings["spec_dampfac"] = width
+                
+                if freq_settings.get("intensities"):
+                    freq_settings["irspec"] = True
+                    
+                if freq_settings.get("raman"):
+                    freq_settings["ramspec"] = True
+        
+        # Thermodynamic properties
+        calc_thermo = yes_no_prompt("\nCalculate thermodynamic properties?", "yes")
+        if calc_thermo:
+            print("\nTemperature range for thermodynamics:")
+            use_range = yes_no_prompt("Use temperature range (vs single temperature)?", "no")
+            if use_range:
+                n_temps = int(input("Number of temperature points [20]: ") or 20)
+                t_min = float(input("Minimum temperature (K) [0]: ") or 0)
+                t_max = float(input("Maximum temperature (K) [400]: ") or 400)
+                freq_settings["temprange"] = (n_temps, t_min, t_max)
+            else:
+                temp = float(input("Temperature (K) [298.15]: ") or 298.15)
+                freq_settings["temperature"] = temp
+            
+            # Pressure settings
+            use_press_range = yes_no_prompt("Calculate at multiple pressures?", "no")
+            if use_press_range:
+                n_press = int(input("Number of pressure points [10]: ") or 10)
+                p_min = float(input("Minimum pressure (MPa) [0.1]: ") or 0.1)
+                p_max = float(input("Maximum pressure (MPa) [10]: ") or 10)
+                freq_settings["pressrange"] = (n_press, p_min, p_max)
+            else:
+                press = float(input("Pressure (MPa) [0.101325]: ") or 0.101325)
+                freq_settings["pressure"] = press
     
-    # Additional options
-    print("\nAdditional options:")
+    # Advanced options for all frequency calculations
+    show_advanced = yes_no_prompt("\nShow advanced options?", "no")
+    if show_advanced:
+        print("\nAdvanced frequency options:")
+        
+        # Mode analysis
+        freq_settings["analysis"] = yes_no_prompt("Perform mode analysis?", "no")
+        
+        # Print modes
+        freq_settings["print_modes"] = yes_no_prompt("Print eigenvectors?", "yes")
+        
+        # Eckart conditions
+        freq_settings["eckart"] = yes_no_prompt("Apply Eckart conditions?", "yes")
+        
+        # Step size customization
+        custom_step = yes_no_prompt("Customize displacement step size?", "no")
+        if custom_step:
+            step = float(input("Step size (Å) [0.003]: ") or 0.003)
+            freq_settings["stepsize"] = step
+        
+        # Isotope substitution
+        use_isotopes = yes_no_prompt("Include isotope substitutions?", "no")
+        if use_isotopes:
+            n_isotopes = int(input("Number of atoms to substitute: "))
+            isotopes = {}
+            for i in range(n_isotopes):
+                atom_label = input(f"Atom label {i+1}: ")
+                mass = float(input(f"New mass for {atom_label} (amu): "))
+                isotopes[atom_label] = mass
+            freq_settings["isotopes"] = isotopes
+        
+        # Fragment calculation
+        calc_fragment = yes_no_prompt("Calculate frequencies for atom fragment only?", "no")
+        if calc_fragment:
+            atom_list = input("Enter atom labels separated by spaces: ").strip()
+            freq_settings["fragment"] = atom_list.split()
+        
+        # Multitask for HPC
+        use_multitask = yes_no_prompt("Enable multitask parallelization?", "no")
+        if use_multitask:
+            n_tasks = int(input("Number of parallel tasks [4]: ") or 4)
+            freq_settings["multitask"] = n_tasks
     
-    # Restart capability
-    use_restart = yes_no_prompt("Enable restart capability?", "yes")
-    if use_restart:
-        freq_settings["restart"] = True
-    
-    # Print level
-    print("\nOutput verbosity:")
-    print("0: Minimal output")
-    print("1: Standard output (default)")
-    print("2: Detailed output")
-    print("3: Debug output")
-    
-    print_level = input("Select print level (0-3) [1]: ").strip() or "1"
-    freq_settings["print_level"] = int(print_level)
+    # Summary of settings
+    print("\n=== FREQUENCY CALCULATION SUMMARY ===")
+    print(f"Mode: {freq_settings.get('mode', 'GAMMA')}")
+    print(f"Numerical derivative: {freq_settings.get('numderiv', 2)}")
+    if freq_settings.get('intensities'):
+        print(f"IR intensities: {freq_settings.get('ir_method', 'BERRY')}")
+    if freq_settings.get('raman'):
+        print("Raman intensities: Yes (CPHF)")
+    if freq_settings.get('irspec') or freq_settings.get('ramspec'):
+        print(f"Spectra generation: Range {freq_settings.get('spec_range', [0, 4000])} cm⁻¹")
+    print("="*40)
     
     return freq_settings
 

@@ -821,6 +821,80 @@ DEFAULT_FREQ_SETTINGS = {
     "NUMDERIV": 2,  # Numerical derivative level
     "TOLINTEG": "12 12 12 12 24",  # Tighter tolerance for frequencies
     "TOLDEE": 12,  # Tighter SCF convergence for frequencies
+    "mode": "GAMMA",  # Default to gamma-point frequencies
+    "intensities": False,  # Calculate IR intensities
+    "ir_method": "BERRY",  # Method for IR intensities
+    "raman": False,  # Calculate Raman intensities
+    "print_modes": True,  # Print eigenvectors
+    "analysis": False,  # Analysis of vibrational modes
+    "eckart": True,  # Apply Eckart conditions
+    "temperature": 298.15,  # Temperature for thermodynamics (K)
+    "pressure": 0.101325,  # Pressure for thermodynamics (MPa)
+}
+
+# Frequency calculation templates for common use cases
+FREQ_TEMPLATES = {
+    "basic": {
+        "mode": "GAMMA",
+        "numderiv": 2,
+        "intensities": False,
+        "print_modes": True,
+    },
+    "ir_spectrum": {
+        "mode": "GAMMA",
+        "numderiv": 2,
+        "intensities": True,
+        "ir_method": "BERRY",
+        "irspec": True,
+        "spec_range": [0, 4000],
+        "spec_step": 1.0,
+        "spec_dampfac": 8.0,
+    },
+    "raman_spectrum": {
+        "mode": "GAMMA",
+        "numderiv": 2,
+        "intensities": True,
+        "ir_method": "CPHF",
+        "raman": True,
+        "ramspec": True,
+        "spec_range": [0, 4000],
+        "spec_step": 1.0,
+        "spec_dampfac": 8.0,
+    },
+    "ir_raman": {
+        "mode": "GAMMA",
+        "numderiv": 2,
+        "intensities": True,
+        "ir_method": "CPHF",
+        "raman": True,
+        "irspec": True,
+        "ramspec": True,
+        "spec_range": [0, 4000],
+        "spec_step": 1.0,
+        "spec_dampfac": 8.0,
+    },
+    "thermodynamics": {
+        "mode": "GAMMA",
+        "numderiv": 2,
+        "intensities": False,
+        "temprange": (20, 0, 400),  # 20 points from 0 to 400K
+        "pressrange": (1, 0.101325, 0.101325),  # Atmospheric pressure
+    },
+    "phonon_bands": {
+        "mode": "DISPERSION",
+        "numderiv": 2,
+        "bands": True,
+        "band_path": "AUTO",  # Will need to be defined based on crystal system
+        "npoints": 100,
+    },
+    "phonon_dos": {
+        "mode": "DISPERSION", 
+        "numderiv": 2,
+        "pdos": True,
+        "dos_range": [0, 1000],
+        "dos_bins": 200,
+        "projected": True,
+    },
 }
 
 # Default tolerance settings
@@ -1266,7 +1340,7 @@ def write_optimization_section(f, optimization_type, optimization_settings):
         print("MAXTRADIUS", file=f)
         print(format_crystal_float(optimization_settings["MAXTRADIUS"]), file=f)
 
-    print("ENDOPT", file=f)
+    print("ENDGEOM", file=f)
 
 
 def write_frequency_section(f, freq_settings):
@@ -1403,13 +1477,37 @@ def write_frequency_section(f, freq_settings):
     
     # Temperature range
     if "temprange" in freq_settings:
-        n_temps, t_min, t_max = freq_settings["temprange"]
+        temprange = freq_settings["temprange"]
+        # Handle both tuple and dict formats
+        if isinstance(temprange, dict):
+            n_temps = temprange.get("n_temps", 20)
+            t_min = temprange.get("t_min", 0)
+            t_max = temprange.get("t_max", 400)
+        else:
+            # Assume it's a tuple/list
+            try:
+                n_temps, t_min, t_max = temprange
+            except (ValueError, TypeError):
+                # Fallback to defaults if unpacking fails
+                n_temps, t_min, t_max = 20, 0, 400
         print("TEMPERAT", file=f)
         print(f"{n_temps} {t_min} {t_max}", file=f)
     
     # Pressure range
     if "pressrange" in freq_settings:
-        n_press, p_min, p_max = freq_settings["pressrange"]
+        pressrange = freq_settings["pressrange"]
+        # Handle both tuple and dict formats
+        if isinstance(pressrange, dict):
+            n_press = pressrange.get("n_press", 20)
+            p_min = pressrange.get("p_min", 0)
+            p_max = pressrange.get("p_max", 10)
+        else:
+            # Assume it's a tuple/list
+            try:
+                n_press, p_min, p_max = pressrange
+            except (ValueError, TypeError):
+                # Fallback to defaults if unpacking fails
+                n_press, p_min, p_max = 20, 0, 10
         print("PRESSURE", file=f)
         print(f"{n_press} {p_min} {p_max}", file=f)
     
@@ -1682,7 +1780,7 @@ def write_frequency_section(f, freq_settings):
         print(vci_settings.get("guess", 1), file=f)  # 0=harmonic, 1=VSCF
     
     # End FREQCALC block
-    print("END", file=f)
+    print("ENDFREQ", file=f)
 
 
 def write_anharm_section(f, anharm_settings):
