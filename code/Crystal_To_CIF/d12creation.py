@@ -816,11 +816,11 @@ DEFAULT_OPT_SETTINGS = {
     "MAXCYCLE": 800,  # Max number of optimization steps
 }
 
-# Default frequency calculation settings
+# Default frequency calculation settings (using high accuracy tolerances)
 DEFAULT_FREQ_SETTINGS = {
     "NUMDERIV": 2,  # Numerical derivative level
-    "TOLINTEG": "12 12 12 12 24",  # Tighter tolerance for frequencies
-    "TOLDEE": 12,  # Tighter SCF convergence for frequencies
+    "TOLINTEG": "9 9 9 11 38",  # High accuracy tolerance for frequencies
+    "TOLDEE": 11,  # Tighter SCF convergence for frequencies
     "mode": "GAMMA",  # Default to gamma-point frequencies
     "intensities": False,  # Calculate IR intensities
     "ir_method": "BERRY",  # Method for IR intensities
@@ -830,6 +830,28 @@ DEFAULT_FREQ_SETTINGS = {
     "eckart": True,  # Apply Eckart conditions
     "temperature": 298.15,  # Temperature for thermodynamics (K)
     "pressure": 0.101325,  # Pressure for thermodynamics (MPa)
+}
+
+# Advanced frequency calculation settings (for high accuracy)
+ADVANCED_FREQ_SETTINGS = {
+    "NUMDERIV": 2,  # Numerical derivative level
+    "TOLINTEG": "9 9 9 11 38",  # Advanced tolerance for frequencies
+    "TOLDEE": 11,  # Tighter SCF convergence for advanced frequencies
+    "mode": "GAMMA",  # Default to gamma-point frequencies
+    "intensities": True,  # Calculate IR intensities
+    "ir_method": "CPHF",  # Use CPHF for accurate intensities
+    "raman": True,  # Calculate Raman intensities (requires CPHF)
+    "cphf_max_iter": 30,  # CPHF max iterations
+    "cphf_tolerance": 6,  # CPHF convergence (10^-6)
+    "print_modes": True,  # Print eigenvectors
+    "analysis": True,  # Analysis of vibrational modes
+    "eckart": True,  # Apply Eckart conditions
+    "temperature": 298.15,  # Temperature for thermodynamics (K)
+    "pressure": 0.101325,  # Pressure for thermodynamics (MPa)
+    "ir_spectrum": True,  # Generate IR spectrum
+    "raman_spectrum": True,  # Generate Raman spectrum
+    "ir_spectrum_width": 10,  # Peak width for IR spectrum (cm^-1)
+    "raman_spectrum_width": 10,  # Peak width for Raman spectrum (cm^-1)
 }
 
 # Frequency calculation templates for common use cases

@@ -2444,8 +2444,19 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                     if key not in ["coordinates", "primitive_cell", "conventional_cell"]:
                         options[key] = value
                 
-                # Convert freq_settings temprange from dict to tuple if needed
-                if "freq_settings" in options and isinstance(options["freq_settings"], dict):
+                # Handle both "frequency_settings" (from workflow) and "freq_settings" (direct usage)
+                freq_key = None
+                if "frequency_settings" in options:
+                    freq_key = "frequency_settings"
+                elif "freq_settings" in options:
+                    freq_key = "freq_settings"
+                
+                if freq_key and isinstance(options[freq_key], dict):
+                    # Rename to freq_settings for consistency with rest of script
+                    if freq_key == "frequency_settings":
+                        options["freq_settings"] = options.pop("frequency_settings")
+                    
+                    # Convert temprange from dict to tuple if needed
                     if "temprange" in options["freq_settings"] and isinstance(options["freq_settings"]["temprange"], dict):
                         temprange_dict = options["freq_settings"]["temprange"]
                         options["freq_settings"]["temprange"] = (

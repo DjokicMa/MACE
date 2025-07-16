@@ -307,7 +307,17 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
             step_configs[f"{calc_type}_{step_num}"] = {
                 "calculation_type": "FREQ",
                 "source": "CRYSTALOptToD12.py",
-                "inherit_base_settings": True
+                "inherit_base_settings": True,
+                "frequency_settings": {
+                    "mode": "GAMMA",
+                    "numderiv": 2,
+                    "intensities": False,
+                    "temperatures": [298.15],
+                    "custom_tolerances": {
+                        "TOLINTEG": "9 9 9 11 38",
+                        "TOLDEE": 11
+                    }
+                }
             }
     
     # Create plan

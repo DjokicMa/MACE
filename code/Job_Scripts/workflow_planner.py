@@ -1291,9 +1291,9 @@ class WorkflowPlanner:
             print("    - Mode: FREQCALC (gamma point vibrational analysis)")
             print("    - IR intensities: No (faster calculation)")
             print("    - Raman intensities: No")
-            print("    - Enhanced tolerances for accurate frequencies:")
-            print("      - TOLINTEG: 12 12 12 12 24 (tighter integrals)")
-            print("      - TOLDEE: 12 (SCF convergence 10^-12 Ha)")
+            print("    - High accuracy tolerances for frequencies:")
+            print("      - TOLINTEG: 9 9 9 11 38")
+            print("      - TOLDEE: 11 (SCF convergence 10^-11 Ha)")
             print("    - Numerical derivatives: 2-point (two displacements per atom)")
             print("    - Method/basis: inherited from optimized geometry")
             
@@ -1307,8 +1307,8 @@ class WorkflowPlanner:
                     "intensities": False,
                     "temperatures": [298.15],
                     "custom_tolerances": {
-                        "TOLINTEG": "12 12 12 12 24",
-                        "TOLDEE": 12
+                        "TOLINTEG": "9 9 9 11 38",
+                        "TOLDEE": 11
                     }
                 }
             }
@@ -1414,17 +1414,14 @@ class WorkflowPlanner:
                 else:
                     config["frequency_settings"]["temperatures"] = [298.15]
             
-            # Enhanced tolerances
-            print("\n  Tolerance settings for frequency calculations:")
-            print("    Standard: TOLINTEG 7 7 7 7 14, TOLDEE 7")
-            print("    Enhanced: TOLINTEG 12 12 12 12 24, TOLDEE 12 (recommended)")
-            enhanced = input("  Use enhanced tolerances? [Y/n]: ").strip().lower()
-            if enhanced != 'n':
-                config["frequency_settings"]["custom_tolerances"] = {
-                    "TOLINTEG": "12 12 12 12 24",
-                    "TOLDEE": 12
-                }
-                print("  ✓ Using enhanced tolerances for improved accuracy")
+            # Always use high accuracy tolerances for FREQ
+            print("\n  Using high accuracy tolerances for frequency calculations:")
+            print("    TOLINTEG: 9 9 9 11 38")
+            print("    TOLDEE: 11")
+            config["frequency_settings"]["custom_tolerances"] = {
+                "TOLINTEG": "9 9 9 11 38",
+                "TOLDEE": 11
+            }
                 
         else:
             # Expert - run CRYSTALOptToD12.py interactively
