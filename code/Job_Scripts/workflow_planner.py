@@ -1449,6 +1449,15 @@ class WorkflowPlanner:
             # Copy required scripts early
             self._copy_required_scripts_for_expert_mode()
             
+            print("\n    Expert mode: Full interactive configuration")
+            print("    When prompted for frequency settings, answer 'n' to access:")
+            print("      - Phonon dispersion calculations")
+            print("      - IR/Raman intensity methods")
+            print("      - Anharmonic corrections")
+            print("      - Temperature-dependent properties")
+            print("      - Custom k-point paths")
+            print("      - And more advanced options...")
+            
             # Run CRYSTALOptToD12.py interactively for FREQ configuration
             expert_config = self._run_interactive_crystal_opt_config("FREQ")
             
@@ -1847,11 +1856,20 @@ class WorkflowPlanner:
             source_file = source_dir / script_name
             dest_file = self.work_dir / script_name
             
-            if source_file.exists() and not dest_file.exists():
+            if source_file.exists():
+                # Always copy to ensure we have the latest version
                 shutil.copy2(source_file, dest_file)
                 print(f"        Copied: {script_name}")
-            elif dest_file.exists():
-                print(f"        Already exists: {script_name}")
+                
+                # Verify the copied file has the advanced frequency settings function
+                if script_name == "CRYSTALOptToD12.py":
+                    with open(dest_file, 'r') as f:
+                        content = f.read()
+                        if "get_advanced_frequency_settings" in content:
+                            print(f"        ✓ Advanced frequency settings available")
+                        else:
+                            print(f"        ⚠ Warning: Advanced frequency settings not found in {script_name}")
+                            print(f"        The script may be outdated and won't show advanced FREQ options")
             else:
                 print(f"        Warning: Source not found: {script_name}")
     

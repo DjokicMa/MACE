@@ -2665,6 +2665,17 @@ fi'''
                         print(f"  Config dispersion: {config_content.get('dispersion', 'N/A')}")
                 except Exception as e:
                     print(f"  Error reading config file: {e}")
+                
+                # With expert config file, we need different responses based on calc type
+                if target_base_type == "FREQ":
+                    # For FREQ with config file:
+                    # 1. Apply config? → y (yes)
+                    # Additional newlines for any prompts CRYSTALOptToD12 might have
+                    input_responses = "y\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+                else:
+                    # For other types with config file:
+                    # 1. Apply config? → y (yes)
+                    input_responses = "y\n"
             elif not expert_config_file:
                 # Check if workflow configuration has settings for this calculation type
                 workflow_config = self.get_workflow_step_config(workflow_id, target_calc_type)
@@ -2681,20 +2692,25 @@ fi'''
                         temp_config["optimization_settings"] = workflow_config.get('optimization_settings', {})
                     
                     # Add frequency-specific settings
-                    if target_base_type == "FREQ" and 'frequency_settings' in workflow_config:
-                        freq_settings = workflow_config['frequency_settings']
-                        # Check if it's the new comprehensive format or old format
-                        if isinstance(freq_settings, dict):
-                            # New comprehensive format - pass through directly
-                            temp_config['freq_settings'] = freq_settings
-                        else:
-                            # Old format compatibility
-                            if 'mode' in freq_settings:
-                                temp_config['freq_mode'] = freq_settings['mode']
-                            if 'intensities' in freq_settings:
-                                temp_config['ir_intensities'] = freq_settings['intensities']
-                            if 'raman' in freq_settings:
-                                temp_config['raman_intensities'] = freq_settings['raman']
+                    # Check both possible keys for frequency settings
+                    if target_base_type == "FREQ":
+                        freq_settings = workflow_config.get('frequency_settings') or workflow_config.get('freq_settings')
+                        if freq_settings:
+                            print(f"  DEBUG: Found frequency settings: {freq_settings}")
+                            # Check if it's the new comprehensive format or old format
+                            if isinstance(freq_settings, dict):
+                                # New comprehensive format - pass through directly
+                                temp_config['freq_settings'] = freq_settings
+                                # Also add as frequency_settings for compatibility
+                                temp_config['frequency_settings'] = freq_settings
+                            else:
+                                # Old format compatibility
+                                if 'mode' in freq_settings:
+                                    temp_config['freq_mode'] = freq_settings['mode']
+                                if 'intensities' in freq_settings:
+                                    temp_config['ir_intensities'] = freq_settings['intensities']
+                                if 'raman' in freq_settings:
+                                    temp_config['raman_intensities'] = freq_settings['raman']
                     
                     # Add method settings if present
                     if 'method_settings' in workflow_config:
@@ -2728,31 +2744,43 @@ fi'''
                     print(f"  Created temporary config file for {target_calc_type}")
                     print(f"  Config contents:")
                     for key, value in temp_config.items():
-                        if key != 'optimization_settings':
-                            print(f"    {key}: {value}")
-                        else:
+                        if key == 'optimization_settings':
                             print(f"    {key}:")
                             for k, v in value.items():
                                 print(f"      {k}: {v}")
-                # With config file, we just need to confirm applying it
-                # 1. Apply config? → y (yes)
-                input_responses = "y\n"
-            # Prepare input responses for non-interactive execution based on target type
-            # 1. Keep settings? → y (yes, keep original settings)
-            elif target_base_type == "OPT":
-                # 2. Calc type → 2 (OPT)
-                # 3. Symmetry choice → 1 (Write only unique atoms)
-                input_responses = "y\n2\n1\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
-            elif target_base_type == "SP":
-                # 2. Calc type → 1 (SP)
-                # 3. Symmetry choice → 1 (Write only unique atoms)
-                input_responses = "y\n1\n1\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
-            elif target_base_type == "FREQ":
-                # 2. Calc type → 3 (FREQ)
-                input_responses = "y\n3\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+                        elif key in ['freq_settings', 'frequency_settings'] and isinstance(value, dict):
+                            print(f"    {key}:")
+                            for k, v in value.items():
+                                print(f"      {k}: {v}")
+                        else:
+                            print(f"    {key}: {value}")
+                # With config file, we need different responses based on calc type
+                if target_base_type == "FREQ":
+                    # For FREQ with config file:
+                    # 1. Apply config? → y (yes)
+                    # Additional newlines for any prompts CRYSTALOptToD12 might have
+                    input_responses = "y\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+                else:
+                    # For other types with config file:
+                    # 1. Apply config? → y (yes)
+                    input_responses = "y\n"
             else:
-                # Default to SP for unknown types
-                input_responses = "y\n1\n1\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+                # Prepare input responses for non-interactive execution based on target type
+                # 1. Keep settings? → y (yes, keep original settings)
+                if target_base_type == "OPT":
+                    # 2. Calc type → 2 (OPT)
+                    # 3. Symmetry choice → 1 (Write only unique atoms)
+                    input_responses = "y\n2\n1\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+                elif target_base_type == "SP":
+                    # 2. Calc type → 1 (SP)
+                    # 3. Symmetry choice → 1 (Write only unique atoms)
+                    input_responses = "y\n1\n1\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+                elif target_base_type == "FREQ":
+                    # 2. Calc type → 3 (FREQ)
+                    input_responses = "y\n3\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+                else:
+                    # Default to SP for unknown types
+                    input_responses = "y\n1\n1\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
             
             success, stdout, stderr = self.run_script_in_isolated_directory(
                 crystal_to_d12_script, work_dir, args, input_data=input_responses

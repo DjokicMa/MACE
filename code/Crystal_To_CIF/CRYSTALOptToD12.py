@@ -1248,36 +1248,101 @@ class CrystalInputParser:
 
 def get_advanced_frequency_settings():
     """Get advanced frequency calculation settings from user"""
+    print("\n[DEBUG] Entering get_advanced_frequency_settings()")
+    import sys
+    sys.stdout.flush()  # Force output to appear
+    
+    try:
+        from d12creation import FREQ_TEMPLATES
+    except ImportError:
+        # Fallback if import fails
+        FREQ_TEMPLATES = {}
+    
     freq_settings = {}
     
     print("\n=== FREQUENCY CALCULATION SETTINGS ===")
+    sys.stdout.flush()
     
-    # Mode selection
-    print("\nFrequency calculation modes:")
-    print("1: Gamma point only (default) - Thermodynamic properties")
-    print("2: Phonon dispersion - Band structure and DOS")
-    print("3: Custom k-points - Specific points in Brillouin zone")
+    # First, ask if they want to use a template
+    print("\nFrequency calculation templates:")
+    print("1: Basic frequencies only")
+    print("2: IR spectrum")
+    print("3: Raman spectrum")
+    print("4: IR + Raman spectra")
+    print("5: Thermodynamic properties")
+    print("6: Phonon band structure")
+    print("7: Phonon density of states")
+    print("8: Custom settings")
     
-    mode_choice = input("Select mode (1-3) [1]: ").strip() or "1"
+    template_choice = input("Select template (1-8) [1]: ").strip() or "1"
     
-    if mode_choice == "1":
-        freq_settings["mode"] = "GAMMA"
-    elif mode_choice == "2":
-        freq_settings["mode"] = "DISPERSION"
-        # Ask for dispersion details
-        n_kpoints = int(input("Number of k-points for dispersion [20]: ") or 20)
-        freq_settings["n_kpoints"] = n_kpoints
+    template_map = {
+        "1": "basic",
+        "2": "ir_spectrum",
+        "3": "raman_spectrum",
+        "4": "ir_raman",
+        "5": "thermodynamics",
+        "6": "phonon_bands",
+        "7": "phonon_dos",
+    }
+    
+    if template_choice in template_map and FREQ_TEMPLATES:
+        # Use template as base
+        template_name = template_map[template_choice]
+        freq_settings = FREQ_TEMPLATES.get(template_name, {}).copy()
         
-        # Ask if they want to specify a path or use automatic
-        use_auto_path = yes_no_prompt("Use automatic k-path generation?", "yes")
-        if not use_auto_path:
-            print("Enter k-points path (e.g., 'G-X-M-G' or custom coordinates)")
-            print("Note: Custom path specification will be added to TODO list")
-            # TODO: Implement custom k-path specification
+        print(f"\nUsing '{template_name}' template as base.")
+        
+        # Allow some customization even with templates
+        if template_choice in ["2", "3", "4"]:
+            # Spectral templates - ask about range
+            print("\nSpectral range settings:")
+            custom_range = yes_no_prompt("Customize spectral range?", "no")
+            if custom_range:
+                min_freq = float(input("Minimum frequency (cm⁻¹) [0]: ") or 0)
+                max_freq = float(input("Maximum frequency (cm⁻¹) [4000]: ") or 4000)
+                freq_settings["spec_range"] = [min_freq, max_freq]
+                
+        elif template_choice == "5":
+            # Thermodynamics - ask about temperature range
+            print("\nThermodynamic settings:")
+            custom_temp = yes_no_prompt("Customize temperature range?", "no")
+            if custom_temp:
+                n_temps = int(input("Number of temperature points [20]: ") or 20)
+                t_min = float(input("Minimum temperature (K) [0]: ") or 0)
+                t_max = float(input("Maximum temperature (K) [400]: ") or 400)
+                freq_settings["temprange"] = (n_temps, t_min, t_max)
+                
     else:
-        freq_settings["mode"] = "CUSTOM"
-        # TODO: Implement custom k-points input
-        print("Custom k-points mode not yet fully implemented")
+        # Custom settings
+        print("\n=== CUSTOM FREQUENCY SETTINGS ===")
+        
+        # Mode selection
+        print("\nFrequency calculation modes:")
+        print("1: Gamma point only (default)")
+        print("2: Phonon dispersion")
+        
+        mode_choice = input("Select mode (1-2) [1]: ").strip() or "1"
+        
+        if mode_choice == "1":
+            freq_settings["mode"] = "GAMMA"
+        else:
+            freq_settings["mode"] = "DISPERSION"
+            # Ask for dispersion details
+            try:
+                n_kpoints_input = input("Number of k-points for dispersion [20]: ").strip()
+                n_kpoints = int(n_kpoints_input) if n_kpoints_input else 20
+            except ValueError:
+                print("Invalid input, using default value of 20")
+                n_kpoints = 20
+            freq_settings["n_kpoints"] = n_kpoints
+            
+            # Ask if they want to specify a path or use automatic
+            use_auto_path = yes_no_prompt("Use automatic k-path generation?", "yes")
+            if not use_auto_path:
+                print("Enter k-points path (e.g., 'G-X-M-G' or custom coordinates)")
+                print("Note: Custom path specification will be added to TODO list")
+                # TODO: Implement custom k-path specification
     
     # Numerical derivative method
     print("\nNumerical derivative method:")
@@ -1287,7 +1352,11 @@ def get_advanced_frequency_settings():
     print("   Uses central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
     
     numderiv = input("Select method (1-2) [2]: ").strip() or "2"
-    freq_settings["numderiv"] = int(numderiv)
+    try:
+        freq_settings["numderiv"] = int(numderiv)
+    except ValueError:
+        print("Invalid input, using default NUMDERIV=2")
+        freq_settings["numderiv"] = 2
     
     # IR intensities
     calc_ir = yes_no_prompt("\nCalculate IR intensities?", "no")
@@ -1301,15 +1370,25 @@ def get_advanced_frequency_settings():
         
         ir_method_choice = input("Select method (1-3) [1]: ").strip() or "1"
         ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
-        freq_settings["ir_method"] = ir_methods[ir_method_choice]
+        freq_settings["ir_method"] = ir_methods.get(ir_method_choice, "BERRY")
         
         if freq_settings["ir_method"] == "CPHF":
             # CPHF specific options
             print("\nCPHF calculation options:")
-            max_iter = int(input("Maximum CPHF iterations [30]: ") or 30)
+            try:
+                max_iter_input = input("Maximum CPHF iterations [30]: ").strip()
+                max_iter = int(max_iter_input) if max_iter_input else 30
+            except ValueError:
+                print("Invalid input, using default value of 30")
+                max_iter = 30
             freq_settings["cphf_max_iter"] = max_iter
             
-            tol = float(input("CPHF convergence tolerance (10^-x) [6]: ") or 6)
+            try:
+                tol_input = input("CPHF convergence tolerance (10^-x) [6]: ").strip()
+                tol = float(tol_input) if tol_input else 6
+            except ValueError:
+                print("Invalid input, using default value of 6")
+                tol = 6
             freq_settings["cphf_tolerance"] = tol
     
     # Raman intensities (requires CPHF)
@@ -1331,12 +1410,22 @@ def get_advanced_frequency_settings():
         if gen_spectra:
             if freq_settings.get("intensities"):
                 freq_settings["ir_spectrum"] = True
-                width = float(input("IR peak width (cm^-1) [10]: ") or 10)
+                try:
+                    width_input = input("IR peak width (cm^-1) [10]: ").strip()
+                    width = float(width_input) if width_input else 10
+                except ValueError:
+                    print("Invalid input, using default value of 10")
+                    width = 10
                 freq_settings["ir_spectrum_width"] = width
                 
             if freq_settings.get("raman"):
                 freq_settings["raman_spectrum"] = True
-                width = float(input("Raman peak width (cm^-1) [10]: ") or 10)
+                try:
+                    width_input = input("Raman peak width (cm^-1) [10]: ").strip()
+                    width = float(width_input) if width_input else 10
+                except ValueError:
+                    print("Invalid input, using default value of 10")
+                    width = 10
                 freq_settings["raman_spectrum_width"] = width
     
     # Anharmonic calculations
@@ -1351,15 +1440,25 @@ def get_advanced_frequency_settings():
         
         anharm_choice = input("Select type (1-3) [1]: ").strip() or "1"
         anharm_types = {"1": "ANHARM", "2": "VSCF", "3": "VCI"}
-        freq_settings["anharm_type"] = anharm_types[anharm_choice]
+        freq_settings["anharm_type"] = anharm_types.get(anharm_choice, "ANHARM")
         
         if freq_settings["anharm_type"] in ["VSCF", "VCI"]:
             # VSCF/VCI specific options
-            max_quanta = int(input("Maximum quanta per mode [4]: ") or 4)
+            try:
+                max_quanta_input = input("Maximum quanta per mode [4]: ").strip()
+                max_quanta = int(max_quanta_input) if max_quanta_input else 4
+            except ValueError:
+                print("Invalid input, using default value of 4")
+                max_quanta = 4
             freq_settings["vscf_max_quanta"] = max_quanta
             
             if freq_settings["anharm_type"] == "VCI":
-                max_coupled = int(input("Maximum coupled modes [2]: ") or 2)
+                try:
+                    max_coupled_input = input("Maximum coupled modes [2]: ").strip()
+                    max_coupled = int(max_coupled_input) if max_coupled_input else 2
+                except ValueError:
+                    print("Invalid input, using default value of 2")
+                    max_coupled = 2
                 freq_settings["vci_max_coupled"] = max_coupled
     
     # Temperature for thermodynamic properties
@@ -1367,7 +1466,11 @@ def get_advanced_frequency_settings():
         print("\nThermodynamic properties calculation:")
         temp_list = input("Enter temperatures (K) separated by spaces [298.15]: ").strip()
         if temp_list:
-            freq_settings["temperatures"] = [float(t) for t in temp_list.split()]
+            try:
+                freq_settings["temperatures"] = [float(t) for t in temp_list.split()]
+            except ValueError:
+                print("Invalid temperature values, using default 298.15 K")
+                freq_settings["temperatures"] = [298.15]
         else:
             freq_settings["temperatures"] = [298.15]
     
@@ -1518,7 +1621,41 @@ def get_calculation_options(current_settings, shared_mode=False):
             )
 
             if not use_default_freq:
-                options["freq_settings"] = get_advanced_frequency_settings()
+                try:
+                    print("\nConfiguring advanced frequency settings...")
+                    import sys
+                    sys.stdout.flush()
+                    
+                    # Create a flag file to verify this code path is reached
+                    import tempfile
+                    debug_file = Path(tempfile.gettempdir()) / "crystal_freq_debug.txt"
+                    with open(debug_file, 'w') as f:
+                        f.write("get_advanced_frequency_settings() is being called\n")
+                    
+                    options["freq_settings"] = get_advanced_frequency_settings()
+                    
+                    # Write success
+                    with open(debug_file, 'a') as f:
+                        f.write("get_advanced_frequency_settings() completed successfully\n")
+                        f.write(f"Result: {options['freq_settings']}\n")
+                        
+                except Exception as e:
+                    import traceback
+                    print(f"\nError getting advanced frequency settings: {e}")
+                    print("Traceback:")
+                    traceback.print_exc()
+                    print("Using default settings instead.")
+                    
+                    # Write error to debug file
+                    try:
+                        debug_file = Path(tempfile.gettempdir()) / "crystal_freq_debug.txt"
+                        with open(debug_file, 'a') as f:
+                            f.write(f"ERROR: {e}\n")
+                            f.write(traceback.format_exc())
+                    except:
+                        pass
+                        
+                    options["freq_settings"] = DEFAULT_FREQ_SETTINGS.copy()
             else:
                 options["freq_settings"] = DEFAULT_FREQ_SETTINGS.copy()
 
@@ -2306,6 +2443,24 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 for key, value in config_data.items():
                     if key not in ["coordinates", "primitive_cell", "conventional_cell"]:
                         options[key] = value
+                
+                # Convert freq_settings temprange from dict to tuple if needed
+                if "freq_settings" in options and isinstance(options["freq_settings"], dict):
+                    if "temprange" in options["freq_settings"] and isinstance(options["freq_settings"]["temprange"], dict):
+                        temprange_dict = options["freq_settings"]["temprange"]
+                        options["freq_settings"]["temprange"] = (
+                            temprange_dict.get("n_temps", 20),
+                            temprange_dict.get("t_min", 0),
+                            temprange_dict.get("t_max", 400)
+                        )
+                    # Also convert pressrange if it exists
+                    if "pressrange" in options["freq_settings"] and isinstance(options["freq_settings"]["pressrange"], dict):
+                        pressrange_dict = options["freq_settings"]["pressrange"]
+                        options["freq_settings"]["pressrange"] = (
+                            pressrange_dict.get("n_press", 20),
+                            pressrange_dict.get("p_min", 0),
+                            pressrange_dict.get("p_max", 10)
+                        )
                 
                 # Set write_only_unique if not specified in config
                 if "write_only_unique" not in options:
