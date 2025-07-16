@@ -732,24 +732,42 @@ Job_Scripts/
 
 ### Frequency Calculation Support
 
-The workflow system fully supports CRYSTAL23 frequency calculations:
+The workflow system fully supports CRYSTAL23 frequency calculations with optimized tolerance settings:
 
 1. **Integration with Crystal_To_CIF/d12creation.py**: Comprehensive frequency calculation configuration
 2. **Workflow Configuration**: Three levels of frequency setup (Basic/Advanced/Expert) in workflow planner
-3. **Supported Features**:
+3. **Tolerance Settings**:
+   - **All FREQ calculations**: TOLINTEG 9 9 9 11 38, TOLDEE 11 (high accuracy by default)
+   - **Geometry Optimization**: TOLDEG 0.00003, TOLDEX 0.00012 (already default)
+   - **Standard SCF (non-FREQ)**: TOLINTEG 7 7 7 9 30, TOLDEE 7
+4. **Supported Features**:
    - Vibrational frequencies at Gamma point
    - IR intensities (Berry phase, Wannier, CPHF methods)
-   - Raman intensities (when CPHF enabled)
+   - Raman intensities (requires CPHF: INTENS, INTRAMAN, INTCPHF)
    - Thermodynamic properties at specified temperatures
    - Zero-point energy calculation
-4. **Automatic Generation**: CRYSTALOptToD12.py generates FREQ input from optimized geometries
-5. **Property Extraction**: Frequency results automatically extracted to database
+   - Spectral generation (RAMEXP for Raman with laser frequency/temperature)
+   - Restart capability (RESTART keyword with .DAT file)
+5. **Automatic Generation**: CRYSTALOptToD12.py generates FREQ input from optimized geometries
+6. **Property Extraction**: Frequency results automatically extracted to database
+
+Example Raman calculation keywords:
+```
+FREQCALC
+INTENS
+INTRAMAN
+INTCPHF
+ENDCPHF
+ENDFREQ
+RAMEXP
+[laser_frequency] [temperature]
+```
 
 Example workflow with frequency:
 ```bash
 python run_workflow.py --interactive
 # Select workflow: OPT → SP → FREQ
-# Configure frequency settings in workflow planner
+# Choose Advanced level for IR/Raman with CPHF
 ```
 
 ### Race Condition Prevention
