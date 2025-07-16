@@ -10,24 +10,51 @@ This is the comprehensive documentation for the CRYSTAL quantum chemistry workfl
 4. [Material Tracking System](#material-tracking-system)
 5. [Property Extraction](#property-extraction)
 6. [Error Recovery](#error-recovery)
-7. [Advanced Features](#advanced-features)
-8. [Directory Structure](#directory-structure)
-9. [Recent Updates](#recent-updates)
-10. [Troubleshooting](#troubleshooting)
+7. [System Architecture](#system-architecture)
+8. [Advanced Features](#advanced-features)
+9. [Script Details and Integration](#script-details-and-integration)
+10. [Directory Structure](#directory-structure)
+11. [Recent Updates](#recent-updates)
+12. [Troubleshooting](#troubleshooting)
+13. [External Dependencies and Integration](#external-dependencies-and-integration)
+14. [Important Notes and Best Practices](#important-notes-and-best-practices)
+15. [Support and Contributing](#support-and-contributing)
+
+*Note: If table of contents links don't work in your editor (e.g., Kate), you can search for section titles using Ctrl+F*
 
 ---
 
 ## System Overview
 
-The CRYSTAL workflow system provides comprehensive automation for quantum chemistry calculations using CRYSTAL17/23 software on SLURM HPC clusters. It manages the complete calculation pipeline from CIF files to final property extraction.
+The CRYSTAL workflow system provides comprehensive automation for quantum chemistry calculations using CRYSTAL17/23 software on SLURM HPC clusters. It manages the complete calculation pipeline from CIF files to final property extraction with full database tracking and error recovery.
 
-### Key Components
+### Core Components
 
-- **Workflow Manager** (`run_workflow.py`): Unified interface for planning and executing complex calculation sequences
-- **Enhanced Queue Manager**: SLURM job management with material tracking and automated workflow progression
-- **Material Database**: SQLite + ASE integration for complete structure and calculation tracking
-- **Property Extraction**: Automated extraction of 100+ electronic, structural, and thermodynamic properties
-- **Error Recovery**: Automated detection and recovery from common calculation errors
+#### Main Entry Points
+- **`run_workflow.py`**: Primary user interface with interactive planning, quick start, and execution modes
+- **`workflow_planner.py`**: Interactive workflow configuration with three-level CIF customization
+- **`workflow_executor.py`**: Execution engine managing calculation submission and monitoring
+
+#### Job Management
+- **`enhanced_queue_manager.py`**: Advanced SLURM job management with material tracking
+- **`submitcrystal23.py/sh`**: CRYSTAL23 job submission scripts with callback integration
+- **`submit_prop.py/sh`**: Properties calculation submission for BAND/DOSS/FREQ
+
+#### Database & Tracking
+- **`material_database.py`**: SQLite + ASE database engine for comprehensive tracking
+- **`workflow_engine.py`**: Orchestrates workflow progression and dependency management
+- **`workflow_callback.py`**: Handles job completion callbacks and triggers next steps
+
+#### Property Analysis
+- **`crystal_property_extractor.py`**: Extracts 100+ properties from output files
+- **`formula_extractor.py`**: Chemical formula and space group extraction
+- **`input_settings_extractor.py`**: D12/D3 input file settings parser
+- **`population_analysis_processor.py`**: Advanced Mulliken charge analysis
+
+#### Error Handling
+- **`error_recovery.py`**: Automated error detection and recovery engine
+- **`recovery_config.yaml`**: Configurable recovery strategies for 8+ error types
+- **`error_detector.py`**: Pattern-based error detection from output files
 
 ### Supported Workflows
 
@@ -42,38 +69,117 @@ The system supports arbitrary workflow sequences including:
 
 ## Quick Start
 
-### Basic Workflow Execution
+### Prerequisites
 
-```bash
-# Process CIFs with full electronic characterization
-python run_workflow.py --quick-start \
-  --cif-dir ./cifs \
-  --workflow full_electronic
-
-# Interactive planning for complex workflows
-python run_workflow.py --interactive
-
-# Execute saved workflow
-python run_workflow.py --execute workflow_plan_20250618_145837.json
-
-# Monitor progress
-python enhanced_queue_manager.py --status
-```
+1. **CRYSTAL23** installed and available via module system
+2. **SLURM** workload manager access
+3. **Python 3.7+** with scientific computing packages
+4. **High-performance scratch storage** for calculations
 
 ### Installation
 
 ```bash
-# Core dependencies
+# 1. Install Python dependencies
 pip install numpy matplotlib ase spglib PyPDF2 pyyaml pandas
 
-# Verify installation
-python -c "import numpy, matplotlib, ase, spglib, PyPDF2, yaml, pandas; print('All dependencies installed successfully')"
+# 2. Verify installation
+python -c "import numpy, matplotlib, ase, spglib, PyPDF2, yaml, pandas; print('✓ All dependencies installed')"
 
-# Copy all workflow dependencies to working directory
+# 3. Copy workflow scripts to your working directory
 python copy_dependencies.py /path/to/working/directory
 
-# Or copy to current directory
-python copy_dependencies.py
+# 4. Verify module availability
+module load CRYSTAL/23-intel-2023a
+module list  # Should show CRYSTAL and dependencies
+```
+
+### Basic Usage Examples
+
+#### Example 1: Quick Electronic Structure Workflow
+```bash
+# Process all CIFs in a directory with standard electronic characterization
+python run_workflow.py --quick-start \
+  --cif-dir ./my_cifs \
+  --workflow full_electronic
+
+# This will:
+# 1. Convert CIFs to D12 with default B3LYP-D3/POB-TZVP-REV2 settings
+# 2. Run OPT → SP → BAND → DOSS sequence
+# 3. Track everything in materials.db
+# 4. Extract properties automatically
+```
+
+#### Example 2: Interactive Custom Workflow
+```bash
+python run_workflow.py --interactive
+
+# Interactive prompts will guide you through:
+# 1. Input type selection (CIF/D12/Mixed)
+# 2. CIF customization level:
+#    - Basic: Just functional and basis set
+#    - Advanced: Full method configuration  
+#    - Expert: Complete NewCifToD12.py access
+# 3. Workflow sequence design (e.g., OPT → OPT2 → SP → FREQ)
+# 4. SLURM resource configuration
+# 5. Save configuration as JSON for reproducibility
+```
+
+#### Example 3: Execute Saved Workflow
+```bash
+# Re-run a previously configured workflow
+python run_workflow.py --execute workflow_plan_20250618_145837.json
+
+# Monitor progress
+python enhanced_queue_manager.py --status
+
+# Or use monitoring helper
+python monitor_workflow.py --action status
+```
+
+#### Example 4: Database Queries
+```bash
+# Show all materials in database
+python show_properties.py --list-materials
+
+# Show properties for specific material
+python show_properties.py --material-id diamond_227
+
+# Show all workflows
+python workflow_status.py --all
+
+# Export properties to CSV
+python show_properties.py --export properties.csv
+```
+
+### Setup and Configuration
+
+#### Initial Setup
+```bash
+# 1. Create working directory structure
+mkdir -p my_project/{cifs,d12s,results}
+cd my_project
+
+# 2. Copy workflow scripts
+python /path/to/copy_dependencies.py .
+
+# 3. Initialize database (automatic on first use)
+python run_workflow.py --status
+
+# 4. Configure error recovery (optional - recovery_config.yaml already included)
+# Edit recovery_config.yaml to customize error recovery strategies
+```
+
+#### Environment Configuration
+```bash
+# Recommended SLURM defaults (can be customized in workflow planner)
+export CRYSTAL_CORES=32
+export CRYSTAL_MEM="5G"
+export CRYSTAL_WALLTIME="7-00:00:00"
+export CRYSTAL_ACCOUNT="your_account"
+
+# Optional: Set default functional and basis
+export CRYSTAL_DEFAULT_FUNCTIONAL="B3LYP-D3"
+export CRYSTAL_DEFAULT_BASIS="POB-TZVP-REV2"
 ```
 
 ---
@@ -184,30 +290,22 @@ workflow_instances: # Active workflow state tracking
 - **Automated Progression**: Callbacks trigger next workflow steps automatically
 - **Enhanced Callbacks**: Multi-location queue manager detection for flexible deployment
 
-### File Storage System
+### File Storage and Tracking
 
-The system automatically stores all calculation files with complete settings extraction:
+The material database automatically tracks all calculation files:
 
-**Supported File Types**:
-- Input files: `.d12`, `.d3` with complete CRYSTAL settings extraction
-- Output files: `.out`, `.log` with property extraction
-- Binary files: `.f9`, `.f25`, `fort.9`, `fort.25` (wavefunctions, phonons)
-- Property files: `.BAND`, `.DOSS`, `.OPTC` calculation results
-- Scripts: `.sh`, `.slurm` SLURM submission scripts
-- Visualizations: `.png`, `.pdf`, `.eps` plots
-- Data files: `.csv`, `.json`, `.yaml` analysis results
+**Tracked Information**:
+- Input files: `.d12`, `.d3` with extracted settings stored in database
+- Output files: `.out` with automatic property extraction
+- Binary files: `.f9` (wavefunction), `.f25` (phonon data) 
+- SLURM scripts: `.sh` files for job submission
+- Workflow metadata: `.workflow_metadata.json` for progression tracking
 
-**Usage**:
-```bash
-# Store calculation files
-python file_storage_manager.py --store /path/to/calc --calc-id calc_001
-
-# Query stored files
-python query_stored_files.py --material-id diamond
-
-# Verify integrity
-python file_storage_manager.py --verify --calc-id calc_001
-```
+**File Organization**:
+- All files organized by workflow/step/material structure
+- Automatic linking between calculations and files in database
+- Settings extraction happens during workflow execution
+- Properties extracted automatically on job completion
 
 ---
 
@@ -313,6 +411,76 @@ python error_recovery.py --material-id failing_material --fix shrink_error
 
 ---
 
+## System Architecture
+
+### Workflow Execution Flow
+
+```
+1. Planning Phase (run_workflow.py --interactive)
+   ├── Input Selection (CIF/D12/Mixed)
+   ├── CIF Configuration (Basic/Advanced/Expert levels)
+   ├── Workflow Template Selection or Custom Design
+   ├── SLURM Resource Configuration
+   └── JSON Configuration Save
+
+2. Execution Phase (run_workflow.py --execute plan.json)
+   ├── CIF Conversion (if needed)
+   │   └── Calls NewCifToD12.py with saved settings
+   ├── Directory Structure Creation
+   │   └── Individual folders per material/calculation
+   ├── SLURM Script Generation
+   │   └── Material-specific scripts with callbacks
+   └── Job Submission
+       └── Via enhanced_queue_manager.py
+
+3. Runtime Management
+   ├── Job Monitoring (enhanced_queue_manager.py)
+   ├── Completion Detection
+   ├── Property Extraction (crystal_property_extractor.py)
+   ├── Error Recovery (error_recovery.py)
+   └── Workflow Progression (workflow_engine.py)
+       └── Automatic next step submission
+```
+
+
+### Callback Mechanism
+
+All SLURM scripts include an intelligent callback system:
+
+```bash
+# Multi-location queue manager detection
+if [ -f $DIR/enhanced_queue_manager.py ]; then
+    cd $DIR
+    python enhanced_queue_manager.py --max-jobs 250 --callback-mode completion
+elif [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
+    cd $DIR/../../../../
+    python enhanced_queue_manager.py --max-jobs 250 --callback-mode completion
+fi
+```
+
+This ensures workflow progression regardless of execution context.
+
+### Dependency Resolution
+
+The system uses intelligent dependency management:
+
+- **Timing Dependencies**: Workflow sequence determines execution order
+- **Input Dependencies**: Smart source selection based on calculation type
+  - `FREQ` always uses highest completed `OPT` geometry
+  - `BAND/DOSS` use most recent wavefunction (`SP` or `OPT`)
+  - `OPT` after non-geometry calculations uses previous `OPT`
+
+### Optional Calculations
+
+Certain calculation types can fail without blocking workflow:
+- `BAND` - Band structure calculations
+- `DOSS` - Density of states calculations  
+- `FREQ` - Frequency calculations
+
+This allows workflows to continue even if optional analyses fail.
+
+---
+
 ## Advanced Features
 
 ### Race Condition Prevention
@@ -367,67 +535,221 @@ The system supports complex workflow patterns:
 
 ---
 
+## Script Details and Integration
+
+### Core Workflow Scripts
+
+#### `run_workflow.py`
+- **Purpose**: Main entry point for all workflow operations
+- **Features**:
+  - Auto-dependency checking and installation
+  - Multiple operation modes (interactive, execute, quick-start, status)
+  - Template-based quick workflows
+  - Comprehensive help and examples
+
+#### `workflow_planner.py`
+- **Purpose**: Interactive workflow configuration and planning
+- **Key Methods**:
+  - `main_interactive_workflow()`: Main planning interface
+  - `plan_cif_conversion()`: Three-level CIF customization
+  - `plan_workflow_sequence()`: Custom workflow design
+  - `save_workflow_plan()`: JSON persistence
+
+#### `workflow_executor.py`
+- **Purpose**: Execute planned workflows with full automation
+- **Process**:
+  1. Load workflow plan JSON
+  2. Convert CIFs if needed (calls NewCifToD12.py)
+  3. Create directory structure
+  4. Generate individual SLURM scripts
+  5. Submit jobs via enhanced_queue_manager
+  6. Track progress in database
+
+#### `enhanced_queue_manager.py`
+- **Purpose**: Advanced SLURM job management with material tracking
+- **Features**:
+  - Early failure detection (checks jobs every 30s)
+  - Automatic workflow progression
+  - Race condition prevention
+  - Callback mode for job completion
+  - Integration with error recovery
+
+#### `workflow_engine.py`
+- **Purpose**: Orchestrate workflow progression and dependencies
+- **Key Features**:
+  - Reads workflow sequence from JSON files
+  - Determines next calculation steps
+  - Handles optional calculation failures
+  - Creates isolated directories for each step
+  - Manages complex file naming conventions
+
+### Database and Tracking
+
+#### `material_database.py`
+- **Purpose**: Central database for all material and calculation tracking
+- **Features**:
+  - Thread-safe SQLite with WAL mode
+  - ASE integration for structure storage
+  - Comprehensive schema (materials, calculations, properties, files)
+  - Automatic ID generation with collision prevention
+
+#### `crystal_property_extractor.py`
+- **Purpose**: Extract 100+ properties from CRYSTAL output files
+- **Properties Extracted**:
+  - Electronic: band gaps, work functions, DOS, effective masses
+  - Structural: lattice parameters, volumes, densities
+  - Energetic: total energies, formation energies
+  - Population: Mulliken charges, overlap populations
+  - Vibrational: frequencies, zero-point energy
+
+#### `formula_extractor.py`
+- **Purpose**: Extract chemical formulas and space groups
+- **Sources**: D12 input files, CRYSTAL output files
+- **Features**: Handles complex material naming conventions
+
+### Error Recovery System
+
+#### `error_recovery.py`
+- **Purpose**: Automated error detection and recovery
+- **Supported Errors**:
+  - SHRINK parameter errors (calls fixk.py)
+  - Memory allocation issues
+  - SCF convergence failures
+  - Job timeout errors
+  - Basis set linear dependence
+  - Geometry optimization problems
+  - Symmetry-related errors
+
+#### `recovery_config.yaml`
+- **Purpose**: Configure recovery strategies
+- **Features**:
+  - Per-error type configuration
+  - Retry limits and delays
+  - Resource scaling factors
+  - Manual escalation rules
+
+### SLURM Integration
+
+#### `submitcrystal23.py/sh`
+- **Purpose**: Submit CRYSTAL23 calculations
+- **Features**:
+  - Auto-generates SLURM scripts
+  - Includes callback mechanism
+  - Module loading and environment setup
+  - Scratch directory management
+
+#### `submit_prop.py/sh`
+- **Purpose**: Submit properties calculations (BAND/DOSS/FREQ)
+- **Features**:
+  - Similar to submitcrystal23 but for D3 files
+  - Different resource allocations
+  - Callback integration
+
+### Utility Scripts
+
+#### `populate_completed_jobs.py`
+- **Purpose**: Populate database with existing completed calculations
+- **Use Case**: Importing historical calculations into tracking system
+
+#### `workflow_status.py`
+- **Purpose**: Monitor active workflows
+- **Features**: Shows current step, pending calculations, completion status
+
+#### `show_properties.py`
+- **Purpose**: Display extracted properties for materials
+- **Features**: Query by material ID or calculation ID
+
+#### `monitor_workflow.py`
+- **Purpose**: Real-time workflow monitoring
+- **Features**: Live updates, progress tracking, error alerts
+
+---
+
 ## Directory Structure
 
-### Current Organization
+### Workflow Directory Organization
+
+```
+working_directory/
+├── workflow_configs/                  # Configuration files
+│   ├── cif_conversion_config.json    # CIF conversion settings
+│   └── workflow_plan_*.json          # Saved workflow plans
+├── workflow_scripts/                  # Generated SLURM templates
+│   ├── submitcrystal23_opt_1.sh      
+│   └── submit_prop_band_3.sh         
+├── workflow_inputs/                   # Initial input files
+│   └── step_001_OPT/                 
+├── workflow_outputs/                  # Execution outputs
+│   └── workflow_YYYYMMDD_HHMMSS/     
+│       └── step_NNN_TYPE/            
+│           └── material_name/         # Individual material folder
+│               ├── material.d12       # Input file
+│               ├── material.sh        # Individual SLURM script
+│               ├── material.out       # CRYSTAL output
+│               ├── material.f9        # Wavefunction
+│               └── .workflow_metadata.json
+├── materials.db                       # Material tracking database
+├── structures.db                      # ASE structure database
+├── recovery_logs/                     # Error recovery logs
+└── temp/                             # Temporary processing
+```
+
+### Script File Organization
 
 ```
 Job_Scripts/
-├── README.md                          # This file
-├── core/                              # Main production files
-│   ├── enhanced_queue_manager.py      # Primary queue manager
-│   ├── material_database.py           # Database engine
-│   ├── workflow_engine.py             # Workflow orchestration
-│   ├── workflow_planner.py            # Interactive planning
-│   ├── workflow_executor.py           # Execution engine
-│   └── run_workflow.py                # Main entry point
-├── utils/                             # Utility scripts
-│   ├── populate_completed_jobs.py     # Database population
-│   ├── error_detector.py              # Error detection
-│   └── file_storage_manager.py        # File management
-├── config/                            # Configuration files
-│   ├── recovery_config.yaml           # Error recovery config
-│   └── workflows.yaml                 # Workflow definitions
-└── working/                           # Active data
-    ├── materials.db                   # Material database
-    └── workflow_outputs/              # Calculation outputs
+├── README.md                          # This documentation
+├── Main Workflow Scripts
+│   ├── run_workflow.py               # Primary entry point
+│   ├── workflow_planner.py           # Interactive planning
+│   ├── workflow_executor.py          # Execution engine
+│   └── workflow_engine.py            # Orchestration logic
+├── Job Management
+│   ├── enhanced_queue_manager.py     # SLURM management
+│   ├── submitcrystal23.py/sh         # CRYSTAL submission
+│   ├── submit_prop.py/sh             # Properties submission
+│   └── workflow_callback.py          # Completion callbacks
+├── Database & Tracking
+│   ├── material_database.py          # Database engine
+│   ├── crystal_property_extractor.py # Property extraction
+│   ├── formula_extractor.py          # Formula extraction
+│   └── input_settings_extractor.py   # Settings parser
+├── Error Handling
+│   ├── error_recovery.py             # Recovery engine
+│   ├── error_detector.py             # Error detection
+│   └── recovery_config.yaml          # Recovery configuration
+├── Utilities
+│   ├── populate_completed_jobs.py    # Database population
+│   ├── workflow_status.py            # Status monitoring
+│   ├── show_properties.py            # Property display
+│   └── monitor_workflow.py           # Real-time monitoring
+└── Archived/                         # Historical scripts
 ```
 
 ---
 
 ## Recent Updates
 
-### Comprehensive Frequency Calculation Support (Latest)
+### Frequency Calculation Support
 
-The system now supports all CRYSTAL23 frequency calculation features:
+The workflow system fully supports CRYSTAL23 frequency calculations:
 
-1. **Enhanced d12creation.py**: Complete rewrite of `write_frequency_section()` supporting all FREQCALC options
-2. **Interactive Configuration**: Three levels of frequency setup (Basic/Advanced/Expert)
-3. **Full Feature Set**:
-   - IR intensities with multiple methods (Berry phase, Wannier, CPHF)
-   - Raman intensities (requires CPHF)
-   - Phonon dispersion and density of states
-   - Spectral generation (IRSPEC, RAMSPEC)
-   - Anharmonic corrections (ANHARM, VSCF, VCI)
-   - Elastic constants calculation
-   - Temperature-dependent thermodynamics
-4. **Workflow Integration**: Frequency settings properly captured and stored in workflow JSON files
-5. **Backward Compatible**: Existing simple frequency calculations continue to work
+1. **Integration with Crystal_To_CIF/d12creation.py**: Comprehensive frequency calculation configuration
+2. **Workflow Configuration**: Three levels of frequency setup (Basic/Advanced/Expert) in workflow planner
+3. **Supported Features**:
+   - Vibrational frequencies at Gamma point
+   - IR intensities (Berry phase, Wannier, CPHF methods)
+   - Raman intensities (when CPHF enabled)
+   - Thermodynamic properties at specified temperatures
+   - Zero-point energy calculation
+4. **Automatic Generation**: CRYSTALOptToD12.py generates FREQ input from optimized geometries
+5. **Property Extraction**: Frequency results automatically extracted to database
 
-Example configuration in workflow JSON:
-```json
-{
-  "frequency_settings": {
-    "mode": "GAMMA",
-    "numderiv": 2,
-    "intensities": true,
-    "ir_method": "CPHF",
-    "raman": true,
-    "cphf_max_iter": 50,
-    "ir_spectrum": true,
-    "temperatures": [200, 298.15, 400]
-  }
-}
+Example workflow with frequency:
+```bash
+python run_workflow.py --interactive
+# Select workflow: OPT → SP → FREQ
+# Configure frequency settings in workflow planner
 ```
 
 ### Race Condition Prevention
@@ -477,7 +799,7 @@ The system now includes comprehensive race condition fixes for simultaneous job 
 #### Module Loading
 ```bash
 # Ensure CRYSTAL modules are loaded
-module load crystal23
+module load CRYSTAL/23-intel-2023a
 module list  # Verify loaded modules
 ```
 
@@ -583,15 +905,111 @@ The system uses multiple fallback paths to locate scripts:
 
 ---
 
-## Best Practices
+## Important Notes and Best Practices
 
-1. **Start Small**: Test workflows with 1-2 structures first
-2. **Use Templates**: Build on predefined workflow templates
-3. **Save Configurations**: Keep successful workflow JSONs for reuse
-4. **Monitor Progress**: Use `enhanced_queue_manager.py --status` regularly
-5. **Enable Recovery**: Use automatic error recovery for production runs
-6. **Regular Backups**: Backup `materials.db` and workflow configurations
-7. **Resource Planning**: Consider material complexity when setting walltimes
+### Workflow System Behavior
+
+#### Material Naming Convention
+The system handles complex file naming from NewCifToD12.py:
+```
+Original: 1_dia_opt_BULK_OPTGEOM_symm_CRYSTAL_OPT_symm_B3LYP-D3_POB-TZVP-REV2.d12
+Material ID: mat_1_dia
+Clean Name: 1_dia
+```
+
+#### Calculation Dependencies
+- **Geometry-dependent**: FREQ requires completed OPT geometry
+- **Wavefunction-dependent**: BAND/DOSS require SP or OPT wavefunction
+- **Smart fallback**: System finds most appropriate input source
+- **Optional calculations**: BAND/DOSS/FREQ can fail without blocking
+
+#### File Organization
+Each calculation gets isolated directory:
+```
+workflow_outputs/workflow_ID/step_001_OPT/mat_1_dia/
+├── mat_1_dia.d12      # Input file
+├── mat_1_dia.sh       # Individual SLURM script  
+├── mat_1_dia.out      # Output after completion
+└── .workflow_metadata.json  # Workflow tracking
+```
+
+#### Error Recovery Behavior
+- **Automatic**: SHRINK, memory, convergence errors
+- **Manual escalation**: Basis set, disk space issues
+- **Recovery limits**: Configurable per error type
+- **Blacklisting**: Prevents infinite recovery loops
+
+### Best Practices
+
+#### 1. Workflow Planning
+- **Start Small**: Test with 1-2 structures before large batches
+- **Use Templates**: Modify existing templates rather than starting from scratch
+- **Save Configurations**: Keep JSON files for reproducible workflows
+- **Document Custom Workflows**: Add comments in workflow planner
+
+#### 2. Resource Management
+- **Memory Planning**: Start conservative, let error recovery adjust
+- **Walltime Buffer**: Add 20-30% buffer for complex systems
+- **Account Selection**: Use appropriate SLURM account for job type
+- **Scratch Management**: Monitor scratch usage, especially for FREQ
+
+#### 3. Database Management
+- **Regular Backups**: 
+  ```bash
+  cp materials.db materials_backup_$(date +%Y%m%d).db
+  ```
+- **Database Maintenance**:
+  ```bash
+  sqlite3 materials.db "VACUUM;"  # Optimize database
+  sqlite3 materials.db "PRAGMA integrity_check;"  # Check integrity
+  ```
+- **Export Important Data**:
+  ```bash
+  python show_properties.py --export all_properties.csv
+  ```
+
+#### 4. Monitoring and Debugging
+- **Live Monitoring**: Use `monitor_workflow.py` for active workflows
+- **Check Logs**: Review SLURM output files (`*.o*`) for errors
+- **Database Queries**: Use `show_properties.py` to verify extractions
+- **Recovery Logs**: Check `recovery_logs/` for error patterns
+
+#### 5. Production Runs
+- **Enable Error Recovery**: Always use for large batches
+- **Set Queue Limits**: Prevent overwhelming SLURM scheduler
+- **Use Workflow IDs**: Track related calculations together
+- **Document Parameters**: Keep notes on successful configurations
+
+#### 6. Common Pitfalls to Avoid
+- **Don't modify running workflows**: Wait for completion
+- **Avoid manual job submission**: Use workflow system for tracking
+- **Don't delete .workflow_metadata.json**: Required for progression
+- **Check module availability**: Ensure CRYSTAL23 loaded before submission
+
+### Performance Tips
+
+#### Queue Management
+```bash
+# Optimal queue settings for different scales
+# Small batches (< 50 materials)
+python enhanced_queue_manager.py --max-jobs 50 --max-submit 10
+
+# Medium batches (50-200 materials)  
+python enhanced_queue_manager.py --max-jobs 200 --max-submit 5
+
+# Large batches (> 200 materials)
+python enhanced_queue_manager.py --max-jobs 300 --max-submit 3 --reserve 50
+```
+
+#### Parallel Workflows
+- BAND and DOSS can run simultaneously after SP
+- Multiple materials process in parallel up to queue limits
+- Use `--max-jobs` to control parallelism
+
+#### Database Performance
+- Enable WAL mode (automatic) for concurrent access
+- Use `--batch-mode` for bulk operations
+- Index commonly queried fields
 
 ---
 
