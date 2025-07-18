@@ -1,0 +1,32 @@
+{
+  "symmetry_handling": "CIF",
+  "symmetry_tolerance": 1e-05,
+  "write_only_unique": true,
+  "validate_symmetry": true,
+  "trigonal_axes": "AUTO",
+  "origin_setting": "ALTERNATE",
+  "dimensionality": "SLAB",
+  "calculation_type": "OPT",
+  "optimization_type": "FULLOPTG",
+  "optimization_settings": {
+    "TOLDEG": 3e-05,
+    "TOLDEX": 0.00012,
+    "TOLDEE": 7,
+    "MAXCYCLE": 800
+  },
+  "method": "DFT",
+  "dft_functional": "HSESOL3C",
+  "basis_set_type": "INTERNAL",
+  "basis_set": "SOLDEF2MSVP",
+  "use_dispersion": false,
+  "dft_grid": null,
+  "is_spin_polarized": true,
+  "use_smearing": false,
+  "tolerances": {
+    "TOLINTEG": "7 7 7 9 30",
+    "TOLDEE": 7
+  },
+  "scf_method": "DIIS",
+  "scf_maxcycle": 800,
+  "fmixing": 30
+}

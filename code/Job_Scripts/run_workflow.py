@@ -245,13 +245,14 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
     """Create a quick workflow plan with default settings"""
     from datetime import datetime
     
-    # Default CIF conversion config
+    # Default CIF conversion config (adapt to first calculation type)
+    first_calc_type = sequence[0] if sequence else "OPT"
     default_cif_config = {
         "symmetry_handling": "CIF",
         "write_only_unique": True,
         "dimensionality": "CRYSTAL",
-        "calculation_type": "OPT",
-        "optimization_type": "FULLOPTG",
+        "calculation_type": "SP" if first_calc_type == "SP" else "OPT",
+        "optimization_type": "FULLOPTG" if first_calc_type != "SP" else None,
         "optimization_settings": {
             "TOLDEG": 0.00003,
             "TOLDEX": 0.00012,
@@ -277,7 +278,7 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
     for i, calc_type in enumerate(sequence):
         step_num = i + 1
         
-        if calc_type == "OPT" and i == 0 and input_type == "cif":
+        if (calc_type == "OPT" or calc_type == "SP") and i == 0 and input_type == "cif":
             step_configs[f"{calc_type}_{step_num}"] = {"source": "cif_conversion"}
         elif calc_type in ["OPT", "OPT2"]:
             step_configs[f"{calc_type}_{step_num}"] = {

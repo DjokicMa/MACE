@@ -629,7 +629,10 @@ fi'''
             raise ValueError("CIF conversion config not found in plan")
             
         workflow_dir = self.outputs_dir / workflow_id
-        cif_output_dir = workflow_dir / "step_001_OPT"
+        
+        # Determine first calculation type from workflow sequence
+        first_calc_type = plan.get('workflow_sequence', ['OPT'])[0]
+        cif_output_dir = workflow_dir / f"step_001_{first_calc_type}"
         cif_output_dir.mkdir(exist_ok=True)
         
         # Save CIF config for this workflow
@@ -1189,6 +1192,14 @@ fi'''
             # Pass custom tolerances if defined
             if "custom_tolerances" in config.get("frequency_settings", {}):
                 crystal_opt_config["custom_tolerances"] = config["frequency_settings"]["custom_tolerances"]
+        
+        # Add modifications for SP and other calculation types
+        if "tolerance_modifications" in config:
+            crystal_opt_config["tolerance_modifications"] = config["tolerance_modifications"]
+        if "method_modifications" in config:
+            crystal_opt_config["method_modifications"] = config["method_modifications"]
+        if "basis_modifications" in config:
+            crystal_opt_config["basis_modifications"] = config["basis_modifications"]
         
         with open(temp_config, 'w') as f:
             json.dump(crystal_opt_config, f)

@@ -1346,6 +1346,15 @@ def write_basis_set_section(
 def write_optimization_section(f, optimization_type, optimization_settings):
     """Write the optimization section of the D12 file"""
     print("OPTGEOM", file=f)
+    
+    # Add PREOPT if specified
+    if optimization_settings.get("PREOPT", False):
+        print("PREOPT", file=f)
+        if "PREOPT_MAXCYCLE" in optimization_settings:
+            print(optimization_settings["PREOPT_MAXCYCLE"], file=f)
+        else:
+            print("50", file=f)  # Default PREOPT cycles
+    
     print(optimization_type, file=f)
 
     print("MAXCYCLE", file=f)
@@ -1363,6 +1372,25 @@ def write_optimization_section(f, optimization_type, optimization_settings):
         print(format_crystal_float(optimization_settings["MAXTRADIUS"]), file=f)
 
     print("ENDGEOM", file=f)
+
+
+def write_minimal_raman_section(f):
+    """
+    Write a minimal Raman calculation section with CPHF
+    This produces exactly:
+    FREQCALC
+    INTENS
+    INTRAMAN
+    INTCPHF
+    ENDCPHF
+    ENDFREQ
+    """
+    print("FREQCALC", file=f)
+    print("INTENS", file=f)
+    print("INTRAMAN", file=f)
+    print("INTCPHF", file=f)
+    print("ENDCPHF", file=f)
+    print("ENDFREQ", file=f)
 
 
 def write_frequency_section(f, freq_settings):
@@ -1438,6 +1466,11 @@ def write_frequency_section(f, freq_settings):
             - vscf: dict - VSCF settings {"tolerance": float, "mixing": float}
             - vci: dict - VCI settings {"quanta": int, "modes": int, "guess": int}
     """
+    # Check for minimal Raman mode
+    if freq_settings.get("minimal_raman", False):
+        write_minimal_raman_section(f)
+        return
+    
     print("FREQCALC", file=f)
     
     # Handle restart
@@ -1487,10 +1520,11 @@ def write_frequency_section(f, freq_settings):
         for atom_label, mass in isotopes.items():
             print(f"{atom_label} {mass}", file=f)
     
-    # Numerical derivative method
-    numderiv = freq_settings.get("numderiv", 2)
-    print("NUMDERIV", file=f)
-    print(numderiv, file=f)
+    # Numerical derivative method (skip if minimal_raman is True)
+    if not freq_settings.get("minimal_raman", False):
+        numderiv = freq_settings.get("numderiv", 2)
+        print("NUMDERIV", file=f)
+        print(numderiv, file=f)
     
     # Step size for numerical derivatives
     if "stepsize" in freq_settings:
@@ -1598,7 +1632,8 @@ def write_frequency_section(f, freq_settings):
             if "maxcycle" in cphf_settings:
                 print("MAXCYCLE", file=f)
                 print(cphf_settings["maxcycle"], file=f)
-            print("END", file=f)
+            # Print ENDCPHF to close the INTCPHF block
+            print("ENDCPHF", file=f)
         # else: default is Berry phase (INTPOL), no keyword needed
         
         # Born tensor normalization
@@ -1626,7 +1661,7 @@ def write_frequency_section(f, freq_settings):
             if "maxcycle2" in cphf_settings:
                 print("MAXCYCLE2", file=f)
                 print(cphf_settings["maxcycle2"], file=f)
-            print("END", file=f)
+            print("ENDCPHF", file=f)
         
         # Experimental conditions
         if "ramanexp" in freq_settings:
@@ -1669,9 +1704,22 @@ def write_frequency_section(f, freq_settings):
     if freq_settings.get("dispersion", False):
         print("DISPERSION", file=f)
         
+        # Supercell for phonon calculation
+        if "scelphono" in freq_settings:
+            supercell = freq_settings["scelphono"]
+            print("SCELPHONO", file=f)
+            # Can be either expansion factors or full transformation matrix
+            if isinstance(supercell, list) and len(supercell) == 3:
+                # Simple expansion factors [nx, ny, nz]
+                print(" ".join(str(n) for n in supercell), file=f)
+            elif isinstance(supercell, list) and len(supercell) == 9:
+                # Full transformation matrix (3x3)
+                for i in range(0, 9, 3):
+                    print(" ".join(str(supercell[j]) for j in range(i, i+3)), file=f)
+        
         # Fourier interpolation
-        if "intraphonon" in freq_settings:
-            interp = freq_settings["intraphonon"]
+        if "interphess" in freq_settings:
+            interp = freq_settings["interphess"]
             print("INTERPHESS", file=f)
             l_params = interp.get("expand", [2, 2, 2])
             print(" ".join(str(l) for l in l_params[:3]), file=f)
@@ -1734,9 +1782,9 @@ def write_frequency_section(f, freq_settings):
         if "spec_step" in freq_settings:
             print("LENSTEP", file=f)
             print(format_crystal_float(freq_settings["spec_step"]), file=f)
-        if "spec_broadening" in freq_settings:
+        if "spec_dampfac" in freq_settings:
             print("DAMPFAC", file=f)
-            print(format_crystal_float(freq_settings["spec_broadening"]), file=f)
+            print(format_crystal_float(freq_settings["spec_dampfac"]), file=f)
         if freq_settings.get("spec_gaussian", False):
             print("GAUSS", file=f)
         if "spec_angle" in freq_settings:
@@ -1760,12 +1808,18 @@ def write_frequency_section(f, freq_settings):
         if "spec_step" in freq_settings:
             print("LENSTEP", file=f)
             print(format_crystal_float(freq_settings["spec_step"]), file=f)
-        if "spec_voigt" in freq_settings:
+        if "raman_voigt" in freq_settings:
+            print("VOIGT", file=f)
+            print(format_crystal_float(freq_settings["raman_voigt"]), file=f)
+        elif "spec_voigt" in freq_settings:
             print("VOIGT", file=f)
             print(format_crystal_float(freq_settings["spec_voigt"]), file=f)
-        if "spec_broadening" in freq_settings:
+        if "raman_dampfac" in freq_settings:
             print("DAMPFAC", file=f)
-            print(format_crystal_float(freq_settings["spec_broadening"]), file=f)
+            print(format_crystal_float(freq_settings["raman_dampfac"]), file=f)
+        elif "spec_dampfac" in freq_settings:
+            print("DAMPFAC", file=f)
+            print(format_crystal_float(freq_settings["spec_dampfac"]), file=f)
         
         print("END", file=f)
     
@@ -1864,7 +1918,10 @@ def write_dft_section(f, functional, use_dispersion, dft_grid, is_spin_polarized
     if functional in ["PBEH3C", "HSE3C", "B973C", "PBESOL03C", "HSESOL3C"]:
         # These are standalone keywords in CRYSTAL23
         print(f"{functional}", file=f)
-        # 3C methods have their own grid settings, don't add grid
+        # For HSESOL3C, we need XLGRID (even if not specified or DEFAULT)
+        if functional == "HSESOL3C":
+            # Always use XLGRID for HSESOL3C
+            print("XLGRID", file=f)
     elif functional == "mPW1PW91" and use_dispersion:
         print("PW1PW-D3", file=f)
         # Add DFT grid size only if not default and not None
