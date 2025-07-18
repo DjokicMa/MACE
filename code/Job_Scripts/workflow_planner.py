@@ -720,7 +720,7 @@ class WorkflowPlanner:
 
         print("Build your workflow sequence:")
         print("Enter calculation types in order (e.g., OPT SP BAND DOSS)")
-        print("Type 'help' for more information")
+        print("Type 'help' for workflow examples, 'list' to see available types again")
 
         sequence = []
         while True:
@@ -736,6 +736,17 @@ class WorkflowPlanner:
                 break
             elif user_input == "HELP":
                 self.show_workflow_help()
+            elif user_input == "LIST" or user_input == "":
+                # Show available types again
+                print("\nAvailable calculation types:")
+                for calc_type, info in self.calc_types.items():
+                    deps = (
+                        " (depends on: " + ", ".join(info["depends_on"]) + ")"
+                        if info["depends_on"]
+                        else ""
+                    )
+                    print(f"  {calc_type}: {info['name']}{deps}")
+                print("\nType 'help' for workflow examples")
             elif user_input in self.calc_types:
                 # Get properly numbered version
                 numbered_calc = self._get_next_numbered_calc(sequence, user_input)
@@ -748,6 +759,7 @@ class WorkflowPlanner:
             else:
                 print(f"Unknown calculation type: {user_input}")
                 print("Available types:", ", ".join(self.calc_types.keys()))
+                print("Type 'list' to see full descriptions")
 
         if not sequence:
             print("No calculations selected. Using basic optimization.")
@@ -1450,6 +1462,8 @@ class WorkflowPlanner:
     ) -> Dict[str, Any]:
         """Configure frequency calculation with customization levels"""
         print(f"  Configuring {calc_type} calculation")
+        print("\n  ⚠️  Note: To calculate IR or Raman spectra, use Advanced or Expert mode")
+        print("  Basic mode provides frequencies for thermodynamics only")
 
         # Ask for customization level
         print("\n  Frequency Calculation Customization Level:")
@@ -1475,15 +1489,6 @@ class WorkflowPlanner:
             print("    - High accuracy tolerances for frequencies:")
             print("      - TOLINTEG: 9 9 9 11 38")
             print("      - TOLDEE: 11 (SCF convergence 10^-11 Ha)")
-            print("\n  📊 Resource estimate:")
-            print("    - Time: ~1-3x optimization time")
-            print("    - Memory: Similar to optimization")
-            print("    - Quality: Good for thermodynamics, no spectroscopy")
-            print("    - Numerical derivatives: 2-point (two displacements per atom)")
-            print("    - Method/basis: inherited from optimized geometry")
-            print(
-                "\n  ⚠️  Note: To calculate IR or Raman spectra, use Advanced or Expert mode"
-            )
             print("\n  📊 Resource estimate:")
             print("    - Time: ~1-3x optimization time")
             print("    - Memory: Similar to optimization")
@@ -1567,43 +1572,43 @@ class WorkflowPlanner:
                     print("  ⚠️  Note: IR/Raman intensities NOT available in this mode")
                     print("  For molecular spectra, use gamma point mode instead")
 
-                # Supercell for phonon calculation
-                print("\n  Supercell for phonon calculation (SCELPHONO):")
-                print("    Larger supercells = better accuracy but much higher cost")
-                print("    1. Default 2x2x2 (8x more atoms)")
-                print("       - Time: ~4-8x optimization time")
-                print("       - Memory: ~8x optimization memory")
-                print("       - Quality: Good for most phonon properties")
-                print("    2. Custom expansion factors")
-                print(
-                    "       - 3x3x3: ~10-20x time, ~27x memory, better for soft modes"
-                )
-                print("       - 4x4x4: ~30-60x time, ~64x memory, publication quality")
-                print("    Note: For 2D materials, use 2x2x1 or 3x3x1")
-                supercell_choice = input("  Select supercell [1]: ").strip() or "1"
-                if supercell_choice == "2":
-                    nx = input("    Expansion in x [2]: ").strip()
-                    ny = input("    Expansion in y [2]: ").strip()
-                    nz = input("    Expansion in z [2]: ").strip()
-                    config["frequency_settings"]["scelphono"] = [
-                        int(nx) if nx else 2,
-                        int(ny) if ny else 2,
-                        int(nz) if nz else 2,
-                    ]
-                else:
-                    config["frequency_settings"]["scelphono"] = [2, 2, 2]
+                    # Supercell for phonon calculation
+                    print("\n  Supercell for phonon calculation (SCELPHONO):")
+                    print("    Larger supercells = better accuracy but much higher cost")
+                    print("    1. Default 2x2x2 (8x more atoms)")
+                    print("       - Time: ~4-8x optimization time")
+                    print("       - Memory: ~8x optimization memory")
+                    print("       - Quality: Good for most phonon properties")
+                    print("    2. Custom expansion factors")
+                    print(
+                        "       - 3x3x3: ~10-20x time, ~27x memory, better for soft modes"
+                    )
+                    print("       - 4x4x4: ~30-60x time, ~64x memory, publication quality")
+                    print("    Note: For 2D materials, use 2x2x1 or 3x3x1")
+                    supercell_choice = input("  Select supercell [1]: ").strip() or "1"
+                    if supercell_choice == "2":
+                        nx = input("    Expansion in x [2]: ").strip()
+                        ny = input("    Expansion in y [2]: ").strip()
+                        nz = input("    Expansion in z [2]: ").strip()
+                        config["frequency_settings"]["scelphono"] = [
+                            int(nx) if nx else 2,
+                            int(ny) if ny else 2,
+                            int(nz) if nz else 2,
+                        ]
+                    else:
+                        config["frequency_settings"]["scelphono"] = [2, 2, 2]
 
-                # Fourier interpolation
-                use_interphess = (
-                    input("\n  Use Fourier interpolation (INTERPHESS)? [Y/n]: ")
-                    .strip()
-                    .lower()
-                )
-                if use_interphess != "n":
-                    config["frequency_settings"]["interphess"] = {
-                        "expand": [2, 2, 2],  # Default values
-                        "print": 0,
-                    }
+                    # Fourier interpolation
+                    use_interphess = (
+                        input("\n  Use Fourier interpolation (INTERPHESS)? [Y/n]: ")
+                        .strip()
+                        .lower()
+                    )
+                    if use_interphess != "n":
+                        config["frequency_settings"]["interphess"] = {
+                            "expand": [2, 2, 2],  # Default values
+                            "print": 0,
+                        }
 
                 elif phonon_type == "2":
                     # Custom k-points
@@ -1627,6 +1632,7 @@ class WorkflowPlanner:
                     print("\n  ✓ High-symmetry points mode selected")
                     print("  Will calculate phonons at critical points only")
                     print("  Typical points: Gamma, X, M, K, etc.")
+                    print("  ⚠️  Note: IR/Raman intensities NOT available in this mode")
 
                     # For high-symmetry, we don't need supercell
                     config["frequency_settings"]["high_symmetry_only"] = True
@@ -1651,103 +1657,193 @@ class WorkflowPlanner:
             numderiv = input("  Select method (1 or 2) [2]: ").strip() or "2"
             config["frequency_settings"]["numderiv"] = int(numderiv)
 
-            # IR intensities
+            # Gamma point spectroscopy options
             if config["frequency_settings"]["mode"] == "GAMMA":
-                calc_ir = input("\n  Calculate IR intensities? [Y/n]: ").strip().lower()
-                if calc_ir != "n":
+                print("\n  Gamma point calculation type:")
+                print("    1. Pure frequencies (thermodynamics only)")
+                print("       - Fastest: Just vibrational frequencies")
+                print("       - Provides: ZPE, thermal corrections, entropy")
+                print("       - No spectroscopy data")
+                print("    2. IR spectroscopy")
+                print("       - Always calculates IR intensities")
+                print("       - Optional: Generate spectrum plot (IRSPEC)")
+                print("       - Multiple methods available (Berry phase, Wannier, CPHF)")
+                print("    3. Raman spectroscopy")
+                print("       - Always calculates Raman activities")
+                print("       - Optional: Generate spectrum plot (RAMSPEC)")
+                print("       - Requires CPHF calculation")
+                print("       - Significantly more expensive than IR")
+                print("    4. Both IR and Raman")
+                print("       - Always calculates both IR intensities and Raman activities")
+                print("       - Optional: Generate spectrum plots (IRSPEC/RAMSPEC)")
+                print("       - Complete vibrational spectroscopy")
+                print("       - Most expensive option")
+                
+                gamma_type = input("\n  Select calculation type [1]: ").strip() or "1"
+                
+                if gamma_type == "1":
+                    # Pure frequencies - no intensities
+                    config["frequency_settings"]["intensities"] = False
+                    config["frequency_settings"]["raman"] = False
+                    print("\n  ✓ Pure frequency calculation selected")
+                    print("  No IR or Raman intensities will be calculated")
+                    
+                elif gamma_type == "2":
+                    # IR only
                     config["frequency_settings"]["intensities"] = True
-
+                    config["frequency_settings"]["raman"] = False
+                    print("\n  ✓ IR spectroscopy selected")
+                    print("  Note: IR intensities are ALWAYS calculated when IR is selected")
+                    print("        Spectrum plot generation is optional (asked later)")
+                    
                     print("\n  IR intensity calculation method:")
                     print("    1. Berry phase (INTPOL) - Default, efficient")
-                    print("       - Time: +10-20% over base frequency calculation")
+                    print("       - Best for: Periodic solids, semiconductors, insulators")
+                    print("       - Works well: Covalent materials, MOFs, zeolites")
+                    print("       - Limitations: Requires insulating state")
+                    print("       - Time: +10-20% over base frequency")
                     print("       - Memory: Minimal overhead")
-                    print("       - Quality: Good for most systems, periodic-friendly")
                     print("    2. Wannier functions (INTLOC) - Localized approach")
-                    print("       - Time: +20-30% over base frequency calculation")
+                    print("       - Best for: Molecular crystals, ionic solids")
+                    print("       - Works well: Systems with localized bonds/charges")
+                    print("       - Limitations: Requires insulating state, higher memory")
+                    print("       - Time: +20-30% over base frequency")
                     print("       - Memory: +10-20% overhead")
-                    print(
-                        "       - Quality: Better for ionic systems, molecular clusters"
-                    )
-                    print("    3. CPHF (INTCPHF) - Most accurate, required for Raman")
-                    print("       - Time: +50-100% over base frequency calculation")
+                    print("    3. CPHF (INTCPHF) - Most accurate, analytical")
+                    print("       - Best for: Any material (metals, semiconductors, insulators)")
+                    print("       - Works well: Small unit cells, high accuracy needed")
+                    print("       - Benefits: Also enables Raman, most reliable")
+                    print("       - Time: +50-100% over base frequency")
                     print("       - Memory: ~2x base requirement")
-                    print("       - Quality: Best accuracy, enables Raman calculations")
-
-                    ir_method = input("  Select method [1]: ").strip() or "1"
+                    
+                    print("\n  Note: Berry phase (1) is the default as it works well for most")
+                    print("        periodic systems and has the best speed/accuracy balance")
+                    ir_method = input("\n  Select method [1]: ").strip() or "1"
                     ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
-                    config["frequency_settings"]["ir_method"] = ir_methods.get(
-                        ir_method, "BERRY"
-                    )
-
-                # CPHF settings if selected
-                if config["frequency_settings"]["ir_method"] == "CPHF":
-                    max_iter = input("  CPHF max iterations [30]: ").strip()
-                    config["frequency_settings"]["cphf_max_iter"] = (
-                        int(max_iter) if max_iter else 30
-                    )
-                    tol = input("  CPHF convergence (10^-x) [6]: ").strip()
-                    config["frequency_settings"]["cphf_tolerance"] = (
-                        int(tol) if tol else 6
-                    )
-
-            # Raman intensities (requires CPHF)
-            if config["frequency_settings"]["mode"] == "GAMMA":
-                print("\n  Raman intensity calculation:")
-                print(
-                    "    Note: Requires CPHF calculation, significant computational cost"
-                )
-                print("    📊 Resource impact:")
-                print("      - Time: +100-200% over base frequency calculation")
-                print("      - Memory: ~2-3x base requirement")
-                print("      - Quality: Essential for Raman spectroscopy")
-                calc_raman = (
-                    input("  Calculate Raman intensities? [y/N]: ").strip().lower()
-                )
-                if calc_raman == "y":
+                    config["frequency_settings"]["ir_method"] = ir_methods.get(ir_method, "BERRY")
+                    
+                    # CPHF settings if selected
+                    if config["frequency_settings"]["ir_method"] == "CPHF":
+                        max_iter = input("  CPHF max iterations [30]: ").strip()
+                        config["frequency_settings"]["cphf_max_iter"] = int(max_iter) if max_iter else 30
+                        tol = input("  CPHF convergence (10^-x) [6]: ").strip()
+                        config["frequency_settings"]["cphf_tolerance"] = int(tol) if tol else 6
+                    
+                    # Ask about minimal IR
+                    print("\n  Spectrum plot generation:")
+                    print("    By default: Intensities only (no spectrum plot)")
+                    print("    Optional: Generate broadened IR spectrum plot (IRSPEC)")
+                    print("\n  Do you want to skip spectrum plot generation?")
+                    print("    - YES (minimal): Only calculate intensities (faster)")
+                    print("    - NO: Calculate intensities AND generate spectrum plot")
+                    minimal_ir = input("  Skip IR spectrum plot (minimal mode)? [y/N]: ").strip().lower()
+                    if minimal_ir == "y":
+                        config["frequency_settings"]["minimal_ir"] = True
+                        
+                elif gamma_type == "3":
+                    # Raman only
+                    config["frequency_settings"]["intensities"] = True  # Needed for CPHF
                     config["frequency_settings"]["raman"] = True
-                    config["frequency_settings"]["intensities"] = True
-                    config["frequency_settings"]["ir_method"] = "CPHF"
-                    if "cphf_max_iter" not in config["frequency_settings"]:
-                        config["frequency_settings"]["cphf_max_iter"] = 30
-                    if "cphf_tolerance" not in config["frequency_settings"]:
-                        config["frequency_settings"]["cphf_tolerance"] = 6
-
+                    config["frequency_settings"]["ir_method"] = "CPHF"  # Required for Raman
+                    print("\n  ✓ Raman spectroscopy selected")
+                    print("  Note: Raman activities are ALWAYS calculated when Raman is selected")
+                    print("        Spectrum plot generation is optional (asked later)")
+                    print("        CPHF will be used (required for Raman)")
+                    
+                    # CPHF settings
+                    max_iter = input("\n  CPHF max iterations [30]: ").strip()
+                    config["frequency_settings"]["cphf_max_iter"] = int(max_iter) if max_iter else 30
+                    tol = input("  CPHF convergence (10^-x) [6]: ").strip()
+                    config["frequency_settings"]["cphf_tolerance"] = int(tol) if tol else 6
+                    
                     # Ask about minimal Raman
-                    minimal = (
-                        input("  Use minimal Raman (no spectral generation)? [y/N]: ")
-                        .strip()
-                        .lower()
-                    )
+                    print("\n  Spectrum plot generation:")
+                    print("    By default: Activities only (no spectrum plot)")
+                    print("    Optional: Generate broadened Raman spectrum plot (RAMSPEC)")
+                    print("\n  Do you want to skip spectrum plot generation?")
+                    print("    - YES (minimal): Only calculate activities (faster)")
+                    print("    - NO: Calculate activities AND generate spectrum plot")
+                    minimal = input("  Skip Raman spectrum plot (minimal mode)? [y/N]: ").strip().lower()
                     if minimal == "y":
                         config["frequency_settings"]["minimal_raman"] = True
+                        
+                elif gamma_type == "4":
+                    # Both IR and Raman
+                    config["frequency_settings"]["intensities"] = True
+                    config["frequency_settings"]["raman"] = True
+                    config["frequency_settings"]["ir_method"] = "CPHF"  # Required for Raman
+                    print("\n  ✓ Both IR and Raman spectroscopy selected")
+                    print("  Note: IR intensities AND Raman activities are ALWAYS calculated")
+                    print("        Spectrum plot generation is optional (asked later)")
+                    print("        CPHF will be used (required for Raman)")
+                    
+                    # CPHF settings
+                    max_iter = input("\n  CPHF max iterations [30]: ").strip()
+                    config["frequency_settings"]["cphf_max_iter"] = int(max_iter) if max_iter else 30
+                    tol = input("  CPHF convergence (10^-x) [6]: ").strip()
+                    config["frequency_settings"]["cphf_tolerance"] = int(tol) if tol else 6
+                    
+                    # Ask about minimal options
+                    print("\n  Spectrum plot generation options:")
+                    print("  Note: Intensities/activities are ALWAYS calculated")
+                    print("        You're choosing whether to also generate spectrum plots")
+                    
+                    print("\n  IR spectrum plot:")
+                    print("    - Skip plot (minimal): Only intensities in .out file")
+                    print("    - Generate plot: Intensities + broadened spectrum (IRSPEC)")
+                    minimal_ir = input("  Skip IR spectrum plot (minimal mode)? [y/N]: ").strip().lower()
+                    if minimal_ir == "y":
+                        config["frequency_settings"]["minimal_ir"] = True
+                        
+                    print("\n  Raman spectrum plot:")
+                    print("    - Skip plot (minimal): Only activities in .out file")
+                    print("    - Generate plot: Activities + broadened spectrum (RAMSPEC)")
+                    minimal_raman = input("  Skip Raman spectrum plot (minimal mode)? [y/N]: ").strip().lower()
+                    if minimal_raman == "y":
+                        config["frequency_settings"]["minimal_raman"] = True
+                else:
+                    # Default to pure frequencies
+                    config["frequency_settings"]["intensities"] = False
+                    config["frequency_settings"]["raman"] = False
+                    print("\n  Invalid choice - defaulting to pure frequencies")
+                    
+                # Spectral generation (only ask if not minimal)
+                if (config["frequency_settings"].get("intensities") or config["frequency_settings"].get("raman")) and \
+                   not (config["frequency_settings"].get("minimal_ir", False) and config["frequency_settings"].get("minimal_raman", False)):
+                    
+                    # Only ask about spectra if we have non-minimal IR or Raman
+                    has_ir_spectra = config["frequency_settings"].get("intensities") and not config["frequency_settings"].get("minimal_ir", False)
+                    has_raman_spectra = config["frequency_settings"].get("raman") and not config["frequency_settings"].get("minimal_raman", False)
+                    
+                    if has_ir_spectra or has_raman_spectra:
+                        if has_ir_spectra and has_raman_spectra:
+                            spectra_prompt = "\n  Generate IR and Raman spectra plots? [y/N]: "
+                        elif has_ir_spectra:
+                            spectra_prompt = "\n  Generate IR spectrum plot? [y/N]: "
+                        else:
+                            spectra_prompt = "\n  Generate Raman spectrum plot? [y/N]: "
+                            
+                        gen_spectra = input(spectra_prompt).strip().lower()
+                        if gen_spectra == "y":
+                            if has_ir_spectra:
+                                config["frequency_settings"]["irspec"] = True
+                                width = input("  IR peak width (cm^-1) [10]: ").strip()
+                                config["frequency_settings"]["spec_dampfac"] = float(width) if width else 10
+                            if has_raman_spectra:
+                                config["frequency_settings"]["ramspec"] = True
+                                if has_ir_spectra:
+                                    # Ask for Raman width only if different from IR
+                                    use_same = input("  Use same peak width for Raman? [Y/n]: ").strip().lower()
+                                    if use_same == "n":
+                                        width = input("  Raman peak width (cm^-1) [10]: ").strip()
+                                        config["frequency_settings"]["raman_dampfac"] = float(width) if width else 10
+                                else:
+                                    width = input("  Raman peak width (cm^-1) [10]: ").strip()
+                                    config["frequency_settings"]["spec_dampfac"] = float(width) if width else 10
             else:
-                # Not gamma point mode
+                # Not gamma point mode - no intensities possible
                 config["frequency_settings"]["intensities"] = False
                 config["frequency_settings"]["raman"] = False
-
-            # Spectral generation
-            if (
-                config["frequency_settings"].get("intensities")
-                or config["frequency_settings"].get("raman")
-            ) and not config["frequency_settings"].get("minimal_raman", False):
-                gen_spectra = (
-                    input("\n  Generate IR/Raman spectra? [Y/n]: ").strip().lower()
-                )
-                if gen_spectra != "n":
-                    if config["frequency_settings"].get("intensities"):
-                        config["frequency_settings"]["irspec"] = True
-                        width = input("  IR peak width (cm^-1) [10]: ").strip()
-                        config["frequency_settings"]["spec_dampfac"] = (
-                            float(width) if width else 10
-                        )
-                    if config["frequency_settings"].get("raman"):
-                        config["frequency_settings"]["ramspec"] = True
-                        width = input("  Raman peak width (cm^-1) [10]: ").strip()
-                        # Use same dampfac for both IR and Raman if not specified separately
-                        if "spec_dampfac" not in config["frequency_settings"]:
-                            config["frequency_settings"]["spec_dampfac"] = (
-                                float(width) if width else 10
-                            )
 
             # Anharmonic calculations
             calc_anharm = (

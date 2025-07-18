@@ -48,7 +48,7 @@ def copy_dependencies(target_dir: str = "."):
                 "query_input_settings.py", 
                 "formula_extractor.py",
                 "crystal_property_extractor.py",
-                "file_storage_manager.py",
+                # "file_storage_manager.py",  # Currently in Archived folder, not critical
                 "advanced_electronic_analyzer.py",
                 "recovery_config.yaml",
                 "dat_file_processor.py",
