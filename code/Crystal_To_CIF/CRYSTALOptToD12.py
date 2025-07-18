@@ -123,7 +123,7 @@ class CrystalOutputParser:
             "conventional_cell": [],
             "coordinates": [],
             "spacegroup": None,
-            "dimensionality": "CRYSTAL",
+            "dimensionality": None,
             "calculation_type": None,
             "functional": None,
             "basis_set": None,
@@ -159,32 +159,54 @@ class CrystalOutputParser:
 
     def _extract_dimensionality(self, lines):
         """Extract system dimensionality"""
+        # First pass - look for explicit calculation type declarations
         for i, line in enumerate(lines):
-            if "CRYSTAL" in line and "CALCULATION" in line:
-                self.data["dimensionality"] = "CRYSTAL"
-            elif "SLAB CALCULATION" in line:
+            line_upper = line.upper()
+            if "SLAB CALCULATION" in line_upper:
                 self.data["dimensionality"] = "SLAB"
-            elif "POLYMER CALCULATION" in line:
+                return  # Found it, no need to continue
+            elif "POLYMER CALCULATION" in line_upper:
                 self.data["dimensionality"] = "POLYMER"
-            elif "MOLECULE CALCULATION" in line:
+                return
+            elif "MOLECULE CALCULATION" in line_upper:
                 self.data["dimensionality"] = "MOLECULE"
+                return
+            elif "CRYSTAL CALCULATION" in line_upper:
+                self.data["dimensionality"] = "CRYSTAL"
+                return
 
+        # Second pass - check for other indicators
+        for i, line in enumerate(lines):
+            # Check for CRYSTAL - SCF lines
+            if "CRYSTAL - SCF" in line:
+                # Default to CRYSTAL if not already set
+                if self.data["dimensionality"] is None:
+                    self.data["dimensionality"] = "CRYSTAL"
+                    
             # Also check input echo section
             if "*                               CRYSTAL" in line:
                 # Look for the dimensionality in the next few lines
                 for j in range(i, min(i + 10, len(lines))):
                     if "CRYSTAL - PROPERTIES OF THE CRYSTALLINE STATE" in lines[j]:
-                        self.data["dimensionality"] = "CRYSTAL"
+                        if self.data["dimensionality"] is None:
+                            self.data["dimensionality"] = "CRYSTAL"
                         break
-                    elif "SLAB" in lines[j]:
-                        self.data["dimensionality"] = "SLAB"
+                    elif "SLAB" in lines[j] and "CALCULATION" not in lines[j]:
+                        if self.data["dimensionality"] is None:
+                            self.data["dimensionality"] = "SLAB"
                         break
                     elif "POLYMER" in lines[j]:
-                        self.data["dimensionality"] = "POLYMER"
+                        if self.data["dimensionality"] is None:
+                            self.data["dimensionality"] = "POLYMER"
                         break
                     elif "MOLECULE" in lines[j]:
-                        self.data["dimensionality"] = "MOLECULE"
+                        if self.data["dimensionality"] is None:
+                            self.data["dimensionality"] = "MOLECULE"
                         break
+                        
+        # Default to CRYSTAL if nothing found
+        if self.data["dimensionality"] is None:
+            self.data["dimensionality"] = "CRYSTAL"
 
     def _extract_geometry(self, content):
         """Extract optimized geometry from output"""
@@ -1263,7 +1285,24 @@ def get_advanced_frequency_settings():
     print("\n=== FREQUENCY CALCULATION SETTINGS ===")
     sys.stdout.flush()
     
-    # First, ask if they want to use a template
+    # First ask about NUMDERIV
+    print("\nNumerical derivative method (NUMDERIV):")
+    print("  1: One displacement per atom (faster)")
+    print("     Forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
+    print("  2: Two displacements per atom (more accurate)")
+    print("     Central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
+    print("\nNote: NUMDERIV is NOT used when intensities are calculated")
+    
+    numderiv_choice = input("\nInclude NUMDERIV keyword? [y/N]: ").strip().lower()
+    if numderiv_choice == 'y':
+        numderiv = input("Select method (1-2) [2]: ").strip() or "2"
+        try:
+            freq_settings["numderiv"] = int(numderiv)
+        except ValueError:
+            print("Invalid input, using default NUMDERIV=2")
+            freq_settings["numderiv"] = 2
+    
+    # Then ask if they want to use a template
     print("\nFrequency calculation templates:")
     print("1: Basic frequencies only")
     print("2: IR spectrum")
@@ -1328,35 +1367,106 @@ def get_advanced_frequency_settings():
             freq_settings["mode"] = "GAMMA"
         else:
             freq_settings["mode"] = "DISPERSION"
-            # Ask for dispersion details
-            try:
-                n_kpoints_input = input("Number of k-points for dispersion [20]: ").strip()
-                n_kpoints = int(n_kpoints_input) if n_kpoints_input else 20
-            except ValueError:
-                print("Invalid input, using default value of 20")
-                n_kpoints = 20
-            freq_settings["n_kpoints"] = n_kpoints
             
-            # Ask if they want to specify a path or use automatic
-            use_auto_path = yes_no_prompt("Use automatic k-path generation?", "yes")
-            if not use_auto_path:
-                print("Enter k-points path (e.g., 'G-X-M-G' or custom coordinates)")
-                print("Note: Custom path specification will be added to TODO list")
-                # TODO: Implement custom k-path specification
-    
-    # Numerical derivative method
-    print("\nNumerical derivative method:")
-    print("1: One displacement per atom (faster, less accurate)")
-    print("   Uses forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
-    print("2: Two displacements per atom (default, recommended)")
-    print("   Uses central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
-    
-    numderiv = input("Select method (1-2) [2]: ").strip() or "2"
-    try:
-        freq_settings["numderiv"] = int(numderiv)
-    except ValueError:
-        print("Invalid input, using default NUMDERIV=2")
-        freq_settings["numderiv"] = 2
+            print("\n=== PHONON DISPERSION SETTINGS ===")
+            
+            # Supercell size (SCELPHONO)
+            print("\nSupercell size for phonon calculations (SCELPHONO):")
+            print("  The supercell should be large enough that force constants vanish at its boundaries")
+            print("  Typical sizes: 2x2x2 for simple systems, 3x3x3 or larger for complex/ionic systems")
+            
+            scel_input = input("Enter supercell dimensions (e.g., '2 2 2') [2 2 2]: ").strip()
+            if scel_input:
+                try:
+                    scel_parts = scel_input.split()
+                    if len(scel_parts) == 3:
+                        freq_settings["scelphono"] = [int(x) for x in scel_parts]
+                    else:
+                        print("Invalid input, using default 2x2x2")
+                        freq_settings["scelphono"] = [2, 2, 2]
+                except ValueError:
+                    print("Invalid input, using default 2x2x2")
+                    freq_settings["scelphono"] = [2, 2, 2]
+            else:
+                freq_settings["scelphono"] = [2, 2, 2]
+            
+            # Ask about interpolation
+            use_interp = yes_no_prompt("\nUse Hessian interpolation (INTERPHESS)?", "yes")
+            if use_interp:
+                print("\nInterpolation allows calculation on denser k-point mesh")
+                print("Only use if supercell is large enough (radius ~10-15 Å)")
+                
+                interp_input = input("Interpolation factors (e.g., '4 4 4') [4 4 4]: ").strip()
+                if interp_input:
+                    try:
+                        interp_parts = interp_input.split()
+                        if len(interp_parts) == 3:
+                            freq_settings["interphess"] = [int(x) for x in interp_parts]
+                        else:
+                            freq_settings["interphess"] = [4, 4, 4]
+                    except ValueError:
+                        freq_settings["interphess"] = [4, 4, 4]
+                else:
+                    freq_settings["interphess"] = [4, 4, 4]
+                    
+                # Ask about WANG correction for polar materials
+                is_polar = yes_no_prompt("\nIs this a polar/ionic material requiring WANG correction?", "no")
+                if is_polar:
+                    freq_settings["wang"] = True
+                    print("\nFor WANG correction, dielectric tensor is required")
+                    print("This can be obtained from a CPHF calculation")
+                    # In practice, the dielectric tensor would be read from file
+            
+            # Band structure or DOS?
+            print("\nPhonon calculation type:")
+            print("1: Band structure along specific k-paths")
+            print("2: Density of states (DOS)")
+            print("3: Both band structure and DOS")
+            
+            phon_type = input("Select type (1-3) [1]: ").strip() or "1"
+            
+            if phon_type in ["1", "3"]:
+                freq_settings["phonon_bands"] = True
+                
+                # Ask about k-path
+                print("\nPhonon band structure k-path:")
+                print("1: Automatic path based on crystal symmetry")
+                print("2: Manual path specification")
+                
+                path_choice = input("Select option (1-2) [1]: ").strip() or "1"
+                
+                if path_choice == "2":
+                    print("\nDefine k-path segments (e.g., 'G-X-M-G' for common points)")
+                    print("Or use fractional coordinates")
+                    n_lines = int(input("Number of path segments: ") or 1)
+                    
+                    freq_settings["band_path"] = []
+                    for i in range(n_lines):
+                        print(f"\nSegment {i+1}:")
+                        start = input("  Start point (label or 'x y z'): ").strip()
+                        end = input("  End point (label or 'x y z'): ").strip()
+                        n_points = int(input("  Number of points [50]: ") or 50)
+                        
+                        freq_settings["band_path"].append({
+                            "start": start,
+                            "end": end,
+                            "n_points": n_points
+                        })
+                else:
+                    freq_settings["auto_kpath"] = True
+                    
+            if phon_type in ["2", "3"]:
+                freq_settings["phonon_dos"] = True
+                
+                print("\nPhonon DOS settings:")
+                max_freq = float(input("Maximum frequency (cm⁻¹) [3000]: ") or 3000)
+                n_bins = int(input("Number of bins [300]: ") or 300)
+                
+                freq_settings["dos_settings"] = {
+                    "max_freq": max_freq,
+                    "n_bins": n_bins,
+                    "projected": yes_no_prompt("Calculate atom-projected DOS?", "yes")
+                }
     
     # IR intensities
     calc_ir = yes_no_prompt("\nCalculate IR intensities?", "no")
@@ -1364,15 +1474,32 @@ def get_advanced_frequency_settings():
         freq_settings["intensities"] = True
         
         print("\nIR intensity calculation method:")
-        print("1: Berry phase (default, fast)")
-        print("2: Wannier functions (localized, good for molecules)")
-        print("3: CPHF (most accurate, expensive)")
+        print("1: Berry phase (INTPOL - default)")
+        print("   - Fast, works for 3D, 2D, 1D, and 0D systems")
+        print("   - Good for periodic systems, insulators only")
+        print("   - Accuracy depends on k-point density")
+        print("2: Wannier functions (INTLOC)")
+        print("   - Good for molecular/localized systems")
+        print("   - Memory intensive, insulators only")
+        print("   - Can relocalize at each displaced geometry")
+        print("3: CPHF/CPKS (INTCPHF - most accurate)")
+        print("   - Fully analytical Born charges")
+        print("   - Works for all systems")
+        print("   - Required for Raman calculations")
+        print("   - Most expensive computationally")
         
-        ir_method_choice = input("Select method (1-3) [1]: ").strip() or "1"
+        ir_method_choice = input("\nSelect method (1-3) [1]: ").strip() or "1"
         ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
         freq_settings["ir_method"] = ir_methods.get(ir_method_choice, "BERRY")
         
-        if freq_settings["ir_method"] == "CPHF":
+        if freq_settings["ir_method"] == "WANNIER":
+            # Wannier function specific options
+            print("\nWannier function options:")
+            relocal = yes_no_prompt("Relocalize at each displaced geometry (RELOCAL)?", "no")
+            if relocal:
+                freq_settings["relocalize_wannier"] = True
+            
+        elif freq_settings["ir_method"] == "CPHF":
             # CPHF specific options
             print("\nCPHF calculation options:")
             try:
@@ -1406,27 +1533,98 @@ def get_advanced_frequency_settings():
     
     # Spectral generation
     if freq_settings.get("intensities") or freq_settings.get("raman"):
-        gen_spectra = yes_no_prompt("\nGenerate IR/Raman spectra?", "yes")
-        if gen_spectra:
-            if freq_settings.get("intensities"):
-                freq_settings["ir_spectrum"] = True
-                try:
-                    width_input = input("IR peak width (cm^-1) [10]: ").strip()
-                    width = float(width_input) if width_input else 10
-                except ValueError:
-                    print("Invalid input, using default value of 10")
-                    width = 10
-                freq_settings["ir_spectrum_width"] = width
+        print("\n=== SPECTRAL GENERATION OPTIONS ===")
+        
+        # IR spectrum (IRSPEC)
+        if freq_settings.get("intensities"):
+            gen_ir_spec = yes_no_prompt("\nGenerate IR spectrum (IRSPEC)?", "yes")
+            if gen_ir_spec:
+                freq_settings["irspec"] = True
                 
-            if freq_settings.get("raman"):
-                freq_settings["raman_spectrum"] = True
+                print("\nIR spectrum settings:")
+                # Spectral range
+                custom_range = yes_no_prompt("Customize spectral range? [default: 0-4000 cm⁻¹]", "no")
+                if custom_range:
+                    try:
+                        min_freq = float(input("Minimum frequency (cm⁻¹) [0]: ") or 0)
+                        max_freq = float(input("Maximum frequency (cm⁻¹) [4000]: ") or 4000)
+                        freq_settings["spec_range"] = [min_freq, max_freq]
+                    except ValueError:
+                        print("Invalid input, using default range 0-4000 cm⁻¹")
+                        freq_settings["spec_range"] = [0, 4000]
+                else:
+                    freq_settings["spec_range"] = [0, 4000]
+                
+                # Step size
                 try:
-                    width_input = input("Raman peak width (cm^-1) [10]: ").strip()
-                    width = float(width_input) if width_input else 10
+                    step_input = input("Step size (cm⁻¹) [1]: ").strip()
+                    step = float(step_input) if step_input else 1.0
+                    freq_settings["spec_step"] = step
                 except ValueError:
-                    print("Invalid input, using default value of 10")
-                    width = 10
-                freq_settings["raman_spectrum_width"] = width
+                    print("Invalid input, using default step size of 1 cm⁻¹")
+                    freq_settings["spec_step"] = 1.0
+                
+                # Peak width (damping factor)
+                try:
+                    width_input = input("Peak width/damping factor (cm⁻¹) [8]: ").strip()
+                    width = float(width_input) if width_input else 8.0
+                    freq_settings["spec_dampfac"] = width
+                except ValueError:
+                    print("Invalid input, using default width of 8 cm⁻¹")
+                    freq_settings["spec_dampfac"] = 8.0
+                
+        # Raman spectrum (RAMSPEC)
+        if freq_settings.get("raman"):
+            gen_raman_spec = yes_no_prompt("\nGenerate Raman spectrum (RAMSPEC)?", "yes")
+            if gen_raman_spec:
+                freq_settings["ramspec"] = True
+                
+                print("\nRaman spectrum settings:")
+                # Use same range as IR if specified
+                if "spec_range" not in freq_settings:
+                    custom_range = yes_no_prompt("Customize spectral range? [default: 0-4000 cm⁻¹]", "no")
+                    if custom_range:
+                        try:
+                            min_freq = float(input("Minimum frequency (cm⁻¹) [0]: ") or 0)
+                            max_freq = float(input("Maximum frequency (cm⁻¹) [4000]: ") or 4000)
+                            freq_settings["spec_range"] = [min_freq, max_freq]
+                        except ValueError:
+                            print("Invalid input, using default range 0-4000 cm⁻¹")
+                            freq_settings["spec_range"] = [0, 4000]
+                    else:
+                        freq_settings["spec_range"] = [0, 4000]
+                
+                # Step size (use same as IR if specified)
+                if "spec_step" not in freq_settings:
+                    try:
+                        step_input = input("Step size (cm⁻¹) [1]: ").strip()
+                        step = float(step_input) if step_input else 1.0
+                        freq_settings["spec_step"] = step
+                    except ValueError:
+                        print("Invalid input, using default step size of 1 cm⁻¹")
+                        freq_settings["spec_step"] = 1.0
+                
+                # Peak width for Raman
+                try:
+                    width_input = input("Raman peak width/damping factor (cm⁻¹) [8]: ").strip()
+                    width = float(width_input) if width_input else 8.0
+                    freq_settings["raman_dampfac"] = width
+                except ValueError:
+                    print("Invalid input, using default width of 8 cm⁻¹")
+                    freq_settings["raman_dampfac"] = 8.0
+                
+                # Voigt profile parameter
+                try:
+                    voigt_input = input("Lorentz factor (0=Gaussian, 1=Lorentzian) [1.0]: ").strip()
+                    voigt = float(voigt_input) if voigt_input else 1.0
+                    if 0 <= voigt <= 1:
+                        freq_settings["raman_voigt"] = voigt
+                    else:
+                        print("Invalid input, using default Lorentz factor of 1.0")
+                        freq_settings["raman_voigt"] = 1.0
+                except ValueError:
+                    print("Invalid input, using default Lorentz factor of 1.0")
+                    freq_settings["raman_voigt"] = 1.0
     
     # Anharmonic calculations
     calc_anharm = yes_no_prompt("\nInclude anharmonic corrections (X-H stretches)?", "no")
@@ -1555,6 +1753,18 @@ def get_calculation_options(current_settings, shared_mode=False):
                 "TOLINTEG": DEFAULT_FREQ_SETTINGS["TOLINTEG"],
                 "TOLDEE": DEFAULT_FREQ_SETTINGS["TOLDEE"],
             }
+        elif options["calculation_type"] == "SP":
+            # For SP, ask if user wants tight convergence
+            use_tight = yes_no_prompt(
+                "Use tight convergence for SP calculation? (Recommended for accurate energies)",
+                "no"
+            )
+            if use_tight:
+                options["tolerances"] = {
+                    "TOLINTEG": "9 9 9 11 38",
+                    "TOLDEE": 11
+                }
+                print("Using tight convergence tolerances for SP calculation")
     else:
         # Allow full customization
         if shared_mode:
@@ -1602,9 +1812,30 @@ def get_calculation_options(current_settings, shared_mode=False):
             else:
                 options["optimization_settings"] = DEFAULT_OPT_SETTINGS.copy()
 
+            # Ask about PREOPT
+            use_preopt = yes_no_prompt(
+                "\nUse PREOPT (pre-optimization with loose criteria)?", "no"
+            )
+            if use_preopt:
+                print("\nPREOPT performs a quick initial optimization with:")
+                print("  - Looser convergence criteria")
+                print("  - Faster initial geometry relaxation")
+                print("  - Useful for very distorted starting geometries")
+                options["optimization_settings"]["PREOPT"] = True
+                
+                # Ask for PREOPT max cycles
+                preopt_cycles = input("PREOPT max cycles [50]: ").strip()
+                if preopt_cycles:
+                    try:
+                        options["optimization_settings"]["PREOPT_MAXCYCLE"] = int(preopt_cycles)
+                    except ValueError:
+                        options["optimization_settings"]["PREOPT_MAXCYCLE"] = 50
+                else:
+                    options["optimization_settings"]["PREOPT_MAXCYCLE"] = 50
+
             # Ask about MAXTRADIUS
             use_maxtradius = yes_no_prompt(
-                "Set maximum step size (MAXTRADIUS) for geometry optimization?", "no"
+                "\nSet maximum step size (MAXTRADIUS) for geometry optimization?", "no"
             )
 
             if use_maxtradius:
@@ -1616,7 +1847,7 @@ def get_calculation_options(current_settings, shared_mode=False):
         # Frequency settings if FREQ
         if options["calculation_type"] == "FREQ":
             use_default_freq = yes_no_prompt(
-                "Use default frequency calculation settings? (NUMDERIV=2, TOLINTEG=12 12 12 12 24, TOLDEE=12)",
+                "Use default frequency calculation settings? (NUMDERIV=2, TOLINTEG=9 9 9 11 38, TOLDEE=11)",
                 "yes",
             )
 
@@ -1664,6 +1895,18 @@ def get_calculation_options(current_settings, shared_mode=False):
                 "TOLINTEG": DEFAULT_FREQ_SETTINGS["TOLINTEG"],
                 "TOLDEE": DEFAULT_FREQ_SETTINGS["TOLDEE"],
             }
+        elif options["calculation_type"] == "SP":
+            # For SP in custom mode, also ask about tight convergence
+            use_tight = yes_no_prompt(
+                "Use tight convergence for SP calculation? (Recommended for accurate energies)",
+                "no"
+            )
+            if use_tight:
+                options["tolerances"] = {
+                    "TOLINTEG": "9 9 9 11 38",
+                    "TOLDEE": 11
+                }
+                print("Using tight convergence tolerances for SP calculation")
 
         # Method selection
         method_options = {"1": "DFT", "2": "HF"}
@@ -2065,9 +2308,38 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             # For internal basis sets, do NOT add 200 - they handle ECP internally
 
             symbol = ATOMIC_NUMBER_TO_SYMBOL.get(int(atom["atom_number"]), "X")
-            f.write(
-                f"{atom_num} {atom['x']} {atom['y']} {atom['z']} Biso 1.000000 {symbol}\n"
-            )
+            
+            # Handle different coordinate systems based on dimensionality
+            if dimensionality == "SLAB":
+                # For SLAB: fractional a,b coordinates and Cartesian z coordinate
+                # In CRYSTAL output files for SLAB, z-coordinates from "ATOMS IN THE ASYMMETRIC UNIT"
+                # are already in Angstroms (shown as Z(ANGSTROM) in header), not fractional
+                z_cart = float(atom['z'])
+                f.write(
+                    f"{atom_num} {atom['x']} {atom['y']} {z_cart:.6f} Biso 1.000000 {symbol}\n"
+                )
+            elif dimensionality == "POLYMER":
+                # For POLYMER: fractional x, Cartesian y,z coordinates
+                # In CRYSTAL output files for POLYMER, y,z coordinates should already be in Angstroms
+                y_cart = float(atom['y'])
+                z_cart = float(atom['z'])
+                f.write(
+                    f"{atom_num} {atom['x']} {y_cart:.6f} {z_cart:.6f} Biso 1.000000 {symbol}\n"
+                )
+            elif dimensionality == "MOLECULE":
+                # For MOLECULE: all Cartesian coordinates
+                # In CRYSTAL output files for MOLECULE, all coordinates should be in Angstroms
+                x_cart = float(atom['x'])
+                y_cart = float(atom['y'])
+                z_cart = float(atom['z'])
+                f.write(
+                    f"{atom_num} {x_cart:.6f} {y_cart:.6f} {z_cart:.6f} Biso 1.000000 {symbol}\n"
+                )
+            else:
+                # For CRYSTAL: all fractional coordinates
+                f.write(
+                    f"{atom_num} {atom['x']} {atom['y']} {atom['z']} Biso 1.000000 {symbol}\n"
+                )
 
         # Calculation-specific section
         if settings["calculation_type"] == "OPT":
@@ -2151,13 +2423,14 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 f, "INTERNAL", settings["basis_set"], coords_to_write
             )
 
-            f.write("DFT\n")
-            if settings.get("spin_polarized"):
-                f.write("SPIN\n")
-
-            # Write 3C method (remove hyphen for CRYSTAL23)
-            f.write(f"{functional.replace('-', '')}\n")
-            f.write("ENDDFT\n")
+            # Use write_dft_section to properly handle XLGRID for HSESOL3C
+            write_dft_section(
+                f,
+                functional,
+                False,  # No dispersion for 3C methods
+                settings.get("dft_grid", "XLGRID"),
+                settings.get("spin_polarized"),
+            )
         else:
             # Standard basis set and method handling
             if settings.get("basis_set_type") == "EXTERNAL":
@@ -2364,52 +2637,8 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         settings["scf_settings"] = {"method": "DIIS", "maxcycle": 800, "fmixing": 30}
 
     # Get user options or use shared settings
-    if non_interactive:
-        # Non-interactive mode - use provided options or defaults
-        options = settings.copy()
-        
-        # Set calculation type
-        if calc_type:
-            options["calculation_type"] = calc_type
-        else:
-            # Default to SP if not specified
-            options["calculation_type"] = "SP"
-        
-        # Set optimization type if it's an OPT calculation
-        if options["calculation_type"] == "OPT":
-            if opt_type:
-                options["optimization_type"] = opt_type
-            else:
-                # Default to FULLOPTG
-                options["optimization_type"] = "FULLOPTG"
-        
-        # Handle origin setting
-        if origin_setting == "auto":
-            # Auto-detect based on space group
-            spacegroup = settings.get('spacegroup', 1)
-            if 143 <= spacegroup <= 194:
-                # Hexagonal space groups
-                options["origin_setting"] = "0 1 0"
-            elif spacegroup in [146, 148, 155, 160, 161, 166, 167]:
-                # Rhombohedral space groups that can use hexagonal setting
-                options["origin_setting"] = "0 1 0"
-            else:
-                # Most other space groups use standard setting
-                options["origin_setting"] = "0 0 1"
-        else:
-            options["origin_setting"] = origin_setting
-        
-        # Keep all other settings from the extracted data
-        if "write_only_unique" not in options:
-            options["write_only_unique"] = True
-            
-        print("\nRunning in non-interactive mode with settings:")
-        print(f"  Calculation type: {options['calculation_type']}")
-        if options['calculation_type'] == 'OPT':
-            print(f"  Optimization type: {options['optimization_type']}")
-        print(f"  Origin setting: {options['origin_setting']}")
-        
-    elif config_file:
+    if config_file:
+        # Config file takes precedence - process it first
         # Load settings from config file
         print(f"\nLoading settings from config file: {config_file}")
         try:
@@ -2421,12 +2650,31 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             print("CONFIG FILE SETTINGS")
             print("="*70)
             print(f"Calculation type: {config_data.get('calculation_type', 'Not specified')}")
-            print(f"Method: {config_data.get('method', 'Not specified')}")
-            print(f"Functional: {config_data.get('functional', 'Not specified')}")
+            
+            # Check for method_modifications
+            if 'method_modifications' in config_data:
+                method_mods = config_data['method_modifications']
+                if 'new_functional' in method_mods:
+                    print(f"Functional: {method_mods['new_functional']} (via method_modifications)")
+                elif 'functional' in method_mods:
+                    print(f"Functional: {method_mods['functional']} (via method_modifications)")
+                else:
+                    print(f"Functional: {config_data.get('functional', 'Not specified')}")
+            else:
+                print(f"Method: {config_data.get('method', 'Not specified')}")
+                print(f"Functional: {config_data.get('functional', 'Not specified')}")
+            
             if config_data.get('dispersion'):
                 print(f"Dispersion: Yes")
             print(f"Basis set: {config_data.get('basis_set', 'Not specified')}")
             print(f"DFT grid: {config_data.get('dft_grid', 'Not specified')}")
+            
+            # Show tolerance modifications if present
+            if 'tolerance_modifications' in config_data:
+                tol_mods = config_data['tolerance_modifications']
+                if 'custom_tolerances' in tol_mods:
+                    print(f"Custom tolerances: {tol_mods['custom_tolerances']}")
+            
             print("="*70)
             
             # Ask user if they want to apply these settings (skip in non-interactive mode)
@@ -2476,6 +2724,46 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 # Set write_only_unique if not specified in config
                 if "write_only_unique" not in options:
                     options["write_only_unique"] = config_data.get("write_only_unique", True)
+                
+                # Handle method_modifications if present
+                if "method_modifications" in config_data:
+                    method_mods = config_data["method_modifications"]
+                    if "new_functional" in method_mods:
+                        options["functional"] = method_mods["new_functional"]
+                        print(f"  Functional changed to: {method_mods['new_functional']}")
+                    elif "functional" in method_mods:
+                        options["functional"] = method_mods["functional"]
+                        print(f"  Functional changed to: {method_mods['functional']}")
+                    
+                    # Check if the selected functional is a 3C method
+                    functional_name = method_mods.get("new_functional") or method_mods.get("functional")
+                    if functional_name:
+                        # If it's a 3C method, update basis set
+                        if functional_name in ["PBEH3C", "HSE3C", "B973C", "PBESOL03C", "HSESOL3C", "HF3C", "HFSOL3C"]:
+                            options["is_3c_method"] = True
+                            options["basis_set_type"] = "INTERNAL"
+                            # Get the basis set for this 3C method
+                            from d12creation import FUNCTIONAL_CATEGORIES
+                            for category in FUNCTIONAL_CATEGORIES.values():
+                                if "basis_requirements" in category:
+                                    if functional_name in category["basis_requirements"]:
+                                        options["basis_set"] = category["basis_requirements"][functional_name]
+                                        print(f"  Basis set updated to: {options['basis_set']} (required for 3C method)")
+                            # For HSESOL3C, ensure XLGRID is set
+                            if functional_name == "HSESOL3C":
+                                options["dft_grid"] = "XLGRID"
+                                print(f"  DFT grid set to: XLGRID (required for HSESOL3C)")
+                    if "keep_spin" in method_mods and not method_mods["keep_spin"]:
+                        options["spin_polarized"] = False
+                    if "keep_grid" in method_mods and not method_mods["keep_grid"]:
+                        options["dft_grid"] = None
+                
+                # Handle tolerance_modifications if present
+                if "tolerance_modifications" in config_data:
+                    tol_mods = config_data["tolerance_modifications"]
+                    if "custom_tolerances" in tol_mods:
+                        options["tolerances"] = tol_mods["custom_tolerances"]
+                        print(f"  Tolerances updated: {tol_mods['custom_tolerances']}")
                     
                 print("Config file settings applied.")
             else:
@@ -2486,6 +2774,51 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             print(f"Error loading config file: {e}")
             print("Falling back to interactive mode.")
             options = get_calculation_options(settings)
+    elif non_interactive:
+        # Non-interactive mode without config file
+        options = settings.copy()
+        
+        # Set calculation type
+        if calc_type:
+            options["calculation_type"] = calc_type
+        else:
+            # Default to SP if not specified
+            options["calculation_type"] = "SP"
+        
+        # Set optimization type if it's an OPT calculation
+        if options["calculation_type"] == "OPT":
+            if opt_type:
+                options["optimization_type"] = opt_type
+            else:
+                # Default to FULLOPTG
+                options["optimization_type"] = "FULLOPTG"
+        
+        # Handle origin setting
+        if origin_setting == "auto":
+            # Auto-detect based on space group
+            spacegroup = settings.get('spacegroup', 1)
+            if 143 <= spacegroup <= 194:
+                # Hexagonal space groups
+                options["origin_setting"] = "0 1 0"
+            elif spacegroup in [146, 148, 155, 160, 161, 166, 167]:
+                # Rhombohedral space groups that can use hexagonal setting
+                options["origin_setting"] = "0 1 0"
+            else:
+                # Most other space groups use standard setting
+                options["origin_setting"] = "0 0 1"
+        else:
+            options["origin_setting"] = origin_setting
+        
+        # Keep all other settings from the extracted data
+        if "write_only_unique" not in options:
+            options["write_only_unique"] = True
+            
+        print("\nRunning in non-interactive mode with settings:")
+        print(f"  Calculation type: {options['calculation_type']}")
+        if options['calculation_type'] == 'OPT':
+            print(f"  Optimization type: {options['optimization_type']}")
+        print(f"  Origin setting: {options['origin_setting']}")
+        
     elif shared_settings:
         # Merge shared settings with current settings
         options = settings.copy()

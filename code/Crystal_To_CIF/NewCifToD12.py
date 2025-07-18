@@ -566,26 +566,100 @@ def get_advanced_frequency_settings():
             freq_settings["mode"] = "GAMMA"
         else:
             freq_settings["mode"] = "DISPERSION"
-            # Ask for dispersion details
-            n_kpoints = int(input("Number of k-points for dispersion [20]: ") or 20)
-            freq_settings["n_kpoints"] = n_kpoints
+            freq_settings["dispersion"] = True
+            
+            # Supercell settings
+            print("\nSupercell for phonon calculation:")
+            print("1: Automatic (2x2x2)")
+            print("2: Custom expansion factors")
+            print("3: Custom transformation matrix")
+            supercell_choice = input("Select supercell method (1-3) [1]: ").strip() or "1"
+            
+            if supercell_choice == "1":
+                freq_settings["scelphono"] = [2, 2, 2]
+            elif supercell_choice == "2":
+                nx = int(input("Expansion in x [2]: ") or 2)
+                ny = int(input("Expansion in y [2]: ") or 2)
+                nz = int(input("Expansion in z [2]: ") or 2)
+                freq_settings["scelphono"] = [nx, ny, nz]
+            else:
+                print("Enter 3x3 transformation matrix (9 integers):")
+                matrix = []
+                for i in range(3):
+                    row = input(f"Row {i+1} (3 integers): ").split()
+                    matrix.extend([int(x) for x in row])
+                freq_settings["scelphono"] = matrix
+            
+            # Fourier interpolation
+            use_interphess = yes_no_prompt("\nUse Fourier interpolation (INTERPHESS)?", "yes")
+            if use_interphess:
+                print("\nINTERPHESS settings:")
+                l1 = int(input("L1 expansion factor [2]: ") or 2)
+                l2 = int(input("L2 expansion factor [2]: ") or 2)
+                l3 = int(input("L3 expansion factor [2]: ") or 2)
+                print_level = int(input("Print level (0-2) [0]: ") or 0)
+                freq_settings["interphess"] = {
+                    "expand": [l1, l2, l3],
+                    "print": print_level
+                }
+            
+            # Wang correction for polar materials
+            is_polar = yes_no_prompt("\nIs this a polar material (needs Wang correction)?", "no")
+            if is_polar:
+                print("\nWang correction requires high-frequency dielectric tensor.")
+                print("Enter 9 tensor components (xx xy xz yx yy yz zx zy zz):")
+                tensor_str = input("Tensor values: ").strip()
+                if tensor_str:
+                    tensor = [float(x) for x in tensor_str.split()]
+                    if len(tensor) == 9:
+                        freq_settings["wang"] = tensor
+                    else:
+                        print("Warning: Expected 9 values, Wang correction not applied.")
             
             # Ask for band structure calculation
-            calc_bands = yes_no_prompt("Calculate phonon band structure?", "yes")
+            calc_bands = yes_no_prompt("\nCalculate phonon band structure?", "yes")
             if calc_bands:
-                freq_settings["bands"] = True
-                freq_settings["band_path"] = "AUTO"  # Will be determined by crystal system
-                freq_settings["npoints"] = int(input("Points per band segment [100]: ") or 100)
+                freq_settings["bands"] = {
+                    "shrink": int(input("Shrink factor for k-points [16]: ") or 16),
+                    "npoints": int(input("Points per band segment [100]: ") or 100)
+                }
+                
+                # Band path
+                print("\nBand path definition:")
+                print("1: Automatic (based on crystal symmetry)")
+                print("2: Custom path")
+                path_choice = input("Select path method (1-2) [1]: ").strip() or "1"
+                
+                if path_choice == "1":
+                    freq_settings["bands"]["path"] = "AUTO"
+                else:
+                    n_segments = int(input("Number of path segments: "))
+                    path = []
+                    for i in range(n_segments):
+                        print(f"\nSegment {i+1}:")
+                        use_labels = yes_no_prompt("Use high-symmetry point labels?", "yes")
+                        if use_labels:
+                            start = input("Start point label (e.g., G): ").strip()
+                            end = input("End point label (e.g., X): ").strip()
+                            path.append(f"{start} {end}")
+                        else:
+                            print("Enter fractional coordinates:")
+                            start_coords = [float(x) for x in input("Start point (3 values): ").split()]
+                            end_coords = [float(x) for x in input("End point (3 values): ").split()]
+                            path.append([start_coords, end_coords])
+                    freq_settings["bands"]["path"] = path
             
             # Ask for DOS calculation
-            calc_dos = yes_no_prompt("Calculate phonon density of states?", "yes")
+            calc_dos = yes_no_prompt("\nCalculate phonon density of states?", "yes")
             if calc_dos:
-                freq_settings["pdos"] = True
-                max_freq = float(input("Maximum frequency for DOS (cm⁻¹) [1000]: ") or 1000)
+                max_freq = float(input("Maximum frequency for DOS (cm⁻¹) [2000]: ") or 2000)
                 n_bins = int(input("Number of DOS bins [200]: ") or 200)
-                freq_settings["dos_range"] = [0, max_freq]
-                freq_settings["dos_bins"] = n_bins
-                freq_settings["projected"] = yes_no_prompt("Calculate atom-projected DOS?", "yes")
+                projected = yes_no_prompt("Calculate atom-projected DOS?", "yes")
+                freq_settings["pdos"] = {
+                    "max_freq": max_freq,
+                    "nbins": n_bins,
+                    "projected": projected
+                }
         
         # Numerical derivative method
         print("\nNumerical derivative method:")
@@ -603,9 +677,19 @@ def get_advanced_frequency_settings():
             freq_settings["intensities"] = True
             
             print("\nIR intensity calculation method:")
-            print("1: Berry phase (default, fast)")
-            print("2: Wannier functions (localized, good for molecules)")
-            print("3: CPHF (most accurate, expensive)")
+            print("1: Berry phase (INTPOL - default)")
+            print("   - Fast, works for 3D, 2D, 1D, and 0D systems")
+            print("   - Good for periodic systems, insulators only")
+            print("   - Accuracy depends on k-point density")
+            print("2: Wannier functions (INTLOC)")
+            print("   - Good for molecular/localized systems")
+            print("   - Memory intensive, insulators only")
+            print("   - Can relocalize at each displaced geometry")
+            print("3: CPHF/CPKS (INTCPHF - most accurate)")
+            print("   - Fully analytical Born charges")
+            print("   - Works for all systems")
+            print("   - Required for Raman calculations")
+            print("   - Most expensive computationally")
             
             ir_method_choice = input("Select method (1-3) [1]: ").strip() or "1"
             ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
@@ -632,9 +716,17 @@ def get_advanced_frequency_settings():
                 freq_settings["cphf_max_iter"] = 30
             if "cphf_tolerance" not in freq_settings:
                 freq_settings["cphf_tolerance"] = 6
+            
+            # Ask about minimal Raman calculation
+            minimal = yes_no_prompt("\nUse minimal Raman calculation (no spectral generation)?", "no")
+            if minimal:
+                freq_settings["minimal_raman"] = True
+                # Skip spectral generation settings
+                freq_settings["irspec"] = False
+                freq_settings["ramspec"] = False
         
         # Spectral generation
-        if freq_settings.get("intensities") or freq_settings.get("raman"):
+        if (freq_settings.get("intensities") or freq_settings.get("raman")) and not freq_settings.get("minimal_raman", False):
             gen_spectra = yes_no_prompt("\nGenerate IR/Raman spectra?", "yes")
             if gen_spectra:
                 # Spectral range
@@ -873,8 +965,19 @@ def get_calculation_options():
         calc_choice = get_user_input("Select calculation type", calc_options, "2")
         options["calculation_type"] = calc_options[calc_choice]
 
+        # If SP calculation, ask about tight convergence
+        if options["calculation_type"] == "SP":
+            use_tight = yes_no_prompt(
+                "Use tight convergence for SP calculation? (Recommended for accurate energies)",
+                "no"
+            )
+            if use_tight:
+                # These will be set later in the tolerance section
+                options["use_tight_sp"] = True
+                print("Will use tight convergence tolerances for SP calculation")
+
         # If geometry optimization, get optimization type
-        if options["calculation_type"] == "OPT":
+        elif options["calculation_type"] == "OPT":
             opt_choice = get_user_input("Select optimization type", OPT_TYPES, "1")
             options["optimization_type"] = OPT_TYPES[opt_choice]
 
@@ -905,9 +1008,32 @@ def get_calculation_options():
             else:
                 options["optimization_settings"] = DEFAULT_OPT_SETTINGS.copy()
 
+            # Ask about PREOPT
+            use_preopt = yes_no_prompt(
+                "\nUse PREOPT (pre-optimization with loose criteria)?", "no"
+            )
+            if use_preopt:
+                print("\nPREOPT performs a quick initial optimization with:")
+                print("  - Looser convergence criteria")
+                print("  - Faster initial geometry relaxation")
+                print("  - Useful for very distorted starting geometries")
+                if "optimization_settings" not in options:
+                    options["optimization_settings"] = DEFAULT_OPT_SETTINGS.copy()
+                options["optimization_settings"]["PREOPT"] = True
+                
+                # Ask for PREOPT max cycles
+                preopt_cycles = input("PREOPT max cycles [50]: ").strip()
+                if preopt_cycles:
+                    try:
+                        options["optimization_settings"]["PREOPT_MAXCYCLE"] = int(preopt_cycles)
+                    except ValueError:
+                        options["optimization_settings"]["PREOPT_MAXCYCLE"] = 50
+                else:
+                    options["optimization_settings"]["PREOPT_MAXCYCLE"] = 50
+
             # Ask about MAXTRADIUS
             use_maxtradius = yes_no_prompt(
-                "Set maximum step size (MAXTRADIUS) for geometry optimization?", "no"
+                "\nSet maximum step size (MAXTRADIUS) for geometry optimization?", "no"
             )
 
             if use_maxtradius:
@@ -921,7 +1047,7 @@ def get_calculation_options():
         # If frequency calculation, ask about numerical derivative level
         if options["calculation_type"] == "FREQ":
             use_default_freq = yes_no_prompt(
-                "Use default frequency calculation settings? (NUMDERIV=2, TOLINTEG=12 12 12 12 24, TOLDEE=12)",
+                "Use default frequency calculation settings? (NUMDERIV=2, TOLINTEG=9 9 9 11 38, TOLDEE=11)",
                 "yes",
             )
 
@@ -1129,25 +1255,36 @@ def get_calculation_options():
 
         # Get tolerance settings (if not already set by FREQ)
         if "tolerances" not in options:
-            use_default_tol = yes_no_prompt(
-                "Use default tolerance settings? (TOLINTEG=7 7 7 7 14, TOLDEE=7)", "yes"
-            )
-
-            if not use_default_tol:
-                custom_tol = {}
-                tolinteg = input(
-                    "Enter TOLINTEG values (5 integers separated by spaces, default 7 7 7 7 14): "
-                )
-                tolinteg = tolinteg if tolinteg else "7 7 7 7 14"
-                custom_tol["TOLINTEG"] = tolinteg
-
-                toldee = input("Enter TOLDEE value (integer, default 7): ")
-                toldee = int(toldee) if toldee else 7
-                custom_tol["TOLDEE"] = toldee
-
-                options["tolerances"] = custom_tol
+            # Check if we need tight SP tolerances
+            if options.get("use_tight_sp", False):
+                # Automatically use tight tolerances for SP
+                options["tolerances"] = {
+                    "TOLINTEG": "9 9 9 11 38",
+                    "TOLDEE": 11
+                }
+                print("\nUsing tight convergence tolerances:")
+                print("  TOLINTEG: 9 9 9 11 38")
+                print("  TOLDEE: 11")
             else:
-                options["tolerances"] = DEFAULT_TOLERANCES.copy()
+                use_default_tol = yes_no_prompt(
+                    "Use default tolerance settings? (TOLINTEG=7 7 7 7 14, TOLDEE=7)", "yes"
+                )
+
+                if not use_default_tol:
+                    custom_tol = {}
+                    tolinteg = input(
+                        "Enter TOLINTEG values (5 integers separated by spaces, default 7 7 7 7 14): "
+                    )
+                    tolinteg = tolinteg if tolinteg else "7 7 7 7 14"
+                    custom_tol["TOLINTEG"] = tolinteg
+
+                    toldee = input("Enter TOLDEE value (integer, default 7): ")
+                    toldee = int(toldee) if toldee else 7
+                    custom_tol["TOLDEE"] = toldee
+
+                    options["tolerances"] = custom_tol
+                else:
+                    options["tolerances"] = DEFAULT_TOLERANCES.copy()
         else:
             # Ensure all required tolerance keys are present
             if "TOLINTEG" not in options["tolerances"]:
@@ -1634,10 +1771,36 @@ def create_d12_file(cif_data, output_file, options):
             # For internal basis sets, do NOT add 200 - they handle ECP internally
 
             # Write with different format depending on dimensionality (increased precision)
-            print(
-                f"{atomic_number} {positions[i][0]:.10f} {positions[i][1]:.10f} {positions[i][2]:.10f} Biso 1.000000 {symbols[i]}",
-                file=f,
-            )
+            if dimensionality == "SLAB":
+                # For SLAB: fractional a,b coordinates and Cartesian z coordinate
+                z_cart = positions[i][2] * c  # Convert fractional z to Cartesian
+                print(
+                    f"{atomic_number} {positions[i][0]:.10f} {positions[i][1]:.10f} {z_cart:.6f} Biso 1.000000 {symbols[i]}",
+                    file=f,
+                )
+            elif dimensionality == "POLYMER":
+                # For POLYMER: fractional x, Cartesian y,z coordinates
+                y_cart = positions[i][1] * b  # Convert fractional y to Cartesian
+                z_cart = positions[i][2] * c  # Convert fractional z to Cartesian
+                print(
+                    f"{atomic_number} {positions[i][0]:.10f} {y_cart:.6f} {z_cart:.6f} Biso 1.000000 {symbols[i]}",
+                    file=f,
+                )
+            elif dimensionality == "MOLECULE":
+                # For MOLECULE: all Cartesian coordinates
+                x_cart = positions[i][0] * a  # Convert fractional x to Cartesian
+                y_cart = positions[i][1] * b  # Convert fractional y to Cartesian
+                z_cart = positions[i][2] * c  # Convert fractional z to Cartesian
+                print(
+                    f"{atomic_number} {x_cart:.6f} {y_cart:.6f} {z_cart:.6f} Biso 1.000000 {symbols[i]}",
+                    file=f,
+                )
+            else:
+                # For CRYSTAL: all fractional coordinates
+                print(
+                    f"{atomic_number} {positions[i][0]:.10f} {positions[i][1]:.10f} {positions[i][2]:.10f} Biso 1.000000 {symbols[i]}",
+                    file=f,
+                )
 
         # Write calculation-type specific parameters
         if calculation_type == "OPT":
@@ -1677,6 +1840,23 @@ def create_d12_file(cif_data, output_file, options):
 
         else:  # DFT method
             dft_functional = options.get("dft_functional", "")
+            
+            # Handle method_modifications
+            if "method_modifications" in options:
+                modifications = options["method_modifications"]
+                if "functional" in modifications:
+                    print(f"Overriding functional from method_modifications: {modifications['functional']}")
+                    dft_functional = modifications["functional"]
+                    # Update 3C method flag if needed
+                    if "3C" in dft_functional:
+                        options["is_3c_method"] = True
+            
+            # Also check if functional is directly specified (for backward compatibility)
+            if not dft_functional and "functional" in options:
+                dft_functional = options["functional"]
+                if "3C" in dft_functional:
+                    options["is_3c_method"] = True
+            
             use_dispersion = options.get("use_dispersion", False)
             dft_grid = options.get("dft_grid")  # Can be None for 3C methods
 
@@ -1749,6 +1929,17 @@ def process_cifs(cif_directory, options, output_directory=None):
             method_name = options.get("hf_method", "RHF")
         else:
             method_name = options.get("dft_functional", "")
+            
+            # Handle method_modifications for filename
+            if "method_modifications" in options:
+                modifications = options["method_modifications"]
+                if "functional" in modifications:
+                    method_name = modifications["functional"]
+            
+            # Also check if functional is directly specified
+            if not method_name and "functional" in options:
+                method_name = options["functional"]
+            
             # Don't add -D3 to 3C methods or if dispersion is already included in the name
             if (
                 options.get("use_dispersion")

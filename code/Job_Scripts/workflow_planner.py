@@ -68,11 +68,12 @@ class WorkflowPlanner:
             
         # Available calculation types and their dependencies
         # Note: This only includes base types - numbered versions are handled dynamically
+        # Dependencies are now "soft" - they indicate preferred order but not strict requirements
         self.calc_types = {
             "OPT": {"name": "Geometry Optimization", "depends_on": [], "generates": ["optimized_geometry"]},
-            "SP": {"name": "Single Point", "depends_on": ["OPT"], "generates": ["electronic_structure", "wavefunction"]},
-            "BAND": {"name": "Band Structure", "depends_on": ["SP"], "generates": ["band_structure"]},
-            "DOSS": {"name": "Density of States", "depends_on": ["SP"], "generates": ["density_of_states"]},
+            "SP": {"name": "Single Point", "depends_on": [], "generates": ["electronic_structure", "wavefunction"]},
+            "BAND": {"name": "Band Structure", "depends_on": ["SP", "OPT"], "generates": ["band_structure"]},
+            "DOSS": {"name": "Density of States", "depends_on": ["SP", "OPT"], "generates": ["density_of_states"]},
             "FREQ": {"name": "Frequencies", "depends_on": ["OPT"], "generates": ["vibrational_modes"]},
         }
         
@@ -181,11 +182,11 @@ class WorkflowPlanner:
                 
         return files
         
-    def setup_cif_conversion(self, cif_files: List[Path]) -> Dict[str, Any]:
+    def setup_cif_conversion(self, cif_files: List[Path], first_calc_type: str = "OPT") -> Dict[str, Any]:
         """Set up CIF to D12 conversion using NewCifToD12.py"""
-        print("\nStep 2: CIF Conversion Setup")
+        print("\nStep 3: CIF Conversion Setup")
         print("-" * 40)
-        print("Configuring CIF to D12 conversion using NewCifToD12.py")
+        print(f"Configuring CIF to D12 conversion for {first_calc_type} calculation")
         
         # Ask if user wants to use default settings or customize
         use_defaults = yes_no_prompt("Use default CIF conversion settings?", "yes")
@@ -196,8 +197,8 @@ class WorkflowPlanner:
                 "symmetry_handling": "CIF",
                 "write_only_unique": True,
                 "dimensionality": "CRYSTAL",
-                "calculation_type": "OPT",
-                "optimization_type": "FULLOPTG",
+                "calculation_type": "SP" if first_calc_type == "SP" else "OPT",
+                "optimization_type": "FULLOPTG" if first_calc_type != "SP" else None,
                 "method": "DFT",
                 "dft_functional": "HSE06",
                 "use_dispersion": True,
@@ -214,14 +215,20 @@ class WorkflowPlanner:
             print("Using default settings for CIF conversion:")
             print(f"  Method: DFT/HSE06-D3")
             print(f"  Basis set: POB-TZVP-REV2 (internal)")
-            print(f"  Calculation: Geometry optimization")
+            print(f"  Calculation: {first_calc_type} ({'Geometry optimization' if first_calc_type != 'SP' else 'Single point energy'})")
             print(f"  Symmetry: Use CIF symmetry information")
         else:
             print("Custom CIF conversion setup:")
             print("Choose customization level:")
             print("  1: Basic (functional + basis set)")
+            print("     - Time to configure: ~30 seconds")
+            print("     - Good for: Quick calculations with different methods")
             print("  2: Advanced (most common settings)")
+            print("     - Time to configure: ~2-3 minutes")
+            print("     - Good for: Production calculations, specific requirements")
             print("  3: Expert (full NewCifToD12.py integration)")
+            print("     - Time to configure: ~5-10 minutes")
+            print("     - Good for: Complex systems, special basis sets, custom settings")
             
             level_choice = self.get_safe_choice_input(
                 "Customization level", 
@@ -230,16 +237,16 @@ class WorkflowPlanner:
             )
             
             if level_choice == "1":
-                cif_config = self.get_basic_customization()
+                cif_config = self.get_basic_customization(first_calc_type)
             elif level_choice == "2":
-                cif_config = self.get_advanced_customization()
+                cif_config = self.get_advanced_customization(first_calc_type)
             elif level_choice == "3":
                 print("\nLaunching NewCifToD12.py for full configuration...")
                 print("This will run the interactive configuration and save the results.")
-                cif_config = self.run_full_cif_customization(cif_files[0])
+                cif_config = self.run_full_cif_customization(cif_files[0], first_calc_type)
             else:
                 print("Invalid choice. Using basic customization.")
-                cif_config = self.get_basic_customization()
+                cif_config = self.get_basic_customization(first_calc_type)
         
         # Save CIF configuration
         cif_config_file = self.configs_dir / "cif_conversion_config.json"
@@ -250,14 +257,14 @@ class WorkflowPlanner:
         
         return cif_config
         
-    def get_default_cif_config(self) -> Dict[str, Any]:
+    def get_default_cif_config(self, calc_type: str = "OPT") -> Dict[str, Any]:
         """Return sensible default CIF configuration"""
         return {
             "symmetry_handling": "CIF",
             "write_only_unique": True,
             "dimensionality": "CRYSTAL",
-            "calculation_type": "OPT",
-            "optimization_type": "FULLOPTG",
+            "calculation_type": "SP" if calc_type == "SP" else "OPT",
+            "optimization_type": "FULLOPTG" if calc_type != "SP" else None,
             "optimization_settings": {
                 "TOLDEG": 0.00003,
                 "TOLDEX": 0.00012,
@@ -278,7 +285,7 @@ class WorkflowPlanner:
             "fmixing": 30
         }
         
-    def get_basic_customization(self) -> Dict[str, Any]:
+    def get_basic_customization(self, first_calc_type: str = "OPT") -> Dict[str, Any]:
         """Get basic CIF customization options"""
         print("\nBasic customization options:")
         
@@ -325,7 +332,7 @@ class WorkflowPlanner:
         else:
             basis_choice = input("Basis set [POB-TZVP-REV2]: ").strip() or "POB-TZVP-REV2"
         
-        cif_config = self.get_default_cif_config()
+        cif_config = self.get_default_cif_config(first_calc_type)
         cif_config["dft_functional"] = crystal_functional
         cif_config["basis_set"] = basis_choice
         
@@ -345,7 +352,7 @@ class WorkflowPlanner:
         
         return cif_config
         
-    def get_advanced_customization(self) -> Dict[str, Any]:
+    def get_advanced_customization(self, first_calc_type: str = "OPT") -> Dict[str, Any]:
         """Get advanced CIF customization options"""
         print("\nAdvanced customization options:")
         
@@ -500,7 +507,7 @@ class WorkflowPlanner:
         crystal_functional = functional_keyword_map.get(functional, functional)
         
         # Build configuration
-        cif_config = self.get_default_cif_config()
+        cif_config = self.get_default_cif_config(first_calc_type)
         cif_config.update({
             "method": method,
             "dft_functional": crystal_functional,
@@ -520,7 +527,7 @@ class WorkflowPlanner:
         
         return cif_config
         
-    def run_full_cif_customization(self, sample_cif: Path) -> Dict[str, Any]:
+    def run_full_cif_customization(self, sample_cif: Path, first_calc_type: str = "OPT") -> Dict[str, Any]:
         """Run full NewCifToD12.py customization"""
         # Find NewCifToD12.py
         script_path = Path(__file__).parent.parent / "Crystal_To_CIF" / "NewCifToD12.py"
@@ -528,7 +535,7 @@ class WorkflowPlanner:
         if not script_path.exists():
             print(f"Error: NewCifToD12.py not found at {script_path}")
             print("Using advanced customization instead...")
-            return self.get_advanced_customization()
+            return self.get_advanced_customization(first_calc_type)
         
         print(f"\nRunning NewCifToD12.py with sample file: {sample_cif.name}")
         print("This will launch the full interactive configuration.")
@@ -561,12 +568,12 @@ class WorkflowPlanner:
             else:
                 print("NewCifToD12.py configuration failed or was cancelled.")
                 print("Using default configuration...")
-                return self.get_default_cif_config()
+                return self.get_default_cif_config(first_calc_type)
                 
         except Exception as e:
             print(f"Error running NewCifToD12.py: {e}")
             print("Using default configuration...")
-            return self.get_default_cif_config()
+            return self.get_default_cif_config(first_calc_type)
         
         
         
@@ -874,8 +881,8 @@ class WorkflowPlanner:
         
         # Check dependencies based on base type
         if base_type == "SP":
-            # SP needs at least one OPT
-            return any(calc.startswith("OPT") for calc in sequence)
+            # SP can be added at any time (no dependencies)
+            return True
         elif base_type in ["BAND", "DOSS"]:
             # BAND/DOSS need at least one SP or OPT
             return any(calc.startswith("SP") or calc.startswith("OPT") for calc in sequence)
@@ -903,11 +910,13 @@ class WorkflowPlanner:
         print("\nWorkflow Help:")
         print("Common patterns:")
         print("  Basic: OPT")
-        print("  Electronic: OPT SP")
+        print("  Single point: SP")
+        print("  Electronic: OPT SP  or  SP BAND DOSS")
         print("  Analysis: OPT SP BAND DOSS")
         print("  Complete: OPT SP BAND DOSS FREQ")
         print("  Double opt: OPT OPT2 SP")
         print("\nAdvanced patterns:")
+        print("  SP-first: SP BAND DOSS")
         print("  Multi-stage: OPT SP BAND DOSS OPT2 OPT3 SP2 BAND2 DOSS2 FREQ")
         print("  Iterative opt: OPT OPT2 OPT3 SP")
         print("  Multiple properties: OPT SP BAND DOSS BAND2 DOSS2")
@@ -934,12 +943,12 @@ class WorkflowPlanner:
                 calc_name = calc_type
             print(f"\nConfiguring {calc_type} ({calc_name}):")
             
-            if calc_type == "OPT" and i == 0 and has_cifs:
-                print("  Using CIF conversion configuration for first OPT step")
+            if (calc_type == "OPT" or calc_type == "SP") and i == 0 and has_cifs:
+                print(f"  Using CIF conversion configuration for first {calc_type} step")
                 step_configs[f"{calc_type}_1"] = {"source": "cif_conversion"}
                 
-            elif calc_type == "OPT" and i == 0 and not has_cifs:
-                print("  Using existing D12 files for first OPT step")
+            elif (calc_type == "OPT" or calc_type == "SP") and i == 0 and not has_cifs:
+                print(f"  Using existing D12 files for first {calc_type} step")
                 print("    Settings from D12 files will be used as-is")
                 print("    This includes: functional, basis set, tolerances, grid, etc.")
                 step_configs[f"{calc_type}_1"] = {"source": "existing_d12"}
@@ -1043,9 +1052,14 @@ class WorkflowPlanner:
         
         print("    Choose SP customization level:")
         print("      0: Default (inherit all settings from previous OPT)")
+        print("         - Best for: Energy comparison at same level of theory")
         print("      1: Basic (modify method/basis set)")
+        print("         - Best for: Testing different functionals/basis sets")
+        print("         - Example: OPT with PBE → SP with B3LYP for better energies")
         print("      2: Advanced (detailed SCF/convergence settings)")
+        print("         - Best for: Difficult convergence, custom requirements")
         print("      3: Expert (full CRYSTALOptToD12.py integration)")
+        print("         - Best for: Complete control over all parameters")
         
         while True:
             try:
@@ -1092,6 +1106,27 @@ class WorkflowPlanner:
         
         # Basis set modifications - streamlined  
         config["basis_modifications"] = self._get_basis_modifications()
+        
+        # Ask about tight convergence
+        print("\n    Convergence settings for single point energy:")
+        print("      Standard: Good for energy differences (~0.001 Ha accuracy)")
+        print("      Tight: Required for accurate absolute energies (~0.00001 Ha)")
+        print("      📊 Resource impact of tight convergence:")
+        print("        - Time: +20-50% more SCF iterations")
+        print("        - Memory: No significant change")
+        print("        - Use for: Benchmark calculations, basis set comparisons")
+        
+        use_tight = yes_no_prompt("    Use tight convergence?", "no")
+        if use_tight:
+            print("      Applying tight convergence tolerances:")
+            print("        - TOLINTEG: 9 9 9 11 38 (high accuracy integrals)")
+            print("        - TOLDEE: 11 (SCF convergence to 10^-11 Ha)")
+            config["tolerance_modifications"] = {
+                "custom_tolerances": {
+                    "TOLINTEG": "9 9 9 11 38",
+                    "TOLDEE": 11
+                }
+            }
             
         return config
         
@@ -1294,6 +1329,17 @@ class WorkflowPlanner:
             print("    - High accuracy tolerances for frequencies:")
             print("      - TOLINTEG: 9 9 9 11 38")
             print("      - TOLDEE: 11 (SCF convergence 10^-11 Ha)")
+            print("\n  📊 Resource estimate:")
+            print("    - Time: ~1-3x optimization time")
+            print("    - Memory: Similar to optimization")
+            print("    - Quality: Good for thermodynamics, no spectroscopy")
+            print("    - Numerical derivatives: 2-point (two displacements per atom)")
+            print("    - Method/basis: inherited from optimized geometry")
+            print("\n  ⚠️  Note: To calculate IR or Raman spectra, use Advanced or Expert mode")
+            print("\n  📊 Resource estimate:")
+            print("    - Time: ~1-3x optimization time")
+            print("    - Memory: Similar to optimization")
+            print("    - Quality: Good for thermodynamics, no spectroscopy")
             print("    - Numerical derivatives: 2-point (two displacements per atom)")
             print("    - Method/basis: inherited from optimized geometry")
             
@@ -1326,38 +1372,141 @@ class WorkflowPlanner:
             
             # Frequency calculation mode
             print("\n  Frequency calculation mode:")
-            print("    1. Gamma point only (thermodynamic properties)")
-            print("    2. Phonon dispersion (band structure and DOS)")
-            print("    3. Custom k-points")
+            print("    1. Gamma point only (REQUIRED for IR/Raman spectra)")
+            print("       - Fastest option, suitable for molecules and large cells")
+            print("       - Provides: frequencies, ZPE, thermal corrections, entropy")
+            print("       - Enables: IR and Raman intensity calculations")
+            print("       - Time: ~1-3x optimization time")
+            print("       - Memory: Similar to optimization")
+            print("    2. Phonon calculations (band structure, DOS, or custom k-points)")
+            print("       - For solid-state phonon properties (NOT for IR/Raman spectra)")
+            print("       - Options: Full dispersion, specific k-points, or custom paths")
+            print("       - Time: Varies (4-60x optimization time)")
+            print("       - Memory: Scales with calculation type")
+            print("       - Note: Cannot calculate molecular IR/Raman intensities")
             
             mode_choice = input("  Select mode [1]: ").strip() or "1"
             if mode_choice == "1":
                 config["frequency_settings"]["mode"] = "GAMMA"
+                print("\n  ✓ Gamma point mode selected - IR/Raman intensities available")
             elif mode_choice == "2":
-                config["frequency_settings"]["mode"] = "DISPERSION"
-                n_kpoints = input("  Number of k-points for dispersion [20]: ").strip()
-                config["frequency_settings"]["n_kpoints"] = int(n_kpoints) if n_kpoints else 20
+                # Phonon calculations - ask for sub-option
+                print("\n  Phonon calculation type:")
+                print("    1. Full dispersion with supercell (recommended)")
+                print("       - Complete phonon band structure and DOS")
+                print("       - Uses SCELPHONO for supercell generation")
+                print("       - Time: ~4-20x optimization (depends on supercell size)")
+                print("    2. Custom k-points only")
+                print("       - Calculate at specific k-points without full dispersion")
+                print("       - Faster for targeted analysis")
+                print("       - Time: Proportional to number of k-points")
+                print("    3. High-symmetry points only")
+                print("       - Just critical points (Gamma, X, M, etc.)")
+                print("       - Quick check of key phonon frequencies")
+                print("       - Time: ~2-4x optimization")
+                
+                phonon_type = input("  Select phonon type [1]: ").strip() or "1"
+                
+                if phonon_type == "1":
+                    config["frequency_settings"]["mode"] = "DISPERSION"
+                    config["frequency_settings"]["dispersion"] = True
+                    print("\n  ✓ Full phonon dispersion mode selected")
+                    print("  ⚠️  Note: IR/Raman intensities NOT available in this mode")
+                    print("  For molecular spectra, use gamma point mode instead")
+                
+                # Supercell for phonon calculation
+                print("\n  Supercell for phonon calculation (SCELPHONO):")
+                print("    Larger supercells = better accuracy but much higher cost")
+                print("    1. Default 2x2x2 (8x more atoms)")
+                print("       - Time: ~4-8x optimization time")
+                print("       - Memory: ~8x optimization memory")
+                print("       - Quality: Good for most phonon properties")
+                print("    2. Custom expansion factors")
+                print("       - 3x3x3: ~10-20x time, ~27x memory, better for soft modes")
+                print("       - 4x4x4: ~30-60x time, ~64x memory, publication quality")
+                print("    Note: For 2D materials, use 2x2x1 or 3x3x1")
+                supercell_choice = input("  Select supercell [1]: ").strip() or "1"
+                if supercell_choice == "2":
+                    nx = input("    Expansion in x [2]: ").strip()
+                    ny = input("    Expansion in y [2]: ").strip()
+                    nz = input("    Expansion in z [2]: ").strip()
+                    config["frequency_settings"]["scelphono"] = [
+                        int(nx) if nx else 2,
+                        int(ny) if ny else 2,
+                        int(nz) if nz else 2
+                    ]
+                else:
+                    config["frequency_settings"]["scelphono"] = [2, 2, 2]
+                
+                # Fourier interpolation  
+                use_interphess = input("\n  Use Fourier interpolation (INTERPHESS)? [Y/n]: ").strip().lower()
+                if use_interphess != 'n':
+                    config["frequency_settings"]["interphess"] = {
+                        "expand": [2, 2, 2],  # Default values
+                        "print": 0
+                    }
+                    
+                elif phonon_type == "2":
+                    # Custom k-points
+                    config["frequency_settings"]["mode"] = "CUSTOM"
+                    config["frequency_settings"]["custom_kpoints"] = True
+                    print("\n  ✓ Custom k-point mode selected")
+                    print("  You'll specify k-points manually in the configuration")
+                    print("  Example: Calculate at specific q-points for testing")
+                    
+                    # Ask how many k-points
+                    nkpoints = input("\n  Number of k-points to calculate [4]: ").strip()
+                    config["frequency_settings"]["num_kpoints"] = int(nkpoints) if nkpoints else 4
+                    
+                elif phonon_type == "3":
+                    # High-symmetry points only
+                    config["frequency_settings"]["mode"] = "HIGH_SYMMETRY"
+                    print("\n  ✓ High-symmetry points mode selected")
+                    print("  Will calculate phonons at critical points only")
+                    print("  Typical points: Gamma, X, M, K, etc.")
+                    
+                    # For high-symmetry, we don't need supercell
+                    config["frequency_settings"]["high_symmetry_only"] = True
+                    
             else:
-                config["frequency_settings"]["mode"] = "CUSTOM"
+                # Invalid choice - default to gamma
+                config["frequency_settings"]["mode"] = "GAMMA"
+                print("\n  Invalid choice - defaulting to gamma point mode")
             
             # Numerical derivative method
             print("\n  Numerical derivative method:")
             print("    1: One displacement per atom (faster, less accurate)")
-            print("       Uses forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
+            print("       - Forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
+            print("       - Time: N atoms × 1 SCF per atom")
+            print("       - Error: O(t), suitable for quick estimates")
+            print("       - Quality: May miss soft modes, less accurate frequencies")
             print("    2: Two displacements per atom (recommended)")
-            print("       Uses central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
+            print("       - Central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
+            print("       - Time: N atoms × 2 SCF per atom (2x slower)")
+            print("       - Error: O(t²), much more accurate")
+            print("       - Quality: Reliable frequencies, better for publication")
             numderiv = input("  Select method (1 or 2) [2]: ").strip() or "2"
             config["frequency_settings"]["numderiv"] = int(numderiv)
             
             # IR intensities
-            calc_ir = input("\n  Calculate IR intensities? [Y/n]: ").strip().lower()
-            if calc_ir != 'n':
+            if config["frequency_settings"]["mode"] == "GAMMA":
+                calc_ir = input("\n  Calculate IR intensities? [Y/n]: ").strip().lower()
+                if calc_ir != 'n':
                 config["frequency_settings"]["intensities"] = True
                 
                 print("\n  IR intensity calculation method:")
-                print("    1. Berry phase (default, fast)")
-                print("    2. Wannier functions (localized)")
-                print("    3. CPHF (most accurate, required for Raman)")
+                print("    1. Berry phase (INTPOL) - Default, efficient")
+                print("       - Time: +10-20% over base frequency calculation")
+                print("       - Memory: Minimal overhead")
+                print("       - Quality: Good for most systems, periodic-friendly")
+                print("    2. Wannier functions (INTLOC) - Localized approach")
+                print("       - Time: +20-30% over base frequency calculation")
+                print("       - Memory: +10-20% overhead")
+                print("       - Quality: Better for ionic systems, molecular clusters")
+                print("    3. CPHF (INTCPHF) - Most accurate, required for Raman")
+                print("       - Time: +50-100% over base frequency calculation")
+                print("       - Memory: ~2x base requirement")
+                print("       - Quality: Best accuracy, enables Raman calculations")
                 
                 ir_method = input("  Select method [1]: ").strip() or "1"
                 ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
@@ -1371,8 +1520,15 @@ class WorkflowPlanner:
                     config["frequency_settings"]["cphf_tolerance"] = int(tol) if tol else 6
             
             # Raman intensities (requires CPHF)
-            calc_raman = input("\n  Calculate Raman intensities? (requires CPHF) [y/N]: ").strip().lower()
-            if calc_raman == 'y':
+            if config["frequency_settings"]["mode"] == "GAMMA":
+                print("\n  Raman intensity calculation:")
+                print("    Note: Requires CPHF calculation, significant computational cost")
+                print("    📊 Resource impact:")
+                print("      - Time: +100-200% over base frequency calculation")
+                print("      - Memory: ~2-3x base requirement")
+                print("      - Quality: Essential for Raman spectroscopy")
+                calc_raman = input("  Calculate Raman intensities? [y/N]: ").strip().lower()
+                if calc_raman == 'y':
                 config["frequency_settings"]["raman"] = True
                 config["frequency_settings"]["intensities"] = True
                 config["frequency_settings"]["ir_method"] = "CPHF"
@@ -1380,19 +1536,30 @@ class WorkflowPlanner:
                     config["frequency_settings"]["cphf_max_iter"] = 30
                 if "cphf_tolerance" not in config["frequency_settings"]:
                     config["frequency_settings"]["cphf_tolerance"] = 6
+                
+                # Ask about minimal Raman
+                minimal = input("  Use minimal Raman (no spectral generation)? [y/N]: ").strip().lower()
+                if minimal == 'y':
+                    config["frequency_settings"]["minimal_raman"] = True
+            else:
+                # Not gamma point mode
+                config["frequency_settings"]["intensities"] = False
+                config["frequency_settings"]["raman"] = False
             
             # Spectral generation
-            if config["frequency_settings"].get("intensities") or config["frequency_settings"].get("raman"):
+            if (config["frequency_settings"].get("intensities") or config["frequency_settings"].get("raman")) and not config["frequency_settings"].get("minimal_raman", False):
                 gen_spectra = input("\n  Generate IR/Raman spectra? [Y/n]: ").strip().lower()
                 if gen_spectra != 'n':
                     if config["frequency_settings"].get("intensities"):
-                        config["frequency_settings"]["ir_spectrum"] = True
+                        config["frequency_settings"]["irspec"] = True
                         width = input("  IR peak width (cm^-1) [10]: ").strip()
-                        config["frequency_settings"]["ir_spectrum_width"] = float(width) if width else 10
+                        config["frequency_settings"]["spec_dampfac"] = float(width) if width else 10
                     if config["frequency_settings"].get("raman"):
-                        config["frequency_settings"]["raman_spectrum"] = True
+                        config["frequency_settings"]["ramspec"] = True
                         width = input("  Raman peak width (cm^-1) [10]: ").strip()
-                        config["frequency_settings"]["raman_spectrum_width"] = float(width) if width else 10
+                        # Use same dampfac for both IR and Raman if not specified separately
+                        if "spec_dampfac" not in config["frequency_settings"]:
+                            config["frequency_settings"]["spec_dampfac"] = float(width) if width else 10
             
             # Anharmonic calculations
             calc_anharm = input("\n  Include anharmonic corrections? [y/N]: ").strip().lower()
@@ -1400,8 +1567,19 @@ class WorkflowPlanner:
                 config["frequency_settings"]["anharmonic"] = True
                 print("\n  Anharmonic calculation type:")
                 print("    1. ANHARM (basic X-H stretches)")
+                print("       - Time: ~5-10x base frequency time")
+                print("       - Quality: Good for X-H stretches only")
+                print("       - Use for: H-bonded systems, OH/NH/CH groups")
                 print("    2. VSCF (Vibrational SCF)")
+                print("       - Time: ~10-20x base frequency time")
+                print("       - Memory: ~2-3x base requirement")
+                print("       - Quality: Good for fundamental transitions")
+                print("       - Use for: Moderately anharmonic systems")
                 print("    3. VCI (Vibrational CI)")
+                print("       - Time: ~30-50x base frequency time")
+                print("       - Memory: ~4-5x base requirement")
+                print("       - Quality: Includes overtones and combinations")
+                print("       - Use for: Highly anharmonic systems, complete spectra")
                 anharm_type = input("  Select type [1]: ").strip() or "1"
                 anharm_types = {"1": "ANHARM", "2": "VSCF", "3": "VCI"}
                 config["frequency_settings"]["anharm_type"] = anharm_types.get(anharm_type, "ANHARM")
@@ -1492,8 +1670,14 @@ class WorkflowPlanner:
         print(f"    Custom {calc_type} configuration:")
         print(f"    Choose customization level:")
         print(f"      1: Basic (optimization type + tolerances)")
+        print(f"         - Configure: FULLOPTG vs ATOMSONLY, convergence criteria")
+        print(f"         - Time impact: Can reduce optimization time by 30-50%")
         print(f"      2: Advanced (method + basis set modifications)")
+        print(f"         - Configure: Change functional/basis from initial calculation")
+        print(f"         - Use case: Re-optimize with better method")
         print(f"      3: Expert (full CRYSTALOptToD12.py integration)")
+        print(f"         - Configure: All CRYSTAL keywords interactively")
+        print(f"         - Use case: Complex optimizations, constraints, special settings")
         
         while True:
             try:
@@ -2102,7 +2286,9 @@ class WorkflowPlanner:
                 'origin_setting': symmetry_settings.get('origin_setting', '0 0 0'),
                 'dimensionality': symmetry_settings.get('dimensionality', 'CRYSTAL'),
                 # Set write_only_unique based on space group
-                'write_only_unique': symmetry_settings.get('spacegroup', 1) != 1
+                'write_only_unique': symmetry_settings.get('spacegroup', 1) != 1,
+                # Ensure correct calculation type
+                'calculation_type': calc_type
             })
             
             # Save material-specific config
@@ -2274,6 +2460,13 @@ class WorkflowPlanner:
                     saved_config = json.load(f)
                     
                 # Convert to our workflow config format
+                # Ensure the saved config has the correct calculation type
+                saved_config["calculation_type"] = calc_type
+                
+                # Save the corrected config back to file
+                with open(config_file, 'w') as f:
+                    json.dump(saved_config, f, indent=2)
+                
                 expert_config = {
                     "expert_mode": True,
                     "interactive_setup": False,  # Already done
@@ -2342,6 +2535,17 @@ class WorkflowPlanner:
         
         print(f"        Default resources for {calc_type}:")
         print(f"          Cores: {default_resources['ntasks']}")
+        
+        # Add calculation-specific resource explanations
+        if calc_type.startswith("FREQ"):
+            print(f"          📊 FREQ resource notes:")
+            print(f"            - Time scales with number of atoms (N_atoms × 2 displacements)")
+            print(f"            - Memory increases for CPHF/Raman calculations (~2-3x)")
+            print(f"            - Phonon dispersion needs more time (supercell calculations)")
+        elif calc_type.startswith("SP"):
+            print(f"          📊 SP resource notes:")
+            print(f"            - Single SCF calculation, typically faster than OPT")
+            print(f"            - Tight convergence may require +20-50% more iterations")
         
         # Display memory with clear indication of per-cpu vs total
         # This addresses user confusion about memory specifications in SLURM
@@ -2456,7 +2660,7 @@ class WorkflowPlanner:
         scaling_rules = {
             "OPT": {"walltime_factor": 1.0, "memory_factor": 1.0},  # Standard - 7 days
             "SP": {"walltime_factor": 0.43, "memory_factor": 0.8}, # 3 days (3/7 ≈ 0.43)
-            "FREQ": {"walltime_factor": 1.0, "memory_factor": 1.5}, # 7 days (same as OPT)
+            "FREQ": {"walltime_factor": 1.0, "memory_factor": 1.5}, # 7 days (N_atoms × 2 × OPT time)
             "BAND": {"walltime_factor": 1.0, "memory_factor": 0.6}, # 1 day (base is already 1 day)
             "DOSS": {"walltime_factor": 1.0, "memory_factor": 0.6}  # 1 day (base is already 1 day)
         }
@@ -3015,13 +3219,15 @@ class WorkflowPlanner:
             print("No input files found. Exiting.")
             return
             
-        # Step 2: CIF conversion setup if needed
+        # Step 2: Plan workflow sequence first to know what type of calculation we're starting with
+        workflow_sequence = self.plan_workflow_sequence()
+        
+        # Step 3: CIF conversion setup if needed (now we know the first calculation type)
         cif_config = None
         if input_files["cif"]:
-            cif_config = self.setup_cif_conversion(input_files["cif"])
-            
-        # Step 3: Plan workflow sequence
-        workflow_sequence = self.plan_workflow_sequence()
+            # Pass the first calculation type to setup_cif_conversion
+            first_calc_type = workflow_sequence[0] if workflow_sequence else "OPT"
+            cif_config = self.setup_cif_conversion(input_files["cif"], first_calc_type)
         
         # Step 4: Configure workflow steps
         step_configs = self.configure_workflow_steps(workflow_sequence, bool(input_files["cif"]))

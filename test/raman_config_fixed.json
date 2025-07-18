@@ -1,0 +1,33 @@
+{
+  "calculation_type": "FREQ",
+  "dimensionality": "SLAB",
+  "keep_current_settings": true,
+  "frequency_settings": {
+    "mode": "GAMMA",
+    "numderiv": 2,
+    "intensities": true,
+    "ir_method": "CPHF",
+    "raman": true,
+    "cphf_settings": {
+      "maxcycle": 100,
+      "tolalpha": 0.000001,
+      "tolgamma": 0.000001
+    },
+    },
+  "method": "DFT",
+  "dft_functional": "HSESOL3C",
+  "basis_set_type": "INTERNAL",
+  "basis_set": "SOLDEF2MSVP",
+  "use_dispersion": false,
+  "dft_grid": null,
+  "is_spin_polarized": true,
+  "use_smearing": false,
+  "tolerances": {
+    "TOLINTEG": "7 7 7 9 30",
+    "TOLDEE": 7
+  },
+  "scf_method": "DIIS",
+  "scf_maxcycle": 800,
+  "fmixing": 30
+  }
+}

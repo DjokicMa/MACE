@@ -1,0 +1,38 @@
+{
+  "symmetry_handling": "CIF",
+  "symmetry_tolerance": 1e-05,
+  "write_only_unique": true,
+  "validate_symmetry": true,
+  "trigonal_axes": "AUTO",
+  "origin_setting": "AUTO",
+  "dimensionality": "SLAB",
+  "calculation_type": "FREQ",
+  "freq_settings": {
+    "mode": "GAMMA",
+    "numderiv": 2,
+    "intensities": true,
+    "ir_method": "BERRY",
+    "irspec": true,
+    "spec_range": [
+      0,
+      4000
+    ],
+    "spec_step": 1.0,
+    "spec_dampfac": 8.0
+  },
+  "tolerances": {
+    "TOLINTEG": "9 9 9 11 38",
+    "TOLDEE": 11
+  },
+  "method": "DFT",
+  "dft_functional": "HSESOL3C",
+  "basis_set_type": "INTERNAL",
+  "basis_set": "SOLDEF2MSVP",
+  "use_dispersion": false,
+  "dft_grid": null,
+  "is_spin_polarized": true,
+  "use_smearing": false,
+  "scf_method": "DIIS",
+  "scf_maxcycle": 800,
+  "fmixing": 30
+}
