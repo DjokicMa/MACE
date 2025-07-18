@@ -1305,13 +1305,35 @@ def get_advanced_frequency_settings():
     # Then ask if they want to use a template
     print("\nFrequency calculation templates:")
     print("1: Basic frequencies only")
+    print("   - Gamma point frequencies, no intensities")
+    print("   - Use for: ZPE, thermal corrections, stability check")
+    print("   - Time: ~1-3x optimization")
     print("2: IR spectrum")
+    print("   - IR intensities + broadened spectrum")
+    print("   - Use for: Molecular IR spectroscopy")
+    print("   - Time: +20-50% over basic (method dependent)")
     print("3: Raman spectrum")
+    print("   - Raman activities + broadened spectrum (CPHF)")
+    print("   - Use for: Raman spectroscopy")
+    print("   - Time: +100-200% over basic")
     print("4: IR + Raman spectra")
+    print("   - Both IR and Raman with CPHF")
+    print("   - Use for: Complete vibrational spectroscopy")
+    print("   - Time: +100-200% over basic")
     print("5: Thermodynamic properties")
+    print("   - Frequencies + thermal analysis at multiple T")
+    print("   - Use for: Gibbs energy, entropy, heat capacity")
+    print("   - Time: Similar to basic frequencies")
     print("6: Phonon band structure")
+    print("   - Full phonon dispersion with supercell")
+    print("   - Use for: Solid-state phonon properties")
+    print("   - Time: ~4-20x optimization (supercell dependent)")
     print("7: Phonon density of states")
+    print("   - Phonon DOS from supercell calculation")
+    print("   - Use for: Thermal properties, phonon analysis")
+    print("   - Time: ~4-20x optimization (supercell dependent)")
     print("8: Custom settings")
+    print("   - Full control over all parameters")
     
     template_choice = input("Select template (1-8) [1]: ").strip() or "1"
     
@@ -1334,13 +1356,33 @@ def get_advanced_frequency_settings():
         
         # Allow some customization even with templates
         if template_choice in ["2", "3", "4"]:
-            # Spectral templates - ask about range
-            print("\nSpectral range settings:")
-            custom_range = yes_no_prompt("Customize spectral range?", "no")
-            if custom_range:
-                min_freq = float(input("Minimum frequency (cm⁻¹) [0]: ") or 0)
-                max_freq = float(input("Maximum frequency (cm⁻¹) [4000]: ") or 4000)
-                freq_settings["spec_range"] = [min_freq, max_freq]
+            # Spectral templates - clarify behavior and ask about spectrum plots
+            print("\nSpectrum generation options:")
+            print("Note: When using IR/Raman templates:")
+            print("  - Intensities/activities are ALWAYS calculated")
+            print("  - Spectrum plots are OPTIONAL")
+            
+            # Ask about minimal mode
+            if template_choice in ["2", "4"]:  # IR or IR+Raman
+                minimal_ir = yes_no_prompt("\nSkip IR spectrum plot (minimal mode)?", "no")
+                if minimal_ir:
+                    freq_settings["minimal_ir"] = True
+                    freq_settings["irspec"] = False
+                    
+            if template_choice in ["3", "4"]:  # Raman or IR+Raman
+                minimal_raman = yes_no_prompt("\nSkip Raman spectrum plot (minimal mode)?", "no")
+                if minimal_raman:
+                    freq_settings["minimal_raman"] = True
+                    freq_settings["ramspec"] = False
+            
+            # Ask about spectral range only if not minimal
+            if not (freq_settings.get("minimal_ir", False) and freq_settings.get("minimal_raman", False)):
+                print("\nSpectral range settings:")
+                custom_range = yes_no_prompt("Customize spectral range?", "no")
+                if custom_range:
+                    min_freq = float(input("Minimum frequency (cm⁻¹) [0]: ") or 0)
+                    max_freq = float(input("Maximum frequency (cm⁻¹) [4000]: ") or 4000)
+                    freq_settings["spec_range"] = [min_freq, max_freq]
                 
         elif template_choice == "5":
             # Thermodynamics - ask about temperature range
@@ -1359,7 +1401,13 @@ def get_advanced_frequency_settings():
         # Mode selection
         print("\nFrequency calculation modes:")
         print("1: Gamma point only (default)")
+        print("   - Molecular/cluster frequencies")
+        print("   - Thermodynamics at Gamma point")
+        print("   - Can calculate IR/Raman if requested")
         print("2: Phonon dispersion")
+        print("   - Full phonon band structure")
+        print("   - Requires supercell definition")
+        print("   - Cannot calculate IR/Raman intensities")
         
         mode_choice = input("Select mode (1-2) [1]: ").strip() or "1"
         
@@ -1475,19 +1523,26 @@ def get_advanced_frequency_settings():
         
         print("\nIR intensity calculation method:")
         print("1: Berry phase (INTPOL - default)")
-        print("   - Fast, works for 3D, 2D, 1D, and 0D systems")
-        print("   - Good for periodic systems, insulators only")
+        print("   - Best for: Periodic solids, semiconductors, insulators")
+        print("   - Works well: Covalent materials, MOFs, zeolites, 2D materials")
+        print("   - Limitations: Requires insulating state")
+        print("   - Speed: Fast (+10-20% over base frequency)")
         print("   - Accuracy depends on k-point density")
         print("2: Wannier functions (INTLOC)")
-        print("   - Good for molecular/localized systems")
-        print("   - Memory intensive, insulators only")
+        print("   - Best for: Molecular crystals, ionic solids")
+        print("   - Works well: Systems with localized bonds/charges")
+        print("   - Limitations: Requires insulating state, higher memory")
+        print("   - Speed: Moderate (+20-30% over base frequency)")
         print("   - Can relocalize at each displaced geometry")
         print("3: CPHF/CPKS (INTCPHF - most accurate)")
-        print("   - Fully analytical Born charges")
-        print("   - Works for all systems")
-        print("   - Required for Raman calculations")
-        print("   - Most expensive computationally")
+        print("   - Best for: Any material (metals, semiconductors, insulators)")
+        print("   - Works well: Small unit cells, high accuracy needed")
+        print("   - Benefits: Analytical Born charges, enables Raman")
+        print("   - Speed: Slowest (+50-100% over base frequency)")
+        print("   - Memory: ~2x base requirement")
         
+        print("\nNote: Berry phase (1) is the default as it works well for most")
+        print("      periodic systems and has the best speed/accuracy balance")
         ir_method_choice = input("\nSelect method (1-3) [1]: ").strip() or "1"
         ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
         freq_settings["ir_method"] = ir_methods.get(ir_method_choice, "BERRY")
@@ -1535,8 +1590,33 @@ def get_advanced_frequency_settings():
     if freq_settings.get("intensities") or freq_settings.get("raman"):
         print("\n=== SPECTRAL GENERATION OPTIONS ===")
         
+        # Check if user wants minimal calculations
+        if freq_settings.get("intensities") and not freq_settings.get("raman"):
+            print("\nIR spectrum plot generation:")
+            print("  Note: IR intensities are ALWAYS calculated when IR is selected")
+            print("  You're choosing whether to also generate a spectrum plot")
+            print("\n  Options:")
+            print("  - Minimal (no plot): Only intensities in .out file")
+            print("  - Full (with plot): Intensities + broadened spectrum (IRSPEC)")
+            minimal_ir = yes_no_prompt("Skip IR spectrum plot generation (minimal mode)?", "no")
+            if minimal_ir:
+                freq_settings["minimal_ir"] = True
+                freq_settings["irspec"] = False
+        
+        if freq_settings.get("raman"):
+            print("\nRaman spectrum plot generation:")
+            print("  Note: Raman activities are ALWAYS calculated when Raman is selected")
+            print("  You're choosing whether to also generate a spectrum plot")
+            print("\n  Options:")
+            print("  - Minimal (no plot): Only activities in .out file")
+            print("  - Full (with plot): Activities + broadened spectrum (RAMSPEC)")
+            minimal_raman = yes_no_prompt("Skip Raman spectrum plot generation (minimal mode)?", "no")
+            if minimal_raman:
+                freq_settings["minimal_raman"] = True
+                freq_settings["ramspec"] = False
+        
         # IR spectrum (IRSPEC)
-        if freq_settings.get("intensities"):
+        if freq_settings.get("intensities") and not freq_settings.get("minimal_ir", False):
             gen_ir_spec = yes_no_prompt("\nGenerate IR spectrum (IRSPEC)?", "yes")
             if gen_ir_spec:
                 freq_settings["irspec"] = True
@@ -1574,7 +1654,7 @@ def get_advanced_frequency_settings():
                     freq_settings["spec_dampfac"] = 8.0
                 
         # Raman spectrum (RAMSPEC)
-        if freq_settings.get("raman"):
+        if freq_settings.get("raman") and not freq_settings.get("minimal_raman", False):
             gen_raman_spec = yes_no_prompt("\nGenerate Raman spectrum (RAMSPEC)?", "yes")
             if gen_raman_spec:
                 freq_settings["ramspec"] = True
@@ -1846,8 +1926,21 @@ def get_calculation_options(current_settings, shared_mode=False):
 
         # Frequency settings if FREQ
         if options["calculation_type"] == "FREQ":
+            print("\nDefault frequency calculation settings:")
+            print("  NUMDERIV=2: Two-point numerical derivatives (central differences)")
+            print("    - More accurate than NUMDERIV=1 (forward differences)")
+            print("    - Calculates frequencies as (E(+δ) - E(-δ))/2δ")
+            print("    - Requires 2N+1 single point calculations (N = number of atoms)")
+            print("  TOLINTEG=9 9 9 11 38: High accuracy integral tolerances")
+            print("    - Much tighter than optimization (typically 7 7 7 7 14)")
+            print("    - Ensures accurate force constants and frequencies")
+            print("  TOLDEE=11: SCF convergence to 10^-11 Hartree")
+            print("    - Tighter than optimization (typically 10^-7)")
+            print("    - Critical for accurate numerical derivatives")
+            print("\nThese settings ensure publication-quality vibrational frequencies.")
+            
             use_default_freq = yes_no_prompt(
-                "Use default frequency calculation settings? (NUMDERIV=2, TOLINTEG=9 9 9 11 38, TOLDEE=11)",
+                "\nUse these default frequency calculation settings?",
                 "yes",
             )
 
