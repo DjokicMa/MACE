@@ -1,0 +1,12 @@
+{
+  "version": "1.0",
+  "type": "d3_configuration",
+  "calculation_type": "CHARGE",
+  "configuration": {
+    "calculation_type": "CHARGE",
+    "type": "ECH3",
+    "n_points": 100,
+    "scale": 3.0,
+    "use_range": false
+  }
+}

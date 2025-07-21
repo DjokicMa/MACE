@@ -62,8 +62,13 @@ The system supports arbitrary workflow sequences including:
 - **Basic**: `OPT` only
 - **Standard**: `OPT → SP → BAND → DOSS`
 - **Complete**: `OPT → SP → BAND → DOSS → FREQ`
+- **Transport Analysis**: `OPT → SP → TRANSPORT`
+- **Charge Analysis**: `OPT → SP → CHARGE+POTENTIAL`
+- **Full Properties**: `OPT → SP → BAND → DOSS → TRANSPORT → CHARGE+POTENTIAL`
 - **Multi-stage**: `OPT → OPT2 → SP → OPT3 → SP2 → BAND → DOSS → FREQ`
 - **Complex**: `SP → OPT → SP2 → BAND → DOSS → OPT2 → SP3 → FREQ → OPT3`
+
+**Note**: BAND and DOSS can run in parallel (both read the same wavefunction), while TRANSPORT and CHARGE+POTENTIAL run sequentially.
 
 ---
 
@@ -225,9 +230,13 @@ python run_workflow.py --execute workflow_plan_20250623_101909.json
 |----------|----------|------------------|
 | `basic_opt` | OPT | 7 days |
 | `opt_sp` | OPT → SP | 7d + 3d |
-| `full_electronic` | OPT → SP → BAND → DOSS | 7d → 3d → 1d → 1d |
+| `full_electronic` | OPT → SP → BAND → DOSS | 7d → 3d → 2h → 2h |
+| `transport_analysis` | OPT → SP → TRANSPORT | 7d → 3d → 2h |
+| `charge_analysis` | OPT → SP → CHARGE+POTENTIAL | 7d → 3d → 2h |
+| `combined_analysis` | OPT → SP → BAND → DOSS → TRANSPORT | 7d → 3d → 2h → 2h → 2h |
 | `double_opt` | OPT → OPT2 → SP | 7d → 7d → 3d |
 | `complete` | OPT → SP → BAND → DOSS → FREQ | Full characterization |
+| `full_properties` | OPT → SP → BAND → DOSS → TRANSPORT → CHARGE+POTENTIAL → FREQ | Complete analysis |
 
 ### Workflow Features
 
@@ -248,6 +257,11 @@ The system automatically generates from CIF when:
   - FREQ always uses highest completed OPT geometry
   - OPT after FREQ/BAND/DOSS uses highest completed OPT
   - BAND/DOSS use most recent wavefunction (SP or OPT)
+  - TRANSPORT uses most recent wavefunction (SP or OPT)
+  - CHARGE+POTENTIAL uses most recent wavefunction (SP or OPT)
+- **Parallel vs Sequential**:
+  - BAND and DOSS can run in parallel (both read the same wavefunction)
+  - TRANSPORT and CHARGE+POTENTIAL run sequentially after BAND/DOSS
 
 ### Directory Structure
 
@@ -476,6 +490,8 @@ Certain calculation types can fail without blocking workflow:
 - `BAND` - Band structure calculations
 - `DOSS` - Density of states calculations  
 - `FREQ` - Frequency calculations
+- `TRANSPORT` - Transport properties (conductivity, Seebeck coefficient)
+- `CHARGE+POTENTIAL` - Charge density and electrostatic potential
 
 This allows workflows to continue even if optional analyses fail.
 
@@ -730,6 +746,40 @@ Job_Scripts/
 
 ## Recent Updates
 
+### D3 Calculation Support (TRANSPORT and CHARGE+POTENTIAL)
+
+The workflow system now supports all D3 calculation types through the refactored CRYSTALOptToD3.py:
+
+1. **New Calculation Types**:
+   - **TRANSPORT**: Boltzmann transport properties (electrical conductivity, Seebeck coefficient, thermal conductivity)
+   - **CHARGE+POTENTIAL**: Combined charge density and electrostatic potential calculations with CUBE file output
+
+2. **Integration Features**:
+   - Full workflow planner support with Basic/Advanced/Expert configuration levels
+   - Automatic D3 file generation using CRYSTALOptToD3.py
+   - Proper file naming for numbered instances (TRANSPORT2, CHARGE+POTENTIAL2, etc.)
+   - SLURM script mapping to submit_prop.sh with 2-hour walltime default
+
+3. **Dependency Management**:
+   - Both TRANSPORT and CHARGE+POTENTIAL depend on SP or OPT wavefunction
+   - Run sequentially after BAND/DOSS (not in parallel)
+   - Marked as optional calculations (can fail without blocking workflow)
+
+4. **Configuration Options**:
+   - **TRANSPORT**: Temperature range, chemical potential range, relaxation time
+   - **CHARGE+POTENTIAL**: 3D grid density, output format (Gaussian CUBE)
+
+5. **File Handling**:
+   - Enhanced queue manager properly handles .d3 file extensions
+   - Workflow executor renames files for numbered instances
+   - CUBE file copying added to submit_prop.sh for CHARGE+POTENTIAL
+
+Example workflow with new calculations:
+```bash
+python run_workflow.py --interactive
+# Select: OPT → SP → BAND → DOSS → TRANSPORT → CHARGE+POTENTIAL
+```
+
 ### Frequency Calculation Support
 
 The workflow system fully supports CRYSTAL23 frequency calculations with optimized tolerance settings:
@@ -807,6 +857,10 @@ The system now includes comprehensive race condition fixes for simultaneous job 
 - ✅ OPT after FREQ/BAND/DOSS handled correctly
 - ✅ Input validation prevents workflow crashes
 - ✅ Parallel calculations (BAND+DOSS) execute properly
+- ✅ D3 calculation support for TRANSPORT and CHARGE+POTENTIAL
+- ✅ Proper file naming for numbered D3 instances (BAND2, TRANSPORT2, etc.)
+- ✅ Enhanced queue manager handles .d3 file extensions correctly
+- ✅ Sequential execution for TRANSPORT/CHARGE+POTENTIAL (not parallel)
 
 ---
 
@@ -891,14 +945,26 @@ Important logs to check:
 
 The workflow system integrates with several external scripts:
 
-#### From Crystal_To_CIF Directory:
-- **NewCifToD12.py** - Converts CIF files to CRYSTAL D12 format
-- **CRYSTALOptToD12.py** - Generates SP/FREQ inputs from optimized structures  
-- **d12creation.py** - Shared utilities and constants
+#### From Crystal_d12 Directory:
+- **NewCifToD12.py** - Converts CIF files to CRYSTAL D12 format with three customization levels
+- **CRYSTALOptToD12.py** - Generates SP/FREQ/OPT inputs from optimized structures
+- **d12_*.py modules** - Refactored D12 creation utilities:
+  - d12_constants.py - Constants and configuration
+  - d12_parsers.py - Input file parsing
+  - d12_writer.py - D12 file generation
+  - d12_calc_basic.py - Basic calculation setup
+  - d12_calc_freq.py - Frequency calculation setup
+  - d12_interactive.py - Interactive configuration
 
-#### From Creation_Scripts Directory:
-- **create_band_d3.py** - Generates band structure input files
-- **alldos.py** - Generates density of states input files
+#### From Crystal_d3 Directory:
+- **CRYSTALOptToD3.py** - Unified D3 generation for all property calculations
+- **d3_*.py modules** - D3 creation utilities:
+  - d3_config.py - Configuration management
+  - d3_interactive.py - Interactive setup
+  - d3_kpoints.py - K-point path generation
+- **Legacy scripts** (still used for BAND/DOSS in workflow):
+  - create_band_d3.py - Band structure input files
+  - alldos.py - Density of states input files
 
 ### Script Location Resolution
 

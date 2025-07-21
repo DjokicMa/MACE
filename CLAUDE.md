@@ -122,7 +122,7 @@ python -c "import numpy, matplotlib, ase, spglib, PyPDF2, yaml, pandas; print('A
 
 The codebase is organized into distinct workflow stages:
 
-1. **Input Preparation** (`Crystal_To_CIF/`)
+1. **Input Preparation** (`Crystal_d12/`)
    - Convert CIF files to CRYSTAL .d12 format
    - Add ghost atoms for surface calculations
    - Extract optimized geometries from completed calculations
@@ -133,19 +133,20 @@ The codebase is organized into distinct workflow stages:
    - Resource allocation and scratch space management
    - **Material tracking database** (Phase 2) - SQLite + ASE integration
    - **Automated error recovery** (Phase 2) - Configurable fixes for common errors
-   - **Workflow automation** (Phase 2) - OPT → SP → BAND/DOSS progression
+   - **Workflow automation** (Phase 2) - OPT → SP → BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL progression
 
 3. **Status Monitoring** (`Check_Scripts/`)
    - Categorize job completion status based on CRYSTAL error patterns
    - Automatically sort completed/errored jobs into organized folders
    - Fix common input errors (e.g., SHRINK parameters)
 
-4. **Input Generation** (`Creation_Scripts/`)
-   - Generate DOS, band structure, and transport property input files
+4. **Input Generation** (`Crystal_d3/`)
+   - Generate DOS, band structure, transport, and charge density/potential input files
    - Template-based creation using crystal symmetry information
    - Basis set management for different calculation types
    - RCSR database integration for 2P and 3P periodic structures
    - Band plotting templates for different crystal systems
+   - CRYSTALOptToD3.py: Unified D3 generation with basic/advanced/expert configuration modes
 
 5. **Analysis & Visualization** (`Plotting_Scripts/`, `Band_Alignment/`, `Post_Processing_Scripts/`)
    - Extract electronic properties (band gaps, work functions)
@@ -275,6 +276,18 @@ The workflow manager (`run_workflow.py`) provides a unified interface for planni
    - Full characterization including vibrational analysis
    - Comprehensive property extraction
 
+6. **`transport_analysis`**: OPT → SP → TRANSPORT
+   - Transport properties calculation (conductivity, Seebeck coefficient)
+   - Walltimes: 7d → 3d → 1d
+
+7. **`charge_analysis`**: OPT → SP → CHARGE+POTENTIAL
+   - Charge density and electrostatic potential analysis
+   - Walltimes: 7d → 3d → 1d
+
+8. **`combined_analysis`**: OPT → SP → BAND → DOSS → TRANSPORT
+   - Electronic structure with transport properties
+   - Walltimes: 7d → 3d → 1d → 1d → 1d
+
 #### **Custom Workflows**
 - Interactive workflow designer
 - Dependency validation
@@ -313,8 +326,8 @@ Cores: 32, Memory: 5G, Walltime: 7-00:00:00, Account: mendoza_q
 # Single point calculations  
 Cores: 32, Memory: 4G, Walltime: 3-00:00:00, Account: mendoza_q
 
-# Properties calculations (BAND/DOSS)
-Cores: 28, Memory: 48G, Walltime: 1-00:00:00, Account: general
+# Properties calculations (BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL)
+Cores: 28, Memory: 80G, Walltime: 2:00:00, Account: mendoza_q
 
 # Frequency calculations
 Cores: 32, Memory: 5G, Walltime: 7-00:00:00, Account: mendoza_q
@@ -505,7 +518,7 @@ The enhanced system provides comprehensive material lifecycle tracking:
 - **`material_database.py`**: SQLite database with ASE integration for structure storage
 - **`enhanced_queue_manager.py`**: Extended queue manager with material tracking and enhanced callback system
 - **`error_recovery.py`**: Automated error detection and recovery with YAML configuration
-- **`workflow_engine.py`**: Orchestrates OPT → SP → BAND/DOSS workflow progression
+- **`workflow_engine.py`**: Orchestrates OPT → SP → BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL workflow progression
 - **`crystal_file_manager.py`**: Organized file management by material ID and calculation type
 - **`material_monitor.py`**: Real-time monitoring dashboard and health checks
 - **`file_storage_manager.py`**: Comprehensive file storage with settings extraction and provenance tracking
@@ -515,7 +528,7 @@ The enhanced system provides comprehensive material lifecycle tracking:
 #### **Key Features**
 - **Material ID Consistency**: Handles complex file naming from NewCifToD12.py and CRYSTALOptToD12.py
 - **Isolated Script Execution**: Creates clean directories for alldos.py and create_band_d3.py requirements
-- **Automated Workflow Progression**: OPT completion triggers SP generation, SP completion triggers BAND/DOSS
+- **Automated Workflow Progression**: OPT completion triggers SP generation, SP completion triggers BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL
 - **Error Recovery**: Configurable fixes for SHRINK errors, memory issues, convergence problems
 - **Enhanced Callback System**: Multi-location queue manager detection checking both local and parent directories
 - **Directory Organization**: `base_dir/calc_type/` structure for efficient file management

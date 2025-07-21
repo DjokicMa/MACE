@@ -51,6 +51,8 @@ cp SEEBECK.DAT ${DIR}/${JOB}.SEEBECK.DAT
 cp SIGMAS.DAT ${DIR}/${JOB}.SIGMAS.DAT
 cp KAPPA.DAT ${DIR}/${JOB}.KAPPA.DAT
 cp TDF.DAT ${DIR}/${JOB}.TDF.DAT
+cp *.CUBE ${DIR}/ 2>/dev/null || true
+cp *.cube ${DIR}/ 2>/dev/null || true
 
 # ADDED: Auto-submit new jobs when this one completes
 # Check multiple possible locations for queue managers (prefer base directory)

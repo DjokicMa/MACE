@@ -33,9 +33,10 @@ try:
     from enhanced_queue_manager import EnhancedCrystalQueueManager
     from workflow_engine import WorkflowEngine
 
-    # Add the Crystal_To_CIF directory to path for importing
-    sys.path.append(str(Path(__file__).parent.parent / "Crystal_To_CIF"))
-    from d12creation import *
+    # Add the Crystal_d12 directory to path for importing
+    sys.path.append(str(Path(__file__).parent.parent / "Crystal_d12"))
+    # Import from the new modular structure
+    from d12_constants import FREQ_TEMPLATES
 except ImportError as e:
     print(f"Error importing required modules: {e}")
     print("Please ensure all required modules are available")
@@ -101,6 +102,18 @@ class WorkflowPlanner:
                 "depends_on": ["OPT"],
                 "generates": ["vibrational_modes"],
             },
+            "TRANSPORT": {
+                "name": "Transport Properties",
+                "depends_on": ["SP", "OPT"],  # Requires wavefunction from SP or OPT
+                "generates": ["conductivity", "seebeck_coefficient"],
+                # Note: Runs sequentially after BAND/DOSS, not in parallel
+            },
+            "CHARGE+POTENTIAL": {
+                "name": "Charge Density & Potential",
+                "depends_on": ["SP", "OPT"],  # Requires wavefunction from SP or OPT
+                "generates": ["charge_density", "electrostatic_potential"],
+                # Note: Runs sequentially after BAND/DOSS, not in parallel
+            },
         }
 
         # Numbered calculations (OPT2, SP2, etc.) are handled dynamically
@@ -113,6 +126,9 @@ class WorkflowPlanner:
             "full_electronic": ["OPT", "SP", "BAND", "DOSS"],
             "double_opt": ["OPT", "OPT2", "SP"],
             "complete": ["OPT", "SP", "BAND", "DOSS", "FREQ"],
+            "transport_analysis": ["OPT", "SP", "TRANSPORT"],
+            "charge_analysis": ["OPT", "SP", "CHARGE+POTENTIAL"],
+            "combined_analysis": ["OPT", "SP", "BAND", "DOSS", "TRANSPORT"],
             "custom": "user_defined",
         }
 
@@ -617,7 +633,7 @@ class WorkflowPlanner:
     ) -> Dict[str, Any]:
         """Run full NewCifToD12.py customization"""
         # Find NewCifToD12.py
-        script_path = Path(__file__).parent.parent / "Crystal_To_CIF" / "NewCifToD12.py"
+        script_path = Path(__file__).parent.parent / "Crystal_d12" / "NewCifToD12.py"
 
         if not script_path.exists():
             print(f"Error: NewCifToD12.py not found at {script_path}")
@@ -793,6 +809,8 @@ class WorkflowPlanner:
                         "BAND": "Band Structure",
                         "DOSS": "Density of States",
                         "FREQ": "Vibrational Frequencies",
+                        "TRANSPORT": "Transport Properties",
+                        "CHARGE+POTENTIAL": "Charge Density & Electrostatic Potential",
                     }.get(base, base)
                     print(f"  {i}. {calc_type} - {desc}")
                 print("\nEnter number or type name directly")
@@ -818,7 +836,7 @@ class WorkflowPlanner:
                     else:
                         print(f"Cannot add {calc} - check dependencies")
                 # Handle base calculations (OPT, SP, etc.) - auto-number them
-                elif calc in ["OPT", "SP", "BAND", "DOSS", "FREQ"]:
+                elif calc in ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL"]:
                     numbered_calc = self._get_next_numbered_calc(sequence, calc)
                     if self._validate_numbered_calc_addition(sequence, numbered_calc):
                         sequence.append(numbered_calc)
@@ -850,7 +868,7 @@ class WorkflowPlanner:
                 calc = input("\nInsert calculation type: ").strip().upper()
 
                 # Handle numbered calculations
-                if calc in ["OPT", "SP", "BAND", "DOSS", "FREQ"]:
+                if calc in ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL"]:
                     numbered_calc = self._get_next_numbered_calc(sequence, calc)
 
                     print(f"\nCurrent sequence: {' → '.join(sequence)}")
@@ -897,7 +915,7 @@ class WorkflowPlanner:
     def _get_available_calc_types(self, current_sequence: List[str]) -> List[str]:
         """Get list of available calculation types with proper numbering"""
         available = []
-        base_types = ["OPT", "SP", "BAND", "DOSS", "FREQ"]
+        base_types = ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL"]
 
         for base_type in base_types:
             # Count how many of this type already exist
@@ -1010,8 +1028,8 @@ class WorkflowPlanner:
         if base_type == "SP":
             # SP can be added at any time (no dependencies)
             return True
-        elif base_type in ["BAND", "DOSS"]:
-            # BAND/DOSS need at least one SP or OPT
+        elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+            # BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL need at least one SP or OPT
             return any(
                 calc.startswith("SP") or calc.startswith("OPT") for calc in sequence
             )
@@ -1045,10 +1063,13 @@ class WorkflowPlanner:
         print("  Electronic: OPT SP  or  SP BAND DOSS")
         print("  Analysis: OPT SP BAND DOSS")
         print("  Complete: OPT SP BAND DOSS FREQ")
+        print("  Transport: OPT SP TRANSPORT")
+        print("  Charge analysis: OPT SP CHARGE+POTENTIAL")
         print("  Double opt: OPT OPT2 SP")
         print("\nAdvanced patterns:")
         print("  SP-first: SP BAND DOSS")
         print("  Multi-stage: OPT SP BAND DOSS OPT2 OPT3 SP2 BAND2 DOSS2 FREQ")
+        print("  Combined analysis: OPT SP BAND DOSS TRANSPORT CHARGE+POTENTIAL")
         print("  Iterative opt: OPT OPT2 OPT3 SP")
         print("  Multiple properties: OPT SP BAND DOSS BAND2 DOSS2")
         print("\nDependencies:")
@@ -1130,6 +1151,16 @@ class WorkflowPlanner:
             elif calc_type.startswith("FREQ"):
                 # Frequency calculations (FREQ, FREQ2, FREQ3, etc.)
                 config = self.configure_frequency_step(calc_type, i + 1)
+                step_configs[f"{calc_type}_{i + 1}"] = config
+
+            elif calc_type.startswith("TRANSPORT"):
+                # Transport calculations (TRANSPORT, TRANSPORT2, etc.)
+                config = self.configure_analysis_step("TRANSPORT")
+                step_configs[f"{calc_type}_{i + 1}"] = config
+
+            elif calc_type.startswith("CHARGE+POTENTIAL"):
+                # Charge+Potential calculations
+                config = self.configure_analysis_step("CHARGE+POTENTIAL")
                 step_configs[f"{calc_type}_{i + 1}"] = config
 
             # Configure SLURM scripts for this step
@@ -1440,21 +1471,265 @@ class WorkflowPlanner:
         return modifications
 
     def configure_analysis_step(self, calc_type: str) -> Dict[str, Any]:
-        """Configure band structure or DOS calculation"""
+        """Configure D3 property calculations (BAND, DOSS, TRANSPORT, CHARGE, POTENTIAL)"""
         print(f"  Configuring {calc_type} calculation")
-
-        if calc_type == "BAND":
-            script = "create_band_d3.py"
-        else:  # DOSS
-            script = "alldos.py"
-
+        
+        # All D3 calculations now use CRYSTALOptToD3.py
         config = {
             "calculation_type": calc_type,
-            "source": script,
+            "source": "CRYSTALOptToD3.py",
             "requires_wavefunction": True,
-            "isolated_directory": True,
+            "d3_calculation": True,  # Flag to indicate this is a D3 calculation
         }
-
+        
+        # Ask for customization level
+        print(f"\n  {calc_type} Calculation Customization Level:")
+        print("    1. Basic (use sensible defaults)")
+        print("    2. Advanced (customize key parameters)")
+        print("    3. Expert (full CRYSTALOptToD3.py integration)")
+        
+        while True:
+            try:
+                level = int(input("\n  Select customization level (1-3): "))
+                if 1 <= level <= 3:
+                    break
+                print("  Invalid choice. Please enter 1, 2, or 3.")
+            except ValueError:
+                print("  Invalid input. Please enter a number.")
+        
+        if level == 1:
+            # Basic - use default configurations
+            config["d3_config_mode"] = "basic"
+            config["d3_config"] = self._get_basic_d3_config(calc_type)
+            
+        elif level == 2:
+            # Advanced - customize key parameters
+            config["d3_config_mode"] = "advanced"
+            config["d3_config"] = self._get_advanced_d3_config(calc_type)
+            
+        else:
+            # Expert - full interactive configuration
+            config["d3_config_mode"] = "expert"
+            config["expert_mode"] = True
+            config["interactive_setup"] = True
+            print("\n  Expert mode: Full interactive CRYSTALOptToD3.py configuration")
+            print("  You will configure all settings during workflow execution")
+        
+        return config
+    
+    def _get_basic_d3_config(self, calc_type: str) -> Dict[str, Any]:
+        """Get basic D3 configuration with sensible defaults"""
+        configs = {
+            "BAND": {
+                "calculation_type": "BAND",
+                "path": "auto",
+                "bands": "auto", 
+                "shrink": "auto",
+                "labels": "auto",
+                "auto_path": True
+            },
+            "DOSS": {
+                "calculation_type": "DOSS",
+                "npoints": 1000,
+                "band": "all",
+                "projection_type": 0,  # Total DOS only
+                "e_range": [-20, 20]
+            },
+            "TRANSPORT": {
+                "calculation_type": "TRANSPORT",
+                "temperature_range": [100, 800, 50],
+                "mu_range": [-2.0, 2.0, 0.01],
+                "mu_reference": "fermi",
+                "mu_range_type": "auto_fermi",
+                "tdf_range": [-5.0, 5.0, 0.01],
+                "relaxation_time": 10
+            },
+            "CHARGE+POTENTIAL": {
+                "calculation_type": "CHARGE+POTENTIAL",
+                "option_type": 6,  # 3D grid
+                "mapnet": [100, 100, 100],
+                "output_format": "GAUSSIAN"
+            }
+        }
+        
+        config = configs.get(calc_type, {})
+        print(f"\n  Using basic {calc_type} configuration:")
+        
+        if calc_type == "BAND":
+            print("    - Automatic k-path detection based on space group")
+            print("    - All available bands included")
+            print("    - Automatic SHRINK factor from parent calculation")
+            
+        elif calc_type == "DOSS":
+            print("    - Total DOS only (no projections)")
+            print("    - 1000 energy points")
+            print("    - Energy range: -20 to 20 eV")
+            
+        elif calc_type == "TRANSPORT":
+            print("    - Chemical potential range: -2 to +2 eV relative to Fermi")
+            print("    - Temperature range: 100-800 K")
+            print("    - Constant relaxation time: 10 fs")
+            
+        elif calc_type == "CHARGE+POTENTIAL":
+            print("    - 3D charge density and electrostatic potential grids")
+            print("    - 100x100x100 grid points")
+            print("    - Gaussian-compatible output format (cube files)")
+            
+        return config
+    
+    def _get_advanced_d3_config(self, calc_type: str) -> Dict[str, Any]:
+        """Get advanced D3 configuration with user customization"""
+        config = {"calculation_type": calc_type}
+        
+        if calc_type == "BAND":
+            print("\n  Advanced BAND configuration:")
+            
+            # Path configuration
+            print("\n  K-point path:")
+            print("    1. Automatic (SeeK-path based on space group)")
+            print("    2. Custom path specification")
+            
+            path_choice = input("  Select path option [1]: ").strip() or "1"
+            
+            if path_choice == "1":
+                config["path"] = "auto"
+                config["labels"] = "auto"
+                config["auto_path"] = True
+            else:
+                print("  Custom path configuration selected")
+                print("  You will specify the path during execution")
+                config["custom_path"] = True
+            
+            # Band selection
+            use_all = input("\n  Use all bands? [Y/n]: ").strip().lower()
+            if use_all == 'n':
+                config["band"] = input("  Band range (e.g., '1-50' or 'all'): ").strip()
+            else:
+                config["bands"] = "auto"
+            
+            # Points per segment
+            npoints = input("  Points per k-path segment [200]: ").strip()
+            config["npoints"] = int(npoints) if npoints else 200
+            
+        elif calc_type == "DOSS":
+            print("\n  Advanced DOSS configuration:")
+            
+            # Projection type
+            print("\n  DOS projection type:")
+            print("    0. Total DOS only")
+            print("    1. Atom contributions") 
+            print("    2. Shell contributions")
+            print("    3. Atomic orbital contributions")
+            print("    4. Shell + AO contributions")
+            
+            proj_type = input("  Select projection type [0]: ").strip() or "0"
+            config["projection_type"] = int(proj_type)
+            
+            if config["projection_type"] > 0:
+                # Auto projections based on basis set
+                auto_proj = input("  Auto-generate projections from basis set? [Y/n]: ").strip().lower()
+                if auto_proj != 'n':
+                    config["project_orbital_types"] = True
+                    print("  ✓ Projections will be generated automatically")
+                else:
+                    print("  Manual projection configuration selected")
+                    config["manual_projections"] = True
+            
+            # Energy range
+            e_min = input("\n  Energy minimum (eV) [-20]: ").strip()
+            e_max = input("  Energy maximum (eV) [20]: ").strip()
+            config["e_range"] = [
+                float(e_min) if e_min else -20,
+                float(e_max) if e_max else 20
+            ]
+            
+            # Number of points
+            npoints = input("  Number of energy points [2000]: ").strip()
+            config["npoints"] = int(npoints) if npoints else 2000
+            
+        elif calc_type == "TRANSPORT":
+            print("\n  Advanced TRANSPORT configuration:")
+            
+            # Chemical potential reference
+            print("\n  Chemical potential reference:")
+            print("    1. Relative to Fermi energy (automatic)")
+            print("    2. Relative to VBM (manual)")
+            print("    3. Absolute values")
+            
+            mu_ref = input("  Select reference [1]: ").strip() or "1"
+            
+            if mu_ref == "1":
+                config["mu_reference"] = "fermi"
+                config["mu_range_type"] = "auto_fermi"
+                mu_min = input("  Min μ relative to Fermi (eV) [-2]: ").strip()
+                mu_max = input("  Max μ relative to Fermi (eV) [2]: ").strip()
+                config["mu_range"] = [
+                    float(mu_min) if mu_min else -2.0,
+                    float(mu_max) if mu_max else 2.0,
+                    0.01
+                ]
+            elif mu_ref == "2":
+                config["mu_reference"] = "vbm"
+                print("  You will need to specify VBM value during execution")
+            else:
+                config["mu_reference"] = "absolute"
+                mu_min = input("  Min μ absolute (eV): ").strip()
+                mu_max = input("  Max μ absolute (eV): ").strip()
+                config["mu_range"] = [float(mu_min), float(mu_max), 0.01]
+            
+            # Temperature range
+            t_min = input("\n  Min temperature (K) [100]: ").strip()
+            t_max = input("  Max temperature (K) [800]: ").strip()
+            t_step = input("  Temperature step (K) [50]: ").strip()
+            config["temperature_range"] = [
+                int(t_min) if t_min else 100,
+                int(t_max) if t_max else 800,
+                int(t_step) if t_step else 50
+            ]
+            
+            # Relaxation time
+            relax = input("  Relaxation time (fs) [10]: ").strip()
+            config["relaxation_time"] = float(relax) if relax else 10
+            
+        elif calc_type == "CHARGE+POTENTIAL":
+            print(f"\n  Advanced {calc_type} configuration:")
+            
+            # Output type
+            print("\n  Output type:")
+            print("    1. 3D grid (for visualization)")
+            print("    2. 2D plane")
+            print("    3. 1D line")
+            print("    4. Points at atomic positions")
+            
+            out_type = input("  Select output type [1]: ").strip() or "1"
+            
+            type_map = {"1": 6, "2": 3, "3": 2, "4": 7}
+            config["option_type"] = type_map[out_type]
+            
+            if out_type == "1":
+                # 3D grid
+                nx = input("  Grid points in x [100]: ").strip()
+                ny = input("  Grid points in y [100]: ").strip()
+                nz = input("  Grid points in z [100]: ").strip()
+                config["mapnet"] = [
+                    int(nx) if nx else 100,
+                    int(ny) if ny else 100,
+                    int(nz) if nz else 100
+                ]
+            elif out_type in ["2", "3"]:
+                print("  Plane/line parameters will be configured during execution")
+                config["requires_geometry_input"] = True
+            
+            # Output format
+            print("\n  Output format:")
+            print("    1. GAUSSIAN (cube file)")
+            print("    2. XCRYSDEN")
+            print("    3. Standard CRYSTAL")
+            
+            fmt_choice = input("  Select format [1]: ").strip() or "1"
+            format_map = {"1": "GAUSSIAN", "2": "XCRYSDEN", "3": "CRYSTAL"}
+            config["output_format"] = format_map[fmt_choice]
+        
         return config
 
     def configure_frequency_step(
@@ -1628,14 +1903,13 @@ class WorkflowPlanner:
 
                 elif phonon_type == "3":
                     # High-symmetry points only
-                    config["frequency_settings"]["mode"] = "HIGH_SYMMETRY"
+                    config["frequency_settings"]["mode"] = "DISPERSION"
+                    config["frequency_settings"]["high_symmetry_only"] = True
+                    config["frequency_settings"]["scelphono"] = [1, 1, 1]
                     print("\n  ✓ High-symmetry points mode selected")
                     print("  Will calculate phonons at critical points only")
                     print("  Typical points: Gamma, X, M, K, etc.")
                     print("  ⚠️  Note: IR/Raman intensities NOT available in this mode")
-
-                    # For high-symmetry, we don't need supercell
-                    config["frequency_settings"]["high_symmetry_only"] = True
 
             else:
                 # Invalid choice - default to gamma
@@ -1734,10 +2008,13 @@ class WorkflowPlanner:
                     print("    By default: Intensities only (no spectrum plot)")
                     print("    Optional: Generate broadened IR spectrum plot (IRSPEC)")
                     print("\n  Do you want to skip spectrum plot generation?")
-                    print("    - YES (minimal): Only calculate intensities (faster)")
+                    print("    - YES (minimal): Only calculate intensities")
                     print("    - NO: Calculate intensities AND generate spectrum plot")
-                    minimal_ir = input("  Skip IR spectrum plot (minimal mode)? [y/N]: ").strip().lower()
-                    if minimal_ir == "y":
+                    print("\n  Computational cost of spectrum generation:")
+                    print("    - Minimal overhead (<1% additional time)")
+                    print("    - Can be generated later from .out file if needed")
+                    minimal_ir = input("  Skip IR spectrum plot (minimal mode)? [Y/n]: ").strip().lower()
+                    if minimal_ir != "n":
                         config["frequency_settings"]["minimal_ir"] = True
                         
                 elif gamma_type == "3":
@@ -1761,10 +2038,13 @@ class WorkflowPlanner:
                     print("    By default: Activities only (no spectrum plot)")
                     print("    Optional: Generate broadened Raman spectrum plot (RAMSPEC)")
                     print("\n  Do you want to skip spectrum plot generation?")
-                    print("    - YES (minimal): Only calculate activities (faster)")
+                    print("    - YES (minimal): Only calculate activities")
                     print("    - NO: Calculate activities AND generate spectrum plot")
-                    minimal = input("  Skip Raman spectrum plot (minimal mode)? [y/N]: ").strip().lower()
-                    if minimal == "y":
+                    print("\n  Computational cost of spectrum generation:")
+                    print("    - Minimal overhead (<1% additional time)")
+                    print("    - Can be generated later from .out file if needed")
+                    minimal = input("  Skip Raman spectrum plot (minimal mode)? [Y/n]: ").strip().lower()
+                    if minimal != "n":
                         config["frequency_settings"]["minimal_raman"] = True
                         
                 elif gamma_type == "4":
@@ -1791,15 +2071,17 @@ class WorkflowPlanner:
                     print("\n  IR spectrum plot:")
                     print("    - Skip plot (minimal): Only intensities in .out file")
                     print("    - Generate plot: Intensities + broadened spectrum (IRSPEC)")
-                    minimal_ir = input("  Skip IR spectrum plot (minimal mode)? [y/N]: ").strip().lower()
-                    if minimal_ir == "y":
+                    print("    - Cost: <1% additional time, can be done later")
+                    minimal_ir = input("  Skip IR spectrum plot (minimal mode)? [Y/n]: ").strip().lower()
+                    if minimal_ir != "n":
                         config["frequency_settings"]["minimal_ir"] = True
                         
                     print("\n  Raman spectrum plot:")
                     print("    - Skip plot (minimal): Only activities in .out file")
                     print("    - Generate plot: Activities + broadened spectrum (RAMSPEC)")
-                    minimal_raman = input("  Skip Raman spectrum plot (minimal mode)? [y/N]: ").strip().lower()
-                    if minimal_raman == "y":
+                    print("    - Cost: <1% additional time, can be done later")
+                    minimal_raman = input("  Skip Raman spectrum plot (minimal mode)? [Y/n]: ").strip().lower()
+                    if minimal_raman != "n":
                         config["frequency_settings"]["minimal_raman"] = True
                 else:
                     # Default to pure frequencies
@@ -2350,14 +2632,27 @@ class WorkflowPlanner:
         """Copy required scripts early for expert mode configuration"""
         print("      Copying required scripts for expert configuration...")
 
-        # Scripts we need for expert mode
-        required_scripts = ["CRYSTALOptToD12.py", "d12creation.py", "StructureClass.py"]
+        # Scripts we need for expert mode - include both D12 and D3 scripts
+        required_scripts = [
+            "CRYSTALOptToD12.py", 
+            "d12creation.py", 
+            "StructureClass.py",
+            "CRYSTALOptToD3.py",
+            "d3_interactive.py",
+            "d3_config.py"
+        ]
 
-        # Source directory
-        source_dir = Path(__file__).parent.parent / "Crystal_To_CIF"
+        # Source directories
+        d12_source_dir = Path(__file__).parent.parent / "Crystal_d12"
+        d3_source_dir = Path(__file__).parent.parent / "Crystal_d3"
 
         # Copy scripts to working directory
         for script_name in required_scripts:
+            # Determine source directory based on script name
+            if script_name in ["CRYSTALOptToD3.py", "d3_interactive.py", "d3_config.py"]:
+                source_dir = d3_source_dir
+            else:
+                source_dir = d12_source_dir
             source_file = source_dir / script_name
             dest_file = self.work_dir / script_name
 
@@ -2527,7 +2822,7 @@ class WorkflowPlanner:
             script_path = local_script
         else:
             script_path = (
-                Path(__file__).parent.parent / "Crystal_To_CIF" / "CRYSTALOptToD12.py"
+                Path(__file__).parent.parent / "Crystal_d12" / "CRYSTALOptToD12.py"
             )
 
         # Run CRYSTALOptToD12.py
@@ -2601,7 +2896,7 @@ class WorkflowPlanner:
             script_path = local_script
         else:
             script_path = (
-                Path(__file__).parent.parent / "Crystal_To_CIF" / "CRYSTALOptToD12.py"
+                Path(__file__).parent.parent / "Crystal_d12" / "CRYSTALOptToD12.py"
             )
 
         if not script_path.exists():
@@ -2684,7 +2979,7 @@ class WorkflowPlanner:
             script_path = local_script
         else:
             script_path = (
-                Path(__file__).parent.parent / "Crystal_To_CIF" / "CRYSTALOptToD12.py"
+                Path(__file__).parent.parent / "Crystal_d12" / "CRYSTALOptToD12.py"
             )
 
         if not script_path.exists():
@@ -2837,7 +3132,11 @@ class WorkflowPlanner:
 
                 # Convert to our workflow config format
                 # Ensure the saved config has the correct calculation type
-                saved_config["calculation_type"] = calc_type
+                # For FREQ calculations, always use "FREQ" not FREQ2, FREQ3, etc.
+                if calc_type.startswith("FREQ"):
+                    saved_config["calculation_type"] = "FREQ"
+                else:
+                    saved_config["calculation_type"] = calc_type
 
                 # Save the corrected config back to file
                 with open(config_file, "w") as f:
@@ -2890,7 +3189,7 @@ class WorkflowPlanner:
 
         if base_type in ["OPT", "SP", "FREQ"]:
             return ["submitcrystal23.sh"]
-        elif base_type in ["BAND", "DOSS", "TRANSPORT"]:
+        elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
             return ["submit_prop.sh"]
         else:
             return ["submitcrystal23.sh"]  # Default
@@ -3019,7 +3318,7 @@ class WorkflowPlanner:
             base_resources = {
                 "ntasks": 28,
                 "nodes": 1,
-                "walltime": "1-00:00:00",
+                "walltime": "2:00:00",
                 "memory": "80G",
                 "account": "mendoza_q",
                 "module": "CRYSTAL/23-intel-2023a",

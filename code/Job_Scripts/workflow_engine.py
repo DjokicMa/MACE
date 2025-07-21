@@ -31,7 +31,7 @@ import threading
 
 # Define which calculations are optional (can fail without blocking workflow)
 # These calculations can fail without preventing the workflow from continuing
-OPTIONAL_CALC_TYPES = {'BAND', 'DOSS', 'FREQ'}
+OPTIONAL_CALC_TYPES = {'BAND', 'DOSS', 'FREQ', 'TRANSPORT', 'CHARGE+POTENTIAL'}
 
 # Import our material database and other components
 from material_database import MaterialDatabase, create_material_id_from_file, extract_formula_from_d12
@@ -285,8 +285,11 @@ class WorkflowEngine:
         scripts = {
             'crystal_to_d12': "CRYSTALOptToD12.py",
             'newcif_to_d12': "NewCifToD12.py",
-            'alldos': "alldos.py",
-            'create_band': "create_band_d3.py",
+            'crystal_to_d3': "CRYSTALOptToD3.py",
+            'd3_interactive': "d3_interactive.py",
+            'd3_config': "d3_config.py",
+            'alldos': "alldos.py",  # Keep for backwards compatibility
+            'create_band': "create_band_d3.py",  # Keep for backwards compatibility
             'd12creation': "d12creation.py"
         }
         
@@ -300,9 +303,9 @@ class WorkflowEngine:
             else:
                 # Fall back to repository location
                 if key in ['crystal_to_d12', 'newcif_to_d12', 'd12creation']:
-                    script_paths[key] = base_path / "Crystal_To_CIF" / script_name
-                elif key in ['alldos', 'create_band']:
-                    script_paths[key] = base_path / "Creation_Scripts" / script_name
+                    script_paths[key] = base_path / "Crystal_d12" / script_name
+                elif key in ['alldos', 'create_band', 'crystal_to_d3', 'd3_interactive', 'd3_config']:
+                    script_paths[key] = base_path / "Crystal_d3" / script_name
         
         return script_paths
     
@@ -1179,7 +1182,7 @@ fi'''
             
     def generate_doss_from_sp(self, sp_calc_id: str) -> Optional[str]:
         """
-        Generate DOSS calculation from completed SP using alldos.py.
+        Generate DOSS calculation from completed SP using CRYSTALOptToD3.py.
         
         Args:
             sp_calc_id: ID of completed SP calculation
@@ -1187,11 +1190,15 @@ fi'''
         Returns:
             New DOSS calculation ID if successful, None otherwise
         """
-        return self.generate_property_calculation(sp_calc_id, "DOSS")
+        # Use new D3 generation if available, fall back to legacy
+        if self._use_new_d3_generation():
+            return self.generate_d3_calculation_new(sp_calc_id, "DOSS")
+        else:
+            return self.generate_property_calculation(sp_calc_id, "DOSS")
             
     def generate_band_from_sp(self, sp_calc_id: str) -> Optional[str]:
         """
-        Generate BAND calculation from completed SP using create_band_d3.py.
+        Generate BAND calculation from completed SP using CRYSTALOptToD3.py.
         
         Args:
             sp_calc_id: ID of completed SP calculation
@@ -1199,7 +1206,233 @@ fi'''
         Returns:
             New BAND calculation ID if successful, None otherwise
         """
-        return self.generate_property_calculation(sp_calc_id, "BAND")
+        # Use new D3 generation if available, fall back to legacy
+        if self._use_new_d3_generation():
+            return self.generate_d3_calculation_new(sp_calc_id, "BAND")
+        else:
+            return self.generate_property_calculation(sp_calc_id, "BAND")
+    
+    def generate_transport_from_sp(self, sp_calc_id: str) -> Optional[str]:
+        """Generate TRANSPORT calculation from completed SP"""
+        if self._use_new_d3_generation():
+            return self.generate_d3_calculation_new(sp_calc_id, "TRANSPORT")
+        else:
+            print("TRANSPORT calculations require new CRYSTALOptToD3.py")
+            return None
+    
+    def generate_charge_potential_from_sp(self, sp_calc_id: str) -> Optional[str]:
+        """Generate CHARGE+POTENTIAL calculation from completed SP"""
+        if self._use_new_d3_generation():
+            return self.generate_d3_calculation_new(sp_calc_id, "CHARGE+POTENTIAL")
+        else:
+            print("CHARGE+POTENTIAL calculations require new CRYSTALOptToD3.py")
+            return None
+    
+    def _use_new_d3_generation(self) -> bool:
+        """Check if we should use new CRYSTALOptToD3.py for D3 generation"""
+        # Check if CRYSTALOptToD3.py is available
+        crystal_to_d3 = self.script_paths.get('crystal_to_d3')
+        if crystal_to_d3 and Path(crystal_to_d3).exists():
+            return True
+        return False
+    
+    def generate_d3_calculation_new(self, source_calc_id: str, target_calc_type: str) -> Optional[str]:
+        """
+        Generate D3 calculation using new CRYSTALOptToD3.py script.
+        
+        Supports BAND, DOSS, TRANSPORT, CHARGE, POTENTIAL calculations.
+        
+        Args:
+            source_calc_id: ID of source calculation (SP or OPT with wavefunction)
+            target_calc_type: Target D3 calculation type
+            
+        Returns:
+            New calculation ID if successful, None otherwise
+        """
+        print(f"Generating {target_calc_type} calculation using CRYSTALOptToD3.py")
+        
+        # Get source calculation details
+        source_calc = self.db.get_calculation(source_calc_id)
+        if not source_calc:
+            print(f"Source calculation {source_calc_id} not found")
+            return None
+            
+        material_id = source_calc['material_id']
+        
+        # Find the most recent calculation with a wavefunction
+        wavefunction_calc_id = self._find_most_recent_wavefunction_calc(material_id)
+        if not wavefunction_calc_id:
+            print(f"No completed calculation with wavefunction found for material {material_id}")
+            return None
+            
+        wf_calc = self.db.get_calculation(wavefunction_calc_id)
+        if not wf_calc or wf_calc['status'] != 'completed':
+            print(f"Wavefunction calculation {wavefunction_calc_id} not completed")
+            return None
+            
+        wf_output_file = Path(wf_calc['output_file'])
+        
+        # Create work directory for D3 generation
+        work_dir = Path.cwd() / material_id / "tmp_d3_generation"
+        work_dir.mkdir(parents=True, exist_ok=True)
+        
+        try:
+            # Get CRYSTALOptToD3.py script path
+            script_path = self.script_paths.get('crystal_to_d3')
+            if not script_path or not Path(script_path).exists():
+                print("CRYSTALOptToD3.py not found")
+                return None
+                
+            # Create basic D3 configuration based on calc type
+            d3_config = self._get_default_d3_config(target_calc_type)
+            
+            # Save configuration to temp file
+            config_file = work_dir / f"{target_calc_type.lower()}_config.json"
+            import json
+            with open(config_file, 'w') as f:
+                json_config = {
+                    "version": "1.0",
+                    "type": "d3_configuration",
+                    "calculation_type": target_calc_type,
+                    "configuration": d3_config
+                }
+                json.dump(json_config, f, indent=2)
+            
+            # Run CRYSTALOptToD3.py
+            cmd = [
+                sys.executable, str(script_path),
+                "--input", str(wf_output_file),
+                "--output-dir", str(work_dir),
+                "--config-file", str(config_file)
+            ]
+            
+            print(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                print(f"CRYSTALOptToD3.py failed: {result.stderr}")
+                return None
+                
+            # Find generated D3 file
+            d3_files = list(work_dir.glob("*.d3"))
+            if not d3_files:
+                print("No D3 file generated")
+                return None
+                
+            # Get the generated D3 file
+            d3_file = d3_files[0]
+            
+            # Create final directories
+            base_type, calc_num = self._parse_calc_type(target_calc_type)
+            final_dir = Path.cwd() / material_id / f"{base_type}{calc_num}"
+            final_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Copy files to final location
+            final_d3 = final_dir / f"{material_id}_{target_calc_type.lower()}.d3"
+            shutil.copy2(d3_file, final_d3)
+            
+            # Create and submit calculation
+            calc_id = self._create_and_submit_d3_calculation(
+                material_id, target_calc_type, final_d3, final_dir, wavefunction_calc_id
+            )
+            
+            return calc_id
+            
+        except Exception as e:
+            print(f"Error generating {target_calc_type}: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+        finally:
+            # Clean up temp directory
+            if work_dir.exists():
+                shutil.rmtree(work_dir, ignore_errors=True)
+    
+    def _get_default_d3_config(self, calc_type: str) -> Dict[str, Any]:
+        """Get default D3 configuration for different calculation types"""
+        configs = {
+            "BAND": {
+                "calculation_type": "BAND",
+                "path": "auto",
+                "bands": "auto", 
+                "shrink": "auto",
+                "labels": "auto",
+                "auto_path": True
+            },
+            "DOSS": {
+                "calculation_type": "DOSS",
+                "npoints": 1000,
+                "band": "all",
+                "projection_type": 0,
+                "e_range": [-20, 20]
+            },
+            "TRANSPORT": {
+                "calculation_type": "TRANSPORT",
+                "temperature_range": [100, 800, 50],
+                "mu_range": [-2.0, 2.0, 0.01],
+                "mu_reference": "fermi",
+                "mu_range_type": "auto_fermi",
+                "tdf_range": [-5.0, 5.0, 0.01],
+                "relaxation_time": 10
+            },
+            "CHARGE+POTENTIAL": {
+                "calculation_type": "CHARGE+POTENTIAL",
+                "option_type": 6,
+                "mapnet": [100, 100, 100],
+                "output_format": "GAUSSIAN"
+            }
+        }
+        
+        # Extract base type for numbered calculations (BAND2, DOSS3, etc)
+        base_type, _ = self._parse_calc_type(calc_type)
+        return configs.get(base_type, {})
+    
+    def _create_and_submit_d3_calculation(self, material_id: str, calc_type: str, 
+                                         d3_file: Path, work_dir: Path, 
+                                         parent_calc_id: str) -> Optional[str]:
+        """Create and submit a D3 calculation"""
+        # Parse calculation type
+        base_type, calc_num = self._parse_calc_type(calc_type)
+        
+        # Determine step number based on calculation type
+        default_steps = {"BAND": 3, "DOSS": 4, "TRANSPORT": 5, "CHARGE+POTENTIAL": 6}
+        step_num = default_steps.get(base_type, 3)
+        if calc_num > 1:
+            step_num += (calc_num - 1) * 10
+            
+        # Get workflow ID from parent calculation
+        parent_calc = self.db.get_calculation(parent_calc_id)
+        workflow_id = parent_calc.get('workflow_id', 'manual')
+        
+        # Generate SLURM script
+        slurm_script = self._create_slurm_script_for_calculation(
+            work_dir, material_id, calc_type, step_num, workflow_id
+        )
+        
+        if not slurm_script:
+            print(f"Failed to create SLURM script for {calc_type}")
+            return None
+            
+        # Create calculation record
+        calc_id = self.db.create_calculation(
+            material_id=material_id,
+            calc_type=calc_type,
+            input_file=str(d3_file),
+            work_dir=str(work_dir),
+            parent_calc_id=parent_calc_id,
+            workflow_id=workflow_id,
+            step_number=step_num
+        )
+        
+        # Submit job
+        job_id = self._submit_slurm_job(slurm_script, work_dir)
+        if job_id:
+            self.db.update_calculation(calc_id, slurm_job_id=job_id, status='submitted')
+            print(f"Submitted {calc_type} calculation: Job ID {job_id}, Calc ID {calc_id}")
+            return calc_id
+        else:
+            self.db.update_calculation(calc_id, status='failed')
+            return None
         
     def generate_property_calculation(self, source_calc_id: str, target_calc_type: str) -> Optional[str]:
         """
@@ -1268,6 +1501,9 @@ fi'''
             generation_label = f"{target_calc_type}_generation"
             file_pattern = "*DOSS*.d3"
             file_pattern2 = "*doss*.d3"
+        elif base_type in ["TRANSPORT", "CHARGE+POTENTIAL"]:
+            # Use new CRYSTALOptToD3.py for these calculation types
+            return self.generate_d3_calculation_new(wavefunction_calc_id, target_calc_type)
         else:
             print(f"Unsupported property calculation type: {target_calc_type}")
             return None
@@ -1769,6 +2005,28 @@ fi'''
                                     print(f"Failed to generate optional {next_calc_type}, continuing...")
                                 else:
                                     print(f"CRITICAL: Failed to generate {next_calc_type}")
+                        elif next_base_type == "TRANSPORT":
+                            print(f"Generating {next_calc_type} from planned sequence...")
+                            transport_calc_id = self.generate_property_calculation(completed_calc_id, next_calc_type)
+                            if transport_calc_id:
+                                new_calc_ids.append(transport_calc_id)
+                            else:
+                                failed_generations.add(next_calc_type)
+                                if self._is_calculation_optional(next_calc_type):
+                                    print(f"Failed to generate optional {next_calc_type}, continuing...")
+                                else:
+                                    print(f"CRITICAL: Failed to generate {next_calc_type}")
+                        elif next_base_type == "CHARGE+POTENTIAL":
+                            print(f"Generating {next_calc_type} from planned sequence...")
+                            charge_potential_calc_id = self.generate_property_calculation(completed_calc_id, next_calc_type)
+                            if charge_potential_calc_id:
+                                new_calc_ids.append(charge_potential_calc_id)
+                            else:
+                                failed_generations.add(next_calc_type)
+                                if self._is_calculation_optional(next_calc_type):
+                                    print(f"Failed to generate optional {next_calc_type}, continuing...")
+                                else:
+                                    print(f"CRITICAL: Failed to generate {next_calc_type}")
                         elif next_base_type == "OPT":
                             # Check if we have a previous OPT to use
                             all_calcs = self.db.get_calculations_by_status(material_id=material_id)
@@ -1997,6 +2255,7 @@ fi'''
             next_base, _ = self._parse_calc_type(next_calc)
             
             # BAND and DOSS can run in parallel as they both just read the wavefunction
+            # TRANSPORT and CHARGE+POTENTIAL should run sequentially after BAND/DOSS
             if next_base in ["BAND", "DOSS"]:
                 # Check if the other property calculation is also in the sequence
                 other_base = "DOSS" if next_base == "BAND" else "BAND"
@@ -2005,12 +2264,14 @@ fi'''
                     if i != next_index:
                         # Parse the calculation type at this position
                         check_base, check_num = self._parse_calc_type(planned_sequence[i])
-                        # If it's the complementary calculation type
+                        # If it's the complementary calculation type (BAND/DOSS only)
                         if check_base == other_base:
                             # Check if it hasn't been started yet
                             if planned_sequence[i] not in next_steps:
                                 next_steps.append(planned_sequence[i])
                             break
+            # Note: TRANSPORT and CHARGE+POTENTIAL are not included in parallel execution
+            # They will run sequentially as defined in the workflow sequence
         
         return next_steps
     
@@ -2103,11 +2364,23 @@ fi'''
             return True
             
         elif base_type == "DOSS":
-            # DOSS uses alldos.py which should generate its own templates
-            # Just check that the script exists
+            # Check if new CRYSTALOptToD3.py is available first
+            crystal_to_d3 = self.script_paths.get('crystal_to_d3')
+            if crystal_to_d3 and Path(crystal_to_d3).exists():
+                return True
+            
+            # Otherwise check for legacy alldos.py
             alldos_script = self.script_paths.get('alldos')
             if not alldos_script or not Path(alldos_script).exists():
-                print(f"alldos.py script not found: {alldos_script}")
+                print(f"Neither CRYSTALOptToD3.py nor alldos.py script found")
+                return False
+            return True
+            
+        elif base_type in ["TRANSPORT", "CHARGE+POTENTIAL"]:
+            # These require CRYSTALOptToD3.py
+            crystal_to_d3 = self.script_paths.get('crystal_to_d3')
+            if not crystal_to_d3 or not Path(crystal_to_d3).exists():
+                print(f"CRYSTALOptToD3.py required for {base_type} calculations")
                 return False
             return True
             
@@ -2323,8 +2596,8 @@ fi'''
                 base_type, _ = self._parse_calc_type(calc_type)
                 dep_base, _ = self._parse_calc_type(dependency)
                 
-                # Special case: BAND/DOSS really need wavefunction
-                if base_type in ['BAND', 'DOSS'] and dep_base == 'SP':
+                # Special case: D3 calculations really need wavefunction
+                if base_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL'] and dep_base == 'SP':
                     return False, dependency
                     
                 # For other cases, try to find alternative source

@@ -1,0 +1,18 @@
+{
+  "version": "1.0",
+  "type": "d3_configuration",
+  "calculation_type": "BAND",
+  "configuration": {
+    "calculation_type": "BAND",
+    "n_points": 200,
+    "bands": "auto",
+    "path": "auto",
+    "path_method": "coordinates",
+    "auto_path": true,
+    "labels": "auto",
+    "shrink": "auto",
+    "seekpath_full": true,
+    "plot": true,
+    "print_eigenvalues": false
+  }
+}

@@ -205,13 +205,13 @@ class EnhancedCrystalQueueManager:
             elif calc_type == 'DOSS':
                 return str(self.script_paths.get('submit_prop_doss',
                           self.script_paths.get('submit_prop')))
-            elif calc_type in ['TRANSPORT']:
+            elif calc_type in ['TRANSPORT', 'CHARGE+POTENTIAL']:
                 return str(self.script_paths.get('submit_prop'))
         else:
             # In repository context, use general scripts
             if calc_type in ['OPT', 'SP', 'FREQ']:
                 return str(self.script_paths.get('submitcrystal23'))
-            elif calc_type in ['BAND', 'DOSS', 'TRANSPORT']:
+            elif calc_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']:
                 return str(self.script_paths.get('submit_prop'))
         
         return None
@@ -465,7 +465,12 @@ class EnhancedCrystalQueueManager:
                 
         # Create calculation folder and copy input file
         calc_dir = self.create_calculation_folder(material_id, calc_type)
-        input_filename = f"{material_id}_{calc_type.lower()}.d12"
+        
+        # Determine file extension based on calculation type
+        is_d3_calc = calc_type.rstrip('0123456789') in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']
+        file_extension = '.d3' if is_d3_calc else '.d12'
+        
+        input_filename = f"{material_id}_{calc_type.lower()}{file_extension}"
         calc_input_file = calc_dir / input_filename
         
         # Copy input file to calculation directory
