@@ -32,7 +32,7 @@ def get_unclean_shells(output_lines):
             unclean_shells.append(output_lines[index].split("\n")[0])
     data_list = []
     for line in unclean_shells:
-        data_list.append([x for x in line.split(" ") if x is not ""])
+        data_list.append([x for x in line.split(" ") if x != ""])
     return data_list
 
 
@@ -258,7 +258,7 @@ for file_name in data_files:
         input_file = open(input_file_name, "r+")
         input_lines = []
         newk = []
-        
+
         # Read all lines first
         for line in input_file.readlines():
             if "\n" in line:
@@ -266,7 +266,7 @@ for file_name in data_files:
                 input_lines.append(clean_line)
             else:
                 input_lines.append(line)
-        
+
         # Extract SHRINK parameters with robust parsing
         for i, line in enumerate(input_lines):
             if "SHRINK" in line:
@@ -274,11 +274,11 @@ for file_name in data_files:
                 if i + 1 < len(input_lines):
                     next_line = input_lines[i + 1].strip()
                     parts = next_line.split()
-                    
+
                     if len(parts) == 2:
                         # Could be symmetric (ka kb) or unsymmetric first line (0 kb)
                         val1, val2 = map(int, parts)
-                        
+
                         if val1 == 0:
                             # Unsymmetric format: 0 kb followed by ka ka kc
                             newk.append(next_line + "\n")

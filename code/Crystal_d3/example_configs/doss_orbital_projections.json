@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "type": "d3_configuration",
+  "calculation_type": "DOSS",
+  "configuration": {
+    "calculation_type": "DOSS",
+    "projection_type": 3,
+    "energy_range": "window",
+    "energy_window": [-0.3677, 0.7354],
+    "n_points": 2000,
+    "print_integrated": true,
+    "output_format": 0,
+    "projections": []
+  }
+}

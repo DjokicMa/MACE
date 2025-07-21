@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "type": "d3_configuration",
+  "calculation_type": "BAND",
+  "configuration": {
+    "calculation_type": "BAND",
+    "n_points": 200,
+    "bands": "auto",
+    "band_range": [0, 999],
+    "path": "auto",
+    "path_method": "labels",
+    "auto_path": true,
+    "labels": "auto",
+    "shrink": "auto",
+    "title": "Electronic Band Structure"
+  }
+}

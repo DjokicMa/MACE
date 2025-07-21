@@ -226,6 +226,14 @@ class CrystalErrorDetector:
             'dos_complete': {
                 'patterns': ["DENSITY OF STATES", "DOS CALCULATION COMPLETED"],
                 'calc_type': 'DOSS'
+            },
+            'transport_complete': {
+                'patterns': ["TRANSPORT PROPERTIES", "BOLTZTRA CALCULATION", "SEEBECK COEFFICIENT"],
+                'calc_type': 'TRANSPORT'
+            },
+            'charge_potential_complete': {
+                'patterns': ["CHARGE DENSITY", "ELECTROSTATIC POTENTIAL", "ECHG CALCULATION", "POTC CALCULATION"],
+                'calc_type': 'CHARGE+POTENTIAL'
             }
         }
         

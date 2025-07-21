@@ -24,11 +24,12 @@ import os
 import sys
 import argparse
 from pathlib import Path
+from typing import Dict, Any
 
 # Add our modules to path
 current_dir = Path(__file__).parent
 sys.path.append(str(current_dir))
-sys.path.append(str(current_dir.parent / "Crystal_To_CIF"))
+sys.path.append(str(current_dir.parent / "Crystal_d12"))
 
 # Auto-copy dependencies if needed
 def ensure_dependencies():
@@ -110,6 +111,9 @@ Workflow Templates:
   full_electronic  : OPT → SP → BAND → DOSS
   double_opt       : OPT → OPT2 → SP
   complete         : OPT → SP → BAND → DOSS → FREQ
+  transport_analysis : OPT → SP → TRANSPORT
+  charge_analysis  : OPT → SP → CHARGE+POTENTIAL
+  combined_analysis : OPT → SP → BAND → DOSS → TRANSPORT
         """
     )
     
@@ -130,7 +134,8 @@ Workflow Templates:
     parser.add_argument("--cif-dir", help="Directory containing CIF files (for quick start)")
     parser.add_argument("--d12-dir", help="Directory containing D12 files (for quick start)")
     parser.add_argument("--workflow", default="full_electronic",
-                       choices=["basic_opt", "opt_sp", "full_electronic", "double_opt", "complete"],
+                       choices=["basic_opt", "opt_sp", "full_electronic", "double_opt", "complete", 
+                               "transport_analysis", "charge_analysis", "combined_analysis"],
                        help="Workflow template for quick start")
     
     # Common options
@@ -220,7 +225,10 @@ def run_quick_start_mode(args):
         "opt_sp": ["OPT", "SP"],
         "full_electronic": ["OPT", "SP", "BAND", "DOSS"],
         "double_opt": ["OPT", "OPT2", "SP"],
-        "complete": ["OPT", "SP", "BAND", "DOSS", "FREQ"]
+        "complete": ["OPT", "SP", "BAND", "DOSS", "FREQ"],
+        "transport_analysis": ["OPT", "SP", "TRANSPORT"],
+        "charge_analysis": ["OPT", "SP", "CHARGE+POTENTIAL"],
+        "combined_analysis": ["OPT", "SP", "BAND", "DOSS", "TRANSPORT"]
     }
     
     sequence = workflow_templates[args.workflow]
@@ -239,6 +247,43 @@ def run_quick_start_mode(args):
     
     executor = WorkflowExecutor(args.work_dir, args.db_path)
     executor.execute_workflow_plan(plan_file)
+
+
+def _get_basic_d3_config_for_quick_start(calc_type: str) -> Dict[str, Any]:
+    """Get basic D3 configuration for quick start mode"""
+    configs = {
+        "BAND": {
+            "calculation_type": "BAND",
+            "path": "auto",
+            "bands": "auto", 
+            "shrink": "auto",
+            "labels": "auto",
+            "auto_path": True
+        },
+        "DOSS": {
+            "calculation_type": "DOSS",
+            "npoints": 1000,
+            "band": "all",
+            "projection_type": 0,  # Total DOS only
+            "e_range": [-20, 20]
+        },
+        "TRANSPORT": {
+            "calculation_type": "TRANSPORT",
+            "temperature_range": [100, 800, 50],
+            "mu_range": [-2.0, 2.0, 0.01],
+            "mu_reference": "fermi",
+            "mu_range_type": "auto_fermi",
+            "tdf_range": [-5.0, 5.0, 0.01],
+            "relaxation_time": 10
+        },
+        "CHARGE+POTENTIAL": {
+            "calculation_type": "CHARGE+POTENTIAL",
+            "option_type": 6,  # 3D grid
+            "mapnet": [100, 100, 100],
+            "output_format": "GAUSSIAN"
+        }
+    }
+    return configs.get(calc_type, {})
 
 
 def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, args):
@@ -292,17 +337,15 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
                 "source": "CRYSTALOptToD12.py",
                 "inherit_settings": True
             }
-        elif calc_type == "BAND":
+        elif calc_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+            # All D3 calculations now use CRYSTALOptToD3.py
             step_configs[f"{calc_type}_{step_num}"] = {
-                "calculation_type": "BAND",
-                "source": "create_band_d3.py",
-                "requires_wavefunction": True
-            }
-        elif calc_type == "DOSS":
-            step_configs[f"{calc_type}_{step_num}"] = {
-                "calculation_type": "DOSS", 
-                "source": "alldos.py",
-                "requires_wavefunction": True
+                "calculation_type": calc_type,
+                "source": "CRYSTALOptToD3.py",
+                "requires_wavefunction": True,
+                "d3_calculation": True,
+                "d3_config_mode": "basic",
+                "d3_config": _get_basic_d3_config_for_quick_start(calc_type)
             }
         elif calc_type == "FREQ":
             step_configs[f"{calc_type}_{step_num}"] = {
@@ -400,6 +443,18 @@ def show_workflow_templates():
         "complete": {
             "sequence": ["OPT", "SP", "BAND", "DOSS", "FREQ"],
             "description": "Complete characterization including vibrational analysis"
+        },
+        "transport_analysis": {
+            "sequence": ["OPT", "SP", "TRANSPORT"],
+            "description": "Transport properties calculation (conductivity, Seebeck)"
+        },
+        "charge_analysis": {
+            "sequence": ["OPT", "SP", "CHARGE+POTENTIAL"],
+            "description": "Charge density and electrostatic potential analysis"
+        },
+        "combined_analysis": {
+            "sequence": ["OPT", "SP", "BAND", "DOSS", "TRANSPORT"],
+            "description": "Electronic structure with transport properties"
         }
     }
     
@@ -416,7 +471,9 @@ def show_workflow_templates():
         "SP": "Single point electronic structure calculation",
         "BAND": "Band structure calculation",
         "DOSS": "Density of states calculation",
-        "FREQ": "Vibrational frequency calculation"
+        "FREQ": "Vibrational frequency calculation",
+        "TRANSPORT": "Transport properties (conductivity, Seebeck coefficient)",
+        "CHARGE+POTENTIAL": "Charge density and electrostatic potential"
     }
     
     for calc_type, description in calc_types.items():

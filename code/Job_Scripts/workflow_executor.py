@@ -32,8 +32,7 @@ import queue
 try:
     from material_database import MaterialDatabase
     from enhanced_queue_manager import EnhancedCrystalQueueManager
-    sys.path.append(str(Path(__file__).parent.parent / "Crystal_To_CIF"))
-    from d12creation import *
+    # Crystal_d12 modules no longer needed here - handled by subprocess calls
 except ImportError as e:
     print(f"Error importing required modules: {e}")
     sys.exit(1)
@@ -278,7 +277,8 @@ class WorkflowExecutor:
             template_name = f"submitcrystal23_opt_{step_num}.sh"
         elif calc_type in ['OPT', 'SP', 'FREQ']:
             template_name = f"submitcrystal23_{calc_type.lower()}_{step_num}.sh"
-        elif calc_type in ['BAND', 'DOSS']:
+        elif calc_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']:
+            # All D3 property calculations use the same template
             template_name = f"submit_prop_{calc_type.lower()}_{step_num}.sh"
         else:
             template_name = f"submit_{calc_type.lower()}_{step_num}.sh"
@@ -430,7 +430,8 @@ class WorkflowExecutor:
             template_name = f"submitcrystal23_opt_{step_num}.sh"
         elif calc_type in ['OPT', 'SP', 'FREQ']:
             template_name = f"submitcrystal23_{calc_type.lower()}_{step_num}.sh"
-        elif calc_type in ['BAND', 'DOSS']:
+        elif calc_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']:
+            # All D3 property calculations use the same template
             template_name = f"submit_prop_{calc_type.lower()}_{step_num}.sh"
         else:
             template_name = f"submit_{calc_type.lower()}_{step_num}.sh"
@@ -646,7 +647,7 @@ fi'''
         if local_script_path.exists():
             script_path = local_script_path
         else:
-            script_path = Path(__file__).parent.parent / "Crystal_To_CIF" / "NewCifToD12.py"
+            script_path = Path(__file__).parent.parent / "Crystal_d12" / "NewCifToD12.py"
         
         conversion_cmd = [
             sys.executable, str(script_path),
@@ -858,12 +859,25 @@ fi'''
             material_id = self.create_material_id_from_file(input_file)
             print(f"  Created material_id: {material_id} from {input_file.name}")
             
-            # Submit via queue manager
-            calc_id = self.queue_manager.submit_calculation(
-                d12_file=input_file,
-                calc_type=calc_type,
-                material_id=material_id
-            )
+            # Check if this is a D3 calculation
+            is_d3_calc = calc_type.rstrip('0123456789') in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']
+            
+            if is_d3_calc:
+                # For D3 calculations, we need to handle submission differently
+                # The queue manager expects d12_file, but we can pass the d3 file
+                # The submit_prop.sh script will handle it correctly
+                calc_id = self.queue_manager.submit_calculation(
+                    d12_file=input_file,  # Pass D3 file but keep parameter name for compatibility
+                    calc_type=calc_type,
+                    material_id=material_id
+                )
+            else:
+                # Submit via queue manager normally for D12 files
+                calc_id = self.queue_manager.submit_calculation(
+                    d12_file=input_file,
+                    calc_type=calc_type,
+                    material_id=material_id
+                )
             print(f"  Queue manager returned calc_id: {calc_id}")
             
             if calc_id:
@@ -1058,8 +1072,14 @@ fi'''
         source = step_config.get('source', 'unknown')
         
         if source == "CRYSTALOptToD12.py":
-            self.generate_inputs_with_crystal_opt(workflow_id, step_num, calc_type, step_config)
+            if step_config.get("d3_calculation", False):
+                # This is a D3 calculation using CRYSTALOptToD3.py
+                self.generate_inputs_with_crystal_opt_d3(workflow_id, step_num, calc_type, step_config)
+            else:
+                # Regular D12 calculation
+                self.generate_inputs_with_crystal_opt(workflow_id, step_num, calc_type, step_config)
         elif source in ["create_band_d3.py", "alldos.py"]:
+            # Legacy scripts - still supported but deprecated
             self.generate_inputs_with_analysis_script(workflow_id, step_num, calc_type, step_config)
         else:
             print(f"    Unknown input generation method: {source}")
@@ -1097,7 +1117,7 @@ fi'''
         if local_script_path.exists():
             script_path = local_script_path
         else:
-            script_path = Path(__file__).parent.parent / "Crystal_To_CIF" / "CRYSTALOptToD12.py"
+            script_path = Path(__file__).parent.parent / "Crystal_d12" / "CRYSTALOptToD12.py"
         
         # Check if expert mode was already configured during planning
         if config.get("expert_mode", False) and config.get("crystal_opt_config"):
@@ -1248,6 +1268,161 @@ fi'''
                 if not new_path.exists():
                     file_path.rename(new_path)
                     print(f"        Renamed: {file_path.name} → {new_name}")
+    
+    def _fix_d3_numbered_naming(self, output_dir: Path, base_name: str, calc_type: str):
+        """Fix naming for numbered D3 files (BAND2, DOSS2, etc.) generated by CRYSTALOptToD3.py"""
+        # Extract the base calculation type and number
+        import re
+        match = re.match(r'^([A-Z+]+)(\d*)$', calc_type)
+        if not match:
+            return
+            
+        base_calc_type = match.group(1)
+        instance_num = match.group(2)
+        
+        # If no instance number (first instance), no renaming needed
+        if not instance_num:
+            return
+            
+        # CRYSTALOptToD3.py generates files like material_band.d3, material_doss.d3
+        # We need to rename them to material_band2.d3, material_doss2.d3, etc.
+        
+        # Handle CHARGE+POTENTIAL special case
+        if base_calc_type == "CHARGE+POTENTIAL":
+            file_suffix = "charge+potential"
+        else:
+            file_suffix = base_calc_type.lower()
+        
+        # Find and rename D3 files
+        for file_path in output_dir.glob("*.d3"):
+            if f"_{file_suffix}.d3" in file_path.name:
+                # Extract the base name from the file
+                file_base = file_path.stem.replace(f"_{file_suffix}", "")
+                
+                # Create new name with instance number
+                new_name = f"{file_base}_{file_suffix}{instance_num}.d3"
+                new_path = output_dir / new_name
+                
+                if not new_path.exists():
+                    file_path.rename(new_path)
+                    print(f"        Renamed: {file_path.name} → {new_name}")
+                    
+        # Also rename corresponding f9 files
+        for file_path in output_dir.glob("*.f9"):
+            if f"_{file_suffix}.f9" in file_path.name:
+                # Extract the base name from the file
+                file_base = file_path.stem.replace(f"_{file_suffix}", "")
+                
+                # Create new name with instance number
+                new_name = f"{file_base}_{file_suffix}{instance_num}.f9"
+                new_path = output_dir / new_name
+                
+                if not new_path.exists():
+                    file_path.rename(new_path)
+                    print(f"        Renamed: {file_path.name} → {new_name}")
+    
+    def generate_inputs_with_crystal_opt_d3(self, workflow_id: str, step_num: int,
+                                           calc_type: str, config: Dict[str, Any]):
+        """Generate D3 inputs using CRYSTALOptToD3.py"""
+        print(f"    Using CRYSTALOptToD3.py for {calc_type} D3 inputs")
+        
+        # Get completed calculations from previous step
+        prev_step_key = f"step_{step_num}_{self.active_workflows[workflow_id]['plan']['workflow_sequence'][step_num-1]}"
+        prev_job_ids = self.active_workflows[workflow_id]["submitted_jobs"].get(prev_step_key, [])
+        
+        workflow_dir = self.outputs_dir / workflow_id
+        next_step_dir = workflow_dir / f"step_{step_num + 1:03d}_{calc_type}"
+        next_step_dir.mkdir(exist_ok=True)
+        
+        # Generate inputs for each completed calculation
+        for job_id in prev_job_ids:
+            calc = self.db.get_calculation(job_id)
+            if calc and calc.get('status') == 'completed':
+                output_file = calc.get('output_file')
+                
+                if output_file and Path(output_file).exists():
+                    self.run_crystal_opt_d3_conversion(
+                        output_file, next_step_dir, calc_type, config
+                    )
+    
+    def run_crystal_opt_d3_conversion(self, output_file: str, output_dir: Path,
+                                     calc_type: str, config: Dict[str, Any]):
+        """Run CRYSTALOptToD3.py conversion"""
+        # Check for local copy first
+        local_script_path = self.work_dir / "CRYSTALOptToD3.py"
+        if local_script_path.exists():
+            script_path = local_script_path
+        else:
+            script_path = Path(__file__).parent.parent / "Crystal_d3" / "CRYSTALOptToD3.py"
+        
+        # Handle different configuration modes
+        d3_config_mode = config.get("d3_config_mode", "basic")
+        
+        if d3_config_mode == "expert" and config.get("interactive_setup", False):
+            # Expert mode - run interactively
+            print(f"      Running CRYSTALOptToD3.py interactively for expert {calc_type} configuration")
+            
+            cmd = [
+                sys.executable, str(script_path),
+                "--input", output_file,
+                "--output-dir", str(output_dir),
+                "--calc-type", calc_type
+            ]
+            
+            try:
+                # Run interactively (no capture_output so user can interact)
+                print(f"      Launching interactive configuration...")
+                print(f"      Command: {' '.join(cmd)}")
+                result = subprocess.run(cmd)
+                if result.returncode == 0:
+                    print(f"      Successfully generated {calc_type} D3 input interactively")
+                else:
+                    print(f"      Interactive {calc_type} generation failed or was cancelled")
+            except Exception as e:
+                print(f"      Error running interactive mode: {e}")
+                
+        else:
+            # Basic or Advanced mode - use configuration file
+            d3_config = config.get("d3_config", {})
+            
+            # Create temporary config file
+            temp_config = self.temp_dir / f"temp_d3_{calc_type.lower()}_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            
+            # Prepare configuration for CRYSTALOptToD3.py
+            d3_json_config = {
+                "version": "1.0",
+                "type": "d3_configuration",
+                "calculation_type": calc_type,
+                "configuration": d3_config
+            }
+            
+            with open(temp_config, 'w') as f:
+                json.dump(d3_json_config, f, indent=2)
+            
+            # Run CRYSTALOptToD3.py with config file
+            cmd = [
+                sys.executable, str(script_path),
+                "--input", output_file,
+                "--output-dir", str(output_dir),
+                "--config-file", str(temp_config)
+            ]
+            
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                if result.returncode == 0:
+                    print(f"      Generated {calc_type} D3 input from {Path(output_file).name}")
+                    
+                    # Fix D3 file naming for numbered instances (BAND2, DOSS2, etc.)
+                    self._fix_d3_numbered_naming(output_dir, base_name, calc_type)
+                else:
+                    print(f"      Failed to generate {calc_type} D3 input: {result.stderr}")
+            except subprocess.TimeoutExpired:
+                print(f"      Timeout generating {calc_type} D3 input")
+            except Exception as e:
+                print(f"      Error running CRYSTALOptToD3.py: {e}")
+            finally:
+                if temp_config.exists():
+                    temp_config.unlink()
                     
     def generate_inputs_with_analysis_script(self, workflow_id: str, step_num: int,
                                             calc_type: str, config: Dict[str, Any]):
@@ -1268,10 +1443,16 @@ fi'''
             return
             
         # Find input files for this step
-        input_files = list(step_dir.glob("*.d12"))
+        # D3 calculations (BAND, DOSS, TRANSPORT, CHARGE+POTENTIAL) use .d3 files
+        if calc_type.rstrip('0123456789') in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']:
+            input_files = list(step_dir.glob("*.d3"))
+            file_type = "D3"
+        else:
+            input_files = list(step_dir.glob("*.d12"))
+            file_type = "D12"
         
         if not input_files:
-            print(f"    No input files found in {step_dir}")
+            print(f"    No {file_type} input files found in {step_dir}")
             return
             
         print(f"    Submitting {len(input_files)} {calc_type} calculations")

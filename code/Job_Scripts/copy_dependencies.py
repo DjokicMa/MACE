@@ -61,19 +61,28 @@ def copy_dependencies(target_dir: str = "."):
                 "copy_dependencies.py"
             ]
         },
-        "Crystal_To_CIF": {
-            "source_dir": base_dir / "Crystal_To_CIF",
+        "Crystal_d12": {
+            "source_dir": base_dir / "Crystal_d12",
             "files": [
                 "NewCifToD12.py",
                 "CRYSTALOptToD12.py", 
-                "d12creation.py"
+                "d12_calc_basic.py",
+                "d12_calc_freq.py",
+                "d12_constants.py",
+                "d12_interactive.py",
+                "d12_parsers.py",
+                "d12_writer.py"
             ]
         },
-        "Creation_Scripts": {
-            "source_dir": base_dir / "Creation_Scripts",
+        "Crystal_d3": {
+            "source_dir": base_dir / "Crystal_d3",
             "files": [
                 "alldos.py",
-                "create_band_d3.py"
+                "create_band_d3.py",
+                "CRYSTALOptToD3.py",
+                "d3_interactive.py", 
+                "d3_config.py",
+                "d3_kpoints.py"
             ]
         }
     }

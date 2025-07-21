@@ -6,7 +6,8 @@ import shutil
 import itertools
 
 # This directory is where the d3_input folder is saved
-dir = "/mnt/home/djokicma/bin"
+import pathlib
+dir = str(pathlib.Path(__file__).parent.parent)
 
 
 def sym(input_lines, output_lines):
