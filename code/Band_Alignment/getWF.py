@@ -1,6 +1,9 @@
 """
 This script extracts work function and electrostatic potential data from CRYSTAL POTC output files,
 computes relevant values (e.g., WF max/min, EPOT top/bot/avg, EF), and saves the results into WF.csv.
+
+Author: Daniel Maldonado Lopez
+Institution: Michigan State University, Mendoza Group
 """
 
 import os

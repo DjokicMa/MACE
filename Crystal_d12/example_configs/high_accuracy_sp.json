@@ -1,0 +1,25 @@
+{
+  "version": "1.0",
+  "type": "d12_configuration",
+  "configuration": {
+    "name": "high_accuracy_sp",
+    "description": "High-accuracy single point with HSE06-D3",
+    "calculation_type": "SP",
+    "method": "DFT",
+    "functional": "HSE06",
+    "dispersion": true,
+    "basis_set": "POB-TZVP-REV2",
+    "basis_set_type": "INTERNAL",
+    "dft_grid": "XXLGRID",
+    "tolerances": {
+      "TOLINTEG": "9 9 9 11 38",
+      "TOLDEE": 11
+    },
+    "scf_settings": {
+      "method": "DIIS",
+      "maxcycle": 1000,
+      "fmixing": 20
+    },
+    "spin_polarized": false
+  }
+}

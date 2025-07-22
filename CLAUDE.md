@@ -2,9 +2,69 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## MACE - Mendoza Automated CRYSTAL Engine
+
+**Developed by**: Marcus Djokic (Primary Developer)  
+**Contributors**: Daniel Maldonado Lopez, Brandon Lewis, William Comaskey  
+**Advisor**: Prof. Jose Luis Mendoza-Cortes  
+**Institution**: Michigan State University, Mendoza Group  
+
 ## Repository Overview
 
-This is a scientific computing toolkit for **CRYSTAL** quantum chemistry software workflows. CRYSTAL is used for periodic and molecular calculations of electronic structure, properties, and materials science applications. The codebase provides automation scripts, utilities, and analysis tools for the entire CRYSTAL computational workflow on SLURM HPC clusters.
+MACE (Mendoza Automated CRYSTAL Engine) is a scientific computing toolkit for **CRYSTAL** quantum chemistry software workflows. CRYSTAL is used for periodic and molecular calculations of electronic structure, properties, and materials science applications. The codebase provides automation scripts, utilities, and analysis tools for the entire CRYSTAL computational workflow on SLURM HPC clusters.
+
+## Installation and Setup
+
+### Initial Setup
+1. Clone or download the MACE repository
+2. Navigate to the repository root directory
+3. Run the setup script:
+
+```bash
+# Interactive setup (recommended)
+python setup_mace.py --add-to-path
+
+# Specify shell directly
+python setup_mace.py --shell zsh --add-to-path
+python setup_mace.py --shell both --add-to-path  # Configure both bash and zsh
+
+# Setup without PATH modifications
+python setup_mace.py --shell zsh
+```
+
+### Environment Variables
+The setup script configures:
+- `MACE_HOME`: Points to the repository root
+- `PATH`: Adds all script directories (with `--add-to-path`)
+
+### Activation
+After setup:
+```bash
+# Apply changes to current session
+source ~/.zshrc  # or ~/.bashrc
+
+# Or use the activation script for temporary use
+source activate_mace.sh
+```
+
+### New Directory Structure (Phase 3)
+```
+reorganization/
+├── mace_cli                   # Main MACE command-line interface
+├── setup_mace.py              # Installation and setup script
+├── mace/                      # Core MACE package
+│   ├── run_mace.py           # Main workflow runner
+│   ├── workflow/             # Workflow management
+│   ├── queue/                # Queue and job management  
+│   ├── database/             # Material tracking database
+│   ├── submission/           # Job submission scripts
+│   ├── recovery/             # Error detection and recovery
+│   ├── utils/                # Utilities and helpers
+│   └── config/               # Configuration files
+├── Crystal_d12/              # D12 input generation
+├── Crystal_d3/               # D3 properties generation
+└── code/                     # Legacy directory structure (preserved)
+```
 
 ## Common Commands
 
@@ -14,70 +74,94 @@ All scripts are Python-based and run directly:
 python script_name.py
 ```
 
-### Job Management (SLURM Environment)
+### MACE Commands (Primary Interface)
 ```bash
-# Enhanced queue management with material tracking (NEW - Phase 2)
-python enhanced_queue_manager.py --base-dir /path/to/materials --max-jobs 200
+# Interactive workflow planning
+mace workflow --interactive
+python mace_cli workflow --interactive  # Or with full path
+
+# Submit calculations
+mace submit my_calculation.d12
+mace submit property.d3
+
+# Monitor calculations
+mace monitor
+mace queue --status
+
+# Analyze results
+mace analyze --extract-properties .
+
+# Convert CIF files
+mace convert --from-cif *.cif
+
+# Quick workflow execution
+mace workflow --quick-start --cif-dir ./cifs --workflow full_electronic
+```
+
+### Job Management (Direct Script Access)
+```bash
+# Enhanced queue management with material tracking
+python mace/enhanced_queue_manager.py --base-dir /path/to/materials --max-jobs 200
 
 # Legacy queue management (still supported)
-./crystal_queue_manager.py --max-jobs 200 --reserve 20
+./code/Job_Scripts/crystal_queue_manager.py --max-jobs 200 --reserve 20
 
 # Check job status
-./crystal_queue_manager.py --status
+./code/Job_Scripts/crystal_queue_manager.py --status
 
 # Submit all .d12 files in directory
-./submitcrystal23.py
+./mace/submission/submitcrystal23.sh
 
 # Submit properties calculations (.d3 files)
-./submit_prop.py
+./mace/submission/submit_prop.sh
 
 # Cancel jobs above certain ID
-./cancel-jobs.sh 150000
+./code/Job_Scripts/cancel-jobs.sh 150000
 
 # Navigate to job scratch directory
-source cd_job.sh job_output.o
+source code/Job_Scripts/cd_job.sh job_output.o
 ```
 
 ### Material Tracking System (NEW - Phase 2)
 ```bash
 # Error recovery and automated fixes
-python error_recovery.py --action recover --max-recoveries 10
+python mace/recovery/recover.py --action recover --max-recoveries 10
 
 # View recovery statistics
-python error_recovery.py --action stats
+python mace/recovery/recover.py --action stats
 
 # Workflow automation and progression
-python workflow_engine.py --action process
+python mace/workflow/engine.py --action process
 
 # Check workflow status for specific material
-python workflow_engine.py --action status --material-id material_name
+python mace/workflow/engine.py --action status --material-id material_name
 
 # Material monitoring dashboard
-python material_monitor.py --action dashboard --interval 30
+python mace/material_monitor.py --action dashboard --interval 30
 
 # Database health and statistics
-python material_monitor.py --action stats
+python mace/material_monitor.py --action stats
 
 # File organization and management
-python crystal_file_manager.py --action organize --material-id material_name
+python mace/utils/file_manager.py --action organize --material-id material_name
 ```
 
 ### Comprehensive Workflow Manager (NEW - Phase 3)
 ```bash
 # Interactive workflow planning (recommended for first use)
-python run_workflow.py --interactive
+python mace/run_workflow.py --interactive
 
 # Quick start with predefined templates
-python run_workflow.py --quick-start --cif-dir ./cifs --workflow full_electronic
+python mace/run_workflow.py --quick-start --cif-dir ./cifs --workflow full_electronic
 
 # Execute a saved workflow plan
-python run_workflow.py --execute workflow_plan_20250618_145837.json
+python mace/run_workflow.py --execute workflow_plan_20250618_145837.json
 
 # Check workflow status
-python run_workflow.py --status
+python mace/run_workflow.py --status
 
 # Show available templates
-python run_workflow.py --show-templates
+python mace/run_workflow.py --show-templates
 ```
 
 ### Dependency Installation
@@ -155,7 +239,7 @@ The codebase is organized into distinct workflow stages:
    - Automated phonon band structure plotting from f25 files
    - Crystal symmetry analysis and labeling utilities
 
-6. **Comprehensive Workflow Manager** (`Job_Scripts/run_workflow.py`) **(NEW - Phase 3)**
+6. **Comprehensive Workflow Manager** (`mace/run_workflow.py`) **(NEW - Phase 3)**
    - Complete end-to-end workflow planning and execution system
    - Interactive configuration with three customization levels
    - Integration with all existing tools (NewCifToD12.py, CRYSTALOptToD12.py, etc.)
@@ -223,7 +307,7 @@ Scripts implement multiple layers of fault tolerance:
 
 ## Comprehensive Workflow Manager (Phase 3)
 
-The workflow manager (`run_workflow.py`) provides a unified interface for planning and executing complex CRYSTAL calculation workflows. It integrates all existing tools into a cohesive, user-friendly system.
+The workflow manager (`mace/run_workflow.py`) provides a unified interface for planning and executing complex CRYSTAL calculation workflows. It integrates all existing tools into a cohesive, user-friendly system.
 
 ### Core Components
 
@@ -404,7 +488,7 @@ CIF → OPT.d12 → OPT.out/.gui → SP.d12 → SP.out/.f9 → BAND.d3/DOSS.d3
 
 #### **Interactive Planning**
 ```bash
-python run_workflow.py --interactive
+python mace/run_workflow.py --interactive
 # 1. Select input type (CIF/D12/Mixed)
 # 2. Choose CIF customization level (Basic/Advanced/Expert)  
 # 3. Select workflow template or design custom
@@ -415,19 +499,19 @@ python run_workflow.py --interactive
 #### **Quick Start**
 ```bash
 # Process CIFs with full electronic workflow
-python run_workflow.py --quick-start --cif-dir ./cifs --workflow full_electronic
+python mace/run_workflow.py --quick-start --cif-dir ./cifs --workflow full_electronic
 
 # Use existing D12s for optimization only
-python run_workflow.py --quick-start --d12-dir ./d12s --workflow basic_opt
+python mace/run_workflow.py --quick-start --d12-dir ./d12s --workflow basic_opt
 ```
 
 #### **Batch Execution**
 ```bash
 # Execute saved workflow plan
-python run_workflow.py --execute workflow_plan_20250618_145837.json
+python mace/run_workflow.py --execute workflow_plan_20250618_145837.json
 
 # Monitor progress
-python run_workflow.py --status
+python mace/run_workflow.py --status
 ```
 
 ### Error Handling and Recovery
@@ -515,15 +599,15 @@ The workflow manager represents the culmination of all CRYSTAL automation tools,
 The enhanced system provides comprehensive material lifecycle tracking:
 
 #### **Core Components**
-- **`material_database.py`**: SQLite database with ASE integration for structure storage
-- **`enhanced_queue_manager.py`**: Extended queue manager with material tracking and enhanced callback system
-- **`error_recovery.py`**: Automated error detection and recovery with YAML configuration
-- **`workflow_engine.py`**: Orchestrates OPT → SP → BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL workflow progression
-- **`crystal_file_manager.py`**: Organized file management by material ID and calculation type
-- **`material_monitor.py`**: Real-time monitoring dashboard and health checks
-- **`file_storage_manager.py`**: Comprehensive file storage with settings extraction and provenance tracking
-- **`crystal_property_extractor.py`**: Complete property extraction from CRYSTAL output files
-- **`formula_extractor.py`**: Chemical formula and space group extraction from input/output files
+- **`mace/database/`**: SQLite database with ASE integration for structure storage
+- **`mace/queue/manager.py`**: Enhanced queue manager with material tracking and callback system
+- **`mace/recovery/`**: Automated error detection and recovery with YAML configuration
+- **`mace/workflow/engine.py`**: Orchestrates OPT → SP → BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL workflow progression
+- **`mace/utils/file_manager.py`**: Organized file management by material ID and calculation type
+- **`mace/material_monitor.py`**: Real-time monitoring dashboard and health checks
+- **`mace/utils/storage.py`**: Comprehensive file storage with settings extraction and provenance tracking
+- **`mace/utils/property_extractor.py`**: Complete property extraction from CRYSTAL output files
+- **`mace/utils/formula.py`**: Chemical formula and space group extraction from input/output files
 
 #### **Key Features**
 - **Material ID Consistency**: Handles complex file naming from NewCifToD12.py and CRYSTALOptToD12.py
@@ -554,26 +638,27 @@ workflow_instances: # Active workflow state tracking
 All SLURM job scripts now include an enhanced callback mechanism that automatically detects and calls the appropriate queue manager upon job completion:
 
 **Multi-Location Detection:**
-- Checks `$DIR/enhanced_queue_manager.py` first (local directory)
-- Falls back to `$DIR/../../../../enhanced_queue_manager.py` (parent directories)
-- Also checks for `crystal_queue_manager.py` in the same locations
+- Checks for queue manager in multiple locations
+- Falls back through parent directories
+- Also checks for legacy `crystal_queue_manager.py`
 - Ensures workflows continue regardless of execution context
 
 **Callback Logic:**
 ```bash
 # Enhanced callback automatically added to all SLURM scripts
-if [ -f $DIR/enhanced_queue_manager.py ]; then
+# Checks for mace structure first, then legacy locations
+if [ -f $DIR/mace/enhanced_queue_manager.py ]; then
     cd $DIR
-    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
-elif [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
+    python mace/enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+elif [ -f $DIR/../../../../mace/enhanced_queue_manager.py ]; then
     cd $DIR/../../../../
-    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
-elif [ -f $DIR/crystal_queue_manager.py ]; then
+    python mace/enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+elif [ -f $DIR/code/Job_Scripts/crystal_queue_manager.py ]; then
     cd $DIR
-    ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
-elif [ -f $DIR/../../../../crystal_queue_manager.py ]; then
+    ./code/Job_Scripts/crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
+elif [ -f $DIR/../../../../code/Job_Scripts/crystal_queue_manager.py ]; then
     cd $DIR/../../../../
-    ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
+    ./code/Job_Scripts/crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
 fi
 ```
 

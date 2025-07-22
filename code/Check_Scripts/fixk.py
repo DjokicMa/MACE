@@ -6,7 +6,8 @@ and replaces the following line with a uniform k-point mesh using the smallest v
 
 Created on Tue Jun 28 09:50:36 2022
 
-@author: marcus
+Author: Marcus Djokic
+Institution: Michigan State University, Mendoza Group
 """
 
 import os

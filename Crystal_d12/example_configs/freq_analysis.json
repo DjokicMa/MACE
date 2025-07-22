@@ -1,0 +1,32 @@
+{
+  "version": "1.0",
+  "type": "d12_configuration",
+  "configuration": {
+    "name": "freq_analysis",
+    "description": "Vibrational frequency analysis with tight convergence",
+    "calculation_type": "FREQ",
+    "method": "DFT",
+    "functional": "B3LYP",
+    "dispersion": true,
+    "basis_set": "POB-TZVP-REV2",
+    "basis_set_type": "INTERNAL",
+    "dft_grid": "XLGRID",
+    "tolerances": {
+      "TOLINTEG": "9 9 9 11 38",
+      "TOLDEE": 11
+    },
+    "scf_settings": {
+      "method": "DIIS",
+      "maxcycle": 800,
+      "fmixing": 30
+    },
+    "freq_settings": {
+      "freq_mode": "FREQCALC",
+      "intensities": true,
+      "raman": false,
+      "temprange": [20, 0, 400],
+      "template": "raman_minimal"
+    },
+    "spin_polarized": false
+  }
+}

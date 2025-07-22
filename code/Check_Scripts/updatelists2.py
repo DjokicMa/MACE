@@ -3,6 +3,9 @@
 """
 Categorizes quantum chemistry .out files based on completion and error messages.
 Exports categorized file names into separate CSVs by category.
+
+Author: Marcus Djokic
+Institution: Michigan State University, Mendoza Group
 """
 
 import os

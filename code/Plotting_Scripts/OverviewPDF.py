@@ -13,6 +13,9 @@ Features:
 - Includes crystal structure visualizations from different angles
 - Embeds band diagram and DOS plots alongside structural information
 
+Author: Marcus Djokic
+Institution: Michigan State University, Mendoza Group
+
 Directories Setup:
 views_dir: Path to directory containing crystal view PNG images (e.g., "view0.png")
 bands_dir: Directory for BAND plot files ending with ".BANDS.png"

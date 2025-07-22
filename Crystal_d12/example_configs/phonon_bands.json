@@ -1,0 +1,44 @@
+{
+  "version": "1.0",
+  "type": "d12_configuration",
+  "configuration": {
+    "name": "phonon_bands",
+    "description": "Phonon band structure and DOS calculation",
+    "calculation_type": "FREQ",
+    "method": "DFT",
+    "functional": "B3LYP",
+    "dispersion": true,
+    "basis_set": "POB-TZVP-REV2",
+    "basis_set_type": "INTERNAL",
+    "dft_grid": "XLGRID",
+    "tolerances": {
+      "TOLINTEG": "9 9 9 11 38",
+      "TOLDEE": 11
+    },
+    "scf_settings": {
+      "method": "DIIS",
+      "maxcycle": 800,
+      "fmixing": 30
+    },
+    "freq_settings": {
+      "freq_mode": "FREQCALC",
+      "intensities": false,
+      "raman": false,
+      "dispersion": true,
+      "template": "phonon_band_dos",
+      "bands": {
+        "shrink": 16,
+        "npoints": 100,
+        "path": "AUTO"
+      },
+      "pdos": {
+        "type": "PDOS",
+        "max_freq": 2000,
+        "nbins": 200,
+        "projected": true
+      },
+      "temprange": [20, 0, 400]
+    },
+    "spin_polarized": false
+  }
+}
