@@ -22,9 +22,20 @@ class MACESetup:
         self.script_dir = Path(__file__).resolve().parent
         self.repo_root = self.script_dir
         
-        # Verify we're in the correct location
-        if not (self.repo_root / 'code' / 'Job_Scripts' / 'enhanced_queue_manager.py').exists():
+        # Verify we're in the correct location by checking for key files
+        required_files = [
+            self.repo_root / 'mace' / 'enhanced_queue_manager.py',
+            self.repo_root / 'Crystal_d12' / 'NewCifToD12.py',
+            self.repo_root / 'Crystal_d3' / 'CRYSTALOptToD3.py',
+            self.repo_root / 'mace_cli'
+        ]
+        
+        missing_files = [f for f in required_files if not f.exists()]
+        if missing_files:
             print("Error: This script must be run from the MACE repository root")
+            print("Missing required files:")
+            for f in missing_files:
+                print(f"  - {f.relative_to(self.repo_root) if f.is_relative_to(self.repo_root) else f}")
             sys.exit(1)
         
         self.shell = shell if shell else self.detect_shell()
