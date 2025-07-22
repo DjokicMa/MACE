@@ -1,0 +1,34 @@
+{
+  "version": "1.0",
+  "type": "d12_configuration",
+  "configuration": {
+    "name": "metallic_system",
+    "description": "Settings optimized for metallic systems",
+    "calculation_type": "OPT",
+    "optimization_type": "FULLOPTG",
+    "method": "DFT",
+    "functional": "PBE",
+    "dispersion": false,
+    "basis_set": "POB-TZVP-REV2",
+    "basis_set_type": "INTERNAL",
+    "dft_grid": "XLGRID",
+    "tolerances": {
+      "TOLINTEG": "8 8 8 9 30",
+      "TOLDEE": 9
+    },
+    "optimization_settings": {
+      "toldeg": 0.0003,
+      "toldex": 0.0012,
+      "toldee": 9,
+      "maxcycle": 800
+    },
+    "scf_settings": {
+      "method": "DIIS",
+      "maxcycle": 1200,
+      "fmixing": 15
+    },
+    "spin_polarized": true,
+    "use_smearing": true,
+    "smearing_width": 0.02
+  }
+}

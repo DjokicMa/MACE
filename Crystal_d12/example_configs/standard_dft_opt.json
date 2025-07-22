@@ -1,0 +1,32 @@
+{
+  "version": "1.0",
+  "type": "d12_configuration",
+  "configuration": {
+    "name": "standard_dft_opt",
+    "description": "Standard DFT geometry optimization with B3LYP-D3",
+    "calculation_type": "OPT",
+    "optimization_type": "FULLOPTG",
+    "method": "DFT",
+    "functional": "B3LYP",
+    "dispersion": true,
+    "basis_set": "POB-TZVP-REV2",
+    "basis_set_type": "INTERNAL",
+    "dft_grid": "XLGRID",
+    "tolerances": {
+      "TOLINTEG": "7 7 7 7 14",
+      "TOLDEE": 7
+    },
+    "optimization_settings": {
+      "toldeg": 0.0003,
+      "toldex": 0.0012,
+      "toldee": 7,
+      "maxcycle": 800
+    },
+    "scf_settings": {
+      "method": "DIIS",
+      "maxcycle": 800,
+      "fmixing": 30
+    },
+    "spin_polarized": false
+  }
+}

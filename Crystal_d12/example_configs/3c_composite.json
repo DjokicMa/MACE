@@ -1,0 +1,33 @@
+{
+  "version": "1.0",
+  "type": "d12_configuration",
+  "configuration": {
+    "name": "3c_composite",
+    "description": "Fast composite method with PBEH3C",
+    "calculation_type": "OPT",
+    "optimization_type": "FULLOPTG",
+    "method": "DFT",
+    "functional": "PBEH3C",
+    "is_3c_method": true,
+    "dispersion": false,
+    "basis_set": "MINIX",
+    "basis_set_type": "INTERNAL",
+    "dft_grid": null,
+    "tolerances": {
+      "TOLINTEG": "7 7 7 7 14",
+      "TOLDEE": 7
+    },
+    "optimization_settings": {
+      "toldeg": 0.0003,
+      "toldex": 0.0012,
+      "toldee": 7,
+      "maxcycle": 800
+    },
+    "scf_settings": {
+      "method": "DIIS",
+      "maxcycle": 800,
+      "fmixing": 30
+    },
+    "spin_polarized": false
+  }
+}

@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+"""
+MACE - Mendoza Automated CRYSTAL Engine
+=======================================
+
+Main entry point for the MACE workflow management system.
+
+This script provides a unified interface to all MACE functionality,
+including workflow planning, execution, monitoring, and analysis.
+
+Developed by: Marcus Djokic
+Contributors: Daniel Maldonado Lopez, Brandon Lewis, William Comaskey
+Advisor: Prof. Jose Luis Mendoza-Cortes
+Institution: Michigan State University, Mendoza Group
+"""
+
+import sys
+import os
+import argparse
+from pathlib import Path
+
+# Version information
+__version__ = "1.0.0"
+
+# Add MACE package to Python path
+MACE_DIR = Path(__file__).parent / "mace"
+sys.path.insert(0, str(MACE_DIR))
+
+# Import animation and credits
+try:
+    from utils.animation import animate_mace_assembly, loading_bar
+    from utils.banner import get_credits, print_banner
+    BANNER_AVAILABLE = True
+except ImportError:
+    BANNER_AVAILABLE = False
+
+def show_banner():
+    """Show the MACE animated banner and credits"""
+    # Check environment variable in case we're called from a subprocess
+    if os.environ.get('MACE_NO_BANNER', '').lower() in ('1', 'true', 'yes'):
+        return
+        
+    if BANNER_AVAILABLE:
+        print()
+        animate_mace_assembly(__version__)
+        loading_bar(1.0, "Initializing MACE Workflow System")
+        print(get_credits())
+    else:
+        print("\nMACE - Mendoza Automated CRYSTAL Engine")
+        print(f"Version {__version__}")
+        print("=" * 40)
+
+def main():
+    """Main entry point with proper argument parsing"""
+    parser = argparse.ArgumentParser(
+        description=f"MACE - Mendoza Automated CRYSTAL Engine (v{__version__})",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Commands:
+  mace workflow    Run interactive workflow planner
+  mace submit      Submit CRYSTAL calculations
+  mace monitor     Monitor running calculations
+  mace analyze     Analyze completed calculations
+  mace convert     Convert CIF files to CRYSTAL input
+  mace opt2d12     Generate D12 from optimized CRYSTAL output
+  mace opt2d3      Generate D3 property inputs from output
+  mace credits     Show developer credits and contributions
+  mace version     Show version information
+  
+Examples:
+  mace workflow --interactive
+  mace submit my_calculation
+  mace monitor --dashboard
+  mace analyze --extract-properties .
+  mace convert *.cif
+  mace opt2d12 optimized.out
+  mace opt2d3 optimized.out --calc-type BAND
+
+For more help on a specific command:
+  mace <command> --help
+  
+Options:
+  --no-banner      Suppress ASCII art banner display
+"""
+    )
+    
+    parser.add_argument('command', nargs='?', 
+                       choices=['workflow', 'submit', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'credits', 'version'],
+                       help='Command to run')
+    parser.add_argument('args', nargs='*', help='Arguments for the command')
+    parser.add_argument('--no-banner', action='store_true', help='Suppress banner display')
+    parser.add_argument('--version', action='version', version=f'MACE v{__version__}')
+    parser.add_argument('--credits', action='store_true', help='Show developer credits')
+    
+    # Parse known args to handle the main command
+    args, remaining = parser.parse_known_args()
+    
+    # Handle --credits flag
+    if args.credits:
+        if BANNER_AVAILABLE and not args.no_banner:
+            print_banner('banner')
+            print(get_credits())
+        elif BANNER_AVAILABLE:
+            # Just show credits without banner
+            print(get_credits())
+        else:
+            print("\nMACE Development Team:")
+            print("Primary Developer: Marcus Djokic")
+            print("Contributors: Daniel Maldonado Lopez, Brandon Lewis, William Comaskey")
+            print("PI: Prof. Jose Luis Mendoza-Cortes")
+        sys.exit(0)
+    
+    # Set environment variable for child processes
+    if args.no_banner:
+        os.environ['MACE_NO_BANNER'] = '1'
+    
+    # Show banner unless suppressed or showing help
+    if not args.no_banner and args.command and args.command != 'version':
+        show_banner()
+    
+    # If no command, show help
+    if not args.command:
+        if '--help' not in sys.argv and '-h' not in sys.argv and not args.no_banner:
+            # Show main banner for help
+            if BANNER_AVAILABLE:
+                print_banner('banner')  # Use main banner instead of compact
+        parser.print_help()
+        sys.exit(0)
+    
+    # Reconstruct sys.argv for the subcommands, preserving --no-banner if present
+    sys.argv = [sys.argv[0]] + args.args + remaining
+    if args.no_banner and '--no-banner' not in sys.argv:
+        sys.argv.append('--no-banner')
+    
+    # Handle commands
+    if args.command == 'workflow':
+        # Default to run_mace.py
+        from run_mace import main as run_mace_main
+        run_mace_main()
+        
+    elif args.command == 'submit':
+        # Handle submission commands
+        if not args.args:
+            print("Usage: mace submit <file_or_directory>")
+            sys.exit(1)
+        
+        # Determine if submitting D12 or D3 files
+        target = args.args[0]
+        if target.endswith('.d3') or (os.path.isdir(target) and any(f.endswith('.d3') for f in os.listdir(target) if os.path.isfile(os.path.join(target, f)))):
+            from submission.properties import main as submit_properties
+            submit_properties()
+        else:
+            from submission.crystal import main as submit_crystal
+            submit_crystal()
+            
+    elif args.command == 'monitor':
+        # Launch monitoring dashboard
+        from queue.monitor import main as monitor_main
+        sys.argv = ['material_monitor.py', '--action', 'dashboard'] + args.args
+        monitor_main()
+        
+    elif args.command == 'analyze':
+        # Property analysis
+        if args.args and args.args[0] == '--extract-properties':
+            from utils.property_extractor import main as extract_main
+            extract_main()
+        else:
+            print("Usage: mace analyze --extract-properties <directory>")
+            
+    elif args.command == 'convert':
+        # CIF conversion
+        sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
+        from NewCifToD12 import main as cif_main
+        sys.argv = ['NewCifToD12.py'] + args.args + remaining
+        cif_main()
+            
+    elif args.command == 'opt2d12':
+        # Generate D12 from optimized output
+        sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
+        from CRYSTALOptToD12 import main as opt2d12_main
+        sys.argv = ['CRYSTALOptToD12.py'] + args.args + remaining
+        opt2d12_main()
+        
+    elif args.command == 'opt2d3':
+        # Generate D3 from optimized output
+        sys.path.insert(0, str(Path(__file__).parent / "Crystal_d3"))
+        from CRYSTALOptToD3 import main as opt2d3_main
+        sys.argv = ['CRYSTALOptToD3.py'] + args.args + remaining
+        opt2d3_main()
+            
+    elif args.command == 'credits':
+        # Show credits
+        if BANNER_AVAILABLE:
+            print(get_credits())
+        else:
+            print("\nMACE Development Team:")
+            print("Primary Developer: Marcus Djokic")
+            print("Contributors: Daniel Maldonado Lopez, Brandon Lewis, William Comaskey")
+            print("PI: Prof. Jose Luis Mendoza-Cortes")
+            
+    elif args.command == 'version':
+        # Show version with main banner
+        if BANNER_AVAILABLE:
+            print_banner('banner')  # Use main banner
+            print(f"\n    Version: {__version__}")
+            print("    CRYSTAL Support: CRYSTAL17, CRYSTAL23")
+        else:
+            print(f"\nMACE v{__version__}")
+            print("Mendoza Automated CRYSTAL Engine")
+            print("CRYSTAL Support: CRYSTAL17, CRYSTAL23")
+
+if __name__ == "__main__":
+    main()

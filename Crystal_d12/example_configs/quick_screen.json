@@ -1,0 +1,25 @@
+{
+  "version": "1.0",
+  "type": "d12_configuration",
+  "configuration": {
+    "name": "quick_screen",
+    "description": "Fast screening calculations with minimal basis",
+    "calculation_type": "SP",
+    "method": "HF",
+    "functional": null,
+    "dispersion": false,
+    "basis_set": "STO-3G",
+    "basis_set_type": "INTERNAL",
+    "dft_grid": null,
+    "tolerances": {
+      "TOLINTEG": "6 6 6 6 12",
+      "TOLDEE": 6
+    },
+    "scf_settings": {
+      "method": "DIIS",
+      "maxcycle": 500,
+      "fmixing": 30
+    },
+    "spin_polarized": false
+  }
+}

@@ -7,6 +7,9 @@ Creates subdirectories for each completion type.
 Requires:
 - updatelists.py to be run beforehand
 - 'complete_list.csv' and/or 'completesp_list.csv' to exist
+
+Author: Marcus Djokic
+Institution: Michigan State University, Mendoza Group
 """
 import os
 import shutil
