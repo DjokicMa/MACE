@@ -1,0 +1,13 @@
+BAND
+3.4^2T137_BULK_OPTGEOM_TZ - Band Structure - SeeKPath (w.I) - G-X-U-K'-G-L-W-X-|-K'-W-|-U-L
+9 6 1000 1 396 1 0
+0 0 0  3 0 3
+3 0 3  4 2 4
+4 2 4  2 2 4
+2 2 4  0 0 0
+0 0 0  3 3 3
+3 3 3  3 2 4
+3 2 4  3 0 3
+2 2 4  3 2 4
+4 2 4  3 3 3
+END

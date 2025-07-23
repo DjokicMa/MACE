@@ -1032,6 +1032,13 @@ class CrystalInputParser:
                 elif stripped == "SPIN":
                     self.data["spin_polarized"] = True
                     
+                # Check for GRIMME D3 dispersion correction
+                elif stripped in ["GRIMME", "DFTD3"]:
+                    self.data["dispersion"] = True
+                    # If we have a functional already and it doesn't have -D3, add it
+                    if self.data.get("functional") and not self.data["functional"].endswith("-D3"):
+                        self.data["functional"] = self.data["functional"] + "-D3"
+                    
         # Extract smearing settings
         self._extract_smearing_settings(lines)
         

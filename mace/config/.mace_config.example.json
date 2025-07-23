@@ -1,0 +1,32 @@
+{
+  "isolation_mode": "shared",
+  "auto_cleanup": false,
+  "context_settings": {
+    "cleanup_on_exit": false,
+    "archive_results": true,
+    "archive_directory": "./workflow_archives"
+  },
+  "database_settings": {
+    "shared_db_path": "materials.db",
+    "shared_ase_db_path": "structures.db",
+    "backup_interval_hours": 24,
+    "enable_wal_mode": true
+  },
+  "workflow_defaults": {
+    "max_jobs": 250,
+    "reserve_slots": 30,
+    "enable_error_recovery": true,
+    "max_recovery_attempts": 3
+  },
+  "resource_limits": {
+    "max_concurrent_workflows": 5,
+    "max_workflow_duration_days": 30,
+    "max_context_size_gb": 100
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "mace_workflow.log",
+    "rotate_size_mb": 100,
+    "keep_backups": 5
+  }
+}

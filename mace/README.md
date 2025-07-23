@@ -71,6 +71,23 @@ See [INSTALLATION.md](../INSTALLATION.md) for detailed instructions.
 
 ### Basic Usage
 
+#### Getting Help
+```bash
+# General help
+mace --help
+
+# Command-specific help (shows MACE wrapper options)
+mace workflow --help
+mace submit --help
+mace monitor --help
+mace analyze --help
+
+# For conversion/generation commands, these pass through to the underlying scripts
+mace convert --help    # Shows NewCifToD12.py help
+mace opt2d12 --help   # Shows CRYSTALOptToD12.py help
+mace opt2d3 --help    # Shows CRYSTALOptToD3.py help
+```
+
 #### 1. Interactive Workflow Planning
 ```bash
 mace workflow --interactive
@@ -126,21 +143,278 @@ MACE includes predefined workflow templates:
 - **charge_analysis**: OPT → SP → CHARGE+POTENTIAL
 - **complete**: OPT → SP → BAND → DOS → FREQ
 
-## Directory Structure
+## Comprehensive Directory Structure
 
+### Overview
 ```
 mace/
-├── workflow/          # Workflow planning and execution
-├── queue/             # Job queue management
-├── database/          # Material tracking database
-├── submission/        # SLURM job submission
-├── recovery/          # Error detection and recovery
-├── utils/             # Property extraction and analysis
-└── config/            # Configuration files
+├── run_mace.py               # Main workflow manager interface
+├── run_workflow.py           # Primary workflow execution script
+├── enhanced_queue_manager.py # Enhanced SLURM queue management
+├── material_monitor.py       # Real-time monitoring dashboard
+│
+├── config/                   # Configuration management
+├── database/                 # Material tracking database
+├── queue/                    # Job queue management
+├── recovery/                 # Error detection and recovery
+├── submission/               # Job submission scripts
+├── utils/                    # Utility functions and tools
+└── workflow/                 # Workflow planning and execution
+```
 
-Crystal_d12/           # D12 input file generation
-Crystal_d3/            # D3 property file generation
-code/                  # Legacy scripts (preserved for compatibility)
+### Detailed Component Breakdown
+
+#### **Root Level Scripts**
+
+- **`run_mace.py`** - Main entry point for MACE workflow system
+  - Interactive workflow planning mode
+  - Quick-start templates for common workflows
+  - Workflow execution and monitoring
+  - Example: `python run_mace.py --interactive`
+
+- **`run_workflow.py`** - Direct workflow execution wrapper
+  - Simplified interface to run_mace.py
+  - Used by mace_cli for workflow command
+
+- **`enhanced_queue_manager.py`** - Advanced queue management
+  - Material tracking integration
+  - Early failure detection
+  - Automated workflow progression
+  - Resource optimization
+
+- **`material_monitor.py`** - Real-time monitoring dashboard
+  - Live calculation status
+  - Property extraction monitoring
+  - Database health checks
+
+#### **1. config/** - Configuration Management
+
+Stores system configuration files for error recovery and workflow settings.
+
+**Files:**
+- **`recovery_config.yaml`** - Error recovery strategies
+  ```yaml
+  SHRINK_ERROR:
+    detection: "SHRINK FACTOR"
+    fix: increase_shrink
+    max_attempts: 3
+  MEMORY_ERROR:
+    detection: "MEMORY ALLOCATION"
+    fix: increase_memory
+    escalation: reduce_cores
+  ```
+
+#### **2. database/** - Material Tracking System
+
+SQLite-based tracking system with ASE integration for complete calculation provenance.
+
+**Core Components:**
+- **`materials.py`** - Main database interface
+  - Thread-safe material and calculation tracking
+  - Property storage and retrieval
+  - ASE structure integration
+  - Example usage:
+    ```python
+    db = MaterialDatabase()
+    db.add_material("diamond", structure)
+    db.update_calculation_status(calc_id, "completed")
+    ```
+
+- **`queries.py`** - Database query utilities
+  - Complex query builders
+  - Property aggregation functions
+  - Statistical analysis helpers
+
+- **`create_fresh_database.py`** - Database initialization
+  - Creates schema with proper indices
+  - Sets up trigger functions
+  - Initializes workflow templates
+
+- **`database_status_report.py`** - Generate reports
+  - Material statistics
+  - Calculation success rates
+  - Performance metrics
+
+#### **3. queue/** - Job Queue Management
+
+Sophisticated SLURM integration with intelligent job scheduling.
+
+**Key Scripts:**
+- **`manager.py`** - Enhanced queue manager class
+  - Job submission with throttling
+  - Resource allocation optimization
+  - Callback handling for job completion
+  - Integration with material database
+
+- **`monitor.py`** - Queue monitoring utilities
+  - Real-time job status tracking
+  - Resource utilization analysis
+  - Failure pattern detection
+
+- **`queue_lock_manager.py`** - Concurrency control
+  - Prevents race conditions
+  - Manages callback throttling
+  - Ensures atomic operations
+
+#### **4. recovery/** - Error Detection and Recovery
+
+Automated error handling with configurable recovery strategies.
+
+**Components:**
+- **`detector.py`** - Error pattern detection
+  - Parses CRYSTAL output files
+  - Identifies common error patterns
+  - Classifies error severity
+
+- **`recovery.py`** - Recovery engine
+  - Applies fixes based on error type
+  - Integrates with fixk.py and updatelists2.py
+  - Automatic job resubmission
+  - Example recovery flow:
+    ```python
+    error = detector.detect_error(output_file)
+    fix = recovery.get_fix_strategy(error)
+    recovery.apply_fix(input_file, fix)
+    recovery.resubmit_job(job_id)
+    ```
+
+#### **5. submission/** - Job Submission
+
+SLURM script generation and job submission utilities.
+
+**Scripts:**
+- **`crystal.py`** - Submit CRYSTAL calculations
+  - Handles .d12 input files
+  - Resource allocation
+  - Scratch directory setup
+
+- **`properties.py`** - Submit property calculations
+  - Handles .d3 property files
+  - Manages wavefunction dependencies
+  - Optimized for memory-intensive calculations
+
+- **`submitcrystal23.sh`** - CRYSTAL23 submission script
+  - Module loading
+  - Environment setup
+  - Callback integration
+
+- **`submit_prop.sh`** - Property submission script
+  - Specialized for BAND/DOSS/TRANSPORT
+  - Higher memory allocation
+  - Wavefunction handling
+
+#### **6. utils/** - Utility Functions
+
+Comprehensive toolkit for property extraction and analysis.
+
+**Property Extraction:**
+- **`property_extractor.py`** - Extract all properties
+  - Band gaps (direct/indirect)
+  - Total energies
+  - Structural parameters
+  - Electronic properties
+
+- **`formula_extractor.py`** - Chemical information
+  - Extract molecular formula
+  - Determine space group
+  - Count atoms and species
+
+- **`settings_extractor.py`** - Settings extraction
+  - Parse D12/D3 input files
+  - Extract calculation parameters
+  - Store configuration history
+
+**Analysis Tools:**
+- **`advanced_electronic_analyzer.py`** - Electronic analysis
+  - Band structure analysis
+  - DOS integration
+  - Fermi level determination
+
+- **`population_analysis_processor.py`** - Population analysis
+  - Mulliken charges
+  - Orbital populations
+  - Charge density analysis
+
+**Display and Visualization:**
+- **`banner.py`** - MACE banner display
+- **`animation.py`** - Progress animations
+- **`show_properties.py`** - Display extracted properties
+
+#### **7. workflow/** - Workflow Management
+
+Complete workflow planning and execution system.
+
+**Core Components:**
+- **`planner.py`** - Interactive workflow planner
+  - CIF/D12 input selection
+  - Template-based workflow design
+  - Resource planning
+  - Configuration persistence
+
+- **`executor.py`** - Workflow execution engine
+  - Dependency management
+  - Error handling
+  - Progress tracking
+  - File organization
+
+- **`engine.py`** - Workflow automation
+  - Automatic progression (OPT→SP→Properties)
+  - State management
+  - Recovery integration
+
+- **`monitor_workflow.py`** - Workflow monitoring
+  - Real-time status updates
+  - Progress visualization
+  - Performance metrics
+
+**Subdirectory:**
+- **`common/`** - Shared components
+  - **`constants.py`** - Workflow constants
+    - Calculation type definitions
+    - Resource defaults
+    - Template configurations
+
+### Integration Points
+
+1. **Material Database** ↔ **Queue Manager**
+   - Automatic calculation tracking
+   - Status updates on job completion
+
+2. **Error Recovery** ↔ **Submission**
+   - Automatic resubmission of fixed jobs
+   - Resource adjustment based on errors
+
+3. **Workflow Engine** ↔ **All Components**
+   - Orchestrates entire calculation pipeline
+   - Manages dependencies and data flow
+
+4. **Property Extractor** ↔ **Database**
+   - Stores extracted properties
+   - Enables property queries
+
+### Usage Patterns
+
+**Simple Calculation:**
+```bash
+mace submit calculation.d12
+```
+
+**Complete Workflow:**
+```bash
+mace workflow --interactive
+# Select CIFs → Choose workflow → Configure resources → Execute
+```
+
+**Monitoring:**
+```bash
+mace monitor --dashboard
+# Real-time view of all calculations
+```
+
+**Analysis:**
+```bash
+mace analyze --extract-properties output_directory/
+# Extract and store all properties
 ```
 
 ## Documentation
