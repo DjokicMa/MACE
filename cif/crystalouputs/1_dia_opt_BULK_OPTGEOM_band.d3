@@ -1,0 +1,13 @@
+BAND
+1_dia_opt_BULK_OPTGEOM - Band Structure - SeeKPath (w.I) - G-X-W-K-G-L-U-W-|-L-K-|-U-X
+9 12 1000 1 36 1 0
+0 0 0  6 0 6
+6 0 6  6 3 9
+6 3 9  4 4 9
+4 4 9  0 0 0
+0 0 0  6 6 6
+6 6 6  8 3 8
+8 3 8  6 3 9
+6 6 6  4 4 9
+8 3 8  6 0 6
+END

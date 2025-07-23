@@ -781,16 +781,11 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             print(f"Error loading config file: {e}")
             print("Falling back to interactive mode.")
             options = get_calculation_options_from_current(settings)
-    elif non_interactive:
-        # Non-interactive mode without config file
+    elif non_interactive and not calc_type:
+        # True non-interactive mode (no config file, no calc type specified)
         options = settings.copy()
-        
-        # Set calculation type
-        if calc_type:
-            options["calculation_type"] = calc_type
-        else:
-            # Default to SP if not specified
-            options["calculation_type"] = "SP"
+        # Default to SP if not specified
+        options["calculation_type"] = "SP"
         
         # Set optimization type if it's an OPT calculation
         if options["calculation_type"] == "OPT":
@@ -831,6 +826,11 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         if options['calculation_type'] == 'OPT':
             print(f"  Optimization type: {options['optimization_type']}")
         print(f"  Origin setting: {options['origin_setting']}")
+    elif non_interactive and calc_type:
+        # When calc_type is provided but --non-interactive is set,
+        # we still want interactive mode like the D3 scripts
+        # This is used by the workflow manager for expert mode
+        options = get_calculation_options_from_current(settings, calc_type=calc_type)
         
     elif shared_settings:
         # Merge shared settings with current settings
@@ -861,7 +861,8 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             options["is_3c_method"] = True
             options["dft_grid"] = None
     else:
-        options = get_calculation_options_from_current(settings)
+        # Interactive mode (possibly with pre-selected calc_type)
+        options = get_calculation_options_from_current(settings, calc_type=calc_type)
         
         # Ensure write_only_unique is set based on space group
         if "write_only_unique" not in options:
@@ -1162,7 +1163,42 @@ def main():
 
         if not file_pairs:
             print(f"No .out files found in {args.directory}")
-            return
+            # Ask for output file path
+            print()
+            input_file = input("Enter CRYSTAL output file path: ").strip()
+            
+            if not input_file:
+                print("No file path provided. Exiting.")
+                return
+                
+            input_path = Path(input_file)
+            
+            if not input_path.exists():
+                print(f"Error: File or directory not found: {input_file}")
+                return
+            
+            # Check if it's a directory
+            if input_path.is_dir():
+                # Look for .out files in the directory
+                file_pairs = find_file_pairs(input_path)
+                if not file_pairs:
+                    print(f"\nError: No CRYSTAL output files (.out) found in directory: {input_path}")
+                    print("Please specify a CRYSTAL output file (e.g., material.out) or a directory containing .out files.")
+                    return
+                else:
+                    print(f"\nFound {len(file_pairs)} output file(s) in {input_path.name}:")
+                    for pair in sorted(file_pairs)[:10]:  # Show first 10
+                        # pair[0] is a string path, so we need to convert it to Path to get the name
+                        print(f"  - {Path(pair[0]).name}")
+                    if len(file_pairs) > 10:
+                        print(f"  ... and {len(file_pairs) - 10} more")
+            elif input_path.is_file():
+                # Convert single file mode - process as single file
+                # Create a single file pair for processing
+                file_pairs = [(input_path, None)]
+            else:
+                print(f"Error: {input_path} is not a valid file or directory.")
+                return
 
         print(f"Found {len(file_pairs)} output file(s) to process")
 

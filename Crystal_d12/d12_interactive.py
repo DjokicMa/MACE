@@ -121,27 +121,44 @@ def display_default_settings():
     print("-"*70)
 
 
-def display_current_settings(settings: Dict[str, Any], extracted: bool = False):
+def display_current_settings(settings: Dict[str, Any], extracted: bool = False, expert_mode: bool = False):
     """Display current calculation settings from parsed files
     
     Args:
         settings: Dictionary of settings to display
         extracted: If True, shows as "EXTRACTED CALCULATION SETTINGS"
+        expert_mode: If True, shows all available settings in detail
     """
     print("\n" + "="*60)
     if extracted:
-        print("EXTRACTED CALCULATION SETTINGS")
+        if expert_mode:
+            print("EXTRACTED CALCULATION SETTINGS (EXPERT MODE)")
+        else:
+            print("EXTRACTED CALCULATION SETTINGS")
     else:
         print("CURRENT CALCULATION SETTINGS")
     print("="*60)
     
     # Structure information (only for extracted settings)
     if extracted:
-        print(f"\nDimensionality: {settings.get('dimensionality', 'CRYSTAL')}")
+        print(f"\n### STRUCTURE INFORMATION ###")
+        print(f"Dimensionality: {settings.get('dimensionality', 'CRYSTAL')}")
         print(f"Space group: {settings.get('spacegroup', 'N/A')}")
         print(f"Origin setting: {settings.get('origin_setting', '0 0 0')}")
+        if settings.get("conventional_cell"):
+            cell = settings["conventional_cell"]
+            # Ensure all cell parameters are floats
+            try:
+                a, b, c = float(cell[0]), float(cell[1]), float(cell[2])
+                alpha, beta, gamma = float(cell[3]), float(cell[4]), float(cell[5])
+                print(f"Unit cell: a={a:.4f}, b={b:.4f}, c={c:.4f}")
+                print(f"           α={alpha:.2f}°, β={beta:.2f}°, γ={gamma:.2f}°")
+            except (TypeError, ValueError, IndexError) as e:
+                # If conversion fails, just print the raw values
+                print(f"Unit cell: {cell}")
     
     # Method settings
+    print(f"\n### METHOD AND BASIS SET ###")
     if settings.get("functional"):
         func = settings["functional"]
         # Determine if this is a Hartree-Fock method or DFT
@@ -161,13 +178,25 @@ def display_current_settings(settings: Dict[str, Any], extracted: bool = False):
         print(f"Method: Hartree-Fock (RHF)")
     
     print(f"Basis set: {settings.get('basis_set', 'N/A')} ({settings.get('basis_set_type', 'INTERNAL')})")
-    print(f"Spin polarized: {settings.get('spin_polarized', False)}")
     
     if settings.get("dft_grid"):
         print(f"DFT grid: {settings.get('dft_grid')}")
     elif settings.get("functional") and settings["functional"] not in ["HF", "RHF", "UHF"]:
         print(f"DFT grid: DEFAULT")
     
+    # Electronic structure settings
+    print(f"\n### ELECTRONIC STRUCTURE ###")
+    print(f"Spin polarized: {settings.get('spin_polarized', False)}")
+    if settings.get('spin_polarized') and expert_mode:
+        print(f"SPINLOCK: {settings.get('spinlock', 0)}")
+    
+    if settings.get("smearing"):
+        print(f"Fermi smearing: Yes (width={settings.get('smearing_width', 0.01)})")
+    else:
+        print(f"Fermi smearing: No")
+    
+    # Tolerances
+    print(f"\n### CONVERGENCE CRITERIA ###")
     if settings.get("tolerances"):
         tolinteg = settings['tolerances'].get('TOLINTEG')
         toldee = settings['tolerances'].get('TOLDEE')
@@ -178,23 +207,143 @@ def display_current_settings(settings: Dict[str, Any], extracted: bool = False):
         else:
             tolinteg_str = str(tolinteg) if tolinteg else 'N/A'
             
-        print(f"Tolerances: TOLINTEG={tolinteg_str}, TOLDEE={toldee if toldee else 'N/A'}")
+        print(f"TOLINTEG: {tolinteg_str}")
+        print(f"TOLDEE: {toldee if toldee else 'N/A'}")
     
+    # SCF settings
     if settings.get("scf_settings"):
-        print(f"SCF method: {settings['scf_settings'].get('method', 'DIIS')}")
-        print(f"SCF max cycles: {settings['scf_settings'].get('maxcycle', 800)}")
-        print(f"FMIXING: {settings['scf_settings'].get('fmixing', 30)}%")
+        scf = settings["scf_settings"]
+        print(f"\n### SCF SETTINGS ###")
+        print(f"SCF method: {scf.get('method', 'DIIS')}")
+        print(f"SCF max cycles: {scf.get('maxcycle', 800)}")
+        fmixing_val = scf.get('fmixing', 30)
+        # Ensure fmixing is a number
+        try:
+            fmixing_val = int(fmixing_val)
+        except (TypeError, ValueError):
+            fmixing_val = 30  # Default
+        print(f"FMIXING: {fmixing_val}%")
+        
+        if expert_mode:
+            if scf.get('histdiis'):
+                print(f"HISTDIIS: {scf['histdiis']}")
+            if scf.get('ppan'):
+                print(f"PPAN: Yes (parallel diagonalization)")
+            if scf.get('biposize'):
+                print(f"BIPOSIZE: {scf['biposize']}")
+            if scf.get('exchsize'):
+                print(f"EXCHSIZE: {scf['exchsize']}")
+            if scf.get('broyden_w0'):
+                print(f"BROYDEN W0: {scf['broyden_w0']}")
     
+    # K-points
     if settings.get("k_points"):
-        # Handle k_points as either string or formatted value
+        print(f"\n### K-POINTS ###")
         k_points = settings['k_points']
-        if isinstance(k_points, str) and k_points.startswith("SCFDIR"):
+        if isinstance(k_points, str):
             print(f"K-points: {k_points}")
         else:
             print(f"K-points: {k_points}")
     
-    if settings.get("smearing"):
-        print(f"Fermi smearing: Yes (width={settings.get('smearing_width', 0.01)})")
+    # Calculation-specific settings (expert mode)
+    if expert_mode:
+        # Optimization settings
+        if settings.get("optimization_settings"):
+            opt = settings["optimization_settings"]
+            print(f"\n### OPTIMIZATION SETTINGS ###")
+            print(f"Optimization type: {opt.get('type', settings.get('optimization_type', 'FULLOPTG'))}")
+            if opt.get('toldeg') is not None:
+                print(f"TOLDEG: {opt['toldeg']} (RMS gradient)")
+            if opt.get('toldex') is not None:
+                print(f"TOLDEX: {opt['toldex']} (RMS displacement)")
+            if opt.get('toldee') is not None:
+                print(f"TOLDEE: {opt['toldee']} (energy convergence)")
+            if opt.get('maxcycle') is not None:
+                print(f"MAXCYCLE: {opt['maxcycle']}")
+            if opt.get('maxtradius') is not None:
+                print(f"MAXTRADIUS: {opt['maxtradius']}")
+            if opt.get('convergence'):
+                print(f"Convergence preset: {opt['convergence']}")
+        
+        # Frequency settings
+        if settings.get("freq_settings"):
+            freq = settings["freq_settings"]
+            print(f"\n### FREQUENCY SETTINGS ###")
+            freq_mode = freq.get('freq_mode', 'FREQCALC')
+            print(f"Frequency mode: {freq_mode}")
+            
+            if freq_mode == 'ANHARM':
+                if freq.get('h_atom'):
+                    print(f"H atom label: {freq['h_atom']}")
+                if freq.get('keep_symmetry') is not None:
+                    print(f"Keep symmetry: {freq['keep_symmetry']}")
+                if freq.get('points26'):
+                    print(f"Points: 26")
+                else:
+                    print(f"Points: 7")
+                if freq.get('isotopes'):
+                    print(f"Isotopes: {freq['isotopes']}")
+            else:
+                # FREQCALC mode
+                if freq.get('template'):
+                    print(f"Template: {freq['template']}")
+                if freq.get('dispersion'):
+                    print(f"Dispersion calculation: Yes")
+                if freq.get('ir_raman'):
+                    print(f"IR/Raman intensities: Yes")
+                if freq.get('modes'):
+                    print(f"Selected modes: {freq['modes']}")
+                if freq.get('temprange'):
+                    temps = freq['temprange']
+                    if isinstance(temps, tuple) and len(temps) == 3:
+                        print(f"Temperature range: {temps[1]}-{temps[2]}K ({temps[0]} points)")
+                if freq.get('pressrange'):
+                    press = freq['pressrange']
+                    if isinstance(press, tuple) and len(press) == 3:
+                        print(f"Pressure range: {press[1]}-{press[2]} GPa ({press[0]} points)")
+                
+                # Phonon bands
+                if freq.get('bands'):
+                    bands = freq['bands']
+                    print(f"\nPhonon band structure:")
+                    print(f"  SHRINK: {bands.get('shrink', 16)}")
+                    print(f"  Points per segment: {bands.get('npoints', 100)}")
+                    if bands.get('path') == 'AUTO':
+                        print(f"  Path: AUTO (from space group)")
+                    elif bands.get('path'):
+                        print(f"  Path: {bands['path']}")
+                
+                # Phonon DOS
+                if freq.get('pdos'):
+                    pdos = freq['pdos']
+                    print(f"\nPhonon DOS:")
+                    print(f"  Max frequency: {pdos.get('max_freq', 2000)} cm⁻¹")
+                    print(f"  Number of bins: {pdos.get('nbins', 200)}")
+                    print(f"  Projected: {pdos.get('projected', True)}")
+        
+        # Additional settings
+        if settings.get('levshift'):
+            print(f"\n### LEVEL SHIFTING ###")
+            print(f"LEVSHIFT: {settings['levshift'].get('shift', 5.0)} Hartree")
+            print(f"Cycles: {settings['levshift'].get('ncycles', 30)}")
+        
+        if settings.get('print_options'):
+            print(f"\n### PRINT OPTIONS ###")
+            print(f"Options: {', '.join(settings['print_options'])}")
+        
+        if settings.get('ghost_atoms'):
+            print(f"\n### GHOST ATOMS ###")
+            print(f"Type: {settings['ghost_atoms'].get('type')}")
+            if settings['ghost_atoms'].get('distance'):
+                print(f"Distance: {settings['ghost_atoms']['distance']} Å")
+            if settings['ghost_atoms'].get('positions'):
+                print(f"Positions: {settings['ghost_atoms']['positions']}")
+            if settings['ghost_atoms'].get('atom_numbers'):
+                print(f"Atom numbers: {settings['ghost_atoms']['atom_numbers']}")
+        
+        if settings.get('external_pressure'):
+            print(f"\n### EXTERNAL PRESSURE ###")
+            print(f"Pressure: {settings['external_pressure'].get('pressure', 0.0)} GPa")
     
     print("="*60)
 
@@ -243,6 +392,420 @@ def get_calculation_type() -> str:
     return calc_types[choice]
 
 
+def select_basis_set_with_defaults(elements: List[int], method: str = "DFT", 
+                                 functional: Optional[str] = None,
+                                 shared_mode: bool = False,
+                                 current_basis_type: str = "INTERNAL",
+                                 current_basis: str = "Not set") -> Dict[str, Any]:
+    """
+    Wrapper for select_basis_set that preserves current settings as defaults.
+    
+    This function temporarily patches the get_user_input function to use
+    appropriate defaults based on current settings.
+    """
+    import d12_constants
+    
+    # Store the original get_user_input function
+    original_get_user_input = d12_constants.get_user_input
+    
+    # Create a patched version that uses our defaults
+    def patched_get_user_input(prompt, options, default):
+        # For basis type selection
+        if "Select basis set type" in prompt:
+            if current_basis_type == "EXTERNAL":
+                return "1"
+            else:
+                return "2"
+        
+        # For external basis selection
+        elif "Select external basis set" in prompt and current_basis_type == "EXTERNAL":
+            if "DZVP" in current_basis or "doublezeta" in current_basis:
+                return "1"
+            elif "TZVP" in current_basis or "triplezeta" in current_basis:
+                return "2"
+            else:
+                return default
+        
+        # For internal basis selection - need to check the prompt more carefully
+        elif "Enter your choice" in prompt and current_basis_type == "INTERNAL":
+            # Map current basis to selection number
+            basis_map = {
+                "STO-3G": "1", "STO-6G": "2", "POB-DZVP": "3", "POB-DZVPP": "4",
+                "POB-TZVP": "5", "POB-DZVP-REV2": "6", "POB-TZVP-REV2": "7",
+                "MINIS": "8", "6-31G*": "9", "def2-SV(P)": "10", "def2-SVP": "11",
+                "def-TZVP": "12", "def2-TZVP": "13"
+            }
+            
+            # Try exact match first
+            if current_basis in basis_map:
+                return basis_map[current_basis]
+            
+            # Try partial matches for special cases
+            for basis_name, choice in basis_map.items():
+                if basis_name in current_basis or current_basis in basis_name:
+                    return choice
+            
+            # Default to TZVP-REV2 if not found
+            return "7"
+        
+        # For all other prompts, use the original function
+        return original_get_user_input(prompt, options, default)
+    
+    # Temporarily replace the function
+    d12_constants.get_user_input = patched_get_user_input
+    
+    try:
+        # Call the original select_basis_set with our patched input function
+        result = select_basis_set(elements, method, functional, shared_mode)
+    finally:
+        # Always restore the original function
+        d12_constants.get_user_input = original_get_user_input
+    
+    return result
+
+
+def configure_dft_grid_with_defaults(functional: str, current_grid: str = "XLGRID", 
+                                   shared_mode: bool = False) -> Optional[str]:
+    """
+    Wrapper for configure_dft_grid that uses current grid as default.
+    """
+    import d12_constants
+    
+    # 3C methods have their own optimized grids
+    if "-3C" in functional or functional.endswith("3C"):
+        return None
+    
+    # Store the original get_user_input function
+    original_get_user_input = d12_constants.get_user_input
+    
+    # Map grid names to choice numbers
+    grid_map = {
+        "OLDGRID": "1",
+        "DEFAULT": "2", 
+        "LGRID": "3",
+        "XLGRID": "4",
+        "XXLGRID": "5",
+        "XXXLGRID": "6",
+        "HUGEGRID": "7"
+    }
+    
+    # Get the default choice based on current grid
+    default_choice = grid_map.get(current_grid, "4")
+    
+    # Create a patched version that uses our default
+    def patched_get_user_input(prompt, options, default):
+        if "Select integration grid" in prompt:
+            return default_choice
+        return original_get_user_input(prompt, options, default)
+    
+    # Temporarily replace the function
+    d12_constants.get_user_input = patched_get_user_input
+    
+    try:
+        # Call the original configure_dft_grid with our patched input function
+        result = configure_dft_grid(functional, shared_mode)
+    finally:
+        # Always restore the original function
+        d12_constants.get_user_input = original_get_user_input
+    
+    return result
+
+
+def configure_tolerances_with_defaults(current_tolerances: Dict[str, Any], 
+                                      shared_mode: bool = False, 
+                                      calculation_type: str = None) -> Dict[str, Any]:
+    """Wrapper for configure_tolerances that shows current settings as defaults"""
+    # Extract current values
+    current_toldee = current_tolerances.get('TOLDEE', current_tolerances.get('toldee', 7))
+    current_tolinteg = current_tolerances.get('TOLINTEG', current_tolerances.get('tolinteg', '7 7 7 7 14'))
+    
+    # Convert tolinteg to string if it's a list
+    if isinstance(current_tolinteg, list):
+        current_tolinteg = ' '.join(map(str, current_tolinteg))
+    
+    # Determine which preset matches current settings
+    if current_tolinteg == "7 7 7 7 14" and current_toldee == 7:
+        default_choice = "1"
+    elif current_tolinteg == "8 8 8 9 24" and current_toldee == 9:
+        default_choice = "2"
+    elif current_tolinteg == "9 9 9 11 38" and current_toldee == 11:
+        default_choice = "3"
+    else:
+        default_choice = "4"  # Custom
+    
+    # Print current settings
+    print("\n=== SCF CONVERGENCE SETTINGS ===")
+    print(f"Current settings: TOLINTEG: {current_tolinteg}, TOLDEE: {current_toldee}")
+    
+    # Menu-based selection
+    if calculation_type == "FREQ":
+        print("\nSelect SCF convergence level (FREQ calculations require tighter tolerances):")
+        print("1: Standard - TOLINTEG: 7 7 7 7 14, TOLDEE: 7")
+        print("2: Tight - TOLINTEG: 8 8 8 9 24, TOLDEE: 9 (recommended for FREQ)")
+        print("3: Very tight - TOLINTEG: 9 9 9 11 38, TOLDEE: 11 (default for FREQ)")
+        print("4: Custom (keep current or enter new values)")
+        
+        choice = input(f"Select tolerance level (1-4) [{default_choice}]: ").strip()
+        if not choice:
+            choice = default_choice
+    else:
+        # SP/OPT calculations
+        print("\nSelect SCF convergence level:")
+        print("1: Standard - TOLINTEG: 7 7 7 7 14, TOLDEE: 7 (default for OPT/SP)")
+        print("2: Tight - TOLINTEG: 8 8 8 9 24, TOLDEE: 9 (higher precision)")
+        print("3: Very tight - TOLINTEG: 9 9 9 11 38, TOLDEE: 11 (ultra-high precision)")
+        print("4: Custom (keep current or enter new values)")
+        
+        choice = input(f"Select tolerance level (1-4) [{default_choice}]: ").strip()
+        if not choice:
+            choice = default_choice
+    
+    # Process the choice
+    tolerances = {}
+    if choice == "1":
+        tolerances["TOLINTEG"] = "7 7 7 7 14"
+        tolerances["TOLDEE"] = 7
+    elif choice == "2":
+        tolerances["TOLINTEG"] = "8 8 8 9 24"
+        tolerances["TOLDEE"] = 9
+    elif choice == "3":
+        tolerances["TOLINTEG"] = "9 9 9 11 38"
+        tolerances["TOLDEE"] = 11
+    elif choice == "4":
+        # Custom - show current values as defaults
+        print("\nEnter custom tolerance values (press Enter to keep current):")
+        
+        # TOLINTEG
+        tolinteg_input = input(f"TOLINTEG [{current_tolinteg}]: ").strip()
+        if tolinteg_input:
+            tolerances["TOLINTEG"] = tolinteg_input
+        else:
+            tolerances["TOLINTEG"] = current_tolinteg
+        
+        # TOLDEE
+        toldee_input = input(f"TOLDEE [{current_toldee}]: ").strip()
+        if toldee_input:
+            try:
+                tolerances["TOLDEE"] = int(toldee_input)
+            except ValueError:
+                print(f"Invalid input, keeping current value of {current_toldee}")
+                tolerances["TOLDEE"] = current_toldee
+        else:
+            tolerances["TOLDEE"] = current_toldee
+    
+    return tolerances
+
+
+def configure_scf_settings_with_defaults(current_scf: Dict[str, Any], 
+                                       shared_mode: bool = False) -> Dict[str, Any]:
+    """Wrapper for configure_scf_settings that shows current settings as defaults"""
+    # Extract current values
+    current_maxcycle = current_scf.get('maxcycle', 800)
+    current_fmixing = current_scf.get('fmixing', 30)
+    current_method = current_scf.get('method', 'DIIS')
+    current_ppan = current_scf.get('ppan', True)
+    current_biposize = current_scf.get('biposize', 110000000)
+    current_exchsize = current_scf.get('exchsize', 110000000)
+    
+    scf_settings = {}
+    
+    print("\n=== SCF SETTINGS ===")
+    print(f"Current settings: Method={current_method}, MAXCYCLE={current_maxcycle}, FMIXING={current_fmixing}%")
+    
+    # MAXCYCLE
+    print("\nMaximum SCF cycles:")
+    print("  - Default: 800 (recommended)")
+    print("  - Increase for difficult convergence")
+    
+    maxcycle_input = input(f"MAXCYCLE [{current_maxcycle}]: ").strip()
+    if maxcycle_input:
+        try:
+            scf_settings["maxcycle"] = int(maxcycle_input)
+        except ValueError:
+            print(f"Invalid input, using current value of {current_maxcycle}")
+            scf_settings["maxcycle"] = current_maxcycle
+    else:
+        scf_settings["maxcycle"] = current_maxcycle
+    
+    # FMIXING
+    print("\nFMIXING percentage:")
+    print("  - Controls mixing of old and new density matrices")
+    print("  - Default: 30 (30%)")
+    print("  - Lower values = more stable but slower convergence")
+    
+    fmixing_input = input(f"FMIXING [{current_fmixing}]: ").strip()
+    if fmixing_input:
+        try:
+            fmixing = int(fmixing_input)
+            if 0 <= fmixing <= 100:
+                scf_settings["fmixing"] = fmixing
+            else:
+                print(f"Value out of range, using current value of {current_fmixing}")
+                scf_settings["fmixing"] = current_fmixing
+        except ValueError:
+            print(f"Invalid input, using current value of {current_fmixing}")
+            scf_settings["fmixing"] = current_fmixing
+    else:
+        scf_settings["fmixing"] = current_fmixing
+    
+    # SCF method
+    print("\nSCF method:")
+    print("  1. DIIS (default - fastest convergence)")
+    print("  2. Broyden (alternative for difficult cases)")
+    
+    current_method_choice = "1" if current_method == "DIIS" else "2"
+    method_choice = input(f"Select method (1-2) [{current_method_choice}]: ").strip()
+    if not method_choice:
+        method_choice = current_method_choice
+        
+    if method_choice == "1":
+        scf_settings["method"] = "DIIS"
+    else:
+        scf_settings["method"] = "BROYDEN"
+    
+    # PPAN
+    current_ppan_str = "yes" if current_ppan else "no"
+    ppan_input = yes_no_prompt(f"Enable PPAN (parallel diagonalization)?", current_ppan_str)
+    scf_settings["ppan"] = ppan_input
+    
+    # BIPOSIZE/EXCHSIZE
+    if yes_no_prompt("\nModify memory settings (BIPOSIZE/EXCHSIZE)?", "no"):
+        print(f"\nCurrent: BIPOSIZE={current_biposize}, EXCHSIZE={current_exchsize}")
+        print("Default: 110000000 (for large systems)")
+        
+        biposize_input = input(f"BIPOSIZE [{current_biposize}]: ").strip()
+        if biposize_input:
+            try:
+                scf_settings["biposize"] = int(biposize_input)
+            except ValueError:
+                print(f"Invalid input, using current value of {current_biposize}")
+                scf_settings["biposize"] = current_biposize
+        else:
+            scf_settings["biposize"] = current_biposize
+        
+        exchsize_input = input(f"EXCHSIZE [{current_exchsize}]: ").strip()
+        if exchsize_input:
+            try:
+                scf_settings["exchsize"] = int(exchsize_input)
+            except ValueError:
+                print(f"Invalid input, using current value of {current_exchsize}")
+                scf_settings["exchsize"] = current_exchsize
+        else:
+            scf_settings["exchsize"] = current_exchsize
+    
+    return scf_settings
+
+
+def configure_spin_polarization_with_defaults(current_settings: Dict[str, Any], 
+                                             shared_mode: bool = False) -> Dict[str, Any]:
+    """Wrapper for configure_spin_polarization that shows current settings as defaults"""
+    # Extract current values
+    current_spin = current_settings.get('spin_polarized', current_settings.get('is_spin_polarized', True))
+    current_spinlock = current_settings.get('spinlock', 0)
+    
+    spin_config = {}
+    
+    print("\n=== SPIN POLARIZATION ===")
+    print(f"Current setting: Spin polarization = {'Yes' if current_spin else 'No'}")
+    
+    default_spin = "yes" if current_spin else "no"
+    use_spin = yes_no_prompt(
+        "Use spin-polarized calculation?",
+        default_spin
+    )
+    
+    spin_config["spin_polarized"] = use_spin
+    
+    if use_spin:
+        print(f"\nCurrent SPINLOCK: {current_spinlock}")
+        print("SPINLOCK options (number of unpaired electrons, nα-nβ):")
+        print("  - Enter 0 for automatic spin optimization")
+        print("  - Enter positive integer for fixed spin multiplicity (e.g., 2 for triplet)")
+        print("  - Enter -1 for antiferromagnetic initial guess")
+        
+        spinlock_input = input(f"SPINLOCK value (nα-nβ) [{current_spinlock}]: ").strip()
+        if spinlock_input:
+            try:
+                spin_config["spinlock"] = int(spinlock_input)
+            except ValueError:
+                print(f"Invalid input, using current value of {current_spinlock}")
+                spin_config["spinlock"] = current_spinlock
+        else:
+            spin_config["spinlock"] = current_spinlock
+    
+    return spin_config
+
+
+def configure_smearing_with_defaults(current_settings: Dict[str, Any], 
+                                   temp_kelvin: float = 300, 
+                                   shared_mode: bool = False) -> Dict[str, Any]:
+    """Wrapper for configure_smearing that shows current settings as defaults"""
+    # Extract current values
+    current_use_smearing = current_settings.get('use_smearing', current_settings.get('smearing', False))
+    current_width = current_settings.get('smearing_width', 0.01)
+    
+    smearing_config = {}
+    
+    print("\n=== FERMI SMEARING ===")
+    print(f"Current setting: Smearing = {'Yes' if current_use_smearing else 'No'}")
+    if current_use_smearing:
+        print(f"Current smearing width: {current_width} Ha")
+    
+    default_smearing = "yes" if current_use_smearing else "no"
+    use_smearing = yes_no_prompt(
+        "Use Fermi smearing? (recommended for metals)",
+        default_smearing
+    )
+    
+    smearing_config["use_smearing"] = use_smearing
+    
+    if use_smearing:
+        print("\nSmearing width options:")
+        print("  1. Default (0.01 Ha)")
+        print("  2. Temperature-based")
+        print("  3. Custom value")
+        
+        # Determine current choice
+        if abs(current_width - 0.01) < 1e-6:
+            current_choice = "1"
+        else:
+            current_choice = "3"
+        
+        choice = input(f"Select option (1-3) [{current_choice}]: ").strip()
+        if not choice:
+            choice = current_choice
+        
+        if choice == "1":
+            smearing_config["smearing_width"] = 0.01
+        elif choice == "2":
+            temp_input = input(f"Enter temperature in Kelvin [{temp_kelvin}]: ").strip()
+            if temp_input:
+                try:
+                    temp = float(temp_input)
+                    # Convert temperature to Hartree (kT)
+                    # 1 Ha = 315775 K
+                    smearing_config["smearing_width"] = temp / 315775.0
+                except ValueError:
+                    print(f"Invalid input, using {temp_kelvin} K")
+                    smearing_config["smearing_width"] = temp_kelvin / 315775.0
+            else:
+                smearing_config["smearing_width"] = temp_kelvin / 315775.0
+        else:
+            width_input = input(f"Enter smearing width in Hartree [{current_width}]: ").strip()
+            if width_input:
+                try:
+                    smearing_config["smearing_width"] = float(width_input)
+                except ValueError:
+                    print(f"Invalid input, using current value of {current_width}")
+                    smearing_config["smearing_width"] = current_width
+            else:
+                smearing_config["smearing_width"] = current_width
+    else:
+        smearing_config["smearing_width"] = 0.0
+    
+    return smearing_config
+
+
 def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
     """Configure method type and functional"""
     method_options = [
@@ -250,11 +813,21 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
         ("2", "Density Functional Theory (DFT)")
     ]
     
+    # Determine default based on current settings
+    current_method = options.get("method_type", options.get("method", "DFT"))
+    current_functional = options.get("functional", "")
+    
+    # Set default based on current method
+    if current_method == "HF" or current_functional in ["RHF", "UHF", "HF3C", "HFSOL3C"]:
+        method_default = "1"
+    else:
+        method_default = "2"
+    
     print("\nSelect method type:")
     for key, desc in method_options:
         print(f"{key}. {desc}")
     
-    method_choice = get_user_choice("Select method type", method_options, "2")
+    method_choice = get_user_choice("Select method type", method_options, method_default)
     
     if method_choice == "1":
         options["method"] = "HF"  # Added for compatibility
@@ -263,13 +836,18 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
         hf_methods = FUNCTIONAL_CATEGORIES["HF"]["functionals"]
         hf_options = []
         
+        # Determine default based on current functional
+        hf_default = "1"
+        if current_functional in hf_methods:
+            hf_default = str(hf_methods.index(current_functional) + 1)
+        
         print("\nSelect Hartree-Fock method:")
         for i, method in enumerate(hf_methods, 1):
             desc = FUNCTIONAL_CATEGORIES["HF"]["descriptions"][method]
             print(f"{i}: {method} - {desc}")
             hf_options.append((str(i), f"{method} - {desc}"))
         
-        hf_choice = get_user_choice("Select Hartree-Fock method", hf_options, "1")
+        hf_choice = get_user_choice("Select Hartree-Fock method", hf_options, hf_default)
         options["functional"] = hf_methods[int(hf_choice) - 1]
         options["hf_method"] = options["functional"]  # Added for compatibility
     else:
@@ -279,6 +857,17 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
         # Select functional category (excluding HF) - ordered to match NewCifToD12.py
         ordered_categories = ["LDA", "GGA", "HYBRID", "MGGA", "3C"]
         cat_options = []
+        
+        # Determine current functional's category
+        cat_default = "3"  # Default to HYBRID
+        if current_functional:
+            # Strip dispersion suffix if present
+            base_functional = current_functional.replace("-D3", "").replace("-D4", "")
+            for i, cat in enumerate(ordered_categories, 1):
+                if base_functional in FUNCTIONAL_CATEGORIES[cat]["functionals"]:
+                    cat_default = str(i)
+                    break
+        
         print("\nAvailable functional categories:")
         for i, cat in enumerate(ordered_categories, 1):
             cat_info = FUNCTIONAL_CATEGORIES[cat]
@@ -293,8 +882,7 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
                 print(f"   Examples: {', '.join(cat_info['functionals'][:4])}")
             cat_options.append((str(i), cat))
         
-        # Default to HYBRID (3)
-        cat_choice = get_user_choice("Select functional category", cat_options, "3")
+        cat_choice = get_user_choice("Select functional category", cat_options, cat_default)
         
         category = ordered_categories[int(cat_choice) - 1]
         functionals = FUNCTIONAL_CATEGORIES[category]["functionals"]
@@ -303,6 +891,10 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
         print(f"\nAvailable {FUNCTIONAL_CATEGORIES[category]['name']}:")
         func_options = []
         default_func = None
+        
+        # Try to find current functional in this category
+        base_functional = current_functional.replace("-D3", "").replace("-D4", "") if current_functional else ""
+        
         for i, func in enumerate(functionals, 1):
             desc = FUNCTIONAL_CATEGORIES[category]["descriptions"].get(func, "")
             # Check if functional supports D3
@@ -310,8 +902,12 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
             full_desc = f"{func} - {desc}{d3_marker}"
             print(f"{i}: {full_desc}")
             func_options.append((str(i), func))
-            # Set HSE06 as default for hybrid functionals
-            if func == "HSE06" and category == "HYBRID":
+            
+            # Set default to current functional if it's in this category
+            if func == base_functional:
+                default_func = str(i)
+            # Otherwise, set HSE06 as default for hybrid functionals
+            elif default_func is None and func == "HSE06" and category == "HYBRID":
                 default_func = str(i)
         
         if not default_func:
@@ -360,7 +956,13 @@ def get_shared_calculation_options() -> Dict[str, Any]:
     options = configure_method(options)
     
     # Basis set
-    basis_config = select_basis_set([], options.get("method_type", "DFT"), options.get("functional"))
+    basis_config = select_basis_set_with_defaults(
+        [], 
+        options.get("method_type", "DFT"), 
+        options.get("functional"),
+        current_basis_type=options.get("basis_set_type", "INTERNAL"),
+        current_basis=options.get("basis_set", "POB-TZVP-REV2")
+    )
     options.update(basis_config)
     
     # DFT grid (right after functional and basis set for DFT calculations)
@@ -378,25 +980,37 @@ def get_shared_calculation_options() -> Dict[str, Any]:
 
 
 def get_calculation_options_from_current(current_settings: Dict[str, Any], 
-                                        shared_mode: bool = False) -> Dict[str, Any]:
+                                        shared_mode: bool = False,
+                                        calc_type: str = None) -> Dict[str, Any]:
     """Get calculation options starting from current settings
     
     Args:
         current_settings: Current settings extracted from files
         shared_mode: If True, only ask for calculation settings to be shared
+        calc_type: Pre-selected calculation type (bypasses selection menu)
         
     Returns:
         dict: Options for the calculation
     """
     options = current_settings.copy()
     
+    # Determine if we're in expert mode (when calc_type is pre-selected)
+    expert_mode = calc_type is not None
+    
     if not shared_mode:
         # Display current settings
-        display_current_settings(current_settings, extracted=True)
+        print("\n" + "=" * 60)
+        print("SETTINGS FROM PREVIOUS CALCULATION")
+        print("=" * 60)
+        print("The following settings were extracted from your optimized structure:")
+        display_current_settings(current_settings, extracted=True, expert_mode=expert_mode)
         
         # Ask if user wants to keep current settings
+        print("\nYou can either:")
+        print("  - Use these exact settings for the new calculation")
+        print("  - Modify settings (change functional, basis set, tolerances, etc.)")
         keep_settings = yes_no_prompt(
-            "\nKeep these settings for the new calculation?", "yes"
+            "\nUse these exact settings for the new calculation?", "no"
         )
     else:
         keep_settings = False
@@ -404,7 +1018,7 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
     if not keep_settings or shared_mode:
         # In shared mode, first show current settings
         if shared_mode:
-            display_current_settings(current_settings, extracted=True)
+            display_current_settings(current_settings, extracted=True, expert_mode=expert_mode)
             use_extracted = yes_no_prompt(
                 "\nUse these extracted settings as baseline for shared configuration?", "yes"
             )
@@ -441,8 +1055,12 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
                 if key in current_settings:
                     options[key] = current_settings[key]
         
-        # Get calculation type
-        options["calculation_type"] = get_calculation_type()
+        # Get calculation type (use pre-selected if provided)
+        if calc_type:
+            options["calculation_type"] = calc_type
+            print(f"\n  Calculation type: {calc_type} (pre-selected)")
+        else:
+            options["calculation_type"] = get_calculation_type()
         
         # Calculation-specific settings - do this IMMEDIATELY after calc type selection
         print("\n" + "="*60)
@@ -488,7 +1106,7 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
         # Ensure method_type is set from functional if not already present
         if "method_type" not in options and "functional" in options:
             functional = options.get("functional", "")
-            if functional in ["RHF", "UHF", "HF3C", "HFSOL3C"] or functional.startswith("HF"):
+            if functional and (functional in ["RHF", "UHF", "HF3C", "HFSOL3C"] or functional.startswith("HF")):
                 options["method_type"] = "HF"
             else:
                 options["method_type"] = "DFT"
@@ -503,14 +1121,23 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
         current_basis = options.get("basis_set", "Not set")
         current_basis_type = options.get("basis_set_type", "INTERNAL")
         if not shared_mode or yes_no_prompt(f"\nChange basis set? (Current: {current_basis} [{current_basis_type}])", "no"):
-            basis_config = select_basis_set([], options.get("method_type", "DFT"), options.get("functional"))
+            basis_config = select_basis_set_with_defaults(
+                [], 
+                options.get("method_type", "DFT"), 
+                options.get("functional"),
+                current_basis_type=current_basis_type,
+                current_basis=current_basis
+            )
             options.update(basis_config)
         
         # DFT grid (right after functional and basis set for DFT calculations)
         if options.get("method_type", "DFT") == "DFT":
             current_grid = options.get("dft_grid", "XLGRID")
             if not shared_mode or yes_no_prompt(f"\nChange DFT grid? (Current: {current_grid})", "no"):
-                options["dft_grid"] = configure_dft_grid(options.get("functional", ""))
+                options["dft_grid"] = configure_dft_grid_with_defaults(
+                    options.get("functional", ""), 
+                    current_grid=current_grid
+                )
         
         # Tolerances - handle SP, OPT, and FREQ calculations with nice formatting
         if options["calculation_type"] in ["SP", "OPT", "FREQ"]:
@@ -594,14 +1221,26 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
                 options["tolerances"] = configure_tolerances(calculation_type=options.get("calculation_type"))
         
         # Advanced electronic and convergence settings
-        # Show current advanced settings
+        # Show current advanced settings with (Default) markers where appropriate
         print("\n" + "="*60)
         print("CURRENT ADVANCED ELECTRONIC AND CONVERGENCE SETTINGS")
         print("="*60)
-        current_spin = "Yes" if options.get("spin_polarized", True) else "No"
+        
+        # Check if we have actual settings or defaults
+        has_spin_setting = "spin_polarized" in options or "is_spin_polarized" in options
+        current_spin = "Yes" if options.get("spin_polarized", options.get("is_spin_polarized", True)) else "No"
+        
+        has_spinlock = "spinlock" in options
         current_spinlock = options.get("spinlock", 0)
+        
+        has_smearing = "use_smearing" in options or "smearing" in options
         current_smearing = "Yes" if options.get("use_smearing", False) else "No"
+        
+        # Get SCF settings or use defaults
         current_scf = options.get("scf_settings", {})
+        has_scf = bool(current_scf)  # Check if we have any SCF settings
+        
+        # Extract individual SCF values with defaults
         current_scf_method = current_scf.get("method", "DIIS")
         current_maxcycle = current_scf.get("maxcycle", 800)
         current_fmixing = current_scf.get("fmixing", 30)
@@ -609,20 +1248,31 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
         current_biposize = current_scf.get("biposize", 110000000)
         current_exchsize = current_scf.get("exchsize", 110000000)
         
-        print(f"Spin polarization: {current_spin}")
+        # Check for LEVSHIFT
+        has_levshift = "levshift" in options
+        levshift_info = "None"
+        if has_levshift and options["levshift"]:
+            levshift_info = f"{options['levshift']['shift']} Hartree for {options['levshift']['ncycles']} cycles"
+        
+        # Display with (Default) markers
+        print(f"Spin polarization: {current_spin}{'' if has_spin_setting else ' (Default)'}")
         if current_spin == "Yes":
-            print(f"SPINLOCK: {current_spinlock} {'(automatic spin optimization)' if current_spinlock == 0 else ''}")
-        print(f"Fermi smearing: {current_smearing}")
-        print(f"LEVSHIFT: None")  # TODO: Extract from current settings if available
-        print(f"SCF method: {current_scf_method}")
-        print(f"SCF max cycles: {current_maxcycle}")
-        print(f"FMIXING: {current_fmixing}%")
-        print(f"PPAN: {current_ppan} (parallel diagonalization)")
-        print(f"BIPOSIZE/EXCHSIZE: {current_biposize}/{current_exchsize}")
+            spinlock_desc = '(automatic spin optimization)' if current_spinlock == 0 else ''
+            print(f"SPINLOCK: {current_spinlock} {spinlock_desc}{'' if has_spinlock else ' (Default)'}")
+        print(f"Fermi smearing: {current_smearing}{'' if has_smearing else ' (Default)'}")
+        print(f"LEVSHIFT: {levshift_info}{'' if has_levshift else ' (Default)'}")
+        print(f"SCF method: {current_scf_method}{'' if current_scf.get('method') else ' (Default)'}")
+        print(f"SCF max cycles: {current_maxcycle}{'' if current_scf.get('maxcycle') else ' (Default)'}")
+        print(f"FMIXING: {current_fmixing}%{'' if current_scf.get('fmixing') else ' (Default)'}")
+        print(f"PPAN: {current_ppan} (parallel diagonalization){'' if current_scf.get('ppan') is not None else ' (Default)'}")
+        
+        # Check if BIPOSIZE/EXCHSIZE were explicitly set
+        has_bipo_exch = current_scf.get('biposize') is not None or current_scf.get('exchsize') is not None
+        print(f"BIPOSIZE/EXCHSIZE: {current_biposize}/{current_exchsize}{'' if has_bipo_exch else ' (Default)'}")
         print("="*60)
         
         if not shared_mode or yes_no_prompt(f"\nChange advanced electronic and convergence settings?", "no"):
-            advanced_config = configure_advanced_electronic_settings(options)
+            advanced_config = configure_advanced_electronic_settings(options, show_current=True)
             options.update(advanced_config)
         else:
             # Keep existing settings if not changing
@@ -737,7 +1387,13 @@ def get_calculation_options_new() -> Dict[str, Any]:
         # 5. Functional selection (if DFT) - already handled in configure_method
         
         # 6. Basis set selection
-        basis_config = select_basis_set([], options.get("method_type", "DFT"), options.get("functional"))
+        basis_config = select_basis_set_with_defaults(
+            [], 
+            options.get("method_type", "DFT"), 
+            options.get("functional"),
+            current_basis_type=options.get("basis_set_type", "INTERNAL"),
+            current_basis=options.get("basis_set", "POB-TZVP-REV2")
+        )
         options.update(basis_config)
         
         # 7. DFT grid (right after functional and basis set for DFT calculations)
@@ -1061,7 +1717,7 @@ def configure_external_pressure() -> Dict[str, float]:
     return {"pressure": pressure}
 
 
-def configure_advanced_electronic_settings(options: Dict[str, Any]) -> Dict[str, Any]:
+def configure_advanced_electronic_settings(options: Dict[str, Any], show_current: bool = False) -> Dict[str, Any]:
     """Configure advanced electronic and convergence settings
     
     Groups together:
@@ -1072,31 +1728,71 @@ def configure_advanced_electronic_settings(options: Dict[str, Any]) -> Dict[str,
     
     Args:
         options: Current configuration options
+        show_current: If True, user already saw current settings, just ask to use them
         
     Returns:
         Dictionary with advanced settings
     """
     advanced_config = {}
     
-    # Always show the grouped settings
-    print("\n" + "="*60)
-    print("DEFAULT ADVANCED ELECTRONIC AND CONVERGENCE SETTINGS")
-    print("="*60)
-    print("Spin polarization: Yes")
-    print("SPINLOCK: 0 (automatic spin optimization)")
-    print("Fermi smearing: No")
-    print("LEVSHIFT: None")
-    print("SCF method: DIIS")
-    print("SCF max cycles: 800")
-    print("FMIXING: 30%")
-    print("PPAN: Yes (parallel diagonalization)")
-    print("BIPOSIZE/EXCHSIZE: 110000000/110000000")
-    print("="*60)
+    if show_current:
+        # User already saw current settings, just ask if they want to use them
+        # Don't show defaults or current again
+        use_current = yes_no_prompt("\nUse these current advanced settings?", "yes")
+    else:
+        # Show defaults (old behavior)
+        print("\n" + "="*60)
+        print("DEFAULT ADVANCED ELECTRONIC AND CONVERGENCE SETTINGS")
+        print("="*60)
+        print("Spin polarization: Yes")
+        print("SPINLOCK: 0 (automatic spin optimization)")
+        print("Fermi smearing: No")
+        print("LEVSHIFT: None")
+        print("SCF method: DIIS")
+        print("SCF max cycles: 800")
+        print("FMIXING: 30%")
+        print("PPAN: Yes (parallel diagonalization)")
+        print("BIPOSIZE/EXCHSIZE: 110000000/110000000")
+        print("="*60)
+        
+        use_current = yes_no_prompt("\nUse these default advanced settings?", "yes")
     
-    # Ask if user wants to use defaults
-    use_defaults = yes_no_prompt("\nUse these default advanced settings?", "yes")
-    
-    if use_defaults:
+    if use_current and show_current:
+        # Keep all current settings
+        # Extract existing advanced settings from options
+        advanced_config["spin_polarized"] = options.get("spin_polarized", True)
+        advanced_config["is_spin_polarized"] = options.get("is_spin_polarized", True)
+        advanced_config["spinlock"] = options.get("spinlock", 0)
+        advanced_config["smearing"] = options.get("smearing")
+        advanced_config["use_smearing"] = options.get("use_smearing", False)
+        advanced_config["smearing_width"] = options.get("smearing_width", 0.0)
+        
+        # Get SCF settings
+        current_scf = options.get("scf_settings", {})
+        advanced_config["scf_settings"] = {
+            "method": current_scf.get("method", "DIIS"),
+            "maxcycle": current_scf.get("maxcycle", 800),
+            "fmixing": current_scf.get("fmixing", 30),
+            "ppan": current_scf.get("ppan", True),
+            "biposize": current_scf.get("biposize", 110000000),
+            "exchsize": current_scf.get("exchsize", 110000000)
+        }
+        
+        # Copy any additional SCF settings
+        if current_scf.get("histdiis"):
+            advanced_config["scf_settings"]["histdiis"] = current_scf["histdiis"]
+        if current_scf.get("broyden_w0"):
+            advanced_config["scf_settings"]["broyden_w0"] = current_scf["broyden_w0"]
+        
+        # Copy LEVSHIFT if present
+        if options.get("levshift"):
+            advanced_config["levshift"] = options["levshift"]
+        
+        # Compatibility keys
+        advanced_config["scf_method"] = advanced_config["scf_settings"]["method"]
+        advanced_config["scf_maxcycle"] = advanced_config["scf_settings"]["maxcycle"]
+        advanced_config["fmixing"] = advanced_config["scf_settings"]["fmixing"]
+    elif use_current and not show_current:
         # Set all defaults
         advanced_config["spin_polarized"] = True
         advanced_config["is_spin_polarized"] = True
@@ -1117,41 +1813,19 @@ def configure_advanced_electronic_settings(options: Dict[str, Any]) -> Dict[str,
         advanced_config["fmixing"] = 30
     else:
         # Custom advanced settings
-        print("\n=== SPIN POLARIZATION ===")
-        use_spin = yes_no_prompt("Use spin-polarized calculation?", "yes")
-        advanced_config["spin_polarized"] = use_spin
-        advanced_config["is_spin_polarized"] = use_spin
-        
-        if use_spin:
-            print("\nSPINLOCK options (number of unpaired electrons, nα-nβ):")
-            print("  - Enter 0 for automatic spin optimization")
-            print("  - Enter positive integer for fixed spin multiplicity (e.g., 2 for triplet)")
-            print("  - Enter -1 for antiferromagnetic initial guess")
-            spinlock_input = input("SPINLOCK value (nα-nβ) [0]: ").strip()
-            if spinlock_input:
-                try:
-                    advanced_config["spinlock"] = int(spinlock_input)
-                except ValueError:
-                    print("Invalid input, using default value of 0")
-                    advanced_config["spinlock"] = 0
-            else:
-                advanced_config["spinlock"] = 0
+        # Use wrapper functions that show current settings as defaults
+        spin_config = configure_spin_polarization_with_defaults(options)
+        advanced_config.update(spin_config)
+        advanced_config["is_spin_polarized"] = spin_config.get("spin_polarized", True)
         
         # Smearing (if metallic and periodic)
         # Get dimensionality from options or use default
         dimensionality = options.get("dimensionality", "CRYSTAL")
         if dimensionality in ["SLAB", "CRYSTAL", "POLYMER"]:
-            print("\n=== FERMI SURFACE SMEARING ===")
-            use_smearing = yes_no_prompt("Use Fermi surface smearing for metallic systems?", "no")
-            if use_smearing:
-                smear_config = configure_smearing("metal")
-                advanced_config["smearing"] = smear_config
-                advanced_config["use_smearing"] = smear_config.get("enabled", True)
-                advanced_config["smearing_width"] = smear_config.get("width", 0.005)
-            else:
-                advanced_config["smearing"] = None
-                advanced_config["use_smearing"] = False
-                advanced_config["smearing_width"] = 0.0
+            smear_config = configure_smearing_with_defaults(options)
+            advanced_config["smearing"] = smear_config.get("smearing_width", 0.0)
+            advanced_config["use_smearing"] = smear_config.get("use_smearing", False)
+            advanced_config["smearing_width"] = smear_config.get("smearing_width", 0.0)
         else:
             # Molecules don't need smearing
             advanced_config["smearing"] = None
@@ -1160,83 +1834,49 @@ def configure_advanced_electronic_settings(options: Dict[str, Any]) -> Dict[str,
         
         # LEVSHIFT
         print("\n=== LEVEL SHIFTING ===")
-        use_levshift = yes_no_prompt("Use level shifting (for difficult SCF convergence)?", "no")
+        current_levshift = options.get("levshift", {})
+        has_levshift = bool(current_levshift)
+        default_levshift = "yes" if has_levshift else "no"
+        
+        use_levshift = yes_no_prompt("Use level shifting (for difficult SCF convergence)?", default_levshift)
         if use_levshift:
+            current_shift = current_levshift.get("shift", 5.0) if has_levshift else 5.0
+            current_ncycles = current_levshift.get("ncycles", 30) if has_levshift else 30
+            
             levshift_value = safe_float(
-                input("LEVSHIFT value (Hartree) [5.0]: ").strip(),
-                5.0
+                input(f"LEVSHIFT value (Hartree) [{current_shift}]: ").strip(),
+                current_shift
             )
             ncycles = safe_int(
-                input("Number of cycles to apply LEVSHIFT [30]: ").strip(),
-                30
+                input(f"Number of cycles to apply LEVSHIFT [{current_ncycles}]: ").strip(),
+                current_ncycles
             )
             advanced_config["levshift"] = {
                 "shift": levshift_value,
                 "ncycles": ncycles
             }
         
-        # SCF settings
-        print("\n=== SCF CONVERGENCE SETTINGS ===")
-        print("SCF method options:")
-        print("1: DIIS (Direct Inversion in Iterative Subspace) - fastest")
-        print("2: DIIS with HISTDIIS (keep more history)")
-        print("3: BROYDEN (quasi-Newton method)")
-        print("4: DIIS + BROYDEN (hybrid approach)")
-        print("5: Simple mixing only (no acceleration)")
+        # SCF settings - use wrapper to show current settings
+        scf_config = configure_scf_settings_with_defaults(options.get("scf_settings", {}))
+        # Advanced SCF options if using DIIS
+        if scf_config.get("method") == "DIIS":
+            current_histdiis = options.get("scf_settings", {}).get("histdiis")
+            if current_histdiis:
+                default_hist = "yes"
+                print(f"\nCurrent HISTDIIS: {current_histdiis}")
+            else:
+                default_hist = "no"
+            
+            if yes_no_prompt("\nUse HISTDIIS (keep more SCF history)?", default_hist):
+                hist_default = current_histdiis if current_histdiis else 100
+                hist_size = safe_int(
+                    input(f"HISTDIIS size [{hist_default}]: ").strip(),
+                    hist_default
+                )
+                scf_config["histdiis"] = hist_size
         
-        scf_method_choice = input("Select SCF method (1-5) [1]: ").strip() or "1"
-        
-        scf_config = {}
-        if scf_method_choice == "1":
-            scf_config["method"] = "DIIS"
-        elif scf_method_choice == "2":
-            scf_config["method"] = "DIIS"
-            hist_size = safe_int(
-                input("HISTDIIS size [100]: ").strip(),
-                100
-            )
-            scf_config["histdiis"] = hist_size
-        elif scf_method_choice == "3":
-            scf_config["method"] = "BROYDEN"
-            scf_config["broyden_w0"] = safe_float(
-                input("BROYDEN initial mixing [0.1]: ").strip(),
-                0.1
-            )
-        elif scf_method_choice == "4":
-            scf_config["method"] = "DIIS+BROYDEN"
-        else:
-            scf_config["method"] = "NONE"
-        
-        # MAXCYCLE
-        maxcycle = safe_int(
-            input("\nSCF max cycles [800]: ").strip(),
-            800
-        )
-        scf_config["maxcycle"] = maxcycle
-        
-        # FMIXING
-        fmixing = safe_int(
-            input("FMIXING percentage (0-100) [30]: ").strip(),
-            30
-        )
-        scf_config["fmixing"] = fmixing
-        
-        # Additional SCF options
-        print("\nAdditional SCF options:")
-        if yes_no_prompt("Use PPAN (parallel diagonalization)?", "yes"):
-            scf_config["ppan"] = True
-        
-        if yes_no_prompt("Set BIPOSIZE/EXCHSIZE for large systems?", "yes"):
-            biposize = safe_int(
-                input("BIPOSIZE value [110000000]: ").strip(),
-                110000000
-            )
-            exchsize = safe_int(
-                input("EXCHSIZE value [110000000]: ").strip(),
-                110000000
-            )
-            scf_config["biposize"] = biposize
-            scf_config["exchsize"] = exchsize
+        # Additional SCF options - already handled by configure_scf_settings_with_defaults
+        # The wrapper function already asked about PPAN and BIPOSIZE/EXCHSIZE
         
         advanced_config["scf_settings"] = scf_config
         # Add compatibility keys

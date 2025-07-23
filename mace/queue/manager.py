@@ -35,6 +35,8 @@ import threading
 
 # Import MACE components
 from mace.database.materials import MaterialDatabase, create_material_id_from_file, extract_formula_from_d12, find_material_by_similarity
+from mace.database.materials_contextual import ContextualMaterialDatabase
+from mace.workflow.context import get_current_context
 
 # Import lock manager for race condition prevention
 try:
@@ -79,7 +81,15 @@ class EnhancedCrystalQueueManager:
         
         # Initialize material tracking database
         if self.enable_tracking:
-            self.db = MaterialDatabase(db_path)
+            # Check for active workflow context
+            ctx = get_current_context()
+            if ctx:
+                # Use contextual database that will automatically use the right path
+                self.db = ContextualMaterialDatabase()
+                print(f"Using workflow context database: {self.db.get_context_info()['db_path']}")
+            else:
+                # Traditional database
+                self.db = MaterialDatabase(db_path)
         else:
             self.db = None
             
@@ -102,7 +112,12 @@ class EnhancedCrystalQueueManager:
         # Input settings extraction is integrated directly into database storage
             
         # Legacy job status for compatibility
-        self.legacy_status_file = self.d12_dir / "crystal_job_status.json"
+        # Use context-specific status file if available
+        ctx = get_current_context()
+        if ctx:
+            self.legacy_status_file = ctx.get_storage_path() / "crystal_job_status.json"
+        else:
+            self.legacy_status_file = self.d12_dir / "crystal_job_status.json"
         self.legacy_job_status = self.load_legacy_status()
         
         # Job monitoring
@@ -119,7 +134,13 @@ class EnhancedCrystalQueueManager:
         self.throttler = None
         if LOCKING_AVAILABLE:
             try:
-                lock_dir = self.d12_dir / ".queue_locks"
+                # Use context-specific lock directory if available
+                ctx = get_current_context()
+                if ctx:
+                    lock_dir = ctx.get_lock_dir()
+                else:
+                    lock_dir = self.d12_dir / ".queue_locks"
+                    
                 self.lock_manager = QueueLockManager(lock_dir=lock_dir, lock_timeout=300)
                 self.throttler = CallbackThrottler(min_delay=0.5, max_delay=2.0)
                 print(f"Queue locking enabled - lock directory: {lock_dir}")

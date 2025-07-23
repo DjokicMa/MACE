@@ -22,6 +22,7 @@ import subprocess
 import shutil
 import tempfile
 import time
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
@@ -32,6 +33,7 @@ import queue
 try:
     from mace.database.materials import MaterialDatabase
     from mace.queue.manager import EnhancedCrystalQueueManager
+    from mace.workflow.context import WorkflowContext, workflow_context, get_current_context
     # Crystal_d12 modules no longer needed here - handled by subprocess calls
 except ImportError as e:
     print(f"Error importing required modules: {e}")
@@ -48,8 +50,19 @@ class WorkflowExecutor:
     
     def __init__(self, work_dir: str = ".", db_path: str = "materials.db"):
         self.work_dir = Path(work_dir).resolve()
-        self.db_path = db_path
-        self.db = MaterialDatabase(db_path)
+        
+        # Check for active context and use its paths if available
+        ctx = get_current_context()
+        if ctx:
+            # Use context-specific database path
+            self.db_path = str(ctx.get_database_path())
+            print(f"Using context database: {self.db_path}")
+            # In isolated mode, only use the context database
+            self.db = MaterialDatabase(self.db_path)
+        else:
+            # Only create database in shared mode
+            self.db_path = db_path
+            self.db = MaterialDatabase(self.db_path)
         
         # Set up directories
         self.configs_dir = self.work_dir / "workflow_configs"
@@ -178,6 +191,63 @@ class WorkflowExecutor:
         workflow_id = plan.get('workflow_id', f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         print(f"Using workflow_id: {workflow_id}")
         
+        # Get isolation mode from plan (default to 'isolated' if not specified)
+        isolation_mode = plan.get('isolation_mode', 'isolated')
+        post_completion_action = plan.get('post_completion_action', 'keep')
+        
+        # Check if we should use workflow isolation
+        if isolation_mode == 'shared':
+            # Traditional behavior - no context needed
+            print(f"Using shared mode (no workflow isolation)")
+            self._execute_workflow_plan_impl(plan, workflow_id)
+        else:
+            # Use workflow context for isolation
+            print(f"Using {isolation_mode} isolation mode")
+            print(f"Post-completion action: {post_completion_action}")
+            
+            with workflow_context(workflow_id, base_dir=self.work_dir, isolation_mode=isolation_mode) as ctx:
+                # Update database and queue manager paths to use context-specific ones
+                original_db_path = self.db_path
+                original_db = self.db
+                original_queue_manager = self.queue_manager
+                
+                try:
+                    # Create context-aware instances
+                    self.db_path = str(ctx.get_database_path())
+                    self.db = MaterialDatabase(self.db_path)
+                    
+                    # Recreate queue manager with context paths
+                    self.queue_manager = EnhancedCrystalQueueManager(
+                        d12_dir=str(self.outputs_dir),
+                        max_jobs=200,
+                        enable_tracking=True,
+                        enable_error_recovery=True,
+                        max_recovery_attempts=3,
+                        db_path=self.db_path
+                    )
+                    
+                    # Execute workflow within context
+                    self._execute_workflow_plan_impl(plan, workflow_id)
+                    
+                    # Handle post-completion actions
+                    if post_completion_action == 'archive':
+                        print(f"\nArchiving workflow context to: {self.work_dir / 'archived_workflows'}")
+                        ctx.archive(self.work_dir / 'archived_workflows')
+                    elif post_completion_action == 'export_and_delete':
+                        print(f"\nExporting results and deleting context")
+                        export_dir = self.work_dir / 'workflow_results' / workflow_id
+                        ctx.export_results(export_dir)
+                        # Context will be cleaned up automatically on exit
+                    # 'keep' action requires no special handling
+                    
+                finally:
+                    # Restore original instances
+                    self.db_path = original_db_path
+                    self.db = original_db
+                    self.queue_manager = original_queue_manager
+    
+    def _execute_workflow_plan_impl(self, plan: Dict[str, Any], workflow_id: str):
+        """Internal implementation of workflow execution"""
         try:
             # Phase 0: Recreate workflow scripts from configuration
             self.recreate_workflow_scripts(plan)
@@ -245,8 +315,10 @@ class WorkflowExecutor:
         step_configs = plan.get('step_configurations', {})
         
         for step_key, step_config in step_configs.items():
-            # Create a configuration file for each step
-            config_file = self.temp_dir / f"{workflow_id}_{step_key}_config.json"
+            # Create a configuration file for each step in workflow_configs
+            step_configs_dir = self.configs_dir / "step_configs"
+            step_configs_dir.mkdir(exist_ok=True)
+            config_file = step_configs_dir / f"{workflow_id}_{step_key}_config.json"
             with open(config_file, 'w') as f:
                 json.dump(step_config, f, indent=2)
             print(f"    Generated config for {step_key}: {config_file.name}")
@@ -266,12 +338,19 @@ class WorkflowExecutor:
         # Get D12 files from their original location (execute mode) or step directory (interactive mode)
         d12_files = []
         
-        # First check if files are in step directory (interactive mode)
+        # First check if files are in step directory (from CIF conversion or interactive mode)
         step_d12_files = list(step_001_dir.glob("*.d12"))
         if step_d12_files:
             d12_files = step_d12_files
             print(f"  Using D12 files from step directory")
-        # Otherwise get them from original location (execute mode)
+        # Check for generated D12s from CIF conversion
+        elif 'generated_d12s' in plan:
+            for d12_path in plan['generated_d12s']:
+                d12_file = Path(d12_path)
+                if d12_file.exists():
+                    d12_files.append(d12_file)
+            print(f"  Using D12 files from CIF conversion")
+        # Otherwise get them from original location (execute mode with existing D12s)
         elif 'input_files' in plan and 'd12' in plan['input_files']:
             for d12_path in plan['input_files']['d12']:
                 d12_file = Path(d12_path)
@@ -283,6 +362,14 @@ class WorkflowExecutor:
                     if local_file.exists():
                         d12_files.append(local_file)
             print(f"  Using D12 files from original location")
+        
+        # Final fallback: For CIF workflows, check if D12s exist in the input directory
+        # This handles the case where CIF conversion happened but generated_d12s wasn't saved
+        if not d12_files and plan.get('input_type') == 'cif':
+            input_dir = Path(plan.get('input_directory', self.work_dir))
+            d12_files = list(input_dir.glob("*.d12"))
+            if d12_files:
+                print(f"  Found D12 files from CIF conversion in input directory")
         
         if not d12_files:
             print("Error: No D12 files found for workflow execution!")
@@ -310,10 +397,18 @@ class WorkflowExecutor:
                     step_num: int, d12_files: List[Path], step_dir: Path) -> List[str]:
         """Execute a single workflow step with individual calculation folders and database tracking"""
         submitted_jobs = []
+        existing_materials = []  # Track material IDs already used in this workflow
         
         for d12_file in d12_files:
             # Extract core material ID for database consistency
-            material_id = self.create_material_id_from_file(d12_file)
+            base_material_id = self.create_material_id_from_file(d12_file)
+            
+            # Make unique if duplicate
+            material_id = self.make_unique_material_id(base_material_id, d12_file, existing_materials)
+            existing_materials.append(material_id)
+            
+            if material_id != base_material_id:
+                print(f"  Note: Using unique ID '{material_id}' for duplicate material '{base_material_id}'")
             
             # Create individual calculation folder using material_id
             calc_dir = step_dir / material_id
@@ -840,6 +935,13 @@ fi'''
         plan['generated_d12s'] = [str(f) for f in generated_d12s]
         print(f"    Generated {len(generated_d12s)} D12 files")
         
+        # Save the updated plan back to disk so generated_d12s is persisted
+        if 'workflow_id' in plan:
+            updated_plan_file = self.configs_dir / f"workflow_plan_{plan['workflow_id']}_updated.json"
+            with open(updated_plan_file, 'w') as f:
+                json.dump(plan, f, indent=2)
+            print(f"    Updated plan saved with D12 paths")
+        
     # DEPRECATED: Removed in refactoring - organize_existing_d12s_old()
     # This old method copied D12 files but is no longer used.
     # The new organize_existing_d12s() method keeps files in their original location.
@@ -862,7 +964,9 @@ fi'''
     def prepare_step_configuration(self, config: Dict[str, Any], calc_type: str, 
                                  step_num: int, workflow_id: str):
         """Prepare configuration for a specific calculation step"""
-        config_file = self.temp_dir / f"{workflow_id}_step_{step_num:03d}_{calc_type}_config.json"
+        step_configs_dir = self.configs_dir / "step_configs"
+        step_configs_dir.mkdir(exist_ok=True)
+        config_file = step_configs_dir / f"{workflow_id}_step_{step_num:03d}_{calc_type}_config.json"
         
         # Enhance config with workflow-specific information
         enhanced_config = config.copy()
@@ -1070,6 +1174,72 @@ fi'''
             
         return clean_name
         
+    def extract_functional_from_filename(self, file_path: Path) -> str:
+        """Extract DFT functional from filename for duplicate differentiation"""
+        name = file_path.stem
+        parts = name.split('_')
+        
+        # Look for functional names in the filename
+        functionals = ['PBE', 'B3LYP', 'HSE06', 'PBE0', 'SCAN', 'BLYP', 'BP86', 'M06', 'TPSS', 'LDA']
+        
+        for part in parts:
+            # Check direct functional match
+            if part.upper() in functionals:
+                # Check if it has dispersion correction
+                if 'D3' in name.upper():
+                    return f"{part.upper()}-D3"
+                elif 'D2' in name.upper():
+                    return f"{part.upper()}-D2"
+                else:
+                    return part.upper()
+            # Check for M06 variants
+            elif part.upper().startswith('M06'):
+                if 'D3' in name.upper():
+                    return f"{part.upper()}-D3"
+                else:
+                    return part.upper()
+                    
+        # No functional found in filename
+        return None
+        
+    def make_unique_material_id(self, base_material_id: str, d12_file: Path, 
+                               existing_materials: List[str]) -> str:
+        """
+        Create a unique material ID by adding functional-based suffix if needed.
+        
+        Args:
+            base_material_id: The base material identifier
+            d12_file: The D12 file path to extract functional info from
+            existing_materials: List of already used material IDs
+            
+        Returns:
+            Unique material ID, possibly with functional suffix
+        """
+        # If base ID is not in existing materials, use it as-is
+        if base_material_id not in existing_materials:
+            return base_material_id
+            
+        # Try to extract functional from filename
+        functional = self.extract_functional_from_filename(d12_file)
+        
+        if functional:
+            # Try functional-based suffix first
+            unique_id = f"{base_material_id}_{functional}"
+            if unique_id not in existing_materials:
+                return unique_id
+                
+            # If that's taken too, add a counter
+            counter = 2
+            while f"{unique_id}_{counter}" in existing_materials:
+                counter += 1
+            return f"{unique_id}_{counter}"
+        else:
+            # No functional found, use generic counter
+            counter = 2
+            while f"{base_material_id}_{counter}" in existing_materials:
+                counter += 1
+            return f"{base_material_id}_{counter}"
+        
     def monitor_workflow_execution(self, workflow_id: str):
         """Monitor and manage workflow execution"""
         print("Phase 3: Monitoring workflow execution...")
@@ -1189,7 +1359,8 @@ fi'''
         plan = workflow_info["plan"]
         
         # Get configuration for this step
-        config_file = self.temp_dir / f"{workflow_id}_step_{step_num + 1:03d}_{calc_type}_config.json"
+        step_configs_dir = self.configs_dir / "step_configs"
+        config_file = step_configs_dir / f"{workflow_id}_step_{step_num + 1:03d}_{calc_type}_config.json"
         
         if not config_file.exists():
             print(f"    Warning: No config file found for step {step_num + 1}")
@@ -1494,23 +1665,43 @@ fi'''
         d3_config_mode = config.get("d3_config_mode", "basic")
         
         if d3_config_mode == "expert" and config.get("interactive_setup", False):
-            # Expert mode - run interactively
+            # Expert mode - run interactively and save configuration
             print(f"      Running CRYSTALOptToD3.py interactively for expert {calc_type} configuration")
+            
+            # Strip instance numbers for CRYSTALOptToD3.py compatibility (BAND2 -> BAND)
+            base_calc_type = re.sub(r'\d+$', '', calc_type)
+            
+            # Get material name from output file
+            material_name = Path(output_file).stem
+            if material_name.endswith('_opt'):
+                material_name = material_name[:-4]
+            elif material_name.endswith('_sp'):
+                material_name = material_name[:-3]
+                
+            # Create per-material config file path
+            config_dir = self.work_dir / "workflow_configs" / f"expert_{calc_type.lower()}_configs"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            material_config_file = config_dir / f"{material_name}_{calc_type.lower()}_expert_config.json"
             
             cmd = [
                 sys.executable, str(script_path),
                 "--input", output_file,
                 "--output-dir", str(output_dir),
-                "--calc-type", calc_type
+                "--calc-type", base_calc_type,
+                "--save-config",  # Save the configuration
+                "--options-file", str(material_config_file)  # Save to per-material file
             ]
             
             try:
                 # Run interactively (no capture_output so user can interact)
                 print(f"      Launching interactive configuration...")
+                print(f"      Configuration will be saved to: {material_config_file.name}")
                 print(f"      Command: {' '.join(cmd)}")
                 result = subprocess.run(cmd)
                 if result.returncode == 0:
                     print(f"      Successfully generated {calc_type} D3 input interactively")
+                    if material_config_file.exists():
+                        print(f"      ✓ Saved configuration to {material_config_file}")
                 else:
                     print(f"      Interactive {calc_type} generation failed or was cancelled")
             except Exception as e:
@@ -1524,10 +1715,13 @@ fi'''
             temp_config = self.temp_dir / f"temp_d3_{calc_type.lower()}_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             
             # Prepare configuration for CRYSTALOptToD3.py
+            # Strip instance numbers for compatibility (BAND2 -> BAND)
+            base_calc_type = re.sub(r'\d+$', '', calc_type)
+            
             d3_json_config = {
                 "version": "1.0",
                 "type": "d3_configuration",
-                "calculation_type": calc_type,
+                "calculation_type": base_calc_type,
                 "configuration": d3_config
             }
             
@@ -1646,136 +1840,78 @@ fi'''
                 pass
                 
     def setup_workflow_monitoring(self, workflow_dir: Path):
-        """Copy monitoring scripts to workflow directory for easy access."""
+        """Create monitoring documentation for workflow directory."""
         try:
-            print("  Setting up monitoring scripts in workflow directory...")
+            print("  Creating workflow monitoring guide...")
             
-            # List of required monitoring and workflow scripts
-            required_scripts = [
-                "material_database.py",
-                "crystal_file_manager.py", 
-                "error_detector.py",
-                "material_monitor.py",
-                "enhanced_queue_manager.py",  # Critical for workflow progression
-                "workflow_engine.py",
-                "error_recovery.py",
-                "recovery_config.yaml",  # Configuration for error recovery
-                "crystal_queue_manager.py"  # Fallback queue manager
-            ]
-            
-            source_dir = Path(__file__).parent  # Current script directory
-            copied_count = 0
-            
-            for script in required_scripts:
-                source_path = source_dir / script
-                target_path = workflow_dir / script
-                
-                if source_path.exists():
-                    if not target_path.exists():
-                        try:
-                            shutil.copy2(source_path, target_path)
-                            print(f"    ✓ Copied {script}")
-                            copied_count += 1
-                        except Exception as e:
-                            print(f"    ✗ Failed to copy {script}: {e}")
-                    else:
-                        print(f"    - {script} already exists")
-                else:
-                    print(f"    ✗ Source {script} not found")
-            
-            # Create monitoring helper script
-            helper_script = workflow_dir / "monitor_workflow.py"
-            if not helper_script.exists():
-                helper_content = '''#!/usr/bin/env python3
-"""Workflow monitoring helper script"""
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent))
+            # Create monitoring documentation instead of copying scripts
+            readme_content = """# Workflow Monitoring Guide
 
-try:
-    from material_monitor import MaterialMonitor
-    from material_database import MaterialDatabase
-except ImportError as e:
-    print(f"Error: Required monitoring modules not found: {e}")
-    sys.exit(1)
-
-def quick_status():
-    """Show quick status overview."""
-    monitor = MaterialMonitor()
-    stats = monitor.get_quick_stats()
-    
-    print("=== Quick Workflow Status ===")
-    print(f"Materials in database: {stats['materials']}")
-    print(f"Total calculations: {stats['calculations']}")
-    print(f"Database size: {stats['db_size_mb']} MB")
-    print(f"Active queue jobs: {stats['queue_jobs']}")
-
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Workflow monitoring helper")
-    parser.add_argument("--action", choices=["status", "materials", "calculations", "stats"], 
-                       default="status", help="Action to perform")
-    args = parser.parse_args()
-    
-    if args.action == "status":
-        quick_status()
-    else:
-        print(f"Action '{args.action}' not implemented yet. Use --action status for now.")
-'''
-                
-                with open(helper_script, 'w') as f:
-                    f.write(helper_content)
-                os.chmod(helper_script, 0o755)
-                print(f"    ✓ Created monitor_workflow.py")
-                copied_count += 1
-            
-            # Create README
-            readme_content = f"""# Workflow Monitoring
-
-This directory contains all necessary scripts for monitoring your CRYSTAL workflow.
+This workflow is managed by MACE. Use these commands to monitor your workflow:
 
 ## Quick Commands
 
+### Check Workflow Status
 ```bash
-# Check status
-python material_monitor.py --action stats
-
-# Live dashboard (press Ctrl+C to stop)
-python material_monitor.py --action dashboard
-
-# Quick status helper
-python monitor_workflow.py --action status
-
-# Generate detailed report
-python material_monitor.py --action report
+mace status
+# or
+mace workflow --status
 ```
 
-## Database Queries
-
-```python
-from material_database import MaterialDatabase
-db = MaterialDatabase()
-
-# Get all materials
-materials = db.get_all_materials()
-for mat in materials:
-    print(f"{{mat['material_id']}}: {{mat['formula']}} ({{mat['status']}})")
-
-# Get recent calculations
-recent = db.get_recent_calculations(10)
-for calc in recent:
-    print(f"{{calc['material_id']}} - {{calc['calc_type']}} - {{calc['status']}}")
+### Live Monitoring Dashboard
+```bash
+mace monitor --dashboard
+# Press Ctrl+C to stop
 ```
 
-Total monitoring scripts copied: {copied_count}
+### Check Material Database
+```bash
+mace database --stats
+```
+
+### View Queue Status
+```bash
+mace queue --status
+```
+
+### Material Monitor
+```bash
+# Quick stats
+python -m mace.material_monitor --action stats
+
+# Live dashboard
+python -m mace.material_monitor --action dashboard
+```
+
+### Error Recovery
+```bash
+# Check for recoverable errors
+python -m mace.recovery.recover --action stats
+
+# Attempt recovery
+python -m mace.recovery.recover --action recover
+```
+
+### Workflow Engine
+```bash
+# Process workflow
+python -m mace.workflow.engine --action process
+
+# Check workflow status
+python -m mace.workflow.engine --action status
+```
+
+## Notes
+- All MACE commands are available via your PATH after running setup_mace.py
+- The workflow uses an isolated database in .mace_context_{workflow_id}/
+- Monitor commands automatically detect the active workflow context
 """
             
-            readme_path = workflow_dir / "MONITORING_README.md"
+            readme_path = workflow_dir / "WORKFLOW_MONITORING.md"
             with open(readme_path, 'w') as f:
                 f.write(readme_content)
                 
-            print(f"    ✓ Setup complete! Copied {copied_count} monitoring files")
-            print(f"    ✓ Created monitoring documentation")
+            print("    ✓ Created workflow monitoring guide")
                 
         except Exception as e:
             print(f"    Warning: Could not setup monitoring scripts: {e}")

@@ -1147,6 +1147,12 @@ def main():
         help="Save configuration to JSON file after interactive setup"
     )
     parser.add_argument(
+        "--options-file",
+        type=str,
+        default=None,
+        help="Filename for saving configuration (suppresses interactive prompt)"
+    )
+    parser.add_argument(
         "--list-configs",
         action="store_true",
         help="List available D3 configuration files"
@@ -1183,9 +1189,17 @@ def main():
     
     if args.batch:
         # Batch mode
-        out_files = list(Path.cwd().glob("*.out"))
+        if hasattr(args, 'batch_dir') and args.batch_dir:
+            # Use the directory specified by the user
+            out_files = list(args.batch_dir.glob("*.out"))
+            batch_dir = args.batch_dir
+        else:
+            # Use current working directory
+            out_files = list(Path.cwd().glob("*.out"))
+            batch_dir = Path.cwd()
+            
         if not out_files:
-            print("No .out files found in current directory")
+            print(f"No .out files found in {batch_dir}")
             return
         
         print(f"Found {len(out_files)} output files")
@@ -1245,7 +1259,12 @@ def main():
             
             # Option to save configuration
             if args.save_config or yes_no_prompt("\nSave this configuration for future use?", "no"):
-                save_d3_options_prompt(shared_config, skip_prompt=True)
+                if args.options_file:
+                    # Use specified filename without prompting
+                    save_d3_config(shared_config, args.options_file)
+                    print(f"Configuration saved to {args.options_file}")
+                else:
+                    save_d3_options_prompt(shared_config, skip_prompt=True)
         
         # Process each file
         for out_file in out_files:
@@ -1261,60 +1280,149 @@ def main():
         else:
             input_file = input("Enter CRYSTAL output file path: ").strip()
         
-        if not Path(input_file).exists():
-            print(f"Error: File not found: {input_file}")
+        input_path = Path(input_file)
+        
+        # Check if the input exists
+        if not input_path.exists():
+            print(f"\nError: File or directory not found: {input_file}")
             return
         
-        if not args.calc_type:
-            print("\nSelect calculation type:")
-            print("1: BAND - Electronic band structure") 
-            print("2: DOSS - Density of states")
-            print("3: TRANSPORT - Transport properties (Boltzmann)")
-            print("4: CHARGE - Charge density (3D or 2D)")
-            print("5: POTENTIAL - Electrostatic potential")
-            print("6: CHARGE+POTENTIAL - Combined calculation")
-            
-            choice = input("\nSelect type (1-6): ").strip()
-            calc_types = {
-                "1": "BAND", "2": "DOSS", "3": "TRANSPORT",
-                "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL"
-            }
-            calc_type = calc_types.get(choice, "BAND")
-        else:
-            calc_type = args.calc_type
-        
-        # Load configuration if specified
-        config = None
-        if args.config_file:
-            config = load_d3_config(args.config_file)
-            if config:
-                print_d3_config_summary(config)
-                # Validate configuration
-                is_valid, errors = validate_d3_config(config)
-                if not is_valid:
-                    print("\nConfiguration validation errors:")
-                    for error in errors:
-                        print(f"  - {error}")
-                    return
-                # Override calc_type from config if present
-                if "calculation_type" in config:
-                    calc_type = config["calculation_type"]
-            else:
-                print(f"Failed to load configuration from {args.config_file}")
+        # Check if it's a directory
+        if input_path.is_dir():
+            # Look for .out files in the directory
+            out_files = list(input_path.glob('*.out'))
+            if not out_files:
+                print(f"\nError: No CRYSTAL output files (.out) found in directory: {input_path}")
+                print("Please specify a CRYSTAL output file (e.g., material.out) or a directory containing .out files.")
                 return
+            else:
+                # Process all files in the directory
+                print(f"\nFound {len(out_files)} output file(s) in {input_path.name}:")
+                for f in sorted(out_files)[:10]:  # Show first 10
+                    print(f"  - {f.name}")
+                if len(out_files) > 10:
+                    print(f"  ... and {len(out_files) - 10} more")
+                
+                # Get calculation type
+                if not args.calc_type:
+                    print("\nSelect calculation type for all files:")
+                    print("1: BAND - Electronic band structure")
+                    print("2: DOSS - Density of states")
+                    print("3: TRANSPORT - Transport properties")
+                    print("4: CHARGE - Charge density")
+                    print("5: POTENTIAL - Electrostatic potential")
+                    print("6: CHARGE+POTENTIAL - Combined calculation")
+                    
+                    choice = input("\nSelect type (1-6): ").strip()
+                    calc_types = {
+                        "1": "BAND", "2": "DOSS", "3": "TRANSPORT",
+                        "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL"
+                    }
+                    calc_type = calc_types.get(choice, "BAND")
+                else:
+                    calc_type = args.calc_type
+                
+                # Ask about shared settings if more than one file
+                shared_config = None
+                if len(out_files) > 1:
+                    print("\nMultiple files detected. Use shared settings for all files?")
+                    use_shared = yes_no_prompt("Use same configuration for all files?", "yes")
+                    
+                    if use_shared:
+                        print("\n=== Configuring shared settings for all files ===")
+                        # Use first file as reference for getting structure info
+                        first_file = str(out_files[0])
+                        temp_generator = D3Generator(first_file, calc_type, args.output_dir)
+                        shared_config = temp_generator.generate_d3()
+                        if shared_config:
+                            print("\n✓ Shared settings configured")
+                            
+                            # Option to save configuration
+                            if yes_no_prompt("\nSave this configuration for future use?", "no"):
+                                save_d3_options_prompt(shared_config, skip_prompt=True)
+                
+                # Process all files
+                print(f"\nProcessing {len(out_files)} files...")
+                for out_file in sorted(out_files):
+                    print(f"\n{'='*60}")
+                    print(f"Processing: {out_file.name}")
+                    generator = D3Generator(str(out_file), calc_type, args.output_dir)
+                    
+                    if shared_config:
+                        generator.generate_d3(shared_config)
+                    else:
+                        # Interactive configuration for each file
+                        config = generator.generate_d3()
+                
+                print(f"\n{'='*60}")
+                print(f"✓ Completed processing {len(out_files)} files")
+                return
+        elif not input_path.is_file():
+            print(f"\nError: {input_path} is not a valid file.")
+            print("Please specify a CRYSTAL output file (e.g., material.out).")
+            return
+        elif not input_path.suffix.lower() in ['.out', '.log']:
+            print(f"\nWarning: {input_path.name} may not be a CRYSTAL output file.")
+            print("CRYSTAL output files typically have .out or .log extensions.")
         
-        generator = D3Generator(input_file, calc_type, args.output_dir)
-        
-        # Generate D3 file with config if available
-        if config:
-            generator.generate_d3(config)
-        else:
-            # Interactive configuration
-            config = generator.generate_d3()
+        # If we're in batch mode (directory was provided), skip single-file processing
+        if not (hasattr(args, 'batch') and args.batch and input_file is None):
+            # Single file processing
+            if not args.calc_type:
+                print("\nSelect calculation type:")
+                print("1: BAND - Electronic band structure") 
+                print("2: DOSS - Density of states")
+                print("3: TRANSPORT - Transport properties (Boltzmann)")
+                print("4: CHARGE - Charge density (3D or 2D)")
+                print("5: POTENTIAL - Electrostatic potential")
+                print("6: CHARGE+POTENTIAL - Combined calculation")
+                
+                choice = input("\nSelect type (1-6): ").strip()
+                calc_types = {
+                    "1": "BAND", "2": "DOSS", "3": "TRANSPORT",
+                    "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL"
+                }
+                calc_type = calc_types.get(choice, "BAND")
+            else:
+                calc_type = args.calc_type
             
-            # Option to save configuration
-            if args.save_config and config:
-                save_d3_options_prompt(config, skip_prompt=True)
+            # Load configuration if specified
+            config = None
+            if args.config_file:
+                config = load_d3_config(args.config_file)
+                if config:
+                    print_d3_config_summary(config)
+                    # Validate configuration
+                    is_valid, errors = validate_d3_config(config)
+                    if not is_valid:
+                        print("\nConfiguration validation errors:")
+                        for error in errors:
+                            print(f"  - {error}")
+                        return
+                    # Override calc_type from config if present
+                    if "calculation_type" in config:
+                        calc_type = config["calculation_type"]
+                else:
+                    print(f"Failed to load configuration from {args.config_file}")
+                    return
+            
+            generator = D3Generator(input_file, calc_type, args.output_dir)
+            
+            # Generate D3 file with config if available
+            if config:
+                generator.generate_d3(config)
+            else:
+                # Interactive configuration
+                config = generator.generate_d3()
+                
+                # Option to save configuration
+                if args.save_config and config:
+                    if args.options_file:
+                        # Use specified filename without prompting
+                        save_d3_config(config, args.options_file)
+                        print(f"Configuration saved to {args.options_file}")
+                    else:
+                        save_d3_options_prompt(config, skip_prompt=True)
 
 
 if __name__ == "__main__":

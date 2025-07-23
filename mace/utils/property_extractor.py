@@ -76,6 +76,9 @@ class CrystalPropertyExtractor:
         properties.update(self._extract_dos_properties(content, output_file))
         properties.update(self._extract_frequency_properties(content))
         
+        # Extract SCF settings from output
+        properties.update(self._extract_scf_settings(content))
+        
         # Add electronic classification based on band gap
         properties.update(self._classify_electronic_properties(properties))
         
@@ -1532,6 +1535,120 @@ class CrystalPropertyExtractor:
         normal_modes_match = re.search(r'NORMAL MODES NORMALIZED TO CLASSICAL AMPLITUDES.*?\n(.*?)(?=\*{5,}|VIBRATIONAL)', content, re.DOTALL)
         if normal_modes_match:
             props['has_normal_mode_displacements'] = True
+        
+        return props
+    
+    def _extract_scf_settings(self, content: str) -> Dict[str, Any]:
+        """Extract SCF and advanced electronic settings from output file."""
+        props = {}
+        
+        # Extract SCF parameters reported in output
+        # INFORMATION lines pattern - these show actual settings used
+        info_patterns = {
+            'scf_biposize': r'INFORMATION \*+\s*BIPOSIZE\s*\*+.*?COULOMB BIPOLAR BUFFER SET TO\s+(\d+)',
+            'scf_exchsize': r'INFORMATION \*+\s*EXCHSIZE\s*\*+.*?EXCHANGE BIPOLAR BUFFER SIZE SET TO\s+(\d+)',
+            'scf_maxcycle': r'INFORMATION \*+\s*MAXCYCLE\s*\*+.*?MAX NUMBER OF SCF CYCLES SET TO\s+(\d+)',
+            'scf_ppan': r'INFORMATION \*+\s*PPAN\s*\*+.*?MULLIKEN POPULATION ANALYSIS',
+            'scf_toldee': r'INFORMATION \*+\s*TOLDEE\s*\*+.*?SCF TOL ON TOTAL ENERGY SET TO\s+(\d+)',
+            'scf_tolinteg': r'INFORMATION \*+\s*TOLINTEG\s*\*+.*?COULOMB AND EXCHANGE SERIES TOLERANCES',
+            'scf_diis': r'INFORMATION \*+\s*DIIS\s*\*+.*?DIIS FOR SCF ACTIVE',
+            'scf_scfdir': r'INFORMATION \*+\s*SCFDIR\s*\*+.*?DIRECT SCF',
+            'scf_savewf': r'INFORMATION \*+\s*SAVEWF\s*\*+',
+            'scf_savepred': r'INFORMATION \*+\s*SAVEPRED\s*\*+'
+        }
+        
+        for param, pattern in info_patterns.items():
+            match = re.search(pattern, content, re.IGNORECASE | re.DOTALL)
+            if match:
+                if param in ['scf_ppan', 'scf_diis', 'scf_scfdir', 'scf_savewf', 'scf_savepred']:
+                    props[param] = True
+                elif param in ['scf_biposize', 'scf_exchsize', 'scf_maxcycle', 'scf_toldee']:
+                    props[param] = int(match.group(1))
+                else:
+                    props[param] = True
+        
+        # Check for level shifter status
+        if 'LEVEL SHIFTER DISABLED' in content:
+            props['scf_levshift_enabled'] = False
+        elif 'LEVEL SHIFTER ACTIVE' in content or 'LEVSHIFT' in content:
+            props['scf_levshift_enabled'] = True
+            
+        # Extract shrink factors from output
+        shrink_match = re.search(r'SHRINK\.\s*FACT\.\(MONKH\.\)\s+(\d+)\s+(\d+)\s+(\d+)', content)
+        if shrink_match:
+            props['scf_shrink_k1'] = int(shrink_match.group(1))
+            props['scf_shrink_k2'] = int(shrink_match.group(2))
+            props['scf_shrink_k3'] = int(shrink_match.group(3))
+        
+        # Extract Gilat shrink factor
+        gilat_match = re.search(r'SHRINKING FACTOR\(GILAT NET\)\s+(\d+)', content)
+        if gilat_match:
+            props['scf_gilat_shrink'] = int(gilat_match.group(1))
+        
+        # FMIXING percentage
+        fmixing_match = re.search(r'FMIXING\s*[:=]\s*(\d+)', content)
+        if fmixing_match:
+            props['scf_fmixing_percentage'] = int(fmixing_match.group(1))
+        
+        # Anderson mixing
+        anderson_match = re.search(r'ANDERSON MIXING.*?FACTOR\s*[:=]\s*([\d.]+)', content)
+        if anderson_match:
+            props['scf_anderson_factor'] = float(anderson_match.group(1))
+            props['scf_anderson_enabled'] = True
+        
+        # DIIS mixing parameters
+        if 'DIIS FOR SCF ACTIVE' in content:
+            props['scf_diis_enabled'] = True
+            
+            # Extract DIIS parameters
+            diis_start_match = re.search(r'DIIS STARTING FROM CYCLE\s*(\d+)', content)
+            if diis_start_match:
+                props['scf_diis_start_cycle'] = int(diis_start_match.group(1))
+                
+            diis_size_match = re.search(r'DIIS SUBSPACE SIZE\s*[:=]\s*(\d+)', content)
+            if diis_size_match:
+                props['scf_diis_subspace_size'] = int(diis_size_match.group(1))
+        
+        # Broyden mixing
+        broyden_match = re.search(r'BROYDEN MIXING.*?FACTOR\s*[:=]\s*([\d.]+)', content)
+        if broyden_match:
+            props['scf_broyden_factor'] = float(broyden_match.group(1))
+            props['scf_broyden_enabled'] = True
+        
+        # Level shifter details
+        levshift_match = re.search(r'LEVSHIFT\s*[:=]\s*([\d.]+)\s*CYCLES\s*[:=]\s*(\d+)', content)
+        if levshift_match:
+            props['scf_levshift_factor'] = float(levshift_match.group(1))
+            props['scf_levshift_cycles'] = int(levshift_match.group(2))
+        
+        # Extract integration pack parameters
+        intgpack_patterns = {
+            'scf_ilasize': r'ILASIZE\s*[:=]\s*(\d+)',
+            'scf_intgpack': r'INTGPACK\s*[:=]\s*(\d+)',
+            'scf_madelimit': r'MADELIMIT\s*[:=]\s*(\d+)',
+            'scf_poleordr': r'POLEORDR\s*[:=]\s*(\d+)'
+        }
+        
+        for param, pattern in intgpack_patterns.items():
+            match = re.search(pattern, content, re.IGNORECASE)
+            if match:
+                props[param] = int(match.group(1))
+        
+        # Extract exchange parameters
+        if 'EXCHPERM' in content:
+            props['scf_exchange_permutation'] = True
+            
+        if 'BIPOLARIZ' in content:
+            props['scf_bipolarization'] = True
+        
+        # Extract DFT grid information
+        grid_match = re.search(r'DFT GRID.*?(\d+)\s+POINTS', content)
+        if grid_match:
+            props['scf_dft_grid_points'] = int(grid_match.group(1))
+            
+        # Extract pruning information
+        if 'PRUNING' in content:
+            props['scf_grid_pruning'] = True
         
         return props
     

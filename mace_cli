@@ -50,8 +50,174 @@ def show_banner():
         print(f"Version {__version__}")
         print("=" * 40)
 
+def show_command_help(command):
+    """Show help for a specific command"""
+    help_text = {
+        'workflow': """
+Usage: mace workflow [options]
+
+Run the MACE workflow planning and execution system.
+
+Options:
+  --interactive         Start interactive workflow planning
+  --quick-start         Quick start with predefined templates
+  --cif-dir DIR         Directory containing CIF files
+  --d12-dir DIR         Directory containing D12 files
+  --workflow TYPE       Workflow template (basic_opt, opt_sp, full_electronic, etc.)
+  --execute FILE        Execute a saved workflow plan
+  --status              Check workflow status
+  --show-templates      Display available workflow templates
+
+Examples:
+  mace workflow --interactive
+  mace workflow --quick-start --cif-dir ./cifs --workflow full_electronic
+""",
+        'submit': """
+Usage: mace submit <file_or_directory> [options]
+
+Submit CRYSTAL calculations to the queue.
+
+Arguments:
+  file_or_directory     D12/D3 file(s) or directory to submit
+
+Options:
+  --max-jobs N          Maximum concurrent jobs (default: 250)
+  --reserve N           Reserved job slots (default: 30)
+
+Examples:
+  mace submit calculation.d12
+  mace submit my_calculations/
+""",
+        'monitor': """
+Usage: mace monitor [options]
+
+Monitor running calculations and view real-time status.
+
+Options:
+  --dashboard           Launch interactive dashboard (default)
+  --status              Show current job status
+  --interval N          Update interval in seconds (default: 30)
+
+Examples:
+  mace monitor --dashboard
+  mace monitor --status
+""",
+        'analyze': """
+Usage: mace analyze [options]
+
+Analyze completed calculations and extract properties.
+
+Options:
+  --extract-properties DIR    Extract properties from output files in directory
+  --material-id ID            Analyze specific material
+  --output-csv FILE           Output CSV file for results
+
+Examples:
+  mace analyze --extract-properties .
+  mace analyze --extract-properties outputs/ --output-csv results.csv
+""",
+        'convert': """
+Usage: mace convert <cif_files> [options]
+
+Convert CIF files to CRYSTAL D12 input format.
+Runs NewCifToD12.py with all its options.
+
+Examples:
+  mace convert structure.cif
+  mace convert *.cif
+  mace convert structures/ --functional B3LYP --basis POB-TZVP
+
+For full options, the command will show NewCifToD12.py help when run without arguments.
+""",
+        'opt2d12': """
+Usage: mace opt2d12 <output_file> [options]
+
+Generate D12 input files from optimized CRYSTAL output.
+Runs CRYSTALOptToD12.py with all its options.
+
+Examples:
+  mace opt2d12 optimized.out
+  mace opt2d12 calculation.out --sp
+  mace opt2d12 calculation.out --freq
+  mace opt2d12 calculation.out --both
+
+For full options, the command will show CRYSTALOptToD12.py help when run without arguments.
+""",
+        'opt2d3': """
+Usage: mace opt2d3 <output_file> --calc-type TYPE [options]
+
+Generate D3 property input files from CRYSTAL output.
+Runs CRYSTALOptToD3.py with all its options.
+
+Examples:
+  mace opt2d3 optimized.out --calc-type BAND
+  mace opt2d3 optimized.out --calc-type DOSS
+  mace opt2d3 optimized.out --calc-type ALL --mode advanced
+
+For full options, the command will show CRYSTALOptToD3.py help when run without arguments.
+"""
+    }
+    
+    if command in help_text:
+        print(help_text[command])
+    else:
+        print(f"No help available for command: {command}")
+
 def main():
     """Main entry point with proper argument parsing"""
+    # Special handling for commands that should pass through directly
+    passthrough_commands = ['convert', 'opt2d12', 'opt2d3']
+    
+    # Handle --no-banner if it's the first argument
+    no_banner_first = False
+    if len(sys.argv) >= 2 and sys.argv[1] == '--no-banner':
+        no_banner_first = True
+        os.environ['MACE_NO_BANNER'] = '1'
+        # Remove --no-banner and shift arguments
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+    
+    # Check if we have a passthrough command
+    if len(sys.argv) >= 2 and sys.argv[1] in passthrough_commands:
+        # For passthrough commands, skip our argument parsing and go directly to the command
+        command = sys.argv[1]
+        
+        # Check if --no-banner or --help is present
+        suppress_banner = no_banner_first or '--no-banner' in sys.argv or '--help' in sys.argv or '-h' in sys.argv
+        
+        # Set --no-banner if needed
+        if '--no-banner' in sys.argv:
+            os.environ['MACE_NO_BANNER'] = '1'
+            # Remove --no-banner from args passed to subcommand
+            sys.argv = [arg for arg in sys.argv if arg != '--no-banner']
+        
+        # Show banner unless suppressed
+        if not suppress_banner:
+            show_banner()
+        
+        # Execute the command
+        if command == 'convert':
+            sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
+            from NewCifToD12 import main as cif_main
+            sys.argv = ['NewCifToD12.py'] + sys.argv[2:]
+            cif_main()
+        elif command == 'opt2d12':
+            sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
+            from CRYSTALOptToD12 import main as opt2d12_main
+            sys.argv = ['CRYSTALOptToD12.py'] + sys.argv[2:]
+            opt2d12_main()
+        elif command == 'opt2d3':
+            sys.path.insert(0, str(Path(__file__).parent / "Crystal_d3"))
+            from CRYSTALOptToD3 import main as opt2d3_main
+            sys.argv = ['CRYSTALOptToD3.py'] + sys.argv[2:]
+            opt2d3_main()
+        sys.exit(0)
+    
+    # Check if asking for help on a specific command (for non-passthrough commands)
+    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'monitor', 'analyze']:
+        # Show command-specific help
+        show_command_help(sys.argv[1])
+        sys.exit(0)
+    
     parser = argparse.ArgumentParser(
         description=f"MACE - Mendoza Automated CRYSTAL Engine (v{__version__})",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -114,8 +280,8 @@ Options:
     if args.no_banner:
         os.environ['MACE_NO_BANNER'] = '1'
     
-    # Show banner unless suppressed or showing help
-    if not args.no_banner and args.command and args.command != 'version':
+    # Show banner unless suppressed or showing help or running with arguments
+    if not args.no_banner and args.command and args.command != 'version' and not args.args:
         show_banner()
     
     # If no command, show help
@@ -144,19 +310,91 @@ Options:
             print("Usage: mace submit <file_or_directory>")
             sys.exit(1)
         
-        # Determine if submitting D12 or D3 files
         target = args.args[0]
-        if target.endswith('.d3') or (os.path.isdir(target) and any(f.endswith('.d3') for f in os.listdir(target) if os.path.isfile(os.path.join(target, f)))):
-            from submission.properties import main as submit_properties
-            submit_properties()
+        
+        # Check what type of files we're dealing with
+        if os.path.isfile(target):
+            # Single file submission
+            sys.argv = ['submit_script', target]
+            if target.endswith('.d3'):
+                from submission.properties import main as submit_properties
+                submit_properties()
+            elif target.endswith('.d12'):
+                from submission.crystal import main as submit_crystal
+                submit_crystal()
+            else:
+                print(f"Error: {target} is not a D12 or D3 file")
+                sys.exit(1)
+        
+        elif os.path.isdir(target):
+            # Directory submission - check what files are present
+            files = os.listdir(target)
+            d12_files = [f for f in files if f.endswith('.d12') and os.path.isfile(os.path.join(target, f))]
+            d3_files = [f for f in files if f.endswith('.d3') and os.path.isfile(os.path.join(target, f))]
+            
+            if not d12_files and not d3_files:
+                print(f"No D12 or D3 files found in {target}")
+                sys.exit(1)
+            
+            # Handle mixed directories
+            if d12_files and d3_files:
+                print(f"\nFound both D12 and D3 files in {target}:")
+                print(f"  {len(d12_files)} D12 file(s) (CRYSTAL calculations)")
+                print(f"  {len(d3_files)} D3 file(s) (property calculations)")
+                print("\nWhat would you like to submit?")
+                print("1. D12 files only")
+                print("2. D3 files only")
+                print("3. Both D12 and D3 files")
+                
+                choice = input("\nSelect option (1-3): ").strip()
+                
+                if choice == '1':
+                    # Submit D12 only
+                    sys.argv = ['submit_script', target]
+                    from submission.crystal import main as submit_crystal
+                    submit_crystal()
+                elif choice == '2':
+                    # Submit D3 only
+                    sys.argv = ['submit_script', target]
+                    from submission.properties import main as submit_properties
+                    submit_properties()
+                elif choice == '3':
+                    # Submit both
+                    print("\n=== Submitting D12 files ===")
+                    sys.argv = ['submit_script', target]
+                    from submission.crystal import main as submit_crystal
+                    submit_crystal()
+                    
+                    print("\n=== Submitting D3 files ===")
+                    sys.argv = ['submit_script', target]
+                    from submission.properties import main as submit_properties
+                    submit_properties()
+                else:
+                    print("Invalid choice. Exiting.")
+                    sys.exit(1)
+            
+            elif d12_files:
+                # Only D12 files
+                sys.argv = ['submit_script', target]
+                from submission.crystal import main as submit_crystal
+                submit_crystal()
+            
+            else:
+                # Only D3 files
+                sys.argv = ['submit_script', target]
+                from submission.properties import main as submit_properties
+                submit_properties()
+        
         else:
-            from submission.crystal import main as submit_crystal
-            submit_crystal()
+            print(f"Error: {target} is not a valid file or directory")
+            sys.exit(1)
             
     elif args.command == 'monitor':
         # Launch monitoring dashboard
-        from queue.monitor import main as monitor_main
-        sys.argv = ['material_monitor.py', '--action', 'dashboard'] + args.args
+        from material_monitor import main as monitor_main
+        # Default to dashboard if no specific action
+        if not any(arg in args.args for arg in ['--action', '--status']):
+            sys.argv = ['material_monitor.py', '--action', 'dashboard'] + args.args
         monitor_main()
         
     elif args.command == 'analyze':
@@ -167,36 +405,22 @@ Options:
         else:
             print("Usage: mace analyze --extract-properties <directory>")
             
-    elif args.command == 'convert':
-        # CIF conversion
-        sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
-        from NewCifToD12 import main as cif_main
-        sys.argv = ['NewCifToD12.py'] + args.args + remaining
-        cif_main()
-            
-    elif args.command == 'opt2d12':
-        # Generate D12 from optimized output
-        sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
-        from CRYSTALOptToD12 import main as opt2d12_main
-        sys.argv = ['CRYSTALOptToD12.py'] + args.args + remaining
-        opt2d12_main()
-        
-    elif args.command == 'opt2d3':
-        # Generate D3 from optimized output
-        sys.path.insert(0, str(Path(__file__).parent / "Crystal_d3"))
-        from CRYSTALOptToD3 import main as opt2d3_main
-        sys.argv = ['CRYSTALOptToD3.py'] + args.args + remaining
-        opt2d3_main()
+    # These commands are handled in the passthrough section above
+    elif args.command in ['convert', 'opt2d12', 'opt2d3']:
+        # Should never reach here, but just in case
+        pass
             
     elif args.command == 'credits':
-        # Show credits
-        if BANNER_AVAILABLE:
-            print(get_credits())
-        else:
-            print("\nMACE Development Team:")
-            print("Primary Developer: Marcus Djokic")
-            print("Contributors: Daniel Maldonado Lopez, Brandon Lewis, William Comaskey")
-            print("PI: Prof. Jose Luis Mendoza-Cortes")
+        # Credits already shown in banner if banner was displayed
+        # Only show credits here if banner was suppressed
+        if args.no_banner:
+            if BANNER_AVAILABLE:
+                print(get_credits())
+            else:
+                print("\nMACE Development Team:")
+                print("Primary Developer: Marcus Djokic")
+                print("Contributors: Daniel Maldonado Lopez, Brandon Lewis, Dr. William Comaskey")
+                print("PI: Prof. Jose Luis Mendoza-Cortes")
             
     elif args.command == 'version':
         # Show version with main banner
