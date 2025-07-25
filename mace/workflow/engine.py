@@ -279,7 +279,8 @@ class WorkflowEngine:
     def get_script_paths(self) -> Dict[str, Path]:
         """Get paths to all the CRYSTAL workflow scripts."""
         current_dir = Path.cwd()
-        base_path = Path(__file__).parent.parent
+        # Get the reorganization directory (parent of mace)
+        base_path = Path(__file__).parent.parent.parent
         
         # Check for local copies first (in current working directory)
         scripts = {
@@ -1059,21 +1060,21 @@ fi'''
             out_file = out_files[0]
             d12_file = d12_files[0] if d12_files else None
             
-            # Use single file mode with automatic input responses
+            # Use single file mode with command-line arguments for non-interactive execution
+            # Use just the filename, not the full path, since we'll run in the work directory
             args = [
-                "--out-file", str(out_file),
-                "--output-dir", str(work_dir)
+                "--out-file", out_file.name,
+                "--output-dir", ".",
+                "--non-interactive",
+                "--calc-type", "SP"
             ]
             
             if d12_file:
-                args.extend(["--d12-file", str(d12_file)])
+                args.extend(["--d12-file", d12_file.name])
             
-            # Prepare input responses for non-interactive execution
-            # 1. Keep settings? → y (yes, keep original DFT/PBE-D3 settings from d12)
-            # 2. Calc type → 1 (SP)
-            # 3. Symmetry choice → 1 (Write only unique atoms)
-            # 4. Additional defaults for any other prompts
-            input_responses = "y\n1\n1\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+            # Still need input responses even in non-interactive mode
+            # The script asks for confirmation and some settings
+            input_responses = "n\n2\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
             
             success, stdout, stderr = self.run_script_in_isolated_directory(
                 crystal_to_d12_script, work_dir, args, input_data=input_responses
@@ -1082,6 +1083,10 @@ fi'''
             if not success:
                 print(f"CRYSTALOptToD12.py failed: {stderr}")
                 return None
+                
+            # Debug output
+            print(f"CRYSTALOptToD12.py output (first 500 chars): {stdout[:500]}...")
+            print(f"Files in work_dir after script: {list(work_dir.glob('*.d12'))}")
                 
             # Find generated SP .d12 file
             sp_files = list(work_dir.glob("*SP*.d12"))

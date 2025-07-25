@@ -4076,6 +4076,8 @@ class WorkflowPlanner:
                 slurm_config = config["slurm_config"]
 
                 for script_name, script_config in slurm_config["scripts"].items():
+                    # Add workflow_id to script_config for context environment variables
+                    script_config['workflow_id'] = workflow_id
                     self.create_customized_script(
                         bin_scripts_dir, scripts_dir, script_config, step_key
                     )
@@ -4164,6 +4166,16 @@ class WorkflowPlanner:
                 modified_lines.append(
                     f"echo '#SBATCH --constraint={resources['constraint']}' >> $1.sh"
                 )
+            # Add workflow context environment variables after export JOB line
+            elif line.startswith("echo 'export JOB="):
+                modified_lines.append(line)
+                # Add workflow context environment variables
+                workflow_id = script_config.get('workflow_id', f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+                modified_lines.append(f"echo '# Workflow context for queue manager' >> $1.sh")
+                modified_lines.append(f"echo 'export MACE_WORKFLOW_ID=\"{workflow_id}\"' >> $1.sh")
+                modified_lines.append(f"echo 'export MACE_CONTEXT_DIR=\"{self.work_dir}/.mace_context_{workflow_id}\"' >> $1.sh")
+                modified_lines.append(f"echo 'export MACE_ISOLATION_MODE=\"isolated\"' >> $1.sh")
+                continue  # Skip the normal append since we already added the line
             # CRYSTAL module loading (Python module already in base template)
             elif "module load CRYSTAL" in line and ">> $1.sh" in line:
                 modified_lines.append(line)

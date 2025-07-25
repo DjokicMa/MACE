@@ -1,0 +1,7 @@
+# Add to .gitignore
+.env*
+*.pem
+*.key
+*_secret*
+*password*
+config/secrets.yml

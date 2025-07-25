@@ -84,8 +84,9 @@ class EnhancedCrystalQueueManager:
             # Check for active workflow context
             ctx = get_current_context()
             if ctx:
-                # Use contextual database that will automatically use the right path
-                self.db = ContextualMaterialDatabase()
+                # Use contextual database with explicit db_path if provided
+                # This ensures we use the context's database path
+                self.db = ContextualMaterialDatabase(db_path=db_path if db_path != "materials.db" else None)
                 print(f"Using workflow context database: {self.db.get_context_info()['db_path']}")
             else:
                 # Traditional database
@@ -153,23 +154,40 @@ class EnhancedCrystalQueueManager:
         """Detect if we're running in a workflow context."""
         cwd = Path.cwd()
         
-        # Check for workflow indicators
-        workflow_indicators = [
-            cwd / "workflow_scripts",
-            cwd / "workflow_configs", 
-            cwd / "workflow_outputs",
-            cwd / "workflow_inputs"
-        ]
+        # Check current directory and up to 5 parent directories
+        check_dirs = [cwd]
+        current = cwd
+        for _ in range(5):
+            if current.parent != current:
+                current = current.parent
+                check_dirs.append(current)
+            else:
+                break
         
-        return any(indicator.exists() for indicator in workflow_indicators)
+        # Check for workflow indicators in any of these directories
+        for check_dir in check_dirs:
+            workflow_indicators = [
+                check_dir / "workflow_scripts",
+                check_dir / "workflow_configs", 
+                check_dir / "workflow_outputs",
+                check_dir / "workflow_inputs"
+            ]
+            
+            if any(indicator.exists() for indicator in workflow_indicators):
+                # Found workflow root
+                self.workflow_root = check_dir
+                return True
+        
+        self.workflow_root = None
+        return False
         
     def _setup_script_paths(self) -> dict:
         """Setup script paths based on context (workflow vs repository)."""
         script_paths = {}
         
-        if self.is_workflow_context:
+        if self.is_workflow_context and hasattr(self, 'workflow_root'):
             # In workflow context - look for workflow-specific scripts first
-            workflow_scripts_dir = Path.cwd() / "workflow_scripts"
+            workflow_scripts_dir = self.workflow_root / "workflow_scripts"
             if workflow_scripts_dir.exists():
                 script_paths.update({
                     'submitcrystal23_opt': workflow_scripts_dir / "submitcrystal23_opt_1.sh",
@@ -377,13 +395,42 @@ class EnhancedCrystalQueueManager:
         """
         Create organized folder structure for calculations.
         
-        Structure: base_dir/calc_type/material_id/
-        Each material gets its own directory within the calculation type.
+        Structure: 
+        - Workflow: Uses existing workflow structure (no new folders created)
+        - Standard: base_dir/calc_type/material_id/
         """
-        calc_type_dir = self.d12_dir / calc_type.lower()
-        material_dir = calc_type_dir / material_id
-        material_dir.mkdir(parents=True, exist_ok=True)
-        return material_dir
+        if self.is_workflow_context and hasattr(self, 'workflow_root'):
+            # In workflow context, don't create new folders
+            # The workflow executor has already created the proper structure
+            # Just return the current directory if we're already in the right place
+            cwd = Path.cwd()
+            
+            # Check if we're in a material-specific directory already
+            if cwd.name == material_id or cwd.parent.name.startswith('step_'):
+                return cwd
+            
+            # Otherwise, try to find the material directory in workflow outputs
+            workflow_outputs = self.workflow_root / "workflow_outputs"
+            if workflow_outputs.exists():
+                # Look for the material directory in any workflow/step
+                for workflow_dir in workflow_outputs.iterdir():
+                    if workflow_dir.is_dir() and workflow_dir.name.startswith('workflow_'):
+                        for step_dir in workflow_dir.iterdir():
+                            if step_dir.is_dir() and step_dir.name.startswith('step_'):
+                                material_dir = step_dir / material_id
+                                if material_dir.exists():
+                                    return material_dir
+            
+            # If not found, fall back to creating in current directory
+            # This shouldn't happen in normal workflow operation
+            print(f"Warning: Could not find workflow directory for {material_id}, using current directory")
+            return Path.cwd()
+        else:
+            # Standard behavior - create folder structure
+            calc_type_dir = self.d12_dir / calc_type.lower()
+            material_dir = calc_type_dir / material_id
+            material_dir.mkdir(parents=True, exist_ok=True)
+            return material_dir
         
     def extract_material_info_from_d12(self, d12_file: Path) -> Tuple[str, str, Dict]:
         """Extract material information from .d12 file."""

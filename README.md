@@ -98,6 +98,78 @@ Original scripts maintained for compatibility:
 - Property extraction
 - Visualization tools
 
+## 🔒 Workflow Isolation (NEW)
+
+MACE now supports **workflow isolation** to prevent conflicts when running multiple workflows in the same directory. This feature addresses database contamination, material ID collisions, and queue manager conflicts that occurred when multiple workflows shared resources.
+
+### Isolation Modes
+
+1. **Isolated** (Recommended) - Complete separation with workflow-specific databases
+2. **Shared** - Traditional behavior with shared database (backward compatible)
+3. **Hybrid** - Shared schema with isolated data
+
+### How It Works
+
+The workflow isolation system provides:
+- **Separate databases** per workflow to prevent material ID collisions
+- **Independent job queues** with per-workflow limits and management
+- **Isolated file storage** for calculation tracking and results
+- **Automatic cleanup** and archival of completed workflows
+
+### Directory Structure with Isolation
+
+```
+working_directory/
+├── .mace_context_workflow_123/       # Hidden context directory
+│   ├── materials.db                  # Isolated database
+│   ├── structures.db                 # Isolated ASE database
+│   ├── calculation_storage/          # Isolated file storage
+│   ├── .queue_locks/                # Isolated locks
+│   └── context_config.json          # Context metadata
+├── workflow_configs/                # Shared configurations
+└── workflow_outputs/                # Calculation outputs
+```
+
+### Using Workflow Isolation
+
+#### Interactive Mode
+When using `mace workflow --interactive`, you'll be prompted to select an isolation mode during workflow planning (Step 4.5).
+
+#### Running Multiple Workflows Safely
+```bash
+# Terminal 1: Workflow for project A
+cd /shared/calculations
+mace workflow --interactive
+# Select: Isolated mode
+
+# Terminal 2: Workflow for project B (same directory!)
+cd /shared/calculations  
+mace workflow --interactive
+# Select: Isolated mode
+
+# Both workflows run independently without conflicts
+```
+
+#### Programmatic Usage
+```python
+from mace.workflow.context import workflow_context
+from mace.database.materials_contextual import ContextualMaterialDatabase
+
+# Execute workflow with isolation
+with workflow_context("my_workflow", isolation_mode="isolated") as ctx:
+    db = ContextualMaterialDatabase()
+    # All database operations are isolated
+```
+
+### Benefits
+
+- **No conflicts**: Multiple workflows can run in the same directory without interference
+- **Clean organization**: Each workflow has its own hidden context directory
+- **Easy cleanup**: Archive or delete entire workflow contexts when done
+- **Backward compatible**: Existing scripts work unchanged in shared mode
+
+For technical details, see the implementation in `mace/workflow/context.py`.
+
 ## ⚡ Quick Start
 
 ### Installation
