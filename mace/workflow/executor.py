@@ -440,7 +440,7 @@ class WorkflowExecutor:
         if submitted_jobs:
             print(f"Successfully submitted {len(submitted_jobs)} {first_step} calculations")
             print("Monitor progress with:")
-            print(f"  python enhanced_queue_manager.py --status")
+            print(f"  mace monitor --status")
             print(f"  squeue -u $USER")
         else:
             print(f"Warning: No {first_step} jobs were submitted")
@@ -1437,7 +1437,7 @@ fi'''
         
         print(f"  Workflow: {' → '.join(sequence)}")
         print(f"  Monitoring workflow {workflow_id}...")
-        print(f"  Use 'python enhanced_queue_manager.py --status' for detailed job status")
+        print(f"  Use 'mace monitor --status' for detailed job status")
         
         # Start monitoring thread
         monitor_thread = threading.Thread(

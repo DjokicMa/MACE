@@ -4436,14 +4436,14 @@ class WorkflowPlanner:
 
             print("Job submission completed!")
             print("Monitor progress with:")
-            print(f"  python enhanced_queue_manager.py --status")
+            print(f"  mace monitor --status")
             print(f"  Database: {self.db_path}")
 
         except Exception as e:
             print(f"Error during job submission: {e}")
             print("You can manually submit jobs using:")
             print(f"  cd {input_dir}")
-            print("  python enhanced_queue_manager.py --max-jobs 200")
+            print("  mace submit --max-jobs 200")
 
     def main_interactive_workflow(self):
         """Main interactive workflow planning interface"""
