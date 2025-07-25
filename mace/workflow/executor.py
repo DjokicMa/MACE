@@ -654,6 +654,33 @@ class WorkflowExecutor:
             f'export scratch={scratch_dir}'
         )
         
+        # Add workflow context environment variables
+        # Find the line with module loads and add after it
+        module_pattern = r'(module\s+load[^\n]+\n)'
+        context_dir = str(self.work_dir / f".mace_context_{workflow_id}")
+        
+        # Create the export statements
+        context_exports = (
+            '\n# Workflow context for queue manager callback\n'
+            f'export MACE_WORKFLOW_ID="{workflow_id}"\n'
+            f'export MACE_CONTEXT_DIR="{context_dir}"\n'
+            f'export MACE_ISOLATION_MODE="isolated"\n\n'
+        )
+        
+        if re.search(module_pattern, script_content):
+            # Add after last module load
+            script_content = re.sub(
+                r'((?:module\s+load[^\n]+\n)+)',
+                r'\1' + context_exports,
+                script_content
+            )
+        else:
+            # If no module loads found, add after shebang
+            script_content = script_content.replace(
+                '#!/bin/bash\n',
+                '#!/bin/bash\n' + context_exports
+            )
+        
         # Replace file references
         script_content = script_content.replace('$1', material_id)
         

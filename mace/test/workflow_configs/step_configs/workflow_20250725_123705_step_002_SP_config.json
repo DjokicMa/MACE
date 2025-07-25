@@ -1,0 +1,31 @@
+{
+  "calculation_type": "SP",
+  "source": "CRYSTALOptToD12.py",
+  "customization_level": 0,
+  "inherit_settings": true,
+  "slurm_config": {
+    "scripts": {
+      "submitcrystal23.sh": {
+        "source_script": "submitcrystal23.sh",
+        "step_specific_name": "submitcrystal23_sp_2.sh",
+        "resources": {
+          "ntasks": 32,
+          "nodes": 1,
+          "walltime": "3-00:00:00",
+          "memory_per_cpu": "4G",
+          "account": "mendoza_q",
+          "module": "CRYSTAL/23-intel-2023a",
+          "scratch_dir": "$SCRATCH/crys23"
+        },
+        "customizations": [],
+        "copy_to_workdir": true,
+        "workflow_id": "workflow_20250725_123705"
+      }
+    },
+    "resources": {},
+    "modules": {}
+  },
+  "workflow_id": "workflow_20250725_123705",
+  "step_number": 2,
+  "timestamp": "2025-07-25T12:37:11.896227"
+}

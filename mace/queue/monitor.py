@@ -71,13 +71,19 @@ class MaterialMonitor:
             self.db = ContextualMaterialDatabase()
             self.db_path = str(self.context.get_database_path())
             actual_base_dir = self.context.get_storage_path()
+            
+            # For workflow context, also track workflow output directory
+            self.workflow_output_dir = self.base_dir / "workflow_outputs" / self.context.workflow_id
+            
             print(f"Using workflow context: {self.context.workflow_id}")
             print(f"Database: {self.db_path}")
+            print(f"Workflow outputs: {self.workflow_output_dir}")
         else:
             # Fall back to traditional paths
             self.db_path = db_path
             self.db = MaterialDatabase(db_path)
             actual_base_dir = self.base_dir
+            self.workflow_output_dir = None
             
         self.file_manager = CrystalFileManager(str(actual_base_dir), self.db_path)
         if HAS_ERROR_DETECTOR:
@@ -127,7 +133,11 @@ class MaterialMonitor:
             
             # Check for potential issues
             if stats.get('total_materials', 0) == 0:
-                health['issues'].append('No materials in database')
+                # In workflow mode, materials are created when calculations complete
+                if self.context:
+                    health['issues'].append('No materials yet - will be created as calculations complete')
+                else:
+                    health['issues'].append('No materials in database')
             
             if health['size_mb'] > 1000:  # Larger than 1GB
                 health['issues'].append('Large database size - consider cleanup')
@@ -216,28 +226,57 @@ class MaterialMonitor:
         }
         
         try:
-            # Generate file report
-            report = self.file_manager.generate_file_report()
-            
-            files['total_materials'] = report['summary']['total_materials']
-            files['total_files'] = report['summary']['total_files']
-            files['total_size_mb'] = report['summary']['total_size_mb']
-            
-            # Calculate organization score (percentage of files in organized structure)
-            organized_materials = len([m for m in report['materials'].values() 
-                                     if m['total_files'] > 0])
-            if files['total_materials'] > 0:
-                files['organization_score'] = (organized_materials / files['total_materials']) * 100
+            if self.context and self.workflow_output_dir and self.workflow_output_dir.exists():
+                # For workflow context, count files in workflow outputs
+                total_files = 0
+                total_size = 0
+                material_dirs = set()
                 
-            # Check for issues
-            integrity_issues = report['summary']['integrity_issues']
-            if integrity_issues > 0:
-                files['issues'].append(f'File integrity issues: {integrity_issues}')
+                # Walk through workflow output directory
+                for step_dir in self.workflow_output_dir.glob("step_*"):
+                    if step_dir.is_dir():
+                        for mat_dir in step_dir.iterdir():
+                            if mat_dir.is_dir() and not mat_dir.name.startswith('.'):
+                                material_dirs.add(mat_dir.name)
+                                for file_path in mat_dir.rglob("*"):
+                                    if file_path.is_file():
+                                        total_files += 1
+                                        total_size += file_path.stat().st_size
+                
+                files['total_materials'] = len(material_dirs)
+                files['total_files'] = total_files
+                files['total_size_mb'] = total_size / (1024 * 1024)
+                files['organization_score'] = 100.0  # Workflow outputs are always organized
+                
+                # Also check for files in base directory
+                d12_files = list(self.base_dir.glob("*.d12"))
+                if d12_files:
+                    files['issues'].append(f'{len(d12_files)} D12 files in base directory')
+                    
+            else:
+                # Traditional file report
+                report = self.file_manager.generate_file_report()
+                
+                files['total_materials'] = report['summary']['total_materials']
+                files['total_files'] = report['summary']['total_files']
+                files['total_size_mb'] = report['summary']['total_size_mb']
+                
+                # Calculate organization score (percentage of files in organized structure)
+                organized_materials = len([m for m in report['materials'].values() 
+                                         if m['total_files'] > 0])
+                if files['total_materials'] > 0:
+                    files['organization_score'] = (organized_materials / files['total_materials']) * 100
+                    
+                # Check for issues
+                integrity_issues = report['summary']['integrity_issues']
+                if integrity_issues > 0:
+                    files['issues'].append(f'File integrity issues: {integrity_issues}')
                 
             if files['total_size_mb'] > 100000:  # More than 100GB
                 files['issues'].append('Large total file size - consider cleanup')
                 
-            if files['organization_score'] < 80:
+            # Only check organization if there are actually files to organize
+            if files['total_files'] > 0 and files['organization_score'] < 80:
                 files['issues'].append('Poor file organization - consider reorganizing')
                 
             files['status'] = 'healthy' if not files['issues'] else 'warning'

@@ -1,0 +1,42 @@
+{
+  "calculation_type": "CHARGE+POTENTIAL2",
+  "source": "CRYSTALOptToD3.py",
+  "requires_wavefunction": true,
+  "d3_calculation": true,
+  "d3_config_mode": "advanced",
+  "d3_config": {
+    "calculation_type": "CHARGE+POTENTIAL",
+    "option_type": 6,
+    "mapnet": [
+      100,
+      100,
+      100
+    ],
+    "output_format": "GAUSSIAN"
+  },
+  "slurm_config": {
+    "scripts": {
+      "submit_prop.sh": {
+        "source_script": "submit_prop.sh",
+        "step_specific_name": "submit_prop_charge+potential2_14.sh",
+        "resources": {
+          "ntasks": 28,
+          "nodes": 1,
+          "walltime": "2:00:00",
+          "memory": "80G",
+          "account": "mendoza_q",
+          "module": "CRYSTAL/23-intel-2023a",
+          "scratch_dir": "$SCRATCH/crys23/prop"
+        },
+        "customizations": [],
+        "copy_to_workdir": true,
+        "workflow_id": "workflow_20250725_123705"
+      }
+    },
+    "resources": {},
+    "modules": {}
+  },
+  "workflow_id": "workflow_20250725_123705",
+  "step_number": 14,
+  "timestamp": "2025-07-25T12:37:12.107703"
+}

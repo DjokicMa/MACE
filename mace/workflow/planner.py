@@ -4171,9 +4171,11 @@ class WorkflowPlanner:
                 modified_lines.append(line)
                 # Add workflow context environment variables
                 workflow_id = script_config.get('workflow_id', f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+                # Use absolute path to workflow context directory
+                context_dir = str(Path(self.work_dir).resolve() / f".mace_context_{workflow_id}")
                 modified_lines.append(f"echo '# Workflow context for queue manager' >> $1.sh")
                 modified_lines.append(f"echo 'export MACE_WORKFLOW_ID=\"{workflow_id}\"' >> $1.sh")
-                modified_lines.append(f"echo 'export MACE_CONTEXT_DIR=\"{self.work_dir}/.mace_context_{workflow_id}\"' >> $1.sh")
+                modified_lines.append(f"echo 'export MACE_CONTEXT_DIR=\"{context_dir}\"' >> $1.sh")
                 modified_lines.append(f"echo 'export MACE_ISOLATION_MODE=\"isolated\"' >> $1.sh")
                 continue  # Skip the normal append since we already added the line
             # CRYSTAL module loading (Python module already in base template)
