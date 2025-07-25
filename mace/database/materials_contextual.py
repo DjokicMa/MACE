@@ -68,7 +68,17 @@ class ContextualMaterialDatabase(MaterialDatabase):
             ase_db_path = "structures.db"
             
         # Initialize parent class with resolved paths
-        super().__init__(db_path=db_path, ase_db_path=ase_db_path)
+        # If we have a workflow context and it's isolated, delay initialization
+        # to prevent creating the root materials.db
+        auto_init = True
+        if workflow_context and workflow_context.isolation_mode != 'shared':
+            # In isolated mode, let the context create the database
+            auto_init = False
+        elif db_path == "materials.db" and not Path(db_path).exists():
+            # If using default path and it doesn't exist, check if we might get a context later
+            auto_init = False
+            
+        super().__init__(db_path=db_path, ase_db_path=ase_db_path, auto_initialize=auto_init)
         
         # Store resolved paths for reference
         self.resolved_db_path = db_path
@@ -111,7 +121,7 @@ class ContextualMaterialDatabase(MaterialDatabase):
             'db_path': self.resolved_db_path,
             'ase_db_path': self.resolved_ase_db_path,
             'context_dir': str(self.workflow_context.context_dir) if self.workflow_context else None,
-            'is_active': self.workflow_context.is_active() if self.workflow_context else False
+            'is_active': self.workflow_context.is_active if self.workflow_context and hasattr(self.workflow_context, 'is_active') else True if self.workflow_context else False
         }
     
     def is_isolated(self) -> bool:

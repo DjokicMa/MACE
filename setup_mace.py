@@ -111,6 +111,7 @@ class MACESetup:
     def update_shell_config(self, add_to_path=True):
         """Update shell configuration file(s)"""
         export_line = f'export MACE_HOME="{self.repo_root}"'
+        pythonpath_line = 'export PYTHONPATH="$MACE_HOME:$PYTHONPATH"'
         # Add all script directories to PATH
         # Using new structure - reorganized paths
         path_lines = [
@@ -149,6 +150,10 @@ class MACESetup:
             
             if export_line not in content:
                 lines_to_add.append(export_line)
+            
+            # Add PYTHONPATH
+            if pythonpath_line not in content:
+                lines_to_add.append(pythonpath_line)
             
             if add_to_path:
                 for path_line in path_lines:

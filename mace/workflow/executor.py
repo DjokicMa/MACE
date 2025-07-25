@@ -57,12 +57,18 @@ class WorkflowExecutor:
             # Use context-specific database path
             self.db_path = str(ctx.get_database_path())
             print(f"Using context database: {self.db_path}")
-            # In isolated mode, only use the context database
-            self.db = MaterialDatabase(self.db_path)
+            # In isolated mode, don't create database here - it will be created by context
+            self.db = None  # Will be set when context is activated
         else:
             # Only create database in shared mode
             self.db_path = db_path
-            self.db = MaterialDatabase(self.db_path)
+            if db_path == "materials.db" and not Path(db_path).exists():
+                # Delay database creation until isolation mode is determined
+                # This prevents creating materials.db before we know if we're in isolation mode
+                self.db = None
+            else:
+                # Create database for non-default paths or existing databases
+                self.db = MaterialDatabase(self.db_path, auto_initialize=True)
         
         # Set up directories
         self.configs_dir = self.work_dir / "workflow_configs"
@@ -72,15 +78,25 @@ class WorkflowExecutor:
         for dir_path in [self.configs_dir, self.outputs_dir, self.temp_dir]:
             dir_path.mkdir(parents=True, exist_ok=True)
             
-        # Initialize queue manager with error recovery enabled
-        self.queue_manager = EnhancedCrystalQueueManager(
-            d12_dir=str(self.outputs_dir),
-            max_jobs=200,
-            enable_tracking=True,
-            enable_error_recovery=True,
-            max_recovery_attempts=3,
-            db_path=self.db_path
-        )
+        # Initialize queue manager - delay if in isolated mode or if no database exists yet
+        if ctx:
+            # In isolated mode, don't create queue manager here
+            self.queue_manager = None  # Will be set when context is activated
+        elif db_path == "materials.db" and not Path(db_path).exists():
+            # If using default path and database doesn't exist, delay initialization
+            # This prevents creating materials.db before we know the isolation mode
+            self.queue_manager = None
+            # Queue manager will be created later when isolation mode is determined
+        else:
+            # Only create queue manager in shared mode with existing database
+            self.queue_manager = EnhancedCrystalQueueManager(
+                d12_dir=str(self.outputs_dir),
+                max_jobs=200,
+                enable_tracking=True,
+                enable_error_recovery=True,
+                max_recovery_attempts=3,
+                db_path=self.db_path
+            )
         
         # Track active workflows
         self.active_workflows = {}
@@ -94,13 +110,28 @@ class WorkflowExecutor:
         scripts_dir = self.work_dir / "workflow_scripts"
         scripts_dir.mkdir(exist_ok=True)
         
-        job_scripts_dir = Path(__file__).parent  # Job_Scripts directory
+        # Get the base MACE directory
+        mace_dir = Path(__file__).parent.parent
+        
+        # Get workflow_id from plan
+        workflow_id = plan.get('workflow_id', f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         
         # Iterate through all step configurations
         for step_key, step_config in plan.get('step_configurations', {}).items():
             if 'slurm_config' in step_config and 'scripts' in step_config['slurm_config']:
                 for script_name, script_config in step_config['slurm_config']['scripts'].items():
-                    source_script = job_scripts_dir / script_config['source_script']
+                    # Add workflow_id to script config
+                    script_config['workflow_id'] = workflow_id
+                    
+                    # Try to get source script - handle both absolute and relative paths
+                    source_script_path = script_config.get('source_script', '')
+                    if source_script_path.startswith('/'):
+                        # Absolute path provided - use it directly
+                        source_script = Path(source_script_path)
+                    else:
+                        # Relative path - use standard location
+                        source_script = mace_dir / "submission" / script_name
+                    
                     target_script = scripts_dir / script_config['step_specific_name']
                     
                     if source_script.exists():
@@ -141,13 +172,31 @@ class WorkflowExecutor:
             
             # Apply replacements line by line
             lines = content.split('\n')
-            for i, line in enumerate(lines):
+            modified_lines = []
+            
+            for line in lines:
+                # Check for SLURM directive replacements
+                replaced = False
                 for prefix, replacement in replacements.items():
                     if line.strip().startswith(prefix):
-                        lines[i] = replacement
+                        modified_lines.append(replacement)
+                        replaced = True
                         break
+                
+                if not replaced:
+                    # Add workflow context environment variables after 'export JOB=' line
+                    if line.startswith("echo 'export JOB="):
+                        modified_lines.append(line)
+                        # Add workflow context environment variables for script generators
+                        workflow_id = script_config.get('workflow_id', f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+                        modified_lines.append(f"echo '# Workflow context for queue manager' >> $1.sh")
+                        modified_lines.append(f"echo 'export MACE_WORKFLOW_ID=\"{workflow_id}\"' >> $1.sh")
+                        modified_lines.append(f"echo 'export MACE_CONTEXT_DIR=\"${{SLURM_SUBMIT_DIR}}/.mace_context_{workflow_id}\"' >> $1.sh")
+                        modified_lines.append(f"echo 'export MACE_ISOLATION_MODE=\"{getattr(self, 'isolation_mode', 'isolated')}\"' >> $1.sh")
+                    else:
+                        modified_lines.append(line)
             
-            content = '\n'.join(lines)
+            content = '\n'.join(modified_lines)
         
         # Apply any additional customizations
         if 'customizations' in script_config:
@@ -199,7 +248,7 @@ class WorkflowExecutor:
         if isolation_mode == 'shared':
             # Traditional behavior - no context needed
             print(f"Using shared mode (no workflow isolation)")
-            self._execute_workflow_plan_impl(plan, workflow_id)
+            self._execute_workflow_plan_impl(plan, workflow_id, isolation_mode)
         else:
             # Use workflow context for isolation
             print(f"Using {isolation_mode} isolation mode")
@@ -227,7 +276,7 @@ class WorkflowExecutor:
                     )
                     
                     # Execute workflow within context
-                    self._execute_workflow_plan_impl(plan, workflow_id)
+                    self._execute_workflow_plan_impl(plan, workflow_id, isolation_mode)
                     
                     # Handle post-completion actions
                     if post_completion_action == 'archive':
@@ -246,8 +295,11 @@ class WorkflowExecutor:
                     self.db = original_db
                     self.queue_manager = original_queue_manager
     
-    def _execute_workflow_plan_impl(self, plan: Dict[str, Any], workflow_id: str):
+    def _execute_workflow_plan_impl(self, plan: Dict[str, Any], workflow_id: str, isolation_mode: str = 'isolated'):
         """Internal implementation of workflow execution"""
+        # Store isolation mode for use in customize_slurm_script
+        self.isolation_mode = isolation_mode
+        
         try:
             # Phase 0: Recreate workflow scripts from configuration
             self.recreate_workflow_scripts(plan)
@@ -443,6 +495,22 @@ class WorkflowExecutor:
     def submit_workflow_calculation(self, d12_file: Path, calc_type: str, material_id: str,
                                    workflow_id: str, step_num: int, calc_dir: Path) -> str:
         """Submit calculation using workflow-specific directory structure and database tracking"""
+        # Ensure database is initialized
+        if self.db is None:
+            # Initialize database if not already done (happens when default path was used)
+            # In isolation mode, the context should have created the database by now
+            if hasattr(self, 'isolation_mode') and self.isolation_mode == 'isolated':
+                # In isolated mode, use the context database path
+                context_dir = self.work_dir / f".mace_context_{workflow_id}"
+                if context_dir.exists():
+                    self.db_path = str(context_dir / "materials.db")
+                    self.db = MaterialDatabase(self.db_path, auto_initialize=True)
+                else:
+                    raise RuntimeError(f"Context directory not found: {context_dir}")
+            else:
+                # In shared mode, create the default database
+                self.db = MaterialDatabase(self.db_path, auto_initialize=True)
+        
         # Create calculation record in database first
         calc_id = self.db.create_calculation(
             material_id=material_id,
@@ -736,6 +804,38 @@ class WorkflowExecutor:
         # Replace $1 placeholders with material name
         script_content = script_content.replace('$1', material_name)
         
+        # Add workflow context environment variables for queue manager context detection
+        # Since these are script generators, we need to add echo commands
+        context_export_commands = f'''echo '# Workflow context for queue manager' >> $1.sh
+echo 'export MACE_WORKFLOW_ID="{workflow_id}"' >> $1.sh
+echo 'export MACE_CONTEXT_DIR="{self.work_dir}/.mace_context_{workflow_id}"' >> $1.sh
+echo 'export MACE_ISOLATION_MODE="{getattr(self, 'isolation_mode', 'isolated')}"' >> $1.sh
+'''
+        
+        # For script generators, insert after the echo 'export JOB=' line
+        if "echo 'export JOB=" in script_content:
+            lines = script_content.split('\n')
+            for i, line in enumerate(lines):
+                if "echo 'export JOB=" in line:
+                    # Insert context export echo commands after this line
+                    lines.insert(i + 1, context_export_commands)
+                    script_content = '\n'.join(lines)
+                    break
+        # For direct scripts (non-generators), use the original approach
+        elif 'export JOB=' in script_content and 'echo' not in script_content:
+            context_exports = f'''
+# Workflow context for queue manager
+export MACE_WORKFLOW_ID="{workflow_id}"
+export MACE_CONTEXT_DIR="{self.work_dir}/.mace_context_{workflow_id}"
+export MACE_ISOLATION_MODE="{getattr(self, 'isolation_mode', 'isolated')}"
+'''
+            lines = script_content.split('\n')
+            for i, line in enumerate(lines):
+                if line.strip().startswith('export JOB='):
+                    lines.insert(i + 1, context_exports)
+                    script_content = '\n'.join(lines)
+                    break
+        
         # Update scratch directory paths to use base directory
         # This preserves the original template pattern of mkdir -p $scratch/$JOB
         # where $JOB will be the material_name, creating the full path
@@ -755,24 +855,111 @@ class WorkflowExecutor:
         # Fix callback mechanism - check multiple possible locations for queue managers
         enhanced_callback = '''# ADDED: Auto-submit new jobs when this one completes
 # Check multiple possible locations for queue managers
-if [ -f $DIR/enhanced_queue_manager.py ]; then
-    cd $DIR
-    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
-elif [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
-    cd $DIR/../../../../
-    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
-elif [ -f $DIR/crystal_queue_manager.py ]; then
-    cd $DIR
-    ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
-elif [ -f $DIR/../../../../crystal_queue_manager.py ]; then
-    cd $DIR/../../../../
-    ./crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
+cd $DIR
+
+# First check if MACE_HOME is set and use it
+if [ ! -z "$MACE_HOME" ]; then
+    if [ -f "$MACE_HOME/mace/queue/manager.py" ]; then
+        QUEUE_MANAGER="$MACE_HOME/mace/queue/manager.py"
+    elif [ -f "$MACE_HOME/enhanced_queue_manager.py" ]; then
+        QUEUE_MANAGER="$MACE_HOME/enhanced_queue_manager.py"
+    fi
+else
+    # MACE_HOME not set, try to find in PATH or relative locations
+    # Try using which to find mace_cli (which we know works)
+    MACE_CLI=$(which mace_cli 2>/dev/null)
+    if [ ! -z "$MACE_CLI" ]; then
+        # Found mace_cli, derive MACE_HOME from it
+        MACE_HOME=$(dirname "$MACE_CLI")
+        if [ -f "$MACE_HOME/mace/queue/manager.py" ]; then
+            QUEUE_MANAGER="$MACE_HOME/mace/queue/manager.py"
+        fi
+    fi
+fi
+
+# If still not found, check standard relative locations
+if [ -z "$QUEUE_MANAGER" ]; then
+    if [ -f $DIR/mace/queue/manager.py ]; then
+        QUEUE_MANAGER="$DIR/mace/queue/manager.py"
+    elif [ -f $DIR/../../../../mace/queue/manager.py ]; then
+        QUEUE_MANAGER="$DIR/../../../../mace/queue/manager.py"
+    elif [ -f $DIR/../../../../../mace/queue/manager.py ]; then
+        QUEUE_MANAGER="$DIR/../../../../../mace/queue/manager.py"
+    elif [ -f $DIR/enhanced_queue_manager.py ]; then
+        QUEUE_MANAGER="$DIR/enhanced_queue_manager.py"
+    elif [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
+        QUEUE_MANAGER="$DIR/../../../../enhanced_queue_manager.py"
+    elif [ -f $DIR/crystal_queue_manager.py ]; then
+        QUEUE_MANAGER="$DIR/crystal_queue_manager.py"
+    elif [ -f $DIR/../../../../crystal_queue_manager.py ]; then
+        QUEUE_MANAGER="$DIR/../../../../crystal_queue_manager.py"
+    fi
+fi
+
+if [ ! -z "$QUEUE_MANAGER" ]; then
+    echo "Found queue manager at: $QUEUE_MANAGER"
+    
+    # Check if we're in a workflow context by looking for the context directory
+    if [ ! -z "$MACE_CONTEXT_DIR" ] && [ -d "$MACE_CONTEXT_DIR" ]; then
+        # In workflow context - pass the context database path
+        CONTEXT_DB="$MACE_CONTEXT_DIR/materials.db"
+        if [ -f "$CONTEXT_DB" ]; then
+            echo "Using workflow context database: $CONTEXT_DB"
+            python "$QUEUE_MANAGER" --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3 --db-path "$CONTEXT_DB"
+        else
+            echo "Warning: Context database not found at $CONTEXT_DB, using default"
+            python "$QUEUE_MANAGER" --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
+        fi
+    else
+        # Not in workflow context - use default behavior
+        python "$QUEUE_MANAGER" --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
+    fi
+else
+    echo "Warning: Queue manager not found. Checked:"
+    echo "  - \$MACE_HOME/mace/queue/manager.py"
+    echo "  - Various relative paths from $DIR"
+    echo "  Workflow progression may not continue automatically"
 fi'''
         
-        # Replace the existing callback section
+        # Replace the existing callback section - handle both old and new formats
         import re
-        callback_pattern = r'# ADDED: Auto-submit new jobs when this one completes.*?fi'
-        script_content = re.sub(callback_pattern, enhanced_callback, script_content, flags=re.DOTALL)
+        
+        # Check if this is a template script that generates another script
+        if "echo" in script_content and ">> $1.sh" in script_content:
+            # This is a template script like submitcrystal23.sh
+            # We need to replace the callback line with proper echo commands
+            
+            # Convert our enhanced callback to echo format
+            echo_callback_lines = []
+            for line in enhanced_callback.strip().split('\n'):
+                if line.strip():  # Skip empty lines
+                    # Escape special characters for echo
+                    escaped_line = line.replace('$', '\\$').replace('"', '\\"').replace('`', '\\`')
+                    echo_callback_lines.append(f"echo '{escaped_line}' >> $1.sh")
+            
+            enhanced_callback_echo = '\n'.join(echo_callback_lines)
+            
+            # Pattern for the original callback in template format
+            callback_pattern = r"echo '# ADDED: Auto-submit new jobs when this one completes.*?enhanced_queue_manager\.py.*?' >> \$1\.sh"
+            if re.search(callback_pattern, script_content, flags=re.DOTALL):
+                script_content = re.sub(callback_pattern, enhanced_callback_echo, script_content, flags=re.DOTALL)
+            else:
+                # Try simpler pattern without echo
+                callback_pattern2 = r"# ADDED: Auto-submit new jobs when this one completes.*?enhanced_queue_manager\.py.*"
+                if re.search(callback_pattern2, script_content, flags=re.DOTALL):
+                    # Replace with echo version
+                    script_content = re.sub(callback_pattern2, enhanced_callback_echo, script_content, flags=re.DOTALL)
+        else:
+            # This is a regular script, not a template
+            # First try the pattern with 'fi' at the end (for scripts that already have if-else logic)
+            callback_pattern1 = r'# ADDED: Auto-submit new jobs when this one completes.*?fi'
+            if re.search(callback_pattern1, script_content, flags=re.DOTALL):
+                script_content = re.sub(callback_pattern1, enhanced_callback, script_content, flags=re.DOTALL)
+            else:
+                # Try simpler pattern
+                callback_pattern2 = r"cd \$DIR\s*\n\s*enhanced_queue_manager\.py.*"
+                if re.search(callback_pattern2, script_content):
+                    script_content = re.sub(callback_pattern2, enhanced_callback.strip(), script_content)
         
         # Add workflow metadata as comments at the top
         metadata_lines = [

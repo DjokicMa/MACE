@@ -243,6 +243,10 @@ class WorkflowContext:
         """Get the path to the structures database for this context."""
         return self.structures_db_path
     
+    def get_ase_database_path(self) -> Path:
+        """Get the path to the ASE database for this context (alias for structures database)."""
+        return self.structures_db_path
+    
     def get_storage_path(self, subdir: Optional[str] = None) -> Path:
         """Get storage path for this context."""
         path = self.storage_dir
@@ -255,10 +259,60 @@ class WorkflowContext:
         """Get lock file path for this context."""
         return self.lock_dir / f"{lock_name}.lock"
     
+    def get_lock_dir(self) -> Path:
+        """Get the lock directory for this context."""
+        return self.lock_dir
+    
     @classmethod
     def get_active(cls) -> Optional['WorkflowContext']:
         """Get the currently active context for this thread."""
-        return getattr(cls._thread_local, 'context', None)
+        # First check thread-local storage
+        ctx = getattr(cls._thread_local, 'context', None)
+        if ctx:
+            return ctx
+            
+        # Fallback to environment variables
+        workflow_id = os.environ.get('MACE_WORKFLOW_ID')
+        context_dir = os.environ.get('MACE_CONTEXT_DIR')
+        isolation_mode = os.environ.get('MACE_ISOLATION_MODE', 'isolated')
+        
+        if workflow_id and context_dir:
+            # Create context from environment
+            try:
+                ctx = cls.from_environment(workflow_id, context_dir, isolation_mode)
+                ctx.activate()
+                return ctx
+            except Exception:
+                # Failed to create from environment
+                pass
+                
+        return None
+    
+    @classmethod
+    def from_environment(cls, workflow_id: str, context_dir: str, isolation_mode: str = 'isolated') -> 'WorkflowContext':
+        """Create a workflow context from environment variables."""
+        # Check if context already exists
+        if workflow_id in cls._active_contexts:
+            return cls._active_contexts[workflow_id]
+            
+        # Create new context
+        ctx = cls(workflow_id, isolation_mode=isolation_mode)
+        ctx.context_dir = Path(context_dir)
+        
+        # Ensure context directory exists
+        if ctx.context_dir.exists():
+            # Load context configuration if it exists
+            config_file = ctx.context_dir / "context_config.json"
+            if config_file.exists():
+                try:
+                    import json
+                    with open(config_file, 'r') as f:
+                        config = json.load(f)
+                        ctx.metadata.update(config.get('metadata', {}))
+                except Exception:
+                    pass
+                    
+        return ctx
     
     @classmethod
     def get_or_create_shared(cls) -> 'WorkflowContext':

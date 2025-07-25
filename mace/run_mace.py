@@ -218,6 +218,51 @@ def run_quick_start_mode(args):
     executor.execute_workflow_plan(plan_file)
 
 
+def _get_quick_slurm_config(calc_type: str, step_num: int) -> Dict[str, Any]:
+    """Get SLURM configuration for quick start mode"""
+    import os
+    from pathlib import Path
+    
+    # Determine script type and resources based on calculation
+    base_type = calc_type.rstrip("0123456789")
+    
+    # Get the job scripts directory - correctly handle the path
+    mace_dir = Path(__file__).parent.parent
+    job_scripts_dir = mace_dir / "mace" / "submission"
+    
+    if base_type in ["OPT", "SP", "FREQ"]:
+        script_name = "submitcrystal23.sh"
+        default_resources = {
+            "OPT": {"ntasks": 32, "memory_per_cpu": "5G", "walltime": "7-00:00:00"},
+            "SP": {"ntasks": 32, "memory_per_cpu": "4G", "walltime": "3-00:00:00"},
+            "FREQ": {"ntasks": 32, "memory_per_cpu": "5G", "walltime": "7-00:00:00"}
+        }
+    else:  # D3 calculations
+        script_name = "submit_prop.sh"
+        default_resources = {
+            "BAND": {"ntasks": 28, "memory_per_cpu": "80G", "walltime": "2:00:00"},
+            "DOSS": {"ntasks": 28, "memory_per_cpu": "80G", "walltime": "2:00:00"},
+            "TRANSPORT": {"ntasks": 28, "memory_per_cpu": "80G", "walltime": "2:00:00"},
+            "CHARGE+POTENTIAL": {"ntasks": 28, "memory_per_cpu": "80G", "walltime": "2:00:00"}
+        }
+    
+    resources = default_resources.get(base_type, default_resources.get("OPT"))
+    
+    return {
+        "scripts": {
+            script_name: {
+                "source_script": script_name,  # Just use the script name, executor will find it
+                "step_specific_name": f"{script_name.replace('.sh', '')}_{calc_type.lower()}_{step_num}.sh",
+                "workflow_id": None,  # Will be set during execution
+                "resources": resources,
+                "calculation_type": calc_type
+            }
+        },
+        "resources": resources,
+        "modules": {}
+    }
+
+
 def _get_basic_d3_config_for_quick_start(calc_type: str) -> Dict[str, Any]:
     """Get basic D3 configuration for quick start mode"""
     configs = {
@@ -332,6 +377,10 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
                     }
                 }
             }
+        
+        # Add SLURM configuration for each step
+        slurm_config = _get_quick_slurm_config(calc_type, step_num)
+        step_configs[f"{calc_type}_{step_num}"]["slurm_config"] = slurm_config
     
     # Create plan
     plan = {

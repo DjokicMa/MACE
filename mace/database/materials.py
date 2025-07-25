@@ -37,20 +37,35 @@ class MaterialDatabase:
     Handles concurrent access from multiple queue manager instances.
     """
     
-    def __init__(self, db_path: str = "materials.db", ase_db_path: str = "structures.db"):
+    def __init__(self, db_path: str = "materials.db", ase_db_path: str = "structures.db", auto_initialize: bool = True):
         self.db_path = Path(db_path).resolve()
         self.ase_db_path = Path(ase_db_path).resolve()
         self.lock = threading.RLock()
-        self._initialize_database()
+        self._initialized = False
         
-        # Initialize ASE database if available
-        if HAS_ASE:
-            self.ase_db = ase_connect(str(self.ase_db_path))
+        # Only initialize if auto_initialize is True
+        if auto_initialize:
+            self._initialize_database()
+            
+            # Initialize ASE database if available
+            if HAS_ASE:
+                self.ase_db = ase_connect(str(self.ase_db_path))
+            else:
+                self.ase_db = None
         else:
             self.ase_db = None
             
+    def _ensure_initialized(self):
+        """Ensure database is initialized before use."""
+        if not self._initialized:
+            self._initialize_database()
+            if HAS_ASE and self.ase_db is None:
+                self.ase_db = ase_connect(str(self.ase_db_path))
+            self._initialized = True
+            
     def _initialize_database(self):
         """Create database tables if they don't exist."""
+        self._initialized = True
         with self._get_connection() as conn:
             conn.executescript("""
                 -- Materials table: Core material information
@@ -236,6 +251,9 @@ class MaterialDatabase:
     @contextmanager
     def _get_connection(self):
         """Thread-safe database connection context manager with WAL mode for concurrency."""
+        # Ensure database is initialized before connecting
+        self._ensure_initialized()
+        
         with self.lock:
             conn = sqlite3.connect(
                 str(self.db_path),

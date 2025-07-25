@@ -53,7 +53,55 @@ cp *.CUBE ${DIR}/ 2>/dev/null || true
 cp *.cube ${DIR}/ 2>/dev/null || true
 
 # ADDED: Auto-submit new jobs when this one completes
-# Use centralized MACE installation (scripts are in PATH)
+# Check multiple possible locations for queue managers
 cd $DIR
-enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3' >> $1.sh
+
+# First check if MACE_HOME is set and use it
+if [ ! -z "$MACE_HOME" ]; then
+    if [ -f "$MACE_HOME/mace/queue/manager.py" ]; then
+        QUEUE_MANAGER="$MACE_HOME/mace/queue/manager.py"
+    elif [ -f "$MACE_HOME/enhanced_queue_manager.py" ]; then
+        QUEUE_MANAGER="$MACE_HOME/enhanced_queue_manager.py"
+    fi
+else
+    # MACE_HOME not set, try to find in PATH or relative locations
+    # Try using which to find mace_cli (which we know works)
+    MACE_CLI=$(which mace_cli 2>/dev/null)
+    if [ ! -z "$MACE_CLI" ]; then
+        # Found mace_cli, derive MACE_HOME from it
+        MACE_HOME=$(dirname "$MACE_CLI")
+        if [ -f "$MACE_HOME/mace/queue/manager.py" ]; then
+            QUEUE_MANAGER="$MACE_HOME/mace/queue/manager.py"
+        fi
+    fi
+fi
+
+# If still not found, check standard relative locations
+if [ -z "$QUEUE_MANAGER" ]; then
+    if [ -f $DIR/mace/queue/manager.py ]; then
+        QUEUE_MANAGER="$DIR/mace/queue/manager.py"
+    elif [ -f $DIR/../../../../mace/queue/manager.py ]; then
+        QUEUE_MANAGER="$DIR/../../../../mace/queue/manager.py"
+    elif [ -f $DIR/../../../../../mace/queue/manager.py ]; then
+        QUEUE_MANAGER="$DIR/../../../../../mace/queue/manager.py"
+    elif [ -f $DIR/enhanced_queue_manager.py ]; then
+        QUEUE_MANAGER="$DIR/enhanced_queue_manager.py"
+    elif [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
+        QUEUE_MANAGER="$DIR/../../../../enhanced_queue_manager.py"
+    elif [ -f $DIR/crystal_queue_manager.py ]; then
+        QUEUE_MANAGER="$DIR/crystal_queue_manager.py"
+    elif [ -f $DIR/../../../../crystal_queue_manager.py ]; then
+        QUEUE_MANAGER="$DIR/../../../../crystal_queue_manager.py"
+    fi
+fi
+
+if [ ! -z "$QUEUE_MANAGER" ]; then
+    echo "Found queue manager at: $QUEUE_MANAGER"
+    python "$QUEUE_MANAGER" --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
+else
+    echo "Warning: Queue manager not found. Checked:"
+    echo "  - \$MACE_HOME/mace/queue/manager.py"
+    echo "  - Various relative paths from $DIR"
+    echo "  Workflow progression may not continue automatically"
+fi' >> $1.sh
 sbatch $1.sh
