@@ -31,12 +31,12 @@ import signal
 
 # Import MACE components
 try:
-    from database.materials import MaterialDatabase
-    from database.materials_contextual import ContextualMaterialDatabase
-    from workflow.context import get_current_context, WorkflowContext
-    from utils.file_manager import CrystalFileManager
+    from mace.database.materials import MaterialDatabase
+    from mace.database.materials_contextual import ContextualMaterialDatabase
+    from mace.workflow.context import get_current_context, WorkflowContext
+    from mace.utils.file_manager import CrystalFileManager
     try:
-        from recovery.detector import CrystalErrorDetector
+        from mace.recovery.detector import CrystalErrorDetector
         HAS_ERROR_DETECTOR = True
     except ImportError:
         HAS_ERROR_DETECTOR = False

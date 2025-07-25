@@ -516,6 +516,40 @@ class MaterialDatabase:
                 materials.append(material)
             return materials
             
+    def analyze_missing_data(self, material_ids: List[str] = None,
+                           target_properties: List[str] = None) -> Dict[str, Any]:
+        """
+        Analyze missing properties across materials.
+        
+        Args:
+            material_ids: List of materials to analyze (None = all)
+            target_properties: Specific properties to check (None = all known)
+            
+        Returns:
+            Analysis results with missing data summary and recommendations
+        """
+        from mace.database.analysis.missing_data import MissingDataAnalyzer
+        analyzer = MissingDataAnalyzer(self)
+        return analyzer.analyze_missing_data(material_ids, target_properties)
+        
+    def get_material_calculations(self, material_id: str) -> List[Dict]:
+        """Get all calculations for a specific material."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT * FROM calculations 
+                WHERE material_id = ? 
+                ORDER BY created_at DESC
+            """, (material_id,))
+            
+            calculations = []
+            for row in cursor.fetchall():
+                calc = dict(row)
+                if calc.get('settings_json'):
+                    calc['settings'] = json.loads(calc['settings_json'])
+                calculations.append(calc)
+            
+            return calculations
+            
     def get_all_calculations(self) -> List[Dict]:
         """Get all calculations in the database."""
         with self._get_connection() as conn:
@@ -1070,6 +1104,113 @@ class MaterialDatabase:
             
         return stats
         
+    def store_material_property(self, material_id: str, property_name: str, 
+                               property_value: any, property_category: str = 'General',
+                               calc_id: str = None, property_unit: str = None,
+                               confidence: float = None, extractor_script: str = None) -> str:
+        """Store a material property in the database."""
+        import uuid
+        
+        with self._get_connection() as conn:
+            property_id = str(uuid.uuid4())
+            
+            # Handle both numeric and text values
+            property_value_num = None
+            property_value_text = None
+            
+            try:
+                property_value_num = float(property_value)
+            except (ValueError, TypeError):
+                property_value_text = str(property_value)
+            
+            conn.execute("""
+                INSERT INTO properties (
+                    property_id, material_id, calc_id, property_category,
+                    property_name, property_value, property_value_text,
+                    property_unit, confidence, extractor_script,
+                    extracted_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                property_id, material_id, calc_id, property_category,
+                property_name, property_value_num, property_value_text,
+                property_unit, confidence, extractor_script,
+                datetime.now()
+            ))
+            
+            conn.commit()
+            return property_id
+            
+    def get_material_properties(self, material_id: str) -> List[Dict]:
+        """Get all properties for a specific material."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT property_id, material_id, calc_id, property_category,
+                       property_name, property_value, property_value_text,
+                       property_unit, confidence, extractor_script,
+                       extracted_at
+                FROM properties
+                WHERE material_id = ?
+                ORDER BY property_category, property_name
+            """, (material_id,))
+            
+            columns = [desc[0] for desc in cursor.description]
+            results = []
+            for row in cursor.fetchall():
+                prop = dict(zip(columns, row))
+                # Use text value if numeric value is null
+                if prop['property_value'] is None and prop['property_value_text']:
+                    prop['property_value'] = prop['property_value_text']
+                results.append(prop)
+                
+            return results
+            
+    def get_all_properties(self) -> List[Dict]:
+        """Get all properties from the database."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT property_id, material_id, calc_id, property_category,
+                       property_name, property_value, property_value_text,
+                       property_unit, confidence, extractor_script,
+                       extracted_at
+                FROM properties
+                ORDER BY material_id, property_category, property_name
+            """)
+            
+            columns = [desc[0] for desc in cursor.description]
+            results = []
+            for row in cursor.fetchall():
+                prop = dict(zip(columns, row))
+                # Use text value if numeric value is null
+                if prop['property_value'] is None and prop['property_value_text']:
+                    prop['property_value'] = prop['property_value_text']
+                results.append(prop)
+                
+            return results
+            
+    def get_properties_by_name(self, property_name: str) -> List[Dict]:
+        """Get all values of a specific property across materials."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT m.material_id, m.formula, p.property_value, 
+                       p.property_value_text, p.property_unit, p.calc_id,
+                       p.extracted_at
+                FROM properties p
+                JOIN materials m ON p.material_id = m.material_id
+                WHERE p.property_name = ?
+                ORDER BY p.property_value
+            """, (property_name,))
+            
+            columns = [desc[0] for desc in cursor.description]
+            results = []
+            for row in cursor.fetchall():
+                prop = dict(zip(columns, row))
+                # Use text value if numeric value is null
+                if prop['property_value'] is None and prop['property_value_text']:
+                    prop['property_value'] = prop['property_value_text']
+                results.append(prop)
+                
+            return results
+        
     def backup_database(self, backup_dir: str = None):
         """Create a backup of the database."""
         if backup_dir is None:
@@ -1093,6 +1234,98 @@ class MaterialDatabase:
             shutil.copy2(self.ase_db_path, ase_backup_path)
             
         return backup_path
+    
+    def filter_materials_by_properties(self, filter_strings: List[str], logic: str = 'AND') -> List[Dict]:
+        """
+        Filter materials by property value ranges.
+        
+        Args:
+            filter_strings: List of filter strings like ["band_gap > 3.0", "total_energy < -1000"]
+            logic: Logic to combine filters ('AND' or 'OR')
+            
+        Returns:
+            List of materials that match the filters
+        """
+        from mace.database.query.filters import create_filter_from_strings
+        
+        # Get all materials and properties
+        all_materials = self.get_all_materials()
+        all_properties = self.get_all_properties()
+        
+        # Create and apply filter
+        filter_obj = create_filter_from_strings(filter_strings, logic)
+        matching_material_ids = filter_obj.apply_to_materials(all_materials, all_properties)
+        
+        # Return full material records for matching IDs
+        return [m for m in all_materials if m['material_id'] in matching_material_ids]
+        
+    def filter_materials_advanced(self, expression: str) -> List[Dict]:
+        """
+        Filter materials using advanced SQL-like syntax.
+        
+        Supports:
+        - Parentheses: (band_gap > 3 AND space_group = 227) OR total_energy < -1000
+        - LIKE operator: formula LIKE 'C%'
+        - IN operator: space_group IN (225, 227, 229)
+        - IS NULL/IS NOT NULL: transport_seebeck IS NOT NULL
+        
+        Args:
+            expression: Advanced filter expression
+            
+        Returns:
+            List of materials that match the filter
+        """
+        from mace.database.query.advanced_filters import evaluate_advanced_filter
+        
+        # Get all materials and their properties
+        all_materials = self.get_all_materials()
+        all_properties = self.get_all_properties()
+        
+        # Group properties by material
+        props_by_material = {}
+        for prop in all_properties:
+            mat_id = prop['material_id']
+            if mat_id not in props_by_material:
+                props_by_material[mat_id] = []
+            props_by_material[mat_id].append(prop)
+            
+        # Apply filter to each material
+        matching_materials = []
+        for material in all_materials:
+            mat_id = material['material_id']
+            mat_props = props_by_material.get(mat_id, [])
+            
+            try:
+                if evaluate_advanced_filter(expression, material, mat_props):
+                    matching_materials.append(material)
+            except Exception as e:
+                # Log error but continue filtering
+                print(f"Warning: Error filtering material {mat_id}: {e}")
+                
+        return matching_materials
+        
+    def filter_properties(self, filter_strings: List[str], material_id: str = None) -> List[Dict]:
+        """
+        Filter properties by value ranges.
+        
+        Args:
+            filter_strings: List of filter strings
+            material_id: Optional material ID to filter by
+            
+        Returns:
+            List of properties that match the filters
+        """
+        from mace.database.query.filters import create_filter_from_strings
+        
+        # Get properties
+        if material_id:
+            properties = self.get_material_properties(material_id)
+        else:
+            properties = self.get_all_properties()
+            
+        # Create and apply filter
+        filter_obj = create_filter_from_strings(filter_strings, 'OR')  # OR logic for properties
+        return filter_obj.apply_to_properties(properties)
 
 
 # Convenience functions for common operations

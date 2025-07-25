@@ -10,7 +10,7 @@ from pathlib import Path
 def run_with_animation():
     """Run workflow with MACE animation"""
     try:
-        from utils.animation import mace_startup_animation
+        from mace.utils.animation import mace_startup_animation
         # Show quick animation
         mace_startup_animation('quick')
     except:

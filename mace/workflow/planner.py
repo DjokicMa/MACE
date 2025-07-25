@@ -53,7 +53,7 @@ try:
         from .dummy_file_creator import DummyFileCreator
     except ImportError:
         try:
-            from workflow.dummy_file_creator import DummyFileCreator
+            from mace.workflow.dummy_file_creator import DummyFileCreator
         except ImportError:
             DummyFileCreator = None
 except ImportError as e:
@@ -80,7 +80,7 @@ except ImportError as e:
         except ImportError:
             try:
                 # Try absolute import
-                from workflow.dummy_file_creator import DummyFileCreator
+                from mace.workflow.dummy_file_creator import DummyFileCreator
             except ImportError:
                 DummyFileCreator = None
                 print("Warning: DummyFileCreator not available - will use fallback dummy files")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from database.materials import MaterialDatabase
+from mace.database.materials import MaterialDatabase
 import sys
 
 material_id = sys.argv[1] if len(sys.argv) > 1 else '1_dia%'

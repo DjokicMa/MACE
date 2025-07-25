@@ -5,7 +5,7 @@ Calls the new queue.manager module.
 """
 
 import sys
-from queue.manager import main
+from mace.queue.manager import main
 
 if __name__ == "__main__":
     main()

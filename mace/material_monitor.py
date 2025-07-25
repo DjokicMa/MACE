@@ -8,7 +8,7 @@ Institution: Michigan State University, Mendoza Group
 """
 
 import sys
-from queue.monitor import main
+from mace.queue.monitor import main
 
 if __name__ == "__main__":
     main()

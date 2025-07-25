@@ -595,14 +595,33 @@ class ErrorRecoveryEngine:
     def get_recovery_statistics(self) -> Dict:
         """Get statistics on recovery attempts and success rates."""
         stats = {
-            'total_failed_calculations': len(self.db.get_calculations_by_status('failed')),
+            'total_failed_calculations': 0,
+            'failed_by_error_type': {},
             'recovery_attempts': 0,
             'successful_recoveries': 0,
-            'error_type_breakdown': {},
-            'recovery_success_rate': 0.0
+            'recovery_breakdown': {},
+            'recovery_success_rate': 0.0,
+            'total_completed': 0,
+            'total_running': 0,
+            'total_submitted': 0
         }
         
-        # Get all calculations to analyze recovery patterns
+        # First, get breakdown of ALL failed calculations by error type
+        failed_calcs = self.db.get_calculations_by_status('failed')
+        stats['total_failed_calculations'] = len(failed_calcs)
+        
+        for calc in failed_calcs:
+            error_type = calc.get('error_type', 'unknown')
+            if error_type not in stats['failed_by_error_type']:
+                stats['failed_by_error_type'][error_type] = 0
+            stats['failed_by_error_type'][error_type] += 1
+        
+        # Get other status counts
+        stats['total_completed'] = len(self.db.get_calculations_by_status('completed'))
+        stats['total_running'] = len(self.db.get_calculations_by_status('running'))
+        stats['total_submitted'] = len(self.db.get_calculations_by_status('submitted'))
+        
+        # Now analyze recovery attempts
         all_calcs = self.db.get_calculations_by_status()
         
         for calc in all_calcs:
@@ -612,15 +631,15 @@ class ErrorRecoveryEngine:
                 if calc['status'] == 'completed':
                     stats['successful_recoveries'] += 1
                     
-                # Track by error type
+                # Track recovery success by error type
                 parent_calc = self.db.get_calculation(settings.get('parent_calc_id'))
                 if parent_calc:
                     error_type = parent_calc.get('error_type', 'unknown')
-                    if error_type not in stats['error_type_breakdown']:
-                        stats['error_type_breakdown'][error_type] = {'attempts': 0, 'successes': 0}
-                    stats['error_type_breakdown'][error_type]['attempts'] += 1
+                    if error_type not in stats['recovery_breakdown']:
+                        stats['recovery_breakdown'][error_type] = {'attempts': 0, 'successes': 0}
+                    stats['recovery_breakdown'][error_type]['attempts'] += 1
                     if calc['status'] == 'completed':
-                        stats['error_type_breakdown'][error_type]['successes'] += 1
+                        stats['recovery_breakdown'][error_type]['successes'] += 1
                         
         # Calculate success rate
         if stats['recovery_attempts'] > 0:
@@ -657,17 +676,44 @@ def main():
         
     elif args.action == 'stats':
         stats = recovery_engine.get_recovery_statistics()
-        print("\n=== Error Recovery Statistics ===")
-        print(f"Total failed calculations: {stats['total_failed_calculations']}")
-        print(f"Recovery attempts: {stats['recovery_attempts']}")
-        print(f"Successful recoveries: {stats['successful_recoveries']}")
-        print(f"Success rate: {stats['recovery_success_rate']:.1%}")
+        print("\n=== Calculation Status Overview ===")
+        print(f"Completed: {stats['total_completed']}")
+        print(f"Running: {stats['total_running']}")
+        print(f"Submitted: {stats['total_submitted']}")
+        print(f"Failed: {stats['total_failed_calculations']}")
         
-        if stats['error_type_breakdown']:
-            print("\nBreakdown by error type:")
-            for error_type, data in stats['error_type_breakdown'].items():
-                success_rate = data['successes'] / data['attempts'] if data['attempts'] > 0 else 0
-                print(f"  {error_type}: {data['successes']}/{data['attempts']} ({success_rate:.1%})")
+        # Show failed calculations by error type
+        if stats['failed_by_error_type']:
+            print("\n=== Failed Calculations by Error Type ===")
+            for error_type, count in sorted(stats['failed_by_error_type'].items(), 
+                                          key=lambda x: x[1], reverse=True):
+                # Make error types more readable
+                display_type = error_type.replace('_', ' ').title()
+                print(f"  {display_type}: {count}")
+        else:
+            print("\nNo failed calculations found.")
+        
+        # Show recovery statistics if any
+        if stats['recovery_attempts'] > 0:
+            print(f"\n=== Recovery Statistics ===")
+            print(f"Total recovery attempts: {stats['recovery_attempts']}")
+            print(f"Successful recoveries: {stats['successful_recoveries']}")
+            print(f"Overall success rate: {stats['recovery_success_rate']:.1%}")
+            
+            if stats['recovery_breakdown']:
+                print("\nRecovery success by error type:")
+                for error_type, data in sorted(stats['recovery_breakdown'].items()):
+                    success_rate = data['successes'] / data['attempts'] if data['attempts'] > 0 else 0
+                    display_type = error_type.replace('_', ' ').title()
+                    print(f"  {display_type}: {data['successes']}/{data['attempts']} ({success_rate:.1%})")
+        else:
+            print("\n=== Recovery Statistics ===")
+            print("No recovery attempts yet.")
+            
+        # Add helpful hints
+        print("\n=== Available Actions ===")
+        print("Run 'mace recover' to attempt automatic recovery of failed calculations")
+        print("Run 'mace recover --create-config' to create customizable recovery config")
                 
     elif args.action == 'recover':
         print("Starting error recovery process...")

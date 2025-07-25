@@ -41,10 +41,10 @@ sys.path.insert(0, str(parent_dir / "Crystal_d3"))
 
 # Import MACE modules
 try:
-    from workflow.planner import WorkflowPlanner
-    from workflow.executor import WorkflowExecutor
-    from queue.manager import EnhancedCrystalQueueManager
-    from database.materials import MaterialDatabase
+    from mace.workflow.planner import WorkflowPlanner
+    from mace.workflow.executor import WorkflowExecutor
+    from mace.queue.manager import EnhancedCrystalQueueManager
+    from mace.database.materials import MaterialDatabase
 except ImportError as e:
     print(f"Error importing MACE modules: {e}")
     print("Please ensure all MACE modules are properly installed")

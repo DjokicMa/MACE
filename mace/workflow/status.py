@@ -20,8 +20,8 @@ from typing import Dict, List, Optional, Any
 
 # Import MACE components
 try:
-    from database.materials import MaterialDatabase
-    from workflow.engine import WorkflowEngine
+    from mace.database.materials import MaterialDatabase
+    from mace.workflow.engine import WorkflowEngine
 except ImportError as e:
     print(f"Error importing required modules: {e}")
     sys.exit(1)

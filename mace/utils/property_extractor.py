@@ -27,7 +27,7 @@ from datetime import datetime
 
 # Import MACE components
 try:
-    from database.materials import MaterialDatabase
+    from mace.database.materials import MaterialDatabase
 except ImportError as e:
     print(f"Error importing MaterialDatabase: {e}")
     sys.exit(1)
@@ -2038,8 +2038,11 @@ def main():
     parser.add_argument("--output-file", help="Single output file to process")
     parser.add_argument("--scan-directory", help="Directory to scan for output files")
     parser.add_argument("--db-path", default="materials.db", help="Path to materials database")
-    parser.add_argument("--material-id", help="Override material ID")
+    parser.add_argument("--material-id", help="Override material ID (or filter by material ID when scanning)")
     parser.add_argument("--calc-id", help="Override calculation ID")
+    parser.add_argument("--calc-type", help="Filter by calculation type (OPT, SP, FREQ, BAND, DOSS, etc.)")
+    parser.add_argument("--filter-material", help="Only extract properties for specific material ID")
+    parser.add_argument("--filter-type", help="Only extract properties from specific calculation type")
     
     args = parser.parse_args()
     
@@ -2055,12 +2058,79 @@ def main():
     elif args.scan_directory:
         scan_dir = Path(args.scan_directory)
         output_files = list(scan_dir.rglob("*.out"))
-    
-    print(f"🔍 Found {len(output_files)} output files to process")
+        
+        # Apply filters if specified
+        if args.filter_material or args.filter_type:
+            filtered_files = []
+            for f in output_files:
+                # Check material ID filter
+                if args.filter_material:
+                    if args.filter_material not in str(f):
+                        continue
+                
+                # Check calculation type filter
+                if args.filter_type:
+                    # Simple heuristic: check if the calc type is in the filename
+                    file_str = str(f).lower()
+                    filter_type = args.filter_type.lower()
+                    
+                    # Common patterns for different calc types
+                    if filter_type == 'opt' and ('opt' not in file_str and 'optimization' not in file_str):
+                        continue
+                    elif filter_type == 'sp' and 'sp' not in file_str and 'opt' in file_str:
+                        continue
+                    elif filter_type == 'freq' and 'freq' not in file_str:
+                        continue
+                    elif filter_type == 'band' and 'band' not in file_str:
+                        continue
+                    elif filter_type == 'doss' and ('doss' not in file_str and 'dos' not in file_str):
+                        continue
+                
+                filtered_files.append(f)
+            
+            print(f"🔍 Found {len(output_files)} output files, {len(filtered_files)} match filters")
+            output_files = filtered_files
+        else:
+            print(f"🔍 Found {len(output_files)} output files to process")
+    else:
+        print(f"🔍 Found {len(output_files)} output files to process")
     
     total_properties = 0
+    files_processed = 0
+    materials_processed = set()
+    
     for output_file in output_files:
         print(f"\n📊 Processing: {output_file}")
+        
+        # For better filtering, we can also check content if needed
+        if args.calc_type or args.filter_type:
+            # Read first few lines to determine calc type
+            try:
+                with open(output_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    content_preview = f.read(5000)  # Read first 5KB
+                    
+                # Check if this matches the requested calc type
+                calc_type_filter = args.calc_type or args.filter_type
+                if calc_type_filter:
+                    calc_type_filter = calc_type_filter.upper()
+                    
+                    # Define patterns for each calculation type
+                    type_patterns = {
+                        'OPT': ['OPTGEOM', 'OPTIMIZATION', 'GEOMETRY OPTIMIZATION'],
+                        'SP': ['SINGLE POINT', 'SINGLE-POINT', 'SP CALCULATION'],
+                        'FREQ': ['FREQUENCY', 'FREQUENCIES', 'VIBRATIONAL', 'FREQCALC'],
+                        'BAND': ['BAND STRUCTURE', 'BANDSTRUCTURE', 'NEWK'],
+                        'DOSS': ['DENSITY OF STATES', 'DOS CALCULATION', 'DOSS']
+                    }
+                    
+                    # Check if content matches the requested type
+                    if calc_type_filter in type_patterns:
+                        patterns = type_patterns[calc_type_filter]
+                        if not any(pattern in content_preview.upper() for pattern in patterns):
+                            print(f"   ⏭️  Skipping - not a {calc_type_filter} calculation")
+                            continue
+            except Exception as e:
+                print(f"   ⚠️  Could not read file for filtering: {e}")
         
         properties = extractor.extract_all_properties(
             output_file, 
@@ -2069,13 +2139,30 @@ def main():
         )
         
         if properties:
+            # Extract material ID from properties if available
+            for prop in properties:
+                if 'material_id' in prop:
+                    materials_processed.add(prop['material_id'])
+                    break
+            
             saved_count = extractor.save_properties_to_database(properties)
             total_properties += saved_count
+            files_processed += 1
             print(f"   ✅ Extracted and saved {saved_count} properties")
         else:
             print(f"   ⚠️  No properties extracted")
     
-    print(f"\n🎉 Processing complete! Extracted {total_properties} total properties.")
+    print(f"\n🎉 Processing complete!")
+    print(f"   Files processed: {files_processed}")
+    print(f"   Total properties extracted: {total_properties}")
+    print(f"   Materials processed: {len(materials_processed)}")
+    
+    if args.filter_material or args.filter_type or args.calc_type:
+        print(f"\n📌 Filters applied:")
+        if args.filter_material:
+            print(f"   Material ID: {args.filter_material}")
+        if args.filter_type or args.calc_type:
+            print(f"   Calculation type: {args.filter_type or args.calc_type}")
 
 
 if __name__ == "__main__":

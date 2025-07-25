@@ -26,10 +26,10 @@ from typing import Dict, List, Tuple, Optional
 import re
 
 # Import MACE components
-from database.materials import MaterialDatabase
-from utils.property_extractor import CrystalPropertyExtractor
-from utils.settings_extractor import extract_and_store_input_settings
-from utils.formula_extractor import extract_formula_from_d12, extract_space_group_from_output
+from mace.database.materials import MaterialDatabase
+from mace.utils.property_extractor import CrystalPropertyExtractor
+from mace.utils.settings_extractor import extract_and_store_input_settings
+from mace.utils.formula_extractor import extract_formula_from_d12, extract_space_group_from_output
 
 
 class WorkflowDatabaseCreator:

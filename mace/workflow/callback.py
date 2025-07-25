@@ -16,12 +16,17 @@ import argparse
 from pathlib import Path
 
 # Import MACE components
+sys.path.insert(0, str(Path(__file__).parent.parent))
 try:
     from database.materials import MaterialDatabase
     from workflow.engine import WorkflowEngine
-except ImportError as e:
-    print(f"Error importing required modules: {e}")
-    sys.exit(1)
+except ImportError:
+    try:
+        from mace.database.materials import MaterialDatabase
+        from mace.workflow.engine import WorkflowEngine
+    except ImportError as e:
+        print(f"Error importing required modules: {e}")
+        sys.exit(1)
 
 
 def process_workflow_callbacks(calc_id: str = None):
@@ -62,13 +67,8 @@ def main():
     
     args = parser.parse_args()
     
-    # Change to script directory to ensure proper paths
-    original_cwd = os.getcwd()
-    try:
-        os.chdir(script_dir)
-        process_workflow_callbacks(args.calc_id)
-    finally:
-        os.chdir(original_cwd)
+    # Process workflow callbacks
+    process_workflow_callbacks(args.calc_id)
 
 
 if __name__ == "__main__":

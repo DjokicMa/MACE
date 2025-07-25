@@ -1,3 +1,11 @@
+# Python
+__pycache__/
+
+# Jupyter/VSCode
+.ipynb_checkpoints/
+*.ipynb
+.vscode/
+
 # Add to .gitignore
 .env*
 *.pem
