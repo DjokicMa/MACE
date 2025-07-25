@@ -410,7 +410,8 @@ class MaterialMonitor:
         os.system('clear' if os.name == 'posix' else 'cls')
         
         print("=" * 60)
-        print("CRYSTAL MATERIAL TRACKING SYSTEM - STATUS DASHBOARD")
+        print("MACE - CRYSTAL MATERIAL TRACKING SYSTEM")
+        print("STATUS DASHBOARD")
         print("=" * 60)
         print(f"Last Updated: {status['timestamp']}")
         print()
@@ -521,24 +522,38 @@ class MaterialMonitor:
         print(f"Starting continuous monitoring (refresh every {interval} seconds)...")
         print("Press Ctrl+C to stop")
         
-        while self.running:
-            try:
-                status = self.get_system_status()
-                self.print_status_dashboard(status)
-                
-                # Sleep with interruption check
-                for _ in range(interval):
-                    if not self.running:
-                        break
-                    time.sleep(1)
+        # Store last good status to prevent corruption on Ctrl+C
+        last_good_status = None
+        
+        try:
+            while self.running:
+                try:
+                    status = self.get_system_status()
+                    self.print_status_dashboard(status)
+                    # Only update last_good_status if we successfully printed
+                    last_good_status = status
                     
-            except KeyboardInterrupt:
-                break
-            except Exception as e:
-                print(f"Error in monitoring loop: {e}")
-                time.sleep(5)  # Brief pause before retry
-                
-        print("\nMonitoring stopped.")
+                    # Sleep with interruption check
+                    for _ in range(interval):
+                        if not self.running:
+                            break
+                        time.sleep(1)
+                        
+                except KeyboardInterrupt:
+                    # Re-raise to be caught by outer try-except
+                    raise
+                except Exception as e:
+                    print(f"Error in monitoring loop: {e}")
+                    time.sleep(5)  # Brief pause before retry
+                    
+        except KeyboardInterrupt:
+            # Clear any partial output and display the last good status
+            print("\n" * 3)  # Add some space
+            if last_good_status:
+                self.print_status_dashboard(last_good_status)
+                print("\n[MONITORING STOPPED BY USER - Final Status Shown Above]")
+            else:
+                print("\nMonitoring stopped by user (no status to display).")
         
     def generate_detailed_report(self, output_file: str = None) -> Dict[str, any]:
         """Generate detailed system report."""

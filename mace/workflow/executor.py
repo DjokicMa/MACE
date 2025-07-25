@@ -2067,59 +2067,61 @@ This workflow is managed by MACE. Use these commands to monitor your workflow:
 
 ### Check Workflow Status
 ```bash
-mace status
-# or
-mace workflow --status
-```
+# View status of all calculations
+mace monitor --status
 
-### Live Monitoring Dashboard
-```bash
+# Live monitoring dashboard
+mace monitor
+# or
 mace monitor --dashboard
 # Press Ctrl+C to stop
 ```
 
-### Check Material Database
+### Check SLURM Queue
 ```bash
-mace database --stats
+# View your running jobs
+squeue -u $USER
+
+# View jobs for this workflow
+squeue -u $USER | grep workflow_{}
 ```
 
-### View Queue Status
-```bash
-mace queue --status
-```
+### Direct Script Access
+
+If you need more detailed control, you can run the scripts directly:
 
 ### Material Monitor
 ```bash
-# Quick stats
-python -m mace.material_monitor --action stats
+cd {}
+python $MACE_HOME/mace/material_monitor.py --action stats
+python $MACE_HOME/mace/material_monitor.py --action dashboard
+```
 
-# Live dashboard
-python -m mace.material_monitor --action dashboard
+### Queue Manager
+```bash
+cd {}
+python $MACE_HOME/mace/queue/manager.py --status
 ```
 
 ### Error Recovery
 ```bash
-# Check for recoverable errors
-python -m mace.recovery.recover --action stats
-
-# Attempt recovery
-python -m mace.recovery.recover --action recover
+cd {}
+python $MACE_HOME/mace/recovery/recovery.py --action stats
+python $MACE_HOME/mace/recovery/recovery.py --action recover
 ```
 
 ### Workflow Engine
 ```bash
-# Process workflow
-python -m mace.workflow.engine --action process
-
-# Check workflow status
-python -m mace.workflow.engine --action status
+cd {}
+python $MACE_HOME/mace/workflow/engine.py --action status
 ```
 
 ## Notes
-- All MACE commands are available via your PATH after running setup_mace.py
-- The workflow uses an isolated database in .mace_context_{workflow_id}/
-- Monitor commands automatically detect the active workflow context
-"""
+- The primary interface is through `mace monitor` for checking status
+- All other functionality requires running scripts directly from MACE installation
+- The workflow uses an isolated database in .mace_context_{}/
+- If MACE_HOME is not set, replace $MACE_HOME with the path to your MACE installation
+""".format(self.work_dir, workflow_id)
             
             readme_path = workflow_dir / "WORKFLOW_MONITORING.md"
             with open(readme_path, 'w') as f:

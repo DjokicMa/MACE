@@ -32,6 +32,8 @@ import threading
 # Import MACE components
 try:
     from mace.database.materials import MaterialDatabase
+    from mace.database.materials_contextual import ContextualMaterialDatabase
+    from mace.workflow.context import get_current_context
     from mace.recovery.detector import CrystalErrorDetector
 except ImportError as e:
     print(f"Error importing required modules: {e}")
@@ -48,7 +50,16 @@ class ErrorRecoveryEngine:
     """
     
     def __init__(self, db_path: str = "materials.db", config_path: str = "recovery_config.yaml"):
-        self.db = MaterialDatabase(db_path)
+        # Check for active workflow context
+        ctx = get_current_context()
+        if ctx:
+            # Use contextual database which automatically uses workflow-specific paths
+            self.db = ContextualMaterialDatabase(db_path=db_path if db_path != "materials.db" else None)
+            print(f"Using workflow context: {ctx.workflow_id}")
+        else:
+            # Initialize traditional database connection
+            self.db = MaterialDatabase(db_path)
+            
         self.config_path = Path(config_path)
         self.config = self.load_recovery_config()
         self.error_detector = CrystalErrorDetector(db_path=db_path)
