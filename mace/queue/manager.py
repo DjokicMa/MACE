@@ -248,7 +248,7 @@ class EnhancedCrystalQueueManager:
             
         try:
             # Import the population script functionality
-            from populate_completed_jobs import scan_for_completed_calculations, populate_database
+            from mace.database.populate_completed_jobs import scan_for_completed_calculations, populate_database
             
             print("  Scanning for completed calculations...")
             completed_calcs = scan_for_completed_calculations(Path.cwd())
@@ -658,6 +658,42 @@ class EnhancedCrystalQueueManager:
         finally:
             os.chdir(original_cwd)
             
+    def check_queue(self) -> Tuple[int, int]:
+        """Check SLURM queue and return (running, pending) job counts.
+        
+        Returns:
+            Tuple of (running_jobs, pending_jobs)
+        """
+        try:
+            result = subprocess.run(
+                ['squeue', '-u', os.environ.get('USER', 'unknown'), '-o', '%i,%T,%S'],
+                capture_output=True, text=True, check=False
+            )
+            
+            if result.returncode != 0:
+                raise Exception(f"squeue error: {result.stderr}")
+                
+            # Count jobs by state
+            running = 0
+            pending = 0
+            
+            for line in result.stdout.strip().split('\n')[1:]:  # Skip header
+                if line.strip():
+                    parts = line.strip().split(',')
+                    if len(parts) >= 2:
+                        state = parts[1]
+                        if state == 'RUNNING':
+                            running += 1
+                        elif state in ['PENDING', 'CONFIGURING']:
+                            pending += 1
+                            
+            return running, pending
+            
+        except FileNotFoundError:
+            raise Exception("SLURM (squeue) not found - this command requires SLURM to be available")
+        except Exception as e:
+            raise Exception(f"Error checking queue: {e}")
+    
     def check_queue_status(self):
         """Check SLURM queue and update calculation statuses."""
         # Get current queue status
@@ -680,6 +716,11 @@ class EnhancedCrystalQueueManager:
                         job_id, state = parts[0], parts[1]
                         queue_jobs[job_id] = state
                         
+        except FileNotFoundError:
+            # SLURM not available
+            if self.enable_tracking:
+                print("  SLURM not available - skipping queue status check")
+            return
         except Exception as e:
             print(f"Error checking queue status: {e}")
             return

@@ -35,6 +35,8 @@ OPTIONAL_CALC_TYPES = {'BAND', 'DOSS', 'FREQ', 'TRANSPORT', 'CHARGE+POTENTIAL'}
 
 # Import MACE components
 from mace.database.materials import MaterialDatabase, create_material_id_from_file, extract_formula_from_d12
+from mace.database.materials_contextual import ContextualMaterialDatabase
+from mace.workflow.context import get_current_context
 
 
 class WorkflowEngine:
@@ -47,7 +49,15 @@ class WorkflowEngine:
     """
     
     def __init__(self, db_path: str = "materials.db", base_work_dir: str = None, auto_submit: bool = True):
-        self.db = MaterialDatabase(db_path)
+        # Check for active workflow context
+        ctx = get_current_context()
+        if ctx:
+            # Use contextual database which automatically uses workflow-specific paths
+            self.db = ContextualMaterialDatabase(db_path=db_path if db_path != "materials.db" else None)
+            print(f"Using workflow context: {ctx.workflow_id}")
+        else:
+            # Initialize traditional database connection
+            self.db = MaterialDatabase(db_path)
         self.base_work_dir = Path(base_work_dir or os.getcwd())
         self.script_paths = self.get_script_paths()
         self.lock = threading.RLock()

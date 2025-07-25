@@ -61,60 +61,77 @@ Run the MACE workflow planning and execution system.
 Options:
   --interactive         Start interactive workflow planning
   --quick-start         Quick start with predefined templates
-  --cif-dir DIR         Directory containing CIF files
-  --d12-dir DIR         Directory containing D12 files
-  --workflow TYPE       Workflow template (basic_opt, opt_sp, full_electronic, etc.)
   --execute FILE        Execute a saved workflow plan
   --status              Check workflow status
   --show-templates      Display available workflow templates
+  --cif-dir DIR         Directory containing CIF files (for quick start)
+  --d12-dir DIR         Directory containing D12 files (for quick start)
+  --workflow TYPE       Workflow template: basic_opt, opt_sp, full_electronic, 
+                        double_opt, complete, transport_analysis, charge_analysis,
+                        combined_analysis (default: full_electronic)
+  --work-dir DIR        Working directory (default: current directory)
+  --db-path PATH        Database path (default: materials.db)
+  --max-jobs N          Maximum concurrent jobs (default: 200)
 
 Examples:
   mace workflow --interactive
   mace workflow --quick-start --cif-dir ./cifs --workflow full_electronic
+  mace workflow --execute workflow_plan_20250618_145837.json
+  mace workflow --status
+  mace workflow --show-templates
 """,
         'submit': """
-Usage: mace submit <file_or_directory> [options]
+Usage: mace submit <file_or_directory>
 
 Submit CRYSTAL calculations to the queue.
 
 Arguments:
   file_or_directory     D12/D3 file(s) or directory to submit
 
-Options:
-  --max-jobs N          Maximum concurrent jobs (default: 250)
-  --reserve N           Reserved job slots (default: 30)
-
 Examples:
   mace submit calculation.d12
+  mace submit property.d3
   mace submit my_calculations/
+
+Note: This command submits files using the appropriate submission script
+(submitcrystal23.sh for D12 files, submit_prop.sh for D3 files).
+For directories with mixed file types, you'll be prompted to choose.
+Additional options like --max-jobs are not implemented in this wrapper.
 """,
         'monitor': """
 Usage: mace monitor [options]
 
-Monitor running calculations and view real-time status.
+Monitor running calculations and view system status.
 
 Options:
-  --dashboard           Launch interactive dashboard (default)
-  --status              Show current job status
-  --interval N          Update interval in seconds (default: 30)
+  --dashboard           Launch real-time monitoring dashboard (default)
+  --status              Show quick status summary
+  --summary             Show minimal status (materials and total calculations only)
+  --detailed            Show detailed status with calculation types and recent activity
+  --material-id ID      Show status for specific material
+  --interval N          Dashboard update interval in seconds (default: 30)
 
 Examples:
-  mace monitor --dashboard
-  mace monitor --status
+  mace monitor                    # Real-time dashboard
+  mace monitor --status           # Quick status check
+  mace monitor --status --detailed # Detailed status with recent activity
+  mace monitor --status --summary  # Minimal summary only
 """,
         'analyze': """
-Usage: mace analyze [options]
+Usage: mace analyze --extract-properties <directory>
 
-Analyze completed calculations and extract properties.
+Extract properties from CRYSTAL output files.
 
 Options:
-  --extract-properties DIR    Extract properties from output files in directory
-  --material-id ID            Analyze specific material
-  --output-csv FILE           Output CSV file for results
+  --extract-properties DIR    Directory containing output files (required)
 
 Examples:
   mace analyze --extract-properties .
-  mace analyze --extract-properties outputs/ --output-csv results.csv
+  mace analyze --extract-properties outputs/
+
+Note: This command extracts properties and stores them in the materials database.
+Additional options like --material-id and --output-csv shown in some docs
+require calling the property_extractor.py script directly.
 """,
         'convert': """
 Usage: mace convert <cif_files> [options]
@@ -155,6 +172,90 @@ Examples:
   mace opt2d3 optimized.out --calc-type ALL --mode advanced
 
 For full options, the command will show CRYSTALOptToD3.py help when run without arguments.
+""",
+        'manager': """
+Usage: mace manager [options]
+
+Enhanced CRYSTAL Queue Manager with material tracking and workflow automation.
+
+Options:
+  --status              Show current queue status
+  --d12-dir DIR         Directory with D12 files (default: current directory)
+  --max-jobs N          Maximum concurrent jobs (default: 250)
+  --reserve N           Reserved job slots (default: 30)
+  --callback-mode MODE  Callback mode for completion handling
+  --dry-run             Show what would be submitted without actually submitting
+
+Examples:
+  mace manager --status                              # Check queue status
+  mace manager --d12-dir /path/to/calculations      # Run queue manager
+  mace manager --max-jobs 200 --reserve 20          # Custom job limits
+  mace manager --callback-mode completion            # Run in callback mode
+
+Note: This runs the Enhanced Queue Manager (queue/manager.py) which requires SLURM.
+""",
+        'queue': """
+Usage: mace queue [options]
+
+Deprecated: Use 'mace manager' instead.
+This command will be removed in a future version.
+""",
+        'recover': """
+Usage: mace recover [options]
+
+Automated error recovery for failed CRYSTAL calculations.
+
+Options:
+  --action ACTION       Action to perform: recover, stats, config (default: recover)
+  --max-recoveries N    Maximum number of recoveries to attempt (default: 10)
+  --config FILE         Path to recovery configuration file
+  --create-config       Create default recovery configuration
+
+Examples:
+  mace recover
+  mace recover --action stats
+  mace recover --max-recoveries 5
+  mace recover --create-config
+""",
+        'database': """
+Usage: mace database [options]
+
+Database management and queries for material tracking.
+
+Options:
+  --action ACTION       Action: query, export, stats (default: stats)
+  --material-id ID      Query specific material
+  --calc-type TYPE      Filter by calculation type (not implemented yet)
+  --status STATUS       Filter by calculation status (not implemented yet)
+  --export-csv FILE     Export results to CSV (for --action export)
+
+Examples:
+  mace database                                      # Show statistics
+  mace database --action stats                       # Show statistics
+  mace database --action query --material-id diamond # Query specific material
+  mace database --action query                       # List all materials
+  mace database --action export --export-csv results.csv
+
+Note: The 'clean' action is not yet implemented.
+""",
+        'engine': """
+Usage: mace engine [options]
+
+Workflow automation engine for managing calculation progressions.
+
+Options:
+  --action ACTION       Action: status, process, workflow (default: status)
+  --material-id ID      Material ID for status checking
+  --db PATH             Path to materials database (default: materials.db)
+  --work-dir DIR        Base working directory (default: current directory)
+
+Examples:
+  mace engine                                    # Show workflow status
+  mace engine --action process                   # Process pending workflows
+  mace engine --action status --material-id diamond
+  mace engine --action workflow                  # Show workflow templates
+
+Note: The --dry-run option shown in some docs is not implemented.
 """
     }
     
@@ -213,7 +314,7 @@ def main():
         sys.exit(0)
     
     # Check if asking for help on a specific command (for non-passthrough commands)
-    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'monitor', 'analyze']:
+    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine']:
         # Show command-specific help
         show_command_help(sys.argv[1])
         sys.exit(0)
@@ -223,38 +324,34 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Commands:
-  mace workflow    Run interactive workflow planner
-  mace submit      Submit CRYSTAL calculations
-  mace monitor     Monitor running calculations
-  mace analyze     Analyze completed calculations
-  mace convert     Convert CIF files to CRYSTAL input
-  mace opt2d12     Generate D12 from optimized CRYSTAL output
-  mace opt2d3      Generate D3 property inputs from output
-  mace credits     Show developer credits and contributions
-  mace version     Show version information
+  workflow    Interactive workflow planner - design and execute complex calculation sequences
+  submit      Submit calculations to queue - handles both D12 and D3 files automatically
+  monitor     System monitoring - real-time dashboard or quick status (--status, --detailed, --summary)
+  analyze     Extract properties from outputs - band gaps, energies, convergence data
+  convert     CIF to D12 conversion - supports all CRYSTAL basis sets and functionals
+  opt2d12     Generate D12 from optimized output - create SP/FREQ inputs from OPT results
+  opt2d3      Generate D3 property inputs - BAND, DOSS, TRANSPORT, CHARGE calculations
+  manager     Enhanced Queue Manager - material tracking, workflow automation, SLURM integration
+  recover     Error recovery - automated fixes for SHRINK, memory, and convergence issues
+  database    Database queries - search materials, export results, view statistics
+  engine      Workflow automation - manages OPT→SP→BAND progression automatically
   
-Examples:
-  mace workflow --interactive
-  mace submit my_calculation
-  mace monitor --dashboard
-  mace analyze --extract-properties .
-  mace convert *.cif
-  mace opt2d12 optimized.out
-  mace opt2d3 optimized.out --calc-type BAND
-
-For more help on a specific command:
-  mace <command> --help
+Quick Start:
+  mace workflow --interactive      # Plan new workflow
+  mace monitor                     # Live dashboard
+  mace monitor --status            # Quick status check
   
-Options:
-  --no-banner      Suppress ASCII art banner display
+More Help:
+  mace <command> --help           # Command details
 """
     )
     
     parser.add_argument('command', nargs='?', 
-                       choices=['workflow', 'submit', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'credits', 'version'],
+                       choices=['workflow', 'submit', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 
+                               'status', 'queue', 'manager', 'recover', 'database', 'engine', 'credits', 'version'],
                        help='Command to run')
     parser.add_argument('args', nargs='*', help='Arguments for the command')
-    parser.add_argument('--no-banner', action='store_true', help='Suppress banner display')
+    parser.add_argument('--no-banner', action='store_true', help='Suppress ASCII art banner')
     parser.add_argument('--version', action='version', version=f'MACE v{__version__}')
     parser.add_argument('--credits', action='store_true', help='Show developer credits')
     
@@ -390,25 +487,96 @@ Options:
             sys.exit(1)
             
     elif args.command == 'monitor':
-        # Launch monitoring dashboard
-        from material_monitor import main as monitor_main
-        # Handle --status shortcut
-        if '--status' in args.args:
-            # Replace --status with --action status
-            new_args = []
-            for arg in args.args:
-                if arg == '--status':
-                    new_args.extend(['--action', 'status'])
+        # Launch monitoring dashboard or show status
+        # Combine all arguments
+        all_args = args.args + remaining
+        
+        # Check if we should show quick status instead of dashboard
+        if '--status' in all_args or '--summary' in all_args or '--detailed' in all_args:
+            # Show status information
+            from database.materials_contextual import ContextualMaterialDatabase
+            from workflow.context import get_current_context
+            
+            # Parse status arguments
+            material_id = None
+            workflow_id = None
+            detailed = '--detailed' in all_args
+            summary = '--summary' in all_args
+            
+            i = 0
+            while i < len(all_args):
+                if all_args[i] == '--material-id' and i + 1 < len(all_args):
+                    material_id = all_args[i + 1]
+                    i += 2
+                elif all_args[i] == '--workflow-id' and i + 1 < len(all_args):
+                    workflow_id = all_args[i + 1]
+                    i += 2
                 else:
-                    new_args.append(arg)
-            sys.argv = ['material_monitor.py'] + new_args
-        elif not any(arg in args.args for arg in ['--action']):
-            # Default to dashboard if no specific action
-            sys.argv = ['material_monitor.py', '--action', 'dashboard'] + args.args
+                    i += 1
+            
+            # Initialize database
+            db = ContextualMaterialDatabase()
+            
+            # Show context information
+            ctx = get_current_context()
+            if ctx:
+                print(f"\n=== MACE Status (Workflow: {ctx.workflow_id}) ===")
+                print(f"Isolation Mode: {ctx.isolation_mode}")
+                print(f"Database: {ctx.db_path}")
+            else:
+                print("\n=== MACE Status ===")
+            
+            # Get statistics
+            stats = db.get_database_stats()
+            print(f"\nMaterials: {stats.get('total_materials', 0)}")
+            
+            # Calculate total calculations
+            status_dist = stats.get('calculations_by_status', {})
+            total_calcs = sum(status_dist.values())
+            print(f"Calculations: {total_calcs}")
+            
+            # Show status distribution
+            if status_dist and not summary:
+                print(f"  Pending: {status_dist.get('pending', 0)}")
+                print(f"  Running: {status_dist.get('running', 0)}")  
+                print(f"  Completed: {status_dist.get('completed', 0)}")
+                print(f"  Failed: {status_dist.get('failed', 0)}")
+            
+            if detailed and not summary:
+                # Show calculation types
+                calc_types = stats.get('calculations_by_type', {})
+                if calc_types:
+                    print("\nCalculation Types:")
+                    for calc_type, count in calc_types.items():
+                        print(f"  {calc_type}: {count}")
+                
+                # Show recent activity
+                recent_calcs = db.get_recent_calculations(limit=10)
+                if recent_calcs:
+                    print("\nRecent Activity:")
+                    for calc in recent_calcs:
+                        print(f"  {calc['calc_id']} ({calc['material_id']}): {calc['status']}")
+                        if calc.get('error_message'):
+                            print(f"    Error: {calc['error_message']}")
+            
+            elif not summary:
+                # Standard view - show last 5 calculations
+                recent_calcs = db.get_recent_calculations(limit=5)
+                if recent_calcs:
+                    print("\nRecent Activity:")
+                    for calc in recent_calcs:
+                        print(f"  {calc['calc_id']} ({calc['material_id']}): {calc['status']}")
+            
         else:
-            # Pass through all arguments
-            sys.argv = ['material_monitor.py'] + args.args
-        monitor_main()
+            # Run normal monitor dashboard
+            from material_monitor import main as monitor_main
+            if not any(arg in all_args for arg in ['--action']):
+                # Default to dashboard if no specific action
+                sys.argv = ['material_monitor.py', '--action', 'dashboard'] + all_args
+            else:
+                # Pass through all arguments
+                sys.argv = ['material_monitor.py'] + all_args
+            monitor_main()
         
     elif args.command == 'analyze':
         # Property analysis
@@ -435,6 +603,244 @@ Options:
                 print("Contributors: Daniel Maldonado Lopez, Brandon Lewis, Dr. William Comaskey")
                 print("PI: Prof. Jose Luis Mendoza-Cortes")
             
+    elif args.command == 'status':
+        # Redirect to monitor --status for backward compatibility
+        print("Note: 'mace status' has been merged into 'mace monitor --status'")
+        args.command = 'monitor'
+        args.args = ['--status'] + args.args
+        # Re-process as monitor command
+        sys.argv = [sys.argv[0], 'monitor', '--status'] + args.args
+        main()  # Recursive call to handle as monitor
+        return
+    elif args.command == 'manager':
+        # Enhanced Queue Manager command
+        from queue.manager import EnhancedCrystalQueueManager
+        
+        # Combine all arguments
+        all_args = args.args + remaining
+        
+        # Parse queue arguments
+        max_jobs = 250
+        reserve = 30
+        callback_mode = None
+        dry_run = False
+        show_status = False
+        base_dir = '.'
+        
+        i = 0
+        while i < len(all_args):
+            if all_args[i] == '--status':
+                show_status = True
+                i += 1
+            elif all_args[i] == '--max-jobs' and i + 1 < len(all_args):
+                max_jobs = int(all_args[i + 1])
+                i += 2
+            elif all_args[i] == '--reserve' and i + 1 < len(all_args):
+                reserve = int(all_args[i + 1])
+                i += 2
+            elif all_args[i] == '--callback-mode' and i + 1 < len(all_args):
+                callback_mode = all_args[i + 1]
+                i += 2
+            elif all_args[i] == '--dry-run':
+                dry_run = True
+                i += 1
+            elif all_args[i] == '--d12-dir' and i + 1 < len(all_args):
+                base_dir = all_args[i + 1]
+                i += 2
+            else:
+                i += 1
+        
+        # Initialize queue manager
+        manager = EnhancedCrystalQueueManager(
+            d12_dir=base_dir,
+            max_jobs=max_jobs, 
+            reserve_slots=reserve
+        )
+        
+        if show_status:
+            # Show queue status using the check_queue method
+            try:
+                running, pending = manager.check_queue()
+                available = max_jobs - running
+                
+                print("\n=== Queue Status ===")
+                print(f"Running Jobs: {running}")
+                print(f"Pending Jobs: {pending}")
+                print(f"Available Slots: {available}")
+                print(f"Max Jobs: {max_jobs}")
+                print(f"Reserved Slots: {reserve}")
+            except Exception as e:
+                print("\n=== Queue Status ===")
+                print(f"Error: Unable to check SLURM queue - {e}")
+                print("\nNote: This command requires SLURM to be available.")
+                print("On non-SLURM systems, use 'mace monitor --status' for database statistics.")
+        else:
+            # Run queue manager
+            print(f"Running queue manager (max_jobs={max_jobs}, reserve={reserve})...")
+            
+            # The manager needs to be called with proper arguments
+            from queue.manager import main as queue_main
+            
+            # Build argument list
+            sys.argv = ['queue_manager.py', '--d12-dir', base_dir, 
+                       '--max-jobs', str(max_jobs), '--reserve', str(reserve)]
+            
+            if callback_mode:
+                sys.argv.extend(['--callback-mode', callback_mode])
+            
+            if dry_run:
+                sys.argv.append('--dry-run')
+                
+            # Call the main function
+            queue_main()
+    
+    elif args.command == 'queue':
+        # Redirect to manager command for backward compatibility
+        print("Note: 'mace queue' is deprecated. Use 'mace manager' instead.")
+        print("This command will be removed in a future version.\n")
+        args.command = 'manager'
+        # Re-process as manager command
+        sys.argv = [sys.argv[0], 'manager'] + args.args
+        main()  # Recursive call to handle as manager
+        return
+        
+    elif args.command == 'recover':
+        # Error recovery command
+        from recovery.recovery import main as recovery_main
+        # Combine all arguments
+        all_args = args.args + remaining
+        sys.argv = ['recovery.py'] + all_args
+        recovery_main()
+        
+    elif args.command == 'database':
+        # Database management command
+        from database.materials_contextual import ContextualMaterialDatabase
+        import csv
+        
+        # Parse database arguments from remaining args
+        all_args = args.args + remaining  # Combine positional and remaining args
+        action = 'stats'
+        material_id = None
+        calc_type = None
+        status = None
+        export_csv = None
+        
+        i = 0
+        while i < len(all_args):
+            if all_args[i] == '--action' and i + 1 < len(all_args):
+                action = all_args[i + 1]
+                i += 2
+            elif all_args[i] == '--material-id' and i + 1 < len(all_args):
+                material_id = all_args[i + 1]
+                i += 2
+            elif all_args[i] == '--calc-type' and i + 1 < len(all_args):
+                calc_type = all_args[i + 1]
+                i += 2
+            elif all_args[i] == '--status' and i + 1 < len(all_args):
+                status = all_args[i + 1]
+                i += 2
+            elif all_args[i] == '--export-csv' and i + 1 < len(all_args):
+                export_csv = all_args[i + 1]
+                i += 2
+            else:
+                i += 1
+        
+        # Initialize database
+        db = ContextualMaterialDatabase()
+        
+        # Debug: show what action was selected
+        # print(f"DEBUG: Selected action = '{action}', all_args = {all_args}")
+        
+        if action == 'stats':
+            # Show database statistics
+            stats = db.get_database_stats()
+            print("\n=== Database Statistics ===")
+            print(f"Total Materials: {stats.get('total_materials', 0)}")
+            
+            # Calculate total calculations
+            status_dist = stats.get('calculations_by_status', {})
+            total_calcs = sum(status_dist.values())
+            print(f"Total Calculations: {total_calcs}")
+            
+            # Get calculation types
+            calc_types = stats.get('calculations_by_type', {})
+            if calc_types:
+                print("\nCalculation Types:")
+                for calc_type, count in calc_types.items():
+                    print(f"  {calc_type}: {count}")
+            
+            # Get status distribution
+            status_dist = stats.get('calculations_by_status', {})
+            if status_dist:
+                print("\nStatus Distribution:")
+                for status, count in status_dist.items():
+                    print(f"  {status}: {count}")
+            
+            # Add hint about other actions
+            print("\nUse --action query to list materials")
+            print("Use --action export --export-csv FILE to export data")
+                
+        elif action == 'query':
+            # Query database
+            if material_id:
+                material = db.get_material(material_id)
+                if material:
+                    print(f"\n=== Material: {material_id} ===")
+                    for key, value in material.items():
+                        if key != 'structure_json':  # Skip large JSON fields
+                            print(f"{key}: {value}")
+                    
+                    # Get calculations
+                    calcs = db.get_calculations_by_status(material_id=material_id)
+                    if calcs:
+                        print(f"\nCalculations ({len(calcs)}):")
+                        for calc in calcs:
+                            print(f"  {calc['calc_id']} ({calc['calc_type']}): {calc['status']}")
+                else:
+                    print(f"Material '{material_id}' not found")
+            else:
+                # General query - list all materials
+                materials = db.get_all_materials()
+                print(f"\n=== All Materials in Database ({len(materials)} total) ===")
+                print(f"{'Material ID':<30} {'Formula':<20} {'Space Group':<15} {'Created':<20}")
+                print("-" * 85)
+                
+                for mat in materials[:20]:  # Show first 20
+                    material_id = mat['material_id'][:30]  # Truncate long IDs
+                    formula = mat.get('formula', 'Unknown')[:20]
+                    space_group = str(mat.get('space_group', 'Unknown'))[:15]
+                    created = mat.get('created_at', 'Unknown')[:20]
+                    print(f"{material_id:<30} {formula:<20} {space_group:<15} {created:<20}")
+                    
+                if len(materials) > 20:
+                    print(f"\n... and {len(materials) - 20} more materials")
+                    print("Use --material-id <ID> to see details for a specific material")
+                    
+        elif action == 'export':
+            # Export to CSV
+            if export_csv:
+                materials = db.get_all_materials()
+                with open(export_csv, 'w', newline='') as f:
+                    if materials:
+                        writer = csv.DictWriter(f, fieldnames=materials[0].keys())
+                        writer.writeheader()
+                        writer.writerows(materials)
+                print(f"Exported {len(materials)} materials to {export_csv}")
+            else:
+                print("Please specify --export-csv FILE")
+                
+        elif action == 'clean':
+            # Clean up orphaned records
+            print("Database cleanup not yet implemented")
+            
+    elif args.command == 'engine':
+        # Workflow engine command
+        from workflow.engine import main as engine_main
+        # Combine all arguments
+        all_args = args.args + remaining
+        sys.argv = ['engine.py'] + all_args
+        engine_main()
+        
     elif args.command == 'version':
         # Show version with main banner
         if BANNER_AVAILABLE:
