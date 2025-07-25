@@ -1,0 +1,42 @@
+{
+  "calculation_type": "FREQ",
+  "source": "CRYSTALOptToD12.py",
+  "inherit_base_settings": true,
+  "frequency_settings": {
+    "mode": "GAMMA",
+    "numderiv": 2,
+    "intensities": false,
+    "temperatures": [
+      298.15
+    ],
+    "custom_tolerances": {
+      "TOLINTEG": "9 9 9 11 38",
+      "TOLDEE": 11
+    }
+  },
+  "slurm_config": {
+    "scripts": {
+      "submitcrystal23.sh": {
+        "source_script": "submitcrystal23.sh",
+        "step_specific_name": "submitcrystal23_freq_5.sh",
+        "resources": {
+          "ntasks": 32,
+          "nodes": 1,
+          "walltime": "7-00:00:00",
+          "memory_per_cpu": "7G",
+          "account": "mendoza_q",
+          "module": "CRYSTAL/23-intel-2023a",
+          "scratch_dir": "$SCRATCH/crys23"
+        },
+        "customizations": [],
+        "copy_to_workdir": true,
+        "workflow_id": "workflow_20250725_123705"
+      }
+    },
+    "resources": {},
+    "modules": {}
+  },
+  "workflow_id": "workflow_20250725_123705",
+  "step_number": 5,
+  "timestamp": "2025-07-25T12:37:11.927103"
+}

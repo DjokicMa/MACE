@@ -1,0 +1,584 @@
+{
+  "created": "2025-07-25T12:37:05.277945",
+  "input_type": "d12",
+  "input_directory": "/mnt/ffs24/home/jmendoza/CRYSTAL/Marcus/test6",
+  "input_files": {
+    "cif": [],
+    "d12": [
+      "/mnt/ffs24/home/jmendoza/CRYSTAL/Marcus/test6/1_dia_opt_BULK_OPTGEOM_symm_CRYSTAL_OPT_symm_PBESOL_POB-TZVP.d12",
+      "/mnt/ffs24/home/jmendoza/CRYSTAL/Marcus/test6/2_dia2_opt_BULK_OPTGEOM_symm_CRYSTAL_OPT_symm_PBESOL_POB-TZVP.d12",
+      "/mnt/ffs24/home/jmendoza/CRYSTAL/Marcus/test6/3,4^2T1-CA_BULK_OPTGEOM_TZ_symm_CRYSTAL_OPT_symm_PBESOL_POB-TZVP.d12",
+      "/mnt/ffs24/home/jmendoza/CRYSTAL/Marcus/test6/3,4^2T7_CA_BULK_OPTGEOM_TZ_symm_CRYSTAL_OPT_symm_PBESOL_POB-TZVP.d12",
+      "/mnt/ffs24/home/jmendoza/CRYSTAL/Marcus/test6/3,4^2T9-CA_BULK_OPTGEOM_TZ_symm_CRYSTAL_OPT_symm_PBESOL_POB-TZVP.d12",
+      "/mnt/ffs24/home/jmendoza/CRYSTAL/Marcus/test6/3.4^2T137_BULK_OPTGEOM_TZ_symm_CRYSTAL_OPT_symm_PBESOL_POB-TZVP.d12",
+      "/mnt/ffs24/home/jmendoza/CRYSTAL/Marcus/test6/3.4^9T2_BULK_OPTGEOM_TZ_symm_CRYSTAL_OPT_symm_PBESOL_POB-TZVP.d12",
+      "/mnt/ffs24/home/jmendoza/CRYSTAL/Marcus/test6/3_dia3_opt_BULK_OPTGEOM_symm_CRYSTAL_OPT_symm_PBESOL_POB-TZVP.d12"
+    ]
+  },
+  "workflow_sequence": [
+    "OPT",
+    "SP",
+    "BAND",
+    "DOSS",
+    "FREQ",
+    "TRANSPORT",
+    "CHARGE+POTENTIAL",
+    "OPT2",
+    "SP2",
+    "BAND2",
+    "DOSS2",
+    "FREQ2",
+    "TRANSPORT2",
+    "CHARGE+POTENTIAL2"
+  ],
+  "step_configurations": {
+    "OPT_1": {
+      "source": "existing_d12",
+      "slurm_config": {
+        "scripts": {
+          "submitcrystal23.sh": {
+            "source_script": "submitcrystal23.sh",
+            "step_specific_name": "submitcrystal23_opt_1.sh",
+            "resources": {
+              "ntasks": 32,
+              "nodes": 1,
+              "walltime": "7-00:00:00",
+              "memory_per_cpu": "5G",
+              "account": "mendoza_q",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20250725_123705"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    },
+    "SP_2": {
+      "calculation_type": "SP",
+      "source": "CRYSTALOptToD12.py",
+      "customization_level": 0,
+      "inherit_settings": true,
+      "slurm_config": {
+        "scripts": {
+          "submitcrystal23.sh": {
+            "source_script": "submitcrystal23.sh",
+            "step_specific_name": "submitcrystal23_sp_2.sh",
+            "resources": {
+              "ntasks": 32,
+              "nodes": 1,
+              "walltime": "3-00:00:00",
+              "memory_per_cpu": "4G",
+              "account": "mendoza_q",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20250725_123705"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    },
+    "BAND_3": {
+      "calculation_type": "BAND",
+      "source": "CRYSTALOptToD3.py",
+      "requires_wavefunction": true,
+      "d3_calculation": true,
+      "d3_config_mode": "basic",
+      "d3_config": {
+        "calculation_type": "BAND",
+        "path": "auto",
+        "bands": "auto",
+        "shrink": "auto",
+        "labels": "auto",
+        "auto_path": true
+      },
+      "slurm_config": {
+        "scripts": {
+          "submit_prop.sh": {
+            "source_script": "submit_prop.sh",
+            "step_specific_name": "submit_prop_band_3.sh",
+            "resources": {
+              "ntasks": 28,
+              "nodes": 1,
+              "walltime": "2:00:00",
+              "memory": "48G",
+              "account": "mendoza_q",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23/prop"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20250725_123705"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    },
+    "DOSS_4": {
+      "calculation_type": "DOSS",
+      "source": "CRYSTALOptToD3.py",
+      "requires_wavefunction": true,
+      "d3_calculation": true,
+      "d3_config_mode": "basic",
+      "d3_config": {
+        "calculation_type": "DOSS",
+        "npoints": 1000,
+        "band": "all",
+        "projection_type": 0,
+        "e_range": [
+          -20,
+          20
+        ]
+      },
+      "slurm_config": {
+        "scripts": {
+          "submit_prop.sh": {
+            "source_script": "submit_prop.sh",
+            "step_specific_name": "submit_prop_doss_4.sh",
+            "resources": {
+              "ntasks": 28,
+              "nodes": 1,
+              "walltime": "2:00:00",
+              "memory": "48G",
+              "account": "mendoza_q",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23/prop"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20250725_123705"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    },
+    "FREQ_5": {
+      "calculation_type": "FREQ",
+      "source": "CRYSTALOptToD12.py",
+      "inherit_base_settings": true,
+      "frequency_settings": {
+        "mode": "GAMMA",
+        "numderiv": 2,
+        "intensities": false,
+        "temperatures": [
+          298.15
+        ],
+        "custom_tolerances": {
+          "TOLINTEG": "9 9 9 11 38",
+          "TOLDEE": 11
+        }
+      },
+      "slurm_config": {
+        "scripts": {
+          "submitcrystal23.sh": {
+            "source_script": "submitcrystal23.sh",
+            "step_specific_name": "submitcrystal23_freq_5.sh",
+            "resources": {
+              "ntasks": 32,
+              "nodes": 1,
+              "walltime": "7-00:00:00",
+              "memory_per_cpu": "7G",
+              "account": "mendoza_q",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20250725_123705"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    },
+    "TRANSPORT_6": {
+      "calculation_type": "TRANSPORT",
+      "source": "CRYSTALOptToD3.py",
+      "requires_wavefunction": true,
+      "d3_calculation": true,
+      "d3_config_mode": "basic",
+      "d3_config": {
+        "calculation_type": "TRANSPORT",
+        "temperature_range": [
+          100,
+          800,
+          50
+        ],
+        "mu_range": [
+          -2.0,
+          2.0,
+          0.01
+        ],
+        "mu_reference": "fermi",
+        "mu_range_type": "auto_fermi",
+        "tdf_range": [
+          -5.0,
+          5.0,
+          0.01
+        ],
+        "relaxation_time": 10
+      },
+      "slurm_config": {
+        "scripts": {
+          "submit_prop.sh": {
+            "source_script": "submit_prop.sh",
+            "step_specific_name": "submit_prop_transport_6.sh",
+            "resources": {
+              "ntasks": 28,
+              "nodes": 1,
+              "walltime": "2:00:00",
+              "memory": "80G",
+              "account": "mendoza_q",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23/prop"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20250725_123705"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    },
+    "CHARGE+POTENTIAL_7": {
+      "calculation_type": "CHARGE+POTENTIAL",
+      "source": "CRYSTALOptToD3.py",
+      "requires_wavefunction": true,
+      "d3_calculation": true,
+      "d3_config_mode": "basic",
+      "d3_config": {
+        "calculation_type": "CHARGE+POTENTIAL",
+        "option_type": 6,
+        "mapnet": [
+          100,
+          100,
+          100
+        ],
+        "output_format": "GAUSSIAN"
+      },
+      "slurm_config": {
+        "scripts": {
+          "submit_prop.sh": {
+            "source_script": "submit_prop.sh",
+            "step_specific_name": "submit_prop_charge+potential_7.sh",
+            "resources": {
+              "ntasks": 28,
+              "nodes": 1,
+              "walltime": "2:00:00",
+              "memory": "80G",
+              "account": "mendoza_q",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23/prop"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20250725_123705"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    },
+    "OPT2_8": {
+      "calculation_type": "OPT",
+      "source": "CRYSTALOptToD12.py",
+      "customization_level": 1,
+      "optimization_type": "FULLOPTG",
+      "optimization_settings": {
+        "TOLDEG": 1.5e-05,
+        "TOLDEX": 6e-05,
+        "TOLDEE": 8,
+        "MAXCYCLE": 1000
+      },
+      "inherit_base_settings": true,
+      "slurm_config": {
+        "scripts": {
+          "submitcrystal23.sh": {
+            "source_script": "submitcrystal23.sh",
+            "step_specific_name": "submitcrystal23_opt2_8.sh",
+            "resources": {
+              "ntasks": 32,
+              "nodes": 1,
+              "walltime": "7-00:00:00",
+              "memory_per_cpu": "5G",
+              "account": "mendoza_q",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20250725_123705"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    },
+    "SP2_9": {
+      "calculation_type": "SP",
+      "source": "CRYSTALOptToD12.py",
+      "customization_level": 1,
+      "inherit_geometry": true,
+      "inherit_settings": false,
+      "method_modifications": {
+        "inherit_functional": true
+      },
+      "basis_modifications": {
+        "inherit_basis": true
+      },
+      "tolerance_modifications": {
+        "custom_tolerances": {
+          "TOLINTEG": "9 9 9 11 38",
+          "TOLDEE": 11
+        }
+      },
+      "slurm_config": {
+        "scripts": {
+          "submitcrystal23.sh": {
+            "source_script": "submitcrystal23.sh",
+            "step_specific_name": "submitcrystal23_sp2_9.sh",
+            "resources": {
+              "ntasks": 32,
+              "nodes": 1,
+              "walltime": "3-00:00:00",
+              "memory_per_cpu": "4G",
+              "account": "mendoza_q",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20250725_123705"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    },
+    "BAND2_10": {
+      "calculation_type": "BAND",
+      "source": "CRYSTALOptToD3.py",
+      "requires_wavefunction": true,
+      "d3_calculation": true,
+      "d3_config_mode": "advanced",
+      "d3_config": {
+        "calculation_type": "BAND",
+        "path": "auto",
+        "auto_path": true,
+        "path_format": "seekpath_full",
+        "labels": "none",
+        "bands": "auto",
+        "npoints": 200
+      },
+      "slurm_config": {
+        "scripts": {
+          "submit_prop.sh": {
+            "source_script": "submit_prop.sh",
+            "step_specific_name": "submit_prop_band2_10.sh",
+            "resources": {
+              "ntasks": 28,
+              "nodes": 1,
+              "walltime": "2:00:00",
+              "memory": "48G",
+              "account": "mendoza_q",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23/prop"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20250725_123705"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    },
+    "DOSS2_11": {
+      "calculation_type": "DOSS",
+      "source": "CRYSTALOptToD3.py",
+      "requires_wavefunction": true,
+      "d3_calculation": true,
+      "d3_config_mode": "advanced",
+      "d3_config": {
+        "calculation_type": "DOSS",
+        "projection_type": 4,
+        "project_orbital_types": true,
+        "e_range": [
+          -20,
+          20
+        ],
+        "npoints": 2000
+      },
+      "slurm_config": {
+        "scripts": {
+          "submit_prop.sh": {
+            "source_script": "submit_prop.sh",
+            "step_specific_name": "submit_prop_doss2_11.sh",
+            "resources": {
+              "ntasks": 28,
+              "nodes": 1,
+              "walltime": "2:00:00",
+              "memory": "48G",
+              "account": "mendoza_q",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23/prop"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20250725_123705"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    },
+    "FREQ2_12": {
+      "calculation_type": "FREQ",
+      "source": "CRYSTALOptToD12.py",
+      "inherit_base_settings": true,
+      "frequency_settings": {
+        "mode": "GAMMA",
+        "numderiv": 2,
+        "intensities": true,
+        "raman": true,
+        "ir_method": "CPHF",
+        "cphf_max_iter": 30,
+        "cphf_tolerance": 6,
+        "minimal_raman": true,
+        "temperatures": [
+          298.15
+        ],
+        "custom_tolerances": {
+          "TOLINTEG": "9 9 9 11 38",
+          "TOLDEE": 11
+        }
+      },
+      "slurm_config": {
+        "scripts": {
+          "submitcrystal23.sh": {
+            "source_script": "submitcrystal23.sh",
+            "step_specific_name": "submitcrystal23_freq2_12.sh",
+            "resources": {
+              "ntasks": 32,
+              "nodes": 1,
+              "walltime": "7-00:00:00",
+              "memory_per_cpu": "7G",
+              "account": "mendoza_q",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20250725_123705"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    },
+    "TRANSPORT2_13": {
+      "calculation_type": "TRANSPORT",
+      "source": "CRYSTALOptToD3.py",
+      "requires_wavefunction": true,
+      "d3_calculation": true,
+      "d3_config_mode": "advanced",
+      "d3_config": {
+        "calculation_type": "TRANSPORT",
+        "mu_reference": "fermi",
+        "mu_range_type": "auto_fermi",
+        "mu_range": [
+          -2.0,
+          2.0,
+          0.01
+        ],
+        "temperature_range": [
+          100,
+          800,
+          50
+        ],
+        "relaxation_time": 10
+      },
+      "slurm_config": {
+        "scripts": {
+          "submit_prop.sh": {
+            "source_script": "submit_prop.sh",
+            "step_specific_name": "submit_prop_transport2_13.sh",
+            "resources": {
+              "ntasks": 28,
+              "nodes": 1,
+              "walltime": "2:00:00",
+              "memory": "80G",
+              "account": "mendoza_q",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23/prop"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20250725_123705"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    },
+    "CHARGE+POTENTIAL2_14": {
+      "calculation_type": "CHARGE+POTENTIAL",
+      "source": "CRYSTALOptToD3.py",
+      "requires_wavefunction": true,
+      "d3_calculation": true,
+      "d3_config_mode": "advanced",
+      "d3_config": {
+        "calculation_type": "CHARGE+POTENTIAL",
+        "option_type": 6,
+        "mapnet": [
+          100,
+          100,
+          100
+        ],
+        "output_format": "GAUSSIAN"
+      },
+      "slurm_config": {
+        "scripts": {
+          "submit_prop.sh": {
+            "source_script": "submit_prop.sh",
+            "step_specific_name": "submit_prop_charge+potential2_14.sh",
+            "resources": {
+              "ntasks": 28,
+              "nodes": 1,
+              "walltime": "2:00:00",
+              "memory": "80G",
+              "account": "mendoza_q",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23/prop"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20250725_123705"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    }
+  },
+  "cif_conversion_config": null,
+  "isolation_mode": "isolated",
+  "post_completion_action": "keep",
+  "execution_settings": {
+    "max_concurrent_jobs": 200,
+    "enable_material_tracking": true,
+    "auto_progression": true
+  },
+  "workflow_id": "workflow_20250725_123705",
+  "scripts_directory": "/mnt/ffs24/home/jmendoza/CRYSTAL/Marcus/test6/workflow_scripts"
+}

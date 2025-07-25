@@ -1,0 +1,38 @@
+{
+  "calculation_type": "OPT2",
+  "source": "CRYSTALOptToD12.py",
+  "customization_level": 1,
+  "optimization_type": "FULLOPTG",
+  "optimization_settings": {
+    "TOLDEG": 1.5e-05,
+    "TOLDEX": 6e-05,
+    "TOLDEE": 8,
+    "MAXCYCLE": 1000
+  },
+  "inherit_base_settings": true,
+  "slurm_config": {
+    "scripts": {
+      "submitcrystal23.sh": {
+        "source_script": "submitcrystal23.sh",
+        "step_specific_name": "submitcrystal23_opt2_8.sh",
+        "resources": {
+          "ntasks": 32,
+          "nodes": 1,
+          "walltime": "7-00:00:00",
+          "memory_per_cpu": "5G",
+          "account": "mendoza_q",
+          "module": "CRYSTAL/23-intel-2023a",
+          "scratch_dir": "$SCRATCH/crys23"
+        },
+        "customizations": [],
+        "copy_to_workdir": true,
+        "workflow_id": "workflow_20250725_123705"
+      }
+    },
+    "resources": {},
+    "modules": {}
+  },
+  "workflow_id": "workflow_20250725_123705",
+  "step_number": 8,
+  "timestamp": "2025-07-25T12:37:11.962791"
+}
