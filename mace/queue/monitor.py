@@ -32,6 +32,8 @@ import signal
 # Import MACE components
 try:
     from database.materials import MaterialDatabase
+    from database.materials_contextual import ContextualMaterialDatabase
+    from workflow.context import get_current_context, WorkflowContext
     from utils.file_manager import CrystalFileManager
     try:
         from recovery.detector import CrystalErrorDetector
@@ -53,17 +55,33 @@ class MaterialMonitor:
     database health, workflow progress, and alert systems.
     """
     
-    def __init__(self, base_dir: str = ".", db_path: str = "materials.db"):
+    def __init__(self, base_dir: str = ".", db_path: str = "materials.db", use_context: bool = True):
         self.base_dir = Path(base_dir).resolve()
-        self.db_path = db_path
         self.running = False
         self.refresh_interval = 30  # seconds
         
-        # Initialize components
-        self.db = MaterialDatabase(db_path)
-        self.file_manager = CrystalFileManager(base_dir, db_path)
+        # Check for active workflow context
+        self.context = None
+        if use_context:
+            self.context = get_current_context()
+            
+        # Initialize components with context awareness
+        if self.context:
+            # Use contextual database which automatically uses workflow-specific paths
+            self.db = ContextualMaterialDatabase()
+            self.db_path = str(self.context.get_database_path())
+            actual_base_dir = self.context.get_storage_path()
+            print(f"Using workflow context: {self.context.workflow_id}")
+            print(f"Database: {self.db_path}")
+        else:
+            # Fall back to traditional paths
+            self.db_path = db_path
+            self.db = MaterialDatabase(db_path)
+            actual_base_dir = self.base_dir
+            
+        self.file_manager = CrystalFileManager(str(actual_base_dir), self.db_path)
         if HAS_ERROR_DETECTOR:
-            self.error_detector = CrystalErrorDetector(base_dir, db_path)
+            self.error_detector = CrystalErrorDetector(str(actual_base_dir), self.db_path)
         else:
             self.error_detector = None
         
@@ -651,11 +669,61 @@ def main():
     parser.add_argument("--interval", type=int, default=30, 
                        help="Refresh interval for dashboard (seconds)")
     parser.add_argument("--output", help="Output file for reports")
+    parser.add_argument("--no-context", action="store_true", 
+                       help="Disable workflow context detection")
+    parser.add_argument("--workflow-id", help="Specific workflow ID to monitor")
     
     args = parser.parse_args()
     
+    # Try to detect or activate workflow context
+    if not args.no_context and not get_current_context():
+        # Look for workflow contexts in current directory
+        cwd = Path.cwd()
+        context_dirs = list(cwd.glob(".mace_context_*"))
+        
+        if args.workflow_id:
+            # Look for specific workflow
+            target_dir = cwd / f".mace_context_{args.workflow_id}"
+            if target_dir.exists():
+                context_dirs = [target_dir]
+            else:
+                print(f"Error: Workflow context '{args.workflow_id}' not found")
+                sys.exit(1)
+        
+        if len(context_dirs) == 1:
+            # Single context found, activate it
+            context_dir = context_dirs[0]
+            workflow_id = context_dir.name.replace(".mace_context_", "")
+            print(f"Found workflow context: {workflow_id}")
+            
+            # Activate the context
+            ctx = WorkflowContext(workflow_id, base_dir=str(cwd))
+            ctx.activate()
+            
+        elif len(context_dirs) > 1:
+            # Multiple contexts found, ask user to choose
+            print("Multiple workflow contexts found:")
+            for i, ctx_dir in enumerate(context_dirs):
+                wf_id = ctx_dir.name.replace(".mace_context_", "")
+                print(f"  {i+1}. {wf_id}")
+            
+            choice = input("Select workflow to monitor (number): ").strip()
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(context_dirs):
+                    context_dir = context_dirs[idx]
+                    workflow_id = context_dir.name.replace(".mace_context_", "")
+                    ctx = WorkflowContext(workflow_id, base_dir=str(cwd))
+                    ctx.activate()
+                else:
+                    print("Invalid selection")
+                    sys.exit(1)
+            except ValueError:
+                print("Invalid input")
+                sys.exit(1)
+    
     # Create monitor
-    monitor = MaterialMonitor(args.base_dir, args.db_path)
+    monitor = MaterialMonitor(args.base_dir, args.db_path, use_context=not args.no_context)
     
     # Check database connectivity first
     if not monitor.check_database_connectivity():

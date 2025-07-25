@@ -392,9 +392,22 @@ Options:
     elif args.command == 'monitor':
         # Launch monitoring dashboard
         from material_monitor import main as monitor_main
-        # Default to dashboard if no specific action
-        if not any(arg in args.args for arg in ['--action', '--status']):
+        # Handle --status shortcut
+        if '--status' in args.args:
+            # Replace --status with --action status
+            new_args = []
+            for arg in args.args:
+                if arg == '--status':
+                    new_args.extend(['--action', 'status'])
+                else:
+                    new_args.append(arg)
+            sys.argv = ['material_monitor.py'] + new_args
+        elif not any(arg in args.args for arg in ['--action']):
+            # Default to dashboard if no specific action
             sys.argv = ['material_monitor.py', '--action', 'dashboard'] + args.args
+        else:
+            # Pass through all arguments
+            sys.argv = ['material_monitor.py'] + args.args
         monitor_main()
         
     elif args.command == 'analyze':
