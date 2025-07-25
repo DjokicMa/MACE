@@ -19,7 +19,7 @@ from typing import List, Dict, Optional
 
 # Import MACE components
 try:
-    from database.materials import MaterialDatabase, create_material_id_from_file
+    from mace.database.materials import MaterialDatabase, create_material_id_from_file
 except ImportError as e:
     print(f"Error importing required modules: {e}")
     sys.exit(1)

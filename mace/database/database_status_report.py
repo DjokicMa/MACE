@@ -18,10 +18,13 @@ from collections import defaultdict
 
 # Import MACE components
 try:
-    from database.materials import MaterialDatabase
-except ImportError as e:
-    print(f"Error importing MaterialDatabase: {e}")
-    sys.exit(1)
+    from materials import MaterialDatabase
+except ImportError:
+    try:
+        from mace.database.materials import MaterialDatabase
+    except ImportError as e:
+        print(f"Error importing MaterialDatabase: {e}")
+        sys.exit(1)
 
 def analyze_database(db_path: str):
     """Analyze the database and provide a comprehensive report."""

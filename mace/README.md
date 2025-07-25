@@ -129,7 +129,11 @@ mace monitor --dashboard
 mace monitor --status
 
 # View material properties
-python mace/utils/show_properties.py material_id
+mace database --action properties --material-id diamond
+
+# NEW: Filter materials by properties
+mace database --action query --filter "band_gap > 3.0"
+mace database --action query --filter "total_energy < -1000" --filter "band_gap > 2" --logic AND
 ```
 
 ## Workflow Templates
@@ -142,6 +146,359 @@ MACE includes predefined workflow templates:
 - **transport_analysis**: OPT → SP → TRANSPORT
 - **charge_analysis**: OPT → SP → CHARGE+POTENTIAL
 - **complete**: OPT → SP → BAND → DOS → FREQ
+
+## Database Query and Analysis Features
+
+### Property-Based Material Filtering
+
+MACE now includes powerful property-based filtering to find materials matching specific criteria:
+
+#### Basic Usage
+```bash
+# Find materials with large band gaps
+mace database --action query --filter "band_gap > 3.0"
+
+# Find materials with low total energy
+mace database --action query --filter "total_energy < -1000"
+
+# Combine multiple filters with AND logic (default)
+mace database --action query --filter "band_gap > 2" --filter "band_gap < 5"
+
+# Use OR logic for filters
+mace database --action query --filter "band_gap > 5.0" --filter "total_energy < -1000" --logic OR
+```
+
+#### Supported Operators
+- `>`, `>=`, `<`, `<=` - Numeric comparisons
+- `==`, `!=` - Equality comparisons (works for both numbers and strings)
+- `=` - Alias for `==`
+
+#### Filter Examples
+```bash
+# Materials with specific space group
+mace database --action query --filter "space_group == 227"
+
+# Exclude specific formulas
+mace database --action query --filter "formula != C"
+
+# Complex queries
+mace database --action query --filter "band_gap > 2.0" --filter "atoms_in_unit_cell < 10" --filter "total_energy < -500"
+```
+
+#### Advanced SQL-like Filtering
+MACE now supports advanced SQL-like syntax for complex queries using parentheses, logical operators, and special functions:
+
+```bash
+# Parentheses and logical operators
+mace database --action query --filter "(band_gap > 3 AND space_group = 227) OR total_energy < -1000"
+
+# LIKE operator for pattern matching
+mace database --action query --filter "formula LIKE 'C%'"           # Formulas starting with C
+mace database --action query --filter "formula LIKE '%O%'"          # Formulas containing O
+mace database --action query --filter "formula NOT LIKE '%H%'"      # Formulas without H
+
+# IN operator for value lists
+mace database --action query --filter "space_group IN (225, 227, 229)"
+mace database --action query --filter "conductivity_type IN ('insulator', 'semiconductor')"
+
+# IS NULL/IS NOT NULL checks
+mace database --action query --filter "transport_seebeck_300k IS NOT NULL"
+mace database --action query --filter "band_gap IS NULL"
+
+# Complex combinations
+mace database --action query --filter "(formula LIKE 'C%' AND band_gap > 2) OR (space_group IN (227, 229) AND total_energy < -500)"
+mace database --action query --filter "(band_gap > 2 AND band_gap < 5) AND formula NOT LIKE '%O%'"
+```
+
+Note: Advanced filtering is automatically detected when using parentheses, AND/OR keywords, or SQL-style operators (=, LIKE, IN, IS).
+Regular filtering with --logic OR/AND is still supported for simple queries.
+
+```
+
+### Property Statistics and Visualization
+
+#### View All Properties
+```bash
+# Show property statistics across all materials
+mace database --action properties
+
+# Filter by category
+mace database --action properties --category electronic
+mace database --action properties --category structural
+
+# Compact view
+mace database --action properties --compact
+
+# Show distribution data
+mace database --action properties --json
+```
+
+#### Material-Specific Properties
+```bash
+# View all properties for a material
+mace database --action properties --material-id diamond
+
+# Filter by category
+mace database --action properties --material-id diamond --category electronic
+
+# Filter by calculation type
+mace database --action properties --material-id diamond --from-calc OPT
+```
+
+### Available Property Categories
+- **structural** - Atomic positions, density, cell volume
+- **lattice** - Lattice parameters (a, b, c, α, β, γ)
+- **electronic** - Band gaps, energies, electronic structure
+- **electronic_classification** - Conductivity type, magnetic properties
+- **optimization** - Convergence info, gradients, cycles
+- **computational** - CPU time, calculation settings
+- **thermodynamic** - Free energies, entropy, heat capacity
+- **vibrational** - Frequencies, phonon properties
+
+### Multi-Format Data Export
+
+MACE supports exporting materials and properties data in multiple formats:
+
+#### Export Formats
+- **CSV** - Standard comma-separated values
+- **JSON** - Structured data with metadata
+- **Excel** - Formatted .xlsx with multiple sheets
+- **LaTeX** - Publication-ready tables
+- **HTML** - Interactive web tables
+
+#### Basic Export
+```bash
+# Export all materials to Excel
+mace database --action export --format excel --output materials.xlsx
+
+# Export to JSON with metadata
+mace database --action export --format json --output data.json
+
+# Export filtered materials
+mace database --action export --format csv --filter "band_gap > 3" --output high_gap.csv
+```
+
+#### Advanced Export Options
+```bash
+# Export only properties data
+mace database --action export --properties-only --format excel
+
+# Include specific properties with materials
+mace database --action export --include-property band_gap --include-property total_energy
+
+# Include structure data (normally excluded)
+mace database --action export --include-structures --format json
+
+# Combine filters with export
+mace database --action export --format latex --filter "space_group == 227" --filter "band_gap > 2"
+```
+
+#### Export Features
+- **Automatic formatting** - Excel exports include styled headers and auto-sized columns
+- **Metadata inclusion** - JSON and Excel formats include export metadata
+- **Publication-ready** - LaTeX format generates tables ready for inclusion in papers
+- **Web-friendly** - HTML format includes CSS styling and hover effects
+- **Smart defaults** - Auto-generated filenames with timestamps
+- **Filter support** - Export only materials matching property criteria
+
+### Material Property Comparison
+
+Compare properties across multiple materials to identify trends and relationships:
+
+#### Basic Comparison
+```bash
+# Compare specific materials
+mace database --action compare --materials "1_dia,2_dia2,3_dia3"
+
+# Compare specific properties only
+mace database --action compare --materials "1_dia,3_dia3" --properties "band_gap,total_energy"
+
+# Output as JSON for further analysis
+mace database --action compare --materials "1_dia,2_dia2" --output-format json
+```
+
+#### Comparison Features
+- **Side-by-side display** - Properties shown in easy-to-read table format
+- **Automatic statistics** - Min/max values and relative differences calculated
+- **Common property detection** - Identifies properties present in all materials
+- **Largest differences** - Highlights properties with biggest variations
+- **Formula and space group** - Material metadata included in comparison
+- **Export formats** - Table (default), JSON, or raw dictionary
+
+#### Example Output
+```
+Property                  | mat_1        | mat_2       | mat_3      
+-------------------------------------------------------------------
+Formula                   | C            | C2          | C3         
+Space Group               | 227          | 227         | 225        
+-------------------------------------------------------------------
+band_gap                  | 6.0010 eV    | 6.8348 eV   | 5.2341 eV  
+total_energy              | -76.21 Ha    | -152.43 Ha  | -228.64 Ha 
+
+=== Summary ===
+Common properties: 2
+
+Largest relative differences:
+  total_energy: 100.00% difference
+    Min: -228.64 (mat_3)
+    Max: -76.21 (mat_1)
+```
+
+### Missing Data Analysis
+
+Identify missing properties across materials to guide future calculations:
+
+#### Basic Usage
+```bash
+# Analyze all materials for missing properties
+mace database --action missing
+
+# Analyze specific materials
+mace database --action missing --material-ids "1_dia,2_dia2,3_dia3"
+
+# Check for specific properties
+mace database --action missing --target-properties "band_gap,fermi_energy,phonon_frequencies"
+
+# Get detailed report
+mace database --action missing --detail-level detailed
+
+# Export as JSON for programmatic analysis
+mace database --action missing --output-format json
+```
+
+#### Analysis Features
+- **Property completeness scoring** - Percentage of expected properties present
+- **Calculation coverage** - Which calculation types have been run
+- **Smart recommendations** - Suggests calculations to obtain missing properties
+- **Property dependencies** - Understands which calculations produce which properties
+- **Batch analysis** - Process entire material database or subsets
+
+#### Report Levels
+- **summary** - Overview statistics and key findings
+- **detailed** - Includes top recommendations and property coverage
+- **full** - Complete material-by-material breakdown
+
+#### Example Output
+```
+=== Missing Data Analysis Report ===
+Materials analyzed: 50
+Average completeness: 67.3%
+
+=== Key Findings ===
+
+[HIGH] Most commonly missing properties across 50 materials:
+  - transport_seebeck_300k: missing in 45 materials (90.0%)
+  - phonon_frequencies: missing in 40 materials (80.0%)
+  - band_n_kpoints: missing in 35 materials (70.0%)
+
+[MEDIUM] Materials with less than 50% property completeness (5 found):
+  - mat_123: 25.0% complete
+  - mat_456: 30.0% complete
+
+=== Calculation Coverage ===
+OPT            100.0% (50/50)
+SP              80.0% (40/50)
+BAND            30.0% (15/50)
+TRANSPORT       10.0% (5/50)
+```
+
+### Property Correlation Analysis
+
+Discover relationships between material properties through statistical correlation analysis:
+
+#### Basic Usage
+```bash
+# Analyze all property correlations
+mace database --action correlate
+
+# Analyze specific property pairs
+mace database --action correlate --properties "band_gap,total_energy;density,band_gap"
+
+# Set minimum sample requirement
+mace database --action correlate --min-samples 5
+
+# Get results in different formats
+mace database --action correlate --output-format json
+mace database --action correlate --top-n 50  # Show top 50 correlations
+```
+
+#### Features
+- **Pearson correlation coefficient** - Measures linear relationships (-1 to 1)
+- **R-squared values** - Explains variance in the relationship
+- **Linear regression** - Provides slope and intercept for predictions
+- **Automatic property pairing** - Analyzes all numeric property combinations
+- **Strong correlation detection** - Highlights |r| > 0.7 relationships
+
+#### Example Output
+```
+=== Property Correlation Analysis ===
+Materials analyzed: 50
+Properties analyzed: 25
+Property pairs analyzed: 300
+
+=== Strong Correlations (|r| > 0.7) ===
+Found 5 strong correlations:
+  band_gap vs conductivity: r = -0.856 (R² = 0.733, n = 45)
+  density vs bulk_modulus: r = 0.812 (R² = 0.659, n = 38)
+
+Strongest positive correlation:
+  a_lattice vs c_lattice: r = 0.923 (R² = 0.852)
+Strongest negative correlation:
+  band_gap vs conductivity: r = -0.856 (R² = 0.733)
+```
+
+### Property Distribution Analysis
+
+Analyze property distributions to understand data spread, identify outliers, and visualize histograms:
+
+#### Basic Usage
+```bash
+# Analyze all property distributions
+mace database --action distribution
+
+# Analyze specific properties
+mace database --action distribution --properties "band_gap,density,total_energy"
+
+# Customize histogram bins
+mace database --action distribution --bins 20
+
+# Get results in different formats
+mace database --action distribution --output-format json
+mace database --action distribution --top-n 20  # Show top 20 properties
+```
+
+#### Features
+- **Statistical analysis** - Min, max, mean, median, standard deviation
+- **Histogram generation** - Visualize data distribution with customizable bins
+- **Percentile calculation** - 25th, 50th, 75th, 90th, 95th, 99th percentiles
+- **Outlier detection** - Identifies values beyond 1.5 * IQR
+- **Categorical analysis** - Mode, frequency counts for non-numeric properties
+
+#### Example Output
+```
+=== Property Distribution Analysis ===
+Properties analyzed: 50
+Materials included: 200
+
+=== Numeric Properties ===
+Property                Count    Min         Max         Mean       Std Dev
+---------------------------------------------------------------------------
+band_gap                  185    0.000       8.521       3.245       2.134
+  Histogram: ▂▅█▇▆▃▂▁
+  Outliers: 3 values beyond [0.234, 7.891]
+density                   200    1.234      12.456       5.678       2.345
+  Histogram: ▁▃▆█▇▅▂▁
+total_energy             200   -5432.1     -123.4    -2345.6     1234.5
+  Histogram: ▁▂▄▇█▆▃▁
+
+=== Categorical Properties ===
+Property                Count  Unique    Mode              Frequency
+--------------------------------------------------------------------
+crystal_system            200       7    cubic                45.0%
+  Values: cubic(90), hexagonal(40), tetragonal(30), ...
+conductivity_type         185       3    insulator            65.0%
+  Values: insulator(120), semiconductor(50), metal(15)
+```
 
 ## Comprehensive Directory Structure
 
@@ -213,17 +570,32 @@ SQLite-based tracking system with ASE integration for complete calculation prove
   - Thread-safe material and calculation tracking
   - Property storage and retrieval
   - ASE structure integration
+  - **NEW: Property-based filtering capabilities**
   - Example usage:
     ```python
     db = MaterialDatabase()
     db.add_material("diamond", structure)
     db.update_calculation_status(calc_id, "completed")
+    
+    # NEW: Filter materials by properties
+    materials = db.filter_materials_by_properties(
+        ["band_gap > 3.0", "total_energy < -1000"],
+        logic="AND"
+    )
     ```
 
-- **`queries.py`** - Database query utilities
-  - Complex query builders
-  - Property aggregation functions
-  - Statistical analysis helpers
+- **`query/`** - Advanced query and filtering module (**NEW**)
+  - **`filters.py`** - Property range filtering system
+    - Support for numeric and string comparisons
+    - Operators: >, >=, <, <=, ==, !=
+    - AND/OR logic for combining filters
+    - Example:
+      ```python
+      from mace.database.query import PropertyFilter
+      filter = PropertyFilter()
+      filter.add_filter("band_gap", ">", 3.0)
+      filter.add_filter("space_group", "==", 227)
+      ```
 
 - **`create_fresh_database.py`** - Database initialization
   - Creates schema with proper indices

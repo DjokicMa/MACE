@@ -18,7 +18,7 @@ from mace.database.materials import MaterialDatabase
 
 # Import context management
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from workflow.context import get_current_context, require_context
+from mace.workflow.context import get_current_context, require_context
 
 
 class ContextualMaterialDatabase(MaterialDatabase):

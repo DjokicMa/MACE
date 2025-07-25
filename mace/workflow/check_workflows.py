@@ -15,12 +15,17 @@ import argparse
 from pathlib import Path
 
 # Import MACE components
+sys.path.insert(0, str(Path(__file__).parent.parent))
 try:
     from database.materials import MaterialDatabase
     from workflow.engine import WorkflowEngine
-except ImportError as e:
-    print(f"Error importing required modules: {e}")
-    sys.exit(1)
+except ImportError:
+    try:
+        from mace.database.materials import MaterialDatabase
+        from mace.workflow.engine import WorkflowEngine
+    except ImportError as e:
+        print(f"Error importing required modules: {e}")
+        sys.exit(1)
 
 def main():
     parser = argparse.ArgumentParser(description="Check and process workflow progression")

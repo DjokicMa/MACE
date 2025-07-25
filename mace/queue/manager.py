@@ -99,7 +99,7 @@ class EnhancedCrystalQueueManager:
         if self.enable_error_recovery and self.enable_tracking:
             try:
                 # Lazy import to avoid pandas/pyarrow conflicts
-                from recovery.recovery import ErrorRecoveryEngine
+                from mace.recovery.recovery import ErrorRecoveryEngine
                 self.error_recovery_engine = ErrorRecoveryEngine(db_path)
                 print(f"Error recovery enabled with max {self.max_recovery_attempts} attempts per job")
             except ImportError as e:
@@ -339,7 +339,7 @@ class EnhancedCrystalQueueManager:
             print("  Triggering workflow progression...")
             
             # Import and use WorkflowEngine for proper workflow handling
-            from workflow.engine import WorkflowEngine
+            from mace.workflow.engine import WorkflowEngine
             
             # Initialize workflow engine with same database
             workflow_engine = WorkflowEngine(self.db_path, str(self.d12_dir))
@@ -1111,7 +1111,7 @@ class EnhancedCrystalQueueManager:
         """Extract properties from completed calculation and store in database."""
         try:
             # Import property extractor
-            from utils.property_extractor import CrystalPropertyExtractor
+            from mace.utils.property_extractor import CrystalPropertyExtractor
             
             output_file = calc.get('output_file')
             if not output_file or not Path(output_file).exists():
@@ -1146,7 +1146,7 @@ class EnhancedCrystalQueueManager:
         """Update material information with formula and space group from files."""
         try:
             # Import formula extractor
-            from formula_extractor import update_materials_table_info
+            from mace.utils.formula_extractor import update_materials_table_info
             
             material_id = calc['material_id']
             input_file = calc.get('input_file')
@@ -1248,7 +1248,7 @@ class EnhancedCrystalQueueManager:
         
         try:
             # Import and use WorkflowEngine for proper workflow handling
-            from workflow.engine import WorkflowEngine
+            from mace.workflow.engine import WorkflowEngine
             
             # Initialize workflow engine with same database
             workflow_engine = WorkflowEngine(self.db_path, str(self.base_dir))

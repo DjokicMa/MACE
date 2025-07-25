@@ -50,6 +50,403 @@ def show_banner():
         print(f"Version {__version__}")
         print("=" * 40)
 
+def show_action_specific_help(command, action):
+    """Show help for a specific action of any command"""
+    
+    # Delegate to command-specific help functions
+    if command == 'database':
+        show_database_action_help(action)
+    elif command == 'monitor':
+        show_monitor_action_help(action)
+    elif command == 'engine':
+        show_engine_action_help(action)
+    elif command == 'workflow':
+        show_workflow_action_help(action)
+    elif command == 'recover':
+        show_recover_action_help(action)
+    else:
+        print(f"\nNo action-specific help available for command: {command}")
+        print(f"Try: mace {command} --help")
+
+def show_database_action_help(action):
+    """Show help for a specific database action"""
+    action_help = {
+        'stats': """
+Usage: mace database --action stats
+
+Show database statistics including material counts, calculation types, and status distribution.
+
+No additional options required.
+
+Example:
+  mace database --action stats
+""",
+        'query': """
+Usage: mace database --action query [options]
+
+Search and list materials with optional property filters.
+
+Options:
+  --material-id ID      Show specific material details
+  --filter "EXPR"       Filter by property values (can use multiple)
+  --logic AND|OR        Logic for combining filters (default: AND)
+
+Filter Examples:
+  --filter "band_gap > 3.0"
+  --filter "space_group IN (225, 227, 229)"
+  --filter "(band_gap > 3 AND space_group = 227) OR formula LIKE 'C%'"
+
+Examples:
+  mace database --action query
+  mace database --action query --material-id 1_dia
+  mace database --action query --filter "band_gap > 3.0" --filter "space_group == 227"
+""",
+        'properties': """
+Usage: mace database --action properties [options]
+
+Display material properties and statistics.
+
+Options:
+  --material-id ID      Show properties for specific material
+  --category NAME       Filter by category (electronic, structural, etc.)
+  --from-calc TYPE      Show only properties from calculation type (OPT, SP, etc.)
+  --compact             Compact display format
+  --json                Show full JSON data including distributions
+
+Examples:
+  mace database --action properties
+  mace database --action properties --material-id 1_dia
+  mace database --action properties --category electronic --compact
+  mace database --action properties --material-id 1_dia --from-calc OPT
+""",
+        'export': """
+Usage: mace database --action export [options]
+
+Export data to various formats.
+
+Options:
+  --format FORMAT       Output format: csv, json, excel, latex, html (default: csv)
+  --output FILE         Output file path (auto-generated if not specified)
+  --filter "EXPR"       Apply filters before export
+  --logic AND|OR        Filter logic (default: AND)
+  --include-property X  Include specific property (repeat for multiple)
+  --include-structures  Include structure data in export
+  --properties-only     Export properties table instead of materials
+
+Examples:
+  mace database --action export --format excel --output results.xlsx
+  mace database --action export --format json --filter "band_gap > 3"
+  mace database --action export --properties-only --format csv
+  mace database --action export --format latex --include-property band_gap --include-property total_energy
+""",
+        'compare': """
+Usage: mace database --action compare --materials LIST [options]
+
+Compare properties across multiple materials.
+
+Options:
+  --materials LIST      Comma-separated material IDs (required)
+  --properties LIST     Specific properties to compare (optional)
+  --output-format FMT   Output format: table, json, dict (default: table)
+
+Examples:
+  mace database --action compare --materials "1_dia,2_dia2,3_dia3"
+  mace database --action compare --materials "1_dia,2_dia2" --properties "band_gap,total_energy"
+  mace database --action compare --materials "mat1,mat2,mat3" --output-format json
+""",
+        'missing': """
+Usage: mace database --action missing [options]
+
+Analyze missing properties and suggest calculations to run.
+
+Options:
+  --material-ids LIST   Specific materials to analyze (comma-separated)
+  --target-properties   Properties to check for (comma-separated)
+  --detail-level LVL    Report detail: summary, detailed, full (default: summary)
+  --output-format FMT   Output format: report, json, dict (default: report)
+
+Examples:
+  mace database --action missing
+  mace database --action missing --material-ids "1_dia,2_dia2"
+  mace database --action missing --detail-level full
+  mace database --action missing --target-properties "band_gap,fermi_energy" --output-format json
+""",
+        'correlate': """
+Usage: mace database --action correlate [options]
+
+Calculate correlations between properties.
+
+Options:
+  --properties PAIRS    Property pairs like "prop1,prop2;prop3,prop4"
+  --min-samples N       Minimum samples required (default: 3)
+  --output-format FMT   Output format: report, json, dict (default: report)
+  --top-n N             Number of top correlations to show (default: 20)
+
+Examples:
+  mace database --action correlate
+  mace database --action correlate --properties "band_gap,total_energy;density,band_gap"
+  mace database --action correlate --min-samples 5 --top-n 50
+""",
+        'distribution': """
+Usage: mace database --action distribution [options]
+
+Analyze property distributions and generate histograms.
+
+Options:
+  --properties LIST     Comma-separated properties to analyze
+  --bins N              Number of histogram bins (default: 10)
+  --output-format FMT   Output format: report, json, dict (default: report)
+  --top-n N             Number of properties to show details for (default: 10)
+
+Examples:
+  mace database --action distribution
+  mace database --action distribution --properties "band_gap,density,total_energy"
+  mace database --action distribution --bins 20 --top-n 15
+"""
+    }
+    
+    if action in action_help:
+        print(action_help[action])
+    else:
+        print(f"No specific help available for action: {action}")
+        print(f"Available actions: {', '.join(sorted(action_help.keys()))}")
+
+def show_monitor_action_help(action):
+    """Show help for a specific monitor action"""
+    action_help = {
+        'dashboard': """
+Usage: mace monitor --action dashboard [options]
+
+Show real-time monitoring dashboard for all calculations.
+
+Options:
+  --interval SECONDS    Update interval (default: 30)
+  --max-materials N     Limit display to N materials (default: unlimited)
+  
+Dashboard shows:
+  - Active calculations with progress
+  - Recently completed jobs
+  - Error statistics
+  - Resource utilization
+  - Database health metrics
+""",
+        'stats': """
+Usage: mace monitor --action stats
+
+Show database and calculation statistics.
+
+Displays:
+  - Total materials and calculations
+  - Calculation type distribution
+  - Success/failure rates
+  - Average runtimes
+  - Property extraction coverage
+""",
+        'health': """
+Usage: mace monitor --action health
+
+Check database health and integrity.
+
+Performs:
+  - Database connection tests
+  - Schema validation
+  - Index optimization
+  - Storage usage analysis
+  - Orphaned record detection
+"""
+    }
+    
+    if action in action_help:
+        print(action_help[action])
+    else:
+        print(f"No specific help available for action: {action}")
+        print(f"Available actions: {', '.join(sorted(action_help.keys()))}")
+
+def show_engine_action_help(action):
+    """Show help for a specific engine action"""
+    action_help = {
+        'status': """
+Usage: mace engine --action status [options]
+
+Show workflow status for materials.
+
+Options:
+  --material-id ID      Show status for specific material
+  --pending-only        Show only materials with pending workflows
+  
+Shows:
+  - Current calculation status
+  - Next planned steps
+  - Workflow completion percentage
+  - Error states
+""",
+        'process': """
+Usage: mace engine --action process [options]
+
+Process pending workflows and submit next calculations.
+
+Options:
+  --material-id ID      Process specific material only
+  --dry-run             Show what would be done without executing
+  --max-submit N        Maximum jobs to submit (default: 10)
+  
+Workflow progression:
+  OPT → SP → BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL
+""",
+        'workflow': """
+Usage: mace engine --action workflow [options]
+
+Show or modify workflow templates.
+
+Options:
+  --list                List available workflow templates
+  --show TEMPLATE       Show details of a specific template
+  --create NAME         Create new workflow template
+  
+Templates define calculation sequences and resource requirements.
+"""
+    }
+    
+    if action in action_help:
+        print(action_help[action])
+    else:
+        print(f"No specific help available for action: {action}")
+        print(f"Available actions: {', '.join(sorted(action_help.keys()))}")
+
+def show_workflow_action_help(action):
+    """Show help for a specific workflow action"""
+    action_help = {
+        'plan': """
+Usage: mace workflow --action plan [options]
+
+Plan a new workflow interactively or from configuration.
+
+Options:
+  --config FILE         Load workflow from JSON configuration
+  --template NAME       Use predefined workflow template
+  --output FILE         Save plan to file (default: auto-generated)
+  
+Interactive planning includes:
+  - Input file selection (CIF/D12)
+  - Calculation sequence design
+  - Resource allocation
+  - Dependency configuration
+""",
+        'execute': """
+Usage: mace workflow --action execute [options]
+
+Execute a saved workflow plan.
+
+Options:
+  --plan FILE           Workflow plan JSON file to execute
+  --resume              Resume interrupted workflow
+  --skip-validation     Skip input file validation
+  
+Execution includes:
+  - File conversion (CIF → D12)
+  - Job submission
+  - Progress tracking
+  - Error handling
+""",
+        'status': """
+Usage: mace workflow --action status [options]
+
+Check status of running workflows.
+
+Options:
+  --workflow-id ID      Specific workflow to check
+  --active-only         Show only active workflows
+  --detailed            Show step-by-step progress
+  
+Status information:
+  - Overall progress percentage
+  - Current step execution
+  - Completed/failed/pending counts
+  - Resource utilization
+""",
+        'templates': """
+Usage: mace workflow --action templates
+
+List available workflow templates.
+
+Templates include:
+  - basic_opt: Geometry optimization only
+  - opt_sp: OPT → SP
+  - full_electronic: OPT → SP → BAND → DOSS
+  - transport_analysis: OPT → SP → TRANSPORT
+  - complete: OPT → SP → BAND → DOSS → FREQ
+  
+Use --template with plan action to use a template.
+"""
+    }
+    
+    # Handle both explicit action and default modes
+    if action == 'interactive':
+        action = 'plan'
+    elif action == 'quick-start':
+        action = 'execute'
+        
+    if action in action_help:
+        print(action_help[action])
+    else:
+        print(f"No specific help available for action: {action}")
+        print(f"Available actions: {', '.join(sorted(action_help.keys()))}")
+        print("Also: --interactive (interactive planning), --quick-start (quick execution)")
+
+def show_recover_action_help(action):
+    """Show help for a specific recover action"""
+    action_help = {
+        'recover': """
+Usage: mace recover --action recover [options]
+
+Detect and fix errors in failed calculations.
+
+Options:
+  --max-recoveries N    Maximum recovery attempts per material (default: 3)
+  --error-type TYPE     Focus on specific error type
+  --material-id ID      Recover specific material only
+  
+Recoverable errors:
+  - SHRINK factor issues
+  - Memory allocation failures
+  - SCF convergence problems
+  - Basis set issues
+""",
+        'stats': """
+Usage: mace recover --action stats
+
+Show error recovery statistics.
+
+Displays:
+  - Error type distribution
+  - Recovery success rates
+  - Most common failures
+  - Materials requiring manual intervention
+""",
+        'config': """
+Usage: mace recover --action config [options]
+
+Manage error recovery configuration.
+
+Options:
+  --show                Display current configuration
+  --edit                Open configuration in editor
+  --validate            Check configuration validity
+  
+Configuration includes:
+  - Error detection patterns
+  - Fix strategies
+  - Retry policies
+  - Resource adjustments
+"""
+    }
+    
+    if action in action_help:
+        print(action_help[action])
+    else:
+        print(f"No specific help available for action: {action}")
+        print(f"Available actions: {', '.join(sorted(action_help.keys()))}")
+
 def show_command_help(command):
     """Show help for a specific command"""
     help_text = {
@@ -79,6 +476,8 @@ Examples:
   mace workflow --execute workflow_plan_20250618_145837.json
   mace workflow --status
   mace workflow --show-templates
+
+For action-specific options, use: mace workflow --action <ACTION> --help
 """,
         'submit': """
 Usage: mace submit <file_or_directory>
@@ -116,22 +515,33 @@ Examples:
   mace monitor --status           # Quick status check
   mace monitor --status --detailed # Detailed status with recent activity
   mace monitor --status --summary  # Minimal summary only
+
+For action-specific options, use: mace monitor --action <ACTION> --help
 """,
         'analyze': """
-Usage: mace analyze --extract-properties <directory>
+Usage: mace analyze --extract-properties <directory> [options]
 
 Extract properties from CRYSTAL output files.
 
 Options:
   --extract-properties DIR    Directory containing output files (required)
+  --material-id ID           Filter by material ID or override material ID
+  --calc-type TYPE           Filter by calculation type (OPT, SP, FREQ, BAND, DOSS)
+  --filter-material ID       Only extract properties for specific material ID
+  --filter-type TYPE         Only extract properties from specific calculation type
+  --output-file FILE         Process a single output file instead of directory
+  --db-path PATH            Path to materials database (default: materials.db)
 
 Examples:
   mace analyze --extract-properties .
   mace analyze --extract-properties outputs/
+  mace analyze --extract-properties . --material-id diamond
+  mace analyze --extract-properties . --calc-type OPT
+  mace analyze --extract-properties outputs/ --filter-material 1_dia --filter-type SP
+  mace analyze --extract-properties --output-file single_calc.out
 
 Note: This command extracts properties and stores them in the materials database.
-Additional options like --material-id and --output-csv shown in some docs
-require calling the property_extractor.py script directly.
+Filters help process only specific materials or calculation types.
 """,
         'convert': """
 Usage: mace convert <cif_files> [options]
@@ -216,25 +626,57 @@ Examples:
   mace recover --action stats
   mace recover --max-recoveries 5
   mace recover --create-config
+
+For action-specific options, use: mace recover --action <ACTION> --help
 """,
         'database': """
 Usage: mace database [options]
 
 Database management and queries for material tracking.
 
-Options:
-  --action ACTION       Action: query, export, stats (default: stats)
-  --material-id ID      Query specific material
-  --calc-type TYPE      Filter by calculation type (not implemented yet)
-  --status STATUS       Filter by calculation status (not implemented yet)
-  --export-csv FILE     Export results to CSV (for --action export)
+ACTIONS:
+  stats        Show database statistics (default)
+  query        Search and list materials with property filters
+  properties   Display material properties and statistics
+  export       Export data to CSV/JSON/Excel/LaTeX/HTML formats
+  compare      Compare properties across multiple materials
+  missing      Analyze missing properties and suggest calculations
+  correlate    Calculate correlations between properties
+  distribution Analyze property distributions and histograms
 
-Examples:
+OPTIONS:
+  --action ACTION       Action to perform (default: stats)
+  --material-id ID      Specific material ID
+  --filter "EXPR"       Filter by property (query/export)
+  --logic AND|OR        Filter logic (default: AND)
+  --format FORMAT       Export format (export only)
+  --output FILE         Output file path (export only)
+  --materials LIST      Comma-separated IDs (compare only)
+  --material-ids LIST   Comma-separated IDs (missing only)
+  
+Options marked with specific actions in parentheses only work with those actions.
+
+FILTER SYNTAX:
+  Basic:     --filter "band_gap > 3.0" --filter "space_group == 227"
+  Advanced:  --filter "(band_gap > 3 AND space_group = 227) OR formula LIKE 'C%'"
+  
+  Operators: >, <, >=, <=, ==, !=, =, LIKE, NOT LIKE, IN, IS NULL/NOT NULL
+  Examples:
+    --filter "formula LIKE 'C%'"                   # Pattern matching
+    --filter "space_group IN (225, 227, 229)"      # Value lists
+    --filter "transport_seebeck IS NOT NULL"       # NULL checks
+
+QUICK EXAMPLES:
   mace database                                      # Show statistics
-  mace database --action stats                       # Show statistics
-  mace database --action query --material-id diamond # Query specific material
-  mace database --action query                       # List all materials
-  mace database --action export --export-csv results.csv
+  mace database --action query --filter "band_gap > 3.0"
+  mace database --action properties --material-id 1_dia --category electronic
+  mace database --action export --format excel --output results.xlsx
+  mace database --action compare --materials "1_dia,2_dia2,3_dia3"
+  mace database --action missing --detail-level full
+  mace database --action correlate                   # All property correlations
+  mace database --action correlate --properties "band_gap,total_energy"
+  mace database --action distribution               # Property distributions
+  mace database --action distribution --properties "band_gap,density" --bins 20
 
 Note: The 'clean' action is not yet implemented.
 """,
@@ -255,6 +697,8 @@ Examples:
   mace engine --action status --material-id diamond
   mace engine --action workflow                  # Show workflow templates
 
+For action-specific options, use: mace engine --action <ACTION> --help
+
 Note: The --dry-run option shown in some docs is not implemented.
 """
     }
@@ -266,6 +710,16 @@ Note: The --dry-run option shown in some docs is not implemented.
 
 def main():
     """Main entry point with proper argument parsing"""
+    # Save original sys.argv before any modifications
+    original_argv = sys.argv[:]
+    
+    # Check for action-specific help before argparse for any command
+    if len(sys.argv) >= 5 and sys.argv[2] == '--action' and sys.argv[4] == '--help':
+        command = sys.argv[1]
+        action = sys.argv[3]
+        show_action_specific_help(command, action)
+        return
+    
     # Special handling for commands that should pass through directly
     passthrough_commands = ['convert', 'opt2d12', 'opt2d3']
     
@@ -580,11 +1034,15 @@ More Help:
         
     elif args.command == 'analyze':
         # Property analysis
-        if args.args and args.args[0] == '--extract-properties':
+        all_args = args.args + remaining
+        if '--extract-properties' in all_args:
             from utils.property_extractor import main as extract_main
+            # Pass all arguments to property extractor
+            sys.argv = ['property_extractor.py'] + all_args
             extract_main()
         else:
-            print("Usage: mace analyze --extract-properties <directory>")
+            print("Usage: mace analyze --extract-properties <directory> [options]")
+            print("Run 'mace analyze --help' for full options")
             
     # These commands are handled in the passthrough section above
     elif args.command in ['convert', 'opt2d12', 'opt2d3']:
@@ -718,7 +1176,29 @@ More Help:
         import csv
         
         # Parse database arguments from remaining args
-        all_args = args.args + remaining  # Combine positional and remaining args
+        # Need to reconstruct the arguments correctly
+        # When user types: mace database --action properties
+        # We get: args.args = [] and remaining = ['--action', 'properties']
+        # But argparse sometimes splits them incorrectly
+        
+        # Reconstruct the full argument list from original_argv
+        # Find where 'database' is in original_argv and take everything after it
+        try:
+            db_index = original_argv.index('database')
+            all_args = original_argv[db_index + 1:]
+            # Remove --no-banner if present
+            all_args = [arg for arg in all_args if arg != '--no-banner']
+        except (ValueError, NameError):
+            # Fallback to original method
+            all_args = args.args + remaining
+            
+        # Check for action-specific help
+        if '--help' in all_args and '--action' in all_args:
+            action_index = all_args.index('--action')
+            if action_index + 1 < len(all_args):
+                action = all_args[action_index + 1]
+                show_action_help(action)
+                return
         action = 'stats'
         material_id = None
         calc_type = None
@@ -781,6 +1261,20 @@ More Help:
             print("Use --action export --export-csv FILE to export data")
                 
         elif action == 'query':
+            # Parse filter options
+            filter_strings = []
+            filter_logic = 'AND'
+            i = 0
+            while i < len(all_args):
+                if all_args[i] == '--filter' and i + 1 < len(all_args):
+                    filter_strings.append(all_args[i + 1])
+                    i += 2
+                elif all_args[i] == '--logic' and i + 1 < len(all_args):
+                    filter_logic = all_args[i + 1].upper()
+                    i += 2
+                else:
+                    i += 1
+            
             # Query database
             if material_id:
                 material = db.get_material(material_id)
@@ -800,7 +1294,40 @@ More Help:
                     print(f"Material '{material_id}' not found")
             else:
                 # General query - list all materials
-                materials = db.get_all_materials()
+                if filter_strings:
+                    # Apply property filters
+                    try:
+                        # Check if it's a single advanced filter expression
+                        # Look for special operators or single = sign (not ==)
+                        advanced_indicators = ['(', ')', ' AND ', ' OR ', ' LIKE ', ' IN ', ' IS ']
+                        is_advanced = False
+                        if len(filter_strings) == 1:
+                            upper_filter = filter_strings[0].upper()
+                            # Check for advanced operators
+                            for op in advanced_indicators:
+                                if op in upper_filter:
+                                    is_advanced = True
+                                    break
+                            # Also check for single = (SQL style) but not ==
+                            if not is_advanced and '=' in filter_strings[0] and '==' not in filter_strings[0] and '!=' not in filter_strings[0] and '<=' not in filter_strings[0] and '>=' not in filter_strings[0]:
+                                is_advanced = True
+                        
+                        if is_advanced:
+                            # Use advanced filtering
+                            materials = db.filter_materials_advanced(filter_strings[0])
+                            print(f"\n=== Filtered Materials ({len(materials)} matching) ===")
+                            print(f"Advanced filter: {filter_strings[0]}")
+                        else:
+                            # Use regular filtering
+                            materials = db.filter_materials_by_properties(filter_strings, filter_logic)
+                            print(f"\n=== Filtered Materials ({len(materials)} matching) ===")
+                            if filter_strings:
+                                print(f"Filters ({filter_logic}): {', '.join(filter_strings)}")
+                    except Exception as e:
+                        print(f"Error applying filters: {e}")
+                        materials = []
+                else:
+                    materials = db.get_all_materials()
                 print(f"\n=== All Materials in Database ({len(materials)} total) ===")
                 print(f"{'Material ID':<30} {'Formula':<20} {'Space Group':<15} {'Created':<20}")
                 print("-" * 85)
@@ -816,19 +1343,687 @@ More Help:
                     print(f"\n... and {len(materials) - 20} more materials")
                     print("Use --material-id <ID> to see details for a specific material")
                     
-        elif action == 'export':
-            # Export to CSV
-            if export_csv:
-                materials = db.get_all_materials()
-                with open(export_csv, 'w', newline='') as f:
-                    if materials:
-                        writer = csv.DictWriter(f, fieldnames=materials[0].keys())
-                        writer.writeheader()
-                        writer.writerows(materials)
-                print(f"Exported {len(materials)} materials to {export_csv}")
-            else:
-                print("Please specify --export-csv FILE")
+        elif action == 'properties':
+            # Parse additional filtering options
+            category_filter = None
+            calc_type_filter = None
+            show_json = False
+            compact = False
+            
+            # Continue parsing arguments for filters
+            i = 0
+            while i < len(all_args):
+                if all_args[i] == '--category' and i + 1 < len(all_args):
+                    category_filter = all_args[i + 1]
+                    i += 2
+                elif all_args[i] == '--from-calc' and i + 1 < len(all_args):
+                    calc_type_filter = all_args[i + 1].upper()
+                    i += 2
+                elif all_args[i] == '--json':
+                    show_json = True
+                    i += 1
+                elif all_args[i] == '--compact':
+                    compact = True
+                    i += 1
+                else:
+                    i += 1
+            
+            # Show material properties and statistics
+            if material_id:
+                # Show properties for specific material
+                props = db.get_material_properties(material_id)
                 
+                # Filter by calculation type if requested
+                if calc_type_filter and props:
+                    filtered_props = []
+                    for prop in props:
+                        if prop.get('calc_id'):
+                            # Get calculation info
+                            calc_info = db.get_calculation(prop['calc_id'])
+                            if calc_info and calc_info.get('calc_type') == calc_type_filter:
+                                filtered_props.append(prop)
+                    props = filtered_props
+                
+                if props:
+                    # Get material info for header
+                    mat_info = db.get_material(material_id)
+                    
+                    print(f"\n{'=' * 70}")
+                    print(f"Material: {material_id}")
+                    if mat_info:
+                        print(f"Formula: {mat_info.get('formula', 'N/A')}")
+                        print(f"Space Group: {mat_info.get('space_group', 'N/A')}")
+                    if calc_type_filter:
+                        print(f"Properties from: {calc_type_filter} calculations only")
+                    print(f"{'=' * 70}")
+                    
+                    # Group properties by category
+                    props_by_category = {}
+                    for prop in props:
+                        category = prop.get('property_category', 'General')
+                        if category_filter and category.lower() != category_filter.lower():
+                            continue
+                        if category not in props_by_category:
+                            props_by_category[category] = []
+                        props_by_category[category].append(prop)
+                    
+                    if not props_by_category:
+                        print(f"\nNo properties found matching filters.")
+                        if category_filter:
+                            print(f"Category filter: {category_filter}")
+                        if calc_type_filter:
+                            print(f"Calculation type filter: {calc_type_filter}")
+                    else:
+                        # Display properties by category
+                        for category, cat_props in sorted(props_by_category.items()):
+                            if not compact:
+                                print(f"\n{'-' * 50}")
+                                print(f"{category.upper()}")
+                                print(f"{'-' * 50}")
+                            else:
+                                print(f"\n{category}:")
+                            
+                            # Sort properties with custom ordering
+                            def property_sort_key(prop):
+                                name = prop['property_name']
+                                # Priority order for common prefixes
+                                if name.startswith('initial_'):
+                                    return (0, name)
+                                elif name.startswith('final_'):
+                                    return (1, name)
+                                else:
+                                    return (2, name)
+                            
+                            cat_props.sort(key=property_sort_key)
+                            
+                            # Determine if we should show JSON for this category
+                            has_json = any('JSON' in str(p.get('property_unit', '')) or 
+                                         isinstance(p['property_value'], (dict, list)) or
+                                         (isinstance(p['property_value'], str) and 
+                                          (p['property_value'].startswith('[') or p['property_value'].startswith('{')))
+                                         for p in cat_props)
+                            
+                            for prop in cat_props:
+                                value = prop['property_value']
+                                unit = prop.get('property_unit', '')
+                                name = prop['property_name']
+                                
+                                # Format property name nicely
+                                display_name = name.replace('_', ' ').title()
+                                
+                                # Check if value is JSON or complex data
+                                is_json_value = (unit == 'JSON' or 
+                                               isinstance(value, (dict, list)) or
+                                               (isinstance(value, str) and 
+                                                (value.startswith('[') or value.startswith('{'))))
+                                
+                                if is_json_value and not show_json:
+                                    # Show simplified version for JSON data
+                                    if compact:
+                                        print(f"  {name}: <complex data>")
+                                    else:
+                                        print(f"  {display_name:.<40} <complex data - use --json to show>")
+                                elif is_json_value and show_json:
+                                    # Show full JSON data
+                                    print(f"  {display_name}:")
+                                    if isinstance(value, str):
+                                        try:
+                                            import json
+                                            parsed = json.loads(value)
+                                            print(f"    {json.dumps(parsed, indent=4)}")
+                                        except:
+                                            print(f"    {value}")
+                                    else:
+                                        import json
+                                        print(f"    {json.dumps(value, indent=4)}")
+                                else:
+                                    # Format numeric values nicely
+                                    if isinstance(value, float):
+                                        # Use appropriate precision based on magnitude
+                                        if abs(value) < 0.001 or abs(value) > 10000:
+                                            value_str = f"{value:.6e}"
+                                        else:
+                                            value_str = f"{value:.6f}".rstrip('0').rstrip('.')
+                                    else:
+                                        value_str = str(value)
+                                    
+                                    if compact:
+                                        print(f"  {name}: {value_str} {unit}".strip())
+                                    else:
+                                        # Aligned display with dots
+                                        if unit:
+                                            print(f"  {display_name:.<40} {value_str} {unit}")
+                                        else:
+                                            print(f"  {display_name:.<40} {value_str}")
+                        
+                        # Show summary
+                        total_props = sum(len(props) for props in props_by_category.values())
+                        print(f"\n{'-' * 50}")
+                        print(f"Total properties: {total_props}")
+                        print(f"Categories: {', '.join(sorted(props_by_category.keys()))}")
+                        
+                        # Show available options
+                        print(f"\nOptions:")
+                        print(f"  --category <name>   Show only properties from specific category")
+                        print(f"  --from-calc <type>  Show only properties from specific calculation type")
+                        print(f"  --compact           Compact display format")
+                        print(f"  --json              Show full JSON data for complex properties")
+                        
+                else:
+                    print(f"\nNo properties found for material '{material_id}'")
+                    if calc_type_filter:
+                        print(f"(filtered by calculation type: {calc_type_filter})")
+            else:
+                # Show property statistics across all materials
+                # Check for formatting options and filters
+                compact = '--compact' in all_args
+                show_json = '--json' in all_args
+                
+                # Parse category filter
+                category_filter = None
+                for i, arg in enumerate(all_args):
+                    if arg == '--category' and i + 1 < len(all_args):
+                        category_filter = all_args[i + 1]
+                        break
+                
+                # Get all properties
+                all_props = db.get_all_properties()
+                
+                if all_props:
+                    # Count materials with properties
+                    materials_with_props = set()
+                    prop_counts = {}
+                    prop_values = {}
+                    prop_categories = {}
+                    prop_units = {}
+                    prop_by_category = {}
+                    
+                    for prop in all_props:
+                        materials_with_props.add(prop['material_id'])
+                        prop_name = prop['property_name']
+                        category = prop.get('property_category', 'Other')
+                        unit = prop.get('property_unit', '')
+                        
+                        # Count occurrences
+                        if prop_name not in prop_counts:
+                            prop_counts[prop_name] = 0
+                            prop_values[prop_name] = []
+                            prop_categories[prop_name] = category
+                            prop_units[prop_name] = unit
+                        prop_counts[prop_name] += 1
+                        
+                        # Group by category
+                        if category not in prop_by_category:
+                            prop_by_category[category] = {}
+                        prop_by_category[category][prop_name] = prop_counts[prop_name]
+                        
+                        # Collect values for numeric properties
+                        try:
+                            value = float(prop['property_value'])
+                            prop_values[prop_name].append(value)
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    # Display header
+                    if not compact:
+                        print("\n" + "=" * 70)
+                        print("PROPERTY STATISTICS DATABASE")
+                        print("=" * 70)
+                        print(f"\nMaterials with properties: {len(materials_with_props)}")
+                        print(f"Total property entries: {len(all_props)}")
+                        print(f"Unique properties tracked: {len(prop_counts)}")
+                    else:
+                        print("\n=== Property Statistics ===")
+                        print(f"Materials with properties: {len(materials_with_props)}")
+                        print(f"Total property entries: {len(all_props)}")
+                    
+                    # Skip certain non-meaningful properties in stats
+                    skip_props = ['advanced_analysis_available', 'has_dielectric_data',
+                                  'advanced_analysis_note', 'dielectric_extraction_note',
+                                  'calculation_type', 'neighbor_analysis', 'vibrational_temperatures',
+                                  'has_normal_mode_displacements', 'has_force_constants',
+                                  'has_FREQUENCY_data', 'atomic_positions', 'final_atomic_positions',
+                                  'initial_initial_atomic_positions', 'final_final_atomic_positions',
+                                  'mulliken_alpha_plus_beta', 'mulliken_alpha_minus_beta',
+                                  'overlap_population_alpha_plus_beta', 'overlap_population_alpha_minus_beta']
+                    
+                    # Define category order for consistent sorting
+                    category_order = ['structural', 'lattice', 'electronic', 'electronic_classification',
+                                    'optimization', 'computational', 'thermodynamic', 'vibrational',
+                                    'crystallographic', 'population_analysis', 'other']
+                    
+                    if not compact:
+                        # Show property availability by category
+                        print("\n" + "-" * 50)
+                        print("PROPERTY AVAILABILITY BY CATEGORY")
+                        print("-" * 50)
+                        
+                        sorted_categories = sorted(prop_by_category.items(), 
+                                                 key=lambda x: (category_order.index(x[0].lower()) 
+                                                               if x[0].lower() in category_order else 999, x[0]))
+                        
+                        # Apply category filter if specified
+                        if category_filter:
+                            sorted_categories = [(cat, props) for cat, props in sorted_categories 
+                                               if cat.lower() == category_filter.lower()]
+                            if not sorted_categories:
+                                print(f"\nNo properties found in category '{category_filter}'")
+                                print(f"Available categories: {', '.join(sorted(prop_by_category.keys()))}")
+                                return
+                        
+                        for category, props in sorted_categories:
+                            print(f"\n{category.upper()}:")
+                            # Sort properties within category
+                            def prop_sort_key(item):
+                                name = item[0]
+                                if name.startswith('initial_'):
+                                    return (0, name)
+                                elif name.startswith('final_'):
+                                    return (1, name)
+                                else:
+                                    return (2, name)
+                            
+                            sorted_props = sorted(props.items(), key=prop_sort_key)
+                            for prop_name, count in sorted_props:
+                                display_name = prop_name.replace('_', ' ').title()
+                                print(f"  {display_name:.<50} {count} materials")
+                    else:
+                        # Compact view - just show counts
+                        print("\nProperty availability:")
+                        
+                        # Apply category filter if specified
+                        if category_filter:
+                            filtered_props = {name: count for name, count in prop_counts.items()
+                                            if prop_categories.get(name, 'Other').lower() == category_filter.lower()}
+                            if not filtered_props:
+                                print(f"\nNo properties found in category '{category_filter}'")
+                                print(f"Available categories: {', '.join(sorted(set(prop_categories.values())))}")
+                                return
+                            props_to_show = filtered_props
+                            print(f"Category: {category_filter.upper()}")
+                        else:
+                            props_to_show = prop_counts
+                        
+                        sorted_props = sorted(props_to_show.items(), key=lambda x: x[1], reverse=True)
+                        for prop_name, count in sorted_props[:20]:
+                            print(f"  {prop_name}: {count} materials")
+                        if len(sorted_props) > 20:
+                            print(f"  ... and {len(sorted_props) - 20} more properties")
+                    
+                    # Show statistics for numeric properties
+                    if not compact:
+                        print("\n" + "-" * 50)
+                        print("NUMERIC PROPERTY RANGES")
+                        print("-" * 50)
+                    else:
+                        print("\nNumeric property ranges:")
+                    
+                    # Group numeric properties by category
+                    numeric_by_category = {}
+                    for prop_name, values in prop_values.items():
+                        if values and len(values) >= 1 and prop_name not in skip_props:
+                            category = prop_categories.get(prop_name, 'Other')
+                            if category not in numeric_by_category:
+                                numeric_by_category[category] = {}
+                            numeric_by_category[category][prop_name] = values
+                    
+                    # Display numeric properties by category
+                    if numeric_by_category:
+                        sorted_num_categories = sorted(numeric_by_category.items(), 
+                                                     key=lambda x: (category_order.index(x[0].lower()) 
+                                                                   if x[0].lower() in category_order else 999, x[0]))
+                        
+                        # Apply category filter if specified
+                        if category_filter:
+                            sorted_num_categories = [(cat, props) for cat, props in sorted_num_categories 
+                                                   if cat.lower() == category_filter.lower()]
+                        
+                        for category, props in sorted_num_categories:
+                            if not compact:
+                                print(f"\n{category.upper()}:")
+                            
+                            # Sort properties within category
+                            def prop_sort_key(item):
+                                name = item[0]
+                                if name.startswith('initial_'):
+                                    return (0, name)
+                                elif name.startswith('final_'):
+                                    return (1, name)
+                                else:
+                                    return (2, name)
+                            
+                            sorted_props = sorted(props.items(), key=prop_sort_key)
+                            
+                            for prop_name, values in sorted_props:
+                                min_val = min(values)
+                                max_val = max(values)
+                                avg_val = sum(values) / len(values)
+                                unit = prop_units.get(prop_name, '')
+                                
+                                if compact:
+                                    # Compact format
+                                    print(f"  {prop_name}: min={min_val:.3g}, max={max_val:.3g}, avg={avg_val:.3g} {unit}".strip())
+                                else:
+                                    # Full format
+                                    display_name = prop_name.replace('_', ' ').title()
+                                    print(f"\n  {display_name}:")
+                                    
+                                    # Format values based on magnitude
+                                    if abs(min_val) < 0.001 or abs(min_val) > 10000:
+                                        min_str = f"{min_val:.6e}"
+                                    else:
+                                        min_str = f"{min_val:.6f}".rstrip('0').rstrip('.')
+                                    
+                                    if abs(max_val) < 0.001 or abs(max_val) > 10000:
+                                        max_str = f"{max_val:.6e}"
+                                    else:
+                                        max_str = f"{max_val:.6f}".rstrip('0').rstrip('.')
+                                    
+                                    if abs(avg_val) < 0.001 or abs(avg_val) > 10000:
+                                        avg_str = f"{avg_val:.6e}"
+                                    else:
+                                        avg_str = f"{avg_val:.6f}".rstrip('0').rstrip('.')
+                                    
+                                    print(f"    Minimum....................... {min_str} {unit}")
+                                    print(f"    Maximum....................... {max_str} {unit}")
+                                    print(f"    Average....................... {avg_str} {unit}")
+                                    print(f"    Materials with data.......... {len(values)}")
+                                    
+                                    if show_json:
+                                        # Show distribution data
+                                        print(f"    Distribution:")
+                                        import json
+                                        dist_data = {
+                                            "values": sorted(values)[:10],  # First 10 values
+                                            "count": len(values),
+                                            "std_dev": (sum((x - avg_val)**2 for x in values) / len(values))**0.5 if len(values) > 1 else 0
+                                        }
+                                        print(f"      {json.dumps(dist_data, indent=6)}")
+                    
+                    if not compact:
+                        # Show summary and options
+                        print("\n" + "=" * 70)
+                        print("\nOptions:")
+                        print("  --material-id ID    View properties for a specific material")
+                        print("  --category <name>   Show only properties from specific category")
+                        print("  --compact           Compact display format")
+                        print("  --json              Show distribution data for numeric properties")
+                        
+                        print("\nExamples:")
+                        print("  mace database --action properties --compact")
+                        print("  mace database --action properties --json")
+                        print("  mace database --action properties --category electronic")
+                        print("  mace database --action properties --material-id 1_dia")
+                else:
+                    print("No properties found in database")
+                    
+                if compact:
+                    print("\nUse --material-id ID to see properties for a specific material")
+                    print("Use without --compact for detailed view")
+                    
+        elif action == 'export':
+            # Parse export options
+            export_format = 'csv'  # default
+            output_file = export_csv
+            include_properties = []
+            include_structures = False
+            properties_only = False
+            filter_strings = []
+            filter_logic = 'AND'
+            
+            # Parse additional export arguments
+            i = 0
+            while i < len(all_args):
+                if all_args[i] == '--format' and i + 1 < len(all_args):
+                    export_format = all_args[i + 1].lower()
+                    i += 2
+                elif all_args[i] == '--output' and i + 1 < len(all_args):
+                    output_file = all_args[i + 1]
+                    i += 2
+                elif all_args[i] == '--include-property' and i + 1 < len(all_args):
+                    include_properties.append(all_args[i + 1])
+                    i += 2
+                elif all_args[i] == '--include-structures':
+                    include_structures = True
+                    i += 1
+                elif all_args[i] == '--properties-only':
+                    properties_only = True
+                    i += 1
+                elif all_args[i] == '--filter' and i + 1 < len(all_args):
+                    filter_strings.append(all_args[i + 1])
+                    i += 2
+                elif all_args[i] == '--logic' and i + 1 < len(all_args):
+                    filter_logic = all_args[i + 1].upper()
+                    i += 2
+                else:
+                    i += 1
+                    
+            # Use new export functionality
+            try:
+                from database.export import export_materials
+                
+                # Handle include_properties
+                if not include_properties:
+                    include_properties = None  # Include all
+                    
+                exported_file = export_materials(
+                    db,
+                    format=export_format,
+                    output_file=output_file,
+                    filters=filter_strings,
+                    logic=filter_logic,
+                    properties_only=properties_only,
+                    include_properties=include_properties,
+                    include_structures=include_structures
+                )
+                
+                if exported_file:
+                    print(f"\nSuccessfully exported to: {exported_file}")
+                    print(f"Format: {export_format}")
+                    
+                    # Show what was exported
+                    if properties_only:
+                        print("Exported: All properties")
+                    elif filter_strings:
+                        print(f"Exported: Filtered materials ({filter_logic} logic)")
+                        for f in filter_strings:
+                            print(f"  - {f}")
+                    else:
+                        print("Exported: All materials")
+                        
+                    if include_properties and not properties_only:
+                        print(f"Included properties: {', '.join(include_properties)}")
+                else:
+                    print("Export failed.")
+                    
+            except ImportError as e:
+                print(f"Error: {e}")
+                print("\nFalling back to basic CSV export...")
+                # Fallback to basic export
+                if output_file:
+                    materials = db.get_all_materials()
+                    import csv
+                    with open(output_file, 'w', newline='') as f:
+                        if materials:
+                            writer = csv.DictWriter(f, fieldnames=materials[0].keys())
+                            writer.writeheader()
+                            writer.writerows(materials)
+                    print(f"Exported {len(materials)} materials to {output_file}")
+                else:
+                    print("Please specify --export-csv FILE or --output FILE")
+            except Exception as e:
+                print(f"Export error: {e}")
+                
+        elif action == 'compare':
+            # Compare materials
+            # Parse compare-specific arguments
+            materials_to_compare = []
+            properties_to_compare = []
+            output_format = 'table'
+            
+            i = 0
+            while i < len(all_args):
+                if all_args[i] == '--materials' and i + 1 < len(all_args):
+                    # Parse comma-separated list
+                    materials_to_compare = all_args[i + 1].split(',')
+                    i += 2
+                elif all_args[i] == '--properties' and i + 1 < len(all_args):
+                    # Parse comma-separated list
+                    properties_to_compare = all_args[i + 1].split(',')
+                    i += 2
+                elif all_args[i] == '--output-format' and i + 1 < len(all_args):
+                    output_format = all_args[i + 1].lower()
+                    i += 2
+                else:
+                    i += 1
+                    
+            if not materials_to_compare:
+                print("Error: Please specify materials to compare with --materials")
+                print("Example: mace database --action compare --materials '1_dia,2_dia2,3_dia3'")
+            else:
+                try:
+                    from database.analysis import compare_materials
+                    
+                    # If no properties specified, compare all
+                    if not properties_to_compare:
+                        properties_to_compare = None
+                        
+                    result = compare_materials(
+                        db,
+                        materials_to_compare,
+                        properties_to_compare,
+                        output_format
+                    )
+                    
+                    print(result)
+                    
+                except ImportError as e:
+                    print(f"Error importing comparison module: {e}")
+                except Exception as e:
+                    print(f"Comparison error: {e}")
+                    
+        elif action == 'missing':
+            # Analyze missing data
+            # Parse missing-specific arguments
+            material_ids = []
+            target_properties = []
+            output_format = 'report'
+            detail_level = 'summary'
+            
+            i = 0
+            while i < len(all_args):
+                if all_args[i] == '--material-ids' and i + 1 < len(all_args):
+                    # Parse comma-separated list
+                    material_ids = all_args[i + 1].split(',')
+                    i += 2
+                elif all_args[i] == '--target-properties' and i + 1 < len(all_args):
+                    # Parse comma-separated list
+                    target_properties = all_args[i + 1].split(',')
+                    i += 2
+                elif all_args[i] == '--output-format' and i + 1 < len(all_args):
+                    output_format = all_args[i + 1].lower()
+                    i += 2
+                elif all_args[i] == '--detail-level' and i + 1 < len(all_args):
+                    detail_level = all_args[i + 1].lower()
+                    i += 2
+                else:
+                    i += 1
+            
+            try:
+                from mace.database.analysis import analyze_missing_data
+                result = analyze_missing_data(
+                    db,
+                    material_ids if material_ids else None,
+                    target_properties if target_properties else None,
+                    output_format,
+                    detail_level
+                )
+                print(result)
+            except Exception as e:
+                print(f"Missing data analysis error: {e}")
+                    
+        elif action == 'correlate':
+            # Calculate property correlations
+            # Parse correlation-specific arguments
+            property_pairs = []
+            min_samples = 3
+            output_format = 'report'
+            top_n = 20
+            
+            i = 0
+            while i < len(all_args):
+                if all_args[i] == '--properties' and i + 1 < len(all_args):
+                    # Parse property pairs like "band_gap,total_energy"
+                    pairs_str = all_args[i + 1]
+                    for pair in pairs_str.split(';'):
+                        if ',' in pair:
+                            prop1, prop2 = pair.split(',', 1)
+                            property_pairs.append((prop1.strip(), prop2.strip()))
+                    i += 2
+                elif all_args[i] == '--min-samples' and i + 1 < len(all_args):
+                    min_samples = int(all_args[i + 1])
+                    i += 2
+                elif all_args[i] == '--output-format' and i + 1 < len(all_args):
+                    output_format = all_args[i + 1].lower()
+                    i += 2
+                elif all_args[i] == '--top-n' and i + 1 < len(all_args):
+                    top_n = int(all_args[i + 1])
+                    i += 2
+                else:
+                    i += 1
+            
+            try:
+                from mace.database.analysis import calculate_property_correlations
+                result = calculate_property_correlations(
+                    db,
+                    property_pairs if property_pairs else None,
+                    min_samples,
+                    output_format,
+                    top_n
+                )
+                print(result)
+            except Exception as e:
+                print(f"Correlation analysis error: {e}")
+                
+        elif action == 'distribution' or action == 'distribute':
+            # Analyze property distributions
+            # Parse distribution-specific arguments
+            properties = []
+            n_bins = 10
+            output_format = 'report'
+            top_n = 10
+            
+            i = 0
+            while i < len(all_args):
+                if all_args[i] == '--properties' and i + 1 < len(all_args):
+                    # Parse comma-separated properties
+                    properties = [p.strip() for p in all_args[i + 1].split(',')]
+                    i += 2
+                elif all_args[i] == '--bins' and i + 1 < len(all_args):
+                    n_bins = int(all_args[i + 1])
+                    i += 2
+                elif all_args[i] == '--output-format' and i + 1 < len(all_args):
+                    output_format = all_args[i + 1].lower()
+                    i += 2
+                elif all_args[i] == '--top-n' and i + 1 < len(all_args):
+                    top_n = int(all_args[i + 1])
+                    i += 2
+                else:
+                    i += 1
+            
+            try:
+                from mace.database.analysis import analyze_property_distributions
+                result = analyze_property_distributions(
+                    db,
+                    properties if properties else None,
+                    n_bins,
+                    output_format,
+                    top_n
+                )
+                print(result)
+            except Exception as e:
+                print(f"Distribution analysis error: {e}")
+                    
         elif action == 'clean':
             # Clean up orphaned records
             print("Database cleanup not yet implemented")

@@ -29,8 +29,8 @@ import glob
 import re
 
 # Import MACE components
-from database.materials import MaterialDatabase, create_material_id_from_file
-from utils.formula_extractor import extract_formula_from_d12
+from mace.database.materials import MaterialDatabase, create_material_id_from_file
+from mace.utils.formula_extractor import extract_formula_from_d12
 
 
 class CrystalFileManager:
