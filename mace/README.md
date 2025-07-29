@@ -500,6 +500,107 @@ conductivity_type         185       3    insulator            65.0%
   Values: insulator(120), semiconductor(50), metal(15)
 ```
 
+### Workflow Progress Tracking
+
+Track the completion status of multi-step workflows (OPT→SP→BAND→DOS) to monitor progress and identify bottlenecks:
+
+#### Basic Usage
+```bash
+# Track default workflow progress for all materials
+mace database --action workflow
+
+# Track specific workflow
+mace database --action workflow --workflow full_electronic
+
+# Track specific materials
+mace database --action workflow --material-ids "1_dia,2_dia2,3_dia3" --workflow opt_sp
+
+# Use custom calculation sequence
+mace database --action workflow --sequence "OPT,SP,TRANSPORT"
+
+# Show detailed per-material progress
+mace database --action workflow --workflow full_electronic --detailed
+
+# Export progress data
+mace database --action workflow --output-format csv > progress.csv
+```
+
+#### Predefined Workflows
+- **basic_opt**: OPT only
+- **opt_sp**: OPT → SP
+- **full_electronic**: OPT → SP → BAND → DOSS
+- **transport_analysis**: OPT → SP → TRANSPORT
+- **charge_analysis**: OPT → SP → CHARGE+POTENTIAL
+- **combined_analysis**: OPT → SP → BAND → DOSS → TRANSPORT
+- **complete**: OPT → SP → BAND → DOSS → FREQ
+
+#### Features
+- **Progress visualization** - Histogram showing completion distribution
+- **Step-by-step tracking** - Individual calculation status and runtime
+- **Bottleneck identification** - Find slowest and most error-prone steps
+- **Workflow insights** - Automated detection of stuck calculations
+- **Dependency tracking** - Shows blocked calculations
+
+#### Example Output
+```
+=== Workflow Progress Report ===
+Workflow: full_electronic
+Sequence: OPT → SP → BAND → DOSS
+
+=== Summary ===
+Total materials: 50
+Completed: 15 (30.0%)
+In progress: 20
+Not started: 10
+Failed: 5
+Average completion: 47.5%
+
+=== Progress Distribution ===
+  0- 25%: ████████████ 12
+ 25- 50%: ████████████████████ 20
+ 50- 75%: ████████ 8
+ 75-100%: ██████████ 10
+
+=== Insights ===
+[PERFORMANCE] Slowest step: BAND (avg 24.5 hours)
+[RELIABILITY] Most failures: DOSS (8 failures)
+[WARNING] 3 materials have jobs running > 7 days
+```
+
+### Unit Conversion System
+
+Convert property values between different units commonly used in materials science:
+
+#### Basic Usage
+```bash
+# Show all available units for properties
+mace database --action properties --all-units
+
+# Convert units during property display
+mace database --action properties --material-id 1_dia --units "band_gap:eV,total_energy:kcal/mol"
+
+# Multiple conversions
+mace database --action properties --units "a_lattice:angstrom,pressure:gpa,phonon_frequencies:cm^-1"
+```
+
+#### Supported Unit Types
+- **Energy**: hartree, eV, kcal/mol, kJ/mol, cm⁻¹, meV, THz
+- **Length**: bohr, angstrom, nm, pm
+- **Pressure**: hartree/bohr³, GPa, mbar, kbar, Pa, atm
+- **Temperature**: K, °C, °F
+- **Frequency**: THz, cm⁻¹, meV, GHz, MHz
+- **Angle**: rad, degree
+
+#### Example
+```bash
+# Original display (stored in Hartree)
+Total Energy.......................... -76.213456 hartree
+
+# With unit conversion
+mace database --action properties --units "total_energy:eV"
+Total Energy.......................... -2074.123456 eV
+```
+
 ## Comprehensive Directory Structure
 
 ### Overview

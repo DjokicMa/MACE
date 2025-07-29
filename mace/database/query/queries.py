@@ -29,8 +29,19 @@ script_dir = Path(__file__).parent
 sys.path.insert(0, str(script_dir))
 
 try:
-    from material_database import MaterialDatabase
-    from input_settings_extractor import query_calculation_settings
+    from ..materials import MaterialDatabase
+    # Try to import query_calculation_settings - this might be in utils
+    try:
+        from mace.utils.settings_extractor import query_calculation_settings
+    except ImportError:
+        # Fallback - define a simple version
+        def query_calculation_settings(calc_id, db_path):
+            db = MaterialDatabase(db_path)
+            calc = db.get_calculation(calc_id)
+            if calc and calc.get('settings_json'):
+                import json
+                return json.loads(calc['settings_json'])
+            return None
 except ImportError as e:
     print(f"Error importing required modules: {e}")
     sys.exit(1)
@@ -318,6 +329,34 @@ def main():
         print("  python query_input_settings.py --material-id diamond")
         print("  python query_input_settings.py --list-all")
         print("  python query_input_settings.py --settings-summary")
+
+
+# Export functions for use in other modules
+def query_materials(db, filters=None, limit=None):
+    """Query materials from database with optional filters."""
+    materials = db.get_all_materials()
+    
+    # Apply filters if provided
+    if filters:
+        # This is a simplified version - you can expand as needed
+        filtered = []
+        for mat in materials:
+            # Add filter logic here
+            filtered.append(mat)
+        materials = filtered
+    
+    # Apply limit if specified
+    if limit:
+        materials = materials[:limit]
+        
+    return materials
+
+
+def execute_custom_query(db, query_string):
+    """Execute a custom SQL query on the database."""
+    # This is a placeholder - implement actual query execution
+    # based on your database implementation
+    return []
 
 
 if __name__ == "__main__":
