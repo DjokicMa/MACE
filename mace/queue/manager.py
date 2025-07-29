@@ -154,10 +154,28 @@ class EnhancedCrystalQueueManager:
         """Detect if we're running in a workflow context."""
         cwd = Path.cwd()
         
-        # Check current directory and up to 5 parent directories
+        # First, check if we have MACE_WORKFLOW_ID environment variable set
+        # This is a more reliable indicator when running from SLURM scripts
+        if os.environ.get('MACE_WORKFLOW_ID'):
+            # Try to find the workflow root based on the workflow ID
+            workflow_id = os.environ.get('MACE_WORKFLOW_ID')
+            
+            # Check current directory and up to 10 parent directories for the workflow root
+            current = cwd
+            for _ in range(10):
+                # Look for workflow indicators at this level
+                if (current / "workflow_outputs" / workflow_id).exists():
+                    self.workflow_root = current
+                    return True
+                if current.parent == current:
+                    break
+                current = current.parent
+        
+        # Fallback to directory-based detection
+        # Check current directory and up to 7 parent directories
         check_dirs = [cwd]
         current = cwd
-        for _ in range(5):
+        for _ in range(7):
             if current.parent != current:
                 current = current.parent
                 check_dirs.append(current)
@@ -165,6 +183,7 @@ class EnhancedCrystalQueueManager:
                 break
         
         # Check for workflow indicators in any of these directories
+        workflow_root_candidate = None
         for check_dir in check_dirs:
             workflow_indicators = [
                 check_dir / "workflow_scripts",
@@ -174,9 +193,29 @@ class EnhancedCrystalQueueManager:
             ]
             
             if any(indicator.exists() for indicator in workflow_indicators):
-                # Found workflow root
-                self.workflow_root = check_dir
-                return True
+                # Store the first (deepest) candidate
+                if workflow_root_candidate is None:
+                    workflow_root_candidate = check_dir
+                
+                # Check if this is the true workflow root by verifying it has multiple indicators
+                indicators_found = sum(1 for ind in workflow_indicators if ind.exists())
+                if indicators_found >= 3:  # Strong indication this is the root
+                    self.workflow_root = check_dir
+                    return True
+        
+        # If we found a candidate but not a strong match, use the highest level candidate
+        if workflow_root_candidate:
+            # Find the highest level directory with workflow indicators
+            for check_dir in reversed(check_dirs):
+                workflow_indicators = [
+                    check_dir / "workflow_scripts",
+                    check_dir / "workflow_configs", 
+                    check_dir / "workflow_outputs",
+                    check_dir / "workflow_inputs"
+                ]
+                if any(indicator.exists() for indicator in workflow_indicators):
+                    self.workflow_root = check_dir
+                    return True
         
         self.workflow_root = None
         return False
@@ -341,8 +380,16 @@ class EnhancedCrystalQueueManager:
             # Import and use WorkflowEngine for proper workflow handling
             from mace.workflow.engine import WorkflowEngine
             
-            # Initialize workflow engine with same database
-            workflow_engine = WorkflowEngine(self.db_path, str(self.d12_dir))
+            # Determine the correct base directory for workflow engine
+            if self.is_workflow_context and hasattr(self, 'workflow_root'):
+                # Use the workflow root directory when in workflow context
+                base_dir = str(self.workflow_root)
+            else:
+                # Use the d12_dir for non-workflow contexts
+                base_dir = str(self.d12_dir)
+            
+            # Initialize workflow engine with same database and correct base directory
+            workflow_engine = WorkflowEngine(self.db_path, base_dir)
             
             # Process completed calculations and generate next steps
             new_calc_ids = workflow_engine.process_completed_calculations()
@@ -1250,8 +1297,16 @@ class EnhancedCrystalQueueManager:
             # Import and use WorkflowEngine for proper workflow handling
             from mace.workflow.engine import WorkflowEngine
             
-            # Initialize workflow engine with same database
-            workflow_engine = WorkflowEngine(self.db_path, str(self.base_dir))
+            # Determine the correct base directory for workflow engine
+            if self.is_workflow_context and hasattr(self, 'workflow_root'):
+                # Use the workflow root directory when in workflow context
+                base_dir = str(self.workflow_root)
+            else:
+                # Use the d12_dir for non-workflow contexts
+                base_dir = str(self.d12_dir)
+            
+            # Initialize workflow engine with same database and correct base directory
+            workflow_engine = WorkflowEngine(self.db_path, base_dir)
             
             # Process completed calculations and generate next steps
             new_calc_ids = workflow_engine.execute_workflow_step(material_id, completed_calc_id)

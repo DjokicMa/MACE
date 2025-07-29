@@ -112,12 +112,16 @@ Options:
   --from-calc TYPE      Show only properties from calculation type (OPT, SP, etc.)
   --compact             Compact display format
   --json                Show full JSON data including distributions
+  --units UNIT_MAP      Convert units (e.g., "band_gap:eV,total_energy:kcal/mol")
+  --all-units           Show all available units for properties
 
 Examples:
   mace database --action properties
   mace database --action properties --material-id 1_dia
   mace database --action properties --category electronic --compact
   mace database --action properties --material-id 1_dia --from-calc OPT
+  mace database --action properties --units "band_gap:eV,total_energy:eV"
+  mace database --action properties --all-units
 """,
         'export': """
 Usage: mace database --action export [options]
@@ -202,6 +206,136 @@ Examples:
   mace database --action distribution
   mace database --action distribution --properties "band_gap,density,total_energy"
   mace database --action distribution --bins 20 --top-n 15
+""",
+        'workflow': """
+Usage: mace database --action workflow [options]
+
+Track workflow progress for materials.
+
+Options:
+  --material-ids LIST   Comma-separated material IDs (default: all)
+  --workflow NAME       Predefined workflow: basic_opt, opt_sp, full_electronic, 
+                        transport_analysis, charge_analysis, combined_analysis, complete
+  --sequence LIST       Custom sequence (e.g., "OPT,SP,BAND")
+  --detailed            Show detailed per-material progress
+  --output-format FMT   Output format: report, json, csv
+
+Examples:
+  mace database --action workflow                          # Track default workflow
+  mace database --action workflow --workflow full_electronic --detailed
+  mace database --action workflow --material-ids "1_dia,2_dia2" --workflow opt_sp
+  mace database --action workflow --sequence "OPT,SP,TRANSPORT"
+""",
+        'validate': """
+Usage: mace database --action validate [options]
+
+Validate property values and check data integrity.
+
+Options:
+  --material-ids LIST   Comma-separated material IDs (default: all)
+  --fix                 Automatically fix issues where possible
+  --check-integrity     Also check database integrity
+  --output-format FMT   Output format: report, json
+
+Validation checks:
+  - Property type validation (float, int, string, etc.)
+  - Range validation (min/max values)
+  - Unit consistency
+  - Cross-property validation (e.g., lattice parameters vs crystal system)
+  - Database integrity (orphaned records, duplicates)
+
+Examples:
+  mace database --action validate                          # Validate all materials
+  mace database --action validate --material-ids "1_dia,2_dia2"
+  mace database --action validate --fix                    # Fix issues automatically
+  mace database --action validate --check-integrity        # Full database check
+""",
+        'history': """
+Usage: mace database --action history [options]
+
+View and manage property change history.
+
+Options:
+  --material-id ID      Material ID (required for most operations)
+  --property NAME       Specific property name
+  --operation OP        Operation: view, snapshot, compare, rollback, recent
+  --version N           Version number (for rollback/compare)
+  --version2 N          Second version for comparison
+  --limit N             Limit number of results (default: 100)
+  --reason TEXT         Reason for change/rollback
+
+Operations:
+  view      View property history (default)
+  snapshot  Create versioned snapshot of all properties
+  compare   Compare two versions
+  rollback  Rollback property to previous version
+  recent    Show recent changes across all materials
+
+Examples:
+  mace database --action history --material-id 1_dia
+  mace database --action history --material-id 1_dia --property band_gap
+  mace database --action history --operation snapshot --material-id 1_dia
+  mace database --action history --operation compare --material-id 1_dia --version 1 --version2 3
+  mace database --action history --operation recent --limit 50
+""",
+        'interactive': """
+Usage: mace database --action interactive
+
+Launch interactive database explorer with command completion.
+
+The interactive mode provides:
+  - Tab completion for commands and material IDs
+  - Property filtering and queries
+  - Real-time unit conversion
+  - Material comparison
+  - Export capabilities
+  - Command history
+
+Interactive commands:
+  select        Select material for exploration
+  list          List materials
+  search        Search by ID or formula
+  filter        Add property filters
+  query         Execute filtered query
+  props         Show material properties
+  compare       Compare materials
+  export        Export results
+  help          Show all commands
+
+Example:
+  mace database --action interactive
+  mace-db> select 1_dia
+  mace-db [1_dia]> props
+  mace-db [1_dia]> filter band_gap > 3.0
+  mace-db [1_dia]> query
+""",
+        'aggregate': """
+Usage: mace database --action aggregate [options]
+
+Aggregate properties by material groups.
+
+Options:
+  --group-by TYPE       Grouping criterion (required)
+  --properties LIST     Comma-separated properties to aggregate (required)
+  --aggregation FUNC    Aggregation function: mean, median, min, max, sum, count, stdev
+  --filter "EXPR"       Filter materials before grouping
+  --detailed            Show detailed group information
+  --output-format FMT   Output format: report, json
+
+Grouping options:
+  space_group          Group by space group number
+  crystal_system       Group by crystal system
+  formula_prefix       Group by first element in formula
+  conductivity_type    Group by conductivity type
+  band_gap_range       Group by band gap ranges
+  energy_range         Group by total energy ranges
+  atoms_range          Group by number of atoms
+
+Examples:
+  mace database --action aggregate --group-by crystal_system --properties "band_gap,density"
+  mace database --action aggregate --group-by space_group --properties "total_energy" --aggregation min
+  mace database --action aggregate --group-by band_gap_range --properties "density,bulk_modulus" --detailed
+  mace database --action aggregate --group-by formula_prefix --properties "band_gap" --filter "space_group == 227"
 """
     }
     
@@ -643,6 +777,11 @@ ACTIONS:
   missing      Analyze missing properties and suggest calculations
   correlate    Calculate correlations between properties
   distribution Analyze property distributions and histograms
+  workflow     Track multi-step workflow progress
+  validate     Validate property values and data integrity
+  history      View property change history and versioning
+  interactive  Launch interactive database explorer
+  aggregate    Aggregate properties by material groups
 
 OPTIONS:
   --action ACTION       Action to perform (default: stats)
@@ -677,8 +816,12 @@ QUICK EXAMPLES:
   mace database --action correlate --properties "band_gap,total_energy"
   mace database --action distribution               # Property distributions
   mace database --action distribution --properties "band_gap,density" --bins 20
-
-Note: The 'clean' action is not yet implemented.
+  mace database --action workflow                    # Track workflow progress
+  mace database --action workflow --workflow full_electronic --detailed
+  mace database --action validate                    # Validate all materials
+  mace database --action validate --fix --check-integrity
+  mace database --action history --material-id 1_dia # View property history
+  mace database --action history --operation recent  # Recent changes
 """,
         'engine': """
 Usage: mace engine [options]
@@ -1349,6 +1492,8 @@ More Help:
             calc_type_filter = None
             show_json = False
             compact = False
+            units_map = {}
+            show_all_units = False
             
             # Continue parsing arguments for filters
             i = 0
@@ -1365,8 +1510,51 @@ More Help:
                 elif all_args[i] == '--compact':
                     compact = True
                     i += 1
+                elif all_args[i] == '--units' and i + 1 < len(all_args):
+                    # Parse unit conversion map
+                    units_str = all_args[i + 1]
+                    for unit_spec in units_str.split(','):
+                        if ':' in unit_spec:
+                            prop, unit = unit_spec.split(':', 1)
+                            units_map[prop.strip()] = unit.strip()
+                    i += 2
+                elif all_args[i] == '--all-units':
+                    show_all_units = True
+                    i += 1
                 else:
                     i += 1
+            
+            # Show all available units if requested
+            if show_all_units:
+                from mace.database.utils import get_property_units, get_default_unit
+                
+                print("\n=== Available Units for Properties ===\n")
+                
+                # Common properties with units
+                properties_with_units = [
+                    'total_energy', 'fermi_energy', 'band_gap', 'cohesive_energy',
+                    'a_lattice', 'b_lattice', 'c_lattice', 'cell_volume',
+                    'alpha', 'beta', 'gamma',
+                    'pressure', 'bulk_modulus', 'young_modulus',
+                    'phonon_frequencies', 'temperature'
+                ]
+                
+                for prop in properties_with_units:
+                    units = get_property_units(prop)
+                    if units:
+                        default = get_default_unit(prop)
+                        print(f"{prop}:")
+                        units_str = ", ".join(units)
+                        if default:
+                            print(f"  Units: {units_str}")
+                            print(f"  Default: {default}")
+                        else:
+                            print(f"  Units: {units_str}")
+                        print()
+                
+                print("Use --units \"property:unit\" to convert units during display")
+                print("Example: --units \"band_gap:eV,total_energy:kcal/mol\"")
+                return
             
             # Show material properties and statistics
             if material_id:
@@ -1477,22 +1665,38 @@ More Help:
                                         import json
                                         print(f"    {json.dumps(value, indent=4)}")
                                 else:
+                                    # Check if unit conversion requested
+                                    display_value = value
+                                    display_unit = unit
+                                    
+                                    if name in units_map and isinstance(value, (int, float)):
+                                        try:
+                                            from mace.database.utils import convert_units
+                                            # Convert from stored unit to requested unit
+                                            if unit:  # If we have a source unit
+                                                converted_value = convert_units(float(value), unit, units_map[name], name)
+                                                display_value = converted_value
+                                                display_unit = units_map[name]
+                                        except Exception as e:
+                                            # Conversion failed, show original
+                                            pass
+                                    
                                     # Format numeric values nicely
-                                    if isinstance(value, float):
+                                    if isinstance(display_value, float):
                                         # Use appropriate precision based on magnitude
-                                        if abs(value) < 0.001 or abs(value) > 10000:
-                                            value_str = f"{value:.6e}"
+                                        if abs(display_value) < 0.001 or abs(display_value) > 10000:
+                                            value_str = f"{display_value:.6e}"
                                         else:
-                                            value_str = f"{value:.6f}".rstrip('0').rstrip('.')
+                                            value_str = f"{display_value:.6f}".rstrip('0').rstrip('.')
                                     else:
-                                        value_str = str(value)
+                                        value_str = str(display_value)
                                     
                                     if compact:
-                                        print(f"  {name}: {value_str} {unit}".strip())
+                                        print(f"  {name}: {value_str} {display_unit}".strip())
                                     else:
                                         # Aligned display with dots
-                                        if unit:
-                                            print(f"  {display_name:.<40} {value_str} {unit}")
+                                        if display_unit:
+                                            print(f"  {display_name:.<40} {value_str} {display_unit}")
                                         else:
                                             print(f"  {display_name:.<40} {value_str}")
                         
@@ -2023,6 +2227,270 @@ More Help:
                 print(result)
             except Exception as e:
                 print(f"Distribution analysis error: {e}")
+                
+        elif action == 'workflow':
+            # Track workflow progress
+            material_ids = None
+            workflow = None
+            sequence = None
+            detailed = False
+            output_format = 'report'
+            
+            i = 0
+            while i < len(remaining):
+                if remaining[i] == '--material-ids' and i + 1 < len(remaining):
+                    material_ids = [m.strip() for m in remaining[i + 1].split(',')]
+                    i += 2
+                elif remaining[i] == '--workflow' and i + 1 < len(remaining):
+                    workflow = remaining[i + 1]
+                    i += 2
+                elif remaining[i] == '--sequence' and i + 1 < len(remaining):
+                    sequence = [s.strip() for s in remaining[i + 1].split(',')]
+                    i += 2
+                elif remaining[i] == '--detailed':
+                    detailed = True
+                    i += 1
+                elif remaining[i] == '--output-format' and i + 1 < len(remaining):
+                    output_format = remaining[i + 1]
+                    i += 2
+                else:
+                    i += 1
+                    
+            try:
+                from mace.database.analysis import track_workflow_progress
+                result = track_workflow_progress(
+                    db,
+                    material_ids,
+                    workflow,
+                    sequence,
+                    output_format,
+                    detailed
+                )
+                print(result)
+            except Exception as e:
+                print(f"Workflow tracking error: {e}")
+                    
+        elif action == 'validate':
+            # Validate data integrity
+            material_ids = None
+            fix_issues = False
+            check_integrity = False
+            output_format = 'report'
+            
+            i = 0
+            while i < len(remaining):
+                if remaining[i] == '--material-ids' and i + 1 < len(remaining):
+                    material_ids = [m.strip() for m in remaining[i + 1].split(',')]
+                    i += 2
+                elif remaining[i] == '--fix':
+                    fix_issues = True
+                    i += 1
+                elif remaining[i] == '--check-integrity':
+                    check_integrity = True
+                    i += 1
+                elif remaining[i] == '--output-format' and i + 1 < len(remaining):
+                    output_format = remaining[i + 1]
+                    i += 2
+                else:
+                    i += 1
+                    
+            try:
+                from mace.database.utils import validate_materials, DatabaseValidator
+                
+                # Validate materials
+                result = validate_materials(db, material_ids, fix_issues, output_format)
+                print(result)
+                
+                # Check database integrity if requested
+                if check_integrity:
+                    validator = DatabaseValidator(db)
+                    integrity_report = validator.check_database_integrity()
+                    
+                    print("\n=== Database Integrity Check ===")
+                    print(f"Schema valid: {integrity_report['schema_valid']}")
+                    print(f"Orphaned properties: {integrity_report['orphaned_properties']}")
+                    print(f"Duplicate properties: {integrity_report['duplicate_properties']}")
+                    
+                    if integrity_report['integrity_issues']:
+                        print("\nIntegrity issues found:")
+                        for issue in integrity_report['integrity_issues'][:10]:
+                            print(f"  - {issue}")
+                            
+            except Exception as e:
+                print(f"Validation error: {e}")
+                    
+        elif action == 'history':
+            # Property history and versioning
+            operation = 'view'  # default
+            property_name = None
+            version = None
+            version2 = None
+            limit = 100
+            reason = None
+            
+            i = 0
+            while i < len(remaining):
+                if remaining[i] == '--operation' and i + 1 < len(remaining):
+                    operation = remaining[i + 1]
+                    i += 2
+                elif remaining[i] == '--property' and i + 1 < len(remaining):
+                    property_name = remaining[i + 1]
+                    i += 2
+                elif remaining[i] == '--version' and i + 1 < len(remaining):
+                    version = int(remaining[i + 1])
+                    i += 2
+                elif remaining[i] == '--version2' and i + 1 < len(remaining):
+                    version2 = int(remaining[i + 1])
+                    i += 2
+                elif remaining[i] == '--limit' and i + 1 < len(remaining):
+                    limit = int(remaining[i + 1])
+                    i += 2
+                elif remaining[i] == '--reason' and i + 1 < len(remaining):
+                    reason = remaining[i + 1]
+                    i += 2
+                else:
+                    i += 1
+                    
+            try:
+                from mace.database.history import PropertyHistory
+                history = PropertyHistory(db.db_path)
+                
+                if operation == 'view':
+                    if not material_id:
+                        print("Error: --material-id required for viewing history")
+                        return
+                        
+                    report = history.format_history_report(material_id, property_name)
+                    print(report)
+                    
+                elif operation == 'snapshot':
+                    if not material_id:
+                        print("Error: --material-id required for creating snapshot")
+                        return
+                        
+                    version_num = history.create_material_snapshot(material_id, 'user', reason)
+                    print(f"Created snapshot version {version_num} for {material_id}")
+                    
+                elif operation == 'compare':
+                    if not material_id or not version or not version2:
+                        print("Error: --material-id, --version, and --version2 required for comparison")
+                        return
+                        
+                    comparison = history.compare_versions(material_id, version, version2)
+                    
+                    if 'error' in comparison:
+                        print(f"Error: {comparison['error']}")
+                    else:
+                        print(f"\n=== Version Comparison: {material_id} ===")
+                        print(f"Version {version} ({comparison['version1']['created_at']}) vs "
+                              f"Version {version2} ({comparison['version2']['created_at']})")
+                        print(f"\nTotal changes: {comparison['total_changes']}")
+                        
+                        if comparison['added']:
+                            print(f"\nAdded properties ({len(comparison['added'])}):")
+                            for prop in comparison['added']:
+                                print(f"  + {prop['property']}: {prop['new_value']} {prop.get('new_unit', '')}")
+                                
+                        if comparison['removed']:
+                            print(f"\nRemoved properties ({len(comparison['removed'])}):")
+                            for prop in comparison['removed']:
+                                print(f"  - {prop['property']}: {prop['old_value']} {prop.get('old_unit', '')}")
+                                
+                        if comparison['changed']:
+                            print(f"\nChanged properties ({len(comparison['changed'])}):")
+                            for prop in comparison['changed']:
+                                print(f"  ~ {prop['property']}: {prop['old_value']} → {prop['new_value']}")
+                                
+                elif operation == 'rollback':
+                    if not material_id or not property_name or not version or not reason:
+                        print("Error: --material-id, --property, --version, and --reason required for rollback")
+                        return
+                        
+                    success = history.rollback_property(material_id, property_name, version, reason)
+                    if success:
+                        print(f"Successfully rolled back {property_name} to version {version}")
+                    else:
+                        print("Rollback failed - version not found")
+                        
+                elif operation == 'recent':
+                    changes = history.get_recent_changes(limit, material_id)
+                    
+                    print(f"\n=== Recent Property Changes ===")
+                    print(f"Showing last {min(len(changes), limit)} changes")
+                    
+                    for change in changes:
+                        print(f"\n{change['changed_at']} - {change['material_id']} ({change.get('formula', 'N/A')})")
+                        print(f"  {change['property_name']}: {change['old_value']} → {change['property_value']}")
+                        if change.get('change_reason'):
+                            print(f"  Reason: {change['change_reason']}")
+                            
+                else:
+                    print(f"Unknown operation: {operation}")
+                    
+            except Exception as e:
+                print(f"History error: {e}")
+                import traceback
+                traceback.print_exc()
+                    
+        elif action == 'interactive':
+            # Launch interactive explorer
+            try:
+                from mace.database.interactive import run_interactive_explorer
+                run_interactive_explorer(db.db_path)
+            except Exception as e:
+                print(f"Interactive mode error: {e}")
+                import traceback
+                traceback.print_exc()
+                    
+        elif action == 'aggregate':
+            # Aggregate properties by groups
+            group_by = None
+            properties = []
+            aggregation = 'mean'
+            filters = []
+            detailed = False
+            output_format = 'report'
+            
+            i = 0
+            while i < len(remaining):
+                if remaining[i] == '--group-by' and i + 1 < len(remaining):
+                    group_by = remaining[i + 1]
+                    i += 2
+                elif remaining[i] == '--properties' and i + 1 < len(remaining):
+                    properties = [p.strip() for p in remaining[i + 1].split(',')]
+                    i += 2
+                elif remaining[i] == '--aggregation' and i + 1 < len(remaining):
+                    aggregation = remaining[i + 1]
+                    i += 2
+                elif remaining[i] == '--filter' and i + 1 < len(remaining):
+                    filters.append(remaining[i + 1])
+                    i += 2
+                elif remaining[i] == '--detailed':
+                    detailed = True
+                    i += 1
+                elif remaining[i] == '--output-format' and i + 1 < len(remaining):
+                    output_format = remaining[i + 1]
+                    i += 2
+                else:
+                    i += 1
+                    
+            if not group_by or not properties:
+                print("Error: --group-by and --properties are required")
+                print("Use 'mace database --action aggregate --help' for usage")
+                return
+                
+            try:
+                from mace.database.analysis import aggregate_by_groups
+                result = aggregate_by_groups(
+                    db, group_by, properties, aggregation,
+                    filters if filters else None,
+                    output_format, detailed
+                )
+                print(result)
+            except Exception as e:
+                print(f"Aggregation error: {e}")
+                import traceback
+                traceback.print_exc()
                     
         elif action == 'clean':
             # Clean up orphaned records
