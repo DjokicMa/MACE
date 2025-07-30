@@ -167,6 +167,19 @@ def populate_database(completed_calcs: List[Dict], db) -> int:
                     slurm_job_id=calc_info.get('slurm_job_id')
                 )
                 
+                # Store the output file path in the input_settings
+                if calc_info.get('output_file'):
+                    try:
+                        # Get current settings
+                        current_calc = db.get_calculation(calc_id)
+                        if current_calc:
+                            import json
+                            settings = json.loads(current_calc.get('settings_json') or '{}')
+                            settings['output_file'] = calc_info.get('output_file')
+                            db.update_calculation_settings(calc_id, settings)
+                    except Exception as e:
+                        print(f"  Failed to update output file in settings: {e}")
+                
                 # Update file paths
                 if calc_info.get('output_file'):
                     try:

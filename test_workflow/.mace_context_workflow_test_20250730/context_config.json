@@ -1,0 +1,11 @@
+{
+  "workflow_id": "workflow_test_20250730",
+  "isolation_mode": "isolated",
+  "created_at": "2025-07-30T12:10:57.800354",
+  "base_dir": "/mnt/iscsi/UsefulScripts/Codebase/reorganization/test_workflow",
+  "db_path": "/mnt/iscsi/UsefulScripts/Codebase/reorganization/test_workflow/.mace_context_workflow_test_20250730/materials.db",
+  "structures_db_path": "/mnt/iscsi/UsefulScripts/Codebase/reorganization/test_workflow/.mace_context_workflow_test_20250730/structures.db",
+  "storage_dir": "/mnt/iscsi/UsefulScripts/Codebase/reorganization/test_workflow/.mace_context_workflow_test_20250730/calculation_storage",
+  "lock_dir": "/mnt/iscsi/UsefulScripts/Codebase/reorganization/test_workflow/.mace_context_workflow_test_20250730/.queue_locks",
+  "metadata": {}
+}

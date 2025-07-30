@@ -1,0 +1,13 @@
+{
+  "workflow_id": "workflow_test_20250730",
+  "isolation_mode": "isolated",
+  "created_at": "2025-07-30T12:01:33.985574",
+  "base_dir": "/mnt/iscsi/UsefulScripts/Codebase/reorganization/test_workflow/workflow_outputs/workflow_test_20250730/step_001_OPT/mat_test",
+  "db_path": "/mnt/iscsi/UsefulScripts/Codebase/reorganization/test_workflow/workflow_outputs/workflow_test_20250730/step_001_OPT/mat_test/.mace_context_workflow_test_20250730/materials.db",
+  "structures_db_path": "/mnt/iscsi/UsefulScripts/Codebase/reorganization/test_workflow/workflow_outputs/workflow_test_20250730/step_001_OPT/mat_test/.mace_context_workflow_test_20250730/structures.db",
+  "storage_dir": "/mnt/iscsi/UsefulScripts/Codebase/reorganization/test_workflow/workflow_outputs/workflow_test_20250730/step_001_OPT/mat_test/.mace_context_workflow_test_20250730/calculation_storage",
+  "lock_dir": "/mnt/iscsi/UsefulScripts/Codebase/reorganization/test_workflow/workflow_outputs/workflow_test_20250730/step_001_OPT/mat_test/.mace_context_workflow_test_20250730/.queue_locks",
+  "metadata": {
+    "description": "Test workflow for queue manager verification"
+  }
+}
