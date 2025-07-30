@@ -295,9 +295,26 @@ class WorkflowContext:
         if workflow_id in cls._active_contexts:
             return cls._active_contexts[workflow_id]
             
-        # Create new context
-        ctx = cls(workflow_id, isolation_mode=isolation_mode)
-        ctx.context_dir = Path(context_dir)
+        # Parse the context_dir to get base_dir
+        context_path = Path(context_dir)
+        if context_path.name.startswith(".mace_context_"):
+            base_dir = context_path.parent
+        else:
+            # Context dir doesn't follow expected pattern, use parent
+            base_dir = context_path.parent
+            
+        # Create new context with correct base_dir
+        ctx = cls(workflow_id, base_dir=base_dir, isolation_mode=isolation_mode)
+        
+        # Override context_dir if it's different from the calculated one
+        if ctx.context_dir != context_path:
+            ctx.context_dir = context_path
+            # Update all dependent paths
+            ctx.db_path = ctx._get_db_path()
+            ctx.structures_db_path = ctx._get_structures_db_path()
+            ctx.storage_dir = ctx._get_storage_dir()
+            ctx.lock_dir = ctx._get_lock_dir()
+            ctx.config_file = ctx.context_dir / "context_config.json"
         
         # Ensure context directory exists
         if ctx.context_dir.exists():
@@ -309,6 +326,9 @@ class WorkflowContext:
                     with open(config_file, 'r') as f:
                         config = json.load(f)
                         ctx.metadata.update(config.get('metadata', {}))
+                        # Update base_dir from config if available
+                        if 'base_dir' in config:
+                            ctx.base_dir = Path(config['base_dir'])
                 except Exception:
                     pass
                     

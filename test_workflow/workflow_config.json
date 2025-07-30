@@ -1,0 +1,52 @@
+{
+  "workflow_id": "workflow_test_20250730",
+  "created": "2025-07-30T14:00:00",
+  "workflow_sequence": ["OPT_1", "SP_2", "BAND_3", "DOSS_4"],
+  "step_configurations": {
+    "OPT_1": {
+      "calc_type": "OPT",
+      "source": "cif_conversion",
+      "slurm_settings": {
+        "cores": 32,
+        "memory": "5G",
+        "walltime": "7-00:00:00",
+        "account": "mendoza_q"
+      }
+    },
+    "SP_2": {
+      "calc_type": "SP",
+      "source": "CRYSTALOptToD12.py",
+      "slurm_settings": {
+        "cores": 32,
+        "memory": "4G", 
+        "walltime": "3-00:00:00",
+        "account": "mendoza_q"
+      }
+    },
+    "BAND_3": {
+      "calc_type": "BAND",
+      "source": "create_band_d3.py",
+      "slurm_settings": {
+        "cores": 28,
+        "memory": "80G",
+        "walltime": "2:00:00",
+        "account": "mendoza_q"
+      }
+    },
+    "DOSS_4": {
+      "calc_type": "DOSS",
+      "source": "alldos.py",
+      "slurm_settings": {
+        "cores": 28,
+        "memory": "80G",
+        "walltime": "2:00:00",
+        "account": "mendoza_q"
+      }
+    }
+  },
+  "execution_settings": {
+    "base_dir": "/mnt/iscsi/UsefulScripts/Codebase/reorganization/test_workflow",
+    "output_dir": "/mnt/iscsi/UsefulScripts/Codebase/reorganization/test_workflow/workflow_outputs/workflow_test_20250730",
+    "slurm_scripts_dir": "/mnt/iscsi/UsefulScripts/Codebase/reorganization/test_workflow/workflow_scripts"
+  }
+}

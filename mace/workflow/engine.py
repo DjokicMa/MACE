@@ -525,6 +525,47 @@ class WorkflowEngine:
             flags=re.MULTILINE
         )
         
+        # Add workflow context environment variables with absolute paths
+        # Check if we already have MACE_WORKFLOW_ID exported
+        if 'export MACE_WORKFLOW_ID=' not in customized:
+            # Find where to insert - after export JOB= line
+            lines = customized.split('\n')
+            insert_index = -1
+            for i, line in enumerate(lines):
+                if line.strip().startswith('export JOB='):
+                    insert_index = i + 1
+                    break
+                    
+            if insert_index > 0:
+                # Determine the absolute context directory path
+                # Get the workflow root directory
+                ctx = get_current_context()
+                if ctx:
+                    context_dir_path = str(ctx.context_dir)
+                else:
+                    # Fallback - try to determine from current structure
+                    # We're in workflow_outputs/workflow_ID/step_XXX/material/
+                    # Need to go up to find the base directory
+                    current = Path.cwd()
+                    for _ in range(10):
+                        if current.name.startswith('workflow_') and current.parent.name == 'workflow_outputs':
+                            # Found the workflow directory
+                            base_dir = current.parent.parent
+                            context_dir_path = str(base_dir / f'.mace_context_{workflow_id}')
+                            break
+                        current = current.parent
+                    else:
+                        # Last resort - use self.base_work_dir
+                        context_dir_path = str(self.base_work_dir / f'.mace_context_{workflow_id}')
+                
+                context_exports = f'''# Workflow context for queue manager
+export MACE_WORKFLOW_ID="{workflow_id}"
+export MACE_CONTEXT_DIR="{context_dir_path}"
+export MACE_ISOLATION_MODE="isolated"'''
+                
+                lines.insert(insert_index, context_exports)
+                customized = '\n'.join(lines)
+        
         # Update scratch directory to be workflow-specific
         if "export scratch=" in customized:
             scratch_dir = f"$SCRATCH/{workflow_id}/step_{step_num:03d}_{calc_type}/{material_name}"
@@ -583,7 +624,13 @@ fi
 
 if [ ! -z "$QUEUE_MANAGER" ]; then
     echo "Found queue manager at: $QUEUE_MANAGER"
-    python "$QUEUE_MANAGER" --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
+    # Use the workflow context database if available
+    if [ ! -z "$MACE_CONTEXT_DIR" ] && [ -f "$MACE_CONTEXT_DIR/materials.db" ]; then
+        echo "Using workflow context database: $MACE_CONTEXT_DIR/materials.db"
+        python "$QUEUE_MANAGER" --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3 --db-path "$MACE_CONTEXT_DIR/materials.db"
+    else
+        python "$QUEUE_MANAGER" --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
+    fi
 else
     echo "Warning: Queue manager not found. Checked:"
     echo "  - \$MACE_HOME/mace/queue/manager.py"
@@ -593,12 +640,19 @@ fi'''
             
             # Replace the entire queue manager section
             import re
-            customized = re.sub(
-                r'# ADDED: Auto-submit new jobs when this one completes.*?fi',
-                queue_manager_logic.strip(),
-                customized,
-                flags=re.DOTALL
-            )
+            # First try to find and replace the complete queue manager section
+            # Look for the pattern that includes potentially duplicated logic
+            pattern = r'# ADDED: Auto-submit new jobs when this one completes.*?(?:fi\s*){1,2}'
+            if re.search(pattern, customized, re.DOTALL):
+                customized = re.sub(
+                    pattern,
+                    queue_manager_logic.strip(),
+                    customized,
+                    flags=re.DOTALL
+                )
+            else:
+                # If not found, append it
+                customized = customized.rstrip() + '\n\n' + queue_manager_logic
         
         # Ensure memory reporting is correct
         customized = self._fix_memory_reporting(customized)
@@ -1771,8 +1825,19 @@ fi'''
         # Determine next steps based on completed calculation type and workflow plan
         # Check if workflow metadata exists to determine planned sequence
         # Look for workflow_id in settings (where it's stored) or metadata
-        settings = json.loads(completed_calc.get('settings_json', '{}'))
+        settings_json = completed_calc.get('settings_json')
+        if settings_json:
+            try:
+                settings = json.loads(settings_json)
+            except (json.JSONDecodeError, TypeError):
+                settings = {}
+        else:
+            settings = {}
+            
+        # Also check for workflow_id from environment when in workflow context
         workflow_id = settings.get('workflow_id') or completed_calc.get('metadata', {}).get('workflow_id')
+        if not workflow_id and os.environ.get('MACE_WORKFLOW_ID'):
+            workflow_id = os.environ.get('MACE_WORKFLOW_ID')
         
         print(f"DEBUG: Extracted workflow_id: {workflow_id}")
         print(f"DEBUG: Settings: {settings}")
@@ -1788,7 +1853,9 @@ fi'''
             if planned_sequence:
                 # Find current position in sequence and get next step
                 current_index = self._find_calc_position_in_sequence(calc_type, completed_calc, planned_sequence)
+                print(f"DEBUG: Current index in sequence: {current_index}")
                 next_steps = self._get_next_steps_from_sequence(current_index, planned_sequence, calc_type)
+                print(f"DEBUG: Next steps: {next_steps}")
                 
                 # Track completed and failed calculations for dependency checking
                 all_calcs = self.db.get_calculations_by_status(material_id=material_id)
@@ -2130,16 +2197,25 @@ fi'''
             if seq_base == base_type:
                 type_positions.append(i)
         
+        print(f"DEBUG _find_calc_position: calc_type={calc_type}, base_type={base_type}")
+        print(f"DEBUG _find_calc_position: completed_count={completed_count}, type_positions={type_positions}")
+        
         # Return the position corresponding to the just-completed calculation
         # completed_count = 1 means we just finished the first OPT, so we're at position 0
         if completed_count > 0 and completed_count <= len(type_positions):
-            return type_positions[completed_count - 1]
+            position = type_positions[completed_count - 1]
+            print(f"DEBUG _find_calc_position: returning position {position}")
+            return position
         elif type_positions:
             # We've done more than planned, return last position of this type
-            return type_positions[-1]
+            position = type_positions[-1]
+            print(f"DEBUG _find_calc_position: returning last position {position}")
+            return position
         else:
             # Not found in sequence, return end
-            return len(planned_sequence) - 1
+            position = len(planned_sequence) - 1
+            print(f"DEBUG _find_calc_position: returning end position {position}")
+            return position
                 
     def _get_next_steps_from_sequence(self, current_index: int, planned_sequence: List[str], 
                                      completed_calc_type: str) -> List[str]:
@@ -2282,12 +2358,19 @@ fi'''
         Examples:
             OPT -> (OPT, 1)
             OPT2 -> (OPT, 2)
+            OPT_1 -> (OPT, 1)
+            OPT_2 -> (OPT, 2)
             SP -> (SP, 1)
             SP2 -> (SP, 2)
+            SP_2 -> (SP, 2)
             BAND3 -> (BAND, 3)
+            BAND_3 -> (BAND, 3)
+            CHARGE+POTENTIAL -> (CHARGE+POTENTIAL, 1)
+            CHARGE+POTENTIAL_2 -> (CHARGE+POTENTIAL, 2)
         """
         import re
-        match = re.match(r'^([A-Z]+)(\d*)$', calc_type)
+        # Handle both formats: TYPE_N and TYPEN
+        match = re.match(r'^([A-Z]+(?:\+[A-Z]+)?)(?:_|)(\d*)$', calc_type)
         if match:
             base_type = match.group(1)
             num_str = match.group(2)
@@ -2472,8 +2555,18 @@ fi'''
             return True, None
             
         # Check if the dependency is completed
+        # Need to check both exact match and base type match
         if dependency in completed_calcs:
             return True, None
+            
+        # Also check if base type matches (e.g., OPT_1 dependency satisfied by OPT)
+        dep_base, dep_num = self._parse_calc_type(dependency)
+        for completed in completed_calcs:
+            comp_base, comp_num = self._parse_calc_type(completed)
+            if comp_base == dep_base:
+                # For numbered dependencies, check if we have the right one
+                if dep_num == 1 or comp_num == dep_num:
+                    return True, None
             
         # Check if the dependency failed in this execution
         if dependency in failed_calcs:
@@ -2719,8 +2812,30 @@ fi'''
             return None
             
         material_id = source_calc['material_id']
-        source_output_file = Path(source_calc['output_file'])
-        source_input_file = Path(source_calc['input_file'])
+        
+        # Get output file path - try both direct column and settings
+        output_file_path = source_calc.get('output_file')
+        if not output_file_path:
+            # Try to get from settings
+            try:
+                settings = json.loads(source_calc.get('settings_json') or '{}')
+                output_file_path = settings.get('output_file')
+            except:
+                pass
+                
+        if not output_file_path:
+            # Try to infer from input file
+            input_file_path = source_calc.get('input_file')
+            if input_file_path:
+                input_path = Path(input_file_path)
+                output_file_path = str(input_path.with_suffix('.out'))
+                
+        if not output_file_path:
+            print(f"Could not determine output file path for {source_calc_id}")
+            return None
+            
+        source_output_file = Path(output_file_path)
+        source_input_file = Path(source_calc.get('input_file', ''))
         
         if not source_output_file.exists():
             print(f"Source output file not found: {source_output_file}")
@@ -3274,7 +3389,15 @@ fi'''
         new_steps = 0
         for calc in completed_calcs:
             # Check if this calculation has already triggered workflow steps
-            settings = json.loads(calc.get('settings_json', '{}'))
+            settings_json = calc.get('settings_json')
+            if settings_json:
+                try:
+                    settings = json.loads(settings_json)
+                except (json.JSONDecodeError, TypeError):
+                    settings = {}
+            else:
+                settings = {}
+                
             if settings.get('workflow_processed'):
                 continue
                 
@@ -3283,11 +3406,13 @@ fi'''
             
             if new_calc_ids:
                 new_steps += len(new_calc_ids)
-                
-                # Mark this calculation as workflow processed
-                settings['workflow_processed'] = True
-                settings['workflow_process_timestamp'] = datetime.now().isoformat()
-                self.db.update_calculation_settings(calc['calc_id'], settings)
+            
+            # Always mark this calculation as workflow processed, even if no new calculations were generated
+            # This prevents re-processing the same calculation multiple times
+            settings['workflow_processed'] = True
+            settings['workflow_process_timestamp'] = datetime.now().isoformat()
+            settings['workflow_steps_generated'] = len(new_calc_ids) if new_calc_ids else 0
+            self.db.update_calculation_settings(calc['calc_id'], settings)
                 
         return new_steps
 

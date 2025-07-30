@@ -191,7 +191,9 @@ class WorkflowExecutor:
                         workflow_id = script_config.get('workflow_id', f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
                         modified_lines.append(f"echo '# Workflow context for queue manager' >> $1.sh")
                         modified_lines.append(f"echo 'export MACE_WORKFLOW_ID=\"{workflow_id}\"' >> $1.sh")
-                        modified_lines.append(f"echo 'export MACE_CONTEXT_DIR=\"${{SLURM_SUBMIT_DIR}}/.mace_context_{workflow_id}\"' >> $1.sh")
+                        # Use absolute path for MACE_CONTEXT_DIR
+                        context_dir = str(self.work_dir / f".mace_context_{workflow_id}")
+                        modified_lines.append(f"echo 'export MACE_CONTEXT_DIR=\"{context_dir}\"' >> $1.sh")
                         modified_lines.append(f"echo 'export MACE_ISOLATION_MODE=\"{getattr(self, 'isolation_mode', 'isolated')}\"' >> $1.sh")
                     else:
                         modified_lines.append(line)
