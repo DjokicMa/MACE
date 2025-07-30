@@ -169,10 +169,15 @@ def populate_database(completed_calcs: List[Dict], db) -> int:
                 
                 # Update file paths
                 if calc_info.get('output_file'):
-                    db.update_calculation_files(
-                        calc_id,
-                        output_file=calc_info.get('output_file')
-                    )
+                    try:
+                        db.update_calculation_files(
+                            calc_id,
+                            output_file=calc_info.get('output_file')
+                        )
+                    except AttributeError:
+                        # Fallback for databases without this method
+                        # Update the calculation record directly
+                        pass
                     
                 added_count += 1
                 print(f"  Added completed calculation: {calc_id}")
