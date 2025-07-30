@@ -515,9 +515,18 @@ class WorkflowEngine:
         # Replace $1 placeholders with actual material name
         customized = customized.replace("$1", material_name)
         
+        # Fix any incorrect MACE_CONTEXT_DIR settings from templates
+        # Remove lines setting MACE_CONTEXT_DIR to SLURM_SUBMIT_DIR
+        customized = re.sub(
+            r'^export MACE_CONTEXT_DIR="\$\{SLURM_SUBMIT_DIR\}/\.mace_context_[^"]+"\s*$',
+            '',
+            customized,
+            flags=re.MULTILINE
+        )
+        
         # Update scratch directory to be workflow-specific
         if "export scratch=" in customized:
-            scratch_dir = f"$SCRATCH/{workflow_id}/step_{step_num:03d}_{calc_type}"
+            scratch_dir = f"$SCRATCH/{workflow_id}/step_{step_num:03d}_{calc_type}/{material_name}"
             customized = re.sub(
                 r'export scratch=\$SCRATCH/[\w/]+',
                 f'export scratch={scratch_dir}',
