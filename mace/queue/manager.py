@@ -290,7 +290,32 @@ class EnhancedCrystalQueueManager:
             from mace.database.populate_completed_jobs import scan_for_completed_calculations, populate_database
             
             print("  Scanning for completed calculations...")
-            completed_calcs = scan_for_completed_calculations(Path.cwd())
+            
+            # If in workflow context, scan the entire workflow directory
+            scan_dir = Path.cwd()
+            if self.is_workflow_context:
+                # Try to find the workflow root directory
+                workflow_id = os.environ.get('MACE_WORKFLOW_ID')
+                if workflow_id:
+                    # Look for the workflow directory in parent paths
+                    current = Path.cwd()
+                    for _ in range(10):  # Check up to 10 levels up
+                        # Check if current directory name matches workflow_id
+                        if current.name == workflow_id and current.parent.name == "workflow_outputs":
+                            scan_dir = current
+                            print(f"  Scanning entire workflow directory: {scan_dir}")
+                            break
+                        # Also check for workflow_outputs/workflow_id pattern
+                        potential_workflow = current / "workflow_outputs" / workflow_id
+                        if potential_workflow.exists():
+                            scan_dir = potential_workflow
+                            print(f"  Scanning entire workflow directory: {scan_dir}")
+                            break
+                        current = current.parent
+                        if current == current.parent:  # Reached root
+                            break
+            
+            completed_calcs = scan_for_completed_calculations(scan_dir)
             
             if completed_calcs:
                 print(f"  Found {len(completed_calcs)} completed calculations")
