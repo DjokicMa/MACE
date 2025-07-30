@@ -327,7 +327,8 @@ class WorkflowEngine:
         import os
         
         # Find appropriate template script
-        base_dir = Path.cwd()
+        # Use the base_work_dir from the workflow engine, not current directory
+        base_dir = self.base_work_dir
         workflow_scripts_dir = base_dir / "workflow_scripts"
         
         # Look for templates with flexible numbering
@@ -538,23 +539,56 @@ class WorkflowEngine:
             # Replace the existing queue manager logic with enhanced path resolution
             queue_manager_logic = '''
 # ADDED: Auto-submit new jobs when this one completes
-# Enhanced path resolution for workflow directory structure
-QUEUE_MANAGER=""
-if [ -f $DIR/enhanced_queue_manager.py ]; then
-    QUEUE_MANAGER="$DIR/enhanced_queue_manager.py"
-elif [ -f $DIR/../../../enhanced_queue_manager.py ]; then
-    QUEUE_MANAGER="$DIR/../../../enhanced_queue_manager.py"
-elif [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
-    QUEUE_MANAGER="$DIR/../../../../enhanced_queue_manager.py"
-elif [ -f $DIR/../../../../../enhanced_queue_manager.py ]; then
-    QUEUE_MANAGER="$DIR/../../../../../enhanced_queue_manager.py"
+# Check multiple possible locations for queue managers
+cd $DIR
+
+# First check if MACE_HOME is set and use it
+if [ ! -z "$MACE_HOME" ]; then
+    if [ -f "$MACE_HOME/mace/queue/manager.py" ]; then
+        QUEUE_MANAGER="$MACE_HOME/mace/queue/manager.py"
+    elif [ -f "$MACE_HOME/enhanced_queue_manager.py" ]; then
+        QUEUE_MANAGER="$MACE_HOME/enhanced_queue_manager.py"
+    fi
+else
+    # MACE_HOME not set, try to find in PATH or relative locations
+    # Try using which to find mace_cli (which we know works)
+    MACE_CLI=$(which mace_cli 2>/dev/null)
+    if [ ! -z "$MACE_CLI" ]; then
+        # Found mace_cli, derive MACE_HOME from it
+        MACE_HOME=$(dirname "$MACE_CLI")
+        if [ -f "$MACE_HOME/mace/queue/manager.py" ]; then
+            QUEUE_MANAGER="$MACE_HOME/mace/queue/manager.py"
+        fi
+    fi
+fi
+
+# If still not found, check standard relative locations
+if [ -z "$QUEUE_MANAGER" ]; then
+    if [ -f $DIR/mace/queue/manager.py ]; then
+        QUEUE_MANAGER="$DIR/mace/queue/manager.py"
+    elif [ -f $DIR/../../../../mace/queue/manager.py ]; then
+        QUEUE_MANAGER="$DIR/../../../../mace/queue/manager.py"
+    elif [ -f $DIR/../../../../../mace/queue/manager.py ]; then
+        QUEUE_MANAGER="$DIR/../../../../../mace/queue/manager.py"
+    elif [ -f $DIR/enhanced_queue_manager.py ]; then
+        QUEUE_MANAGER="$DIR/enhanced_queue_manager.py"
+    elif [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
+        QUEUE_MANAGER="$DIR/../../../../enhanced_queue_manager.py"
+    elif [ -f $DIR/crystal_queue_manager.py ]; then
+        QUEUE_MANAGER="$DIR/crystal_queue_manager.py"
+    elif [ -f $DIR/../../../../crystal_queue_manager.py ]; then
+        QUEUE_MANAGER="$DIR/../../../../crystal_queue_manager.py"
+    fi
 fi
 
 if [ ! -z "$QUEUE_MANAGER" ]; then
-    cd $(dirname "$QUEUE_MANAGER")
-    python enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
+    echo "Found queue manager at: $QUEUE_MANAGER"
+    python "$QUEUE_MANAGER" --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
 else
-    echo "Warning: enhanced_queue_manager.py not found - workflow progression may not continue automatically"
+    echo "Warning: Queue manager not found. Checked:"
+    echo "  - \$MACE_HOME/mace/queue/manager.py"
+    echo "  - Various relative paths from $DIR"
+    echo "  Workflow progression may not continue automatically"
 fi'''
             
             # Replace the entire queue manager section
