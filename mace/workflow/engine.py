@@ -37,6 +37,7 @@ OPTIONAL_CALC_TYPES = {'BAND', 'DOSS', 'FREQ', 'TRANSPORT', 'CHARGE+POTENTIAL'}
 from mace.database.materials import MaterialDatabase, create_material_id_from_file, extract_formula_from_d12
 from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.workflow.context import get_current_context
+from mace.utils.settings_extractor import extract_d12_settings
 
 
 class WorkflowEngine:
@@ -2927,6 +2928,85 @@ fi'''
             
             if d12_file:
                 args.extend(["--d12-file", str(d12_file)])
+            
+            # For SP/FREQ/OPT generation without expert config, extract functional info
+            if target_base_type in ["SP", "FREQ", "OPT"] and not expert_config_file and d12_file:
+                print(f"  Extracting functional info from source d12 for {target_base_type} generation")
+                try:
+                    # Extract settings from the OPT d12 file
+                    settings = extract_d12_settings(str(d12_file))
+                    functional_info = settings.get('functional_info', {})
+                    
+                    # Determine the functional from the extracted info
+                    functional = None
+                    if functional_info.get('method') == 'DFT':
+                        # Check for common functionals
+                        exchange = functional_info.get('exchange', '').upper()
+                        correlation = functional_info.get('correlation', '').upper()
+                        dispersion = functional_info.get('dispersion', '')
+                        
+                        # Import the comprehensive functional list from d12_constants
+                        try:
+                            from Crystal_d12.d12_constants import FUNCTIONAL_CATEGORIES
+                            
+                            # Get all functionals from all categories
+                            all_functionals = []
+                            for category_data in FUNCTIONAL_CATEGORIES.values():
+                                all_functionals.extend(category_data.get('functionals', []))
+                            
+                            # Check if the exchange matches any known functional
+                            for func in all_functionals:
+                                if func.upper() in exchange.upper():
+                                    functional = func
+                                    break
+                                    
+                            # If not found in exchange, check the full content
+                            if not functional:
+                                for func in all_functionals:
+                                    if func.upper() in settings.get('basis_set', '').upper():
+                                        # Sometimes functional is in basis set name
+                                        functional = func
+                                        break
+                                        
+                        except ImportError:
+                            # Fallback to hardcoded list if import fails
+                            print("    Warning: Could not import d12_constants, using fallback functional list")
+                            if 'B3LYP' in exchange or ('B3' in exchange and 'LYP' in correlation):
+                                functional = 'B3LYP'
+                            elif 'PBESOL' in exchange or 'PBSOL' in exchange:
+                                functional = 'PBESOL'
+                            elif 'PBE0' in exchange:
+                                functional = 'PBE0'
+                            elif 'PBE' in exchange:
+                                functional = 'PBE'
+                            elif 'HSE06' in exchange:
+                                functional = 'HSE06'
+                            elif 'BLYP' in exchange or ('B' in exchange and 'LYP' in correlation):
+                                functional = 'BLYP'
+                        
+                        # Add dispersion correction
+                        if dispersion == 'D3' and functional:
+                            functional += '-D3'
+                    elif functional_info.get('method') == 'HF':
+                        functional = 'RHF'
+                    
+                    if functional:
+                        # Create a temporary config file for SP/FREQ generation
+                        temp_config = work_dir / f"{target_base_type.lower()}_config.json"
+                        config_data = {
+                            "functional": functional,
+                            "calculation_type": target_base_type
+                        }
+                        with open(temp_config, 'w') as f:
+                            json.dump(config_data, f, indent=2)
+                        
+                        args.extend(["--config-file", str(temp_config)])
+                        print(f"    Created config with functional: {functional}")
+                        expert_config_file = temp_config  # Mark that we have a config
+                    else:
+                        print(f"    Could not determine functional from d12 settings: {functional_info}")
+                except Exception as e:
+                    print(f"    Error extracting functional info: {e}")
             
             # If we have an expert config file for OPT2/OPT3, use it
             if expert_config_file and expert_config_file.exists():
