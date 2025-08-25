@@ -441,8 +441,78 @@ class CrystalOutputParser:
         for i, line in enumerate(lines):
             # Check for CRYSTAL23 format: (EXCHANGE)[CORRELATION] FUNCTIONAL:
             if "(EXCHANGE)[CORRELATION] FUNCTIONAL:" in line:
-                # Check if functional name is on the same line
-                if "PERDEW-BURKE-ERNZERHOF" in line:
+                # Try to extract functional using regex pattern
+                import re
+                func_match = re.search(r'FUNCTIONAL:\(([^)]+)\)\[([^\]]+)\]', line)
+                if func_match:
+                    exchange_part = func_match.group(1).strip()
+                    correlation_part = func_match.group(2).strip()
+                    
+                    # Map common functional names based on exchange/correlation parts
+                    if "PBEsol" in exchange_part or "PBEsol" in correlation_part:
+                        self.data["functional"] = "PBESOL"
+                        functional_found = True
+                    elif "PERDEW-BURKE-ERNZERHOF" in exchange_part or "PERDEW-BURKE-ERNZERHOF" in correlation_part:
+                        self.data["functional"] = "PBE"
+                        functional_found = True
+                    elif "BECKE 88" in exchange_part and "LEE-YANG-PARR" in correlation_part:
+                        self.data["functional"] = "BLYP"
+                        functional_found = True
+                    elif "B3LYP" in exchange_part:
+                        self.data["functional"] = "B3LYP"
+                        functional_found = True
+                    elif "PBE0" in exchange_part:
+                        self.data["functional"] = "PBE0"
+                        functional_found = True
+                    elif "HSE06" in exchange_part:
+                        self.data["functional"] = "HSE06"
+                        functional_found = True
+                    elif "HSEsol" in exchange_part:
+                        self.data["functional"] = "HSEsol"
+                        functional_found = True
+                    elif "B97-3c" in exchange_part:
+                        self.data["functional"] = "B97-3C"
+                        self.data["is_3c_method"] = True
+                        functional_found = True
+                    elif "PBEh-3c" in exchange_part:
+                        self.data["functional"] = "PBEH3C"
+                        self.data["is_3c_method"] = True
+                        functional_found = True
+                    elif "HSE-3c" in exchange_part:
+                        self.data["functional"] = "HSE3C"
+                        self.data["is_3c_method"] = True
+                        functional_found = True
+                    elif "HSEsol-3c" in exchange_part:
+                        self.data["functional"] = "HSESOL3C"
+                        self.data["is_3c_method"] = True
+                        functional_found = True
+                    elif "PBEsol0-3c" in exchange_part:
+                        self.data["functional"] = "PBESOL03C"
+                        self.data["is_3c_method"] = True
+                        functional_found = True
+                    elif "WU-COHEN" in exchange_part and "LEE-YANG-PARR" in correlation_part:
+                        self.data["functional"] = "WC1LYP"
+                        functional_found = True
+                    elif "WU-COHEN" in exchange_part and "PERDEW-WANG" in correlation_part:
+                        self.data["functional"] = "B1WC"
+                        functional_found = True
+                    elif "B97" in exchange_part:
+                        self.data["functional"] = "B97"
+                        functional_found = True
+                    elif "SCAN" in exchange_part:
+                        if "r2SCAN" in exchange_part:
+                            self.data["functional"] = "r2SCAN"
+                        else:
+                            self.data["functional"] = "SCAN"
+                        functional_found = True
+                    elif "M05" in exchange_part or "M06" in exchange_part:
+                        # Extract M0X functionals
+                        self.data["functional"] = exchange_part.replace("-", "")
+                        functional_found = True
+                    # Add more mappings as needed
+                    
+                # Fallback to old checks if regex fails
+                elif "PERDEW-BURKE-ERNZERHOF" in line:
                     self.data["functional"] = "PBE"
                     functional_found = True
                 elif "BECKE 88" in line and "LEE-YANG-PARR" in line:
@@ -457,24 +527,6 @@ class CrystalOutputParser:
                 elif "HSE06" in line:
                     self.data["functional"] = "HSE06"
                     functional_found = True
-                # If not found on same line, check the next line
-                elif i + 1 < len(lines):
-                    next_line = lines[i + 1]
-                    if "PERDEW-BURKE-ERNZERHOF" in next_line:
-                        self.data["functional"] = "PBE"
-                        functional_found = True
-                    elif "BECKE 88" in next_line and i + 2 < len(lines) and "LEE-YANG-PARR" in lines[i + 2]:
-                        self.data["functional"] = "BLYP"
-                        functional_found = True
-                    elif "B3LYP" in next_line:
-                        self.data["functional"] = "B3LYP"
-                        functional_found = True
-                    elif "PBE0" in next_line:
-                        self.data["functional"] = "PBE0"
-                        functional_found = True
-                    elif "HSE06" in next_line:
-                        self.data["functional"] = "HSE06"
-                        functional_found = True
                     
             # Check for exchange-correlation functional section (older format)
             elif "EXCHANGE-CORRELATION FUNCTIONAL" in line:

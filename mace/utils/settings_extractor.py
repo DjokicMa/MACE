@@ -249,17 +249,25 @@ def _extract_functional_info(content: str) -> Dict[str, Any]:
     if 'DFT' in content.upper():
         functional_info['method'] = 'DFT'
         
-        # Extract exchange functional
-        exchange_patterns = [
-            r'EXCHANGE\s+(\w+)',
-            r'(\w+)EXCHANGE',  # For combined functionals like B3LYP
-        ]
-        
-        for pattern in exchange_patterns:
-            match = re.search(pattern, content.upper())
-            if match:
-                functional_info['exchange'] = match.group(1)
+        # Check for complete functional specifications first
+        complete_functionals = ['PBESOL', 'B3LYP', 'HSE06', 'PBE0', 'BLYP', 'PBE', 'LDA', 'SVWN', 'PWGGA']
+        for func in complete_functionals:
+            if func in content.upper():
+                functional_info['exchange'] = func
                 break
+        
+        # If not found, try exchange patterns
+        if 'exchange' not in functional_info:
+            exchange_patterns = [
+                r'EXCHANGE\s+(\w+)',
+                r'(\w+)EXCHANGE',  # For combined functionals like B3LYP
+            ]
+            
+            for pattern in exchange_patterns:
+                match = re.search(pattern, content.upper())
+                if match:
+                    functional_info['exchange'] = match.group(1)
+                    break
         
         # Extract correlation functional
         corr_patterns = [
