@@ -1336,6 +1336,23 @@ def get_calculation_options_new() -> Dict[str, Any]:
         options["smearing"] = None
         options["use_smearing"] = False
         options["smearing_width"] = 0.0
+        
+        # IMPORTANT: Even with defaults, always prompt for basis set selection
+        # This ensures users can choose between internal/external basis sets
+        print("\n" + "="*60)
+        print("BASIS SET SELECTION")
+        print("="*60)
+        print("Even with default settings, you can choose your preferred basis set type.")
+        
+        # Get basis set selection with current defaults as fallbacks
+        basis_config = select_basis_set_with_defaults(
+            [], 
+            options.get("method_type", "DFT"), 
+            options.get("functional"),
+            current_basis_type=options.get("basis_set_type", "INTERNAL"),
+            current_basis=options.get("basis_set", "POB-TZVP-REV2")
+        )
+        options.update(basis_config)
     else:
         # Custom settings - go through each option in the correct order
         

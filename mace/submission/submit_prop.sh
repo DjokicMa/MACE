@@ -97,7 +97,7 @@ fi
 
 if [ ! -z "$QUEUE_MANAGER" ]; then
     echo "Found queue manager at: $QUEUE_MANAGER"
-    python "$QUEUE_MANAGER" --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion --max-recovery-attempts 3
+    python "$QUEUE_MANAGER" --max-jobs 950 --reserve 50 --max-submit 10 --callback-mode completion --max-recovery-attempts 3
 else
     echo "Warning: Queue manager not found. Checked:"
     echo "  - \$MACE_HOME/mace/queue/manager.py"

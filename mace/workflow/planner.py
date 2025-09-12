@@ -4059,7 +4059,7 @@ class WorkflowPlanner:
         return customizations
 
     def copy_and_customize_scripts(
-        self, step_configs: Dict[str, Dict[str, Any]], workflow_id: str
+        self, step_configs: Dict[str, Dict[str, Any]], workflow_id: str, queue_config: Dict[str, Any]
     ):
         """Copy and customize all SLURM scripts for the workflow"""
         print("\nStep 4.5: Setting up SLURM scripts and configuration files")
@@ -4079,7 +4079,7 @@ class WorkflowPlanner:
                     # Add workflow_id to script_config for context environment variables
                     script_config['workflow_id'] = workflow_id
                     self.create_customized_script(
-                        bin_scripts_dir, scripts_dir, script_config, step_key
+                        bin_scripts_dir, scripts_dir, script_config, step_key, queue_config
                     )
 
         # Copy additional required files
@@ -4091,6 +4091,7 @@ class WorkflowPlanner:
         scripts_dir: Path,
         script_config: Dict[str, Any],
         step_key: str,
+        queue_config: Dict[str, Any],
     ):
         """Create a customized version of a SLURM script"""
 
@@ -4108,7 +4109,7 @@ class WorkflowPlanner:
             content = f.read()
 
         # Apply customizations
-        modified_content = self.apply_script_customizations(content, script_config)
+        modified_content = self.apply_script_customizations(content, script_config, queue_config)
 
         # Write customized script
         with open(target_script, "w") as f:
@@ -4124,7 +4125,7 @@ class WorkflowPlanner:
         )
 
     def apply_script_customizations(
-        self, content: str, script_config: Dict[str, Any]
+        self, content: str, script_config: Dict[str, Any], queue_config: Dict[str, Any]
     ) -> str:
         """Apply resource and directive customizations to script content"""
 
@@ -4200,7 +4201,23 @@ class WorkflowPlanner:
                     modified_lines.insert(insert_pos + 1, custom_line)
                     insert_pos += 1
 
-        return "\n".join(modified_lines)
+        # Apply queue management configuration to callback parameters
+        content_str = "\n".join(modified_lines)
+        
+        # Replace hardcoded callback parameters with configured values
+        # Pattern: --max-jobs 250 --reserve 30 --max-submit 5
+        import re
+        callback_pattern = r'--max-jobs\s+\d+\s+--reserve\s+\d+\s+--max-submit\s+\d+'
+        replacement = f"--max-jobs {queue_config['max_jobs']} --reserve {queue_config['reserve_slots']} --max-submit {queue_config['max_submit_batch']}"
+        
+        content_str = re.sub(callback_pattern, replacement, content_str)
+        
+        # Also handle --max-recovery-attempts if present  
+        recovery_pattern = r'--max-recovery-attempts\s+\d+'
+        recovery_replacement = f"--max-recovery-attempts {queue_config['max_recovery_attempts']}"
+        content_str = re.sub(recovery_pattern, recovery_replacement, content_str)
+
+        return content_str
 
     def copy_additional_files(self, bin_dir: Path, workflow_id: str):
         """Copy additional required files (minimal with centralized installation)"""
@@ -4447,6 +4464,71 @@ class WorkflowPlanner:
             print(f"  cd {input_dir}")
             print("  mace submit --max-jobs 200")
 
+    def configure_queue_management(self) -> Dict[str, Any]:
+        """Configure SLURM queue management settings with streamlined interface"""
+        print("\nStep 4.8: Queue Management Configuration")
+        print("-" * 40)
+        
+        # Default settings optimized for 1000-job SLURM limit
+        default_config = {
+            "max_jobs": 950,           # Buffer below 1000 limit
+            "reserve_slots": 50,       # Safety buffer
+            "max_submit_batch": 10,    # Jobs to submit per callback
+            "max_recovery_attempts": 3 # Error recovery attempts
+        }
+        
+        print("Default queue management settings:")
+        print(f"  • Maximum total jobs: {default_config['max_jobs']}")
+        print(f"  • Reserve slots: {default_config['reserve_slots']}")
+        print(f"  • Max submit per callback: {default_config['max_submit_batch']}")
+        print(f"  • Recovery attempts: {default_config['max_recovery_attempts']}")
+        print("\nThese settings prevent hitting SLURM job limits and are optimized")
+        print("for most HPC clusters with 1000-job limits.")
+        
+        modify = yes_no_prompt("\nModify queue management settings?", "no")
+        
+        if not modify:
+            return default_config
+            
+        print("\nCustomizing queue management settings:")
+        config = {}
+        
+        # Max total jobs
+        print(f"\n1. Maximum total SLURM jobs allowed:")
+        print(f"   Current default: {default_config['max_jobs']}")
+        print(f"   This prevents exceeding your cluster's job limit")
+        print(f"   Recommended: 950 for clusters with 1000-job limits")
+        max_jobs_input = input(f"   Enter value [{default_config['max_jobs']}]: ").strip()
+        config['max_jobs'] = int(max_jobs_input) if max_jobs_input else default_config['max_jobs']
+        
+        # Reserve slots
+        print(f"\n2. SLURM slots to keep in reserve:")
+        print(f"   Current default: {default_config['reserve_slots']}")
+        print(f"   Safety buffer to prevent submitting too close to limit")
+        reserve_input = input(f"   Enter value [{default_config['reserve_slots']}]: ").strip()
+        config['reserve_slots'] = int(reserve_input) if reserve_input else default_config['reserve_slots']
+        
+        # Max submit per callback
+        print(f"\n3. Maximum jobs to submit per callback:")
+        print(f"   Current default: {default_config['max_submit_batch']}")
+        print(f"   Controls batch size when completed jobs trigger new submissions")
+        print(f"   Higher values = faster throughput, lower values = more stability")
+        submit_input = input(f"   Enter value [{default_config['max_submit_batch']}]: ").strip()
+        config['max_submit_batch'] = int(submit_input) if submit_input else default_config['max_submit_batch']
+        
+        # Recovery attempts
+        print(f"\n4. Maximum error recovery attempts:")
+        print(f"   Current default: {default_config['max_recovery_attempts']}")
+        print(f"   How many times to retry failed calculations with fixes")
+        recovery_input = input(f"   Enter value [{default_config['max_recovery_attempts']}]: ").strip()
+        config['max_recovery_attempts'] = int(recovery_input) if recovery_input else default_config['max_recovery_attempts']
+        
+        print(f"\nQueue management configuration:")
+        for key, value in config.items():
+            print(f"  {key}: {value}")
+            
+        return config
+
     def main_interactive_workflow(self):
         """Main interactive workflow planning interface"""
         self.display_welcome()
@@ -4507,6 +4589,9 @@ class WorkflowPlanner:
             action_map = {"1": "keep", "2": "archive", "3": "export_and_delete"}
             post_completion_action = action_map.get(action_choice, "keep")
 
+        # Step 4.8: Configure queue management settings
+        queue_config = self.configure_queue_management()
+
         # Step 5: Create comprehensive workflow plan
         workflow_plan = {
             "created": datetime.now().isoformat(),
@@ -4518,6 +4603,7 @@ class WorkflowPlanner:
             "cif_conversion_config": cif_config,
             "isolation_mode": isolation_mode,
             "post_completion_action": post_completion_action,
+            "queue_management": queue_config,
             "execution_settings": {
                 "max_concurrent_jobs": 200,
                 "enable_material_tracking": True,
@@ -4527,7 +4613,7 @@ class WorkflowPlanner:
 
         # Step 5: Copy and customize SLURM scripts
         workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        self.copy_and_customize_scripts(step_configs, workflow_id)
+        self.copy_and_customize_scripts(step_configs, workflow_id, queue_config)
 
         # Add script information to workflow plan
         workflow_plan["workflow_id"] = workflow_id
