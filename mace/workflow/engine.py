@@ -37,7 +37,7 @@ OPTIONAL_CALC_TYPES = {'BAND', 'DOSS', 'FREQ', 'TRANSPORT', 'CHARGE+POTENTIAL'}
 from mace.database.materials import MaterialDatabase, create_material_id_from_file, extract_formula_from_d12
 from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.workflow.context import get_current_context
-from mace.utils.settings_extractor import extract_d12_settings
+from mace.utils.settings_extractor import extract_input_settings
 
 
 class WorkflowEngine:
@@ -634,7 +634,7 @@ if [ ! -z "$QUEUE_MANAGER" ]; then
     fi
 else
     echo "Warning: Queue manager not found. Checked:"
-    echo "  - \$MACE_HOME/mace/queue/manager.py"
+    echo "  - \\$MACE_HOME/mace/queue/manager.py"
     echo "  - Various relative paths from $DIR"
     echo "  Workflow progression may not continue automatically"
 fi'''
@@ -2934,7 +2934,7 @@ fi'''
                 print(f"  Extracting functional info from source d12 for {target_base_type} generation")
                 try:
                     # Extract settings from the OPT d12 file
-                    settings = extract_d12_settings(str(d12_file))
+                    settings = extract_input_settings(Path(d12_file))
                     functional_info = settings.get('functional_info', {})
                     
                     # Determine the functional from the extracted info

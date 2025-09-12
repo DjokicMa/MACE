@@ -1,0 +1,13 @@
+BAND
+BiI_slab_sym_opt_modified_SLAB.out
+9 16 1000 1 288 1 0
+8 8 -8  0 8 0   M -> Y
+0 8 0   0 0 0   Y -> G
+0 0 0   0 0 8   G -> Z
+0 0 8   4 4 4   Z -> N
+4 4 4   8 8 8   N -> R
+8 8 8   0 0 0   R -> G
+0 0 0   8 0 0   G -> X
+8 0 0   8 0 8   X -> L
+8 0 8   0 0 0   L -> G
+END
