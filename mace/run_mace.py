@@ -272,14 +272,16 @@ def _get_basic_d3_config_for_quick_start(calc_type: str) -> Dict[str, Any]:
             "bands": "auto", 
             "shrink": "auto",
             "labels": "auto",
-            "auto_path": True
+            "auto_path": True,
+            "n_points": 10000,
+            "path_method": "coordinates"
         },
         "DOSS": {
             "calculation_type": "DOSS",
-            "npoints": 1000,
-            "band": "all",
+            "n_points": 10000,
+            "bands": "all",
             "projection_type": 0,  # Total DOS only
-            "e_range": [-20, 20]
+            "energy_range": [-20, 20]
         },
         "TRANSPORT": {
             "calculation_type": "TRANSPORT",
@@ -292,9 +294,18 @@ def _get_basic_d3_config_for_quick_start(calc_type: str) -> Dict[str, Any]:
         },
         "CHARGE+POTENTIAL": {
             "calculation_type": "CHARGE+POTENTIAL",
-            "option_type": 6,  # 3D grid
-            "mapnet": [100, 100, 100],
-            "output_format": "GAUSSIAN"
+            "charge_config": {
+                "type": "ECH3",
+                "n_points": 1000,
+                "scale": 3.0,
+                "use_range": False
+            },
+            "potential_config": {
+                "type": "POT3",
+                "n_points": 1000,
+                "scale": 3.0,
+                "use_range": False
+            }
         }
     }
     return configs.get(calc_type, {})

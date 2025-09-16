@@ -72,11 +72,20 @@ class ContextualMaterialDatabase(MaterialDatabase):
         # to prevent creating the root materials.db
         auto_init = True
         if workflow_context and workflow_context.isolation_mode != 'shared':
-            # In isolated mode, let the context create the database
-            auto_init = False
-        elif db_path == "materials.db" and not Path(db_path).exists():
-            # If using default path and it doesn't exist, check if we might get a context later
-            auto_init = False
+            # In isolated mode, use the context's database - don't create local files
+            auto_init = True  # The context database should already exist
+        elif db_path == "materials.db":
+            # Check if an isolated context database exists before creating local materials.db
+            context = get_current_context()
+            if context and context.isolation_mode != 'shared':
+                # There's an isolated context - use that database instead
+                db_path = str(context.get_database_path())
+                auto_init = True
+            elif not Path(db_path).exists():
+                # No context and default db doesn't exist - check if we might get a context later
+                auto_init = False
+            else:
+                auto_init = True
             
         super().__init__(db_path=db_path, ase_db_path=ase_db_path, auto_initialize=auto_init)
         
