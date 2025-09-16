@@ -382,8 +382,12 @@ class MaterialDatabase:
             update_values = [status]
             
             if slurm_job_id:
-                update_fields.append('slurm_job_id = ?')
-                update_values.append(slurm_job_id)
+                # Only update slurm_job_id if it's not already set to avoid UNIQUE constraint violations
+                cursor = conn.execute('SELECT slurm_job_id FROM calculations WHERE calc_id = ?', (calc_id,))
+                current_row = cursor.fetchone()
+                if current_row and not current_row[0]:  # Only if current slurm_job_id is NULL
+                    update_fields.append('slurm_job_id = ?')
+                    update_values.append(slurm_job_id)
                 
             if slurm_state:
                 update_fields.append('slurm_state = ?')

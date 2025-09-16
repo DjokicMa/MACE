@@ -1665,14 +1665,16 @@ class WorkflowPlanner:
                 "bands": "auto", 
                 "shrink": "auto",
                 "labels": "auto",
-                "auto_path": True
+                "auto_path": True,
+                "n_points": 10000,
+                "path_method": "coordinates"
             },
             "DOSS": {
                 "calculation_type": "DOSS",
-                "npoints": 1000,
-                "band": "all",
+                "n_points": 10000,
+                "bands": "all",
                 "projection_type": 0,  # Total DOS only
-                "e_range": [-20, 20]
+                "energy_range": [-20, 20]
             },
             "TRANSPORT": {
                 "calculation_type": "TRANSPORT",
@@ -1685,9 +1687,18 @@ class WorkflowPlanner:
             },
             "CHARGE+POTENTIAL": {
                 "calculation_type": "CHARGE+POTENTIAL",
-                "option_type": 6,  # 3D grid
-                "mapnet": [100, 100, 100],
-                "output_format": "GAUSSIAN"
+                "charge_config": {
+                    "type": "ECH3",
+                    "n_points": 1000,
+                    "scale": 3.0,
+                    "use_range": False
+                },
+                "potential_config": {
+                    "type": "POT3",
+                    "n_points": 1000,
+                    "scale": 3.0,
+                    "use_range": False
+                }
             }
         }
         
@@ -1763,8 +1774,18 @@ class WorkflowPlanner:
                 config["bands"] = "auto"
             
             # Points per segment
-            npoints = input("  Points per k-path segment [200]: ").strip()
-            config["npoints"] = int(npoints) if npoints else 200
+            npoints = input("  Points per k-path segment [10000]: ").strip()
+            config["n_points"] = int(npoints) if npoints else 10000
+            
+            # Set path_method based on path_format for proper D3 generation
+            if config.get("path_format") == "vectors":
+                config["path_method"] = "coordinates" 
+            elif config.get("path_format") == "literature":
+                config["path_method"] = "literature"
+            elif config.get("path_format") == "seekpath_full":
+                config["path_method"] = "seekpath"
+            else:
+                config["path_method"] = "coordinates"  # Default to coordinates for compatibility
             
         elif calc_type == "DOSS":
             print("\n  Advanced DOSS configuration:")
@@ -1799,8 +1820,8 @@ class WorkflowPlanner:
             ]
             
             # Number of points
-            npoints = input("  Number of energy points [2000]: ").strip()
-            config["npoints"] = int(npoints) if npoints else 2000
+            npoints = input("  Number of energy points [10000]: ").strip()
+            config["n_points"] = int(npoints) if npoints else 10000
             
         elif calc_type == "TRANSPORT":
             print("\n  Advanced TRANSPORT configuration:")
