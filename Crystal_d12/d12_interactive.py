@@ -410,23 +410,23 @@ def select_basis_set_with_defaults(elements: List[int], method: str = "DFT",
     
     # Create a patched version that uses our defaults
     def patched_get_user_input(prompt, options, default):
-        # For basis type selection
+        # For basis type selection - use current setting as default but still prompt
         if "Select basis set type" in prompt:
             if current_basis_type == "EXTERNAL":
-                return "1"
+                return original_get_user_input(prompt, options, "1")
             else:
-                return "2"
-        
-        # For external basis selection
+                return original_get_user_input(prompt, options, "2")
+
+        # For external basis selection - use current setting as default but still prompt
         elif "Select external basis set" in prompt and current_basis_type == "EXTERNAL":
             if "DZVP" in current_basis or "doublezeta" in current_basis:
-                return "1"
+                return original_get_user_input(prompt, options, "1")
             elif "TZVP" in current_basis or "triplezeta" in current_basis:
-                return "2"
+                return original_get_user_input(prompt, options, "2")
             else:
-                return default
-        
-        # For internal basis selection - need to check the prompt more carefully
+                return original_get_user_input(prompt, options, default)
+
+        # For internal basis selection - use current setting as default but still prompt
         elif "Enter your choice" in prompt and current_basis_type == "INTERNAL":
             # Map current basis to selection number
             basis_map = {
@@ -435,19 +435,19 @@ def select_basis_set_with_defaults(elements: List[int], method: str = "DFT",
                 "MINIS": "8", "6-31G*": "9", "def2-SV(P)": "10", "def2-SVP": "11",
                 "def-TZVP": "12", "def2-TZVP": "13"
             }
-            
+
             # Try exact match first
             if current_basis in basis_map:
-                return basis_map[current_basis]
-            
+                return original_get_user_input(prompt, options, basis_map[current_basis])
+
             # Try partial matches for special cases
             for basis_name, choice in basis_map.items():
                 if basis_name in current_basis or current_basis in basis_name:
-                    return choice
-            
+                    return original_get_user_input(prompt, options, choice)
+
             # Default to TZVP-REV2 if not found
-            return "7"
-        
+            return original_get_user_input(prompt, options, "7")
+
         # For all other prompts, use the original function
         return original_get_user_input(prompt, options, default)
     

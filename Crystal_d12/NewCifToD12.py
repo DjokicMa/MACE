@@ -1100,7 +1100,8 @@ def create_d12_file(cif_data, output_file, options):
                 print("BASISSET", file=f)
                 print(basis_set, file=f)
             else:
-                # External basis set handling
+                # External basis set handling - need END to close geometry section
+                print("END", file=f)
                 unique_atoms = set(atomic_numbers)
                 for atom_num in sorted(unique_atoms):
                     basis_content = read_basis_file(basis_set, atom_num)
