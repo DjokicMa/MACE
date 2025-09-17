@@ -1721,6 +1721,46 @@ fi'''
             "calculation_type": actual_calc_type,
             "keep_current_settings": config.get("inherit_settings", True)
         }
+
+        # CRITICAL: Extract and preserve external basis set information from input file
+        if Path(input_file).exists():
+            try:
+                # Import the D12 parser to extract basis set info
+                sys.path.insert(0, str(Path(__file__).parent.parent / "Crystal_d12"))
+                from d12_parsers import CrystalInputParser
+
+                parser = CrystalInputParser(input_file)
+                d12_data = parser.parse()
+
+                # Check if this was an external basis set calculation
+                if d12_data.get("basis_set_type") == "EXTERNAL" or self._has_external_basis(input_file):
+                    print(f"      Detected external basis set in {Path(input_file).name}")
+                    crystal_opt_config["basis_set_type"] = "EXTERNAL"
+
+                    # Try to determine the basis set path from the input file
+                    basis_path = self._extract_basis_path_from_d12(input_file)
+                    if basis_path == "USE_ORIGINAL_EXTERNAL_BASIS":
+                        # Use the original external basis data from the D12 file
+                        crystal_opt_config["use_original_external_basis"] = True
+                        print(f"      Using original external basis data from {Path(input_file).name}")
+                    elif basis_path:
+                        crystal_opt_config["basis_set_path"] = basis_path
+                        crystal_opt_config["use_original_external_basis"] = False
+                        print(f"      Using external basis from: {basis_path}")
+                    else:
+                        # Fallback: try to use original basis data if possible
+                        crystal_opt_config["use_original_external_basis"] = True
+                        print(f"      Warning: External basis detected but path not found, using original basis data")
+
+                elif d12_data.get("basis_set"):
+                    # Internal basis set - preserve the specific basis set name
+                    crystal_opt_config["basis_set_type"] = "INTERNAL"
+                    crystal_opt_config["basis_set"] = d12_data.get("basis_set")
+                    print(f"      Preserving internal basis set: {d12_data.get('basis_set')}")
+
+            except Exception as e:
+                print(f"      Warning: Could not extract basis set info from {input_file}: {e}")
+                print(f"      Falling back to keep_current_settings")
         
         # Add optimization-specific settings if provided
         if calc_type in ["OPT", "OPT2"] and "optimization_settings" in config:
@@ -1770,7 +1810,90 @@ fi'''
         finally:
             if temp_config.exists():
                 temp_config.unlink()
-    
+
+    def _has_external_basis(self, d12_file: str) -> bool:
+        """Check if a D12 file contains external basis set data"""
+        try:
+            with open(d12_file, 'r') as f:
+                content = f.read()
+                # Look for typical external basis indicators
+                # External basis sets have numeric data patterns and "99 0" terminator
+                return "99 0" in content and any(
+                    line.strip().startswith(('0 0 ', '0 2 ', '0 3 '))
+                    for line in content.split('\n')
+                )
+        except Exception:
+            return False
+
+    def _extract_basis_path_from_d12(self, d12_file: str) -> Optional[str]:
+        """Extract basis set path from D12 filename for external basis sets"""
+        # Extract basis set path from filename patterns like:
+        # material_CRYSTAL_OPT_symm_HSE06-D3_full.basis.triplezeta.d12
+        filename = Path(d12_file).name
+
+        # First, try to use MACE config for bundled basis sets (most reliable)
+        try:
+            # Import MACE config to get correct paths
+            config_path = Path(__file__).parent.parent / "mace_config.py"
+            if config_path.exists():
+                import importlib.util
+                spec = importlib.util.spec_from_file_location("mace_config", config_path)
+                mace_config = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mace_config)
+
+                # Check for bundled basis set indicators in filename
+                if any(tz_indicator in filename.lower() for tz_indicator in ['full.basis.triplezeta', 'triplezeta', 'tz', 'tzvp']):
+                    bundled_tz_path = getattr(mace_config, 'DEFAULT_TZ_PATH', None)
+                    if bundled_tz_path and Path(bundled_tz_path).exists():
+                        return bundled_tz_path
+
+                elif any(dz_indicator in filename.lower() for dz_indicator in ['full.basis.doublezeta', 'doublezeta', 'dz', 'dzvp']):
+                    bundled_dz_path = getattr(mace_config, 'DEFAULT_DZ_PATH', None)
+                    if bundled_dz_path and Path(bundled_dz_path).exists():
+                        return bundled_dz_path
+        except Exception:
+            pass
+
+        # Fallback: Look for common basis set directory patterns in filename
+        # This handles cases where custom paths were used
+
+        # Legacy HPC paths (for backward compatibility)
+        if "full.basis.triplezeta" in filename:
+            legacy_paths = [
+                "/mnt/research/mendozacortes_group/bin/helpscripts/code/full.basis.triplezeta/",
+                "./full.basis.triplezeta/",
+                "../full.basis.triplezeta/"
+            ]
+            for path in legacy_paths:
+                if Path(path).exists():
+                    return path
+        elif "full.basis.doublezeta" in filename:
+            legacy_paths = [
+                "/mnt/research/mendozacortes_group/bin/helpscripts/code/full.basis.doublezeta/",
+                "./full.basis.doublezeta/",
+                "../full.basis.doublezeta/"
+            ]
+            for path in legacy_paths:
+                if Path(path).exists():
+                    return path
+
+        # If we can't determine the exact path, try to parse it from the D12 file itself
+        # by looking for basis set content and trying to match it to known locations
+        try:
+            with open(d12_file, 'r') as f:
+                content = f.read()
+
+            # If it has external basis content, we should preserve it even if we can't
+            # determine the exact original path. CRYSTALOptToD12.py can use the
+            # original external basis data from the file itself.
+            if "99 0" in content and any(line.strip().startswith(('0 0 ', '0 2 ', '0 3 ')) for line in content.split('\n')):
+                # Return a special marker indicating we should use original basis data
+                return "USE_ORIGINAL_EXTERNAL_BASIS"
+        except Exception:
+            pass
+
+        return None
+
     def _fix_opt2_naming(self, output_dir: Path, base_name: str):
         """Fix naming for OPT2 files generated by CRYSTALOptToD12.py"""
         # CRYSTALOptToD12.py might generate files with patterns like material_opt_opt.d12

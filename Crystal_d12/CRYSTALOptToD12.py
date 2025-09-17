@@ -369,6 +369,8 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         elif functional in ["RHF", "UHF"]:
             # Standard HF methods
             if settings.get("basis_set_type") == "EXTERNAL":
+                # External basis set handling - need END to close geometry section
+                f.write("END\n")
                 # Handle external basis sets for HF methods
                 if settings.get("use_original_external_basis") and external_basis_data:
                     # Use the external basis from the original file
@@ -418,6 +420,8 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         else:
             # Standard basis set and method handling
             if settings.get("basis_set_type") == "EXTERNAL":
+                # External basis set handling - need END to close geometry section
+                f.write("END\n")
                 # Write external basis set data
                 if settings.get("use_original_external_basis") and external_basis_data:
                     # Use the external basis from the original file

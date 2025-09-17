@@ -1385,9 +1385,20 @@ fi'''
             return None
             
         wf_output_file = Path(wf_calc['output_file'])
-        
-        # Create work directory for D3 generation
-        work_dir = Path.cwd() / material_id / "tmp_d3_generation"
+
+        # Get workflow base directory and determine proper step location
+        workflow_base = self.get_workflow_output_base(source_calc)
+
+        # Find the step number for this calculation type
+        step_num = self._get_next_step_number(workflow_base, target_calc_type)
+
+        # Create work directory in proper workflow step location
+        core_name = self.extract_core_material_name(material_id)
+        calc_suffix = self.get_next_calc_suffix(core_name, target_calc_type, workflow_base)
+        dir_name = f"{core_name}{calc_suffix}"
+
+        step_dir = workflow_base / f"step_{step_num:03d}_{target_calc_type}" / dir_name
+        work_dir = step_dir / "tmp_d3_generation"
         work_dir.mkdir(parents=True, exist_ok=True)
         
         try:
@@ -1438,9 +1449,9 @@ fi'''
             # Get the generated D3 file
             d3_file = d3_files[0]
             
-            # Create final directories
+            # Create final directories in proper workflow step location
             base_type, calc_num = self._parse_calc_type(target_calc_type)
-            final_dir = Path.cwd() / material_id / f"{base_type}{calc_num}"
+            final_dir = step_dir / f"{base_type}{calc_num}"
             final_dir.mkdir(parents=True, exist_ok=True)
             
             # Copy files to final location
@@ -1555,9 +1566,8 @@ fi'''
             calc_type=calc_type,
             input_file=str(d3_file),
             work_dir=str(work_dir),
-            parent_calc_id=parent_calc_id,
-            workflow_id=workflow_id,
-            step_number=step_num
+            prerequisite_calc_id=parent_calc_id,
+            settings={'workflow_id': workflow_id, 'step_number': step_num}
         )
         
         # Submit job

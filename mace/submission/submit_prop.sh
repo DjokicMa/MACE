@@ -97,7 +97,13 @@ fi
 
 if [ ! -z "$QUEUE_MANAGER" ]; then
     echo "Found queue manager at: $QUEUE_MANAGER"
-    python "$QUEUE_MANAGER" --max-jobs 950 --reserve 50 --max-submit 10 --callback-mode completion --max-recovery-attempts 3
+    # Check for workflow context database
+    if [ ! -z "$MACE_CONTEXT_DIR" ] && [ -f "$MACE_CONTEXT_DIR/materials.db" ]; then
+        echo "Using workflow context database: $MACE_CONTEXT_DIR/materials.db"
+        python "$QUEUE_MANAGER" --max-jobs 950 --reserve 50 --max-submit 10 --callback-mode completion --max-recovery-attempts 3 --db-path "$MACE_CONTEXT_DIR/materials.db"
+    else
+        python "$QUEUE_MANAGER" --max-jobs 950 --reserve 50 --max-submit 10 --callback-mode completion --max-recovery-attempts 3
+    fi
 else
     echo "Warning: Queue manager not found. Checked:"
     echo "  - \$MACE_HOME/mace/queue/manager.py"

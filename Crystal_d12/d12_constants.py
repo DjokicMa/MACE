@@ -1286,13 +1286,58 @@ def select_basis_set(elements: List[int], method: str = "DFT",
         print("   - Good balance of speed and accuracy")
         print("2: TZVP-REV2 - Triple-zeta + polarization")
         print("   - Higher accuracy, more expensive")
-        
+        print("3: Custom path - Specify your own basis set directory")
+
+        # Add custom option
+        external_options["3"] = "CUSTOM"
+
         external_choice = get_user_input(
             "Select external basis set",
             external_options,
             "2"
         )
-        basis_config["basis_set"] = external_options[external_choice]
+
+        if external_choice == "3":
+            # Custom basis set path
+            print("\nCustom external basis set:")
+            print("Enter the full path to your basis set directory.")
+            print("This directory should contain numbered files (1, 6, 8, etc.) for each element.")
+            print("Example: /path/to/my/basis_sets/custom_basis/")
+
+            while True:
+                custom_path = input("Basis set directory path: ").strip()
+                if not custom_path:
+                    print("Please enter a valid path.")
+                    continue
+
+                custom_path = Path(custom_path)
+                if not custom_path.exists():
+                    print(f"Error: Path does not exist: {custom_path}")
+                    retry = input("Try again? [Y/n]: ").strip().lower()
+                    if retry == 'n':
+                        print("Falling back to TZVP-REV2")
+                        basis_config["basis_set"] = external_options["2"]
+                        break
+                    continue
+
+                if not custom_path.is_dir():
+                    print(f"Error: Path is not a directory: {custom_path}")
+                    continue
+
+                # Check if it contains some basis files
+                basis_files = list(custom_path.glob("[0-9]*"))
+                if not basis_files:
+                    print(f"Warning: No numbered basis files found in {custom_path}")
+                    confirm = input("Use this path anyway? [y/N]: ").strip().lower()
+                    if confirm != 'y':
+                        continue
+
+                # Ensure path ends with /
+                basis_config["basis_set"] = str(custom_path) + ("/" if not str(custom_path).endswith("/") else "")
+                print(f"Using custom basis set: {basis_config['basis_set']}")
+                break
+        else:
+            basis_config["basis_set"] = external_options[external_choice]
         
     else:
         # Internal basis set selection
