@@ -189,12 +189,17 @@ def get_advanced_frequency_settings():
         
         # Ask about NUMDERIV for all templates
         print("\nNumerical derivative method (NUMDERIV):")
+        print("  0: No NUMDERIV keyword (use CRYSTAL default)")
+        print("     Uses CRYSTAL's default difference quotient formula")
         print("  1: One displacement per atom (faster)")
         print("     Forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
         print("  2: Two displacements per atom (more accurate)")
         print("     Central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
-        numderiv_choice = input("\nSelect method (1-2) [2]: ").strip() or "2"
-        freq_settings["numderiv"] = int(numderiv_choice)
+        numderiv_choice = input("\nSelect method (0-2) [2]: ").strip() or "2"
+        if numderiv_choice == "0":
+            freq_settings["numderiv"] = None  # Signal to skip NUMDERIV keyword
+        else:
+            freq_settings["numderiv"] = int(numderiv_choice)
         
         # Allow customization based on template
         if template_choice == "1":  # Basic template
@@ -920,13 +925,18 @@ def get_advanced_frequency_settings():
         
         # Numerical derivative method
         print("\nNumerical derivative method:")
+        print("0: No NUMDERIV keyword (use CRYSTAL default)")
+        print("   Uses CRYSTAL's default difference quotient formula")
         print("1: One displacement per atom (faster, less accurate)")
         print("   Uses forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
         print("2: Two displacements per atom (default, recommended)")
         print("   Uses central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
-        
-        numderiv = input("Select method (1-2) [2]: ").strip() or "2"
-        freq_settings["numderiv"] = int(numderiv)
+
+        numderiv = input("Select method (0-2) [2]: ").strip() or "2"
+        if numderiv == "0":
+            freq_settings["numderiv"] = None  # Signal to skip NUMDERIV keyword
+        else:
+            freq_settings["numderiv"] = int(numderiv)
         
         # Skip IR/Raman section entirely for phonon dispersion calculations
         if freq_settings.get("mode") != "DISPERSION":
@@ -1652,11 +1662,12 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
         for atom_label, mass in isotopes.items():
             print(f"{atom_label} {mass}", file=f)
     
-    # Numerical derivative method (skip if minimal_raman is True)
+    # Numerical derivative method (skip if minimal_raman is True or numderiv is None)
     if not freq_settings.get("minimal_raman", False):
         numderiv = freq_settings.get("numderiv", 2)
-        print("NUMDERIV", file=f)
-        print(numderiv, file=f)
+        if numderiv is not None:
+            print("NUMDERIV", file=f)
+            print(numderiv, file=f)
     
     # Step size for numerical derivatives
     if "stepsize" in freq_settings:

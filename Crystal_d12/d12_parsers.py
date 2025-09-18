@@ -557,29 +557,29 @@ class CrystalOutputParser:
                         functional_found = True
                         break
                         
-            # Check for 3C methods
-            elif "PBEh-3c" in line or "PBEH3C" in line:
-                self.data["functional"] = "PBEh-3C"
+            # Check for 3C methods (only if not already found)
+            elif ("PBEh-3c" in line or "PBEH3C" in line) and not functional_found:
+                self.data["functional"] = "PBEH3C"
                 self.data["is_3c_method"] = True
                 return
-            elif "HSE-3c" in line or "HSE3C" in line:
-                self.data["functional"] = "HSE-3C"
+            elif ("HSE-3c" in line or "HSE3C" in line) and not functional_found:
+                self.data["functional"] = "HSE3C"
                 self.data["is_3c_method"] = True
                 return
-            elif "B97-3c" in line or "B973C" in line:
-                self.data["functional"] = "B97-3C"
+            elif ("B97-3c" in line or "B973C" in line) and not functional_found:
+                self.data["functional"] = "B973C"
                 self.data["is_3c_method"] = True
                 return
-            elif "PBEsol0-3c" in line or "PBESOL03C" in line:
-                self.data["functional"] = "PBEsol0-3C"
+            elif ("PBEsol0-3c" in line or "PBESOL03C" in line) and not functional_found:
+                self.data["functional"] = "PBESOL03C"
                 self.data["is_3c_method"] = True
                 return
-            elif "HSEsol-3c" in line or "HSESOL3C" in line:
-                self.data["functional"] = "HSEsol-3C"
+            elif ("HSEsol-3c" in line or "HSESOL3C" in line) and not functional_found:
+                self.data["functional"] = "HSESOL3C"
                 self.data["is_3c_method"] = True
                 return
-            elif "r2SCAN-3c" in line or "R2SCAN3C" in line:
-                self.data["functional"] = "r2SCAN-3C"
+            elif ("r2SCAN-3c" in line or "R2SCAN3C" in line) and not functional_found:
+                self.data["functional"] = "R2SCAN3C"
                 self.data["is_3c_method"] = True
                 return
         
