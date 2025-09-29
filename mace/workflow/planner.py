@@ -1689,14 +1689,14 @@ class WorkflowPlanner:
                 "calculation_type": "CHARGE+POTENTIAL",
                 "charge_config": {
                     "type": "ECH3",
-                    "n_points": 1000,
-                    "scale": 3.0,
+                    "n_points": 100,
+                    "scale": 3,
                     "use_range": False
                 },
                 "potential_config": {
                     "type": "POT3",
-                    "n_points": 1000,
-                    "scale": 3.0,
+                    "n_points": 100,
+                    "scale": 3,
                     "use_range": False
                 }
             }
@@ -2308,6 +2308,35 @@ class WorkflowPlanner:
                                 config["frequency_settings"]["irspec"] = True
                                 width = input("  IR peak width (cm^-1) [10]: ").strip()
                                 config["frequency_settings"]["spec_dampfac"] = float(width) if width else 10
+
+                                # Dielectric information required for IRSPEC
+                                print("\n  Dielectric information (required for IR spectrum):")
+                                print("    1. Constant - Single isotropic value")
+                                print("    2. Tensor - Full 3x3 anisotropic tensor")
+                                diel_type = input("  Select type [1]: ").strip() or "1"
+
+                                if diel_type == "1":
+                                    diel_const = input("  Dielectric constant [2.5]: ").strip()
+                                    config["frequency_settings"]["dielectric_constant"] = float(diel_const) if diel_const else 2.5
+                                    print(f"  ✓ Using dielectric constant: {config['frequency_settings']['dielectric_constant']}")
+                                else:
+                                    print("  Enter 3x3 dielectric tensor (9 values, row-wise):")
+                                    print("  Example: 2.5 0.0 0.0 0.0 2.5 0.0 0.0 0.0 2.5")
+                                    tensor_input = input("  Tensor values: ").strip()
+                                    if tensor_input:
+                                        try:
+                                            tensor_values = [float(x) for x in tensor_input.split()]
+                                            if len(tensor_values) == 9:
+                                                config["frequency_settings"]["dielectric_tensor"] = tensor_values
+                                                print("  ✓ Using dielectric tensor")
+                                            else:
+                                                print("  Invalid tensor (using default constant 2.5)")
+                                                config["frequency_settings"]["dielectric_constant"] = 2.5
+                                        except ValueError:
+                                            print("  Invalid tensor values (using default constant 2.5)")
+                                            config["frequency_settings"]["dielectric_constant"] = 2.5
+                                    else:
+                                        config["frequency_settings"]["dielectric_constant"] = 2.5
                             if has_raman_spectra:
                                 config["frequency_settings"]["ramspec"] = True
                                 if has_ir_spectra:
@@ -2323,6 +2352,23 @@ class WorkflowPlanner:
                 # Not gamma point mode - no intensities possible
                 config["frequency_settings"]["intensities"] = False
                 config["frequency_settings"]["raman"] = False
+
+            # Vibrational mode calculation selection
+            if config["frequency_settings"].get("mode") == "GAMMA":
+                print("\n  Vibrational mode calculation:")
+                print("    1. IRRAMAN - Both IR and Raman modes (default)")
+                print("    2. IR - Only IR active modes")
+                print("    3. RAMAN - Only Raman active modes")
+                print("    4. ALL - All vibrational modes")
+                mode_choice = input("  Select mode type [1]: ").strip() or "1"
+                mode_map = {"1": "IRRAMAN", "2": "IR", "3": "RAMAN", "4": "ALL"}
+                config["frequency_settings"]["mode_selection"] = mode_map.get(mode_choice, "IRRAMAN")
+
+                if mode_choice != "1":
+                    mode_name = mode_map[mode_choice]
+                    print(f"  ✓ Mode selection: {mode_name}")
+                else:
+                    print("  ✓ Using default mode (IRRAMAN)")
 
             # Anharmonic calculations
             calc_anharm = (

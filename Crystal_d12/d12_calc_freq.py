@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "Crystal_d3"))
 try:
     from d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
-                           get_seekpath_full_kpath, get_literature_kpath_vectors)
+                           get_seekpath_full_kpath, get_literature_kpath_vectors, validate_kpoint_labels_for_crystal23)
 except ImportError:
     print("Warning: Could not import d3_kpoints module - some k-path features may be unavailable")
     get_band_path_from_symmetry = None
@@ -35,6 +35,7 @@ except ImportError:
     get_seekpath_labels = None
     get_seekpath_full_kpath = None
     get_literature_kpath_vectors = None
+    validate_kpoint_labels_for_crystal23 = None
 
 # Default frequency settings
 DEFAULT_FREQ_SETTINGS = {
@@ -195,7 +196,7 @@ def get_advanced_frequency_settings():
         print("     Forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
         print("  2: Two displacements per atom (more accurate)")
         print("     Central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
-        numderiv_choice = input("\nSelect method (0-2) [2]: ").strip() or "2"
+        numderiv_choice = input("\nSelect method (0-2) [0]: ").strip() or "0"
         if numderiv_choice == "0":
             freq_settings["numderiv"] = None  # Signal to skip NUMDERIV keyword
         else:
@@ -932,7 +933,7 @@ def get_advanced_frequency_settings():
         print("2: Two displacements per atom (default, recommended)")
         print("   Uses central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
 
-        numderiv = input("Select method (0-2) [2]: ").strip() or "2"
+        numderiv = input("Select method (0-2) [0]: ").strip() or "0"
         if numderiv == "0":
             freq_settings["numderiv"] = None  # Signal to skip NUMDERIV keyword
         else:
@@ -1616,6 +1617,10 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
     print("FREQCALC", file=f)
     
     # Handle restart
+    # RESTART allows continuing a terminated frequency calculation from the last computed point
+    # Required files: FREQINFO.DAT, fort.20, fort.13, fort.28 (Berry), fort.80 (Wannier)
+    # Note: IR intensities (Berry/Wannier) must be present in original calculation,
+    #       but CPHF analytical intensities can be added during restart
     if freq_settings.get("restart", False):
         print("RESTART", file=f)
     
@@ -1646,7 +1651,19 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
     # Eckart conditions
     if not freq_settings.get("eckart", True):
         print("NOECKART", file=f)
-    
+
+    # Mode calculation selection (IR, RAMAN, IRRAMAN, ALL)
+    # This determines which vibrational modes are calculated (separate from intensity calculations)
+    # Note: IRRAMAN (both IR and Raman modes) is the default in CRYSTAL23
+    mode_selection = freq_settings.get("mode_selection", "default")
+    if mode_selection and mode_selection != "default":
+        mode_selection = mode_selection.upper()
+        if mode_selection in ["IR", "RAMAN", "ALL"]:
+            print(mode_selection, file=f)
+        # Don't print IRRAMAN explicitly since it's the default
+        elif mode_selection == "IRRAMAN":
+            pass  # Default behavior, no keyword needed
+
     # Fragment calculation
     if "fragment" in freq_settings:
         fragment_atoms = freq_settings["fragment"]
@@ -1664,7 +1681,7 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
     
     # Numerical derivative method (skip if minimal_raman is True or numderiv is None)
     if not freq_settings.get("minimal_raman", False):
-        numderiv = freq_settings.get("numderiv", 2)
+        numderiv = freq_settings.get("numderiv", None)
         if numderiv is not None:
             print("NUMDERIV", file=f)
             print(numderiv, file=f)
@@ -1729,17 +1746,6 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
         print("FREQSCAL", file=f)
         print(format_crystal_float(freq_settings["freqscale"]), file=f)
     
-    # Dielectric tensor or constant for LO/TO splitting
-    if "dielectric_tensor" in freq_settings:
-        tensor = freq_settings["dielectric_tensor"]
-        print("DIELTENS", file=f)
-        # Print 3x3 tensor (9 values)
-        tensor_str = " ".join(format_crystal_float(v) for v in tensor[:9])
-        print(tensor_str, file=f)
-    elif "dielectric_constant" in freq_settings:
-        print("DIELISO", file=f)
-        print(format_crystal_float(freq_settings["dielectric_constant"]), file=f)
-    
     # Chi2 tensor for Raman LO modes
     if "chi2tensor" in freq_settings:
         tensor = freq_settings["chi2tensor"]
@@ -1749,61 +1755,91 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
             tensor_str = " ".join(format_crystal_float(v) for v in tensor[i:i+9])
             print(tensor_str, file=f)
     
+    # Determine if we need CPHF and where to place it
+    has_intensities = freq_settings.get("intensities", False)
+    has_raman = freq_settings.get("raman", False)
+    ir_method = freq_settings.get("ir_method", "BERRY").upper()
+    needs_cphf = (has_intensities and ir_method == "CPHF") or has_raman
+
     # IR intensities
-    if freq_settings.get("intensities", False):
+    if has_intensities:
         print("INTENS", file=f)
-        
-        ir_method = freq_settings.get("ir_method", "BERRY").upper()
-        if ir_method == "WANNIER":
-            print("INTLOC", file=f)
-            
-            # Wannier function settings
-            if freq_settings.get("relocalize_wannier", False):
-                print("DIPOMOME", file=f)
-                print("RELOCAL", file=f)
-                print("END", file=f)
-        elif ir_method == "CPHF":
-            print("INTCPHF", file=f)
-            # CPHF settings block
-            cphf_settings = freq_settings.get("cphf_settings", {})
-            if "fmixing" in cphf_settings:
-                print("FMIXING", file=f)
-                print(cphf_settings["fmixing"], file=f)
-            if "tolalpha" in cphf_settings:
-                print("TOLALPHA", file=f)
-                print(cphf_settings["tolalpha"], file=f)
-            if "maxcycle" in cphf_settings:
-                print("MAXCYCLE", file=f)
-                print(cphf_settings["maxcycle"], file=f)
-            # Print ENDCPHF to close the INTCPHF block
-            print("ENDCPHF", file=f)
-        # else: default is Berry phase (INTPOL), no keyword needed
-        
+
+        # If INTRAMAN is present, don't add any IR intensity method here
+        # INTRAMAN will handle INTCPHF after itself
+        if not has_raman:
+            if ir_method == "WANNIER":
+                print("INTLOC", file=f)
+
+                # Wannier function settings
+                if freq_settings.get("relocalize_wannier", False):
+                    print("DIPOMOME", file=f)
+                    print("RELOCAL", file=f)
+                    print("END", file=f)
+            elif ir_method == "CPHF":
+                print("INTCPHF", file=f)
+                # CPHF settings block
+                cphf_settings = freq_settings.get("cphf_settings", {})
+                if "fmixing" in cphf_settings:
+                    print("FMIXING", file=f)
+                    print(cphf_settings["fmixing"], file=f)
+                if "tolalpha" in cphf_settings:
+                    print("TOLALPHA", file=f)
+                    print(cphf_settings["tolalpha"], file=f)
+                if "maxcycle" in cphf_settings:
+                    print("MAXCYCLE", file=f)
+                    print(cphf_settings["maxcycle"], file=f)
+                print("ENDCPHF", file=f)
+            # else: default is Berry phase (INTPOL), no keyword needed
+
         # Born tensor normalization
         if freq_settings.get("born_tensor_norm", False):
             print("NORMBORN", file=f)
+
+        # Dielectric tensor or constant for LO/TO splitting (required for IRSPEC)
+        if "dielectric_tensor" in freq_settings:
+            tensor = freq_settings["dielectric_tensor"]
+            print("DIELTENS", file=f)
+            # Print 3x3 tensor (9 values)
+            tensor_str = " ".join(format_crystal_float(v) for v in tensor[:9])
+            print(tensor_str, file=f)
+        elif "dielectric_constant" in freq_settings:
+            print("DIELISO", file=f)
+            print(format_crystal_float(freq_settings["dielectric_constant"]), file=f)
     else:
         print("NOINTENS", file=f)
-    
+
     # Raman intensities
-    if freq_settings.get("raman", False):
+    if has_raman:
         print("INTRAMAN", file=f)
-        
-        # Always need INTCPHF for Raman
-        if not (freq_settings.get("intensities", False) and 
-                freq_settings.get("ir_method", "BERRY").upper() == "CPHF"):
+
+        # INTCPHF must come after INTRAMAN (required by CRYSTAL)
+        if needs_cphf:
             print("INTCPHF", file=f)
-            # CPHF settings for Raman
+            # CPHF settings
             cphf_settings = freq_settings.get("cphf_settings", {})
+            # Use Raman-specific settings if available, otherwise fallback to regular settings
             if "fmixing2" in cphf_settings:
                 print("FMIXING2", file=f)
                 print(cphf_settings["fmixing2"], file=f)
+            elif "fmixing" in cphf_settings:
+                print("FMIXING", file=f)
+                print(cphf_settings["fmixing"], file=f)
+
             if "tolgamma" in cphf_settings:
                 print("TOLGAMMA", file=f)
                 print(cphf_settings["tolgamma"], file=f)
+            elif "tolalpha" in cphf_settings:
+                print("TOLALPHA", file=f)
+                print(cphf_settings["tolalpha"], file=f)
+
             if "maxcycle2" in cphf_settings:
                 print("MAXCYCLE2", file=f)
                 print(cphf_settings["maxcycle2"], file=f)
+            elif "maxcycle" in cphf_settings:
+                print("MAXCYCLE", file=f)
+                print(cphf_settings["maxcycle"], file=f)
+
             print("ENDCPHF", file=f)
         
         # Experimental conditions
@@ -1965,15 +2001,53 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
                             ]
                             path.append(int_seg)
                 else:
-                    # Label-based path
+                    # Label-based path - validate for CRYSTAL23 compatibility
                     band_settings["kpath_source"] = "default"
                     path_labels = get_band_path_from_symmetry(space_group, lattice_type)
-                    path = []
-                    for i in range(len(path_labels) - 1):
-                        path.append(f"{path_labels[i]} {path_labels[i+1]}")
-                    shrink = 0  # Force labels mode
-                    # Store path labels for title generation
-                    band_settings["path_labels"] = path_labels
+
+                    # Validate k-point labels for CRYSTAL23 compatibility
+                    if validate_kpoint_labels_for_crystal23:
+                        labels_valid, validated_path = validate_kpoint_labels_for_crystal23(path_labels, space_group, lattice_type)
+
+                        if not labels_valid:
+                            print("Warning: Some k-point labels are invalid for CRYSTAL23. Switching to coordinate mode for phonon bands.")
+                            # Switch to coordinate mode
+                            if get_kpoint_coordinates_from_labels:
+                                frac_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
+                                if frac_segments and scale_kpoint_segments:
+                                    path = scale_kpoint_segments(frac_segments, 16)  # Use default shrink=16 for coordinates
+                                    shrink = 16
+                                    band_settings["path_labels"] = path_labels  # Keep original for title
+                                else:
+                                    # Fallback
+                                    path = [[0, 0, 0, 1, 0, 0]]
+                                    shrink = 16
+                            else:
+                                # Fallback if coordinate conversion fails
+                                path = []
+                                for i in range(len(validated_path) - 1):
+                                    path.append(f"{validated_path[i]} {validated_path[i+1]}")
+                                shrink = 0
+                        else:
+                            # Use validated labels
+                            path = []
+                            for i in range(len(validated_path) - 1):
+                                if validated_path[i] == "|":
+                                    continue
+                                j = i + 1
+                                while j < len(validated_path) and validated_path[j] == "|":
+                                    j += 1
+                                if j < len(validated_path):
+                                    path.append(f"{validated_path[i]} {validated_path[j]}")
+                            shrink = 0
+                            band_settings["path_labels"] = validated_path
+                    else:
+                        # Fallback if validation function not available
+                        path = []
+                        for i in range(len(path_labels) - 1):
+                            path.append(f"{path_labels[i]} {path_labels[i+1]}")
+                        shrink = 0
+                        band_settings["path_labels"] = path_labels
             
             # Second line: NLINE (number of lines/segments)
             if isinstance(path, list):
@@ -2056,29 +2130,37 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
     
     # IR spectrum generation
     if freq_settings.get("irspec", False):
-        print("IRSPEC", file=f)
-        
-        # Spectrum settings
-        if "spec_range" in freq_settings:
-            print("RANGE", file=f)
-            print(f"{freq_settings['spec_range'][0]} {freq_settings['spec_range'][1]}", file=f)
-        if "spec_step" in freq_settings:
-            print("LENSTEP", file=f)
-            print(format_crystal_float(freq_settings["spec_step"]), file=f)
-        if "spec_dampfac" in freq_settings:
-            print("DAMPFAC", file=f)
-            print(format_crystal_float(freq_settings["spec_dampfac"]), file=f)
-        if freq_settings.get("spec_gaussian", False):
-            print("GAUSS", file=f)
-        if "spec_angle" in freq_settings:
-            print("ANGLE", file=f)
-            print(format_crystal_float(freq_settings["spec_angle"]), file=f)
-        if freq_settings.get("spec_refrind", False):
-            print("REFRIND", file=f)
-        if freq_settings.get("spec_dielfun", False):
-            print("DIELFUN", file=f)
-        
-        print("END", file=f)
+        # Validate that IRSPEC has required dielectric information
+        has_dielectric = ("dielectric_tensor" in freq_settings or
+                         "dielectric_constant" in freq_settings)
+
+        if not has_dielectric:
+            print("Warning: IRSPEC requires either DIELTENS (dielectric_tensor) or DIELISO (dielectric_constant)")
+            print("IRSPEC will be skipped. Add dielectric information to enable IR spectrum.")
+        else:
+            print("IRSPEC", file=f)
+
+            # Spectrum settings
+            if "spec_range" in freq_settings:
+                print("RANGE", file=f)
+                print(f"{freq_settings['spec_range'][0]} {freq_settings['spec_range'][1]}", file=f)
+            if "spec_step" in freq_settings:
+                print("LENSTEP", file=f)
+                print(format_crystal_float(freq_settings["spec_step"]), file=f)
+            if "spec_dampfac" in freq_settings:
+                print("DAMPFAC", file=f)
+                print(format_crystal_float(freq_settings["spec_dampfac"]), file=f)
+            if freq_settings.get("spec_gaussian", False):
+                print("GAUSS", file=f)
+            if "spec_angle" in freq_settings:
+                print("ANGLE", file=f)
+                print(format_crystal_float(freq_settings["spec_angle"]), file=f)
+            if freq_settings.get("spec_refrind", False):
+                print("REFRIND", file=f)
+            if freq_settings.get("spec_dielfun", False):
+                print("DIELFUN", file=f)
+
+            print("END", file=f)
     
     # Raman spectrum generation
     if freq_settings.get("ramspec", False):

@@ -717,6 +717,20 @@ Examples:
 
 For full options, the command will show CRYSTALOptToD3.py help when run without arguments.
 """,
+        'opt2cif': """
+Usage: mace opt2cif [files/directory] [options]
+
+Convert CRYSTAL output files to CIF format.
+Supports all dimensionalities (3D, 2D, 1D, 0D) and calculation types (OPT, SP, FREQ).
+
+Examples:
+  mace opt2cif material.out
+  mace opt2cif .
+  mace opt2cif /path/to/calculations/
+  mace opt2cif . --output-dir cifs/ --include-metadata
+
+For full options, the command will show CrystalOutToCif.py help when run without arguments.
+""",
         'manager': """
 Usage: mace manager [options]
 
@@ -864,7 +878,7 @@ def main():
         return
     
     # Special handling for commands that should pass through directly
-    passthrough_commands = ['convert', 'opt2d12', 'opt2d3']
+    passthrough_commands = ['convert', 'opt2d12', 'opt2d3', 'opt2cif']
     
     # Handle --no-banner if it's the first argument
     no_banner_first = False
@@ -908,6 +922,11 @@ def main():
             from CRYSTALOptToD3 import main as opt2d3_main
             sys.argv = ['CRYSTALOptToD3.py'] + sys.argv[2:]
             opt2d3_main()
+        elif command == 'opt2cif':
+            sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
+            from CrystalOutToCif import main as opt2cif_main
+            sys.argv = ['CrystalOutToCif.py'] + sys.argv[2:]
+            opt2cif_main()
         sys.exit(0)
     
     # Check if asking for help on a specific command (for non-passthrough commands)
@@ -928,6 +947,7 @@ Commands:
   convert     CIF to D12 conversion - supports all CRYSTAL basis sets and functionals
   opt2d12     Generate D12 from optimized output - create SP/FREQ inputs from OPT results
   opt2d3      Generate D3 property inputs - BAND, DOSS, TRANSPORT, CHARGE calculations
+  opt2cif     Convert CRYSTAL outputs to CIF - supports all dimensionalities and calc types
   manager     Enhanced Queue Manager - material tracking, workflow automation, SLURM integration
   recover     Error recovery - automated fixes for SHRINK, memory, and convergence issues
   database    Database queries - search materials, export results, view statistics
@@ -944,7 +964,7 @@ More Help:
     )
     
     parser.add_argument('command', nargs='?', 
-                       choices=['workflow', 'submit', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 
+                       choices=['workflow', 'submit', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif',
                                'status', 'queue', 'manager', 'recover', 'database', 'engine', 'credits', 'version'],
                        help='Command to run')
     parser.add_argument('args', nargs='*', help='Arguments for the command')
@@ -1188,7 +1208,7 @@ More Help:
             print("Run 'mace analyze --help' for full options")
             
     # These commands are handled in the passthrough section above
-    elif args.command in ['convert', 'opt2d12', 'opt2d3']:
+    elif args.command in ['convert', 'opt2d12', 'opt2d3', 'opt2cif']:
         # Should never reach here, but just in case
         pass
             

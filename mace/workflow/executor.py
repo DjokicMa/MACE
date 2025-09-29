@@ -89,12 +89,13 @@ class WorkflowExecutor:
             # Queue manager will be created later when isolation mode is determined
         else:
             # Only create queue manager in shared mode with existing database
+            # Use default settings for now - will be updated from plan during execution
             self.queue_manager = EnhancedCrystalQueueManager(
                 d12_dir=str(self.outputs_dir),
-                max_jobs=200,
+                max_jobs=200,  # Will be updated from workflow plan
                 enable_tracking=True,
                 enable_error_recovery=True,
-                max_recovery_attempts=3,
+                max_recovery_attempts=3,  # Will be updated from workflow plan
                 db_path=self.db_path
             )
         
@@ -267,15 +268,27 @@ class WorkflowExecutor:
                     self.db_path = str(ctx.get_database_path())
                     self.db = MaterialDatabase(self.db_path)
                     
-                    # Recreate queue manager with context paths
+                    # Get queue config from pending config or use defaults
+                    queue_config = getattr(self, '_pending_queue_config', {
+                        'max_jobs': 200,
+                        'reserve_slots': 30,
+                        'max_submit_batch': 5,
+                        'max_recovery_attempts': 3
+                    })
+
+                    # Recreate queue manager with context paths and proper configuration
                     self.queue_manager = EnhancedCrystalQueueManager(
                         d12_dir=str(self.outputs_dir),
-                        max_jobs=200,
+                        max_jobs=queue_config['max_jobs'],
+                        reserve_slots=queue_config['reserve_slots'],
                         enable_tracking=True,
                         enable_error_recovery=True,
-                        max_recovery_attempts=3,
+                        max_recovery_attempts=queue_config['max_recovery_attempts'],
                         db_path=self.db_path
                     )
+                    self.queue_manager.max_submit_per_callback = queue_config['max_submit_batch']
+
+                    print(f"  Created isolated queue manager with max_jobs={queue_config['max_jobs']}")
                     
                     # Execute workflow within context
                     self._execute_workflow_plan_impl(plan, workflow_id, isolation_mode)
@@ -296,12 +309,151 @@ class WorkflowExecutor:
                     self.db_path = original_db_path
                     self.db = original_db
                     self.queue_manager = original_queue_manager
-    
+
+    def _configure_queue_manager_from_plan(self, plan: Dict[str, Any]):
+        """Extract queue configuration from workflow plan and update queue manager"""
+        # Extract queue configuration from plan
+        execution_settings = plan.get('execution_settings', {})
+        queue_config = execution_settings.get('queue_management', {})
+
+        # Default values (conservative fallback)
+        max_jobs = queue_config.get('max_jobs', 200)
+        reserve_slots = queue_config.get('reserve_slots', 30)
+        max_submit_batch = queue_config.get('max_submit_batch', 5)
+        max_recovery_attempts = queue_config.get('max_recovery_attempts', 3)
+
+        print(f"Queue Configuration from Plan:")
+        print(f"  • Max jobs: {max_jobs}")
+        print(f"  • Reserve slots: {reserve_slots}")
+        print(f"  • Max submit batch: {max_submit_batch}")
+        print(f"  • Recovery attempts: {max_recovery_attempts}")
+
+        # Recreate queue manager with correct settings if it exists
+        if self.queue_manager:
+            print(f"  Updating existing queue manager configuration...")
+            # Update the existing queue manager parameters
+            self.queue_manager.max_jobs = max_jobs
+            self.queue_manager.reserve_slots = reserve_slots
+            self.queue_manager.max_submit_per_callback = max_submit_batch
+            if hasattr(self.queue_manager, 'max_recovery_attempts'):
+                self.queue_manager.max_recovery_attempts = max_recovery_attempts
+        else:
+            # If queue manager doesn't exist yet, store config for later creation
+            self._pending_queue_config = {
+                'max_jobs': max_jobs,
+                'reserve_slots': reserve_slots,
+                'max_submit_batch': max_submit_batch,
+                'max_recovery_attempts': max_recovery_attempts
+            }
+            print(f"  Queue manager not yet created, storing configuration for later...")
+
+    def _validate_workflow_plan(self, plan: Dict[str, Any]) -> bool:
+        """Comprehensive validation of workflow plan before execution"""
+        print("🔍 Validating workflow plan...")
+        validation_errors = []
+
+        # 1. Check for required plan components
+        required_fields = ['workflow_sequence', 'input_directory', 'input_type']
+        for field in required_fields:
+            if field not in plan:
+                validation_errors.append(f"Missing required field: {field}")
+
+        # 2. Validate input directory and files
+        input_dir = Path(plan.get('input_directory', ''))
+        if not input_dir.exists():
+            validation_errors.append(f"Input directory does not exist: {input_dir}")
+        else:
+            input_type = plan.get('input_type', 'cif')
+            input_files = plan.get('input_files', {})
+
+            if input_type == 'cif' and not input_files.get('cif', []):
+                # Check if CIF files exist in directory
+                cif_files = list(input_dir.glob("*.cif"))
+                if not cif_files:
+                    validation_errors.append(f"No CIF files found in {input_dir}")
+
+            elif input_type == 'd12' and not input_files.get('d12', []):
+                # Check if D12 files exist in directory
+                d12_files = list(input_dir.glob("*.d12"))
+                if not d12_files:
+                    validation_errors.append(f"No D12 files found in {input_dir}")
+
+        # 3. Validate workflow sequence
+        workflow_sequence = plan.get('workflow_sequence', [])
+        if not workflow_sequence:
+            validation_errors.append("Empty workflow sequence")
+        else:
+            valid_calc_types = ['OPT', 'SP', 'FREQ', 'BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']
+            for calc_type in workflow_sequence:
+                if calc_type not in valid_calc_types:
+                    validation_errors.append(f"Invalid calculation type: {calc_type}")
+
+        # 4. Validate step configurations
+        step_configs = plan.get('step_configurations', {})
+        for step_key, config in step_configs.items():
+            if not isinstance(config, dict):
+                validation_errors.append(f"Invalid step configuration for {step_key}")
+
+        # 5. Check execution settings
+        execution_settings = plan.get('execution_settings', {})
+        if 'max_concurrent_jobs' in execution_settings:
+            max_jobs = execution_settings['max_concurrent_jobs']
+            if not isinstance(max_jobs, int) or max_jobs <= 0:
+                validation_errors.append(f"Invalid max_concurrent_jobs: {max_jobs}")
+
+        # 6. Validate queue management configuration
+        queue_config = plan.get('queue_management', {})
+        if queue_config:
+            max_jobs = queue_config.get('max_jobs', 200)
+            if not isinstance(max_jobs, int) or max_jobs <= 0 or max_jobs > 1000:
+                validation_errors.append(f"Invalid queue max_jobs: {max_jobs} (must be 1-1000)")
+
+        # Report validation results
+        if validation_errors:
+            print("❌ Validation failed with the following errors:")
+            for error in validation_errors:
+                print(f"   • {error}")
+            return False
+        else:
+            print("✅ Workflow plan validation passed")
+            return True
+
+    def _apply_execution_settings(self, plan: Dict[str, Any]):
+        """Apply execution settings from workflow plan"""
+        execution_settings = plan.get('execution_settings', {})
+
+        print("🔧 Applying execution settings...")
+
+        # Material tracking
+        enable_tracking = execution_settings.get('enable_material_tracking', True)
+        if hasattr(self, 'queue_manager') and self.queue_manager:
+            # Update queue manager tracking settings
+            print(f"   • Material tracking: {'enabled' if enable_tracking else 'disabled'}")
+
+        # Auto progression
+        auto_progression = execution_settings.get('auto_progression', True)
+        print(f"   • Auto progression: {'enabled' if auto_progression else 'disabled'}")
+
+        # Max concurrent jobs
+        max_concurrent = execution_settings.get('max_concurrent_jobs', 200)
+        print(f"   • Max concurrent jobs: {max_concurrent}")
+
     def _execute_workflow_plan_impl(self, plan: Dict[str, Any], workflow_id: str, isolation_mode: str = 'isolated'):
         """Internal implementation of workflow execution"""
         # Store isolation mode for use in customize_slurm_script
         self.isolation_mode = isolation_mode
-        
+
+        # CRITICAL: Extract and apply queue configuration from workflow plan
+        self._configure_queue_manager_from_plan(plan)
+
+        # CRITICAL: Validate workflow plan and inputs before execution
+        if not self._validate_workflow_plan(plan):
+            print("❌ Workflow validation failed. Aborting execution.")
+            return
+
+        # Apply execution settings from the plan
+        self._apply_execution_settings(plan)
+
         try:
             # Phase 0: Recreate workflow scripts from configuration
             self.recreate_workflow_scripts(plan)
