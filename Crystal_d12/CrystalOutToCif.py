@@ -53,7 +53,7 @@ class CrystalOutToCifConverter:
         Args:
             options: Dictionary of conversion options
         """
-        self.parser = CrystalOutputParser()
+        self.parser = None  # Will be initialized per file
         self.options = options or {}
         self.converted_files = []
         self.failed_files = []
@@ -139,9 +139,10 @@ class CrystalOutToCifConverter:
         Returns:
             Dict with formatted cell parameters
         """
-        a, b, c, alpha, beta, gamma = cell_params[:6]
+        # Convert to float in case they come as strings
+        a, b, c, alpha, beta, gamma = [float(x) for x in cell_params[:6]]
 
-        vacuum_thickness = self.options.get("vacuum_thickness", 20.0)
+        vacuum_thickness = float(self.options.get("vacuum_thickness", 20.0))
 
         if dimensionality == "SLAB":
             # For 2D materials, use vacuum thickness for c-axis
@@ -186,7 +187,7 @@ class CrystalOutToCifConverter:
             cell_params = geometry_data.get("conventional_cell", [10.0, 10.0, 10.0, 90.0, 90.0, 90.0])
 
             cell = self.format_cell_parameters(cell_params, dimensionality)
-            precision = self.options.get("precision", 6)
+            precision = int(self.options.get("precision", 6))
 
             f.write(f"_cell_length_a    {cell['a']:.{precision}f}\n")
             f.write(f"_cell_length_b    {cell['b']:.{precision}f}\n")
@@ -276,7 +277,7 @@ class CrystalOutToCifConverter:
                 print(f"Processing: {out_file}")
 
             # Parse the output file
-            self.parser.output_file = out_file
+            self.parser = CrystalOutputParser(out_file)
             output_data = self.parser.parse()
 
             # Detect calculation type
@@ -301,11 +302,14 @@ class CrystalOutToCifConverter:
             # Generate output filename if not provided
             if cif_file is None:
                 base_name = Path(out_file).stem
-                output_dir = self.options.get("output_dir", Path(out_file).parent)
-                cif_file = os.path.join(output_dir, f"{base_name}.cif")
+                output_dir = self.options.get("output_dir")
+                if output_dir is None:
+                    output_dir = Path(out_file).parent
+                cif_file = os.path.join(str(output_dir), f"{base_name}.cif")
 
             # Create output directory if needed
-            os.makedirs(os.path.dirname(cif_file), exist_ok=True)
+            if cif_file:
+                os.makedirs(os.path.dirname(cif_file), exist_ok=True)
 
             # Check for dry run
             if self.options.get("dry_run", False):
