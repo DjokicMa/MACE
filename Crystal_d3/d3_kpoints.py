@@ -717,6 +717,101 @@ KPOINT_COORDINATES = {
 }
 
 
+# CRYSTAL23 valid k-point labels from Tables 14.1 and 14.2
+CRYSTAL23_VALID_LABELS = {
+    # P Cubic (Table 14.1)
+    "cubic_simple": {"M", "R", "X"},
+    # FC Cubic (Table 14.1)
+    "cubic_fc": {"X", "L", "W"},
+    # BC Cubic (Table 14.1)
+    "cubic_bc": {"H", "P", "N"},
+    # Hexagonal or P Trigonal (Table 14.1)
+    "hexagonal": {"M", "K", "A", "L", "H"},
+    # Rhombohedral (R Trigonal) (Table 14.1)
+    "rhombohedral": {"T", "F", "L"},
+    # P Monoclinic (Table 14.1)
+    "monoclinic_simple": {"A", "B", "C", "D", "E", "Y", "Z"},
+    # AC Monoclinic (Table 14.1)
+    "monoclinic_ac": {"A", "Y", "M"},
+    # P Orthorhombic (Table 14.2)
+    "orthorhombic_simple": {"S", "T", "U", "R", "X", "Y", "Z"},
+    # FC Orthorhombic (Table 14.2)
+    "orthorhombic_fc": {"Z", "Y", "T"},
+    # AC Orthorhombic (Table 14.2)
+    "orthorhombic_ab": {"S", "T", "R", "Y", "Z"},
+    # BC Orthorhombic (Table 14.2)
+    "orthorhombic_bc": {"S", "T", "R", "X", "W"},
+    # P Tetragonal (Table 14.2)
+    "tetragonal_simple": {"M", "R", "A", "X", "Z"},
+    # BC Tetragonal (Table 14.2)
+    "tetragonal_bc": {"M", "P", "X"},
+    # Triclinic (derived from coordinates table)
+    "triclinic": {"V", "Y", "Z", "T", "R", "X", "U"},
+}
+
+
+def validate_kpoint_labels_for_crystal23(labels: List[str], space_group: int, lattice_type: str) -> Tuple[bool, List[str]]:
+    """
+    Validate if all k-point labels are supported by CRYSTAL23. If any are invalid,
+    convert the entire path to coordinates (CRYSTAL doesn't allow mixing).
+
+    Args:
+        labels: List of k-point labels
+        space_group: Space group number
+        lattice_type: Lattice centering type
+
+    Returns:
+        Tuple of (all_valid, validated_path) where:
+        - all_valid: True if all labels are valid, False if coordinates were used
+        - validated_path: Either original labels or all coordinates
+    """
+    crystal_system = get_crystal_system_from_space_group(space_group, lattice_type)
+
+    if crystal_system not in CRYSTAL23_VALID_LABELS:
+        print(f"Warning: Crystal system '{crystal_system}' not in CRYSTAL23 validation table")
+        return True, labels  # Fall back to original behavior
+
+    if crystal_system not in KPOINT_COORDINATES:
+        print(f"Warning: Crystal system '{crystal_system}' coordinates not available")
+        return True, labels
+
+    # Check if all labels (except | and G) are valid
+    all_valid = True
+    invalid_labels = []
+
+    for label in labels:
+        if label in ["|", "G", "GAMMA"]:
+            continue  # Skip discontinuity markers and Gamma
+
+        if label not in CRYSTAL23_VALID_LABELS[crystal_system]:
+            all_valid = False
+            invalid_labels.append(label)
+
+    if all_valid:
+        return True, labels
+
+    # If any label is invalid, convert ALL to coordinates
+    print(f"Warning: Invalid CRYSTAL23 k-point labels found: {invalid_labels}")
+    print(f"Converting entire path to coordinates for {crystal_system}")
+
+    kpoint_dict = KPOINT_COORDINATES[crystal_system]
+    coordinate_path = []
+
+    for label in labels:
+        if label == "|":
+            coordinate_path.append(label)
+        elif label in kpoint_dict:
+            coords = kpoint_dict[label]
+            coord_str = f"{coords[0]:.6f} {coords[1]:.6f} {coords[2]:.6f}"
+            coordinate_path.append(coord_str)
+        else:
+            print(f"Error: K-point label '{label}' not found in coordinate dictionary")
+            # Use origin as fallback
+            coordinate_path.append("0.000000 0.000000 0.000000")
+
+    return False, coordinate_path
+
+
 def get_crystal_system_from_space_group(space_group: int, lattice_type: str = "P") -> str:
     """Determine crystal system and lattice centering from space group number."""
     

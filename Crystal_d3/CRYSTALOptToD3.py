@@ -36,7 +36,8 @@ try:
                                extract_shrink_from_d12)
     from Crystal_d3.d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
-                           get_seekpath_full_kpath, get_literature_kpath_vectors, unicode_to_ascii_kpoint)
+                           get_seekpath_full_kpath, get_literature_kpath_vectors, unicode_to_ascii_kpoint,
+                           validate_kpoint_labels_for_crystal23)
 except ImportError:
     # Fall back to relative import (for script usage)
     from d3_interactive import (configure_d3_calculation, get_band_info_from_output,
@@ -45,7 +46,8 @@ except ImportError:
                                extract_shrink_from_d12)
     from d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
-                           get_seekpath_full_kpath, get_literature_kpath_vectors, unicode_to_ascii_kpoint)
+                           get_seekpath_full_kpath, get_literature_kpath_vectors, unicode_to_ascii_kpoint,
+                           validate_kpoint_labels_for_crystal23)
 from d3_config import (save_d3_config, load_d3_config, validate_d3_config,
                       print_d3_config_summary, save_d3_options_prompt,
                       list_available_d3_configs, select_d3_config_file)
@@ -413,55 +415,100 @@ class D3Generator:
                 path = get_band_path_from_symmetry(space_group, lattice_type)
             else:
                 path = config.get("path", ["G", "X", "M", "G"])
-            
-            # Count actual segments (excluding | markers)
-            n_segments = 0
-            i = 0
-            while i < len(path) - 1:
-                if path[i] == "|":
-                    i += 1
-                    continue
-                j = i + 1
-                while j < len(path) and path[j] == "|":
-                    j += 1
-                if j < len(path):
-                    n_segments += 1
-                    i = j
-                else:
-                    break
-            
-            shrink = 0
-            n_points = config.get("n_points", 1000)
-            
-            # Use band range from config
-            first_band = config.get("first_band", 1)
-            last_band = config.get("last_band")
-            if last_band is None:
-                last_band = self.structure_info['n_ao'] if self.structure_info['n_ao'] > 0 else 100
-            
-            plot = 1 if config.get("plot", True) else 0
-            print_eig = 1 if config.get("print_eigenvalues", False) else 0
-            
-            lines.append(f"{n_segments} {shrink} {n_points} {first_band} {last_band} {plot} {print_eig}")
-            
-            # Add path segments - handle discontinuous paths
-            current_segment = []
-            
-            for label in path:
-                if label == "|":
-                    # End current segment
-                    if len(current_segment) >= 2:
-                        # Create segments from consecutive points
-                        for i in range(len(current_segment) - 1):
-                            lines.append(f"{current_segment[i]} {current_segment[i+1]}")
-                    current_segment = []
-                else:
-                    current_segment.append(label)
-            
-            # Handle final segment
-            if len(current_segment) >= 2:
-                for i in range(len(current_segment) - 1):
-                    lines.append(f"{current_segment[i]} {current_segment[i+1]}")
+
+            # Validate k-point labels for CRYSTAL23 compatibility
+            space_group = self.structure_info.get('space_group', 1)
+            lattice_type = self.structure_info.get('lattice_type', 'P')
+            labels_valid, validated_path = validate_kpoint_labels_for_crystal23(path, space_group, lattice_type)
+
+            if not labels_valid:
+                # Switch to coordinate mode if any labels are invalid
+                print("Switching to coordinate mode due to invalid k-point labels")
+                # Convert to coordinate format
+                segments = []
+                current_segment = []
+
+                for item in validated_path:
+                    if item == "|":
+                        if len(current_segment) >= 2:
+                            for i in range(len(current_segment) - 1):
+                                segments.append(f"{current_segment[i]} {current_segment[i+1]}")
+                        current_segment = []
+                    else:
+                        current_segment.append(item)
+
+                # Handle final segment
+                if len(current_segment) >= 2:
+                    for i in range(len(current_segment) - 1):
+                        segments.append(f"{current_segment[i]} {current_segment[i+1]}")
+
+                # Use coordinate format
+                n_segments = len(segments)
+                shrink = config.get("shrink", 16)  # Use non-zero shrink for coordinates
+                n_points = config.get("n_points", 1000)
+
+                first_band = config.get("first_band", 1)
+                last_band = config.get("last_band")
+                if last_band is None:
+                    last_band = self.structure_info['n_ao'] if self.structure_info['n_ao'] > 0 else 100
+
+                plot = 1 if config.get("plot", True) else 0
+                print_eig = 1 if config.get("print_eigenvalues", False) else 0
+
+                lines.append(f"{n_segments} {shrink} {n_points} {first_band} {last_band} {plot} {print_eig}")
+
+                for segment in segments:
+                    lines.append(segment)
+            else:
+                # Use original label format
+                # Count actual segments (excluding | markers)
+                n_segments = 0
+                i = 0
+                while i < len(validated_path) - 1:
+                    if validated_path[i] == "|":
+                        i += 1
+                        continue
+                    j = i + 1
+                    while j < len(validated_path) and validated_path[j] == "|":
+                        j += 1
+                    if j < len(validated_path):
+                        n_segments += 1
+                        i = j
+                    else:
+                        break
+
+                shrink = 0
+                n_points = config.get("n_points", 1000)
+
+                # Use band range from config
+                first_band = config.get("first_band", 1)
+                last_band = config.get("last_band")
+                if last_band is None:
+                    last_band = self.structure_info['n_ao'] if self.structure_info['n_ao'] > 0 else 100
+
+                plot = 1 if config.get("plot", True) else 0
+                print_eig = 1 if config.get("print_eigenvalues", False) else 0
+
+                lines.append(f"{n_segments} {shrink} {n_points} {first_band} {last_band} {plot} {print_eig}")
+
+                # Add path segments - handle discontinuous paths
+                current_segment = []
+
+                for label in validated_path:
+                    if label == "|":
+                        # End current segment
+                        if len(current_segment) >= 2:
+                            # Create segments from consecutive points
+                            for i in range(len(current_segment) - 1):
+                                lines.append(f"{current_segment[i]} {current_segment[i+1]}")
+                        current_segment = []
+                    else:
+                        current_segment.append(label)
+
+                # Handle final segment
+                if len(current_segment) >= 2:
+                    for i in range(len(current_segment) - 1):
+                        lines.append(f"{current_segment[i]} {current_segment[i+1]}")
         
         elif config.get("path_method") == "manual":
             # Manual mixed path
@@ -756,7 +803,7 @@ class D3Generator:
                         lines.append(f"{x_max} {y_max} {z_max}")
                 else:
                     lines.append("SCALE")
-                    scale = config.get("scale", 3.0)
+                    scale = config.get("scale", 3)
                     if self.structure_info['dimensionality'] == 2:
                         # 2D: only ZSCALE
                         lines.append(str(int(scale)))
@@ -839,7 +886,7 @@ class D3Generator:
                         lines.append(f"{x_max} {y_max} {z_max}")
                 else:
                     lines.append("SCALE")
-                    scale = config.get("scale", 3.0)
+                    scale = config.get("scale", 3)
                     if self.structure_info['dimensionality'] == 2:
                         # 2D: only ZSCALE
                         lines.append(str(int(scale)))

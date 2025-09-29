@@ -1517,14 +1517,14 @@ fi'''
                 "calculation_type": "CHARGE+POTENTIAL",
                 "charge_config": {
                     "type": "ECH3",
-                    "n_points": 1000,
-                    "scale": 3.0,
+                    "n_points": 100,
+                    "scale": 3,
                     "use_range": False
                 },
                 "potential_config": {
                     "type": "POT3",
-                    "n_points": 1000,
-                    "scale": 3.0,
+                    "n_points": 100,
+                    "scale": 3,
                     "use_range": False
                 }
             }

@@ -6,7 +6,7 @@
     "calculation_type": "CHARGE",
     "type": "ECH3",
     "n_points": 100,
-    "scale": 3.0,
+    "scale": 3,
     "use_range": false
   }
 }

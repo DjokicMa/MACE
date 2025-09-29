@@ -316,14 +316,14 @@ def get_default_d3_config(calc_type: str) -> Dict[str, Any]:
             "calculation_type": "CHARGE",
             "type": "ECH3",
             "n_points": 100,
-            "scale": 3.0,
+            "scale": 3,
             "use_range": False
         },
         "POTENTIAL": {
             "calculation_type": "POTENTIAL",
             "type": "POT3",
             "n_points": 100,
-            "scale": 3.0,
+            "scale": 3,
             "use_range": False
         },
         "CHARGE+POTENTIAL": {
@@ -331,13 +331,13 @@ def get_default_d3_config(calc_type: str) -> Dict[str, Any]:
             "charge_config": {
                 "type": "ECH3",
                 "n_points": 100,
-                "scale": 3.0,
+                "scale": 3,
                 "use_range": False
             },
             "potential_config": {
                 "type": "POT3",
                 "n_points": 100,
-                "scale": 3.0,
+                "scale": 3,
                 "use_range": False
             }
         },
