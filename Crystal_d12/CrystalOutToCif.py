@@ -219,7 +219,11 @@ class CrystalOutToCifConverter:
 
             for coord in coordinates:
                 atom_num = int(coord["atom_number"])
-                symbol = ATOMIC_NUMBER_TO_SYMBOL.get(atom_num, f"X{atom_num}")
+
+                # Handle ECP basis sets: CRYSTAL adds +200 to atomic numbers for ECP atoms
+                # e.g., Pt (Z=78) becomes 278 with ECP basis sets
+                actual_atom_num = atom_num - 200 if atom_num > 200 else atom_num
+                symbol = ATOMIC_NUMBER_TO_SYMBOL.get(actual_atom_num, f"X{atom_num}")
 
                 # Create unique labels
                 if symbol not in atom_counts:

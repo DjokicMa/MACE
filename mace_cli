@@ -614,22 +614,33 @@ Examples:
 For action-specific options, use: mace workflow --action <ACTION> --help
 """,
         'submit': """
-Usage: mace submit <file_or_directory>
+Usage: mace submit <file_or_directory> [options]
 
 Submit CRYSTAL calculations to the queue.
 
 Arguments:
   file_or_directory     D12/D3 file(s) or directory to submit
 
+Options:
+  --interactive, -i     Interactively configure SLURM resources (cores, memory, walltime)
+  --nosubmit           Generate SLURM scripts but do not submit jobs
+  --overwrite-sh       Overwrite existing .sh files instead of using them
+
 Examples:
   mace submit calculation.d12
   mace submit property.d3
   mace submit my_calculations/
+  mace submit --interactive my_calculations/
+  mace submit -i calculation.d12
+  mace submit --nosubmit my_calculations/
+  mace submit --overwrite-sh --interactive calculation.d12
 
 Note: This command submits files using the appropriate submission script
 (submitcrystal23.sh for D12 files, submit_prop.sh for D3 files).
+The --interactive flag allows you to customize SLURM resources similar to
+the workflow interactive mode, with defaults optimized for each calculation type.
+By default, existing .sh files are reused; use --overwrite-sh to regenerate them.
 For directories with mixed file types, you'll be prompted to choose.
-Additional options like --max-jobs are not implemented in this wrapper.
 """,
         'monitor': """
 Usage: mace monitor [options]
@@ -1019,17 +1030,37 @@ More Help:
         run_mace_main()
         
     elif args.command == 'submit':
-        # Handle submission commands
-        if not args.args:
-            print("Usage: mace submit <file_or_directory>")
+        # Parse submit command arguments
+        submit_parser = argparse.ArgumentParser(prog='mace submit')
+        submit_parser.add_argument('target', help='D12/D3 file(s) or directory to submit')
+        submit_parser.add_argument('--interactive', '-i', action='store_true',
+                                 help='Interactively configure SLURM resources (cores, memory, walltime)')
+        submit_parser.add_argument('--nosubmit', action='store_true',
+                                 help='Generate SLURM scripts but do not submit jobs')
+        submit_parser.add_argument('--overwrite-sh', action='store_true',
+                                 help='Overwrite existing .sh files instead of using them')
+
+        try:
+            submit_args = submit_parser.parse_args(args.args + remaining)
+        except SystemExit:
             sys.exit(1)
-        
-        target = args.args[0]
-        
+
+        target = submit_args.target
+        interactive = submit_args.interactive
+        nosubmit = submit_args.nosubmit
+        overwrite_sh = submit_args.overwrite_sh
+
         # Check what type of files we're dealing with
         if os.path.isfile(target):
             # Single file submission
             sys.argv = ['submit_script', target]
+            if interactive:
+                sys.argv.append('--interactive')
+            if nosubmit:
+                sys.argv.append('--nosubmit')
+            if overwrite_sh:
+                sys.argv.append('--overwrite-sh')
+
             if target.endswith('.d3'):
                 from submission.properties import main as submit_properties
                 submit_properties()
@@ -1045,11 +1076,11 @@ More Help:
             files = os.listdir(target)
             d12_files = [f for f in files if f.endswith('.d12') and os.path.isfile(os.path.join(target, f))]
             d3_files = [f for f in files if f.endswith('.d3') and os.path.isfile(os.path.join(target, f))]
-            
+
             if not d12_files and not d3_files:
                 print(f"No D12 or D3 files found in {target}")
                 sys.exit(1)
-            
+
             # Handle mixed directories
             if d12_files and d3_files:
                 print(f"\nFound both D12 and D3 files in {target}:")
@@ -1059,43 +1090,79 @@ More Help:
                 print("1. D12 files only")
                 print("2. D3 files only")
                 print("3. Both D12 and D3 files")
-                
+
                 choice = input("\nSelect option (1-3): ").strip()
-                
+
                 if choice == '1':
                     # Submit D12 only
                     sys.argv = ['submit_script', target]
+                    if interactive:
+                        sys.argv.append('--interactive')
+                    if nosubmit:
+                        sys.argv.append('--nosubmit')
+                    if overwrite_sh:
+                        sys.argv.append('--overwrite-sh')
                     from submission.crystal import main as submit_crystal
                     submit_crystal()
                 elif choice == '2':
                     # Submit D3 only
                     sys.argv = ['submit_script', target]
+                    if interactive:
+                        sys.argv.append('--interactive')
+                    if nosubmit:
+                        sys.argv.append('--nosubmit')
+                    if overwrite_sh:
+                        sys.argv.append('--overwrite-sh')
                     from submission.properties import main as submit_properties
                     submit_properties()
                 elif choice == '3':
                     # Submit both
                     print("\n=== Submitting D12 files ===")
                     sys.argv = ['submit_script', target]
+                    if interactive:
+                        sys.argv.append('--interactive')
+                    if nosubmit:
+                        sys.argv.append('--nosubmit')
+                    if overwrite_sh:
+                        sys.argv.append('--overwrite-sh')
                     from submission.crystal import main as submit_crystal
                     submit_crystal()
-                    
+
                     print("\n=== Submitting D3 files ===")
                     sys.argv = ['submit_script', target]
+                    if interactive:
+                        sys.argv.append('--interactive')
+                    if nosubmit:
+                        sys.argv.append('--nosubmit')
+                    if overwrite_sh:
+                        sys.argv.append('--overwrite-sh')
                     from submission.properties import main as submit_properties
                     submit_properties()
                 else:
                     print("Invalid choice. Exiting.")
                     sys.exit(1)
-            
+
             elif d12_files:
                 # Only D12 files
                 sys.argv = ['submit_script', target]
+                if interactive:
+                    sys.argv.append('--interactive')
+                if nosubmit:
+                    sys.argv.append('--nosubmit')
+                if overwrite_sh:
+                    sys.argv.append('--overwrite-sh')
                 from submission.crystal import main as submit_crystal
                 submit_crystal()
-            
+
             else:
                 # Only D3 files
                 sys.argv = ['submit_script', target]
+                if interactive:
+                    sys.argv.append('--interactive')
+                if nosubmit:
+                    sys.argv.append('--nosubmit')
+                if overwrite_sh:
+                    sys.argv.append('--overwrite-sh')
                 from submission.properties import main as submit_properties
                 submit_properties()
         

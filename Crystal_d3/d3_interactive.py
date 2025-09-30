@@ -878,7 +878,7 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
     
     # Output options
     band_config["plot"] = True  # Always generate plot
-    band_config["print_eigenvalues"] = yes_no_prompt("\nPrint eigenvalues to output?", "no")
+    band_config["print_eigenvalues"] = yes_no_prompt("\nPrint eigenvalues to output?", "yes")
     
     return band_config
 
