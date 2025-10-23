@@ -868,6 +868,33 @@ Examples:
 For action-specific options, use: mace engine --action <ACTION> --help
 
 Note: The --dry-run option shown in some docs is not implemented.
+""",
+        'completion': """
+Usage: mace completion [options]
+
+Check CRYSTAL calculation completion status and optionally organize files.
+
+Options:
+  --directory, -d DIR   Directory to scan for .out files (default: current)
+  --detailed            Show detailed file listings for each category
+  --move-completed      Move completed files to a "completed" folder
+  --organize            Organize all files into categorized folders
+  --output-dir DIR      Output directory for organized files (default: "completed" or "sorted")
+  --extensions EXT...   File extensions to move (default: .sh .out .d12 .d3 .f9)
+
+Examples:
+  mace completion                      # Check status in current directory
+  mace completion --detailed           # Show detailed file listings
+  mace completion --move-completed     # Move completed files to 'completed' folder
+  mace completion --organize           # Organize all files by status
+  mace completion --organize --output-dir results
+  mace completion -d /path/to/calculations --detailed
+
+Status Categories:
+  Complete:      Successfully finished calculations (OPT END or TOTAL CPU TIME)
+  Errors:        Failed calculations categorized by error type
+  Ongoing:       Incomplete calculations still running or pending
+  Unknown:       Files with unrecognized error patterns
 """
     }
     
@@ -889,7 +916,7 @@ def main():
         return
     
     # Special handling for commands that should pass through directly
-    passthrough_commands = ['convert', 'opt2d12', 'opt2d3', 'opt2cif']
+    passthrough_commands = ['convert', 'opt2d12', 'opt2d3', 'opt2cif', 'completion']
     
     # Handle --no-banner if it's the first argument
     no_banner_first = False
@@ -938,10 +965,15 @@ def main():
             from CrystalOutToCif import main as opt2cif_main
             sys.argv = ['CrystalOutToCif.py'] + sys.argv[2:]
             opt2cif_main()
+        elif command == 'completion':
+            sys.path.insert(0, str(Path(__file__).parent / "mace"))
+            from completion_checker import main as completion_main
+            sys.argv = ['completion_checker.py'] + sys.argv[2:]
+            completion_main()
         sys.exit(0)
     
     # Check if asking for help on a specific command (for non-passthrough commands)
-    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine']:
+    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'completion']:
         # Show command-specific help
         show_command_help(sys.argv[1])
         sys.exit(0)
@@ -955,6 +987,7 @@ Commands:
   submit      Submit calculations to queue - handles both D12 and D3 files automatically
   monitor     System monitoring - real-time dashboard or quick status (--status, --detailed, --summary)
   analyze     Extract properties from outputs - band gaps, energies, convergence data
+  completion  Check calculation status - categorize completed/errored jobs, organize files
   convert     CIF to D12 conversion - supports all CRYSTAL basis sets and functionals
   opt2d12     Generate D12 from optimized output - create SP/FREQ inputs from OPT results
   opt2d3      Generate D3 property inputs - BAND, DOSS, TRANSPORT, CHARGE calculations

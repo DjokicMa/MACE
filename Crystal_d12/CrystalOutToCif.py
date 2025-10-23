@@ -58,6 +58,29 @@ class CrystalOutToCifConverter:
         self.converted_files = []
         self.failed_files = []
 
+    @staticmethod
+    def format_element_symbol(symbol: str) -> str:
+        """
+        Ensure proper capitalization of element symbols.
+
+        Element symbols should be formatted as:
+        - Single letter: Uppercase (e.g., 'C', 'N', 'O')
+        - Two letters: First uppercase, second lowercase (e.g., 'Bi', 'Si', 'Al')
+
+        This prevents issues where 'BI' (Boron + Iodine) is misinterpreted instead of 'Bi' (Bismuth).
+
+        Args:
+            symbol: Element symbol (may be improperly capitalized)
+
+        Returns:
+            Properly capitalized element symbol
+        """
+        if not symbol or not isinstance(symbol, str):
+            return symbol
+
+        # Proper capitalization: first letter uppercase, rest lowercase
+        return symbol[0].upper() + symbol[1:].lower() if len(symbol) > 1 else symbol.upper()
+
     def detect_calculation_type(self, content: str) -> str:
         """
         Detect the calculation type from output content.
@@ -223,7 +246,10 @@ class CrystalOutToCifConverter:
                 # Handle ECP basis sets: CRYSTAL adds +200 to atomic numbers for ECP atoms
                 # e.g., Pt (Z=78) becomes 278 with ECP basis sets
                 actual_atom_num = atom_num - 200 if atom_num > 200 else atom_num
-                symbol = ATOMIC_NUMBER_TO_SYMBOL.get(actual_atom_num, f"X{atom_num}")
+                raw_symbol = ATOMIC_NUMBER_TO_SYMBOL.get(actual_atom_num, f"X{atom_num}")
+
+                # Ensure proper capitalization: 'Bi' not 'BI', 'Si' not 'SI', etc.
+                symbol = self.format_element_symbol(raw_symbol)
 
                 # Create unique labels
                 if symbol not in atom_counts:
