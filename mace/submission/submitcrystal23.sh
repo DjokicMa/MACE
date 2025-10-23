@@ -96,4 +96,6 @@ else
     echo "  - Various relative paths from $DIR"
     echo "  Workflow progression may not continue automatically"
 fi' >> $1.sh
-sbatch $1.sh
+# NOTE: Job submission is now handled by the calling script (crystal.py)
+# This allows for proper handling of --nosubmit flag
+# sbatch $1.sh
