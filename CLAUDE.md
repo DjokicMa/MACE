@@ -96,6 +96,14 @@ mace convert --from-cif *.cif
 
 # Quick workflow execution
 mace workflow --quick-start --cif-dir ./cifs --workflow full_electronic
+
+# Check calculation completion status
+mace completion                           # Check current directory
+mace completion --recursive               # Scan subdirectories (workflow structures)
+mace completion --detailed                # Show detailed file listings
+mace completion --remove-zombie-jobs      # Detect and cancel failed jobs still running in SLURM
+mace completion --recursive --remove-zombie-jobs  # Full workflow zombie detection
+mace completion --organize                # Sort files by status into folders
 ```
 
 ### Job Management (Direct Script Access)
