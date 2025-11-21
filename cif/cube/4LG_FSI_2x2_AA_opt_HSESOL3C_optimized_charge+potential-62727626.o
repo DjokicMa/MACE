@@ -1,0 +1,16 @@
+submit directory: 
+/mnt/ufs18/rs/Dual_ion_batteries/FSIStudy/step3.5ECHPOT/scale3
+cp: cannot create regular file '/mnt/ufs18/rs/Dual_ion_batteries/FSIStudy/step3.5ECHPOT/scale3/4LG_FSI_2x2_AA_opt_HSESOL3C_optimized_charge+potential.f9': Permission denied
+cp: cannot stat 'BAND.DAT': No such file or directory
+cp: cannot stat 'fort.25': No such file or directory
+cp: cannot stat 'DOSS.DAT': No such file or directory
+cp: cannot stat 'POTC.DAT': No such file or directory
+cp: cannot stat 'SIGMA.DAT': No such file or directory
+cp: cannot stat 'SEEBECK.DAT': No such file or directory
+cp: cannot stat 'SIGMAS.DAT': No such file or directory
+cp: cannot stat 'KAPPA.DAT': No such file or directory
+cp: cannot stat 'TDF.DAT': No such file or directory
+Warning: Queue manager not found. Checked:
+  - $MACE_HOME/mace/queue/manager.py
+  - Various relative paths from /mnt/ufs18/rs/Dual_ion_batteries/FSIStudy/step3.5ECHPOT/scale3
+  Workflow progression may not continue automatically

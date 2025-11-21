@@ -1,0 +1,15 @@
+submit directory: 
+/mnt/ffs24/home/arrg/Documents/batteries/Batteries4LGwFSI/Batteries4LGwFSI_scale3
+cp: cannot stat 'BAND.DAT': No such file or directory
+cp: cannot stat 'fort.25': No such file or directory
+cp: cannot stat 'DOSS.DAT': No such file or directory
+cp: cannot stat 'POTC.DAT': No such file or directory
+cp: cannot stat 'SIGMA.DAT': No such file or directory
+cp: cannot stat 'SEEBECK.DAT': No such file or directory
+cp: cannot stat 'SIGMAS.DAT': No such file or directory
+cp: cannot stat 'KAPPA.DAT': No such file or directory
+cp: cannot stat 'TDF.DAT': No such file or directory
+Warning: Queue manager not found. Checked:
+  - $MACE_HOME/mace/queue/manager.py
+  - Various relative paths from /mnt/ffs24/home/arrg/Documents/batteries/Batteries4LGwFSI/Batteries4LGwFSI_scale3
+  Workflow progression may not continue automatically
