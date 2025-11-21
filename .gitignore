@@ -17,3 +17,5 @@ config/secrets.yml
 
 *.CUBE
 *.gif
+*.f9
+*.zip
