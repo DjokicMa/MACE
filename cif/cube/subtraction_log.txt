@@ -1,0 +1,47 @@
+Reading large CUBE file: 4LG_FSI_2x2_ABAB_opt_charge+potential_DENS.CUBE
+Reading small CUBE file: 4LG_FSI_2x2_ABAB_FSI_opt_charge+potential_DENS.CUBE
+
+======================================================================
+CUBE SUBTRACTION WITH GRID ALIGNMENT
+======================================================================
+
+Large cube: [100 100 500] grid
+Small cube: [100 100  76] grid
+
+Interpolation details:
+  Source grid: [100 100  76]
+  Target grid: [100 100 500]
+  Source origin: [ 0.        0.       23.405906]
+  Target origin: [  0.         0.       -17.311656]
+
+  Source Z range: [23.406, 35.607] Bohr
+  Target Z range: [-17.312, 63.556] Bohr
+
+  Interpolating...   Interpolating... 5%  Interpolating... 10%  Interpolating... 15%  Interpolating... 20%  Interpolating... 25%  Interpolating... 30%  Interpolating... 35%  Interpolating... 40%  Interpolating... 45%  Interpolating... 50%  Interpolating... 55%  Interpolating... 60%  Interpolating... 65%  Interpolating... 70%  Interpolating... 75%  Interpolating... 80%  Interpolating... 85%  Interpolating... 90%  Interpolating... 95%  Interpolating... 100%  Interpolating... done!           
+
+  Coverage: 750,000 / 5,000,000 points (15.0%)
+  Interpolated data range: [-9.617507e-17, 1.547572e+02]
+
+----------------------------------------------------------------------
+SUBTRACTION RESULTS:
+----------------------------------------------------------------------
+  Large data range:   [0.000000e+00, 4.674200e+02]
+  Small data range:   [-1.880200e-16, 2.310300e+02]
+  Interpolated range: [-9.617507e-17, 1.547572e+02]
+  Result range:       [-9.520951e+01, 3.126628e+02]
+
+  Points changed: 508,703 / 5,000,000 (10.2%)
+
+  In subtraction region:
+    Large mean:   4.180084e-02
+    Small mean:   3.188898e-02
+    Result mean:  9.911860e-03
+
+Writing result to: 4LG_FSI_subtracted_CORRECTED.CUBE
+
+======================================================================
+SUBTRACTION COMPLETE!
+======================================================================
+
+You can now visualize the result:
+  python crystal_cubeviz_plotly.py 4LG_FSI_subtracted_CORRECTED.CUBE --iso-browse

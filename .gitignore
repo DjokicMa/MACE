@@ -13,3 +13,7 @@ __pycache__/
 *_secret*
 *password*
 config/secrets.yml
+
+
+*.CUBE
+*.gif
