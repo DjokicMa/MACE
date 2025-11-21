@@ -19,3 +19,9 @@ config/secrets.yml
 *.gif
 *.f9
 *.zip
+
+# Large binary files - computational data
+*.f9
+*.cube
+*.CUBE
+*.zip
