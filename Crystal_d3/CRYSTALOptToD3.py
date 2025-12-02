@@ -980,9 +980,9 @@ class D3Generator:
                                                                self.input_dir, config)
                             
                             # Scale fractional coordinates
-                            coord_segments = scale_kpoint_segments(frac_segments, shrink)
+                            coord_segments, adjusted_shrink = scale_kpoint_segments(frac_segments, shrink)
                             config["segments"] = coord_segments
-                            config["shrink"] = shrink
+                            config["shrink"] = adjusted_shrink
                             # Store SeeK-path labels
                             config["path_labels"] = get_seekpath_labels(space_group, lattice_type, str(self.input_file))
                             # Store k-path source info
@@ -994,17 +994,17 @@ class D3Generator:
                                 config["kpath_source"] = "seekpath_inv"
                             else:
                                 config["kpath_source"] = "seekpath_noinv"
-                            print(f"  Using SeeK-path full k-path for space group {space_group} with shrink={shrink}")
+                            print(f"  Using SeeK-path full k-path for space group {space_group} with shrink={adjusted_shrink}")
                         else:
                             # Fallback - try literature path first
                             frac_segments = get_literature_kpath_vectors(space_group, lattice_type)
                             if frac_segments:
                                 # Use literature path
-                                shrink = extract_and_process_shrink(str(self.input_file), self.base_name, 
+                                shrink = extract_and_process_shrink(str(self.input_file), self.base_name,
                                                                    self.input_dir, config)
-                                coord_segments = scale_kpoint_segments(frac_segments, shrink)
+                                coord_segments, adjusted_shrink = scale_kpoint_segments(frac_segments, shrink)
                                 config["segments"] = coord_segments
-                                config["shrink"] = shrink
+                                config["shrink"] = adjusted_shrink
                                 config["path_labels"] = get_band_path_from_symmetry(space_group, lattice_type)
                                 config["kpath_source"] = "literature"
                                 print(f"  SeeK-path not available, using literature k-path for space group {space_group}")
@@ -1027,12 +1027,12 @@ class D3Generator:
                                                                self.input_dir, config)
                             
                             # Scale fractional coordinates
-                            coord_segments = scale_kpoint_segments(frac_segments, shrink)
+                            coord_segments, adjusted_shrink = scale_kpoint_segments(frac_segments, shrink)
                             config["segments"] = coord_segments
-                            config["shrink"] = shrink
+                            config["shrink"] = adjusted_shrink
                             # Store path labels (literature paths use standard labels for now)
                             config["path_labels"] = get_band_path_from_symmetry(space_group, lattice_type)
-                            print(f"  Using literature k-path for space group {space_group} with shrink={shrink}")
+                            print(f"  Using literature k-path for space group {space_group} with shrink={adjusted_shrink}")
                         else:
                             # Fallback
                             path_labels = get_band_path_from_symmetry(space_group, lattice_type)
@@ -1052,12 +1052,12 @@ class D3Generator:
                                                            self.input_dir, config)
                         
                         # Scale fractional coordinates by shrink factor
-                        coord_segments = scale_kpoint_segments(frac_segments, shrink)
-                        
+                        coord_segments, adjusted_shrink = scale_kpoint_segments(frac_segments, shrink)
+
                         config["segments"] = coord_segments
                         config["path_labels"] = path_labels  # Store labels for title
-                        config["shrink"] = shrink
-                        print(f"  Using k-point vectors for space group {space_group} with shrink={shrink}")
+                        config["shrink"] = adjusted_shrink
+                        print(f"  Using k-point vectors for space group {space_group} with shrink={adjusted_shrink}")
             
             
             # For TRANSPORT calculations with auto Fermi reference, recalculate for each material
