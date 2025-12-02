@@ -1058,8 +1058,35 @@ class D3Generator:
                         config["path_labels"] = path_labels  # Store labels for title
                         config["shrink"] = adjusted_shrink
                         print(f"  Using k-point vectors for space group {space_group} with shrink={adjusted_shrink}")
-            
-            
+
+            # For BAND calculations with bands around Fermi, recalculate for each material
+            if self.calc_type == "BAND" and config.get("bands") == "fermi":
+                # Extract band info for this material
+                try:
+                    from Crystal_d3.d3_interactive import get_band_info_from_output
+                except ImportError:
+                    from d3_interactive import get_band_info_from_output
+                band_info = get_band_info_from_output(str(self.input_file))
+
+                if band_info.get('valence_bands', 0) > 0:
+                    # Get offsets from config
+                    bands_below = config.get("bands_below_fermi", 500)
+                    bands_above = config.get("bands_above_fermi", 600)
+
+                    # Calculate actual band numbers for THIS material
+                    first = max(1, band_info['valence_bands'] - bands_below)
+                    last = min(band_info['n_bands'], band_info['valence_bands'] + bands_above)
+
+                    config["first_band"] = first
+                    config["last_band"] = last
+                    print(f"  Material has {band_info['valence_bands']} valence bands (Fermi level)")
+                    print(f"  Selected bands {first} to {last} ({bands_below} below + {bands_above} above Fermi)")
+                else:
+                    # Fallback to all bands
+                    print("  Warning: Could not determine Fermi level, using all bands")
+                    config["first_band"] = 1
+                    config["last_band"] = None
+
             # For TRANSPORT calculations with auto Fermi reference, recalculate for each material
             if self.calc_type == "TRANSPORT" and config.get("mu_reference") == "fermi":
                 # Extract Fermi energy for this material
