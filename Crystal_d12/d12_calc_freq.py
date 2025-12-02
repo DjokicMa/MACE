@@ -1990,7 +1990,7 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
                     
                     if frac_segments and scale_kpoint_segments:
                         # Scale fractional coordinates by shrink factor
-                        path = scale_kpoint_segments(frac_segments, shrink)
+                        path, shrink = scale_kpoint_segments(frac_segments, shrink)
                     else:
                         # Fallback to manual scaling
                         path = []
@@ -2015,8 +2015,7 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
                             if get_kpoint_coordinates_from_labels:
                                 frac_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
                                 if frac_segments and scale_kpoint_segments:
-                                    path = scale_kpoint_segments(frac_segments, 16)  # Use default shrink=16 for coordinates
-                                    shrink = 16
+                                    path, shrink = scale_kpoint_segments(frac_segments, 16)  # Use default shrink=16 for coordinates
                                     band_settings["path_labels"] = path_labels  # Keep original for title
                                 else:
                                     # Fallback

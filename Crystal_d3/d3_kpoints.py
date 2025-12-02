@@ -519,26 +519,64 @@ def extract_and_process_shrink(out_file: str, base_name: str,
     return shrink
 
 
-def scale_kpoint_segments(frac_segments: List[List[float]], shrink: int) -> List[List[int]]:
+def get_minimum_shrink_for_segments(frac_segments: List[List[float]]) -> int:
+    """Determine minimum shrink factor needed to represent all k-points as integers.
+
+    Args:
+        frac_segments: List of k-point segments with fractional coordinates
+
+    Returns:
+        Minimum shrink factor (always even, minimum 4 for paths with 1/4 coordinates)
+    """
+    from fractions import Fraction
+
+    max_denominator = 1
+    for seg in frac_segments:
+        for coord in seg:
+            if coord != 0:
+                # Convert to fraction and get denominator
+                frac = Fraction(coord).limit_denominator(1000)
+                max_denominator = max(max_denominator, frac.denominator)
+
+    # Round up to next even number
+    min_shrink = max_denominator
+    if min_shrink % 2 == 1:
+        min_shrink += 1
+
+    # Minimum of 4 for robustness (handles 1/2, 1/4 coordinates)
+    return max(4, min_shrink)
+
+
+def scale_kpoint_segments(frac_segments: List[List[float]], shrink: int) -> tuple:
     """Scale fractional k-point coordinates to integers based on shrink factor.
-    
+
     Args:
         frac_segments: List of k-point segments with fractional coordinates
         shrink: Shrink factor for scaling
-        
+
     Returns:
-        List of k-point segments with integer coordinates
+        Tuple of (coord_segments, adjusted_shrink) where:
+            - coord_segments: List of k-point segments with integer coordinates
+            - adjusted_shrink: The shrink factor used (may be adjusted if input was insufficient)
     """
     # Safeguard against invalid shrink values
     if shrink <= 0:
         print(f"WARNING: Invalid shrink factor {shrink}, using default 16")
         shrink = 16
-    
+
+    # Check if shrink is sufficient for the given coordinates
+    min_shrink = get_minimum_shrink_for_segments(frac_segments)
+    if shrink < min_shrink:
+        print(f"WARNING: Shrink factor {shrink} insufficient for k-path coordinates")
+        print(f"         Minimum required: {min_shrink} (to represent fractional coordinates like 1/4)")
+        print(f"         Adjusting shrink to {min_shrink}")
+        shrink = min_shrink
+
     coord_segments = []
     for seg in frac_segments:
         scaled_seg = [int(round(coord * shrink)) for coord in seg]
         coord_segments.append(scaled_seg)
-    return coord_segments
+    return coord_segments, shrink
 
 
 # High-symmetry point paths for different crystal systems
@@ -587,12 +625,10 @@ KPOINT_COORDINATES = {
     },
     "cubic_fc": {
         "G": [0.0, 0.0, 0.0],    # Gamma
-        "X": [0.5, 0.0, 0.5],    # [1/2, 0, 1/2]
-        "L": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2]
-        "W": [0.5, 0.25, 0.75],  # [1/2, 1/4, 3/4]
-        # K and U not in Table 14.1 - commonly used points
-        "K": [3/8, 3/8, 3/4],    # [3/8, 3/8, 3/4]
-        "U": [5/8, 0.25, 5/8],   # [5/8, 1/4, 5/8]
+        "X": [0.5, 0.0, 0.5],    # [1/2, 0, 1/2] - Table 14.1
+        "L": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2] - Table 14.1
+        "W": [0.5, 0.25, 0.75],  # [1/2, 1/4, 3/4] - Table 14.1
+        # K and U are NOT in CRYSTAL23 Table 14.1 - they are literature points added in get_literature_kpath_vectors()
     },
     "cubic_bc": {
         "G": [0.0, 0.0, 0.0],    # Gamma
@@ -622,12 +658,9 @@ KPOINT_COORDINATES = {
     },
     "tetragonal_bc": {
         "G": [0.0, 0.0, 0.0],    # Gamma
-        "M": [0.5, 0.5, 0.0],    # [1/2, 1/2, 0]
-        "P": [0.25, 0.25, 0.0],  # [1/4, 1/4, 0]
-        "X": [0.0, 0.5, 0.0],    # [0, 1/2, 0]
-        "N": [0.0, 0.5, 0.5],    # [0, 1/2, 1/2]
-        "Z": [0.0, 0.0, 0.5],    # [0, 0, 1/2]
-        "R": [0.0, 0.5, 0.5],    # Same as N in some conventions
+        "M": [0.5, 0.5, -0.5],   # [1/2, 1/2, -1/2] - Table 14.2
+        "P": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2] - Table 14.2
+        "X": [0.0, 0.0, 0.5],    # [0, 0, 1/2] - Table 14.2
     },
     
     # Orthorhombic systems (from Table 14.2)
@@ -643,55 +676,43 @@ KPOINT_COORDINATES = {
     },
     "orthorhombic_fc": {
         "G": [0.0, 0.0, 0.0],    # Gamma
-        "Z": [0.5, 0.5, 0.0],    # [1/2, 1/2, 0]
-        "Y": [0.5, 0.0, 0.0],    # [1/2, 0, 0]
-        "T": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2]
-        "X": [0.0, 0.5, 0.0],    # [0, 1/2, 0]
-        "U": [0.0, 0.5, 0.5],    # [0, 1/2, 1/2]
-        "S": [0.5, 0.0, 0.5],    # [1/2, 0, 1/2]
-        "R": [0.0, 0.0, 0.5],    # [0, 0, 1/2]
+        "Z": [0.5, 0.5, 0.0],    # [1/2, 1/2, 0] - Table 14.2
+        "Y": [0.5, 0.0, 0.5],    # [1/2, 0, 1/2] - Table 14.2
+        "T": [1.0, 0.5, 0.5],    # [1, 1/2, 1/2] - Table 14.2
     },
     "orthorhombic_ab": {
         "G": [0.0, 0.0, 0.0],    # Gamma
-        "S": [0.5, 0.0, 0.0],    # [1/2, 0, 0]
-        "T": [0.5, 0.5, 0.0],    # [1/2, 1/2, 0]
-        "R": [0.0, 0.5, 0.5],    # [0, 1/2, 1/2]
-        "Y": [0.0, 0.5, 0.0],    # [0, 1/2, 0]
-        "Z": [0.0, 0.0, 0.5],    # [0, 0, 1/2]
-        "X": [0.5, 0.0, 0.5],    # [1/2, 0, 1/2]
-        "U": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2]
+        "S": [0.0, 0.5, 0.0],    # [0, 1/2, 0] - Table 14.2
+        "T": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2] - Table 14.2
+        "R": [0.0, 0.5, 0.5],    # [0, 1/2, 1/2] - Table 14.2
+        "Y": [0.5, 0.5, 0.0],    # [1/2, 1/2, 0] - Table 14.2
+        "Z": [0.0, 0.0, 0.5],    # [0, 0, 1/2] - Table 14.2
     },
     "orthorhombic_bc": {
         "G": [0.0, 0.0, 0.0],    # Gamma
-        "S": [0.0, 0.5, 0.0],    # [0, 1/2, 0]
-        "T": [0.5, 0.5, 0.0],    # [1/2, 1/2, 0]
-        "R": [0.5, 0.0, 0.5],    # [1/2, 0, 1/2]
-        "X": [0.5, 0.0, 0.0],    # [1/2, 0, 0]
-        "W": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2]
-        "Y": [0.0, 0.5, 0.5],    # [0, 1/2, 1/2]
-        "Z": [0.0, 0.0, 0.5],    # [0, 0, 1/2]
+        "S": [0.5, 0.0, 0.0],    # [1/2, 0, 0] - Table 14.2
+        "T": [0.0, 0.0, 0.5],    # [0, 0, 1/2] - Table 14.2
+        "R": [0.0, 0.5, 0.0],    # [0, 1/2, 0] - Table 14.2
+        "X": [0.5, -0.5, 0.5],   # [1/2, -1/2, 1/2] - Table 14.2
+        "W": [0.25, 0.25, 0.25], # [1/4, 1/4, 1/4] - Table 14.2
     },
     
-    # Monoclinic systems (from Table 14.2)
+    # Monoclinic systems (from Table 14.1)
     "monoclinic_simple": {
         "G": [0.0, 0.0, 0.0],    # Gamma
-        "A": [0.5, 0.5, 0.0],    # [1/2, 1/2, 0]
-        "B": [0.0, 0.5, 0.0],    # [0, 1/2, 0]
-        "C": [0.0, 0.5, 0.5],    # [0, 1/2, 1/2]
-        "D": [0.5, 0.0, 0.5],    # [1/2, 0, 1/2]
-        "E": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2]
-        "Y": [0.5, 0.0, 0.0],    # [1/2, 0, 0]
-        "Z": [0.0, 0.0, 0.5],    # [0, 0, 1/2]
+        "A": [0.5, -0.5, 0.0],   # [1/2, -1/2, 0] - Table 14.1
+        "B": [0.5, 0.0, 0.0],    # [1/2, 0, 0] - Table 14.1
+        "C": [0.0, 0.5, 0.5],    # [0, 1/2, 1/2] - Table 14.1
+        "D": [0.5, 0.0, 0.5],    # [1/2, 0, 1/2] - Table 14.1
+        "E": [0.5, -0.5, 0.5],   # [1/2, -1/2, 1/2] - Table 14.1
+        "Y": [0.0, 0.5, 0.0],    # [0, 1/2, 0] - Table 14.1
+        "Z": [0.0, 0.0, 0.5],    # [0, 0, 1/2] - Table 14.1
     },
     "monoclinic_ac": {
         "G": [0.0, 0.0, 0.0],    # Gamma
-        "A": [0.5, 0.0, 0.0],    # [1/2, 0, 0]
-        "Y": [0.0, 0.5, 0.0],    # [0, 1/2, 0]
-        "M": [0.5, 0.5, 0.0],    # [1/2, 1/2, 0]
-        "C": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2]
-        "D": [0.5, 0.0, 0.5],    # [1/2, 0, 1/2]
-        "E": [0.0, 0.5, 0.5],    # [0, 1/2, 1/2]
-        "Z": [0.0, 0.0, 0.5],    # [0, 0, 1/2]
+        "A": [0.5, 0.0, 0.0],    # [1/2, 0, 0] - Table 14.1
+        "Y": [0.0, 0.5, 0.5],    # [0, 1/2, 1/2] - Table 14.1
+        "M": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2] - Table 14.1
     },
     
     # Triclinic system (from Table 14.2)
@@ -706,13 +727,12 @@ KPOINT_COORDINATES = {
         "U": [0.5, 0.0, 0.5],    # [1/2, 0, 1/2]
     },
     
-    # Rhombohedral (R lattice) (from Table 14.2)
+    # Rhombohedral (R lattice) (from Table 14.1)
     "rhombohedral": {
         "G": [0.0, 0.0, 0.0],    # Gamma
-        "T": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2]
-        "F": [0.5, 0.5, 0.0],    # [1/2, 1/2, 0]
-        "L": [0.5, 0.0, 0.0],    # [1/2, 0, 0]
-        "Z": [0.5, 0.5, -0.5],   # [1/2, 1/2, -1/2]
+        "T": [0.5, 0.5, -0.5],   # [1/2, 1/2, -1/2] - Table 14.1
+        "F": [0.0, 0.5, 0.5],    # [0, 1/2, 1/2] - Table 14.1
+        "L": [0.0, 0.0, 0.5],    # [0, 0, 1/2] - Table 14.1
     },
 }
 
@@ -1021,24 +1041,59 @@ def get_literature_kpath_vectors(space_group: int, lattice_type: str) -> List[Li
     return segments
 
 
-def get_extended_bravais(sg: int, lat: str, 
+def normalize_lattice_type(lat: str) -> str:
+    """Convert descriptive lattice type names to single-letter Bravais types.
+
+    Args:
+        lat: Lattice type (can be descriptive like 'cubic_bc' or single-letter like 'I')
+
+    Returns:
+        Single-letter Bravais lattice type (P, I, F, C, R, A, B)
+    """
+    # Mapping from descriptive names to single-letter types
+    lattice_map = {
+        'cubic_primitive': 'P',
+        'cubic_fc': 'F',
+        'cubic_bc': 'I',
+        'tetragonal_simple': 'P',
+        'tetragonal_bc': 'I',
+        'orthorhombic_simple': 'P',
+        'orthorhombic_bc': 'I',
+        'orthorhombic_fc': 'F',
+        'orthorhombic_ab': 'C',
+        'orthorhombic_ac': 'C',
+        'orthorhombic_bc': 'C',
+        'monoclinic_simple': 'P',
+        'monoclinic_ac': 'C',
+        'rhombohedral': 'R',
+        'hexagonal': 'P',
+        'triclinic': 'P'
+    }
+
+    # Return mapped value if it exists, otherwise assume it's already single-letter
+    return lattice_map.get(lat, lat)
+
+
+def get_extended_bravais(sg: int, lat: str,
                         a: float = None, b: float = None, c: float = None,
                         alpha: float = None, beta: float = None, gamma: float = None) -> str:
     """Determine extended Bravais lattice symbol from space group and lattice type.
-    
+
     Enhanced version with cell parameter analysis when available.
     Based on SeeK-path methodology for comprehensive k-path determination.
     Returns symbols like aP1, aP2, cF1, etc.
-    
+
     Args:
         sg: Space group number
-        lat: Lattice type (P, C, F, I, R, etc.)
+        lat: Lattice type (can be descriptive like 'cubic_bc' or single-letter like 'I')
         a, b, c: Lattice parameters in Angstroms (optional)
         alpha, beta, gamma: Lattice angles in degrees (optional)
-        
+
     Returns:
         Extended Bravais lattice symbol
     """
+    # Normalize lattice type to single letter
+    lat = normalize_lattice_type(lat)
     
     # Triclinic
     if sg == 1:
@@ -1990,6 +2045,38 @@ seekpath_data = {
         ],
         "labels": ["G", "H", "N", "G", "P", "H", "|", "P", "N", "|", "G", "H'", "N'", "G", "P'", "H'", "|", "P'", "N'"]
     },
+    # cI2 and cI2_noinv use the same paths as cI1/cI1_noinv
+    # Space groups 199, 204, 206, 211, 214, 217, 220 are classified as cI2 but use identical BCC paths
+    "cI2": {
+        # Alias for cI1 - same BCC k-path for space groups in cI2_groups
+        "segments": [
+            [0.0, 0.0, 0.0, 2.0, -2.0, 2.0],     # Γ → H
+            [2.0, -2.0, 2.0, 0.0, 0.0, 2.0],     # H → N
+            [0.0, 0.0, 2.0, 0.0, 0.0, 0.0],      # N → Γ
+            [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],      # Γ → P
+            [1.0, 1.0, 1.0, 2.0, -2.0, 2.0],     # P → H
+            [1.0, 1.0, 1.0, 0.0, 0.0, 2.0],      # P → N
+        ],
+        "labels": ["G", "H", "N", "G", "P", "H", "|", "P", "N"]
+    },
+    "cI2_noinv": {
+        # Alias for cI1_noinv - same BCC k-path with primed points for non-centrosymmetric groups
+        "segments": [
+            [0.0, 0.0, 0.0, 0.5, -0.5, 0.5],     # Γ → H
+            [0.5, -0.5, 0.5, 0.0, 0.0, 0.5],     # H → N
+            [0.0, 0.0, 0.5, 0.0, 0.0, 0.0],      # N → Γ
+            [0.0, 0.0, 0.0, 0.25, 0.25, 0.25],   # Γ → P
+            [0.25, 0.25, 0.25, 0.5, -0.5, 0.5],  # P → H
+            [0.25, 0.25, 0.25, 0.0, 0.0, 0.5],   # P → N
+            [0.0, 0.0, 0.0, -0.5, 0.5, -0.5],    # Γ → H'
+            [-0.5, 0.5, -0.5, 0.0, 0.0, -0.5],   # H' → N'
+            [0.0, 0.0, -0.5, 0.0, 0.0, 0.0],     # N' → Γ
+            [0.0, 0.0, 0.0, -0.25, -0.25, -0.25], # Γ → P'
+            [-0.25, -0.25, -0.25, -0.5, 0.5, -0.5], # P' → H'
+            [-0.25, -0.25, -0.25, 0.0, 0.0, -0.5] # P' → N'
+        ],
+        "labels": ["G", "H", "N", "G", "P", "H", "|", "P", "N", "|", "G", "H'", "N'", "G", "P'", "H'", "|", "P'", "N'"]
+    },
     "cP1_noinv": {
         # Cubic primitive without inversion (P2_13)
         "segments": [
@@ -2774,9 +2861,16 @@ def get_seekpath_labels(space_group: int, lattice_type: str, out_file: Optional[
     
     # Get path labels if available
     if lookup_key in seekpath_data and "labels" in seekpath_data[lookup_key]:
-        return seekpath_data[lookup_key]["labels"]
+        labels = seekpath_data[lookup_key]["labels"]
+        n_labels = len([l for l in labels if l != '|'])
+        n_discontinuities = labels.count('|')
+        print(f"  ✓ Using SeeK-path labels for '{lookup_key}': {n_labels} labels with {n_discontinuities} discontinuities")
+        return labels
     else:
         # Fall back to literature path labels first
+        print(f"  ⚠ WARNING: SeeK-path data not found for lookup_key='{lookup_key}'")
+        print(f"     Available keys: {list(seekpath_data.keys())[:5]}... ({len(seekpath_data)} total)")
+        print(f"     Falling back to literature path (loses primed labels and proper discontinuities!)")
         return get_literature_path_labels(space_group, lattice_type)
 
 

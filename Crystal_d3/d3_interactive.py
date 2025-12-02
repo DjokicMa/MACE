@@ -523,31 +523,94 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
     if path_method == "1":
         # True automatic path from output file
         if out_file:
-            # Extract space group from output file
+            # Extract space group from output file using robust detection
             import re
+            import sys
+            from pathlib import Path
+
+            # Import space group symbol mappings
+            sys.path.insert(0, str(Path(__file__).parent.parent / "Crystal_d12"))
+            try:
+                from d12_constants import SPACEGROUP_SYMBOL_TO_NUMBER, SPACEGROUP_ALTERNATIVES
+            except ImportError:
+                SPACEGROUP_SYMBOL_TO_NUMBER = {}
+                SPACEGROUP_ALTERNATIVES = {}
+
             space_group = 1
             lattice_type = 'P'
-            
+
             try:
                 with open(out_file, 'r') as f:
                     content = f.read()
-                    
-                # Find space group number
-                sg_match = re.search(r'SPACE GROUP.*?NUMBER:\s*(\d+)', content)
-                if sg_match:
-                    space_group = int(sg_match.group(1))
-                
-                # Find lattice type from space group symbol
-                sg_symbol_match = re.search(r'SPACE GROUP.*?:\s+([A-Z]\s*[\-/0-9\s]*[A-Z0-9]*)', content)
+
+                # Find space group symbol
+                sg_symbol_match = re.search(r'SPACE GROUP[^:]*:\s*([A-Z][^$\n]+)', content)
                 if sg_symbol_match:
                     symbol = sg_symbol_match.group(1).strip()
                     if symbol:
+                        # Extract lattice type (first letter)
                         lattice_type = symbol[0]
-                
+
+                        # Try to map symbol to space group number using comprehensive dictionaries
+                        if symbol in SPACEGROUP_SYMBOL_TO_NUMBER:
+                            space_group = SPACEGROUP_SYMBOL_TO_NUMBER[symbol]
+                        elif symbol in SPACEGROUP_ALTERNATIVES:
+                            space_group = SPACEGROUP_ALTERNATIVES[symbol]
+                        elif symbol.replace(' ', '') in SPACEGROUP_SYMBOL_TO_NUMBER:
+                            space_group = SPACEGROUP_SYMBOL_TO_NUMBER[symbol.replace(' ', '')]
+                        elif symbol.replace(' ', '-') in SPACEGROUP_SYMBOL_TO_NUMBER:
+                            space_group = SPACEGROUP_SYMBOL_TO_NUMBER[symbol.replace(' ', '-')]
+
+                # Space group number - direct number pattern (fallback)
+                sg_match = re.search(r'SPACE GROUP.*?NUMBER:\s*(\d+)', content)
+                if sg_match:
+                    space_group = int(sg_match.group(1))
+
+                # Convert single-letter lattice type to descriptive format
+                # This ensures compatibility with the rest of the codebase
+                from d3_kpoints import get_crystal_system_from_space_group
+                crystal_system = get_crystal_system_from_space_group(space_group, lattice_type)
+
+                # Map to descriptive lattice type for internal use
+                if 195 <= space_group <= 230:  # Cubic
+                    if lattice_type == 'P':
+                        lattice_type = 'cubic_primitive'
+                    elif lattice_type == 'F':
+                        lattice_type = 'cubic_fc'
+                    elif lattice_type == 'I':
+                        lattice_type = 'cubic_bc'
+                elif 75 <= space_group <= 142:  # Tetragonal
+                    if lattice_type == 'P':
+                        lattice_type = 'tetragonal_simple'
+                    elif lattice_type == 'I':
+                        lattice_type = 'tetragonal_bc'
+                elif 16 <= space_group <= 74:  # Orthorhombic
+                    if lattice_type == 'P':
+                        lattice_type = 'orthorhombic_simple'
+                    elif lattice_type == 'I':
+                        lattice_type = 'orthorhombic_bc'
+                    elif lattice_type == 'F':
+                        lattice_type = 'orthorhombic_fc'
+                    elif lattice_type in ['A', 'B', 'C']:
+                        lattice_type = 'orthorhombic_ab'
+                elif 3 <= space_group <= 15:  # Monoclinic
+                    if lattice_type == 'P':
+                        lattice_type = 'monoclinic_simple'
+                    elif lattice_type in ['A', 'C']:
+                        lattice_type = 'monoclinic_ac'
+                elif 143 <= space_group <= 167:  # Trigonal/Rhombohedral
+                    if lattice_type == 'R':
+                        lattice_type = 'rhombohedral'
+                    else:
+                        lattice_type = 'hexagonal'
+                elif 168 <= space_group <= 194:  # Hexagonal
+                    lattice_type = 'hexagonal'
+
                 print(f"\nDetected space group: {space_group} ({lattice_type} lattice)")
-            except:
-                print("\nCould not read space group from output file, using default P1")
-        
+            except Exception as e:
+                print(f"\nCould not read space group from output file: {e}")
+                print("Using default P1")
+
         # Get appropriate path based on symmetry
         path_labels = get_band_path_from_symmetry(space_group, lattice_type)
         
@@ -599,11 +662,12 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
             
             # Get k-point coordinates for the labels (returns fractional coordinates)
             frac_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
-            
+
             # Scale fractional coordinates by shrink factor to get integers
-            coord_segments = scale_kpoint_segments(frac_segments, shrink)
+            coord_segments, adjusted_shrink = scale_kpoint_segments(frac_segments, shrink)
             band_config["segments"] = coord_segments
-            print(f"\n✓ Converted path to k-point vectors (shrink={shrink})")
+            band_config["shrink"] = adjusted_shrink
+            print(f"\n✓ Converted path to k-point vectors (shrink={adjusted_shrink})")
         else:
             # SeeK-path full paths with comprehensive k-points
             band_config["path_method"] = "coordinates"
@@ -624,9 +688,10 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
                 frac_segments = get_literature_kpath_vectors(space_group, lattice_type)
                 if frac_segments:
                     # Scale fractional coordinates by shrink factor
-                    coord_segments = scale_kpoint_segments(frac_segments, shrink)
+                    coord_segments, adjusted_shrink = scale_kpoint_segments(frac_segments, shrink)
                     band_config["segments"] = coord_segments
-                    print(f"✓ Using comprehensive literature k-path with {len(coord_segments)} segments")
+                    band_config["shrink"] = adjusted_shrink
+                    print(f"✓ Using comprehensive literature k-path with {len(coord_segments)} segments (shrink={adjusted_shrink})")
                 else:
                     # Fallback to standard path
                     print("\nLiterature path not available, using standard path")
@@ -651,9 +716,10 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
                     else:
                         band_config["kpath_source"] = "seekpath_noinv"
                     # Scale fractional coordinates by shrink factor
-                    coord_segments = scale_kpoint_segments(frac_segments, shrink)
+                    coord_segments, adjusted_shrink = scale_kpoint_segments(frac_segments, shrink)
                     band_config["segments"] = coord_segments
-                    print(f"✓ Using SeeK-path full k-path with {len(coord_segments)} segments")
+                    band_config["shrink"] = adjusted_shrink
+                    print(f"✓ Using SeeK-path full k-path with {len(coord_segments)} segments (shrink={adjusted_shrink})")
                 else:
                     # Fallback to standard path
                     print("\nSeeK-path full path not available, using standard path")
@@ -823,8 +889,8 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
                         if len(coords) == 6:
                             # Scale fractional to integer using unified function
                             # Convert to segment format for scaling function
-                            scaled_segment = scale_kpoint_segments([coords], shrink)[0]
-                            segments.append(scaled_segment)
+                            scaled_segments, _ = scale_kpoint_segments([coords], shrink)
+                            segments.append(scaled_segments[0])
                         else:
                             print("Warning: Expected 6 numbers, skipping segment")
                     except ValueError:
