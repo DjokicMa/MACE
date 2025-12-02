@@ -626,12 +626,29 @@ Options:
   --nosubmit           Generate SLURM scripts but do not submit jobs
   --overwrite-sh       Overwrite existing .sh files instead of using them
 
+Node Exclusion Options (mutually exclusive):
+  --exclude-amd20      Exclude all AMD20 nodes (amr + nvf types) [RECOMMENDED]
+  --exclude-mendoza    Exclude Mendoza group nodes
+  --exclude-type TYPE  Exclude all nodes of specific type (amr, nvf, agg, etc.)
+  --exclude-nodes STR  Custom node exclusion (e.g., "amr-042,amr-050" or "amr-[042-050]")
+
 Examples:
+  # Basic submission
   mace submit calculation.d12
   mace submit property.d3
   mace submit my_calculations/
+
+  # Interactive configuration
   mace submit --interactive my_calculations/
   mace submit -i calculation.d12
+
+  # With node exclusion
+  mace submit --exclude-amd20 calculation.d12
+  mace submit --exclude-type amr my_calculations/
+  mace submit --exclude-nodes "amr-042,amr-050" calculation.d12
+  mace submit -i --exclude-mendoza my_calculations/
+
+  # Other options
   mace submit --nosubmit my_calculations/
   mace submit --overwrite-sh --interactive calculation.d12
 
@@ -1073,6 +1090,17 @@ More Help:
         submit_parser.add_argument('--overwrite-sh', action='store_true',
                                  help='Overwrite existing .sh files instead of using them')
 
+        # Node exclusion options
+        exclusion_group = submit_parser.add_mutually_exclusive_group()
+        exclusion_group.add_argument('--exclude-amd20', action='store_true',
+                                    help='Exclude all AMD20 nodes (amr + nvf types)')
+        exclusion_group.add_argument('--exclude-mendoza', action='store_true',
+                                    help='Exclude Mendoza group nodes')
+        exclusion_group.add_argument('--exclude-type', metavar='TYPE',
+                                    help='Exclude all nodes of specific type (amr, nvf, agg, etc.)')
+        exclusion_group.add_argument('--exclude-nodes', metavar='NODES',
+                                    help='Custom node exclusion (e.g., "amr-042,amr-050" or "amr-[042-050]")')
+
         try:
             submit_args = submit_parser.parse_args(args.args + remaining)
         except SystemExit:
@@ -1082,6 +1110,53 @@ More Help:
         interactive = submit_args.interactive
         nosubmit = submit_args.nosubmit
         overwrite_sh = submit_args.overwrite_sh
+
+        # Process node exclusion flags
+        exclude_string = None
+        if submit_args.exclude_amd20 or submit_args.exclude_mendoza or submit_args.exclude_type or submit_args.exclude_nodes:
+            try:
+                from mace.utils.node_exclusion import NodeExclusionManager
+                node_manager = NodeExclusionManager()
+
+                if submit_args.exclude_amd20:
+                    print("\nExcluding all AMD20 nodes (amr + nvf)...")
+                    amd20_nodes = node_manager.get_amd20_nodes()
+                    if amd20_nodes:
+                        exclude_string = node_manager.create_exclude_string(amd20_nodes)
+                        print(f"Exclude string: {exclude_string}")
+                    else:
+                        print("Warning: No AMD20 nodes found")
+
+                elif submit_args.exclude_mendoza:
+                    exclude_string = node_manager.create_exclude_string(node_manager.MENDOZA_NODES)
+                    print(f"Excluding Mendoza nodes: {exclude_string}")
+
+                elif submit_args.exclude_type:
+                    node_type = submit_args.exclude_type
+                    print(f"\nQuerying SLURM for all '{node_type}' nodes...")
+                    nodes = node_manager.query_nodes_by_type(node_type)
+                    if nodes:
+                        exclude_string = node_manager.create_exclude_string(nodes)
+                        print(f"Found {len(nodes)} nodes")
+                        print(f"Exclude string: {exclude_string}")
+                    else:
+                        print(f"Warning: No nodes found for type '{node_type}'")
+
+                elif submit_args.exclude_nodes:
+                    # User provided custom nodes
+                    custom_input = submit_args.exclude_nodes
+                    if '[' in custom_input and ']' in custom_input:
+                        # Already in SLURM format
+                        exclude_string = custom_input
+                    else:
+                        # Parse comma-separated nodes
+                        nodes = [n.strip() for n in custom_input.split(',')]
+                        exclude_string = node_manager.create_exclude_string(nodes)
+                    print(f"Custom node exclusion: {exclude_string}")
+
+            except ImportError:
+                print("Warning: Node exclusion module not available")
+                exclude_string = None
 
         # Check what type of files we're dealing with
         if os.path.isfile(target):
@@ -1093,6 +1168,8 @@ More Help:
                 sys.argv.append('--nosubmit')
             if overwrite_sh:
                 sys.argv.append('--overwrite-sh')
+            if exclude_string:
+                sys.argv.extend(['--exclude-nodes', exclude_string])
 
             if target.endswith('.d3'):
                 from submission.properties import main as submit_properties
@@ -1135,6 +1212,8 @@ More Help:
                         sys.argv.append('--nosubmit')
                     if overwrite_sh:
                         sys.argv.append('--overwrite-sh')
+                    if exclude_string:
+                        sys.argv.extend(['--exclude-nodes', exclude_string])
                     from submission.crystal import main as submit_crystal
                     submit_crystal()
                 elif choice == '2':
@@ -1146,6 +1225,8 @@ More Help:
                         sys.argv.append('--nosubmit')
                     if overwrite_sh:
                         sys.argv.append('--overwrite-sh')
+                    if exclude_string:
+                        sys.argv.extend(['--exclude-nodes', exclude_string])
                     from submission.properties import main as submit_properties
                     submit_properties()
                 elif choice == '3':
@@ -1158,6 +1239,8 @@ More Help:
                         sys.argv.append('--nosubmit')
                     if overwrite_sh:
                         sys.argv.append('--overwrite-sh')
+                    if exclude_string:
+                        sys.argv.extend(['--exclude-nodes', exclude_string])
                     from submission.crystal import main as submit_crystal
                     submit_crystal()
 
@@ -1169,6 +1252,8 @@ More Help:
                         sys.argv.append('--nosubmit')
                     if overwrite_sh:
                         sys.argv.append('--overwrite-sh')
+                    if exclude_string:
+                        sys.argv.extend(['--exclude-nodes', exclude_string])
                     from submission.properties import main as submit_properties
                     submit_properties()
                 else:
@@ -1184,6 +1269,8 @@ More Help:
                     sys.argv.append('--nosubmit')
                 if overwrite_sh:
                     sys.argv.append('--overwrite-sh')
+                if exclude_string:
+                    sys.argv.extend(['--exclude-nodes', exclude_string])
                 from submission.crystal import main as submit_crystal
                 submit_crystal()
 
@@ -1196,6 +1283,8 @@ More Help:
                     sys.argv.append('--nosubmit')
                 if overwrite_sh:
                     sys.argv.append('--overwrite-sh')
+                if exclude_string:
+                    sys.argv.extend(['--exclude-nodes', exclude_string])
                 from submission.properties import main as submit_properties
                 submit_properties()
         

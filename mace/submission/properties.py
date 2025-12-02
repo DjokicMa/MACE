@@ -10,6 +10,13 @@ import shutil
 import itertools
 from pathlib import Path
 
+# Try to import node exclusion manager
+try:
+    from mace.utils.node_exclusion import NodeExclusionManager
+    NODE_EXCLUSION_AVAILABLE = True
+except ImportError:
+    NODE_EXCLUSION_AVAILABLE = False
+
 def get_default_d3_resources():
     """Get default SLURM resources for D3 calculations"""
     return {
@@ -114,13 +121,168 @@ def configure_interactive_resources():
     new_account = input(f"  Account [{default_resources['account']}]: ").strip()
     resources['account'] = new_account if new_account else default_resources['account']
 
+    # Node exclusion
+    resources['node_exclusion'] = None
+    if NODE_EXCLUSION_AVAILABLE:
+        exclude_prompt = input("\nExclude specific nodes? (y/n) [n]: ").strip().lower()
+        if exclude_prompt in ['y', 'yes']:
+            resources['node_exclusion'] = prompt_node_exclusion()
+
     print(f"\nFinal resource configuration:")
     print(f"  • Cores: {resources['ntasks']}")
     print(f"  • Total Memory: {resources['memory']}")
     print(f"  • Walltime: {resources['walltime']}")
     print(f"  • Account: {resources['account']}")
+    if resources.get('node_exclusion'):
+        print(f"  • Node Exclusion: {resources['node_exclusion']}")
 
     return resources
+
+def prompt_node_exclusion():
+    """Prompt user for node exclusion configuration"""
+    if not NODE_EXCLUSION_AVAILABLE:
+        return None
+
+    node_manager = NodeExclusionManager()
+
+    print("\n  " + "="*60)
+    print("  SLURM Node Exclusion Configuration")
+    print("  " + "="*60)
+
+    print("\n  Select node exclusion option:")
+    print("  1) No exclusions (use all available nodes)")
+    print("  2) Exclude all AMD20 nodes (amr + nvf types) [RECOMMENDED]")
+    print("  3) Exclude Mendoza group nodes (agg-[011-012], amr-[163,178-179])")
+    print("  4) Exclude all nodes of a specific type (amr, nvf, agg, etc.)")
+    print("  5) Custom node exclusion list")
+
+    choice = input("\n  Enter choice [1-5] (default: 2): ").strip() or "2"
+
+    if choice == "1":
+        print("  No node exclusions will be applied.")
+        return None
+
+    elif choice == "2":
+        # Exclude AMD20 nodes
+        print("  Querying SLURM for all AMD20 nodes (amr + nvf)...")
+        amd20_nodes = node_manager.get_amd20_nodes()
+        if amd20_nodes:
+            amr_count = sum(1 for n in amd20_nodes if n.startswith('amr-'))
+            nvf_count = sum(1 for n in amd20_nodes if n.startswith('nvf-'))
+            print(f"  Found {len(amd20_nodes)} AMD20 nodes:")
+            print(f"    - amr (AMD EPYC 7452): {amr_count} nodes")
+            print(f"    - nvf (AMD EPYC 7452 + V100): {nvf_count} nodes")
+            exclude_str = node_manager.create_exclude_string(amd20_nodes)
+            print(f"  Exclude string: {exclude_str}")
+            return exclude_str
+        else:
+            print("  Warning: No AMD20 nodes found")
+            return None
+
+    elif choice == "3":
+        exclude_str = node_manager.create_exclude_string(
+            node_manager.MENDOZA_NODES
+        )
+        print(f"  Excluding Mendoza nodes: {exclude_str}")
+        return exclude_str
+
+    elif choice == "4":
+        return exclude_by_type_prompt(node_manager)
+
+    elif choice == "5":
+        return custom_exclusion_prompt(node_manager)
+
+    else:
+        print("  Invalid choice. No exclusions will be applied.")
+        return None
+
+def exclude_by_type_prompt(node_manager):
+    """Handle exclusion of all nodes by type"""
+    print("\n  Available node types:")
+    for i, node_type in enumerate(node_manager.KNOWN_NODE_TYPES, 1):
+        print(f"  {i}) {node_type}")
+    print(f"  {len(node_manager.KNOWN_NODE_TYPES) + 1}) Enter custom type")
+
+    choice = input(
+        f"\n  Select node type [1-{len(node_manager.KNOWN_NODE_TYPES) + 1}]: "
+    ).strip()
+
+    try:
+        choice_num = int(choice)
+        if 1 <= choice_num <= len(node_manager.KNOWN_NODE_TYPES):
+            node_type = node_manager.KNOWN_NODE_TYPES[choice_num - 1]
+        elif choice_num == len(node_manager.KNOWN_NODE_TYPES) + 1:
+            node_type = input("  Enter custom node type prefix: ").strip()
+        else:
+            print("  Invalid choice.")
+            return None
+    except ValueError:
+        print("  Invalid input.")
+        return None
+
+    print(f"\n  Querying SLURM for all '{node_type}' nodes...")
+    nodes = node_manager.query_nodes_by_type(node_type)
+
+    if not nodes:
+        print(f"  No nodes found for type '{node_type}'")
+        return None
+
+    print(f"  Found {len(nodes)} nodes: {nodes[0]} to {nodes[-1]}")
+
+    confirm = input(
+        f"\n  Exclude all {len(nodes)} '{node_type}' nodes? [y/N]: "
+    ).strip().lower()
+
+    if confirm == 'y':
+        exclude_str = node_manager.create_exclude_string(nodes)
+        print(f"  Exclude string: {exclude_str}")
+        return exclude_str
+    else:
+        print("  Exclusion cancelled.")
+        return None
+
+def custom_exclusion_prompt(node_manager):
+    """Handle custom node exclusion list"""
+    print("\n  Enter nodes to exclude (comma-separated).")
+    print("  Examples:")
+    print("    - Single nodes: amr-042,amr-050,nvf-123")
+    print("    - With ranges: amr-[042-050],nvf-[100-110]")
+
+    custom_input = input("\n  Nodes to exclude: ").strip()
+
+    if not custom_input:
+        print("  No exclusions specified.")
+        return None
+
+    # Check if already in SLURM format
+    if '[' in custom_input and ']' in custom_input:
+        print(f"  Using provided exclude string: {custom_input}")
+        return custom_input
+
+    # Parse comma-separated node names
+    nodes = [n.strip() for n in custom_input.split(',')]
+
+    # Group by prefix
+    node_groups = {}
+    for node in nodes:
+        match = re.match(r'^([a-z]+)-(\d+)$', node)
+        if match:
+            prefix = match.group(1)
+            if prefix not in node_groups:
+                node_groups[prefix] = []
+            node_groups[prefix].append(node)
+        else:
+            print(f"  Warning: Invalid node format '{node}', skipping")
+
+    # Create exclude strings for each type
+    exclude_dict = {}
+    for prefix, prefix_nodes in node_groups.items():
+        exclude_dict[prefix] = prefix_nodes
+
+    exclude_str = node_manager.create_multi_type_exclude_string(exclude_dict)
+    print(f"  Compact exclude string: {exclude_str}")
+
+    return exclude_str
 
 def create_custom_slurm_script(script_path, resources):
     """Create a customized SLURM script with user-specified resources"""
@@ -133,18 +295,33 @@ def create_custom_slurm_script(script_path, resources):
     lines = content.split('\n')
     modified_lines = []
 
-    for line in lines:
+    # Track if we need to add node exclusion
+    last_sbatch_line = -1
+
+    for i, line in enumerate(lines):
         # Modify resource directives
         if line.startswith("echo '#SBATCH --ntasks="):
             modified_lines.append(f"echo '#SBATCH --ntasks={resources['ntasks']}' >> $1.sh")
+            last_sbatch_line = len(modified_lines) - 1
         elif line.startswith("echo '#SBATCH -t "):
             modified_lines.append(f"echo '#SBATCH -t {resources['walltime']}' >> $1.sh")
+            last_sbatch_line = len(modified_lines) - 1
         elif line.startswith("echo '#SBATCH --mem="):
             modified_lines.append(f"echo '#SBATCH --mem={resources['memory']}' >> $1.sh")
+            last_sbatch_line = len(modified_lines) - 1
         elif line.startswith("echo '#SBATCH -A "):
             modified_lines.append(f"echo '#SBATCH -A {resources['account']}' >> $1.sh")
+            last_sbatch_line = len(modified_lines) - 1
+        elif line.startswith("echo '#SBATCH"):
+            modified_lines.append(line)
+            last_sbatch_line = len(modified_lines) - 1
         else:
             modified_lines.append(line)
+
+    # Add node exclusion if specified
+    if resources.get('node_exclusion') and last_sbatch_line >= 0:
+        exclude_line = f"echo '#SBATCH --exclude={resources['node_exclusion']}' >> $1.sh"
+        modified_lines.insert(last_sbatch_line + 1, exclude_line)
 
     # Create temporary customized script
     custom_script_path = script_path.parent / f"submit_prop_custom_{os.getpid()}.sh"
@@ -196,6 +373,15 @@ def main():
     if overwrite_sh:
         sys.argv.remove('--overwrite-sh')
 
+    # Check for node exclusion argument
+    exclude_string = None
+    if '--exclude-nodes' in sys.argv:
+        idx = sys.argv.index('--exclude-nodes')
+        if idx + 1 < len(sys.argv):
+            exclude_string = sys.argv[idx + 1]
+            sys.argv.pop(idx)  # Remove --exclude-nodes
+            sys.argv.pop(idx)  # Remove the value
+
     # Get the directory where this script is located
     script_dir = Path(__file__).parent
     submit_prop_script = script_dir / "submit_prop.sh"
@@ -209,6 +395,14 @@ def main():
     custom_script = None
     if interactive_mode:
         resources = configure_interactive_resources()
+        # If exclude_string was provided via command line, use it
+        if exclude_string and not resources.get('node_exclusion'):
+            resources['node_exclusion'] = exclude_string
+        custom_script = create_custom_slurm_script(submit_prop_script, resources)
+    elif exclude_string:
+        # Non-interactive mode but exclusion specified
+        resources = get_default_d3_resources()
+        resources['node_exclusion'] = exclude_string
         custom_script = create_custom_slurm_script(submit_prop_script, resources)
 
     # Use custom script if created, otherwise use original

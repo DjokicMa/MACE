@@ -33,11 +33,13 @@ try:
     from mace.database.materials import create_material_id_from_file
     from mace.queue.manager import EnhancedCrystalQueueManager
     from mace.workflow.engine import WorkflowEngine
+    from mace.utils.node_exclusion import NodeExclusionManager
 except ImportError:
     try:
         from .engine import WorkflowEngine
     except ImportError:
         WorkflowEngine = None
+    NodeExclusionManager = None
 
 try:
     # Add the Crystal_d12 directory to path for importing
@@ -102,6 +104,9 @@ class WorkflowPlanner:
         self.db_path = db_path
         # Database is not needed during planning phase - will be created by executor if needed
         # self.db = MaterialDatabase(db_path)  # Removed to prevent unnecessary database creation
+
+        # Initialize node exclusion manager
+        self.node_manager = NodeExclusionManager() if NodeExclusionManager else None
 
         # Create necessary directories
         self.configs_dir = self.work_dir / "workflow_configs"
@@ -3815,8 +3820,20 @@ class WorkflowPlanner:
             "step_specific_name": f"{script_name.replace('.sh', '')}_{calc_type.lower()}_{step_num}.sh",
             "resources": resources,
             "customizations": [],
+            "node_exclusion": None,
             "copy_to_workdir": True,
         }
+
+        # Ask about node exclusion
+        if self.node_manager:
+            exclude_nodes = yes_no_prompt(
+                f"        Exclude specific nodes for {calc_type} jobs?", "no"
+            )
+            if exclude_nodes:
+                exclude_str = self.prompt_node_exclusion()
+                if exclude_str:
+                    script_config["node_exclusion"] = exclude_str
+                    print(f"        Node exclusion configured: {exclude_str}")
 
         # Ask about additional customizations
         additional_custom = yes_no_prompt(
@@ -4125,6 +4142,150 @@ class WorkflowPlanner:
 
         return customizations
 
+    def prompt_node_exclusion(self) -> Optional[str]:
+        """Prompt user for node exclusion configuration"""
+        if not self.node_manager:
+            return None
+
+        print("\n        " + "="*60)
+        print("        SLURM Node Exclusion Configuration")
+        print("        " + "="*60)
+
+        print("\n        Select node exclusion option:")
+        print("        1) No exclusions (use all available nodes)")
+        print("        2) Exclude all AMD20 nodes (amr + nvf types) [RECOMMENDED]")
+        print("        3) Exclude Mendoza group nodes (agg-[011-012], amr-[163,178-179])")
+        print("        4) Exclude all nodes of a specific type (amr, nvf, agg, etc.)")
+        print("        5) Custom node exclusion list")
+
+        choice = input("\n        Enter choice [1-5] (default: 2): ").strip() or "2"
+
+        if choice == "1":
+            print("        No node exclusions will be applied.")
+            return None
+
+        elif choice == "2":
+            # Exclude AMD20 nodes
+            print("        Querying SLURM for all AMD20 nodes (amr + nvf)...")
+            amd20_nodes = self.node_manager.get_amd20_nodes()
+            if amd20_nodes:
+                amr_count = sum(1 for n in amd20_nodes if n.startswith('amr-'))
+                nvf_count = sum(1 for n in amd20_nodes if n.startswith('nvf-'))
+                print(f"        Found {len(amd20_nodes)} AMD20 nodes:")
+                print(f"          - amr (AMD EPYC 7452): {amr_count} nodes")
+                print(f"          - nvf (AMD EPYC 7452 + V100): {nvf_count} nodes")
+                exclude_str = self.node_manager.create_exclude_string(amd20_nodes)
+                print(f"        Exclude string: {exclude_str}")
+                return exclude_str
+            else:
+                print("        Warning: No AMD20 nodes found")
+                return None
+
+        elif choice == "3":
+            exclude_str = self.node_manager.create_exclude_string(
+                self.node_manager.MENDOZA_NODES
+            )
+            print(f"        Excluding Mendoza nodes: {exclude_str}")
+            return exclude_str
+
+        elif choice == "4":
+            return self._exclude_by_type_prompt()
+
+        elif choice == "5":
+            return self._custom_exclusion_prompt()
+
+        else:
+            print("        Invalid choice. No exclusions will be applied.")
+            return None
+
+    def _exclude_by_type_prompt(self) -> Optional[str]:
+        """Handle exclusion of all nodes by type"""
+        print("\n        Available node types:")
+        for i, node_type in enumerate(self.node_manager.KNOWN_NODE_TYPES, 1):
+            print(f"        {i}) {node_type}")
+        print(f"        {len(self.node_manager.KNOWN_NODE_TYPES) + 1}) Enter custom type")
+
+        choice = input(
+            f"\n        Select node type [1-{len(self.node_manager.KNOWN_NODE_TYPES) + 1}]: "
+        ).strip()
+
+        try:
+            choice_num = int(choice)
+            if 1 <= choice_num <= len(self.node_manager.KNOWN_NODE_TYPES):
+                node_type = self.node_manager.KNOWN_NODE_TYPES[choice_num - 1]
+            elif choice_num == len(self.node_manager.KNOWN_NODE_TYPES) + 1:
+                node_type = input("        Enter custom node type prefix: ").strip()
+            else:
+                print("        Invalid choice.")
+                return None
+        except ValueError:
+            print("        Invalid input.")
+            return None
+
+        print(f"\n        Querying SLURM for all '{node_type}' nodes...")
+        nodes = self.node_manager.query_nodes_by_type(node_type)
+
+        if not nodes:
+            print(f"        No nodes found for type '{node_type}'")
+            return None
+
+        print(f"        Found {len(nodes)} nodes: {nodes[0]} to {nodes[-1]}")
+
+        confirm = input(
+            f"\n        Exclude all {len(nodes)} '{node_type}' nodes? [y/N]: "
+        ).strip().lower()
+
+        if confirm == 'y':
+            exclude_str = self.node_manager.create_exclude_string(nodes)
+            print(f"        Exclude string: {exclude_str}")
+            return exclude_str
+        else:
+            print("        Exclusion cancelled.")
+            return None
+
+    def _custom_exclusion_prompt(self) -> Optional[str]:
+        """Handle custom node exclusion list"""
+        print("\n        Enter nodes to exclude (comma-separated).")
+        print("        Examples:")
+        print("          - Single nodes: amr-042,amr-050,nvf-123")
+        print("          - With ranges: amr-[042-050],nvf-[100-110]")
+
+        custom_input = input("\n        Nodes to exclude: ").strip()
+
+        if not custom_input:
+            print("        No exclusions specified.")
+            return None
+
+        # Check if already in SLURM format
+        if '[' in custom_input and ']' in custom_input:
+            print(f"        Using provided exclude string: {custom_input}")
+            return custom_input
+
+        # Parse comma-separated node names
+        nodes = [n.strip() for n in custom_input.split(',')]
+
+        # Group by prefix
+        node_groups = {}
+        for node in nodes:
+            match = re.match(r'^([a-z]+)-(\d+)$', node)
+            if match:
+                prefix = match.group(1)
+                if prefix not in node_groups:
+                    node_groups[prefix] = []
+                node_groups[prefix].append(node)
+            else:
+                print(f"        Warning: Invalid node format '{node}', skipping")
+
+        # Create exclude strings for each type
+        exclude_dict = {}
+        for prefix, prefix_nodes in node_groups.items():
+            exclude_dict[prefix] = prefix_nodes
+
+        exclude_str = self.node_manager.create_multi_type_exclude_string(exclude_dict)
+        print(f"        Compact exclude string: {exclude_str}")
+
+        return exclude_str
+
     def copy_and_customize_scripts(
         self, step_configs: Dict[str, Dict[str, Any]], workflow_id: str, queue_config: Dict[str, Any]
     ):
@@ -4253,9 +4414,22 @@ class WorkflowPlanner:
             else:
                 modified_lines.append(line)
 
+        # Add node exclusion directive if specified
+        node_exclusion = script_config.get("node_exclusion")
+        if node_exclusion:
+            # Find where to insert (after last #SBATCH directive)
+            insert_pos = -1
+            for i, line in enumerate(modified_lines):
+                if line.startswith("echo '#SBATCH"):
+                    insert_pos = i
+
+            if insert_pos >= 0:
+                exclude_line = f"echo '#SBATCH --exclude={node_exclusion}' >> $1.sh"
+                modified_lines.insert(insert_pos + 1, exclude_line)
+
         # Add custom directives after the main SBATCH directives
         if customizations:
-            # Find where to insert (after last #SBATCH directive)
+            # Find where to insert (after last #SBATCH directive, including node exclusion)
             insert_pos = -1
             for i, line in enumerate(modified_lines):
                 if line.startswith("echo '#SBATCH"):
