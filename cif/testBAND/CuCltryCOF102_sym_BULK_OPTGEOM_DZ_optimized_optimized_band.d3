@@ -1,0 +1,16 @@
+BAND
+CuCltryCOF102_sym_BULK_OPTGEOM_DZ_optimized_optimized - Band Structure - SeeKPath (no.I) - G-H-N-G-P-H-|-P-N-|-G-H'-N'-G-P'-H'-|-P'-N'
+12 4 1000 1162 1212 1 0
+0 0 0  2 -2 2
+2 -2 2  0 0 2
+0 0 2  0 0 0
+0 0 0  1 1 1
+1 1 1  2 -2 2
+1 1 1  0 0 2
+0 0 0  -2 2 -2
+-2 2 -2  0 0 -2
+0 0 -2  0 0 0
+0 0 0  -1 -1 -1
+-1 -1 -1  -2 2 -2
+-1 -1 -1  0 0 -2
+END

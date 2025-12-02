@@ -17,7 +17,7 @@ def print_with_delay(text: str, delay: float = 0.015):
         time.sleep(delay)
     print()
 
-def animate_mace_assembly(version="1.0.1-alpha"):
+def animate_mace_assembly(version="1.0.2-alpha"):
     """Animate MACE logo being assembled"""
     frames = [
         """

@@ -905,11 +905,11 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
     # Band range
     print("\nBand range selection:")
     print("1: All bands")
-    print("2: Around Fermi level (~20 valence + ~30 conduction bands)")
+    print("2: Around Fermi level (adaptive per material)")
     print("3: Custom range")
-    
+
     band_range = input("Select option (1-3) [1]: ").strip() or "1"
-    
+
     if band_range == "1":
         # This will be set per material in CRYSTALOptToD3.py based on n_ao
         band_config["bands"] = "auto"
@@ -917,24 +917,12 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
         band_config["first_band"] = 1
         band_config["last_band"] = None  # Will be set to n_ao
     elif band_range == "2":
-        # Extract band info from output
-        if out_file:
-            band_info = get_band_info_from_output(out_file)
-            if band_info['valence_bands'] > 0:
-                # Around Fermi: ~20 valence + ~30 conduction
-                first = max(1, band_info['valence_bands'] - 20)
-                last = min(band_info['n_bands'], band_info['valence_bands'] + 30)
-                band_config["first_band"] = first
-                band_config["last_band"] = last
-                print(f"\n✓ Selected bands {first} to {last} (around Fermi level)")
-            else:
-                # Fallback to all bands
-                band_config["first_band"] = 1
-                band_config["last_band"] = None
-        else:
-            # Default range around typical Fermi
-            band_config["first_band"] = 1
-            band_config["last_band"] = 50
+        # Around Fermi: store the OFFSETS, not specific band numbers
+        # This allows each material to calculate its own range based on its Fermi level
+        band_config["bands"] = "fermi"
+        band_config["bands_below_fermi"] = int(input("Number of bands below Fermi [500]: ").strip() or 500)
+        band_config["bands_above_fermi"] = int(input("Number of bands above Fermi [600]: ").strip() or 600)
+        print(f"\n✓ Will select {band_config['bands_below_fermi']} bands below and {band_config['bands_above_fermi']} bands above Fermi for each material")
     else:
         # Custom range
         first = int(input("First band [1]: ") or 1)
