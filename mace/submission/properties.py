@@ -17,13 +17,27 @@ try:
 except ImportError:
     NODE_EXCLUSION_AVAILABLE = False
 
+def get_default_amd20_exclusion():
+    """Get default AMD20 node exclusion string (amr + nvf)"""
+    if not NODE_EXCLUSION_AVAILABLE:
+        return None
+    try:
+        manager = NodeExclusionManager()
+        amd20_nodes = manager.get_amd20_nodes()
+        if amd20_nodes:
+            return manager.create_exclude_string(amd20_nodes)
+    except Exception as e:
+        print(f"Warning: Could not query AMD20 nodes: {e}")
+    return None
+
 def get_default_d3_resources():
     """Get default SLURM resources for D3 calculations"""
     return {
         'ntasks': 28,
         'memory': '80G',
         'walltime': '2:00:00',
-        'account': 'mendoza_q'
+        'account': 'mendoza_q',
+        'node_exclusion': get_default_amd20_exclusion()  # Default: exclude AMD20 nodes
     }
 
 def get_safe_integer_input(prompt, default, min_val=1, max_val=128):
@@ -79,6 +93,12 @@ def configure_interactive_resources():
     print(f"  • Walltime: {default_resources['walltime']}")
     print(f"  • Account: {default_resources['account']}")
 
+    # Show node exclusion default
+    if default_resources.get('node_exclusion'):
+        print(f"  • Node Exclusion: AMD20 nodes (amr + nvf) [ENABLED by default]")
+    else:
+        print(f"  • Node Exclusion: None")
+
     # Calculate per-CPU memory for display
     mem_str = default_resources['memory'].upper()
     if mem_str.endswith('G'):
@@ -91,6 +111,7 @@ def configure_interactive_resources():
     print("  • DOSS calculations: Moderate memory, time depends on energy range/resolution")
     print("  • TRANSPORT calculations: High memory for Boltzmann transport equations")
     print("  • CHARGE+POTENTIAL: High memory for charge density and potential maps")
+    print("\n⚠️  AMD20 node exclusion is ENABLED by default (recommended for CRYSTAL23)")
 
     modify = input("\nCustomize resources? (y/n) [n]: ").strip().lower()
     if modify not in ['y', 'yes']:
@@ -121,12 +142,17 @@ def configure_interactive_resources():
     new_account = input(f"  Account [{default_resources['account']}]: ").strip()
     resources['account'] = new_account if new_account else default_resources['account']
 
-    # Node exclusion
-    resources['node_exclusion'] = None
+    # Node exclusion - default is AMD20, allow customization
     if NODE_EXCLUSION_AVAILABLE:
-        exclude_prompt = input("\nExclude specific nodes? (y/n) [n]: ").strip().lower()
-        if exclude_prompt in ['y', 'yes']:
+        print("\n⚠️  Node Exclusion (AMD20 nodes excluded by default)")
+        exclude_choice = input("Change node exclusion? (y/n) [n]: ").strip().lower()
+        if exclude_choice in ['y', 'yes']:
             resources['node_exclusion'] = prompt_node_exclusion()
+        else:
+            # Keep the default AMD20 exclusion
+            resources['node_exclusion'] = default_resources.get('node_exclusion')
+    else:
+        resources['node_exclusion'] = None
 
     print(f"\nFinal resource configuration:")
     print(f"  • Cores: {resources['ntasks']}")
