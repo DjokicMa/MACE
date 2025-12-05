@@ -84,7 +84,7 @@ class CrystalOutputParser:
             elif "POLYMER CALCULATION" in line_upper:
                 self.data["dimensionality"] = "POLYMER"
                 return
-            elif "MOLECULE CALCULATION" in line_upper:
+            elif "MOLECULAR CALCULATION" in line_upper or "MOLECULE CALCULATION" in line_upper:
                 self.data["dimensionality"] = "MOLECULE"
                 return
             elif "CRYSTAL CALCULATION" in line_upper:
@@ -288,29 +288,67 @@ class CrystalOutputParser:
 
         # Look for coordinates based on dimensionality
         if self.data["dimensionality"] == "MOLECULE":
-            # Look for Cartesian coordinates
+            # Look for Cartesian coordinates in molecular calculations
+            # Try "ATOMS IN THE ASYMMETRIC UNIT" first (optimized geometry format)
             for i in range(start_idx, min(start_idx + 200, len(lines))):
-                if "CARTESIAN COORDINATES" in lines[i] and "PRIMITIVE CELL" in lines[i]:
-                    # Skip the header lines
-                    j = i + 3
+                if "ATOMS IN THE ASYMMETRIC UNIT" in lines[i]:
+                    # Structure:
+                    # i+0: "ATOMS IN THE ASYMMETRIC UNIT..."
+                    # i+1: "ATOM  X(ANGSTROM)..." (column headers)
+                    # i+2: "****..." (separator)
+                    # i+3: first data line
+                    j = i + 1
+                    # Skip column headers and separator lines
+                    while j < len(lines) and ("ATOM" in lines[j] or "*" in lines[j] or not lines[j].strip()):
+                        j += 1
+                    # Now read coordinate data
                     while j < len(lines):
                         parts = lines[j].split()
-                        if len(parts) >= 6 and parts[1].isdigit():
+                        # Format: index T/F atom_num symbol x y z
+                        if len(parts) >= 7 and parts[1] in ["T", "F"]:
                             try:
                                 coord = {
                                     "atom_number": parts[2],
-                                    "x": parts[3],
-                                    "y": parts[4],
-                                    "z": parts[5],
+                                    "x": parts[4],
+                                    "y": parts[5],
+                                    "z": parts[6],
                                     "is_unique": True,  # Molecules typically have all atoms unique
                                 }
                                 coordinates.append(coord)
-                            except:
+                            except (ValueError, IndexError):
                                 break
+                        elif not lines[j].strip():
+                            # Empty line, continue
+                            break
                         else:
                             break
                         j += 1
                     break
+
+            # Fallback: Try "CARTESIAN COORDINATES" + "PRIMITIVE CELL" (old format)
+            if not coordinates:
+                for i in range(start_idx, min(start_idx + 200, len(lines))):
+                    if "CARTESIAN COORDINATES" in lines[i] and "PRIMITIVE CELL" in lines[i]:
+                        # Skip the header lines
+                        j = i + 3
+                        while j < len(lines):
+                            parts = lines[j].split()
+                            if len(parts) >= 6 and parts[1].isdigit():
+                                try:
+                                    coord = {
+                                        "atom_number": parts[2],
+                                        "x": parts[3],
+                                        "y": parts[4],
+                                        "z": parts[5],
+                                        "is_unique": True,
+                                    }
+                                    coordinates.append(coord)
+                                except:
+                                    break
+                            else:
+                                break
+                            j += 1
+                        break
         else:
             # Look for coordinates with T/F symmetry markers
             found_coords = False

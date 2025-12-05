@@ -1,0 +1,37 @@
+data_Suflolane_MOLECULE_OPT_symm_HSESOL3C_SOLDEF2MSVP
+
+_cell_length_a    44.125399
+_cell_length_b    44.149415
+_cell_length_c    43.248427
+_cell_angle_alpha 90.000000
+_cell_angle_beta  90.000000
+_cell_angle_gamma 90.000000
+
+_symmetry_space_group_name_H-M  'P 1'
+_symmetry_Int_Tables_number     1
+
+loop_
+_symmetry_equiv_pos_as_xyz
+  'x, y, z'
+
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+O1       O      0.453254     0.529748     0.524319
+S1       S      0.474862     0.526845     0.499151
+O2       O      0.473886     0.546993     0.472617
+C1       C      0.475652     0.487089     0.485754
+C2       C      0.508848     0.477768     0.487448
+C3       C      0.522079     0.492618     0.516501
+C4       C      0.513729     0.526061     0.515047
+H1       H      0.461490     0.473672     0.501613
+H2       H      0.465797     0.485963     0.462445
+H3       H      0.521086     0.485716     0.466806
+H4       H      0.511127     0.453007     0.488040
+H5       H      0.546746     0.489630     0.517917
+H6       H      0.512324     0.482134     0.537340
+H7       H      0.528510     0.538598     0.499022
+H8       H      0.513786     0.537618     0.537555

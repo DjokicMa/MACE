@@ -18,20 +18,41 @@ class NodeExclusionManager:
     """Manages SLURM node exclusion for job submissions."""
 
     # Common node types in the HPC cluster
-    KNOWN_NODE_TYPES = ['amr', 'nvf', 'agg', 'dev']
+    KNOWN_NODE_TYPES = ['amr', 'nvf', 'nvl', 'agg', 'agx', 'skl', 'nfh', 'neh', 'nel', 'acm', 'nal', 'nif', 'dev']
 
-    # Node type descriptions
+    # Node type descriptions with cluster generation
     NODE_TYPE_INFO = {
-        'amr': 'AMD EPYC 7452 (32 cores, AMD20)',
-        'nvf': 'AMD EPYC 7452 + NVIDIA V100 (32 cores, AMD20-V100)',
-        'agg': 'Intel nodes (Aggregator)',
-        'dev': 'Development nodes'
+        'amr': 'AMD EPYC 7452 (amd20)',
+        'nvf': 'AMD EPYC 7452 + V100 (amd20-v100)',
+        'agg': 'Intel Aggregator (amd24)',
+        'agx': 'Intel AGX (amd24)',
+        'nfh': 'NVIDIA H-series (amd24)',
+        'neh': 'Enhanced H-series (amd24)',
+        'nel': 'Enhanced L-series (amd24)',
+        'acm': 'ACM compute (amd22)',
+        'nal': 'NAL nodes (amd21)',
+        'nif': 'NIF nodes (intel21)',
+        'skl': 'Intel Skylake (intel18)',
+        'nvl': 'NVIDIA L-series (intel18-v100)',
+        'dev': 'Development/test nodes'
+    }
+
+    # Cluster generation groupings
+    CLUSTER_TYPES = {
+        'amd24': ['agg', 'agx', 'nfh', 'neh', 'nel'],
+        'amd22': ['acm'],
+        'amd21': ['nal'],
+        'amd20': ['amr'],
+        'amd20-v100': ['nvf'],
+        'intel21': ['nif'],
+        'intel18': ['skl'],
+        'intel18-v100': ['nvl']
     }
 
     # Predefined exclusion sets
     MENDOZA_NODES = ['agg-011', 'agg-012', 'amr-163', 'amr-178', 'amr-179']
 
-    # AMD20 node types (amr + nvf)
+    # AMD20 node types (amr + nvf) - kept for backward compatibility
     AMD20_NODE_TYPES = ['amr', 'nvf']
 
     def __init__(self):
@@ -50,6 +71,29 @@ class NodeExclusionManager:
             nodes = self.query_nodes_by_type(node_type)
             all_amd20_nodes.extend(nodes)
         return sorted(all_amd20_nodes, key=self._extract_node_number)
+
+    def get_nodes_by_cluster(self, cluster_type: str) -> List[str]:
+        """
+        Query and return all nodes for a specific cluster generation.
+
+        Args:
+            cluster_type: Cluster generation (e.g., 'amd24', 'amd22', 'intel18')
+
+        Returns:
+            Combined list of all nodes in that cluster generation
+        """
+        if cluster_type not in self.CLUSTER_TYPES:
+            print(f"Warning: Unknown cluster type '{cluster_type}'")
+            return []
+
+        all_nodes = []
+        node_types = self.CLUSTER_TYPES[cluster_type]
+
+        for node_type in node_types:
+            nodes = self.query_nodes_by_type(node_type)
+            all_nodes.extend(nodes)
+
+        return sorted(all_nodes, key=self._extract_node_number)
 
     def query_nodes_by_type(self, node_type: str) -> List[str]:
         """
@@ -260,14 +304,15 @@ class NodeExclusionManager:
         print("SLURM Node Exclusion Configuration")
         print("="*70)
 
-        print("\nDo you want to exclude any nodes from your jobs?")
+        print("\nSelect node exclusion option:")
         print("1) No exclusions (use all available nodes)")
-        print("2) Exclude all AMD20 nodes (amr + nvf types) [RECOMMENDED]")
-        print("3) Exclude Mendoza group nodes (agg-[011-012], amr-[163,178-179])")
-        print("4) Exclude all nodes of a specific type (amr, nvf, agg, etc.)")
-        print("5) Custom node exclusion list")
+        print("2) Exclude all AMD20 nodes (amr + nvf) [RECOMMENDED for CRYSTAL23]")
+        print("3) Exclude by cluster generation (amd24, amd22, amd21, intel18, etc.)")
+        print("4) Exclude Mendoza group nodes (save CPU hours)")
+        print("5) Exclude specific node type(s) - allows multiple")
+        print("6) Custom node exclusion list")
 
-        choice = input("\nEnter your choice [1-5] (default: 2): ").strip() or "2"
+        choice = input("\nEnter choice [1-6] (default: 2): ").strip() or "2"
 
         if choice == "1":
             print("\nNo node exclusions will be applied.")
@@ -277,14 +322,17 @@ class NodeExclusionManager:
             return self._exclude_amd20_nodes()
 
         elif choice == "3":
+            return self._exclude_by_cluster()
+
+        elif choice == "4":
             exclude_str = self.create_exclude_string(self.MENDOZA_NODES)
             print(f"\nExcluding Mendoza nodes: {exclude_str}")
             return exclude_str
 
-        elif choice == "4":
+        elif choice == "5":
             return self._exclude_by_type()
 
-        elif choice == "5":
+        elif choice == "6":
             return self._custom_exclusion()
 
         else:
@@ -317,21 +365,114 @@ class NodeExclusionManager:
             print("Exclusion cancelled.")
             return None
 
+    def _exclude_by_cluster(self) -> Optional[str]:
+        """Handle exclusion by cluster generation."""
+        print("\nAvailable cluster generations:")
+        print("  1) amd24      - agg, agx, nfh, neh, nel (newest)")
+        print("  2) amd22      - acm")
+        print("  3) amd21      - nal")
+        print("  4) amd20      - amr (memory issues with CRYSTAL23)")
+        print("  5) amd20-v100 - nvf (memory issues with CRYSTAL23)")
+        print("  6) intel21    - nif")
+        print("  7) intel18    - skl")
+        print("  8) intel18-v100 - nvl")
+        print("  9) Multiple clusters (comma/space separated)")
+
+        choice = input("\nSelect cluster generation [1-9]: ").strip()
+
+        cluster_map = {
+            '1': 'amd24',
+            '2': 'amd22',
+            '3': 'amd21',
+            '4': 'amd20',
+            '5': 'amd20-v100',
+            '6': 'intel21',
+            '7': 'intel18',
+            '8': 'intel18-v100'
+        }
+
+        clusters = []
+        if choice in cluster_map:
+            clusters = [cluster_map[choice]]
+        elif choice == '9':
+            cluster_input = input("\nEnter cluster types (comma or space separated): ").strip()
+            if ',' in cluster_input:
+                clusters = [c.strip() for c in cluster_input.split(',') if c.strip()]
+            else:
+                clusters = [c.strip() for c in cluster_input.split() if c.strip()]
+        else:
+            print("Invalid choice.")
+            return None
+
+        if not clusters:
+            print("No clusters specified.")
+            return None
+
+        # Query nodes for each cluster
+        all_nodes = []
+        cluster_counts = {}
+
+        print(f"\nQuerying SLURM for cluster(s): {', '.join(clusters)}...")
+
+        for cluster in clusters:
+            if cluster not in self.CLUSTER_TYPES:
+                print(f"  Warning: Unknown cluster type '{cluster}', skipping")
+                continue
+
+            nodes = self.get_nodes_by_cluster(cluster)
+            if nodes:
+                all_nodes.extend(nodes)
+                node_types = self.CLUSTER_TYPES[cluster]
+                cluster_counts[cluster] = {
+                    'total': len(nodes),
+                    'types': ', '.join(node_types)
+                }
+                print(f"  Found {len(nodes):3d} {cluster} nodes ({', '.join(node_types)})")
+            else:
+                print(f"  Found   0 {cluster} nodes")
+
+        if not all_nodes:
+            print(f"\nNo nodes found for specified cluster(s)")
+            return None
+
+        # Summary
+        print(f"\nTotal: {len(all_nodes)} nodes across {len(cluster_counts)} cluster(s)")
+        for cluster, info in cluster_counts.items():
+            print(f"  - {cluster}: {info['total']} nodes ({info['types']})")
+
+        confirm = input(f"\nExclude all {len(all_nodes)} nodes? [Y/n]: ").strip().lower()
+        if confirm in ['', 'y', 'yes']:
+            exclude_str = self.create_exclude_string(all_nodes)
+            print(f"\nExclude string: {exclude_str}")
+            return exclude_str
+        else:
+            print("Exclusion cancelled.")
+            return None
+
     def _exclude_by_type(self) -> Optional[str]:
-        """Handle exclusion of all nodes by type."""
+        """Handle exclusion of all nodes by type(s) - supports multiple types."""
         print("\nAvailable node types:")
         for i, node_type in enumerate(self.KNOWN_NODE_TYPES, 1):
-            print(f"{i}) {node_type}")
-        print(f"{len(self.KNOWN_NODE_TYPES) + 1}) Enter custom type")
+            info = self.NODE_TYPE_INFO.get(node_type, '')
+            print(f"{i}) {node_type:6s} - {info}")
+        print(f"{len(self.KNOWN_NODE_TYPES) + 1}) Enter custom type(s)")
 
-        choice = input(f"\nSelect node type to exclude [1-{len(self.KNOWN_NODE_TYPES) + 1}]: ").strip()
+        choice = input(f"\nSelect node type [1-{len(self.KNOWN_NODE_TYPES) + 1}]: ").strip()
 
+        # Parse the choice
+        node_types = []
         try:
             choice_num = int(choice)
             if 1 <= choice_num <= len(self.KNOWN_NODE_TYPES):
-                node_type = self.KNOWN_NODE_TYPES[choice_num - 1]
+                node_types = [self.KNOWN_NODE_TYPES[choice_num - 1]]
             elif choice_num == len(self.KNOWN_NODE_TYPES) + 1:
-                node_type = input("Enter custom node type prefix: ").strip()
+                # Allow custom types - comma or space separated
+                custom_input = input("\nEnter node type(s) (comma or space separated): ").strip()
+                # Parse both comma and space separated
+                if ',' in custom_input:
+                    node_types = [t.strip() for t in custom_input.split(',') if t.strip()]
+                else:
+                    node_types = [t.strip() for t in custom_input.split() if t.strip()]
             else:
                 print("Invalid choice.")
                 return None
@@ -339,18 +480,37 @@ class NodeExclusionManager:
             print("Invalid input.")
             return None
 
-        print(f"\nQuerying SLURM for all '{node_type}' nodes...")
-        nodes = self.query_nodes_by_type(node_type)
-
-        if not nodes:
-            print(f"No nodes found for type '{node_type}'")
+        if not node_types:
+            print("No node types specified.")
             return None
 
-        print(f"Found {len(nodes)} nodes: {nodes[0]} to {nodes[-1]}")
+        # Query SLURM for each node type
+        all_nodes = []
+        node_counts = {}
 
-        confirm = input(f"\nExclude all {len(nodes)} '{node_type}' nodes? [y/N]: ").strip().lower()
-        if confirm == 'y':
-            exclude_str = self.create_exclude_string(nodes)
+        print(f"\nQuerying SLURM for node types: {', '.join(node_types)}...")
+
+        for node_type in node_types:
+            nodes = self.query_nodes_by_type(node_type)
+            if nodes:
+                all_nodes.extend(nodes)
+                node_counts[node_type] = len(nodes)
+                print(f"  Found {len(nodes):3d} {node_type} nodes")
+            else:
+                print(f"  Found   0 {node_type} nodes")
+
+        if not all_nodes:
+            print(f"\nNo nodes found for specified type(s)")
+            return None
+
+        # Summary
+        print(f"\nTotal: {len(all_nodes)} nodes across {len(node_counts)} type(s)")
+        for node_type, count in node_counts.items():
+            print(f"  - {node_type}: {count} nodes")
+
+        confirm = input(f"\nExclude all {len(all_nodes)} nodes? [Y/n]: ").strip().lower()
+        if confirm in ['', 'y', 'yes']:
+            exclude_str = self.create_exclude_string(all_nodes)
             print(f"\nExclude string: {exclude_str}")
             return exclude_str
         else:
