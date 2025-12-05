@@ -1,0 +1,6 @@
+submit directory: 
+/mnt/ufs18/rs/Dual_ion_batteries/SolventTest/step1OPT
+Warning: Queue manager not found. Checked:
+  - $MACE_HOME/mace/queue/manager.py
+  - Various relative paths from /mnt/ufs18/rs/Dual_ion_batteries/SolventTest/step1OPT
+  Workflow progression may not continue automatically

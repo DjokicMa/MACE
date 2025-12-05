@@ -207,7 +207,31 @@ class CrystalOutToCifConverter:
 
             # Cell parameters
             dimensionality = geometry_data.get("dimensionality", "CRYSTAL")
-            cell_params = geometry_data.get("conventional_cell", [10.0, 10.0, 10.0, 90.0, 90.0, 90.0])
+            cell_params = geometry_data.get("conventional_cell", [])
+
+            # For molecules or if no cell parameters, use defaults based on coordinates
+            if not cell_params or len(cell_params) < 6:
+                if dimensionality == "MOLECULE":
+                    # For molecules, create a box that encompasses the coordinates with vacuum
+                    coords = geometry_data["coordinates"]
+                    if coords:
+                        # Find min/max coordinates to size the box
+                        xs = [float(c["x"]) for c in coords]
+                        ys = [float(c["y"]) for c in coords]
+                        zs = [float(c["z"]) for c in coords]
+
+                        # Box size = max - min + 2 * vacuum_thickness
+                        vacuum = float(self.options.get("vacuum_thickness", 20.0))
+                        a = max(xs) - min(xs) + 2 * vacuum
+                        b = max(ys) - min(ys) + 2 * vacuum
+                        c = max(zs) - min(zs) + 2 * vacuum
+                        cell_params = [a, b, c, 90.0, 90.0, 90.0]
+                    else:
+                        # Fallback to default
+                        cell_params = [50.0, 50.0, 50.0, 90.0, 90.0, 90.0]
+                else:
+                    # Default cell for other dimensionalities
+                    cell_params = [10.0, 10.0, 10.0, 90.0, 90.0, 90.0]
 
             cell = self.format_cell_parameters(cell_params, dimensionality)
             precision = int(self.options.get("precision", 6))
@@ -273,12 +297,27 @@ class CrystalOutToCifConverter:
                     z_fract = z_cart / cell["c"]
                 elif dimensionality == "MOLECULE":
                     # For MOLECULE: all Cartesian (convert to fractional)
+                    # Coordinates need to be shifted to be relative to box origin
                     x_cart = float(coord["x"])
                     y_cart = float(coord["y"])
                     z_cart = float(coord["z"])
-                    x_fract = x_cart / cell["a"]
-                    y_fract = y_cart / cell["b"]
-                    z_fract = z_cart / cell["c"]
+
+                    # Find min coordinates to shift the molecule to start near origin
+                    coords = geometry_data["coordinates"]
+                    x_min = min(float(c["x"]) for c in coords)
+                    y_min = min(float(c["y"]) for c in coords)
+                    z_min = min(float(c["z"]) for c in coords)
+
+                    # Shift coordinates to be relative to box origin with vacuum padding
+                    vacuum = float(self.options.get("vacuum_thickness", 20.0))
+                    x_shifted = x_cart - x_min + vacuum
+                    y_shifted = y_cart - y_min + vacuum
+                    z_shifted = z_cart - z_min + vacuum
+
+                    # Convert to fractional
+                    x_fract = x_shifted / cell["a"]
+                    y_fract = y_shifted / cell["b"]
+                    z_fract = z_shifted / cell["c"]
                 else:
                     # For CRYSTAL: all fractional
                     x_fract = float(coord["x"])
