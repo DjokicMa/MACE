@@ -380,7 +380,8 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                     f.write("END\n")
                 elif settings.get("basis_set_path"):
                     # Read basis sets from specified path
-                    f.write(f"# External basis set from: {settings['basis_set_path']}\n")
+                    # Note: CRYSTAL doesn't support comments, so we just print the path info
+                    print(f"  External basis set from: {settings['basis_set_path']}")
                     unique_atoms = set()
                     for atom in coords_to_write:
                         unique_atoms.add(int(atom["atom_number"]))
@@ -400,8 +401,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                     # Fallback: basis_set_type is EXTERNAL but no path provided
                     legacy_path = settings.get("basis_set")
                     if legacy_path and os.path.isdir(legacy_path):
-                        print(f"Note: Using legacy basis_set field as path: {legacy_path}")
-                        f.write(f"# External basis set from: {legacy_path}\n")
+                        print(f"  Note: Using legacy basis_set field as path: {legacy_path}")
                         unique_atoms = set()
                         for atom in coords_to_write:
                             unique_atoms.add(int(atom["atom_number"]))
@@ -456,9 +456,8 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                     f.write("END\n")
                 elif settings.get("basis_set_path"):
                     # Read basis sets from specified path
-                    f.write(
-                        f"# External basis set from: {settings['basis_set_path']}\n"
-                    )
+                    # Note: CRYSTAL doesn't support comments, so we just print the path info
+                    print(f"  External basis set from: {settings['basis_set_path']}")
                     unique_atoms = set()
                     for atom in coords_to_write:
                         unique_atoms.add(int(atom["atom_number"]))
@@ -483,8 +482,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                     # This can happen if basis_set contains a path (legacy behavior)
                     legacy_path = settings.get("basis_set")
                     if legacy_path and os.path.isdir(legacy_path):
-                        print(f"Note: Using legacy basis_set field as path: {legacy_path}")
-                        f.write(f"# External basis set from: {legacy_path}\n")
+                        print(f"  Note: Using legacy basis_set field as path: {legacy_path}")
                         unique_atoms = set()
                         for atom in coords_to_write:
                             unique_atoms.add(int(atom["atom_number"]))
