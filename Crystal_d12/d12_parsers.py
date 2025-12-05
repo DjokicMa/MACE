@@ -917,58 +917,43 @@ class CrystalInputParser:
 
     def _extract_basis_set(self, lines: List[str]) -> None:
         """Extract basis set information"""
-        # Look for BASISSET keyword anywhere in the file
+        # First, scan the entire file for "99 0" which definitively indicates external basis
+        # This marker appears at the end of external basis set definitions
+        external_basis_end = None
+        for i, line in enumerate(lines):
+            if "99 0" in line.strip():
+                external_basis_end = i
+                break
+
+        if external_basis_end is not None:
+            # External basis set found - "99 0" marks end of ALL basis sets
+            self.data["basis_set_type"] = "EXTERNAL"
+
+            # Find the geometry END - the "END" that comes right before basis set data
+            # Search backwards from "99 0" to find the END that precedes basis headers
+            geometry_end = None
+            for j in range(external_basis_end - 1, -1, -1):
+                if lines[j].strip() == "END":
+                    geometry_end = j
+                    break
+
+            # Extract all basis set data from after geometry_end to 99 0
+            if geometry_end is not None:
+                for j in range(geometry_end + 1, external_basis_end):
+                    line_content = lines[j].strip()
+                    if line_content:
+                        self.data["external_basis_data"].append(line_content)
+            return
+
+        # If no "99 0" found, look for BASISSET keyword (internal basis)
         for i, line in enumerate(lines):
             if line.strip() == "BASISSET":
                 self.data["basis_set_type"] = "INTERNAL"
                 if i + 1 < len(lines):
                     self.data["basis_set"] = lines[i + 1].strip()
                 return
-        
-        # If BASISSET not found, look for external basis set indicators
-        # First find where geometry section ends (either END or where basis data starts)
-        geom_end = None
-        found_atoms = False
-        
-        for i, line in enumerate(lines):
-            # Check if we've seen atomic positions (lines with atomic numbers and coordinates)
-            if len(line.strip().split()) >= 4:
-                try:
-                    # Try to parse as atomic number followed by coordinates
-                    parts = line.strip().split()
-                    int(parts[0])  # Should be atomic number
-                    float(parts[1])  # Should be x coordinate
-                    found_atoms = True
-                except (ValueError, IndexError):
-                    pass
-            
-            # Look for END after we've seen atoms, or "99 0" which indicates external basis
-            if (line.strip() == "END" and found_atoms) or "99 0" in line:
-                if "99 0" in line:
-                    # External basis set found
-                    self.data["basis_set_type"] = "EXTERNAL"
-                    # Find where geometry ends (last atom line)
-                    for j in range(i-1, -1, -1):
-                        if len(lines[j].strip().split()) >= 4:
-                            try:
-                                parts = lines[j].strip().split()
-                                int(parts[0])  # Should be atomic number
-                                float(parts[1])  # Should be x coordinate
-                                geom_end = j
-                                break
-                            except (ValueError, IndexError):
-                                pass
-                    
-                    # Extract all basis set data between geometry end and 99 0
-                    if geom_end is not None:
-                        for j in range(geom_end + 1, i):
-                            line_content = lines[j].strip()
-                            if line_content and not line_content.startswith("#"):  # Skip comments
-                                self.data["external_basis_data"].append(line_content)
-                    return
-                else:
-                    geom_end = i
-                break
+
+        # If neither found, default to internal (parser couldn't determine)
 
     def _extract_optimization_settings(self, lines: List[str]) -> None:
         """Extract optimization settings if present"""
