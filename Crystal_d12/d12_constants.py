@@ -1333,11 +1333,14 @@ def select_basis_set(elements: List[int], method: str = "DFT",
                         continue
 
                 # Ensure path ends with /
-                basis_config["basis_set"] = str(custom_path) + ("/" if not str(custom_path).endswith("/") else "")
+                custom_path_str = str(custom_path) + ("/" if not str(custom_path).endswith("/") else "")
+                basis_config["basis_set"] = custom_path_str
+                basis_config["basis_set_path"] = custom_path_str  # Also set basis_set_path for write_d12_file
                 print(f"Using custom basis set: {basis_config['basis_set']}")
                 break
         else:
             basis_config["basis_set"] = external_options[external_choice]
+            basis_config["basis_set_path"] = external_options[external_choice]  # Also set basis_set_path for write_d12_file
         
     else:
         # Internal basis set selection

@@ -396,11 +396,36 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
 
                     f.write("99 0\n")
                     f.write("END\n")
+                else:
+                    # Fallback: basis_set_type is EXTERNAL but no path provided
+                    legacy_path = settings.get("basis_set")
+                    if legacy_path and os.path.isdir(legacy_path):
+                        print(f"Note: Using legacy basis_set field as path: {legacy_path}")
+                        f.write(f"# External basis set from: {legacy_path}\n")
+                        unique_atoms = set()
+                        for atom in coords_to_write:
+                            unique_atoms.add(int(atom["atom_number"]))
+
+                        for atom_num in sorted(unique_atoms):
+                            basis_file = os.path.join(legacy_path, str(atom_num))
+                            if os.path.exists(basis_file):
+                                with open(basis_file, "r") as bf:
+                                    f.write(bf.read())
+                            else:
+                                print(f"Warning: Basis set file not found for element {atom_num}")
+
+                        f.write("99 0\n")
+                        f.write("END\n")
+                    else:
+                        print("ERROR: External basis set type selected but no valid path provided!")
+                        print(f"  basis_set_path: {settings.get('basis_set_path')}")
+                        print(f"  basis_set: {settings.get('basis_set')}")
+                        raise ValueError("External basis set path not configured properly")
             else:
                 # Internal basis set
                 f.write("BASISSET\n")
                 f.write(f"{settings.get('basis_set', 'POB-TZVP-REV2')}\n")
-            
+
             # For UHF, add the UHF keyword
             if functional == "UHF":
                 f.write("UHF\n")
@@ -453,6 +478,32 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
 
                     f.write("99 0\n")
                     f.write("END\n")
+                else:
+                    # Fallback: basis_set_type is EXTERNAL but no path provided
+                    # This can happen if basis_set contains a path (legacy behavior)
+                    legacy_path = settings.get("basis_set")
+                    if legacy_path and os.path.isdir(legacy_path):
+                        print(f"Note: Using legacy basis_set field as path: {legacy_path}")
+                        f.write(f"# External basis set from: {legacy_path}\n")
+                        unique_atoms = set()
+                        for atom in coords_to_write:
+                            unique_atoms.add(int(atom["atom_number"]))
+
+                        for atom_num in sorted(unique_atoms):
+                            basis_file = os.path.join(legacy_path, str(atom_num))
+                            if os.path.exists(basis_file):
+                                with open(basis_file, "r") as bf:
+                                    f.write(bf.read())
+                            else:
+                                print(f"Warning: Basis set file not found for element {atom_num}")
+
+                        f.write("99 0\n")
+                        f.write("END\n")
+                    else:
+                        print("ERROR: External basis set type selected but no valid path provided!")
+                        print(f"  basis_set_path: {settings.get('basis_set_path')}")
+                        print(f"  basis_set: {settings.get('basis_set')}")
+                        raise ValueError("External basis set path not configured properly")
             else:
                 # Internal basis set
                 f.write("BASISSET\n")
@@ -595,28 +646,36 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             for key, value in in_data.items():
                 if key not in settings or settings[key] is None:
                     settings[key] = value
-                elif key in ["functional", "dispersion", "spin_polarized", "dft_grid", "method", 
-                           "is_3c_method", "use_smearing", "smearing_width", 
+                elif key in ["functional", "dispersion", "spin_polarized", "dft_grid", "method",
+                           "is_3c_method", "use_smearing", "smearing_width",
                            "k_points", "scf_method", "scf_maxcycle", "fmixing", "scf_direct",
-                           "mulliken_analysis", "diis_history", "calculation_type", 
-                           "optimization_settings", "freq_settings", "origin_setting", 
-                           "spacegroup", "dimensionality", "tolerances"]:
+                           "mulliken_analysis", "diis_history", "calculation_type",
+                           "optimization_settings", "freq_settings", "origin_setting",
+                           "spacegroup", "dimensionality", "tolerances",
+                           "basis_set", "basis_set_type", "basis_set_path"]:
                     # For all calculation settings, prefer input file (.d12) over output file (.out)
                     # because .d12 contains the original user-specified settings
-                    # INCLUDING tolerances - the output parser has issues extracting these correctly
+                    # INCLUDING tolerances and basis set - the output parser has issues extracting these correctly
                     if value is not None:
                         settings[key] = value
                         # Debug output for symmetry-related settings
                         if key in ["origin_setting", "spacegroup", "dimensionality"]:
                             print(f"  Preserving {key} from D12 file: {value} (was {settings.get(key, 'not set')} from output)")
+                        elif key in ["basis_set", "basis_set_type"]:
+                            print(f"  Preserving {key} from D12 file: {value}")
                 elif key == "scf_settings":
                     # Merge SCF settings
                     if "scf_settings" not in settings:
                         settings["scf_settings"] = {}
                     settings["scf_settings"].update(value)
 
-            # Store external basis data
+            # Store external basis data from D12 file
             external_basis_data = in_data.get("external_basis_data", [])
+
+            # If we have external basis data from D12, mark it for potential reuse
+            if external_basis_data:
+                settings["has_original_external_basis"] = True
+                print(f"  Found external basis set data in D12 file ({len(external_basis_data)} lines)")
         except Exception as e:
             print(f"Warning: Error parsing input file: {e}")
             print("Continuing with output file data only")
@@ -630,8 +689,15 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             settings["spacegroup"] = 1
 
     if not settings.get("basis_set"):
-        settings["basis_set"] = "POB-TZVP-REV2"
-        settings["basis_set_type"] = "INTERNAL"
+        # Check if we have external basis data from D12 that we can reuse
+        if external_basis_data and settings.get("has_original_external_basis"):
+            settings["basis_set"] = "EXTERNAL (from original D12)"
+            settings["basis_set_type"] = "EXTERNAL"
+            settings["use_original_external_basis"] = True
+            print("  Using external basis set from original D12 file")
+        else:
+            settings["basis_set"] = "POB-TZVP-REV2"
+            settings["basis_set_type"] = "INTERNAL"
 
     # Set default tolerances if not found
     if not settings.get("tolerances"):
@@ -1249,14 +1315,15 @@ def main():
                         for key, value in in_data.items():
                             if key not in settings or settings[key] is None:
                                 settings[key] = value
-                            elif key in ["functional", "dispersion", "spin_polarized", "dft_grid", "method", 
-                                       "is_3c_method", "use_smearing", "smearing_width", 
+                            elif key in ["functional", "dispersion", "spin_polarized", "dft_grid", "method",
+                                       "is_3c_method", "use_smearing", "smearing_width",
                                        "k_points", "scf_method", "scf_maxcycle", "fmixing", "scf_direct",
-                                       "mulliken_analysis", "diis_history", "calculation_type", 
-                                       "optimization_settings", "freq_settings", "origin_setting", 
-                                       "spacegroup", "dimensionality", "tolerances"]:
+                                       "mulliken_analysis", "diis_history", "calculation_type",
+                                       "optimization_settings", "freq_settings", "origin_setting",
+                                       "spacegroup", "dimensionality", "tolerances",
+                                       "basis_set", "basis_set_type", "basis_set_path"]:
                                 # For all calculation settings, prefer input file (.d12) over output file (.out)
-                                # INCLUDING tolerances - the output parser has issues extracting these correctly
+                                # INCLUDING tolerances and basis set - the output parser has issues extracting these correctly
                                 if value is not None:
                                     settings[key] = value
                             elif key == "scf_settings":
@@ -1264,6 +1331,12 @@ def main():
                                 if "scf_settings" not in settings:
                                     settings["scf_settings"] = {}
                                 settings["scf_settings"].update(value)
+
+                        # Check for external basis data from D12
+                        template_external_basis = in_data.get("external_basis_data", [])
+                        if template_external_basis:
+                            settings["has_original_external_basis"] = True
+                            print(f"  Found external basis set data in D12 file ({len(template_external_basis)} lines)")
                     except:
                         pass
 
