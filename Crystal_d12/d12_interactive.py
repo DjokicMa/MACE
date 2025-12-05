@@ -177,7 +177,10 @@ def display_current_settings(settings: Dict[str, Any], extracted: bool = False, 
     else:
         print(f"Method: Hartree-Fock (RHF)")
     
-    print(f"Basis set: {settings.get('basis_set', 'N/A')} ({settings.get('basis_set_type', 'INTERNAL')})")
+    basis_info = f"Basis set: {settings.get('basis_set', 'N/A')} ({settings.get('basis_set_type', 'INTERNAL')})"
+    if settings.get("has_original_external_basis"):
+        basis_info += " [D12 data available]"
+    print(basis_info)
     
     if settings.get("dft_grid"):
         print(f"DFT grid: {settings.get('dft_grid')}")
@@ -1120,15 +1123,24 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
         # Basis set
         current_basis = options.get("basis_set", "Not set")
         current_basis_type = options.get("basis_set_type", "INTERNAL")
+        has_original_external = options.get("has_original_external_basis", False)
+
+        # Show special message if we have original external basis from D12
+        if has_original_external and "from original D12" in str(current_basis):
+            print(f"\nNote: Original external basis set data is available from the D12 file.")
+            print(f"      Keeping the current basis will reuse this data.")
+
         if not shared_mode or yes_no_prompt(f"\nChange basis set? (Current: {current_basis} [{current_basis_type}])", "no"):
             basis_config = select_basis_set_with_defaults(
-                [], 
-                options.get("method_type", "DFT"), 
+                [],
+                options.get("method_type", "DFT"),
                 options.get("functional"),
                 current_basis_type=current_basis_type,
                 current_basis=current_basis
             )
             options.update(basis_config)
+            # Clear the original external basis flag if user is changing the basis
+            options["use_original_external_basis"] = False
         
         # DFT grid (right after functional and basis set for DFT calculations)
         if options.get("method_type", "DFT") == "DFT":
