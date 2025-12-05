@@ -95,6 +95,28 @@ class NodeExclusionManager:
 
         return sorted(all_nodes, key=self._extract_node_number)
 
+    def get_all_amd_nodes(self) -> List[str]:
+        """Query and return all AMD cluster nodes."""
+        all_nodes = []
+        amd_clusters = ['amd24', 'amd22', 'amd21', 'amd20', 'amd20-v100']
+
+        for cluster in amd_clusters:
+            nodes = self.get_nodes_by_cluster(cluster)
+            all_nodes.extend(nodes)
+
+        return sorted(all_nodes, key=self._extract_node_number)
+
+    def get_all_intel_nodes(self) -> List[str]:
+        """Query and return all Intel cluster nodes."""
+        all_nodes = []
+        intel_clusters = ['intel21', 'intel18', 'intel18-v100']
+
+        for cluster in intel_clusters:
+            nodes = self.get_nodes_by_cluster(cluster)
+            all_nodes.extend(nodes)
+
+        return sorted(all_nodes, key=self._extract_node_number)
+
     def query_nodes_by_type(self, node_type: str) -> List[str]:
         """
         Query SLURM for all available nodes of a specific type.
@@ -304,13 +326,29 @@ class NodeExclusionManager:
         print("SLURM Node Exclusion Configuration")
         print("="*70)
 
-        print("\nSelect node exclusion option:")
+        # Show cluster information first
+        print("\n📊 Cluster Overview:")
+        print("  AMD Clusters:")
+        print("    • amd24: agg, agx, nfh, neh, nel (newest generation)")
+        print("    • amd22: acm")
+        print("    • amd21: nal")
+        print("    • amd20: amr (⚠️ memory issues with CRYSTAL23)")
+        print("    • amd20-v100: nvf (⚠️ memory issues with CRYSTAL23)")
+        print("")
+        print("  Intel Clusters:")
+        print("    • intel21: nif")
+        print("    • intel18: skl")
+        print("    • intel18-v100: nvl")
+
+        print("\n" + "="*70)
+        print("Select exclusion option:")
+        print("="*70)
         print("1) No exclusions (use all available nodes)")
-        print("2) Exclude all AMD20 nodes (amr + nvf) [RECOMMENDED for CRYSTAL23]")
-        print("3) Exclude by cluster generation (amd24, amd22, amd21, intel18, etc.)")
-        print("4) Exclude Mendoza group nodes (save CPU hours)")
-        print("5) Exclude specific node type(s) - allows multiple")
-        print("6) Custom node exclusion list")
+        print("2) Exclude AMD20 only (amr + nvf) [RECOMMENDED for CRYSTAL23]")
+        print("3) Exclude ALL AMD nodes (amd24 + amd22 + amd21 + amd20)")
+        print("4) Exclude ALL Intel nodes (intel21 + intel18)")
+        print("5) Exclude Mendoza group nodes (save CPU hours)")
+        print("6) Custom selection (choose specific types or clusters)")
 
         choice = input("\nEnter choice [1-6] (default: 2): ").strip() or "2"
 
@@ -322,18 +360,18 @@ class NodeExclusionManager:
             return self._exclude_amd20_nodes()
 
         elif choice == "3":
-            return self._exclude_by_cluster()
+            return self._exclude_all_amd_nodes()
 
         elif choice == "4":
+            return self._exclude_all_intel_nodes()
+
+        elif choice == "5":
             exclude_str = self.create_exclude_string(self.MENDOZA_NODES)
             print(f"\nExcluding Mendoza nodes: {exclude_str}")
             return exclude_str
 
-        elif choice == "5":
-            return self._exclude_by_type()
-
         elif choice == "6":
-            return self._custom_exclusion()
+            return self._custom_selection()
 
         else:
             print("Invalid choice. No exclusions will be applied.")
@@ -363,6 +401,79 @@ class NodeExclusionManager:
             return exclude_str
         else:
             print("Exclusion cancelled.")
+            return None
+
+    def _exclude_all_amd_nodes(self) -> Optional[str]:
+        """Handle exclusion of all AMD nodes."""
+        print("\nQuerying SLURM for ALL AMD nodes...")
+        amd_nodes = self.get_all_amd_nodes()
+
+        if not amd_nodes:
+            print("No AMD nodes found")
+            return None
+
+        # Count by cluster
+        print(f"Found {len(amd_nodes)} AMD nodes across all generations:")
+        for cluster in ['amd24', 'amd22', 'amd21', 'amd20', 'amd20-v100']:
+            cluster_nodes = self.get_nodes_by_cluster(cluster)
+            if cluster_nodes:
+                node_types = ', '.join(self.CLUSTER_TYPES[cluster])
+                print(f"  - {cluster}: {len(cluster_nodes)} nodes ({node_types})")
+
+        confirm = input(f"\nExclude all {len(amd_nodes)} AMD nodes? [Y/n]: ").strip().lower()
+        if confirm in ['', 'y', 'yes']:
+            exclude_str = self.create_exclude_string(amd_nodes)
+            print(f"\nExclude string: {exclude_str}")
+            return exclude_str
+        else:
+            print("Exclusion cancelled.")
+            return None
+
+    def _exclude_all_intel_nodes(self) -> Optional[str]:
+        """Handle exclusion of all Intel nodes."""
+        print("\nQuerying SLURM for ALL Intel nodes...")
+        intel_nodes = self.get_all_intel_nodes()
+
+        if not intel_nodes:
+            print("No Intel nodes found")
+            return None
+
+        # Count by cluster
+        print(f"Found {len(intel_nodes)} Intel nodes across all generations:")
+        for cluster in ['intel21', 'intel18', 'intel18-v100']:
+            cluster_nodes = self.get_nodes_by_cluster(cluster)
+            if cluster_nodes:
+                node_types = ', '.join(self.CLUSTER_TYPES[cluster])
+                print(f"  - {cluster}: {len(cluster_nodes)} nodes ({node_types})")
+
+        confirm = input(f"\nExclude all {len(intel_nodes)} Intel nodes? [Y/n]: ").strip().lower()
+        if confirm in ['', 'y', 'yes']:
+            exclude_str = self.create_exclude_string(intel_nodes)
+            print(f"\nExclude string: {exclude_str}")
+            return exclude_str
+        else:
+            print("Exclusion cancelled.")
+            return None
+
+    def _custom_selection(self) -> Optional[str]:
+        """Handle custom selection - either by cluster or by node type."""
+        print("\n" + "="*70)
+        print("Custom Selection")
+        print("="*70)
+        print("\n1) Select by cluster generation (amd24, amd22, intel18, etc.)")
+        print("2) Select by node type (amr, nvf, agg, skl, etc.)")
+        print("3) Manual node list (e.g., amr-042,nvf-100)")
+
+        sub_choice = input("\nSelect method [1-3]: ").strip()
+
+        if sub_choice == "1":
+            return self._exclude_by_cluster()
+        elif sub_choice == "2":
+            return self._exclude_by_type()
+        elif sub_choice == "3":
+            return self._custom_exclusion()
+        else:
+            print("Invalid choice.")
             return None
 
     def _exclude_by_cluster(self) -> Optional[str]:
