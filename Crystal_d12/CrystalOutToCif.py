@@ -243,10 +243,28 @@ class CrystalOutToCifConverter:
             f.write(f"_cell_angle_beta  {cell['beta']:.{precision}f}\n")
             f.write(f"_cell_angle_gamma {cell['gamma']:.{precision}f}\n\n")
 
-            # Space group (default to P1 for simplicity)
-            space_group = self.options.get("space_group", "P 1")
-            f.write(f"_symmetry_space_group_name_H-M  '{space_group}'\n")
-            f.write(f"_symmetry_Int_Tables_number     1\n\n")
+            # Space group handling
+            preserve_symmetry = self.options.get("preserve_symmetry", False)
+
+            if preserve_symmetry and geometry_data.get("spacegroup"):
+                # Use actual space group from CRYSTAL calculation
+                sg_number = geometry_data["spacegroup"]
+                # Get Hermann-Mauguin symbol from number if available
+                from d12_constants import SPACEGROUP_SYMBOLS
+                sg_symbol = SPACEGROUP_SYMBOLS.get(sg_number, "P 1")
+            elif self.options.get("space_group"):
+                # User override
+                sg_symbol = self.options["space_group"]
+                # Try to get number from symbol
+                from d12_constants import SPACEGROUP_SYMBOL_TO_NUMBER
+                sg_number = SPACEGROUP_SYMBOL_TO_NUMBER.get(sg_symbol, 1)
+            else:
+                # Default to P1
+                sg_symbol = "P 1"
+                sg_number = 1
+
+            f.write(f"_symmetry_space_group_name_H-M  '{sg_symbol}'\n")
+            f.write(f"_symmetry_Int_Tables_number     {sg_number}\n\n")
 
             # Symmetry operations
             f.write("loop_\n")
@@ -262,6 +280,11 @@ class CrystalOutToCifConverter:
             f.write("_atom_site_fract_z\n")
 
             coordinates = geometry_data["coordinates"]
+
+            # Filter to unique atoms if preserving symmetry
+            if preserve_symmetry:
+                coordinates = [c for c in coordinates if c.get("is_unique", True)]
+
             atom_counts = {}
 
             for coord in coordinates:
@@ -506,8 +529,13 @@ Examples:
     )
     parser.add_argument(
         "--space-group",
-        default="P 1",
-        help="Space group for CIF (default: P 1)"
+        default=None,
+        help="Override space group for CIF (default: use from CRYSTAL output or P 1)"
+    )
+    parser.add_argument(
+        "--preserve-symmetry",
+        action="store_true",
+        help="Preserve crystallographic symmetry (write only unique atoms with actual space group)"
     )
     parser.add_argument(
         "--vacuum-thickness",
@@ -544,6 +572,7 @@ Examples:
         "output_dir": args.output_dir,
         "force_dimension": args.force_dimension,
         "space_group": args.space_group,
+        "preserve_symmetry": args.preserve_symmetry,
         "vacuum_thickness": args.vacuum_thickness,
         "precision": args.precision,
         "include_metadata": args.include_metadata,
