@@ -1284,7 +1284,9 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
         print("="*60)
         
         if not shared_mode or yes_no_prompt(f"\nChange advanced electronic and convergence settings?", "no"):
-            advanced_config = configure_advanced_electronic_settings(options, show_current=True)
+            # User wants to change settings - go directly into configuration mode
+            # Don't ask again "Use these current settings?" since they just said they want to change
+            advanced_config = configure_advanced_electronic_settings(options, force_configure=True)
             options.update(advanced_config)
         else:
             # Keep existing settings if not changing
@@ -1746,25 +1748,30 @@ def configure_external_pressure() -> Dict[str, float]:
     return {"pressure": pressure}
 
 
-def configure_advanced_electronic_settings(options: Dict[str, Any], show_current: bool = False) -> Dict[str, Any]:
+def configure_advanced_electronic_settings(options: Dict[str, Any], show_current: bool = False,
+                                          force_configure: bool = False) -> Dict[str, Any]:
     """Configure advanced electronic and convergence settings
-    
+
     Groups together:
     - Spin polarization and SPINLOCK
     - Fermi smearing
     - LEVSHIFT
     - SCF settings (MAXCYCLE, FMIXING, etc.)
-    
+
     Args:
         options: Current configuration options
         show_current: If True, user already saw current settings, just ask to use them
-        
+        force_configure: If True, skip prompts and go directly into configuration mode
+
     Returns:
         Dictionary with advanced settings
     """
     advanced_config = {}
-    
-    if show_current:
+
+    if force_configure:
+        # Skip all prompts and go directly into configuration
+        use_current = False
+    elif show_current:
         # User already saw current settings, just ask if they want to use them
         # Don't show defaults or current again
         use_current = yes_no_prompt("\nUse these current advanced settings?", "yes")
@@ -1783,7 +1790,7 @@ def configure_advanced_electronic_settings(options: Dict[str, Any], show_current
         print("PPAN: Yes (parallel diagonalization)")
         print("BIPOSIZE/EXCHSIZE: 110000000/110000000")
         print("="*60)
-        
+
         use_current = yes_no_prompt("\nUse these default advanced settings?", "yes")
     
     if use_current and show_current:
