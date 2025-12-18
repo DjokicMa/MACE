@@ -81,6 +81,79 @@ class CrystalOutToCifConverter:
         # Proper capitalization: first letter uppercase, rest lowercase
         return symbol[0].upper() + symbol[1:].lower() if len(symbol) > 1 else symbol.upper()
 
+    @staticmethod
+    def format_spacegroup_symbol(symbol: str) -> str:
+        """
+        Format space group symbol with proper spacing for CIF files.
+
+        Many CIF readers (like VESTA) expect space group symbols in expanded format
+        with spaces between components: 'I -4 3 d' not 'I-43d'.
+
+        Args:
+            symbol: Compact space group symbol (e.g., 'I-43d', 'Fd-3m', 'P21/c')
+
+        Returns:
+            Expanded space group symbol with proper spacing
+        """
+        if not symbol or not isinstance(symbol, str):
+            return symbol
+
+        # Already has spaces - return as-is
+        if ' ' in symbol and symbol != "P 1":
+            return symbol
+
+        # Handle common cubic space groups with -4 and -3 rotoinversions
+        # Pattern: Lattice-43x or Lattice-3x
+        import re
+
+        # Handle patterns like I-43d, F-43c, P-43n -> I -4 3 d, F -4 3 c, P -4 3 n
+        match = re.match(r'^([PIFABC])(-?)(\d)(\d)([a-z])$', symbol)
+        if match:
+            lattice, neg, n1, n2, suffix = match.groups()
+            if neg:
+                return f"{lattice} -{n1} {n2} {suffix}"
+            else:
+                return f"{lattice} {n1} {n2} {suffix}"
+
+        # Handle patterns like Fd-3m, Ia-3d, Pm-3m -> F d -3 m, I a -3 d, P m -3 m
+        match = re.match(r'^([PIFABC])([a-z]?)(-?)(\d)([a-z])$', symbol)
+        if match:
+            lattice, centering, neg, n, suffix = match.groups()
+            if centering:
+                if neg:
+                    return f"{lattice} {centering} -{n} {suffix}"
+                else:
+                    return f"{lattice} {centering} {n} {suffix}"
+            else:
+                if neg:
+                    return f"{lattice} -{n} {suffix}"
+                else:
+                    return f"{lattice} {n} {suffix}"
+
+        # Handle patterns like P21/c, P21/n -> P 21/c, P 21/n
+        match = re.match(r'^([PIFABC])(\d+)/([a-z])$', symbol)
+        if match:
+            lattice, n, suffix = match.groups()
+            return f"{lattice} {n}/{suffix}"
+
+        # Handle patterns like P212121 -> P 21 21 21
+        match = re.match(r'^([PIFABC])(\d+)(\d+)(\d+)$', symbol)
+        if match:
+            lattice, n1, n2, n3 = match.groups()
+            return f"{lattice} {n1} {n2} {n3}"
+
+        # Handle R-3m, R-3c type -> R -3 m, R -3 c
+        match = re.match(r'^([R])(-?)(\d)([a-z])$', symbol)
+        if match:
+            lattice, neg, n, suffix = match.groups()
+            if neg:
+                return f"{lattice} -{n} {suffix}"
+            else:
+                return f"{lattice} {n} {suffix}"
+
+        # Return as-is if no pattern matches
+        return symbol
+
     def detect_calculation_type(self, content: str) -> str:
         """
         Detect the calculation type from output content.
@@ -205,9 +278,18 @@ class CrystalOutToCifConverter:
                 f.write(f"# Dimensionality: {geometry_data.get('dimensionality', 'UNKNOWN')}\n")
                 f.write(f"# Space group: {geometry_data.get('spacegroup', 'Unknown')}\n\n")
 
-            # Cell parameters
+            # Cell parameters - choose based on mode
             dimensionality = geometry_data.get("dimensionality", "CRYSTAL")
-            cell_params = geometry_data.get("conventional_cell", [])
+            preserve_symmetry = self.options.get("preserve_symmetry", False)
+
+            if preserve_symmetry:
+                # For symmetry-preserved CIF, use conventional (crystallographic) cell
+                cell_params = geometry_data.get("conventional_cell", [])
+            else:
+                # For default mode, prefer primitive cell for consistency with coordinates
+                cell_params = geometry_data.get("primitive_cell", [])
+                if not cell_params:
+                    cell_params = geometry_data.get("conventional_cell", [])
 
             # For molecules or if no cell parameters, use defaults based on coordinates
             if not cell_params or len(cell_params) < 6:
@@ -243,9 +325,7 @@ class CrystalOutToCifConverter:
             f.write(f"_cell_angle_beta  {cell['beta']:.{precision}f}\n")
             f.write(f"_cell_angle_gamma {cell['gamma']:.{precision}f}\n\n")
 
-            # Space group handling
-            preserve_symmetry = self.options.get("preserve_symmetry", False)
-
+            # Space group handling (preserve_symmetry already set above)
             if preserve_symmetry and geometry_data.get("spacegroup"):
                 # Use actual space group from CRYSTAL calculation
                 sg_number = geometry_data["spacegroup"]
@@ -263,13 +343,21 @@ class CrystalOutToCifConverter:
                 sg_symbol = "P 1"
                 sg_number = 1
 
-            f.write(f"_symmetry_space_group_name_H-M  '{sg_symbol}'\n")
-            f.write(f"_symmetry_Int_Tables_number     {sg_number}\n\n")
+            # Format space group symbol with proper spacing for CIF
+            # e.g., 'I-43d' -> 'I -4 3 d', 'Fd-3m' -> 'F d -3 m'
+            sg_symbol_formatted = self.format_spacegroup_symbol(sg_symbol)
 
-            # Symmetry operations
-            f.write("loop_\n")
-            f.write("_symmetry_equiv_pos_as_xyz\n")
-            f.write("  'x, y, z'\n\n")
+            # Use newer CIF format tags for better software compatibility
+            f.write(f"_space_group_name_H-M_alt       '{sg_symbol_formatted}'\n")
+            f.write(f"_space_group_IT_number          {sg_number}\n\n")
+
+            # Symmetry operations handling:
+            # - For preserve_symmetry mode: omit the loop entirely, let software derive from space group
+            # - For default (P1) mode: include identity operation
+            if not preserve_symmetry:
+                f.write("loop_\n")
+                f.write("_space_group_symop_operation_xyz\n")
+                f.write("   'x, y, z'\n\n")
 
             # Atomic coordinates
             f.write("loop_\n")
@@ -279,11 +367,25 @@ class CrystalOutToCifConverter:
             f.write("_atom_site_fract_y\n")
             f.write("_atom_site_fract_z\n")
 
-            coordinates = geometry_data["coordinates"]
-
-            # Filter to unique atoms if preserving symmetry
+            # Select appropriate coordinates based on mode
             if preserve_symmetry:
+                # For symmetry-preserved CIF, use crystallographic coordinates if available
+                # These are in the conventional cell basis, matching the space group
+                crystallographic_coords = geometry_data.get("crystallographic_coordinates", [])
+                if crystallographic_coords:
+                    coordinates = crystallographic_coords
+                    if self.options.get("verbose", False):
+                        print(f"  Using crystallographic coordinates ({len(crystallographic_coords)} atoms)")
+                else:
+                    # Fallback to primitive coordinates if crystallographic not available
+                    coordinates = geometry_data["coordinates"]
+                    if self.options.get("verbose", False):
+                        print(f"  Warning: Crystallographic coordinates not found, using primitive")
+                # Filter to unique atoms only
                 coordinates = [c for c in coordinates if c.get("is_unique", True)]
+            else:
+                # Default mode: use primitive coordinates (all atoms)
+                coordinates = geometry_data["coordinates"]
 
             atom_counts = {}
 

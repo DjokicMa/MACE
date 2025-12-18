@@ -26,6 +26,97 @@ from d12_constants import (
 )
 
 
+def rotation_matrix_to_xyz(rotation: List[List[float]], translation: List[float]) -> str:
+    """
+    Convert a rotation matrix and translation vector to xyz notation.
+
+    Args:
+        rotation: 3x3 rotation matrix [[r11,r12,r13],[r21,r22,r23],[r31,r32,r33]]
+        translation: Translation vector [tx, ty, tz] in fractional coordinates
+
+    Returns:
+        String in xyz notation, e.g., '-x+1/2, -y, z+1/2'
+    """
+    axes = ['x', 'y', 'z']
+    result = []
+
+    for i in range(3):  # For each output coordinate (x', y', z')
+        terms = []
+
+        # Rotation part
+        for j in range(3):  # For each input coordinate (x, y, z)
+            coeff = rotation[i][j]
+
+            # Round to handle floating point errors
+            coeff = round(coeff)
+
+            if coeff == 0:
+                continue
+            elif coeff == 1:
+                terms.append(axes[j])
+            elif coeff == -1:
+                terms.append(f'-{axes[j]}')
+            else:
+                # Handle other integer coefficients (rare but possible)
+                if coeff > 0:
+                    terms.append(f'{int(coeff)}*{axes[j]}')
+                else:
+                    terms.append(f'{int(coeff)}*{axes[j]}')
+
+        # Translation part - convert to fraction string
+        trans = translation[i]
+
+        # Handle common fractional translations
+        # Normalize to [0, 1) range
+        trans = trans % 1.0
+        if trans < 0:
+            trans += 1.0
+
+        # Round to handle floating point errors and identify common fractions
+        trans = round(trans, 4)
+
+        trans_str = ""
+        if abs(trans) > 0.001:  # Non-zero translation
+            # Common fractional values
+            if abs(trans - 0.5) < 0.01:
+                trans_str = "+1/2"
+            elif abs(trans - 0.25) < 0.01:
+                trans_str = "+1/4"
+            elif abs(trans - 0.75) < 0.01:
+                trans_str = "+3/4"
+            elif abs(trans - 1.0/3.0) < 0.01:
+                trans_str = "+1/3"
+            elif abs(trans - 2.0/3.0) < 0.01:
+                trans_str = "+2/3"
+            elif abs(trans - 1.0/6.0) < 0.01:
+                trans_str = "+1/6"
+            elif abs(trans - 5.0/6.0) < 0.01:
+                trans_str = "+5/6"
+            else:
+                # Use decimal for unusual translations
+                trans_str = f"+{trans:.4f}"
+
+        # Combine terms
+        if terms:
+            coord_str = terms[0]
+            for t in terms[1:]:
+                if t.startswith('-'):
+                    coord_str += t
+                else:
+                    coord_str += '+' + t
+            coord_str += trans_str
+        else:
+            # No rotation component, just translation
+            if trans_str:
+                coord_str = trans_str.lstrip('+')  # Remove leading + for pure translations
+            else:
+                coord_str = '0'
+
+        result.append(coord_str)
+
+    return ', '.join(result)
+
+
 class CrystalOutputParser:
     """Enhanced parser for CRYSTAL17/23 output files"""
 
@@ -51,6 +142,8 @@ class CrystalOutputParser:
             "is_3c_method": False,
             "smearing": False,
             "smearing_width": None,
+            "symmetry_operations": [],  # List of symmetry operations in xyz notation
+            "lattice_centering": None,  # Lattice centering type (P, I, F, A, B, C, R)
         }
 
     def parse(self) -> Dict[str, Any]:
@@ -208,11 +301,19 @@ class CrystalOutputParser:
             # No cell parameters for molecules
             return
 
-        # Look for PRIMITIVE CELL
-        for i in range(start_idx, min(start_idx + 100, len(lines))):
-            if "PRIMITIVE CELL" in lines[i] and "LATTICE PARAMETERS" in lines[i]:
+        # Find the end of geometry block (look for "END" marker or end of file)
+        # Large structures can have thousands of atoms, so we need a large search range
+        end_idx = len(lines)
+        for i in range(start_idx, len(lines)):
+            if "TTTTTTTTTT END" in lines[i] or "EEEEEEEEEE TERMINATION" in lines[i]:
+                end_idx = i
+                break
+
+        # Look for PRIMITIVE CELL (usually appears first, near start)
+        for i in range(start_idx, min(start_idx + 100, end_idx)):
+            if "PRIMITIVE CELL" in lines[i] and ("LATTICE PARAMETERS" in lines[i] or "CENTRING CODE" in lines[i]):
                 # Skip to parameter line
-                for j in range(i + 1, i + 10):
+                for j in range(i + 1, min(i + 10, end_idx)):
                     if (
                         "ALPHA" in lines[j]
                         and "BETA" in lines[j]
@@ -224,11 +325,12 @@ class CrystalOutputParser:
                         break
                 break
 
-        # Look for CRYSTALLOGRAPHIC CELL
-        for i in range(start_idx, min(start_idx + 100, len(lines))):
+        # Look for CRYSTALLOGRAPHIC CELL (can be much further down for large structures)
+        # Search the entire geometry block
+        for i in range(start_idx, end_idx):
             if "CRYSTALLOGRAPHIC CELL" in lines[i] and "VOLUME" in lines[i]:
                 # Skip to parameter line
-                for j in range(i + 1, i + 10):
+                for j in range(i + 1, min(i + 10, end_idx)):
                     if (
                         "ALPHA" in lines[j]
                         and "BETA" in lines[j]
@@ -243,7 +345,7 @@ class CrystalOutputParser:
         # If no conventional cell found, use primitive
         if not self.data.get("conventional_cell") and self.data.get("primitive_cell"):
             self.data["conventional_cell"] = self.data["primitive_cell"]
-            
+
         # Also try to extract lattice parameters from the optimized geometry section
         if not self.data.get("conventional_cell"):
             self._extract_optimized_cell_parameters(lines, start_idx)
@@ -350,62 +452,76 @@ class CrystalOutputParser:
                             j += 1
                         break
         else:
-            # Look for coordinates with T/F symmetry markers
-            found_coords = False
+            # For periodic systems, extract BOTH primitive and crystallographic coordinates
+            # Default mode uses primitive (all atoms), preserve-symmetry uses crystallographic
 
-            # PRIORITY: First try to find COORDINATES IN THE CRYSTALLOGRAPHIC CELL
-            # This is essential for maintaining consistency with lattice parameters
-            for i in range(start_idx, min(start_idx + 200, len(lines))):
-                if "COORDINATES IN THE CRYSTALLOGRAPHIC CELL" in lines[i]:
-                    # Skip header lines
-                    j = i + 3
-                    while j < len(lines):
+            # Find the end of geometry block for proper search range
+            end_idx = len(lines)
+            for i in range(start_idx, len(lines)):
+                if "TTTTTTTTTT END" in lines[i] or "EEEEEEEEEE TERMINATION" in lines[i]:
+                    end_idx = i
+                    break
+
+            # Extract PRIMITIVE coordinates from "ATOMS IN THE ASYMMETRIC UNIT" (near start)
+            for i in range(start_idx, min(start_idx + 100, end_idx)):
+                if "ATOMS IN THE ASYMMETRIC UNIT" in lines[i]:
+                    j = i + 1
+                    # Skip to data (past header and asterisk line)
+                    while j < end_idx and "***" not in lines[j]:
+                        j += 1
+                    j += 1  # Skip asterisk line
+                    while j < end_idx:
                         parts = lines[j].split()
-                        if len(parts) >= 7 and (parts[1] == "T" or parts[1] == "F"):
-                            coord = {
-                                "atom_number": parts[2],
-                                "x": parts[4],
-                                "y": parts[5],
-                                "z": parts[6],
-                                "is_unique": parts[1] == "T",
-                            }
-                            coordinates.append(coord)
+                        if len(parts) >= 7 and parts[1] in ["T", "F"]:
+                            try:
+                                coord = {
+                                    "atom_number": parts[2],
+                                    "x": parts[4],
+                                    "y": parts[5],
+                                    "z": parts[6],
+                                    "is_unique": parts[1] == "T",
+                                }
+                                coordinates.append(coord)
+                            except (ValueError, IndexError):
+                                break
                         elif len(parts) < 6 or not lines[j].strip():
                             break
                         j += 1
-                    found_coords = True
                     break
 
-            # Fallback: If crystallographic coordinates not found, try ATOMS IN THE ASYMMETRIC UNIT
-            if not found_coords:
-                for i in range(start_idx, min(start_idx + 200, len(lines))):
-                    if "ATOMS IN THE ASYMMETRIC UNIT" in lines[i]:
-                        # Skip header lines
-                        j = i + 3
-                        while j < len(lines):
-                            parts = lines[j].split()
-                            if len(parts) >= 7:
-                                # Check for T/F marker
-                                if parts[1] in ["T", "F"]:
-                                    try:
-                                        coord = {
-                                            "atom_number": parts[2],
-                                            "x": parts[4],
-                                            "y": parts[5],
-                                            "z": parts[6],
-                                            "is_unique": parts[1]
-                                            == "T",  # True if T, False if F
-                                        }
-                                        coordinates.append(coord)
-                                    except:
-                                        break
-                                else:
-                                    break
-                            elif len(parts) < 6 or not lines[j].strip():
+            # Store primitive coordinates as default
+            self.data["primitive_coordinates"] = coordinates.copy()
+
+            # Extract CRYSTALLOGRAPHIC coordinates (search entire geometry block)
+            crystallographic_coords = []
+            for i in range(start_idx, end_idx):
+                if "COORDINATES IN THE CRYSTALLOGRAPHIC CELL" in lines[i]:
+                    j = i + 1
+                    # Skip to data (past header and asterisk line)
+                    while j < end_idx and "***" not in lines[j]:
+                        j += 1
+                    j += 1  # Skip asterisk line
+                    while j < end_idx:
+                        parts = lines[j].split()
+                        if len(parts) >= 7 and parts[1] in ["T", "F"]:
+                            try:
+                                coord = {
+                                    "atom_number": parts[2],
+                                    "x": parts[4],
+                                    "y": parts[5],
+                                    "z": parts[6],
+                                    "is_unique": parts[1] == "T",
+                                }
+                                crystallographic_coords.append(coord)
+                            except (ValueError, IndexError):
                                 break
-                            j += 1
-                        found_coords = True
-                        break
+                        elif len(parts) < 6 or not lines[j].strip():
+                            break
+                        j += 1
+                    break
+
+            # Store crystallographic coordinates separately
+            self.data["crystallographic_coordinates"] = crystallographic_coords
 
         self.data["coordinates"] = coordinates
 
