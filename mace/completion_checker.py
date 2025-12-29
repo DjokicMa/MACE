@@ -339,7 +339,7 @@ def get_running_jobs() -> Set[str]:
 
 def detect_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]) -> List[Dict]:
     """
-    Detect jobs that have failed but are still running in SLURM.
+    Detect jobs that have finished (completed or failed) but are still running in SLURM.
 
     Args:
         result_buckets: Dictionary of categorized files
@@ -355,10 +355,15 @@ def detect_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]) -> Lis
 
     zombies = []
 
-    # Check errored jobs and ongoing jobs (which might have errors not yet detected)
-    error_categories = list(ERROR_PATTERNS.keys()) + ['unknown', 'ongoing']
+    # Check ALL categories: completed jobs, errored jobs, and ongoing jobs
+    # Completed jobs should NOT still be running in SLURM
+    all_categories = (
+        ['complete', 'completesp'] +  # Successfully completed
+        list(ERROR_PATTERNS.keys()) +  # Failed with errors
+        ['unknown', 'ongoing']  # Unknown errors or still running
+    )
 
-    for category in error_categories:
+    for category in all_categories:
         for base_name in result_buckets.get(category, []):
             out_path = file_paths.get(base_name)
             if not out_path:
@@ -366,8 +371,12 @@ def detect_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]) -> Lis
 
             job_id = find_slurm_job_id(out_path)
             if job_id and job_id in running_jobs:
-                # For ongoing jobs, note they might still be legitimately running
-                if category == 'ongoing':
+                # Set appropriate description based on category
+                if category == 'complete':
+                    description = "OPT completed successfully but SLURM job still running"
+                elif category == 'completesp':
+                    description = "SP completed successfully but SLURM job still running"
+                elif category == 'ongoing':
                     description = "Still running (check if stuck)"
                 else:
                     description = ERROR_DESCRIPTIONS.get(category, 'Unknown error')
@@ -394,23 +403,35 @@ def remove_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]):
 
     if not zombies:
         print("\n✓ No zombie jobs detected.")
-        print("  (All failed jobs have already stopped in SLURM)")
+        print("  (All finished jobs have already stopped in SLURM)")
         return
 
-    # Separate actual errors from ongoing jobs
-    error_zombies = [z for z in zombies if z['category'] != 'ongoing']
+    # Separate into three categories: completed, errors, and ongoing
+    completed_zombies = [z for z in zombies if z['category'] in ('complete', 'completesp')]
+    error_zombies = [z for z in zombies if z['category'] not in ('complete', 'completesp', 'ongoing')]
     ongoing_zombies = [z for z in zombies if z['category'] == 'ongoing']
 
     # Print header and explanation
     print(f"\n{'='*70}")
     print("ZOMBIE JOB DETECTION")
     print(f"{'='*70}")
-    print("\nZombie jobs are calculations that have FAILED (error in output)")
+    print("\nZombie jobs are calculations that have FINISHED (completed or failed)")
     print("but are STILL RUNNING in SLURM, wasting CPU hours.\n")
 
-    # Show error zombies first (definite zombies)
+    # Show completed zombies first (these should definitely be cancelled)
+    if completed_zombies:
+        print(f"Found {len(completed_zombies)} COMPLETED job(s) still running in SLURM:\n")
+
+        for z in completed_zombies:
+            print(f"  • {z['name']}")
+            print(f"    Job ID: {z['job_id']}")
+            print(f"    Status: {z['description']}")
+            print(f"    Path: {z['path'].parent}")
+            print()
+
+    # Show error zombies (also definite zombies)
     if error_zombies:
-        print(f"Found {len(error_zombies)} zombie job(s) with errors:\n")
+        print(f"Found {len(error_zombies)} FAILED job(s) still running in SLURM:\n")
 
         for z in error_zombies:
             print(f"  • {z['name']}")
@@ -433,28 +454,41 @@ def remove_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]):
     # Confirm cancellation
     print(f"{'='*70}")
 
-    if error_zombies:
-        # Ask about error zombies first
-        error_ids = [z['job_id'] for z in error_zombies]
-        response = input(f"Cancel {len(error_zombies)} failed zombie job(s)? [y/N]: ").strip().lower()
+    # Combine completed and error zombies - both should be cancelled
+    definite_zombies = completed_zombies + error_zombies
+
+    if definite_zombies:
+        # Ask about definite zombies (completed + errors)
+        definite_ids = [z['job_id'] for z in definite_zombies]
+        num_completed = len(completed_zombies)
+        num_errors = len(error_zombies)
+
+        prompt_parts = []
+        if num_completed > 0:
+            prompt_parts.append(f"{num_completed} completed")
+        if num_errors > 0:
+            prompt_parts.append(f"{num_errors} failed")
+
+        prompt = f"Cancel {' + '.join(prompt_parts)} zombie job(s)? [y/N]: "
+        response = input(prompt).strip().lower()
 
         if response == 'y':
             result = subprocess.run(
-                ['scancel'] + error_ids,
+                ['scancel'] + definite_ids,
                 capture_output=True, text=True
             )
 
             if result.returncode == 0:
-                print(f"\n✓ Cancelled {len(error_ids)} zombie job(s):")
-                for jid in error_ids:
+                print(f"\n✓ Cancelled {len(definite_ids)} zombie job(s):")
+                for jid in definite_ids:
                     print(f"  scancel {jid}")
             else:
                 print(f"\n✗ Error cancelling jobs: {result.stderr}")
         else:
-            print("\nNo failed jobs cancelled.")
-            if error_ids:
+            print("\nNo zombie jobs cancelled.")
+            if definite_ids:
                 print("To cancel manually:")
-                for jid in error_ids:
+                for jid in definite_ids:
                     print(f"  scancel {jid}")
 
     # Optionally ask about ongoing jobs
