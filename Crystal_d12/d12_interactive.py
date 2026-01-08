@@ -395,22 +395,26 @@ def get_calculation_type() -> str:
     return calc_types[choice]
 
 
-def select_basis_set_with_defaults(elements: List[int], method: str = "DFT", 
+def select_basis_set_with_defaults(elements: List[int], method: str = "DFT",
                                  functional: Optional[str] = None,
                                  shared_mode: bool = False,
                                  current_basis_type: str = "INTERNAL",
                                  current_basis: str = "Not set") -> Dict[str, Any]:
     """
     Wrapper for select_basis_set that preserves current settings as defaults.
-    
+
     This function temporarily patches the get_user_input function to use
     appropriate defaults based on current settings.
     """
     import d12_constants
-    
+
+    # Ensure current_basis is a string (handle None case)
+    if current_basis is None:
+        current_basis = "Not set"
+
     # Store the original get_user_input function
     original_get_user_input = d12_constants.get_user_input
-    
+
     # Create a patched version that uses our defaults
     def patched_get_user_input(prompt, options, default):
         # For basis type selection - use current setting as default but still prompt
@@ -1120,9 +1124,9 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
         if not shared_mode or yes_no_prompt(f"\nChange method/functional? (Current: {current_method}/{current_functional})", "no"):
             options = configure_method(options)
         
-        # Basis set
-        current_basis = options.get("basis_set", "Not set")
-        current_basis_type = options.get("basis_set_type", "INTERNAL")
+        # Basis set - use 'or' to handle both missing key and None value
+        current_basis = options.get("basis_set") or "Not set"
+        current_basis_type = options.get("basis_set_type") or "INTERNAL"
         has_original_external = options.get("has_original_external_basis", False)
 
         # Show special message if we have original external basis from D12
