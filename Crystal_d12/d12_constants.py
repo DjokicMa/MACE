@@ -1714,24 +1714,45 @@ def generate_unit_cell_line(spacegroup: int, cell_params: List[float],
     return ""
 
 
-def read_basis_file(basis_dir: str, atomic_number: int) -> str:
+def read_basis_file(basis_dir: str, atomic_number: int, basis_set_type: str = "EXTERNAL") -> str:
     """
-    Read a basis set file for a given element
-    
+    Read a basis set file for a given element.
+
+    For EXTERNAL basis sets, ECP elements (Z >= 37) have their basis files
+    named with +200 offset (e.g., Te=52 -> file "252", Pb=82 -> file "282").
+
     Args:
         basis_dir: Directory containing basis set files
-        atomic_number: Element atomic number
-        
+        atomic_number: Element atomic number (original, without +200)
+        basis_set_type: "EXTERNAL" or "INTERNAL" - determines file naming
+
     Returns:
         Content of the basis set file
     """
     import os
+
+    # For EXTERNAL basis sets, ECP elements use +200 naming convention
+    file_number = atomic_number
+    if basis_set_type == "EXTERNAL" and atomic_number in ECP_ELEMENTS_EXTERNAL:
+        file_number = atomic_number + 200
+
+    basis_file_path = os.path.join(basis_dir, str(file_number))
+
     try:
-        with open(os.path.join(basis_dir, str(atomic_number)), "r") as f:
+        with open(basis_file_path, "r") as f:
             return f.read()
     except FileNotFoundError:
+        # Also try without +200 offset as fallback (for non-standard directories)
+        if file_number != atomic_number:
+            try:
+                with open(os.path.join(basis_dir, str(atomic_number)), "r") as f:
+                    return f.read()
+            except FileNotFoundError:
+                pass
+
         print(
-            f"Warning: Basis set file for element {atomic_number} not found in {basis_dir}"
+            f"Warning: Basis set file for element {atomic_number} (Z={atomic_number}) "
+            f"not found in {basis_dir} (tried: {file_number})"
         )
         return ""
 

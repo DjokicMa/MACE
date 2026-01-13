@@ -1059,9 +1059,10 @@ def create_d12_file(cif_data, output_file, options):
                     print(basis_set, file=f)
                 else:
                     # External basis set handling
+                    # Note: read_basis_file handles ECP element naming (+200 for Z >= 37)
                     unique_atoms = set(atomic_numbers)
                     for atom_num in sorted(unique_atoms):
-                        basis_content = read_basis_file(basis_set, atom_num)
+                        basis_content = read_basis_file(basis_set, atom_num, "EXTERNAL")
                         if basis_content:
                             print(basis_content, file=f, end="")
                     print("99 0", file=f)
@@ -1101,10 +1102,11 @@ def create_d12_file(cif_data, output_file, options):
                 print(basis_set, file=f)
             else:
                 # External basis set handling - need END to close geometry section
+                # Note: read_basis_file handles ECP element naming (+200 for Z >= 37)
                 print("END", file=f)
                 unique_atoms = set(atomic_numbers)
                 for atom_num in sorted(unique_atoms):
-                    basis_content = read_basis_file(basis_set, atom_num)
+                    basis_content = read_basis_file(basis_set, atom_num, "EXTERNAL")
                     if basis_content:
                         print(basis_content, file=f, end="")
                 print("99 0", file=f)

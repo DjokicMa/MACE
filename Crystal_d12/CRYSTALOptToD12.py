@@ -387,13 +387,16 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                         unique_atoms.add(int(atom["atom_number"]))
 
                     # Read basis set files
+                    # For ECP elements (Z >= 37), basis files are named with +200 offset
                     for atom_num in sorted(unique_atoms):
-                        basis_file = os.path.join(settings["basis_set_path"], str(atom_num))
+                        # Determine correct file name (add 200 for ECP elements)
+                        file_num = atom_num + 200 if atom_num in ECP_ELEMENTS_EXTERNAL else atom_num
+                        basis_file = os.path.join(settings["basis_set_path"], str(file_num))
                         if os.path.exists(basis_file):
                             with open(basis_file, "r") as bf:
                                 f.write(bf.read())
                         else:
-                            print(f"Warning: Basis set file not found for element {atom_num}")
+                            print(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
 
                     f.write("99 0\n")
                     f.write("END\n")
@@ -406,13 +409,15 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                         for atom in coords_to_write:
                             unique_atoms.add(int(atom["atom_number"]))
 
+                        # For ECP elements (Z >= 37), basis files are named with +200 offset
                         for atom_num in sorted(unique_atoms):
-                            basis_file = os.path.join(legacy_path, str(atom_num))
+                            file_num = atom_num + 200 if atom_num in ECP_ELEMENTS_EXTERNAL else atom_num
+                            basis_file = os.path.join(legacy_path, str(file_num))
                             if os.path.exists(basis_file):
                                 with open(basis_file, "r") as bf:
                                     f.write(bf.read())
                             else:
-                                print(f"Warning: Basis set file not found for element {atom_num}")
+                                print(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
 
                         f.write("99 0\n")
                         f.write("END\n")
@@ -463,16 +468,19 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                         unique_atoms.add(int(atom["atom_number"]))
 
                     # Read basis set files
+                    # For ECP elements (Z >= 37), basis files are named with +200 offset
                     for atom_num in sorted(unique_atoms):
+                        # Determine correct file name (add 200 for ECP elements)
+                        file_num = atom_num + 200 if atom_num in ECP_ELEMENTS_EXTERNAL else atom_num
                         basis_file = os.path.join(
-                            settings["basis_set_path"], str(atom_num)
+                            settings["basis_set_path"], str(file_num)
                         )
                         if os.path.exists(basis_file):
                             with open(basis_file, "r") as bf:
                                 f.write(bf.read())
                         else:
                             print(
-                                f"Warning: Basis set file not found for element {atom_num}"
+                                f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})"
                             )
 
                     f.write("99 0\n")
@@ -487,13 +495,15 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                         for atom in coords_to_write:
                             unique_atoms.add(int(atom["atom_number"]))
 
+                        # For ECP elements (Z >= 37), basis files are named with +200 offset
                         for atom_num in sorted(unique_atoms):
-                            basis_file = os.path.join(legacy_path, str(atom_num))
+                            file_num = atom_num + 200 if atom_num in ECP_ELEMENTS_EXTERNAL else atom_num
+                            basis_file = os.path.join(legacy_path, str(file_num))
                             if os.path.exists(basis_file):
                                 with open(basis_file, "r") as bf:
                                     f.write(bf.read())
                             else:
-                                print(f"Warning: Basis set file not found for element {atom_num}")
+                                print(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
 
                         f.write("99 0\n")
                         f.write("END\n")
