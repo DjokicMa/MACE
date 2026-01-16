@@ -161,29 +161,57 @@ class WorkflowExecutor:
         # Apply resource customizations
         if 'resources' in script_config:
             resources = script_config['resources']
-            
-            # Update SLURM directives
-            replacements = {
-                '#SBATCH --ntasks=': f"#SBATCH --ntasks={resources.get('ntasks', 32)}",
-                '#SBATCH --nodes=': f"#SBATCH --nodes={resources.get('nodes', 1)}",
-                '#SBATCH --time=': f"#SBATCH --time={resources.get('walltime', '7-00:00:00')}",
-                '#SBATCH --mem-per-cpu=': f"#SBATCH --mem-per-cpu={resources.get('memory_per_cpu', '5G')}",
-                '#SBATCH --account=': f"#SBATCH --account={resources.get('account', 'mendoza_q')}"
-            }
-            
+
+            # SLURM directive mappings - handle both short and long forms
+            # Format: (short_flag, long_flag, new_value)
+            slurm_mappings = [
+                ('-n ', '--ntasks=', str(resources.get('ntasks', 32))),
+                ('--ntasks=', '--ntasks=', str(resources.get('ntasks', 32))),
+                ('-N ', '--nodes=', str(resources.get('nodes', 1))),
+                ('--nodes=', '--nodes=', str(resources.get('nodes', 1))),
+                ('-t ', '--time=', resources.get('walltime', '7-00:00:00')),
+                ('--time=', '--time=', resources.get('walltime', '7-00:00:00')),
+                ('-A ', '-A ', resources.get('account', 'mendoza_q')),
+                ('--account=', '--account=', resources.get('account', 'mendoza_q')),
+                ('--mem-per-cpu=', '--mem-per-cpu=', resources.get('memory_per_cpu', '5G')),
+                ('--mem=', '--mem=', resources.get('memory', '48G')),
+            ]
+
             # Apply replacements line by line
             lines = content.split('\n')
             modified_lines = []
-            
+
             for line in lines:
                 # Check for SLURM directive replacements
                 replaced = False
-                for prefix, replacement in replacements.items():
-                    if line.strip().startswith(prefix):
-                        modified_lines.append(replacement)
-                        replaced = True
-                        break
-                
+
+                # Handle script generator format: echo '#SBATCH ...' >> $1.sh
+                if "echo '#SBATCH" in line or 'echo "#SBATCH' in line:
+                    for short_flag, long_flag, new_value in slurm_mappings:
+                        # Check if this line contains this SLURM flag
+                        flag_pattern = f"#SBATCH {short_flag}" if not short_flag.startswith('--') else f"#SBATCH {short_flag}"
+                        if flag_pattern in line:
+                            # Preserve the echo format and quotes
+                            if "echo '#SBATCH" in line:
+                                # Single-quoted echo
+                                new_line = f"echo '#SBATCH {long_flag}{new_value}' >> $1.sh"
+                            else:
+                                # Double-quoted echo
+                                new_line = f'echo "#SBATCH {long_flag}{new_value}" >> $1.sh'
+                            modified_lines.append(new_line)
+                            replaced = True
+                            break
+
+                # Handle direct SLURM directive format: #SBATCH ...
+                elif line.strip().startswith('#SBATCH'):
+                    for short_flag, long_flag, new_value in slurm_mappings:
+                        flag_pattern = f"#SBATCH {short_flag}"
+                        if flag_pattern in line:
+                            new_line = f"#SBATCH {long_flag}{new_value}"
+                            modified_lines.append(new_line)
+                            replaced = True
+                            break
+
                 if not replaced:
                     # Add workflow context environment variables after 'export JOB=' line
                     if line.startswith("echo 'export JOB="):
@@ -951,12 +979,21 @@ class WorkflowExecutor:
         # Read template content
         with open(template_script, 'r') as f:
             template_content = f.read()
-            
-        # Update template with specific values
+
+        # Apply SLURM resource customizations from step config if available
+        if 'slurm_config' in step_config and 'scripts' in step_config['slurm_config']:
+            # Find the matching script config for this calc type
+            for script_name, script_config in step_config['slurm_config']['scripts'].items():
+                if 'resources' in script_config:
+                    script_config['workflow_id'] = workflow_id
+                    template_content = self.apply_script_customizations(template_content, script_config)
+                    break
+
+        # Update template with specific values (workflow context, scratch dirs, etc.)
         script_content = self.customize_slurm_script(
             template_content, workflow_id, calc_type, step_num, material_name, calc_dir
         )
-        
+
         # Write individual script
         script_file = calc_dir / f"{material_name}.sh"
         with open(script_file, 'w') as f:

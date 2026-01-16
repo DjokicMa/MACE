@@ -413,6 +413,8 @@ SPACEGROUP_ALTERNATIVES = {
     "P B C N": 60, "P B C A": 61, "P N M A": 62, "C M C M": 63, "C M C E": 64,
     "C M M M": 65, "C C C M": 66, "C M M E": 67, "C C C E": 68, "F M M M": 69,
     "F D D D": 70, "I M M M": 71, "I B A M": 72, "I B C A": 73, "I M M A": 74,
+    # Old notation (A instead of E) - CRYSTAL often outputs these
+    "A B M 2": 39, "A B A 2": 41, "C M C A": 64, "C M M A": 67, "C C C A": 68,
     # Tetragonal
     "P 4": 75, "P 41": 76, "P 42": 77, "P 43": 78, "I 4": 79, "I 41": 80,
     "P -4": 81, "I -4": 82, "P 4/M": 83, "P 42/M": 84, "P 4/N": 85, "P 42/N": 86,

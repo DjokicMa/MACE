@@ -696,16 +696,19 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             print("Warning: Space group not found. Defaulting to P1")
             settings["spacegroup"] = 1
 
-    if not settings.get("basis_set"):
-        # Check if we have external basis data from D12 that we can reuse
-        if external_basis_data and settings.get("has_original_external_basis"):
+    # Handle external basis sets - this must be checked BEFORE setting defaults
+    # to ensure external basis data is always used when available
+    if external_basis_data and settings.get("has_original_external_basis"):
+        # Always enable external basis reuse when data is available from D12
+        settings["basis_set_type"] = "EXTERNAL"
+        settings["use_original_external_basis"] = True
+        if not settings.get("basis_set"):
             settings["basis_set"] = "EXTERNAL (from original D12)"
-            settings["basis_set_type"] = "EXTERNAL"
-            settings["use_original_external_basis"] = True
-            print("  Using external basis set from original D12 file")
-        else:
-            settings["basis_set"] = "POB-TZVP-REV2"
-            settings["basis_set_type"] = "INTERNAL"
+        print("  Using external basis set from original D12 file")
+    elif not settings.get("basis_set"):
+        # No external basis and no basis set specified - use default internal
+        settings["basis_set"] = "POB-TZVP-REV2"
+        settings["basis_set_type"] = "INTERNAL"
 
     # Set default tolerances if not found
     if not settings.get("tolerances"):
@@ -764,13 +767,26 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 apply_config = yes_no_prompt("\nApply these settings from config file?", default="yes")
             
             if apply_config:
+                # Preserve external basis settings before config override
+                # These must be maintained unless config explicitly provides new basis settings
+                had_external_basis = settings.get("use_original_external_basis", False)
+                external_basis_type = settings.get("basis_set_type")
+
                 # Use settings from config file
                 options = settings.copy()
                 # Override with config file settings
                 for key, value in config_data.items():
                     if key not in ["coordinates", "primitive_cell", "conventional_cell"]:
                         options[key] = value
-                
+
+                # Restore external basis settings if they were set and config didn't override them
+                # This ensures workflow-generated configs (which only set functional/calc_type)
+                # don't accidentally disable external basis handling
+                if had_external_basis and "basis_set_type" not in config_data and "basis_set_path" not in config_data:
+                    options["use_original_external_basis"] = True
+                    options["basis_set_type"] = external_basis_type
+                    print("  Preserving external basis settings from original D12")
+
                 # Handle both "frequency_settings" (from workflow) and "freq_settings" (direct usage)
                 freq_key = None
                 if "frequency_settings" in options:
@@ -911,6 +927,10 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         options = get_calculation_options_from_current(settings, calc_type=calc_type)
         
     elif shared_settings:
+        # Preserve external basis settings before shared_settings override
+        had_external_basis = settings.get("use_original_external_basis", False)
+        external_basis_type = settings.get("basis_set_type")
+
         # Merge shared settings with current settings
         options = settings.copy()
         # Override with shared settings (except geometry-specific data)
@@ -924,6 +944,12 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 "origin_setting",
             ]:
                 options[key] = value
+
+        # Restore external basis settings if they were set and shared_settings didn't override them
+        if had_external_basis and "basis_set_type" not in shared_settings and "basis_set_path" not in shared_settings:
+            options["use_original_external_basis"] = True
+            options["basis_set_type"] = external_basis_type
+            print("  Preserving external basis settings from original D12")
 
         # Ensure consistency for 3C methods
         if options.get("functional") in [

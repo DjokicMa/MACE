@@ -1,0 +1,29 @@
+{
+  "source": "existing_d12",
+  "slurm_config": {
+    "scripts": {
+      "submitcrystal23.sh": {
+        "source_script": "submitcrystal23.sh",
+        "step_specific_name": "submitcrystal23_opt_1.sh",
+        "resources": {
+          "ntasks": 16,
+          "nodes": 1,
+          "walltime": "7-00:00:00",
+          "memory_per_cpu": "3G",
+          "account": "general_long",
+          "module": "CRYSTAL/23-intel-2023a",
+          "scratch_dir": "$SCRATCH/crys23"
+        },
+        "customizations": [],
+        "copy_to_workdir": true,
+        "workflow_id": "workflow_20260113_125231"
+      }
+    },
+    "resources": {},
+    "modules": {}
+  },
+  "workflow_id": "workflow_20260113_125231",
+  "step_number": 1,
+  "calculation_type": "OPT",
+  "timestamp": "2026-01-13T12:52:41.900746"
+}

@@ -1,0 +1,181 @@
+{
+  "created": "2026-01-13T12:52:31.552519",
+  "input_type": "d12",
+  "input_directory": "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial",
+  "input_files": {
+    "cif": [],
+    "d12": [
+      "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/CuI_PBE_slab_opt.d12",
+      "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/NiI2_PBE_slab_opt_cutcorrect.d12",
+      "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/RbCl_PBE_slab_opt.d12",
+      "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/FeCl2_PBE_slab_opt_cutcorrect.d12",
+      "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/TiCl2_PBE_slab_opt_nowP1.d12",
+      "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/TeI_PBE_slab_opt.d12",
+      "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/TiBr2_PBE_slab_opt_nowP1.d12",
+      "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/CuF2_PBE_slab_opt_cutcorrect.d12",
+      "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/CoI2_PBE_slab_opt_cutcorrect.d12",
+      "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/ScCl_PBE_slab_opt.d12",
+      "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/VI2_PBE_slab_opt_cutcorrect.d12",
+      "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/BiI_PBE_slab_opt.d12",
+      "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/CuBr_PBE_slab_opt.d12",
+      "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/YCl_PBE_slab_opt.d12",
+      "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/VBr2_PBE_slab_opt_nowP1.d12",
+      "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/VCl2_PBE_slab_opt_nowP1.d12"
+    ]
+  },
+  "workflow_sequence": [
+    "OPT",
+    "SP",
+    "BAND",
+    "DOSS"
+  ],
+  "step_configurations": {
+    "OPT_1": {
+      "source": "existing_d12",
+      "slurm_config": {
+        "scripts": {
+          "submitcrystal23.sh": {
+            "source_script": "submitcrystal23.sh",
+            "step_specific_name": "submitcrystal23_opt_1.sh",
+            "resources": {
+              "ntasks": 16,
+              "nodes": 1,
+              "walltime": "7-00:00:00",
+              "memory_per_cpu": "3G",
+              "account": "general_long",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20260113_125231"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    },
+    "SP_2": {
+      "calculation_type": "SP",
+      "source": "CRYSTALOptToD12.py",
+      "customization_level": 0,
+      "inherit_settings": true,
+      "slurm_config": {
+        "scripts": {
+          "submitcrystal23.sh": {
+            "source_script": "submitcrystal23.sh",
+            "step_specific_name": "submitcrystal23_sp_2.sh",
+            "resources": {
+              "ntasks": 16,
+              "nodes": 1,
+              "walltime": "3-00:00:00",
+              "memory_per_cpu": "3G",
+              "account": "general_long",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20260113_125231"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    },
+    "BAND_3": {
+      "calculation_type": "BAND",
+      "source": "CRYSTALOptToD3.py",
+      "requires_wavefunction": true,
+      "d3_calculation": true,
+      "d3_config_mode": "basic",
+      "d3_config": {
+        "calculation_type": "BAND",
+        "path": "auto",
+        "bands": "auto",
+        "shrink": "auto",
+        "labels": "auto",
+        "auto_path": true,
+        "n_points": 10000,
+        "path_method": "coordinates"
+      },
+      "slurm_config": {
+        "scripts": {
+          "submit_prop.sh": {
+            "source_script": "submit_prop.sh",
+            "step_specific_name": "submit_prop_band_3.sh",
+            "resources": {
+              "ntasks": 28,
+              "nodes": 1,
+              "walltime": "2:00:00",
+              "memory": "48G",
+              "account": "mendoza_q",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23/prop"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20260113_125231"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    },
+    "DOSS_4": {
+      "calculation_type": "DOSS",
+      "source": "CRYSTALOptToD3.py",
+      "requires_wavefunction": true,
+      "d3_calculation": true,
+      "d3_config_mode": "basic",
+      "d3_config": {
+        "calculation_type": "DOSS",
+        "n_points": 10000,
+        "bands": "all",
+        "projection_type": 0,
+        "energy_range": [
+          -20,
+          20
+        ]
+      },
+      "slurm_config": {
+        "scripts": {
+          "submit_prop.sh": {
+            "source_script": "submit_prop.sh",
+            "step_specific_name": "submit_prop_doss_4.sh",
+            "resources": {
+              "ntasks": 28,
+              "nodes": 1,
+              "walltime": "2:00:00",
+              "memory": "48G",
+              "account": "mendoza_q",
+              "module": "CRYSTAL/23-intel-2023a",
+              "scratch_dir": "$SCRATCH/crys23/prop"
+            },
+            "customizations": [],
+            "copy_to_workdir": true,
+            "workflow_id": "workflow_20260113_125231"
+          }
+        },
+        "resources": {},
+        "modules": {}
+      }
+    }
+  },
+  "cif_conversion_config": null,
+  "isolation_mode": "isolated",
+  "post_completion_action": "keep",
+  "queue_management": {
+    "max_jobs": 950,
+    "reserve_slots": 50,
+    "max_submit_batch": 10,
+    "max_recovery_attempts": 3
+  },
+  "execution_settings": {
+    "max_concurrent_jobs": 200,
+    "enable_material_tracking": true,
+    "auto_progression": true
+  },
+  "workflow_id": "workflow_20260113_125231",
+  "scripts_directory": "/mnt/ufs18/rs-020/MX_MX2_transitionmetalhalides/MACE_tutorial/workflow_scripts"
+}

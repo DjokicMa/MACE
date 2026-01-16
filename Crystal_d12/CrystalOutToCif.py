@@ -24,6 +24,9 @@ USAGE:
     4. With custom options:
        python CrystalOutToCif.py . --output-dir cifs/ --include-metadata
 
+    5. With symmetry verification (compares P1 vs symmetrized):
+       python CrystalOutToCif.py . --preserve-symmetry --verify
+
 AUTHOR:
     Marcus Djokic
     Institution: Michigan State University, Mendoza Group
@@ -42,6 +45,19 @@ from datetime import datetime
 from d12_parsers import CrystalOutputParser
 from d12_constants import ATOMIC_NUMBER_TO_SYMBOL
 
+# Optional imports for symmetry verification
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+
+try:
+    import spglib
+    SPGLIB_AVAILABLE = True
+except ImportError:
+    SPGLIB_AVAILABLE = False
+
 
 class CrystalOutToCifConverter:
     """Main converter class for CRYSTAL output to CIF conversion"""
@@ -57,6 +73,8 @@ class CrystalOutToCifConverter:
         self.options = options or {}
         self.converted_files = []
         self.failed_files = []
+        self.verified_files = []      # Files that passed verification
+        self.verify_failed_files = [] # Files that failed verification (file, message)
 
     @staticmethod
     def format_element_symbol(symbol: str) -> str:
@@ -451,6 +469,206 @@ class CrystalOutToCifConverter:
 
                 f.write(f"{label:8s} {symbol:2s} {x_fract:12.{precision}f} {y_fract:12.{precision}f} {z_fract:12.{precision}f}\n")
 
+    def verify_symmetry(self, geometry_data: Dict[str, Any], tolerance: float = 0.01) -> Tuple[bool, str, Dict[str, Any]]:
+        """
+        Verify that symmetrized CIF matches P1 representation.
+
+        Compares the full P1 atom list against the symmetry-expanded unique atoms
+        to ensure the space group and origin are correctly applied.
+
+        Args:
+            geometry_data: Geometry data from parser
+            tolerance: Position tolerance in fractional coordinates (default: 0.01)
+
+        Returns:
+            Tuple of (is_valid, message, details_dict)
+        """
+        if not NUMPY_AVAILABLE or not SPGLIB_AVAILABLE:
+            return False, "Verification requires numpy and spglib packages", {}
+
+        details = {
+            "p1_atom_count": 0,
+            "unique_atom_count": 0,
+            "expanded_atom_count": 0,
+            "space_group_detected": None,
+            "space_group_input": None,
+            "position_matches": 0,
+            "position_mismatches": 0,
+        }
+
+        try:
+            # Get all coordinates (P1 representation)
+            all_coords = geometry_data.get("coordinates", [])
+            if not all_coords:
+                return False, "No coordinates found in geometry data", details
+
+            details["p1_atom_count"] = len(all_coords)
+
+            # Get cell parameters
+            cell_params = geometry_data.get("primitive_cell", [])
+            if not cell_params:
+                cell_params = geometry_data.get("conventional_cell", [])
+            if not cell_params or len(cell_params) < 6:
+                return False, "No cell parameters found", details
+
+            a, b, c = float(cell_params[0]), float(cell_params[1]), float(cell_params[2])
+            alpha, beta, gamma = float(cell_params[3]), float(cell_params[4]), float(cell_params[5])
+
+            # Convert angles to radians
+            alpha_rad = np.radians(alpha)
+            beta_rad = np.radians(beta)
+            gamma_rad = np.radians(gamma)
+
+            # Build lattice vectors
+            cos_alpha = np.cos(alpha_rad)
+            cos_beta = np.cos(beta_rad)
+            cos_gamma = np.cos(gamma_rad)
+            sin_gamma = np.sin(gamma_rad)
+
+            # Standard crystallographic convention for lattice vectors
+            lattice = np.array([
+                [a, 0, 0],
+                [b * cos_gamma, b * sin_gamma, 0],
+                [c * cos_beta,
+                 c * (cos_alpha - cos_beta * cos_gamma) / sin_gamma,
+                 c * np.sqrt(1 - cos_alpha**2 - cos_beta**2 - cos_gamma**2 +
+                            2 * cos_alpha * cos_beta * cos_gamma) / sin_gamma]
+            ])
+
+            # Build positions and atomic numbers arrays
+            positions = []
+            numbers = []
+            for coord in all_coords:
+                x = float(coord["x"])
+                y = float(coord["y"])
+                z = float(coord["z"])
+                positions.append([x, y, z])
+
+                atom_num = int(coord["atom_number"])
+                # Handle ECP atoms (CRYSTAL adds +200)
+                if atom_num > 200:
+                    atom_num -= 200
+                numbers.append(atom_num)
+
+            positions = np.array(positions)
+            numbers = np.array(numbers)
+
+            # Use spglib to find symmetry from P1 coordinates
+            cell = (lattice, positions, numbers)
+
+            # Get space group
+            sg_info = spglib.get_spacegroup(cell, symprec=tolerance)
+            if sg_info:
+                details["space_group_detected"] = sg_info
+
+            # Get symmetry dataset
+            dataset = spglib.get_symmetry_dataset(cell, symprec=tolerance)
+            if dataset is None:
+                return False, "spglib could not determine symmetry", details
+
+            # Use attribute access (spglib >= 2.0) with fallback for older versions
+            try:
+                sg_number = dataset.number
+                equivalent_atoms = dataset.equivalent_atoms
+                rotations = dataset.rotations
+                translations = dataset.translations
+            except AttributeError:
+                # Fallback for older spglib versions
+                sg_number = dataset['number']
+                equivalent_atoms = dataset['equivalent_atoms']
+                rotations = dataset['rotations']
+                translations = dataset['translations']
+
+            details["space_group_input"] = geometry_data.get("spacegroup", "Unknown")
+
+            # Find unique atoms (equivalent atoms mapping)
+            unique_indices = np.unique(equivalent_atoms, return_index=True)[1]
+            details["unique_atom_count"] = len(unique_indices)
+
+            # Get symmetry operations
+            n_ops = len(rotations)
+
+            # Expand unique atoms using symmetry operations
+            expanded_positions = []
+            expanded_numbers = []
+
+            for idx in unique_indices:
+                pos = positions[idx]
+                num = numbers[idx]
+
+                for i in range(n_ops):
+                    # Apply symmetry operation: R * pos + t
+                    new_pos = np.dot(rotations[i], pos) + translations[i]
+                    # Wrap to [0, 1)
+                    new_pos = new_pos % 1.0
+
+                    # Check if this position already exists
+                    is_duplicate = False
+                    for existing_pos in expanded_positions:
+                        diff = np.abs(new_pos - existing_pos)
+                        # Handle periodic boundary
+                        diff = np.minimum(diff, 1 - diff)
+                        if np.all(diff < tolerance):
+                            is_duplicate = True
+                            break
+
+                    if not is_duplicate:
+                        expanded_positions.append(new_pos)
+                        expanded_numbers.append(num)
+
+            expanded_positions = np.array(expanded_positions)
+            expanded_numbers = np.array(expanded_numbers)
+            details["expanded_atom_count"] = len(expanded_positions)
+
+            # Compare P1 vs expanded
+            if len(all_coords) != len(expanded_positions):
+                msg = (f"Atom count mismatch: P1 has {len(all_coords)} atoms, "
+                       f"symmetry expansion gives {len(expanded_positions)} atoms")
+                return False, msg, details
+
+            # Match each P1 atom to an expanded atom
+            matched = [False] * len(expanded_positions)
+            for i, coord in enumerate(all_coords):
+                p1_pos = np.array([float(coord["x"]), float(coord["y"]), float(coord["z"])])
+                p1_pos = p1_pos % 1.0  # Wrap to [0, 1)
+
+                atom_num = int(coord["atom_number"])
+                if atom_num > 200:
+                    atom_num -= 200
+
+                found_match = False
+                for j, (exp_pos, exp_num) in enumerate(zip(expanded_positions, expanded_numbers)):
+                    if matched[j]:
+                        continue
+                    if exp_num != atom_num:
+                        continue
+
+                    diff = np.abs(p1_pos - exp_pos)
+                    diff = np.minimum(diff, 1 - diff)  # Periodic boundary
+
+                    if np.all(diff < tolerance):
+                        matched[j] = True
+                        found_match = True
+                        details["position_matches"] += 1
+                        break
+
+                if not found_match:
+                    details["position_mismatches"] += 1
+
+            if details["position_mismatches"] > 0:
+                msg = (f"Position mismatch: {details['position_mismatches']} atoms in P1 "
+                       f"could not be matched to symmetry-expanded positions")
+                return False, msg, details
+
+            # Success
+            msg = (f"Verification passed: {details['p1_atom_count']} P1 atoms match "
+                   f"{details['unique_atom_count']} unique atoms expanded to "
+                   f"{details['expanded_atom_count']} (SG: {sg_info})")
+            return True, msg, details
+
+        except Exception as e:
+            return False, f"Verification error: {str(e)}", details
+
     def convert_file(self, out_file: str, cif_file: Optional[str] = None) -> bool:
         """
         Convert a single CRYSTAL output file to CIF.
@@ -516,6 +734,30 @@ class CrystalOutToCifConverter:
             if self.options.get("verbose", False):
                 print(f"  Created: {cif_file}")
 
+            # Run symmetry verification if requested
+            if self.options.get("verify", False):
+                # Only verify 3D crystals (not slabs, polymers, molecules)
+                if geometry_data.get("dimensionality", "CRYSTAL") == "CRYSTAL":
+                    tolerance = self.options.get("verify_tolerance", 0.01)
+                    is_valid, msg, details = self.verify_symmetry(geometry_data, tolerance)
+
+                    if is_valid:
+                        if self.options.get("verbose", False):
+                            print(f"  [VERIFY OK] {msg}")
+                        self.verified_files.append((out_file, msg))
+                    else:
+                        print(f"  [VERIFY FAIL] {msg}")
+                        self.verify_failed_files.append((out_file, msg, details))
+                        if self.options.get("verbose", False) and details:
+                            print(f"    Details: P1={details.get('p1_atom_count', '?')} atoms, "
+                                  f"Unique={details.get('unique_atom_count', '?')}, "
+                                  f"Expanded={details.get('expanded_atom_count', '?')}")
+                            if details.get("space_group_detected"):
+                                print(f"    Detected SG: {details['space_group_detected']}")
+                else:
+                    if self.options.get("verbose", False):
+                        print(f"  [VERIFY SKIP] Symmetry verification only for 3D crystals")
+
             self.converted_files.append((out_file, cif_file))
             return True
 
@@ -575,6 +817,31 @@ class CrystalOutToCifConverter:
         print(f"  Successful: {success_count}/{len(out_files)}")
         print(f"  Failed: {len(self.failed_files)}")
 
+        # Verification summary (if verification was enabled)
+        if self.options.get("verify", False):
+            total_verified = len(self.verified_files) + len(self.verify_failed_files)
+            print(f"\nVerification results:")
+            print(f"  Passed: {len(self.verified_files)}/{total_verified}")
+            print(f"  Failed: {len(self.verify_failed_files)}/{total_verified}")
+
+            # Always show verification failures (they're important!)
+            if self.verify_failed_files:
+                print(f"\n{'='*60}")
+                print(f"VERIFICATION FAILURES ({len(self.verify_failed_files)} files):")
+                print(f"{'='*60}")
+                for out_file, msg, details in self.verify_failed_files:
+                    print(f"\n  {Path(out_file).name}:")
+                    print(f"    {msg}")
+                    if details:
+                        print(f"    P1 atoms: {details.get('p1_atom_count', '?')}, "
+                              f"Unique: {details.get('unique_atom_count', '?')}, "
+                              f"Expanded: {details.get('expanded_atom_count', '?')}")
+                        if details.get("space_group_detected"):
+                            print(f"    Detected SG: {details['space_group_detected']}")
+                        if details.get("space_group_input"):
+                            print(f"    Input SG: {details['space_group_input']}")
+                print(f"{'='*60}")
+
         if self.failed_files and self.options.get("verbose", False):
             print("\nFailed conversions:")
             for out_file, error in self.failed_files:
@@ -612,6 +879,8 @@ Examples:
   %(prog)s . --output-dir cifs/            # Save CIFs to specific directory
   %(prog)s . --include-metadata --verbose  # Include metadata and verbose output
   %(prog)s . --dry-run                     # Show what would be converted
+  %(prog)s . --preserve-symmetry --verify  # Symmetrized CIF with verification
+  %(prog)s . --verify --verify-tolerance 0.001  # Strict tolerance check
         """
     )
 
@@ -666,6 +935,17 @@ Examples:
         action="store_true",
         help="Verbose output"
     )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Verify symmetrized CIF matches P1 representation using spglib (requires numpy, spglib)"
+    )
+    parser.add_argument(
+        "--verify-tolerance",
+        type=float,
+        default=0.01,
+        help="Position tolerance for symmetry verification in fractional coords (default: 0.01)"
+    )
 
     args = parser.parse_args()
 
@@ -680,7 +960,19 @@ Examples:
         "include_metadata": args.include_metadata,
         "dry_run": args.dry_run,
         "verbose": args.verbose,
+        "verify": args.verify,
+        "verify_tolerance": args.verify_tolerance,
     }
+
+    # Check dependencies for verification
+    if args.verify and (not NUMPY_AVAILABLE or not SPGLIB_AVAILABLE):
+        missing = []
+        if not NUMPY_AVAILABLE:
+            missing.append("numpy")
+        if not SPGLIB_AVAILABLE:
+            missing.append("spglib")
+        print(f"Warning: --verify requires {', '.join(missing)}. Install with: pip install {' '.join(missing)}")
+        print("Continuing without verification...")
 
     # Create converter and run
     converter = CrystalOutToCifConverter(options)
