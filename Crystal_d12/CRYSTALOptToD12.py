@@ -226,8 +226,22 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             if cell_line:
                 f.write(f"{cell_line}\n")
 
-        # Atomic coordinates - filter based on symmetry preference
-        coords = geometry_data["coordinates"]
+        # Atomic coordinates - use crystallographic coordinates when conventional cell is used
+        # For centered lattices (non-P space groups), CRYSTAL reports both primitive and
+        # crystallographic (conventional) coordinates. When using conventional_cell for
+        # lattice parameters, we MUST use crystallographic_coordinates to match.
+        use_conventional = geometry_data.get("conventional_cell") is not None
+        crystallographic_coords = geometry_data.get("crystallographic_coordinates", [])
+
+        if use_conventional and crystallographic_coords:
+            # Use crystallographic coordinates to match conventional cell
+            coords = crystallographic_coords
+            print(f"  Using crystallographic coordinates ({len(coords)} atoms) with conventional cell")
+        else:
+            # Use primitive coordinates (default)
+            coords = geometry_data["coordinates"]
+            if use_conventional and not crystallographic_coords:
+                print(f"  Warning: Conventional cell used but crystallographic coordinates not found")
 
         # Filter coordinates if requested
         if settings.get("write_only_unique", False):
