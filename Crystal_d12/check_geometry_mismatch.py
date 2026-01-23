@@ -184,52 +184,55 @@ def find_source_out_file(d12_name, old_dir):
     """
     Given a follow-up d12 filename, find the corresponding .out file in old_dir.
 
-    Follow-up names look like:
-      Material_OPT_..._POB-TZVP-REV2_opt_B3LYP-D3-D3_optimized.d12
-      Material_OPT_..._POB-TZVP-REV2_sp_PBE-D3-D3_optimized.d12
+    CRYSTALOptToD12.py appends _{calctype}_{functional}_optimized to the source base name.
+    The source base name itself may contain _opt, _sp, etc. as part of the original name.
 
-    Source names look like:
-      Material_OPT_..._POB-TZVP-REV2.out
+    Strategy: find all positions where _(opt|sp|freq)_ occurs, try each as a split point
+    from RIGHT to LEFT, and return the first one that matches an existing .out file.
     """
     base = d12_name
     if base.endswith('.d12'):
         base = base[:-4]
 
-    # Try stripping common suffixes added by CRYSTALOptToD12.py
-    # Pattern: _opt_FUNCTIONAL_optimized or _sp_FUNCTIONAL_optimized
-    patterns = [
-        r'_opt_.*_optimized$',
-        r'_sp_.*_optimized$',
-        r'_freq_.*_optimized$',
-        r'_opt_.*$',
-        r'_sp_.*$',
-    ]
+    # Find all positions where _(opt|sp|freq)_ occurs in the name
+    # These are candidate split points where CRYSTALOptToD12 appended its suffix
+    split_candidates = []
+    for match in re.finditer(r'_(opt|sp|freq)_', base):
+        candidate_base = base[:match.start()]
+        split_candidates.append(candidate_base)
 
-    source_base = None
-    for pattern in patterns:
-        match = re.search(pattern, base)
-        if match:
-            source_base = base[:match.start()]
-            break
+    # Also try stripping just _optimized from the end (in case suffix is simpler)
+    if base.endswith('_optimized'):
+        stripped = base[:-len('_optimized')]
+        # Then try stripping the functional and calc type
+        for match in re.finditer(r'_(opt|sp|freq)_', stripped):
+            candidate_base = stripped[:match.start()]
+            if candidate_base not in split_candidates:
+                split_candidates.append(candidate_base)
 
-    if not source_base:
-        # Fallback: try removing last _suffix
-        parts = base.rsplit('_', 1)
-        if len(parts) > 1:
-            source_base = parts[0]
-        else:
-            source_base = base
+    # Try candidates from RIGHT to LEFT (rightmost split is most likely correct,
+    # since the source name may contain _opt as part of its own name)
+    split_candidates.reverse()
 
-    # Look for .out file in old_dir
-    out_file = os.path.join(old_dir, source_base + ".out")
+    for source_base in split_candidates:
+        if not source_base:
+            continue
+        out_file = os.path.join(old_dir, source_base + ".out")
+        if os.path.exists(out_file):
+            return out_file
+
+    # If no exact match, try glob for partial matches (right to left)
+    for source_base in split_candidates:
+        if not source_base:
+            continue
+        candidates = glob.glob(os.path.join(old_dir, source_base + "*.out"))
+        if candidates:
+            return min(candidates, key=len)
+
+    # Final fallback: try the full base name as-is
+    out_file = os.path.join(old_dir, base + ".out")
     if os.path.exists(out_file):
         return out_file
-
-    # Try glob for partial matches
-    candidates = glob.glob(os.path.join(old_dir, source_base + "*.out"))
-    if candidates:
-        # Return the shortest match (most likely the direct match)
-        return min(candidates, key=len)
 
     return None
 
@@ -240,32 +243,38 @@ def find_source_d12_file(d12_name, old_dir):
     if base.endswith('.d12'):
         base = base[:-4]
 
-    patterns = [
-        r'_opt_.*_optimized$',
-        r'_sp_.*_optimized$',
-        r'_freq_.*_optimized$',
-        r'_opt_.*$',
-        r'_sp_.*$',
-    ]
+    # Same right-to-left strategy as find_source_out_file
+    split_candidates = []
+    for match in re.finditer(r'_(opt|sp|freq)_', base):
+        candidate_base = base[:match.start()]
+        split_candidates.append(candidate_base)
 
-    source_base = None
-    for pattern in patterns:
-        match = re.search(pattern, base)
-        if match:
-            source_base = base[:match.start()]
-            break
+    if base.endswith('_optimized'):
+        stripped = base[:-len('_optimized')]
+        for match in re.finditer(r'_(opt|sp|freq)_', stripped):
+            candidate_base = stripped[:match.start()]
+            if candidate_base not in split_candidates:
+                split_candidates.append(candidate_base)
 
-    if not source_base:
-        parts = base.rsplit('_', 1)
-        source_base = parts[0] if len(parts) > 1 else base
+    split_candidates.reverse()
 
-    d12_file = os.path.join(old_dir, source_base + ".d12")
-    if os.path.exists(d12_file):
-        return d12_file
+    for source_base in split_candidates:
+        if not source_base:
+            continue
+        d12_file = os.path.join(old_dir, source_base + ".d12")
+        if os.path.exists(d12_file):
+            return d12_file
 
-    candidates = glob.glob(os.path.join(old_dir, source_base + "*.d12"))
-    if candidates:
-        return min(candidates, key=len)
+    for source_base in split_candidates:
+        if not source_base:
+            continue
+        candidates = glob.glob(os.path.join(old_dir, source_base + "*.d12"))
+        if candidates:
+            return min(candidates, key=len)
+
+    out_file = os.path.join(old_dir, base + ".d12")
+    if os.path.exists(out_file):
+        return out_file
 
     return None
 
