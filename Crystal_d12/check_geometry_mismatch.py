@@ -289,7 +289,7 @@ def find_related_files(d12_path):
             related.append(candidate)
     # Also find SLURM output files (.o12345 pattern)
     for f in glob.glob(base + '.o*'):
-        if f != d12_path:
+        if f != d12_path and f not in related:
             related.append(f)
     # Find job output files with job IDs (base-123456.o pattern)
     parent = os.path.dirname(d12_path) or '.'
@@ -335,6 +335,18 @@ def check_mismatch(d12_path, old_dir):
         # Primitive lattice - no mismatch possible
         return "correct", "Primitive lattice (no centering), coordinates are unambiguous"
 
+    # Check if conventional and primitive cells are the same (P-lattice reported with both)
+    primitive_cell = out_data.get("primitive_cell")
+    if primitive_cell and conventional_cell:
+        try:
+            conv_vals = [float(x) for x in conventional_cell]
+            prim_vals = [float(x) for x in primitive_cell]
+            if all(abs(c - p) < 1e-4 for c, p in zip(conv_vals, prim_vals)):
+                # Cells are identical - this is a P-lattice, no mismatch possible
+                return "correct", "Primitive lattice (conventional = primitive cell)"
+        except (ValueError, TypeError):
+            pass
+
     if not crystallographic_coords:
         # No crystallographic coordinates extracted - can't verify
         return "skipped", "Crystallographic coordinates not found in output"
@@ -366,10 +378,10 @@ def check_mismatch(d12_path, old_dir):
         )
 
 
-def organize_files(results, old_dir, dry_run=False):
+def organize_files(results, old_dir, check_dir=".", dry_run=False):
     """Organize files into correct_geometry/ and needs_regeneration/ folders."""
-    correct_dir = "correct_geometry"
-    regen_dir = "needs_regeneration"
+    correct_dir = os.path.join(check_dir, "correct_geometry")
+    regen_dir = os.path.join(check_dir, "needs_regeneration")
 
     if not dry_run:
         os.makedirs(correct_dir, exist_ok=True)
@@ -399,6 +411,8 @@ def organize_files(results, old_dir, dry_run=False):
             if dry_run:
                 print(f"  [DRY-RUN] {action}: {fname} -> {target_dir}/")
             else:
+                if not os.path.exists(f):
+                    continue
                 shutil.move(f, target)
                 print(f"  {action}d: {fname} -> {target_dir}/")
 
@@ -534,7 +548,7 @@ After organizing, run 'mace opt2d12' in needs_regeneration/ to regenerate the ba
     if args.organize:
         print("Organizing files...")
         print("-" * 40)
-        organize_files(results, args.old_dir, dry_run=args.dry_run)
+        organize_files(results, args.old_dir, check_dir=args.check_dir, dry_run=args.dry_run)
         print()
         if args.dry_run:
             print("[DRY-RUN] No files were actually moved.")
