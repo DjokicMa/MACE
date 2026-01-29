@@ -932,7 +932,7 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
     
     # Output options
     band_config["plot"] = True  # Always generate plot
-    band_config["print_eigenvalues"] = yes_no_prompt("\nPrint eigenvalues to output?", "yes")
+    band_config["print_eigenvalues"] = yes_no_prompt("\nPrint eigenvalues to output?", "no")
     
     return band_config
 
@@ -1176,8 +1176,7 @@ def configure_doss_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
     npol = int(input("NPOL value [14]: ") or 14)
     doss_config["npol"] = npol
     
-    # Always print integrated DOS
-    doss_config["print_integrated"] = True
+    doss_config["print_integrated"] = yes_no_prompt("\nPrint integrated DOS to output?", "no")
     
     return doss_config
 
