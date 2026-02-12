@@ -975,10 +975,17 @@ class D3Generator:
                         result = get_seekpath_full_kpath(space_group, lattice_type, str(self.input_file))
                         if result:
                             frac_segments, kpath_info = result
-                            # Extract and process shrink factor
-                            shrink = extract_and_process_shrink(str(self.input_file), self.base_name, 
-                                                               self.input_dir, config)
-                            
+
+                            # For seekpath library results, use the library's calculated shrink factor
+                            # This ensures exact integer representation of parametric k-points
+                            if kpath_info.get('source') == 'seekpath_library' and 'shrink_factor' in kpath_info:
+                                shrink = kpath_info['shrink_factor']
+                                print(f"    Using seekpath library's shrink factor: {shrink}")
+                            else:
+                                # Fall back to D12's shrink factor
+                                shrink = extract_and_process_shrink(str(self.input_file), self.base_name,
+                                                                   self.input_dir, config)
+
                             # Scale fractional coordinates
                             coord_segments, adjusted_shrink = scale_kpoint_segments(frac_segments, shrink)
                             config["segments"] = coord_segments

@@ -106,11 +106,26 @@ python CRYSTALOptToD3.py --list-configs
 
 **Features**:
 - Literature-standard k-point paths for all space groups (Setyawan & Curtarolo 2010)
-- **NEW**: SeeK-path integration with extended Bravais lattice notation
+- **NEW**: SeeK-path library integration for accurate parametric k-points
 - **NEW**: Cell parameter-aware extended Bravais lattice determination
 - Automatic SHRINK factor extraction and scaling
 - Support for both label-based and coordinate-based paths
 - Comprehensive k-point coordinate dictionaries for all crystal systems
+
+**SeeKPath Library Integration**:
+
+For accurate band structure k-paths, install the `seekpath` library:
+```bash
+pip install seekpath
+```
+
+When seekpath is installed and you select "SeeK-path full paths" (option 4) during BAND configuration:
+- K-point coordinates are calculated from actual lattice parameters (not static tables)
+- Parametric k-points (monoclinic, orthorhombic, rhombohedral, etc.) are handled correctly
+- SHRINK factor is automatically adjusted for exact integer representation
+- Discontinuities in the path are properly detected and marked
+
+Without seekpath, the code falls back to static dictionaries which are only accurate for cubic systems.
 
 **SHRINK Factor Extraction Logic**:
 The system uses a hierarchical approach to obtain valid SHRINK values:

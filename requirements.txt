@@ -1,0 +1,24 @@
+# MACE - Mendoza Automated CRYSTAL Engine
+# Core dependencies for MACE functionality
+
+# Scientific computing
+numpy>=1.21.0
+matplotlib>=3.5.0
+
+# Atomic simulation and structure handling
+ase>=3.22.0
+
+# Symmetry analysis
+spglib>=1.16.0
+
+# PDF processing
+PyPDF2>=2.0.0
+
+# Configuration and data handling
+pyyaml>=6.0
+pandas>=1.3.0
+
+# Optional but recommended: Accurate band structure k-path generation
+# Implements HPKOT methodology (Hinuma et al., Comp. Mat. Sci. 128, 140 (2017))
+# Uncomment the line below to include seekpath
+# seekpath

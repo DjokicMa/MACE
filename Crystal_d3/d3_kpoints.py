@@ -21,6 +21,22 @@ import re
 from pathlib import Path
 import numpy as np
 
+# Try to import the accurate seekpath interface module
+try:
+    from .seekpath_interface import (
+        get_accurate_bandpath,
+        SEEKPATH_AVAILABLE as SEEKPATH_LIBRARY_AVAILABLE
+    )
+except ImportError:
+    try:
+        from seekpath_interface import (
+            get_accurate_bandpath,
+            SEEKPATH_AVAILABLE as SEEKPATH_LIBRARY_AVAILABLE
+        )
+    except ImportError:
+        SEEKPATH_LIBRARY_AVAILABLE = False
+        get_accurate_bandpath = None
+
 
 # Centrosymmetric space groups (with inversion symmetry)
 CENTROSYMMETRIC_SPACE_GROUPS = {
@@ -2697,36 +2713,72 @@ def detect_inversion_from_crystal_output(output_file: str) -> Tuple[bool, str]:
 
 def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optional[str] = None) -> Tuple[List[List[float]], Dict[str, Any]]:
     """Get comprehensive SeeK-path k-paths with extended Bravais lattice notation.
-    
+
     Based on SeeK-path (https://seekpath.materialscloud.io/)
-    These paths include extended Bravais lattice symbols and primed points for 
+    These paths include extended Bravais lattice symbols and primed points for
     non-centrosymmetric groups.
-    
+
+    When the seekpath Python library is installed and an output file is provided,
+    this function uses the accurate seekpath library which correctly handles
+    parametric k-points for non-cubic lattices. Otherwise, it falls back to the
+    static seekpath_data dictionary (accurate only for cubic systems).
+
     Args:
         space_group: Space group number
         lattice_type: Lattice type (P, C, F, I, R, etc.)
         out_file: Optional CRYSTAL output file to extract cell parameters
-        
+
     Returns:
         Tuple of (segments, kpath_info) where:
             segments: List of k-path segments as fractional coordinates
             kpath_info: Dict with inversion symmetry and source information
     """
-    
+
+    # Try to use the accurate seekpath library if available and output file provided
+    if SEEKPATH_LIBRARY_AVAILABLE and out_file and get_accurate_bandpath is not None:
+        try:
+            segments, labels, kpath_info = get_accurate_bandpath(out_file)
+
+            # Convert segments from integer scaled coordinates to fractional
+            # get_accurate_bandpath returns segments already scaled by shrink_factor
+            # We need to convert back to fractional for compatibility
+            shrink = kpath_info.get('shrink_factor', 16)
+            fractional_segments = []
+            for seg in segments:
+                fractional_seg = [
+                    seg[0] / shrink, seg[1] / shrink, seg[2] / shrink,
+                    seg[3] / shrink, seg[4] / shrink, seg[5] / shrink
+                ]
+                fractional_segments.append(fractional_seg)
+
+            kpath_info['source'] = 'seekpath_library'
+            kpath_info['labels'] = labels  # Include labels for reference
+
+            print(f"  Using seekpath library: {kpath_info.get('bravais_lattice_extended', 'unknown')} "
+                  f"({'centrosymmetric' if kpath_info.get('has_inversion', True) else 'non-centrosymmetric'})")
+
+            return fractional_segments, kpath_info
+
+        except Exception as e:
+            print(f"  Warning: seekpath library failed ({e}), falling back to static data")
+
+    # Fallback to static seekpath_data dictionary
+    # (Note: This is only accurate for cubic lattices; non-cubic have parametric k-points)
+
     # Try to extract lattice parameters if output file provided
     lattice_params = None
     has_inversion = has_inversion_symmetry(space_group)  # Default from space group
-    
+
     if out_file:
         lattice_params = extract_lattice_parameters_from_output(out_file)
-        
+
         # Detect inversion from output file
         detected_inv, method = detect_inversion_from_crystal_output(out_file)
         if method != 'unknown' and method != 'file_error':
             has_inversion = detected_inv
             print(f"  Detected {'centrosymmetric' if has_inversion else 'non-centrosymmetric'} "
                   f"structure via {method}")
-    
+
     # Get extended Bravais symbol with cell parameters if available
     if lattice_params:
         ext_bravais = get_extended_bravais(
@@ -2736,7 +2788,7 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
         )
     else:
         ext_bravais = get_extended_bravais(space_group, lattice_type)
-    
+
     # Select appropriate k-path based on inversion
     if has_inversion:
         lookup_key = ext_bravais  # Use base version for centrosymmetric
@@ -2746,28 +2798,34 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
             print(f"  WARNING: Non-centrosymmetric path not available for {ext_bravais}")
             print("  Using centrosymmetric path (may miss important features)")
             lookup_key = ext_bravais
-    
+
     # Prepare k-path info dictionary
     kpath_info = {
         "has_inversion": has_inversion,
         "extended_bravais": ext_bravais,
-        "lookup_key": lookup_key
+        "lookup_key": lookup_key,
+        "source": "seekpath_data"
     }
-    
+
+    # Warn about static data limitations for non-cubic
+    if not ext_bravais.startswith('c'):
+        print(f"  Note: Using static seekpath_data for {ext_bravais}. "
+              f"Install 'seekpath' library for accurate parametric k-points.")
+
     # Get path data if available
     if lookup_key in seekpath_data:
         return seekpath_data[lookup_key]["segments"], kpath_info
     else:
         # Fallback to literature path first
         print(f"\nSeeK-path data not available for {lookup_key}")
-        
+
         # Try literature path vectors
         lit_segments = get_literature_kpath_vectors(space_group, lattice_type)
         if lit_segments:
             print("Using literature k-path (Setyawan & Curtarolo 2010) instead")
             kpath_info["source"] = "literature"
             return lit_segments, kpath_info
-        
+
         # If no literature path, fall back to standard path
         print("Using standard path instead")
         kpath_info["source"] = "default"
@@ -2817,30 +2875,49 @@ def unicode_to_ascii_kpoint(label: str) -> str:
 
 def get_seekpath_labels(space_group: int, lattice_type: str, out_file: Optional[str] = None) -> List[str]:
     """Get the k-point labels for SeeK-path.
-    
+
     Returns the high-symmetry point labels for the SeeK-path including
     discontinuity markers (|).
-    
+
+    When the seekpath Python library is installed and an output file is provided,
+    this function uses the accurate seekpath library which correctly handles
+    parametric k-points and discontinuity markers. Otherwise, it falls back to
+    the static seekpath_data dictionary.
+
     Args:
         space_group: Space group number
         lattice_type: Lattice type (P, C, F, I, R, etc.)
         out_file: Optional CRYSTAL output file to extract cell parameters
-        
+
     Returns:
-        List of k-point labels
+        List of k-point labels with '|' markers for discontinuities
     """
+
+    # Try to use the accurate seekpath library if available and output file provided
+    if SEEKPATH_LIBRARY_AVAILABLE and out_file and get_accurate_bandpath is not None:
+        try:
+            segments, labels, kpath_info = get_accurate_bandpath(out_file)
+            n_labels = len([l for l in labels if l != '|'])
+            n_discontinuities = labels.count('|')
+            print(f"  Using seekpath library labels: {n_labels} labels with {n_discontinuities} discontinuities")
+            return labels
+        except Exception as e:
+            print(f"  Warning: seekpath library failed ({e}), falling back to static data")
+
+    # Fallback to static seekpath_data dictionary
+
     # Try to extract lattice parameters if output file provided
     lattice_params = None
     has_inversion = has_inversion_symmetry(space_group)  # Default from space group
-    
+
     if out_file:
         lattice_params = extract_lattice_parameters_from_output(out_file)
-        
+
         # Detect inversion from output file
         detected_inv, method = detect_inversion_from_crystal_output(out_file)
         if method != 'unknown' and method != 'file_error':
             has_inversion = detected_inv
-    
+
     # Get extended Bravais symbol with cell parameters if available
     if lattice_params:
         ext_bravais = get_extended_bravais(
@@ -2850,7 +2927,7 @@ def get_seekpath_labels(space_group: int, lattice_type: str, out_file: Optional[
         )
     else:
         ext_bravais = get_extended_bravais(space_group, lattice_type)
-    
+
     # Select appropriate k-path based on inversion
     if has_inversion:
         lookup_key = ext_bravais  # Use base version for centrosymmetric
@@ -2858,17 +2935,17 @@ def get_seekpath_labels(space_group: int, lattice_type: str, out_file: Optional[
         lookup_key = f"{ext_bravais}_noinv"  # Use non-inversion version
         if lookup_key not in seekpath_data:
             lookup_key = ext_bravais  # Fall back to centrosymmetric
-    
+
     # Get path labels if available
     if lookup_key in seekpath_data and "labels" in seekpath_data[lookup_key]:
         labels = seekpath_data[lookup_key]["labels"]
         n_labels = len([l for l in labels if l != '|'])
         n_discontinuities = labels.count('|')
-        print(f"  ✓ Using SeeK-path labels for '{lookup_key}': {n_labels} labels with {n_discontinuities} discontinuities")
+        print(f"  Using SeeK-path labels for '{lookup_key}': {n_labels} labels with {n_discontinuities} discontinuities")
         return labels
     else:
         # Fall back to literature path labels first
-        print(f"  ⚠ WARNING: SeeK-path data not found for lookup_key='{lookup_key}'")
+        print(f"  WARNING: SeeK-path data not found for lookup_key='{lookup_key}'")
         print(f"     Available keys: {list(seekpath_data.keys())[:5]}... ({len(seekpath_data)} total)")
         print(f"     Falling back to literature path (loses primed labels and proper discontinuities!)")
         return get_literature_path_labels(space_group, lattice_type)

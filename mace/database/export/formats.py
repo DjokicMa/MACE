@@ -119,7 +119,7 @@ class ExportFormatter:
             'metadata': {
                 'export_date': datetime.now().isoformat(),
                 'record_count': len(data),
-                'mace_version': '1.0.2-alpha'
+                'mace_version': '1.0.0'
             },
             'data': data
         }

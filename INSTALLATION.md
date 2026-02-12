@@ -46,11 +46,15 @@
 # Core dependencies (required)
 pip install numpy matplotlib ase spglib PyPDF2 pyyaml pandas
 
+# Recommended: accurate band structure k-paths for all crystal systems
+pip install seekpath
+
 # Optional dependencies
 pip install scipy scikit-learn
 
 # Verify installation
 python -c "import numpy, matplotlib, ase, spglib, PyPDF2, yaml, pandas; print('All dependencies installed successfully')"
+python -c "import seekpath; print('seekpath available for accurate band paths')"
 ```
 
 ### Step 2: Configure Environment

@@ -1,0 +1,13 @@
+BAND
+3^2,4T53-CA_BULK_OPTGEOM_TZ_opt_B3LYP-D3-D3_optimized_rev1_sp_B3LYP-D3-D3_optimized - Band Structure - SeeKPath (w.I) - G-M-K-G-A-L-H-A-|-L-M-|-H-K
+9 16 1000 1 648 1 0
+0 0 0  8 0 0
+8 0 0  5 5 0
+5 5 0  0 0 0
+0 0 0  0 0 8
+0 0 8  8 0 8
+8 0 8  5 5 8
+5 5 8  0 0 8
+8 0 8  8 0 0
+5 5 8  5 5 0
+END

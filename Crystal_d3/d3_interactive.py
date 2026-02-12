@@ -701,7 +701,7 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
                 # format_choice == "4" - SeeK-path
                 band_config["seekpath_full"] = True
                 band_config["path"] = "auto"  # Ensure auto-detection is triggered
-                
+
                 # Get SeeK-path full path based on extended Bravais lattice (in fractional coordinates)
                 result = get_seekpath_full_kpath(space_group, lattice_type, out_file)
                 if result:
@@ -715,6 +715,13 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
                         band_config["kpath_source"] = "seekpath_inv"
                     else:
                         band_config["kpath_source"] = "seekpath_noinv"
+
+                    # For seekpath library results, use the library's calculated shrink factor
+                    # This ensures exact integer representation of parametric k-points
+                    if kpath_info.get('source') == 'seekpath_library' and 'shrink_factor' in kpath_info:
+                        shrink = kpath_info['shrink_factor']
+                        print(f"  Using seekpath library's shrink factor: {shrink}")
+
                     # Scale fractional coordinates by shrink factor
                     coord_segments, adjusted_shrink = scale_kpoint_segments(frac_segments, shrink)
                     band_config["segments"] = coord_segments

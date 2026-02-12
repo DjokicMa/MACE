@@ -1,0 +1,16 @@
+BAND
+4^3T201-CA_rev1_sp_B3LYP-D3-D3_optimized - Band Structure - SeeKPath (no.I) - G-X-S-Y-G-Z-U-R-T-Z-|-X-U-|-Y-T-|-S-R
+12 16 1000 1 216 1 0
+0 0 0  8 0 0
+8 0 0  8 8 0
+8 8 0  0 8 0
+0 8 0  0 0 0
+0 0 0  0 0 8
+0 0 8  8 0 8
+8 0 8  8 8 8
+8 8 8  0 8 8
+0 8 8  0 0 8
+8 0 0  8 0 8
+0 8 0  0 8 8
+8 8 0  8 8 8
+END

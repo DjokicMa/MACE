@@ -1,0 +1,10 @@
+BAND
+4^2T1397-HZ_rev1_sp_B3LYP-D3-D3_optimized - Band Structure - SeeKPath (w.I) - G-H-N-G-P-H-|-P-N
+6 16 1000 1 576 1 0
+0 0 0  8 -8 8
+8 -8 8  0 0 8
+0 0 8  0 0 0
+0 0 0  4 4 4
+4 4 4  8 -8 8
+4 4 4  0 0 8
+END

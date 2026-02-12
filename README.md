@@ -15,6 +15,10 @@
   <strong>A comprehensive scientific computing toolkit for CRYSTAL quantum chemistry workflows</strong>
 </p>
 
+<p align="center">
+  <strong>Version 1.0.0</strong>
+</p>
+
 ---
 
 ## 🚀 Overview
@@ -32,7 +36,7 @@ MACE (Mendoza Automated CRYSTAL Engine) is an advanced automation framework for 
 reorganization/
 ├── README.md                  # This file
 ├── INSTALLATION.md            # Detailed installation guide
-├── CLAUDE.md                  # Comprehensive technical documentation
+├── DOCUMENTATION.md                  # Comprehensive technical documentation
 │
 ├── mace_cli                   # Main MACE command-line interface
 ├── setup_mace.py              # Automated installation script
@@ -213,7 +217,7 @@ python Crystal_d3/CRYSTALOptToD3.py --input optimized.out --calc-type BAND
 ## 📚 Documentation
 
 - **[INSTALLATION.md](INSTALLATION.md)** - Complete installation and setup guide
-- **[CLAUDE.md](CLAUDE.md)** - Comprehensive technical documentation
+- **[DOCUMENTATION.md](DOCUMENTATION.md)** - Comprehensive technical documentation
 - **[mace/README.md](mace/README.md)** - MACE framework documentation
 - **[Crystal_d12/README.md](Crystal_d12/README.md)** - D12 input generation guide
 - **[Crystal_d3/README.md](Crystal_d3/README.md)** - D3 property calculation guide
@@ -241,6 +245,9 @@ Core requirements:
 - NumPy, Matplotlib, ASE, spglib
 - PyYAML, pandas, PyPDF2
 
+Optional (recommended):
+- **seekpath** - Accurate band structure k-path generation for all crystal systems
+
 HPC requirements:
 - SLURM workload manager
 - CRYSTAL17/23 quantum chemistry software
@@ -248,7 +255,11 @@ HPC requirements:
 
 Install all dependencies:
 ```bash
+# Core dependencies
 pip install numpy matplotlib ase spglib PyPDF2 pyyaml pandas
+
+# Recommended: accurate band structure k-paths
+pip install seekpath
 ```
 
 ## 🤝 Contributing
@@ -262,7 +273,9 @@ We welcome contributions! Please:
 
 ## 📄 License
 
-[License information to be added]
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2021-2026 Marcus Djokic, Mendoza Group, Michigan State University
 
 ## 📖 Citation
 
@@ -274,7 +287,7 @@ If you use MACE in your research, please cite:
 ## 💬 Support
 
 - **Issues**: Report bugs via GitHub Issues
-- **Documentation**: See [CLAUDE.md](CLAUDE.md) for comprehensive technical details
+- **Documentation**: See [DOCUMENTATION.md](DOCUMENTATION.md) for comprehensive technical details
 - **Contact**: [Contact information to be added]
 
 ---

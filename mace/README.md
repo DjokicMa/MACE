@@ -893,7 +893,7 @@ mace analyze --extract-properties output_directory/
 ## Documentation
 
 - [INSTALLATION.md](INSTALLATION.md) - Installation and setup guide
-- [CLAUDE.md](../CLAUDE.md) - Comprehensive technical documentation
+- [DOCUMENTATION.md](../DOCUMENTATION.md) - Comprehensive technical documentation
 - [Examples](examples/) - Tutorial notebooks and example workflows
 
 ## Advanced Features
@@ -936,11 +936,11 @@ We welcome contributions! Please see our contributing guidelines for:
 
 - **Issues**: Report bugs via GitHub Issues
 - **Questions**: Contact the development team
-- **Documentation**: See [CLAUDE.md](../CLAUDE.md) for comprehensive docs
+- **Documentation**: See [DOCUMENTATION.md](../DOCUMENTATION.md) for comprehensive docs
 
 ## License
 
-[License information to be added]
+This project is licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
 
 ## Citation
 
