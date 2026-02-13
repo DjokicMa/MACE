@@ -280,8 +280,27 @@ Copyright (c) 2021-2026 Marcus Djokic, Mendoza Group, Michigan State University
 ## 📖 Citation
 
 If you use MACE in your research, please cite:
-```
-[Citation to be added]
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18635426.svg)](https://doi.org/10.5281/zenodo.18635426)
+
+**APA Format:**
+> Djokic, M., Maldonado-Lopez, D., Lewis, B., Comaskey, W., & Mendoza-Cortes, J. (2026). Mendoza Automated CRYSTAL Engine (MACE) (v1.0.0). Zenodo. https://doi.org/10.5281/zenodo.18635426
+
+**BibTeX:**
+```bibtex
+@software{djokic_2026_mace,
+  author       = {Djokic, Marcus and
+                  Maldonado-Lopez, Daniel and
+                  Lewis, Brandon and
+                  Comaskey, William and
+                  Mendoza-Cortes, Jose Luis},
+  title        = {Mendoza Automated CRYSTAL Engine (MACE)},
+  version      = {v1.0.0},
+  year         = 2026,
+  publisher    = {Zenodo},
+  doi          = {10.5281/zenodo.18635426},
+  url          = {https://doi.org/10.5281/zenodo.18635426}
+}
 ```
 
 ## 💬 Support
