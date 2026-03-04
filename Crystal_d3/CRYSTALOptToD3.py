@@ -414,7 +414,7 @@ class D3Generator:
                 lattice_type = self.structure_info.get('lattice_type', 'P')
                 path = get_band_path_from_symmetry(space_group, lattice_type)
             else:
-                path = config.get("path", ["G", "X", "M", "G"])
+                path = config.get("path", ["GAMMA", "X", "M", "GAMMA"])
 
             # Validate k-point labels for CRYSTAL23 compatibility
             space_group = self.structure_info.get('space_group', 1)

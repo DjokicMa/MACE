@@ -886,6 +886,55 @@ For action-specific options, use: mace engine --action <ACTION> --help
 
 Note: The --dry-run option shown in some docs is not implemented.
 """,
+        'plotting': """
+Usage: mace plotting [options]
+
+Plot CRYSTAL calculation outputs (band structures, DOS, structures).
+
+Modes:
+  (default)             Interactive mode - guided configuration
+  --band                Plot band structures with CLI options
+  --dos                 Plot density of states with CLI options
+  --structure           Visualize crystal structures from CIF files
+  --all                 Plot all available outputs with defaults
+
+Common Options:
+  -d, --directory DIR   Working directory (default: current)
+  -o, --output DIR      Output directory for generated plots
+
+Band Structure Options:
+  --e-lower FLOAT       Lower energy limit in eV (default: -8)
+  --e-upper FLOAT       Upper energy limit in eV (default: 8)
+  --alpha FLOAT         Transparency for band stacking (default: 0.3)
+  --no-gaps             Remove gaps at k-path discontinuities
+
+DOS Options:
+  --projection TYPE     Projection type: both, total, orbital, tm_orb
+  --no-composition      Disable VB/CB composition labels
+
+Structure Options:
+  --supercell NX NY NZ  Supercell dimensions (default: 2 2 2)
+  --bond-cutoff FLOAT   Bond cutoff in Angstroms (default: 1.9)
+  --color-by-coord      Color atoms by coordination number
+
+Examples:
+  mace plotting                     # Interactive mode
+  mace plotting --band              # Plot all band structures with defaults
+  mace plotting --dos               # Plot all DOS with defaults
+  mace plotting --structure         # Visualize all CIF files
+  mace plotting --all               # Plot everything with defaults
+  mace plotting --band --e-lower -6 --e-upper 6
+  mace plotting --dos --projection orbital
+
+Supported File Types:
+  Band Structure: *.band.band.dat, *.BAND.DAT
+  DOS: *_doss.DOSS.DAT, *.DOSS.DAT
+  Structures: *.cif
+
+Output Formats:
+  - PNG (600 DPI) for publications
+  - SVG for scalable graphics
+""",
         'completion': """
 Usage: mace completion [options]
 
@@ -990,7 +1039,7 @@ def main():
         sys.exit(0)
     
     # Check if asking for help on a specific command (for non-passthrough commands)
-    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'completion']:
+    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'completion', 'plotting']:
         # Show command-specific help
         show_command_help(sys.argv[1])
         sys.exit(0)
@@ -1013,7 +1062,8 @@ Commands:
   recover     Error recovery - automated fixes for SHRINK, memory, and convergence issues
   database    Database queries - search materials, export results, view statistics
   engine      Workflow automation - manages OPT→SP→BAND progression automatically
-  
+  plotting    Plot outputs - band structures, DOS, and structure visualizations
+
 Quick Start:
   mace workflow --interactive      # Plan new workflow
   mace monitor                     # Live dashboard
@@ -1024,9 +1074,9 @@ More Help:
 """
     )
     
-    parser.add_argument('command', nargs='?', 
+    parser.add_argument('command', nargs='?',
                        choices=['workflow', 'submit', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif',
-                               'status', 'queue', 'manager', 'recover', 'database', 'engine', 'credits', 'version'],
+                               'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version'],
                        help='Command to run')
     parser.add_argument('args', nargs='*', help='Arguments for the command')
     parser.add_argument('--no-banner', action='store_true', help='Suppress ASCII art banner')
@@ -2712,7 +2762,24 @@ More Help:
         all_args = args.args + remaining
         sys.argv = ['engine.py'] + all_args
         engine_main()
-        
+
+    elif args.command == 'plotting':
+        # Import and run the plotting module
+        try:
+            from plotting.main import main as plotting_main
+        except ImportError:
+            # Try with mace prefix
+            try:
+                from mace.plotting.main import main as plotting_main
+            except ImportError:
+                print("Error: Could not import plotting module.")
+                print("Please ensure the mace package is properly installed.")
+                sys.exit(1)
+
+        # Combine all arguments
+        all_args = args.args + remaining
+        plotting_main(all_args)
+
     elif args.command == 'version':
         # Show version with main banner
         if BANNER_AVAILABLE:

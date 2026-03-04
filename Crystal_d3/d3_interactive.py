@@ -809,12 +809,12 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
             print(f"  {label}: {coords}")
         print("=" * 60)
         
-        print("\nEnter band path as space-separated labels (e.g., G X M G):")
-        print("Note: Use G for Gamma point. Labels are case-sensitive.")
-        print("      Use | for discontinuous paths (e.g., G X M G | R X)")
-        print("      This creates separate segments without connecting G to R.")
+        print("\nEnter band path as space-separated labels (e.g., GAMMA X M GAMMA):")
+        print("Note: Use GAMMA for the zone center. Labels are case-sensitive.")
+        print("      Use | for discontinuous paths (e.g., GAMMA X M GAMMA | R X)")
+        print("      This creates separate segments without connecting GAMMA to R.")
         path_str = input("Path: ").strip()
-        band_config["path"] = path_str.split() if path_str else ["G", "X", "M", "G"]
+        band_config["path"] = path_str.split() if path_str else ["GAMMA", "X", "M", "GAMMA"]
     
     else:
         # Manual k-point entry

@@ -49,27 +49,28 @@ CENTROSYMMETRIC_SPACE_GROUPS = {
 
 
 # CRYSTAL-supported high-symmetry k-point labels from Tables 14.1 and 14.2
+# Note: Using "GAMMA" instead of "G" to avoid collision with parametric G point in tI2/mC2
 CRYSTAL_KPOINT_LABELS = {
     "P Cubic": {
-        "G": "Γ (0, 0, 0)",
+        "GAMMA": "Γ (0, 0, 0)",
         "M": "(1/2, 1/2, 0)",
         "R": "(1/2, 1/2, 1/2)",
         "X": "(0, 1/2, 0)"
     },
     "FC Cubic": {
-        "G": "Γ (0, 0, 0)",
+        "GAMMA": "Γ (0, 0, 0)",
         "X": "(1/2, 0, 1/2)",
         "L": "(1/2, 1/2, 1/2)",
         "W": "(1/2, 1/4, 3/4)"
     },
     "BC Cubic": {
-        "G": "Γ (0, 0, 0)",
+        "GAMMA": "Γ (0, 0, 0)",
         "H": "(1/2, -1/2, 1/2)",
         "P": "(1/4, 1/4, 1/4)",
         "N": "(0, 0, 1/2)"
     },
     "Hexagonal or P Trigonal": {
-        "G": "Γ (0, 0, 0)",
+        "GAMMA": "Γ (0, 0, 0)",
         "M": "(1/2, 0, 0)",
         "K": "(1/3, 1/3, 0)",
         "A": "(0, 0, 1/2)",
@@ -77,13 +78,13 @@ CRYSTAL_KPOINT_LABELS = {
         "H": "(1/3, 1/3, 1/2)"
     },
     "Rhombohedral (R Trigonal)": {
-        "G": "Γ (0, 0, 0)",
+        "GAMMA": "Γ (0, 0, 0)",
         "T": "(1/2, 1/2, -1/2)",
         "F": "(0, 1/2, 1/2)",
         "L": "(0, 0, 1/2)"
     },
     "P Monoclinic": {
-        "G": "Γ (0, 0, 0)",
+        "GAMMA": "Γ (0, 0, 0)",
         "A": "(1/2, -1/2, 0)",
         "B": "(1/2, 0, 0)",
         "C": "(0, 1/2, 1/2)",
@@ -93,13 +94,13 @@ CRYSTAL_KPOINT_LABELS = {
         "Z": "(0, 0, 1/2)"
     },
     "AC Monoclinic": {
-        "G": "Γ (0, 0, 0)",
+        "GAMMA": "Γ (0, 0, 0)",
         "A": "(1/2, 0, 0)",
         "Y": "(0, 1/2, 1/2)",
         "M": "(1/2, 1/2, 1/2)"
     },
     "P Orthorhombic": {
-        "G": "Γ (0, 0, 0)",
+        "GAMMA": "Γ (0, 0, 0)",
         "S": "(1/2, 1/2, 0)",
         "T": "(0, 1/2, 1/2)",
         "U": "(1/2, 0, 1/2)",
@@ -109,13 +110,13 @@ CRYSTAL_KPOINT_LABELS = {
         "Z": "(0, 0, 1/2)"
     },
     "FC Orthorhombic": {
-        "G": "Γ (0, 0, 0)",
+        "GAMMA": "Γ (0, 0, 0)",
         "Z": "(1/2, 1/2, 0)",
         "Y": "(1/2, 0, 1/2)",
         "T": "(1, 1/2, 1/2)"
     },
     "AC Orthorhombic": {
-        "G": "Γ (0, 0, 0)",
+        "GAMMA": "Γ (0, 0, 0)",
         "S": "(0, 1/2, 0)",
         "T": "(1/2, 1/2, 1/2)",
         "R": "(0, 1/2, 1/2)",
@@ -123,7 +124,7 @@ CRYSTAL_KPOINT_LABELS = {
         "Z": "(0, 0, 1/2)"
     },
     "BC Orthorhombic": {
-        "G": "Γ (0, 0, 0)",
+        "GAMMA": "Γ (0, 0, 0)",
         "S": "(1/2, 0, 0)",
         "T": "(0, 0, 1/2)",
         "R": "(0, 1/2, 0)",
@@ -131,7 +132,7 @@ CRYSTAL_KPOINT_LABELS = {
         "W": "(1/4, 1/4, 1/4)"
     },
     "P Tetragonal": {
-        "G": "Γ (0, 0, 0)",
+        "GAMMA": "Γ (0, 0, 0)",
         "M": "(1/2, 1/2, 0)",
         "R": "(0, 1/2, 1/2)",
         "A": "(1/2, 1/2, 1/2)",
@@ -139,7 +140,7 @@ CRYSTAL_KPOINT_LABELS = {
         "Z": "(0, 0, 1/2)"
     },
     "BC Tetragonal": {
-        "G": "Γ (0, 0, 0)",
+        "GAMMA": "Γ (0, 0, 0)",
         "M": "(1/2, 1/2, -1/2)",
         "P": "(1/2, 1/2, 1/2)",
         "X": "(0, 0, 1/2)"
@@ -599,32 +600,32 @@ def scale_kpoint_segments(frac_segments: List[List[float]], shrink: int) -> tupl
 # Based on the d3_input templates from create_band_d3.py
 BAND_PATHS = {
     # Triclinic (SG 1-2)
-    "triclinic": ["V", "Y", "G", "Z", "T", "R", "G", "X", "U", "G"],
-    
+    "triclinic": ["V", "Y", "GAMMA", "Z", "T", "R", "GAMMA", "X", "U", "GAMMA"],
+
     # Monoclinic (SG 3-15)
-    "monoclinic_simple": ["A", "G", "B", "C", "G", "D", "E", "G", "Y", "Z", "G"],
-    "monoclinic_ac": ["A", "G", "Y", "M", "G"],
-    
+    "monoclinic_simple": ["A", "GAMMA", "B", "C", "GAMMA", "D", "E", "GAMMA", "Y", "Z", "GAMMA"],
+    "monoclinic_ac": ["A", "GAMMA", "Y", "M", "GAMMA"],
+
     # Orthorhombic (SG 16-74)
-    "orthorhombic_simple": ["S", "G", "T", "U", "G", "R", "X", "G", "Y", "Z", "G"],
-    "orthorhombic_ab": ["S", "G", "T", "R", "G", "Y", "Z", "G"],
-    "orthorhombic_bc": ["S", "G", "T", "R", "G", "X", "W", "G"],
-    "orthorhombic_fc": ["Z", "G", "Y", "T", "G"],
-    
+    "orthorhombic_simple": ["S", "GAMMA", "T", "U", "GAMMA", "R", "X", "GAMMA", "Y", "Z", "GAMMA"],
+    "orthorhombic_ab": ["S", "GAMMA", "T", "R", "GAMMA", "Y", "Z", "GAMMA"],
+    "orthorhombic_bc": ["S", "GAMMA", "T", "R", "GAMMA", "X", "W", "GAMMA"],
+    "orthorhombic_fc": ["Z", "GAMMA", "Y", "T", "GAMMA"],
+
     # Tetragonal (SG 75-142)
-    "tetragonal_simple": ["M", "G", "R", "A", "G", "X", "Z", "G"],
-    "tetragonal_bc": ["M", "G", "P", "X", "G"],
-    
+    "tetragonal_simple": ["M", "GAMMA", "R", "A", "GAMMA", "X", "Z", "GAMMA"],
+    "tetragonal_bc": ["M", "GAMMA", "P", "X", "GAMMA"],
+
     # Hexagonal (SG 143-194)
-    "hexagonal": ["M", "G", "K", "A", "G", "L", "H", "G"],
-    
+    "hexagonal": ["M", "GAMMA", "K", "A", "GAMMA", "L", "H", "GAMMA"],
+
     # Rhombohedral (R lattice in hexagonal setting)
-    "rhombohedral": ["T", "G", "F", "L", "G"],
-    
+    "rhombohedral": ["T", "GAMMA", "F", "L", "GAMMA"],
+
     # Cubic (SG 195-230)
-    "cubic_simple": ["M", "G", "R", "X", "G"],
-    "cubic_fc": ["X", "G", "L", "W", "G"],
-    "cubic_bc": ["H", "G", "P", "N", "G"]
+    "cubic_simple": ["M", "GAMMA", "R", "X", "GAMMA"],
+    "cubic_fc": ["X", "GAMMA", "L", "W", "GAMMA"],
+    "cubic_bc": ["H", "GAMMA", "P", "N", "GAMMA"]
 }
 
 
@@ -634,38 +635,38 @@ BAND_PATHS = {
 KPOINT_COORDINATES = {
     # Cubic systems (from Table 14.1)
     "cubic_simple": {
-        "G": [0.0, 0.0, 0.0],    # Gamma
+        "GAMMA": [0.0, 0.0, 0.0],
         "M": [0.5, 0.5, 0.0],    # [1/2, 1/2, 0]
         "R": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2]
         "X": [0.0, 0.5, 0.0],    # [0, 1/2, 0]
     },
     "cubic_fc": {
-        "G": [0.0, 0.0, 0.0],    # Gamma
+        "GAMMA": [0.0, 0.0, 0.0],
         "X": [0.5, 0.0, 0.5],    # [1/2, 0, 1/2] - Table 14.1
         "L": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2] - Table 14.1
         "W": [0.5, 0.25, 0.75],  # [1/2, 1/4, 3/4] - Table 14.1
         # K and U are NOT in CRYSTAL23 Table 14.1 - they are literature points added in get_literature_kpath_vectors()
     },
     "cubic_bc": {
-        "G": [0.0, 0.0, 0.0],    # Gamma
+        "GAMMA": [0.0, 0.0, 0.0],
         "H": [0.5, -0.5, 0.5],   # [1/2, -1/2, 1/2]
         "P": [0.25, 0.25, 0.25], # [1/4, 1/4, 1/4]
         "N": [0.0, 0.0, 0.5],    # [0, 0, 1/2]
     },
-    
+
     # Hexagonal/P Trigonal system (from Table 14.1)
     "hexagonal": {
-        "G": [0.0, 0.0, 0.0],    # Gamma
+        "GAMMA": [0.0, 0.0, 0.0],
         "M": [0.5, 0.0, 0.0],    # [1/2, 0, 0]
         "K": [1/3, 1/3, 0.0],    # [1/3, 1/3, 0]
         "A": [0.0, 0.0, 0.5],    # [0, 0, 1/2]
         "L": [0.5, 0.0, 0.5],    # [1/2, 0, 1/2]
         "H": [1/3, 1/3, 0.5],    # [1/3, 1/3, 1/2]
     },
-    
+
     # Tetragonal systems (from Table 14.2)
     "tetragonal_simple": {
-        "G": [0.0, 0.0, 0.0],    # Gamma
+        "GAMMA": [0.0, 0.0, 0.0],
         "M": [0.5, 0.5, 0.0],    # [1/2, 1/2, 0]
         "R": [0.0, 0.5, 0.5],    # [0, 1/2, 1/2]
         "A": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2]
@@ -673,15 +674,15 @@ KPOINT_COORDINATES = {
         "Z": [0.0, 0.0, 0.5],    # [0, 0, 1/2]
     },
     "tetragonal_bc": {
-        "G": [0.0, 0.0, 0.0],    # Gamma
+        "GAMMA": [0.0, 0.0, 0.0],
         "M": [0.5, 0.5, -0.5],   # [1/2, 1/2, -1/2] - Table 14.2
         "P": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2] - Table 14.2
         "X": [0.0, 0.0, 0.5],    # [0, 0, 1/2] - Table 14.2
     },
-    
+
     # Orthorhombic systems (from Table 14.2)
     "orthorhombic_simple": {
-        "G": [0.0, 0.0, 0.0],    # Gamma
+        "GAMMA": [0.0, 0.0, 0.0],
         "S": [0.5, 0.5, 0.0],    # [1/2, 1/2, 0]
         "T": [0.0, 0.5, 0.5],    # [0, 1/2, 1/2]
         "U": [0.5, 0.0, 0.5],    # [1/2, 0, 1/2]
@@ -691,13 +692,13 @@ KPOINT_COORDINATES = {
         "Z": [0.0, 0.0, 0.5],    # [0, 0, 1/2]
     },
     "orthorhombic_fc": {
-        "G": [0.0, 0.0, 0.0],    # Gamma
+        "GAMMA": [0.0, 0.0, 0.0],
         "Z": [0.5, 0.5, 0.0],    # [1/2, 1/2, 0] - Table 14.2
         "Y": [0.5, 0.0, 0.5],    # [1/2, 0, 1/2] - Table 14.2
         "T": [1.0, 0.5, 0.5],    # [1, 1/2, 1/2] - Table 14.2
     },
     "orthorhombic_ab": {
-        "G": [0.0, 0.0, 0.0],    # Gamma
+        "GAMMA": [0.0, 0.0, 0.0],
         "S": [0.0, 0.5, 0.0],    # [0, 1/2, 0] - Table 14.2
         "T": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2] - Table 14.2
         "R": [0.0, 0.5, 0.5],    # [0, 1/2, 1/2] - Table 14.2
@@ -705,17 +706,17 @@ KPOINT_COORDINATES = {
         "Z": [0.0, 0.0, 0.5],    # [0, 0, 1/2] - Table 14.2
     },
     "orthorhombic_bc": {
-        "G": [0.0, 0.0, 0.0],    # Gamma
+        "GAMMA": [0.0, 0.0, 0.0],
         "S": [0.5, 0.0, 0.0],    # [1/2, 0, 0] - Table 14.2
         "T": [0.0, 0.0, 0.5],    # [0, 0, 1/2] - Table 14.2
         "R": [0.0, 0.5, 0.0],    # [0, 1/2, 0] - Table 14.2
         "X": [0.5, -0.5, 0.5],   # [1/2, -1/2, 1/2] - Table 14.2
         "W": [0.25, 0.25, 0.25], # [1/4, 1/4, 1/4] - Table 14.2
     },
-    
+
     # Monoclinic systems (from Table 14.1)
     "monoclinic_simple": {
-        "G": [0.0, 0.0, 0.0],    # Gamma
+        "GAMMA": [0.0, 0.0, 0.0],
         "A": [0.5, -0.5, 0.0],   # [1/2, -1/2, 0] - Table 14.1
         "B": [0.5, 0.0, 0.0],    # [1/2, 0, 0] - Table 14.1
         "C": [0.0, 0.5, 0.5],    # [0, 1/2, 1/2] - Table 14.1
@@ -725,15 +726,15 @@ KPOINT_COORDINATES = {
         "Z": [0.0, 0.0, 0.5],    # [0, 0, 1/2] - Table 14.1
     },
     "monoclinic_ac": {
-        "G": [0.0, 0.0, 0.0],    # Gamma
+        "GAMMA": [0.0, 0.0, 0.0],
         "A": [0.5, 0.0, 0.0],    # [1/2, 0, 0] - Table 14.1
         "Y": [0.0, 0.5, 0.5],    # [0, 1/2, 1/2] - Table 14.1
         "M": [0.5, 0.5, 0.5],    # [1/2, 1/2, 1/2] - Table 14.1
     },
-    
+
     # Triclinic system (from Table 14.2)
     "triclinic": {
-        "G": [0.0, 0.0, 0.0],    # Gamma
+        "GAMMA": [0.0, 0.0, 0.0],
         "V": [0.5, 0.5, 0.0],    # [1/2, 1/2, 0]
         "Y": [0.0, 0.5, 0.0],    # [0, 1/2, 0]
         "Z": [0.0, 0.0, 0.5],    # [0, 0, 1/2]
@@ -742,10 +743,10 @@ KPOINT_COORDINATES = {
         "X": [0.5, 0.0, 0.0],    # [1/2, 0, 0]
         "U": [0.5, 0.0, 0.5],    # [1/2, 0, 1/2]
     },
-    
+
     # Rhombohedral (R lattice) (from Table 14.1)
     "rhombohedral": {
-        "G": [0.0, 0.0, 0.0],    # Gamma
+        "GAMMA": [0.0, 0.0, 0.0],
         "T": [0.5, 0.5, -0.5],   # [1/2, 1/2, -1/2] - Table 14.1
         "F": [0.0, 0.5, 0.5],    # [0, 1/2, 1/2] - Table 14.1
         "L": [0.0, 0.0, 0.5],    # [0, 0, 1/2] - Table 14.1
@@ -811,13 +812,14 @@ def validate_kpoint_labels_for_crystal23(labels: List[str], space_group: int, la
         print(f"Warning: Crystal system '{crystal_system}' coordinates not available")
         return True, labels
 
-    # Check if all labels (except | and G) are valid
+    # Check if all labels (except | and GAMMA) are valid
+    # Note: "G" kept for backwards compatibility with old configs
     all_valid = True
     invalid_labels = []
 
     for label in labels:
         if label in ["|", "G", "GAMMA"]:
-            continue  # Skip discontinuity markers and Gamma
+            continue  # Skip discontinuity markers and Gamma (both old "G" and new "GAMMA")
 
         if label not in CRYSTAL23_VALID_LABELS[crystal_system]:
             all_valid = False
@@ -900,7 +902,7 @@ def get_band_path_from_symmetry(space_group: int, lattice_type: str = "P") -> Li
     crystal_system = get_crystal_system_from_space_group(space_group, lattice_type)
     
     # Return the appropriate path, defaulting to cubic simple if not found
-    return BAND_PATHS.get(crystal_system, ["G", "X", "M", "G", "R"])
+    return BAND_PATHS.get(crystal_system, ["GAMMA", "X", "M", "GAMMA", "R"])
 
 
 def get_kpoint_coordinates_from_labels(labels: List[str], space_group: int, lattice_type: str) -> List[List[float]]:
@@ -945,22 +947,22 @@ def get_literature_path_labels(space_group: int, lattice_type: str) -> List[str]
     
     # Define comprehensive paths from literature
     literature_paths = {
-        "cubic_simple": ["G", "X", "M", "G", "R", "X", "M", "R"],
-        "cubic_fc": ["G", "X", "W", "K", "G", "L", "U", "W", "L", "K", "U", "X"],
-        "cubic_bc": ["G", "H", "N", "G", "P", "H", "P", "N"],
-        "hexagonal": ["G", "M", "K", "G", "A", "L", "H", "A", "L", "M", "K", "H"],
-        "tetragonal_simple": ["G", "X", "M", "G", "Z", "R", "A", "Z", "X", "R", "M", "A"],
-        "tetragonal_bc": ["G", "X", "M", "G", "Z", "P", "N", "Z", "M", "X", "P"],
-        "orthorhombic_simple": ["G", "X", "S", "Y", "G", "Z", "U", "R", "T", "Z", "Y", "T", "U", "X", "S", "R"],
-        "orthorhombic_fc": ["G", "Y", "T", "Z", "G", "X", "S", "R", "U", "X", "T", "Y", "S", "U", "Z", "R"],
-        "orthorhombic_ab": ["G", "X", "S", "R", "G", "T", "Y", "Z", "G"],
-        "orthorhombic_bc": ["G", "X", "S", "R", "G", "T", "W", "Z", "G", "Y"],
-        "monoclinic_simple": ["G", "Y", "A", "B", "G", "C", "D", "E", "Z"],
-        "monoclinic_ac": ["G", "A", "Y", "M", "G", "C", "D", "E", "Z"],
-        "triclinic": ["X", "G", "Y", "L", "G", "Z", "N", "G", "M", "R", "G"],
-        "rhombohedral": ["G", "L", "B", "B1", "Z", "G", "X", "Q", "F", "P1", "Z", "L", "P"]
+        "cubic_simple": ["GAMMA", "X", "M", "GAMMA", "R", "X", "M", "R"],
+        "cubic_fc": ["GAMMA", "X", "W", "K", "GAMMA", "L", "U", "W", "L", "K", "U", "X"],
+        "cubic_bc": ["GAMMA", "H", "N", "GAMMA", "P", "H", "P", "N"],
+        "hexagonal": ["GAMMA", "M", "K", "GAMMA", "A", "L", "H", "A", "L", "M", "K", "H"],
+        "tetragonal_simple": ["GAMMA", "X", "M", "GAMMA", "Z", "R", "A", "Z", "X", "R", "M", "A"],
+        "tetragonal_bc": ["GAMMA", "X", "M", "GAMMA", "Z", "P", "N", "Z", "M", "X", "P"],
+        "orthorhombic_simple": ["GAMMA", "X", "S", "Y", "GAMMA", "Z", "U", "R", "T", "Z", "Y", "T", "U", "X", "S", "R"],
+        "orthorhombic_fc": ["GAMMA", "Y", "T", "Z", "GAMMA", "X", "S", "R", "U", "X", "T", "Y", "S", "U", "Z", "R"],
+        "orthorhombic_ab": ["GAMMA", "X", "S", "R", "GAMMA", "T", "Y", "Z", "GAMMA"],
+        "orthorhombic_bc": ["GAMMA", "X", "S", "R", "GAMMA", "T", "W", "Z", "GAMMA", "Y"],
+        "monoclinic_simple": ["GAMMA", "Y", "A", "B", "GAMMA", "C", "D", "E", "Z"],
+        "monoclinic_ac": ["GAMMA", "A", "Y", "M", "GAMMA", "C", "D", "E", "Z"],
+        "triclinic": ["X", "GAMMA", "Y", "L", "GAMMA", "Z", "N", "GAMMA", "M", "R", "GAMMA"],
+        "rhombohedral": ["GAMMA", "L", "B", "B1", "Z", "GAMMA", "X", "Q", "F", "P1", "Z", "L", "P"]
     }
-    
+
     # Get path for this system, default to standard path if not found
     return literature_paths.get(crystal_system, get_band_path_from_symmetry(space_group, lattice_type))
 
@@ -1021,24 +1023,24 @@ def get_literature_kpath_vectors(space_group: int, lattice_type: str) -> List[Li
     
     # Define comprehensive paths from literature
     literature_paths = {
-        "cubic_simple": ["G", "X", "M", "G", "R", "X", "M", "R"],
-        "cubic_fc": ["G", "X", "W", "K", "G", "L", "U", "W", "L", "K", "U", "X"],
-        "cubic_bc": ["G", "H", "N", "G", "P", "H", "P", "N"],
-        "hexagonal": ["G", "M", "K", "G", "A", "L", "H", "A", "L", "M", "K", "H"],
-        "tetragonal_simple": ["G", "X", "M", "G", "Z", "R", "A", "Z", "X", "R", "M", "A"],
-        "tetragonal_bc": ["G", "X", "M", "G", "Z", "P", "N", "Z", "M", "X", "P"],
-        "orthorhombic_simple": ["G", "X", "S", "Y", "G", "Z", "U", "R", "T", "Z", "Y", "T", "U", "X", "S", "R"],
-        "orthorhombic_fc": ["G", "Y", "T", "Z", "G", "X", "S", "R", "U", "X", "T", "Y", "S", "U", "Z", "R"],
-        "orthorhombic_ab": ["G", "X", "S", "R", "G", "T", "Y", "Z", "G"],
-        "orthorhombic_bc": ["G", "X", "S", "R", "G", "T", "W", "Z", "G", "Y"],
-        "monoclinic_simple": ["G", "Y", "A", "B", "G", "C", "D", "E", "Z"],
-        "monoclinic_ac": ["G", "A", "Y", "M", "G", "C", "D", "E", "Z"],
-        "triclinic": ["X", "G", "Y", "L", "G", "Z", "N", "G", "M", "R", "G"],
-        "rhombohedral": ["G", "L", "B", "B1", "Z", "G", "X", "Q", "F", "P1", "Z", "L", "P"]
+        "cubic_simple": ["GAMMA", "X", "M", "GAMMA", "R", "X", "M", "R"],
+        "cubic_fc": ["GAMMA", "X", "W", "K", "GAMMA", "L", "U", "W", "L", "K", "U", "X"],
+        "cubic_bc": ["GAMMA", "H", "N", "GAMMA", "P", "H", "P", "N"],
+        "hexagonal": ["GAMMA", "M", "K", "GAMMA", "A", "L", "H", "A", "L", "M", "K", "H"],
+        "tetragonal_simple": ["GAMMA", "X", "M", "GAMMA", "Z", "R", "A", "Z", "X", "R", "M", "A"],
+        "tetragonal_bc": ["GAMMA", "X", "M", "GAMMA", "Z", "P", "N", "Z", "M", "X", "P"],
+        "orthorhombic_simple": ["GAMMA", "X", "S", "Y", "GAMMA", "Z", "U", "R", "T", "Z", "Y", "T", "U", "X", "S", "R"],
+        "orthorhombic_fc": ["GAMMA", "Y", "T", "Z", "GAMMA", "X", "S", "R", "U", "X", "T", "Y", "S", "U", "Z", "R"],
+        "orthorhombic_ab": ["GAMMA", "X", "S", "R", "GAMMA", "T", "Y", "Z", "GAMMA"],
+        "orthorhombic_bc": ["GAMMA", "X", "S", "R", "GAMMA", "T", "W", "Z", "GAMMA", "Y"],
+        "monoclinic_simple": ["GAMMA", "Y", "A", "B", "GAMMA", "C", "D", "E", "Z"],
+        "monoclinic_ac": ["GAMMA", "A", "Y", "M", "GAMMA", "C", "D", "E", "Z"],
+        "triclinic": ["X", "GAMMA", "Y", "L", "GAMMA", "Z", "N", "GAMMA", "M", "R", "GAMMA"],
+        "rhombohedral": ["GAMMA", "L", "B", "B1", "Z", "GAMMA", "X", "Q", "F", "P1", "Z", "L", "P"]
     }
-    
+
     # Get path for this system
-    path_labels = literature_paths.get(crystal_system, ["G", "X", "M", "G"])
+    path_labels = literature_paths.get(crystal_system, ["GAMMA", "X", "M", "GAMMA"])
     
     # Convert to coordinate segments
     segments = []
@@ -1219,7 +1221,7 @@ seekpath_data = {
             [0.5, 0.0, 0.0, 0.5, 0.0, 0.5],    # X → M
             [0.5, 0.5, 0.5, 0.5, 0.5, 0.0]     # R → N
         ],
-        "labels": ["G", "X", "|", "Y", "G", "Z", "|", "N", "Y", "|", "M", "Z", "|", "X", "M", "|", "R", "N"]
+        "labels": ["GAMMA", "X", "|", "Y", "GAMMA", "Z", "|", "N", "Y", "|", "M", "Z", "|", "X", "M", "|", "R", "N"]
     },
     "cF1": {
         "segments": [
@@ -1233,7 +1235,7 @@ seekpath_data = {
             [0.5, 0.5, 0.5, 0.375, 0.375, 0.75], # L → K
             [0.625, 0.25, 0.625, 0.5, 0.0, 0.5]  # U → X
         ],
-        "labels": ["G", "X", "W", "K", "G", "L", "U", "W", "|", "L", "K", "|", "U", "X"]
+        "labels": ["GAMMA", "X", "W", "K", "GAMMA", "L", "U", "W", "|", "L", "K", "|", "U", "X"]
     },
     "cF2": {
         "segments": [
@@ -1247,7 +1249,7 @@ seekpath_data = {
             [0.375, 0.375, 0.75, 0.5, 0.25, 0.75], # K' → W
             [0.625, 0.25, 0.625, 0.5, 0.5, 0.5]  # U → L
         ],
-        "labels": ["G", "X", "U", "K'", "G", "L", "W", "X", "|", "K'", "W", "|", "U", "L"]
+        "labels": ["GAMMA", "X", "U", "K'", "GAMMA", "L", "W", "X", "|", "K'", "W", "|", "U", "L"]
     },
     "hR1": {
         "segments": [
@@ -1263,7 +1265,7 @@ seekpath_data = {
             [0.25, 0.25, -0.5, 0.0, 0.0, -0.5], # P1 → Z
             [0.5, 0.0, -0.5, 0.0, 0.0, -0.5]   # L → Z
         ],
-        "labels": ["G", "L", "B1", "|", "L", "B", "Z", "G", "X", "Q", "F", "P1", "Z", "|", "L", "Z"]
+        "labels": ["GAMMA", "L", "B1", "|", "L", "B", "Z", "GAMMA", "X", "Q", "F", "P1", "Z", "|", "L", "Z"]
     },
     "hR2": {
         "segments": [
@@ -1278,7 +1280,7 @@ seekpath_data = {
             [0.5, 0.0, -0.5, 0.0, 0.0, -0.5],  # L → Z
             [0.5, 0.5, 0.5, 0.5, 0.0, -0.5]    # F → L
         ],
-        "labels": ["G", "P", "Z", "Q", "G", "F", "P", "Q1", "L", "Z", "|", "F", "L"]
+        "labels": ["GAMMA", "P", "Z", "Q", "GAMMA", "F", "P", "Q1", "L", "Z", "|", "F", "L"]
     },
     "aP1": {
         # Default fallback for triclinic without specific variant
@@ -1291,7 +1293,7 @@ seekpath_data = {
             [0.5, 0.0, 0.5, 0.0, 0.0, 0.0],    # U → Γ
             [0.0, 0.0, 0.0, 0.5, 0.5, 0.0]     # Γ → V
         ],
-        "labels": ["G", "X", "|", "Y", "G", "|", "Z", "|", "R", "G", "|", "T", "|", "U", "G", "|", "V"]
+        "labels": ["GAMMA", "X", "|", "Y", "GAMMA", "|", "Z", "|", "R", "GAMMA", "|", "T", "|", "U", "GAMMA", "|", "V"]
     },
     "aP3": {
         # Triclinic P-1 with inversion (variant 3)
@@ -1304,7 +1306,7 @@ seekpath_data = {
             [-0.5, 0.0, 0.5, 0.0, 0.0, 0.0],   # U₂ → Γ
             [0.0, 0.0, 0.0, 0.5, -0.5, 0.0]    # Γ → V₂
         ],
-        "labels": ["G", "X", "|", "Y", "G", "|", "Z", "|", "R_2", "G", "|", "T_2", "|", "U_2", "G", "|", "V_2"]
+        "labels": ["GAMMA", "X", "|", "Y", "GAMMA", "|", "Z", "|", "R_2", "GAMMA", "|", "T_2", "|", "U_2", "GAMMA", "|", "V_2"]
     },
     "cP1": {
         # Cubic primitive with inversion
@@ -1317,7 +1319,7 @@ seekpath_data = {
             [0.5, 0.5, 0.5, 0.5, 0.5, 0.0],    # R → M
             [0.5, 0.5, 0.0, 0.5, 0.0, 0.0]     # M → X₁
         ],
-        "labels": ["G", "X", "M", "G", "R", "X", "|", "R", "M", "|", "M", "X_1"]
+        "labels": ["GAMMA", "X", "M", "GAMMA", "R", "X", "|", "R", "M", "|", "M", "X_1"]
     },
     "cP2": {
         # Cubic primitive with inversion (variant 2)
@@ -1329,7 +1331,7 @@ seekpath_data = {
             [0.5, 0.5, 0.5, 0.0, 0.5, 0.0],    # R → X
             [0.5, 0.5, 0.5, 0.5, 0.5, 0.0]     # R → M
         ],
-        "labels": ["G", "X", "M", "G", "R", "X", "|", "M", "R"]
+        "labels": ["GAMMA", "X", "M", "GAMMA", "R", "X", "|", "M", "R"]
     },
     "cI1": {
         # Cubic body-centered with inversion
@@ -1341,7 +1343,7 @@ seekpath_data = {
             [0.25, 0.25, 0.25, 0.5, -0.5, 0.5], # P → H
             [0.25, 0.25, 0.25, 0.0, 0.0, 0.5]  # P → N
         ],
-        "labels": ["G", "H", "N", "G", "P", "H", "|", "P", "N"]
+        "labels": ["GAMMA", "H", "N", "GAMMA", "P", "H", "|", "P", "N"]
     },
     "hP1": {
         # Hexagonal primitive with inversion
@@ -1357,7 +1359,7 @@ seekpath_data = {
             [1/3, 1/3, 0.5, 1/3, 1/3, 0.0],    # H → K
             [1/3, 1/3, 0.0, 1/3, 1/3, -0.5]    # K → H₂
         ],
-        "labels": ["G", "M", "K", "G", "A", "L", "H", "A", "|", "L", "M", "|", "H", "K", "|", "K", "H_2"]
+        "labels": ["GAMMA", "M", "K", "GAMMA", "A", "L", "H", "A", "|", "L", "M", "|", "H", "K", "|", "K", "H_2"]
     },
     "hP2": {
         # Hexagonal primitive with inversion (variant 2)
@@ -1372,7 +1374,7 @@ seekpath_data = {
             [0.5, 0.0, 0.5, 0.5, 0.0, 0.0],    # L → M
             [1/3, 1/3, 0.5, 1/3, 1/3, 0.0]     # H → K
         ],
-        "labels": ["G", "M", "K", "G", "A", "L", "H", "A", "|", "L", "M", "|", "H", "K"]
+        "labels": ["GAMMA", "M", "K", "GAMMA", "A", "L", "H", "A", "|", "L", "M", "|", "H", "K"]
     },
     "mP1": {
         # Monoclinic primitive with inversion
@@ -1388,7 +1390,7 @@ seekpath_data = {
             [-0.5, 0.5, 0.0, -0.5, 0.0, 0.0],  # C₂ → Y₂
             [-0.5, 0.0, 0.0, 0.0, 0.0, 0.0]    # Y₂ → Γ
         ],
-        "labels": ["G", "Z", "D", "B", "G", "A", "E", "Z", "C_2", "Y_2", "G"]
+        "labels": ["GAMMA", "Z", "D", "B", "GAMMA", "A", "E", "Z", "C_2", "Y_2", "GAMMA"]
     },
     "oP1": {
         # Orthorhombic primitive with inversion
@@ -1406,7 +1408,7 @@ seekpath_data = {
             [0.0, 0.5, 0.0, 0.0, 0.5, 0.5],    # Y → T
             [0.5, 0.5, 0.0, 0.5, 0.5, 0.5]     # S → R
         ],
-        "labels": ["G", "X", "S", "Y", "G", "Z", "U", "R", "T", "Z", "|", "Y", "T", "|", "X", "U", "|", "S", "R"]
+        "labels": ["GAMMA", "X", "S", "Y", "GAMMA", "Z", "U", "R", "T", "Z", "|", "Y", "T", "|", "X", "U", "|", "S", "R"]
     },
     "tP1": {
         # Tetragonal primitive with inversion
@@ -1421,7 +1423,7 @@ seekpath_data = {
             [0.0, 0.5, 0.0, 0.0, 0.5, 0.5],    # X → R
             [0.5, 0.5, 0.0, 0.5, 0.5, 0.5]     # M → A
         ],
-        "labels": ["G", "X", "M", "G", "Z", "R", "A", "Z", "|", "X", "R", "|", "M", "A"]
+        "labels": ["GAMMA", "X", "M", "GAMMA", "Z", "R", "A", "Z", "|", "X", "R", "|", "M", "A"]
     },
     "tI1": {
         # Tetragonal body-centered with inversion
@@ -1435,7 +1437,7 @@ seekpath_data = {
             [0.25, 0.25, 0.25, 0.0, 0.5, 0.0], # P → N
             [0.0, 0.5, 0.0, 0.0, 0.0, 0.0]     # N → Γ
         ],
-        "labels": ["G", "X", "M", "G", "Z", "Z_0", "M", "|", "X", "P", "N", "G"]
+        "labels": ["GAMMA", "X", "M", "GAMMA", "Z", "Z_0", "M", "|", "X", "P", "N", "GAMMA"]
     },
     "tI2": {
         # Tetragonal body-centered with inversion (variant 2)
@@ -1450,7 +1452,7 @@ seekpath_data = {
             [0.0, 0.0, 0.5, -0.285, 0.285, 0.5], # X → R (approximate)
             [0.5, 0.5, -0.285, 0.5, 0.5, -0.5] # G → M
         ],
-        "labels": ["G", "X", "P", "N", "G", "M", "S", "S_0", "G", "|", "X", "R", "|", "G", "M"]
+        "labels": ["GAMMA", "X", "P", "N", "GAMMA", "M", "S", "S_0", "GAMMA", "|", "X", "R", "|", "GAMMA", "M"]
     },
     "mS1": {
         # Monoclinic C-centered with inversion (mC1 in SeeK-path)
@@ -1466,7 +1468,7 @@ seekpath_data = {
             [0.0, 0.5, 0.5, 0.0, 0.0, 0.0],        # L₂ → Γ
             [0.0, 0.0, 0.0, 0.0, 0.5, 0.0]         # Γ → V₂
         ],
-        "labels": ["G", "C", "C_2", "Y_2", "G", "M_2", "D", "D_2", "A", "G", "|", "L_2", "G", "|", "V_2"]
+        "labels": ["GAMMA", "C", "C_2", "Y_2", "GAMMA", "M_2", "D", "D_2", "A", "GAMMA", "|", "L_2", "GAMMA", "|", "V_2"]
     },
     "oS1": {
         # Orthorhombic C-centered with inversion (oC1 in SeeK-path)
@@ -1484,7 +1486,7 @@ seekpath_data = {
             [0.0, 0.5, 0.5, 0.0, 0.0, 0.5],        # R → Z
             [0.0, 0.0, 0.5, -0.5, 0.5, 0.5]        # Z → T
         ],
-        "labels": ["G", "Y", "C_0", "SIGMA_0", "G", "Z", "A_0", "E_0", "T", "Y", "|", "G", "S", "R", "Z", "T"]
+        "labels": ["GAMMA", "Y", "C_0", "SIGMA_0", "GAMMA", "Z", "A_0", "E_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T"]
     },
     "oI1": {
         # Orthorhombic body-centered with inversion
@@ -1501,7 +1503,7 @@ seekpath_data = {
             [0.0, 0.0, 0.0, 0.0, 0.0, 0.5],        # Γ → T
             [0.0, 0.0, 0.5, 0.25, 0.25, 0.25]      # T → W
         ],
-        "labels": ["G", "X", "F_2", "SIGMA_0", "G", "Y_0", "U_0", "X", "|", "G", "R", "W", "S", "G", "T", "W"]
+        "labels": ["GAMMA", "X", "F_2", "SIGMA_0", "GAMMA", "Y_0", "U_0", "X", "|", "GAMMA", "R", "W", "S", "GAMMA", "T", "W"]
     },
     "oF1": {
         # Orthorhombic face-centered with inversion
@@ -1517,7 +1519,7 @@ seekpath_data = {
             [0.5, 0.773, 0.227, 0.5, 0.5, 0.0],    # A₀ → Z (approx)
             [0.0, 0.0, 0.0, 0.5, 0.5, 0.5]         # Γ → L
         ],
-        "labels": ["G", "Y", "T", "Z", "G", "SIGMA_0", "U_0", "T", "|", "Y", "C_0", "A_0", "Z", "|", "G", "L"]
+        "labels": ["GAMMA", "Y", "T", "Z", "GAMMA", "SIGMA_0", "U_0", "T", "|", "Y", "C_0", "A_0", "Z", "|", "GAMMA", "L"]
     },
     
     # Triclinic lattices
@@ -1539,7 +1541,7 @@ seekpath_data = {
             [-1.0, 0.0, -1.0, 0.0, 0.0, 0.0],    # U' → Γ
             [0.0, 0.0, 0.0, -1.0, -1.0, 0.0]     # Γ → V'
         ],
-        "labels": ["G", "X", "Y", "G", "G", "Z", "R", "G", "G", "T", "U", "G", "G", "V", "G", "X'", "Y'", "G", "G", "Z'", "R'", "G", "G", "T'", "U'", "G", "G", "V'"]
+        "labels": ["GAMMA", "X", "Y", "GAMMA", "GAMMA", "Z", "R", "GAMMA", "GAMMA", "T", "U", "GAMMA", "GAMMA", "V", "GAMMA", "X'", "Y'", "GAMMA", "GAMMA", "Z'", "R'", "GAMMA", "GAMMA", "T'", "U'", "GAMMA", "GAMMA", "V'"]
     },
     "aP3": {
         # Triclinic primitive with inversion (P-1)
@@ -1552,7 +1554,7 @@ seekpath_data = {
             [-1.0, 0.0, 1.0, 0.0, 0.0, 0.0],     # U₂ → Γ
             [0.0, 0.0, 0.0, 1.0, -1.0, 0.0]      # Γ → V₂
         ],
-        "labels": ["G", "X", "Y", "G", "G", "Z", "R_2", "G", "G", "T_2", "U_2", "G", "G", "V_2"]
+        "labels": ["GAMMA", "X", "Y", "GAMMA", "GAMMA", "Z", "R_2", "GAMMA", "GAMMA", "T_2", "U_2", "GAMMA", "GAMMA", "V_2"]
     },
     
     # Cubic lattices
@@ -1567,7 +1569,7 @@ seekpath_data = {
             [1.0, 1.0, 1.0, 1.0, 1.0, 0.0],      # R → M
             [1.0, 1.0, 0.0, 1.0, 0.0, 0.0]       # M → X₁
         ],
-        "labels": ["G", "X", "M", "G", "R", "X", "|", "R", "M", "|", "M", "X_1"]
+        "labels": ["GAMMA", "X", "M", "GAMMA", "R", "X", "|", "R", "M", "|", "M", "X_1"]
     },
     "cP2": {
         # Cubic primitive with inversion (Pm-3m)
@@ -1579,7 +1581,7 @@ seekpath_data = {
             [1.0, 1.0, 1.0, 0.0, 1.0, 0.0],      # R → X
             [1.0, 1.0, 1.0, 1.0, 1.0, 0.0]       # R → M
         ],
-        "labels": ["G", "X", "M", "G", "R", "X", "|", "R", "M"]
+        "labels": ["GAMMA", "X", "M", "GAMMA", "R", "X", "|", "R", "M"]
     },
     "cI1": {
         # Cubic body-centered with inversion (Im-3m)
@@ -1591,7 +1593,7 @@ seekpath_data = {
             [1.0, 1.0, 1.0, 2.0, -2.0, 2.0],     # P → H
             [1.0, 1.0, 1.0, 0.0, 0.0, 2.0]       # P → N
         ],
-        "labels": ["G", "H", "N", "G", "P", "H", "|", "P", "N"]
+        "labels": ["GAMMA", "H", "N", "GAMMA", "P", "H", "|", "P", "N"]
     },
     
     # Hexagonal lattices
@@ -1609,7 +1611,7 @@ seekpath_data = {
             [2.0, 2.0, 3.0, 2.0, 2.0, 0.0],      # H → K
             [2.0, 2.0, 0.0, 2.0, 2.0, -3.0]      # K → H₂
         ],
-        "labels": ["G", "M", "K", "G", "A", "L", "H", "A", "|", "L", "M", "|", "H", "K", "|", "K", "H_2"]
+        "labels": ["GAMMA", "M", "K", "GAMMA", "A", "L", "H", "A", "|", "L", "M", "|", "H", "K", "|", "K", "H_2"]
     },
     "hP2": {
         # Hexagonal primitive with inversion (P6/mmm)
@@ -1624,7 +1626,7 @@ seekpath_data = {
             [3.0, 0.0, 3.0, 3.0, 0.0, 0.0],      # L → M
             [2.0, 2.0, 3.0, 2.0, 2.0, 0.0]       # H → K
         ],
-        "labels": ["G", "M", "K", "G", "A", "L", "H", "A", "|", "L", "M", "|", "H", "K"]
+        "labels": ["GAMMA", "M", "K", "GAMMA", "A", "L", "H", "A", "|", "L", "M", "|", "H", "K"]
     },
     
     # Monoclinic lattices
@@ -1642,7 +1644,7 @@ seekpath_data = {
             [-1.0, 1.0, 0.0, -1.0, 0.0, 0.0],    # C₂ → Y₂
             [-1.0, 0.0, 0.0, 0.0, 0.0, 0.0]      # Y₂ → Γ
         ],
-        "labels": ["G", "Z", "D", "B", "G", "A", "E", "Z", "C_2", "Y_2", "G"]
+        "labels": ["GAMMA", "Z", "D", "B", "GAMMA", "A", "E", "Z", "C_2", "Y_2", "GAMMA"]
     },
     
     # Orthorhombic lattices
@@ -1662,7 +1664,7 @@ seekpath_data = {
             [0.0, 1.0, 0.0, 0.0, 1.0, 1.0],      # Y → T
             [1.0, 1.0, 0.0, 1.0, 1.0, 1.0]       # S → R
         ],
-        "labels": ["G", "X", "S", "Y", "G", "Z", "U", "R", "T", "Z", "|", "X", "U", "|", "Y", "T", "|", "S", "R"]
+        "labels": ["GAMMA", "X", "S", "Y", "GAMMA", "Z", "U", "R", "T", "Z", "|", "X", "U", "|", "Y", "T", "|", "S", "R"]
     },
     
     # Tetragonal lattices (already present but adding tP1)
@@ -1679,7 +1681,7 @@ seekpath_data = {
             [0.0, 1.0, 0.0, 0.0, 1.0, 1.0],      # X → R
             [1.0, 1.0, 0.0, 1.0, 1.0, 1.0]       # M → A
         ],
-        "labels": ["G", "X", "M", "G", "Z", "R", "A", "Z", "|", "X", "R", "|", "M", "A"]
+        "labels": ["GAMMA", "X", "M", "GAMMA", "Z", "R", "A", "Z", "|", "X", "R", "|", "M", "A"]
     },
     "tI1": {
         # Tetragonal body-centered with inversion (I4/m)
@@ -1693,7 +1695,7 @@ seekpath_data = {
             [0.5, 0.5, 0.5, 0.0, 1.0, 0.0],          # P → N
             [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]           # N → Γ
         ],
-        "labels": ["G", "X", "M", "G", "Z", "Z_0", "M", "|", "X", "P", "N", "G"]
+        "labels": ["GAMMA", "X", "M", "GAMMA", "Z", "Z_0", "M", "|", "X", "P", "N", "GAMMA"]
     },
     "tI2": {
         # Tetragonal body-centered with inversion (I4/mmm)
@@ -1708,7 +1710,7 @@ seekpath_data = {
             [0.0, 0.0, 1.0, -0.569274, 0.569274, 1.0], # X → R (scaled)
             [1.0, 1.0, -0.569274, 1.0, 1.0, -1.0]     # G → M
         ],
-        "labels": ["G", "X", "P", "N", "G", "M", "S", "S_0", "G", "|", "X", "R", "|", "G", "M"]
+        "labels": ["GAMMA", "X", "P", "N", "GAMMA", "M", "S", "S_0", "GAMMA", "|", "X", "R", "|", "GAMMA", "M"]
     },
     
     # Monoclinic C-centered lattices
@@ -1725,7 +1727,7 @@ seekpath_data = {
             [0.0, 0.5, 0.5, 0.0, 0.0, 0.0],               # L₂ → Γ
             [0.0, 0.0, 0.0, 0.0, 0.5, 0.0]                # Γ → V₂
         ],
-        "labels": ["G", "C", "C_2", "Y_2", "G", "M_2", "D", "D_2", "A", "G", "|", "L_2", "G", "|", "G", "V_2"]
+        "labels": ["GAMMA", "C", "C_2", "Y_2", "GAMMA", "M_2", "D", "D_2", "A", "GAMMA", "|", "L_2", "GAMMA", "|", "GAMMA", "V_2"]
     },
     "mC2": {
         # Base-centered monoclinic with inversion (C2/c)
@@ -1737,7 +1739,7 @@ seekpath_data = {
             [0.0, 1.0, 1.0, 0.0, 0.0, 0.0],      # L₂ → Γ
             [0.0, 0.0, 0.0, 0.0, 1.0, 0.0]       # Γ → V₂
         ],
-        "labels": ["G", "Y", "M", "A", "G", "|", "L_2", "G", "|", "G", "V_2"]
+        "labels": ["GAMMA", "Y", "M", "A", "GAMMA", "|", "L_2", "GAMMA", "|", "GAMMA", "V_2"]
     },
     "mC3": {
         # Base-centered monoclinic with inversion (C2/m)
@@ -1750,7 +1752,7 @@ seekpath_data = {
             [0.0, 0.5, 0.5, 0.0, 0.0, 0.0],              # L₂ → Γ
             [0.0, 0.0, 0.0, 0.0, 0.5, 0.0]               # Γ → V₂
         ],
-        "labels": ["G", "A", "I_2", "I", "M_2", "G", "Y", "|", "L_2", "G", "|", "G", "V_2"]
+        "labels": ["GAMMA", "A", "I_2", "I", "M_2", "GAMMA", "Y", "|", "L_2", "GAMMA", "|", "GAMMA", "V_2"]
     },
     
     # Orthorhombic C-centered lattices
@@ -1769,7 +1771,7 @@ seekpath_data = {
             [0.0, 0.5, 0.5, 0.0, 0.0, 0.5],              # R → Z
             [0.0, 0.0, 0.5, -0.5, 0.5, 0.5]              # Z → T
         ],
-        "labels": ["G", "Y", "C_0", "SIGMA_0", "G", "Z", "A_0", "E_0", "T", "Y", "|", "G", "S", "R", "Z", "T"]
+        "labels": ["GAMMA", "Y", "C_0", "SIGMA_0", "GAMMA", "Z", "A_0", "E_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T"]
     },
     "oC2": {
         # Base-centered orthorhombic with inversion (Cmcm)
@@ -1786,7 +1788,7 @@ seekpath_data = {
             [0.0, 0.5, 0.5, 0.0, 0.0, 0.5],              # R → Z
             [0.0, 0.0, 0.5, 0.5, 0.5, 0.5]               # Z → T
         ],
-        "labels": ["G", "Y", "F_0", "DELTA_0", "G", "Z", "B_0", "G_0", "T", "Y", "|", "G", "S", "R", "Z", "T"]
+        "labels": ["GAMMA", "Y", "F_0", "DELTA_0", "GAMMA", "Z", "B_0", "G_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T"]
     },
     
     # Orthorhombic I-centered lattices
@@ -1805,7 +1807,7 @@ seekpath_data = {
             [0.0, 0.0, 0.0, 0.0, 0.0, 0.5],              # Γ → T
             [0.0, 0.0, 0.5, 0.25, 0.25, 0.25]            # T → W
         ],
-        "labels": ["G", "X", "F_2", "SIGMA_0", "G", "Y_0", "U_0", "X", "|", "G", "R", "W", "S", "G", "T", "W"]
+        "labels": ["GAMMA", "X", "F_2", "SIGMA_0", "GAMMA", "Y_0", "U_0", "X", "|", "GAMMA", "R", "W", "S", "GAMMA", "T", "W"]
     },
     "oI3": {
         # Body-centered orthorhombic with inversion (Imma)
@@ -1822,7 +1824,7 @@ seekpath_data = {
             [0.0, 0.0, 0.0, 0.0, 0.0, 0.5],              # Γ → T
             [0.0, 0.0, 0.5, 0.25, 0.25, 0.25]            # T → W
         ],
-        "labels": ["G", "X", "F_0", "SIGMA_0", "G", "LAMBDA_0", "G_0", "X", "|", "G", "R", "W", "S", "G", "T", "W"]
+        "labels": ["GAMMA", "X", "F_0", "SIGMA_0", "GAMMA", "LAMBDA_0", "G_0", "X", "|", "GAMMA", "R", "W", "S", "GAMMA", "T", "W"]
     },
     
     # Orthorhombic F-centered lattices (simplified with fractional coordinates)
@@ -1839,7 +1841,7 @@ seekpath_data = {
             [0.5, 0.771367, 0.271367, 0.5, 0.5, 0.0],    # A₀ → Z
             [0.0, 0.0, 0.0, 0.5, 0.5, 0.5]               # Γ → L
         ],
-        "labels": ["G", "Y", "T", "Z", "G", "SIGMA_0", "U_0", "T", "|", "Y", "C_0", "A_0", "Z", "|", "G", "L"]
+        "labels": ["GAMMA", "Y", "T", "Z", "GAMMA", "SIGMA_0", "U_0", "T", "|", "Y", "C_0", "A_0", "Z", "|", "GAMMA", "L"]
     },
     "oF3": {
         # Face-centered orthorhombic with inversion (Fmmm)
@@ -1855,7 +1857,7 @@ seekpath_data = {
             [0.0, 0.0, 0.0, 0.5, 0.5, 0.0],              # Γ → Z
             [0.0, 0.0, 0.0, 0.5, 0.5, 0.5]               # Γ → L
         ],
-        "labels": ["G", "Y", "C_0", "A_0", "Z", "B_0", "D_0", "T", "G_0", "H_0", "Y", "|", "T", "G", "|", "G", "Z", "|", "G", "L"]
+        "labels": ["GAMMA", "Y", "C_0", "A_0", "Z", "B_0", "D_0", "T", "G_0", "H_0", "Y", "|", "T", "GAMMA", "|", "GAMMA", "Z", "|", "GAMMA", "L"]
     },
     
     # Without inversion symmetry entries (selected examples) - using shrink factor scaling
@@ -1881,7 +1883,7 @@ seekpath_data = {
             [0.0, -0.5, -0.5, 0.0, 0.0, 0.0],             # L₂' → Γ
             [0.0, 0.0, 0.0, 0.0, -0.5, 0.0]               # Γ → V₂'
         ],
-        "labels": ["G", "C", "C_2", "Y_2", "G", "M_2", "D", "D_2", "A", "G", "|", "L_2", "G", "|", "G", "V_2", "|", "G", "C'", "C_2'", "Y_2'", "G", "M_2'", "D'", "D_2'", "A'", "G", "|", "L_2'", "G", "|", "G", "V_2'"]
+        "labels": ["GAMMA", "C", "C_2", "Y_2", "GAMMA", "M_2", "D", "D_2", "A", "GAMMA", "|", "L_2", "GAMMA", "|", "GAMMA", "V_2", "|", "GAMMA", "C'", "C_2'", "Y_2'", "GAMMA", "M_2'", "D'", "D_2'", "A'", "GAMMA", "|", "L_2'", "GAMMA", "|", "GAMMA", "V_2'"]
     },
     "oS1": {
         # Orthorhombic base-centered without inversion (Cmc2_1)
@@ -1909,7 +1911,7 @@ seekpath_data = {
             [0.0, -0.5, -0.5, 0.0, 0.0, -0.5],           # R' → Z'
             [0.0, 0.0, -0.5, 0.5, -0.5, -0.5]            # Z' → T'
         ],
-        "labels": ["G", "Y", "C_0", "SIGMA_0", "G", "Z", "A_0", "E_0", "T", "Y", "|", "G", "S", "R", "Z", "T", "|", "G", "Y'", "C_0'", "SIGMA_0'", "G", "Z'", "A_0'", "E_0'", "T'", "Y'", "|", "G", "S'", "R'", "Z'", "T'"]
+        "labels": ["GAMMA", "Y", "C_0", "SIGMA_0", "GAMMA", "Z", "A_0", "E_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "C_0'", "SIGMA_0'", "GAMMA", "Z'", "A_0'", "E_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
     },
     "oI2": {
         # Body-centered orthorhombic without inversion (Ima2)
@@ -1937,7 +1939,7 @@ seekpath_data = {
             [0.0, 0.0, 0.0, 0.0, 0.0, -0.5],             # Γ → T'
             [0.0, 0.0, -0.5, -0.25, -0.25, -0.25]        # T' → W'
         ],
-        "labels": ["G", "X", "U_2", "Y_0", "G", "LAMBDA_0", "G_2", "X", "|", "G", "R", "W", "S", "G", "T", "W", "|", "G", "X'", "U_2'", "Y_0'", "G", "LAMBDA_0'", "G_2'", "X'", "|", "G", "R'", "W'", "S'", "G", "T'", "W'"]
+        "labels": ["GAMMA", "X", "U_2", "Y_0", "GAMMA", "LAMBDA_0", "G_2", "X", "|", "GAMMA", "R", "W", "S", "GAMMA", "T", "W", "|", "GAMMA", "X'", "U_2'", "Y_0'", "GAMMA", "LAMBDA_0'", "G_2'", "X'", "|", "GAMMA", "R'", "W'", "S'", "GAMMA", "T'", "W'"]
     },
     "oF2": {
         # Face-centered orthorhombic without inversion (Fdd2)
@@ -1961,7 +1963,7 @@ seekpath_data = {
             [-0.804420, -0.304420, -0.5, -0.5, 0.0, -0.5], # H₀' → Y'
             [0.0, 0.0, 0.0, -0.5, -0.5, -0.5]            # Γ → L'
         ],
-        "labels": ["G", "T", "Z", "Y", "G", "LAMBDA_0", "Q_0", "Z", "|", "T", "G_0", "H_0", "Y", "|", "G", "L", "|", "G", "T'", "Z'", "Y'", "G", "LAMBDA_0'", "Q_0'", "Z'", "|", "T'", "G_0'", "H_0'", "Y'", "|", "G", "L'"]
+        "labels": ["GAMMA", "T", "Z", "Y", "GAMMA", "LAMBDA_0", "Q_0", "Z", "|", "T", "G_0", "H_0", "Y", "|", "GAMMA", "L", "|", "GAMMA", "T'", "Z'", "Y'", "GAMMA", "LAMBDA_0'", "Q_0'", "Z'", "|", "T'", "G_0'", "H_0'", "Y'", "|", "GAMMA", "L'"]
     },
     
     # Non-inversion versions for Bravais lattices
@@ -1983,7 +1985,7 @@ seekpath_data = {
             [-1.0, 0.0, -1.0, 0.0, 0.0, 0.0],    # U' → Γ
             [0.0, 0.0, 0.0, -1.0, -1.0, 0.0]     # Γ → V'
         ],
-        "labels": ["G", "X", "|", "Y", "G", "|", "G", "Z", "|", "R", "G", "|", "G", "T", "|", "U", "G", "|", "G", "V", "|", "G", "X'", "|", "Y'", "G", "|", "G", "Z'", "|", "R'", "G", "|", "G", "T'", "|", "U'", "G", "|", "G", "V'"]
+        "labels": ["GAMMA", "X", "|", "Y", "GAMMA", "|", "GAMMA", "Z", "|", "R", "GAMMA", "|", "GAMMA", "T", "|", "U", "GAMMA", "|", "GAMMA", "V", "|", "GAMMA", "X'", "|", "Y'", "GAMMA", "|", "GAMMA", "Z'", "|", "R'", "GAMMA", "|", "GAMMA", "T'", "|", "U'", "GAMMA", "|", "GAMMA", "V'"]
     },
     "aP3_noinv": {
         # Triclinic P1 without inversion (aP3)
@@ -2003,7 +2005,7 @@ seekpath_data = {
             [1.0, 0.0, -1.0, 0.0, 0.0, 0.0],     # U₂' → Γ
             [0.0, 0.0, 0.0, -1.0, 1.0, 0.0]      # Γ → V₂'
         ],
-        "labels": ["G", "X", "|", "Y", "G", "|", "G", "Z", "|", "R_2", "G", "|", "G", "T_2", "|", "U_2", "G", "|", "G", "V_2", "|", "G", "X'", "|", "Y'", "G", "|", "G", "Z'", "|", "R_2'", "G", "|", "G", "T_2'", "|", "U_2'", "G", "|", "G", "V_2'"]
+        "labels": ["GAMMA", "X", "|", "Y", "GAMMA", "|", "GAMMA", "Z", "|", "R_2", "GAMMA", "|", "GAMMA", "T_2", "|", "U_2", "GAMMA", "|", "GAMMA", "V_2", "|", "GAMMA", "X'", "|", "Y'", "GAMMA", "|", "GAMMA", "Z'", "|", "R_2'", "GAMMA", "|", "GAMMA", "T_2'", "|", "U_2'", "GAMMA", "|", "GAMMA", "V_2'"]
     },
     "cF1_noinv": {
         # Cubic face-centered without inversion (F23)
@@ -2023,7 +2025,7 @@ seekpath_data = {
             [-0.5, -0.25, -0.75, -0.5, 0.0, -0.5], # W' → X'
             [-0.5, 0.0, -0.5, -0.75, -0.25, -0.5] # X' → W₂'
         ],
-        "labels": ["G", "X", "U", "K", "G", "L", "W", "X", "W_2", "|", "G", "X'", "U'", "K'", "G", "L'", "W'", "X'", "W_2'"]
+        "labels": ["GAMMA", "X", "U", "K", "GAMMA", "L", "W", "X", "W_2", "|", "GAMMA", "X'", "U'", "K'", "GAMMA", "L'", "W'", "X'", "W_2'"]
     },
     "cF2_noinv": {
         # Cubic face-centered without inversion (F-43m)
@@ -2041,7 +2043,7 @@ seekpath_data = {
             [-0.5, -0.5, -0.5, -0.5, -0.25, -0.75], # L' → W'
             [-0.5, -0.25, -0.75, -0.5, 0.0, -0.5] # W' → X'
         ],
-        "labels": ["G", "X", "U", "K", "G", "L", "W", "X", "|", "G", "X'", "U'", "K'", "G", "L'", "W'", "X'"]
+        "labels": ["GAMMA", "X", "U", "K", "GAMMA", "L", "W", "X", "|", "GAMMA", "X'", "U'", "K'", "GAMMA", "L'", "W'", "X'"]
     },
     "cI1_noinv": {
         # Cubic body-centered without inversion (I-43m)
@@ -2059,7 +2061,7 @@ seekpath_data = {
             [-0.25, -0.25, -0.25, -0.5, 0.5, -0.5], # P' → H'
             [-0.25, -0.25, -0.25, 0.0, 0.0, -0.5] # P' → N'
         ],
-        "labels": ["G", "H", "N", "G", "P", "H", "|", "P", "N", "|", "G", "H'", "N'", "G", "P'", "H'", "|", "P'", "N'"]
+        "labels": ["GAMMA", "H", "N", "GAMMA", "P", "H", "|", "P", "N", "|", "GAMMA", "H'", "N'", "GAMMA", "P'", "H'", "|", "P'", "N'"]
     },
     # cI2 and cI2_noinv use the same paths as cI1/cI1_noinv
     # Space groups 199, 204, 206, 211, 214, 217, 220 are classified as cI2 but use identical BCC paths
@@ -2073,7 +2075,7 @@ seekpath_data = {
             [1.0, 1.0, 1.0, 2.0, -2.0, 2.0],     # P → H
             [1.0, 1.0, 1.0, 0.0, 0.0, 2.0],      # P → N
         ],
-        "labels": ["G", "H", "N", "G", "P", "H", "|", "P", "N"]
+        "labels": ["GAMMA", "H", "N", "GAMMA", "P", "H", "|", "P", "N"]
     },
     "cI2_noinv": {
         # Alias for cI1_noinv - same BCC k-path with primed points for non-centrosymmetric groups
@@ -2091,7 +2093,7 @@ seekpath_data = {
             [-0.25, -0.25, -0.25, -0.5, 0.5, -0.5], # P' → H'
             [-0.25, -0.25, -0.25, 0.0, 0.0, -0.5] # P' → N'
         ],
-        "labels": ["G", "H", "N", "G", "P", "H", "|", "P", "N", "|", "G", "H'", "N'", "G", "P'", "H'", "|", "P'", "N'"]
+        "labels": ["GAMMA", "H", "N", "GAMMA", "P", "H", "|", "P", "N", "|", "GAMMA", "H'", "N'", "GAMMA", "P'", "H'", "|", "P'", "N'"]
     },
     "cP1_noinv": {
         # Cubic primitive without inversion (P2_13)
@@ -2111,7 +2113,7 @@ seekpath_data = {
             [-0.5, -0.5, -0.5, -0.5, -0.5, 0.0], # R' → M'
             [-0.5, -0.5, 0.0, -0.5, 0.0, 0.0]    # M' → X₁'
         ],
-        "labels": ["G", "X", "M", "G", "R", "X", "|", "R", "M", "|", "M", "X_1", "|", "G", "X'", "M'", "G", "R'", "X'", "|", "R'", "M'", "|", "M'", "X_1'"]
+        "labels": ["GAMMA", "X", "M", "GAMMA", "R", "X", "|", "R", "M", "|", "M", "X_1", "|", "GAMMA", "X'", "M'", "GAMMA", "R'", "X'", "|", "R'", "M'", "|", "M'", "X_1'"]
     },
     "cP2_noinv": {
         # Cubic primitive without inversion (P-43m)
@@ -2129,7 +2131,7 @@ seekpath_data = {
             [-0.5, -0.5, -0.5, 0.0, -0.5, 0.0],  # R' → X'
             [-0.5, -0.5, -0.5, -0.5, -0.5, 0.0]  # R' → M'
         ],
-        "labels": ["G", "X", "M", "G", "R", "X", "|", "R", "M", "|", "G", "X'", "M'", "G", "R'", "X'", "|", "R'", "M'"]
+        "labels": ["GAMMA", "X", "M", "GAMMA", "R", "X", "|", "R", "M", "|", "GAMMA", "X'", "M'", "GAMMA", "R'", "X'", "|", "R'", "M'"]
     },
     "hP1_noinv": {
         # Hexagonal primitive without inversion (P3)
@@ -2155,7 +2157,7 @@ seekpath_data = {
             [-1/3, -1/3, -0.5, -1/3, -1/3, 0.0], # H' → K'
             [-1/3, -1/3, 0.0, -1/3, -1/3, 0.5]   # K' → H₂'
         ],
-        "labels": ["G", "M", "K", "G", "A", "L", "H", "A", "|", "L", "M", "|", "H", "K", "|", "K", "H_2", "|", "G", "M'", "K'", "G", "A'", "L'", "H'", "A'", "|", "L'", "M'", "|", "H'", "K'", "|", "K'", "H_2'"]
+        "labels": ["GAMMA", "M", "K", "GAMMA", "A", "L", "H", "A", "|", "L", "M", "|", "H", "K", "|", "K", "H_2", "|", "GAMMA", "M'", "K'", "GAMMA", "A'", "L'", "H'", "A'", "|", "L'", "M'", "|", "H'", "K'", "|", "K'", "H_2'"]
     },
     "hP2_noinv": {
         # Hexagonal primitive without inversion (P-6m2)
@@ -2179,7 +2181,7 @@ seekpath_data = {
             [-0.5, 0.0, -0.5, -0.5, 0.0, 0.0],   # L' → M'
             [-1/3, -1/3, -0.5, -1/3, -1/3, 0.0]  # H' → K'
         ],
-        "labels": ["G", "M", "K", "G", "A", "L", "H", "A", "|", "L", "M", "|", "H", "K", "|", "G", "M'", "K'", "G", "A'", "L'", "H'", "A'", "|", "L'", "M'", "|", "H'", "K'"]
+        "labels": ["GAMMA", "M", "K", "GAMMA", "A", "L", "H", "A", "|", "L", "M", "|", "H", "K", "|", "GAMMA", "M'", "K'", "GAMMA", "A'", "L'", "H'", "A'", "|", "L'", "M'", "|", "H'", "K'"]
     },
     "hR1_noinv": {
         # Rhombohedral without inversion (R3m)
@@ -2199,7 +2201,7 @@ seekpath_data = {
             [-0.622283, 0.0, -0.377717, -0.5, 0.0, -0.5], # S₂' → F'
             [-0.5, 0.0, -0.5, 0.0, 0.0, 0.0]             # F' → Γ
         ],
-        "labels": ["G", "T", "H_2", "H_0", "L", "G", "S_0", "S_2", "F", "G", "|", "G", "T'", "H_2'", "H_0'", "L'", "G", "S_0'", "S_2'", "F'", "G"]
+        "labels": ["GAMMA", "T", "H_2", "H_0", "L", "GAMMA", "S_0", "S_2", "F", "GAMMA", "|", "GAMMA", "T'", "H_2'", "H_0'", "L'", "GAMMA", "S_0'", "S_2'", "F'", "GAMMA"]
     },
     "hR2_noinv": {
         # Rhombohedral without inversion (R3m variant 2)
@@ -2215,7 +2217,7 @@ seekpath_data = {
             [-0.302174, -0.302174, -0.302174, 0.0, 0.0, 0.0], # P₂' → Γ
             [0.0, 0.0, 0.0, -0.5, 0.5, 0.0]              # Γ → F'
         ],
-        "labels": ["G", "L", "T", "P_0", "P_2", "G", "F", "|", "G", "L'", "T'", "P_0'", "P_2'", "G", "F'"]
+        "labels": ["GAMMA", "L", "T", "P_0", "P_2", "GAMMA", "F", "|", "GAMMA", "L'", "T'", "P_0'", "P_2'", "GAMMA", "F'"]
     },
     "mC1_noinv": {
         # Monoclinic C-centered without inversion (Cc)
@@ -2239,7 +2241,7 @@ seekpath_data = {
             [0.0, -0.5, -0.5, 0.0, 0.0, 0.0],            # L₂' → Γ
             [0.0, 0.0, 0.0, 0.0, -0.5, 0.0]              # Γ → V₂'
         ],
-        "labels": ["G", "C", "C_2", "Y_2", "G", "M_2", "D", "D_2", "A", "G", "|", "L_2", "G", "|", "G", "V_2", "|", "G", "C'", "C_2'", "Y_2'", "G", "M_2'", "D'", "D_2'", "A'", "G", "|", "L_2'", "G", "|", "G", "V_2'"]
+        "labels": ["GAMMA", "C", "C_2", "Y_2", "GAMMA", "M_2", "D", "D_2", "A", "GAMMA", "|", "L_2", "GAMMA", "|", "GAMMA", "V_2", "|", "GAMMA", "C'", "C_2'", "Y_2'", "GAMMA", "M_2'", "D'", "D_2'", "A'", "GAMMA", "|", "L_2'", "GAMMA", "|", "GAMMA", "V_2'"]
     },
     "mC2_noinv": {
         # Monoclinic C-centered without inversion (C2)
@@ -2257,7 +2259,7 @@ seekpath_data = {
             [0.0, -1.0, -1.0, 0.0, 0.0, 0.0],    # L₂' → Γ
             [0.0, 0.0, 0.0, 0.0, -1.0, 0.0]      # Γ → V₂'
         ],
-        "labels": ["G", "Y", "M", "A", "G", "|", "L_2", "G", "|", "G", "V_2", "|", "G", "Y'", "M'", "A'", "G", "|", "L_2'", "G", "|", "G", "V_2'"]
+        "labels": ["GAMMA", "Y", "M", "A", "GAMMA", "|", "L_2", "GAMMA", "|", "GAMMA", "V_2", "|", "GAMMA", "Y'", "M'", "A'", "GAMMA", "|", "L_2'", "GAMMA", "|", "GAMMA", "V_2'"]
     },
     "mC3_noinv": {
         # Monoclinic C-centered without inversion (Cm)
@@ -2277,7 +2279,7 @@ seekpath_data = {
             [0.0, -0.5, -0.5, 0.0, 0.0, 0.0],            # L₂' → Γ
             [0.0, 0.0, 0.0, 0.0, -0.5, 0.0]              # Γ → V₂'
         ],
-        "labels": ["G", "A", "I_2", "I", "M_2", "G", "Y", "|", "L_2", "G", "|", "G", "V_2", "|", "G", "A'", "I_2'", "I'", "M_2'", "G", "Y'", "|", "L_2'", "G", "|", "G", "V_2'"]
+        "labels": ["GAMMA", "A", "I_2", "I", "M_2", "GAMMA", "Y", "|", "L_2", "GAMMA", "|", "GAMMA", "V_2", "|", "GAMMA", "A'", "I_2'", "I'", "M_2'", "GAMMA", "Y'", "|", "L_2'", "GAMMA", "|", "GAMMA", "V_2'"]
     },
     "mP1_noinv": {
         # Monoclinic primitive without inversion (Pc)
@@ -2303,7 +2305,7 @@ seekpath_data = {
             [0.5, -0.5, 0.0, 0.5, 0.0, 0.0],     # C₂' → Y₂'
             [0.5, 0.0, 0.0, 0.0, 0.0, 0.0]       # Y₂' → Γ
         ],
-        "labels": ["G", "Z", "D", "B", "G", "A", "E", "Z", "C_2", "Y_2", "G", "|", "G", "Z'", "D'", "B'", "G", "A'", "E'", "Z'", "C_2'", "Y_2'", "G"]
+        "labels": ["GAMMA", "Z", "D", "B", "GAMMA", "A", "E", "Z", "C_2", "Y_2", "GAMMA", "|", "GAMMA", "Z'", "D'", "B'", "GAMMA", "A'", "E'", "Z'", "C_2'", "Y_2'", "GAMMA"]
     },
     "oA1_noinv": {
         # Orthorhombic A-centered without inversion (Amm2)
@@ -2331,7 +2333,7 @@ seekpath_data = {
             [0.0, -0.5, -0.5, 0.0, 0.0, -0.5],           # R' → Z'
             [0.0, 0.0, -0.5, 0.5, -0.5, -0.5]            # Z' → T'
         ],
-        "labels": ["G", "Y", "C_0", "SIGMA_0", "G", "Z", "A_0", "E_0", "T", "Y", "|", "G", "S", "R", "Z", "T", "|", "G", "Y'", "C_0'", "SIGMA_0'", "G", "Z'", "A_0'", "E_0'", "T'", "Y'", "|", "G", "S'", "R'", "Z'", "T'"]
+        "labels": ["GAMMA", "Y", "C_0", "SIGMA_0", "GAMMA", "Z", "A_0", "E_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "C_0'", "SIGMA_0'", "GAMMA", "Z'", "A_0'", "E_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
     },
     "oA2_noinv": {
         # Orthorhombic A-centered without inversion (Amm2 variant 2)
@@ -2359,7 +2361,7 @@ seekpath_data = {
             [0.0, -0.5, -0.5, 0.0, 0.0, -0.5],           # R' → Z'
             [0.0, 0.0, -0.5, -0.5, -0.5, -0.5]           # Z' → T'
         ],
-        "labels": ["G", "Y", "F_0", "DELTA_0", "G", "Z", "B_0", "G_0", "T", "Y", "|", "G", "S", "R", "Z", "T", "|", "G", "Y'", "F_0'", "DELTA_0'", "G", "Z'", "B_0'", "G_0'", "T'", "Y'", "|", "G", "S'", "R'", "Z'", "T'"]
+        "labels": ["GAMMA", "Y", "F_0", "DELTA_0", "GAMMA", "Z", "B_0", "G_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "F_0'", "DELTA_0'", "GAMMA", "Z'", "B_0'", "G_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
     },
     "oC1_noinv": {
         # Orthorhombic C-centered without inversion (Cmc2_1)
@@ -2387,7 +2389,7 @@ seekpath_data = {
             [0.0, -0.5, -0.5, 0.0, 0.0, -0.5],           # R' → Z'
             [0.0, 0.0, -0.5, 0.5, -0.5, -0.5]            # Z' → T'
         ],
-        "labels": ["G", "Y", "C_0", "SIGMA_0", "G", "Z", "A_0", "E_0", "T", "Y", "|", "G", "S", "R", "Z", "T", "|", "G", "Y'", "C_0'", "SIGMA_0'", "G", "Z'", "A_0'", "E_0'", "T'", "Y'", "|", "G", "S'", "R'", "Z'", "T'"]
+        "labels": ["GAMMA", "Y", "C_0", "SIGMA_0", "GAMMA", "Z", "A_0", "E_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "C_0'", "SIGMA_0'", "GAMMA", "Z'", "A_0'", "E_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
     },
     "oC2_noinv": {
         # Orthorhombic C-centered without inversion (Cmc2_1 variant 2)
@@ -2415,7 +2417,7 @@ seekpath_data = {
             [0.0, -0.5, -0.5, 0.0, 0.0, -0.5],           # R' → Z'
             [0.0, 0.0, -0.5, -0.5, -0.5, -0.5]           # Z' → T'
         ],
-        "labels": ["G", "Y", "F_0", "DELTA_0", "G", "Z", "B_0", "G_0", "T", "Y", "|", "G", "S", "R", "Z", "T", "|", "G", "Y'", "F_0'", "DELTA_0'", "G", "Z'", "B_0'", "G_0'", "T'", "Y'", "|", "G", "S'", "R'", "Z'", "T'"]
+        "labels": ["GAMMA", "Y", "F_0", "DELTA_0", "GAMMA", "Z", "B_0", "G_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "F_0'", "DELTA_0'", "GAMMA", "Z'", "B_0'", "G_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
     },
     "oF1_noinv": {
         # Orthorhombic face-centered without inversion (Fmm2)
@@ -2439,7 +2441,7 @@ seekpath_data = {
             [-0.5, -0.771367, -0.271367, -0.5, -0.5, 0.0], # A₀' → Z'
             [0.0, 0.0, 0.0, -0.5, -0.5, -0.5]           # Γ → L'
         ],
-        "labels": ["G", "Y", "T", "Z", "G", "SIGMA_0", "U_0", "T", "|", "Y", "C_0", "A_0", "Z", "|", "G", "L", "|", "G", "Y'", "T'", "Z'", "G", "SIGMA_0'", "U_0'", "T'", "|", "Y'", "C_0'", "A_0'", "Z'", "|", "G", "L'"]
+        "labels": ["GAMMA", "Y", "T", "Z", "GAMMA", "SIGMA_0", "U_0", "T", "|", "Y", "C_0", "A_0", "Z", "|", "GAMMA", "L", "|", "GAMMA", "Y'", "T'", "Z'", "GAMMA", "SIGMA_0'", "U_0'", "T'", "|", "Y'", "C_0'", "A_0'", "Z'", "|", "GAMMA", "L'"]
     },
     "oF3_noinv": {
         # Orthorhombic face-centered without inversion (Fmm2 variant 3)
@@ -2465,7 +2467,7 @@ seekpath_data = {
             [0.0, 0.0, 0.0, -0.5, -0.5, 0.0],            # Γ → Z'
             [0.0, 0.0, 0.0, -0.5, -0.5, -0.5]           # Γ → L'
         ],
-        "labels": ["G", "Y", "C_0", "A_0", "Z", "B_0", "D_0", "T", "G_0", "H_0", "Y", "|", "T", "G", "|", "G", "Z", "|", "G", "L", "|", "G", "Y'", "C_0'", "A_0'", "Z'", "B_0'", "D_0'", "T'", "G_0'", "H_0'", "Y'", "|", "T'", "G", "|", "G", "Z'", "|", "G", "L'"]
+        "labels": ["GAMMA", "Y", "C_0", "A_0", "Z", "B_0", "D_0", "T", "G_0", "H_0", "Y", "|", "T", "GAMMA", "|", "GAMMA", "Z", "|", "GAMMA", "L", "|", "GAMMA", "Y'", "C_0'", "A_0'", "Z'", "B_0'", "D_0'", "T'", "G_0'", "H_0'", "Y'", "|", "T'", "GAMMA", "|", "GAMMA", "Z'", "|", "GAMMA", "L'"]
     },
     "oI1_noinv": {
         # Orthorhombic body-centered without inversion (Imm2)
@@ -2493,7 +2495,7 @@ seekpath_data = {
             [0.0, 0.0, 0.0, 0.0, 0.0, -0.5],             # Γ → T'
             [0.0, 0.0, -0.5, -0.25, -0.25, -0.25]        # T' → W'
         ],
-        "labels": ["G", "X", "F_2", "SIGMA_0", "G", "Y_0", "U_0", "X", "|", "G", "R", "W", "S", "G", "T", "W", "|", "G", "X'", "F_2'", "SIGMA_0'", "G", "Y_0'", "U_0'", "X'", "|", "G", "R'", "W'", "S'", "G", "T'", "W'"]
+        "labels": ["GAMMA", "X", "F_2", "SIGMA_0", "GAMMA", "Y_0", "U_0", "X", "|", "GAMMA", "R", "W", "S", "GAMMA", "T", "W", "|", "GAMMA", "X'", "F_2'", "SIGMA_0'", "GAMMA", "Y_0'", "U_0'", "X'", "|", "GAMMA", "R'", "W'", "S'", "GAMMA", "T'", "W'"]
     },
     "oI3_noinv": {
         # Orthorhombic body-centered without inversion (Imm2 variant 3)
@@ -2521,7 +2523,7 @@ seekpath_data = {
             [0.0, 0.0, 0.0, 0.0, 0.0, -0.5],             # Γ → T'
             [0.0, 0.0, -0.5, -0.25, -0.25, -0.25]        # T' → W'
         ],
-        "labels": ["G", "X", "F_0", "SIGMA_0", "G", "LAMBDA_0", "G_0", "X", "|", "G", "R", "W", "S", "G", "T", "W", "|", "G", "X'", "F_0'", "SIGMA_0'", "G", "LAMBDA_0'", "G_0'", "X'", "|", "G", "R'", "W'", "S'", "G", "T'", "W'"]
+        "labels": ["GAMMA", "X", "F_0", "SIGMA_0", "GAMMA", "LAMBDA_0", "G_0", "X", "|", "GAMMA", "R", "W", "S", "GAMMA", "T", "W", "|", "GAMMA", "X'", "F_0'", "SIGMA_0'", "GAMMA", "LAMBDA_0'", "G_0'", "X'", "|", "GAMMA", "R'", "W'", "S'", "GAMMA", "T'", "W'"]
     },
     "oP1_noinv": {
         # Orthorhombic primitive without inversion (Pmm2)
@@ -2551,7 +2553,7 @@ seekpath_data = {
             [0.0, -0.5, 0.0, 0.0, -0.5, -0.5],   # Y' → T'
             [-0.5, -0.5, 0.0, -0.5, -0.5, -0.5]  # S' → R'
         ],
-        "labels": ["G", "X", "S", "Y", "G", "Z", "U", "R", "T", "Z", "|", "Y", "T", "|", "X", "U", "|", "S", "R", "|", "G", "X'", "S'", "Y'", "G", "Z'", "U'", "R'", "T'", "Z'", "|", "Y'", "T'", "|", "X'", "U'", "|", "S'", "R'"]
+        "labels": ["GAMMA", "X", "S", "Y", "GAMMA", "Z", "U", "R", "T", "Z", "|", "Y", "T", "|", "X", "U", "|", "S", "R", "|", "GAMMA", "X'", "S'", "Y'", "GAMMA", "Z'", "U'", "R'", "T'", "Z'", "|", "Y'", "T'", "|", "X'", "U'", "|", "S'", "R'"]
     },
     "tI1_noinv": {
         # Tetragonal body-centered without inversion (I-4)
@@ -2573,7 +2575,7 @@ seekpath_data = {
             [-0.25, -0.25, -0.25, 0.0, -0.5, 0.0],       # P' → N'
             [0.0, -0.5, 0.0, 0.0, 0.0, 0.0]              # N' → Γ
         ],
-        "labels": ["G", "X", "M", "G", "Z", "Z_0", "M", "|", "X", "P", "N", "G", "|", "G", "X'", "M'", "G", "Z'", "Z_0'", "M'", "|", "X'", "P'", "N'", "G"]
+        "labels": ["GAMMA", "X", "M", "GAMMA", "Z", "Z_0", "M", "|", "X", "P", "N", "GAMMA", "|", "GAMMA", "X'", "M'", "GAMMA", "Z'", "Z_0'", "M'", "|", "X'", "P'", "N'", "GAMMA"]
     },
     "tI2_noinv": {
         # Tetragonal body-centered without inversion (I4mm)
@@ -2597,7 +2599,7 @@ seekpath_data = {
             [0.0, 0.0, -0.5, 0.192640, -0.192640, -0.5], # X' → R'
             [-0.5, -0.5, 0.192640, -0.5, -0.5, 0.5]      # G' → M'
         ],
-        "labels": ["G", "X", "P", "N", "G", "M", "S", "S_0", "G", "|", "X", "R", "|", "G", "M", "|", "G", "X'", "P'", "N'", "G", "M'", "S'", "S_0'", "G", "|", "X'", "R'", "|", "G'", "M'"]
+        "labels": ["GAMMA", "X", "P", "N", "GAMMA", "M", "S", "S_0", "GAMMA", "|", "X", "R", "|", "GAMMA", "M", "|", "GAMMA", "X'", "P'", "N'", "GAMMA", "M'", "S'", "S_0'", "GAMMA", "|", "X'", "R'", "|", "G'", "M'"]
     },
     "tP1_noinv": {
         # Tetragonal primitive without inversion (P-4m2)
@@ -2621,7 +2623,7 @@ seekpath_data = {
             [0.0, -0.5, 0.0, 0.0, -0.5, -0.5],   # X' → R'
             [-0.5, -0.5, 0.0, -0.5, -0.5, -0.5]  # M' → A'
         ],
-        "labels": ["G", "X", "M", "G", "Z", "R", "A", "Z", "|", "X", "R", "|", "M", "A", "|", "G", "X'", "M'", "G", "Z'", "R'", "A'", "Z'", "|", "X'", "R'", "|", "M'", "A'"]
+        "labels": ["GAMMA", "X", "M", "GAMMA", "Z", "R", "A", "Z", "|", "X", "R", "|", "M", "A", "|", "GAMMA", "X'", "M'", "GAMMA", "Z'", "R'", "A'", "Z'", "|", "X'", "R'", "|", "M'", "A'"]
     }
 }
 
@@ -2835,10 +2837,16 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
         ), kpath_info
 
 def unicode_to_ascii_kpoint(label: str) -> str:
-    """Convert Unicode k-point labels to ASCII equivalents for CRYSTAL compatibility."""
+    """Convert Unicode k-point labels to ASCII equivalents for CRYSTAL compatibility.
+
+    Note: We use GAMMA instead of G for the zone center to avoid collision with
+    the parametric 'G' point that exists in tI2 and mC2 Bravais lattices.
+    This is consistent with other Greek letters (SIGMA, LAMBDA, DELTA).
+    """
     # Common conversions
+    # Note: Γ -> GAMMA (not G) to avoid collision with parametric G point in tI2/mC2
     conversions = {
-        "Γ": "G",
+        "Γ": "GAMMA",
         "Σ": "SIGMA",
         "Λ": "LAMBDA",
         "Δ": "DELTA",
@@ -2850,7 +2858,7 @@ def unicode_to_ascii_kpoint(label: str) -> str:
         "ξ": "XI",
         "π": "PI",
         # Add primed versions
-        "Γ'": "G'",
+        "Γ'": "GAMMA'",
         "Σ'": "SIGMA'",
         "Λ'": "LAMBDA'",
         "Δ'": "DELTA'",
@@ -2957,7 +2965,7 @@ BAND_TEMPLATES = {
     "cubic": {
         "name": "cubic",
         "description": "Simple cubic lattice",
-        "path": ["M", "G", "R", "X", "G"],
+        "path": ["M", "GAMMA", "R", "X", "GAMMA"],
         "shrink": 0,
         "npoints": 500,
         "bands": [1, 8],
@@ -2967,7 +2975,7 @@ BAND_TEMPLATES = {
     "cubic2": {
         "name": "cubic2", 
         "description": "Face-centered cubic",
-        "path": ["X", "G", "L", "W", "G"],
+        "path": ["X", "GAMMA", "L", "W", "GAMMA"],
         "shrink": 0,
         "npoints": 500,
         "bands": [1, 8],
@@ -2977,7 +2985,7 @@ BAND_TEMPLATES = {
     "cubic3": {
         "name": "cubic3",
         "description": "Body-centered cubic",
-        "path": ["H", "G", "P", "N", "G"],
+        "path": ["H", "GAMMA", "P", "N", "GAMMA"],
         "shrink": 0,
         "npoints": 500,
         "bands": [1, 8],
@@ -2987,7 +2995,7 @@ BAND_TEMPLATES = {
     "hexagonal": {
         "name": "hexagonal",
         "description": "Hexagonal lattice",
-        "path": ["M", "G", "K", "A", "G", "L", "H", "G"],
+        "path": ["M", "GAMMA", "K", "A", "GAMMA", "L", "H", "GAMMA"],
         "shrink": 0,
         "npoints": 1000,
         "bands": [1, 8],
@@ -2997,7 +3005,7 @@ BAND_TEMPLATES = {
     "hexagonal2": {
         "name": "hexagonal2",
         "description": "Rhombohedral lattice",
-        "path": ["T", "G", "F", "L", "G"],
+        "path": ["T", "GAMMA", "F", "L", "GAMMA"],
         "shrink": 0,
         "npoints": 500,
         "bands": [1, 8],
@@ -3007,7 +3015,7 @@ BAND_TEMPLATES = {
     "tetragonal": {
         "name": "tetragonal",
         "description": "Simple tetragonal",
-        "path": ["M", "G", "R", "A", "G", "X", "Z", "G"],
+        "path": ["M", "GAMMA", "R", "A", "GAMMA", "X", "Z", "GAMMA"],
         "shrink": 0,
         "npoints": 1000,
         "bands": [1, 8],
@@ -3017,7 +3025,7 @@ BAND_TEMPLATES = {
     "tetragonal2": {
         "name": "tetragonal2",
         "description": "Body-centered tetragonal",
-        "path": ["M", "G", "P", "X", "G"],
+        "path": ["M", "GAMMA", "P", "X", "GAMMA"],
         "shrink": 0,
         "npoints": 500,
         "bands": [1, 8],
@@ -3027,7 +3035,7 @@ BAND_TEMPLATES = {
     "orthorhombic": {
         "name": "orthorhombic",
         "description": "Simple orthorhombic",
-        "path": ["S", "G", "T", "U", "G", "R", "X", "G", "Y", "Z", "G"],
+        "path": ["S", "GAMMA", "T", "U", "GAMMA", "R", "X", "GAMMA", "Y", "Z", "GAMMA"],
         "shrink": 0,
         "npoints": 1000,
         "bands": [1, 8],
@@ -3037,7 +3045,7 @@ BAND_TEMPLATES = {
     "orthorhombic2": {
         "name": "orthorhombic2",
         "description": "Face-centered orthorhombic",
-        "path": ["Z", "G", "Y", "T", "G"],
+        "path": ["Z", "GAMMA", "Y", "T", "GAMMA"],
         "shrink": 0,
         "npoints": 400,
         "bands": [1, 8],
@@ -3047,7 +3055,7 @@ BAND_TEMPLATES = {
     "orthorhombic3": {
         "name": "orthorhombic3",
         "description": "Base-centered orthorhombic (a)",
-        "path": ["S", "G", "T", "R", "G", "Y", "Z", "G"],
+        "path": ["S", "GAMMA", "T", "R", "GAMMA", "Y", "Z", "GAMMA"],
         "shrink": 0,
         "npoints": 600,
         "bands": [1, 8],
@@ -3057,7 +3065,7 @@ BAND_TEMPLATES = {
     "orthorhombic4": {
         "name": "orthorhombic4",
         "description": "Base-centered orthorhombic (c)",
-        "path": ["S", "G", "T", "R", "G", "X", "W", "G"],
+        "path": ["S", "GAMMA", "T", "R", "GAMMA", "X", "W", "GAMMA"],
         "shrink": 0,
         "npoints": 600,
         "bands": [1, 8],
@@ -3067,7 +3075,7 @@ BAND_TEMPLATES = {
     "monoclinic": {
         "name": "monoclinic",
         "description": "Simple monoclinic",
-        "path": ["A", "G", "B", "C", "G", "D", "E", "G", "Y", "Z", "G"],
+        "path": ["A", "GAMMA", "B", "C", "GAMMA", "D", "E", "GAMMA", "Y", "Z", "GAMMA"],
         "shrink": 0,
         "npoints": 1000,
         "bands": [1, 8],
@@ -3077,7 +3085,7 @@ BAND_TEMPLATES = {
     "monoclinic2": {
         "name": "monoclinic2",
         "description": "Base-centered monoclinic",
-        "path": ["A", "G", "Y", "M", "G"],
+        "path": ["A", "GAMMA", "Y", "M", "GAMMA"],
         "shrink": 0,
         "npoints": 400,
         "bands": [1, 8],
@@ -3087,7 +3095,7 @@ BAND_TEMPLATES = {
     "triclinic": {
         "name": "triclinic",
         "description": "Triclinic lattice",
-        "path": ["V", "Y", "G", "Z", "T", "R", "G", "X", "U", "G"],
+        "path": ["V", "Y", "GAMMA", "Z", "T", "R", "GAMMA", "X", "U", "GAMMA"],
         "shrink": 0,
         "npoints": 1000,
         "bands": [1, 8],

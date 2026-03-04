@@ -321,14 +321,17 @@ def convert_seekpath_label(label: str) -> str:
         label: SeeKPath label (e.g., 'GAMMA', 'SIGMA_0')
 
     Returns:
-        CRYSTAL-compatible label (e.g., 'G', 'SIGMA_0')
-    """
-    # Main conversions
-    conversions = {
-        'GAMMA': 'G',
-    }
+        CRYSTAL-compatible label
 
-    return conversions.get(label, label)
+    Note:
+        We keep GAMMA as-is (not abbreviated to 'G') for consistency with other
+        Greek letters (SIGMA, LAMBDA, DELTA) and to avoid confusion with the
+        parametric 'G' point that exists in tI2 and mC2 lattices.
+    """
+    # No conversions needed - keep all labels as-is
+    # GAMMA stays GAMMA (like SIGMA stays SIGMA)
+    # This avoids collision with the 'G' point in tI2/mC2 lattices
+    return label
 
 
 def convert_to_mace_format(seekpath_result: Dict[str, Any],
