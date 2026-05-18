@@ -52,10 +52,128 @@ ERROR_DESCRIPTIONS = {
     'potential': "Segmentation fault/runtime error",
 }
 
+# === Completed-calc subtype handling === #
+# Maps detected calc subtype to bucket name used for organizing files
+CALC_TYPE_TO_BUCKET = {
+    'OPT': 'complete',
+    'SP': 'completesp',
+    'FREQ': 'completefreq',
+    'BAND': 'completeband',
+    'DOSS': 'completedoss',
+    'TRANSPORT': 'completetransport',
+    'CHARGE+POTENTIAL': 'completecharge_potential',
+}
+
+COMPLETED_BUCKETS = list(CALC_TYPE_TO_BUCKET.values())
+
+COMPLETED_BUCKET_DESCRIPTIONS = {
+    'complete': "Geometry optimization (OPT END)",
+    'completesp': "Single point energy (SP)",
+    'completefreq': "Frequency calculation (FREQ)",
+    'completeband': "Band structure (D3 BAND)",
+    'completedoss': "Density of states (D3 DOSS)",
+    'completetransport': "Transport properties (D3 TRANSPORT)",
+    'completecharge_potential': "Charge density + potential (D3)",
+}
+
+# Filename suffix → calc type. Numbered variants like _opt2, _band3 also match.
+# Patterns are evaluated in order; the first match wins so list more specific
+# tokens (charge_potential) before generic ones (charge, potential).
+_FILENAME_CALC_TYPE_PATTERNS = [
+    (re.compile(r'_band\d*(?:_|$)'), 'BAND'),
+    (re.compile(r'_doss\d*(?:_|$)'), 'DOSS'),
+    (re.compile(r'_dos\d*(?:_|$)'), 'DOSS'),
+    (re.compile(r'_transport\d*(?:_|$)'), 'TRANSPORT'),
+    (re.compile(r'_transp\d*(?:_|$)'), 'TRANSPORT'),
+    (re.compile(r'_charge[_+]potential\d*(?:_|$)'), 'CHARGE+POTENTIAL'),
+    (re.compile(r'_chargepot\d*(?:_|$)'), 'CHARGE+POTENTIAL'),
+    (re.compile(r'_cp\d*(?:_|$)'), 'CHARGE+POTENTIAL'),
+    (re.compile(r'_charge\d*(?:_|$)'), 'CHARGE+POTENTIAL'),
+    (re.compile(r'_potential\d*(?:_|$)'), 'CHARGE+POTENTIAL'),
+    (re.compile(r'_freq\d*(?:_|$)'), 'FREQ'),
+    (re.compile(r'_sp\d*(?:_|$)'), 'SP'),
+    (re.compile(r'_opt\d*(?:_|$)'), 'OPT'),
+]
+
+# === Default extensions for organizing files === #
+# Includes all files produced/copied back by submit_prop.sh for d3 calcs
+# (BAND.DAT, DOSS.DAT, fort.25 → .f25, transport .DAT files, cube files)
+# plus standard inputs/outputs.
+DEFAULT_EXTENSIONS = [
+    # Inputs and submission artifacts
+    '.sh', '.out', '.d12', '.d3',
+    # CRYSTAL wavefunction / phonon binaries
+    '.f9', '.f25',
+    # D3 BAND/DOSS/POT 1D outputs
+    '.BAND.DAT', '.DOSS.DAT', '.POTC.DAT',
+    # Transport outputs
+    '.SIGMA.DAT', '.SEEBECK.DAT', '.SIGMAS.DAT', '.KAPPA.DAT', '.TDF.DAT',
+    # 3D cube outputs (CHARGE+POTENTIAL)
+    '_DENS.CUBE', '_POT.CUBE', '_SPIN.CUBE',
+    # FREQ-related outputs (when the user copies them back from scratch)
+    '.FREQINFO.DAT', '.BORN.DAT', '.IRSPEC.DAT', '.RAMSPEC.DAT',
+    '.HESSOPT.DAT', '.IRREFR.DAT',
+]
+
+
+def _detect_calc_type_from_d3(d3_file: Path) -> Optional[str]:
+    """Inspect a .d3 input file to decide which property calc it drives."""
+    try:
+        with open(d3_file, 'r', errors='ignore') as f:
+            content = f.read().upper()
+    except Exception:
+        return None
+
+    if 'BOLTZTRA' in content:
+        return 'TRANSPORT'
+    if 'ECHG' in content or 'POTC' in content:
+        return 'CHARGE+POTENTIAL'
+    if 'DOSS' in content:
+        return 'DOSS'
+    if 'BAND' in content:
+        return 'BAND'
+    return None
+
+
+def determine_completed_subtype(file_path: Path, lines, has_opt_end: bool = False) -> str:
+    """
+    Decide which calc type a successfully-completed .out file came from.
+
+    Resolution order (first match wins):
+      1. Filename suffix (_opt, _sp, _freq, _band, _doss, _transport, _charge*, etc.)
+      2. Sibling .d3 file's keywords (BAND/DOSS/BOLTZTRA/ECHG/POTC)
+      3. Content tells (TRANSPORT, FREQ markers)
+      4. has_opt_end fallback → OPT, otherwise SP
+    """
+    base_lower = file_path.stem.lower()
+    for pattern, calc_type in _FILENAME_CALC_TYPE_PATTERNS:
+        if pattern.search(base_lower):
+            return calc_type
+
+    parent = file_path.parent
+    base_name = file_path.stem
+    for ext in ('.d3', '.D3'):
+        d3_candidate = parent / f"{base_name}{ext}"
+        if d3_candidate.exists():
+            d3_type = _detect_calc_type_from_d3(d3_candidate)
+            if d3_type:
+                return d3_type
+            # .d3 exists but unrecognized — still definitely a properties calc
+            return 'BAND'
+
+    content = ''.join(lines)
+    if re.search(r'SEEBECK COEFFICIENT|BOLTZTRA', content, re.IGNORECASE):
+        return 'TRANSPORT'
+    if re.search(r'VIBRATIONAL FREQUENCIES|FREQUENCY CALCULATION|MODES\s+EIGV', content, re.IGNORECASE):
+        return 'FREQ'
+
+    return 'OPT' if has_opt_end else 'SP'
+
+
 # === Initialize result buckets === #
 def initialize_buckets():
     """Initialize categorization buckets"""
-    categories = list(ERROR_PATTERNS.keys()) + ["complete", "completesp", "unknown", "ongoing"]
+    categories = list(ERROR_PATTERNS.keys()) + COMPLETED_BUCKETS + ["unknown", "ongoing"]
     return {cat: [] for cat in categories}
 
 # === Function to categorize a single output file === #
@@ -85,13 +203,18 @@ def categorize_output_file(file_path):
                 return category, base_name
 
     # === Completion checks only if no error found === #
+    # Detection logic unchanged: OPT END and TOTAL CPU TIME = are the same
+    # signals that have always decided "did this calc finish?". Subtype
+    # routing happens only after one of these fires.
     has_opt_end = any("OPT END" in line for line in lines)
     has_cpu_time = any("    TOTAL CPU TIME =" in line for line in lines)
 
     if has_opt_end:
-        return 'complete', base_name
+        subtype = determine_completed_subtype(Path(file_path), lines, has_opt_end=True)
+        return CALC_TYPE_TO_BUCKET.get(subtype, 'complete'), base_name
     elif has_cpu_time:
-        return 'completesp', base_name
+        subtype = determine_completed_subtype(Path(file_path), lines, has_opt_end=False)
+        return CALC_TYPE_TO_BUCKET.get(subtype, 'completesp'), base_name
 
     # === Fallback: Check for generic 'error' === #
     if any("error" in line.lower() for line in lines):
@@ -150,16 +273,16 @@ def print_summary(result_buckets, detailed=False):
     print(f"Total files scanned: {total_files}\n")
 
     # Completion status
-    complete_count = len(result_buckets['complete'])
-    completesp_count = len(result_buckets['completesp'])
-    total_complete = complete_count + completesp_count
+    bucket_counts = {b: len(result_buckets.get(b, [])) for b in COMPLETED_BUCKETS}
+    total_complete = sum(bucket_counts.values())
 
     if total_complete > 0:
         print(f"✓ COMPLETED: {total_complete} calculation(s)")
-        if complete_count > 0:
-            print(f"  └─ Optimization complete (OPT END): {complete_count}")
-        if completesp_count > 0:
-            print(f"  └─ Single point complete: {completesp_count}")
+        for bucket in COMPLETED_BUCKETS:
+            count = bucket_counts[bucket]
+            if count > 0:
+                desc = COMPLETED_BUCKET_DESCRIPTIONS.get(bucket, bucket)
+                print(f"  └─ {desc}: {count}")
 
     # Error status
     total_errors = sum(len(result_buckets[cat]) for cat in ERROR_PATTERNS.keys())
@@ -204,10 +327,13 @@ def organize_files(result_buckets, target_dir='sorted', extensions=None):
     Args:
         result_buckets: Dictionary of categorized files
         target_dir: Base directory for organized files
-        extensions: List of file extensions to move (default: ['.sh', '.out', '.d12', '.d3', '.f9'])
+        extensions: List of file suffixes to move. Defaults to DEFAULT_EXTENSIONS,
+            which covers .d12/.d3 inputs, .out, .sh, .f9/.f25, and every
+            properties-style output that submit_prop.sh copies back
+            (.BAND.DAT, .DOSS.DAT, .POTC.DAT, transport .DAT files, cube files).
     """
     if extensions is None:
-        extensions = ['.sh', '.out', '.d12', '.d3', '.f9']
+        extensions = list(DEFAULT_EXTENSIONS)
 
     base_dir = Path.cwd()
     moved_count = 0
@@ -256,21 +382,20 @@ def organize_completed(result_buckets, target_dir='completed', extensions=None):
     """
     Move only successfully completed files to a completed directory.
 
+    Buckets each calc into a per-type subfolder (complete, completesp,
+    completefreq, completeband, completedoss, completetransport,
+    completecharge_potential) so d3 outputs land separately from SP/OPT.
+
     Args:
         result_buckets: Dictionary of categorized files
         target_dir: Directory for completed files
-        extensions: List of file extensions to move
+        extensions: List of file suffixes to move (default: DEFAULT_EXTENSIONS)
     """
     if extensions is None:
-        extensions = ['.sh', '.out', '.d12', '.d3', '.f9']
+        extensions = list(DEFAULT_EXTENSIONS)
 
-    # Filter to only completed calculations
-    completed_only = {
-        'complete': result_buckets['complete'],
-        'completesp': result_buckets['completesp']
-    }
-
-    total_completed = len(result_buckets['complete']) + len(result_buckets['completesp'])
+    completed_only = {bucket: result_buckets.get(bucket, []) for bucket in COMPLETED_BUCKETS}
+    total_completed = sum(len(v) for v in completed_only.values())
 
     if total_completed == 0:
         print("\nNo completed calculations to organize.")
@@ -358,7 +483,7 @@ def detect_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]) -> Lis
     # Check ALL categories: completed jobs, errored jobs, and ongoing jobs
     # Completed jobs should NOT still be running in SLURM
     all_categories = (
-        ['complete', 'completesp'] +  # Successfully completed
+        COMPLETED_BUCKETS +  # Successfully completed (all complete* variants)
         list(ERROR_PATTERNS.keys()) +  # Failed with errors
         ['unknown', 'ongoing']  # Unknown errors or still running
     )
@@ -372,10 +497,8 @@ def detect_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]) -> Lis
             job_id = find_slurm_job_id(out_path)
             if job_id and job_id in running_jobs:
                 # Set appropriate description based on category
-                if category == 'complete':
-                    description = "OPT completed successfully but SLURM job still running"
-                elif category == 'completesp':
-                    description = "SP completed successfully but SLURM job still running"
+                if category in COMPLETED_BUCKET_DESCRIPTIONS:
+                    description = f"{COMPLETED_BUCKET_DESCRIPTIONS[category]} completed but SLURM job still running"
                 elif category == 'ongoing':
                     description = "Still running (check if stuck)"
                 else:
@@ -407,8 +530,9 @@ def remove_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]):
         return
 
     # Separate into three categories: completed, errors, and ongoing
-    completed_zombies = [z for z in zombies if z['category'] in ('complete', 'completesp')]
-    error_zombies = [z for z in zombies if z['category'] not in ('complete', 'completesp', 'ongoing')]
+    completed_buckets_set = set(COMPLETED_BUCKETS)
+    completed_zombies = [z for z in zombies if z['category'] in completed_buckets_set]
+    error_zombies = [z for z in zombies if z['category'] not in completed_buckets_set and z['category'] != 'ongoing']
     ongoing_zombies = [z for z in zombies if z['category'] == 'ongoing']
 
     # Print header and explanation
@@ -562,8 +686,11 @@ Examples:
     parser.add_argument('--output-dir', default=None,
                        help='Output directory for organized files (default: "completed" or "sorted")')
     parser.add_argument('--extensions', nargs='+',
-                       default=['.sh', '.out', '.d12', '.d3', '.f9'],
-                       help='File extensions to move (default: .sh .out .d12 .d3 .f9)')
+                       default=list(DEFAULT_EXTENSIONS),
+                       help=('File suffixes to move. Default covers .sh/.out/.d12/.d3 inputs, '
+                             '.f9/.f25, all d3 .DAT outputs (BAND/DOSS/POTC/SIGMA/SEEBECK/'
+                             'SIGMAS/KAPPA/TDF), cube files (_DENS/_POT/_SPIN.CUBE), and '
+                             'FREQ-related .DAT files.'))
     parser.add_argument('--remove-zombie-jobs', action='store_true',
                        help='Detect and cancel jobs that failed but are still running in SLURM')
 
