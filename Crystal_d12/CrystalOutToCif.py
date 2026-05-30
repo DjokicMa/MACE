@@ -196,6 +196,39 @@ class CrystalOutToCifConverter:
 
         return "UNKNOWN"
 
+    @staticmethod
+    def _parse_origin_shift(content: str) -> Tuple[float, float, float]:
+        """
+        Parse 'SHIFT OF THE ORIGIN : a/b a/b a/b' from CRYSTAL output.
+
+        CRYSTAL emits this line when the input uses a non-standard origin
+        (IFSO=1) for a centrosymmetric space group with two origin choices.
+        The three components are the shift CRYSTAL applies to convert
+        between origin 1 (user input) and the standard origin 2.
+        Each component is either an integer (e.g. "0") or a fraction
+        (e.g. "7/8", "1/4"). Returns (0, 0, 0) if the line is absent.
+        """
+        match = re.search(
+            r"SHIFT OF THE ORIGIN\s*:\s*(\S+)\s+(\S+)\s+(\S+)", content
+        )
+        if not match:
+            return (0.0, 0.0, 0.0)
+
+        def _to_float(tok: str) -> float:
+            if "/" in tok:
+                num, den = tok.split("/", 1)
+                return float(num) / float(den)
+            return float(tok)
+
+        try:
+            return (
+                _to_float(match.group(1)),
+                _to_float(match.group(2)),
+                _to_float(match.group(3)),
+            )
+        except (ValueError, ZeroDivisionError):
+            return (0.0, 0.0, 0.0)
+
     def extract_best_geometry(self, output_data: Dict[str, Any], calc_type: str) -> Dict[str, Any]:
         """
         Extract the most appropriate geometry based on calculation type.
@@ -242,13 +275,22 @@ class CrystalOutToCifConverter:
 
         return True, ""
 
-    def format_cell_parameters(self, cell_params: List[float], dimensionality: str) -> Dict[str, float]:
+    def format_cell_parameters(
+        self,
+        cell_params: List[float],
+        dimensionality: str,
+        np_extents: Optional[Dict[str, float]] = None,
+    ) -> Dict[str, float]:
         """
         Format cell parameters based on dimensionality.
 
         Args:
             cell_params: List of [a, b, c, alpha, beta, gamma]
             dimensionality: System dimensionality
+            np_extents: Cartesian span (max-min, in Angstrom) of the atoms
+                along each non-periodic axis, keyed "y"/"z". Used to size
+                the non-periodic cell axes so the whole slab/wire fits with
+                the requested vacuum gap.
 
         Returns:
             Dict with formatted cell parameters
@@ -257,14 +299,18 @@ class CrystalOutToCifConverter:
         a, b, c, alpha, beta, gamma = [float(x) for x in cell_params[:6]]
 
         vacuum_thickness = float(self.options.get("vacuum_thickness", 20.0))
+        np_extents = np_extents or {}
 
         if dimensionality == "SLAB":
-            # For 2D materials, use vacuum thickness for c-axis
-            c = vacuum_thickness
+            # c-axis = slab thickness + vacuum gap, so the separation between
+            # periodic slab images equals vacuum_thickness regardless of how
+            # thick the slab is. A fixed c (= vacuum) made thick slabs spill
+            # past the cell, wrapping atoms back to the bottom.
+            c = np_extents.get("z", 0.0) + vacuum_thickness
         elif dimensionality == "POLYMER":
-            # For 1D materials, use vacuum for b and c
-            b = vacuum_thickness
-            c = vacuum_thickness
+            # For 1D materials, size both non-periodic axes (b, c) the same way
+            b = np_extents.get("y", 0.0) + vacuum_thickness
+            c = np_extents.get("z", 0.0) + vacuum_thickness
         elif dimensionality == "MOLECULE":
             # For 0D materials, use large cell
             a = max(a, vacuum_thickness)
@@ -333,7 +379,28 @@ class CrystalOutToCifConverter:
                     # Default cell for other dimensionalities
                     cell_params = [10.0, 10.0, 10.0, 90.0, 90.0, 90.0]
 
-            cell = self.format_cell_parameters(cell_params, dimensionality)
+            # For SLAB/POLYMER, measure the Cartesian span along the non-periodic
+            # axes so the cell can be sized to fit the slab/wire plus vacuum, and
+            # so coordinates can be offset to sit inside the cell (no wrap-around).
+            np_extents = {}
+            np_offsets = {}
+            vacuum_thickness = float(self.options.get("vacuum_thickness", 20.0))
+            if dimensionality in ("SLAB", "POLYMER"):
+                np_coords = geometry_data.get("coordinates", [])
+                if np_coords:
+                    if dimensionality == "SLAB":
+                        zs = [float(c["z"]) for c in np_coords]
+                        np_extents["z"] = max(zs) - min(zs)
+                        np_offsets["z"] = min(zs)
+                    else:  # POLYMER: y and z are non-periodic Cartesian
+                        ys = [float(c["y"]) for c in np_coords]
+                        zs = [float(c["z"]) for c in np_coords]
+                        np_extents["y"] = max(ys) - min(ys)
+                        np_extents["z"] = max(zs) - min(zs)
+                        np_offsets["y"] = min(ys)
+                        np_offsets["z"] = min(zs)
+
+            cell = self.format_cell_parameters(cell_params, dimensionality, np_extents)
             precision = int(self.options.get("precision", 6))
 
             f.write(f"_cell_length_a    {cell['a']:.{precision}f}\n")
@@ -386,12 +453,15 @@ class CrystalOutToCifConverter:
             f.write("_atom_site_fract_z\n")
 
             # Select appropriate coordinates based on mode
+            origin_shift = geometry_data.get("origin_shift", (0.0, 0.0, 0.0))
+            coords_in_conventional_basis = False
             if preserve_symmetry:
                 # For symmetry-preserved CIF, use crystallographic coordinates if available
                 # These are in the conventional cell basis, matching the space group
                 crystallographic_coords = geometry_data.get("crystallographic_coordinates", [])
                 if crystallographic_coords:
                     coordinates = crystallographic_coords
+                    coords_in_conventional_basis = True
                     if self.options.get("verbose", False):
                         print(f"  Using crystallographic coordinates ({len(crystallographic_coords)} atoms)")
                 else:
@@ -399,11 +469,48 @@ class CrystalOutToCifConverter:
                     coordinates = geometry_data["coordinates"]
                     if self.options.get("verbose", False):
                         print(f"  Warning: Crystallographic coordinates not found, using primitive")
+                    # For primitive Bravais lattices (P), CRYSTAL omits the
+                    # CRYSTALLOGRAPHIC CELL section because primitive == conventional.
+                    # In that case the primitive coords are already in the
+                    # conventional basis, so the origin shift can still be applied.
+                    try:
+                        prim = [float(p) for p in geometry_data.get("primitive_cell", [])[:6]]
+                        conv = [float(p) for p in geometry_data.get("conventional_cell", [])[:6]]
+                        if len(prim) == 6 and len(conv) == 6 and all(
+                            abs(a - b) < 1e-4 for a, b in zip(prim, conv)
+                        ):
+                            coords_in_conventional_basis = True
+                    except (ValueError, TypeError):
+                        pass
                 # Filter to unique atoms only
                 coordinates = [c for c in coordinates if c.get("is_unique", True)]
             else:
                 # Default mode: use primitive coordinates (all atoms)
                 coordinates = geometry_data["coordinates"]
+
+            # Convert origin-1 coords to standard origin-2 by subtracting the
+            # SHIFT OF THE ORIGIN that CRYSTAL itself reported. Only valid when
+            # coords are in the conventional cell basis (preserve_symmetry mode).
+            apply_shift = (
+                dimensionality == "CRYSTAL"
+                and coords_in_conventional_basis
+                and any(abs(s) > 1e-6 for s in origin_shift)
+            )
+            if apply_shift and self.options.get("verbose", False):
+                print(
+                    f"  Applying origin shift {origin_shift} from CRYSTAL output "
+                    f"(IFSO=1 -> standard origin-2 coords)"
+                )
+            elif (
+                not coords_in_conventional_basis
+                and any(abs(s) > 1e-6 for s in origin_shift)
+                and self.options.get("verbose", False)
+            ):
+                print(
+                    f"  Note: CRYSTAL reported origin shift {origin_shift} but coords "
+                    f"are not in conventional basis; not applying. Use --preserve-symmetry "
+                    f"for standard origin-2 CIF."
+                )
 
             atom_counts = {}
 
@@ -426,18 +533,24 @@ class CrystalOutToCifConverter:
 
                 # Handle coordinates based on dimensionality
                 if dimensionality == "SLAB":
-                    # For SLAB: x,y fractional, z Cartesian (convert to fractional)
+                    # For SLAB: x,y fractional, z Cartesian (convert to fractional).
+                    # Offset z by (z_min - vacuum/2) so the slab is centered in the
+                    # cell with vacuum_thickness of vacuum split above and below;
+                    # this keeps every atom inside [0,1) regardless of slab thickness.
                     x_fract = float(coord["x"])
                     y_fract = float(coord["y"])
                     z_cart = float(coord["z"])
-                    z_fract = z_cart / cell["c"]  # Convert Cartesian z to fractional
+                    z_origin = np_offsets.get("z", 0.0) - vacuum_thickness / 2.0
+                    z_fract = (z_cart - z_origin) / cell["c"]
                 elif dimensionality == "POLYMER":
-                    # For POLYMER: x fractional, y,z Cartesian
+                    # For POLYMER: x fractional, y,z Cartesian (centered with vacuum)
                     x_fract = float(coord["x"])
                     y_cart = float(coord["y"])
                     z_cart = float(coord["z"])
-                    y_fract = y_cart / cell["b"]
-                    z_fract = z_cart / cell["c"]
+                    y_origin = np_offsets.get("y", 0.0) - vacuum_thickness / 2.0
+                    z_origin = np_offsets.get("z", 0.0) - vacuum_thickness / 2.0
+                    y_fract = (y_cart - y_origin) / cell["b"]
+                    z_fract = (z_cart - z_origin) / cell["c"]
                 elif dimensionality == "MOLECULE":
                     # For MOLECULE: all Cartesian (convert to fractional)
                     # Coordinates need to be shifted to be relative to box origin
@@ -466,6 +579,11 @@ class CrystalOutToCifConverter:
                     x_fract = float(coord["x"])
                     y_fract = float(coord["y"])
                     z_fract = float(coord["z"])
+
+                if apply_shift:
+                    x_fract = (x_fract - origin_shift[0]) % 1.0
+                    y_fract = (y_fract - origin_shift[1]) % 1.0
+                    z_fract = (z_fract - origin_shift[2]) % 1.0
 
                 f.write(f"{label:8s} {symbol:2s} {x_fract:12.{precision}f} {y_fract:12.{precision}f} {z_fract:12.{precision}f}\n")
 
@@ -697,6 +815,10 @@ class CrystalOutToCifConverter:
                 content = f.read()
             calc_type = self.detect_calculation_type(content)
 
+            # Extract CRYSTAL's reported origin shift (non-zero only when IFSO=1
+            # was used for a centrosymmetric SG with two origin choices).
+            output_data["origin_shift"] = self._parse_origin_shift(content)
+
             if self.options.get("verbose", False):
                 print(f"  Detected calculation type: {calc_type}")
                 print(f"  Dimensionality: {output_data.get('dimensionality', 'UNKNOWN')}")
@@ -912,7 +1034,9 @@ Examples:
         "--vacuum-thickness",
         type=float,
         default=20.0,
-        help="Vacuum thickness for 2D/1D/0D materials (default: 20.0 Å)"
+        help="Vacuum gap between periodic images for 2D/1D materials, added "
+             "beyond the slab/wire thickness (default: 20.0 Å). For 0D "
+             "molecules, the minimum box dimension."
     )
     parser.add_argument(
         "--precision",
