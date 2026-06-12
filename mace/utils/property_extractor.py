@@ -94,9 +94,15 @@ class CrystalPropertyExtractor:
             'extractor_version': '1.0'
         }
         
-        # Process population analysis data if available
+        # Process population analysis data if available. Package-qualified
+        # import first: the bare name only resolves when mace/utils is on
+        # sys.path directly, so in every production context the ImportError
+        # was silently swallowed and population processing never ran.
         try:
-            from population_analysis_processor import PopulationAnalysisProcessor
+            try:
+                from mace.utils.population_analysis_processor import PopulationAnalysisProcessor
+            except ImportError:
+                from population_analysis_processor import PopulationAnalysisProcessor
             processor = PopulationAnalysisProcessor()
             
             # Check if we have population analysis data to process
@@ -293,18 +299,19 @@ class CrystalPropertyExtractor:
                 props['band_gap'] = float(gap_matches[-1])  # Take the last (final) value
                 props['spin_polarized'] = False
         
-        # Direct vs indirect band gap
-        if 'DIRECT ENERGY BAND GAP' in content:
-            direct_match = re.search(r'DIRECT ENERGY BAND GAP:\s*([\d.]+)\s*eV', content)
-            if direct_match:
-                props['direct_band_gap'] = float(direct_match.group(1))
-                props['band_gap_type'] = 'direct'
-        
-        if 'INDIRECT ENERGY BAND GAP' in content:
-            indirect_match = re.search(r'INDIRECT ENERGY BAND GAP:\s*([\d.]+)\s*eV', content)
-            if indirect_match:
-                props['indirect_band_gap'] = float(indirect_match.group(1))
-                props['band_gap_type'] = 'indirect'
+        # Direct vs indirect band gap. The negative lookbehind keeps "DIRECT"
+        # from matching inside "INDIRECT", which stored a spurious
+        # direct_band_gap for every indirect-gap material; take the LAST
+        # occurrence (earlier ones are pre-optimization SCF cycles).
+        direct_matches = re.findall(r'(?<!IN)DIRECT ENERGY BAND GAP:\s*([\d.]+)\s*eV', content)
+        if direct_matches:
+            props['direct_band_gap'] = float(direct_matches[-1])
+            props['band_gap_type'] = 'direct'
+
+        indirect_matches = re.findall(r'INDIRECT ENERGY BAND GAP:\s*([\d.]+)\s*eV', content)
+        if indirect_matches:
+            props['indirect_band_gap'] = float(indirect_matches[-1])
+            props['band_gap_type'] = 'indirect'
         
         # Add advanced electronic properties
         props.update(self._extract_advanced_electronic_properties(content))
@@ -402,18 +409,20 @@ class CrystalPropertyExtractor:
                     props['total_energy_au'] = float(final_energy_match.group(1))
                     props['total_energy_ev'] = float(final_energy_match.group(1)) * 27.2114
         
-        # D3 dispersion correction
-        d3_match = re.search(r'D3 DISPERSION ENERGY \(AU\)\s*([-\d.E+]+)', content)
-        if d3_match:
-            d3_energy = float(d3_match.group(1))
+        # D3 dispersion correction — take the LAST occurrence; the first is
+        # printed for the initial geometry and is inconsistent with the
+        # final total energy (which is taken last)
+        d3_matches = re.findall(r'D3 DISPERSION ENERGY \(AU\)\s*([-\d.E+]+)', content)
+        if d3_matches:
+            d3_energy = float(d3_matches[-1])
             props['d3_dispersion_energy_au'] = d3_energy
             props['d3_dispersion_energy_ev'] = d3_energy * 27.2114
-            
+
             # Also look for the total energy + dispersion
-            total_plus_disp_match = re.search(r'TOTAL ENERGY \+ DISP \(AU\)\s*([-\d.E+]+)', content)
-            if total_plus_disp_match:
-                props['total_energy_plus_d3_au'] = float(total_plus_disp_match.group(1))
-                props['total_energy_plus_d3_ev'] = float(total_plus_disp_match.group(1)) * 27.2114
+            total_plus_disp_matches = re.findall(r'TOTAL ENERGY \+ DISP \(AU\)\s*([-\d.E+]+)', content)
+            if total_plus_disp_matches:
+                props['total_energy_plus_d3_au'] = float(total_plus_disp_matches[-1])
+                props['total_energy_plus_d3_ev'] = float(total_plus_disp_matches[-1]) * 27.2114
             elif 'total_energy_au' in props:
                 # Calculate if not explicitly given
                 props['total_energy_plus_d3_au'] = props['total_energy_au'] + d3_energy
@@ -503,18 +512,25 @@ class CrystalPropertyExtractor:
         if 'OPTGEOM' in content or 'OPT END - CONVERGED' in content:
             props['calculation_type'] = 'geometry_optimization'
             
-            # Convergence information
+            # Convergence information. Runs that converge at the first point
+            # print "OPT END - CONVERGED" without the convergence-tests line,
+            # so treat either as converged.
             converged_match = re.search(r'CONVERGENCE TESTS SATISFIED AFTER\s+(\d+)\s+ENERGY AND GRADIENT CALCULATIONS', content)
+            opt_end_match = re.search(r'OPT END - CONVERGED.*?POINTS\s+(\d+)', content)
             if converged_match:
                 props['optimization_cycles'] = int(converged_match.group(1))
                 props['optimization_converged'] = True
+            elif opt_end_match:
+                props['optimization_cycles'] = int(opt_end_match.group(1))
+                props['optimization_converged'] = True
             else:
                 props['optimization_converged'] = False
-            
-            # Final gradient
-            grad_norm_match = re.search(r'GRADIENT NORM\s+([\d.E+-]+)', content)
-            if grad_norm_match:
-                props['final_gradient_norm'] = float(grad_norm_match.group(1))
+
+            # Final gradient — last occurrence; the first GRADIENT NORM line
+            # is the initial geometry's
+            grad_norm_matches = re.findall(r'GRADIENT NORM\s+([\d.E+-]+)', content)
+            if grad_norm_matches:
+                props['final_gradient_norm'] = float(grad_norm_matches[-1])
         
         # Check for single point calculation
         elif 'SINGLE POINT CALCULATION' in content or 'SCFDIR' in content:
@@ -702,8 +718,11 @@ class CrystalPropertyExtractor:
         
         if search_final:
             # Look for final atomic positions
+            # Stop at TRANSFORMATION too: capturing through to "T = ATOM"
+            # (printed only after the crystallographic table) spanned both
+            # the primitive and crystallographic tables, doubling every atom
             final_geom_match = re.search(
-                r'FINAL OPTIMIZED GEOMETRY.*?ATOM\s+X/A\s+Y/B\s+Z/C\s*\n\s*\*+\s*\n(.*?)\n\s*T = ATOM',
+                r'FINAL OPTIMIZED GEOMETRY.*?ATOM\s+X/A\s+Y/B\s+Z/C\s*\n\s*\*+\s*\n(.*?)\n\s*(?:T = ATOM|TRANSFORMATION)',
                 content, re.DOTALL
             )
             
@@ -770,17 +789,32 @@ class CrystalPropertyExtractor:
     
     def _extract_mulliken_section(self, content: str, section_type: str) -> Dict[str, Any]:
         """Extract Mulliken population analysis for a specific section."""
-        # Escape special regex characters in section_type
+        # The section header line is printed IMMEDIATELY above the Mulliken
+        # header; a loose `.*?` join matched the SPINLOCK echo line
+        # ("ALPHA-BETA ELECTRONS LOCKED TO ...") and then skipped forward to
+        # the alpha+beta table, storing full populations as spin densities.
+        # The capture is bounded so it cannot run into the other spin section
+        # or the overlap tables (which doubled atom counts), and the LAST
+        # PPAN print is used (earlier ones belong to earlier SCF/geometries).
         escaped_section = re.escape(section_type)
-        pattern = f'{escaped_section}.*?MULLIKEN POPULATION ANALYSIS.*?NO. OF ELECTRONS\\s+([\\d.-]+)(.*?)(?=MMMMM|TTTTTT|$)'
-        match = re.search(pattern, content, re.DOTALL)
-        
-        if not match:
+        pattern = (f'{escaped_section}\\s*\\n\\s*MULLIKEN POPULATION ANALYSIS[^\\n]*?'
+                   f'NO. OF ELECTRONS\\s+([\\d.-]+)(.*?)'
+                   f'(?=ALPHA\\+BETA ELECTRONS|ALPHA-BETA ELECTRONS|'
+                   f'OVERLAP POPULATION|MMMMM|TTTTTT|$)')
+        matches = list(re.finditer(pattern, content, re.DOTALL))
+
+        if not matches:
             return None
-        
+
+        match = matches[-1]
         total_electrons = float(match.group(1))
         section_content = match.group(2)
         
+        # The section holds two tables with identical atom rows (A.O.
+        # POPULATION followed by SHELL POPULATION) — parse only the first
+        # so atoms aren't double-counted
+        section_content = re.split(r'ATOM\s+Z\s+CHARGE\s+SHELL\s+POPULATION', section_content)[0]
+
         # Extract atomic charges and populations
         atoms = []
         atom_matches = re.finditer(r'(\d+)\s+(\w+)\s+(\d+)\s+([\d.-]+)(.*?)(?=\n\s*\d+|\n\s*ATOM|\n\s*OVERLAP|$)', section_content, re.DOTALL)
@@ -1072,11 +1106,15 @@ class CrystalPropertyExtractor:
             unit = self._get_property_unit(prop_name)
             
             try:
-                # Check if property already exists
+                # Check if property already exists. NULL-safe calc_id match:
+                # untracked extractions have calc_id=None, and `calc_id = ?`
+                # never matches NULL, so every re-extraction inserted a full
+                # duplicate set of property rows.
                 with self.db._get_connection() as conn:
                     cursor = conn.execute(
-                        "SELECT property_id FROM properties WHERE material_id = ? AND property_name = ? AND calc_id = ?",
-                        (material_id, prop_name, calc_id)
+                        "SELECT property_id FROM properties WHERE material_id = ? AND property_name = ? "
+                        "AND (calc_id = ? OR (calc_id IS NULL AND ? IS NULL))",
+                        (material_id, prop_name, calc_id, calc_id)
                     )
                     existing = cursor.fetchone()
                     
@@ -1133,17 +1171,19 @@ class CrystalPropertyExtractor:
         
         # Fermi energy extraction - including SP calculation conducting state format
         fermi_patterns = [
-            r'FERMI ENERGY\s*[=:]\s*([-\d.]+)',
-            r'FERMI LEVEL\s*[=:]\s*([-\d.]+)',
-            r'CHEMICAL POTENTIAL\s*[=:]\s*([-\d.]+)',
+            r'FERMI ENERGY\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
+            r'FERMI LEVEL\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
+            r'CHEMICAL POTENTIAL\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
             r'EFERMI\(AU\)\s+([-\d.E+\-]+)',  # SP calculation conducting state: "EFERMI(AU) -9.9423732E-02"
             r'POSSIBLY CONDUCTING STATE.*?EFERMI\(AU\)\s+([-\d.E+\-]+)'  # Full conducting state pattern
         ]
         
         for pattern in fermi_patterns:
-            match = re.search(pattern, content, re.IGNORECASE)
-            if match:
-                props['fermi_energy'] = float(match.group(1))
+            # Last occurrence: conducting-state EFERMI lines are printed per
+            # SCF iteration and only the final one is converged
+            fermi_matches = re.findall(pattern, content, re.IGNORECASE)
+            if fermi_matches:
+                props['fermi_energy'] = float(fermi_matches[-1])
                 break
         
         # SCF cycles
@@ -1188,16 +1228,16 @@ class CrystalPropertyExtractor:
             
         # Extract Fermi energy from BAND calculation
         fermi_patterns = [
-            r'FERMI ENERGY\s*[=:]\s*([-\d.]+)',
-            r'FERMI LEVEL\s*[=:]\s*([-\d.]+)',
-            r'EF\s*[=:]\s*([-\d.]+)',
+            r'FERMI ENERGY\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
+            r'FERMI LEVEL\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
+            r'EF\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
             r'FERMI ENERGY\s+([-\d.E+\-]+)',  # CRYSTAL format: "FERMI ENERGY -0.123E+00"
         ]
         
         for pattern in fermi_patterns:
-            match = re.search(pattern, content, re.IGNORECASE)
-            if match:
-                props['fermi_energy_band'] = float(match.group(1))
+            fermi_matches = re.findall(pattern, content, re.IGNORECASE)
+            if fermi_matches:
+                props['fermi_energy_band'] = float(fermi_matches[-1])
                 break
                 
         # Check for BAND.DAT file and extract information
@@ -1208,7 +1248,10 @@ class CrystalPropertyExtractor:
             
             # Try to extract information from DAT file using existing processor
             try:
-                from dat_file_processor import DatFileProcessor
+                try:
+                    from mace.utils.dat_file_processor import DatFileProcessor
+                except ImportError:
+                    from dat_file_processor import DatFileProcessor
                 processor = DatFileProcessor()
                 dat_info = processor.process_band_dat_file(band_dat_file)
                 if dat_info:
@@ -1263,16 +1306,16 @@ class CrystalPropertyExtractor:
         
         # Extract Fermi energy from DOSS calculation
         fermi_patterns = [
-            r'FERMI ENERGY\s*[=:]\s*([-\d.]+)',
-            r'FERMI LEVEL\s*[=:]\s*([-\d.]+)',
-            r'EF\s*[=:]\s*([-\d.]+)',
+            r'FERMI ENERGY\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
+            r'FERMI LEVEL\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
+            r'EF\s*[=:]\s*([-\d.]+(?:[Ee][+-]?\d+)?)',
             r'FERMI ENERGY\s+([-\d.E+\-]+)',  # CRYSTAL format: "FERMI ENERGY -0.123E+00"
         ]
         
         for pattern in fermi_patterns:
-            match = re.search(pattern, content, re.IGNORECASE)
-            if match:
-                props['fermi_energy_dos'] = float(match.group(1))
+            fermi_matches = re.findall(pattern, content, re.IGNORECASE)
+            if fermi_matches:
+                props['fermi_energy_dos'] = float(fermi_matches[-1])
                 break
                 
         # Check for DOSS.DAT file and extract information
@@ -1291,7 +1334,10 @@ class CrystalPropertyExtractor:
             
             # Try to extract information from DAT file using existing processor
             try:
-                from dat_file_processor import DatFileProcessor
+                try:
+                    from mace.utils.dat_file_processor import DatFileProcessor
+                except ImportError:
+                    from dat_file_processor import DatFileProcessor
                 processor = DatFileProcessor()
                 dat_info = processor.process_doss_dat_file(dat_file)
                 if dat_info:
@@ -1792,7 +1838,9 @@ class CrystalPropertyExtractor:
         elif 'band_gap' in prop_lower:
             return 'eV'
         elif 'fermi_energy' in prop_lower:
-            return 'eV'
+            # CRYSTAL prints FERMI ENERGY / EFERMI(AU) in Hartree and the
+            # extractor stores the raw value
+            return 'Hartree'
         elif prop_lower.endswith('_energy') and not 'lattice' in prop_lower:
             return 'eV'
         
@@ -1950,7 +1998,10 @@ class CrystalPropertyExtractor:
         advanced_props = {}
         
         try:
-            from advanced_electronic_analyzer import AdvancedElectronicAnalyzer
+            try:
+                from mace.utils.advanced_electronic_analyzer import AdvancedElectronicAnalyzer
+            except ImportError:
+                from advanced_electronic_analyzer import AdvancedElectronicAnalyzer
             
             # Look for BAND.DAT and DOSS.DAT files in the same directory
             output_dir = output_file.parent
