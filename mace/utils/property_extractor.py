@@ -555,19 +555,34 @@ class CrystalPropertyExtractor:
         return props
     
     def _extract_neighbor_information(self, content: str) -> Dict[str, Any]:
-        """Extract neighbor information from CRYSTAL output."""
+        """Extract neighbor information from CRYSTAL output.
+
+        OPT outputs print the neighbor table twice: once for the initial
+        geometry and again after the final optimized geometry. The first
+        table keeps the original property names; when a later table exists,
+        it is stored under final_* property names.
+        """
         props = {}
-        
-        # Look for neighbor analysis section (take the first occurrence)
-        neighbor_section_match = re.search(
+
+        neighbor_section_matches = list(re.finditer(
             r'NEIGHBORS OF THE NON-EQUIVALENT ATOMS.*?N = NUMBER OF NEIGHBORS AT DISTANCE R\s*\n\s*ATOM\s+N\s+R/ANG\s+R/AU\s+NEIGHBORS.*?\n(.*?)(?=\n\s*SYMMETRY|\n\s*TTTT|\n\s*MMMM|\n\s*[A-Z]{3,}|$)',
             content, re.DOTALL
-        )
-        
-        if not neighbor_section_match:
+        ))
+
+        if not neighbor_section_matches:
             return props
-        
-        neighbor_content = neighbor_section_match.group(1).strip()
+
+        props.update(self._parse_neighbor_section(neighbor_section_matches[0].group(1).strip()))
+
+        if len(neighbor_section_matches) > 1:
+            final_props = self._parse_neighbor_section(neighbor_section_matches[-1].group(1).strip())
+            props.update({f'final_{name}': value for name, value in final_props.items()})
+
+        return props
+
+    def _parse_neighbor_section(self, neighbor_content: str) -> Dict[str, Any]:
+        """Parse a single neighbor analysis table into property values."""
+        props = {}
         neighbors_data = []
         coordination_numbers = []
         bond_distances = []
@@ -582,9 +597,14 @@ class CrystalPropertyExtractor:
             if not line:
                 continue
             
-            # Check if this line starts with atom number and element
+            # Check if this line starts with atom number and element.
+            # Shell header rows carry decimal R/ANG and R/AU values; wrapped
+            # continuation rows hold only integer cell indices, so requiring
+            # decimal points avoids misreading 5-token continuation lines
+            # (e.g. "2 C    0 0 1") as new shells with bogus distances.
             parts = line.split()
-            if len(parts) >= 5 and parts[0].isdigit() and parts[1].isalpha():
+            if (len(parts) >= 5 and parts[0].isdigit() and parts[1].isalpha()
+                    and '.' in parts[3] and '.' in parts[4]):
                 try:
                     atom_num = int(parts[0])
                     element = parts[1]
