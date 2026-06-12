@@ -76,6 +76,7 @@ Examples:
 Workflow Templates:
   basic_opt         : OPT
   opt_sp           : OPT → SP
+  opt_sp_freq      : OPT → SP → FREQ
   full_electronic  : OPT → SP → BAND → DOSS
   double_opt       : OPT → OPT2 → SP
   complete         : OPT → SP → BAND → DOSS → FREQ
@@ -102,8 +103,8 @@ Workflow Templates:
     parser.add_argument("--cif-dir", help="Directory containing CIF files (for quick start)")
     parser.add_argument("--d12-dir", help="Directory containing D12 files (for quick start)")
     parser.add_argument("--workflow", default="full_electronic",
-                       choices=["basic_opt", "opt_sp", "full_electronic", "double_opt", "complete", 
-                               "transport_analysis", "charge_analysis", "combined_analysis"],
+                       choices=["basic_opt", "opt_sp", "opt_sp_freq", "full_electronic", "double_opt",
+                               "complete", "transport_analysis", "charge_analysis", "combined_analysis"],
                        help="Workflow template for quick start")
     
     # Common options
@@ -192,6 +193,7 @@ def run_quick_start_mode(args):
     workflow_templates = {
         "basic_opt": ["OPT"],
         "opt_sp": ["OPT", "SP"],
+        "opt_sp_freq": ["OPT", "SP", "FREQ"],
         "full_electronic": ["OPT", "SP", "BAND", "DOSS"],
         "double_opt": ["OPT", "OPT2", "SP"],
         "complete": ["OPT", "SP", "BAND", "DOSS", "FREQ"],
@@ -460,6 +462,10 @@ def show_workflow_templates():
         "opt_sp": {
             "sequence": ["OPT", "SP"],
             "description": "Geometry optimization followed by single point calculation"
+        },
+        "opt_sp_freq": {
+            "sequence": ["OPT", "SP", "FREQ"],
+            "description": "Optimization, single point, then vibrational frequencies"
         },
         "full_electronic": {
             "sequence": ["OPT", "SP", "BAND", "DOSS"],
