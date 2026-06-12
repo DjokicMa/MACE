@@ -25,3 +25,6 @@ config/secrets.yml
 *.cube
 *.CUBE
 *.zip
+
+# Local calculation test data (12+ GB) - never commit
+test/
