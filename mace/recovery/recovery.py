@@ -41,10 +41,26 @@ except ImportError as e:
     sys.exit(1)
 
 
+# The detector and older manager versions store error types under different
+# names than the recovery-config keys; map them to canonical config keys so
+# those failures are actually recoverable
+ERROR_TYPE_ALIASES = {
+    'time_limit': 'timeout_error',
+    'scf_convergence': 'convergence_error',
+    'scf_error': 'convergence_error',
+    'disk_quota': 'disk_space_error',
+}
+
+
+def canonical_error_type(error_type: str) -> str:
+    """Normalize an error type to the recovery-config key naming."""
+    return ERROR_TYPE_ALIASES.get(error_type, error_type)
+
+
 class ErrorRecoveryEngine:
     """
     Automated error recovery system for CRYSTAL calculations.
-    
+
     Handles common calculation failures using configurable recovery strategies
     and integrates with existing error detection and fixing scripts.
     """
@@ -163,8 +179,8 @@ class ErrorRecoveryEngine:
         
         for calc in failed_calcs:
             calc_id = calc['calc_id']
-            error_type = calc.get('error_type', 'unknown')
-            
+            error_type = canonical_error_type(calc.get('error_type', 'unknown'))
+
             # Check if this error type is recoverable
             if error_type not in self.config["error_recovery"]:
                 continue
@@ -185,12 +201,19 @@ class ErrorRecoveryEngine:
             material_id=self.db.get_calculation(calc_id)['material_id']
         )
         
-        # Count calculations that are recovery attempts for this calc
+        # Count calculations that are recovery attempts for this calc.
+        # The markers live inside settings_json — they are not columns, so
+        # reading them off the row directly always returned 0 and the
+        # per-error max_retries cap was never enforced.
         retry_count = 0
         for calc in recovery_calcs:
-            if calc.get('parent_calc_id') == calc_id and calc.get('is_recovery_attempt'):
+            try:
+                settings = json.loads(calc.get('settings_json') or '{}')
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if settings.get('parent_calc_id') == calc_id and settings.get('is_recovery_attempt'):
                 retry_count += 1
-                
+
         return retry_count
         
     def attempt_recovery(self, calc: Dict) -> bool:
@@ -204,10 +227,10 @@ class ErrorRecoveryEngine:
             True if recovery was attempted, False if skipped
         """
         calc_id = calc['calc_id']
-        error_type = calc.get('error_type', 'unknown')
-        
+        error_type = canonical_error_type(calc.get('error_type', 'unknown'))
+
         print(f"Attempting recovery for calculation {calc_id} (error: {error_type})")
-        
+
         # Get recovery configuration for this error type
         error_config = self.config["error_recovery"].get(error_type, {})
         handler_name = error_config.get("handler")
@@ -266,7 +289,9 @@ class ErrorRecoveryEngine:
             shutil.copy2(original_input, temp_input)
             
             # Run fixk.py in temp directory
-            fixk_script = Path(__file__).parent.parent / "Check_Scripts" / "fixk.py"
+            # fixk.py lives in code/Check_Scripts at the repo root, not
+            # under the mace package
+            fixk_script = Path(__file__).parent.parent.parent / "code" / "Check_Scripts" / "fixk.py"
             
             try:
                 # Change to temp directory and run fixk.py
@@ -400,47 +425,71 @@ class ErrorRecoveryEngine:
             with open(original_input, 'r') as f:
                 lines = f.readlines()
                 
-            # Find and update SCF parameters
+            # Find and update SCF parameters. CRYSTAL d12 format puts the
+            # value on the line AFTER the keyword (MAXCYCLE\n800), which the
+            # old same-line parsing never matched, so this handler always
+            # reported "no convergence parameters found".
             updated_lines = []
             found_maxcycle = False
             found_fmixing = False
-            
-            for line in lines:
-                if 'MAXCYCLE' in line.upper():
-                    # Increase MAXCYCLE
+
+            i = 0
+            while i < len(lines):
+                line = lines[i]
+                keyword = line.strip().upper()
+
+                if keyword == 'MAXCYCLE' and i + 1 < len(lines):
+                    try:
+                        current_cycles = int(lines[i + 1].strip())
+                        new_cycles = current_cycles + config.get('max_cycles_increase', 1000)
+                        updated_lines.append(line)
+                        updated_lines.append(f"{new_cycles}\n")
+                        found_maxcycle = True
+                        print(f"Increased MAXCYCLE from {current_cycles} to {new_cycles}")
+                        i += 2
+                        continue
+                    except ValueError:
+                        pass
+
+                elif keyword == 'FMIXING' and i + 1 < len(lines):
+                    try:
+                        current_fmix = int(lines[i + 1].strip())
+                        new_fmix = max(10, current_fmix - config.get('fmixing_adjustment', 10))
+                        updated_lines.append(line)
+                        updated_lines.append(f"{new_fmix}\n")
+                        found_fmixing = True
+                        print(f"Adjusted FMIXING from {current_fmix} to {new_fmix}")
+                        i += 2
+                        continue
+                    except ValueError:
+                        pass
+
+                # Same-line form (MAXCYCLE 800) kept as fallback
+                if 'MAXCYCLE' in keyword and len(line.split()) > 1:
                     parts = line.split()
-                    for i, part in enumerate(parts):
-                        if part.upper() == 'MAXCYCLE' and i + 1 < len(parts):
+                    for j, part in enumerate(parts):
+                        if part.upper() == 'MAXCYCLE' and j + 1 < len(parts):
                             try:
-                                current_cycles = int(parts[i + 1])
-                                max_increase = config.get('max_cycles_increase', 1000)
-                                new_cycles = current_cycles + max_increase
-                                parts[i + 1] = str(new_cycles)
+                                current_cycles = int(parts[j + 1])
+                                parts[j + 1] = str(current_cycles + config.get('max_cycles_increase', 1000))
                                 found_maxcycle = True
-                                print(f"Increased MAXCYCLE from {current_cycles} to {new_cycles}")
-                                break
                             except ValueError:
                                 pass
                     updated_lines.append(' '.join(parts) + '\n')
-                    
-                elif 'FMIXING' in line.upper():
-                    # Adjust FMIXING
+                elif 'FMIXING' in keyword and len(line.split()) > 1:
                     parts = line.split()
-                    for i, part in enumerate(parts):
-                        if part.upper() == 'FMIXING' and i + 1 < len(parts):
+                    for j, part in enumerate(parts):
+                        if part.upper() == 'FMIXING' and j + 1 < len(parts):
                             try:
-                                current_fmix = int(parts[i + 1])
-                                adjustment = config.get('fmixing_adjustment', 10)
-                                new_fmix = max(10, current_fmix - adjustment)  # Don't go below 10
-                                parts[i + 1] = str(new_fmix)
+                                current_fmix = int(parts[j + 1])
+                                parts[j + 1] = str(max(10, current_fmix - config.get('fmixing_adjustment', 10)))
                                 found_fmixing = True
-                                print(f"Adjusted FMIXING from {current_fmix} to {new_fmix}")
-                                break
                             except ValueError:
                                 pass
                     updated_lines.append(' '.join(parts) + '\n')
                 else:
                     updated_lines.append(line)
+                i += 1
                     
             # Create recovery input file
             recovery_suffix = f"_recovery_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -540,13 +589,21 @@ class ErrorRecoveryEngine:
             work_dir = Path(calc.get('work_dir', ''))
             if work_dir.exists():
                 try:
-                    # Remove large temporary files
-                    for pattern in ['*.tmp', '*.scratch', 'fort.*', '*.f*']:
+                    # Remove large temporary files. NEVER delete wavefunction
+                    # files (.f9 / fort.9 / .f98 / fort.98) — they are the
+                    # restart data SP/BAND/DOSS need; the old '*.f*'/'fort.*'
+                    # patterns destroyed them.
+                    protected = {'.f9', '.f98'}
+                    protected_names = {'fort.9', 'fort.98', 'fort.20', 'fort.34'}
+                    for pattern in ['*.tmp', '*.scratch', 'fort.*']:
                         for file_path in work_dir.glob(pattern):
+                            if (file_path.suffix.lower() in protected
+                                    or file_path.name.lower() in protected_names):
+                                continue
                             if file_path.is_file() and file_path.stat().st_size > 100 * 1024 * 1024:  # > 100MB
                                 file_path.unlink()
                                 print(f"Removed large file: {file_path}")
-                                
+
                 except Exception as e:
                     print(f"Error during cleanup: {e}")
                     
@@ -569,18 +626,21 @@ class ErrorRecoveryEngine:
         material_id = original_calc['material_id']
         calc_type = original_calc['calc_type']
         
-        # Generate new calculation ID
+        # Generate new calculation ID (create_calculation takes `settings`,
+        # a dict — the old settings_json= kwarg raised TypeError and killed
+        # every recovery that produced a fixed input)
         recovery_calc_id = self.db.create_calculation(
             material_id=material_id,
             calc_type=calc_type,
             input_file=str(fixed_input_file),
+            work_dir=original_calc.get('work_dir'),
             priority=original_calc.get('priority', 0) + 1,  # Higher priority for recovery
-            settings_json=json.dumps({
+            settings={
                 'is_recovery_attempt': True,
                 'parent_calc_id': original_calc['calc_id'],
                 'recovery_strategy': recovery_config.get('handler'),
                 'recovery_timestamp': datetime.now().isoformat()
-            })
+            }
         )
         
         print(f"Created recovery calculation {recovery_calc_id} for {original_calc['calc_id']}")
@@ -625,7 +685,10 @@ class ErrorRecoveryEngine:
         all_calcs = self.db.get_calculations_by_status()
         
         for calc in all_calcs:
-            settings = json.loads(calc.get('settings_json', '{}'))
+            # `or '{}'` not a dict-default: the column is usually NULL, and
+            # .get('settings_json', '{}') returns None for NULL, crashing
+            # json.loads
+            settings = json.loads(calc.get('settings_json') or '{}')
             if settings.get('is_recovery_attempt'):
                 stats['recovery_attempts'] += 1
                 if calc['status'] == 'completed':

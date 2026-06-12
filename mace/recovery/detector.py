@@ -468,8 +468,9 @@ class CrystalErrorDetector:
         if directory is None:
             directory = self.base_dir
             
-        # Find updatelists2.py script
-        updatelists_script = Path(__file__).parent.parent / "Check_Scripts" / "updatelists2.py"
+        # Find updatelists2.py script — it lives in code/Check_Scripts at the
+        # repo root, not under the mace package
+        updatelists_script = Path(__file__).parent.parent.parent / "code" / "Check_Scripts" / "updatelists2.py"
         
         if not updatelists_script.exists():
             return {

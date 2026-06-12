@@ -237,12 +237,13 @@ class EnhancedCrystalQueueManager:
                 })
             
             # Fallback to repository scripts if workflow scripts don't exist
-            repo_scripts_dir = Path(__file__).parent
+            # (templates live in mace/submission, not mace/queue)
+            repo_scripts_dir = Path(__file__).parent.parent / "submission"
             script_paths.setdefault('submitcrystal23', repo_scripts_dir / "submitcrystal23.sh")
             script_paths.setdefault('submit_prop', repo_scripts_dir / "submit_prop.sh")
         else:
-            # In repository context - use original script directory
-            script_dir = Path(__file__).parent
+            # In repository context - use the submission script directory
+            script_dir = Path(__file__).parent.parent / "submission"
             script_paths.update({
                 'submitcrystal23': script_dir / "submitcrystal23.sh",
                 'submit_prop': script_dir / "submit_prop.sh"
@@ -622,10 +623,23 @@ class EnhancedCrystalQueueManager:
             # Update tracking database
             if self.enable_tracking and calc_id:
                 self.db.update_calculation_status(
-                    calc_id, 
-                    'submitted', 
+                    calc_id,
+                    'submitted',
                     slurm_job_id=slurm_job_id
                 )
+                # Record the generated SLURM script so the memory/timeout
+                # recovery handlers (which edit resource directives) can
+                # find it — the job_script column was never written before
+                try:
+                    generated_script = calc_dir / f"{calc_input_file.stem}.sh"
+                    if generated_script.exists():
+                        with self.db._get_connection() as conn:
+                            conn.execute(
+                                "UPDATE calculations SET job_script = ? WHERE calc_id = ?",
+                                (str(generated_script), calc_id)
+                            )
+                except Exception:
+                    pass
                 
             # Update legacy tracking
             self.legacy_job_status["submitted"][slurm_job_id] = {
@@ -1047,7 +1061,7 @@ class EnhancedCrystalQueueManager:
                     "GEOMETRY OPTIMIZATION FAILED",
                     "SMALL DISTANCE BETWEEN ATOMS"
                 ],
-                'time_limit': [
+                'timeout_error': [
                     "DUE TO TIME LIMIT",
                     "TIME LIMIT EXCEEDED"
                 ],
@@ -1101,7 +1115,12 @@ class EnhancedCrystalQueueManager:
         print(f"   Error: {error_type} - {error_message}")
         
         try:
-            # Use ErrorRecoveryEngine to attempt recovery
+            # Use ErrorRecoveryEngine to attempt recovery. The calc dict was
+            # fetched before the error info was written, so inject the
+            # analyzed error type/message the engine keys its handlers on.
+            calc = dict(calc)
+            calc['error_type'] = error_type
+            calc['error_message'] = error_message
             recovered = self.error_recovery_engine.attempt_recovery(calc)
             
             if recovered:
@@ -1129,25 +1148,30 @@ class EnhancedCrystalQueueManager:
         if not self.db:
             return 0
         try:
-            # Query database for recovery attempts
-            result = self.db.execute_query(
-                "SELECT recovery_attempts FROM calculations WHERE calc_id = ?", 
-                (calc_id,)
-            )
-            return result[0]['recovery_attempts'] if result else 0
-        except:
+            # MaterialDatabase has no execute_query method — the old call
+            # raised AttributeError, the bare except returned 0, and
+            # max_recovery_attempts was never enforced
+            with self.db._get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT recovery_attempts FROM calculations WHERE calc_id = ?",
+                    (calc_id,)
+                )
+                row = cursor.fetchone()
+                return (row[0] or 0) if row else 0
+        except Exception:
             return 0
-    
+
     def increment_recovery_attempt_count(self, calc_id: str):
         """Increment the recovery attempt count for a calculation."""
         if not self.db:
             return
         try:
-            current_count = self.get_recovery_attempt_count(calc_id)
-            self.db.execute_query(
-                "UPDATE calculations SET recovery_attempts = ? WHERE calc_id = ?",
-                (current_count + 1, calc_id)
-            )
+            with self.db._get_connection() as conn:
+                conn.execute(
+                    "UPDATE calculations SET recovery_attempts = COALESCE(recovery_attempts, 0) + 1 "
+                    "WHERE calc_id = ?",
+                    (calc_id,)
+                )
         except Exception as e:
             print(f"Warning: Could not update recovery attempt count for {calc_id}: {e}")
     
@@ -1170,17 +1194,23 @@ class EnhancedCrystalQueueManager:
                                             error_type=None, error_message="Recovered and resubmitted")
             
             # Mark this as a recovery resubmission
-            if hasattr(self.db, 'execute_query'):
-                try:
-                    self.db.execute_query(
+            try:
+                with self.db._get_connection() as conn:
+                    conn.execute(
                         "UPDATE calculations SET completion_type = 'recovery_attempt' WHERE calc_id = ?",
                         (calc_id,)
                     )
-                except:
-                    pass  # Column might not exist in older databases
-            
+            except Exception:
+                pass  # Column might not exist in older databases
+
             # Submit the calculation using existing submit logic
-            return self.submit_single_calculation(d12_file, calc['calc_type'])
+            # (submit_single_calculation never existed on this class —
+            # recovered jobs were silently never resubmitted)
+            new_calc_id = self.submit_calculation(
+                d12_file, calc_type=calc.get('calc_type'),
+                material_id=calc.get('material_id')
+            )
+            return new_calc_id is not None
             
         except Exception as e:
             print(f"❌ Error resubmitting calculation {calc['calc_id']}: {e}")
@@ -1421,14 +1451,17 @@ class EnhancedCrystalQueueManager:
                     )
                     self.handle_completed_calculation(calc['calc_id'])
                 else:
-                    # Job left the queue without a completion signal -> failed
-                    error_type, error_message = self.analyze_calculation_error(calc)
+                    # Job left the queue without a completion signal -> failed.
+                    # Record the output file BEFORE invoking the handler so
+                    # error analysis reads the real output (the stale in-memory
+                    # record had output_file=None -> "no_output"), and route
+                    # through handle_failed_calculation so error recovery runs
+                    # for this path too.
                     self.db.update_calculation_status(
                         calc['calc_id'], 'failed',
-                        output_file=str(output_file),
-                        error_type=error_type,
-                        error_message=error_message
+                        output_file=str(output_file)
                     )
+                    self.handle_failed_calculation(calc['calc_id'], 'NOT_IN_QUEUE')
 
             except Exception as e:
                 print(f"Error checking output file {output_file}: {e}")
