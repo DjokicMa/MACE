@@ -40,16 +40,28 @@ def scan_for_completed_calculations(base_dir: Path) -> List[Dict]:
             material_name = out_file.stem
             
             # Remove common suffixes
-            for suffix in ['_opt', '_sp', '_freq']:
+            for suffix in ['_opt', '_sp', '_freq', '_band', '_doss',
+                           '_transport', '_charge+potential']:
                 if material_name.endswith(suffix):
                     material_name = material_name[:-len(suffix)]
                     break
-                    
-            # Determine calculation type
+
+            # Determine calculation type (D3 property types before SP/FREQ so
+            # their records dedup against engine-created ones instead of
+            # being re-registered as OPT)
             calc_type = 'OPT'  # Default
-            if '_sp' in out_file.stem:
+            stem_lower = out_file.stem.lower()
+            if '_doss' in stem_lower:
+                calc_type = 'DOSS'
+            elif '_band' in stem_lower:
+                calc_type = 'BAND'
+            elif '_transport' in stem_lower:
+                calc_type = 'TRANSPORT'
+            elif '_charge+potential' in stem_lower or '_charge_potential' in stem_lower:
+                calc_type = 'CHARGE+POTENTIAL'
+            elif '_sp' in stem_lower:
                 calc_type = 'SP'
-            elif '_freq' in out_file.stem:
+            elif '_freq' in stem_lower:
                 calc_type = 'FREQ'
             elif out_file.parent.name.startswith('step_') and '_OPT' in out_file.parent.name:
                 calc_type = 'OPT'
@@ -139,14 +151,27 @@ def populate_database(completed_calcs: List[Dict], db) -> int:
             
             already_exists = False
             for existing in existing_calcs:
-                if existing.get('output_file') == calc_info.get('output_file'):
+                # Match by output file, or — for records created at submission
+                # time before any output exists (engine/executor records have
+                # output_file=NULL) — by work_dir + calc_type
+                same_output = (
+                    calc_info.get('output_file')
+                    and existing.get('output_file') == calc_info.get('output_file')
+                )
+                same_workdir = (
+                    existing.get('work_dir') and calc_info.get('work_dir')
+                    and str(existing['work_dir']).rstrip('/') == str(calc_info['work_dir']).rstrip('/')
+                    and existing.get('calc_type') == calc_info.get('calc_type')
+                )
+                if same_output or same_workdir:
                     already_exists = True
                     # Update status to completed if needed
                     if existing.get('status') != 'completed':
                         db.update_calculation_status(
-                            existing['calc_id'], 
+                            existing['calc_id'],
                             'completed',
-                            slurm_job_id=calc_info.get('slurm_job_id')
+                            slurm_job_id=calc_info.get('slurm_job_id'),
+                            output_file=calc_info.get('output_file')
                         )
                         print(f"  Updated {existing['calc_id']} to completed status")
                     break
@@ -160,14 +185,17 @@ def populate_database(completed_calcs: List[Dict], db) -> int:
                     work_dir=calc_info.get('work_dir')
                 )
                 
-                # Update with completion info
+                # Update with completion info; output_file MUST be stored on
+                # the record — the dedup check above compares against it, so
+                # leaving it NULL re-added every calculation on each scan
                 db.update_calculation_status(
                     calc_id,
                     'completed',
-                    slurm_job_id=calc_info.get('slurm_job_id')
+                    slurm_job_id=calc_info.get('slurm_job_id'),
+                    output_file=calc_info.get('output_file')
                 )
-                
-                # Store the output file path in the input_settings
+
+                # Also keep the output file path in the settings JSON
                 if calc_info.get('output_file'):
                     try:
                         # Get current settings
@@ -179,19 +207,7 @@ def populate_database(completed_calcs: List[Dict], db) -> int:
                             db.update_calculation_settings(calc_id, settings)
                     except Exception as e:
                         print(f"  Failed to update output file in settings: {e}")
-                
-                # Update file paths
-                if calc_info.get('output_file'):
-                    try:
-                        db.update_calculation_files(
-                            calc_id,
-                            output_file=calc_info.get('output_file')
-                        )
-                    except AttributeError:
-                        # Fallback for databases without this method
-                        # Update the calculation record directly
-                        pass
-                    
+
                 added_count += 1
                 print(f"  Added completed calculation: {calc_id}")
                 

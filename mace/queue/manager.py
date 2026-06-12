@@ -817,18 +817,23 @@ class EnhancedCrystalQueueManager:
                         status = 'running'
                     elif slurm_state in ['COMPLETED']:
                         status = 'completed'
-                        self.handle_completed_calculation(calc['calc_id'])
                     elif slurm_state in ['FAILED', 'CANCELLED', 'TIMEOUT', 'NODE_FAIL']:
                         status = 'failed'
-                        self.handle_failed_calculation(calc['calc_id'], slurm_state)
                     else:
                         continue  # Unknown state, don't update
-                        
-                    # Update database
+
+                    # Update database BEFORE invoking handlers so they see
+                    # the final status (handlers previously ran first and
+                    # their status-based lookups found nothing)
                     if calc['status'] != status:
                         self.db.update_calculation_status(
                             calc['calc_id'], status, slurm_state=slurm_state
                         )
+
+                    if status == 'completed':
+                        self.handle_completed_calculation(calc['calc_id'])
+                    elif status == 'failed':
+                        self.handle_failed_calculation(calc['calc_id'], slurm_state)
                         
                 else:
                     # Job not in queue - check if it completed or failed
@@ -943,13 +948,14 @@ class EnhancedCrystalQueueManager:
         if not self.enable_tracking:
             return
             
-        calc = self.db.get_calculation_by_slurm_id(calc_id) or \
-               next((c for c in self.db.get_calculations_by_status('completed') 
-                    if c['calc_id'] == calc_id), None)
-               
+        # calc_id is a calculation ID; look it up directly (slurm-id lookup
+        # kept as fallback for legacy callers that pass a SLURM job id)
+        calc = self.db.get_calculation(calc_id) or \
+               self.db.get_calculation_by_slurm_id(calc_id)
+
         if not calc:
             return
-            
+
         print(f"Handling completed calculation: {calc_id}")
         
         # Extract and store input settings directly in database
@@ -973,13 +979,14 @@ class EnhancedCrystalQueueManager:
         if not self.enable_tracking:
             return
             
-        calc = self.db.get_calculation_by_slurm_id(calc_id) or \
-               next((c for c in self.db.get_calculations_by_status('failed') 
-                    if c['calc_id'] == calc_id), None)
-               
+        # calc_id is a calculation ID; look it up directly (slurm-id lookup
+        # kept as fallback for legacy callers that pass a SLURM job id)
+        calc = self.db.get_calculation(calc_id) or \
+               self.db.get_calculation_by_slurm_id(calc_id)
+
         if not calc:
             return
-            
+
         print(f"Handling failed calculation: {calc_id} (SLURM state: {slurm_state})")
         
         # Analyze error type from output file
@@ -1391,15 +1398,22 @@ class EnhancedCrystalQueueManager:
         output_files = list(work_dir.glob("*.out"))
         
         if output_files:
-            # Found output file, check if calculation completed successfully
-            output_file = output_files[0]
-            
+            # Prefer the output matching this calculation's input file name
+            input_stem = Path(calc['input_file']).stem if calc.get('input_file') else None
+            output_file = next(
+                (f for f in output_files if f.stem == input_stem), output_files[0]
+            )
+
             try:
-                with open(output_file, 'r') as f:
-                    content = f.read()
-                    
-                # Check for successful completion indicators
-                if "CRYSTAL ENDS" in content.upper() or "CALCULATION TERMINATED" in content.upper():
+                # Reuse the validated completion detection from completion_checker:
+                # real CRYSTAL outputs signal success via "OPT END" / "TOTAL CPU
+                # TIME =" — the old "CRYSTAL ENDS"/"CALCULATION TERMINATED"
+                # markers match zero real outputs, so every finished job that had
+                # left the queue was marked failed.
+                from mace.completion_checker import categorize_output_file
+                category, _ = categorize_output_file(output_file)
+
+                if category.startswith('complete'):
                     # Successful completion
                     self.db.update_calculation_status(
                         calc['calc_id'], 'completed',
@@ -1407,7 +1421,7 @@ class EnhancedCrystalQueueManager:
                     )
                     self.handle_completed_calculation(calc['calc_id'])
                 else:
-                    # Failed calculation
+                    # Job left the queue without a completion signal -> failed
                     error_type, error_message = self.analyze_calculation_error(calc)
                     self.db.update_calculation_status(
                         calc['calc_id'], 'failed',
@@ -1415,7 +1429,7 @@ class EnhancedCrystalQueueManager:
                         error_type=error_type,
                         error_message=error_message
                     )
-                    
+
             except Exception as e:
                 print(f"Error checking output file {output_file}: {e}")
                 

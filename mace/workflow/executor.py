@@ -340,9 +340,11 @@ class WorkflowExecutor:
 
     def _configure_queue_manager_from_plan(self, plan: Dict[str, Any]):
         """Extract queue configuration from workflow plan and update queue manager"""
-        # Extract queue configuration from plan
+        # Extract queue configuration from plan — the planner writes
+        # queue_management at the plan top level; keep the old nested
+        # location as a fallback
         execution_settings = plan.get('execution_settings', {})
-        queue_config = execution_settings.get('queue_management', {})
+        queue_config = plan.get('queue_management') or execution_settings.get('queue_management', {})
 
         # Default values (conservative fallback)
         max_jobs = queue_config.get('max_jobs', 200)
@@ -413,7 +415,9 @@ class WorkflowExecutor:
         else:
             valid_calc_types = ['OPT', 'SP', 'FREQ', 'BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']
             for calc_type in workflow_sequence:
-                if calc_type not in valid_calc_types:
+                # Planner legitimately emits numbered types (OPT2, SP2, BAND3...)
+                base_type = calc_type.rstrip('0123456789')
+                if base_type not in valid_calc_types:
                     validation_errors.append(f"Invalid calculation type: {calc_type}")
 
         # 4. Validate step configurations
@@ -1537,47 +1541,17 @@ fi'''
             return None
             
     def create_material_id_from_file(self, file_path: Path) -> str:
-        """Create a material ID from file path - for workflow files, use the stem as-is"""
-        name = file_path.stem
-        
-        # For workflow-generated files that are already clean (like "1_dia_opt.d12"),
-        # we should use the name as-is since it's already been cleaned by the workflow planner
-        # Only apply suffix removal for complex filenames with technical suffixes
-        
-        parts = name.split('_')
-        
-        # If this looks like a simple workflow filename (e.g., "1_dia_opt", "3,4^2T1-CA_opt"),
-        # use it as-is
-        if len(parts) <= 3 and any(part.lower() in ['opt', 'sp', 'band', 'doss', 'freq'] for part in parts[-1:]):
-            return name
-            
-        # For complex filenames with technical suffixes, apply smart removal
-        core_parts = []
-        for i, part in enumerate(parts):
-            # Check if this part is a technical suffix
-            if part.upper() in ['SP', 'FREQ', 'BAND', 'DOSS', 'BULK', 'OPTGEOM', 
-                              'CRYSTAL', 'SLAB', 'POLYMER', 'MOLECULE', 'SYMM', 'TZ', 'DZ', 'SZ']:
-                break
-            # Check if this part is a DFT functional
-            elif part.upper() in ['PBE', 'B3LYP', 'HSE06', 'PBE0', 'SCAN', 'BLYP', 'BP86']:
-                break
-            # Check if this part contains basis set info  
-            elif 'POB' in part.upper() or 'TZVP' in part.upper() or 'DZVP' in part.upper():
-                break
-            # Check if this part is a dispersion correction
-            elif 'D3' in part.upper():
-                break
-            else:
-                core_parts.append(part)
-        
-        # If we found core parts, use them
-        if core_parts:
-            clean_name = '_'.join(core_parts)
-        else:
-            # Fallback: use the whole name
-            clean_name = name
-            
-        return clean_name
+        """Create a material ID using the canonical database derivation.
+
+        The executor previously kept workflow filenames as-is ("1_dia_opt"),
+        while the queue manager, populate_completed_jobs scan, and the
+        workflow engine all derive the canonical ID ("1_dia"). That split the
+        same material across two IDs: the submitted record never matched the
+        completion scan, every completed job was re-registered as a duplicate
+        material, and follow-up steps hung off the duplicate.
+        """
+        from mace.database.materials import create_material_id_from_file as canonical_material_id
+        return canonical_material_id(file_path)
         
     def extract_functional_from_filename(self, file_path: Path) -> str:
         """Extract DFT functional from filename for duplicate differentiation"""
@@ -2397,7 +2371,7 @@ mace monitor --dashboard
 squeue -u $USER
 
 # View jobs for this workflow
-squeue -u $USER | grep workflow_{}
+squeue -u $USER | grep workflow_
 ```
 
 ### Direct Script Access
@@ -2433,9 +2407,9 @@ python $MACE_HOME/mace/workflow/engine.py --action status
 ## Notes
 - The primary interface is through `mace monitor` for checking status
 - All other functionality requires running scripts directly from MACE installation
-- The workflow uses an isolated database in .mace_context_{}/
+- The workflow uses an isolated database in .mace_context_workflow_*/
 - If MACE_HOME is not set, replace $MACE_HOME with the path to your MACE installation
-""".format(self.work_dir, workflow_id)
+""".format(workflow_dir, workflow_dir, workflow_dir, workflow_dir)
             
             readme_path = workflow_dir / "WORKFLOW_MONITORING.md"
             with open(readme_path, 'w') as f:

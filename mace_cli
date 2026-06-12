@@ -1125,7 +1125,14 @@ More Help:
     
     # Handle commands
     if args.command == 'workflow':
-        # Default to run_mace.py
+        # Default to run_mace.py — rebuild argv from the original command
+        # line: args.args + remaining loses flag/value pairing, and
+        # run_mace.py's argparse doesn't define --no-banner
+        try:
+            wf_idx = original_argv.index('workflow')
+            sys.argv = ['run_mace.py'] + [a for a in original_argv[wf_idx + 1:] if a != '--no-banner']
+        except ValueError:
+            pass
         from run_mace import main as run_mace_main
         run_mace_main()
         
@@ -1436,11 +1443,24 @@ More Help:
         
     elif args.command == 'analyze':
         # Property analysis
-        all_args = args.args + remaining
+        # Rebuild from original_argv: args.args + remaining loses the pairing
+        # between flags and their values (positionals get pulled ahead)
+        try:
+            analyze_idx = original_argv.index('analyze')
+            all_args = [a for a in original_argv[analyze_idx + 1:] if a != '--no-banner']
+        except ValueError:
+            all_args = args.args + remaining
         if '--extract-properties' in all_args:
             from utils.property_extractor import main as extract_main
-            # Pass all arguments to property extractor
-            sys.argv = ['property_extractor.py'] + all_args
+            # Translate --extract-properties [DIR] to the extractor's own flags:
+            # with a directory it becomes --scan-directory DIR; without one
+            # (e.g. followed by --output-file) the flag is simply dropped
+            idx = all_args.index('--extract-properties')
+            if idx + 1 < len(all_args) and not all_args[idx + 1].startswith('-'):
+                extractor_args = all_args[:idx] + ['--scan-directory', all_args[idx + 1]] + all_args[idx + 2:]
+            else:
+                extractor_args = all_args[:idx] + all_args[idx + 1:]
+            sys.argv = ['property_extractor.py'] + extractor_args
             extract_main()
         else:
             print("Usage: mace analyze --extract-properties <directory> [options]")

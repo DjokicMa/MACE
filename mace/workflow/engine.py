@@ -157,9 +157,11 @@ class WorkflowEngine:
                 plan = json.load(f)
                 step_configs = plan.get('step_configurations', {})
                 
-                # Find configuration for this calc type
+                # Find configuration for this calc type — keys are
+                # "{CALC_TYPE}_{position}"; exact type match required
+                # (substring matching made "SP" hit "TRANSPORT_3")
                 for step_key, config in step_configs.items():
-                    if calc_type in step_key:
+                    if step_key.rsplit('_', 1)[0] == calc_type:
                         return config
                         
                 return None
@@ -760,7 +762,7 @@ fi'''
                     
                     # Maybe the template just generated the script but didn't submit it
                     # Look for generated script and submit it manually
-                    generated_script = work_dir / f"{full_job_name}.sh"
+                    generated_script = work_dir / f"{job_name}.sh"
                     if generated_script.exists():
                         print(f"  Found generated script: {generated_script.name}")
                         result = subprocess.run(
@@ -1547,9 +1549,15 @@ fi'''
         if calc_num > 1:
             step_num += (calc_num - 1) * 10
             
-        # Get workflow ID from parent calculation
+        # Get workflow ID from parent calculation (stored inside settings_json,
+        # not as a calculations column)
         parent_calc = self.db.get_calculation(parent_calc_id)
-        workflow_id = parent_calc.get('workflow_id', 'manual')
+        workflow_id = 'manual'
+        if parent_calc:
+            try:
+                workflow_id = json.loads(parent_calc.get('settings_json') or '{}').get('workflow_id') or 'manual'
+            except (json.JSONDecodeError, TypeError):
+                pass
         
         # Generate SLURM script
         slurm_script = self._create_slurm_script_for_calculation(
@@ -1571,13 +1579,13 @@ fi'''
         )
         
         # Submit job
-        job_id = self._submit_slurm_job(slurm_script, work_dir)
+        job_id = self._submit_calculation_to_slurm(slurm_script, work_dir)
         if job_id:
-            self.db.update_calculation(calc_id, slurm_job_id=job_id, status='submitted')
+            self.db.update_calculation_status(calc_id, 'submitted', slurm_job_id=job_id)
             print(f"Submitted {calc_type} calculation: Job ID {job_id}, Calc ID {calc_id}")
             return calc_id
         else:
-            self.db.update_calculation(calc_id, status='failed')
+            self.db.update_calculation_status(calc_id, 'failed')
             return None
         
     def generate_property_calculation(self, source_calc_id: str, target_calc_type: str) -> Optional[str]:
@@ -3248,8 +3256,10 @@ fi'''
             
             # Create SLURM script for calculation
             job_name = f"{core_name}{suffix}"
+            # Pass the full numbered type (e.g. OPT2) so the numbered SLURM
+            # templates are selected instead of the step-1 base template
             slurm_script_path = self._create_slurm_script_for_calculation(
-                step_dir, job_name, target_base_type, step_num, workflow_base.name
+                step_dir, job_name, target_calc_type, step_num, workflow_base.name
             )
             
             # Create calculation record
