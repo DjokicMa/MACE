@@ -550,13 +550,20 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         # SCF parameters section
         atomic_numbers = [int(atom["atom_number"]) for atom in coords_to_write]
 
-        # Check basis set compatibility
-        is_compatible, missing_elements = check_basis_set_compatibility(
-            settings.get("basis_set", "POB-TZVP-REV2"), 
-            atomic_numbers, 
-            settings.get("basis_set_type", "INTERNAL")
-        )
-        
+        # Check basis set compatibility — only meaningful for internal basis
+        # sets; external basis records are carried verbatim from the source
+        # d12, so checking the (default) internal basis against them raised
+        # false alarms for elements like Pb/Ag and killed workflow SP/FREQ
+        # generation with an EOFError at the prompt below
+        if external_basis_data or settings.get("basis_set_type") == "EXTERNAL":
+            is_compatible, missing_elements = True, []
+        else:
+            is_compatible, missing_elements = check_basis_set_compatibility(
+                settings.get("basis_set", "POB-TZVP-REV2"),
+                atomic_numbers,
+                settings.get("basis_set_type", "INTERNAL")
+            )
+
         if not is_compatible:
             print(
                 f"\nWARNING: The selected basis set '{settings.get('basis_set')}' does not support all elements in your structure!"
@@ -564,6 +571,11 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             print(
                 f"Missing elements: {', '.join([f'{ATOMIC_NUMBER_TO_SYMBOL.get(z, z)} (Z={z})' for z in missing_elements])}"
             )
+            if not sys.stdin.isatty():
+                # Non-interactive (workflow callback): fail cleanly instead of
+                # crashing with EOFError at the prompt
+                print("Non-interactive mode: aborting D12 file creation.")
+                return
             if not yes_no_prompt("\nDo you want to continue anyway?"):
                 print("Aborting D12 file creation.")
                 return

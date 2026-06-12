@@ -419,7 +419,16 @@ def extract_and_process_shrink(out_file: str, base_name: str,
         Shrink factor (always even for cleaner k-paths)
     """
     shrink = config.get("shrink", default_shrink)
-    
+    # Configs use "auto" (a string) to mean "derive it" — coerce any
+    # non-numeric marker to the default so the comparisons below don't
+    # TypeError when every extraction path fails (e.g. MOLECULE outputs
+    # with no SHRINK and no lattice parameters)
+    if not isinstance(shrink, int):
+        try:
+            shrink = int(shrink)
+        except (TypeError, ValueError):
+            shrink = default_shrink
+
     # Try to extract shrink from original D12 file first
     d12_path = Path(out_file).with_suffix('.d12')
     if not d12_path.exists():
