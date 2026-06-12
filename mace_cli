@@ -1122,6 +1122,20 @@ More Help:
     sys.argv = [sys.argv[0]] + args.args + remaining
     if args.no_banner and '--no-banner' not in sys.argv:
         sys.argv.append('--no-banner')
+
+    def command_args(command_name):
+        """Arguments following the command on the ORIGINAL command line.
+
+        args.args + remaining loses flag/value pairing (positionals get
+        pulled ahead of unknown options, so `mace submit --exclude-nodes n1
+        file.d12` arrives scrambled), and submodule parsers don't define
+        --no-banner, so it is stripped here.
+        """
+        try:
+            idx = original_argv.index(command_name)
+            return [a for a in original_argv[idx + 1:] if a != '--no-banner']
+        except ValueError:
+            return [a for a in (args.args + remaining) if a != '--no-banner']
     
     # Handle commands
     if args.command == 'workflow':
@@ -1159,7 +1173,7 @@ More Help:
                                     help='Custom node exclusion (e.g., "amr-042,amr-050" or "amr-[042-050]")')
 
         try:
-            submit_args = submit_parser.parse_args(args.args + remaining)
+            submit_args = submit_parser.parse_args(command_args('submit'))
         except SystemExit:
             sys.exit(1)
 
@@ -1351,8 +1365,12 @@ More Help:
             
     elif args.command == 'monitor':
         # Launch monitoring dashboard or show status
-        # Combine all arguments
-        all_args = args.args + remaining
+        # 'status' is redirected here with --status prepended to args.args,
+        # so only rebuild from original_argv for a direct 'monitor' call
+        if 'monitor' in original_argv:
+            all_args = command_args('monitor')
+        else:
+            all_args = [a for a in (args.args + remaining) if a != '--no-banner']
         
         # Check if we should show quick status instead of dashboard
         if '--status' in all_args or '--summary' in all_args or '--detailed' in all_args:
@@ -1486,18 +1504,18 @@ More Help:
     elif args.command == 'status':
         # Redirect to monitor --status for backward compatibility
         print("Note: 'mace status' has been merged into 'mace monitor --status'")
-        args.command = 'monitor'
-        args.args = ['--status'] + args.args
-        # Re-process as monitor command
-        sys.argv = [sys.argv[0], 'monitor', '--status'] + args.args
+        extra = command_args('status')
+        if '--status' not in extra:
+            extra = ['--status'] + extra
+        sys.argv = [sys.argv[0], 'monitor'] + extra
         main()  # Recursive call to handle as monitor
         return
     elif args.command == 'manager':
         # Enhanced Queue Manager command
         from queue.manager import EnhancedCrystalQueueManager
-        
+
         # Combine all arguments
-        all_args = args.args + remaining
+        all_args = command_args('manager')
         
         # Parse queue arguments
         max_jobs = 250
@@ -1569,8 +1587,10 @@ More Help:
                 sys.argv.extend(['--callback-mode', callback_mode])
             
             if dry_run:
-                sys.argv.append('--dry-run')
-                
+                # manager.py argparse does not implement --dry-run;
+                # forwarding it made argparse exit with an error
+                print("Note: --dry-run is not supported by the queue manager; ignoring.")
+
             # Call the main function
             queue_main()
     
@@ -1578,9 +1598,10 @@ More Help:
         # Redirect to manager command for backward compatibility
         print("Note: 'mace queue' is deprecated. Use 'mace manager' instead.")
         print("This command will be removed in a future version.\n")
-        args.command = 'manager'
-        # Re-process as manager command
-        sys.argv = [sys.argv[0], 'manager'] + args.args
+        # Re-process as manager command, forwarding ALL arguments (flags
+        # previously landed in `remaining` and were dropped, so e.g.
+        # `mace queue --status` launched the full job-submitting manager)
+        sys.argv = [sys.argv[0], 'manager'] + command_args('queue')
         main()  # Recursive call to handle as manager
         return
         
@@ -1588,7 +1609,7 @@ More Help:
         # Error recovery command
         from recovery.recovery import main as recovery_main
         # Combine all arguments
-        all_args = args.args + remaining
+        all_args = command_args('recover')
         sys.argv = ['recovery.py'] + all_args
         recovery_main()
         
@@ -2516,21 +2537,21 @@ More Help:
             output_format = 'report'
             
             i = 0
-            while i < len(remaining):
-                if remaining[i] == '--material-ids' and i + 1 < len(remaining):
-                    material_ids = [m.strip() for m in remaining[i + 1].split(',')]
+            while i < len(all_args):
+                if all_args[i] == '--material-ids' and i + 1 < len(all_args):
+                    material_ids = [m.strip() for m in all_args[i + 1].split(',')]
                     i += 2
-                elif remaining[i] == '--workflow' and i + 1 < len(remaining):
-                    workflow = remaining[i + 1]
+                elif all_args[i] == '--workflow' and i + 1 < len(all_args):
+                    workflow = all_args[i + 1]
                     i += 2
-                elif remaining[i] == '--sequence' and i + 1 < len(remaining):
-                    sequence = [s.strip() for s in remaining[i + 1].split(',')]
+                elif all_args[i] == '--sequence' and i + 1 < len(all_args):
+                    sequence = [s.strip() for s in all_args[i + 1].split(',')]
                     i += 2
-                elif remaining[i] == '--detailed':
+                elif all_args[i] == '--detailed':
                     detailed = True
                     i += 1
-                elif remaining[i] == '--output-format' and i + 1 < len(remaining):
-                    output_format = remaining[i + 1]
+                elif all_args[i] == '--output-format' and i + 1 < len(all_args):
+                    output_format = all_args[i + 1]
                     i += 2
                 else:
                     i += 1
@@ -2557,18 +2578,18 @@ More Help:
             output_format = 'report'
             
             i = 0
-            while i < len(remaining):
-                if remaining[i] == '--material-ids' and i + 1 < len(remaining):
-                    material_ids = [m.strip() for m in remaining[i + 1].split(',')]
+            while i < len(all_args):
+                if all_args[i] == '--material-ids' and i + 1 < len(all_args):
+                    material_ids = [m.strip() for m in all_args[i + 1].split(',')]
                     i += 2
-                elif remaining[i] == '--fix':
+                elif all_args[i] == '--fix':
                     fix_issues = True
                     i += 1
-                elif remaining[i] == '--check-integrity':
+                elif all_args[i] == '--check-integrity':
                     check_integrity = True
                     i += 1
-                elif remaining[i] == '--output-format' and i + 1 < len(remaining):
-                    output_format = remaining[i + 1]
+                elif all_args[i] == '--output-format' and i + 1 < len(all_args):
+                    output_format = all_args[i + 1]
                     i += 2
                 else:
                     i += 1
@@ -2608,30 +2629,30 @@ More Help:
             reason = None
             
             i = 0
-            while i < len(remaining):
-                if remaining[i] == '--operation' and i + 1 < len(remaining):
-                    operation = remaining[i + 1]
+            while i < len(all_args):
+                if all_args[i] == '--operation' and i + 1 < len(all_args):
+                    operation = all_args[i + 1]
                     i += 2
-                elif remaining[i] == '--property' and i + 1 < len(remaining):
-                    property_name = remaining[i + 1]
+                elif all_args[i] == '--property' and i + 1 < len(all_args):
+                    property_name = all_args[i + 1]
                     i += 2
-                elif remaining[i] == '--version' and i + 1 < len(remaining):
-                    version = int(remaining[i + 1])
+                elif all_args[i] == '--version' and i + 1 < len(all_args):
+                    version = int(all_args[i + 1])
                     i += 2
-                elif remaining[i] == '--version2' and i + 1 < len(remaining):
-                    version2 = int(remaining[i + 1])
+                elif all_args[i] == '--version2' and i + 1 < len(all_args):
+                    version2 = int(all_args[i + 1])
                     i += 2
-                elif remaining[i] == '--limit' and i + 1 < len(remaining):
-                    limit = int(remaining[i + 1])
+                elif all_args[i] == '--limit' and i + 1 < len(all_args):
+                    limit = int(all_args[i + 1])
                     i += 2
-                elif remaining[i] == '--reason' and i + 1 < len(remaining):
-                    reason = remaining[i + 1]
+                elif all_args[i] == '--reason' and i + 1 < len(all_args):
+                    reason = all_args[i + 1]
                     i += 2
                 else:
                     i += 1
                     
             try:
-                from mace.database.history import PropertyHistory
+                from mace.database.utils.history import PropertyHistory
                 history = PropertyHistory(db.db_path)
                 
                 if operation == 'view':
@@ -2731,24 +2752,24 @@ More Help:
             output_format = 'report'
             
             i = 0
-            while i < len(remaining):
-                if remaining[i] == '--group-by' and i + 1 < len(remaining):
-                    group_by = remaining[i + 1]
+            while i < len(all_args):
+                if all_args[i] == '--group-by' and i + 1 < len(all_args):
+                    group_by = all_args[i + 1]
                     i += 2
-                elif remaining[i] == '--properties' and i + 1 < len(remaining):
-                    properties = [p.strip() for p in remaining[i + 1].split(',')]
+                elif all_args[i] == '--properties' and i + 1 < len(all_args):
+                    properties = [p.strip() for p in all_args[i + 1].split(',')]
                     i += 2
-                elif remaining[i] == '--aggregation' and i + 1 < len(remaining):
-                    aggregation = remaining[i + 1]
+                elif all_args[i] == '--aggregation' and i + 1 < len(all_args):
+                    aggregation = all_args[i + 1]
                     i += 2
-                elif remaining[i] == '--filter' and i + 1 < len(remaining):
-                    filters.append(remaining[i + 1])
+                elif all_args[i] == '--filter' and i + 1 < len(all_args):
+                    filters.append(all_args[i + 1])
                     i += 2
-                elif remaining[i] == '--detailed':
+                elif all_args[i] == '--detailed':
                     detailed = True
                     i += 1
-                elif remaining[i] == '--output-format' and i + 1 < len(remaining):
-                    output_format = remaining[i + 1]
+                elif all_args[i] == '--output-format' and i + 1 < len(all_args):
+                    output_format = all_args[i + 1]
                     i += 2
                 else:
                     i += 1
@@ -2779,7 +2800,7 @@ More Help:
         # Workflow engine command
         from workflow.engine import main as engine_main
         # Combine all arguments
-        all_args = args.args + remaining
+        all_args = command_args('engine')
         sys.argv = ['engine.py'] + all_args
         engine_main()
 
@@ -2797,7 +2818,7 @@ More Help:
                 sys.exit(1)
 
         # Combine all arguments
-        all_args = args.args + remaining
+        all_args = command_args('plotting')
         plotting_main(all_args)
 
     elif args.command == 'version':

@@ -3533,8 +3533,10 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="MACE Workflow Engine")
-    parser.add_argument("--action", choices=['status', 'process', 'workflow'], 
-                       default='process', help="Action to perform")
+    parser.add_argument("--action", choices=['status', 'process', 'workflow'],
+                       default='status',
+                       help="Action to perform (default: status; 'process' "
+                            "submits the next workflow calculations)")
     parser.add_argument("--material-id", help="Material ID for status checking")
     parser.add_argument("--db", default="materials.db", help="Path to materials database")
     parser.add_argument("--work-dir", default=".", help="Base working directory")
