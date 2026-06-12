@@ -737,6 +737,23 @@ class CrystalOutputParser:
                 self.data["is_3c_method"] = True
                 return
         
+        # Upgrade GGA names to their hybrid counterparts when the output
+        # declares Fock exchange: CRYSTAL prints the same
+        # (EXCHANGE)[CORRELATION] line for B3LYP and BLYP (PBE0 and PBE...),
+        # so without this check every B3LYP output re-emitted as BLYP when
+        # no original .d12 was available.
+        hybrid_map = {"BLYP": "B3LYP", "PBE": "PBE0", "PBESOL": "PBESOL0"}
+        if self.data.get("functional") in hybrid_map:
+            for line in lines:
+                if "PERCENTAGE OF FOCK EXCHANGE" in line:
+                    try:
+                        pct = float(line.split()[-1])
+                    except (ValueError, IndexError):
+                        break
+                    if pct > 0:
+                        self.data["functional"] = hybrid_map[self.data["functional"]]
+                    break
+
         # After extracting functional, check if D3 dispersion is used
         # and append -D3 to the functional name
         if functional_found and self.data.get("functional"):
@@ -868,17 +885,25 @@ class CrystalOutputParser:
         
         # If we found all 5 TOLINTEG values, store them
         if len(tolinteg_values) == 5:
-            # Convert negative values to positive (e.g., -7 -> 7)
-            # In CRYSTAL output, "10** -7" means tolerance of 10^-7
-            # But in input files, we write just "7" for 10^-7
-            positive_values = []
+            # In CRYSTAL output "10** -7" means a 10^-7 tolerance, written
+            # as "7" in input files. POSITIVE exponents (pure-DFT runs print
+            # "10**  20" for T3-T5: exchange screening disabled) are NOT
+            # tolerances — abs()'ing them re-emitted absurd "7 7 20 20 20"
+            # inputs. Skip extraction in that case and keep defaults.
+            exponents = []
+            valid = True
             for val in tolinteg_values:
                 try:
                     num = int(val)
-                    positive_values.append(str(abs(num)))
                 except ValueError:
-                    positive_values.append(val)
-            self.data["tolerances"]["TOLINTEG"] = " ".join(positive_values)
+                    valid = False
+                    break
+                if num >= 0:
+                    valid = False
+                    break
+                exponents.append(str(-num))
+            if valid:
+                self.data["tolerances"]["TOLINTEG"] = " ".join(exponents)
 
     def _extract_scf_settings(self, lines: List[str]) -> None:
         """Extract SCF settings"""

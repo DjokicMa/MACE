@@ -461,21 +461,22 @@ class D3Generator:
                     lines.append(segment)
             else:
                 # Use original label format
-                # Count actual segments (excluding | markers)
+                # Count segments exactly as they are emitted below —
+                # consecutive pairs within runs between "|" discontinuities.
+                # The old counter also paired labels ACROSS each "|", so the
+                # NLINE header claimed one more segment than was written and
+                # CRYSTAL read END as a segment.
                 n_segments = 0
-                i = 0
-                while i < len(validated_path) - 1:
-                    if validated_path[i] == "|":
-                        i += 1
-                        continue
-                    j = i + 1
-                    while j < len(validated_path) and validated_path[j] == "|":
-                        j += 1
-                    if j < len(validated_path):
-                        n_segments += 1
-                        i = j
+                run_len = 0
+                for _label in validated_path:
+                    if _label == "|":
+                        if run_len >= 2:
+                            n_segments += run_len - 1
+                        run_len = 0
                     else:
-                        break
+                        run_len += 1
+                if run_len >= 2:
+                    n_segments += run_len - 1
 
                 shrink = 0
                 n_points = config.get("n_points", 1000)
@@ -494,13 +495,19 @@ class D3Generator:
                 # Add path segments - handle discontinuous paths
                 current_segment = []
 
+                def _crystal_label(lbl):
+                    # CRYSTAL's BAND label records use the single-letter
+                    # names from its Tables 14.1/14.2 — "GAMMA" is not a
+                    # recognized label
+                    return 'G' if lbl.upper() in ('GAMMA', 'Γ') else lbl
+
                 for label in validated_path:
                     if label == "|":
                         # End current segment
                         if len(current_segment) >= 2:
                             # Create segments from consecutive points
                             for i in range(len(current_segment) - 1):
-                                lines.append(f"{current_segment[i]} {current_segment[i+1]}")
+                                lines.append(f"{_crystal_label(current_segment[i])} {_crystal_label(current_segment[i+1])}")
                         current_segment = []
                     else:
                         current_segment.append(label)
@@ -508,7 +515,7 @@ class D3Generator:
                 # Handle final segment
                 if len(current_segment) >= 2:
                     for i in range(len(current_segment) - 1):
-                        lines.append(f"{current_segment[i]} {current_segment[i+1]}")
+                        lines.append(f"{_crystal_label(current_segment[i])} {_crystal_label(current_segment[i+1])}")
         
         elif config.get("path_method") == "manual":
             # Manual mixed path
@@ -689,6 +696,25 @@ class D3Generator:
             first_band = -1
             last_band = -1
             bmi, bma = config["energy_window"]
+            # The configured window is relative to the Fermi level (the
+            # interactive prompt collects "eV below/above Fermi"), but the
+            # CRYSTAL BMI/BMA record holds ABSOLUTE energies in Hartree —
+            # without adding E_F the window was centered on E=0
+            if not config.get("energy_window_absolute"):
+                try:
+                    try:
+                        from Crystal_d3.d3_interactive import get_band_info_from_output
+                    except ImportError:
+                        from d3_interactive import get_band_info_from_output
+                    fermi = get_band_info_from_output(str(self.input_file)).get('fermi_energy')
+                    if fermi is not None:
+                        bmi += fermi
+                        bma += fermi
+                        print(f"  Energy window centered on Fermi level ({fermi:.6f} Ha)")
+                    else:
+                        print("  Warning: Fermi energy not found; BMI/BMA window left centered on E=0")
+                except Exception as e:
+                    print(f"  Warning: could not center energy window on Fermi level: {e}")
         elif config.get("band_range"):
             # Specific band range
             first_band, last_band = config["band_range"]

@@ -874,9 +874,13 @@ def get_crystal_system_from_space_group(space_group: int, lattice_type: str = "P
         # Orthorhombic - check centering
         if lattice_type == "F":
             return "orthorhombic_fc"
-        elif lattice_type in ["A", "B"]:
+        elif lattice_type in ["A", "B", "C"]:
+            # All base-centered lattices use the AB table; the old map sent
+            # "C" to the body-centered table and "I" to simple, giving every
+            # C-centered (Cmcm...) and I-centered orthorhombic the wrong
+            # k-point coordinates
             return "orthorhombic_ab"
-        elif lattice_type == "C":
+        elif lattice_type == "I":
             return "orthorhombic_bc"
         else:
             return "orthorhombic_simple"

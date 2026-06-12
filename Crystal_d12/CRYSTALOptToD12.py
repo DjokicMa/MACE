@@ -924,19 +924,14 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 # Default to FULLOPTG
                 options["optimization_type"] = "FULLOPTG"
         
-        # Handle origin setting
+        # Handle origin setting: "auto" preserves the origin extracted from
+        # the source calculation. The old behavior guessed a directive from
+        # a space-group table ("0 1 0" rhombohedral flag for sg 143-194,
+        # "0 0 1" shifted origin for everything else), which rewrote correct
+        # origins — e.g. Fd-3m "0 0 0" re-emitted as the origin-2 "0 0 1"
+        # form while keeping origin-1 coordinates (wrong structure).
         if origin_setting == "auto":
-            # Auto-detect based on space group
-            spacegroup = settings.get('spacegroup', 1)
-            if 143 <= spacegroup <= 194:
-                # Hexagonal space groups
-                options["origin_setting"] = "0 1 0"
-            elif spacegroup in [146, 148, 155, 160, 161, 166, 167]:
-                # Rhombohedral space groups that can use hexagonal setting
-                options["origin_setting"] = "0 1 0"
-            else:
-                # Most other space groups use standard setting
-                options["origin_setting"] = "0 0 1"
+            options["origin_setting"] = settings.get("origin_setting", "0 0 0")
         else:
             options["origin_setting"] = origin_setting
         
