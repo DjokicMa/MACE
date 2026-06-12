@@ -800,9 +800,18 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
 
                 # Use settings from config file
                 options = settings.copy()
-                # Override with config file settings
+                # Override with config file settings — but never the target's
+                # geometry identity: a config saved from one material carries
+                # its spacegroup/dimensionality, and applying it to another
+                # material wrote the wrong symmetry (e.g. sg-227 diamond
+                # options applied to an sg-166 polymorph)
+                geometry_identity_keys = [
+                    "coordinates", "primitive_cell", "conventional_cell",
+                    "spacegroup", "space_group", "dimensionality",
+                    "origin_setting", "cell_parameters", "lattice_parameters",
+                ]
                 for key, value in config_data.items():
-                    if key not in ["coordinates", "primitive_cell", "conventional_cell"]:
+                    if key not in geometry_identity_keys:
                         options[key] = value
 
                 # Restore external basis settings if they were set and config didn't override them

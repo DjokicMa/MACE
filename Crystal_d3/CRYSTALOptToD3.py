@@ -1448,7 +1448,14 @@ def main():
         
         # If we're in batch mode (directory was provided), skip single-file processing
         if not (hasattr(args, 'batch') and args.batch and input_file is None):
-            # Single file processing
+            # Single file processing.
+            # A config file carries its own calculation_type — read it before
+            # falling back to the interactive prompt, which crashed with
+            # EOFError when applying a saved config non-interactively.
+            if not args.calc_type and args.config_file:
+                peek_config = load_d3_config(args.config_file)
+                if peek_config and peek_config.get('calculation_type'):
+                    args.calc_type = peek_config['calculation_type']
             if not args.calc_type:
                 print("\nSelect calculation type:")
                 print("1: BAND - Electronic band structure") 

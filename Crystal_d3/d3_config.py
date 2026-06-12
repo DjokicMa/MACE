@@ -235,7 +235,10 @@ def validate_d3_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
                 errors.append(f"Missing required field for BAND: {key}")
     
     elif calc_type == "DOSS":
-        required = ["projection_type", "energy_range", "n_points"]
+        # energy_range is only present in energy-window mode; the default
+        # all-bands configs saved by configure_doss_calculation don't have
+        # it, and requiring it rejected every saved DOSS config on reload
+        required = ["projection_type", "n_points"]
         for key in required:
             if key not in config:
                 errors.append(f"Missing required field for DOSS: {key}")
@@ -271,7 +274,9 @@ def validate_d3_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
             errors.append("Missing exchange_options for DFT_EXCHANGE")
     
     elif calc_type == "TRANSPORT":
-        required = ["transport_type", "temperature_range"]
+        # configure_transport_calculation emits temperature_range/mu_range;
+        # "transport_type" is not a key it ever produces
+        required = ["temperature_range"]
         for key in required:
             if key not in config:
                 errors.append(f"Missing required field for TRANSPORT: {key}")
