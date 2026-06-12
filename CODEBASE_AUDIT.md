@@ -100,6 +100,40 @@ molecule-dim BAND d3 instead, and the engine correctly treats BAND as
 optional if it fails; FREQ progression verified on the diamonds (refs match),
 not driven for molecules.
 
+### Second fix wave (2026-06-12 afternoon, committed)
+
+- **CLI §1 closed out**: all command branches rebuild args from the original
+  command line; database history import, status/queue redirects, --dry-run
+  forwarding, and the engine default action (now status) fixed. (§1.1-1.6)
+- **Utils §5 data-quality closed out**: package imports (population/dat/advanced
+  processing now actually runs), INDIRECT-gap false match, first-vs-last
+  occurrences, Fermi exponents + Hartree unit, Mulliken section anchoring and
+  A.O.-table-only parsing, doubled final positions, point-1 convergence, and
+  NULL-calc_id duplicate property rows. (§5.1-5.11) Verified against the 637
+  real outputs.
+- **JSON config round-trips verified and fixed**: opt2d3 applies saved configs
+  non-interactively (calc type read from config; DOSS/TRANSPORT validation
+  aligned with what configurators emit); opt2d12 configs no longer transplant
+  the source material's spacegroup/dimensionality onto the target. convert
+  --save_options/--batch verified working as-is.
+- **Recovery §4 closed out**: full chain verified with mocked SLURM
+  (detection → d12 fix → recovery record → resubmission). Includes the .f9
+  protection, settings kwarg, resubmission method, attempt counters, taxonomy
+  aliases, next-line MAXCYCLE/FMIXING parsing, Check_Scripts paths, NULL
+  settings_json, job-left-queue routing through the failure handler, submit
+  script location, and job_script recording. (§4.1-4.14)
+- **d12/d3 correctness (part of §6/§7)**: non-interactive origin preservation,
+  hybrid functional detection (B3LYP no longer parsed as BLYP), TOLINTEG
+  positive-exponent handling, label-mode NLINE counting + GAMMA→G mapping,
+  orthorhombic centering map, Fermi-centered DOSS energy windows.
+- **opt_sp_freq** added as a built-in workflow template.
+
+**Still open (highest-value remainder):** monoclinic unique-axis detection
+(§6.14); duplicate pre-scaled seekpath fallback tables (§7.1 — only triggers
+when the seekpath library is missing; present in the anaconda env);
+contextual planner/executor variants (§3.7); plotting branch internals (§8.2+);
+materials_contextual drift (§2.4-2.5); and the defunct code/ cleanup.
+
 ## Cross-cutting root causes
 
 These five patterns account for the majority of the critical findings:
