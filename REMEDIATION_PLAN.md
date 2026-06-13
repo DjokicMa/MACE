@@ -49,12 +49,20 @@ Add/extend a pytest test in `tests/` for every fix. Suggested order:
      MACE_BASIS_DIR env override (explicit wins). BONUS: fixed the bundled-config lookup
      (parent.parent -> parent.parent.parent) which silently never found repo-root mace_config.py,
      so shipped basis sets were unused. tests/test_basis_path_resolution.py.
-6. STRATEGIC (larger, panel + incremental, test-first): shared CRYSTAL `.out` parser / Fermi /
-   constants module; coverage for engine.py + planner.py; delete the remaining dead files
-   (portable_slurm_generator.py, legacy_manager.py, copy_dependencies.py, installer.py,
-   Crystal_d12/Archived, Crystal_d3/Archived, code/Check_Scripts/Archived) —
-   KEEP enhanced_queue_manager.py (required shim) AND **KEEP mace_config.py** (NOT dead — loaded
-   dynamically by executor.py:2000 for bundled basis paths; earlier "unimported" claim was wrong).
+6. STRATEGIC. User opted into all three sub-tracks (panel before each, then proceed autonomously):
+   - 6c [DONE `42320593`] dead-file deletion — panel (investigate+adversarial) + human DELETE list
+     (PATHFINDER 04-handoff:14-27) agreed. DELETED: portable_slurm_generator.py, legacy_manager.py,
+     installer.py, check_property_units.py, mace_env_helper.py, run_workflow_animated.py,
+     grab_properties.py, Crystal_d12/Archived/, code/Check_Scripts/Archived/, and the 6 dead
+     *.py in Crystal_d3/Archived/. KEPT (verified active / DO-NOT-DELETE): copy_dependencies.py
+     (manual deploy CLI), enhanced_queue_manager.py (shim), mace_config.py (dynamic-loaded by
+     executor.py), Crystal_d3/Archived/{band_plot,d3_input,parameters,basis}/. Docs updated. 320 tests.
+   - 6b [NEXT] coverage for engine.py (~3.6k LoC) + planner.py (~5k LoC) — panel to pick targets, then tests.
+   - 6a [AFTER 6b] shared CRYSTAL `.out` parser / Fermi / constants module — panel to design + impact,
+     then extract incrementally behind tests (touches validated parsing — highest risk).
+   NOTE: a separate `mace/plotting/*` refactor WIP (registry.py/handlers/detect.py/prompts.py/
+   MACE_PLOTTING_INTEGRATION_PLAN.md + test_plotting_*) appeared in the working tree mid-session —
+   NOT mine; left untouched/uncommitted.
 
 Do NOT re-fix the "Already FIXED but docs are stale" list at the bottom (CONCERNS.md is stale).
 
