@@ -12,8 +12,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 try:
-    from material_monitor import MaterialMonitor
-    from material_database import MaterialDatabase
+    # Package-qualified paths after the reorg (was the pre-reorg bare
+    # 'material_monitor'/'material_database', which no longer resolve and made
+    # this whole module sys.exit(1) on import).
+    from mace.queue.monitor import MaterialMonitor
+    from mace.database.materials import MaterialDatabase
 except ImportError as e:
     print(f"Error: Required monitoring modules not found: {e}")
     print("Please run: python setup_workflow_monitoring.py")

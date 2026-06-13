@@ -457,13 +457,15 @@ class DatabaseValidator:
         self.db = db
         self.property_validator = PropertyValidator()
         
-    def validate_all_materials(self, fix_issues: bool = False) -> Dict[str, Any]:
+    def validate_all_materials(self, fix_issues: bool = False,
+                               material_ids: List[str] = None) -> Dict[str, Any]:
         """
-        Validate all materials in the database.
-        
+        Validate all materials in the database (or a specified subset).
+
         Args:
             fix_issues: Whether to automatically fix issues
-            
+            material_ids: If given, validate only these materials.
+
         Returns:
             Validation report
         """
@@ -478,9 +480,12 @@ class DatabaseValidator:
             'fixed_issues': 0,
             'material_reports': {}
         }
-        
-        # Get all materials
+
+        # Get all materials (optionally restricted to the requested subset)
         materials = self.db.get_all_materials()
+        if material_ids:
+            wanted = set(material_ids)
+            materials = [m for m in materials if m['material_id'] in wanted]
         report['total_materials'] = len(materials)
         
         for material in materials:
@@ -622,22 +627,12 @@ def validate_materials(db, material_ids: List[str] = None,
         Formatted validation results
     """
     validator = DatabaseValidator(db)
-    
-    if material_ids:
-        # Validate specific materials
-        report = {
-            'total_materials': len(material_ids),
-            'valid_materials': 0,
-            'materials_with_errors': 0,
-            'materials_with_warnings': 0,
-            'material_reports': {}
-        }
-        
-        for mat_id in material_ids:
-            # Similar to validate_all_materials but for specific IDs
-            pass  # Implementation would be similar
-    else:
-        report = validator.validate_all_materials(fix_issues)
+
+    # Single code path for both cases: validate_all_materials filters to the
+    # requested IDs when given. The old material_ids branch was a `pass` stub
+    # that returned an all-zero report (and KeyError'd in the formatter on the
+    # missing aggregate keys), so the explorer's "validate specific" never worked.
+    report = validator.validate_all_materials(fix_issues, material_ids)
         
     if output_format == 'json':
         return json.dumps(report, indent=2, default=str)
