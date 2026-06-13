@@ -982,6 +982,11 @@ class CrystalInputParser:
             "fmixing": 30,
             "k_points": None,
             "origin_setting": "0 0 0",
+            # Default to closed-shell; set True only when a SPIN keyword is found
+            # (mirrors CrystalOutputParser). Without this the key was absent for
+            # closed-shell inputs, so downstream `.get("spin_polarized", True)`
+            # re-injected SPIN into closed-shell re-runs.
+            "spin_polarized": False,
             "optimization_settings": {},
             "freq_settings": {},
             "external_basis_info": [],

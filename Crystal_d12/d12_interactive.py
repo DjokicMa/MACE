@@ -1833,9 +1833,14 @@ def configure_advanced_electronic_settings(options: Dict[str, Any], show_current
         advanced_config["scf_maxcycle"] = advanced_config["scf_settings"]["maxcycle"]
         advanced_config["fmixing"] = advanced_config["scf_settings"]["fmixing"]
     elif use_current and not show_current:
-        # Set all defaults
-        advanced_config["spin_polarized"] = True
-        advanced_config["is_spin_polarized"] = True
+        # Set all defaults. Derive spin from the source settings rather than
+        # hardcoding True (which injected SPIN into closed-shell re-runs, e.g.
+        # SPIN on diamond): the parser sets spin_polarized=False when the source
+        # .d12 has no SPIN keyword and True when it does, so this preserves the
+        # source's open/closed-shell state. Mirrors the show_current branch above.
+        advanced_config["spin_polarized"] = options.get("spin_polarized", True)
+        advanced_config["is_spin_polarized"] = options.get(
+            "is_spin_polarized", advanced_config["spin_polarized"])
         advanced_config["spinlock"] = 0
         advanced_config["smearing"] = None
         advanced_config["use_smearing"] = False
