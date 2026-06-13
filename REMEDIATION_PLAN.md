@@ -134,20 +134,20 @@ it can legitimately differ from the SP-mesh gap for near-zero-gap systems.
   STILL TODO: extract a shared crystal-parsing/constants module (one HARTREE_TO_EV, one geometry
   parser, one element/ECP map) — do incrementally behind tests to preserve validated detection.
 
-## DEAD-CODE DELETION — panel-verified, AWAITING USER CONFIRMATION (destructive)
+## DEAD-CODE DELETION — DONE (user-confirmed; panel-verified)
 
 Multi-agent panel (analysis + adversarial verify, run wf_c1f92500-571) confirmed all candidates
-are dead with zero live callers; the adversarial verifiers could not refute "safe to delete" and
-debunked a competing PATHFINDER "ACTIVE" claim. Pending user go-ahead:
-- `code/Plotting_Scripts/` (stale duplicate of live `Plotting/`; `mace plotting` resolves to
-  `Plotting/` via sys.path.insert). deletion_risk low. Optional collateral: orphaned PATH exports
-  in activate_mace.sh:23 / setup_mace.py:128,211 and echo-help lines.
-- `mace/workflow/executor_contextual.py`, `planner_contextual.py`, `run_workflow_isolated.py`
-  — one orphaned isolation-EXAMPLE cluster (run_workflow_isolated self-labels as "Example"; the
-  live isolation feature lives in the BASE executor/planner/context, unaffected). Delete together
-  + remove/​update `mace/workflow/ISOLATION_MIGRATION_GUIDE.md`.
-- DO NOT DELETE `mace/database/materials_contextual.py` (ContextualMaterialDatabase) — it is LIVE
-  (mace_cli:1379,1630). `Archived/` does not exist (moot).
+dead with zero live callers; the adversarial verifiers could not refute "safe to delete" and
+debunked a competing PATHFINDER "ACTIVE" claim. User confirmed deletion. Each removed as its own
+revertable commit; recoverable from git history.
+- Workflow isolation cluster (`853670bd`): deleted
+  `mace/workflow/{executor_contextual,planner_contextual,run_workflow_isolated}.py`; rewrote
+  `ISOLATION_MIGRATION_GUIDE.md` to describe the base-class isolation that supersedes them.
+- `code/Plotting_Scripts/` (`12683bc0`): deleted (stale dup of live `Plotting/`); removed orphaned
+  PATH exports (activate_mace.sh, setup_mace.py x2) + dead `mace_env_helper.py` entry; pointed
+  example/help + README/INSTALLATION/DOCUMENTATION at `mace plotting`. AUTHORSHIP.md kept (credit).
+- KEPT (live): `mace/database/materials_contextual.py` (ContextualMaterialDatabase, mace_cli:1379,1630).
+- Verified after each: `mace plotting`/`--version` work, no live refs remain, 51-test suite green.
 
 ---
 
