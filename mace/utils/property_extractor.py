@@ -1240,9 +1240,19 @@ class CrystalPropertyExtractor:
                 props['fermi_energy_band'] = float(fermi_matches[-1])
                 break
                 
-        # Check for BAND.DAT file and extract information
-        band_dat_file = output_file.parent / "BAND.DAT"
-        if band_dat_file.exists():
+        # Check for BAND.DAT file and extract information. CRYSTAL/the workflow
+        # writes "<stem>.BAND.DAT" (e.g. "..._band.BAND.DAT"), not a bare
+        # "BAND.DAT", so the fixed-name lookup never matched real files and the
+        # band analysis stayed inert. Mirror the DOSS alt-name fallback.
+        band_dat_default = output_file.parent / "BAND.DAT"
+        band_dat_alt = output_file.parent / f"{output_file.stem}.BAND.DAT"
+        band_dat_file = None
+        if band_dat_default.exists():
+            band_dat_file = band_dat_default
+        elif band_dat_alt.exists():
+            band_dat_file = band_dat_alt
+
+        if band_dat_file:
             props['band_dat_exists'] = True
             props['band_dat_size'] = band_dat_file.stat().st_size
             
