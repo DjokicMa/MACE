@@ -1296,10 +1296,24 @@ class CrystalPropertyExtractor:
                 except ImportError:
                     from dat_file_processor import DatFileProcessor
                 processor = DatFileProcessor()
-                # BAND.DAT eigenvalues are absolute Hartree; pass the Fermi level
-                # so the gap/metallic classification has a reference point.
+                # CRYSTAL BAND.DAT eigenvalues are Fermi-referenced, so the gap is
+                # computed by band index. Determine the occupied-band count (HOMO
+                # index): prefer the explicit "TOP OF VALENCE BANDS - BAND N"
+                # line, else fall back to (electrons per cell)//2 — exact for
+                # closed-shell / non-magnetic systems (the band .out usually only
+                # carries the electron count). Without it the BAND-derived gap is
+                # left unset rather than wrong.
+                num_occ = None
+                nocc_match = re.findall(r'TOP OF VALENCE BANDS\s*-\s*BAND\s*(\d+)', content)
+                if nocc_match:
+                    num_occ = int(nocc_match[-1])
+                else:
+                    nelec_match = re.findall(r'N\.?\s*OF ELECTRONS PER CELL\s*(\d+)', content)
+                    if nelec_match:
+                        num_occ = int(nelec_match[-1]) // 2
                 dat_info = processor.process_band_dat_file(
-                    band_dat_file, fermi_energy=props.get('fermi_energy_band'))
+                    band_dat_file, fermi_energy=props.get('fermi_energy_band'),
+                    num_occupied_bands=num_occ)
                 if dat_info and 'error' not in dat_info:
                     # Merge only compact scalars — never the raw eigenvalue/k-point
                     # arrays, which would be JSON-dumped into the properties table.

@@ -24,16 +24,22 @@ class DatFileProcessor:
         pass
     
     def process_band_dat_file(self, file_path: Path,
-                              fermi_energy: Optional[float] = None) -> Dict[str, Any]:
+                              fermi_energy: Optional[float] = None,
+                              num_occupied_bands: Optional[int] = None) -> Dict[str, Any]:
         """
         Process BAND.DAT file to extract band structure information.
 
         Args:
             file_path: Path to BAND.DAT file
-            fermi_energy: Fermi level in absolute Hartree (from the .out file).
-                BAND.DAT eigenvalues are absolute Hartree, so a reliable
-                metal/insulator split needs this reference. When omitted the
-                gap/metallic fields are returned as None instead of guessed.
+            fermi_energy: Fermi level, kept for callers/back-compat. NOTE:
+                CRYSTAL BAND.DAT eigenvalues are Fermi-REFERENCED (E - E_Fermi,
+                Fermi at 0), not absolute, so the gap is computed by band index
+                rather than by splitting at this value.
+            num_occupied_bands: Number of occupied bands (the HOMO index, e.g.
+                "TOP OF VALENCE BANDS - BAND N" in the .out). The fundamental
+                gap is min_k(E[N]) - max_k(E[N-1]); this is referencing-
+                independent. When omitted the gap/VBM/CBM are returned as None
+                (never guessed) since they can't be located reliably.
 
         Returns:
             Dictionary with band structure data
@@ -59,7 +65,8 @@ class DatFileProcessor:
 
             # Extract electronic properties
             results['electronic_properties'] = self._analyze_band_structure(
-                results, fermi_energy=fermi_energy)
+                results, fermi_energy=fermi_energy,
+                num_occupied_bands=num_occupied_bands)
 
             return results
             
@@ -114,10 +121,11 @@ class DatFileProcessor:
             @ ... xmgrace directives (incl. @ TITLE "ALPHA"/"BETA") ...
             <abscissa>  E1  E2 ... E_NBND   (one row per k-point, per spin block)
 
-        Band energies are ABSOLUTE Hartree (not Fermi-shifted). The first value
-        on a data row is the k-path abscissa, not a 3-component k-point, so the
-        old "first three columns are a k-point" assumption silently corrupted
-        both the eigenvalues and the band count.
+        Band energies are Fermi-REFERENCED Hartree (E - E_Fermi, Fermi at 0) —
+        verified against the .out: BAND.DAT range == (.out absolute range) minus
+        EFERMI. The first value on a data row is the k-path abscissa, not a
+        3-component k-point, so the old "first three columns are a k-point"
+        assumption silently corrupted both the eigenvalues and the band count.
         """
         results = {
             'num_k_points': 0,
@@ -262,14 +270,27 @@ class DatFileProcessor:
         return results
     
     def _analyze_band_structure(self, band_data: Dict[str, Any],
-                                fermi_energy: Optional[float] = None) -> Dict[str, Any]:
-        """Analyze BAND.DAT eigenvalues for the fundamental gap.
+                                fermi_energy: Optional[float] = None,
+                                num_occupied_bands: Optional[int] = None) -> Dict[str, Any]:
+        """Analyze BAND.DAT eigenvalues for the band-path gap.
 
-        Eigenvalues are absolute Hartree, so VBM/CBM are defined relative to the
-        Fermi level (also absolute Hartree). Without the Fermi level the gap is
-        undetermined and we return None — the previous implementation took the
-        global maximum eigenvalue as the VBM, which left no states above it and
-        therefore classified *every* system as metallic.
+        CRYSTAL BAND.DAT eigenvalues are Fermi-referenced (E - E_Fermi), and each
+        data row is one k-point's ascending list of NBND eigenvalues. The gap is
+        therefore found by BAND INDEX, not by splitting at a Fermi value:
+
+            VBM = max over k of E[N-1]   (top of the occupied manifold)
+            CBM = min over k of E[N]     (bottom of the virtual manifold)
+            gap = CBM - VBM
+
+        with N = num_occupied_bands (the .out's "TOP OF VALENCE BANDS - BAND N").
+        Because the gap is a difference, the Fermi reference cancels — this
+        matches each .out's own reported band gap to <0.01 eV. VBM/CBM are
+        reported as Fermi-referenced eV (VBM ~ 0 for these insulators).
+
+        Without N the band edges cannot be located reliably, so the gap/VBM/CBM
+        are returned as None (never guessed). The earlier implementation split at
+        the ABSOLUTE .out Fermi against Fermi-referenced data, producing a gap
+        ~6x too small (e.g. 1.45 eV vs the true 7.8 eV).
         """
         analysis = {
             'band_gap_ev': None,
@@ -279,28 +300,29 @@ class DatFileProcessor:
             'metallic': None,
         }
 
-        rows = band_data.get('eigenvalues', [])
-        all_e = [e for row in rows for e in row]
-        if not all_e:
+        rows = [r for r in band_data.get('eigenvalues', []) if r]
+        if not rows:
             return analysis
 
-        if fermi_energy is None:
-            analysis['note'] = 'band_gap_requires_fermi_energy'
+        if not num_occupied_bands or num_occupied_bands < 1:
+            analysis['note'] = 'band_gap_requires_occupied_band_count'
             return analysis
 
-        occupied = [e for e in all_e if e <= fermi_energy]
-        unoccupied = [e for e in all_e if e > fermi_energy]
-        if not occupied or not unoccupied:
-            analysis['note'] = 'no_states_on_one_side_of_fermi'
+        n = num_occupied_bands
+        # Only rows that actually carry both edge bands (guards ragged rows).
+        homo = [r[n - 1] for r in rows if len(r) >= n + 1]
+        lumo = [r[n] for r in rows if len(r) >= n + 1]
+        if not homo or not lumo:
+            analysis['note'] = 'occupied_band_count_out_of_range'
             return analysis
 
-        vbm = max(occupied)
-        cbm = min(unoccupied)
+        vbm = max(homo)
+        cbm = min(lumo)
         gap_ev = (cbm - vbm) * HARTREE_TO_EV
         if gap_ev < 0:
-            gap_ev = 0.0
-        analysis['valence_band_maximum_ev'] = (vbm - fermi_energy) * HARTREE_TO_EV
-        analysis['conduction_band_minimum_ev'] = (cbm - fermi_energy) * HARTREE_TO_EV
+            gap_ev = 0.0  # band overlap along the path -> metallic
+        analysis['valence_band_maximum_ev'] = vbm * HARTREE_TO_EV
+        analysis['conduction_band_minimum_ev'] = cbm * HARTREE_TO_EV
         analysis['band_gap_ev'] = gap_ev
         analysis['metallic'] = gap_ev < 0.01  # eV threshold
         return analysis
