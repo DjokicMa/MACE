@@ -4,10 +4,24 @@ This script is in place to submit all .d12 input files in the current directory 
 """
 import os, sys, math
 import re
+import subprocess
 import linecache
 import shutil
 import itertools
 from pathlib import Path
+
+
+def extract_slurm_job_id(output):
+    """Parse the SLURM job id ('Submitted batch job N') from sbatch stdout.
+
+    Returns the id as a string, or None if absent. Mirrors the parsing in
+    EnhancedCrystalQueueManager.submit_to_slurm so jobs submitted through this
+    (untracked) path can still be tracked/recovered from the printed id.
+    """
+    if not output:
+        return None
+    match = re.search(r'Submitted batch job (\d+)', output)
+    return match.group(1) if match else None
 
 # Try to import node exclusion manager
 try:
@@ -241,13 +255,19 @@ def generate_or_use_script(script_to_use, submit_name, data_folder, overwrite_sh
         if existing_sh.exists() and overwrite_sh:
             print(f"  Overwriting existing script: {existing_sh.name}")
 
-        # Generate new script by running the submission script generator
-        cmd = f"{script_to_use} {submit_name} 100"
-        result = os.system(cmd)
+        # Generate new script by running the submission script generator.
+        # The generator only writes <name>.sh; actual submission happens in
+        # main() (the trailing sbatch in the template is commented out).
+        result = subprocess.run(
+            ['bash', str(script_to_use), submit_name, '100'],
+            capture_output=True, text=True
+        )
 
-        if result == 0 and existing_sh.exists():
+        if result.returncode == 0 and existing_sh.exists():
             return existing_sh, True  # (script_path, was_generated)
         else:
+            if result.returncode != 0 and result.stderr:
+                print(f"  Script generator error: {result.stderr.strip()}")
             return None, False
 
 def main():
@@ -330,6 +350,7 @@ def main():
     else:
         print(f"Found {len(d12_files)} D12 file(s) to submit")
 
+    submitted_job_ids = []
     try:
         # Process each D12 file
         for file_name in d12_files:
@@ -359,11 +380,21 @@ def main():
                     # Submit the script
                     if sh_script.exists():
                         print(f"  Submitting: {sh_script.name}")
-                        submit_result = os.system(f"sbatch {sh_script.name}")
-                        if submit_result != 0:
+                        submit_result = subprocess.run(
+                            ['sbatch', sh_script.name],
+                            capture_output=True, text=True
+                        )
+                        if submit_result.returncode != 0:
                             print(f"  Warning: Failed to submit {sh_script.name}")
+                            if submit_result.stderr:
+                                print(f"    {submit_result.stderr.strip()}")
                         else:
-                            print(f"  ✓ Submitted successfully")
+                            job_id = extract_slurm_job_id(submit_result.stdout)
+                            if job_id:
+                                submitted_job_ids.append(job_id)
+                                print(f"  ✓ Submitted successfully (job {job_id})")
+                            else:
+                                print(f"  ✓ Submitted successfully")
                     else:
                         print(f"  Error: Script {sh_script.name} not found")
             else:
@@ -371,6 +402,10 @@ def main():
 
             # Return to original directory
             os.chdir(original_dir)
+
+        if submitted_job_ids and not nosubmit_mode:
+            print(f"\nSubmitted {len(submitted_job_ids)} job(s): "
+                  f"{', '.join(submitted_job_ids)}")
 
     finally:
         # Cleanup: Remove temporary custom script if created
