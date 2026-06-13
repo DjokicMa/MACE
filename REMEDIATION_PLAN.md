@@ -19,26 +19,33 @@ evidence for each item below is in "PERSISTING ISSUES" near the bottom of this f
 user opts into a panel, analyze with the Workflow tool first (it caught 2 wrong audit claims).
 Add/extend a pytest test in `tests/` for every fix. Suggested order:
 
-1. ContextualMaterialDatabase trio (LATENT, cheap, 1 commit) — materials_contextual.py:
-   `copy_to_context` -> rename `create_or_update_material` to `create_material`;
-   `get_workflow_materials`/`get_workflow_calculations` (L257/293) -> `_get_connection`;
-   and `store_material_property` (materials.py:1114-1145) -> drop the explicit `property_id`
-   so the INTEGER PK autoincrements (it currently inserts str(uuid4) -> datatype mismatch).
-   All dormant today (no live callers), so no behavior change risk; fix before those features
-   are wired up.
-2. Dead `input_settings_extractor` import (HIGH, quick) — queue/manager.py:1390: remove it or
-   implement the module; feature silently never runs (swallowed ImportError).
-3. `mace submit` job-id capture (HIGH) — submission/crystal.py:246,362 + properties.py:243,359
-   use os.system; switch to subprocess.run + "Submitted batch job (\d+)" regex (mirror
-   manager.submit_to_slurm) so untracked submissions are trackable/recoverable.
-4. node_exclusion.py:132-135 shell=True injection (MEDIUM) — split the `| grep` pipe into two
-   subprocess calls (or filter in Python); node_type is unsanitized on a live path.
+1. [DONE `b02cc0d5`] ContextualMaterialDatabase trio (was LATENT) — materials_contextual.py:
+   `copy_to_context` now calls `create_material` (not the nonexistent `create_or_update_material`),
+   JSON-decodes metadata/settings before re-passing (avoids double-encode), and uses the real
+   `property_unit` kwarg (the old `unit=`/`conditions=` were a TypeError);
+   `get_workflow_materials`/`get_workflow_calculations` use `_get_connection`;
+   `store_material_property` (materials.py) drops the explicit `property_id` so the INTEGER PK
+   autoincrements (was inserting str(uuid4) -> datatype mismatch). tests/test_contextual_db.py.
+2. [DONE `e250d3af`] input_settings_extractor import — manager.py:1390 AND
+   create_fresh_database.py:542 imported a bare nonexistent module; both now import from
+   `mace.utils.settings_extractor` (the real home). The manager path was a LIVE silent no-op
+   (called from handle_completed_calculation on every completed calc). tests/test_settings_extractor.py.
+   NOTE leftover: copy_dependencies.py / installer.py list "input_settings_extractor.py" but are
+   dead (zero importers, all flat filenames gone) -> item 6.
+3. [DONE `d7b001ba`] `mace submit` job-id capture — submission/crystal.py + properties.py now use
+   subprocess.run + extract_slurm_job_id() ("Submitted batch job N"); print per-file id + a
+   copyable summary. tests/test_submit_jobid.py (incl. end-to-end vs a fake sbatch).
+4. [DONE `deb705f0`] node_exclusion.py shell=True injection — now ["scontrol","show","nodes"] as
+   an argv list (no shell; grep was redundant) + re.escape(node_type). tests/test_node_exclusion_security.py.
+   NOTE leftover: legacy_manager.py:169 also shell=True but DEAD (zero importers) -> item 6.
+
 5. MEDIUM cleanups: aggregation.py:149 conductivity_type grouping; crystal-system/space-group
    dup (d3_kpoints.py:862-899 vs d12_constants.py); hardcoded basis paths executor.py:2026,2035.
 6. STRATEGIC (larger, panel + incremental, test-first): shared CRYSTAL `.out` parser / Fermi /
    constants module; coverage for engine.py + planner.py; delete the remaining dead files
-   (mace_config.py, portable_slurm_generator.py, Crystal_d12/Archived, Crystal_d3/Archived,
-   code/Check_Scripts/Archived) — KEEP enhanced_queue_manager.py (required shim).
+   (mace_config.py, portable_slurm_generator.py, legacy_manager.py, copy_dependencies.py,
+   installer.py, Crystal_d12/Archived, Crystal_d3/Archived, code/Check_Scripts/Archived) —
+   KEEP enhanced_queue_manager.py (required shim).
 
 Do NOT re-fix the "Already FIXED but docs are stale" list at the bottom (CONCERNS.md is stale).
 
