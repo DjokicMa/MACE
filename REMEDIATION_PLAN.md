@@ -39,13 +39,22 @@ Add/extend a pytest test in `tests/` for every fix. Suggested order:
    an argv list (no shell; grep was redundant) + re.escape(node_type). tests/test_node_exclusion_security.py.
    NOTE leftover: legacy_manager.py:169 also shell=True but DEAD (zero importers) -> item 6.
 
-5. MEDIUM cleanups: aggregation.py:149 conductivity_type grouping; crystal-system/space-group
-   dup (d3_kpoints.py:862-899 vs d12_constants.py); hardcoded basis paths executor.py:2026,2035.
+5. [DONE] MEDIUM cleanups:
+   - 5a [`49635b41`] aggregation conductivity_type/energy_range grouping — ❌ NOT A BUG (verified;
+     extractor emits all grouping keys). tests/test_aggregation_keys.py.
+   - 5b [`<this batch>`] crystal-system/space-group dup (d3_kpoints vs d12_constants) — left as two
+     intentional impls (different inputs/outputs; k-path logic is validated). Drift neutralized by
+     tests/test_crystal_system_consistency.py (both agree on base system + canonical ITC ranges, all 230).
+   - 5c [`<this batch>`] hardcoded basis paths executor.py — added MACE_TZ_BASIS_PATH/MACE_DZ_BASIS_PATH/
+     MACE_BASIS_DIR env override (explicit wins). BONUS: fixed the bundled-config lookup
+     (parent.parent -> parent.parent.parent) which silently never found repo-root mace_config.py,
+     so shipped basis sets were unused. tests/test_basis_path_resolution.py.
 6. STRATEGIC (larger, panel + incremental, test-first): shared CRYSTAL `.out` parser / Fermi /
    constants module; coverage for engine.py + planner.py; delete the remaining dead files
-   (mace_config.py, portable_slurm_generator.py, legacy_manager.py, copy_dependencies.py,
-   installer.py, Crystal_d12/Archived, Crystal_d3/Archived, code/Check_Scripts/Archived) —
-   KEEP enhanced_queue_manager.py (required shim).
+   (portable_slurm_generator.py, legacy_manager.py, copy_dependencies.py, installer.py,
+   Crystal_d12/Archived, Crystal_d3/Archived, code/Check_Scripts/Archived) —
+   KEEP enhanced_queue_manager.py (required shim) AND **KEEP mace_config.py** (NOT dead — loaded
+   dynamically by executor.py:2000 for bundled basis paths; earlier "unimported" claim was wrong).
 
 Do NOT re-fix the "Already FIXED but docs are stale" list at the bottom (CONCERNS.md is stale).
 
@@ -245,11 +254,14 @@ STRATEGIC (debt; no active bug):
   incrementally behind tests (preserve validated detection).
 - Untested core: engine.py (~3587 LoC), planner.py (~5006 LoC) have no automated tests; the
   51-test suite pins campaign fixes only. No coverage gate.
-- More dead files NOT yet removed (panel/PATHFINDER dead-code verification): top-level
-  `mace_config.py` (unimported by mace_cli/run_mace), `mace/submission/portable_slurm_generator.py`
-  (example; emits `--work-dir .` the manager argparse rejects), `Crystal_d12/Archived/` (8),
-  `Crystal_d3/Archived/` (11), `code/Check_Scripts/Archived/`. KEEP `enhanced_queue_manager.py`
+- More dead files NOT yet removed (panel/PATHFINDER dead-code verification):
+  `mace/submission/portable_slurm_generator.py` (example; emits `--work-dir .` the manager argparse
+  rejects), `Crystal_d12/Archived/` (8), `Crystal_d3/Archived/` (11), `code/Check_Scripts/Archived/`,
+  and (verified dead THIS session, zero importers) `mace/queue/legacy_manager.py`,
+  `mace/utils/copy_dependencies.py`, `mace/utils/installer.py`. KEEP `enhanced_queue_manager.py`
   (REQUIRED shim — referenced by copy_dependencies/templates/docs).
+  CORRECTION: top-level `mace_config.py` is NOT dead — `mace/workflow/executor.py:2000` loads it
+  dynamically (importlib) for bundled basis-set paths (DEFAULT_TZ_PATH/DZ_PATH). Do NOT delete it.
 
 Already FIXED but docs (esp. CONCERNS.md) are STALE — do NOT re-fix: missing_data classifier
 (0d52a696), ipDOS_V2 row-skip (fdf9cf8e) + stale copy deleted (12683bc0), aggregation

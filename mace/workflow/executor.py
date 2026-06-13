@@ -1994,10 +1994,27 @@ fi'''
         # material_CRYSTAL_OPT_symm_HSE06-D3_full.basis.triplezeta.d12
         filename = Path(d12_file).name
 
-        # First, try to use MACE config for bundled basis sets (most reliable)
+        # Explicit per-site override wins (set by the user); avoids hardcoding any
+        # one institution's basis directory. MACE_TZ_BASIS_PATH / MACE_DZ_BASIS_PATH
+        # point directly at a tz/dz dir; MACE_BASIS_DIR is a parent holding both.
+        basis_dir = os.environ.get("MACE_BASIS_DIR")
+        if "full.basis.triplezeta" in filename:
+            for cand in (os.environ.get("MACE_TZ_BASIS_PATH"),
+                         os.path.join(basis_dir, "full.basis.triplezeta") if basis_dir else None):
+                if cand and Path(cand).exists():
+                    return cand
+        elif "full.basis.doublezeta" in filename:
+            for cand in (os.environ.get("MACE_DZ_BASIS_PATH"),
+                         os.path.join(basis_dir, "full.basis.doublezeta") if basis_dir else None):
+                if cand and Path(cand).exists():
+                    return cand
+
+        # Next, try MACE config for bundled basis sets that ship with the repo.
         try:
-            # Import MACE config to get correct paths
-            config_path = Path(__file__).parent.parent / "mace_config.py"
+            # mace_config.py lives at the repo root: mace/workflow/ -> mace/ ->
+            # repo root is three parents up (the old parent.parent pointed at
+            # mace/ so this block silently never ran -> bundled sets were unused).
+            config_path = Path(__file__).parent.parent.parent / "mace_config.py"
             if config_path.exists():
                 import importlib.util
                 spec = importlib.util.spec_from_file_location("mace_config", config_path)
@@ -2020,7 +2037,9 @@ fi'''
         # Fallback: Look for common basis set directory patterns in filename
         # This handles cases where custom paths were used
 
-        # Legacy HPC paths (for backward compatibility)
+        # Legacy HPC paths (for backward compatibility). The institutional path
+        # below is MSU/Mendoza-group specific and simply won't exist off-cluster
+        # (set MACE_*_BASIS_PATH above for other sites); ./ and ../ are last-resort.
         if "full.basis.triplezeta" in filename:
             legacy_paths = [
                 "/mnt/research/mendozacortes_group/bin/helpscripts/code/full.basis.triplezeta/",
