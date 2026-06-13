@@ -223,8 +223,10 @@ MEDIUM:
   (`scontrol show nodes | grep 'NodeName={node_type}'`) — injection surface; split the pipe.
 - Duplicated crystal-system/space-group logic: d3_kpoints.py:862-899 vs inline chains in
   d12_constants.py (no cross-import) — drift landmine.
-- aggregation.py:149 `conductivity_type` grouping may bucket all "Unknown" (the energy_range/
-  band_gap_range groupings were already fixed in c51c1c94; this sub-grouping was not).
+- ~~aggregation.py:149 `conductivity_type` grouping may bucket all "Unknown"~~ — ❌ NOT A BUG
+  (verified 2026-06-13): the extractor DOES emit `conductivity_type`/`total_energy_au`/
+  `atoms_in_unit_cell`/`band_gap` (real test/ SP output) and save_properties_to_database stores
+  each key verbatim. Locked by tests/test_aggregation_keys.py. (Overstated audit, like the trio.)
 - Hardcoded institutional basis paths executor.py:2026,2035 (has ./ + ../ fallbacks → degraded,
   not fatal, off-cluster).
 
