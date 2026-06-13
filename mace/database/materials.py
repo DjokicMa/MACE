@@ -1437,43 +1437,26 @@ def find_material_by_similarity(db: 'MaterialDatabase', potential_material_id: s
 
 
 def extract_formula_from_d12(d12_file: str) -> str:
-    """Extract chemical formula from .d12 file."""
+    """Extract chemical formula from a .d12 file.
+
+    Delegates to mace.utils.formula_extractor, which maps atomic numbers to
+    element symbols and builds an ordered formula (e.g. 'TiPbO3'). The previous
+    local implementation joined the *count values* without ever converting
+    atomic numbers to symbols, so it returned a meaningless digit string; the
+    queue manager and workflow engine import this function, so every material
+    they registered got a garbage formula.
+    """
+    from pathlib import Path
     try:
-        with open(d12_file, 'r') as f:
-            lines = f.readlines()
-            
-        # Look for atomic coordinates section
-        in_coords = False
-        elements = []
-        
-        for line in lines:
-            line = line.strip()
-            if line.isdigit() and not in_coords:
-                # Number of atoms line
-                in_coords = True
-                continue
-                
-            if in_coords and line:
-                parts = line.split()
-                if len(parts) >= 4:
-                    atomic_num = int(parts[0])
-                    if atomic_num > 200:
-                        atomic_num -= 200  # Remove ECP offset
-                    if atomic_num <= 118:  # Valid atomic number
-                        elements.append(atomic_num)
-                        
-        # Convert to formula (simplified)
-        if elements:
-            from collections import Counter
-            element_counts = Counter(elements)
-            # This is a very basic formula generation
-            return ''.join(f"{num}" if num > 1 else "" for num in sorted(element_counts.values()))
-        else:
-            return "Unknown"
-            
+        from mace.utils.formula_extractor import extract_formula_from_d12 as _extract
+    except ImportError:  # pragma: no cover - fallback when run without the package
+        from formula_extractor import extract_formula_from_d12 as _extract
+    try:
+        formula = _extract(Path(d12_file))
     except Exception as e:
         print(f"Error extracting formula from {d12_file}: {e}")
-        return "Unknown"
+        formula = None
+    return formula or "Unknown"
 
 
 if __name__ == "__main__":
