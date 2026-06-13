@@ -86,10 +86,12 @@ it can legitimately differ from the SP-mesh gap for near-zero-gap systems.
 
 - D3 workflow continuation halts on the `'manual'` workflow_id fallback (`engine.py:~1558`
   → use `workflow_base.name`, matching the numbered/SP paths). MEDIUM.
-- OPT continuation drops a configured non-zero SPINLOCK: `d12_parsers` never parses the
-  SPINLOCK keyword, so the round-trip loses it. LOW.
-- Public d12 wrappers `def f(*args, **kwargs)` lose their signature — add `functools.wraps`
-  to `configure_single_point/optimization`, `get_frequency_configuration`. LOW.
+- ~~OPT continuation drops a configured non-zero SPINLOCK~~ — DONE (`7260581a`):
+  `_extract_spinlock_settings` parses `SPINLOCK\n<n> [<cycles>]` (both forms) and sets
+  spin_polarized for a non-zero lock; verified round-trip + tests.
+- ~~Public d12 wrappers lose their signature~~ — DONE (`593a09e4`): `functools.update_wrapper`
+  on `configure_single_point/optimization` + `get_frequency_configuration` (sets `__wrapped__`,
+  keeps the public name).
 - `mace manager` in-place default flips silently: print a one-line notice; add `--organize`
   to `mace manager --help` (mace_cli help block ~767-773); confirm before bare `mace submit`
   on a populated dir. LOW.
