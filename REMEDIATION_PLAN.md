@@ -103,9 +103,12 @@ it can legitimately differ from the SP-mesh gap for near-zero-gap systems.
 
 ## STRATEGIC IMPROVEMENTS (from the review)
 
-- **Regression test suite over the `test/` corpus + CI** — highest leverage; nearly every
-  STILL_INCORRECT finding (formula +1 atom, BAND.DAT reference, -D3-D3, recovery resubmit, gCP)
-  plus the "claimed-but-doesn't-reproduce" pattern would have been caught by parser-output tests.
+- **Regression test suite over the `test/` corpus + CI** — DONE (commit `013b8b61`).
+  `tests/` (pytest) pins gCP/corrected-total/molecular-thermo/enthalpy, BAND.DAT band-index gap,
+  formula BASISSET-reset, and the B1 recovery chain against real `test/` outputs; `find_data()`
+  skips cleanly when the gitignored corpus is absent so CI stays green (recovery tests are
+  self-contained and always run). `pytest.ini` + `.github/workflows/tests.yml`. 19 tests green.
+  Next: extend coverage to -D3-D3 guard, SP missing-data classifier, d3 geometry double-count.
 - Delete confirmed-dead/duplicate trees: `code/Plotting_Scripts` (1733 lines, stale vs live
   `Plotting/` — fdf9cf8e fixed `Plotting/` but the stale copy still has the bug),
   `executor_contextual`/`planner_contextual`/`run_workflow_isolated` (imported by nothing),
