@@ -32,12 +32,34 @@ from d3_kpoints import (
 # Add Crystal_d12 to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "Crystal_d12"))
 
-# Opt-in "press b to go back" navigation (no-op input() if menu_nav is unavailable).
+# Opt-in "press b to go back" navigation + crash-safe back-aware readers
+# (fall back to plain input() behaviour if menu_nav is unavailable).
 try:
-    from menu_nav import nav_read as _nav_read
+    from menu_nav import (nav_read as _nav_read, nav_int as _nav_int,
+                          nav_float as _nav_float)
 except Exception:  # pragma: no cover - defensive fallback
     def _nav_read(prompt="", valid_set=None):
         return input(prompt)
+
+    def _nav_int(prompt="", default=None, choices=None):
+        while True:
+            r = input(prompt).strip()
+            if not r and default is not None:
+                return int(default)
+            try:
+                return int(r)
+            except ValueError:
+                print("Please enter a whole number.")
+
+    def _nav_float(prompt="", default=None):
+        while True:
+            r = input(prompt).strip()
+            if not r and default is not None:
+                return float(default)
+            try:
+                return float(r)
+            except ValueError:
+                print("Please enter a number.")
 
 
 # Import yes_no_prompt function
@@ -527,7 +549,7 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
     print("3: Custom labels - Specify path using labels (G, X, M, etc.)")
     print("4: Fractional coordinates - Specify path using k-point vectors")
     
-    path_method = input("Select method (1-4) [1]: ").strip() or "1"
+    path_method = _nav_read("Select method (1-4) [1]: ", valid_set={"_choice_"}).strip() or "1"
     
     if path_method == "1":
         # True automatic path from output file
@@ -601,7 +623,7 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
         print("2: K-point vectors (fractional coordinates)")
         print("3: Literature path with vectors (comprehensive, includes non-CRYSTAL points)")
         print("4: SeeK-path full paths (extended Bravais lattice notation)")
-        format_choice = input("Select format (1-4) [1]: ").strip() or "1"
+        format_choice = _nav_read("Select format (1-4) [1]: ", valid_set={"_choice_"}).strip() or "1"
         
         if format_choice == "1":
             # Use labels - CRYSTAL-compatible subset
@@ -727,7 +749,7 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
         print("5: Monoclinic")
         print("6: Triclinic")
         
-        system_choice = input("Select system (1-6) [1]: ").strip() or "1"
+        system_choice = _nav_read("Select system (1-6) [1]: ", valid_set={"_choice_"}).strip() or "1"
         
         template_map = {
             "1": ["cubic", "cubic2", "cubic3"],
@@ -747,7 +769,7 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
                 print(f"{i+1}: {t['description']}")
                 print(f"   Path: {' → '.join(t['path'])}")
             
-            template_idx = int(input(f"\nSelect template (1-{len(templates)}) [1]: ") or 1) - 1
+            template_idx = _nav_int(f"\nSelect template (1-{len(templates)}) [1]: ", default=1) - 1
             template_name = templates[template_idx]
         else:
             template_name = templates[0]
@@ -807,13 +829,13 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
         
         if use_mixed:
             # Mixed path - each segment can be labels or coordinates
-            n_segments = int(input("Number of path segments: "))
+            n_segments = _nav_int("Number of path segments: ")
             segments = []
             band_config["shrink"] = 16  # Default, will be adjusted if needed
             
             for i in range(n_segments):
                 print(f"\nSegment {i+1}:")
-                seg_type = input("Type (L)abels or (C)oordinates [L]: ").strip().upper() or "L"
+                seg_type = _nav_read("Type (L)abels or (C)oordinates [L]: ", valid_set={"_choice_"}).strip().upper() or "L"
                 
                 if seg_type == "L":
                     labels = input("Enter two labels (e.g., G X): ").strip().upper()
@@ -841,9 +863,9 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
             print("\nSegment format:")
             print("1: All segments use labels")
             print("2: All segments use fractional coordinates")
-            format_choice = input("Select format (1-2) [1]: ").strip() or "1"
+            format_choice = _nav_read("Select format (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
             
-            n_segments = int(input("Number of path segments: "))
+            n_segments = _nav_int("Number of path segments: ")
             segments = []
             
             if format_choice == "1":
@@ -859,7 +881,7 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
                 input_dir = Path(out_file).parent if out_file else Path.cwd()
                 default_shrink = extract_and_process_shrink(out_file, base_name, input_dir, {})
                 
-                shrink_input = input(f"Shrink factor for k-points [{default_shrink}]: ").strip()
+                shrink_input = _nav_read(f"Shrink factor for k-points [{default_shrink}]: ", valid_set={"_choice_"}).strip()
                 shrink = int(shrink_input) if shrink_input else default_shrink
                 
                 # Ensure it's even for cleaner paths
@@ -887,7 +909,7 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
             band_config["segments"] = segments
     
     # Number of k-points
-    n_points = int(input("\nTotal number of k-points along path [1000]: ") or 1000)
+    n_points = _nav_int("\nTotal number of k-points along path [1000]: ", default=1000)
     band_config["n_points"] = n_points
     
     # Band range
@@ -896,7 +918,7 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
     print("2: Around Fermi level (adaptive per material)")
     print("3: Custom range")
 
-    band_range = input("Select option (1-3) [1]: ").strip() or "1"
+    band_range = _nav_read("Select option (1-3) [1]: ", valid_set={"_choice_"}).strip() or "1"
 
     if band_range == "1":
         # This will be set per material in CRYSTALOptToD3.py based on n_ao
@@ -908,13 +930,13 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
         # Around Fermi: store the OFFSETS, not specific band numbers
         # This allows each material to calculate its own range based on its Fermi level
         band_config["bands"] = "fermi"
-        band_config["bands_below_fermi"] = int(input("Number of bands below Fermi [500]: ").strip() or 500)
-        band_config["bands_above_fermi"] = int(input("Number of bands above Fermi [600]: ").strip() or 600)
+        band_config["bands_below_fermi"] = _nav_int("Number of bands below Fermi [500]: ", default=500)
+        band_config["bands_above_fermi"] = _nav_int("Number of bands above Fermi [600]: ", default=600)
         print(f"\n✓ Will select {band_config['bands_below_fermi']} bands below and {band_config['bands_above_fermi']} bands above Fermi for each material")
     else:
         # Custom range
-        first = int(input("First band [1]: ") or 1)
-        last = int(input("Last band [all]: ") or 0)
+        first = _nav_int("First band [1]: ", default=1)
+        last = _nav_int("Last band [all]: ", default=0)
         band_config["first_band"] = first
         band_config["last_band"] = last if last > 0 else None
     
@@ -940,7 +962,7 @@ def configure_doss_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
     print("5: Projected DOS on specific atoms")
     print("6: Manual projections (custom combinations)")
     
-    proj_type = input("Select projection type (1-6) [3]: ").strip() or "3"
+    proj_type = _nav_read("Select projection type (1-6) [3]: ", valid_set={"_choice_"}).strip() or "3"
     
     doss_config["projection_type"] = int(proj_type)
     
@@ -969,7 +991,7 @@ def configure_doss_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
         print("1: Project on all atoms")
         print("2: Project on specific atoms")
         
-        atom_choice = input("Select (1-2) [1]: ").strip() or "1"
+        atom_choice = _nav_read("Select (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
         
         if atom_choice == "1":
             doss_config["project_all_atoms"] = True
@@ -1143,26 +1165,26 @@ def configure_doss_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
     print("2: Energy window around Fermi level")
     print("3: Specific band range")
     
-    range_choice = input("Select option (1-3) [1]: ").strip() or "1"
+    range_choice = _nav_read("Select option (1-3) [1]: ", valid_set={"_choice_"}).strip() or "1"
     
     if range_choice == "2":
         # Energy window - collect in eV but convert to Ha
         EV_TO_HA = 1.0 / 27.211386
-        bmi_ev = float(input("Lower energy limit (eV below Fermi) [-10]: ") or -10)
-        bma_ev = float(input("Upper energy limit (eV above Fermi) [20]: ") or 20)
+        bmi_ev = _nav_float("Lower energy limit (eV below Fermi) [-10]: ", default=-10)
+        bma_ev = _nav_float("Upper energy limit (eV above Fermi) [20]: ", default=20)
         # Convert to Hartree
         bmi_ha = bmi_ev * EV_TO_HA
         bma_ha = bma_ev * EV_TO_HA
         doss_config["energy_window"] = (bmi_ha, bma_ha)
     elif range_choice == "3":
         # Band range
-        first = int(input("First band [1]: ") or 1)
-        last = int(input("Last band [all]: ") or -1)
+        first = _nav_int("First band [1]: ", default=1)
+        last = _nav_int("Last band [all]: ", default=-1)
         if last > 0:
             doss_config["band_range"] = (first, last)
     
     # Other parameters
-    n_points = int(input("\nNumber of energy points [10000]: ") or 10000)
+    n_points = _nav_int("\nNumber of energy points [10000]: ", default=10000)
     doss_config["n_points"] = n_points
     
     # Output format
@@ -1170,14 +1192,14 @@ def configure_doss_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
     print("1: CRYSTAL fort.25 format")
     print("2: DOSS.DAT format")
     
-    out_format = input("Select format (1-2) [2]: ").strip() or "2"
+    out_format = _nav_read("Select format (1-2) [2]: ", valid_set={"_choice_"}).strip() or "2"
     doss_config["output_format"] = int(out_format) if out_format in ["1", "2"] else 2
     
     # Polynomial order for DOS smoothing
     print("\nPolynomial order (NPOL) for DOS smoothing:")
     print("  Suggested: 10-18 (higher NPOL = smoother DOS)")
     print("  Note: Higher IS values support higher NPOL values")
-    npol = int(input("NPOL value [14]: ") or 14)
+    npol = _nav_int("NPOL value [14]: ", default=14)
     doss_config["npol"] = npol
     
     doss_config["print_integrated"] = yes_no_prompt("\nPrint integrated DOS to output?", "no")
@@ -1193,9 +1215,9 @@ def configure_transport_calculation(out_file: Optional[str] = None) -> Dict[str,
     
     # Temperature range
     print("\nTemperature range:")
-    t_min = float(input("Minimum temperature (K) [100]: ") or 100)
-    t_max = float(input("Maximum temperature (K) [800]: ") or 800)
-    t_step = float(input("Temperature step (K) [50]: ") or 50)
+    t_min = _nav_float("Minimum temperature (K) [100]: ", default=100)
+    t_max = _nav_float("Maximum temperature (K) [800]: ", default=800)
+    t_step = _nav_float("Temperature step (K) [50]: ", default=50)
     transport_config["temperature_range"] = (t_min, t_max, t_step)
     
     # Chemical potential range
@@ -1215,14 +1237,14 @@ def configure_transport_calculation(out_file: Optional[str] = None) -> Dict[str,
     print("2: Relative to VBM (manual)")
     print("3: Absolute values")
     
-    mu_option = input("Select option (1-3) [1]: ").strip() or "1"
+    mu_option = _nav_read("Select option (1-3) [1]: ", valid_set={"_choice_"}).strip() or "1"
     
     if mu_option == "1" and fermi_energy_ev is not None:
         # Relative to Fermi energy
         print("\nRange relative to Fermi energy:")
-        mu_min_rel = float(input("Minimum μ (eV below Fermi) [-2.0]: ") or -2.0)
-        mu_max_rel = float(input("Maximum μ (eV above Fermi) [2.0]: ") or 2.0)
-        mu_step = float(input("μ step (eV) [0.01]: ") or 0.01)
+        mu_min_rel = _nav_float("Minimum μ (eV below Fermi) [-2.0]: ", default=-2.0)
+        mu_max_rel = _nav_float("Maximum μ (eV above Fermi) [2.0]: ", default=2.0)
+        mu_step = _nav_float("μ step (eV) [0.01]: ", default=0.01)
         
         # Store as absolute values
         transport_config["mu_range"] = (fermi_energy_ev + mu_min_rel, 
@@ -1239,34 +1261,34 @@ def configure_transport_calculation(out_file: Optional[str] = None) -> Dict[str,
             print("\nChemical potential range (relative to VBM):")
             reference = "vbm"
             
-        mu_min = float(input("Minimum μ (eV) [-2.0]: ") or -2.0)
-        mu_max = float(input("Maximum μ (eV) [2.0]: ") or 2.0)
-        mu_step = float(input("μ step (eV) [0.01]: ") or 0.01)
+        mu_min = _nav_float("Minimum μ (eV) [-2.0]: ", default=-2.0)
+        mu_max = _nav_float("Maximum μ (eV) [2.0]: ", default=2.0)
+        mu_step = _nav_float("μ step (eV) [0.01]: ", default=0.01)
         transport_config["mu_range"] = (mu_min, mu_max, mu_step)
         transport_config["mu_reference"] = reference
     
     # Transport distribution function range
     print("\nTransport distribution function range:")
-    tdf_min = float(input("Minimum energy (eV) [-5.0]: ") or -5.0)
-    tdf_max = float(input("Maximum energy (eV) [5.0]: ") or 5.0)
-    tdf_step = float(input("Energy step (eV) [0.01]: ") or 0.01)
+    tdf_min = _nav_float("Minimum energy (eV) [-5.0]: ", default=-5.0)
+    tdf_max = _nav_float("Maximum energy (eV) [5.0]: ", default=5.0)
+    tdf_step = _nav_float("Energy step (eV) [0.01]: ", default=0.01)
     transport_config["tdf_range"] = (tdf_min, tdf_max, tdf_step)
     
     # Relaxation time
-    tau = float(input("\nRelaxation time (fs) [10]: ") or 10)
+    tau = _nav_float("\nRelaxation time (fs) [10]: ", default=10)
     transport_config["relaxation_time"] = tau
     
     # Smearing
     use_smear = yes_no_prompt("\nUse smearing for metallic systems?", "no")
     if use_smear:
-        smear = float(input("Smearing width (eV) [0.025]: ") or 0.025)
+        smear = _nav_float("Smearing width (eV) [0.025]: ", default=0.025)
         transport_config["smearing"] = smear
         
         print("\nSmearing type:")
         print("0: Fermi-Dirac")
         print("1: Gaussian")
         print("2: Methfessel-Paxton")
-        smear_type = int(input("Select type (0-2) [0]: ") or 0)
+        smear_type = _nav_int("Select type (0-2) [0]: ", default=0)
         transport_config["smearing_type"] = smear_type
     
     return transport_config
@@ -1283,13 +1305,13 @@ def configure_charge_density_calculation() -> Dict[str, Any]:
     print("1: ECH3 - 3D charge density grid")
     print("2: ECHG - 2D charge density map")
     
-    calc_type = input("Select type (1-2) [1]: ").strip() or "1"
+    calc_type = _nav_read("Select type (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
     
     if calc_type == "1":
         charge_config["type"] = "ECH3"
         
         # Number of grid points
-        n_points = int(input("\nNumber of grid points per direction [100]: ") or 100)
+        n_points = _nav_int("\nNumber of grid points per direction [100]: ", default=100)
         charge_config["n_points"] = n_points
         
         # For lower dimensional systems
@@ -1297,13 +1319,13 @@ def configure_charge_density_calculation() -> Dict[str, Any]:
         print("1: Use automatic SCALE")
         print("2: Define explicit RANGE")
         
-        range_choice = input("Select option (1-2) [1]: ").strip() or "1"
+        range_choice = _nav_read("Select option (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
         
         if range_choice == "2":
             charge_config["use_range"] = True
         else:
             charge_config["use_range"] = False
-            scale = float(input("Scale factor for non-periodic directions [3.0]: ") or 3.0)
+            scale = _nav_float("Scale factor for non-periodic directions [3.0]: ", default=3.0)
             charge_config["scale"] = scale
     
     else:
@@ -1315,7 +1337,7 @@ def configure_charge_density_calculation() -> Dict[str, Any]:
         print("1: Gradient of charge density")
         print("2: Laplacian of charge density")
         
-        deriv = int(input("Select order (0-2) [0]: ") or 0)
+        deriv = _nav_int("Select order (0-2) [0]: ", default=0)
         charge_config["derivative_order"] = deriv
         
         # Map plane definition
@@ -1335,16 +1357,16 @@ def configure_potential_calculation() -> Dict[str, Any]:
     print("1: POT3 - 3D potential grid")
     print("2: POTC - Potential at specific points")
     
-    calc_type = input("Select type (1-2) [1]: ").strip() or "1"
+    calc_type = _nav_read("Select type (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
     
     if calc_type == "1":
         potential_config["type"] = "POT3"
         
         # Grid settings
-        n_points = int(input("\nNumber of grid points per direction [100]: ") or 100)
+        n_points = _nav_int("\nNumber of grid points per direction [100]: ", default=100)
         potential_config["n_points"] = n_points
         
-        itol = int(input("Bipolar expansion tolerance (5-8) [5]: ") or 5)
+        itol = _nav_int("Bipolar expansion tolerance (5-8) [5]: ", default=5)
         potential_config["itol"] = itol
         
         # For lower dimensional systems
@@ -1352,13 +1374,13 @@ def configure_potential_calculation() -> Dict[str, Any]:
         print("1: Use automatic SCALE")
         print("2: Define explicit RANGE")
         
-        range_choice = input("Select option (1-2) [1]: ").strip() or "1"
+        range_choice = _nav_read("Select option (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
         
         if range_choice == "2":
             potential_config["use_range"] = True
         else:
             potential_config["use_range"] = False
-            scale = float(input("Scale factor for non-periodic directions [3.0]: ") or 3.0)
+            scale = _nav_float("Scale factor for non-periodic directions [3.0]: ", default=3.0)
             potential_config["scale"] = scale
     
     else:
@@ -1370,7 +1392,7 @@ def configure_potential_calculation() -> Dict[str, Any]:
         print("1: Plane-averaged potential")
         print("2: Volume-averaged potential")
         
-        ica = int(input("Select mode (0-2) [0]: ") or 0)
+        ica = _nav_int("Select mode (0-2) [0]: ", default=0)
         potential_config["ica"] = ica
         
         if ica == 0:
@@ -1380,7 +1402,7 @@ def configure_potential_calculation() -> Dict[str, Any]:
             print("2: At custom points")
             print("3: Read from file")
             
-            point_choice = input("Select option (1-3) [1]: ").strip() or "1"
+            point_choice = _nav_read("Select option (1-3) [1]: ", valid_set={"_choice_"}).strip() or "1"
             
             if point_choice == "1":
                 potential_config["at_atoms"] = True
@@ -1389,24 +1411,24 @@ def configure_potential_calculation() -> Dict[str, Any]:
                     atom_list = input("Enter atom numbers: ").strip()
                     potential_config["atoms"] = [int(a) for a in atom_list.split()]
             elif point_choice == "2":
-                n_points = int(input("Number of points: ") or 1)
+                n_points = _nav_int("Number of points: ", default=1)
                 potential_config["n_points"] = n_points
                 potential_config["custom_points"] = True
             else:
-                potential_config["n_points"] = -int(input("Number of points in file: ") or 1)
+                potential_config["n_points"] = -_nav_int("Number of points in file: ", default=1)
                 potential_config["read_file"] = True
         
         else:
             # Plane/volume averaging
-            z_min = float(input("Z minimum (bohr) [0]: ") or 0)
-            z_max = float(input("Z maximum (bohr) [10]: ") or 10)
+            z_min = _nav_float("Z minimum (bohr) [0]: ", default=0)
+            z_max = _nav_float("Z maximum (bohr) [10]: ", default=10)
             potential_config["z_range"] = (z_min, z_max)
             
-            n_planes = int(input("Number of planes [100]: ") or 100)
+            n_planes = _nav_int("Number of planes [100]: ", default=100)
             potential_config["n_planes"] = n_planes
             
             if ica == 2:
-                thickness = float(input("Slice thickness (bohr) [0.5]: ") or 0.5)
+                thickness = _nav_float("Slice thickness (bohr) [0.5]: ", default=0.5)
                 potential_config["slice_thickness"] = thickness
     
     return potential_config
