@@ -283,19 +283,21 @@ def plot_bands(files: List[str], config: Dict[str, Any], output_dir: str = ".") 
 
         print(f"\n  Plotting: {band_path.name}")
 
+        argv_backup = sys.argv
         try:
             os.chdir(work_dir)
 
             # Build command-line arguments for the band plotter
-            argv_backup = sys.argv
             sys.argv = [
                 'ipBANDS_V2.py',
                 str(config['e_lower']),
                 str(config['e_upper']),
             ]
 
-            if config['alpha'] != 0.3:
-                sys.argv.extend(['--alpha', str(config['alpha'])])
+            # Always forward alpha: the config default (0.3) differs from the
+            # plotter's own default (1.0), so gating on != 0.3 silently dropped
+            # the configured transparency and rendered opaque.
+            sys.argv.extend(['--alpha', str(config['alpha'])])
             if config['auto_width']:
                 sys.argv.append('--auto-width')
             if config['no_gaps']:
@@ -312,8 +314,6 @@ def plot_bands(files: List[str], config: Dict[str, Any], output_dir: str = ".") 
             # Run the plotter
             band_plotter.main()
 
-            sys.argv = argv_backup
-
             # Find generated files
             base_name = band_path.name.replace('.band.band.dat', '').replace('.BAND.DAT', '')
             formats = config.get('formats', ['svg'])
@@ -323,9 +323,13 @@ def plot_bands(files: List[str], config: Dict[str, Any], output_dir: str = ".") 
                     output_files.append(str(out_file))
                     print(f"    Generated: {out_file.name}")
 
-        except Exception as e:
+        except (Exception, SystemExit) as e:
+            # The legacy plotters call sys.exit() on bad input; SystemExit is not
+            # an Exception, so without catching it one bad file aborted the whole
+            # batch and the mace process.
             print(f"    Error: {e}")
         finally:
+            sys.argv = argv_backup
             os.chdir(original_dir)
 
     return output_files
@@ -414,6 +418,14 @@ def plot_dos(files: List[str], config: Dict[str, Any], output_dir: str = ".") ->
     Returns:
         List of generated output files.
     """
+    # 'tm_orb' (transition-metal orbital, others total) is an ipDOS *element_mode*,
+    # not a proj_type. Both the interactive menu and the CLI expose it as a
+    # projection choice, so map it back here; otherwise ipDOS_V2 rejects
+    # proj_type='tm_orb' with sys.exit(1). Copy the config so we don't mutate the
+    # caller's dict.
+    if config.get('projection_type') == 'tm_orb':
+        config = {**config, 'projection_type': 'total', 'element_mode': 'tm_orb'}
+
     # Import the DOS plotting module
     plotting_dir = Path(__file__).parent.parent.parent / "Plotting"
     if str(plotting_dir) not in sys.path:
@@ -435,11 +447,11 @@ def plot_dos(files: List[str], config: Dict[str, Any], output_dir: str = ".") ->
 
         print(f"\n  Plotting: {dos_path.name}")
 
+        argv_backup = sys.argv
         try:
             os.chdir(work_dir)
 
             # Build command-line arguments for the DOS plotter
-            argv_backup = sys.argv
             sys.argv = [
                 'ipDOS_V2.py',
                 str(config['e_lower']),
@@ -461,8 +473,6 @@ def plot_dos(files: List[str], config: Dict[str, Any], output_dir: str = ".") ->
             # Run the plotter
             dos_plotter.main()
 
-            sys.argv = argv_backup
-
             # Find generated files
             base_name = dos_path.name.replace('_doss.DOSS.DAT', '').replace('.DOSS.DAT', '')
             formats = config.get('formats', ['svg'])
@@ -472,9 +482,13 @@ def plot_dos(files: List[str], config: Dict[str, Any], output_dir: str = ".") ->
                     output_files.append(str(out_file))
                     print(f"    Generated: {out_file.name}")
 
-        except Exception as e:
+        except (Exception, SystemExit) as e:
+            # The legacy plotters call sys.exit() on bad input; SystemExit is not
+            # an Exception, so without catching it one bad file aborted the whole
+            # batch and the mace process.
             print(f"    Error: {e}")
         finally:
+            sys.argv = argv_backup
             os.chdir(original_dir)
 
     return output_files
