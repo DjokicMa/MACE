@@ -41,17 +41,20 @@ class UnitConverter:
         'mm': 5.2917721067e-8,
     }
     
-    # Pressure conversions (base: Hartree/Bohr^3)
+    # Pressure conversions (base: Hartree/Bohr^3); factor = units per 1 base unit.
+    # 1 Hartree/Bohr^3 = 29421.0107637093 GPa; the rest follow from standard
+    # ratios (1 GPa = 10 kbar = 0.01 Mbar = 1e9 Pa = 1000 MPa). The old table had
+    # kbar and Mbar swapped and atm off by ~1000x.
     PRESSURE_CONVERSIONS = {
         'hartree/bohr^3': 1.0,
         'ha/bohr^3': 1.0,
         'gpa': 29421.0107637093,
-        'mbar': 294210.107637093,
-        'kbar': 294.210107637093,
-        'pa': 2.9421e13,
-        'mpa': 2.9421e7,
-        'atm': 290246.6961,
-        'psi': 4.269e9,
+        'kbar': 294210.107637093,      # 1 GPa = 10 kbar
+        'mbar': 294.210107637093,      # 1 GPa = 0.01 Mbar
+        'pa': 29421010763709.297,      # 1 GPa = 1e9 Pa
+        'mpa': 29421010.7637093,       # 1 GPa = 1000 MPa
+        'atm': 290362800.53006953,     # 1 atm = 101325 Pa
+        'psi': 4267156842.904755,      # 1 psi = 6894.757293168 Pa
     }
     
     # Temperature conversions (base: Kelvin)
