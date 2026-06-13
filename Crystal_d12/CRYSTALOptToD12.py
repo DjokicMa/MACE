@@ -1030,11 +1030,16 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     calc_type = options["calculation_type"]
     functional = options.get("functional", "RHF")
 
-    # Don't add -D3 to 3C methods or HF methods or if dispersion is already included in the name
+    # Don't add -D3 to 3C methods or HF methods or if dispersion is already included
+    # in the name. The "-D3 not in functional" guard is essential here: this is the
+    # tool that emits the "_optimized" continuation filenames, and d12_parsers bakes
+    # "-D3" into the functional parsed from real CRYSTAL "DFT-D3" output, so without
+    # it a B3LYP-D3 source doubled to "B3LYP-D3-D3" (and tripled on each continuation).
     if (
         options.get("dispersion")
         and "-3C" not in functional
         and "3C" not in functional
+        and "-D3" not in functional
         and functional not in ["RHF", "UHF", "HF3C", "HFSOL3C"]
     ):
         functional += "-D3"
