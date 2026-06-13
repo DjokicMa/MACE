@@ -1189,11 +1189,15 @@ def process_cifs(cif_directory, options, output_directory=None):
             if not method_name and "functional" in options:
                 method_name = options["functional"]
 
-            # Don't add -D3 to 3C methods or if dispersion is already included in the name
+            # Don't add -D3 to 3C methods or if dispersion is already included in
+            # the name. The "-D3" guard was missing, so a functional carried over
+            # from a parsed source (e.g. "B3LYP-D3") got doubled to "B3LYP-D3-D3"
+            # in continuation filenames.
             if (
                 options.get("use_dispersion")
                 and "-3C" not in method_name
                 and "3C" not in method_name
+                and "-D3" not in method_name
             ):
                 method_name += "-D3"
 
@@ -1268,7 +1272,7 @@ def print_summary(options):
         print(f"Method: Hartree-Fock ({options.get('hf_method', 'RHF')})")
     else:
         functional = options.get("dft_functional", "")
-        if options.get("use_dispersion"):
+        if options.get("use_dispersion") and "-D3" not in functional and "3C" not in functional:
             functional += "-D3"
         print(f"Method: DFT")
         print(f"Functional: {functional}")
