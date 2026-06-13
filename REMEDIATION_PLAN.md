@@ -57,12 +57,30 @@ Add/extend a pytest test in `tests/` for every fix. Suggested order:
      *.py in Crystal_d3/Archived/. KEPT (verified active / DO-NOT-DELETE): copy_dependencies.py
      (manual deploy CLI), enhanced_queue_manager.py (shim), mace_config.py (dynamic-loaded by
      executor.py), Crystal_d3/Archived/{band_plot,d3_input,parameters,basis}/. Docs updated. 320 tests.
-   - 6b [NEXT] coverage for engine.py (~3.6k LoC) + planner.py (~5k LoC) — panel to pick targets, then tests.
-   - 6a [AFTER 6b] shared CRYSTAL `.out` parser / Fermi / constants module — panel to design + impact,
-     then extract incrementally behind tests (touches validated parsing — highest risk).
+   - 6b [DONE `779c6351`] coverage for engine.py + planner.py — panel mapped the testable surface;
+     added tests/test_engine_logic.py (44) + tests/test_planner_logic.py (38) pinning the PURE/MOCKABLE
+     logic kernels (calc-type parse, DFT dependency resolution, next-step selection, name/suffix/step
+     numbering, memory math, resource scaling, script templating). Characterization-first; ground truth
+     captured from real code. INTEGRATION paths (sbatch/db/subprocess) deferred.
+   - 6a [SAFE SLICE DONE `5d810773`] panel mapped constants/Fermi/.out-parser dup. Did ONLY the
+     provable no-op: new mace/constants.py (HARTREE_TO_EV/EV_TO_HARTREE/BOHR_TO_ANGSTROM/ANGSTROM_TO_BOHR);
+     re-pointed the 4 ALREADY-byte-identical sites (dat_file_processor, units.py base ev/angstrom keys,
+     2 test files). tests/test_constants_no_drift.py. 422 tests.
+     DEFERRED (precision-fix wave — behavior change, needs real-output regression pins first):
+     ~30 truncated `27.2114`/`27.211386` literals in property_extractor.py (validated parser),
+     advanced_electronic_analyzer.py, Crystal_d3/*, untested Band_Alignment/plotting scripts.
+     DO NOT TOUCH: 'BOHR = 0.5291772083 ANGSTROM' fixture strings (CRYSTAL-output mimics); units.py
+     derived keys (mev/thz/nm..mm/pressure — re-derivation risks last-ULP drift).
+     STILL DEFERRED (HIGH risk, no active bug): shared CRYSTAL .out parser extraction and Fermi-energy
+     extraction unification (divergent regex/units/occurrence policy across 6 sites) — need
+     characterization tests first; don't-fix-what-works.
    NOTE: a separate `mace/plotting/*` refactor WIP (registry.py/handlers/detect.py/prompts.py/
    MACE_PLOTTING_INTEGRATION_PLAN.md + test_plotting_*) appeared in the working tree mid-session —
    NOT mine; left untouched/uncommitted.
+
+   ===> ALL stragglers 1-6 are DONE (within don't-fix-what-works bounds). Remaining = the two
+   explicitly-deferred behavior-changing items above (constant-precision fix; parser/Fermi merge),
+   each gated on real-output regression pins. Suite: 422 tests.
 
 Do NOT re-fix the "Already FIXED but docs are stale" list at the bottom (CONCERNS.md is stale).
 
