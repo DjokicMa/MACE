@@ -128,7 +128,44 @@ not driven for molecules.
   orthorhombic centering map, Fermi-centered DOSS energy windows.
 - **opt_sp_freq** added as a built-in workflow template.
 
-**Still open (highest-value remainder):** monoclinic unique-axis detection
+### Third fix wave (2026-06-12 night, committed) — data-quality batch
+
+- **DAT post-processing rewritten (§5.13, finding #1 follow-on)**: `dat_file_processor`
+  now parses the real CRYSTAL BAND.DAT (`# NKPT NBND NSPIN` header, `<abscissa>
+  E1..E_NBND` rows, absolute-Hartree energies) and DOSS.DAT (wrapped multi-line
+  records reshaped by `1+NPROJ`, `E-EFermi` energies, total DOS = last column).
+  Band metal/insulator now requires the .out Fermi level (returns None instead
+  of "metallic" when absent); DOS metallicity uses a gap-existence test robust
+  to edge spikes and semimetals. property_extractor merges only compact
+  `band_dat_*`/`doss_dat_*` scalars (no more JSON-dumping raw arrays). Verified:
+  4LG graphene → metallic, 9 molecular electrolytes → ~7.5-8.4 eV insulators.
+  (505f5ead)
+- **§7.9 fixed**: `CRYSTALOptToD3.py:176` element regex `[A-Z][a-z]?` →
+  `[A-Z][A-Za-z]?`; all-caps "TI"/"PB"/"SI" now captured (was returning an empty
+  list, which made every manual atom projection fail the bound check). The
+  `d3_interactive.py:1025` variant and geometry double-counting remain open.
+  (11a158dc)
+- **§2.6 fixed**: `utils/units.py` pressure factors — kbar/Mbar were swapped and
+  atm ~1000× off; recomputed from the GPa base and round-trip verified.
+  (1b7c064f)
+- **§2.9 fixed**: `analysis/missing_data.py` `CALC_TYPE_PROPERTIES` realigned to
+  the extractor's real vocabulary (`total_energy_au`, `final_primitive_a`,
+  `zero_point_energy_au`, `total_kpoints`, `doss_dat_*`...); required props now
+  only those emitted for any system of a type, so completeness is meaningful
+  (was ~0% / "everything missing"). TRANSPORT/CHARGE+POTENTIAL require nothing
+  (extractor doesn't parse those yet). (05c7d91c)
+- **§2.10 fixed**: chemical formula extraction — materials.py delegates to
+  formula_extractor (fixes queue manager + engine); formula_extractor now
+  matches scientific-notation coordinates, decodes the Z+200 ECP offset, bounds
+  its fallback to the geometry block, and orders metals-first. `1LiFSI*` →
+  `LiC5NH10S2F2O7` (was `225810`), `Ti19O30` → `Ti19O30`, `Ag2Br3` → `AgBr`.
+  (28e64fbf)
+
+**Still open (highest-value remainder):** transport-coefficient and
+charge/potential-grid extraction (not implemented — missing-data now treats
+them as having no required props); memory/timeout recovery resource edits not
+carried into resubmitted scripts; `d3_interactive.py:1025` element regex +
+geometry double-counting (§7.9 sibling); monoclinic unique-axis detection
 (§6.14); duplicate pre-scaled seekpath fallback tables (§7.1 — only triggers
 when the seekpath library is missing; present in the anaconda env);
 contextual planner/executor variants (§3.7); plotting branch internals (§8.2+);
@@ -190,11 +227,11 @@ These five patterns account for the majority of the critical findings:
 3. **CRITICAL** `materials.py:1119-1142` — `store_material_property` always fails: inserts a `uuid4()` string into `property_id INTEGER PRIMARY KEY AUTOINCREMENT` → `sqlite3.IntegrityError: datatype mismatch` (reproduced on a fresh DB).
 4. **MAJOR** `materials_contextual.py:166, 208-215` — `copy_to_context` always crashes: calls nonexistent `create_or_update_material` and passes kwargs `unit=`/`conditions=` that `store_material_property` doesn't accept.
 5. **MAJOR** `materials_contextual.py:257, 293` — `get_workflow_materials`/`get_workflow_calculations` call `self.get_connection()`; the method is `_get_connection` → AttributeError whenever a workflow_id is set.
-6. **MAJOR** `utils/units.py:48-53` — kbar/Mbar pressure conversion factors are swapped and `atm` is 1000× too small (`convert_units(10,'gpa','kbar')` → 0.1 instead of 100).
+6. **MAJOR** ✅ FIXED (1b7c064f) `utils/units.py:48-53` — kbar/Mbar pressure conversion factors are swapped and `atm` is 1000× too small (`convert_units(10,'gpa','kbar')` → 0.1 instead of 100).
 7. **MAJOR** `materials.py:635` — `cleanup_old_records` uses `datetime.now().replace(day=day-30)` → ValueError on ~every invocation; use `timedelta`.
 8. **MAJOR** `utils/validation.py:626-647` — `validate_materials(material_ids=[...])` is a `pass` stub whose report dict then KeyErrors in the formatter; the interactive explorer's `do_validate` always hits this.
-9. **MAJOR** `analysis/missing_data.py:16-48` — expected property names don't match anything the extractor writes (`total_energy` vs `total_energy_au`, `final_a` vs `final_primitive_a`, ...) → every completed calc reported "missing data".
-10. **MAJOR** `materials.py:1439-1476` — `extract_formula_from_d12` returns garbage (e.g. `'2'` for diamond; joins counts without symbols) and the queue manager imports THIS version, not the correct `mace.utils.formula_extractor`.
+9. **MAJOR** ✅ FIXED (05c7d91c) `analysis/missing_data.py:16-48` — expected property names don't match anything the extractor writes (`total_energy` vs `total_energy_au`, `final_a` vs `final_primitive_a`, ...) → every completed calc reported "missing data".
+10. **MAJOR** ✅ FIXED (28e64fbf) `materials.py:1439-1476` — `extract_formula_from_d12` returns garbage (e.g. `'2'` for diamond; joins counts without symbols) and the queue manager imports THIS version, not the correct `mace.utils.formula_extractor`. (Both versions fixed: materials.py delegates; formula_extractor handles sci-notation coords + ECP offset.)
 11. **MINOR** `analysis/aggregation.py:149, 185` — `group_by='conductivity_type'/'energy_range'` look up property names the extractor never writes; everything lands in "Unknown".
 12. **MINOR** `materials_contextual.py:173, 188` — passes already-encoded JSON strings into functions that `json.dumps` again → double-encoded JSON (latent until #4 fixed).
 13. **MINOR** `materials.py:984-1001` — `capture_workflow_execution_data` can `return instance_id` before assignment (NameError) and only returns the last material's instance.
@@ -253,7 +290,7 @@ These five patterns account for the majority of the critical findings:
 10. **MAJOR** `property_extractor.py:1136, 1794` — Fermi regex truncates scientific exponents (`-1.137E-01` → -1.137, 8.8× off) and the unit map labels Hartree values as eV.
 11. **MAJOR** `property_extractor.py:1076-1081` — with `calc_id=None` (untracked folders) the dedup `WHERE calc_id = ?` never matches NULL → every re-extraction inserts a full duplicate property set.
 12. **MAJOR** `file_manager.py:265-275` — `_infer_material_id_from_filename` corrupts names via mid-string `replace` (`..._optimized_rev1` → `...imized_rev1`) and is a fourth divergent ID scheme.
-13. **MAJOR** `dat_file_processor.py:232-242` — band analysis sets `max_occupied = max(all eigenvalues)` → every band structure classified metallic with `band_gap=None` (latent while finding #1 keeps this module unloadable).
+13. **MAJOR** ✅ FIXED (505f5ead) `dat_file_processor.py:232-242` — band analysis sets `max_occupied = max(all eigenvalues)` → every band structure classified metallic with `band_gap=None` (latent while finding #1 keeps this module unloadable). (Full rewrite: real BAND/DOSS formats, Fermi-referenced gap, robust DOS metallicity; verified on real outputs.)
 14. **MINOR** `property_extractor.py:320, 361, 530, 1150`; `scf_settings_extractor.py:170` — confirmed never-match patterns (literal `'band_gap'`, `SPACE GROUP NUMBER`, `SCF FIELD CONVERGENCE`) — dead extraction paths.
 15. **MINOR** — `show_properties.py:7` runs DB-creating code at import (no `__main__` guard); `material_database` imports in 3 files always fail; population processor expects `mulliken_population` keys but extractor emits `*_alpha_plus_beta` (bonding analysis never produced; 0.29 overlap diamond C–C would be labeled 'ionic'); FREQ enthalpy checks `zero_point_energy_au` before it's set; `initial_initial_*`/`final_final_*` junk keys from double-prefixing; settings_extractor writes `input_settings_json` but its own query reads `settings_json`.
 
@@ -285,7 +322,7 @@ These five patterns account for the majority of the critical findings:
 6. **MAJOR** `d3_kpoints.py:601-629` (commit 772d8495) — BAND_PATHS labels changed "G"→"GAMMA" and are written verbatim into label-mode .d3 segment lines; CRYSTAL's tables define single-letter labels (all validated archived templates use "G"). Map GAMMA→G at write time.
 7. **MAJOR** `d3_interactive.py:1151` + `CRYSTALOptToD3.py:687-722` — DOSS energy window prompts "eV below/above Fermi" but writes BMI/BMA as absolute energies without adding E_F → window centered on 0, not the Fermi level.
 8. **MAJOR** `d3_config.py:231-277` — `validate_d3_config` requires keys the configurators never produce → every saved DOSS/TRANSPORT config rejected on `--config-file` reload.
-9. **MAJOR** `CRYSTALOptToD3.py:176`, `d3_interactive.py:1025` — atom-element regex can't match CRYSTAL's all-caps two-letter symbols ("SI", "TI") → atom projections rejected for any system with 2-letter elements; also double-counts atoms from repeated geometry blocks.
+9. **MAJOR** ⚠ PARTIAL FIX (11a158dc) `CRYSTALOptToD3.py:176`, `d3_interactive.py:1025` — atom-element regex can't match CRYSTAL's all-caps two-letter symbols ("SI", "TI") → atom projections rejected for any system with 2-letter elements; also double-counts atoms from repeated geometry blocks. (CRYSTALOptToD3.py:176 fixed + verified on Ti13Pb3; d3_interactive.py:1025 and the geometry double-count remain open.)
 10. **MINOR** `CRYSTALOptToD3.py:128` — electron-count regex says "PER UNIT CELL"; real outputs print "PER CELL" → always 0 (currently unused).
 11. **MINOR** `d3_interactive.py:146-153` — "BOTTOM OF CONDUCTION BANDS" (real: "VIRTUAL BANDS") and `SPACE GROUP.*?NUMBER:` never match → dead-but-misleading fields.
 12. **MINOR** `d3_kpoints.py:996-1058` — literature k-path references labels with no coordinates (rhombohedral Z/X, monoclinic C/D/E/Z…) → up to 6 of 13 segments silently dropped.
