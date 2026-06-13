@@ -29,7 +29,7 @@ Usage:
 
 import json
 import os
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Tuple
 from pathlib import Path
 
 
@@ -533,7 +533,3 @@ def print_config_summary(config: Dict[str, Any]) -> None:
         print(f"  Max Cycles: {opt.get('maxcycle', 'Default')}")
     
     print("="*60 + "\n")
-
-
-# Make validate function importable with correct name
-from typing import Tuple
