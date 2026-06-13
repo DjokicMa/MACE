@@ -12,48 +12,71 @@ import json
 class MissingDataAnalyzer:
     """Analyzes missing properties across materials to guide calculations."""
     
-    # Define expected properties for each calculation type
+    # Expected properties per calculation type. These names must match what
+    # CrystalPropertyExtractor actually writes (verified against real test/
+    # outputs); the previous lists used names the extractor never emits
+    # (total_energy vs total_energy_au, freq_* vs zero_point_energy_au, ...) so
+    # every material was reported as missing nearly everything. "required" holds
+    # only properties the extractor emits for *any* system of that type (a
+    # molecule has no lattice, a metal has no band gap, so those are optional);
+    # this keeps completeness scores meaningful.
     CALC_TYPE_PROPERTIES = {
         'OPT': {
-            'required': ['total_energy', 'final_a', 'final_b', 'final_c'],
-            'optional': ['final_alpha', 'final_beta', 'final_gamma', 'optimization_cycles', 
-                        'max_gradient', 'rms_gradient', 'density']
+            'required': ['total_energy_au', 'optimization_cycles'],
+            'optional': ['total_energy_ev', 'total_energy_plus_d3_au', 'optimization_converged',
+                         'final_gradient_norm', 'final_primitive_a', 'final_primitive_b',
+                         'final_primitive_c', 'final_primitive_alpha', 'final_primitive_beta',
+                         'final_primitive_gamma', 'final_primitive_cell_volume',
+                         'final_density', 'atoms_in_unit_cell']
         },
         'SP': {
-            'required': ['total_energy', 'band_gap', 'fermi_energy'],
-            'optional': ['indirect_band_gap', 'direct_band_gap', 'homo_energy', 
-                        'lumo_energy', 'vbm_energy', 'cbm_energy']
+            'required': ['total_energy_au', 'electronic_classification'],
+            'optional': ['total_energy_ev', 'band_gap', 'direct_band_gap', 'indirect_band_gap',
+                         'fermi_energy', 'vbm_energy', 'cbm_energy', 'is_spin_polarized',
+                         'conductivity_type']
         },
         'FREQ': {
-            'required': ['freq_n_modes', 'freq_min', 'freq_max'],
-            'optional': ['freq_negative_count', 'freq_zero_point_energy', 
-                        'freq_thermal_energy', 'freq_entropy']
+            'required': ['has_frequency_data'],
+            'optional': ['zero_point_energy_au', 'zero_point_energy_ev', 'zero_point_energy_kj_mol',
+                         'entropy_j_mol_k', 'heat_capacity_j_mol_k', 'vibrational_temperatures',
+                         'has_force_constants', 'has_normal_mode_displacements',
+                         'thermodynamic_temperature_k']
         },
         'BAND': {
-            'required': ['band_n_kpoints', 'band_n_bands'],
-            'optional': ['band_gap_from_band', 'band_fermi_energy']
+            'required': ['has_band_structure'],
+            'optional': ['total_bands', 'total_kpoints', 'fermi_energy_band',
+                         'band_gap_advanced_ev', 'band_structure_k_points', 'band_dat_num_bands',
+                         'band_dat_num_kpoints', 'band_dat_metallic',
+                         'electronic_classification_advanced', 'is_semimetal_advanced']
         },
         'DOSS': {
-            'required': ['dos_n_points', 'dos_energy_range'],
-            'optional': ['dos_gap', 'dos_fermi_energy', 'dos_n_electrons']
+            'required': ['has_dos'],
+            'optional': ['doss_dat_metallic', 'doss_dat_band_gap_ev', 'doss_dat_at_fermi',
+                         'doss_dat_num_energy_points', 'fermi_energy_dos', 'dos_at_fermi_level',
+                         'band_gap', 'vbm_energy']
         },
+        # The extractor does not yet parse transport coefficients or charge/
+        # potential grid statistics, so these types have no type-specific
+        # properties to require (listing any would force a false "missing").
         'TRANSPORT': {
-            'required': ['transport_seebeck_300k', 'transport_conductivity_300k'],
-            'optional': ['transport_power_factor_300k', 'transport_thermal_conductivity_300k']
+            'required': [],
+            'optional': ['band_gap', 'electronic_classification', 'conductivity_type']
         },
         'CHARGE+POTENTIAL': {
-            'required': ['charge_min', 'charge_max', 'potential_min', 'potential_max'],
-            'optional': ['charge_sum', 'potential_average']
+            'required': [],
+            'optional': []
         }
     }
-    
-    # Define property dependencies
+
+    # Property-name prefix -> calculation types that can produce it. Used as a
+    # secondary hint for suggested calculations (missing_by_calc_type is primary).
     PROPERTY_DEPENDENCIES = {
         'band_gap': ['SP'],
         'fermi_energy': ['SP', 'BAND', 'DOSS'],
-        'phonon_properties': ['FREQ'],
-        'transport_properties': ['TRANSPORT'],
-        'charge_density': ['CHARGE+POTENTIAL']
+        'zero_point_energy': ['FREQ'],
+        'vibrational': ['FREQ'],
+        'doss_dat': ['DOSS'],
+        'band_structure': ['BAND'],
     }
     
     def __init__(self, db):
