@@ -216,15 +216,24 @@ class ErrorRecoveryEngine:
 
         return retry_count
         
-    def attempt_recovery(self, calc: Dict) -> bool:
+    def attempt_recovery(self, calc: Dict, create_record: bool = True) -> Optional[Dict]:
         """
         Attempt to recover a failed calculation.
-        
+
         Args:
             calc: Failed calculation record
-            
+            create_record: When True (standalone / `mace recover` CLI use) a
+                recovery calculation row is created here. The queue manager
+                passes False because it creates the single submission row
+                itself when it resubmits — avoiding an orphaned pending row.
+
         Returns:
-            True if recovery was attempted, False if skipped
+            On success, a dict of the artifacts the resubmitter needs:
+              {'fixed_input_file': Path,
+               'fixed_job_script': Optional[Path],   # bumped --mem/--time script
+               'recovery_calc_id': Optional[str]}
+            None if recovery was skipped or failed. (Truthy on success / falsy
+            otherwise, so existing ``if attempt_recovery(...)`` callers still work.)
         """
         calc_id = calc['calc_id']
         error_type = canonical_error_type(calc.get('error_type', 'unknown'))
@@ -234,32 +243,47 @@ class ErrorRecoveryEngine:
         # Get recovery configuration for this error type
         error_config = self.config["error_recovery"].get(error_type, {})
         handler_name = error_config.get("handler")
-        
+
         if not handler_name:
             print(f"No handler configured for error type: {error_type}")
-            return False
-            
+            return None
+
         # Get the handler method
         handler_method = getattr(self, handler_name, None)
         if not handler_method:
             print(f"Handler method not found: {handler_name}")
-            return False
-            
+            return None
+
         try:
-            # Apply recovery fix
-            fixed_input_file = handler_method(calc, error_config)
-            
-            if fixed_input_file:
-                # Create new calculation with recovery attempt
-                self.create_recovery_calculation(calc, fixed_input_file, error_config)
-                return True
+            # Apply recovery fix. Handlers return either the fixed input Path
+            # (back-compat) or a (fixed_input, fixed_job_script) tuple where the
+            # job script carries bumped resources — normalize both shapes.
+            result = handler_method(calc, error_config)
+            if isinstance(result, tuple):
+                fixed_input_file, fixed_job_script = result
             else:
+                fixed_input_file, fixed_job_script = result, None
+
+            if not fixed_input_file:
                 print(f"Recovery handler failed to generate fixed input for {calc_id}")
-                return False
-                
+                return None
+
+            recovery_calc_id = None
+            if create_record:
+                # Create new calculation with recovery attempt
+                recovery_calc_id = self.create_recovery_calculation(
+                    calc, fixed_input_file, error_config,
+                    fixed_job_script=fixed_job_script,
+                )
+            return {
+                'fixed_input_file': Path(fixed_input_file),
+                'fixed_job_script': Path(fixed_job_script) if fixed_job_script else None,
+                'recovery_calc_id': recovery_calc_id,
+            }
+
         except Exception as e:
             print(f"Error during recovery attempt for {calc_id}: {e}")
-            return False
+            return None
             
     def fixk_handler(self, calc: Dict, config: Dict) -> Optional[Path]:
         """
@@ -311,9 +335,10 @@ class ErrorRecoveryEngine:
                     
                     # Copy fixed file back
                     shutil.copy2(temp_input, fixed_path)
-                    
+
                     print(f"SHRINK fix applied successfully: {fixed_path}")
-                    return fixed_path
+                    # (fixed input, no job-script change)
+                    return (fixed_path, None)
                 else:
                     print(f"fixk.py failed: {result.stderr}")
                     return None
@@ -391,9 +416,11 @@ class ErrorRecoveryEngine:
                     f.write(updated_script)
                     
                 print(f"Memory increased from {current_memory_gb}GB to {new_memory_gb}GB")
-                
-                # Return original input file (no changes needed)
-                return Path(calc['input_file'])
+
+                # Input is unchanged; the fix lives in the bumped job script.
+                # Return both so the resubmitter submits the bumped script
+                # instead of regenerating a default one from the template.
+                return (Path(calc['input_file']), new_script_path)
                 
             else:
                 print("Could not find memory allocation in job script")
@@ -433,12 +460,24 @@ class ErrorRecoveryEngine:
             found_maxcycle = False
             found_fmixing = False
 
+            # An SCF-convergence failure must bump only the SCF MAXCYCLE, not the
+            # geometry-step MAXCYCLE inside OPTGEOM. Track the OPTGEOM block so we
+            # leave its MAXCYCLE untouched (a d12 can carry both — verified on real
+            # OPT inputs: OPTGEOM MAXCYCLE near the top, SCF MAXCYCLE after ENDDFT).
+            in_optgeom = False
+
             i = 0
             while i < len(lines):
                 line = lines[i]
                 keyword = line.strip().upper()
 
-                if keyword == 'MAXCYCLE' and i + 1 < len(lines):
+                # Maintain OPTGEOM block state before acting on MAXCYCLE.
+                if keyword == 'OPTGEOM':
+                    in_optgeom = True
+                elif keyword in ('ENDOPT', 'ENDOPTGEOM') or (in_optgeom and keyword == 'END'):
+                    in_optgeom = False
+
+                if keyword == 'MAXCYCLE' and not in_optgeom and i + 1 < len(lines):
                     try:
                         current_cycles = int(lines[i + 1].strip())
                         new_cycles = current_cycles + config.get('max_cycles_increase', 1000)
@@ -465,7 +504,7 @@ class ErrorRecoveryEngine:
                         pass
 
                 # Same-line form (MAXCYCLE 800) kept as fallback
-                if 'MAXCYCLE' in keyword and len(line.split()) > 1:
+                if 'MAXCYCLE' in keyword and not in_optgeom and len(line.split()) > 1:
                     parts = line.split()
                     for j, part in enumerate(parts):
                         if part.upper() == 'MAXCYCLE' and j + 1 < len(parts):
@@ -501,7 +540,8 @@ class ErrorRecoveryEngine:
                 
             if found_maxcycle or found_fmixing:
                 print(f"Convergence parameters updated: {fixed_path}")
-                return fixed_path
+                # (fixed input, no job-script change)
+                return (fixed_path, None)
             else:
                 print("No convergence parameters found to modify")
                 return None
@@ -568,9 +608,10 @@ class ErrorRecoveryEngine:
                     f.write(updated_script)
                     
                 print(f"Walltime increased from {hours:02d}:{minutes:02d}:{seconds:02d} to {new_hours:02d}:{new_minutes:02d}:{new_seconds:02d}")
-                
-                # Return original input file
-                return Path(calc['input_file'])
+
+                # Input is unchanged; the fix lives in the bumped job script.
+                # Return both so the resubmitter submits the bumped script.
+                return (Path(calc['input_file']), new_script_path)
                 
             else:
                 print("Could not find walltime in job script")
@@ -606,26 +647,28 @@ class ErrorRecoveryEngine:
 
                 except Exception as e:
                     print(f"Error during cleanup: {e}")
-                    
-        # Return original input file (no changes needed)
-        return Path(calc['input_file'])
+
+        # Input is unchanged; cleanup only frees scratch space.
+        return (Path(calc['input_file']), None)
         
-    def create_recovery_calculation(self, original_calc: Dict, fixed_input_file: Path, 
-                                  recovery_config: Dict) -> str:
+    def create_recovery_calculation(self, original_calc: Dict, fixed_input_file: Path,
+                                  recovery_config: Dict, fixed_job_script: Optional[Path] = None) -> str:
         """
         Create a new calculation record for the recovery attempt.
-        
+
         Args:
             original_calc: Original failed calculation
             fixed_input_file: Path to fixed input file
             recovery_config: Recovery configuration used
-            
+            fixed_job_script: Path to a bumped SLURM script (resource handlers),
+                recorded so a later resubmission can honor the new resources.
+
         Returns:
             New calculation ID
         """
         material_id = original_calc['material_id']
         calc_type = original_calc['calc_type']
-        
+
         # Generate new calculation ID (create_calculation takes `settings`,
         # a dict — the old settings_json= kwarg raised TypeError and killed
         # every recovery that produced a fixed input)
@@ -639,7 +682,8 @@ class ErrorRecoveryEngine:
                 'is_recovery_attempt': True,
                 'parent_calc_id': original_calc['calc_id'],
                 'recovery_strategy': recovery_config.get('handler'),
-                'recovery_timestamp': datetime.now().isoformat()
+                'recovery_timestamp': datetime.now().isoformat(),
+                'recovery_job_script': str(fixed_job_script) if fixed_job_script else None,
             }
         )
         

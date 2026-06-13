@@ -564,17 +564,21 @@ class EnhancedCrystalQueueManager:
         except:
             return 'SP'  # Default fallback
             
-    def submit_calculation(self, d12_file: Path, calc_type: str = None, 
-                          material_id: str = None, prerequisite_calc_id: str = None) -> Optional[str]:
+    def submit_calculation(self, d12_file: Path, calc_type: str = None,
+                          material_id: str = None, prerequisite_calc_id: str = None,
+                          job_script_override: Path = None) -> Optional[str]:
         """
         Submit a calculation with material tracking.
-        
+
         Args:
             d12_file: Path to .d12 input file
             calc_type: Type of calculation (OPT, SP, BAND, DOSS)
             material_id: Material ID (generated if None)
             prerequisite_calc_id: Calculation this depends on
-            
+            job_script_override: A ready-made SLURM script to submit directly
+                instead of regenerating one from the template. Used by error
+                recovery to honor a bumped --mem/--time script.
+
         Returns:
             calc_id if successful, None if failed
         """
@@ -633,7 +637,8 @@ class EnhancedCrystalQueueManager:
             print(f"    Enhanced QM: created calc_id='{calc_id}'")
             
         # Submit to SLURM
-        slurm_job_id = self.submit_to_slurm(calc_input_file, calc_dir, calc_type)
+        slurm_job_id = self.submit_to_slurm(calc_input_file, calc_dir, calc_type,
+                                            submit_script_override=job_script_override)
         
         if slurm_job_id:
             # Update tracking database
@@ -673,20 +678,29 @@ class EnhancedCrystalQueueManager:
             print(f"Failed to submit calculation for {material_id}")
             return None
             
-    def submit_to_slurm(self, input_file: Path, work_dir: Path, calc_type: str) -> Optional[str]:
+    def submit_to_slurm(self, input_file: Path, work_dir: Path, calc_type: str,
+                        submit_script_override: Path = None) -> Optional[str]:
         """
         Submit job to SLURM using appropriate submission script.
-        
+
         Args:
             input_file: Path to .d12 input file
             work_dir: Working directory for calculation
             calc_type: Type of calculation (determines which script to use)
-            
+            submit_script_override: A ready-made SLURM script to submit directly,
+                bypassing template selection. Used by error recovery so a bumped
+                --mem/--time script is honored instead of being regenerated away.
+
         Returns:
             SLURM job ID if successful, None if failed
         """
-        # Determine which submission script to use based on context
-        submit_script = self._get_submit_script_for_calc_type(calc_type)
+        # An error-recovery override (a concrete, already-bumped SLURM script)
+        # takes precedence over the per-calc-type template.
+        if submit_script_override and Path(submit_script_override).exists():
+            submit_script = str(Path(submit_script_override).resolve())
+        else:
+            # Determine which submission script to use based on context
+            submit_script = self._get_submit_script_for_calc_type(calc_type)
         if not submit_script:
             print(f"Unknown calculation type: {calc_type}")
             return None
@@ -1070,7 +1084,9 @@ class EnhancedCrystalQueueManager:
                 'convergence_error': [
                     "SCF NOT CONVERGED",
                     "CONVERGENCE NOT ACHIEVED",
-                    "TOO MANY SCF CYCLES"
+                    # CRYSTAL prints "TOO MANY CYCLES" (matches detector.py);
+                    # the old "TOO MANY SCF CYCLES" never matched real output.
+                    "TOO MANY CYCLES"
                 ],
                 'geometry_error': [
                     "ATOMS TOO CLOSE",
@@ -1137,15 +1153,22 @@ class EnhancedCrystalQueueManager:
             calc = dict(calc)
             calc['error_type'] = error_type
             calc['error_message'] = error_message
-            recovered = self.error_recovery_engine.attempt_recovery(calc)
-            
-            if recovered:
+            # create_record=False: we create the single submission row below via
+            # resubmit, so the engine should not also create an (unsubmitted,
+            # orphaned) recovery row.
+            recovery = self.error_recovery_engine.attempt_recovery(calc, create_record=False)
+
+            if recovery:
                 # Increment recovery attempt count
                 self.increment_recovery_attempt_count(calc_id)
-                
-                # Resubmit the job
-                work_dir = Path(calc['work_dir'])
-                if self.resubmit_fixed_calculation(calc):
+
+                # Resubmit the FIXED input the handler produced — NOT the
+                # original failing input — honoring any bumped job script.
+                if self.resubmit_fixed_calculation(
+                    calc,
+                    fixed_input=recovery.get('fixed_input_file'),
+                    fixed_job_script=recovery.get('fixed_job_script'),
+                ):
                     print(f"🚀 Successfully resubmitted recovered job for {calc_id}")
                     return True
                 else:
@@ -1191,35 +1214,54 @@ class EnhancedCrystalQueueManager:
         except Exception as e:
             print(f"Warning: Could not update recovery attempt count for {calc_id}: {e}")
     
-    def resubmit_fixed_calculation(self, calc: Dict) -> bool:
-        """Resubmit a calculation after error recovery."""
+    def resubmit_fixed_calculation(self, calc: Dict, fixed_input=None, fixed_job_script=None) -> bool:
+        """Resubmit a calculation after error recovery.
+
+        Args:
+            calc: the original failed calculation record.
+            fixed_input: the recovery-generated input (e.g. a ``*_recovery_*.d12``
+                with a bumped MAXCYCLE). When given we submit THIS — submitting
+                the original failing input instead was the core recovery bug.
+            fixed_job_script: a recovery-generated SLURM script carrying bumped
+                ``--mem``/``--time`` (resource handlers). When given it is
+                submitted directly rather than regenerating a default script
+                from the template, which would discard the resource bump.
+        """
         try:
             work_dir = Path(calc['work_dir'])
             calc_id = calc['calc_id']
-            
-            # Find the D12 file (should be fixed by error recovery). Prefer the one whose
-            # stem matches this calc's recorded input_file: in in-place mode several
-            # calculations can share one work_dir, so a bare glob()[0] could resubmit the
-            # wrong input. Fall back to the recorded path, then to the first match.
-            d12_files = list(work_dir.glob("*.d12"))
-            if not d12_files:
-                print(f"❌ No D12 file found in {work_dir} for resubmission")
-                return False
 
             d12_file = None
-            recorded = calc.get('input_file')
-            if recorded:
-                recorded_path = Path(recorded)
-                if recorded_path.exists():
-                    d12_file = recorded_path
+            # Prefer the recovery-generated fix.
+            if fixed_input:
+                fixed_input = Path(fixed_input)
+                if fixed_input.exists():
+                    d12_file = fixed_input
                 else:
-                    for f in d12_files:
-                        if f.stem == recorded_path.stem:
-                            d12_file = f
-                            break
+                    print(f"⚠️  Recovery input {fixed_input} missing; falling back to work_dir input")
+
             if d12_file is None:
-                d12_file = d12_files[0]
-            
+                # Fallback: locate an input in the work_dir. Prefer the one whose
+                # stem matches this calc's recorded input_file: in in-place mode
+                # several calculations can share one work_dir, so a bare glob()[0]
+                # could resubmit the wrong input. Then recorded path, then first match.
+                d12_files = list(work_dir.glob("*.d12"))
+                if not d12_files:
+                    print(f"❌ No D12 file found in {work_dir} for resubmission")
+                    return False
+                recorded = calc.get('input_file')
+                if recorded:
+                    recorded_path = Path(recorded)
+                    if recorded_path.exists():
+                        d12_file = recorded_path
+                    else:
+                        for f in d12_files:
+                            if f.stem == recorded_path.stem:
+                                d12_file = f
+                                break
+                if d12_file is None:
+                    d12_file = d12_files[0]
+
             # Update database status to 'resubmitted'
             self.db.update_calculation_status(calc_id, 'resubmitted', 
                                             error_type=None, error_message="Recovered and resubmitted")
@@ -1239,7 +1281,8 @@ class EnhancedCrystalQueueManager:
             # recovered jobs were silently never resubmitted)
             new_calc_id = self.submit_calculation(
                 d12_file, calc_type=calc.get('calc_type'),
-                material_id=calc.get('material_id')
+                material_id=calc.get('material_id'),
+                job_script_override=fixed_job_script,
             )
             return new_calc_id is not None
             
