@@ -66,7 +66,6 @@ reorganization/
 └── code/                      # Legacy scripts (preserved for compatibility)
     ├── Job_Scripts/           # Original job management tools
     ├── Check_Scripts/         # Status checking utilities
-    ├── Plotting_Scripts/      # Visualization tools
     ├── Post_Processing_Scripts/ # Analysis utilities
     └── Band_Alignment/        # Band alignment calculations
 ```

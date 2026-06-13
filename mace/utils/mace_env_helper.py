@@ -42,8 +42,7 @@ def setup_mace_paths():
         mace_home / 'code' / 'Crystal_d12',
         mace_home / 'code' / 'Crystal_d3',
         mace_home / 'code' / 'Check_Scripts',
-        mace_home / 'code' / 'Post_Processing_Scripts',
-        mace_home / 'code' / 'Plotting_Scripts'
+        mace_home / 'code' / 'Post_Processing_Scripts'
     ]
     
     for path in paths_to_add:

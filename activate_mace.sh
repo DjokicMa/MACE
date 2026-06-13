@@ -20,7 +20,6 @@ export PATH="$MACE_HOME/Crystal_d3:$PATH"
 
 # Legacy paths for scripts not yet migrated
 export PATH="$MACE_HOME/code/Check_Scripts:$PATH"
-export PATH="$MACE_HOME/code/Plotting_Scripts:$PATH"
 export PATH="$MACE_HOME/code/Post_Processing_Scripts:$PATH"
 export PATH="$MACE_HOME/code/Band_Alignment:$PATH"
 

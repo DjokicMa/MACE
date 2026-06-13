@@ -249,7 +249,7 @@ The codebase is organized into distinct workflow stages:
    - Band plotting templates for different crystal systems
    - CRYSTALOptToD3.py: Unified D3 generation with basic/advanced/expert configuration modes
 
-5. **Analysis & Visualization** (`Plotting_Scripts/`, `Band_Alignment/`, `Post_Processing_Scripts/`)
+5. **Analysis & Visualization** (`mace plotting` / `Plotting/`, `Band_Alignment/`, `Post_Processing_Scripts/`)
    - Extract electronic properties (band gaps, work functions)
    - Generate publication-quality plots and multi-page PDFs
    - Comprehensive material property analysis and comparison

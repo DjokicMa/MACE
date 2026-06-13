@@ -125,7 +125,6 @@ class MACESetup:
             'export PATH="$MACE_HOME/Crystal_d3:$PATH"',
             # Legacy paths for scripts not yet migrated
             'export PATH="$MACE_HOME/code/Check_Scripts:$PATH"',
-            'export PATH="$MACE_HOME/code/Plotting_Scripts:$PATH"',
             'export PATH="$MACE_HOME/code/Post_Processing_Scripts:$PATH"',
             'export PATH="$MACE_HOME/code/Band_Alignment:$PATH"'
         ]
@@ -208,7 +207,6 @@ export PATH="$MACE_HOME/Crystal_d3:$PATH"
 
 # Legacy paths for scripts not yet migrated
 export PATH="$MACE_HOME/code/Check_Scripts:$PATH"
-export PATH="$MACE_HOME/code/Plotting_Scripts:$PATH"
 export PATH="$MACE_HOME/code/Post_Processing_Scripts:$PATH"
 export PATH="$MACE_HOME/code/Band_Alignment:$PATH"
 
@@ -337,19 +335,9 @@ echo "Analysis (Post_Processing_Scripts):"
 echo "  # Extract properties from outputs"
 echo "  grab_properties.py"
 echo ""
-echo "Plotting (Plotting_Scripts):"
-echo "  # Plot band structures"
-echo "  autoBands.py material.BAND"
-echo "  ipBANDS_V2.py material.BAND  # Interactive plotting"
-echo ""
-echo "  # Plot DOS"
-echo "  ipDOS_V2.py material.DOSS    # Interactive plotting"
-echo ""
-echo "  # Plot phonon bands"
-echo "  autoPhononBands.py material.f25"
-echo ""
-echo "  # Create overview PDF"
-echo "  OverviewPDF.py"
+echo "Plotting:"
+echo "  # Plot band structures, DOS, CIFs, and overviews"
+echo "  mace plotting"
 echo ""
 echo "Current environment:"
 echo "  MACE_HOME=$MACE_HOME"

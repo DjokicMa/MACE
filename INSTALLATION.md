@@ -76,7 +76,6 @@ The `setup_mace.py` script handles environment configuration:
    - `$MACE_HOME/Crystal_d12`
    - `$MACE_HOME/Crystal_d3`
    - `$MACE_HOME/code/Check_Scripts`
-   - `$MACE_HOME/code/Plotting_Scripts`
    - `$MACE_HOME/code/Post_Processing_Scripts`
 3. **Alias**: `mace` → `mace_cli` for convenient command access
 
