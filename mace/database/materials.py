@@ -1111,41 +1111,42 @@ class MaterialDatabase:
             
         return stats
         
-    def store_material_property(self, material_id: str, property_name: str, 
+    def store_material_property(self, material_id: str, property_name: str,
                                property_value: any, property_category: str = 'General',
                                calc_id: str = None, property_unit: str = None,
-                               confidence: float = None, extractor_script: str = None) -> str:
-        """Store a material property in the database."""
-        import uuid
-        
+                               confidence: float = None, extractor_script: str = None) -> int:
+        """Store a material property in the database.
+
+        Returns the autoincremented integer property_id. The ``property_id``
+        column is ``INTEGER PRIMARY KEY AUTOINCREMENT``, so it must NOT be set
+        explicitly (a string UUID raises a SQLite datatype mismatch).
+        """
         with self._get_connection() as conn:
-            property_id = str(uuid.uuid4())
-            
             # Handle both numeric and text values
             property_value_num = None
             property_value_text = None
-            
+
             try:
                 property_value_num = float(property_value)
             except (ValueError, TypeError):
                 property_value_text = str(property_value)
-            
-            conn.execute("""
+
+            cursor = conn.execute("""
                 INSERT INTO properties (
-                    property_id, material_id, calc_id, property_category,
+                    material_id, calc_id, property_category,
                     property_name, property_value, property_value_text,
                     property_unit, confidence, extractor_script,
                     extracted_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                property_id, material_id, calc_id, property_category,
+                material_id, calc_id, property_category,
                 property_name, property_value_num, property_value_text,
                 property_unit, confidence, extractor_script,
                 datetime.now()
             ))
-            
+
             conn.commit()
-            return property_id
+            return cursor.lastrowid
             
     def get_material_properties(self, material_id: str) -> List[Dict]:
         """Get all properties for a specific material."""

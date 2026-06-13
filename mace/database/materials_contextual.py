@@ -10,6 +10,7 @@ Author: Workflow isolation enhancement
 
 import os
 import sys
+import json
 from pathlib import Path
 from typing import Optional, Union, Dict, Any, List
 
@@ -19,6 +20,24 @@ from mace.database.materials import MaterialDatabase
 # Import context management
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from mace.workflow.context import get_current_context, require_context
+
+
+def _loads_or_none(value):
+    """Decode a stored JSON column back into a dict for create_* methods.
+
+    The database returns ``metadata_json`` / ``settings_json`` as JSON *strings*,
+    but ``create_material`` / ``create_calculation`` re-serialize with
+    ``json.dumps``. Passing the raw string would double-encode it, so decode it
+    here. Tolerates already-decoded dicts and ``None``.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value)
+    except (ValueError, TypeError):
+        return None
 
 
 class ContextualMaterialDatabase(MaterialDatabase):
@@ -163,14 +182,14 @@ class ContextualMaterialDatabase(MaterialDatabase):
         # Copy materials
         for material in materials:
             if not target_db.get_material(material['material_id']):
-                target_db.create_or_update_material(
+                target_db.create_material(
                     material_id=material['material_id'],
                     formula=material['formula'],
                     space_group=material.get('space_group'),
                     dimensionality=material.get('dimensionality', 'CRYSTAL'),
                     source_type=material.get('source_type'),
                     source_file=material.get('source_file'),
-                    metadata=material.get('metadata_json')
+                    metadata=_loads_or_none(material.get('metadata_json'))
                 )
                 
             # Copy calculations if requested
@@ -185,7 +204,7 @@ class ContextualMaterialDatabase(MaterialDatabase):
                             calc_subtype=calc.get('calc_subtype'),
                             input_file=calc.get('input_file'),
                             work_dir=calc.get('work_dir'),
-                            settings=calc.get('settings_json')
+                            settings=_loads_or_none(calc.get('settings_json'))
                         )
                         
                         # Update status if calculation was completed
@@ -210,8 +229,10 @@ class ContextualMaterialDatabase(MaterialDatabase):
                         calc_id=prop.get('calc_id'),
                         property_name=prop['property_name'],
                         property_value=prop['property_value'],
-                        unit=prop.get('unit'),
-                        conditions=prop.get('conditions_json')
+                        property_category=prop.get('property_category', 'General'),
+                        property_unit=prop.get('property_unit'),
+                        confidence=prop.get('confidence'),
+                        extractor_script=prop.get('extractor_script'),
                     )
     
     @classmethod
@@ -254,7 +275,7 @@ class ContextualMaterialDatabase(MaterialDatabase):
                 WHERE json_extract(c.settings_json, '$.workflow_id') = ?
             """
             
-            with self.get_connection() as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(query, (workflow_id,))
                 
@@ -290,7 +311,7 @@ class ContextualMaterialDatabase(MaterialDatabase):
                 ORDER BY started_at DESC
             """
             
-            with self.get_connection() as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(query, (workflow_id,))
                 
