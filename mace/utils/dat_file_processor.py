@@ -14,7 +14,9 @@ from pathlib import Path
 from typing import Dict, List, Any, Tuple, Optional
 
 # CODATA 2018; band/DOS energies in CRYSTAL .DAT files are in Hartree.
-HARTREE_TO_EV = 27.211386245988
+# Single-sourced from mace.constants (re-exported here so existing
+# `dat_file_processor.HARTREE_TO_EV` users keep working unchanged).
+from mace.constants import HARTREE_TO_EV
 
 
 class DatFileProcessor:

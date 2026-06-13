@@ -7,8 +7,7 @@ fb173e82) cannot silently regress.
 import pytest
 
 from conftest import find_data, energy_props
-
-HARTREE_TO_EV = 27.211386245988
+from mace.constants import HARTREE_TO_EV
 
 
 def test_gcp_extracted_for_3c_method(extractor):

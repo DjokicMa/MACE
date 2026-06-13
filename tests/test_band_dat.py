@@ -49,7 +49,7 @@ def test_persisted_gap_matches_independent_band_index_recompute(extractor):
     from the raw BAND.DAT, and equals the physically-correct pinned value
     (~8.47 eV for 1EMS-conf1). Pins both the algorithm and the value."""
     from mace.utils.dat_file_processor import DatFileProcessor
-    H = 27.211386245988
+    from mace.constants import HARTREE_TO_EV as H
     band_out = find_data("BAND/1LiFSI-1EMS-conf1*band.out", must_contain="FROM BAND")
     p = _band_props(extractor, band_out)
     bd = find_data("BAND/1LiFSI-1EMS-conf1*band.BAND.DAT")

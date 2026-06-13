@@ -7,6 +7,8 @@ Convert property values between different units commonly used in materials scien
 from typing import Dict, List, Tuple, Optional, Union
 import re
 
+from mace.constants import HARTREE_TO_EV, BOHR_TO_ANGSTROM
+
 
 class UnitConverter:
     """Handles unit conversions for material properties."""
@@ -17,7 +19,7 @@ class UnitConverter:
         'hartree': 1.0,
         'ha': 1.0,
         'au': 1.0,
-        'ev': 27.211386245988,
+        'ev': HARTREE_TO_EV,
         'rydberg': 2.0,
         'ry': 2.0,
         'kcal/mol': 627.509474,
@@ -32,8 +34,8 @@ class UnitConverter:
     LENGTH_CONVERSIONS = {
         'bohr': 1.0,
         'au': 1.0,
-        'angstrom': 0.52917721067,
-        'a': 0.52917721067,
+        'angstrom': BOHR_TO_ANGSTROM,
+        'a': BOHR_TO_ANGSTROM,
         'nm': 0.052917721067,
         'pm': 52.917721067,
         'm': 5.2917721067e-11,
