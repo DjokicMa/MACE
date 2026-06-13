@@ -182,15 +182,35 @@ not driven for molecules.
   17+-column DOS files; now reads continuations only while the record is short.
   (fdf9cf8e)
 
+### Sixth fix wave (2026-06-13, committed) — calc-type generation remainders
+
+- **§6.14 fixed**: `d12_constants.py` `generate_unit_cell_line` monoclinic
+  branch now detects unique-axis-a/-c cells and raises an actionable error
+  instead of silently collapsing them to `a b c <beta=90>`. b-unique cells
+  (every real monoclinic structure in test/: sg 5,8,10,11,12,14) are
+  byte-identical. A cell-line-only "write whichever angle != 90" patch would
+  NOT work — CRYSTAL reads monoclinic space-group numbers in the IT
+  unique-axis-b setting, so it would still build a b-unique cell. (ba6f4664)
+- **§6.13 fixed**: `write_scf_section` now emits a configured fixed spin state
+  (`SPINLOCK\n<n> <cycles>`, default 50 cycles) at the top of the SCF block;
+  both active writers (NewCifToD12, CRYSTALOptToD12) pass it from their
+  options/settings, gated on spin polarization. Per the codebase's own
+  contract (0 = automatic), spinlock 0/unset writes nothing, so all current
+  configs are byte-identical. The dead `write_spin_settings` (UHF + wrong
+  single-value format) is left untouched. (8d370021)
+- **§7.9 fixed**: d3 atom-element parsing (`CRYSTALOptToD3.py`,
+  `d3_interactive.py`) now walks only the first contiguous geometry block
+  (atom indices 1..N) instead of findall over the whole file, which had
+  multiplied the list by the optimization-step count (Ti6O11: 1428 -> 34).
+  `len(atom_elements)` now equals n_atoms, so out-of-range atom indices are
+  rejected instead of mislabeled. Valid projections byte-identical. (a876d9f0)
+
 **Still open (highest-value remainder):** transport-coefficient and
 charge/potential-grid extraction (not implemented — missing-data now treats
 them as having no required props); memory/timeout recovery resource edits not
-carried into resubmitted scripts; configured SPINLOCK never written by active
-writers (§6.13 remainder); geometry double-counting in d3 atom projections
-(§7.9 remainder); monoclinic unique-axis detection
-(§6.14); duplicate pre-scaled seekpath fallback tables (§7.1 — only triggers
-when the seekpath library is missing; present in the anaconda env);
-contextual planner/executor variants (§3.7);
+carried into resubmitted scripts; duplicate pre-scaled seekpath fallback
+tables (§7.1 — only triggers when the seekpath library is missing; present in
+the anaconda env); contextual planner/executor variants (§3.7);
 materials_contextual drift (§2.4-2.5); and the defunct code/ cleanup.
 
 ### Fifth fix wave (2026-06-13, committed) — make-it-live + DB/CLI cleanup
@@ -352,8 +372,8 @@ These five patterns account for the majority of the critical findings:
 10. **MAJOR** `CRYSTALOptToD12.py:311-331` — ANHARM path emits a malformed block (geometry END placement inconsistent with the FREQCALC path).
 11. **MAJOR** `NewCifToD12.py:1230-1250` — symmetry "CIF" + write-all-atoms keeps the non-P1 space group → CRYSTAL regenerates orbits → coincident atoms (fatal).
 12. **MAJOR** `d12_constants.py:1934-1939` — EXTERNAL basis compatibility check misses absent elements (He, Ne, Ar, Kr, Xe, Po–Ra have no files) → deck written with NO basis for those elements.
-13. **MAJOR** ⚠ PARTIAL FIX (c0844e3d) `d12_interactive.py:1837` (also 710, 1803) — "default advanced settings" hardcodes `spin_polarized=True` (SPIN injected into closed-shell re-runs — visible in `test/1_dia_opt_rev1.d12`); configured SPINLOCK is never written by any active writer. (SPIN injection fixed: defaults branch now derives from the source, CrystalInputParser inits spin_polarized=False; verified diamond→False, electrolytes/Ti→True. The SPINLOCK-not-written issue remains open.)
-14. **MAJOR** `d12_constants.py:1701-1702` — monoclinic always emits `a b c beta` with no unique-axis detection; c-unique CIFs silently produce a wrong lattice.
+13. **MAJOR** ✅ FIXED (c0844e3d, 8d370021) `d12_interactive.py:1837` (also 710, 1803) — "default advanced settings" hardcodes `spin_polarized=True` (SPIN injected into closed-shell re-runs — visible in `test/1_dia_opt_rev1.d12`); configured SPINLOCK is never written by any active writer. (SPIN injection fixed in c0844e3d: defaults branch derives from the source, CrystalInputParser inits spin_polarized=False; verified diamond→False, electrolytes/Ti→True. SPINLOCK now written in 8d370021: `write_scf_section` emits `SPINLOCK\n<n> <cycles>` for a configured non-zero lock, gated on spin polarization; spinlock 0/unset is byte-identical.)
+14. **MAJOR** ✅ FIXED (ba6f4664) `d12_constants.py:1701-1702` — monoclinic always emits `a b c beta` with no unique-axis detection; a/c-unique CIFs silently produce a wrong lattice. Now raises an actionable error for unique-axis-a/-c cells (CRYSTAL reads monoclinic SG numbers in the IT unique-axis-b setting, so a cell-line swap can't fix it — the structure must be standardized to b-unique). All 13 b-unique monoclinic structures in test/ byte-identical.
 15. **MINOR** bundle — `-D3-D3` doubled filename suffix (live artifact in test/) ✅ FIXED (ee56e9e1, added the missing "-D3" not-in-name guard); simplified `SHRINK k n` overwritten with raw string; `--output-dir` created but unused; `d12_from_config.py` wrapper passes a positional no target accepts (always argparse error); spurious MULTI_ORIGIN entry for SG 60; `Ghosts/create_d12_w-ghosts.py:66` ECP fixup writes wrong index.
 
 ## 7. Crystal_d3 (properties-input generators)
@@ -366,7 +386,7 @@ These five patterns account for the majority of the critical findings:
 6. **MAJOR** `d3_kpoints.py:601-629` (commit 772d8495) — BAND_PATHS labels changed "G"→"GAMMA" and are written verbatim into label-mode .d3 segment lines; CRYSTAL's tables define single-letter labels (all validated archived templates use "G"). Map GAMMA→G at write time.
 7. **MAJOR** ✅ FIXED (wave 2) `d3_interactive.py:1151` + `CRYSTALOptToD3.py:687-722` — DOSS energy window prompts "eV below/above Fermi" but writes BMI/BMA as absolute energies without adding E_F → window centered on 0, not the Fermi level. (energy_window has a single consumer, CRYSTALOptToD3:698, which wave 2 made Fermi-aware via `bmi += fermi`; the interactive path feeds the same writer so it's covered.)
 8. **MAJOR** `d3_config.py:231-277` — `validate_d3_config` requires keys the configurators never produce → every saved DOSS/TRANSPORT config rejected on `--config-file` reload.
-9. **MAJOR** ⚠ PARTIAL FIX (11a158dc, de9c40f8) `CRYSTALOptToD3.py:176`, `d3_interactive.py:1025` — atom-element regex can't match CRYSTAL's all-caps two-letter symbols ("SI", "TI") → atom projections rejected for any system with 2-letter elements; also double-counts atoms from repeated geometry blocks. (Both regex sites now fixed + verified on Ti13Pb3; only the geometry double-count remains open.)
+9. **MAJOR** ✅ FIXED (11a158dc, de9c40f8, a876d9f0) `CRYSTALOptToD3.py:176`, `d3_interactive.py:1025` — atom-element regex can't match CRYSTAL's all-caps two-letter symbols ("SI", "TI") → atom projections rejected for any system with 2-letter elements; also double-counts atoms from repeated geometry blocks. (Both regex sites fixed + verified on Ti13Pb3. Double-count fixed in a876d9f0: both parsers now walk only the first contiguous geometry block (indices 1..N), so len(atom_elements) == n_atoms; Ti6O11 1428→34, valid projections byte-identical, out-of-range atoms now rejected.)
 10. **MINOR** `CRYSTALOptToD3.py:128` — electron-count regex says "PER UNIT CELL"; real outputs print "PER CELL" → always 0 (currently unused).
 11. **MINOR** `d3_interactive.py:146-153` — "BOTTOM OF CONDUCTION BANDS" (real: "VIRTUAL BANDS") and `SPACE GROUP.*?NUMBER:` never match → dead-but-misleading fields.
 12. **MINOR** `d3_kpoints.py:996-1058` — literature k-path references labels with no coordinates (rhombohedral Z/X, monoclinic C/D/E/Z…) → up to 6 of 13 segments silently dropped.
