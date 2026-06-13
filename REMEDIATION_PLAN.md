@@ -96,7 +96,10 @@ it can legitimately differ from the SP-mesh gap for near-zero-gap systems.
 - `mace manager` in-place default flips silently: print a one-line notice; add `--organize`
   to `mace manager --help` (mace_cli help block ~767-773); confirm before bare `mace submit`
   on a populated dir. LOW.
-- `mace submit --track` opt-in DB tracking (route through EnhancedCrystalQueueManager in-place).
+- ~~`mace submit --track` opt-in DB tracking~~ — DONE (`0c650a27`): routes through
+  EnhancedCrystalQueueManager(enable_tracking=True, organize_outputs=False), in-place; default
+  unchanged (manager/DB built only under --track); guards --nosubmit/node-exclusion; tests added.
+  Panel-analyzed before implementation.
 - Full cross-step planner orchestrator back (risky — interleaves JSON writes / subprocess);
   `b` at the rare explicit-coordinate-entry prompts (freq/d3 manual k-path coords).
 - ~~`formula_extractor.extract_formula_from_d12` str/Path crash~~ — DONE (`d8f1140f`): all four
@@ -126,9 +129,25 @@ it can legitimately differ from the SP-mesh gap for near-zero-gap systems.
   `Plotting/` — fdf9cf8e fixed `Plotting/` but the stale copy still has the bug),
   `executor_contextual`/`planner_contextual`/`run_workflow_isolated` (imported by nothing),
   `Archived/`. De-track committed artifacts (root `materials.db`, `.DS_Store`) via .gitignore.
-- Single-source `__version__` (import from `mace/__init__.py`); extract a shared
-  crystal-parsing/constants module (one HARTREE_TO_EV, one geometry parser, one element/ECP map)
-  — do incrementally behind tests to preserve validated detection behavior.
+- ~~Single-source `__version__`~~ — DONE (`4387049b`): mace_cli, formats.py, animation.py all
+  derive from `mace/__init__.py`; verified a bump propagates; tests pin it. Panel-analyzed.
+  STILL TODO: extract a shared crystal-parsing/constants module (one HARTREE_TO_EV, one geometry
+  parser, one element/ECP map) — do incrementally behind tests to preserve validated detection.
+
+## DEAD-CODE DELETION — panel-verified, AWAITING USER CONFIRMATION (destructive)
+
+Multi-agent panel (analysis + adversarial verify, run wf_c1f92500-571) confirmed all candidates
+are dead with zero live callers; the adversarial verifiers could not refute "safe to delete" and
+debunked a competing PATHFINDER "ACTIVE" claim. Pending user go-ahead:
+- `code/Plotting_Scripts/` (stale duplicate of live `Plotting/`; `mace plotting` resolves to
+  `Plotting/` via sys.path.insert). deletion_risk low. Optional collateral: orphaned PATH exports
+  in activate_mace.sh:23 / setup_mace.py:128,211 and echo-help lines.
+- `mace/workflow/executor_contextual.py`, `planner_contextual.py`, `run_workflow_isolated.py`
+  — one orphaned isolation-EXAMPLE cluster (run_workflow_isolated self-labels as "Example"; the
+  live isolation feature lives in the BASE executor/planner/context, unaffected). Delete together
+  + remove/​update `mace/workflow/ISOLATION_MIGRATION_GUIDE.md`.
+- DO NOT DELETE `mace/database/materials_contextual.py` (ContextualMaterialDatabase) — it is LIVE
+  (mace_cli:1379,1630). `Archived/` does not exist (moot).
 
 ---
 
