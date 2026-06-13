@@ -182,7 +182,7 @@ class PropertyAggregator:
                 props = self.db.get_material_properties(mat_id)
                 energy = None
                 for prop in props:
-                    if prop['property_name'] == 'total_energy':
+                    if prop['property_name'] == 'total_energy_au':
                         try:
                             energy = float(prop['property_value'])
                         except ValueError:

@@ -12,7 +12,7 @@ import sqlite3
 import json
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from contextlib import contextmanager
 from typing import Dict, List, Optional, Tuple, Any
@@ -632,7 +632,10 @@ class MaterialDatabase:
             
     def cleanup_old_records(self, days_old: int = 30):
         """Clean up old failed/cancelled calculations to prevent database bloat."""
-        cutoff_date = datetime.now().replace(day=datetime.now().day - days_old).isoformat()
+        # Use timedelta, not replace(day=...): subtracting days_old from the
+        # current day-of-month gives a non-positive day for most of the month
+        # (e.g. the 13th - 30 = -17) and raised ValueError on nearly every call.
+        cutoff_date = (datetime.now() - timedelta(days=days_old)).isoformat()
         
         with self._get_connection() as conn:
             # Remove old failed calculations

@@ -576,10 +576,13 @@ class PropertyHistory:
             if not history:
                 lines.append("No history found.")
             else:
-                # Group by date
+                # Group by date. SQLite's CURRENT_TIMESTAMP is space-separated
+                # ("2026-06-13 12:34:56"), not ISO 'T'-separated, so split('T')
+                # never split and every record grouped under its full timestamp.
+                # Normalize both separators before taking the date.
                 by_date = {}
                 for record in history:
-                    date = record['changed_at'].split('T')[0]
+                    date = str(record['changed_at']).replace('T', ' ').split(' ')[0]
                     if date not in by_date:
                         by_date[date] = []
                     by_date[date].append(record)
