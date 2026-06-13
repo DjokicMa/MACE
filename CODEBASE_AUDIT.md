@@ -190,8 +190,30 @@ writers (§6.13 remainder); geometry double-counting in d3 atom projections
 (§7.9 remainder); monoclinic unique-axis detection
 (§6.14); duplicate pre-scaled seekpath fallback tables (§7.1 — only triggers
 when the seekpath library is missing; present in the anaconda env);
-contextual planner/executor variants (§3.7); plotting branch internals (§8.2+);
+contextual planner/executor variants (§3.7);
 materials_contextual drift (§2.4-2.5); and the defunct code/ cleanup.
+
+### Fifth fix wave (2026-06-13, committed) — make-it-live + DB/CLI cleanup
+
+- **§5 BAND.DAT now live (a68f1ecb)**: `_extract_band_properties` looked for a
+  bare `BAND.DAT`, but real files are `<stem>.BAND.DAT`; added the alt-name
+  fallback (mirrors DOSS), so the rewritten band analysis (#13) actually runs.
+  Verified: 4LG graphene → metallic, gap~0; 1LiFSI radical → small gap.
+- **§8.3 + §8.5 + §8.2 plotting (f81d2075)**: catch `SystemExit` in the band/DOS
+  batch loops (one bad file no longer aborts the batch + mace process) and
+  restore `sys.argv` in `finally`; always forward `--alpha` (config default 0.3
+  ≠ plotter default 1.0); map a `tm_orb` projection to `element_mode='tm_orb'` +
+  `proj_type='total'` so ipDOS stops rejecting it. (§8.1 was already fixed via
+  command_args; §8.4 glob/plotter mismatch left for the plotting consolidation.)
+- **§2.7 + §2.14(history) + §2.11(agg) (c51c1c94)**: `cleanup_old_records` used
+  `replace(day=day-30)` → ValueError on ~every call (now `timedelta`);
+  `history` grouped by full timestamp because SQLite's timestamps are
+  space-separated not ISO `T`; `aggregation` energy_range matched `total_energy`
+  instead of `total_energy_au`.
+- **§3.14(monitor) + §2.8(validation) (85cae68c)**: `monitor_workflow` imported
+  pre-reorg bare module names (always exited) → package paths; `validate_materials`
+  specific-id branch was a no-op stub that KeyError'd → routed through a new
+  `material_ids` filter on `validate_all_materials`.
 
 ## Cross-cutting root causes
 
