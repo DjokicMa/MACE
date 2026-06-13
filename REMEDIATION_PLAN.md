@@ -84,8 +84,9 @@ it can legitimately differ from the SP-mesh gap for near-zero-gap systems.
 
 ## BACKLOG (lower priority, from the review — fix opportunistically)
 
-- D3 workflow continuation halts on the `'manual'` workflow_id fallback (`engine.py:~1558`
-  → use `workflow_base.name`, matching the numbered/SP paths). MEDIUM.
+- ~~D3 workflow continuation halts on the `'manual'` workflow_id fallback~~ — DONE (`7f82f01f`):
+  derives the id from `get_workflow_output_base(parent_calc).name`; also hardened that helper's
+  NULL `settings_json` crash. Tests added.
 - ~~OPT continuation drops a configured non-zero SPINLOCK~~ — DONE (`7260581a`):
   `_extract_spinlock_settings` parses `SPINLOCK\n<n> [<cycles>]` (both forms) and sets
   spin_polarized for a non-zero lock; verified round-trip + tests.
@@ -100,8 +101,9 @@ it can legitimately differ from the SP-mesh gap for near-zero-gap systems.
   `b` at the rare explicit-coordinate-entry prompts (freq/d3 manual k-path coords).
 - ~~`formula_extractor.extract_formula_from_d12` str/Path crash~~ — DONE (`d8f1140f`): all four
   public entry points coerce str→Path; missing paths return None; regression tests added.
-- `CrystalPropertyExtractor.__init__` unconditionally creates `materials.db`, blocking offline
-  single-file extraction — make tracking/db optional.
+- ~~`CrystalPropertyExtractor.__init__` unconditionally creates `materials.db`~~ — DONE
+  (`00f2efb0`): DB is now lazy + `enable_tracking=False` for offline single-file extraction;
+  pure parsing never creates a file. Tests added.
 
 ## STRATEGIC IMPROVEMENTS (from the review)
 
