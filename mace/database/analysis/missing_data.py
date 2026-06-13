@@ -30,8 +30,14 @@ class MissingDataAnalyzer:
                          'final_density', 'atoms_in_unit_cell']
         },
         'SP': {
-            'required': ['total_energy_au', 'electronic_classification'],
-            'optional': ['total_energy_ev', 'band_gap', 'direct_band_gap', 'indirect_band_gap',
+            # electronic_classification is only emitted when a band gap is found, so it
+            # is absent for metals and most bulk SP runs (the gap comes from BAND/DOSS
+            # post-processing). Keeping it required false-flagged every metal SP as
+            # incomplete -- exactly the bug this table was meant to fix. total_energy_au
+            # is the only reliable SP required property.
+            'required': ['total_energy_au'],
+            'optional': ['total_energy_ev', 'electronic_classification', 'band_gap',
+                         'direct_band_gap', 'indirect_band_gap',
                          'fermi_energy', 'vbm_energy', 'cbm_energy', 'is_spin_polarized',
                          'conductivity_type']
         },

@@ -159,7 +159,7 @@ class PropertyAggregator:
                     if prop['property_name'] == 'band_gap':
                         try:
                             band_gap = float(prop['property_value'])
-                        except ValueError:
+                        except (ValueError, TypeError):
                             pass
                         break
                         
@@ -185,7 +185,7 @@ class PropertyAggregator:
                     if prop['property_name'] == 'total_energy_au':
                         try:
                             energy = float(prop['property_value'])
-                        except ValueError:
+                        except (ValueError, TypeError):
                             pass
                         break
                         
@@ -209,7 +209,7 @@ class PropertyAggregator:
                     if prop['property_name'] == 'atoms_in_unit_cell':
                         try:
                             atoms = int(prop['property_value'])
-                        except ValueError:
+                        except (ValueError, TypeError):
                             pass
                         break
                         
