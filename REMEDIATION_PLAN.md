@@ -51,38 +51,34 @@ is from the last. Take the last block. Low priority — components are diagnosti
 
 ---
 
-## WAVE B (confirmed high/critical from the full review)
+## WAVE B — DONE (both committed; diagnoses partly corrected during the fix)
 
-### B1 — Error-recovery chain is broken end-to-end (CRITICAL, commit e24cc154)
-Recovery "succeeds" but resubmits the ORIGINAL failing input, so SCF/OOM/timeout jobs re-run
-with the exact parameters that already failed.
-- `mace/recovery/recovery.py`: SCF handler writes the fix to `<stem>_recovery_<ts>.d12`
-  (~L308-310) but only records it in a separate DB row; memory/timeout handlers literally
-  `return Path(calc['input_file'])` (~L396), discarding the bumped `--mem`/`--time` script.
-- `mace/queue/manager.py` `resubmit_fixed_calculation` (~L1213) prefers `recorded_path.exists()`
-  → the original unfixed input, and submits THAT (verified: MAXCYCLE stays at the failed value).
-- Fix: pass the handler's `_recovery_<ts>` path into resubmit (or update `calc['input_file']`);
-  make memory/timeout handlers return their bumped `_recovery_<ts>.sh` (or have submit_to_slurm
-  honor it); dispatch or remove the orphaned pending recovery row.
-- Also (same commit): `convergence_handler` bumps BOTH OPTGEOM and SCF `MAXCYCLE` (no block
-  awareness — only the SCF cap should change); double-bookkeeping creates 2 DB rows per recovery;
-  error-string taxonomy diverges: `manager.analyze_calculation_error` uses `TOO MANY SCF CYCLES`
-  (manager.py:~1073) vs detector `TOO MANY CYCLES` (detector.py:~67) — unify.
-- CAVEAT: `test/` has ZERO failed CRYSTAL outputs, so the whole recovery taxonomy is UNVERIFIED
-  against real failures. Need at least one real failed `.out` to validate before trusting this.
+### B1 — Error-recovery chain now resubmits the FIX (CRITICAL) — commit `acf632c9`
+Confirmed by inspection: recovery "succeeded" but `resubmit_fixed_calculation` submitted the
+ORIGINAL `calc['input_file']`, and `submit_to_slurm` regenerated the job script from the template
+(discarding any bumped `--mem`/`--time`). Both fix classes were dropped.
+- Handlers now return `(fixed_input, fixed_job_script)`; `attempt_recovery` returns the artifacts
+  dict (+ `create_record` so the manager path makes no orphaned recovery row).
+  `resubmit_fixed_calculation(calc, fixed_input, fixed_job_script)` submits the fix;
+  `submit_calculation`/`submit_to_slurm` gained an override to honor a bumped script.
+- `convergence_handler` is now OPTGEOM-aware (bumps only the SCF MAXCYCLE; verified on a real
+  dual-MAXCYCLE OPT d12). Taxonomy unified: `TOO MANY SCF CYCLES` → `TOO MANY CYCLES`.
+- Verified with mocked SLURM: resubmission carries SCF MAXCYCLE=1800 (the fix), not 800; memory
+  bump threads the 120GB script; no-fix path still falls back to the recorded input.
+- CAVEAT (unchanged): `test/` has ZERO failed CRYSTAL outputs, so the real-failure taxonomy
+  remains unverified against actual failures. The organized-mode resubmit (copy to a new
+  calc_dir) + bumped-script-cwd interaction is also untested against real SLURM.
 
-### B2 — BAND.DAT electronic gap is wrong and persisted (HIGH, commit 505f5ead)
-`mace/utils/dat_file_processor.py` `_analyze_band_structure`: BAND.DAT records line-wrap when
-NBND is large (e.g. NBND=259 → many physical lines per k-point) and are NOT de-wrapped, and the
-gap is split at the absolute `.out` Fermi rather than the file's own VBM. Result: ~10x-wrong gap
-(e.g. BAND 0.8 eV vs DOSS 7.6 eV vs .out 8.2 eV) written via `property_extractor.py:~1282-1287`
-(`band_dat_band_gap_ev/vbm/cbm/metallic`).
-- Fix: de-wrap BAND records (flatten tokens, reshape by width `1 + NBND`, mirror the DOSS
-  token-flatten already in the same module); reference eigenvalues to the file's own VBM (E≈0)
-  / detect the HOMO-LUMO crossing instead of the absolute Fermi.
-- Until fixed: stop persisting `band_dat_band_gap_ev/vbm/cbm` (DOSS already gives the correct gap).
-- Verify on a wrapped BAND.DAT (e.g. `test/BAND/1LiFSI-1EMS-conf1_*band.BAND.DAT`, NBND=259)
-  and a metal (4LG) vs the DOSS/.out gap.
+### B2 — BAND.DAT gap fixed via band-index method (HIGH) — commit `4a1b6194`
+The review's stated cause (NBND line-wrapping) did NOT reproduce — every record is one physical
+line of 1+NBND tokens. The REAL cause: BAND.DAT eigenvalues are Fermi-REFERENCED (E - E_Fermi,
+Fermi at 0), but `_analyze_band_structure` treated them as absolute and split at the .out's
+absolute Fermi → gap ~6x too small (1.45 eV vs true 7.8). Fixed by computing the gap by BAND
+INDEX (VBM=max_k E[N-1], CBM=min_k E[N]); N from "TOP OF VALENCE BANDS - BAND N" or
+electrons//2. Referencing-independent; matches each band .out's own gap to <0.01 eV. Without N,
+gap/VBM/CBM are left None (never guessed). Verified on 78 BAND.DAT (insulators 7.2-9.2 eV,
+4LG metals 0.0, semiconductors 2-4 eV). Note: this is the BAND-PATH gap (matches the band .out);
+it can legitimately differ from the SP-mesh gap for near-zero-gap systems.
 
 ---
 
