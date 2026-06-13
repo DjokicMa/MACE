@@ -52,6 +52,9 @@ def extract_formula_from_d12(d12_file: Path) -> Optional[str]:
     Returns:
         Chemical formula string (e.g., 'C2', 'SiO2', 'CaCO3')
     """
+    # Accept str or Path: callers (e.g. the queue manager) pass plain strings,
+    # which used to crash on .exists() with AttributeError.
+    d12_file = Path(d12_file)
     if not d12_file.exists():
         return None
     
@@ -139,6 +142,7 @@ def extract_formula_from_d12(d12_file: Path) -> Optional[str]:
 
 def extract_formula_from_cif(cif_file: Path) -> Optional[str]:
     """Extract chemical formula from a CIF file."""
+    cif_file = Path(cif_file)  # accept str or Path
     if not cif_file.exists():
         return None
     
@@ -193,6 +197,7 @@ def extract_space_group_from_output(output_file: Path) -> Optional[int]:
     Returns:
         Space group number (1-230) or None
     """
+    output_file = Path(output_file)  # accept str or Path
     if not output_file.exists():
         return None
     
@@ -306,7 +311,12 @@ def extract_material_info_from_files(d12_file: Path = None,
     """
     formula = None
     space_group = None
-    
+
+    # Accept str or Path for any provided file (callers pass plain strings).
+    d12_file = Path(d12_file) if d12_file else None
+    cif_file = Path(cif_file) if cif_file else None
+    output_file = Path(output_file) if output_file else None
+
     # Try to get formula from multiple sources
     if d12_file and d12_file.exists():
         formula = extract_formula_from_d12(d12_file)
