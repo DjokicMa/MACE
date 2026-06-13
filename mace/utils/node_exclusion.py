@@ -128,11 +128,12 @@ class NodeExclusionManager:
             List of node names matching the type
         """
         try:
-            # Query SLURM for nodes
-            cmd = f"scontrol show nodes | grep 'NodeName={node_type}'"
+            # Query SLURM for nodes. No shell / no piped grep: node_type is
+            # user-controlled (CLI --query/--exclude-type, interactive planner),
+            # so shell=True here was a command-injection vector. The grep was
+            # redundant anyway — the regex loop below already filters by type.
             result = subprocess.run(
-                cmd,
-                shell=True,
+                ["scontrol", "show", "nodes"],
                 capture_output=True,
                 text=True,
                 timeout=30
@@ -142,9 +143,9 @@ class NodeExclusionManager:
                 print(f"Warning: Could not query nodes of type '{node_type}'")
                 return []
 
-            # Parse node names
+            # Parse node names (re.escape: node_type may contain regex metachars)
             nodes = []
-            pattern = rf'NodeName=({node_type}-\d+)'
+            pattern = rf'NodeName=({re.escape(node_type)}-\d+)'
             for line in result.stdout.split('\n'):
                 match = re.search(pattern, line)
                 if match:
