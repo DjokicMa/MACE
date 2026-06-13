@@ -12,6 +12,24 @@ that did NOT reproduce. Re-run each fix against real data and don't overclaim.
 
 ---
 
+## PRE-PUSH REVIEW (active task as of 2026-06-13, post-stragglers)
+
+Stragglers 1-6 are DONE (see item details below). Nothing is pushed yet: local `main` is
+**~89 commits ahead of origin/main** — that diff IS the review surface. The user requested a
+LARGE multi-agent review (as many agents as possible) BEFORE pushing:
+- Scope: `git diff origin/main..main` (and `git log --oneline origin/main..main`). Review every
+  changed aspect for (a) correctness / works-as-intended, (b) latent bugs/regressions, (c)
+  optimization opportunities, (d) UI/UX improvements (interactive menus, prompts, CLI output).
+- Use the Workflow tool (user opted into max agents). Adversarially verify findings — audit claims
+  were overstated repeatedly this campaign (dead-code, aggregation "bug", a stale DO-NOT-DELETE).
+- CONSTRAINTS: do NOT edit `mace/plotting/*`, `tests/test_plotting_*`, `tests/test_vibmode_parser.py`
+  (user's SEPARATE instance — see [[project-plotting-separate-instance]]); use
+  /home/marcus/anaconda3/bin/python; verify against real `test/*.out`; don't-fix-what-works.
+  Review is ADVISORY — propose, don't rewrite validated logic without the user's go-ahead.
+- Suite baseline to keep green: 424 tests (`pytest tests/`).
+
+---
+
 ## NEXT UP — remaining stragglers in priority order (start here after compaction)
 
 The campaign's bug-fix + dead-code waves are DONE (see "DONE" + the dated commit log). Full
