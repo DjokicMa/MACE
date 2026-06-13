@@ -88,7 +88,12 @@ def extract_formula_from_d12(d12_file: Path) -> Optional[str]:
         if line.upper() in ['CRYSTAL', 'SLAB', 'POLYMER', 'MOLECULE']:
             in_geometry = True
             continue
-        elif line.upper() in ['EXTERNAL', 'OPTGEOM', 'END']:
+        elif line.upper() in ['EXTERNAL', 'OPTGEOM', 'END', 'BASISSET']:
+            # BASISSET ends the geometry for internal-basis decks (e.g. 3C methods
+            # on MOLECULE/SLAB/POLYMER), which have NO 'END' between the atoms and
+            # the basis block. Without it, in_geometry stayed True through the SCF
+            # section and the TOLINTEG value line ("8 8 8 9 24") was parsed as a
+            # spurious atom (Z=8 -> O; "9 9 9 11 38" -> Z=9 -> F on slabs).
             in_geometry = False
             continue
 
