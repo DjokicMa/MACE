@@ -151,6 +151,73 @@ revertable commit; recoverable from git history.
 
 ---
 
+## PERSISTING ISSUES — synthesis of ALL prior analysis (verified 2026-06-13)
+
+Cross-referenced CODEBASE_AUDIT.md / PATHFINDER-2026-06-12 / .planning/codebase/CONCERNS.md
+against what's fixed; each VERIFIED against live code + call-sites (audit severities were often
+overstated — checking callers downgraded the "critical" trio to dormant).
+
+LATENT (real defects, but in methods with NO live callers — fix before relying on those features):
+- `ContextualMaterialDatabase` (mace/database/materials_contextual.py) has 3 broken methods:
+  (a) `copy_to_context` calls `create_or_update_material` which does not exist (L166);
+  (b) it then calls `store_material_property` (materials.py:1114) which INSERTs `str(uuid4())`
+      into `property_id INTEGER PRIMARY KEY` (materials.py:130) → datatype-mismatch IntegrityError;
+  (c) `get_workflow_materials`/`get_workflow_calculations` (L257/293) call `self.get_connection()`
+      but only `_get_connection` exists → AttributeError.
+  ALL THREE ARE DORMANT: `copy_to_context` has zero callers; the two workflow-query methods have
+  zero callers; `store_material_property`'s only caller is `copy_to_context`. The live extractor
+  writes via its own autoincrement INSERT (property_extractor.save_properties_to_database), which
+  is why tracking works today. Cheap to fix (rename to create_material/_get_connection; drop the
+  explicit property_id so it autoincrements).
+
+HIGH (live):
+- Default `mace submit` discards the SLURM job_id: submission/crystal.py:246,362 +
+  properties.py:243,359 use `os.system(...)`, so untracked submissions can't be
+  monitored/recovered (the new `--track`/`mace manager` path captures the id; this is the
+  untracked path). Fix: switch to subprocess.run + job-id regex (mirror manager.submit_to_slurm).
+- Dead import disables input-settings capture: queue/manager.py:1390
+  `from input_settings_extractor import ...` — no such module exists → ImportError (likely
+  swallowed); the feature silently never runs. Remove or implement.
+
+MEDIUM:
+- `shell=True` with interpolated `node_type` in the LIVE util mace/utils/node_exclusion.py:132-135
+  (`scontrol show nodes | grep 'NodeName={node_type}'`) — injection surface; split the pipe.
+- Duplicated crystal-system/space-group logic: d3_kpoints.py:862-899 vs inline chains in
+  d12_constants.py (no cross-import) — drift landmine.
+- aggregation.py:149 `conductivity_type` grouping may bucket all "Unknown" (the energy_range/
+  band_gap_range groupings were already fixed in c51c1c94; this sub-grouping was not).
+- Hardcoded institutional basis paths executor.py:2026,2035 (has ./ + ../ fallbacks → degraded,
+  not fatal, off-cluster).
+
+LOW:
+- Plotting batch is O(N^2) (mace/plotting/main.py ~L280-313, each plotter re-globs) — perf only.
+- capture_workflow_execution_data (materials.py ~L1004) returns last material only; NameError on
+  present-but-empty input lists.
+- legacy_manager.py:166 shell=True — dead/reference-only (no live import); near-zero exposure.
+
+STRATEGIC (debt; no active bug):
+- Shared crystal-`.out` parser duplicated across >=6 sites (property_extractor is most complete;
+  detector/d12_parsers/seekpath/CBM_VBM re-parse). Fermi extraction in ~5 places. d12_config vs
+  d3_config parallel save/load/validate I/O. analysis/* query boilerplate (no base class). Two
+  submit_slurm_job impls in executor.py (L893,L1206) + dual script generators (executor.py:747 vs
+  engine.py:327). HIGH_SYMMETRY_PATHS dup (d12_constants copy vestigial). → extract shared modules
+  incrementally behind tests (preserve validated detection).
+- Untested core: engine.py (~3587 LoC), planner.py (~5006 LoC) have no automated tests; the
+  51-test suite pins campaign fixes only. No coverage gate.
+- More dead files NOT yet removed (panel/PATHFINDER dead-code verification): top-level
+  `mace_config.py` (unimported by mace_cli/run_mace), `mace/submission/portable_slurm_generator.py`
+  (example; emits `--work-dir .` the manager argparse rejects), `Crystal_d12/Archived/` (8),
+  `Crystal_d3/Archived/` (11), `code/Check_Scripts/Archived/`. KEEP `enhanced_queue_manager.py`
+  (REQUIRED shim — referenced by copy_dependencies/templates/docs).
+
+Already FIXED but docs (esp. CONCERNS.md) are STALE — do NOT re-fix: missing_data classifier
+(0d52a696), ipDOS_V2 row-skip (fdf9cf8e) + stale copy deleted (12683bc0), aggregation
+energy/band_gap groupings (c51c1c94), walltime regex, recovery fix-script paths, engine
+step-config substring->exact match, plotting glob breadth, validate_materials stub (85cae68c),
+history.py timestamp split (c51c1c94), AND recovery `.f9`/`.f98`/`fort.9` deletion guard
+(recovery.py:637-642 — VERIFIED present). CONCERNS.md is the stalest artifact; several audit
+paths are pre-reorg (now under mace/database/utils/).
+
 ## Where the full review output lives
 Ephemeral (will not survive): `/tmp/claude-1000/.../tasks/wmcn5j90p.output` (43-agent review,
 per-commit verdicts). The verified high/critical items are captured above. Re-run the review
