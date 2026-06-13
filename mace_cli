@@ -19,8 +19,8 @@ import os
 import argparse
 from pathlib import Path
 
-# Version information
-__version__ = "1.0.0"
+# Version information (canonical value lives in mace/__init__.py; keep in sync)
+__version__ = "1.0.5"
 
 # Add MACE package to Python path
 MACE_DIR = Path(__file__).parent / "mace"
@@ -1153,7 +1153,8 @@ More Help:
     elif args.command == 'submit':
         # Parse submit command arguments
         submit_parser = argparse.ArgumentParser(prog='mace submit')
-        submit_parser.add_argument('target', help='D12/D3 file(s) or directory to submit')
+        submit_parser.add_argument('target', nargs='?', default='.',
+                                 help='D12/D3 file(s) or directory to submit (default: current directory)')
         submit_parser.add_argument('--interactive', '-i', action='store_true',
                                  help='Interactively configure SLURM resources (cores, memory, walltime)')
         submit_parser.add_argument('--nosubmit', action='store_true',
