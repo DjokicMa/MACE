@@ -35,6 +35,24 @@ def test_corrected_total_includes_gcp_single_point(extractor):
     )
 
 
+def test_ev_conversions_use_full_precision_constant(extractor):
+    """Item 6a precision fix: the eV fields must equal the AU value times the
+    full-precision HARTREE_TO_EV (27.211386245988), not the old truncated 27.2114.
+    The tight rel tolerance (1e-12) would fail if any *27.2114 literal returned —
+    27.2114 vs full precision diverge at ~1.4e-5."""
+    out = find_data("BAND/1LiFSI-3EMS-conf1*sp_HSESOL3C_optimized.out")
+    p = energy_props(extractor, out)
+    for au_key, ev_key in [
+        ("total_energy_au", "total_energy_ev"),
+        ("d3_dispersion_energy_au", "d3_dispersion_energy_ev"),
+        ("gcp_energy_au", "gcp_energy_ev"),
+        ("total_energy_corrected_au", "total_energy_corrected_ev"),
+    ]:
+        if p.get(au_key) is not None and p.get(ev_key) is not None:
+            assert p[ev_key] == pytest.approx(p[au_key] * HARTREE_TO_EV, rel=1e-12), (
+                f"{ev_key} not converted with full-precision HARTREE_TO_EV")
+
+
 def test_corrected_total_uses_final_geometry_in_opt(extractor):
     """In an OPT the printed combined line is the INITIAL geometry; the corrected
     total must come from the FINAL-geometry components instead (4LG was stale by

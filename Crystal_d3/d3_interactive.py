@@ -17,6 +17,13 @@ from typing import Dict, List, Optional, Tuple, Any, Union
 import sys
 from pathlib import Path
 
+# Single-sourced full-precision constants (fallback keeps this standalone-runnable).
+try:
+    from mace.constants import HARTREE_TO_EV, EV_TO_HARTREE
+except ImportError:
+    HARTREE_TO_EV = 27.211386245988
+    EV_TO_HARTREE = 1.0 / HARTREE_TO_EV
+
 # Import k-point utilities from the new module
 from d3_kpoints import (
     get_crystal_system_from_space_group,
@@ -1169,7 +1176,7 @@ def configure_doss_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
     
     if range_choice == "2":
         # Energy window - collect in eV but convert to Ha
-        EV_TO_HA = 1.0 / 27.211386
+        EV_TO_HA = EV_TO_HARTREE
         bmi_ev = _nav_float("Lower energy limit (eV below Fermi) [-10]: ", default=-10)
         bma_ev = _nav_float("Upper energy limit (eV above Fermi) [20]: ", default=20)
         # Convert to Hartree
@@ -1229,7 +1236,7 @@ def configure_transport_calculation(out_file: Optional[str] = None) -> Dict[str,
         band_info = get_band_info_from_output(out_file)
         if band_info.get('fermi_energy') is not None:
             # Convert from Hartree to eV
-            fermi_energy_ev = band_info['fermi_energy'] * 27.211386
+            fermi_energy_ev = band_info['fermi_energy'] * HARTREE_TO_EV
             print(f"Detected Fermi energy: {fermi_energy_ev:.3f} eV")
     
     print("\nChemical potential options:")

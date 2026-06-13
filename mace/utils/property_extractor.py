@@ -25,6 +25,8 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 from datetime import datetime
 
+from mace.constants import HARTREE_TO_EV
+
 # Import MACE components
 try:
     from mace.database.materials import MaterialDatabase
@@ -406,7 +408,7 @@ class CrystalPropertyExtractor:
         energy_matches = re.findall(r'TOTAL ENERGY\(DFT\)\(AU\)\s*\(\s*\d+\)\s*([-\d.E+]+)', content)
         if energy_matches:
             props['total_energy_au'] = float(energy_matches[-1])
-            props['total_energy_ev'] = float(energy_matches[-1]) * 27.2114  # Hartree to eV
+            props['total_energy_ev'] = float(energy_matches[-1]) * HARTREE_TO_EV  # Hartree to eV
         
         # Alternative energy extraction patterns
         if not energy_matches:
@@ -414,13 +416,13 @@ class CrystalPropertyExtractor:
             scf_energy_match = re.search(r'== SCF ENDED - CONVERGENCE ON ENERGY\s+E\(AU\)\s*([-\d.E+]+)', content)
             if scf_energy_match:
                 props['total_energy_au'] = float(scf_energy_match.group(1))
-                props['total_energy_ev'] = float(scf_energy_match.group(1)) * 27.2114
+                props['total_energy_ev'] = float(scf_energy_match.group(1)) * HARTREE_TO_EV
             else:
                 # From final optimization energy
                 final_energy_match = re.search(r'E\(AU\):\s*([-\d.E+]+)', content)
                 if final_energy_match:
                     props['total_energy_au'] = float(final_energy_match.group(1))
-                    props['total_energy_ev'] = float(final_energy_match.group(1)) * 27.2114
+                    props['total_energy_ev'] = float(final_energy_match.group(1)) * HARTREE_TO_EV
         
         # D3 dispersion correction — take the LAST occurrence; the first is
         # printed for the initial geometry and is inconsistent with the
@@ -430,7 +432,7 @@ class CrystalPropertyExtractor:
         if d3_matches:
             d3_energy = float(d3_matches[-1])
             props['d3_dispersion_energy_au'] = d3_energy
-            props['d3_dispersion_energy_ev'] = d3_energy * 27.2114
+            props['d3_dispersion_energy_ev'] = d3_energy * HARTREE_TO_EV
 
             # Total energy + dispersion (D3 only). Kept under its historical
             # name for back-compat; for 3C methods this is NOT the fully
@@ -438,11 +440,11 @@ class CrystalPropertyExtractor:
             total_plus_disp_matches = re.findall(r'TOTAL ENERGY \+ DISP \(AU\)\s*([-\d.E+]+)', content)
             if total_plus_disp_matches:
                 props['total_energy_plus_d3_au'] = float(total_plus_disp_matches[-1])
-                props['total_energy_plus_d3_ev'] = float(total_plus_disp_matches[-1]) * 27.2114
+                props['total_energy_plus_d3_ev'] = float(total_plus_disp_matches[-1]) * HARTREE_TO_EV
             elif 'total_energy_au' in props:
                 # Calculate if not explicitly given
                 props['total_energy_plus_d3_au'] = props['total_energy_au'] + d3_energy
-                props['total_energy_plus_d3_ev'] = props['total_energy_plus_d3_au'] * 27.2114
+                props['total_energy_plus_d3_ev'] = props['total_energy_plus_d3_au'] * HARTREE_TO_EV
 
         # gCP (geometrical counterpoise) correction — printed by 3C methods
         # (e.g. HSESOL3C) alongside D3. Omitting it silently understates the
@@ -452,7 +454,7 @@ class CrystalPropertyExtractor:
         if gcp_matches:
             gcp_energy = float(gcp_matches[-1])
             props['gcp_energy_au'] = gcp_energy
-            props['gcp_energy_ev'] = gcp_energy * 27.2114
+            props['gcp_energy_ev'] = gcp_energy * HARTREE_TO_EV
 
         # Fully corrected total energy = total + D3 + gCP, built from the
         # FINAL-geometry components (total_energy_au, d3_energy, gcp_energy are
@@ -466,13 +468,13 @@ class CrystalPropertyExtractor:
         if 'total_energy_au' in props and (d3_energy is not None or gcp_energy is not None):
             corrected = props['total_energy_au'] + (d3_energy or 0.0) + (gcp_energy or 0.0)
             props['total_energy_corrected_au'] = corrected
-            props['total_energy_corrected_ev'] = corrected * 27.2114
+            props['total_energy_corrected_ev'] = corrected * HARTREE_TO_EV
         else:
             corrected_line = (re.findall(r'TOTAL ENERGY \+ DISP \+ GCP \(AU\)\s*([-\d.E+]+)', content)
                               or re.findall(r'TOTAL ENERGY \+ DISP \(AU\)\s*([-\d.E+]+)', content))
             if corrected_line:
                 props['total_energy_corrected_au'] = float(corrected_line[-1])
-                props['total_energy_corrected_ev'] = float(corrected_line[-1]) * 27.2114
+                props['total_energy_corrected_ev'] = float(corrected_line[-1]) * HARTREE_TO_EV
 
         # Extract energy components if available
         energy_components = self._extract_energy_components(content)
@@ -502,7 +504,7 @@ class CrystalPropertyExtractor:
                     components[prop_name] = au_value
                     # Also add eV version
                     ev_name = prop_name.replace('_au', '_ev')
-                    components[ev_name] = au_value * 27.2114
+                    components[ev_name] = au_value * HARTREE_TO_EV
         
         return components
     

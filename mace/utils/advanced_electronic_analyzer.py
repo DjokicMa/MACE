@@ -22,12 +22,20 @@ from typing import Dict, List, Tuple, Optional, Any
 import warnings
 warnings.filterwarnings('ignore')
 
+# Single-sourced full-precision constants (fallback keeps this standalone-runnable).
+try:
+    from mace.constants import HARTREE_TO_EV, BOHR_TO_ANGSTROM
+except ImportError:
+    HARTREE_TO_EV = 27.211386245988
+    BOHR_TO_ANGSTROM = 0.52917721067
+
+
 class AdvancedElectronicAnalyzer:
     """Advanced electronic structure analysis using CRYSTAL BAND and DOSS data."""
     
     def __init__(self):
-        self.ha_to_ev = 27.2114  # Hartree to eV conversion
-        self.bohr_to_angstrom = 0.529177  # Bohr to Angstrom conversion
+        self.ha_to_ev = HARTREE_TO_EV  # Hartree to eV conversion
+        self.bohr_to_angstrom = BOHR_TO_ANGSTROM  # Bohr to Angstrom conversion
         
     def read_dos_data(self, doss_file: Path) -> Tuple[np.ndarray, np.ndarray]:
         """

@@ -27,6 +27,12 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
+# Single-sourced full-precision constant (fallback keeps this standalone-runnable).
+try:
+    from mace.constants import HARTREE_TO_EV
+except ImportError:
+    HARTREE_TO_EV = 27.211386245988
+
 # Import configuration modules
 try:
     # Try absolute import first (for package usage)
@@ -1157,7 +1163,7 @@ class D3Generator:
                 
                 if band_info.get('fermi_energy') is not None:
                     # Convert from Hartree to eV
-                    fermi_energy_ev = band_info['fermi_energy'] * 27.211386
+                    fermi_energy_ev = band_info['fermi_energy'] * HARTREE_TO_EV
                     
                     # Get relative range from config
                     if config.get("mu_range_type") == "auto_fermi":
