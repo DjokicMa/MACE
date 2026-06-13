@@ -20,12 +20,37 @@ from typing import Dict, Any, Tuple, Optional, List
 import sys
 from pathlib import Path
 
-# Opt-in "press b to go back" navigation (falls back to a direct call if unavailable).
+# Opt-in "press b to go back" navigation + crash-safe back-aware readers
+# (fall back to plain input() behaviour if menu_nav is unavailable).
 try:
-    from menu_nav import run_with_back as _run_with_back
+    from menu_nav import (run_with_back as _run_with_back, nav_read as _nav_read,
+                          nav_int as _nav_int, nav_float as _nav_float)
 except Exception:  # pragma: no cover - defensive fallback
     def _run_with_back(flow_fn):
         return flow_fn()
+
+    def _nav_read(prompt="", valid_set=None):
+        return input(prompt)
+
+    def _nav_int(prompt="", default=None, choices=None):
+        while True:
+            r = input(prompt).strip()
+            if not r and default is not None:
+                return int(default)
+            try:
+                return int(r)
+            except ValueError:
+                print("Please enter a whole number.")
+
+    def _nav_float(prompt="", default=None):
+        while True:
+            r = input(prompt).strip()
+            if not r and default is not None:
+                return float(default)
+            try:
+                return float(r)
+            except ValueError:
+                print("Please enter a number.")
 
 # Add Crystal_d3 to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "Crystal_d3"))
@@ -176,7 +201,7 @@ def get_advanced_frequency_settings():
     print("8: Custom settings")
     print("   - Full control over all parameters")
     
-    template_choice = input("Select template (1-8) [1]: ").strip() or "1"
+    template_choice = _nav_read("Select template (1-8) [1]: ", valid_set={"_choice_"}).strip() or "1"
     
     template_map = {
         "1": "basic",
@@ -203,7 +228,7 @@ def get_advanced_frequency_settings():
         print("     Forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
         print("  2: Two displacements per atom (more accurate)")
         print("     Central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
-        numderiv_choice = input("\nSelect method (0-2) [0]: ").strip() or "0"
+        numderiv_choice = _nav_read("\nSelect method (0-2) [0]: ", valid_set={"_choice_"}).strip() or "0"
         if numderiv_choice == "0":
             freq_settings["numderiv"] = None  # Signal to skip NUMDERIV keyword
         else:
@@ -237,7 +262,7 @@ def get_advanced_frequency_settings():
                 print("   - Memory: ~2x base requirement")
                 print("\nNote: CPHF (3) is the default due to its broad applicability")
                 print("      and highest accuracy for all material types")
-                ir_method_choice = input("\nSelect method (1-3) [3]: ").strip() or "3"
+                ir_method_choice = _nav_read("\nSelect method (1-3) [3]: ", valid_set={"_choice_"}).strip() or "3"
                 ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
                 freq_settings["ir_method"] = ir_methods[ir_method_choice]
         elif template_choice in ["2", "3", "4"]:
@@ -274,7 +299,7 @@ def get_advanced_frequency_settings():
                     print("   - Memory: ~2x base requirement")
                     print("\nNote: CPHF (3) is the default due to its broad applicability")
                     print("      and highest accuracy for all material types")
-                    ir_method_choice = input("\nSelect method (1-3) [3]: ").strip() or "3"
+                    ir_method_choice = _nav_read("\nSelect method (1-3) [3]: ", valid_set={"_choice_"}).strip() or "3"
                     ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
                     freq_settings["ir_method"] = ir_methods[ir_method_choice]
                 
@@ -294,8 +319,8 @@ def get_advanced_frequency_settings():
                 print("\nSpectral range settings:")
                 custom_range = yes_no_prompt("Customize spectral range?", "no")
                 if custom_range:
-                    min_freq = float(input("Minimum frequency (cm⁻¹) [0]: ") or 0)
-                    max_freq = float(input("Maximum frequency (cm⁻¹) [4000]: ") or 4000)
+                    min_freq = _nav_float("Minimum frequency (cm⁻¹) [0]: ", default=0)
+                    max_freq = _nav_float("Maximum frequency (cm⁻¹) [4000]: ", default=4000)
                     freq_settings["spec_range"] = [min_freq, max_freq]
                 
         elif template_choice == "5":
@@ -305,9 +330,9 @@ def get_advanced_frequency_settings():
             print("  Default: 20 points from 0 K to 400 K")
             custom_temp = yes_no_prompt("\nCustomize temperature range?", "no")
             if custom_temp:
-                n_temps = int(input("Number of temperature points [20]: ") or 20)
-                t_min = float(input("Minimum temperature (K) [0]: ") or 0)
-                t_max = float(input("Maximum temperature (K) [400]: ") or 400)
+                n_temps = _nav_int("Number of temperature points [20]: ", default=20)
+                t_min = _nav_float("Minimum temperature (K) [0]: ", default=0)
+                t_max = _nav_float("Maximum temperature (K) [400]: ", default=400)
                 freq_settings["temprange"] = (n_temps, t_min, t_max)
             else:
                 print("Using default: 20 points from 0 K to 400 K")
@@ -322,9 +347,9 @@ def get_advanced_frequency_settings():
             print("  - Cost scales as (N₁×N₂×N₃)³")
             custom_supercell = yes_no_prompt("Customize supercell size?", "no")
             if custom_supercell:
-                n1 = int(input("Supercell N₁ [2]: ") or 2)
-                n2 = int(input("Supercell N₂ [2]: ") or 2)
-                n3 = int(input("Supercell N₃ [2]: ") or 2)
+                n1 = _nav_int("Supercell N₁ [2]: ", default=2)
+                n2 = _nav_int("Supercell N₂ [2]: ", default=2)
+                n3 = _nav_int("Supercell N₃ [2]: ", default=2)
                 freq_settings["scelphono"] = [n1, n2, n3]
             
             # Band path configuration - Enhanced like electronic bands
@@ -333,7 +358,7 @@ def get_advanced_frequency_settings():
             print("2: Template selection - Choose from common band paths")
             print("3: Custom labels - Specify path using labels (G, X, M, etc.)")
             print("4: Fractional coordinates - Specify path using k-point vectors")
-            path_choice = input("Select method (1-4) [1]: ").strip() or "1"
+            path_choice = _nav_read("Select method (1-4) [1]: ", valid_set={"_choice_"}).strip() or "1"
             
             if path_choice == "1":
                 # Automatic path with format options
@@ -344,7 +369,7 @@ def get_advanced_frequency_settings():
                 print("2: K-point vectors (fractional coordinates)")
                 print("3: Literature path with vectors (comprehensive)")
                 print("4: SeeK-path full paths (extended Bravais lattice notation)")
-                format_choice = input("Select format (1-4) [1]: ").strip() or "1"
+                format_choice = _nav_read("Select format (1-4) [1]: ", valid_set={"_choice_"}).strip() or "1"
                 
                 if format_choice == "1":
                     freq_settings["bands"]["path_method"] = "labels"
@@ -379,14 +404,14 @@ def get_advanced_frequency_settings():
                 print("5: Monoclinic")
                 print("6: Triclinic")
                 
-                system_choice = input("Select system (1-6) [1]: ").strip() or "1"
+                system_choice = _nav_read("Select system (1-6) [1]: ", valid_set={"_choice_"}).strip() or "1"
                 
                 if system_choice == "1":
                     print("\nCubic templates:")
                     print("1: Simple cubic (sc)")
                     print("2: Face-centered cubic (fcc)")
                     print("3: Body-centered cubic (bcc)")
-                    template_idx = input("Select template (1-3) [1]: ").strip() or "1"
+                    template_idx = _nav_read("Select template (1-3) [1]: ", valid_set={"_choice_"}).strip() or "1"
                     template_map = {"1": "cubic_simple", "2": "cubic_fc", "3": "cubic_bc"}
                     template_name = template_map.get(template_idx, "cubic_simple")
                 elif system_choice == "2":
@@ -395,7 +420,7 @@ def get_advanced_frequency_settings():
                     print("\nTetragonal templates:")
                     print("1: Simple tetragonal")
                     print("2: Body-centered tetragonal")
-                    template_idx = input("Select template (1-2) [1]: ").strip() or "1"
+                    template_idx = _nav_read("Select template (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
                     template_map = {"1": "tetragonal_simple", "2": "tetragonal_bc"}
                     template_name = template_map.get(template_idx, "tetragonal_simple")
                 elif system_choice == "4":
@@ -404,7 +429,7 @@ def get_advanced_frequency_settings():
                     print("2: Base-centered orthorhombic (ab)")
                     print("3: Base-centered orthorhombic (bc)")
                     print("4: Face-centered orthorhombic")
-                    template_idx = input("Select template (1-4) [1]: ").strip() or "1"
+                    template_idx = _nav_read("Select template (1-4) [1]: ", valid_set={"_choice_"}).strip() or "1"
                     template_map = {"1": "orthorhombic_simple", "2": "orthorhombic_ab", 
                                   "3": "orthorhombic_bc", "4": "orthorhombic_fc"}
                     template_name = template_map.get(template_idx, "orthorhombic_simple")
@@ -412,7 +437,7 @@ def get_advanced_frequency_settings():
                     print("\nMonoclinic templates:")
                     print("1: Simple monoclinic")
                     print("2: Base-centered monoclinic")
-                    template_idx = input("Select template (1-2) [1]: ").strip() or "1"
+                    template_idx = _nav_read("Select template (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
                     template_map = {"1": "monoclinic_simple", "2": "monoclinic_ac"}
                     template_name = template_map.get(template_idx, "monoclinic_simple")
                 else:
@@ -506,7 +531,7 @@ def get_advanced_frequency_settings():
                 
                 if use_mixed:
                     # Mixed path - each segment can be labels or coordinates
-                    n_segments = int(input("Number of path segments: "))
+                    n_segments = _nav_int("Number of path segments: ")
                     path = []
                     freq_settings["bands"]["shrink"] = 16  # Default, will be adjusted
                     
@@ -514,7 +539,7 @@ def get_advanced_frequency_settings():
                         print(f"\nSegment {i+1}:")
                         print("1: Use high-symmetry labels (e.g., G X)")
                         print("2: Use fractional coordinates")
-                        seg_type = input("Select type (1-2) [1]: ").strip() or "1"
+                        seg_type = _nav_read("Select type (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
                         
                         if seg_type == "1":
                             segment = input("Enter label pair (e.g., 'G X'): ").strip().upper()
@@ -534,7 +559,7 @@ def get_advanced_frequency_settings():
                     freq_settings["bands"]["mixed_path"] = True
                 else:
                     # All coordinates
-                    n_segments = int(input("Number of path segments: "))
+                    n_segments = _nav_int("Number of path segments: ")
                     path = []
                     print("\nEnter fractional coordinates for each segment:")
                     for i in range(n_segments):
@@ -548,8 +573,8 @@ def get_advanced_frequency_settings():
             if freq_settings["bands"].get("shrink", 16) != 0:
                 custom_kpoints = yes_no_prompt("\nCustomize k-point density?", "no")
                 if custom_kpoints:
-                    shrink = int(input("Shrink factor for k-points [16]: ") or 16)
-                    npoints = int(input("Points per band segment [100]: ") or 100)
+                    shrink = _nav_int("Shrink factor for k-points [16]: ", default=16)
+                    npoints = _nav_int("Points per band segment [100]: ", default=100)
                     freq_settings["bands"]["shrink"] = shrink
                     freq_settings["bands"]["npoints"] = npoints
         
@@ -566,7 +591,7 @@ def get_advanced_frequency_settings():
             print("   Neutron-weighted phonon DOS")
             print("   For comparison with INS experiments")
             
-            dos_type = input("\nSelect type (1-2) [1]: ").strip() or "1"
+            dos_type = _nav_read("\nSelect type (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
             
             if dos_type == "2":
                 # INS specific settings
@@ -574,7 +599,7 @@ def get_advanced_frequency_settings():
                 print("0: Coherent cross-section only")
                 print("1: Incoherent cross-section only")
                 print("2: Coherent + Incoherent cross-section")
-                neutron_type = int(input("Select neutron weighting (0-2) [2]: ") or 2)
+                neutron_type = _nav_int("Select neutron weighting (0-2) [2]: ", default=2)
                 
                 # Supercell configuration
                 print("\nSupercell size (for phonon calculations):")
@@ -582,15 +607,15 @@ def get_advanced_frequency_settings():
                 print("  - Cost scales as (N₁×N₂×N₃)³")
                 custom_supercell = yes_no_prompt("Customize supercell size?", "no")
                 if custom_supercell:
-                    n1 = int(input("Supercell N₁ [2]: ") or 2)
-                    n2 = int(input("Supercell N₂ [2]: ") or 2)
-                    n3 = int(input("Supercell N₃ [2]: ") or 2)
+                    n1 = _nav_int("Supercell N₁ [2]: ", default=2)
+                    n2 = _nav_int("Supercell N₂ [2]: ", default=2)
+                    n3 = _nav_int("Supercell N₃ [2]: ", default=2)
                     freq_settings["scelphono"] = [n1, n2, n3]
                 
                 # INS parameters
                 print("\nINS spectrum parameters:")
-                max_freq = float(input("Maximum frequency for INS (cm⁻¹) [3000]: ") or 3000)
-                n_bins = int(input("Number of spectrum bins [300]: ") or 300)
+                max_freq = _nav_float("Maximum frequency for INS (cm⁻¹) [3000]: ", default=3000)
+                n_bins = _nav_int("Number of spectrum bins [300]: ", default=300)
                 
                 freq_settings["ins"] = {
                     "max_freq": max_freq,
@@ -605,15 +630,15 @@ def get_advanced_frequency_settings():
                 print("  - Cost scales as (N₁×N₂×N₃)³")
                 custom_supercell = yes_no_prompt("Customize supercell size?", "no")
                 if custom_supercell:
-                    n1 = int(input("Supercell N₁ [2]: ") or 2)
-                    n2 = int(input("Supercell N₂ [2]: ") or 2)
-                    n3 = int(input("Supercell N₃ [2]: ") or 2)
+                    n1 = _nav_int("Supercell N₁ [2]: ", default=2)
+                    n2 = _nav_int("Supercell N₂ [2]: ", default=2)
+                    n3 = _nav_int("Supercell N₃ [2]: ", default=2)
                     freq_settings["scelphono"] = [n1, n2, n3]
                 
                 # DOS parameters
                 print("\nPhonon DOS parameters:")
-                max_freq = float(input("Maximum frequency for DOS (cm⁻¹) [2000]: ") or 2000)
-                n_bins = int(input("Number of DOS bins [200]: ") or 200)
+                max_freq = _nav_float("Maximum frequency for DOS (cm⁻¹) [2000]: ", default=2000)
+                n_bins = _nav_int("Number of DOS bins [200]: ", default=200)
                 projected = yes_no_prompt("Calculate atom-projected DOS?", "yes")
                 
                 freq_settings["pdos"] = {
@@ -638,7 +663,7 @@ def get_advanced_frequency_settings():
         print("   - Cannot calculate IR/Raman intensities")
         print("   - Time: ~4-20x optimization (supercell dependent)")
         
-        mode_choice = input("Select mode (1-2) [1]: ").strip() or "1"
+        mode_choice = _nav_read("Select mode (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
         
         if mode_choice == "1":
             freq_settings["mode"] = "GAMMA"
@@ -651,14 +676,14 @@ def get_advanced_frequency_settings():
             print("1: Automatic (2x2x2)")
             print("2: Custom expansion factors")
             print("3: Custom transformation matrix")
-            supercell_choice = input("Select supercell method (1-3) [1]: ").strip() or "1"
+            supercell_choice = _nav_read("Select supercell method (1-3) [1]: ", valid_set={"_choice_"}).strip() or "1"
             
             if supercell_choice == "1":
                 freq_settings["scelphono"] = [2, 2, 2]
             elif supercell_choice == "2":
-                nx = int(input("Expansion in x [2]: ") or 2)
-                ny = int(input("Expansion in y [2]: ") or 2)
-                nz = int(input("Expansion in z [2]: ") or 2)
+                nx = _nav_int("Expansion in x [2]: ", default=2)
+                ny = _nav_int("Expansion in y [2]: ", default=2)
+                nz = _nav_int("Expansion in z [2]: ", default=2)
                 freq_settings["scelphono"] = [nx, ny, nz]
             else:
                 print("Enter 3x3 transformation matrix (9 integers):")
@@ -672,10 +697,10 @@ def get_advanced_frequency_settings():
             use_interphess = yes_no_prompt("\nUse Fourier interpolation (INTERPHESS)?", "yes")
             if use_interphess:
                 print("\nINTERPHESS settings:")
-                l1 = int(input("L1 expansion factor [2]: ") or 2)
-                l2 = int(input("L2 expansion factor [2]: ") or 2)
-                l3 = int(input("L3 expansion factor [2]: ") or 2)
-                print_level = int(input("Print level (0-2) [0]: ") or 0)
+                l1 = _nav_int("L1 expansion factor [2]: ", default=2)
+                l2 = _nav_int("L2 expansion factor [2]: ", default=2)
+                l3 = _nav_int("L3 expansion factor [2]: ", default=2)
+                print_level = _nav_int("Print level (0-2) [0]: ", default=0)
                 freq_settings["interphess"] = {
                     "expand": [l1, l2, l3],
                     "print": print_level
@@ -701,7 +726,7 @@ def get_advanced_frequency_settings():
                 print("\nPhonon band structure type:")
                 print("1: Full band structure along paths")
                 print("2: High-symmetry points only (quick check)")
-                band_type = input("Select type (1-2) [1]: ").strip() or "1"
+                band_type = _nav_read("Select type (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
                 
                 if band_type == "2":
                     # High-symmetry points only
@@ -717,8 +742,8 @@ def get_advanced_frequency_settings():
                 else:
                     # Full band structure
                     freq_settings["bands"] = {
-                        "shrink": int(input("Shrink factor for k-points [16]: ") or 16),
-                        "npoints": int(input("Points per band segment [100]: ") or 100)
+                        "shrink": _nav_int("Shrink factor for k-points [16]: ", default=16),
+                        "npoints": _nav_int("Points per band segment [100]: ", default=100)
                     }
                     
                     # Band path
@@ -727,7 +752,7 @@ def get_advanced_frequency_settings():
                     print("2: Template selection - Choose from common band paths")
                     print("3: Custom labels - Specify path using labels (G, X, M, etc.)")
                     print("4: Fractional coordinates - Specify path using k-point vectors")
-                    path_choice = input("Select path method (1-4) [1]: ").strip() or "1"
+                    path_choice = _nav_read("Select path method (1-4) [1]: ", valid_set={"_choice_"}).strip() or "1"
                     
                     if path_choice == "1":
                         # Automatic path
@@ -738,7 +763,7 @@ def get_advanced_frequency_settings():
                         print("2: K-point vectors (fractional coordinates)")
                         print("3: Literature path with vectors (comprehensive)")
                         print("4: SeeK-path full paths (extended Bravais lattice notation)")
-                        format_choice = input("Select format (1-4) [1]: ").strip() or "1"
+                        format_choice = _nav_read("Select format (1-4) [1]: ", valid_set={"_choice_"}).strip() or "1"
                         
                         if format_choice == "1":
                             # Labels with CRYSTAL subset
@@ -777,14 +802,14 @@ def get_advanced_frequency_settings():
                         print("5: Monoclinic")
                         print("6: Triclinic")
                         
-                        system_choice = input("Select system (1-6) [1]: ").strip() or "1"
+                        system_choice = _nav_read("Select system (1-6) [1]: ", valid_set={"_choice_"}).strip() or "1"
                         
                         if system_choice == "1":
                             print("\nCubic templates:")
                             print("1: Simple cubic (sc)")
                             print("2: Face-centered cubic (fcc)")
                             print("3: Body-centered cubic (bcc)")
-                            template_idx = input("Select template (1-3) [1]: ").strip() or "1"
+                            template_idx = _nav_read("Select template (1-3) [1]: ", valid_set={"_choice_"}).strip() or "1"
                             template_map = {"1": "cubic_simple", "2": "cubic_fc", "3": "cubic_bc"}
                             template_name = template_map.get(template_idx, "cubic_simple")
                         elif system_choice == "2":
@@ -793,7 +818,7 @@ def get_advanced_frequency_settings():
                             print("\nTetragonal templates:")
                             print("1: Simple tetragonal")
                             print("2: Body-centered tetragonal")
-                            template_idx = input("Select template (1-2) [1]: ").strip() or "1"
+                            template_idx = _nav_read("Select template (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
                             template_map = {"1": "tetragonal_simple", "2": "tetragonal_bc"}
                             template_name = template_map.get(template_idx, "tetragonal_simple")
                         elif system_choice == "4":
@@ -802,7 +827,7 @@ def get_advanced_frequency_settings():
                             print("2: Base-centered orthorhombic (ab)")
                             print("3: Base-centered orthorhombic (bc)")
                             print("4: Face-centered orthorhombic")
-                            template_idx = input("Select template (1-4) [1]: ").strip() or "1"
+                            template_idx = _nav_read("Select template (1-4) [1]: ", valid_set={"_choice_"}).strip() or "1"
                             template_map = {"1": "orthorhombic_simple", "2": "orthorhombic_ab", 
                                           "3": "orthorhombic_bc", "4": "orthorhombic_fc"}
                             template_name = template_map.get(template_idx, "orthorhombic_simple")
@@ -810,7 +835,7 @@ def get_advanced_frequency_settings():
                             print("\nMonoclinic templates:")
                             print("1: Simple monoclinic")
                             print("2: Base-centered monoclinic")
-                            template_idx = input("Select template (1-2) [1]: ").strip() or "1"
+                            template_idx = _nav_read("Select template (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
                             template_map = {"1": "monoclinic_simple", "2": "monoclinic_ac"}
                             template_name = template_map.get(template_idx, "monoclinic_simple")
                         else:
@@ -863,7 +888,7 @@ def get_advanced_frequency_settings():
                         
                         if use_mixed:
                             # Mixed path - each segment can be labels or coordinates
-                            n_segments = int(input("Number of path segments: "))
+                            n_segments = _nav_int("Number of path segments: ")
                             path = []
                             freq_settings["bands"]["shrink"] = 16  # Default, will be adjusted
                             
@@ -871,7 +896,7 @@ def get_advanced_frequency_settings():
                                 print(f"\nSegment {i+1}:")
                                 print("1: Use high-symmetry labels (e.g., G X)")
                                 print("2: Use fractional coordinates")
-                                seg_type = input("Select type (1-2) [1]: ").strip() or "1"
+                                seg_type = _nav_read("Select type (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
                                 
                                 if seg_type == "1":
                                     segment = input("Enter label pair (e.g., 'G X'): ").strip().upper()
@@ -891,7 +916,7 @@ def get_advanced_frequency_settings():
                             freq_settings["bands"]["mixed_path"] = True
                         else:
                             # All coordinates
-                            n_segments = int(input("Number of path segments: "))
+                            n_segments = _nav_int("Number of path segments: ")
                             path = []
                             print("\nEnter fractional coordinates for each segment:")
                             for i in range(n_segments):
@@ -904,8 +929,8 @@ def get_advanced_frequency_settings():
             # Ask for DOS calculation
             calc_dos = yes_no_prompt("\nCalculate phonon density of states?", "yes")
             if calc_dos:
-                max_freq = float(input("Maximum frequency for DOS (cm⁻¹) [2000]: ") or 2000)
-                n_bins = int(input("Number of DOS bins [200]: ") or 200)
+                max_freq = _nav_float("Maximum frequency for DOS (cm⁻¹) [2000]: ", default=2000)
+                n_bins = _nav_int("Number of DOS bins [200]: ", default=200)
                 projected = yes_no_prompt("Calculate atom-projected DOS?", "yes")
                 freq_settings["pdos"] = {
                     "max_freq": max_freq,
@@ -916,14 +941,14 @@ def get_advanced_frequency_settings():
             # Ask for INS calculation
             calc_ins = yes_no_prompt("\nCalculate INS (Inelastic Neutron Scattering) spectrum?", "no")
             if calc_ins:
-                ins_max_freq = float(input("Maximum frequency for INS (cm⁻¹) [3000]: ") or 3000)
-                ins_n_bins = int(input("Number of INS bins [300]: ") or 300)
+                ins_max_freq = _nav_float("Maximum frequency for INS (cm⁻¹) [3000]: ", default=3000)
+                ins_n_bins = _nav_int("Number of INS bins [300]: ", default=300)
                 
                 print("\nNeutron scattering type:")
                 print("0: Coherent scattering only")
                 print("1: Incoherent scattering only")
                 print("2: Both coherent and incoherent")
-                neutron_type = int(input("Select type (0-2) [2]: ") or 2)
+                neutron_type = _nav_int("Select type (0-2) [2]: ", default=2)
                 
                 freq_settings["ins"] = {
                     "max_freq": ins_max_freq,
@@ -940,7 +965,7 @@ def get_advanced_frequency_settings():
         print("2: Two displacements per atom (default, recommended)")
         print("   Uses central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
 
-        numderiv = input("Select method (0-2) [0]: ").strip() or "0"
+        numderiv = _nav_read("Select method (0-2) [0]: ", valid_set={"_choice_"}).strip() or "0"
         if numderiv == "0":
             freq_settings["numderiv"] = None  # Signal to skip NUMDERIV keyword
         else:
@@ -978,7 +1003,7 @@ def get_advanced_frequency_settings():
                 
                 print("\nNote: CPHF (3) is the default due to its broad applicability")
                 print("      and highest accuracy for all material types")
-                ir_method_choice = input("\nSelect method (1-3) [3]: ").strip() or "3"
+                ir_method_choice = _nav_read("\nSelect method (1-3) [3]: ", valid_set={"_choice_"}).strip() or "3"
                 ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
                 freq_settings["ir_method"] = ir_methods[ir_method_choice]
                 
@@ -993,7 +1018,7 @@ def get_advanced_frequency_settings():
                     # CPHF specific options
                     print("\nCPHF calculation options:")
                     try:
-                        max_iter_input = input("Maximum CPHF iterations [30]: ").strip()
+                        max_iter_input = _nav_read("Maximum CPHF iterations [30]: ", valid_set={"_choice_"}).strip()
                         max_iter = int(max_iter_input) if max_iter_input else 30
                     except ValueError:
                         print("Invalid input, using default value of 30")
@@ -1001,7 +1026,7 @@ def get_advanced_frequency_settings():
                     freq_settings["cphf_max_iter"] = max_iter
                     
                     try:
-                        tol_input = input("CPHF convergence tolerance (10^-x) [6]: ").strip()
+                        tol_input = _nav_read("CPHF convergence tolerance (10^-x) [6]: ", valid_set={"_choice_"}).strip()
                         tol = float(tol_input) if tol_input else 6
                     except ValueError:
                         print("Invalid input, using default value of 6")
@@ -1065,26 +1090,26 @@ def get_advanced_frequency_settings():
                         print("\nSpectrum plotting settings:")
                         custom_range = yes_no_prompt("Customize spectral range?", "no")
                         if custom_range:
-                            min_freq = float(input("Minimum frequency (cm⁻¹) [0]: ") or 0)
-                            max_freq = float(input("Maximum frequency (cm⁻¹) [4000]: ") or 4000)
+                            min_freq = _nav_float("Minimum frequency (cm⁻¹) [0]: ", default=0)
+                            max_freq = _nav_float("Maximum frequency (cm⁻¹) [4000]: ", default=4000)
                             freq_settings["spec_range"] = [min_freq, max_freq]
                     
                     if "resolution" not in freq_settings:
-                        resolution = int(input("Resolution for spectrum (cm⁻¹) [16]: ") or 16)
+                        resolution = _nav_int("Resolution for spectrum (cm⁻¹) [16]: ", default=16)
                         freq_settings["resolution"] = resolution
                     
                     # Broadening
                     print("\nLine broadening type:")
                     print("1: Lorentzian (default)")
                     print("2: Gaussian")
-                    broadening = input("Select broadening (1-2) [1]: ").strip() or "1"
+                    broadening = _nav_read("Select broadening (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
                     freq_settings["broadening"] = "LORENTZ" if broadening == "1" else "GAUSS"
                     
                     if "lorentz_width" not in freq_settings and broadening == "1":
-                        width = float(input("Lorentzian FWHM (cm⁻¹) [8]: ") or 8)
+                        width = _nav_float("Lorentzian FWHM (cm⁻¹) [8]: ", default=8)
                         freq_settings["lorentz_width"] = width
                     elif "gauss_width" not in freq_settings and broadening == "2":
-                        width = float(input("Gaussian FWHM (cm⁻¹) [10]: ") or 10)
+                        width = _nav_float("Gaussian FWHM (cm⁻¹) [10]: ", default=10)
                         freq_settings["gauss_width"] = width
                     
                     # Raman-specific settings
@@ -1092,11 +1117,11 @@ def get_advanced_frequency_settings():
                         if "laser_wavelength" not in freq_settings:
                             print("\nRaman excitation wavelength (nm):")
                             print("Common values: 488, 514.5, 532, 633, 785, 1064")
-                            wavelength = float(input("Wavelength [532]: ") or 532)
+                            wavelength = _nav_float("Wavelength [532]: ", default=532)
                             freq_settings["laser_wavelength"] = wavelength
                         
                         if "temperature" not in freq_settings:
-                            temp = float(input("Temperature for Raman (K) [298.15]: ") or 298.15)
+                            temp = _nav_float("Temperature for Raman (K) [298.15]: ", default=298.15)
                             freq_settings["temperature"] = temp
                         
                         # RAMANEXP option
@@ -1104,15 +1129,15 @@ def get_advanced_frequency_settings():
                         if use_ramanexp:
                             print("\nRAMANEXP takes into account experimental conditions")
                             print("(temperature, incoming laser) in the calculation of Raman intensities")
-                            ramanexp_laser = float(input(f"Laser wavelength (nm) [{freq_settings.get('laser_wavelength', 532)}]: ") or freq_settings.get('laser_wavelength', 532))
-                            ramanexp_temp = float(input(f"Temperature (K) [{freq_settings.get('temperature', 298.15)}]: ") or freq_settings.get('temperature', 298.15))
+                            ramanexp_laser = _nav_float(f"Laser wavelength (nm) [{freq_settings.get('laser_wavelength', 532)}]: ", default=freq_settings.get('laser_wavelength', 532))
+                            ramanexp_temp = _nav_float(f"Temperature (K) [{freq_settings.get('temperature', 298.15)}]: ", default=freq_settings.get('temperature', 298.15))
                             freq_settings["ramanexp"] = [ramanexp_temp, ramanexp_laser]
                         
                         # Raman units
                         print("\nRaman intensity units:")
                         print("1: Arbitrary units (default)")
                         print("2: Absolute differential cross section")
-                        raman_units = input("Select units (1-2) [1]: ").strip() or "1"
+                        raman_units = _nav_read("Select units (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
                         if raman_units == "2":
                             freq_settings["raman_absolute"] = True
                 
@@ -1123,7 +1148,7 @@ def get_advanced_frequency_settings():
                     print("1: DAT file only (2-column ASCII)")
                     print("2: DAT + CSV")
                     print("3: DAT + CSV + JCAMP-DX")
-                    output_format = input("Select output format (1-3) [1]: ").strip() or "1"
+                    output_format = _nav_read("Select output format (1-3) [1]: ", valid_set={"_choice_"}).strip() or "1"
                     
                     if output_format in ["2", "3"]:
                         freq_settings["output_csv"] = True
@@ -1136,9 +1161,9 @@ def get_advanced_frequency_settings():
             if calc_thermo:
                 freq_settings["thermo"] = True
                 print("\nThermodynamic calculation settings:")
-                n_temps = int(input("Number of temperature points [20]: ") or 20)
-                t_min = float(input("Minimum temperature (K) [0]: ") or 0)
-                t_max = float(input("Maximum temperature (K) [400]: ") or 400)
+                n_temps = _nav_int("Number of temperature points [20]: ", default=20)
+                t_min = _nav_float("Minimum temperature (K) [0]: ", default=0)
+                t_max = _nav_float("Maximum temperature (K) [400]: ", default=400)
                 freq_settings["temprange"] = (n_temps, t_min, t_max)
         
         # Atomic projection
@@ -1164,7 +1189,7 @@ def get_advanced_frequency_settings():
         ask_restart = yes_no_prompt("Configure restart capability?", "no")
         if ask_restart:
             freq_settings["restart"] = True
-            checkpoint_interval = int(input("Checkpoint interval (calculations) [10]: ") or 10)
+            checkpoint_interval = _nav_int("Checkpoint interval (calculations) [10]: ", default=10)
             freq_settings["checkpoint_interval"] = checkpoint_interval
         
         # Parallelization
@@ -1194,29 +1219,29 @@ def get_advanced_frequency_settings():
                 print("3: VSCF - Vibrational SCF (all modes)")
                 print("4: VCI - Vibrational CI (most accurate)")
                 
-                anharm_choice = input("Select method (1-4): ").strip()
+                anharm_choice = _nav_read("Select method (1-4): ", valid_set={"_choice_"}).strip()
                 
                 if anharm_choice == "1":
                     freq_settings["anharm"] = True
                     # ANHARM specific settings handled elsewhere
                 elif anharm_choice == "2":
                     freq_settings["anhapes"] = True
-                    n_modes = int(input("Number of modes to scan [3]: ") or 3)
+                    n_modes = _nav_int("Number of modes to scan [3]: ", default=3)
                     freq_settings["anhapes_modes"] = []
                     for i in range(n_modes):
-                        mode = int(input(f"Mode number {i+1}: "))
+                        mode = _nav_int(f"Mode number {i+1}: ")
                         freq_settings["anhapes_modes"].append(mode)
                 elif anharm_choice == "3":
                     freq_settings["vscf"] = True
                     print("\nVSCF settings:")
-                    vscf_level = int(input("VSCF level (1-4) [2]: ") or 2)
+                    vscf_level = _nav_int("VSCF level (1-4) [2]: ", default=2)
                     freq_settings["vscf_level"] = vscf_level
                 elif anharm_choice == "4":
                     freq_settings["vci"] = True
                     print("\nVCI settings:")
-                    vci_level = int(input("VCI level (1-4) [2]: ") or 2)
+                    vci_level = _nav_int("VCI level (1-4) [2]: ", default=2)
                     freq_settings["vci_level"] = vci_level
-                    max_quanta = int(input("Maximum quanta sum [4]: ") or 4)
+                    max_quanta = _nav_int("Maximum quanta sum [4]: ", default=4)
                     freq_settings["vci_max_quanta"] = max_quanta
         
         # Print level
@@ -1226,7 +1251,7 @@ def get_advanced_frequency_settings():
         print("1: Standard output (default)")
         print("2: Detailed output")
         print("3: Debug output")
-        print_level = int(input("Select print level (0-3) [1]: ") or 1)
+        print_level = _nav_int("Select print level (0-3) [1]: ", default=1)
         freq_settings["print_level"] = print_level
         
         # Mode following for difficult cases
@@ -1240,7 +1265,7 @@ def get_advanced_frequency_settings():
         print("1: Use full symmetry (default)")
         print("2: Reduce symmetry for mode analysis")
         print("3: No symmetry")
-        sym_choice = input("Select symmetry option (1-3) [1]: ").strip() or "1"
+        sym_choice = _nav_read("Select symmetry option (1-3) [1]: ", valid_set={"_choice_"}).strip() or "1"
         
         if sym_choice == "2":
             freq_settings["reduce_symmetry"] = True
@@ -1293,7 +1318,7 @@ def _get_frequency_configuration_impl(current_settings: Optional[Dict[str, Any]]
     print("   - More accurate frequencies for hydrogen stretching")
     print("   - Calculates anharmonic corrections")
     
-    freq_type_choice = input("Select type (1-2) [1]: ").strip() or "1"
+    freq_type_choice = _nav_read("Select type (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
     
     if freq_type_choice == "2":
         # ANHARM calculation
@@ -1367,11 +1392,11 @@ def _get_anharm_configuration() -> Dict[str, Any]:
         "no"
     )
     if calc_isotopes:
-        n_isotopes = int(input("Number of isotopic substitutions: ") or 1)
+        n_isotopes = _nav_int("Number of isotopic substitutions: ", default=1)
         settings["isotopes"] = []
         for i in range(n_isotopes):
-            label = int(input(f"  Atom label for substitution {i+1}: "))
-            mass = float(input(f"  New mass (amu) [2.014 for D]: ") or 2.014)
+            label = _nav_int(f"  Atom label for substitution {i+1}: ")
+            mass = _nav_float(f"  New mass (amu) [2.014 for D]: ", default=2.014)
             settings["isotopes"].append((label, mass))
     
     # ANHARM uses tight tolerances
