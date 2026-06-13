@@ -96,8 +96,8 @@ it can legitimately differ from the SP-mesh gap for near-zero-gap systems.
 - `mace submit --track` opt-in DB tracking (route through EnhancedCrystalQueueManager in-place).
 - Full cross-step planner orchestrator back (risky — interleaves JSON writes / subprocess);
   `b` at the rare explicit-coordinate-entry prompts (freq/d3 manual k-path coords).
-- `formula_extractor.extract_formula_from_d12` expects a `Path` but some callers pass a `str`
-  → `AttributeError: 'str' object has no attribute 'exists'`. Make it accept both. (Found in review.)
+- ~~`formula_extractor.extract_formula_from_d12` str/Path crash~~ — DONE (`d8f1140f`): all four
+  public entry points coerce str→Path; missing paths return None; regression tests added.
 - `CrystalPropertyExtractor.__init__` unconditionally creates `materials.db`, blocking offline
   single-file extraction — make tracking/db optional.
 
