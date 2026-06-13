@@ -635,6 +635,9 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             settings.get("scf_settings", {}).get("fmixing", 30),
             len(atomic_numbers),
             settings.get("spacegroup", 1),
+            # Carry a configured fixed spin state through on the OPT-continuation
+            # path too, gated on spin polarization (0/None => unchanged output).
+            spinlock=(settings.get("spinlock", 0) if settings.get("spin_polarized") else 0),
         )
         
         # Note: The single END at the very end is written by write_scf_section

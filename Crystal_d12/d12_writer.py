@@ -476,12 +476,23 @@ def write_basis_set_section(f: TextIO, basis_type: str, dimensionality: str,
     print("99 0", file=f)
 
 
+# Number of SCF cycles a SPINLOCK is held for when a fixed spin state is
+# requested. CRYSTAL's SPINLOCK syntax is "SPINLOCK\n<n_unpaired> <n_cycles>";
+# the interactive/config layer only captures the lock value (nalpha-nbeta), so
+# the cycle count defaults here. 50 matches the convention used in the project's
+# historical inputs and is long enough to steer SCF into the target spin state
+# without freezing it for the whole run.
+DEFAULT_SPINLOCK_CYCLES = 50
+
+
 def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
                      dimensionality: str, use_smearing: bool, smearing_width: float,
                      scf_method: str, scf_maxcycle: int, fmixing: int,
-                     num_atoms: int, spacegroup: int = 1) -> None:
+                     num_atoms: int, spacegroup: int = 1,
+                     spinlock: Optional[int] = None,
+                     spinlock_cycles: int = DEFAULT_SPINLOCK_CYCLES) -> None:
     """Write the SCF parameters section of the D12 file
-    
+
     Args:
         f: File handle
         tolerances: Dictionary with TOLINTEG and TOLDEE
@@ -494,7 +505,22 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
         fmixing: FMIXING percentage
         num_atoms: Number of atoms in system
         spacegroup: Space group number
+        spinlock: Fixed spin state (nalpha-nbeta) to lock during SCF. A value of
+            0 or None means "automatic spin optimization" and writes no SPINLOCK
+            (preserving the prior behaviour exactly). The caller must only pass a
+            non-zero value for spin-polarized systems, since SPINLOCK requires
+            SPIN/UHF to be active.
+        spinlock_cycles: Number of SCF cycles to hold the lock (see
+            DEFAULT_SPINLOCK_CYCLES).
     """
+    # Fixed spin state. CRYSTAL expects SPINLOCK at the top of the SCF block,
+    # ahead of TOLINTEG, exactly as it appears in the project's reference inputs.
+    # Only emitted for an explicitly requested non-zero lock, so spinlock=0/None
+    # leaves the output byte-for-byte identical to before this parameter existed.
+    if spinlock:
+        print("SPINLOCK", file=f)
+        print(f"{spinlock} {spinlock_cycles}", file=f)
+
     # Tolerance settings with proper fallback handling
     print("TOLINTEG", file=f)
     tolinteg_value = tolerances.get("TOLINTEG", "7 7 7 7 14")  # Default fallback

@@ -1133,6 +1133,10 @@ def create_d12_file(cif_data, output_file, options):
             fmixing,
             len(atomic_numbers),
             spacegroup,
+            # Emit a configured fixed spin state only for spin-polarized systems;
+            # a missing/zero value leaves the SCF block unchanged. Previously a
+            # configured SPINLOCK never reached any active writer.
+            spinlock=(options.get("spinlock", 0) if is_spin_polarized else 0),
         )
 
         # Note: The single END at the very end is written by write_scf_section
