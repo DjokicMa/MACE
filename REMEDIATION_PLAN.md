@@ -118,6 +118,10 @@ it can legitimately differ from the SP-mesh gap for near-zero-gap systems.
   `CRYSTALOptToD3.generate_d3`); pinning them cleanly needs a small pure-helper extraction —
   deferred to avoid refactoring validated interactive code. Both were verified against real
   outputs at fix time.
+  Update: the `-D3-D3` issue is a FILENAME-only nuisance (content always correct; confirmed by
+  user — results in `test/` unaffected). Now fully removed (`7175e10b`) via the testable
+  `dedupe_dispersion_suffix` helper applied to the continuation filename; 9 tests pin it.
+  (d3 geometry double-count remains the only unpinned Wave A fix.)
 - Delete confirmed-dead/duplicate trees: `code/Plotting_Scripts` (1733 lines, stale vs live
   `Plotting/` — fdf9cf8e fixed `Plotting/` but the stale copy still has the bug),
   `executor_contextual`/`planner_contextual`/`run_workflow_isolated` (imported by nothing),
