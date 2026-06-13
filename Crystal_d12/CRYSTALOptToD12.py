@@ -77,6 +77,19 @@ from d12_interactive import (
 )
 
 
+def dedupe_dispersion_suffix(functional: str) -> str:
+    """Collapse any accidental repeated '-D3' in a functional name to one.
+
+    Purely cosmetic: the SCF section writes the functional/dispersion correctly
+    regardless, but the continuation filenames embed the functional string, so a
+    doubled value produced names like ``..._B3LYP-D3-D3_optimized.d12``. This
+    guarantees a generated filename never carries ``-D3-D3`` no matter how the
+    functional was derived (parsed output, reused config, re-continuation).
+    """
+    if not functional:
+        return functional
+    return re.sub(r'(?:-D3){2,}', '-D3', functional)
+
 
 def _get_phonon_band_path_title(band_settings, geometry_data):
     """Generate path information string for phonon band calculations."""
@@ -1043,6 +1056,11 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         and functional not in ["RHF", "UHF", "HF3C", "HFSOL3C"]
     ):
         functional += "-D3"
+
+    # Belt-and-suspenders against the long-standing filename nuisance: never emit
+    # a doubled '-D3-D3' in the continuation filename, regardless of how the
+    # functional was derived. Cosmetic only — the SCF content is unaffected.
+    functional = dedupe_dispersion_suffix(functional)
 
     new_filename = f"{base_name}_{calc_type.lower()}_{functional}_optimized.d12"
 
