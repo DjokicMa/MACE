@@ -957,12 +957,21 @@ def ipDOS(
 
             data = line.split()
 
-            if len(labels) >= 17:
+            # A DOS record can wrap across several physical lines when there are
+            # many projection columns; a complete record has len(labels) values
+            # (energy + projections). Pull continuation lines until the record is
+            # complete. The previous code unconditionally read ONE line ahead
+            # whenever len(labels) >= 17 and discarded it unless it looked like a
+            # short continuation — which silently dropped every second row of any
+            # 17+-column DOS file that was written on single (unwrapped) lines.
+            while len(data) < len(labels):
                 ne = next(f, "")
-                if ne:
-                    ne = ne.split()
-                    if len(data) >= 17 and len(ne) < 17:
-                        data = np.concatenate([data, ne])
+                if not ne:
+                    break
+                ne_parts = ne.split()
+                if not ne_parts:
+                    continue
+                data += ne_parts
 
             data_vect[0].append(float(data[0]) * 27.2114 + maxV)
 
