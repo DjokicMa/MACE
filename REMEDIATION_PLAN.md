@@ -111,8 +111,13 @@ it can legitimately differ from the SP-mesh gap for near-zero-gap systems.
   `tests/` (pytest) pins gCP/corrected-total/molecular-thermo/enthalpy, BAND.DAT band-index gap,
   formula BASISSET-reset, and the B1 recovery chain against real `test/` outputs; `find_data()`
   skips cleanly when the gitignored corpus is absent so CI stays green (recovery tests are
-  self-contained and always run). `pytest.ini` + `.github/workflows/tests.yml`. 19 tests green.
-  Next: extend coverage to -D3-D3 guard, SP missing-data classifier, d3 geometry double-count.
+  self-contained and always run). `pytest.ini` + `.github/workflows/tests.yml`. Now 33 tests
+  green, also covering: SPINLOCK round-trip, D3 workflow_id fallback, offline extraction, and
+  the SP missing-data classifier (`8622cb52`). Still uncovered: the `-D3-D3` guard and d3
+  geometry double-count are inline in large interactive flows (`CRYSTALOptToD12.write_*`,
+  `CRYSTALOptToD3.generate_d3`); pinning them cleanly needs a small pure-helper extraction —
+  deferred to avoid refactoring validated interactive code. Both were verified against real
+  outputs at fix time.
 - Delete confirmed-dead/duplicate trees: `code/Plotting_Scripts` (1733 lines, stale vs live
   `Plotting/` — fdf9cf8e fixed `Plotting/` but the stale copy still has the bug),
   `executor_contextual`/`planner_contextual`/`run_workflow_isolated` (imported by nothing),
