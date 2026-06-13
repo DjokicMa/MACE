@@ -12,6 +12,7 @@ Author: Marcus Djokic
 Institution: Michigan State University, Mendoza Group
 """
 
+import functools
 from typing import Dict, Any, Optional
 
 # Opt-in "press b to go back" navigation + crash-safe back-aware readers. Falls back to
@@ -339,3 +340,13 @@ def write_optimization_section(f, optimization_type, optimization_settings):
         print(format_crystal_float(maxtradius), file=f)
     
     print("ENDOPT", file=f)
+
+
+# Expose the real questionnaire signature/docstring through the back-controller
+# wrappers (which take *args/**kwargs). update_wrapper sets __wrapped__ so
+# inspect.signature/help resolve to the _impl, while the curated `assigned` keeps
+# the public __name__ (we deliberately do NOT copy the private _impl name).
+functools.update_wrapper(configure_single_point, _configure_single_point_impl,
+                         assigned=("__doc__", "__annotations__"), updated=())
+functools.update_wrapper(configure_optimization, _configure_optimization_impl,
+                         assigned=("__doc__", "__annotations__"), updated=())

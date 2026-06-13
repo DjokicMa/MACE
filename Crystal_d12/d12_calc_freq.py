@@ -17,6 +17,7 @@ logic is separated into dedicated modules for better maintainability.
 """
 
 from typing import Dict, Any, Tuple, Optional, List
+import functools
 import sys
 from pathlib import Path
 
@@ -2380,6 +2381,13 @@ def get_high_symmetry_points(space_group, bravais):
             [0.5, 0.0, 0.0, 0.0, 0.0, 0.0],  # X → Γ
         ]
 
+
+# Expose the real questionnaire signature/docstring through the back-controller
+# wrapper (which takes *args/**kwargs). update_wrapper sets __wrapped__ so
+# inspect.signature/help resolve to the _impl, while the curated `assigned` keeps
+# the public __name__ (we deliberately do NOT copy the private _impl name).
+functools.update_wrapper(get_frequency_configuration, _get_frequency_configuration_impl,
+                         assigned=("__doc__", "__annotations__"), updated=())
 
 # For backwards compatibility, export the main function
 get_frequency_settings = get_frequency_configuration
