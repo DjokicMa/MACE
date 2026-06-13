@@ -413,12 +413,15 @@ class CrystalPropertyExtractor:
         # printed for the initial geometry and is inconsistent with the
         # final total energy (which is taken last)
         d3_matches = re.findall(r'D3 DISPERSION ENERGY \(AU\)\s*([-\d.E+]+)', content)
+        d3_energy = None
         if d3_matches:
             d3_energy = float(d3_matches[-1])
             props['d3_dispersion_energy_au'] = d3_energy
             props['d3_dispersion_energy_ev'] = d3_energy * 27.2114
 
-            # Also look for the total energy + dispersion
+            # Total energy + dispersion (D3 only). Kept under its historical
+            # name for back-compat; for 3C methods this is NOT the fully
+            # corrected total (those also add gCP — see total_energy_corrected_au).
             total_plus_disp_matches = re.findall(r'TOTAL ENERGY \+ DISP \(AU\)\s*([-\d.E+]+)', content)
             if total_plus_disp_matches:
                 props['total_energy_plus_d3_au'] = float(total_plus_disp_matches[-1])
@@ -427,7 +430,37 @@ class CrystalPropertyExtractor:
                 # Calculate if not explicitly given
                 props['total_energy_plus_d3_au'] = props['total_energy_au'] + d3_energy
                 props['total_energy_plus_d3_ev'] = props['total_energy_plus_d3_au'] * 27.2114
-        
+
+        # gCP (geometrical counterpoise) correction — printed by 3C methods
+        # (e.g. HSESOL3C) alongside D3. Omitting it silently understates the
+        # corrected total by the gCP term (~0.17 AU ≈ 108 kcal/mol).
+        gcp_matches = re.findall(r'GCP ENERGY \(AU\)\s*([-\d.E+]+)', content)
+        gcp_energy = None
+        if gcp_matches:
+            gcp_energy = float(gcp_matches[-1])
+            props['gcp_energy_au'] = gcp_energy
+            props['gcp_energy_ev'] = gcp_energy * 27.2114
+
+        # Fully corrected total energy = total + D3 + gCP, built from the
+        # FINAL-geometry components (total_energy_au, d3_energy, gcp_energy are
+        # all taken as last occurrences = the converged geometry). We do NOT
+        # prefer CRYSTAL's printed "TOTAL ENERGY + DISP + GCP" line: in an OPT
+        # that combined line is emitted only for the INITIAL geometry and is
+        # never re-printed after OPT END, so trusting it yields a stale total
+        # (verified: 4LG OPT off by ~0.094 AU). For single-geometry SP runs the
+        # computed sum matches the printed line to ~1e-10. Only fall back to the
+        # printed line when the components themselves are unavailable.
+        if 'total_energy_au' in props and (d3_energy is not None or gcp_energy is not None):
+            corrected = props['total_energy_au'] + (d3_energy or 0.0) + (gcp_energy or 0.0)
+            props['total_energy_corrected_au'] = corrected
+            props['total_energy_corrected_ev'] = corrected * 27.2114
+        else:
+            corrected_line = (re.findall(r'TOTAL ENERGY \+ DISP \+ GCP \(AU\)\s*([-\d.E+]+)', content)
+                              or re.findall(r'TOTAL ENERGY \+ DISP \(AU\)\s*([-\d.E+]+)', content))
+            if corrected_line:
+                props['total_energy_corrected_au'] = float(corrected_line[-1])
+                props['total_energy_corrected_ev'] = float(corrected_line[-1]) * 27.2114
+
         # Extract energy components if available
         energy_components = self._extract_energy_components(content)
         props.update(energy_components)
@@ -1594,25 +1627,11 @@ class CrystalPropertyExtractor:
             if temps:
                 props['vibrational_temperatures'] = temps
         
-        # Extract thermodynamic properties
+        # Extract thermodynamic properties (includes electronic_energy EL,
+        # Gibbs, and enthalpy H = Gibbs + TS — see _extract_thermodynamic_properties)
         thermo_props = self._extract_thermodynamic_properties(content)
         props.update(thermo_props)
-        
-        # Calculate enthalpy from other energies
-        if 'zero_point_energy_au' in props and 'thermal_energy_au' in thermo_props and 'pv_term_au' in thermo_props:
-            # Enthalpy = E0 + ET + PV
-            enthalpy_au = props['zero_point_energy_au'] + thermo_props['thermal_energy_au'] + thermo_props['pv_term_au']
-            props['enthalpy_au'] = enthalpy_au
-            props['enthalpy_ev'] = enthalpy_au * 27.2114
-            props['enthalpy_kj_mol'] = enthalpy_au * 2625.5  # Hartree to kJ/mol
-            
-            # Also calculate enthalpy including electronic energy if available
-            if 'total_energy_au' in self._extract_energy_properties(content):
-                el_energy = self._extract_energy_properties(content)['total_energy_au']
-                props['enthalpy_total_au'] = el_energy + enthalpy_au
-                props['enthalpy_total_ev'] = props['enthalpy_total_au'] * 27.2114
-                props['enthalpy_total_kj_mol'] = props['enthalpy_total_au'] * 2625.5
-        
+
         # Extract zero-point energy
         zpe_match = re.search(r'E0\s*:\s*([-\d.E+]+)\s+([-\d.E+]+)\s+([-\d.E+]+)', content)
         if zpe_match:
@@ -1770,9 +1789,24 @@ class CrystalPropertyExtractor:
             props['thermodynamic_temperature_k'] = float(conditions_match.group(1))
             props['thermodynamic_pressure_mpa'] = float(conditions_match.group(2))
         
-        # Extract thermodynamic functions
+        # Electronic energy (EL) — the baseline total energy printed at the top
+        # of the harmonic thermodynamic block; H and G are built on top of it.
+        el_match = re.search(
+            r'^\s*EL\s*:\s*([-\d.E+]+)\s+([-\d.E+]+)\s+([-\d.E+]+)',
+            content, re.MULTILINE
+        )
+        if el_match:
+            props['electronic_energy_au'] = float(el_match.group(1))
+            props['electronic_energy_ev'] = float(el_match.group(2))
+            props['electronic_energy_kj_mol'] = float(el_match.group(3))
+
+        # Extract thermodynamic functions. CRYSTAL labels the ET/PV/TS block
+        # "...WITH VIBRATIONAL CONTRIBUTIONS" for periodic systems but
+        # "...TAKING INTO ACCOUNT MOLECULAR ..." for molecules — match both,
+        # else molecular FREQ runs lose Gibbs/ET/PV/TS entirely.
         thermo_section = re.search(
-            r'THERMODYNAMIC FUNCTIONS WITH VIBRATIONAL CONTRIBUTIONS.*?'
+            r'THERMODYNAMIC FUNCTIONS '
+            r'(?:WITH VIBRATIONAL CONTRIBUTIONS|TAKING INTO ACCOUNT MOLECULAR).*?'
             r'AU/CELL\s+EV/CELL\s+KJ/MOL\s*\n(.*?)(?=OTHER THERMODYNAMIC|\*{5,})',
             content, re.DOTALL
         )
@@ -1814,6 +1848,13 @@ class CrystalPropertyExtractor:
                 props['gibbs_free_energy_au'] = float(total_match.group(1))
                 props['gibbs_free_energy_ev'] = float(total_match.group(2))
                 props['gibbs_free_energy_kj_mol'] = float(total_match.group(3))
+
+            # Enthalpy H = EL + E0 + ET + PV = Gibbs + TS. Built from CRYSTAL's
+            # own printed columns (per unit) so it carries no conversion drift.
+            if 'gibbs_free_energy_au' in props and 'entropy_term_au' in props:
+                props['enthalpy_au'] = props['gibbs_free_energy_au'] + props['entropy_term_au']
+                props['enthalpy_ev'] = props['gibbs_free_energy_ev'] + props['entropy_term_ev']
+                props['enthalpy_kj_mol'] = props['gibbs_free_energy_kj_mol'] + props['entropy_term_kj_mol']
         
         # Extract entropy and heat capacity
         other_thermo = re.search(
