@@ -64,13 +64,18 @@ class EnhancedCrystalQueueManager:
     - Integration with analysis scripts
     """
     
-    def __init__(self, d12_dir, max_jobs=250, reserve_slots=30, 
-                 db_path="materials.db", enable_tracking=True, 
-                 enable_error_recovery=True, max_recovery_attempts=3):
+    def __init__(self, d12_dir, max_jobs=250, reserve_slots=30,
+                 db_path="materials.db", enable_tracking=True,
+                 enable_error_recovery=True, max_recovery_attempts=3,
+                 organize_outputs=True):
         self.d12_dir = Path(d12_dir).resolve()
         self.max_jobs = max_jobs
         self.reserve_slots = reserve_slots
         self.enable_tracking = enable_tracking
+        # When False (manual `mace manager` default), inputs are submitted in place
+        # instead of being copied into a <calc_type>/<material_id>/ tree. Workflow runs
+        # keep organize_outputs=True (and use their own workflow dirs anyway).
+        self.organize_outputs = organize_outputs
         self.enable_error_recovery = enable_error_recovery
         self.max_recovery_attempts = max_recovery_attempts
         self.db_path = db_path
@@ -464,13 +469,16 @@ class EnhancedCrystalQueueManager:
         except Exception as e:
             print(f"Warning: Could not save legacy status: {e}")
             
-    def create_calculation_folder(self, material_id: str, calc_type: str) -> Path:
+    def create_calculation_folder(self, material_id: str, calc_type: str,
+                                  source_file=None) -> Path:
         """
         Create organized folder structure for calculations.
-        
-        Structure: 
+
+        Structure:
         - Workflow: Uses existing workflow structure (no new folders created)
-        - Standard: base_dir/calc_type/material_id/
+        - Standard (organize_outputs=True): base_dir/calc_type/material_id/
+        - In-place (organize_outputs=False): the source file's own directory, with no
+          new folders created (manual `mace manager` default). Requires source_file.
         """
         if self.is_workflow_context and hasattr(self, 'workflow_root'):
             # In workflow context, don't create new folders
@@ -499,6 +507,10 @@ class EnhancedCrystalQueueManager:
             print(f"Warning: Could not find workflow directory for {material_id}, using current directory")
             return Path.cwd()
         else:
+            if not self.organize_outputs and source_file is not None:
+                # In-place: submit the file where it already lives; no copying, no
+                # <calc_type>/<material_id>/ tree. The DB still records this as work_dir.
+                return Path(source_file).resolve().parent
             # Standard behavior - create folder structure
             calc_type_dir = self.d12_dir / calc_type.lower()
             material_dir = calc_type_dir / material_id
@@ -590,18 +602,22 @@ class EnhancedCrystalQueueManager:
                     metadata=metadata
                 )
                 
-        # Create calculation folder and copy input file
-        calc_dir = self.create_calculation_folder(material_id, calc_type)
-        
+        # Create calculation folder (organized) or resolve in-place directory.
+        calc_dir = self.create_calculation_folder(material_id, calc_type, source_file=d12_file)
+
         # Determine file extension based on calculation type
         is_d3_calc = calc_type.rstrip('0123456789') in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']
         file_extension = '.d3' if is_d3_calc else '.d12'
-        
-        input_filename = f"{material_id}_{calc_type.lower()}{file_extension}"
-        calc_input_file = calc_dir / input_filename
-        
-        # Copy input file to calculation directory
-        shutil.copy2(d12_file, calc_input_file)
+
+        in_place = (not self.organize_outputs) and (not self.is_workflow_context)
+        if in_place:
+            # Submit the original file as-is: no copy, no rename, no extra subfolder.
+            calc_input_file = Path(d12_file).resolve()
+        else:
+            input_filename = f"{material_id}_{calc_type.lower()}{file_extension}"
+            calc_input_file = calc_dir / input_filename
+            # Copy input file to calculation directory
+            shutil.copy2(d12_file, calc_input_file)
         
         # Create calculation record
         calc_id = None
@@ -1181,13 +1197,28 @@ class EnhancedCrystalQueueManager:
             work_dir = Path(calc['work_dir'])
             calc_id = calc['calc_id']
             
-            # Find the D12 file (should be fixed by error recovery)
+            # Find the D12 file (should be fixed by error recovery). Prefer the one whose
+            # stem matches this calc's recorded input_file: in in-place mode several
+            # calculations can share one work_dir, so a bare glob()[0] could resubmit the
+            # wrong input. Fall back to the recorded path, then to the first match.
             d12_files = list(work_dir.glob("*.d12"))
             if not d12_files:
                 print(f"❌ No D12 file found in {work_dir} for resubmission")
                 return False
-            
-            d12_file = d12_files[0]
+
+            d12_file = None
+            recorded = calc.get('input_file')
+            if recorded:
+                recorded_path = Path(recorded)
+                if recorded_path.exists():
+                    d12_file = recorded_path
+                else:
+                    for f in d12_files:
+                        if f.stem == recorded_path.stem:
+                            d12_file = f
+                            break
+            if d12_file is None:
+                d12_file = d12_files[0]
             
             # Update database status to 'resubmitted'
             self.db.update_calculation_status(calc_id, 'resubmitted', 
@@ -1762,14 +1793,20 @@ def main():
         help="Disable automatic error recovery"
     )
     parser.add_argument(
-        "--max-recovery-attempts", 
-        type=int, 
-        default=3, 
+        "--max-recovery-attempts",
+        type=int,
+        default=3,
         help="Maximum recovery attempts per job (default: 3)"
     )
-    
+    parser.add_argument(
+        "--organize",
+        action="store_true",
+        help="Copy each input into a <calc_type>/<material_id>/ folder (organized). "
+             "Default is in-place: submit files where they are, no copies."
+    )
+
     args = parser.parse_args()
-    
+
     # Create queue manager
     manager = EnhancedCrystalQueueManager(
         d12_dir=args.d12_dir,
@@ -1778,7 +1815,8 @@ def main():
         db_path=args.db_path,
         enable_tracking=not args.disable_tracking,
         enable_error_recovery=not args.disable_error_recovery,
-        max_recovery_attempts=args.max_recovery_attempts
+        max_recovery_attempts=args.max_recovery_attempts,
+        organize_outputs=args.organize
     )
     
     manager.max_submit_per_callback = args.max_submit

@@ -1525,11 +1525,15 @@ More Help:
         dry_run = False
         show_status = False
         base_dir = '.'
-        
+        organize = False  # default: submit in place (no <calc_type>/<material_id>/ copies)
+
         i = 0
         while i < len(all_args):
             if all_args[i] == '--status':
                 show_status = True
+                i += 1
+            elif all_args[i] == '--organize':
+                organize = True
                 i += 1
             elif all_args[i] == '--max-jobs' and i + 1 < len(all_args):
                 max_jobs = int(all_args[i + 1])
@@ -1549,11 +1553,13 @@ More Help:
             else:
                 i += 1
         
-        # Initialize queue manager
+        # Initialize queue manager. Manual `mace manager` defaults to in-place
+        # (organize_outputs=False); pass --organize to get the organized folder tree.
         manager = EnhancedCrystalQueueManager(
             d12_dir=base_dir,
-            max_jobs=max_jobs, 
-            reserve_slots=reserve
+            max_jobs=max_jobs,
+            reserve_slots=reserve,
+            organize_outputs=organize
         )
         
         if show_status:
@@ -1581,9 +1587,14 @@ More Help:
             from queue.manager import main as queue_main
             
             # Build argument list
-            sys.argv = ['queue_manager.py', '--d12-dir', base_dir, 
+            sys.argv = ['queue_manager.py', '--d12-dir', base_dir,
                        '--max-jobs', str(max_jobs), '--reserve', str(reserve)]
-            
+
+            if organize:
+                # Opt back into the organized <calc_type>/<material_id>/ layout;
+                # default (omitted) is in-place submission.
+                sys.argv.append('--organize')
+
             if callback_mode:
                 sys.argv.extend(['--callback-mode', callback_mode])
             
