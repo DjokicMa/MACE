@@ -66,21 +66,25 @@ Add/extend a pytest test in `tests/` for every fix. Suggested order:
      provable no-op: new mace/constants.py (HARTREE_TO_EV/EV_TO_HARTREE/BOHR_TO_ANGSTROM/ANGSTROM_TO_BOHR);
      re-pointed the 4 ALREADY-byte-identical sites (dat_file_processor, units.py base ev/angstrom keys,
      2 test files). tests/test_constants_no_drift.py. 422 tests.
-     DEFERRED (precision-fix wave — behavior change, needs real-output regression pins first):
-     ~30 truncated `27.2114`/`27.211386` literals in property_extractor.py (validated parser),
-     advanced_electronic_analyzer.py, Crystal_d3/*, untested Band_Alignment/plotting scripts.
+   - 6a [PRECISION WAVE DONE `698dfe9d`] replaced the truncated 27.2114/27.211386 literals with the
+     full-precision constant in CORE MACE: property_extractor.py (10 sites; the validated .out parser —
+     eV now == au*HARTREE_TO_EV, pinned by test_ev_conversions_use_full_precision_constant),
+     advanced_electronic_analyzer.py, Crystal_d3/CRYSTALOptToD3.py + d3_interactive.py (try/except
+     import keeps them standalone-runnable). 424 tests.
+     STILL EXCLUDED (user is editing plotting in a separate instance; also untested standalone tools):
+     Plotting/*, code/NewPlotting_Scripts/*, code/Band_Alignment/* — their 27.2114 literals remain
+     for a future separately-reviewed pass.
      DO NOT TOUCH: 'BOHR = 0.5291772083 ANGSTROM' fixture strings (CRYSTAL-output mimics); units.py
      derived keys (mev/thz/nm..mm/pressure — re-derivation risks last-ULP drift).
      STILL DEFERRED (HIGH risk, no active bug): shared CRYSTAL .out parser extraction and Fermi-energy
      extraction unification (divergent regex/units/occurrence policy across 6 sites) — need
      characterization tests first; don't-fix-what-works.
-   NOTE: a separate `mace/plotting/*` refactor WIP (registry.py/handlers/detect.py/prompts.py/
-   MACE_PLOTTING_INTEGRATION_PLAN.md + test_plotting_*) appeared in the working tree mid-session —
-   NOT mine; left untouched/uncommitted.
+   NOTE: a separate `mace/plotting/*` refactor + tests/test_vibmode_parser.py are the USER's WIP in
+   another Claude instance — left untouched/uncommitted on purpose.
 
-   ===> ALL stragglers 1-6 are DONE (within don't-fix-what-works bounds). Remaining = the two
-   explicitly-deferred behavior-changing items above (constant-precision fix; parser/Fermi merge),
-   each gated on real-output regression pins. Suite: 422 tests.
+   ===> Stragglers 1-6 DONE incl. the 6a precision wave (core). Only remaining work = the plotting/
+   band-alignment constant pass (user's area) and the HIGH-risk shared .out-parser/Fermi merge
+   (deferred, needs characterization tests). Suite: 424 tests.
 
 Do NOT re-fix the "Already FIXED but docs are stale" list at the bottom (CONCERNS.md is stale).
 
