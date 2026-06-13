@@ -176,12 +176,27 @@ class D3Generator:
         # "SI"), so the second letter must also allow uppercase; the old
         # "[A-Z][a-z]?" captured only "T" for titanium and mislabeled every
         # two-letter element in the DOSS atom projections.
+        # CRYSTAL reprints the full geometry once per optimization step, so a
+        # findall over the whole file multiplied the atom list by the number of
+        # steps (e.g. 34 atoms -> 1428 entries for Ti6O11). The leading atom
+        # index runs 1..N within one listing and resets on the next block, so
+        # collect only the first contiguous, strictly-increasing run. This makes
+        # len(atom_elements) == n_atoms again, so the index-bounds checks in the
+        # projection code reject out-of-range atoms instead of mislabeling them
+        # from a later geometry block. The first n_atoms entries are unchanged,
+        # so every valid projection is byte-identical to before.
+        atom_pattern = re.compile(r'^\s*(\d+)\s+[TF]\s+\d+\s+([A-Z][A-Za-z]?)\s+', re.MULTILINE)
         atom_elements = []
-        atom_pattern = re.compile(r'^\s*\d+\s+[TF]\s+\d+\s+([A-Z][A-Za-z]?)\s+', re.MULTILINE)
-        atom_matches = atom_pattern.findall(content)
-        if atom_matches:
-            info['atom_elements'] = atom_matches
-        
+        last_idx = 0
+        for m in atom_pattern.finditer(content):
+            idx = int(m.group(1))
+            if idx <= last_idx:
+                break
+            atom_elements.append(m.group(2))
+            last_idx = idx
+        if atom_elements:
+            info['atom_elements'] = atom_elements
+
         return info
     
     def _copy_wavefunction(self) -> bool:

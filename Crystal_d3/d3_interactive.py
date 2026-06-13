@@ -997,8 +997,21 @@ def configure_doss_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
             # so the second letter must allow uppercase; "[A-Z][a-z]?" matched
             # nothing for two-letter elements (the trailing \s+ hit the second
             # element letter), leaving atom_elements empty.
-            atom_pattern = re.compile(r'^\s*\d+\s+[TF]\s+\d+\s+([A-Z][A-Za-z]?)\s+', re.MULTILINE)
-            atom_elements = atom_pattern.findall(content)
+            # CRYSTAL reprints the geometry once per optimization step, so a
+            # findall over the whole file repeats the atom list N times. The
+            # leading atom index runs 1..N within one listing and resets on the
+            # next block; collect only the first contiguous run so the count
+            # matches n_atoms (the [:n_atoms] consumers below were already
+            # masking this, but len(atom_elements) is now correct too).
+            atom_pattern = re.compile(r'^\s*(\d+)\s+[TF]\s+\d+\s+([A-Z][A-Za-z]?)\s+', re.MULTILINE)
+            atom_elements = []
+            _last_idx = 0
+            for _m in atom_pattern.finditer(content):
+                _idx = int(_m.group(1))
+                if _idx <= _last_idx:
+                    break
+                atom_elements.append(_m.group(2))
+                _last_idx = _idx
             
             # Parse basis set to show available orbitals
             data_list, n_ao = parse_basis_set_info(out_file)
