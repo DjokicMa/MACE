@@ -171,9 +171,13 @@ class D3Generator:
             info['title'] = title_match.group(1).strip()
         
         # Extract atom elements from ATOM listing
-        # Look for pattern like: "1 T 6 C" where 6 is atomic number and C is element
+        # Look for pattern like: "1 T 6 C" or "1 T 22 TI" where the trailing token
+        # is the element symbol. CRYSTAL prints symbols in ALL CAPS ("TI", "PB",
+        # "SI"), so the second letter must also allow uppercase; the old
+        # "[A-Z][a-z]?" captured only "T" for titanium and mislabeled every
+        # two-letter element in the DOSS atom projections.
         atom_elements = []
-        atom_pattern = re.compile(r'^\s*\d+\s+[TF]\s+\d+\s+([A-Z][a-z]?)\s+', re.MULTILINE)
+        atom_pattern = re.compile(r'^\s*\d+\s+[TF]\s+\d+\s+([A-Z][A-Za-z]?)\s+', re.MULTILINE)
         atom_matches = atom_pattern.findall(content)
         if atom_matches:
             info['atom_elements'] = atom_matches
