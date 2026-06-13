@@ -161,11 +161,33 @@ not driven for molecules.
   `LiC5NH10S2F2O7` (was `225810`), `Ti19O30` → `Ti19O30`, `Ag2Br3` → `AgBr`.
   (28e64fbf)
 
+### Fourth fix wave (2026-06-13, committed) — calc-type generation batch
+
+- **§7.9 sibling fixed**: `d3_interactive.py:1025` element regex `[A-Z][a-z]?`
+  → `[A-Z][A-Za-z]?` (same all-caps two-letter bug as CRYSTALOptToD3:176).
+  (de9c40f8)
+- **§7-bundle `-D3-D3` fixed**: the continuation filename method-name guard
+  only excluded 3C methods, not `-D3` already present, so a carried-over
+  `B3LYP-D3` doubled to `B3LYP-D3-D3`. Added the missing guard (+ the same on
+  the print_summary line). (ee56e9e1)
+- **§7.1 (FREQ) fixed**: phonon BANDS deck wrote the `ISS NSUB` line before the
+  path was resolved; label paths force shrink=0 and coordinate paths rescale it,
+  so the written ISS didn't match the emitted segments. Header now written after
+  resolution. (eb23aa59)
+- **§2/§6 SPIN-into-closed-shell fixed**: the "set all defaults" branch derives
+  spin from the source instead of hardcoding True, and CrystalInputParser inits
+  spin_polarized=False; closed-shell sources (no SPIN keyword) stay closed-shell
+  while SPIN-bearing sources are unchanged. (c0844e3d)
+- **§8.13 fixed**: `ipDOS_V2.py` dropped every second row of unwrapped
+  17+-column DOS files; now reads continuations only while the record is short.
+  (fdf9cf8e)
+
 **Still open (highest-value remainder):** transport-coefficient and
 charge/potential-grid extraction (not implemented — missing-data now treats
 them as having no required props); memory/timeout recovery resource edits not
-carried into resubmitted scripts; `d3_interactive.py:1025` element regex +
-geometry double-counting (§7.9 sibling); monoclinic unique-axis detection
+carried into resubmitted scripts; configured SPINLOCK never written by active
+writers (§6.13 remainder); geometry double-counting in d3 atom projections
+(§7.9 remainder); monoclinic unique-axis detection
 (§6.14); duplicate pre-scaled seekpath fallback tables (§7.1 — only triggers
 when the seekpath library is missing; present in the anaconda env);
 contextual planner/executor variants (§3.7); plotting branch internals (§8.2+);
@@ -296,7 +318,7 @@ These five patterns account for the majority of the critical findings:
 
 ## 6. Crystal_d12 (input generators)
 
-1. **CRITICAL** `d12_calc_freq.py:1922` — phonon BANDS writes the `ISS NSUB` line before path resolution; later label-paths zero/rescale `shrink`, so the emitted deck pairs ISS=16 with label segments → CRYSTAL misparses.
+1. **CRITICAL** ✅ FIXED (eb23aa59) `d12_calc_freq.py:1922` — phonon BANDS writes the `ISS NSUB` line before path resolution; later label-paths zero/rescale `shrink`, so the emitted deck pairs ISS=16 with label segments → CRYSTAL misparses. (BANDS header now emitted after the path/shrink is resolved.)
 2. **CRITICAL** `CRYSTALOptToD12.py:907-918` — `--non-interactive` "auto" origin overrides the preserved origin ("0 0 1" for most space groups, "0 1 0" for 143–194); diamond Fd-3m re-emitted with origin-2 coords → wrong structure. Default to `settings["origin_setting"]`.
 3. **CRITICAL** `NewCifToD12.py:1060-1069` — HF method + EXTERNAL basis never writes the geometry-closing `END` (DFT path does) → malformed deck.
 4. **CRITICAL** `NewCifToD12.py:945-948` + `d12_constants.py:1707` — rhombohedral-axes trigonal CIFs: IFHR=1 directive emitted but cell line is `a c` instead of `a alpha` → alpha dropped, wrong cell.
@@ -308,9 +330,9 @@ These five patterns account for the majority of the critical findings:
 10. **MAJOR** `CRYSTALOptToD12.py:311-331` — ANHARM path emits a malformed block (geometry END placement inconsistent with the FREQCALC path).
 11. **MAJOR** `NewCifToD12.py:1230-1250` — symmetry "CIF" + write-all-atoms keeps the non-P1 space group → CRYSTAL regenerates orbits → coincident atoms (fatal).
 12. **MAJOR** `d12_constants.py:1934-1939` — EXTERNAL basis compatibility check misses absent elements (He, Ne, Ar, Kr, Xe, Po–Ra have no files) → deck written with NO basis for those elements.
-13. **MAJOR** `d12_interactive.py:1837` (also 710, 1803) — "default advanced settings" hardcodes `spin_polarized=True` (SPIN injected into closed-shell re-runs — visible in `test/1_dia_opt_rev1.d12`); configured SPINLOCK is never written by any active writer.
+13. **MAJOR** ⚠ PARTIAL FIX (c0844e3d) `d12_interactive.py:1837` (also 710, 1803) — "default advanced settings" hardcodes `spin_polarized=True` (SPIN injected into closed-shell re-runs — visible in `test/1_dia_opt_rev1.d12`); configured SPINLOCK is never written by any active writer. (SPIN injection fixed: defaults branch now derives from the source, CrystalInputParser inits spin_polarized=False; verified diamond→False, electrolytes/Ti→True. The SPINLOCK-not-written issue remains open.)
 14. **MAJOR** `d12_constants.py:1701-1702` — monoclinic always emits `a b c beta` with no unique-axis detection; c-unique CIFs silently produce a wrong lattice.
-15. **MINOR** bundle — `-D3-D3` doubled filename suffix (live artifact in test/); simplified `SHRINK k n` overwritten with raw string; `--output-dir` created but unused; `d12_from_config.py` wrapper passes a positional no target accepts (always argparse error); spurious MULTI_ORIGIN entry for SG 60; `Ghosts/create_d12_w-ghosts.py:66` ECP fixup writes wrong index.
+15. **MINOR** bundle — `-D3-D3` doubled filename suffix (live artifact in test/) ✅ FIXED (ee56e9e1, added the missing "-D3" not-in-name guard); simplified `SHRINK k n` overwritten with raw string; `--output-dir` created but unused; `d12_from_config.py` wrapper passes a positional no target accepts (always argparse error); spurious MULTI_ORIGIN entry for SG 60; `Ghosts/create_d12_w-ghosts.py:66` ECP fixup writes wrong index.
 
 ## 7. Crystal_d3 (properties-input generators)
 
@@ -322,7 +344,7 @@ These five patterns account for the majority of the critical findings:
 6. **MAJOR** `d3_kpoints.py:601-629` (commit 772d8495) — BAND_PATHS labels changed "G"→"GAMMA" and are written verbatim into label-mode .d3 segment lines; CRYSTAL's tables define single-letter labels (all validated archived templates use "G"). Map GAMMA→G at write time.
 7. **MAJOR** `d3_interactive.py:1151` + `CRYSTALOptToD3.py:687-722` — DOSS energy window prompts "eV below/above Fermi" but writes BMI/BMA as absolute energies without adding E_F → window centered on 0, not the Fermi level.
 8. **MAJOR** `d3_config.py:231-277` — `validate_d3_config` requires keys the configurators never produce → every saved DOSS/TRANSPORT config rejected on `--config-file` reload.
-9. **MAJOR** ⚠ PARTIAL FIX (11a158dc) `CRYSTALOptToD3.py:176`, `d3_interactive.py:1025` — atom-element regex can't match CRYSTAL's all-caps two-letter symbols ("SI", "TI") → atom projections rejected for any system with 2-letter elements; also double-counts atoms from repeated geometry blocks. (CRYSTALOptToD3.py:176 fixed + verified on Ti13Pb3; d3_interactive.py:1025 and the geometry double-count remain open.)
+9. **MAJOR** ⚠ PARTIAL FIX (11a158dc, de9c40f8) `CRYSTALOptToD3.py:176`, `d3_interactive.py:1025` — atom-element regex can't match CRYSTAL's all-caps two-letter symbols ("SI", "TI") → atom projections rejected for any system with 2-letter elements; also double-counts atoms from repeated geometry blocks. (Both regex sites now fixed + verified on Ti13Pb3; only the geometry double-count remains open.)
 10. **MINOR** `CRYSTALOptToD3.py:128` — electron-count regex says "PER UNIT CELL"; real outputs print "PER CELL" → always 0 (currently unused).
 11. **MINOR** `d3_interactive.py:146-153` — "BOTTOM OF CONDUCTION BANDS" (real: "VIRTUAL BANDS") and `SPACE GROUP.*?NUMBER:` never match → dead-but-misleading fields.
 12. **MINOR** `d3_kpoints.py:996-1058` — literature k-path references labels with no coordinates (rhombohedral Z/X, monoclinic C/D/E/Z…) → up to 6 of 13 segments silently dropped.
@@ -344,7 +366,7 @@ These five patterns account for the majority of the critical findings:
 10. **MINOR** `main.py:499,875` — `parallel_jobs` config key never read.
 11. **MINOR** `main.py:827-858` — CLI-mode configs omit `formats` → PNG outputs missing from reported file lists.
 12. **MINOR** `main.py:244` — transparency prompt inverts matplotlib alpha semantics.
-13. **MINOR** `Plotting/ipDOS_V2.py:960-965` — 17+-column unwrapped DOS data: every second row silently discarded by an unconditional `next(f)`.
+13. **MINOR** ✅ FIXED (fdf9cf8e) `Plotting/ipDOS_V2.py:960-965` — 17+-column unwrapped DOS data: every second row silently discarded by an unconditional `next(f)`. (Now pulls continuations only while the record is short; verified 50→100 rows on an unwrapped file, wrapped files unchanged. Stale `code/` copy left for the plotting-tree cleanup.)
 
 ### Defunct in `code/` (candidates for archiving/removal)
 - `code/Plotting_Scripts/{ipBANDS_V2,ipDOS_V2,plottingCIFs,autoBands,autoPhononBands}.py` — stale older copies of `Plotting/` and `code/NewPlotting_Scripts/` versions.
