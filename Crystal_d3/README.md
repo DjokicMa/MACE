@@ -157,21 +157,15 @@ All SHRINK values are rounded up to even numbers for cleaner k-paths.
 - Automatic lattice parameter extraction from CRYSTAL output files
 - Enhanced `get_extended_bravais()` function that uses cell parameters when available
 
-## Legacy Scripts (Archived)
+## Legacy Scripts (removed)
 
-The following scripts have been archived and their functionality is now fully integrated into `CRYSTALOptToD3.py`:
+The legacy D3 generators (`alldos.py`, `create_band_d3.py`, `create_Transportd3.py`)
+have been **removed** — their functionality is fully integrated into `CRYSTALOptToD3.py`.
+They remain recoverable from git history if ever needed.
 
-### `Archived/alldos.py` - Legacy DOS Generation
-- **Original Purpose**: Generate DOSS input files with orbital projections
-- **Status**: Archived - use `CRYSTALOptToD3.py --calc-type DOSS` instead
-
-### `Archived/create_band_d3.py` - Legacy Band Structure Generation  
-- **Original Purpose**: Create BAND.d3 files
-- **Status**: Archived - use `CRYSTALOptToD3.py --calc-type BAND` instead
-
-### `Archived/create_Transportd3.py` - Legacy Transport Properties
-- **Original Purpose**: Generate TRANSPORT.d3 files
-- **Status**: Archived - use `CRYSTALOptToD3.py --calc-type TRANSPORT` instead
+- DOS generation → `CRYSTALOptToD3.py --calc-type DOSS`
+- Band structure generation → `CRYSTALOptToD3.py --calc-type BAND`
+- Transport properties → `CRYSTALOptToD3.py --calc-type TRANSPORT`
 
 ## Example Configurations
 

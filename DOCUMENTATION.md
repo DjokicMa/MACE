@@ -490,8 +490,7 @@ All workflow configurations are saved as JSON files for:
 #### **Seamless Integration**
 - **NewCifToD12.py**: CIF → D12 conversion with full configuration
 - **CRYSTALOptToD12.py**: OPT → SP/FREQ generation
-- **create_band_d3.py**: Band structure input generation
-- **alldos.py**: Density of states input generation
+- **CRYSTALOptToD3.py**: Band structure / DOS / transport input generation (`--calc-type BAND|DOSS|TRANSPORT`)
 - **Enhanced Queue Manager**: Job submission and monitoring
 - **Material Database**: Calculation tracking and provenance
 
@@ -628,7 +627,7 @@ The enhanced system provides comprehensive material lifecycle tracking:
 
 #### **Key Features**
 - **Material ID Consistency**: Handles complex file naming from NewCifToD12.py and CRYSTALOptToD12.py
-- **Isolated Script Execution**: Creates clean directories for alldos.py and create_band_d3.py requirements
+- **Isolated Script Execution**: Creates clean directories for CRYSTALOptToD3.py (BAND/DOSS/TRANSPORT) requirements
 - **Automated Workflow Progression**: OPT completion triggers SP generation, SP completion triggers BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL
 - **Error Recovery**: Configurable fixes for SHRINK errors, memory issues, convergence problems
 - **Enhanced Callback System**: Multi-location queue manager detection checking both local and parent directories
