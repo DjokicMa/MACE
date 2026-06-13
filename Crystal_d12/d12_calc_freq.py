@@ -1914,13 +1914,17 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
         # Band structure
         if "bands" in freq_settings:
             band_settings = freq_settings["bands"]
-            print("BANDS", file=f)
-            
-            # First line: ISS NSUB (shrinking factor and number of k-points)
+
+            # The ISS (shrink) value can be recomputed while the path is resolved
+            # below: scale_kpoint_segments returns a new shrink, and label mode
+            # forces shrink=0. Defer writing the BANDS header until after the path
+            # is resolved so the written ISS matches the emitted segments.
+            # (Previously the header was written here with the pre-resolution
+            # shrink, so label paths emitted ISS=16 followed by "G X" labels and
+            # coordinate paths emitted a stale ISS — both misread by CRYSTAL.)
             shrink = band_settings.get("shrink", 16)
             npoints = band_settings.get("npoints", 100)
-            print(f"{shrink} {npoints}", file=f)
-            
+
             # Get path
             path = band_settings.get("path", [])
             
@@ -2048,6 +2052,11 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
                         shrink = 0
                         band_settings["path_labels"] = path_labels
             
+            # Path and final shrink (ISS) are now resolved — write the BANDS
+            # header (keyword, then "ISS NSUB") before the segment count.
+            print("BANDS", file=f)
+            print(f"{shrink} {npoints}", file=f)
+
             # Second line: NLINE (number of lines/segments)
             if isinstance(path, list):
                 print(len(path), file=f)
