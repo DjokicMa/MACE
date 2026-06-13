@@ -17,8 +17,15 @@ def print_with_delay(text: str, delay: float = 0.015):
         time.sleep(delay)
     print()
 
-def animate_mace_assembly(version="1.0.5"):
+def animate_mace_assembly(version=None):
     """Animate MACE logo being assembled"""
+    # Default to the canonical package version (single source of truth) rather
+    # than a hardcoded literal; resolved lazily to avoid import-order fragility.
+    if version is None:
+        try:
+            from mace import __version__ as version
+        except Exception:  # pragma: no cover - defensive
+            version = ""
     frames = [
         """
       █                           

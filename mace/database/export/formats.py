@@ -14,6 +14,13 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
 
+# Single source of truth for the version (mace/__init__.py has no imports, so
+# this is side-effect free); fall back defensively if the package is unavailable.
+try:
+    from mace import __version__ as MACE_VERSION
+except Exception:  # pragma: no cover - defensive
+    MACE_VERSION = "unknown"
+
 
 class ExportFormatter:
     """Handles formatting and exporting of materials data to various formats."""
@@ -119,7 +126,7 @@ class ExportFormatter:
             'metadata': {
                 'export_date': datetime.now().isoformat(),
                 'record_count': len(data),
-                'mace_version': '1.0.5'
+                'mace_version': MACE_VERSION
             },
             'data': data
         }

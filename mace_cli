@@ -19,8 +19,11 @@ import os
 import argparse
 from pathlib import Path
 
-# Version information (canonical value lives in mace/__init__.py; keep in sync)
-__version__ = "1.0.5"
+# Version information — single source of truth in mace/__init__.py.
+# (mace_cli runs from the repo root, which Python auto-adds to sys.path[0], so the
+# package imports before the line-27 sys.path tweak; mace/__init__.py has no
+# imports, so this is side-effect free.)
+from mace import __version__
 
 # Add MACE package to Python path
 MACE_DIR = Path(__file__).parent / "mace"
