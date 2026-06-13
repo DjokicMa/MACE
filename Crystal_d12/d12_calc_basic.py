@@ -14,12 +14,29 @@ Institution: Michigan State University, Mendoza Group
 
 from typing import Dict, Any, Optional
 
+# Opt-in "press b to go back" navigation. Falls back to a direct call if menu_nav is
+# unavailable, so these config functions keep working outside the MACE tree.
+try:
+    from menu_nav import run_with_back as _run_with_back
+except Exception:  # pragma: no cover - defensive fallback
+    def _run_with_back(flow_fn):
+        return flow_fn()
+
 
 # ============================================================
 # Single Point Calculations
 # ============================================================
 
-def configure_single_point(current_settings: Optional[Dict[str, Any]] = None, 
+def configure_single_point(*args, **kwargs):
+    """Single-point configuration with 'press b to go back' navigation (opt-in).
+
+    Thin wrapper: the questionnaire body lives in _configure_single_point_impl and is
+    run through the back controller. Outside an interactive TTY this is a direct call.
+    """
+    return _run_with_back(lambda: _configure_single_point_impl(*args, **kwargs))
+
+
+def _configure_single_point_impl(current_settings: Optional[Dict[str, Any]] = None,
                           shared_mode: bool = False) -> Dict[str, Any]:
     """
     Get single point calculation configuration from user.
@@ -108,7 +125,15 @@ DEFAULT_OPT_SETTINGS = {
 }
 
 
-def configure_optimization(current_settings: Optional[Dict[str, Any]] = None,
+def configure_optimization(*args, **kwargs):
+    """Optimization configuration with 'press b to go back' navigation (opt-in).
+
+    Thin wrapper over _configure_optimization_impl run through the back controller.
+    """
+    return _run_with_back(lambda: _configure_optimization_impl(*args, **kwargs))
+
+
+def _configure_optimization_impl(current_settings: Optional[Dict[str, Any]] = None,
                           shared_mode: bool = False,
                           is_already_optimized: bool = False) -> Dict[str, Any]:
     """

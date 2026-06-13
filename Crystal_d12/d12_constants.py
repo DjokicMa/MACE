@@ -1595,15 +1595,27 @@ def configure_smearing(system_type: str = "insulator",
 # Utility Functions
 # ============================================================
 
+# Back-navigation primitive. Falls back to plain input() if menu_nav is unavailable,
+# so these helpers keep working even outside the MACE tree. nav_read only intercepts
+# 'b'/'back' when a flow is wrapped by run_with_back AND the valid_set excludes 'b'
+# (so a menu whose options literally include 'b' is unaffected); otherwise it behaves
+# exactly like input().
+try:
+    from menu_nav import nav_read as _nav_read
+except Exception:  # pragma: no cover - defensive fallback
+    def _nav_read(prompt="", valid_set=None):
+        return input(prompt)
+
+
 def get_user_input(prompt: str, options: Any, default: Optional[str] = None) -> str:
     """
     Get validated user input from a list of options
-    
+
     Args:
         prompt: The prompt to display to the user
         options: Valid options (list or dict)
         default: Default value
-        
+
     Returns:
         Valid user input
     """
@@ -1613,12 +1625,12 @@ def get_user_input(prompt: str, options: Any, default: Optional[str] = None) -> 
     else:
         opt_str = "\n".join([f"{i + 1}: {opt}" for i, opt in enumerate(options)])
         valid_inputs = [str(i + 1) for i in range(len(options))]
-    
+
     default_str = f" (default: {default})" if default else ""
-    
+
     while True:
         print(f"\n{prompt}{default_str}:\n{opt_str}")
-        choice = input("Enter your choice: ").strip()
+        choice = _nav_read("Enter your choice: ", valid_set=valid_inputs).strip()
         
         if choice == "" and default:
             return default
@@ -1649,7 +1661,7 @@ def yes_no_prompt(prompt: str, default: str = "yes") -> bool:
         raise ValueError(f"Invalid default value: {default}")
     
     while True:
-        choice = input(prompt).lower() or default
+        choice = _nav_read(prompt, valid_set=valid).lower() or default
         if choice in valid:
             return valid[choice]
         print("Please respond with 'yes' or 'no' (or 'y' or 'n').")
@@ -1659,7 +1671,7 @@ def get_valid_input(prompt: str, valid_values: List[str],
                    default: Optional[str] = None) -> str:
     """Get validated user input from a list of valid values"""
     while True:
-        value = input(prompt).strip()
+        value = _nav_read(prompt, valid_set=valid_values).strip()
         if not value and default:
             return default
         if value in valid_values:

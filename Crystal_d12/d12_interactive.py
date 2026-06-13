@@ -351,6 +351,14 @@ def display_current_settings(settings: Dict[str, Any], extracted: bool = False, 
     print("="*60)
 
 
+# Opt-in back-navigation primitive (no-op input() if menu_nav is unavailable).
+try:
+    from menu_nav import nav_read as _nav_read
+except Exception:  # pragma: no cover - defensive fallback
+    def _nav_read(prompt="", valid_set=None):
+        return input(prompt)
+
+
 def get_user_choice(prompt: str, options: List[Tuple[str, str]], default: str = "1") -> str:
     """Get user choice from a list of options with concise prompting
     
@@ -368,7 +376,7 @@ def get_user_choice(prompt: str, options: List[Tuple[str, str]], default: str = 
     
     while choice not in valid_keys:
         print(f"Invalid input. Please choose from: {', '.join(valid_keys)}")
-        choice = input(f"{prompt} (default: {default}): ").strip() or default
+        choice = _nav_read(f"{prompt} (default: {default}): ", valid_set=valid_keys).strip() or default
     
     return choice
 

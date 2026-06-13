@@ -20,6 +20,13 @@ from typing import Dict, Any, Tuple, Optional, List
 import sys
 from pathlib import Path
 
+# Opt-in "press b to go back" navigation (falls back to a direct call if unavailable).
+try:
+    from menu_nav import run_with_back as _run_with_back
+except Exception:  # pragma: no cover - defensive fallback
+    def _run_with_back(flow_fn):
+        return flow_fn()
+
 # Add Crystal_d3 to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "Crystal_d3"))
 try:
@@ -1243,7 +1250,17 @@ def get_advanced_frequency_settings():
     return freq_settings
 
 
-def get_frequency_configuration(current_settings: Optional[Dict[str, Any]] = None,
+def get_frequency_configuration(*args, **kwargs):
+    """Frequency configuration with 'press b to go back' navigation (opt-in).
+
+    Thin wrapper over _get_frequency_configuration_impl run through the back controller.
+    The questionnaire is pure (the only write, f.write("END"), happens later at
+    write-time), so replay on a back request is side-effect free.
+    """
+    return _run_with_back(lambda: _get_frequency_configuration_impl(*args, **kwargs))
+
+
+def _get_frequency_configuration_impl(current_settings: Optional[Dict[str, Any]] = None,
                               shared_mode: bool = False) -> Dict[str, Any]:
     """
     Get frequency calculation configuration from user.
