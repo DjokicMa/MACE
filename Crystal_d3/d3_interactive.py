@@ -1021,8 +1021,11 @@ def configure_doss_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
                 if atoms_match:
                     n_atoms = int(atoms_match.group(1))
             
-            # Extract atom elements
-            atom_pattern = re.compile(r'^\s*\d+\s+[TF]\s+\d+\s+([A-Z][a-z]?)\s+', re.MULTILINE)
+            # Extract atom elements. CRYSTAL prints symbols ALL CAPS ("TI", "PB"),
+            # so the second letter must allow uppercase; "[A-Z][a-z]?" matched
+            # nothing for two-letter elements (the trailing \s+ hit the second
+            # element letter), leaving atom_elements empty.
+            atom_pattern = re.compile(r'^\s*\d+\s+[TF]\s+\d+\s+([A-Z][A-Za-z]?)\s+', re.MULTILINE)
             atom_elements = atom_pattern.findall(content)
             
             # Parse basis set to show available orbitals
