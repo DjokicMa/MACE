@@ -1699,6 +1699,35 @@ def generate_unit_cell_line(spacegroup: int, cell_params: List[float],
         if spacegroup >= 1 and spacegroup <= 2:  # Triclinic
             return f"{a:.8f} {b:.8f} {c:.8f} {alpha:.6f} {beta:.6f} {gamma:.6f}"
         elif spacegroup >= 3 and spacegroup <= 15:  # Monoclinic
+            # CRYSTAL interprets monoclinic space-group NUMBERS in the standard
+            # International Tables "unique axis b" setting, so the cell line must
+            # carry beta (the a^c angle) with alpha = gamma = 90. A cell that is
+            # actually unique-axis-a or unique-axis-c (alpha or gamma is the
+            # non-orthogonal angle) cannot be expressed by swapping the printed
+            # angle: CRYSTAL would still build a b-unique cell and read it as
+            # beta, silently producing a wrong lattice. Detect that case and
+            # refuse loudly rather than emit garbage. b-unique cells (every real
+            # MP/spglib monoclinic structure) are unchanged: this still returns
+            # "a b c beta".
+            d_alpha, d_beta, d_gamma = (
+                abs(alpha - 90.0), abs(beta - 90.0), abs(gamma - 90.0)
+            )
+            if d_alpha > 1e-2 and d_alpha >= d_beta and d_alpha >= d_gamma:
+                raise ValueError(
+                    f"Monoclinic cell looks unique-axis-a (alpha={alpha:.4f}, "
+                    f"beta={beta:.4f}, gamma={gamma:.4f}); CRYSTAL space group "
+                    f"{spacegroup} expects the standard unique-axis-b setting "
+                    f"(beta != 90, alpha = gamma = 90). Standardize the structure "
+                    f"to unique-axis-b (e.g. via spglib) before generating the .d12."
+                )
+            if d_gamma > 1e-2 and d_gamma >= d_beta and d_gamma >= d_alpha:
+                raise ValueError(
+                    f"Monoclinic cell looks unique-axis-c (alpha={alpha:.4f}, "
+                    f"beta={beta:.4f}, gamma={gamma:.4f}); CRYSTAL space group "
+                    f"{spacegroup} expects the standard unique-axis-b setting "
+                    f"(beta != 90, alpha = gamma = 90). Standardize the structure "
+                    f"to unique-axis-b (e.g. via spglib) before generating the .d12."
+                )
             return f"{a:.8f} {b:.8f} {c:.8f} {beta:.6f}"
         elif spacegroup >= 16 and spacegroup <= 74:  # Orthorhombic
             return f"{a:.8f} {b:.8f} {c:.8f}"
