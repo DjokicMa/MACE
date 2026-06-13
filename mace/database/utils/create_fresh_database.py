@@ -539,7 +539,7 @@ class WorkflowDatabaseCreator:
         """Extract input settings from D12/D3 file with enhanced error handling."""
         try:
             # Use enhanced input settings extractor if available
-            from input_settings_extractor import extract_and_store_input_settings
+            from mace.utils.settings_extractor import extract_and_store_input_settings
             success = extract_and_store_input_settings(calc_id, input_file, self.db_path)
             if success:
                 self.stats['input_settings_extracted'] += 1

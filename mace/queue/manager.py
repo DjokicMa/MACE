@@ -1387,8 +1387,8 @@ class EnhancedCrystalQueueManager:
             return
             
         try:
-            from input_settings_extractor import extract_and_store_input_settings
-            
+            from mace.utils.settings_extractor import extract_and_store_input_settings
+
             calc_id = calc['calc_id']
             input_file = calc.get('input_file')
             
