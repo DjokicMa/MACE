@@ -31,6 +31,15 @@ from d3_kpoints import (
 
 # Add Crystal_d12 to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "Crystal_d12"))
+
+# Opt-in "press b to go back" navigation (no-op input() if menu_nav is unavailable).
+try:
+    from menu_nav import nav_read as _nav_read
+except Exception:  # pragma: no cover - defensive fallback
+    def _nav_read(prompt="", valid_set=None):
+        return input(prompt)
+
+
 # Import yes_no_prompt function
 def yes_no_prompt(prompt: str, default: str = "yes") -> bool:
     """Prompt for yes/no input with default value."""
@@ -40,8 +49,8 @@ def yes_no_prompt(prompt: str, default: str = "yes") -> bool:
     else:
         prompt_str = f"{prompt} [y/N]: "
         default_val = False
-    
-    response = input(prompt_str).strip().lower()
+
+    response = _nav_read(prompt_str, valid_set={"y", "yes", "n", "no"}).strip().lower()
     if not response:
         return default_val
     return response in ['y', 'yes']

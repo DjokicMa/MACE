@@ -56,6 +56,13 @@ from pathlib import Path
 # Add Crystal_d12 to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "Crystal_d12"))
 from d12_interactive import yes_no_prompt
+
+# Opt-in "press b to go back" navigation (no-op if menu_nav is unavailable).
+try:
+    from menu_nav import run_with_back as _run_with_back
+except Exception:  # pragma: no cover - defensive fallback
+    def _run_with_back(flow_fn):
+        return flow_fn()
 from d12_constants import (SPACEGROUP_SYMBOLS, SPACEGROUP_ALTERNATIVES, 
                           SPACEGROUP_SYMBOL_TO_NUMBER)
 
@@ -1380,7 +1387,11 @@ def main():
             print("\n=== Configuring shared settings for all files ===")
             # Use first file as reference for getting structure info
             first_file = str(out_files[0])
-            shared_config = configure_d3_calculation(calc_type, first_file)
+            # Shared-settings config is gathered BEFORE any per-file mkdir/copy, so it is
+            # safe to run under the back controller ("press b to go back"). Per-file mode
+            # (generate_d3, line ~1173) runs AFTER _copy_wavefunction's mkdir+copy, so it is
+            # intentionally left unwrapped to avoid replaying filesystem mutations.
+            shared_config = _run_with_back(lambda: configure_d3_calculation(calc_type, first_file))
             print("\n✓ Shared settings configured")
             
             # Option to save configuration
