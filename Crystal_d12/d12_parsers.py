@@ -1271,7 +1271,42 @@ class CrystalInputParser:
         
         # Extract SCF settings
         self._extract_scf_settings(lines)
-        
+
+        # Extract a fixed-spin SPINLOCK so it survives a parse->regenerate
+        # round-trip (e.g. OPT continuation)
+        self._extract_spinlock_settings(lines)
+
+    def _extract_spinlock_settings(self, lines: List[str]) -> None:
+        """Extract a fixed-spin SPINLOCK so it is preserved across a
+        parse -> regenerate round-trip (OPT continuation, JSON config reuse).
+
+        CRYSTAL syntax is two lines::
+
+            SPINLOCK
+            <n_unpaired> [<n_cycles>]
+
+        The current writer emits both values; an older form emits only
+        <n_unpaired>. Without this the keyword was never read, so a configured
+        non-zero lock silently reverted to automatic spin optimization.
+        """
+        for i, line in enumerate(lines):
+            if line.strip() == "SPINLOCK" and i + 1 < len(lines):
+                parts = lines[i + 1].split()
+                try:
+                    self.data["spinlock"] = int(parts[0])
+                except (ValueError, IndexError):
+                    continue
+                if len(parts) > 1:
+                    try:
+                        self.data["spinlock_cycles"] = int(parts[1])
+                    except ValueError:
+                        pass
+                # A non-zero lock only makes sense for a spin-polarized run; make
+                # sure the writer's spin_polarized gate won't drop it on re-run.
+                if self.data.get("spinlock"):
+                    self.data["spin_polarized"] = True
+                break
+
     def _extract_smearing_settings(self, lines: List[str]) -> None:
         """Extract Fermi smearing settings"""
         for i, line in enumerate(lines):

@@ -18,6 +18,12 @@ TEST_DATA = REPO_ROOT / "test"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+# Crystal_d12/ is not a package and its modules use bare sibling imports
+# (e.g. `from d12_constants import ...`), so it must be on sys.path directly.
+_CRYSTAL_D12 = REPO_ROOT / "Crystal_d12"
+if _CRYSTAL_D12.is_dir() and str(_CRYSTAL_D12) not in sys.path:
+    sys.path.insert(0, str(_CRYSTAL_D12))
+
 
 def find_data(pattern: str, must_contain: str = None) -> Path:
     """First ``test/`` file matching glob ``pattern`` (optionally whose text
