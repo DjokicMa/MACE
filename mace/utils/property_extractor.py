@@ -36,9 +36,22 @@ except ImportError as e:
 class CrystalPropertyExtractor:
     """Extract comprehensive properties from CRYSTAL output files."""
     
-    def __init__(self, db_path: str = "materials.db"):
-        self.db = MaterialDatabase(db_path)
+    def __init__(self, db_path: str = "materials.db", enable_tracking: bool = True):
+        # The database is created lazily (on first real use) so pure parsing —
+        # e.g. extracting properties from a single .out with enable_tracking=False
+        # — never touches or creates materials.db. Pass enable_tracking=False for
+        # offline single-file extraction.
+        self.db_path = db_path
+        self.enable_tracking = enable_tracking
+        self._db = None
         self.properties = []
+
+    @property
+    def db(self):
+        """Lazily-opened MaterialDatabase, or None when tracking is disabled."""
+        if self._db is None and self.enable_tracking and self.db_path:
+            self._db = MaterialDatabase(self.db_path)
+        return self._db
         
     def extract_all_properties(self, output_file: Path, material_id: str = None, calc_id: str = None) -> Dict[str, Any]:
         """Extract all properties from a CRYSTAL output file."""
@@ -1094,6 +1107,8 @@ class CrystalPropertyExtractor:
     
     def _find_calc_id_for_output(self, output_file: Path) -> Optional[str]:
         """Find the calculation ID associated with this output file."""
+        if not self.enable_tracking or self.db is None:
+            return None  # offline / untracked extraction: no DB to consult
         try:
             with self.db._get_connection() as conn:
                 cursor = conn.execute(
@@ -1107,6 +1122,8 @@ class CrystalPropertyExtractor:
     
     def save_properties_to_database(self, properties: Dict[str, Any]) -> int:
         """Save extracted properties to the database."""
+        if not self.enable_tracking or self.db is None:
+            return 0  # tracking disabled: nothing to persist
         if not properties or '_metadata' not in properties:
             return 0
         
