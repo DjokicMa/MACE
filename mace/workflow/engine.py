@@ -962,8 +962,13 @@ fi'''
         Returns:
             Path to workflow outputs directory
         """
-        # First try to get workflow_id from calculation settings
-        settings = json.loads(opt_calc.get('settings_json', '{}'))
+        # First try to get workflow_id from calculation settings. The column is
+        # often NULL (not the string '{}'), so `.get(..., '{}')` returns None and
+        # json.loads(None) would raise — use `or '{}'`.
+        try:
+            settings = json.loads(opt_calc.get('settings_json') or '{}')
+        except (json.JSONDecodeError, TypeError):
+            settings = {}
         workflow_id = settings.get('workflow_id')
         
         if workflow_id:
@@ -1550,14 +1555,25 @@ fi'''
             step_num += (calc_num - 1) * 10
             
         # Get workflow ID from parent calculation (stored inside settings_json,
-        # not as a calculations column)
+        # not as a calculations column). If the parent has none recorded, fall
+        # back to the workflow output directory name (which get_workflow_output_base
+        # resolves from path/material context) — matching the SP/numbered-step
+        # paths. The old literal 'manual' fallback broke workflow continuation:
+        # the next step looks calculations up by workflow_id and 'manual' never
+        # matched the real workflow.
         parent_calc = self.db.get_calculation(parent_calc_id)
-        workflow_id = 'manual'
+        workflow_id = None
         if parent_calc:
             try:
-                workflow_id = json.loads(parent_calc.get('settings_json') or '{}').get('workflow_id') or 'manual'
+                workflow_id = json.loads(parent_calc.get('settings_json') or '{}').get('workflow_id')
             except (json.JSONDecodeError, TypeError):
-                pass
+                workflow_id = None
+            if not workflow_id:
+                try:
+                    workflow_id = self.get_workflow_output_base(parent_calc).name
+                except Exception:
+                    workflow_id = None
+        workflow_id = workflow_id or 'manual'
         
         # Generate SLURM script
         slurm_script = self._create_slurm_script_for_calculation(
