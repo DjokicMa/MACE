@@ -13,6 +13,9 @@ import re
 from pathlib import Path
 from typing import Dict, List, Any, Tuple, Optional
 
+# CODATA 2018; band/DOS energies in CRYSTAL .DAT files are in Hartree.
+HARTREE_TO_EV = 27.211386245988
+
 
 class DatFileProcessor:
     """Process CRYSTAL .DAT files (BAND.DAT and DOSS.DAT)."""
@@ -20,23 +23,28 @@ class DatFileProcessor:
     def __init__(self):
         pass
     
-    def process_band_dat_file(self, file_path: Path) -> Dict[str, Any]:
+    def process_band_dat_file(self, file_path: Path,
+                              fermi_energy: Optional[float] = None) -> Dict[str, Any]:
         """
         Process BAND.DAT file to extract band structure information.
-        
+
         Args:
             file_path: Path to BAND.DAT file
-            
+            fermi_energy: Fermi level in absolute Hartree (from the .out file).
+                BAND.DAT eigenvalues are absolute Hartree, so a reliable
+                metal/insulator split needs this reference. When omitted the
+                gap/metallic fields are returned as None instead of guessed.
+
         Returns:
             Dictionary with band structure data
         """
         if not file_path.exists():
             return {"error": f"File not found: {file_path}"}
-        
+
         try:
             with open(file_path, 'r') as f:
                 content = f.read()
-            
+
             results = {
                 'file_type': 'BAND.DAT',
                 'file_path': str(file_path),
@@ -45,13 +53,14 @@ class DatFileProcessor:
                 'band_structure_data': {},
                 'electronic_properties': {}
             }
-            
+
             # Parse the band structure data
             results.update(self._parse_band_dat_content(content))
-            
+
             # Extract electronic properties
-            results['electronic_properties'] = self._analyze_band_structure(results)
-            
+            results['electronic_properties'] = self._analyze_band_structure(
+                results, fermi_energy=fermi_energy)
+
             return results
             
         except Exception as e:
@@ -95,202 +104,287 @@ class DatFileProcessor:
             return {"error": f"Error processing DOSS.DAT file: {e}"}
     
     def _parse_band_dat_content(self, content: str) -> Dict[str, Any]:
-        """Parse BAND.DAT file content."""
-        lines = content.strip().split('\n')
-        
+        """Parse CRYSTAL BAND.DAT content.
+
+        Real (xmgrace-style) format::
+
+            # NKPT <n> NBND <m> NSPIN <s>
+            # NPANEL <p>
+            #   <kindex>   <label>          (high-symmetry panel labels)
+            @ ... xmgrace directives (incl. @ TITLE "ALPHA"/"BETA") ...
+            <abscissa>  E1  E2 ... E_NBND   (one row per k-point, per spin block)
+
+        Band energies are ABSOLUTE Hartree (not Fermi-shifted). The first value
+        on a data row is the k-path abscissa, not a 3-component k-point, so the
+        old "first three columns are a k-point" assumption silently corrupted
+        both the eigenvalues and the band count.
+        """
         results = {
             'num_k_points': 0,
             'num_bands': 0,
+            'num_spins': 1,
+            'num_panels': 0,
             'k_points': [],
             'eigenvalues': [],
             'k_path_labels': []
         }
-        
-        if not lines:
-            return results
-        
-        # Try to parse header information
-        try:
-            # First line often contains dimensions
-            if lines[0].strip():
-                parts = lines[0].split()
-                if len(parts) >= 2:
-                    results['num_k_points'] = int(parts[0])
-                    results['num_bands'] = int(parts[1])
-        except (ValueError, IndexError):
-            pass
-        
-        # Parse k-points and eigenvalues
-        current_line = 1
-        k_points = []
-        eigenvalues = []
-        
-        while current_line < len(lines):
-            line = lines[current_line].strip()
+
+        k_abscissa: List[float] = []
+        eigenvalues: List[List[float]] = []
+
+        for raw in content.split('\n'):
+            line = raw.strip()
             if not line:
-                current_line += 1
                 continue
-            
+
+            if line.startswith('#'):
+                tokens = line.lstrip('#').split()
+                for key, dest in (('NKPT', 'num_k_points'), ('NBND', 'num_bands'),
+                                  ('NSPIN', 'num_spins'), ('NPANEL', 'num_panels')):
+                    if key in tokens:
+                        try:
+                            results[dest] = int(tokens[tokens.index(key) + 1])
+                        except (ValueError, IndexError):
+                            pass
+                # Panel/high-symmetry label line: "<int> <label>"
+                if len(tokens) == 2 and tokens[0].isdigit() and not tokens[1].isdigit():
+                    results['k_path_labels'].append(tokens[1])
+                continue
+
+            if line.startswith('@'):
+                continue  # xmgrace directive
+
+            parts = line.split()
             try:
-                # Try to parse as k-point followed by eigenvalues
-                parts = line.split()
-                if len(parts) >= 4:  # k-point (3 values) + at least one eigenvalue
-                    k_point = [float(parts[0]), float(parts[1]), float(parts[2])]
-                    k_points.append(k_point)
-                    
-                    # Eigenvalues are the remaining values
-                    eigvals = [float(x) for x in parts[3:]]
-                    eigenvalues.append(eigvals)
+                values = [float(x) for x in parts]
             except ValueError:
-                pass
-            
-            current_line += 1
-        
-        results['k_points'] = k_points
+                continue
+            if len(values) < 2:
+                continue
+            k_abscissa.append(values[0])
+            eigenvalues.append(values[1:])
+
+        results['k_points'] = k_abscissa
         results['eigenvalues'] = eigenvalues
-        results['num_k_points'] = len(k_points)
-        if eigenvalues:
-            results['num_bands'] = len(eigenvalues[0]) if eigenvalues[0] else 0
-        
+        if eigenvalues and not results['num_bands']:
+            results['num_bands'] = len(eigenvalues[0])
+        if not results['num_k_points']:
+            spins = results.get('num_spins') or 1
+            results['num_k_points'] = len(eigenvalues) // max(spins, 1)
         return results
     
     def _parse_doss_dat_content(self, content: str) -> Dict[str, Any]:
-        """Parse DOSS.DAT file content."""
-        lines = content.strip().split('\n')
-        
+        """Parse CRYSTAL DOSS.DAT content.
+
+        Format::
+
+            # NEPTS <n> NPROJ <p> NSPIN <s>
+            @ XAXIS LABEL "E-EFERMI (HARTREE)"   (energies are Fermi-referenced)
+            <E-EFermi>  proj1 ... projN          (last column is the total DOS)
+
+        Each record has (1 + NPROJ) values, but CRYSTAL wraps long records over
+        several physical lines, so a line-by-line parse corrupts the columns once
+        NPROJ is large (continuation lines get read as spurious energy points).
+        We therefore flatten every numeric token and reshape by the record width.
+        The total DOS is the last column; for spin-polarized runs the energy grid
+        is written once per spin block. ``#`` lines are headers, ``@`` lines are
+        xmgrace directives.
+        """
         results = {
             'num_energy_points': 0,
+            'num_proj': 0,
+            'num_spins': 1,
             'energy_range': [0, 0],
             'energy_points': [],
             'total_dos': [],
             'projected_dos': {}
         }
-        
-        if not lines:
-            return results
-        
-        # Parse DOS data
-        energy_points = []
-        total_dos = []
-        projected_dos = {}
-        
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith('#'):
+
+        nepts = nproj = 0
+        nspin = 1
+        tokens: List[float] = []
+        for raw in content.split('\n'):
+            line = raw.strip()
+            if not line:
                 continue
-            
+            if line.startswith('#'):
+                htok = line.lstrip('#').split()
+                for key in ('NEPTS', 'NPROJ', 'NSPIN'):
+                    if key in htok:
+                        try:
+                            val = int(htok[htok.index(key) + 1])
+                        except (ValueError, IndexError):
+                            continue
+                        if key == 'NEPTS':
+                            nepts = val
+                        elif key == 'NPROJ':
+                            nproj = val
+                        else:
+                            nspin = val
+                continue
+            if line.startswith('@'):
+                continue  # xmgrace directive
             try:
-                parts = line.split()
-                if len(parts) >= 2:
-                    energy = float(parts[0])
-                    total_density = float(parts[1])
-                    
-                    energy_points.append(energy)
-                    total_dos.append(total_density)
-                    
-                    # Additional columns might be projected DOS
-                    if len(parts) > 2:
-                        for i, val in enumerate(parts[2:], start=2):
-                            col_name = f'projected_dos_{i}'
-                            if col_name not in projected_dos:
-                                projected_dos[col_name] = []
-                            projected_dos[col_name].append(float(val))
+                tokens.extend(float(x) for x in line.split())
             except ValueError:
                 continue
-        
+
+        results['num_proj'] = nproj
+        results['num_spins'] = nspin
+
+        # Record width = energy + projections. Verify it divides the token count;
+        # if the header is missing/inconsistent, infer it from the grid size.
+        width = nproj + 1 if nproj > 0 else 0
+        if width < 2 or len(tokens) % width != 0:
+            if nepts and nspin and len(tokens) % (nepts * nspin) == 0:
+                width = len(tokens) // (nepts * nspin)
+            else:
+                width = 0
+
+        energy_points: List[float] = []
+        total_dos: List[float] = []
+        projected_dos: Dict[str, List[float]] = {}
+        if width >= 2 and len(tokens) % width == 0:
+            for i in range(0, len(tokens), width):
+                rec = tokens[i:i + width]
+                energy_points.append(rec[0])
+                total_dos.append(rec[-1])  # total DOS is the last column
+                for j, val in enumerate(rec[1:-1], start=1):
+                    projected_dos.setdefault(f'projected_dos_{j}', []).append(val)
+
         results['energy_points'] = energy_points
         results['total_dos'] = total_dos
         results['projected_dos'] = projected_dos
-        results['num_energy_points'] = len(energy_points)
-        
+        results['num_energy_points'] = nepts or (len(energy_points) // max(nspin, 1))
         if energy_points:
             results['energy_range'] = [min(energy_points), max(energy_points)]
-        
+
         return results
     
-    def _analyze_band_structure(self, band_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze band structure data to extract electronic properties."""
+    def _analyze_band_structure(self, band_data: Dict[str, Any],
+                                fermi_energy: Optional[float] = None) -> Dict[str, Any]:
+        """Analyze BAND.DAT eigenvalues for the fundamental gap.
+
+        Eigenvalues are absolute Hartree, so VBM/CBM are defined relative to the
+        Fermi level (also absolute Hartree). Without the Fermi level the gap is
+        undetermined and we return None — the previous implementation took the
+        global maximum eigenvalue as the VBM, which left no states above it and
+        therefore classified *every* system as metallic.
+        """
         analysis = {
-            'band_gap_direct': None,
-            'band_gap_indirect': None,
-            'valence_band_maximum': None,
-            'conduction_band_minimum': None,
-            'fermi_level_estimate': None,
-            'metallic': False
+            'band_gap_ev': None,
+            'valence_band_maximum_ev': None,
+            'conduction_band_minimum_ev': None,
+            'fermi_energy_hartree': fermi_energy,
+            'metallic': None,
         }
-        
-        eigenvalues = band_data.get('eigenvalues', [])
-        if not eigenvalues:
+
+        rows = band_data.get('eigenvalues', [])
+        all_e = [e for row in rows for e in row]
+        if not all_e:
             return analysis
-        
-        try:
-            # Convert to numpy array for easier manipulation
-            eig_array = np.array(eigenvalues)
-            
-            # Find band gap (assuming last occupied band is HOMO, first unoccupied is LUMO)
-            # This is a simplified approach - would need more sophisticated analysis for real cases
-            max_occupied = np.max(eig_array)
-            min_unoccupied = np.min(eig_array[eig_array > max_occupied]) if np.any(eig_array > max_occupied) else None
-            
-            if min_unoccupied is not None:
-                band_gap = min_unoccupied - max_occupied
-                analysis['band_gap_indirect'] = band_gap
-                analysis['valence_band_maximum'] = max_occupied
-                analysis['conduction_band_minimum'] = min_unoccupied
-                analysis['metallic'] = band_gap < 0.01  # eV threshold
-            else:
-                analysis['metallic'] = True
-            
-        except Exception:
-            pass
-        
+
+        if fermi_energy is None:
+            analysis['note'] = 'band_gap_requires_fermi_energy'
+            return analysis
+
+        occupied = [e for e in all_e if e <= fermi_energy]
+        unoccupied = [e for e in all_e if e > fermi_energy]
+        if not occupied or not unoccupied:
+            analysis['note'] = 'no_states_on_one_side_of_fermi'
+            return analysis
+
+        vbm = max(occupied)
+        cbm = min(unoccupied)
+        gap_ev = (cbm - vbm) * HARTREE_TO_EV
+        if gap_ev < 0:
+            gap_ev = 0.0
+        analysis['valence_band_maximum_ev'] = (vbm - fermi_energy) * HARTREE_TO_EV
+        analysis['conduction_band_minimum_ev'] = (cbm - fermi_energy) * HARTREE_TO_EV
+        analysis['band_gap_ev'] = gap_ev
+        analysis['metallic'] = gap_ev < 0.01  # eV threshold
         return analysis
     
     def _analyze_density_of_states(self, dos_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze density of states data."""
+        """Classify a DOSS.DAT density of states.
+
+        Energies are Fermi-referenced (E - EFermi, Fermi at 0). The system is an
+        insulator/semiconductor iff a zero-DOS window straddles the Fermi level;
+        the gap is that window's width. We test for the *existence of a gap* near
+        E = 0 (a near-zero-DOS run) rather than comparing the Fermi-level DOS to
+        the peak height: metallic DOS at E = 0 can be small (semimetals) while
+        broadening/integration artifacts make the global maximum a poor scale.
+        CRYSTAL pins E = 0 at the top of the valence band for insulators, so the
+        gap opens just above E = 0.
+        """
         analysis = {
-            'fermi_level': None,
-            'band_gap_from_dos': None,
-            'total_states': 0,
+            'metallic': None,
+            'band_gap_ev': None,
+            'dos_at_fermi': None,
+            'total_states': None,
             'peak_positions': [],
-            'dos_at_fermi': 0
         }
-        
+
         energy_points = dos_data.get('energy_points', [])
         total_dos = dos_data.get('total_dos', [])
-        
-        if not energy_points or not total_dos:
+        if not energy_points or not total_dos or len(energy_points) != len(total_dos):
             return analysis
-        
+
+        pairs = sorted(zip(energy_points, total_dos), key=lambda p: p[0])
+        es = [e for e, _ in pairs]
+        ds = [abs(d) for _, d in pairs]
+        emin, emax = es[0], es[-1]
+        span = emax - emin
+        if span <= 0:
+            return analysis
+
+        # Robust DOS scale: 95th percentile over the interior (drop the outer 2%
+        # of the energy range, where broadening/integration artifacts spike).
+        margin = 0.02 * span
+        interior = [d for e, d in zip(es, ds) if emin + margin <= e <= emax - margin]
+        if not interior:
+            interior = ds
+        ordered = sorted(interior)
+        scale = ordered[int(0.95 * (len(ordered) - 1))]
+        if scale <= 0:
+            return analysis  # flat/zero DOS — cannot classify
+        near_zero = 0.001 * scale  # what counts as "no states"
+
         try:
-            energy_array = np.array(energy_points)
-            dos_array = np.array(total_dos)
-            
-            # Estimate Fermi level (where DOS drops significantly)
-            # This is a simplified approach
-            max_dos = np.max(dos_array)
-            threshold = max_dos * 0.1
-            
-            # Find band gap as region with low DOS
-            low_dos_indices = dos_array < threshold
-            if np.any(low_dos_indices):
-                gap_energies = energy_array[low_dos_indices]
-                if len(gap_energies) > 0:
-                    analysis['band_gap_from_dos'] = np.max(gap_energies) - np.min(gap_energies)
-            
-            # Find peaks in DOS
-            dos_peaks = []
-            for i in range(1, len(dos_array) - 1):
-                if dos_array[i] > dos_array[i-1] and dos_array[i] > dos_array[i+1]:
-                    if dos_array[i] > max_dos * 0.2:  # Significant peaks only
-                        dos_peaks.append(energy_array[i])
-            
-            analysis['peak_positions'] = dos_peaks
-            analysis['total_states'] = np.trapz(dos_array, energy_array)
-            
+            trapz = getattr(np, 'trapezoid', None) or np.trapz
+            analysis['total_states'] = float(trapz([d for _, d in pairs], es))
         except Exception:
             pass
-        
+
+        # DOS at the Fermi level (within ~0.1 eV of E = 0), for reporting.
+        fwin = 0.0037  # Hartree
+        near = [d for e, d in zip(es, ds) if abs(e) <= fwin]
+        analysis['dos_at_fermi'] = (max(near) if near
+                                    else ds[min(range(len(es)), key=lambda i: abs(es[i]))])
+
+        # Width of the near-zero-DOS run closest to (and within ~0.27 eV of) E = 0.
+        best_gap = 0.0
+        i, n = 0, len(ds)
+        while i < n:
+            if ds[i] < near_zero:
+                j = i
+                while j + 1 < n and ds[j + 1] < near_zero:
+                    j += 1
+                lo_e, hi_e = es[i], es[j]
+                dist = 0.0 if lo_e <= 0 <= hi_e else min(abs(lo_e), abs(hi_e))
+                if dist <= 0.01:  # within ~0.27 eV of the Fermi level
+                    best_gap = max(best_gap, hi_e - lo_e)
+                i = j + 1
+            else:
+                i += 1
+
+        gap_ev = best_gap * HARTREE_TO_EV
+        if gap_ev < 0.1:  # no meaningful gap at the Fermi level
+            analysis['metallic'] = True
+            analysis['band_gap_ev'] = 0.0
+        else:
+            analysis['metallic'] = False
+            analysis['band_gap_ev'] = gap_ev
         return analysis
 
 
@@ -383,7 +477,8 @@ if __name__ == "__main__":
             print(f"  Bands: {result.get('num_bands', 0)}")
             if 'electronic_properties' in result:
                 props = result['electronic_properties']
-                print(f"  Band gap: {props.get('band_gap_indirect', 'N/A')} eV")
+                print(f"  Band gap: {props.get('band_gap_ev', 'N/A')} eV "
+                      f"(needs fermi_energy=... to compute)")
                 print(f"  Metallic: {props.get('metallic', 'Unknown')}")
         
         elif "doss" in test_file.name.lower():

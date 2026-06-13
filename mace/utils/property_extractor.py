@@ -1253,9 +1253,28 @@ class CrystalPropertyExtractor:
                 except ImportError:
                     from dat_file_processor import DatFileProcessor
                 processor = DatFileProcessor()
-                dat_info = processor.process_band_dat_file(band_dat_file)
-                if dat_info:
-                    props.update(dat_info)
+                # BAND.DAT eigenvalues are absolute Hartree; pass the Fermi level
+                # so the gap/metallic classification has a reference point.
+                dat_info = processor.process_band_dat_file(
+                    band_dat_file, fermi_energy=props.get('fermi_energy_band'))
+                if dat_info and 'error' not in dat_info:
+                    # Merge only compact scalars — never the raw eigenvalue/k-point
+                    # arrays, which would be JSON-dumped into the properties table.
+                    props['band_dat_num_kpoints'] = dat_info.get('num_k_points')
+                    props['band_dat_num_bands'] = dat_info.get('num_bands')
+                    props['band_dat_num_spins'] = dat_info.get('num_spins')
+                    props['band_dat_num_panels'] = dat_info.get('num_panels')
+                    if dat_info.get('k_path_labels'):
+                        props['band_dat_kpath_labels'] = dat_info['k_path_labels']
+                    bep = dat_info.get('electronic_properties', {})
+                    if bep.get('metallic') is not None:
+                        props['band_dat_metallic'] = bep['metallic']
+                    if bep.get('band_gap_ev') is not None:
+                        props['band_dat_band_gap_ev'] = bep['band_gap_ev']
+                    if bep.get('valence_band_maximum_ev') is not None:
+                        props['band_dat_vbm_ev'] = bep['valence_band_maximum_ev']
+                    if bep.get('conduction_band_minimum_ev') is not None:
+                        props['band_dat_cbm_ev'] = bep['conduction_band_minimum_ev']
             except ImportError:
                 pass  # DAT file processor not available
             except Exception as e:
@@ -1340,8 +1359,21 @@ class CrystalPropertyExtractor:
                     from dat_file_processor import DatFileProcessor
                 processor = DatFileProcessor()
                 dat_info = processor.process_doss_dat_file(dat_file)
-                if dat_info:
-                    props.update(dat_info)
+                if dat_info and 'error' not in dat_info:
+                    # Merge only compact scalars — never the raw DOS arrays.
+                    props['doss_dat_num_energy_points'] = dat_info.get('num_energy_points')
+                    props['doss_dat_num_spins'] = dat_info.get('num_spins')
+                    erange = dat_info.get('energy_range')
+                    if erange:
+                        props['doss_dat_energy_min'] = erange[0]
+                        props['doss_dat_energy_max'] = erange[1]
+                    da = dat_info.get('dos_analysis', {})
+                    if da.get('metallic') is not None:
+                        props['doss_dat_metallic'] = da['metallic']
+                    if da.get('band_gap_ev') is not None:
+                        props['doss_dat_band_gap_ev'] = da['band_gap_ev']
+                    if da.get('dos_at_fermi') is not None:
+                        props['doss_dat_at_fermi'] = da['dos_at_fermi']
             except ImportError:
                 pass  # DAT file processor not available
             except Exception as e:
