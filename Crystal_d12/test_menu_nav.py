@@ -196,8 +196,41 @@ def t13():
     check("T13 back-equals-no-back byte-identical result", a == b == ("1", "y", "p"), f"{a} vs {b}")
 
 
+from menu_nav import nav_int, nav_choice
+
+
+# T14: nav_int never crashes on 'b'; goes back when available, re-prompts when not
+def t14():
+    # first question: 'b' is not back (nothing before it) -> re-prompt, NOT a crash
+    use(["b", "5"])
+    r = run_with_back(lambda: nav_int("n> "))
+    check("T14 nav_int 'b' at first q re-prompts (no crash)", r == 5, str(r))
+    # 'b' at second nav_int goes back to the first
+    use(["3", "b", "7", "9"])
+    r2 = run_with_back(lambda: (nav_int("a> "), nav_int("b> ")))
+    check("T14 nav_int back re-asks prior", r2 == (7, 9), str(r2))
+    # invalid then valid (no crash on junk either)
+    use(["x", "4"])
+    r3 = run_with_back(lambda: nav_int("n> "))
+    check("T14 nav_int re-prompts on junk", r3 == 4, str(r3))
+    # choices restriction
+    use(["9", "2"])
+    r4 = run_with_back(lambda: nav_int("0-2> ", choices=[0, 1, 2]))
+    check("T14 nav_int enforces choices", r4 == 2, str(r4))
+
+
+# T15: nav_choice validates and supports back; 'b' kept when it's a valid choice
+def t15():
+    use(["1", "b", "2", "ok"])
+    r = run_with_back(lambda: (nav_choice("a> ", ["1", "2"]), nav_choice("c> ", ["ok", "no"])))
+    check("T15 nav_choice back re-asks prior", r == ("2", "ok"), str(r))
+    use(["b"])  # 'b' is itself a valid choice -> not stolen
+    r2 = run_with_back(lambda: nav_choice("x> ", ["a", "b"]))
+    check("T15 nav_choice keeps 'b' when valid", r2 == "b", str(r2))
+
+
 if __name__ == "__main__":
-    for t in [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13]:
+    for t in [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15]:
         t()
     print()
     if _failures:

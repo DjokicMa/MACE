@@ -14,13 +14,37 @@ Institution: Michigan State University, Mendoza Group
 
 from typing import Dict, Any, Optional
 
-# Opt-in "press b to go back" navigation. Falls back to a direct call if menu_nav is
-# unavailable, so these config functions keep working outside the MACE tree.
+# Opt-in "press b to go back" navigation + crash-safe back-aware readers. Falls back to
+# plain input() behaviour if menu_nav is unavailable.
 try:
-    from menu_nav import run_with_back as _run_with_back
+    from menu_nav import (run_with_back as _run_with_back, nav_read as _nav_read,
+                          nav_int as _nav_int, nav_float as _nav_float)
 except Exception:  # pragma: no cover - defensive fallback
     def _run_with_back(flow_fn):
         return flow_fn()
+
+    def _nav_read(prompt="", valid_set=None):
+        return input(prompt)
+
+    def _nav_int(prompt="", default=None, choices=None):
+        while True:
+            r = input(prompt).strip()
+            if not r and default is not None:
+                return int(default)
+            try:
+                return int(r)
+            except ValueError:
+                print("Please enter a whole number.")
+
+    def _nav_float(prompt="", default=None):
+        while True:
+            r = input(prompt).strip()
+            if not r and default is not None:
+                return float(default)
+            try:
+                return float(r)
+            except ValueError:
+                print("Please enter a number.")
 
 
 # ============================================================
@@ -190,7 +214,7 @@ def _configure_optimization_impl(current_settings: Optional[Dict[str, Any]] = No
     print("   10x tighter criteria for publication-quality structures")
     print("\n4. Custom - Set your own criteria")
     
-    conv_choice = input("\nSelect convergence level [1-4, default=1]: ").strip() or "1"
+    conv_choice = _nav_read("\nSelect convergence level [1-4, default=1]: ", valid_set={"1", "2", "3", "4"}).strip() or "1"
     
     if conv_choice == "1":
         opt_config["convergence"] = "Standard"
@@ -217,18 +241,11 @@ def _configure_optimization_impl(current_settings: Optional[Dict[str, Any]] = No
         opt_config["convergence"] = "Custom"
         print("\nCustom convergence criteria:")
         
-        # Get custom tolerances
-        toldeg_input = input("Enter TOLDEG (RMS of gradient) [0.00003]: ").strip()
-        opt_config["toldeg"] = float(toldeg_input) if toldeg_input else 0.00003
-        
-        toldex_input = input("Enter TOLDEX (RMS of displacement) [0.00012]: ").strip()
-        opt_config["toldex"] = float(toldex_input) if toldex_input else 0.00012
-        
-        toldee_input = input("Enter TOLDEE (energy difference exponent) [7]: ").strip()
-        opt_config["toldee"] = int(toldee_input) if toldee_input else 7
-        
-        maxcycle_input = input("Enter MAXCYCLE (max optimization steps) [800]: ").strip()
-        opt_config["maxcycle"] = int(maxcycle_input) if maxcycle_input else 800
+        # Get custom tolerances (back-aware, crash-safe readers)
+        opt_config["toldeg"] = _nav_float("Enter TOLDEG (RMS of gradient) [0.00003]: ", default=0.00003)
+        opt_config["toldex"] = _nav_float("Enter TOLDEX (RMS of displacement) [0.00012]: ", default=0.00012)
+        opt_config["toldee"] = _nav_int("Enter TOLDEE (energy difference exponent) [7]: ", default=7)
+        opt_config["maxcycle"] = _nav_int("Enter MAXCYCLE (max optimization steps) [800]: ", default=800)
         
         print(f"Using custom convergence: TOLDEG={opt_config['toldeg']}, TOLDEX={opt_config['toldex']}, TOLDEE={opt_config['toldee']}, MAXCYCLE={opt_config['maxcycle']}")
     
@@ -240,9 +257,7 @@ def _configure_optimization_impl(current_settings: Optional[Dict[str, Any]] = No
     )
     
     if use_maxtradius:
-        maxtradius_input = input("Enter MAXTRADIUS (max displacement, default 0.25): ").strip()
-        maxtradius = float(maxtradius_input) if maxtradius_input else 0.25
-        opt_config["maxtradius"] = maxtradius
+        opt_config["maxtradius"] = _nav_float("Enter MAXTRADIUS (max displacement, default 0.25): ", default=0.25)
     
     return opt_config
 

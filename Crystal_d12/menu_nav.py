@@ -263,6 +263,66 @@ def run_with_back(flow_fn):
         sys.stdout = real_stdout
 
 
+def nav_choice(prompt="", choices=None, default=None):
+    """Back-aware reader for a discrete string choice (e.g. menu keys '1'/'2'/'3').
+
+    Loops until the answer is in `choices` (or empty -> default). 'b'/'back' is a back
+    request only when back is available and 'b' is not itself a valid choice. Crash-safe:
+    an invalid entry re-prompts instead of raising. With no wrapped flow this behaves like
+    a normal validated input() loop.
+    """
+    valid = {str(c) for c in (choices or [])}
+    while True:
+        raw = nav_read(prompt, valid_set=valid if valid else None)
+        raw = raw.strip()
+        if not raw and default is not None:
+            return str(default)
+        if not valid or raw in valid:
+            return raw
+        print(f"Invalid choice. Please choose from: {', '.join(sorted(valid))}")
+
+
+def nav_int(prompt="", default=None, choices=None):
+    """Back-aware reader for an integer answer.
+
+    Numeric prompts never have 'b' as a legitimate value, so 'b'/'back' is always treated
+    as a back request when back is available (otherwise it just re-prompts -- it never
+    crashes int(), unlike a bare int(input())). Returns an int. `choices` optionally
+    restricts the allowed integers. With no wrapped flow this is a robust int(input()) loop.
+    """
+    allowed = None if choices is None else {int(c) for c in choices}
+    while True:
+        # valid_set excludes 'b' so the back token is intercepted when back is available.
+        raw = nav_read(prompt, valid_set={"__int__"})
+        raw = raw.strip()
+        if not raw and default is not None:
+            return int(default)
+        try:
+            val = int(raw)
+        except (ValueError, TypeError):
+            extra = f" from {sorted(allowed)}" if allowed else ""
+            print(f"Please enter a whole number{extra}.")
+            continue
+        if allowed is not None and val not in allowed:
+            print(f"Please choose from: {sorted(allowed)}")
+            continue
+        return val
+
+
+def nav_float(prompt="", default=None):
+    """Back-aware reader for a float answer. 'b'/'back' goes back (never crashes float()),
+    invalid input re-prompts, empty returns default. Like nav_int but for floats."""
+    while True:
+        raw = nav_read(prompt, valid_set={"__float__"}).strip()
+        if not raw and default is not None:
+            return float(default)
+        try:
+            return float(raw)
+        except (ValueError, TypeError):
+            print("Please enter a number.")
+            continue
+
+
 def back_available_live():
     """True iff we are at a LIVE prompt with at least one earlier answer to go back to.
 
