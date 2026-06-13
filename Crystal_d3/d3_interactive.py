@@ -566,47 +566,19 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
                 if sg_match:
                     space_group = int(sg_match.group(1))
 
-                # Convert single-letter lattice type to descriptive format
-                # This ensures compatibility with the rest of the codebase
+                # crystal_system is the descriptive form (e.g. "cubic_fc") for
+                # display only. Keep lattice_type as the single-letter centering:
+                # get_band_path_from_symmetry / get_kpoint_coordinates_from_labels
+                # call get_crystal_system_from_space_group themselves and that
+                # function matches on the LETTER ('F', 'I', ...). The old code
+                # overwrote lattice_type with the descriptive form, so every
+                # centered lattice fell through to the simple/primitive k-path
+                # (FCC treated as simple cubic, rhombohedral as hexagonal, ...).
                 from d3_kpoints import get_crystal_system_from_space_group
                 crystal_system = get_crystal_system_from_space_group(space_group, lattice_type)
 
-                # Map to descriptive lattice type for internal use
-                if 195 <= space_group <= 230:  # Cubic
-                    if lattice_type == 'P':
-                        lattice_type = 'cubic_primitive'
-                    elif lattice_type == 'F':
-                        lattice_type = 'cubic_fc'
-                    elif lattice_type == 'I':
-                        lattice_type = 'cubic_bc'
-                elif 75 <= space_group <= 142:  # Tetragonal
-                    if lattice_type == 'P':
-                        lattice_type = 'tetragonal_simple'
-                    elif lattice_type == 'I':
-                        lattice_type = 'tetragonal_bc'
-                elif 16 <= space_group <= 74:  # Orthorhombic
-                    if lattice_type == 'P':
-                        lattice_type = 'orthorhombic_simple'
-                    elif lattice_type == 'I':
-                        lattice_type = 'orthorhombic_bc'
-                    elif lattice_type == 'F':
-                        lattice_type = 'orthorhombic_fc'
-                    elif lattice_type in ['A', 'B', 'C']:
-                        lattice_type = 'orthorhombic_ab'
-                elif 3 <= space_group <= 15:  # Monoclinic
-                    if lattice_type == 'P':
-                        lattice_type = 'monoclinic_simple'
-                    elif lattice_type in ['A', 'C']:
-                        lattice_type = 'monoclinic_ac'
-                elif 143 <= space_group <= 167:  # Trigonal/Rhombohedral
-                    if lattice_type == 'R':
-                        lattice_type = 'rhombohedral'
-                    else:
-                        lattice_type = 'hexagonal'
-                elif 168 <= space_group <= 194:  # Hexagonal
-                    lattice_type = 'hexagonal'
-
-                print(f"\nDetected space group: {space_group} ({lattice_type} lattice)")
+                print(f"\nDetected space group: {space_group} "
+                      f"({crystal_system}, {lattice_type}-centered)")
             except Exception as e:
                 print(f"\nCould not read space group from output file: {e}")
                 print("Using default P1")
