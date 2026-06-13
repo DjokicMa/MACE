@@ -27,35 +27,27 @@ that did NOT reproduce. Re-run each fix against real data and don't overclaim.
   (`a59e5007`), d12_calc_freq ~95 prompts (`2e115b15`), d3_interactive ~59 prompts (`d6b7eb93`).
   Planner inherits via the wrapped per-step configs. Tests: `Crystal_d12/test_menu_nav.py`,
   `Crystal_d12/test_back_integration.py`.
+- gCP + corrected total + molecular FREQ thermo + enthalpy (`fb173e82`), all in
+  `mace/utils/property_extractor.py`, verified against real `test/` outputs:
+  - `gcp_energy_au/ev` added; `total_energy_corrected_au/ev` = total + D3 + gCP from the
+    FINAL-geometry components. NOTE: we do NOT prefer CRYSTAL's printed
+    `TOTAL ENERGY + DISP + GCP` line — in an OPT it is the INITIAL geometry and never
+    re-printed after OPT END (4LG OPT was stale by 0.094 AU). Verified on 226 HSESOL3C
+    outputs: corrected ≡ total+D3+gCP exactly; SP matches printed line to ~1e-10.
+    `total_energy_plus_d3_au` unchanged for back-compat (only `missing_data.py` reads it).
+  - BONUS BUG FOUND + FIXED: molecular FREQ runs extracted ZERO thermodynamics — CRYSTAL
+    labels the block `...TAKING INTO ACCOUNT MOLECULAR ...` for molecules vs
+    `...WITH VIBRATIONAL CONTRIBUTIONS` for periodic; regex matched only the latter.
+    Broadened → Gibbs/ET/PV/TS now extracted on all 95 FREQ outputs (were missing on every
+    molecular one — the bulk of the electrolyte set).
+  - `enthalpy_au/ev/kj_mol` = Gibbs + TS (== EL+E0+ET+PV); `electronic_energy_au/ev/kj_mol`
+    (EL line). Removed prior enthalpy block (dead code: gated on `zero_point_energy_au`
+    before it was set; mislabeled the thermal correction as enthalpy). H verified exact
+    (==Gibbs+TS==EL+E0+ET+PV, 0 error over 95 files).
 
----
-
-## NEXT: gCP + enthalpy extraction (SCF/FREQ findings) — additive, low-risk
-
-All in `mace/utils/property_extractor.py`. Verify against `test/` (226 HSESOL3C electrolyte
-outputs have gCP; FREQ outputs in `test/FREQ/`).
-
-1. **gCP (~108 kcal/mol data-integrity bug).** `_extract_energy_properties` (~L412-429) reads
-   `D3 DISPERSION ENERGY (AU)` and a corrected total via `TOTAL ENERGY + DISP (AU)` — but 3C
-   methods print `GCP ENERGY (AU)` and `TOTAL ENERGY + DISP + GCP (AU)` (note the `+ GCP`), so
-   it falls back to `total + D3` and silently drops the gCP term (e.g. +0.1733 AU).
-   - Add `gcp_energy_au/ev` from `GCP ENERGY \(AU\)\s*([-\d.E+]+)` (last occurrence).
-   - Make the corrected total prefer `TOTAL ENERGY + DISP + GCP (AU)` when present, else
-     `TOTAL ENERGY + DISP (AU)`, else compute `total + d3 + gcp`. Store as a correct
-     `total_energy_corrected_au` (keep `total_energy_plus_d3_au` for back-compat).
-   - Verify: an HSESOL3C `.out` (e.g. `test/BAND/1LiFSI-3EMS-conf1_*sp_HSESOL3C_optimized.out`)
-     corrected total == the file's `TOTAL ENERGY + DISP + GCP (AU)` line.
-
-2. **Enthalpy (small additive gap).** `_extract_frequency_properties` already extracts ZPE(E0),
-   thermal(ET), PV, entropy_term(TS), gibbs_free_energy — read directly from CRYSTAL's printed
-   lines (verified correct). Missing: enthalpy and the EL baseline as named fields.
-   - Add `enthalpy_au/ev` = `gibbs_free_energy + entropy_term` (== EL+E0+ET+PV).
-   - Add `electronic_energy_au` (EL, the `EL :` line in the thermo block).
-   - Verify on `test/FREQ/1_dia_opt_rev1_freq_*supercel222.out`: gibbs = -609.632528018002,
-     E0 = 0.109109635725; enthalpy should = gibbs + TS.
-
-(minor) OPT energy components use `re.search` (first `+++ ENERGIES IN A.U. +++` block); for
-multi-step OPT they can be from an early cycle while total is from the last. Take the last block.
+(minor, still open) OPT energy *components* (`_extract_energy_components`) use `re.search` (first
+`+++ ENERGIES IN A.U. +++` block); for multi-step OPT they can be from an early cycle while total
+is from the last. Take the last block. Low priority — components are diagnostic, not the total.
 
 ---
 
