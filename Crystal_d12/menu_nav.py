@@ -128,7 +128,14 @@ class NavSession:
 
         shown = prompt
         if self._has_pending_default:
-            shown = f"{prompt} (previously: {self.pending_default})"
+            hint = f"(previously: {self.pending_default})"
+            # Put the value hint BEFORE the [b=back] affordance, and avoid a double
+            # space when the base prompt already ends in whitespace.
+            if prompt.rstrip().endswith("[b=back]"):
+                base = prompt.rstrip()[: -len("[b=back]")].rstrip()
+                shown = f"{base} {hint} [b=back]"
+            else:
+                shown = f"{prompt.rstrip()} {hint}"
             self._has_pending_default = False
             self.pending_default = ""
 
@@ -218,7 +225,7 @@ def nav_read(prompt="", valid_set=None):
 
     shown = prompt
     if intercept and back_available_live():
-        shown = f"{prompt} [b=back]"
+        shown = f"{prompt.rstrip()} [b=back]"  # rstrip avoids a double space
     return session.handle_input(shown, intercept=intercept)
 
 

@@ -372,8 +372,11 @@ def get_user_choice(prompt: str, options: List[Tuple[str, str]], default: str = 
     """
     # Don't print the prompt here as it's already printed in the calling code
     valid_keys = [opt[0] for opt in options]
-    choice = input(f"{prompt} (default: {default}): ").strip() or default
-    
+    # Use _nav_read on the FIRST read too (not plain input): otherwise a single 'b'
+    # back-request is only intercepted on the retry, so the user must press 'b'
+    # twice. _nav_read is a pass-through when no back-nav flow is active.
+    choice = _nav_read(f"{prompt} (default: {default}): ", valid_set=valid_keys).strip() or default
+
     while choice not in valid_keys:
         print(f"Invalid input. Please choose from: {', '.join(valid_keys)}")
         choice = _nav_read(f"{prompt} (default: {default}): ", valid_set=valid_keys).strip() or default
