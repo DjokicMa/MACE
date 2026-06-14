@@ -108,3 +108,41 @@ def configure_output_formats(interactive: bool = True, default_formats: List[str
     }
 
     return format_map.get(choice, ['png', 'svg'])
+
+
+def configure_plotly_formats(interactive: bool = True,
+                             default_formats: List[str] = None) -> List[str]:
+    """Configure output formats for the plotly-based plotters (cube / FREQ).
+
+    Unlike :func:`configure_output_formats` (band/DOS, raster-first), the default
+    here is interactive **HTML** — the whole point of these viewers is rotation /
+    hover / slider interactivity. Static PNG/SVG/PDF go through kaleido.
+
+    Returns a list such as ``['html']`` or ``['html', 'png']``.
+    """
+    if default_formats is None:
+        default_formats = ['html']
+
+    if not interactive:
+        return default_formats
+
+    print("\n  Output format options:")
+    print("    1. Interactive HTML (default, recommended)")
+    print("    2. HTML + PNG")
+    print("    3. PNG only (static, via kaleido)")
+    print("    4. SVG only (vector, via kaleido)")
+    print("    5. PDF only (vector, via kaleido)")
+    print("    6. HTML + PNG + SVG + PDF")
+
+    choice = get_string_input("  Select format(s) [1-6]", "1")
+
+    format_map = {
+        '1': ['html'],
+        '2': ['html', 'png'],
+        '3': ['png'],
+        '4': ['svg'],
+        '5': ['pdf'],
+        '6': ['html', 'png', 'svg', 'pdf'],
+    }
+
+    return format_map.get(choice, ['html'])

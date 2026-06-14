@@ -63,3 +63,42 @@ def test_plot_cube_writes_html_for_real_cube(tmp_path):
     assert out, "handler returned no generated files"
     assert all(Path(p).exists() for p in out)
     assert any(p.endswith(".html") for p in out)
+
+
+# ---- interactive configuration flows ----
+
+def _feed(monkeypatch, responses):
+    it = iter(responses)
+    monkeypatch.setattr("builtins.input", lambda *a, **k: next(it, ""))
+
+
+def test_interactive_cube_all_defaults_is_iso_html(monkeypatch):
+    # view, auto-iso, atoms, bonds, format, advanced -> all defaults
+    _feed(monkeypatch, [])
+    cfg = cube_h.configure_cube_plot(interactive=True)
+    assert cfg["view"] == "iso"
+    assert cfg["iso"] is None          # auto-select
+    assert cfg["show_atoms"] is True
+    assert cfg["formats"] == ["html"]
+    assert cfg["operation"] is None
+
+
+def test_interactive_cube_single_slice_uses_auto_middle(monkeypatch):
+    # view=2 (slice), axis default z, "use best/middle slice?" yes -> slice_pos None
+    _feed(monkeypatch, ["2"])
+    cfg = cube_h.configure_cube_plot(interactive=True)
+    assert cfg["view"] == "slice"
+    assert cfg["slice_axis"] == "z"
+    assert cfg["slice_pos"] is None
+
+
+def test_interactive_cube_slice_auto_renders_a_real_cube(tmp_path):
+    # The auto/middle slice path must produce a file (engine resolves the index).
+    cube = find_data("ECH3POT3/*.CUBE")
+    cfg = cube_h.configure_cube_plot(interactive=False)
+    cfg["view"] = "slice"
+    cfg["slice_axis"] = "z"
+    cfg["slice_pos"] = None
+    cfg["show_atoms"] = False
+    out = cube_h.plot_cube([str(cube)], cfg, str(tmp_path))
+    assert out and all(Path(p).exists() for p in out)

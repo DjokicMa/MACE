@@ -82,29 +82,54 @@ def configure_freq_plot(interactive: bool = True) -> Dict[str, Any]:
     if not interactive:
         return config
 
-    print("\n" + "-" * 40)
+    print("\n" + "-" * 50)
     print("  VIBRATIONAL MODE CONFIGURATION")
-    print("-" * 40)
+    print("-" * 50)
+    print("  Each mode is an atomic-displacement pattern at a given frequency.")
+    print("  Tip: choose 'List the mode table' first to see mode numbers, irreps,")
+    print("  imaginary (soft) modes and IR/Raman activity before picking one.")
 
     choice = select_option(
         "What would you like to do?",
-        ["List modes only", "Render a single mode", "Render all modes (one HTML)"],
-        default=2,
+        [
+            "Render one mode (animated 3D)",
+            "List the mode table only (no render)",
+            "Render every mode into a single HTML",
+        ],
+        default=1,
     )
-    if choice == 1:
+    if choice == 2:
         config["list_modes"] = True
         return config
+
     if choice == 3:
         config["all_modes"] = True
     else:
-        if not yes_no_prompt("Use the lowest real mode (representative)?", "yes"):
-            config["mode"] = int(get_float_input("  Mode number", 1))
+        if yes_no_prompt("Use the lowest real mode automatically (representative)?", "yes"):
+            config["mode"] = None
+        else:
+            config["mode"] = int(get_float_input("  Mode number (from the --list-modes table)", 1))
 
-    config["gif"] = yes_no_prompt("Export animated GIF instead of HTML?", "no")
+        out_choice = select_option(
+            "  Output style:",
+            [
+                "Interactive animated HTML (recommended)",
+                "Animated GIF (shareable, static file)",
+                "Static HTML with displacement arrows (no animation)",
+            ],
+            default=1,
+        )
+        if out_choice == 2:
+            config["gif"] = True
+        elif out_choice == 3:
+            config["static"] = True
+
     if yes_no_prompt("Configure advanced options?", "no"):
-        config["amplitude"] = get_float_input("  Displacement amplitude", 1.0)
-        config["normalize"] = yes_no_prompt("  Normalize displacements?", "no")
-        config["static"] = yes_no_prompt("  Static (no animation)?", "no")
+        config["amplitude"] = get_float_input("  Displacement amplitude (visual exaggeration)", 1.0)
+        config["normalize"] = yes_no_prompt("  Normalize displacements for visibility?", "no")
+        if config["gif"]:
+            config["gif_fps"] = int(get_float_input("  GIF frames per second", 20))
+        config["frames"] = int(get_float_input("  Animation frame count", 30))
 
     return config
 

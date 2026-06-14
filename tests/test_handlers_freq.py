@@ -68,3 +68,33 @@ def test_plot_freq_writes_html_for_representative_mode(tmp_path):
     assert out, "handler returned no generated files"
     assert all(Path(p).exists() for p in out)
     assert any(p.endswith(".html") for p in out)
+
+
+# ---- interactive configuration flows ----
+
+def _feed(monkeypatch, responses):
+    it = iter(responses)
+    monkeypatch.setattr("builtins.input", lambda *a, **k: next(it, ""))
+
+
+def test_interactive_freq_defaults_single_representative_html(monkeypatch):
+    # action default (render one), representative yes, output style default (html), advanced no
+    _feed(monkeypatch, [])
+    cfg = freq_h.configure_freq_plot(interactive=True)
+    assert cfg["list_modes"] is False
+    assert cfg["all_modes"] is False
+    assert cfg["mode"] is None      # representative
+    assert cfg["gif"] is False and cfg["static"] is False
+
+
+def test_interactive_freq_list_only_short_circuits(monkeypatch):
+    _feed(monkeypatch, ["2"])       # "List the mode table only"
+    cfg = freq_h.configure_freq_plot(interactive=True)
+    assert cfg["list_modes"] is True
+
+
+def test_interactive_freq_gif_output_style(monkeypatch):
+    # render one (default), representative yes, output style 2 (GIF), advanced no
+    _feed(monkeypatch, ["", "", "2"])
+    cfg = freq_h.configure_freq_plot(interactive=True)
+    assert cfg["gif"] is True and cfg["static"] is False

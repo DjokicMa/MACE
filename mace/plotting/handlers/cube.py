@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from ..prompts import (
-    configure_output_formats,
+    configure_plotly_formats,
     get_float_input,
     get_string_input,
     select_option,
@@ -92,34 +92,59 @@ def configure_cube_plot(interactive: bool = True) -> Dict[str, Any]:
     if not interactive:
         return config
 
-    print("\n" + "-" * 40)
+    print("\n" + "-" * 50)
     print("  CUBE VISUALIZATION CONFIGURATION")
-    print("-" * 40)
+    print("-" * 50)
+    print("  Cube sub-type (density / potential / spin / difference) is detected")
+    print("  automatically from each file; choose how to render it below.")
 
     view_choice = select_option(
-        "Select view:",
-        ["iso - 3D isosurface(s)", "slice - single 2D slice", "slice-all - grid of slices"],
+        "How would you like to view the volume?",
+        [
+            "3D isosurface   - shells at constant value (best for densities/orbitals)",
+            "Single 2D slice - one plane through the volume (best for ESP maps)",
+            "Slice grid      - many parallel slices at once (explore the volume)",
+        ],
         default=1,
     )
     config["view"] = ["iso", "slice", "slice-all"][view_choice - 1]
 
     if config["view"] == "iso":
-        if not yes_no_prompt("Auto-select isovalues?", "yes"):
-            raw = get_string_input("  Isovalues (comma-separated)", "0.001,0.01")
+        if yes_no_prompt("Auto-select isovalues (recommended)?", "yes"):
+            config["iso"] = None
+        else:
+            raw = get_string_input("  Isovalues, comma-separated (e.g. 0.001,0.01)", "0.001,0.01")
             config["iso"] = [float(x) for x in raw.split(",") if x.strip()]
     else:
-        config["slice_axis"] = get_string_input("  Slice axis (x/y/z)", "z").lower()
+        axis_choice = select_option(
+            "  Slice/stack axis:",
+            ["z (recommended for slabs)", "y", "x"],
+            default=1,
+        )
+        config["slice_axis"] = ["z", "y", "x"][axis_choice - 1]
         if config["view"] == "slice":
-            config["slice_pos"] = int(get_float_input("  Slice index", 0))
+            if yes_no_prompt("  Use the best/middle slice automatically?", "yes"):
+                config["slice_pos"] = None          # engine picks the best slice
+            else:
+                config["slice_pos"] = int(get_float_input("  Slice index (0-based)", 0))
 
-    config["show_atoms"] = yes_no_prompt("Show atoms?", "yes")
-    config["formats"] = configure_output_formats(interactive=True)
+    config["show_atoms"] = yes_no_prompt("Overlay atoms?", "yes")
+    if config["show_atoms"]:
+        config["bonds"] = yes_no_prompt("  Draw bonds between atoms?", "no")
 
-    if yes_no_prompt("Configure advanced options?", "no"):
-        cs = get_string_input("  Colorscale (blank = auto)", "")
+    config["formats"] = configure_plotly_formats(interactive=True)
+
+    if yes_no_prompt("Configure advanced appearance?", "no"):
+        cs = get_string_input("  Plotly colorscale (blank = auto, e.g. Viridis/RdBu)", "")
         config["colorscale"] = cs or None
-        config["bonds"] = yes_no_prompt("  Draw bonds?", "no")
-        config["publication"] = yes_no_prompt("  Publication mode?", "no")
+        scale_choice = select_option(
+            "  Color scaling:",
+            ["auto (engine decides)", "log (wide dynamic range)", "linear"],
+            default=1,
+        )
+        config["scale"] = [None, "log", "linear"][scale_choice - 1]
+        config["clip"] = get_float_input("  Color clip percentile (trim outliers)", 99.5)
+        config["publication"] = yes_no_prompt("  Publication styling (clean axes, no title)?", "no")
 
     return config
 
@@ -181,7 +206,10 @@ def _common_argv(config: Dict[str, Any]) -> List[str]:
             argv += ["--iso", ",".join(str(v) for v in config["iso"])]
     elif config["view"] == "slice":
         pos = config.get("slice_pos")
-        argv += ["--slice", config.get("slice_axis", "z"), str(pos if pos is not None else 0)]
+        # A non-numeric position makes the engine pick its own best/middle slice
+        # (CubeFile.get_best_visualization_slice) instead of a hard index-0 edge.
+        argv += ["--slice", config.get("slice_axis", "z"),
+                 str(pos) if pos is not None else "auto"]
     elif config["view"] == "slice-all":
         argv += ["--slice-all", config.get("slice_axis", "z")]
 
