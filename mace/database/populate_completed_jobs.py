@@ -10,6 +10,8 @@ from typing import Dict, List, Optional
 import json
 from datetime import datetime
 
+from mace.database.materials import create_material_id_from_file
+
 
 def scan_for_completed_calculations(base_dir: Path) -> List[Dict]:
     """
@@ -36,15 +38,14 @@ def scan_for_completed_calculations(base_dir: Path) -> List[Dict]:
                 if "TERMINATION" not in content:
                     continue
                     
-            # Extract material name from file
-            material_name = out_file.stem
-            
-            # Remove common suffixes
-            for suffix in ['_opt', '_sp', '_freq', '_band', '_doss',
-                           '_transport', '_charge+potential']:
-                if material_name.endswith(suffix):
-                    material_name = material_name[:-len(suffix)]
-                    break
+            # Derive the material id with the SAME canonical function the workflow
+            # engine/executor use (create_material_id_from_file). A local
+            # trailing-suffix strip loop diverged from canonical for numbered and
+            # continuation filenames (e.g. 'mat_opt2.out' -> 'mat_opt2', and
+            # 'mat_opt_B3LYP-D3_optimized.out' -> the whole stem) instead of 'mat',
+            # so scanned OPT->SP continuations were re-registered as brand-new
+            # materials, silently duplicating material rows on every workflow scan.
+            material_name = create_material_id_from_file(out_file.name)
 
             # Determine calculation type (D3 property types before SP/FREQ so
             # their records dedup against engine-created ones instead of
@@ -66,11 +67,12 @@ def scan_for_completed_calculations(base_dir: Path) -> List[Dict]:
             elif out_file.parent.name.startswith('step_') and '_OPT' in out_file.parent.name:
                 calc_type = 'OPT'
                 
-            # Look for corresponding input file
+            # Look for corresponding input file. Use the actual output stem (NOT
+            # the canonical material id, which strips calc/functional tokens) so the
+            # sibling .d12 is still found for continuation filenames.
             d12_file = out_file.with_suffix('.d12')
             if not d12_file.exists():
-                # Try without suffix
-                d12_file = out_file.parent / f"{material_name}.d12"
+                d12_file = out_file.parent / f"{out_file.stem}.d12"
                 
             calc_info = {
                 'material_id': material_name,
