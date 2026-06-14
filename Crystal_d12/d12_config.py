@@ -459,7 +459,7 @@ def apply_config_to_options(config: Dict[str, Any], options: Dict[str, Any]) -> 
     direct_mappings = [
         'calculation_type', 'method', 'functional', 'dispersion',
         'basis_set', 'basis_set_type', 'basis_set_path',
-        'dft_grid', 'spin_polarized', 'spinlock',
+        'dft_grid', 'spin_polarized', 'spinlock', 'spinlock_cycles',
         'use_smearing', 'smearing_width', 'dimensionality',
         'symmetry_handling', 'write_only_unique', 'validate_symmetry',
         'trigonal_axes', 'origin_setting', 'is_3c_method'

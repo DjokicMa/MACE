@@ -68,8 +68,8 @@ from d12_writer import (
     write_smearing_settings, write_minimal_raman_section,
     write_dft_section, write_basis_set_section
 )
-# Import write_scf_section from d12_writer  
-from d12_writer import write_scf_section
+# Import write_scf_section from d12_writer
+from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES
 from d12_interactive import (
     display_current_settings, interactive_d12_configuration,
     get_calculation_options_from_current, get_calculation_options,
@@ -651,6 +651,10 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             # Carry a configured fixed spin state through on the OPT-continuation
             # path too, gated on spin polarization (0/None => unchanged output).
             spinlock=(settings.get("spinlock", 0) if settings.get("spin_polarized") else 0),
+            # Preserve the parsed/configured SCF-cycle count for the lock; without
+            # this the writer falls back to DEFAULT_SPINLOCK_CYCLES (50) and a deck
+            # with e.g. 'SPINLOCK 2 30' is silently regenerated as '2 50'.
+            spinlock_cycles=settings.get("spinlock_cycles", DEFAULT_SPINLOCK_CYCLES),
         )
         
         # Note: The single END at the very end is written by write_scf_section

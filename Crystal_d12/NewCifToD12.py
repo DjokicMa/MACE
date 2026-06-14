@@ -143,7 +143,7 @@ except ImportError:
     )
 
 # Import write_scf_section from d12_writer
-from d12_writer import write_scf_section
+from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES
 
 # Try to import spglib for symmetry operations
 try:
@@ -1137,6 +1137,9 @@ def create_d12_file(cif_data, output_file, options):
             # a missing/zero value leaves the SCF block unchanged. Previously a
             # configured SPINLOCK never reached any active writer.
             spinlock=(options.get("spinlock", 0) if is_spin_polarized else 0),
+            # Preserve the configured SCF-cycle count for the lock (else the writer
+            # falls back to DEFAULT_SPINLOCK_CYCLES and a non-default count is lost).
+            spinlock_cycles=options.get("spinlock_cycles", DEFAULT_SPINLOCK_CYCLES),
         )
 
         # Note: The single END at the very end is written by write_scf_section

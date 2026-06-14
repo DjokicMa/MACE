@@ -54,6 +54,43 @@ def test_old_single_value_spinlock_form(tmp_path):
     assert d.get("spinlock") == 3
 
 
+def test_spinlock_cycles_preserved_through_real_write_call_site(tmp_path):
+    """The OPT-continuation call site (write_d12_file -> write_scf_section) must
+    forward spinlock_cycles. The round-trip test above hand-passes the kwarg, so
+    it could not catch that the *real* call site omitted it and the writer fell
+    back to DEFAULT_SPINLOCK_CYCLES (50). Here we drive write_d12_file with a real
+    optimized geometry and a non-default lock (2 30) and capture exactly what the
+    real call site hands the emitter."""
+    import CRYSTALOptToD12 as M
+    from d12_parsers import CrystalOutputParser
+
+    geo = CrystalOutputParser(str(find_data("OPT/1_dia_opt_rev1.out"))).parse()
+    settings = dict(geo)
+    settings.update(spin_polarized=True, spinlock=2, spinlock_cycles=30)
+
+    captured = {}
+
+    class _Stop(Exception):
+        pass
+
+    def _spy(f, *args, **kwargs):
+        captured.update(kwargs)
+        raise _Stop()  # stop before the (irrelevant) rest of the SCF/opt blocks
+
+    orig = M.write_scf_section
+    M.write_scf_section = _spy
+    try:
+        M.write_d12_file(str(tmp_path / "new.d12"), geo, settings)
+    except _Stop:
+        pass
+    finally:
+        M.write_scf_section = orig
+
+    assert captured.get("spinlock") == 2
+    # The bug: omitted at the call site -> writer silently used 50 instead of 30.
+    assert captured.get("spinlock_cycles") == 30
+
+
 def test_nonzero_spinlock_survives_round_trip(tmp_path):
     """parse(real edited to 2 50) -> write_scf_section -> SPINLOCK 2 50 reappears."""
     edited = _with_spinlock_value(_real_spinlock_d12(), tmp_path, "2 50")
