@@ -143,17 +143,25 @@ def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser for mace plotting."""
     parser = argparse.ArgumentParser(
         prog='mace plotting',
-        description='Plot CRYSTAL calculation outputs (bands, DOS, structures)',
+        description='Plot CRYSTAL calculation outputs '
+                    '(bands, DOS, structures, cube volumetrics, FREQ vibrational modes)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  mace plotting                     # Interactive mode in current directory
-  mace plotting --band              # Plot all band structures with defaults
-  mace plotting --dos               # Plot all DOS with defaults
-  mace plotting --structure         # Visualize all CIF files
-  mace plotting --all               # Plot everything with defaults
-  mace plotting --band -8 8         # Band plot with custom energy range
-  mace plotting --dos -8 8 both     # DOS plot with projection type
+  mace plotting                          # Interactive mode in current directory
+  mace plotting --band                   # Plot all band structures with defaults
+  mace plotting --dos                    # Plot all DOS with defaults
+  mace plotting --structure              # Visualize all CIF files
+  mace plotting --all                    # Plot everything discovered with defaults
+
+  mace plotting --cube                   # Render every cube (.CUBE) in the directory
+  mace plotting --cube dens.CUBE --iso 0.001,0.01
+  mace plotting --esp pot.CUBE --view slice --slice z 30
+  mace plotting --diff after.CUBE before.CUBE   # density difference
+
+  mace plotting --freq mol_freq.out --list-modes
+  mace plotting --freq mol_freq.out --mode 7 --gif
+  mace plotting --freq mol_freq.out --all-modes
 """
     )
 

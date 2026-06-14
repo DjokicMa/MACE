@@ -18,6 +18,15 @@ PyPDF2>=2.0.0
 pyyaml>=6.0
 pandas>=1.3.0
 
+# Interactive plotting engines (mace plotting --cube / --freq)
+# crystal_cubeviz_plotly + vibmode_viewer build plotly figures; scipy provides
+# RegularGridInterpolator for non-orthogonal cube grids. kaleido is pinned to
+# 0.2.1 (the stable pre-v1 release) for static PNG/SVG/PDF export; HTML output
+# needs only plotly. Tested with plotly 6.0.1 / scipy 1.15.2 / kaleido 0.2.1.
+plotly>=5.0.0
+scipy>=1.10.0
+kaleido==0.2.1
+
 # Optional but recommended: Accurate band structure k-path generation
 # Implements HPKOT methodology (Hinuma et al., Comp. Mat. Sci. 128, 140 (2017))
 # Uncomment the line below to include seekpath

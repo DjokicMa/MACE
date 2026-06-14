@@ -898,18 +898,23 @@ Note: The --dry-run option shown in some docs is not implemented.
         'plotting': """
 Usage: mace plotting [options]
 
-Plot CRYSTAL calculation outputs (band structures, DOS, structures).
+Plot CRYSTAL calculation outputs (band structures, DOS, structures,
+cube volumetrics, FREQ vibrational modes).
 
 Modes:
   (default)             Interactive mode - guided configuration
   --band                Plot band structures with CLI options
   --dos                 Plot density of states with CLI options
   --structure           Visualize crystal structures from CIF files
+  --cube                Render cube volumetrics (ECH3/POT3 density, ESP, spin)
+  --freq, --vibmodes    Render FREQ vibrational normal modes
   --all                 Plot all available outputs with defaults
 
 Common Options:
   -d, --directory DIR   Working directory (default: current)
   -o, --output DIR      Output directory for generated plots
+  FILE(s)               Explicit input file(s); omit to auto-discover in -d
+  --format FMT          Output format for cube/FREQ: html (default), png, svg, pdf
 
 Band Structure Options:
   --e-lower FLOAT       Lower energy limit in eV (default: -8)
@@ -926,23 +931,42 @@ Structure Options:
   --bond-cutoff FLOAT   Bond cutoff in Angstroms (default: 1.9)
   --color-by-coord      Color atoms by coordination number
 
+Cube Options:
+  --density / --esp / --spin   Select quantity (each implies --cube)
+  --diff A B            Density difference A - B (non-orthogonal-safe)
+  --iso V[,V2...]       Isovalue(s) for the isosurface view
+  --view {iso,slice,slice-all}    Visualization mode (default: iso)
+  --slice AXIS POS      Single 2D slice (axis x/y/z, integer index)
+  --colorscale NAME     Plotly colorscale; --no-atoms / --bonds / --publication
+  --engine-args "..."   Advanced: forward extra cube-engine flags
+
+Vibrational Mode Options:
+  --list-modes          List the mode table only (no render)
+  --mode N              Render mode number N (default: lowest real mode)
+  --all-modes           Render every mode into one HTML (explicit opt-in)
+  --gif                 Export an animated GIF instead of HTML
+  --amplitude F / --normalize / --static
+
 Examples:
   mace plotting                     # Interactive mode
   mace plotting --band              # Plot all band structures with defaults
-  mace plotting --dos               # Plot all DOS with defaults
-  mace plotting --structure         # Visualize all CIF files
-  mace plotting --all               # Plot everything with defaults
-  mace plotting --band --e-lower -6 --e-upper 6
-  mace plotting --dos --projection orbital
+  mace plotting --all               # Plot everything discovered with defaults
+  mace plotting --cube dens.CUBE --iso 0.001,0.01
+  mace plotting --diff after.CUBE before.CUBE
+  mace plotting --freq mol_freq.out --list-modes
+  mace plotting --freq mol_freq.out --mode 7 --gif
 
 Supported File Types:
   Band Structure: *.band.band.dat, *.BAND.DAT
   DOS: *_doss.DOSS.DAT, *.DOSS.DAT
   Structures: *.cif
+  Cube volumetrics: *.CUBE (DENS/POT/SPIN; auto-detected sub-type)
+  FREQ vibrational modes: *.out with a phonon normal-modes block
 
 Output Formats:
-  - PNG (600 DPI) for publications
-  - SVG for scalable graphics
+  - Interactive HTML (plotly) by default
+  - PNG / SVG / PDF static export via kaleido (--format)
+  - PNG (600 DPI) / SVG for band/DOS/structure publications
 """,
         'completion': """
 Usage: mace completion [options]
