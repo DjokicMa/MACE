@@ -60,15 +60,37 @@ HTML). Full suite: **484 passed**.
   also sidesteps the C2 two-sources-of-truth risk: detect never subtypes cubes;
   the engine remains the sole authority.
 
+### Phase 4 spectra (IR/Raman) — DONE (2026-06-14, branch `plotting-phase0-wiring`)
+
+| Step | What | Commit |
+|------|------|--------|
+| H3 + lift | `handlers/spectra_api.py` — pure read/render/average lifted from `plotIRRAM.py` (verified superset; the 5 scripts' `read_*` are byte-identical → one `read_spectrum`). 2.4 fixes applied: column gate relaxed `!=N`→"≥ needed", no `os.getcwd()`, no `input()`, format parametrized, ragged-grid-safe averaging | `cbc3a2de` |
+| handlers | `handlers/spectra.py` — SPECTRA_IR (`*IRSPEC.DAT`) + SPECTRA_RAMAN (`*RAMSPEC.DAT`) registry entries; conf-style per-material averaging; raman modes total/par_perp/all; `--format html`→png fallback | `36f5a048` |
+| CLI | `--ir`/`--raman`/`--spectra` (umbrella via `_dispatch_kinds`) + `--raman-mode`/`--average`/`--ir-column`; help synced | `77ad8a42` |
+
+Discovery is glob-only (suffix-anchored `*IRSPEC.DAT`/`*RAMSPEC.DAT`, C3-safe — never
+column-sniffs arbitrary `.dat`). E2E verified on real data (`--spectra --raman-mode
+all` → IR absorbance png + Raman all png). Validated against 132 IRSPEC (3-col) +
+132 RAMSPEC (10-col). Full suite: **520 passed**.
+
+**Scoped out of Phase 4 (deferred, low value / no inputs):**
+- `--raman-component {xx..zz}` single-direction selector (the `all` mode already
+  plots all six; no validated single-direction plotter exists to lift).
+- `--from-freq` / `SPECTRA_FROM_FREQ` derivation (synthesize spectra from FREQ runs
+  with `can_spectra`). Real `*SPEC.DAT` exist for every FREQ run in the corpus, so
+  this adds nothing now; needs the FREQ `can_spectra` sniff first.
+
 **Still outstanding:**
 - **TODO #5 — `grid_geometry.py` shared affine: DEFERRED** (Phase-6-style). The
   validated engines carry their own inline affine (tested), and no new consumer
   needs the shared helper, so extraction is pure DRY refactor with risk to tested
   code — deliberately not done. Revisit with the Phase 6 library migration.
-- **Phase 4 — spectra (IR/Raman):** `handlers/spectra_api.py` lift from
-  `plotIRRAM.py` (H3 diff first), `*SPEC.DAT` detect + `SPECTRA_FROM_FREQ`
-  derivation, `--ir`/`--raman`/`--spectra` flags. Inputs exist (264 SPEC.DAT), so
-  it is now validatable. Not started.
+- **Phase 6 — library migration** of the two big engines is already effectively
+  done (TODO #1 relocated them); only the optional `grid_geometry` extraction
+  remains.
+
+Plotting integration is now functionally complete for all five kinds: band, DOS,
+structure, cube, FREQ, IR, Raman.
 
 ---
 
