@@ -272,6 +272,7 @@ Operations:
   snapshot  Create versioned snapshot of all properties
   compare   Compare two versions
   rollback  Rollback property to previous version
+            (REQUIRES all of: --material-id, --property, --version, --reason)
   recent    Show recent changes across all materials
 
 Examples:
@@ -279,6 +280,7 @@ Examples:
   mace database --action history --material-id 1_dia --property band_gap
   mace database --action history --operation snapshot --material-id 1_dia
   mace database --action history --operation compare --material-id 1_dia --version 1 --version2 3
+  mace database --action history --operation rollback --material-id 1_dia --property band_gap --version 2 --reason "revert bad extraction"
   mace database --action history --operation recent --limit 50
 """,
         'interactive': """
@@ -354,42 +356,38 @@ def show_monitor_action_help(action):
         'dashboard': """
 Usage: mace monitor --action dashboard [options]
 
-Show real-time monitoring dashboard for all calculations.
+Show the real-time monitoring dashboard (this is also the default when no
+--action is given; do NOT pass a literal --dashboard flag).
 
 Options:
-  --interval SECONDS    Update interval (default: 30)
-  --max-materials N     Limit display to N materials (default: unlimited)
-  
-Dashboard shows:
-  - Active calculations with progress
-  - Recently completed jobs
-  - Error statistics
-  - Resource utilization
-  - Database health metrics
+  --interval SECONDS    Refresh interval (default: 30)
+  --db-path PATH        Database path (default: materials.db)
+  --base-dir DIR        Base directory to scan
+  --workflow-id ID      Restrict to a specific workflow
+  --no-context          Ignore workflow-context auto-detection
+""",
+        'status': """
+Usage: mace monitor --action status
+
+Print a one-shot status snapshot (recent calculations + database stats).
+Equivalent to `mace monitor --status`.
+""",
+        'report': """
+Usage: mace monitor --action report [--output FILE]
+
+Generate a detailed JSON system report.
+
+Options:
+  --output FILE         Write the report to FILE (default: stdout)
+  --db-path PATH        Database path (default: materials.db)
 """,
         'stats': """
 Usage: mace monitor --action stats
 
-Show database and calculation statistics.
-
-Displays:
+Show database and calculation statistics:
   - Total materials and calculations
   - Calculation type distribution
   - Success/failure rates
-  - Average runtimes
-  - Property extraction coverage
-""",
-        'health': """
-Usage: mace monitor --action health
-
-Check database health and integrity.
-
-Performs:
-  - Database connection tests
-  - Schema validation
-  - Index optimization
-  - Storage usage analysis
-  - Orphaned record detection
 """
     }
     
@@ -403,44 +401,37 @@ def show_engine_action_help(action):
     """Show help for a specific engine action"""
     action_help = {
         'status': """
-Usage: mace engine --action status [options]
+Usage: mace engine --action status --material-id ID [options]
 
-Show workflow status for materials.
+Show workflow status for a specific material (--material-id is required for this
+action).
 
 Options:
-  --material-id ID      Show status for specific material
-  --pending-only        Show only materials with pending workflows
-  
-Shows:
-  - Current calculation status
-  - Next planned steps
-  - Workflow completion percentage
-  - Error states
+  --material-id ID      Material to show status for (required)
+  --db PATH             Database path
+  --work-dir DIR        Working directory
 """,
         'process': """
 Usage: mace engine --action process [options]
 
-Process pending workflows and submit next calculations.
+Process completed calculations and submit the next workflow step.
 
 Options:
-  --material-id ID      Process specific material only
-  --dry-run             Show what would be done without executing
-  --max-submit N        Maximum jobs to submit (default: 10)
-  
-Workflow progression:
-  OPT → SP → BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL
+  --material-id ID      (Global flag; not used by the process action)
+  --db PATH             Database path
+  --work-dir DIR        Working directory
+
+Follows the planned workflow sequence for each material (e.g. OPT then SP, then
+the requested property steps).
 """,
         'workflow': """
 Usage: mace engine --action workflow [options]
 
-Show or modify workflow templates.
+Print a per-material workflow-completion summary across the database.
 
 Options:
-  --list                List available workflow templates
-  --show TEMPLATE       Show details of a specific template
-  --create NAME         Create new workflow template
-  
-Templates define calculation sequences and resource requirements.
+  --db PATH             Database path
+  --work-dir DIR        Working directory
 """
     }
     
@@ -452,83 +443,19 @@ Templates define calculation sequences and resource requirements.
 
 def show_workflow_action_help(action):
     """Show help for a specific workflow action"""
-    action_help = {
-        'plan': """
-Usage: mace workflow --action plan [options]
+    # `mace workflow` is FLAG-driven, not --action-driven: it delegates to
+    # run_mace.py, which defines no --action (`mace workflow --action X` errors).
+    print("""
+mace workflow has no --action modes; it is flag-driven. Use:
 
-Plan a new workflow interactively or from configuration.
+  mace workflow --interactive       Interactive workflow planning
+  mace workflow --quick-start       Quick start from a template (with --cif-dir/--d12-dir)
+  mace workflow --execute FILE      Execute a saved workflow plan JSON
+  mace workflow --status            Check workflow status
+  mace workflow --show-templates    List available workflow templates
 
-Options:
-  --config FILE         Load workflow from JSON configuration
-  --template NAME       Use predefined workflow template
-  --output FILE         Save plan to file (default: auto-generated)
-  
-Interactive planning includes:
-  - Input file selection (CIF/D12)
-  - Calculation sequence design
-  - Resource allocation
-  - Dependency configuration
-""",
-        'execute': """
-Usage: mace workflow --action execute [options]
-
-Execute a saved workflow plan.
-
-Options:
-  --plan FILE           Workflow plan JSON file to execute
-  --resume              Resume interrupted workflow
-  --skip-validation     Skip input file validation
-  
-Execution includes:
-  - File conversion (CIF → D12)
-  - Job submission
-  - Progress tracking
-  - Error handling
-""",
-        'status': """
-Usage: mace workflow --action status [options]
-
-Check status of running workflows.
-
-Options:
-  --workflow-id ID      Specific workflow to check
-  --active-only         Show only active workflows
-  --detailed            Show step-by-step progress
-  
-Status information:
-  - Overall progress percentage
-  - Current step execution
-  - Completed/failed/pending counts
-  - Resource utilization
-""",
-        'templates': """
-Usage: mace workflow --action templates
-
-List available workflow templates.
-
-Templates include:
-  - basic_opt: Geometry optimization only
-  - opt_sp: OPT → SP
-  - full_electronic: OPT → SP → BAND → DOSS
-  - transport_analysis: OPT → SP → TRANSPORT
-  - complete: OPT → SP → BAND → DOSS → FREQ
-  
-Use --template with plan action to use a template.
-"""
-    }
-    
-    # Handle both explicit action and default modes
-    if action == 'interactive':
-        action = 'plan'
-    elif action == 'quick-start':
-        action = 'execute'
-        
-    if action in action_help:
-        print(action_help[action])
-    else:
-        print(f"No specific help available for action: {action}")
-        print(f"Available actions: {', '.join(sorted(action_help.keys()))}")
-        print("Also: --interactive (interactive planning), --quick-start (quick execution)")
+Run `mace workflow --help` for the full option list.
+""")
 
 def show_recover_action_help(action):
     """Show help for a specific recover action"""
@@ -539,15 +466,17 @@ Usage: mace recover --action recover [options]
 Detect and fix errors in failed calculations.
 
 Options:
-  --max-recoveries N    Maximum recovery attempts per material (default: 3)
-  --error-type TYPE     Focus on specific error type
-  --material-id ID      Recover specific material only
-  
-Recoverable errors:
+  --max-recoveries N    Maximum total recovery attempts (default: 10)
+  --db PATH             Database path
+  --config FILE         Recovery configuration file
+
+Auto-recoverable errors:
   - SHRINK factor issues
   - Memory allocation failures
   - SCF convergence problems
-  - Basis set issues
+  - Walltime / timeout
+  - Disk-space (scratch cleanup)
+(Basis-set issues are flagged for MANUAL intervention, not auto-recovered.)
 """,
         'stats': """
 Usage: mace recover --action stats
@@ -561,16 +490,10 @@ Displays:
   - Materials requiring manual intervention
 """,
         'config': """
-Usage: mace recover --action config [options]
+Usage: mace recover --action config
 
-Manage error recovery configuration.
-
-Options:
-  --show                Display current configuration
-  --edit                Open configuration in editor
-  --validate            Check configuration validity
-  
-Configuration includes:
+Write the default error-recovery configuration file (equivalent to
+`mace recover --create-config`). Edit the generated file by hand to customize:
   - Error detection patterns
   - Fix strategies
   - Retry policies
@@ -600,9 +523,9 @@ Options:
   --show-templates      Display available workflow templates
   --cif-dir DIR         Directory containing CIF files (for quick start)
   --d12-dir DIR         Directory containing D12 files (for quick start)
-  --workflow TYPE       Workflow template: basic_opt, opt_sp, full_electronic, 
-                        double_opt, complete, transport_analysis, charge_analysis,
-                        combined_analysis (default: full_electronic)
+  --workflow TYPE       Workflow template: basic_opt, opt_sp, opt_sp_freq,
+                        full_electronic, double_opt, complete, transport_analysis,
+                        charge_analysis, combined_analysis (default: full_electronic)
   --work-dir DIR        Working directory (default: current directory)
   --db-path PATH        Database path (default: materials.db)
   --max-jobs N          Maximum concurrent jobs (default: 200)
@@ -613,8 +536,6 @@ Examples:
   mace workflow --execute workflow_plan_20250618_145837.json
   mace workflow --status
   mace workflow --show-templates
-
-For action-specific options, use: mace workflow --action <ACTION> --help
 """,
         'submit': """
 Usage: mace submit [file_or_directory] [options]
@@ -674,19 +595,24 @@ Usage: mace monitor [options]
 Monitor running calculations and view system status.
 
 Options:
-  --dashboard           Launch real-time monitoring dashboard (default)
+  (no flag)             Real-time dashboard runs by DEFAULT (do not pass --dashboard)
   --status              Show quick status summary
   --summary             Show minimal status (materials and total calculations only)
   --detailed            Show detailed status with calculation types and recent activity
-  --material-id ID      Show status for specific material
   --interval N          Dashboard update interval in seconds (default: 30)
+  --output FILE         Output file for --action report
+  --workflow-id ID      Restrict to a specific workflow
+  --db-path PATH        Database path (default: materials.db)
+  --action ACTION       dashboard (default) | status | report | stats
 
 Examples:
   mace monitor                    # Real-time dashboard
   mace monitor --status           # Quick status check
   mace monitor --status --detailed # Detailed status with recent activity
   mace monitor --status --summary  # Minimal summary only
+  mace monitor --action report --output report.json
 
+Note: --material-id is currently NOT honored in --status mode.
 For action-specific options, use: mace monitor --action <ACTION> --help
 """,
         'analyze': """
@@ -697,6 +623,7 @@ Extract properties from CRYSTAL output files.
 Options:
   --extract-properties DIR    Directory containing output files (required)
   --material-id ID           Filter by material ID or override material ID
+  --calc-id ID               Override calculation ID
   --calc-type TYPE           Filter by calculation type (OPT, SP, FREQ, BAND, DOSS)
   --filter-material ID       Only extract properties for specific material ID
   --filter-type TYPE         Only extract properties from specific calculation type
@@ -715,44 +642,73 @@ Note: This command extracts properties and stores them in the materials database
 Filters help process only specific materials or calculation types.
 """,
         'convert': """
-Usage: mace convert <cif_files> [options]
+Usage: mace convert [--cif_dir DIR] [--output_dir DIR] [options]
 
-Convert CIF files to CRYSTAL D12 input format.
-Runs NewCifToD12.py with all its options.
+Convert CIF files to CRYSTAL D12 input format (wraps NewCifToD12.py). Input is
+read from a DIRECTORY (--cif_dir, default: current directory), NOT individual
+file arguments. Functional / basis / calculation settings are chosen
+INTERACTIVELY (or loaded from a saved options file in batch mode).
+
+Options:
+  --cif_dir DIR         Directory containing the .cif files (default: ./)
+  --output_dir DIR      Output directory for .d12 files (default: same as --cif_dir)
+  --batch               Run non-interactively using a saved options file
+  --save_options        Save the chosen options for later batch reuse
+  --options_file FILE   File to save/load options for batch mode
 
 Examples:
-  mace convert structure.cif
-  mace convert *.cif
-  mace convert structures/ --functional B3LYP --basis POB-TZVP
+  mace convert                                  # interactive, CIFs from ./
+  mace convert --cif_dir structures/
+  mace convert --cif_dir structures/ --output_dir d12s/
+  mace convert --cif_dir . --save_options --options_file myopts.json
+  mace convert --cif_dir . --batch --options_file myopts.json
 
-For full options, the command will show NewCifToD12.py help when run without arguments.
+Running with no arguments starts the interactive converter.
 """,
         'opt2d12': """
-Usage: mace opt2d12 <output_file> [options]
+Usage: mace opt2d12 [--out-file FILE | --directory DIR] [options]
 
-Generate D12 input files from optimized CRYSTAL output.
-Runs CRYSTALOptToD12.py with all its options.
+Generate new D12 input files from optimized CRYSTAL output (wraps
+CRYSTALOptToD12.py). The output file is given via --out-file (there is NO
+positional argument); calculation type via --calc-type {SP,OPT,FREQ}.
+
+Options:
+  --out-file FILE       CRYSTAL output (.out) to convert
+  --d12-file FILE       Original .d12 (for settings reference)
+  --directory DIR       Process all files in DIR (default: current directory)
+  --output-dir DIR      Output directory (default: same as input)
+  --calc-type {SP,OPT,FREQ}        Calculation type (for --non-interactive)
+  --opt-type {FULLOPTG,ATOMONLY,CELLONLY}
+  --config-file FILE    JSON config (skips interactive prompts)
+  --non-interactive     Skip all prompts (use defaults / provided options)
+  --shared-settings     Apply the same settings to all files
+  --save-options / --options-file FILE    Save/load options
 
 Examples:
-  mace opt2d12 optimized.out
-  mace opt2d12 calculation.out --sp
-  mace opt2d12 calculation.out --freq
-  mace opt2d12 calculation.out --both
-
-For full options, the command will show CRYSTALOptToD12.py help when run without arguments.
+  mace opt2d12 --out-file optimized.out
+  mace opt2d12 --out-file optimized.out --calc-type SP --non-interactive
+  mace opt2d12 --directory . --calc-type FREQ --non-interactive
 """,
         'opt2d3': """
-Usage: mace opt2d3 <output_file> --calc-type TYPE [options]
+Usage: mace opt2d3 --input FILE --calc-type TYPE [options]
 
-Generate D3 property input files from CRYSTAL output.
-Runs CRYSTALOptToD3.py with all its options.
+Generate D3 property input files from CRYSTAL output (wraps CRYSTALOptToD3.py).
+The output file is given via --input/-i (there is NO positional argument).
+
+Options:
+  --input, -i FILE      CRYSTAL output (.out/.log)
+  --calc-type, -t TYPE  One of: BAND, DOSS, TRANSPORT, CHARGE, POTENTIAL,
+                        CHARGE+POTENTIAL
+  --batch, -b           Process all .out files in the current directory
+  --config-file, -c FILE   Load D3 configuration from JSON
+  --save-config         Save configuration after interactive setup
+  --list-configs        List available D3 configuration files
+  --output-dir, -o DIR  Output directory (default: same as input)
 
 Examples:
-  mace opt2d3 optimized.out --calc-type BAND
-  mace opt2d3 optimized.out --calc-type DOSS
-  mace opt2d3 optimized.out --calc-type ALL --mode advanced
-
-For full options, the command will show CRYSTALOptToD3.py help when run without arguments.
+  mace opt2d3 --input optimized.out --calc-type BAND
+  mace opt2d3 -i optimized.out -t DOSS
+  mace opt2d3 --batch --calc-type BAND
 """,
         'opt2cif': """
 Usage: mace opt2cif [files/directory] [options]
@@ -766,7 +722,8 @@ Examples:
   mace opt2cif /path/to/calculations/
   mace opt2cif . --output-dir cifs/ --include-metadata
 
-For full options, the command will show CrystalOutToCif.py help when run without arguments.
+Accepts files or directories as positional targets (e.g. `.` for the current
+directory). For the full option list run `mace opt2cif --help`.
 """,
         'manager': """
 Usage: mace manager [options]
@@ -778,8 +735,11 @@ Options:
   --d12-dir DIR         Directory with D12 files (default: current directory)
   --max-jobs N          Maximum concurrent jobs (default: 250)
   --reserve N           Reserved job slots (default: 30)
+  --organize            Copy inputs into <calc_type>/<material_id>/ folders
+                        (default: submit in place)
   --callback-mode MODE  Callback mode for completion handling
-  --dry-run             Show what would be submitted without actually submitting
+  --dry-run             NOT implemented: currently ignored (a warning prints and a
+                        REAL submission proceeds). Use --status for a non-submitting view.
 
 Examples:
   mace manager --status                              # Check queue status
@@ -804,6 +764,7 @@ Options:
   --action ACTION       Action to perform: recover, stats, config (default: recover)
   --max-recoveries N    Maximum number of recoveries to attempt (default: 10)
   --config FILE         Path to recovery configuration file
+  --db PATH             Path to materials database
   --create-config       Create default recovery configuration
 
 Examples:
@@ -842,7 +803,7 @@ OPTIONS:
   --format FORMAT       Export format (export only)
   --output FILE         Output file path (export only)
   --materials LIST      Comma-separated IDs (compare only)
-  --material-ids LIST   Comma-separated IDs (missing only)
+  --material-ids LIST   Comma-separated IDs (missing/workflow/validate)
   
 Options marked with specific actions in parentheses only work with those actions.
 
@@ -887,13 +848,13 @@ Options:
 
 Examples:
   mace engine                                    # Show workflow status
-  mace engine --action process                   # Process pending workflows
+  mace engine --action process                   # Process completed calcs, submit next step
   mace engine --action status --material-id diamond
-  mace engine --action workflow                  # Show workflow templates
+  mace engine --action workflow                  # Per-material workflow-completion summary
 
 For action-specific options, use: mace engine --action <ACTION> --help
 
-Note: The --dry-run option shown in some docs is not implemented.
+Note: --action status requires --material-id. There is no --dry-run/--max-submit.
 """,
         'plotting': """
 Usage: mace plotting [options]
@@ -1005,6 +966,28 @@ Status Categories:
   Errors:        Failed calculations categorized by error type
   Ongoing:       Incomplete calculations still running or pending
   Unknown:       Files with unrecognized error patterns
+""",
+        'status': """
+Usage: mace status [options]
+
+Backward-compatibility alias for 'mace monitor --status'. All arguments are
+forwarded to the monitor status view. Prefer 'mace monitor --status' going forward.
+
+Examples:
+  mace status
+  mace status --detailed
+""",
+        'credits': """
+Usage: mace credits
+
+Show the MACE development team and acknowledgements. Equivalent to the global
+'mace --credits' flag.
+""",
+        'version': """
+Usage: mace version
+
+Show the MACE version (single-sourced from mace/__init__.py). Equivalent to the
+global 'mace --version' flag.
 """
     }
     
@@ -1083,7 +1066,7 @@ def main():
         sys.exit(0)
     
     # Check if asking for help on a specific command (for non-passthrough commands)
-    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'completion', 'plotting']:
+    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'completion', 'plotting', 'credits', 'version']:
         # Show command-specific help
         show_command_help(sys.argv[1])
         sys.exit(0)
@@ -1105,8 +1088,14 @@ Commands:
   manager     Enhanced Queue Manager - material tracking, workflow automation, SLURM integration
   recover     Error recovery - automated fixes for SHRINK, memory, and convergence issues
   database    Database queries - search materials, export results, view statistics
-  engine      Workflow automation - manages OPT→SP→BAND progression automatically
-  plotting    Plot outputs - band structures, DOS, and structure visualizations
+  engine      Workflow automation - process completed calcs and submit the next step
+  plotting    Plot outputs - band structures, DOS, structures, cube volumetrics, FREQ/IR/Raman
+  credits     Show the development team (same as --credits)
+  version     Show the MACE version (same as --version)
+
+Aliases / deprecated:
+  status      Alias for 'mace monitor --status'
+  queue       Deprecated - use 'mace manager'
 
 Quick Start:
   mace workflow --interactive      # Plan new workflow

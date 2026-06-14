@@ -4,6 +4,16 @@
 
 **Findings:** 48 total — 13 high · 8 medium · 18 low · 9 nit
 
+## RESOLUTION (2026-06-14) — all doc-only fixes applied
+
+Every non-plotting finding is fixed in `mace_cli` (help text only, no behavior changes):
+- Deleted the **fabricated `--action … --help`** content for `workflow` (it has no `--action` → now redirects to the real flag-driven interface), and stripped non-existent flags from `engine`/`recover`/`monitor` action-help; added the real `monitor --action report`.
+- Rewrote the broken **passthrough** curated blocks (`convert`, `opt2d12`, `opt2d3`) to the real interfaces, and fixed `opt2cif`'s trailing note. (Passthrough `--help` still shows each tool's own accurate argparse output.)
+- Added missing **`status` / `version` / `credits`** help blocks (+ routed `version`/`credits`); fixed `manager --dry-run` (labeled not-implemented) and added `--organize`; fixed `recover --max-recoveries` default (3→10) and the recoverable-errors list; added `analyze --calc-id`, `recover --db`, `monitor` pass-through flags; added `opt_sp_freq` to the workflow template list; fixed the top-level epilog (now lists `credits`/`version` + an Aliases section for `status`/`queue`).
+- **Plotting findings (3) left as-is** — advisory; that area is under active development elsewhere.
+
+Verified: `mace_cli` compiles; every `<cmd> --help` renders; the previously fabricated invocations no longer advertise non-existent flags; full suite **529 passing**.
+
 ## Overall
 
 Help-text accuracy across the MACE CLI is uneven. Pass-through-only utilities (submit, queue, database) and the auto-generated argparse help they expose are accurate, but the hand-maintained curated help blocks in mace_cli have drifted badly from the underlying tools' real interfaces. Three commands are outright inaccurate (workflow, convert, engine): they advertise positional arguments, flags, and entire --action sub-modes that do not exist and that error out (exit 2) when a user copies them verbatim. The recover and monitor commands document several non-existent flags/actions alongside real, undocumented ones. A recurring structural problem is that every passthrough command (convert, opt2d12, opt2d3, opt2cif, completion) intercepts --help BEFORE show_command_help, so the curated help_text blocks for those commands are dead code that no user ever sees yet still drift; conversely status and version reach show_command_help but have no help_text key, so their --help prints "No help available" or the generic top-level help. Several deprecated/alias commands (status, queue, credits, version) are inconsistently represented between the usage brace list, the epilog Commands block, and the argparse choices. Net: bare --help renders for nearly everything, but the per-command guidance is trustworthy mainly for the passthrough tools' own auto-generated argparse output and for submit/database; the curated MACE-level help should not be trusted without verification for workflow, convert, engine, recover, and monitor.
