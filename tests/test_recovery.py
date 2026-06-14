@@ -209,6 +209,30 @@ def test_submit_to_slurm_sbatches_override_batch_file(tmp_path, monkeypatch):
     assert job_id == "778899"
 
 
+def test_disk_full_classified_as_disk_space_error(tmp_path):
+    """recovery#F2: 'DISK FULL' was classified io_error and excluded from the
+    recoverable gate, so the engine's cleanup_handler was unreachable. It must now
+    classify as disk_space_error. analyze_calculation_error reads only
+    calc['output_file'], so a bare manager (no __init__) exercises it."""
+    from mace.queue.manager import EnhancedCrystalQueueManager
+    mgr = EnhancedCrystalQueueManager.__new__(EnhancedCrystalQueueManager)
+    out = tmp_path / "job.out"
+    out.write_text(" SCF ENDED\n DISK FULL - cannot write fort.9\n")
+    etype, _ = mgr.analyze_calculation_error({"output_file": str(out)})
+    assert etype == "disk_space_error"
+
+
+def test_engine_recovers_disk_space_error(engine, original_d12, tmp_path):
+    """The disk_space_error handler (cleanup) must produce a recovery result with
+    the input unchanged (cleanup frees scratch; it is not an input fix)."""
+    calc = {"calc_id": "D1", "material_id": "M1", "calc_type": "OPT",
+            "input_file": str(original_d12), "work_dir": str(tmp_path),
+            "error_type": "disk_space_error"}
+    res = engine.attempt_recovery(calc, create_record=False)
+    assert res is not None
+    assert res["fixed_input_file"] == original_d12
+
+
 def test_resubmit_submits_the_fix_not_the_original(engine, original_d12, tmp_path):
     """The core B1 fix: the resubmission must carry the FIXED input."""
     from mace.queue.manager import EnhancedCrystalQueueManager

@@ -1120,9 +1120,13 @@ class EnhancedCrystalQueueManager:
                     "DUE TO TIME LIMIT",
                     "TIME LIMIT EXCEEDED"
                 ],
+                'disk_space_error': [
+                    "DISK FULL",
+                    "NO SPACE LEFT",
+                    "DISK QUOTA EXCEEDED"
+                ],
                 'io_error': [
                     "I/O ERROR",
-                    "DISK FULL",
                     "PERMISSION DENIED"
                 ]
             }
@@ -1154,8 +1158,12 @@ class EnhancedCrystalQueueManager:
         """
         calc_id = calc['calc_id']
         
-        # Check if error type is recoverable
-        recoverable_errors = ['shrink_error', 'memory_error', 'convergence_error', 'timeout_error', 'scf_error']
+        # Check if error type is recoverable. disk_space_error routes to the
+        # engine's cleanup_handler (frees scratch >100MB, protecting wavefunction
+        # files) -- previously 'DISK FULL' was lumped into io_error and excluded
+        # here, so the advertised disk-space recovery was unreachable.
+        recoverable_errors = ['shrink_error', 'memory_error', 'convergence_error',
+                              'timeout_error', 'scf_error', 'disk_space_error']
         if error_type not in recoverable_errors:
             print(f"⚠️  Error type '{error_type}' is not recoverable for {calc_id}")
             return False
