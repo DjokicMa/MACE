@@ -146,7 +146,8 @@ def _cube_config_from_args(args) -> Dict[str, Any]:
         cfg["operation"] = "diff"
 
     cfg["colorscale"] = getattr(args, "colorscale", None) or None
-    cfg["alpha"] = getattr(args, "alpha", cfg["alpha"])
+    # NB: --alpha is owned by the band group (different default/semantics); cube
+    # opacity stays at its engine default and is reachable via --engine-args.
     cfg["show_atoms"] = not getattr(args, "no_atoms", False)
     cfg["bonds"] = bool(getattr(args, "bonds", False))
     cfg["publication"] = bool(getattr(args, "publication", False))

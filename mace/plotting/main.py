@@ -24,7 +24,7 @@ from typing import List, Dict, Optional, Any
 
 from . import handlers  # noqa: F401  (import side-effect: registers all plotters)
 from . import detect
-from .registry import PlotKind, REGISTRY, entries
+from .registry import PlotKind, REGISTRY, entries, get
 from .prompts import select_option, yes_no_prompt
 
 
@@ -180,9 +180,33 @@ Examples:
         help='Visualize crystal structures from CIF files'
     )
     mode_group.add_argument(
+        '--cube',
+        action='store_true',
+        help='Plot cube volumetric data (ECH3/POT3 density, potential, spin)'
+    )
+    mode_group.add_argument(
+        '--freq', '--vibmodes',
+        dest='freq',
+        action='store_true',
+        help='Render FREQ vibrational normal modes'
+    )
+    mode_group.add_argument(
         '--all',
         action='store_true',
         help='Plot all available outputs with defaults'
+    )
+
+    # Explicit input file(s); when omitted, files are auto-discovered in -d.
+    parser.add_argument(
+        'files',
+        nargs='*',
+        metavar='FILE',
+        help='Explicit input file(s); omit to auto-discover in --directory'
+    )
+    parser.add_argument(
+        '--format',
+        choices=['html', 'png', 'svg', 'pdf'],
+        help='Output format for cube/FREQ plots (default: html)'
     )
 
     # Common options
@@ -259,6 +283,57 @@ Examples:
         help='Color atoms by coordination number'
     )
 
+    # Cube visualization options
+    cube_group = parser.add_argument_group('cube visualization options')
+    cube_group.add_argument('--density', '--charge', dest='density', action='store_true',
+                            help='Cube: select density quantity (implies --cube)')
+    cube_group.add_argument('--esp', '--potential', dest='esp', action='store_true',
+                            help='Cube: select electrostatic potential (implies --cube)')
+    cube_group.add_argument('--spin', action='store_true',
+                            help='Cube: select spin density (implies --cube)')
+    cube_group.add_argument('--diff', nargs=2, metavar=('A', 'B'),
+                            help='Cube difference A - B (implies --cube)')
+    cube_group.add_argument('--iso',
+                            help='Cube isovalue(s), comma-separated (e.g. 0.001,0.01)')
+    cube_group.add_argument('--view', choices=['iso', 'slice', 'slice-all'],
+                            help='Cube view (default: iso)')
+    cube_group.add_argument('--slice', nargs=2, metavar=('AXIS', 'POS'),
+                            help='Single 2D slice: axis (x/y/z) and integer index')
+    cube_group.add_argument('--slice-all', metavar='AXIS',
+                            help='Grid of slices along AXIS (x/y/z)')
+    cube_group.add_argument('--colorscale', help='Plotly colorscale name')
+    cube_group.add_argument('--no-atoms', action='store_true', help='Cube: do not draw atoms')
+    cube_group.add_argument('--bonds', action='store_true', help='Cube: draw bonds')
+    cube_group.add_argument('--publication', action='store_true', help='Cube: publication styling')
+    cube_group.add_argument('--log', action='store_true', help='Cube: log color scale')
+    cube_group.add_argument('--linear', action='store_true', help='Cube: linear color scale')
+    cube_group.add_argument('--clip', type=float, default=99.5,
+                            help='Cube: color clip percentile (default: 99.5)')
+    cube_group.add_argument('--engine-args',
+                            help='Advanced: extra cube-engine flags (shlex-split; '
+                                 'output-controlling flags are screened out)')
+
+    # Vibrational mode options ( --all-modes is deliberately NOT in mode_group,
+    # so it never clashes with the top-level --all; see H5 ).
+    freq_group = parser.add_argument_group('vibrational mode options')
+    freq_group.add_argument('--mode', type=int, help='FREQ: render this mode number')
+    freq_group.add_argument('--all-modes', action='store_true',
+                            help='FREQ: render every mode into one HTML (explicit opt-in)')
+    freq_group.add_argument('--list-modes', action='store_true',
+                            help='FREQ: list the mode table only (no render)')
+    freq_group.add_argument('--amplitude', type=float, default=1.0,
+                            help='FREQ: displacement amplitude (default: 1.0)')
+    freq_group.add_argument('--gif', action='store_true',
+                            help='FREQ: export an animated GIF instead of HTML')
+    freq_group.add_argument('--gif-fps', type=int, default=20,
+                            help='FREQ: GIF frames per second (default: 20)')
+    freq_group.add_argument('--static', action='store_true',
+                            help='FREQ: static view with arrows (no animation)')
+    freq_group.add_argument('--normalize', action='store_true',
+                            help='FREQ: normalize displacements for visibility')
+    freq_group.add_argument('--frames', type=int,
+                            help='FREQ: animation frame count (default: 30)')
+
     return parser
 
 
@@ -277,21 +352,21 @@ def main(argv: Optional[List[str]] = None) -> int:
         argv = sys.argv[1:]
 
     args = parser.parse_args(argv)
+    files_pos = list(getattr(args, 'files', []) or [])
 
-    # Single-kind mode (--band / --dos / --structure). Mode flags are mutually
-    # exclusive, so at most one matches.
-    for entry in entries():
-        if getattr(args, entry.flag, False):
-            by_kind = detect.discover(args.directory)
-            files = by_kind.get(entry.kind, [])
-            if not files:
-                print(entry.not_found_msg)
-                return 1
-            config = (entry.config_from_args(args)
-                      if entry.config_from_args else entry.configure(interactive=False))
-            print(entry.progress_tmpl.format(n=len(files)))
-            entry.handler(files, config, args.output)
-            return 0
+    # H4: --diff owns exactly its two operands; extra positionals are an error.
+    if getattr(args, 'diff', None) and files_pos:
+        parser.error('--diff takes exactly two cube files; '
+                     'remove the extra positional argument(s)')
+
+    # A mode flag pins the kind (mutually exclusive, so at most one matches);
+    # cube sub-flags (--density/--esp/--spin/--diff) imply --cube.
+    pinned = next((e for e in entries() if getattr(args, e.flag, False)), None)
+    if pinned is None and _cube_implied(args):
+        pinned = get(PlotKind.CUBE)
+
+    if pinned is not None:
+        return _dispatch_pinned(pinned, args, files_pos)
 
     if args.all:
         by_kind = detect.discover(args.directory)
@@ -307,8 +382,81 @@ def main(argv: Optional[List[str]] = None) -> int:
             entry.handler(files, config, args.output)
         return 0
 
+    # Explicit files with no mode flag: classify each and dispatch by kind.
+    if files_pos:
+        return _dispatch_positional(args, files_pos)
+
     # Interactive mode (default)
     run_interactive(args.directory)
+    return 0
+
+
+def _cube_implied(args) -> bool:
+    """True when a cube sub-flag is present without an explicit mode flag."""
+    return bool(getattr(args, 'density', False) or getattr(args, 'esp', False)
+                or getattr(args, 'spin', False) or getattr(args, 'diff', None))
+
+
+def _filter_cube_subtype(files: List[str], args) -> List[str]:
+    """Narrow discovered cubes to a requested sub-type by the trailing filename
+    token (``_DENS``/``_POT``/``_SPIN``.CUBE). Filename-level only — the engine
+    remains the authority on the data-level sub-type (integration-plan C2)."""
+    token = ('dens' if getattr(args, 'density', False)
+             else 'pot' if getattr(args, 'esp', False)
+             else 'spin' if getattr(args, 'spin', False) else None)
+    if token is None:
+        return files
+    return [f for f in files if Path(f).name.lower().endswith(f'_{token}.cube')]
+
+
+def _config_for(entry, args):
+    return (entry.config_from_args(args)
+            if entry.config_from_args else entry.configure(interactive=False))
+
+
+def _dispatch_pinned(entry, args, files_pos: List[str]) -> int:
+    """Run a single pinned plotter: explicit files win, else discover its kind."""
+    if entry.kind == PlotKind.CUBE and getattr(args, 'diff', None):
+        files = list(args.diff)
+    elif files_pos:
+        files = files_pos
+    else:
+        files = detect.discover(args.directory).get(entry.kind, [])
+        if entry.kind == PlotKind.CUBE:
+            files = _filter_cube_subtype(files, args)
+
+    if not files:
+        print(entry.not_found_msg)
+        return 1
+
+    config = _config_for(entry, args)
+    print(entry.progress_tmpl.format(n=len(files)))
+    entry.handler(files, config, args.output)
+    return 0
+
+
+def _dispatch_positional(args, files_pos: List[str]) -> int:
+    """Classify explicit files by content/name and dispatch grouped by kind."""
+    groups: Dict[PlotKind, List[str]] = {}
+    for f in files_pos:
+        kind = detect.classify_file(f)
+        if kind is None:
+            print(f"  Skipping unrecognized file: {Path(f).name} "
+                  f"(force with --cube/--freq/--band/--dos)")
+            continue
+        groups.setdefault(kind, []).append(f)
+
+    if not groups:
+        print("  No recognized plottable files.")
+        return 1
+
+    for entry in entries():               # registration order
+        files = groups.get(entry.kind)
+        if not files:
+            continue
+        config = _config_for(entry, args)
+        print(entry.progress_tmpl.format(n=len(files)))
+        entry.handler(files, config, args.output)
     return 0
 
 
