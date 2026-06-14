@@ -46,6 +46,7 @@ class DatFileProcessor:
         Returns:
             Dictionary with band structure data
         """
+        file_path = Path(file_path)  # tolerate str callers (matches formula_extractor)
         if not file_path.exists():
             return {"error": f"File not found: {file_path}"}
 
@@ -85,6 +86,7 @@ class DatFileProcessor:
         Returns:
             Dictionary with density of states data
         """
+        file_path = Path(file_path)  # tolerate str callers (matches formula_extractor)
         if not file_path.exists():
             return {"error": f"File not found: {file_path}"}
         
@@ -213,6 +215,7 @@ class DatFileProcessor:
         nepts = nproj = 0
         nspin = 1
         tokens: List[float] = []
+        line_widths: Dict[int, int] = {}  # column-count -> frequency (for headerless fallback)
         for raw in content.split('\n'):
             line = raw.strip()
             if not line:
@@ -235,9 +238,11 @@ class DatFileProcessor:
             if line.startswith('@'):
                 continue  # xmgrace directive
             try:
-                tokens.extend(float(x) for x in line.split())
+                vals = [float(x) for x in line.split()]
             except ValueError:
                 continue
+            tokens.extend(vals)
+            line_widths[len(vals)] = line_widths.get(len(vals), 0) + 1
 
         results['num_proj'] = nproj
         results['num_spins'] = nspin
@@ -249,7 +254,17 @@ class DatFileProcessor:
             if nepts and nspin and len(tokens) % (nepts * nspin) == 0:
                 width = len(tokens) // (nepts * nspin)
             else:
-                width = 0
+                # No usable NEPTS/NPROJ header: fall back to the column count
+                # CRYSTAL actually wrote per line (unwrapped DOSS = one record per
+                # line). This recovers headerless files that previously parsed to
+                # ZERO points; last resort is energy+total (width 2).
+                modal = max(line_widths, key=line_widths.get) if line_widths else 0
+                if modal >= 2 and len(tokens) % modal == 0:
+                    width = modal
+                elif len(tokens) % 2 == 0:
+                    width = 2
+                else:
+                    width = 0
 
         energy_points: List[float] = []
         total_dos: List[float] = []
@@ -380,10 +395,13 @@ class DatFileProcessor:
         except Exception:
             pass
 
-        # DOS at the Fermi level (within ~0.1 eV of E = 0), for reporting.
-        fwin = 0.0037  # Hartree
-        near = [d for e, d in zip(es, ds) if abs(e) <= fwin]
-        analysis['dos_at_fermi'] = (max(near) if near
+        # DOS at the Fermi level: the value at the first grid point AT or ABOVE
+        # E = 0. (Taking max over a +/-window, or even the closest point, returned
+        # the nonzero valence-band tail at E=0^- for an insulator instead of ~0;
+        # the first point >= E_F sits in the gap and reports ~0 correctly, while a
+        # true metal still reports its finite Fermi-level DOS.)
+        at_or_above = [(e, d) for e, d in zip(es, ds) if e >= 0]
+        analysis['dos_at_fermi'] = (min(at_or_above, key=lambda ed: ed[0])[1] if at_or_above
                                     else ds[min(range(len(es)), key=lambda i: abs(es[i]))])
 
         # Width of the near-zero-DOS run closest to (and within ~0.27 eV of) E = 0.
