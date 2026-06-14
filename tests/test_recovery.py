@@ -137,6 +137,39 @@ def test_memory_handler_preserves_mem_per_cpu_form(engine, original_d12, tmp_pat
     assert not re.search(r"#SBATCH\s+--mem=", text)
 
 
+def test_timeout_handler_matches_short_t_form(engine, original_d12, tmp_path):
+    """bug_006: the templates emit '#SBATCH -t ...' (short form), but the old regex
+    only matched '--time=HH:MM:SS', so every real timeout recovery silently no-op'd.
+    Drive the real timeout_handler against the production short form."""
+    script = tmp_path / "job.sh"
+    script.write_text("#!/bin/bash\n#SBATCH -t 2:00:00\n#SBATCH --mem-per-cpu=5G\n")
+    calc = {"calc_id": "T1", "material_id": "M1", "calc_type": "OPT",
+            "input_file": str(original_d12), "work_dir": str(tmp_path),
+            "job_script": str(script), "error_type": "timeout_error"}
+    res = engine.attempt_recovery(calc, create_record=False)
+    bumped = res["fixed_job_script"]
+    assert bumped is not None and bumped.exists()          # was None before the fix
+    text = bumped.read_text()
+    assert "-t 0-04:00:00" in text                          # 2h * 2, -t form preserved
+    assert "--time" not in text                              # must not switch directive form
+
+
+def test_timeout_handler_handles_days_field_and_cap(engine, original_d12, tmp_path):
+    """The production OPT default is '-t 7-00:00:00' (7 days). The old colon-split
+    cap parse crashed on the configured max_walltime '7-00:00:00'. The handler must
+    parse the days field, cap at the 7-day limit, and never SHRINK the job."""
+    script = tmp_path / "job.sh"
+    script.write_text("#!/bin/bash\n#SBATCH -t 7-00:00:00\n")
+    calc = {"calc_id": "T2", "material_id": "M1", "calc_type": "OPT",
+            "input_file": str(original_d12), "work_dir": str(tmp_path),
+            "job_script": str(script), "error_type": "timeout_error"}
+    res = engine.attempt_recovery(calc, create_record=False)
+    bumped = res["fixed_job_script"]
+    assert bumped is not None and bumped.exists()
+    # 7d * 2 = 14d, capped to the 7-day max, never below original -> stays 7 days.
+    assert "-t 7-00:00:00" in bumped.read_text()
+
+
 def test_submit_to_slurm_sbatches_override_batch_file(tmp_path, monkeypatch):
     """B2 regression: a recovery-bumped, ready-made SLURM batch file (literal
     #SBATCH directives, mode 0o644 / NOT executable) passed via

@@ -111,7 +111,10 @@ class ErrorRecoveryEngine:
                 "timeout_error": {
                     "handler": "timeout_handler",
                     "walltime_factor": 2.0,
-                    "max_walltime": "48:00:00",
+                    # 7-day HPCC limit (matches mace/config/recovery_config.yaml);
+                    # the old "48:00:00" both contradicted the YAML and would cap a
+                    # multi-day OPT below its original walltime.
+                    "max_walltime": "7-00:00:00",
                     "max_retries": 1,
                     "resubmit_delay": 900
                 },
@@ -557,6 +560,47 @@ class ErrorRecoveryEngine:
             print(f"Error applying convergence fix: {e}")
             return None
             
+    @staticmethod
+    def _parse_walltime_seconds(value) -> Optional[int]:
+        """Parse a SLURM walltime to seconds. Handles the forms this repo emits
+        and the common SLURM variants: 'D-HH:MM:SS', 'HH:MM:SS', plus 'D-HH[:MM]',
+        'MM:SS', and bare minutes. Returns None if unparseable."""
+        if not value:
+            return None
+        value = str(value).strip()
+        days = 0
+        days_present = False
+        if '-' in value:
+            d, _, value = value.partition('-')
+            try:
+                days = int(d)
+            except ValueError:
+                return None
+            days_present = True
+        try:
+            nums = [int(p) for p in value.split(':')]
+        except ValueError:
+            return None
+        if days_present:                       # D-HH[:MM[:SS]]
+            h = nums[0] if len(nums) > 0 else 0
+            m = nums[1] if len(nums) > 1 else 0
+            s = nums[2] if len(nums) > 2 else 0
+        elif len(nums) == 1:                   # bare minutes
+            h, m, s = 0, nums[0], 0
+        elif len(nums) == 2:                   # MM:SS
+            h, m, s = 0, nums[0], nums[1]
+        else:                                  # HH:MM:SS
+            h, m, s = nums[0], nums[1], nums[2]
+        return ((days * 24 + h) * 60 + m) * 60 + s
+
+    @staticmethod
+    def _format_walltime(total_seconds: int) -> str:
+        """Format seconds as SLURM's 'D-HH:MM:SS'."""
+        days, rem = divmod(int(total_seconds), 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes, seconds = divmod(rem, 60)
+        return f"{days}-{hours:02d}:{minutes:02d}:{seconds:02d}"
+
     def timeout_handler(self, calc: Dict, config: Dict) -> Optional[Path]:
         """Handler for timeout errors - increases walltime."""
         print(f"Applying timeout fix for {calc['calc_id']}")
@@ -571,37 +615,43 @@ class ErrorRecoveryEngine:
             with open(job_script, 'r') as f:
                 script_content = f.read()
                 
-            # Find current walltime
-            time_match = re.search(r'#SBATCH\s+--time[=\s]+(\d+):(\d+):(\d+)', script_content)
-            
+            # Find current walltime. SLURM accepts both -t and --time, and the
+            # value may carry a days field (D-HH:MM:SS) -- the form this repo's own
+            # templates emit ('#SBATCH -t 7-00:00:00'). Match either directive and
+            # the optional days, and preserve whichever was used (mirrors the
+            # --mem/--mem-per-cpu form preservation in memory_handler).
+            time_match = re.search(
+                r'#SBATCH\s+(--time|-t)[=\s]+((?:\d+-)?\d+(?::\d+){0,2})', script_content)
+
             if time_match:
-                hours = int(time_match.group(1))
-                minutes = int(time_match.group(2))
-                seconds = int(time_match.group(3))
-                
-                total_seconds = hours * 3600 + minutes * 60 + seconds
-                
+                directive = time_match.group(1)
+                total_seconds = self._parse_walltime_seconds(time_match.group(2))
+                if not total_seconds:
+                    print("Could not parse walltime in job script")
+                    return None
+
                 # Apply time factor
                 time_factor = config.get('walltime_factor', 2.0)
                 new_total_seconds = int(total_seconds * time_factor)
-                
-                # Convert back to HH:MM:SS
-                new_hours = new_total_seconds // 3600
-                new_minutes = (new_total_seconds % 3600) // 60
-                new_seconds = new_total_seconds % 60
-                
-                # Check against maximum
-                max_time_str = config.get('max_walltime', '48:00:00')
-                max_hours = int(max_time_str.split(':')[0])
-                if new_hours > max_hours:
-                    new_hours = max_hours
-                    new_minutes = 0
-                    new_seconds = 0
-                    
-                # Update job script
-                new_time_line = f"#SBATCH --time={new_hours:02d}:{new_minutes:02d}:{new_seconds:02d}"
+
+                # Cap at the configured maximum (days-aware), but never below the
+                # original walltime -- a low/legacy default must not SHRINK a
+                # multi-day job (the old '48:00:00' default + colon-split parse
+                # both broke on the '7-00:00:00' the templates actually use).
+                max_total = self._parse_walltime_seconds(config.get('max_walltime', '7-00:00:00'))
+                if max_total:
+                    new_total_seconds = min(new_total_seconds, max_total)
+                new_total_seconds = max(new_total_seconds, total_seconds)
+
+                new_walltime = self._format_walltime(new_total_seconds)
+
+                # Update job script, preserving the original directive form.
+                if directive == '-t':
+                    new_time_line = f"#SBATCH -t {new_walltime}"
+                else:
+                    new_time_line = f"#SBATCH --time={new_walltime}"
                 updated_script = re.sub(
-                    r'#SBATCH\s+--time[=\s]+\d+:\d+:\d+',
+                    r'#SBATCH\s+(?:--time|-t)[=\s]+(?:\d+-)?\d+(?::\d+){0,2}',
                     new_time_line,
                     script_content
                 )
@@ -614,7 +664,7 @@ class ErrorRecoveryEngine:
                 with open(new_script_path, 'w') as f:
                     f.write(updated_script)
                     
-                print(f"Walltime increased from {hours:02d}:{minutes:02d}:{seconds:02d} to {new_hours:02d}:{new_minutes:02d}:{new_seconds:02d}")
+                print(f"Walltime increased from {self._format_walltime(total_seconds)} to {new_walltime}")
 
                 # Input is unchanged; the fix lives in the bumped job script.
                 # Return both so the resubmitter submits the bumped script.
