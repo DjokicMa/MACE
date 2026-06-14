@@ -617,12 +617,12 @@ Examples:
 For action-specific options, use: mace workflow --action <ACTION> --help
 """,
         'submit': """
-Usage: mace submit <file_or_directory> [options]
+Usage: mace submit [file_or_directory] [options]
 
 Submit CRYSTAL calculations to the queue.
 
 Arguments:
-  file_or_directory     D12/D3 file(s) or directory to submit
+  file_or_directory     D12/D3 file(s) or directory to submit (default: current directory)
 
 Options:
   --interactive, -i     Interactively configure SLURM resources (cores, memory, walltime)
@@ -1309,6 +1309,12 @@ More Help:
                 except Exception as e:
                     print(f"  Failed to submit {f.name}: {e}")
             print(f"\nSubmitted {submitted}/{len(selected)} tracked calculation(s)")
+            # Single copy-pasteable job-id line for follow-up squeue/scancel, at
+            # parity with the non-tracking submit path (the per-file ids were only
+            # printed scattered across the manager's own output).
+            tracked_ids = list(getattr(manager, "legacy_job_status", {}).get("submitted", {}).keys())
+            if tracked_ids:
+                print(f"Job ID(s): {', '.join(str(j) for j in tracked_ids)}")
             sys.exit(0 if submitted == len(selected) else 1)
 
         # Check what type of files we're dealing with
@@ -1542,14 +1548,10 @@ More Help:
             monitor_main()
         
     elif args.command == 'analyze':
-        # Property analysis
-        # Rebuild from original_argv: args.args + remaining loses the pairing
-        # between flags and their values (positionals get pulled ahead)
-        try:
-            analyze_idx = original_argv.index('analyze')
-            all_args = [a for a in original_argv[analyze_idx + 1:] if a != '--no-banner']
-        except ValueError:
-            all_args = args.args + remaining
+        # Property analysis. Use the shared command_args() helper (same as every
+        # other rebuilt subcommand) so the original flag/value pairing is preserved
+        # and --no-banner is stripped consistently, including in the fallback.
+        all_args = command_args('analyze')
         if '--extract-properties' in all_args:
             from utils.property_extractor import main as extract_main
             # Translate --extract-properties [DIR] to the extractor's own flags:

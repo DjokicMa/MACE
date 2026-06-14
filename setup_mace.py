@@ -305,31 +305,30 @@ echo "    - Legacy scripts (Check, Plotting, Post-Processing)"
 echo "MACE (Mendoza Automated CRYSTAL Engine) Example Commands"
 echo "=============================="
 echo ""
-echo "D12 Creation (Crystal_d12):"
-echo "  # Convert CIF files to D12"
-echo "  cd /path/to/cif/files"
-echo "  NewCifToD12.py  # or python $MACE_HOME/code/Crystal_d12/NewCifToD12.py"
+echo "D12 Creation:"
+echo "  # Convert CIF files to D12 (run in the directory with the .cif files)"
+echo "  mace convert"
 echo ""
-echo "  # Create D12 from optimized structure"
-echo "  CRYSTALOptToD12.py material.out"
+echo "  # Create D12 from an optimized structure"
+echo "  mace opt2d12 material.out"
 echo ""
-echo "D3 Creation (Crystal_d3):"
+echo "D3 Creation:"
 echo "  # Create property calculations"
-echo "  CRYSTALOptToD3.py material.out --calc-type BAND"
-echo "  CRYSTALOptToD3.py material.out --calc-type DOSS"
-echo "  CRYSTALOptToD3.py material.out --calc-type TRANSPORT"
+echo "  mace opt2d3 material.out --calc-type BAND"
+echo "  mace opt2d3 material.out --calc-type DOSS"
+echo "  mace opt2d3 material.out --calc-type TRANSPORT"
 echo ""
-echo "Job Management (Job_Scripts):"
+echo "Job Management:"
 echo "  # Run comprehensive workflow"
-echo "  run_workflow.py --interactive"
+echo "  mace workflow --interactive"
 echo ""
-echo "  # Submit jobs"
-echo "  submitcrystal23.sh jobname"
-echo "  submit_prop.sh property_calc"
+echo "  # Submit jobs (a file or a directory; defaults to the current directory)"
+echo "  mace submit material.d12"
+echo "  mace submit ."
 echo ""
 echo "  # Monitor calculations"
-echo "  enhanced_queue_manager.py --status"
-echo "  material_monitor.py --action dashboard"
+echo "  mace monitor --status"
+echo "  mace monitor"
 echo ""
 echo "Analysis:"
 echo "  # Extract properties from completed outputs"
@@ -413,11 +412,11 @@ echo "  All script directories are in PATH"
             print("   mace monitor --dashboard          # Monitor progress")
             print("   mace analyze --extract-properties # Extract properties")
             print("   mace convert --from-cif *.cif     # Convert CIF files")
-            print("\n   Or use scripts directly:")
-            print("   NewCifToD12.py                    # D12 creation")
-            print("   CRYSTALOptToD3.py file.out        # D3 creation")
-            print("   run_workflow.py --interactive     # Workflow management")
-            print("   enhanced_queue_manager.py --help  # Queue management")
+            print("\n   More commands:")
+            print("   mace opt2d12 file.out             # D12 creation")
+            print("   mace opt2d3 file.out              # D3 creation")
+            print("   mace workflow --interactive       # Workflow management")
+            print("   mace monitor --status             # Queue status")
 
 def main():
     parser = argparse.ArgumentParser(
