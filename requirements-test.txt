@@ -1,0 +1,6 @@
+# Pinned test dependencies so the regression gate isn't at the mercy of upstream
+# major releases (a breaking pytest/numpy major could otherwise turn CI red with
+# no change in this repo). Loosen deliberately when intentionally upgrading.
+pytest<9
+pyyaml
+numpy<3

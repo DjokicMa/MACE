@@ -25,15 +25,17 @@ GROUPING_KEYS = {
 
 
 @pytest.fixture(scope="module")
-def sp_properties():
+def sp_properties(tmp_path_factory):
     """Extracted properties from a real SP/OPT output that has an energy block
     and a band gap (a molecular electrolyte SP with HSESOL3C)."""
     from mace.utils.property_extractor import CrystalPropertyExtractor
     out = find_data("**/*_sp_*.out", must_contain="TOTAL ENERGY")
     if "charge" in out.name or "band" in out.name:
         pytest.skip("matched a charge/band output without the SP energy block")
-    ex = CrystalPropertyExtractor(db_path="/tmp/__agg_keys_test.db",
-                                  enable_tracking=False)
+    # tmp_path_factory (session-scoped, works with this module-scoped fixture) for
+    # isolation, instead of a fixed world-writable /tmp file.
+    db = tmp_path_factory.mktemp("agg") / "agg.db"
+    ex = CrystalPropertyExtractor(db_path=str(db), enable_tracking=False)
     return ex.extract_all_properties(out, material_id="m", calc_id="c")
 
 
