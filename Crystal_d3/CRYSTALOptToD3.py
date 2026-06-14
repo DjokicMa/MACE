@@ -1511,50 +1511,55 @@ def main():
         # If we're in batch mode (directory was provided), skip single-file processing
         if not (hasattr(args, 'batch') and args.batch and input_file is None):
             # Single file processing.
-            # A config file carries its own calculation_type — read it before
-            # falling back to the interactive prompt, which crashed with
-            # EOFError when applying a saved config non-interactively.
-            if not args.calc_type and args.config_file:
-                peek_config = load_d3_config(args.config_file)
-                if peek_config and peek_config.get('calculation_type'):
-                    args.calc_type = peek_config['calculation_type']
+            # A config file carries its own calculation_type. Load it ONCE here and
+            # reuse it for both calc-type resolution and generation -- it was
+            # previously loaded twice (a 'peek' plus the load below), printing the
+            # "Loaded D3 configuration..." banner twice. (The peek originally fixed
+            # an EOFError when applying a saved config non-interactively.)
+            config = None
+            if args.config_file:
+                config = load_d3_config(args.config_file)
+                if not config:
+                    print(f"Failed to load configuration from {args.config_file}")
+                    return
+                if not args.calc_type and config.get('calculation_type'):
+                    args.calc_type = config['calculation_type']
+
             if not args.calc_type:
                 print("\nSelect calculation type:")
-                print("1: BAND - Electronic band structure") 
+                print("1: BAND - Electronic band structure")
                 print("2: DOSS - Density of states")
                 print("3: TRANSPORT - Transport properties (Boltzmann)")
                 print("4: CHARGE - Charge density (3D or 2D)")
                 print("5: POTENTIAL - Electrostatic potential")
                 print("6: CHARGE+POTENTIAL - Combined calculation")
-                
-                choice = input("\nSelect type (1-6): ").strip()
+
                 calc_types = {
                     "1": "BAND", "2": "DOSS", "3": "TRANSPORT",
                     "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL"
                 }
-                calc_type = calc_types.get(choice, "BAND")
+                choice = input("\nSelect type (1-6): ").strip()
+                while choice not in calc_types:
+                    # Re-prompt instead of silently defaulting a typo to BAND, which
+                    # would generate the wrong property calculation with no warning.
+                    print(f"  '{choice}' is not a valid choice; enter a number 1-6.")
+                    choice = input("Select type (1-6): ").strip()
+                calc_type = calc_types[choice]
             else:
                 calc_type = args.calc_type
-            
-            # Load configuration if specified
-            config = None
-            if args.config_file:
-                config = load_d3_config(args.config_file)
-                if config:
-                    print_d3_config_summary(config)
-                    # Validate configuration
-                    is_valid, errors = validate_d3_config(config)
-                    if not is_valid:
-                        print("\nConfiguration validation errors:")
-                        for error in errors:
-                            print(f"  - {error}")
-                        return
-                    # Override calc_type from config if present
-                    if "calculation_type" in config:
-                        calc_type = config["calculation_type"]
-                else:
-                    print(f"Failed to load configuration from {args.config_file}")
+
+            # Validate / summarize the already-loaded config.
+            if config:
+                print_d3_config_summary(config)
+                is_valid, errors = validate_d3_config(config)
+                if not is_valid:
+                    print("\nConfiguration validation errors:")
+                    for error in errors:
+                        print(f"  - {error}")
                     return
+                # Override calc_type from config if present
+                if "calculation_type" in config:
+                    calc_type = config["calculation_type"]
             
             generator = D3Generator(input_file, calc_type, args.output_dir)
             

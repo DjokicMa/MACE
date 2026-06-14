@@ -1093,7 +1093,9 @@ def normalize_lattice_type(lat: str) -> str:
         'orthorhombic_fc': 'F',
         'orthorhombic_ab': 'C',
         'orthorhombic_ac': 'C',
-        'orthorhombic_bc': 'C',
+        # NOTE: 'orthorhombic_bc' is body-centered -> 'I' (defined above). A stray
+        # duplicate 'orthorhombic_bc': 'C' here silently overrode it to C-centered;
+        # removed. (C-centered variants are ab/ac.)
         'monoclinic_simple': 'P',
         'monoclinic_ac': 'C',
         'rhombohedral': 'R',
