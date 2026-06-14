@@ -10,12 +10,21 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-_DIR = Path(__file__).resolve().parent.parent / "test" / "AddedPlottingFunctionalty"
-if str(_DIR) not in sys.path:
-    sys.path.insert(0, str(_DIR))
+# Cube engine ships in the package (relocated from gitignored test/) so this
+# import — and the CubeFile tests below — run on a fresh clone.
+ccp = pytest.importorskip("mace.plotting.engines.crystal_cubeviz_plotly")
 
-ccp = pytest.importorskip("crystal_cubeviz_plotly")
-sc = pytest.importorskip("subtract_cubes")
+# subtract_cubes is a DEPRECATED standalone diagnostic intentionally left under
+# gitignored test/ (the shipped cube engine's own diff path supersedes it). Its
+# tests skip on a clone; they must not skip the CubeFile tests above.
+_SC_DIR = Path(__file__).resolve().parent.parent / "test" / "AddedPlottingFunctionalty"
+if str(_SC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SC_DIR))
+try:
+    import subtract_cubes as sc
+except ImportError:
+    sc = None
+_needs_sc = pytest.mark.skipif(sc is None, reason="subtract_cubes (deprecated diagnostic) not on disk")
 
 NV = (6, 6, 6)
 VOX = [[0.4, 0, 0], [0, 0.4, 0], [0, 0, 0.4]]
@@ -69,6 +78,7 @@ def test_cubefile_reads_positive_natoms_unchanged(tmp_path):
     assert cube.data_all is None
 
 
+@_needs_sc
 def test_subtract_reader_handles_negative_natoms(tmp_path):
     f = tmp_path / "multi_DENS.cube"
     _write_multidataset(f)
@@ -77,6 +87,7 @@ def test_subtract_reader_handles_negative_natoms(tmp_path):
     assert np.allclose(cube["data"], 1.0)
 
 
+@_needs_sc
 def test_subtract_output_natoms_positive_roundtrip(tmp_path):
     a, b, out = tmp_path / "a.cube", tmp_path / "b.cube", tmp_path / "out.CUBE"
     _write_single(a, 2.0)

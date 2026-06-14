@@ -24,12 +24,10 @@ import pytest
 
 from conftest import find_data
 
-# vibmode_viewer.py lives in the (not-yet-wired) plotting scripts dir.
-_VIB_DIR = Path(__file__).resolve().parent.parent / "test" / "AddedPlottingFunctionalty"
-if str(_VIB_DIR) not in sys.path:
-    sys.path.insert(0, str(_VIB_DIR))
-
-vib = pytest.importorskip("vibmode_viewer")
+# FREQ engine ships in the package (relocated from gitignored test/); import it
+# from there so this parser test runs on a fresh clone. (The real .out corpus
+# below is still loaded from test/ via find_data, which skips if absent.)
+vib = pytest.importorskip("mace.plotting.engines.vibmode_viewer")
 
 # Cubic perovskite: 5 atoms, 15 modes, degenerate ranges, imaginary soft mode,
 # 6+6+3 eigenvector blocks.

@@ -9,11 +9,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-_DIR = Path(__file__).resolve().parent.parent / "test" / "AddedPlottingFunctionalty"
-if str(_DIR) not in sys.path:
-    sys.path.insert(0, str(_DIR))
-
-ccp = pytest.importorskip("crystal_cubeviz_plotly")
+# Cube engine ships in the package (relocated from gitignored test/); import it
+# from there so this test runs on a fresh clone.
+ccp = pytest.importorskip("mace.plotting.engines.crystal_cubeviz_plotly")
 
 
 def _grid_r(vox, nvox):
