@@ -908,6 +908,8 @@ Modes:
   --structure           Visualize crystal structures from CIF files
   --cube                Render cube volumetrics (ECH3/POT3 density, ESP, spin)
   --freq, --vibmodes    Render FREQ vibrational normal modes
+  --ir / --raman        Plot IR / Raman spectra (*IRSPEC.DAT / *RAMSPEC.DAT)
+  --spectra             Plot both IR and Raman (umbrella)
   --all                 Plot all available outputs with defaults
 
 Common Options:
@@ -947,6 +949,12 @@ Vibrational Mode Options:
   --gif                 Export an animated GIF instead of HTML
   --amplitude F / --normalize / --static
 
+Spectra (IR / Raman) Options:
+  --raman-mode MODE     total | par_perp | all (default: all)
+  --average             Average conf-style (-confN_) spectra per material
+  --ir-column N         IR intensity column index (default: 2 = absorbance)
+                        (spectra are matplotlib png/svg/pdf; --format html -> png)
+
 Examples:
   mace plotting                     # Interactive mode
   mace plotting --band              # Plot all band structures with defaults
@@ -955,6 +963,8 @@ Examples:
   mace plotting --diff after.CUBE before.CUBE
   mace plotting --freq mol_freq.out --list-modes
   mace plotting --freq mol_freq.out --mode 7 --gif
+  mace plotting --spectra --average
+  mace plotting --raman --raman-mode all
 
 Supported File Types:
   Band Structure: *.band.band.dat, *.BAND.DAT
@@ -962,6 +972,7 @@ Supported File Types:
   Structures: *.cif
   Cube volumetrics: *.CUBE (DENS/POT/SPIN; auto-detected sub-type)
   FREQ vibrational modes: *.out with a phonon normal-modes block
+  IR / Raman spectra: *IRSPEC.DAT / *RAMSPEC.DAT
 
 Output Formats:
   - Interactive HTML (plotly) by default

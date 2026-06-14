@@ -143,8 +143,8 @@ def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser for mace plotting."""
     parser = argparse.ArgumentParser(
         prog='mace plotting',
-        description='Plot CRYSTAL calculation outputs '
-                    '(bands, DOS, structures, cube volumetrics, FREQ vibrational modes)',
+        description='Plot CRYSTAL calculation outputs (bands, DOS, structures, '
+                    'cube volumetrics, FREQ vibrational modes, IR/Raman spectra)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -162,6 +162,10 @@ Examples:
   mace plotting --freq mol_freq.out --list-modes
   mace plotting --freq mol_freq.out --mode 7 --gif
   mace plotting --freq mol_freq.out --all-modes
+
+  mace plotting --ir                     # plot every *IRSPEC.DAT
+  mace plotting --raman --raman-mode all # Raman incl. single-crystal directions
+  mace plotting --spectra --average      # IR + Raman, conf configs averaged
 """
     )
 
@@ -197,6 +201,21 @@ Examples:
         dest='freq',
         action='store_true',
         help='Render FREQ vibrational normal modes'
+    )
+    mode_group.add_argument(
+        '--ir',
+        action='store_true',
+        help='Plot IR spectra (*IRSPEC.DAT)'
+    )
+    mode_group.add_argument(
+        '--raman',
+        action='store_true',
+        help='Plot Raman spectra (*RAMSPEC.DAT)'
+    )
+    mode_group.add_argument(
+        '--spectra',
+        action='store_true',
+        help='Plot both IR and Raman spectra (umbrella)'
     )
     mode_group.add_argument(
         '--all',
@@ -342,6 +361,15 @@ Examples:
     freq_group.add_argument('--frames', type=int,
                             help='FREQ: animation frame count (default: 30)')
 
+    # Spectra (IR / Raman) options
+    spectra_group = parser.add_argument_group('spectra (IR / Raman) options')
+    spectra_group.add_argument('--raman-mode', choices=['total', 'par_perp', 'all'],
+                               help="Raman intensities: total / par_perp / all (default: all)")
+    spectra_group.add_argument('--average', action='store_true',
+                               help='Average conf-style (-confN_) spectra per material')
+    spectra_group.add_argument('--ir-column', type=int, default=2,
+                               help='IR intensity column index (default: 2 = absorbance)')
+
     return parser
 
 
@@ -375,6 +403,12 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if pinned is not None:
         return _dispatch_pinned(pinned, args, files_pos)
+
+    # --spectra umbrella: both IR and Raman.
+    if getattr(args, 'spectra', False):
+        return _dispatch_kinds([PlotKind.SPECTRA_IR, PlotKind.SPECTRA_RAMAN],
+                               args, files_pos,
+                               empty_msg="  No spectra (IRSPEC/RAMSPEC .DAT) files found.")
 
     if args.all:
         by_kind = detect.discover(args.directory)
@@ -440,6 +474,30 @@ def _dispatch_pinned(entry, args, files_pos: List[str]) -> int:
     config = _config_for(entry, args)
     print(entry.progress_tmpl.format(n=len(files)))
     entry.handler(files, config, args.output)
+    return 0
+
+
+def _dispatch_kinds(kinds, args, files_pos: List[str], empty_msg: str) -> int:
+    """Dispatch several kinds at once (the --spectra umbrella). Explicit files
+    are classified/routed by content; otherwise each kind is discovered."""
+    if files_pos:
+        return _dispatch_positional(args, files_pos)
+
+    by_kind = detect.discover(args.directory)
+    any_done = False
+    for kind in kinds:
+        entry = get(kind)
+        files = by_kind.get(kind, [])
+        if not files:
+            continue
+        config = _config_for(entry, args)
+        print(entry.progress_tmpl.format(n=len(files)))
+        entry.handler(files, config, args.output)
+        any_done = True
+
+    if not any_done:
+        print(empty_msg)
+        return 1
     return 0
 
 
