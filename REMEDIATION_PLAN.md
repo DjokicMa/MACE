@@ -28,8 +28,16 @@ documented in PRE_PUSH_REVIEW.md (several pre-existing, not introduced by this b
   mock-only tested, which hid them. New NON-mocked regression tests (test_recovery.py).
 - MEDIUM (`f840e946`) — SPINLOCK cycle count now threaded through the real d12 write call sites +
   d12_config direct_mappings (was silently reset to 50). New test drives the real call site.
-- Suite: **427 tests** green (424 baseline + 3 new). Remaining low/nits NOT yet actioned — pick from
-  PRE_PUSH_REVIEW.md if the user wants them before/after push.
+- Suite: **427 tests** green at that point. THEN a cloud ultrareview was run + reconciled, and the
+  user opted to fix EVERYTHING (Tier 1 correctness + Tier 2 UI/UX + Tier 3 low). ALL DONE:
+  - Cloud correctness: timeout_handler `-t`/days-field (`d9cb77b5`), scan material_id -> canonical
+    (`a86c2d01`). Cloud bug_001 (plotting imports) = user's separate instance, FLAGGED not fixed.
+  - Low/UX: DOSS parser headerless/dos_at_fermi/str-path (`b7d694e7`), db dedup/isoformat/suggest/
+    validate/LaTeX (`e3e235a3`), d3 single-load/re-prompt/lattice-key (`4217a8e3`), CLI help+--track
+    +analyze (`aa9cb596`), d12 back-nav first-keystroke+cosmetics (`dbeddb31`), disk-space recovery
+    reachable (`c248bb00`), doc hygiene + CI matrix/pinning.
+  - Suite now **457 passing**. EXCLUDED (plotting domain): Plotting/ipDOS_V2.py extraction#F2.
+  - Local `main` ~103 commits ahead, STILL NOT pushed — awaiting user go-ahead.
 - CONSTRAINTS still apply: do NOT edit `mace/plotting/*`, `tests/test_plotting_*`,
   `tests/test_vibmode_parser.py` (user's SEPARATE instance — [[project-plotting-separate-instance]]);
   /home/marcus/anaconda3/bin/python; real `test/*.out`; don't-fix-what-works. Still NOT pushed.

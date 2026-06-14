@@ -7,7 +7,27 @@ real `test/*.out` data. `mace/plotting/*`, `tests/test_plotting_*`, `tests/test_
 were excluded (separate effort).
 **Agents:** 59 · **Raw findings:** 41 · **Confirmed:** 35 · **Refuted/overstated:** 6
 
-## Verdict: ⛔ DO NOT PUSH YET
+## RESOLUTION (2026-06-13, all tiers fixed)
+
+After this report, a **cloud ultrareview** was also run and reconciled. Net new from
+the cloud: 2 confirmed correctness fixes (timeout-handler regex; scan material_id
+divergence) + 1 flagged plotting issue (below). **All actionable findings are now
+fixed and committed** (each behind a regression test where applicable); suite **457
+passing** (was 424). Commit map:
+- Blockers: `c05a3043` (B1/B2), `f840e946` (SPINLOCK).
+- Cloud correctness: `d9cb77b5` (timeout `-t`/days), `a86c2d01` (canonical material_id).
+- Low/UX waves: `b7d694e7` (DOSS parser), `e3e235a3` (db), `4217a8e3` (d3),
+  `aa9cb596` (CLI/UX), `dbeddb31` (d12 back-nav), `c248bb00` (disk recovery),
+  doc/CI hygiene commits.
+- ⚠️ **Cloud bug_001 (plotting) — NOT actioned (your separate instance).** The
+  committed `HEAD:mace/plotting/main.py` has no broken imports, so the current push
+  is safe; but your uncommitted refactor imports `registry/detect/prompts/handlers`
+  which exist only as untracked files. Commit `main.py` **together** with those four
+  submodules or `mace plotting` breaks on a clean checkout.
+
+---
+
+## Verdict (original): ⛔ DO NOT PUSH YET
 
 Two **HIGH** correctness bugs in the **error-recovery resubmission path** (both *newly
 activated* by this diff — they were latent/dead on `origin/main`). One **MEDIUM** (SPINLOCK
