@@ -217,9 +217,11 @@ class ExportFormatter:
         output_path = Path(output_file)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Select key columns for LaTeX table (too many columns don't work well)
-        key_columns = ['material_id', 'formula', 'space_group', 'band_gap', 
-                      'total_energy', 'optimization_converged']
+        # Select key columns for LaTeX table (too many columns don't work well).
+        # Use the canonical property name 'total_energy_au' (the extractor/DB never
+        # emit a bare 'total_energy', so it was always silently dropped here).
+        key_columns = ['material_id', 'formula', 'space_group', 'band_gap',
+                      'total_energy_au', 'optimization_converged']
         
         # Filter to available columns
         available_columns = []

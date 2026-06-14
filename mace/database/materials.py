@@ -1142,7 +1142,9 @@ class MaterialDatabase:
                 material_id, calc_id, property_category,
                 property_name, property_value_num, property_value_text,
                 property_unit, confidence, extractor_script,
-                datetime.now()
+                # isoformat string (matches every other timestamp in this module
+                # and avoids the deprecated sqlite3 default datetime adapter on 3.12+)
+                datetime.now().isoformat()
             ))
 
             conn.commit()

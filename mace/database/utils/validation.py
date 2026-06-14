@@ -486,6 +486,11 @@ class DatabaseValidator:
         if material_ids:
             wanted = set(material_ids)
             materials = [m for m in materials if m['material_id'] in wanted]
+            # Surface requested-but-not-found ids so a typo'd/stale selection is
+            # reported instead of silently yielding an empty "all valid" report.
+            missing = sorted(wanted - {m['material_id'] for m in materials})
+            if missing:
+                report['missing_materials'] = missing
         report['total_materials'] = len(materials)
         
         for material in materials:

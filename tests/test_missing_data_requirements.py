@@ -22,6 +22,18 @@ def test_electronic_classification_not_required_for_sp():
     assert "electronic_classification" in REQ["SP"]["optional"]
 
 
+def test_suggested_calcs_excludes_completed_calc_types():
+    """db-analysis-export#F1: completed calc types must never be re-suggested. With
+    everything completed, band_gap/fermi_energy count as 'missing' and used to pull
+    their PROPERTY_DEPENDENCIES (BAND/DOSS/SP) back in unconditionally; now they're
+    filtered against completed_calcs."""
+    a = MissingDataAnalyzer(db=None)
+    r = a._analyze_material_missing(
+        "m", existing_props=set(), completed_calcs={"OPT", "SP", "BAND", "DOSS"})
+    assert all(c not in r["suggested_calculations"]
+               for c in ("OPT", "SP", "BAND", "DOSS"))
+
+
 def test_required_property_names_use_extractor_suffixes():
     """The table must use the names the extractor actually emits (the original
     bug was names like 'total_energy' that the extractor never writes)."""

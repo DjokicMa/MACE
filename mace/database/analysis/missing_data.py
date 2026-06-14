@@ -210,10 +210,14 @@ class MissingDataAnalyzer:
         # Suggest calculations to get missing properties
         suggested_calcs = set()
         for prop in analysis['missing_properties']:
-            # Check if property has known dependencies
+            # Check if property has known dependencies. Match the FULL dependency
+            # key (or one of its variants), NOT just its first underscore token --
+            # 'band_gap'.split('_')[0] == 'band' used to match every band_* property
+            # and over-suggest SP/BAND/DOSS/TRANSPORT. Also skip already-completed
+            # calc types so a finished SP isn't recommended again.
             for dep_name, dep_calcs in self.PROPERTY_DEPENDENCIES.items():
-                if prop.startswith(dep_name.split('_')[0]):  # Match property category
-                    suggested_calcs.update(dep_calcs)
+                if prop == dep_name or prop.startswith(dep_name + '_'):
+                    suggested_calcs.update(c for c in dep_calcs if c not in completed_calcs)
                     
         # Also check direct calc type mapping
         for calc_type, missing_props in analysis['missing_by_calc_type'].items():

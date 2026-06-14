@@ -153,9 +153,12 @@ def populate_database(completed_calcs: List[Dict], db) -> int:
             
             already_exists = False
             for existing in existing_calcs:
-                # Match by output file, or — for records created at submission
-                # time before any output exists (engine/executor records have
-                # output_file=NULL) — by work_dir + calc_type
+                # Match by output file, or -- for records whose stored output_file
+                # (a submission-time guess set by the executor) differs from the
+                # actual scanned filename -- by work_dir + base calc type. The scan
+                # always emits a BASE calc type (OPT/SP/BAND/...), while the engine
+                # persists NUMBERED steps (OPT2/SP2/BAND3), so compare on the
+                # digit-stripped base or a second OPT/SP would dedup-miss.
                 same_output = (
                     calc_info.get('output_file')
                     and existing.get('output_file') == calc_info.get('output_file')
@@ -163,7 +166,8 @@ def populate_database(completed_calcs: List[Dict], db) -> int:
                 same_workdir = (
                     existing.get('work_dir') and calc_info.get('work_dir')
                     and str(existing['work_dir']).rstrip('/') == str(calc_info['work_dir']).rstrip('/')
-                    and existing.get('calc_type') == calc_info.get('calc_type')
+                    and str(existing.get('calc_type') or '').rstrip('0123456789')
+                        == str(calc_info.get('calc_type') or '').rstrip('0123456789')
                 )
                 if same_output or same_workdir:
                     already_exists = True
