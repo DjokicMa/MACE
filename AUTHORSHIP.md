@@ -83,7 +83,7 @@ This document provides comprehensive authorship attribution for the MACE (Mendoz
 - `queries.py` - Database query utilities
 
 **Queue Module:**
-- `legacy_manager.py` - Legacy queue manager compatibility
+- `manager.py` - Enhanced tracking queue manager (EnhancedCrystalQueueManager)
 
 **Recovery Module:**
 - `pandas_utils.py` - Pandas utility functions
@@ -127,7 +127,6 @@ This document provides comprehensive authorship attribution for the MACE (Mendoz
 - `fixk.py` - Fix k-point issues
 
 **Plotting_Scripts:**
-- `OverviewPDF.py` - Generate overview PDFs
 - `overview.py` (archived) - Legacy overview script
 
 #### Daniel Maldonado Lopez
