@@ -8,5 +8,6 @@ and ``spectra`` modules here; each is imported below so a single
 from . import legacy  # noqa: F401  (import side-effect: registers band/DOS/structure)
 from . import cube  # noqa: F401  (import side-effect: registers cube volumetric)
 from . import freq  # noqa: F401  (import side-effect: registers FREQ vibrational modes)
+from . import spectra  # noqa: F401  (import side-effect: registers IR / Raman spectra)
 
-__all__ = ['legacy', 'cube', 'freq']
+__all__ = ['legacy', 'cube', 'freq', 'spectra']
