@@ -752,12 +752,35 @@ class EnhancedCrystalQueueManager:
                     print(f"Error running script generator: {result.stderr}")
                     return None
                     
+            elif re.search(r'(?m)^\s*#SBATCH\b', script_content):
+                # A ready-made SLURM batch file (e.g. an error-recovery bumped
+                # --mem/--time script returned via submit_script_override). It must
+                # be handed to sbatch, NOT executed directly: executing the batch
+                # body would run the payload on the login node and never print a
+                # 'Submitted batch job N' line, and such files are typically not +x
+                # (raising PermissionError that gets swallowed upstream, so recovery
+                # silently never resubmits). Submit via sbatch and parse the job id.
+                print(f"  Submitting SLURM batch file via sbatch: {script_path.name}")
+                cmd = ['sbatch', str(script_path)]
+                result = subprocess.run(cmd, capture_output=True, text=True)
+
+                if result.returncode == 0:
+                    job_id_match = re.search(r'Submitted batch job (\d+)', result.stdout)
+                    if job_id_match:
+                        return job_id_match.group(1)
+                    else:
+                        print(f"Could not extract job ID from: {result.stdout.strip()}")
+                        return None
+                else:
+                    print(f"Error submitting batch file: {result.stderr}")
+                    return None
+
             else:
-                # This is a regular SLURM script - submit directly
+                # A self-submitting executable script (legacy path) - run it directly.
                 print(f"  Submitting SLURM script: {script_path.name}")
                 cmd = [str(script_path), job_name]
                 result = subprocess.run(cmd, capture_output=True, text=True)
-                
+
                 if result.returncode == 0:
                     # Extract job ID from sbatch output
                     output = result.stdout.strip()

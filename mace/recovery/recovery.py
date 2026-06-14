@@ -373,12 +373,18 @@ class ErrorRecoveryEngine:
             with open(job_script, 'r') as f:
                 script_content = f.read()
                 
-            # Find current memory allocation
-            memory_match = re.search(r'#SBATCH\s+--mem(?:-per-cpu)?[=\s]+(\d+)([GMK]?)B?', script_content)
-            
+            # Find current memory allocation. Capture the directive itself so we
+            # can preserve whether it is per-cpu (--mem-per-cpu) or total (--mem):
+            # the standard CRYSTAL template uses --mem-per-cpu=5G, and rewriting
+            # that to a total --mem would silently collapse a 5G x ntasks
+            # allocation (e.g. 160GB) into a few GB total -- the opposite of the
+            # bump this handler exists to perform.
+            memory_match = re.search(r'#SBATCH\s+(--mem(?:-per-cpu)?)[=\s]+(\d+)([GMK]?)B?', script_content)
+
             if memory_match:
-                current_memory = int(memory_match.group(1))
-                unit = memory_match.group(2) or 'G'
+                mem_directive = memory_match.group(1)  # '--mem' or '--mem-per-cpu'
+                current_memory = int(memory_match.group(2))
+                unit = memory_match.group(3) or 'G'
                 
                 # Convert to GB for calculations
                 if unit == 'M':
@@ -399,8 +405,9 @@ class ErrorRecoveryEngine:
                 if new_memory_gb > max_memory_gb:
                     new_memory_gb = max_memory_gb
                     
-                # Update job script
-                new_memory_line = f"#SBATCH --mem={new_memory_gb}GB"
+                # Update job script, preserving the original directive form so a
+                # per-cpu allocation stays per-cpu (and a total stays total).
+                new_memory_line = f"#SBATCH {mem_directive}={new_memory_gb}GB"
                 updated_script = re.sub(
                     r'#SBATCH\s+--mem(?:-per-cpu)?[=\s]+\d+[GMK]?B?',
                     new_memory_line,

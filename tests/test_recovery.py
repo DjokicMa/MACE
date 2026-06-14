@@ -115,6 +115,67 @@ def test_memory_handler_returns_bumped_script(engine, original_d12, tmp_path):
     assert "--mem=120GB" in bumped.read_text()          # 80 * 1.5
 
 
+def test_memory_handler_preserves_mem_per_cpu_form(engine, original_d12, tmp_path):
+    """B1 regression: the standard CRYSTAL template uses --mem-per-cpu=5G with
+    ntasks=32 (=160GB total). The bump must PRESERVE the per-cpu form (5->7G per
+    cpu); rewriting it to a bare total --mem=7GB silently cuts the allocation
+    ~23x and guarantees a worse OOM. Drives the real memory_handler (not mocked).
+    """
+    import re
+    script = tmp_path / "job.sh"
+    script.write_text(
+        "#!/bin/bash\n#SBATCH --ntasks=32\n#SBATCH --mem-per-cpu=5G\n#SBATCH -t 7-00:00:00\n")
+    calc = {"calc_id": "C3", "material_id": "M1", "calc_type": "OPT",
+            "input_file": str(original_d12), "work_dir": str(tmp_path),
+            "job_script": str(script), "error_type": "memory_error"}
+    res = engine.attempt_recovery(calc, create_record=False)
+    bumped = res["fixed_job_script"]
+    assert bumped is not None and bumped.exists()
+    text = bumped.read_text()
+    assert "--mem-per-cpu=7GB" in text                      # 5 * 1.5, form preserved
+    # Must NOT have been collapsed into a bare total --mem= (the 23x-cut bug).
+    assert not re.search(r"#SBATCH\s+--mem=", text)
+
+
+def test_submit_to_slurm_sbatches_override_batch_file(tmp_path, monkeypatch):
+    """B2 regression: a recovery-bumped, ready-made SLURM batch file (literal
+    #SBATCH directives, mode 0o644 / NOT executable) passed via
+    submit_script_override must be submitted with `sbatch` and its job id parsed
+    -- NOT exec'd directly. Direct execution raised a PermissionError that was
+    swallowed upstream, so recovery silently never resubmitted. Drives the REAL
+    submit_to_slurm (the method the old test mocked away) against a fake sbatch.
+    """
+    import os
+    import stat
+    from mace.queue.manager import EnhancedCrystalQueueManager
+
+    work = tmp_path / "work"
+    work.mkdir()
+    inp = work / "job.d12"
+    inp.write_text("dummy\n")
+
+    # Exactly what the recovery handlers write: a self-contained batch file with
+    # literal #SBATCH lines and NO generator-echo markers, left non-executable.
+    bumped = work / "job_recovery_x.sh"
+    bumped.write_text(
+        "#!/bin/bash --login\n#SBATCH -J job\n#SBATCH --mem-per-cpu=7GB\nPcrystal\n")
+    assert not (bumped.stat().st_mode & stat.S_IXUSR)       # proves +x is not required
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "sbatch"
+    fake.write_text('#!/bin/bash\necho "Submitted batch job 778899"\n')
+    fake.chmod(fake.stat().st_mode | stat.S_IRWXU)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+    mgr = EnhancedCrystalQueueManager(
+        d12_dir=str(work), db_path=str(tmp_path / "mgr.db"),
+        enable_tracking=True, enable_error_recovery=False, organize_outputs=False)
+
+    job_id = mgr.submit_to_slurm(inp, work, "OPT", submit_script_override=bumped)
+    assert job_id == "778899"
+
+
 def test_resubmit_submits_the_fix_not_the_original(engine, original_d12, tmp_path):
     """The core B1 fix: the resubmission must carry the FIXED input."""
     from mace.queue.manager import EnhancedCrystalQueueManager
