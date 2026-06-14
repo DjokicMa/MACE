@@ -36,7 +36,13 @@ os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 
 import numpy as np
 import plotly.graph_objects as go
-import plotly.express as px
+# Use plotly.colors, NOT plotly.express: importing plotly.express pulls in
+# xarray -> pandas -> pyarrow, and under the full `mace` CLI (which already loads
+# the pandas/pyarrow stack) that re-init raises
+# `ArrowKeyError: A type extension with name arrow.py_extension_type already
+# defined`. plotly.colors is the lightweight home of sample_colorscale (the only
+# plotly.express symbol this engine used) and pulls no heavy deps.
+import plotly.colors as pcolors
 from plotly.subplots import make_subplots
 import sys
 import os
@@ -2132,8 +2138,8 @@ def plot_isosurface_plotly(cube: CubeFile, iso_values: Optional[List[float]] = N
     colorscale = get_plotly_colorscale(cube.data_type, colorscale)
     
     # Create color palette for multiple isosurfaces
-    colors = px.colors.sample_colorscale(colorscale, 
-                                         np.linspace(0, 1, len(iso_values)))
+    colors = pcolors.sample_colorscale(colorscale,
+                                       np.linspace(0, 1, len(iso_values)))
     
     # Add isosurfaces
     if HAS_SKIMAGE:

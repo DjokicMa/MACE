@@ -20,6 +20,29 @@ from mace.plotting.handlers import cube as cube_h
 from mace.plotting.registry import PlotKind, get
 
 
+def test_cube_engine_does_not_import_plotly_express():
+    """Regression: importing the cube engine must NOT pull in plotly.express.
+
+    plotly.express imports xarray -> pandas -> pyarrow; under the full `mace` CLI
+    (which already loads that stack) the re-init raises
+    `ArrowKeyError: A type extension with name arrow.py_extension_type already
+    defined`, crashing `mace plotting`. The engine uses plotly.colors instead.
+    Run in a subprocess so other tests' imports can't mask the check.
+    """
+    import subprocess
+    import sys
+
+    code = (
+        "import mace.plotting.engines.crystal_cubeviz_plotly\n"
+        "import sys\n"
+        "bad = [m for m in ('plotly.express', 'xarray') if m in sys.modules]\n"
+        "print('BAD=' + ','.join(bad))\n"
+    )
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "BAD=" in r.stdout and r.stdout.strip() == "BAD="
+
+
 def test_cube_entry_registered():
     e = get(PlotKind.CUBE)
     assert e is not None
