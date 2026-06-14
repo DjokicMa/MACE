@@ -15,18 +15,24 @@ that did NOT reproduce. Re-run each fix against real data and don't overclaim.
 ## PRE-PUSH REVIEW (active task as of 2026-06-13, post-stragglers)
 
 Stragglers 1-6 are DONE (see item details below). Nothing is pushed yet: local `main` is
-**~89 commits ahead of origin/main** — that diff IS the review surface. The user requested a
-LARGE multi-agent review (as many agents as possible) BEFORE pushing:
-- Scope: `git diff origin/main..main` (and `git log --oneline origin/main..main`). Review every
-  changed aspect for (a) correctness / works-as-intended, (b) latent bugs/regressions, (c)
-  optimization opportunities, (d) UI/UX improvements (interactive menus, prompts, CLI output).
-- Use the Workflow tool (user opted into max agents). Adversarially verify findings — audit claims
-  were overstated repeatedly this campaign (dead-code, aggregation "bug", a stale DO-NOT-DELETE).
-- CONSTRAINTS: do NOT edit `mace/plotting/*`, `tests/test_plotting_*`, `tests/test_vibmode_parser.py`
-  (user's SEPARATE instance — see [[project-plotting-separate-instance]]); use
-  /home/marcus/anaconda3/bin/python; verify against real `test/*.out`; don't-fix-what-works.
-  Review is ADVISORY — propose, don't rewrite validated logic without the user's go-ahead.
-- Suite baseline to keep green: 424 tests (`pytest tests/`).
+**~92 commits ahead of origin/main**. The pre-push review IS DONE (2026-06-13):
+
+**PRE-PUSH REVIEW RESULT — see `PRE_PUSH_REVIEW.md` for the full report.** 17-agent Workflow over
+the `origin/main..main` diff, every finding adversarially re-verified. 41 raw → **35 confirmed,
+6 refuted** (the skeptic layer again caught overstatement). Verdict was DO-NOT-PUSH: 2 HIGH + 1
+MEDIUM, all now FIXED (commits below); 0 critical, 0 security. Remaining 17 low + 15 nit are
+documented in PRE_PUSH_REVIEW.md (several pre-existing, not introduced by this branch).
+- B1+B2 (`c05a3043`) — recovery resubmission: memory_handler preserved `--mem-per-cpu` form (was
+  collapsing 160GB→7GB total, ~23x cut); submit_to_slurm now `sbatch`es a ready-made bumped batch
+  file instead of exec'ing it (PermissionError was swallowed → silent no-resubmit). Both were
+  mock-only tested, which hid them. New NON-mocked regression tests (test_recovery.py).
+- MEDIUM (`f840e946`) — SPINLOCK cycle count now threaded through the real d12 write call sites +
+  d12_config direct_mappings (was silently reset to 50). New test drives the real call site.
+- Suite: **427 tests** green (424 baseline + 3 new). Remaining low/nits NOT yet actioned — pick from
+  PRE_PUSH_REVIEW.md if the user wants them before/after push.
+- CONSTRAINTS still apply: do NOT edit `mace/plotting/*`, `tests/test_plotting_*`,
+  `tests/test_vibmode_parser.py` (user's SEPARATE instance — [[project-plotting-separate-instance]]);
+  /home/marcus/anaconda3/bin/python; real `test/*.out`; don't-fix-what-works. Still NOT pushed.
 
 ---
 
