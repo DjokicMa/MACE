@@ -1659,6 +1659,325 @@ class CrystalPropertyExtractor:
             
         return props
     
+    def _build_dos_summary(self, dat_info, content, output_file, doss_dat_file):
+        """Build a compact, JSON-serializable density-of-states summary.
+
+        Mirrors ``_build_band_structure_summary``: this stores the scientifically
+        useful DOS structure WITHOUT dumping the full ~1000-pt x N-projection x
+        2-spin matrix (which is 96 KB - 2 MB of JSON for real slabs) into the
+        properties table. The raw ``DOSS.DAT`` stays on disk (referenced via
+        ``source_file`` + the already-stored ``doss_dat_*`` scalars) and is
+        re-parsed on demand. We persist:
+
+          * the DOS @ Fermi PER SPIN channel (alpha + beta, not just the first),
+          * the gap-from-DOS / band-edge energies (window straddling E_F),
+          * the integrated number of states up to E_Fermi (occupied-state count),
+          * a DOWNSAMPLED total-DOS curve per spin (<= 200 pts/spin, ~few KB) in
+            eV so the shape can be replotted without re-reading the big file,
+          * the projection count + per-projection integrated weight (a single
+            scalar per projection — the atom/orbital decomposition magnitude —
+            not the full per-energy projected curves).
+
+        UNITS. CRYSTAL DOSS.DAT energies are Fermi-referenced Hartree (E -
+        E_Fermi, Fermi at 0) and the DOS magnitudes are in states/HARTREE/cell.
+        We convert the energy axis to eV (``* H``) AND the DOS magnitudes to
+        per-eV (``/ H``) so the stored curve, the DOS@Fermi values and the
+        projection weights are all self-consistent with the ``states/eV/cell``
+        label. The legacy ``DatFileProcessor`` analyzer (``dos_at_fermi`` /
+        ``total_states``) leaves DOS in states/HARTREE/cell, so the documented
+        relationship between the eV values here and the legacy scalars is a
+        single factor of ``H = HARTREE_TO_EV``:
+
+            dos_at_fermi_<spin>_ev (states/eV) * H == legacy doss_dat_at_fermi
+                                                      (states/Ha, single channel)
+
+        For spin-polarized runs the energy grid is written once per spin block
+        (concatenated in ``energy_points``); the beta block's DOS values are
+        sign-negated for mirror plotting, so we take magnitudes for the physical
+        DOS. Returns ``(summary, extra_scalars)`` and ``(None, {})`` when there
+        is no curve to summarize. All values are native float/int/str/bool/list
+        so they JSON-serialize cleanly.
+        """
+        energy_points = dat_info.get('energy_points') or []
+        total_dos = dat_info.get('total_dos') or []
+        if not energy_points or not total_dos:
+            return None, {}
+        # Guard ragged parser output (energy/DOS must stay aligned for slicing).
+        if len(energy_points) != len(total_dos):
+            return None, {}
+
+        H = HARTREE_TO_EV
+        nspin = int(dat_info.get('num_spins') or 1)
+        if nspin < 1:
+            nspin = 1
+        nproj = int(dat_info.get('num_proj') or 0)
+        # NEPTS = points PER spin block. Prefer the header value but never let it
+        # run past the actual array; the grid is repeated once per spin block.
+        nepts_hdr = int(dat_info.get('num_energy_points') or 0)
+        total_len = len(energy_points)
+        if nepts_hdr > 0 and nepts_hdr * nspin == total_len:
+            nepts = nepts_hdr
+        else:
+            # Fall back to an even split; if it doesn't divide cleanly, treat the
+            # whole thing as one block (never desync the per-block slices).
+            if nspin > 1 and total_len % nspin == 0:
+                nepts = total_len // nspin
+            else:
+                nepts = total_len
+                nspin = 1
+
+        da = dat_info.get('dos_analysis') or {}
+
+        # Genuine projection count: the CRYSTAL header NPROJ counts the TOTAL DOS
+        # column as a "projection", and the parser also exposes a projected_dos
+        # column that is byte-identical to the total DOS. Neither is a real
+        # atom/orbital projection, so we count only the projected_dos columns
+        # that are NOT identical to the total DOS (computed below alongside the
+        # per-projection weights). ``num_proj`` is then == len(weights).
+        proj_all = dat_info.get('projected_dos') or {}
+        total_dos_full = total_dos
+        genuine_proj = {
+            name: vals for name, vals in proj_all.items()
+            if not (isinstance(vals, list) and vals == total_dos_full)
+        }
+        n_genuine_proj = len(genuine_proj)
+
+        summary = {
+            'source_file': Path(doss_dat_file).name,
+            'num_energy_points': int(nepts),
+            'num_proj': int(n_genuine_proj),
+            'num_spins': int(nspin),
+            'energy_units': 'eV',
+            'energy_reference': 'fermi',  # DOSS.DAT energies are E - E_Fermi
+            # DOS magnitudes are converted from states/HARTREE/cell to per-eV
+            # (divided by HARTREE_TO_EV) so they match the eV energy axis below.
+            'dos_units': 'states/eV/cell',
+            'spin_polarized': bool(nspin >= 2),
+        }
+
+        erange = dat_info.get('energy_range')
+        if erange and len(erange) == 2:
+            summary['energy_min_ev'] = float(erange[0]) * H
+            summary['energy_max_ev'] = float(erange[1]) * H
+
+        # Absolute Fermi energy (Hartree): footer "# EFERMI (HARTREE) <val>",
+        # printed once per spin block. Parse from the raw .DAT (it is NOT on the
+        # energy axis, which is already Fermi-shifted). Best-effort only.
+        efermi_ha = None
+        try:
+            dat_text = Path(doss_dat_file).read_text(errors='ignore')
+            ef_matches = re.findall(
+                r'EFERMI\s*\(HARTREE\)\s*(-?\d+\.?\d*(?:[Ee][+-]?\d+)?)', dat_text)
+            if ef_matches:
+                efermi_ha = float(ef_matches[-1])
+        except Exception:
+            efermi_ha = None
+        summary['fermi_energy_hartree'] = (
+            float(efermi_ha) if efermi_ha is not None else None)
+
+        # --- Per-spin DOS @ Fermi (value at first grid point AT or ABOVE E=0) ---
+        # Same convention as DatFileProcessor._analyze_density_of_states, but per
+        # spin block so the alpha and beta Fermi-level DOS are both reported
+        # (never silently collapsing to the first channel).
+        def _dos_at_fermi(es, ds):
+            at_or_above = [(e, d) for e, d in zip(es, ds) if e >= 0]
+            if at_or_above:
+                return abs(min(at_or_above, key=lambda ed: ed[0])[1])
+            if not es:
+                return None
+            ci = min(range(len(es)), key=lambda i: abs(es[i]))
+            return abs(ds[ci])
+
+        spin_labels = ['alpha', 'beta'] if nspin >= 2 else ['total']
+        dos_at_fermi_by_spin = {}      # states/eV/cell, per spin channel
+        dos_at_fermi_per_channel = None  # states/eV/cell, single channel (legacy)
+        downsampled = {}
+        # Energy grid (eV) for the first block; identical across blocks.
+        block0_es_ha = energy_points[0:nepts]
+        for s in range(nspin):
+            lo = s * nepts
+            hi = lo + nepts
+            es_ha = energy_points[lo:hi]
+            # DOS magnitudes converted states/Ha -> states/eV (divide by H) so the
+            # stored values match the 'states/eV/cell' label and the eV axis.
+            ds_block = [abs(d) / H for d in total_dos[lo:hi]]
+            if not es_ha:
+                continue
+            label = spin_labels[s] if s < len(spin_labels) else f'spin_{s}'
+            daf = _dos_at_fermi(es_ha, ds_block)  # already per-eV
+            daf_val = float(daf) if daf is not None else None
+            dos_at_fermi_by_spin[label] = daf_val
+            # The legacy analyzer reports a SINGLE channel (first block); keep an
+            # explicit per-channel value so the relationship to doss_dat_at_fermi
+            # is defined (per_channel_ev * H == legacy states/Ha value), with no
+            # silent factor-of-2 vs the both-spins sum below.
+            if s == 0:
+                dos_at_fermi_per_channel = daf_val
+            # Downsample the (E in eV, DOS in states/eV) curve to <= 200 points.
+            # Stride = ceil(n/200) guarantees len(range(0,n,stride)) <= 200
+            # (n//200 could yield 201 points: an off-by-one).
+            n = len(es_ha)
+            stride = max(1, -(-n // 200))  # ceil division
+            curve = [[float(es_ha[i]) * H, float(ds_block[i])]
+                     for i in range(0, n, stride)]
+            downsampled[label] = curve
+        summary['dos_at_fermi_by_spin'] = dos_at_fermi_by_spin
+        summary['total_dos_curve_ev'] = downsampled
+
+        # Two clearly-named Fermi-level DOS aggregates so there is NO silent 2x
+        # disagreement with the single-channel legacy ``doss_dat_at_fermi``:
+        #   * dos_at_fermi_per_channel_ev: single channel (matches legacy/H),
+        #   * dos_at_fermi_both_spins_ev:  alpha + beta (the spin-summed total).
+        finite_daf = [v for v in dos_at_fermi_by_spin.values() if v is not None]
+        both_spins = float(sum(finite_daf)) if finite_daf else None
+        summary['dos_at_fermi_per_channel_ev'] = dos_at_fermi_per_channel
+        summary['dos_at_fermi_both_spins_ev'] = both_spins
+        # Back-compat key: keep ``total_dos_at_fermi`` but make it the SINGLE
+        # channel value (states/eV), matching the legacy convention (legacy/H),
+        # NOT the doubled sum, so the headline no longer disagrees by 2x.
+        total_dos_at_fermi = dos_at_fermi_per_channel
+        summary['total_dos_at_fermi'] = total_dos_at_fermi
+
+        # Gap-from-DOS / band edges: the zero-DOS window straddling E_F. Recompute
+        # the edges here (the analyzer keeps only the width) using the first block
+        # (insulator gap edges are spin-degenerate for the systems CRYSTAL writes
+        # this way; abs() makes the beta block identical). Consistent-by-design
+        # with doss_dat_band_gap_ev which the analyzer derived the same way.
+        band_gap_ev = da.get('band_gap_ev')
+        summary['band_gap_ev'] = (
+            float(band_gap_ev) if band_gap_ev is not None else None)
+        summary['metallic'] = (
+            bool(da['metallic']) if da.get('metallic') is not None else None)
+
+        vbm_ev = cbm_ev = None
+        if block0_es_ha:
+            es0 = [e for e in block0_es_ha]
+            ds0 = [abs(d) for d in total_dos[0:nepts]]
+            pairs = sorted(zip(es0, ds0), key=lambda p: p[0])
+            es = [e for e, _ in pairs]
+            ds = [d for _, d in pairs]
+            span = (es[-1] - es[0]) if len(es) >= 2 else 0.0
+            if span > 0:
+                margin = 0.02 * span
+                interior = [d for e, d in zip(es, ds)
+                            if es[0] + margin <= e <= es[-1] - margin] or ds
+                ordered = sorted(interior)
+                scale = ordered[int(0.95 * (len(ordered) - 1))] if ordered else 0.0
+                if scale > 0:
+                    near_zero = 0.001 * scale
+                    i, n = 0, len(ds)
+                    best = None  # (lo_e, hi_e) of the gap window nearest E_F
+                    while i < n:
+                        if ds[i] < near_zero:
+                            j = i
+                            while j + 1 < n and ds[j + 1] < near_zero:
+                                j += 1
+                            lo_e, hi_e = es[i], es[j]
+                            dist = (0.0 if lo_e <= 0 <= hi_e
+                                    else min(abs(lo_e), abs(hi_e)))
+                            if dist <= 0.01 and (best is None or
+                                                 (hi_e - lo_e) > (best[1] - best[0])):
+                                best = (lo_e, hi_e)
+                            i = j + 1
+                        else:
+                            i += 1
+                    if best is not None:
+                        vbm_ev = float(best[0]) * H  # top of valence (gap onset)
+                        cbm_ev = float(best[1]) * H  # bottom of conduction
+        summary['vbm_ev'] = vbm_ev
+        summary['cbm_ev'] = cbm_ev
+
+        # numpy is NOT imported at module scope here, so use a self-contained
+        # trapezoid (the integrand magnitudes are tiny per-point, no overflow).
+        def _trapz(ys, xs):
+            if len(ys) != len(xs) or len(xs) < 2:
+                return None
+            acc = 0.0
+            for k in range(1, len(xs)):
+                acc += (xs[k] - xs[k - 1]) * (ys[k] + ys[k - 1]) * 0.5
+            return acc
+
+        # Integrated states up to E_Fermi == approx number of OCCUPIED states
+        # (electrons) per cell. The legacy ``total_states`` integrated the SIGNED
+        # alpha(+)/beta(-) concatenated curve over the whole Hartree axis, giving
+        # ~0 (physically meaningless), so we DROP that and instead integrate the
+        # |DOS| magnitude (states/eV, summed over spins) on the eV axis from the
+        # band bottom up to E_Fermi (E <= 0). Units: states/cell (eV cancels).
+        integrated_states_to_fermi = None
+        if block0_es_ha:
+            es_ev_occ = []   # eV energies <= E_Fermi, ascending
+            dos_occ = []     # summed-over-spin |DOS| (states/eV) at those energies
+            for i in range(nepts):
+                e_ha = energy_points[i]
+                if e_ha > 0:
+                    continue
+                e_ev = float(e_ha) * H
+                d_sum = 0.0
+                for s in range(nspin):
+                    idx = s * nepts + i
+                    if idx < len(total_dos):
+                        d_sum += abs(float(total_dos[idx])) / H
+                es_ev_occ.append(e_ev)
+                dos_occ.append(d_sum)
+            if len(es_ev_occ) >= 2:
+                order = sorted(range(len(es_ev_occ)), key=lambda k: es_ev_occ[k])
+                xs = [es_ev_occ[k] for k in order]
+                ys = [dos_occ[k] for k in order]
+                w = _trapz(ys, xs)
+                if w is not None:
+                    integrated_states_to_fermi = float(w)
+        summary['dos_integrated_states_to_fermi'] = integrated_states_to_fermi
+
+        peaks = da.get('peak_positions') or []
+        summary['peak_positions_ev'] = [float(p) * H for p in peaks]
+
+        # Per-projection integrated weight (atom/orbital decomposition magnitude):
+        # the trapezoid integral of |projection|/H over the first block, in
+        # states/cell (states/eV * eV). A single scalar per projection — NOT the
+        # per-energy curves. We integrate only the GENUINE projections (the column
+        # byte-identical to the TOTAL DOS is excluded — it is not a projection),
+        # so len(proj_weights) == num_proj. Keep the neutral projected_dos_N
+        # indices (atom/orbital identity is not available from the .DAT).
+        proj_weights = {}
+        if block0_es_ha and genuine_proj:
+            es0 = block0_es_ha
+            es0_ev = [float(e) * H for e in es0]
+            for name, vals in genuine_proj.items():
+                if not isinstance(vals, list) or len(vals) < nepts:
+                    continue
+                block = [abs(v) / H for v in vals[0:nepts]]  # states/eV
+                if len(block) == len(es0_ev) and len(es0_ev) >= 2:
+                    w = _trapz(block, es0_ev)  # states/cell
+                    if w is not None:
+                        proj_weights[str(name)] = float(w)
+        if proj_weights:
+            summary['projection_integrated_weights'] = proj_weights
+
+        # --- Queryable scalar rows (numeric/bool) — distinct from the JSON blob.
+        extra_scalars = {}
+        # Single-channel DOS@Fermi (states/eV); equals legacy doss_dat_at_fermi/H.
+        if total_dos_at_fermi is not None:
+            extra_scalars['dos_total_at_fermi'] = total_dos_at_fermi
+        if both_spins is not None:
+            extra_scalars['dos_at_fermi_both_spins_ev'] = both_spins
+        for label, val in dos_at_fermi_by_spin.items():
+            if val is not None and label in ('alpha', 'beta'):
+                extra_scalars[f'dos_at_fermi_{label}'] = float(val)
+        if band_gap_ev is not None:
+            extra_scalars['dos_band_gap_from_dos_ev'] = float(band_gap_ev)
+        if da.get('metallic') is not None:
+            extra_scalars['dos_is_metallic'] = bool(da['metallic'])
+        # Meaningful integrated occupied-state count (replaces the meaningless ~0
+        # signed-trapezoid ``dos_total_states`` that was dropped from the blob).
+        if integrated_states_to_fermi is not None:
+            extra_scalars['dos_integrated_states_to_fermi'] = (
+                float(integrated_states_to_fermi))
+        # Genuine projection count == len(projection_integrated_weights); the
+        # total-equals column and the header's TOTAL slot are not counted.
+        extra_scalars['dos_num_projections'] = int(n_genuine_proj)
+
+        return summary, extra_scalars
+
     def _extract_dos_properties(self, content: str, output_file: Path) -> Dict[str, Any]:
         """Extract density of states specific properties from DOSS calculations."""
         props = {}
@@ -1735,6 +2054,29 @@ class CrystalPropertyExtractor:
                         props['doss_dat_band_gap_ev'] = da['band_gap_ev']
                     if da.get('dos_at_fermi') is not None:
                         props['doss_dat_at_fermi'] = da['dos_at_fermi']
+
+                    # LAYERED ADDITION: store the actual DENSITY OF STATES (the
+                    # per-spin DOS @ Fermi, gap/band edges from the DOS, integrated
+                    # states, projection decomposition weights, and a downsampled
+                    # total-DOS curve) as a compact JSON summary, plus queryable
+                    # scalar rows. Per the storage analysis we do NOT dump the full
+                    # ~1000-pt x N-projection x 2-spin matrix; the raw DOSS.DAT
+                    # stays on disk and is re-parsed on demand. Failures here never
+                    # disturb the scalars merged above.
+                    try:
+                        summary, extra_scalars = self._build_dos_summary(
+                            dat_info, content, output_file, dat_file)
+                        if summary:
+                            # Key prefixed 'dos_' so _categorize_property routes
+                            # it to 'density_of_states' (a bare 'density_of_states'
+                            # key would be caught by the earlier 'density' ->
+                            # 'structural' branch).
+                            props['dos_structure'] = summary
+                        for k, v in (extra_scalars or {}).items():
+                            if v is not None:
+                                props[k] = v
+                    except Exception as e:
+                        print(f"Warning: Could not build density-of-states summary: {e}")
             except ImportError:
                 pass  # DAT file processor not available
             except Exception as e:
