@@ -549,26 +549,39 @@ _BANNER_ANIMS = {
 }
 
 
+def _wm_settled(version: str, subtitle: str, meta: Optional[str]):
+    """The settled banner frame: gradient wordmark + subtitle + meta, centered."""
+    p = _CAPS.palette
+    sub = _Text(subtitle, style="bold")
+    meta_text = meta if meta is not None else f"v{version}  ·  Michigan State University  ·  Mendoza Group"
+    return _Align.center(_Group(_wm_final(p.gradient), _Text(), sub, _Text(meta_text, style="dim")))
+
+
 def banner(
     version: str,
     *,
     subtitle: str = _SUBTITLE,
     meta: Optional[str] = None,
+    animate: bool = True,
 ) -> None:
     """Render the MACE wordmark adaptively.
 
-    Interactive (rich + TTY + color): ONE startup animation chosen at random each
-    call from {phonon, decode, shimmer}, played via ``rich.Live`` **in place** (no
-    clear, no forced delay beyond the animation frames), then settling on a SINGLE
-    final frame (wordmark + subtitle + meta).
-    Non-interactive / no rich: a single concise line ``MACE v{version} — {subtitle}``.
-    Honors ``MACE_NO_BANNER`` / ``--no-banner`` (returns immediately when suppressed).
+    ``animate=True`` (default; the startup banner): in rich + TTY + color, play ONE
+    random animation from {phonon, decode, shimmer} via ``rich.Live`` **in place**
+    (no clear, no forced delay beyond the frames), settling on a SINGLE final frame
+    (wordmark + subtitle + meta).
+    ``animate=False`` (the static help/credits/version banner): render that SAME
+    themed wordmark **statically** — no animation — so the logo still gets the
+    crystal/mono gradient instead of plain ASCII art.
+    In both modes, when stdout is piped (not a TTY) or rich is missing, only a single
+    concise line ``MACE v{version} — {subtitle}`` is printed (never ANSI art into a
+    redirect). Honors ``MACE_NO_BANNER`` / ``--no-banner`` (returns when suppressed).
     """
     if _CAPS.banner_suppressed():
         return
 
-    if not _CAPS.interactive:
-        # Concise, plain, no escapes — for pipes / SLURM / no-color / no-rich.
+    def _concise_line() -> None:
+        # Concise, no escapes — for pipes / SLURM / no-color / no-rich.
         line = f"MACE v{version} — {subtitle}"
         if not _CAPS.color_ok:
             import builtins
@@ -576,20 +589,30 @@ def banner(
             builtins.print(_plain(line))
         else:
             _CAPS.console().print(line)
+
+    if animate:
+        # Animated startup banner — unchanged behavior.
+        if not _CAPS.interactive:
+            _concise_line()
+            return
+        console = _CAPS.console()
+        p = _CAPS.palette
+        import time as _time
+        gen, dt = _BANNER_ANIMS[random.choice(list(_BANNER_ANIMS))]
+        with _Live(console=console, refresh_per_second=60, transient=False) as live:
+            for frame in gen(p.gradient):
+                live.update(_Align.center(frame))
+                _time.sleep(dt)
+            live.update(_wm_settled(version, subtitle, meta))
         return
 
-    # Interactive: random startup animation, in-place. NO \033[2J\033[H, no fake sleep.
-    console = _CAPS.console()
-    p = _CAPS.palette
-    import time as _time
-    gen, dt = _BANNER_ANIMS[random.choice(list(_BANNER_ANIMS))]
-    with _Live(console=console, refresh_per_second=60, transient=False) as live:
-        for frame in gen(p.gradient):
-            live.update(_Align.center(frame))
-            _time.sleep(dt)
-        sub = _Text(subtitle, style="bold")
-        meta_text = meta if meta is not None else f"v{version}  ·  Michigan State University  ·  Mendoza Group"
-        live.update(_Align.center(_Group(_wm_final(p.gradient), _Text(), sub, _Text(meta_text, style="dim"))))
+    # Static themed logo: gradient wordmark in a TTY (no animation), concise line
+    # when piped / rich-absent. A no-color TTY renders the wordmark as plain ASCII
+    # art (the console's no_color drops the gradient styles).
+    if not _RICH_AVAILABLE or not _CAPS.is_tty:
+        _concise_line()
+        return
+    _CAPS.console().print(_wm_settled(version, subtitle, meta))
 
 
 def credits() -> None:

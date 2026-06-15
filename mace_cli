@@ -1227,7 +1227,7 @@ More Help:
     # Handle --credits flag
     if args.credits:
         if BANNER_AVAILABLE and not args.no_banner:
-            print_banner('banner')
+            ui.banner(__version__, animate=False)
             ui.print(get_credits())
         elif BANNER_AVAILABLE:
             # Just show credits without banner
@@ -1252,7 +1252,7 @@ More Help:
         if '--help' not in sys.argv and '-h' not in sys.argv and not args.no_banner:
             # Show main banner for help
             if BANNER_AVAILABLE:
-                print_banner('banner')  # Use main banner instead of compact
+                ui.banner(__version__, animate=False)  # styled static logo (themed)
         parser.print_help()
         sys.exit(0)
     
@@ -3050,7 +3050,7 @@ More Help:
     elif args.command == 'version':
         # Show version with main banner
         if BANNER_AVAILABLE:
-            print_banner('banner')  # Use main banner
+            ui.banner(__version__, animate=False)  # styled static logo (themed)
             ui.print(f"\n    Version: {__version__}")
             ui.print("    CRYSTAL Support: CRYSTAL17, CRYSTAL23")
         else:

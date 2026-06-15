@@ -545,6 +545,30 @@ def test_banner_plain_no_ansi_and_no_clear(ui):
     assert lines == ["MACE v5.6.7 — Concise Sub"]
 
 
+def test_banner_static_concise_when_piped(ui):
+    """animate=False still collapses to the concise line when not a TTY (piped),
+    never dumping ANSI art into a redirect."""
+    ui2 = _rich_ui(ui)
+    ui2.configure(force_color=False, force_tty=False)
+    text = _capture_stdout_stderr(lambda: ui2.banner("1.1.0", subtitle="Sub", animate=False))
+    assert ESC not in text and "2J" not in text
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    assert lines == ["MACE v1.1.0 — Sub"]
+
+
+def test_banner_static_themed_wordmark_in_tty(ui):
+    """animate=False in a color TTY renders the themed gradient wordmark STATICALLY:
+    the block-art glyph + color escapes are present, with no full-screen clear and
+    no fake animation delay. (Regression: the static/help/version banner used to
+    bypass the ui theme via banner.py's plain ASCII art.)"""
+    ui2 = _rich_ui(ui)
+    ui2.configure(force_color=True, force_tty=True, palette="crystal")
+    text = _capture_stdout_stderr(lambda: ui2.banner("1.1.0", animate=False))
+    assert "█" in text          # the wordmark block art is present
+    assert ESC in text          # themed (gradient) — not plain ASCII
+    assert CLEAR not in text and "2J" not in text
+
+
 # ===========================================================================
 # Stage 2 — startup animation color-leak guard (deterministic, no PTY)
 # ===========================================================================
