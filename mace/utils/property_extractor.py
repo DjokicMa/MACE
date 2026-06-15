@@ -1576,8 +1576,11 @@ class CrystalPropertyExtractor:
         props['has_frequency_data'] = True
         
         # Extract vibrational frequencies
+        # Note: real CRYSTAL output prints the units line as "(CM**-1)" (no
+        # inner parens), so the anchor must tolerate both "(CM**-1)" and the
+        # older "(CM**(-1))" form.
         freq_section = re.search(
-            r'MODES\s+EIGV\s+FREQUENCIES\s+IRREP.*?\n\s*\(HARTREE\*\*2\)\s*\(CM\*\*\(-1\)\)\s*\(THZ\).*?\n(.*?)(?=NORMAL MODES|VIBRATIONAL TEMPERATURES|\*{5,})',
+            r'MODES\s+EIGV\s+FREQUENCIES\s+IRREP.*?\n\s*\(HARTREE\*\*2\)\s*\(CM\*\*-?\(?-?1\)?\)\s*\(THZ\).*?\n(.*?)(?=NORMAL MODES|VIBRATIONAL TEMPERATURES|<RAMAN>|\*{5,})',
             content, re.DOTALL
         )
         
@@ -1590,34 +1593,55 @@ class CrystalPropertyExtractor:
                 if not line:
                     continue
                     
-                # Parse frequency data lines
+                # Parse frequency data lines. Real CRYSTAL output prints the
+                # mode range space-separated, e.g. "1-   1" or "4-   6", so the
+                # range and the three numeric columns (EIGV, CM**-1, THZ) must
+                # be parsed from the line directly rather than from split()[0..3]
+                # (a naive split puts "1-" in parts[0] and shifts every column).
                 # Format: MODE_RANGE EIGV FREQ_CM FREQ_THZ (IRREP) IR_ACTIVE (INTENSITY) RAMAN_ACTIVE
-                parts = line.split()
-                if len(parts) >= 3 and parts[0].replace('-', '').isdigit():
+                row_match = re.match(
+                    r'(\d+)-\s*(\d+)\s+([-\d.E+]+)\s+([-\d.E+]+)\s+([-\d.E+]+)',
+                    line
+                )
+                if row_match:
                     try:
-                        mode_match = re.match(r'(\d+)-\s*(\d+)', parts[0])
-                        if mode_match:
-                            mode_start = int(mode_match.group(1))
-                            mode_end = int(mode_match.group(2))
+                        mode_start = int(row_match.group(1))
+                        mode_end = int(row_match.group(2))
+                        eigv = float(row_match.group(3))
+                        freq_cm = float(row_match.group(4))
+                        freq_thz = float(row_match.group(5))
+
+                        # Parse the symmetry/activity tail. Real layout after
+                        # the three numeric columns is:
+                        #   (IRREP)   IR_FLAG (INTENSITY)   RAMAN_FLAG
+                        # e.g. "(A  )   A (     0.93)   A" where IR_FLAG /
+                        # RAMAN_FLAG are single A(ctive)/I(nactive) letters and
+                        # the bracketed value is the integrated IR intensity in
+                        # KM/MOL. Default to None/0.0 when the tail is absent
+                        # (files without IR/Raman columns must not crash).
+                        irrep = None
+                        ir_active = False
+                        raman_active = False
+                        intensity = 0.0
+                        tail_match = re.search(
+                            r'\(\s*([^)]*?)\s*\)\s*([AI])\s*\(\s*([-\d.E+]+)\s*\)\s*([AI])',
+                            line[row_match.end():]
+                        )
+                        if tail_match:
+                            irrep = tail_match.group(1).strip()
+                            ir_active = tail_match.group(2) == 'A'
+                            try:
+                                intensity = float(tail_match.group(3))
+                            except ValueError:
+                                intensity = 0.0
+                            raman_active = tail_match.group(4) == 'A'
                         else:
-                            mode_start = mode_end = int(parts[0])
-                        
-                        eigv = float(parts[1])
-                        freq_cm = float(parts[2])
-                        freq_thz = float(parts[3]) if len(parts) > 3 else None
-                        
-                        # Extract irrep
-                        irrep_match = re.search(r'\(([^)]+)\)', line)
-                        irrep = irrep_match.group(1) if irrep_match else None
-                        
-                        # Extract IR/Raman activity
-                        ir_active = 'A' in line.split(')')[-1] if ')' in line else False
-                        raman_active = line.strip().endswith('A')
-                        
-                        # Extract intensity
-                        intensity_match = re.search(r'\(\s*([\d.]+)\s*\)', line.split(')')[-1] if ')' in line else line)
-                        intensity = float(intensity_match.group(1)) if intensity_match else 0.0
-                        
+                            # Fallback: at least capture the IRREP label if the
+                            # full activity tail does not match this row's shape.
+                            irrep_match = re.search(r'\(([^)]+)\)', line[row_match.end():])
+                            if irrep_match:
+                                irrep = irrep_match.group(1).strip()
+
                         freq_data.append({
                             'mode_start': mode_start,
                             'mode_end': mode_end,
@@ -1634,14 +1658,23 @@ class CrystalPropertyExtractor:
             
             if freq_data:
                 props['vibrational_frequencies'] = freq_data
+                # Number of printed mode rows. Periodic outputs group degenerate
+                # modes into one row (e.g. "4-   6"); num_vibrational_modes is
+                # the number of parsed rows so it matches len(vibrational_frequencies).
                 props['num_vibrational_modes'] = len(freq_data)
-                
-                # Extract summary statistics
+
+                # Imaginary modes are flagged by a NEGATIVE frequency in CRYSTAL
+                # output (no trailing 'i'); use the cm**-1 sign as the primary
+                # signal. This is always set when modes were parsed.
+                props['num_imaginary_frequencies'] = sum(
+                    1 for f in freq_data if f['frequency_cm'] < 0
+                )
+
+                # Highest / lowest among the genuine (non-translational) modes.
                 non_zero_freqs = [f['frequency_cm'] for f in freq_data if f['frequency_cm'] > 0.1]
                 if non_zero_freqs:
                     props['lowest_frequency_cm'] = min(non_zero_freqs)
                     props['highest_frequency_cm'] = max(non_zero_freqs)
-                    props['num_imaginary_frequencies'] = sum(1 for f in freq_data if f['eigenvalue'] < 0)
         
         # Extract vibrational temperatures
         vib_temp_match = re.search(r'VIBRATIONAL TEMPERATURES \(K\).*?\n\s*TO MODES\s*\n(.*?)(?=\*{5,}|\n\n)', content, re.DOTALL)
