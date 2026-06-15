@@ -5,6 +5,26 @@ All notable changes to MACE (Mendoza Automated CRYSTAL Engine) will be documente
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-06-14
+
+### Added
+
+#### Deep property extraction
+The materials database now stores the full scientific results of each calculation
+type, not just scalar summaries — as compact JSON plus flat, queryable scalar rows
+in the existing `properties` table (no schema change):
+- **FREQ** — vibrational frequencies, IR intensities, Raman activities, imaginary-mode count
+- **BAND** — band-structure summary: k-path with high-symmetry labels, direct/indirect/fundamental gap, VBM/CBM k-locations
+- **DOSS** — density-of-states curve (downsampled), per-spin DOS@Fermi, gap, projected-DOS weights, integrated states
+- **TRANSPORT** — BoltzTraP Seebeck / power-factor / electronic-ZT peaks vs (T, µ), carrier type
+- **CHARGE+POTENTIAL** — ECH3/POT3 grid metadata, coordinate box, and references to the generated `.CUBE` grid files
+
+### Fixed
+- **FREQ extractor** previously parsed vibrational data into a discarded local variable; frequencies/IR/Raman now actually persist (fixed the units-anchor `(CM**-1)` and mode-range parse bugs).
+
+### Changed
+- **Repo hygiene** — internal planning/audit docs untracked (kept on disk), ad-hoc validation scripts centralized under `tests/`, and generated artifacts gitignored.
+
 ## [1.0.0] - 2025-02-12
 
 ### Added
