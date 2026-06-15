@@ -29,13 +29,22 @@ from mace import __version__
 MACE_DIR = Path(__file__).parent / "mace"
 sys.path.insert(0, str(MACE_DIR))
 
-# Import animation and credits
+# Import banner/credits + the ui visual-layer facade. The ui facade renders the
+# adaptive startup banner (animated in a TTY, one concise line when piped) and the
+# credits; the old animation.py screen-clear + fake loading-bar startup path is
+# retired here (animation.py itself is kept for its standalone demo + the version
+# single-source check).
 try:
-    from utils.animation import animate_mace_assembly, loading_bar
     from utils.banner import get_credits, print_banner
     BANNER_AVAILABLE = True
 except ImportError:
     BANNER_AVAILABLE = False
+
+try:
+    from mace.utils import ui
+    UI_AVAILABLE = True
+except Exception:
+    UI_AVAILABLE = False
 
 def show_banner():
     """Show the MACE animated banner and credits"""
@@ -43,10 +52,11 @@ def show_banner():
     if os.environ.get('MACE_NO_BANNER', '').lower() in ('1', 'true', 'yes'):
         return
         
-    if BANNER_AVAILABLE:
+    if UI_AVAILABLE:
+        ui.banner(__version__)
+        ui.credits()
+    elif BANNER_AVAILABLE:
         print()
-        animate_mace_assembly(__version__)
-        loading_bar(1.0, "Initializing MACE Workflow System")
         print(get_credits())
     else:
         print("\nMACE - Mendoza Automated CRYSTAL Engine")
