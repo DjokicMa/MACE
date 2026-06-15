@@ -19,6 +19,7 @@ Usage:
 import os
 import sys
 import re
+import math
 import argparse
 import json
 from pathlib import Path
@@ -90,7 +91,12 @@ class CrystalPropertyExtractor:
         properties.update(self._extract_band_structure_properties(content, output_file))
         properties.update(self._extract_dos_properties(content, output_file))
         properties.update(self._extract_frequency_properties(content))
-        
+        properties.update(self._extract_transport_properties(content, output_file))
+        # CHARGE+POTENTIAL (CRYSTAL ECH3/POT3): grid metadata + references to the
+        # generated .CUBE grid files. Additive and self-skipping -- returns {} when
+        # the .out has no ECH3/POT3 markers, so non-charge calcs are untouched.
+        properties.update(self._extract_charge_potential_properties(content, output_file))
+
         # Extract SCF settings from output
         properties.update(self._extract_scf_settings(content))
         
@@ -2355,9 +2361,275 @@ class CrystalPropertyExtractor:
         normal_modes_match = re.search(r'NORMAL MODES NORMALIZED TO CLASSICAL AMPLITUDES.*?\n(.*?)(?=\*{5,}|VIBRATIONAL)', content, re.DOTALL)
         if normal_modes_match:
             props['has_normal_mode_displacements'] = True
-        
+
         return props
-    
+
+    # ------------------------------------------------------------------
+    # Thermoelectric / electronic transport (CRYSTAL BOLTZTRA / BoltzTraP)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _parse_transport_dat(dat_file: Path):
+        """Parse one CRYSTAL/BoltzTraP transport ``.dat`` file.
+
+        These files store a tensor property as a function of chemical potential
+        ``Mu(eV)`` and temperature ``T(K)``.  The per-temperature block markers
+        (``# T(K) = 300.000 Npoints = ...``) are *commented*, so the temperature
+        is taken from column 2 of every data row (which carries the same value
+        and is therefore robust to the comment style).  Layout::
+
+            # 0 [<property> in SI units, i.e. in <unit>]
+            # Mu(eV) T(K) N(#carriers) <tensor components...>
+            # T(K) = 300.000 Npoints = 711 V(cm^3) = 1.123E-21
+              -3.400  300.000  1.351E+00  <xx> <xy> ... <zz>
+
+        The off-diagonal components are ~0 for these cubic-ish cells; we keep the
+        isotropic average of the diagonal (xx+yy+zz)/3 as the scalar property.
+
+        Returns ``(unit_str_or_None, rows)`` where each row is the native tuple
+        ``(T, mu, n_carriers, diag_avg)``.  Never raises: returns ``(None, [])``
+        on a missing/unreadable/malformed file.
+        """
+        try:
+            if dat_file is None or not dat_file.exists():
+                return None, []
+            text = dat_file.read_text(errors="ignore")
+        except OSError:
+            return None, []
+
+        unit = None
+        rows = []
+        for line in text.splitlines():
+            s = line.strip()
+            if not s:
+                continue
+            if s.startswith('#'):
+                # Units descriptor: "# 0 [Seebeck coefficient ... i.e. in V/K]".
+                # Skip the column-header comment ("# Mu(eV) T(K) ...").
+                if unit is None and 'units' in s.lower() and 'mu(ev)' not in s.lower():
+                    m = re.search(r'\[(.*)\]', s)
+                    if m:
+                        unit = m.group(1).strip()
+                continue
+            parts = s.split()
+            if len(parts) < 4:
+                continue
+            try:
+                vals = [float(p) for p in parts]
+            except ValueError:
+                continue
+            if not all(math.isfinite(v) for v in vals):
+                continue
+            mu, T, n_carr = vals[0], vals[1], vals[2]
+            tensor = vals[3:]
+            n = len(tensor)
+            # Diagonal of the property tensor depends on the column layout:
+            #   9 cols -> full 3x3 (SEEBECK): xx,xy,xz,yx,yy,yz,zx,zy,zz
+            #   6 cols -> symmetric (SIGMA/KAPPA): xx,xy,xz,yy,yz,zz
+            if n == 9:
+                diag = (tensor[0], tensor[4], tensor[8])
+            elif n == 6:
+                diag = (tensor[0], tensor[3], tensor[5])
+            elif n >= 3:
+                diag = (tensor[0], tensor[1], tensor[2])
+            else:
+                diag = (tensor[0],)
+            rows.append((T, mu, n_carr, sum(diag) / len(diag)))
+        return unit, rows
+
+    def _extract_transport_properties(self, content: str, output_file: Path) -> Dict[str, Any]:
+        """Extract thermoelectric / electronic transport properties.
+
+        Detects a CRYSTAL "THERMOELECTRIC AND ELECTRONIC TRANSPORT PROPERTIES
+        CALCULATION" (BOLTZTRA) run and, when its companion BoltzTraP ``.dat``
+        files are present next to the ``.out`` (``*.SEEBECK.dat`` / ``*.SIGMA.dat``
+        / ``*.KAPPA.dat``), stores:
+
+          * a compact JSON ``transport`` summary (temperatures covered, mu range,
+            peak |Seebeck| with its (T, mu) and carrier type, peak power factor,
+            peak electronic ZT, units, and the source data files referenced), and
+          * flat queryable scalar rows (``transport_seebeck_max_uv_per_k``,
+            ``transport_power_factor_max``, ``transport_zt_max``,
+            ``transport_n_temperatures``).
+
+        Mirrors ``_build_band_structure_summary``: a compact payload + flat
+        scalars, native python types, no schema change (the dict/list is
+        ``json.dumps``-ed into ``property_value_text``).  Only peaks + a reference
+        to the ``.dat`` are stored — never the full multi-thousand-row tables.
+        Failures never propagate (no transport key emitted on absent/malformed
+        data).
+
+        Physical guards (these BoltzTraP outputs are noisy):
+          * BoltzTraP sets S to a huge value where "THE DETERMINANT OF THE
+            CONDUCTIVITY MATRIX IS VERY SMALL"; we only evaluate operating points
+            whose electrical conductivity is within 1e-3 of the peak |sigma| so
+            those determinant-singularity spikes are excluded.
+          * Power factor PF = S^2 * sigma; electronic figure of merit
+            ZT_e = PF * T / kappa_e (electronic kappa only -- no lattice term, so
+            it is an upper bound the summary labels ``zt_electronic``).
+        """
+        props: Dict[str, Any] = {}
+
+        # Only act on a real transport (BOLTZTRA) run.
+        up = content.upper()
+        if ('THERMOELECTRIC AND ELECTRONIC TRANSPORT' not in up
+                and 'BOLTZTRA' not in up):
+            return props
+
+        try:
+            props['calculation_type'] = 'TRANSPORT'
+            props['has_transport'] = True
+
+            # Temperature / chemical-potential grid from the .out header (if present).
+            def _grab(label):
+                m = re.search(label + r'\s*[:=]?\s*(-?\d+\.\d+)', content)
+                return float(m.group(1)) if m else None
+
+            t_min = _grab(r'MIN TEMPERATURE VALUE \(K\)')
+            t_max = _grab(r'MAX TEMPERATURE VALUE \(K\)')
+            mu_min_hdr = _grab(r'MIN CHEMICAL POTENTIAL VALUE \(eV\)')
+            mu_max_hdr = _grab(r'MAX CHEMICAL POTENTIAL VALUE \(eV\)')
+
+            # Locate companion BoltzTraP .dat files (case-insensitive stem match).
+            out_dir = output_file.parent
+            stem = output_file.stem
+
+            def _find(suffix):
+                # Prefer the exact-stem companion; fall back to any in the dir.
+                exact = out_dir / f"{stem}.{suffix}"
+                if exact.exists():
+                    return exact
+                cands = (list(out_dir.glob(f"*.{suffix}"))
+                         + list(out_dir.glob(f"*.{suffix.lower()}")))
+                return cands[0] if cands else None
+
+            seebeck_file = _find('SEEBECK.dat')
+            sigma_file = _find('SIGMA.dat')
+            kappa_file = _find('KAPPA.dat')
+
+            if seebeck_file is None:
+                # No data to summarize beyond the calc-type marker.
+                props['transport_data_available'] = False
+                return props
+
+            s_unit, s_rows = self._parse_transport_dat(seebeck_file)
+            _, sig_rows = self._parse_transport_dat(sigma_file)
+            _, kap_rows = self._parse_transport_dat(kappa_file)
+
+            if not s_rows:
+                props['transport_data_available'] = False
+                return props
+
+            # (T, mu) -> property lookups (round mu to align grids across files).
+            sig_lut = {(round(T, 3), round(mu, 4)): v
+                       for (T, mu, _nc, v) in sig_rows}
+            kap_lut = {(round(T, 3), round(mu, 4)): v
+                       for (T, mu, _nc, v) in kap_rows}
+
+            sig_abs = [abs(v) for v in sig_lut.values() if v != 0.0]
+            sig_max = max(sig_abs) if sig_abs else 0.0
+            sig_floor = sig_max * 1e-3  # exclude determinant-singularity points
+
+            temperatures = sorted({round(r[0], 3) for r in s_rows})
+            mus = [r[1] for r in s_rows]
+            mu_lo = min(mus) if mus else None
+            mu_hi = max(mus) if mus else None
+
+            peak_s = 0.0           # signed Seebeck (V/K) at peak |S|
+            peak_s_loc = None      # (T, mu)
+            peak_s_ncarr = None
+            peak_pf = 0.0          # W/m/K^2
+            peak_pf_loc = None
+            peak_zt = 0.0          # dimensionless (electronic only)
+            peak_zt_loc = None
+            n_usable = 0
+
+            for (T, mu, n_carr, s_val) in s_rows:
+                key = (round(T, 3), round(mu, 4))
+                g = sig_lut.get(key)
+                # Require a physically meaningful conductivity at this point.
+                if sig_floor <= 0.0 or g is None or abs(g) < sig_floor:
+                    continue
+                n_usable += 1
+                if abs(s_val) > abs(peak_s):
+                    peak_s = s_val
+                    peak_s_loc = (T, mu)
+                    peak_s_ncarr = n_carr
+                pf = s_val * s_val * abs(g)
+                if pf > peak_pf:
+                    peak_pf = pf
+                    peak_pf_loc = (T, mu)
+                k = kap_lut.get(key)
+                if k and abs(k) > 0.0:
+                    zt = pf * T / abs(k)
+                    if zt > peak_zt:
+                        peak_zt = zt
+                        peak_zt_loc = (T, mu)
+
+            has_usable = abs(peak_s) > 0.0
+            # Carrier-type convention: N(#carriers) > 0 -> holes (p-type),
+            # N(#carriers) < 0 -> electrons (n-type), matching the sign that
+            # accompanies the dominant Seebeck operating point.
+            carrier_type = None
+            if peak_s_ncarr is not None and peak_s_ncarr != 0.0:
+                carrier_type = 'p-type' if peak_s_ncarr > 0 else 'n-type'
+
+            def _loc(loc):
+                return {'temperature_k': float(loc[0]),
+                        'mu_ev': float(loc[1])} if loc else None
+
+            summary = {
+                'source_files': [f.name for f in
+                                 (seebeck_file, sigma_file, kappa_file) if f],
+                'seebeck_source_file': seebeck_file.name,
+                'temperatures_k': [float(t) for t in temperatures],
+                'n_temperatures': int(len(temperatures)),
+                'temperature_min_k': (float(t_min) if t_min is not None
+                                      else (float(min(temperatures))
+                                            if temperatures else None)),
+                'temperature_max_k': (float(t_max) if t_max is not None
+                                      else (float(max(temperatures))
+                                            if temperatures else None)),
+                'mu_min_ev': float(mu_min_hdr) if mu_min_hdr is not None
+                             else (float(mu_lo) if mu_lo is not None else None),
+                'mu_max_ev': float(mu_max_hdr) if mu_max_hdr is not None
+                             else (float(mu_hi) if mu_hi is not None else None),
+                'n_data_points': int(len(s_rows)),
+                'n_usable_points': int(n_usable),
+                'has_usable_data': bool(has_usable),
+                'carrier_type': carrier_type,
+                'units': {
+                    'seebeck': s_unit or 'V/K',
+                    'electrical_conductivity': '1/Ohm/m',
+                    'electronic_thermal_conductivity': 'W/m/K',
+                    'power_factor': 'W/m/K^2',
+                    'zt': 'dimensionless (electronic, kappa_lattice excluded)',
+                },
+                'seebeck_max_signed_v_per_k': float(peak_s),
+                'seebeck_max_abs_uv_per_k': float(abs(peak_s) * 1.0e6),
+                'seebeck_max_at': _loc(peak_s_loc),
+                'power_factor_max_w_per_m_k2': float(peak_pf),
+                'power_factor_max_at': _loc(peak_pf_loc),
+                'zt_electronic_max': float(peak_zt),
+                'zt_electronic_max_at': _loc(peak_zt_loc),
+            }
+            props['transport'] = summary
+
+            # Flat, numerically-queryable scalar rows.
+            props['transport_n_temperatures'] = int(len(temperatures))
+            props['transport_n_data_points'] = int(len(s_rows))
+            props['transport_data_available'] = bool(has_usable)
+            if has_usable:
+                props['transport_seebeck_max_uv_per_k'] = float(abs(peak_s) * 1.0e6)
+                props['transport_power_factor_max'] = float(peak_pf)
+                props['transport_zt_max'] = float(peak_zt)
+                if carrier_type:
+                    props['transport_carrier_type'] = carrier_type
+
+        except Exception as e:  # never let transport extraction break the run
+            print(f"Warning: Could not extract transport properties: {e}")
+
+        return props
+
     def _extract_scf_settings(self, content: str) -> Dict[str, Any]:
         """Extract SCF and advanced electronic settings from output file."""
         props = {}
@@ -2764,6 +3036,142 @@ class CrystalPropertyExtractor:
         else:
             return 'dimensionless'
 
+
+    def _extract_charge_potential_properties(self, content: str, output_file: Path) -> Dict[str, Any]:
+        """Extract CHARGE+POTENTIAL (CRYSTAL ECH3/POT3) metadata.
+
+        A CRYSTAL ECH3 (3D charge density) / POT3 (3D electrostatic potential)
+        job stores its real numerical payload -- the 3D grids -- in BINARY/large
+        sidecar files (``*_DENS.CUBE``, ``*_POT.CUBE``, ``*_SPIN.CUBE``), NOT in
+        the .out text. A text extractor must NOT parse those grids. So, mirroring
+        ``_build_band_structure_summary``, this stores ONLY what the .out text
+        honestly exposes plus *references* to the grid files on disk:
+
+          * confirmation that ECH3 / POT3 ran (the ``ECH3``/``POT3`` timing banners),
+          * the grid divisions (``3D DENSITY, GRID IS nx*ny*nz``) and derived
+            number of grid points,
+          * the real-space bounding box (``X/Y/Z COORDINATE RANGE IS lo TO hi``),
+          * multipolar-expansion order / spin-polarization flag when printed,
+          * the SCF total energy / Fermi energy already on the page,
+          * the names of the generated ``*.CUBE`` grid files in the same directory
+            (so the mace plotting cube viewer, which globs ``*.CUBE``, can find them).
+
+        Returns a compact JSON-serializable ``charge_potential`` summary plus a few
+        flat queryable scalar/string rows. All values are native float/int/str/bool
+        so they JSON-serialize cleanly. Returns ``{}`` (no keys) when the file has
+        no ECH3/POT3 markers, so non-charge calculations are completely untouched.
+        Any internal failure degrades gracefully -- it never raises.
+        """
+        try:
+            has_ech3 = re.search(r'\bECH3\s+(?:START|END)\b', content) is not None
+            has_pot3 = re.search(r'\bPOT3\s+(?:START|END)\b', content) is not None
+            if not (has_ech3 or has_pot3):
+                return {}  # not a charge/potential calc -> contribute nothing
+
+            summary: Dict[str, Any] = {
+                'source': 'ECH3/POT3 (.out text + .CUBE grid sidecars)',
+                'has_charge_density': bool(has_ech3),
+                'has_electrostatic_potential': bool(has_pot3),
+            }
+
+            # --- Grid divisions: "3D DENSITY, GRID IS nx*ny*nz" (space-padded
+            # numbers like "100* 58* 86" appear, so tolerate inner whitespace).
+            # ECH3 and POT3 print the same grid; take the first occurrence.
+            grid_dims = None
+            num_points = None
+            gm = re.search(
+                r'3D\s+\w+,\s*GRID\s+IS\s+(\d+)\s*\*\s*(\d+)\s*\*\s*(\d+)',
+                content, re.IGNORECASE)
+            if gm:
+                grid_dims = [int(gm.group(1)), int(gm.group(2)), int(gm.group(3))]
+                num_points = int(grid_dims[0] * grid_dims[1] * grid_dims[2])
+                summary['grid_divisions'] = grid_dims
+                summary['num_grid_points'] = num_points
+
+            # --- Real-space bounding box of the grid (Bohr), if printed.
+            box = {}
+            for axis, lo, hi in re.findall(
+                    r'([XYZ])\s+COORDINATE RANGE IS\s+(-?\d+\.\d+)\s+TO\s+(-?\d+\.\d+)',
+                    content):
+                box[axis.lower()] = [float(lo), float(hi)]
+            if box:
+                summary['coordinate_range'] = box
+
+            # --- Multipolar expansion order (POT3 section), if printed.
+            mm = re.search(r'MULTIPOLAR EXPANSION UP TO L=\s*(\d+)', content)
+            if mm:
+                summary['multipole_expansion_l'] = int(mm.group(1))
+
+            # --- Spin-polarization flag.
+            spin_polarized = 'SPIN POLARIZED SYSTEM' in content
+            summary['spin_polarized'] = bool(spin_polarized)
+
+            # --- Scalar metadata already on the page: SCF total energy / Fermi.
+            em = re.search(r'TOTAL ENERGY\s+(-?\d+\.\d+E[+-]?\d+)', content)
+            scf_energy = None
+            if em:
+                try:
+                    scf_energy = float(em.group(1))
+                    summary['scf_total_energy_au'] = scf_energy
+                except ValueError:
+                    pass
+            fm = re.search(r'FERMI ENERGY\s+(-?\d+\.\d+E?[+-]?\d*)', content)
+            fermi_energy = None
+            if fm:
+                try:
+                    fermi_energy = float(fm.group(1))
+                    summary['fermi_energy_au'] = fermi_energy
+                except ValueError:
+                    pass
+
+            # --- Which 3D properties were computed (provenance list).
+            computed = []
+            if has_ech3:
+                computed.append('charge_density')
+                if spin_polarized:
+                    computed.append('spin_density')
+            if has_pot3:
+                computed.append('electrostatic_potential')
+            summary['computed_properties'] = computed
+
+            # --- Reference the generated grid/cube files on disk so the mace
+            # plotting cube viewer (which globs *.CUBE in the .out's directory)
+            # can find them. We only RECORD names that actually exist -- never
+            # parse the binary grids. The match is scoped to this job's stem.
+            grid_files = []
+            try:
+                output_dir = output_file.parent
+                stem = output_file.stem  # e.g. ..._charge+potential
+                for cube in sorted(output_dir.glob('*.CUBE')):
+                    if cube.stem.startswith(stem):
+                        grid_files.append(cube.name)
+            except OSError:
+                grid_files = []
+            if grid_files:
+                summary['grid_files'] = grid_files
+
+            props: Dict[str, Any] = {'charge_potential': summary}
+
+            # --- Flat, queryable scalar/string rows (distinct from the JSON blob).
+            props['chargepot_has_ech3'] = bool(has_ech3)
+            props['chargepot_has_pot3'] = bool(has_pot3)
+            props['chargepot_spin_polarized'] = bool(spin_polarized)
+            if grid_dims is not None:
+                props['chargepot_grid_dims'] = 'x'.join(str(d) for d in grid_dims)
+            if num_points is not None:
+                props['chargepot_grid_points'] = int(num_points)
+            if computed:
+                props['chargepot_computed_properties'] = ','.join(computed)
+            if grid_files:
+                props['chargepot_grid_files'] = ','.join(grid_files)
+                props['chargepot_num_grid_files'] = int(len(grid_files))
+            if scf_energy is not None:
+                props['chargepot_scf_total_energy_au'] = float(scf_energy)
+
+            return props
+        except Exception as e:
+            print(f"Warning: Could not extract charge/potential properties: {e}")
+            return {}
 
     def _extract_advanced_band_dos_analysis(self, output_file: Path, properties: Dict[str, Any]) -> Dict[str, Any]:
         """
