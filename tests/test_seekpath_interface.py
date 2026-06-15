@@ -9,10 +9,11 @@ This script tests the seekpath_interface.py module to verify:
 4. Format conversion to MACE format
 5. Discontinuity detection
 
-Usage:
-    python test_seekpath_interface.py                    # Run all unit tests
-    python test_seekpath_interface.py --file output.out  # Test with specific file
-    python test_seekpath_interface.py --compare          # Compare with old implementation
+Run under pytest (collected as ``test_seekpath_interface``; skips when seekpath
+is not installed) or standalone:
+    python tests/test_seekpath_interface.py                    # Run all unit tests
+    python tests/test_seekpath_interface.py --file output.out  # Test with specific file
+    python tests/test_seekpath_interface.py --compare          # Compare with old implementation
 
 Author: Marcus Djokic
 Institution: Michigan State University, Mendoza Group
@@ -22,6 +23,11 @@ import numpy as np
 import sys
 import argparse
 from pathlib import Path
+
+# Make Crystal_d3/ importable whether run via pytest or standalone (python tests/test_seekpath_interface.py).
+_D3 = str(Path(__file__).resolve().parent.parent / "Crystal_d3")
+if _D3 not in sys.path:
+    sys.path.insert(0, _D3)
 
 # Import the module to test
 try:
@@ -118,11 +124,12 @@ def test_label_conversion(results: TestResult):
     """Test label conversion."""
     print("\n--- Testing label conversion ---")
 
-    # Test GAMMA -> G
-    if convert_seekpath_label('GAMMA') == 'G':
-        results.ok("GAMMA -> G")
+    # GAMMA is intentionally kept as-is (not abbreviated to 'G') to avoid colliding
+    # with the parametric 'G' point in tI2/mC2 lattices -- see convert_seekpath_label.
+    if convert_seekpath_label('GAMMA') == 'GAMMA':
+        results.ok("GAMMA kept as-is")
     else:
-        results.fail("GAMMA -> G", f"Got: {convert_seekpath_label('GAMMA')}")
+        results.fail("GAMMA kept as-is", f"Got: {convert_seekpath_label('GAMMA')}")
 
     # Test passthrough
     if convert_seekpath_label('X') == 'X':
@@ -416,6 +423,29 @@ def run_all_tests():
     test_discontinuity_detection(results)
 
     return results.summary()
+
+
+# The helpers above take a ``results`` accumulator (not a pytest fixture) and
+# ``TestResult`` is a plain tracker, so stop pytest from collecting them as tests.
+# The single ``test_seekpath_interface`` entry point below drives the whole suite.
+for _obj in (TestResult, test_cell_params_to_vectors, test_label_conversion,
+             test_minimum_shrink, test_discontinuity_detection,
+             test_seekpath_available, test_with_file):
+    _obj.__test__ = False
+
+
+def test_seekpath_interface():
+    """pytest entry point: run the seekpath_interface unit suite.
+
+    Skips cleanly when the optional seekpath stack is unavailable (e.g. CI), so it
+    is meaningful on dev machines without breaking a data/dependency-less run.
+    """
+    import pytest
+    if not MODULE_AVAILABLE:
+        pytest.skip("seekpath_interface module not importable")
+    if not SEEKPATH_AVAILABLE:
+        pytest.skip("seekpath library not installed (pip install seekpath)")
+    assert run_all_tests(), "seekpath_interface unit tests reported failures"
 
 
 def main():

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Self-tests for menu_nav.py (the 'press b to go back' controller).
 
-Run: python test_menu_nav.py    (exit 0 = all pass)
+Run under pytest (collected as ``test_menu_nav``) or standalone:
+    python tests/test_menu_nav.py    (exit 0 = all pass)
 
 Tests drive the controller with a scripted feeder of the LIVE inputs the user would type
 (replayed answers do not consume the feeder, matching real usage). _FORCE_ENABLE is set so
@@ -10,6 +11,12 @@ the controller runs without a real TTY.
 import builtins
 import io
 import sys
+from pathlib import Path
+
+# Make Crystal_d12/ importable whether run via pytest or standalone (python tests/test_menu_nav.py).
+_D12 = str(Path(__file__).resolve().parent.parent / "Crystal_d12")
+if _D12 not in sys.path:
+    sys.path.insert(0, _D12)
 
 import menu_nav
 from menu_nav import run_with_back, nav_read, MenuBack, back_available_live
@@ -229,8 +236,19 @@ def t15():
     check("T15 nav_choice keeps 'b' when valid", r2 == "b", str(r2))
 
 
+_ALL_TESTS = [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15]
+
+
+def test_menu_nav():
+    """pytest entry point: run every menu_nav self-test, assert none failed."""
+    _failures.clear()
+    for t in _ALL_TESTS:
+        t()
+    assert not _failures, f"menu_nav failures: {_failures}"
+
+
 if __name__ == "__main__":
-    for t in [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15]:
+    for t in _ALL_TESTS:
         t()
     print()
     if _failures:

@@ -28,3 +28,30 @@ config/secrets.yml
 
 # Local calculation test data (12+ GB) - never commit
 test/
+
+# Graphify build/working output (regenerable)
+graphify-out/
+
+# Claude Code local tooling and agent git worktrees (local-only, never shipped)
+.claude/
+
+# Codebase-mapping / planning tool outputs — internal, regenerable, not for release
+# (graphify -> .planning/graphs/, map-codebase -> .planning/codebase/, pathfinder -> PATHFINDER-*/)
+.planning/
+PATHFINDER-*/
+
+# Generated SQLite databases (always regenerable from calculation outputs)
+*.db
+
+# Throwaway UI/visual demos (not part of the shipped CLI)
+mace_visual_demo*.py
+
+# Internal process / planning docs — kept locally for reference, not shipped to users
+CODEBASE_AUDIT.md
+HELP_AUDIT.md
+PRE_PUSH_REVIEW.md
+REMEDIATION_PLAN.md
+MACE_PLOTTING_INTEGRATION_PLAN.md
+Crystal_d3/SEEKPATH_INTEGRATION_PLAN.md
+Crystal_d3/D3_IMPROVEMENTS.md
+Crystal_d12/CRYSTAL_TO_CIF_IMPLEMENTATION_PLAN.md

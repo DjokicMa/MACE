@@ -18,11 +18,16 @@ TEST_DATA = REPO_ROOT / "test"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-# Crystal_d12/ is not a package and its modules use bare sibling imports
-# (e.g. `from d12_constants import ...`), so it must be on sys.path directly.
+# Crystal_d12/ and Crystal_d3/ are not packages and their modules use bare
+# sibling imports (e.g. `from d12_constants import ...`, `from d3_kpoints import ...`),
+# so they must be on sys.path directly.
 _CRYSTAL_D12 = REPO_ROOT / "Crystal_d12"
 if _CRYSTAL_D12.is_dir() and str(_CRYSTAL_D12) not in sys.path:
     sys.path.insert(0, str(_CRYSTAL_D12))
+
+_CRYSTAL_D3 = REPO_ROOT / "Crystal_d3"
+if _CRYSTAL_D3.is_dir() and str(_CRYSTAL_D3) not in sys.path:
+    sys.path.insert(0, str(_CRYSTAL_D3))
 
 
 def find_data(pattern: str, must_contain: str = None) -> Path:

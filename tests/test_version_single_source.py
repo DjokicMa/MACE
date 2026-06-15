@@ -41,6 +41,10 @@ def test_only_init_holds_a_version_literal():
         parts = rel.parts
         if parts and parts[0] in ("test", "tests"):
             continue
+        # Skip hidden/tooling dirs (e.g. .claude agent worktrees, .venv) that may hold
+        # checked-out copies of the source tree and would otherwise be false positives.
+        if any(p.startswith(".") for p in parts):
+            continue
         if rel.as_posix() == "mace/__init__.py":
             continue
         try:
