@@ -1258,6 +1258,273 @@ class CrystalPropertyExtractor:
         
         return props
     
+    def _parse_band_dat_kpath_nodes(self, band_dat_file: Path):
+        """Parse the high-symmetry node positions from a CRYSTAL BAND.DAT header.
+
+        The ``# <kindex> <label>`` lines in the ``# NPANEL`` block give the
+        cumulative (1-based) k-point index of each high-symmetry node along the
+        path, plus a (usually placeholder, e.g. "A") label. ``DatFileProcessor``
+        keeps only the labels, so re-scan the header here to also recover the
+        node *indices* (needed to read band energies AT the high-symmetry
+        points) and the explicit ``# EFERMI (HARTREE)`` value.
+
+        Returns ``(node_indices, node_labels, efermi_hartree)`` using native
+        Python ints/floats/strs. Scans only ``#``/``@`` header lines and stops
+        at the first numeric data row, so it is cheap even for large files.
+        """
+        node_indices = []
+        node_labels = []
+        efermi_ha = None
+        try:
+            with open(band_dat_file, 'r') as f:
+                for raw in f:
+                    line = raw.strip()
+                    if not line:
+                        continue
+                    if line.startswith('@'):
+                        continue  # xmgrace directive
+                    if line.startswith('#'):
+                        upper = line.upper()
+                        if 'EFERMI' in upper and efermi_ha is None:
+                            m = re.search(r'(-?\d+\.\d+(?:[Ee][+-]?\d+)?)', line)
+                            if m:
+                                efermi_ha = float(m.group(1))
+                            continue
+                        tok = line.lstrip('#').split()
+                        # Panel node line: "<int> <label>" (skip NKPT/NPANEL header
+                        # lines, which have a keyword in tok[0]).
+                        if (len(tok) >= 2 and tok[0].isdigit()
+                                and not tok[1].isdigit()
+                                and 'NKPT' not in tok and 'NPANEL' not in tok):
+                            node_indices.append(int(tok[0]))
+                            node_labels.append(tok[1])
+                        continue
+                    # Numeric data row. The node block sits in the header, but the
+                    # "# EFERMI (HARTREE)" comment is written between the ALPHA and
+                    # BETA data blocks (not in the header). Once we have the node
+                    # indices, keep skipping data rows cheaply until we hit that
+                    # comment (or EOF) so EFERMI is captured without re-reading the
+                    # full BETA block.
+                    if node_indices and efermi_ha is not None:
+                        break
+                    continue
+        except Exception:
+            return [], [], None
+        return node_indices, node_labels, efermi_ha
+
+    def _kpath_labels_from_d3(self, output_file: Path, num_nodes: int):
+        """Resolve the REAL high-symmetry labels (G/X/L/...) from the band ``.d3``.
+
+        CRYSTAL writes placeholder labels ("A") into BAND.DAT, but the input deck
+        (``<stem>.d3``) carries the SeeKPath path string on its title line, e.g.
+        ``... SeeKPath (w.I) - GAMMA-X-U-|-K-GAMMA-L-W-X``. A ``|`` marks a path
+        discontinuity (the two endpoints it joins coincide as ONE node), so the
+        node count after collapsing ``|`` matches the BAND.DAT panel-node count.
+        Returns a list of ``num_nodes`` label strings, or ``[]`` if unavailable.
+        """
+        d3_file = output_file.parent / f"{output_file.stem}.d3"
+        if not d3_file.exists():
+            return []
+        try:
+            lines = d3_file.read_text(errors='ignore').splitlines()
+        except Exception:
+            return []
+        title = ''
+        for ln in lines[:5]:
+            if 'SeeKPath' in ln or 'SEEKPATH' in ln.upper() or 'Band Structure' in ln:
+                title = ln
+                break
+        if not title:
+            return []
+        m = re.search(r'SeeKPath[^-]*-\s*(.+)$', title)
+        path_str = (m.group(1) if m else '').strip()
+        if not path_str:
+            return []
+        raw = path_str.split('-')
+        labels = []
+        i = 0
+        while i < len(raw):
+            lab = raw[i].strip()
+            if lab == '|':
+                # Discontinuity: merge the next endpoint into the previous node.
+                if labels and i + 1 < len(raw):
+                    labels[-1] = labels[-1] + '|' + raw[i + 1].strip()
+                    i += 2
+                    continue
+                i += 1
+                continue
+            if lab:
+                labels.append(lab)
+            i += 1
+        if num_nodes and len(labels) == num_nodes:
+            return labels
+        return labels  # best-effort even on count mismatch (caller may zip-truncate)
+
+    def _build_band_structure_summary(self, dat_info, content, output_file,
+                                      band_dat_file, num_occ):
+        """Build a compact, JSON-serializable band-structure summary.
+
+        Per the storage analysis this stores the scientifically useful structure
+        WITHOUT dumping the full ~1000k-point x ~100-band eigenvalue matrix into
+        the properties table: the k-path with real high-symmetry labels, the band
+        energies AT the high-symmetry points, direct vs indirect gap with their
+        k-locations, band/k-point counts, and the Fermi energy. The raw BAND.DAT
+        stays on disk and is re-parsed on demand. All values are native
+        float/int/str/bool so they JSON-serialize cleanly.
+        """
+        eigenvalues = dat_info.get('eigenvalues') or []
+        if not eigenvalues:
+            return None, {}
+        nk = int(dat_info.get('num_k_points') or 0)
+        nb = int(dat_info.get('num_bands') or (len(eigenvalues[0]) if eigenvalues else 0))
+        ns = int(dat_info.get('num_spins') or 1)
+        k_abscissa = dat_info.get('k_points') or []
+
+        node_indices, _placeholder_labels, efermi_ha = self._parse_band_dat_kpath_nodes(band_dat_file)
+        if efermi_ha is None:
+            # Fall back to the Fermi energy parsed from the .out (CRYSTAL writes
+            # the same value, in Hartree, on the band .out's FERMI ENERGY line).
+            m = re.search(r'FERMI ENERGY\s+(-?\d+\.\d+(?:[Ee][+-]?\d+)?)', content)
+            if m:
+                try:
+                    efermi_ha = float(m.group(1))
+                except ValueError:
+                    efermi_ha = None
+        real_labels = self._kpath_labels_from_d3(output_file, len(node_indices))
+        # Prefer real .d3 labels; fall back to BAND.DAT placeholders.
+        if real_labels and len(real_labels) == len(node_indices):
+            labels = real_labels
+        elif dat_info.get('k_path_labels'):
+            labels = list(dat_info['k_path_labels'])
+        else:
+            labels = list(_placeholder_labels)
+
+        # Restrict to the ALPHA (first-spin) k-block for the per-k geometry; the
+        # node indices are 1-based cumulative positions within one spin block.
+        alpha = eigenvalues[:nk] if nk else eigenvalues
+
+        summary = {
+            'source_file': band_dat_file.name,
+            'num_kpoints': nk,
+            'num_bands': nb,
+            'num_spins': ns,
+            'num_panels': int(dat_info.get('num_panels') or 0),
+            'fermi_energy_hartree': float(efermi_ha) if efermi_ha is not None else None,
+            'energy_units': 'eV',
+            'energy_reference': 'fermi',  # BAND.DAT eigenvalues are E - E_Fermi
+            'kpath_node_indices': [int(i) for i in node_indices],
+            'kpath_node_distances': [
+                float(k_abscissa[i - 1]) for i in node_indices
+                if 0 < i <= len(k_abscissa)
+            ],
+            'kpath_labels': [str(l) for l in labels],
+        }
+
+        H = HARTREE_TO_EV
+        # Band energies (Fermi-referenced eV) at each high-symmetry node. Only the
+        # node rows are stored (a few KB), not the full matrix.
+        hs_bands = []
+        for ni in node_indices:
+            if 0 < ni <= len(alpha):
+                hs_bands.append([float(e) * H for e in alpha[ni - 1]])
+            else:
+                hs_bands.append([])
+        summary['high_symmetry_band_energies_ev'] = hs_bands
+
+        # Direct vs indirect gap from the occupied-band index (referencing-
+        # independent, same convention as DatFileProcessor._analyze_band_structure).
+        #
+        # Two correctness invariants, matching the legacy scalar analyzer:
+        #   (1) Indices are over the UNFILTERED rows: ragged rows are skipped
+        #       in place but never shift the surviving rows' indices, so the
+        #       reported k-point index stays a valid index into the per-k
+        #       geometry (k_abscissa / node_indices), which is defined over one
+        #       spin block of `nk` k-points (kidx = global_row % nk).
+        #   (2) The fundamental gap considers ALL spin channels (VBM = max
+        #       occupied over every k AND every spin; CBM = min virtual over
+        #       every k AND every spin), so it agrees with the legacy
+        #       band_dat_band_gap_ev for spin-polarized systems too — not just
+        #       the first spin block.
+        extra_scalars = {}
+        if num_occ and num_occ >= 1 and eigenvalues:
+            n = num_occ
+            kdiv = nk if nk else len(eigenvalues)
+
+            def _label_for(kidx):
+                # Map a 0-based per-spin-block k index to the high-symmetry
+                # label if it sits exactly on a node, else None.
+                for lbl, nidx in zip(labels, node_indices):
+                    if nidx - 1 == kidx:
+                        return str(lbl)
+                return None
+
+            vbm_e = None
+            vbm_global = None   # global row index of the VBM (max occupied)
+            cbm_e = None
+            cbm_global = None   # global row index of the CBM (min virtual)
+            direct = None       # smallest per-(k,spin) HOMO-LUMO gap (Hartree)
+            for gi, row in enumerate(eigenvalues):
+                # Skip ragged rows in place but KEEP the true global index.
+                if len(row) < n + 1:
+                    continue
+                homo_e = row[n - 1]
+                lumo_e = row[n]
+                if vbm_e is None or homo_e > vbm_e:
+                    vbm_e = homo_e
+                    vbm_global = gi
+                if cbm_e is None or lumo_e < cbm_e:
+                    cbm_e = lumo_e
+                    cbm_global = gi
+                d = lumo_e - homo_e
+                if direct is None or d < direct:
+                    direct = d
+
+            if vbm_e is not None and cbm_e is not None:
+                # Per-spin-block k indices (valid into k_abscissa/node_indices).
+                vbm_k = (vbm_global % kdiv) if kdiv else vbm_global
+                cbm_k = (cbm_global % kdiv) if kdiv else cbm_global
+
+                indirect = (cbm_e - vbm_e) * H
+                if indirect < 0:
+                    indirect = 0.0  # band overlap along the path -> metallic
+                direct_ev = direct * H
+                if direct_ev < 0:
+                    direct_ev = 0.0
+                is_direct = bool(vbm_k == cbm_k)
+
+                summary['direct_gap_ev'] = float(direct_ev)
+                summary['indirect_gap_ev'] = float(indirect)
+                summary['fundamental_gap_ev'] = float(indirect)  # min over all k+spin
+                summary['is_direct_gap'] = is_direct
+                summary['vbm'] = {
+                    'energy_ev': float(vbm_e * H),
+                    'kpoint_index': int(vbm_k),
+                    'kpath_distance': (float(k_abscissa[vbm_k]) if vbm_k < len(k_abscissa) else None),
+                    'band_index': int(n),
+                    'kpoint_label': _label_for(vbm_k),
+                }
+                summary['cbm'] = {
+                    'energy_ev': float(cbm_e * H),
+                    'kpoint_index': int(cbm_k),
+                    'kpath_distance': (float(k_abscissa[cbm_k]) if cbm_k < len(k_abscissa) else None),
+                    'band_index': int(n + 1),
+                    'kpoint_label': _label_for(cbm_k),
+                }
+                summary['occupied_bands'] = int(n)
+
+                # Queryable scalar rows (numeric/bool) — distinct from the JSON blob.
+                extra_scalars['band_direct_gap_ev'] = float(direct_ev)
+                extra_scalars['band_indirect_gap_ev'] = float(indirect)
+                extra_scalars['band_fundamental_gap_ev'] = float(indirect)
+                extra_scalars['band_gap_is_direct'] = is_direct
+                extra_scalars['band_vbm_kpoint_index'] = int(vbm_k)
+                extra_scalars['band_cbm_kpoint_index'] = int(cbm_k)
+
+        if labels:
+            extra_scalars['band_kpath_label_string'] = '-'.join(str(l) for l in labels)
+
+        return summary, extra_scalars
+
     def _extract_band_structure_properties(self, content: str, output_file: Path) -> Dict[str, Any]:
         """Extract band structure specific properties from BAND calculations."""
         props = {}
@@ -1351,6 +1618,24 @@ class CrystalPropertyExtractor:
                         props['band_dat_vbm_ev'] = bep['valence_band_maximum_ev']
                     if bep.get('conduction_band_minimum_ev') is not None:
                         props['band_dat_cbm_ev'] = bep['conduction_band_minimum_ev']
+
+                    # LAYERED ADDITION: store the actual band STRUCTURE (k-path +
+                    # high-symmetry-point band energies + direct/indirect gap with
+                    # k-locations) as a compact JSON summary, plus queryable scalar
+                    # rows. Per the storage analysis we do NOT dump the full
+                    # per-k eigenvalue matrix (MBs); the raw BAND.DAT stays on disk
+                    # and is re-parsed on demand. Failures here never affect the
+                    # scalars above.
+                    try:
+                        summary, extra_scalars = self._build_band_structure_summary(
+                            dat_info, content, output_file, band_dat_file, num_occ)
+                        if summary:
+                            props['band_structure'] = summary
+                        for k, v in (extra_scalars or {}).items():
+                            if v is not None:
+                                props[k] = v
+                    except Exception as e:
+                        print(f"Warning: Could not build band-structure summary: {e}")
             except ImportError:
                 pass  # DAT file processor not available
             except Exception as e:
