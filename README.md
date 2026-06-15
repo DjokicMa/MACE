@@ -261,6 +261,13 @@ pip install numpy matplotlib ase spglib PyPDF2 pyyaml pandas
 pip install seekpath
 ```
 
+> **On HPC/SLURM:** the job-completion callback runs under the compute node's
+> *module* Python, not your interactive env. Install deps (esp. `seekpath`) into
+> that Python with the job's modules loaded, e.g.
+> `module load Python/3.11.3-GCCcore-12.3.0 ... && pip install --user seekpath`.
+> See [INSTALLATION.md](INSTALLATION.md) ("HPC / SLURM clusters"). Without seekpath,
+> BAND k-paths fall back to built-in tables (still valid); `pyarrow` is not required.
+
 ## 🤝 Contributing
 
 We welcome contributions! Please:

@@ -57,6 +57,43 @@ python -c "import numpy, matplotlib, ase, spglib, PyPDF2, yaml, pandas; print('A
 python -c "import seekpath; print('seekpath available for accurate band paths')"
 ```
 
+#### HPC / SLURM clusters (IMPORTANT: install into the *module* Python)
+
+On an HPC cluster the job-completion callback baked into every generated `.sh`
+(`python mace/queue/manager.py --callback-mode completion ...`) runs under the
+**module-loaded Python on the compute node** — NOT whatever Python you used to
+install MACE interactively (e.g. an Anaconda env). So the dependencies must be
+visible to that module Python, or the callback can't track / scrape / recover /
+progress workflows.
+
+Install with the SAME modules loaded that the job scripts use, using `--user`
+(lands in `~/.local`, which is on the shared home filesystem and therefore visible
+from every compute node):
+
+```bash
+# Match the modules the generated job scripts load (see mace/submission/submitcrystal23.sh)
+module purge
+module load CRYSTAL/23-intel-2023a Python/3.11.3-GCCcore-12.3.0 Python-bundle-PyPI/2023.06-GCCcore-12.3.0
+
+# Many sites' Python-bundle already ships numpy/scipy/pandas/ase/spglib/matplotlib/pyyaml.
+# Install whatever is missing into the module Python (e.g. seekpath):
+pip install --user seekpath
+
+# Verify in this exact module env (and ideally on a compute node via: srun --pty bash):
+python -c "import numpy, scipy, pandas, ase, spglib, yaml; print('core OK')"
+python -c "import seekpath; print('seekpath OK -> library-computed band k-paths')"
+python "$MACE_HOME/mace/queue/manager.py" --callback-mode status_check   # read-only sanity check
+```
+
+Notes:
+- **seekpath** is optional. Without it, BAND generation still works — it falls back
+  to the built-in extended-Bravais k-path tables. Installing it (into the module
+  Python) upgrades to live, geometry-computed paths; the SLURM callback picks it up
+  automatically.
+- **pyarrow** is NOT required (pandas runs without it); don't bother installing it.
+- `--user` installs are keyed to the Python X.Y version (e.g. `~/.local/lib/python3.11`),
+  so reinstall if you switch the Python module's minor version.
+
 ### Step 2: Configure Environment
 
 The `setup_mace.py` script handles environment configuration:
