@@ -46,6 +46,91 @@ try:
 except Exception:
     UI_AVAILABLE = False
 
+# When the ui facade can't be imported (e.g. running mace_cli outside the
+# installed package), fall back to a minimal stdlib shim so every ``ui.*`` call
+# site below stays guard-free. The shim mirrors the facade's *plain* mode:
+# markup is stripped, warn/err go to stderr, progress is a no-op pass-through.
+if not UI_AVAILABLE:
+    import re as _re
+
+    class _UIShim:
+        _MARKUP = _re.compile(r"\[/?[^\[\]]*\]")
+
+        def _plain(self, text):
+            return self._MARKUP.sub("", str(text))
+
+        def ok(self, msg):
+            print(self._plain(msg))
+
+        def info(self, msg):
+            print(self._plain(msg))
+
+        def print(self, *objects, **kwargs):
+            file = kwargs.pop("file", sys.stdout)
+            for k in ("style", "markup", "highlight", "justify"):
+                kwargs.pop(k, None)
+            cleaned = [self._plain(o) if isinstance(o, str) else o for o in objects]
+            print(*cleaned, file=file, **kwargs)
+
+        def warn(self, msg):
+            print(self._plain(msg), file=sys.stderr)
+
+        def err(self, msg):
+            print(self._plain(msg), file=sys.stderr)
+
+        def rule(self, title=""):
+            title = self._plain(title)
+            if title:
+                print(f"-- {title} " + "-" * max(3, 74 - len(title)))
+            else:
+                print("-" * 80)
+
+        def table(self, columns, rows, *, title=None):
+            cols = [str(c) for c in columns]
+            str_rows = [[self._plain(str(c)) for c in r] for r in rows]
+            widths = [len(c) for c in cols]
+            for r in str_rows:
+                for i, cell in enumerate(r):
+                    if i < len(widths):
+                        widths[i] = max(widths[i], len(cell))
+            if title:
+                print(self._plain(str(title)))
+            print("  ".join(c.ljust(widths[i]) for i, c in enumerate(cols)))
+            print("  ".join("-" * w for w in widths))
+            for r in str_rows:
+                print("  ".join(
+                    (r[i] if i < len(r) else "").ljust(widths[i])
+                    for i in range(len(cols))
+                ))
+
+        def progress(self, iterable, **kwargs):
+            return iterable
+
+        def badge(self, state):
+            return str(state).upper()
+
+        # banner/credits: the shim only activates when the real ui facade failed
+        # to import. show_banner() prefers UI_AVAILABLE; keep these as safe
+        # fallbacks so that path never raises AttributeError. banner() concise,
+        # credits() defers to banner.py when present.
+        def banner(self, version, **kwargs):
+            if os.environ.get("MACE_NO_BANNER", "").lower() in ("1", "true", "yes"):
+                return
+            print(f"MACE v{version} - Mendoza Automated CRYSTAL Engine")
+
+        def credits(self):
+            try:
+                from mace.utils.banner import get_credits
+                print(get_credits())
+            except Exception:
+                print("\n" + "=" * 60)
+                print("Developed at Michigan State University")
+                print("Mendoza Group - Materials Science & Engineering")
+                print("=" * 60)
+
+    ui = _UIShim()
+    UI_AVAILABLE = True
+
 def show_banner():
     """Show the MACE animated banner and credits"""
     # Check environment variable in case we're called from a subprocess
@@ -78,8 +163,8 @@ def show_action_specific_help(command, action):
     elif command == 'recover':
         show_recover_action_help(action)
     else:
-        print(f"\nNo action-specific help available for command: {command}")
-        print(f"Try: mace {command} --help")
+        ui.err(f"\nNo action-specific help available for command: {command}")
+        ui.info(f"Try: mace {command} --help")
 
 def show_database_action_help(action):
     """Show help for a specific database action"""
@@ -355,10 +440,12 @@ Examples:
     }
     
     if action in action_help:
+        # Verbatim help text: print() directly (it contains [option]-style
+        # placeholders that ui's markup stripper would remove).
         print(action_help[action])
     else:
-        print(f"No specific help available for action: {action}")
-        print(f"Available actions: {', '.join(sorted(action_help.keys()))}")
+        ui.err(f"No specific help available for action: {action}")
+        ui.info(f"Available actions: {', '.join(sorted(action_help.keys()))}")
 
 def show_monitor_action_help(action):
     """Show help for a specific monitor action"""
@@ -402,10 +489,12 @@ Show database and calculation statistics:
     }
     
     if action in action_help:
+        # Verbatim help text: print() directly (it contains [option]-style
+        # placeholders that ui's markup stripper would remove).
         print(action_help[action])
     else:
-        print(f"No specific help available for action: {action}")
-        print(f"Available actions: {', '.join(sorted(action_help.keys()))}")
+        ui.err(f"No specific help available for action: {action}")
+        ui.info(f"Available actions: {', '.join(sorted(action_help.keys()))}")
 
 def show_engine_action_help(action):
     """Show help for a specific engine action"""
@@ -446,10 +535,12 @@ Options:
     }
     
     if action in action_help:
+        # Verbatim help text: print() directly (it contains [option]-style
+        # placeholders that ui's markup stripper would remove).
         print(action_help[action])
     else:
-        print(f"No specific help available for action: {action}")
-        print(f"Available actions: {', '.join(sorted(action_help.keys()))}")
+        ui.err(f"No specific help available for action: {action}")
+        ui.info(f"Available actions: {', '.join(sorted(action_help.keys()))}")
 
 def show_workflow_action_help(action):
     """Show help for a specific workflow action"""
@@ -512,10 +603,12 @@ Write the default error-recovery configuration file (equivalent to
     }
     
     if action in action_help:
+        # Verbatim help text: print() directly (it contains [option]-style
+        # placeholders that ui's markup stripper would remove).
         print(action_help[action])
     else:
-        print(f"No specific help available for action: {action}")
-        print(f"Available actions: {', '.join(sorted(action_help.keys()))}")
+        ui.err(f"No specific help available for action: {action}")
+        ui.info(f"Available actions: {', '.join(sorted(action_help.keys()))}")
 
 def show_command_help(command):
     """Show help for a specific command"""
@@ -1002,9 +1095,11 @@ global 'mace --version' flag.
     }
     
     if command in help_text:
+        # Verbatim help text: print() directly (it contains [option]-style
+        # placeholders that ui's markup stripper would remove).
         print(help_text[command])
     else:
-        print(f"No help available for command: {command}")
+        ui.err(f"No help available for command: {command}")
 
 def main():
     """Main entry point with proper argument parsing"""
@@ -1133,15 +1228,15 @@ More Help:
     if args.credits:
         if BANNER_AVAILABLE and not args.no_banner:
             print_banner('banner')
-            print(get_credits())
+            ui.print(get_credits())
         elif BANNER_AVAILABLE:
             # Just show credits without banner
-            print(get_credits())
+            ui.print(get_credits())
         else:
-            print("\nMACE Development Team:")
-            print("Primary Developer: Marcus Djokic")
-            print("Contributors: Daniel Maldonado Lopez, Brandon Lewis, William Comaskey")
-            print("PI: Prof. Jose Luis Mendoza-Cortes")
+            ui.print("\nMACE Development Team:")
+            ui.print("Primary Developer: Marcus Djokic")
+            ui.print("Contributors: Daniel Maldonado Lopez, Brandon Lewis, William Comaskey")
+            ui.print("PI: Prof. Jose Luis Mendoza-Cortes")
         sys.exit(0)
     
     # Set environment variable for child processes
@@ -1238,28 +1333,28 @@ More Help:
                 node_manager = NodeExclusionManager()
 
                 if submit_args.exclude_amd20:
-                    print("\nExcluding all AMD20 nodes (amr + nvf)...")
+                    ui.info("\nExcluding all AMD20 nodes (amr + nvf)...")
                     amd20_nodes = node_manager.get_amd20_nodes()
                     if amd20_nodes:
                         exclude_string = node_manager.create_exclude_string(amd20_nodes)
-                        print(f"Exclude string: {exclude_string}")
+                        ui.info(f"Exclude string: {exclude_string}")
                     else:
-                        print("Warning: No AMD20 nodes found")
+                        ui.warn("Warning: No AMD20 nodes found")
 
                 elif submit_args.exclude_mendoza:
                     exclude_string = node_manager.create_exclude_string(node_manager.MENDOZA_NODES)
-                    print(f"Excluding Mendoza nodes: {exclude_string}")
+                    ui.info(f"Excluding Mendoza nodes: {exclude_string}")
 
                 elif submit_args.exclude_type:
                     node_type = submit_args.exclude_type
-                    print(f"\nQuerying SLURM for all '{node_type}' nodes...")
+                    ui.info(f"\nQuerying SLURM for all '{node_type}' nodes...")
                     nodes = node_manager.query_nodes_by_type(node_type)
                     if nodes:
                         exclude_string = node_manager.create_exclude_string(nodes)
-                        print(f"Found {len(nodes)} nodes")
-                        print(f"Exclude string: {exclude_string}")
+                        ui.info(f"Found {len(nodes)} nodes")
+                        ui.info(f"Exclude string: {exclude_string}")
                     else:
-                        print(f"Warning: No nodes found for type '{node_type}'")
+                        ui.warn(f"Warning: No nodes found for type '{node_type}'")
 
                 elif submit_args.exclude_nodes:
                     # User provided custom nodes
@@ -1271,10 +1366,10 @@ More Help:
                         # Parse comma-separated nodes
                         nodes = [n.strip() for n in custom_input.split(',')]
                         exclude_string = node_manager.create_exclude_string(nodes)
-                    print(f"Custom node exclusion: {exclude_string}")
+                    ui.info(f"Custom node exclusion: {exclude_string}")
 
             except ImportError:
-                print("Warning: Node exclusion module not available")
+                ui.warn("Warning: Node exclusion module not available")
                 exclude_string = None
 
         # Opt-in DB tracking: route through the tracking queue manager (in-place,
@@ -1283,11 +1378,11 @@ More Help:
         # so a bare `mace submit` never opens/creates a database.
         if track:
             if nosubmit:
-                print("Error: --track records jobs in the database as they are submitted, "
+                ui.err("Error: --track records jobs in the database as they are submitted, "
                       "so it cannot be combined with --nosubmit.")
                 sys.exit(1)
             if exclude_string:
-                print("Warning: node-exclusion flags are not applied to --track submissions "
+                ui.warn("Warning: node-exclusion flags are not applied to --track submissions "
                       "(the tracking manager uses the submission templates directly); ignoring them.")
             try:
                 from queue.manager import EnhancedCrystalQueueManager
@@ -1306,16 +1401,16 @@ More Help:
                 d3s = [Path(target) / f for f in entries
                        if f.endswith('.d3') and os.path.isfile(os.path.join(target, f))]
                 if not d12s and not d3s:
-                    print(f"No D12 or D3 files found in {target}")
+                    ui.err(f"No D12 or D3 files found in {target}")
                     sys.exit(1)
                 if d12s and d3s:
-                    print(f"\nFound both D12 and D3 files in {target}:")
-                    print(f"  {len(d12s)} D12 file(s) (CRYSTAL calculations)")
-                    print(f"  {len(d3s)} D3 file(s) (property calculations)")
-                    print("\nWhat would you like to submit?")
-                    print("1. D12 files only")
-                    print("2. D3 files only")
-                    print("3. Both D12 and D3 files")
+                    ui.info(f"\nFound both D12 and D3 files in {target}:")
+                    ui.info(f"  {len(d12s)} D12 file(s) (CRYSTAL calculations)")
+                    ui.info(f"  {len(d3s)} D3 file(s) (property calculations)")
+                    ui.info("\nWhat would you like to submit?")
+                    ui.info("1. D12 files only")
+                    ui.info("2. D3 files only")
+                    ui.info("3. Both D12 and D3 files")
                     choice = input("\nSelect option (1-3): ").strip()
                     if choice == '1':
                         selected = d12s
@@ -1324,31 +1419,31 @@ More Help:
                     elif choice == '3':
                         selected = d12s + d3s
                     else:
-                        print("Invalid choice. Exiting.")
+                        ui.err("Invalid choice. Exiting.")
                         sys.exit(1)
                 else:
                     selected = d12s or d3s
             else:
-                print(f"Error: {target} is not a valid file or directory")
+                ui.err(f"Error: {target} is not a valid file or directory")
                 sys.exit(1)
 
             manager = EnhancedCrystalQueueManager(
                 d12_dir=base_dir, enable_tracking=True, organize_outputs=False)
-            print(f"\nTracking enabled: recording {len(selected)} calculation(s) in materials.db (in-place)")
+            ui.info(f"\nTracking enabled: recording {len(selected)} calculation(s) in materials.db (in-place)")
             submitted = 0
-            for f in selected:
+            for f in ui.progress(selected, total=len(selected), description="Submitting"):
                 try:
                     if manager.submit_calculation(Path(f)):
                         submitted += 1
                 except Exception as e:
-                    print(f"  Failed to submit {f.name}: {e}")
-            print(f"\nSubmitted {submitted}/{len(selected)} tracked calculation(s)")
+                    ui.err(f"  Failed to submit {f.name}: {e}")
+            ui.ok(f"\nSubmitted {submitted}/{len(selected)} tracked calculation(s)")
             # Single copy-pasteable job-id line for follow-up squeue/scancel, at
             # parity with the non-tracking submit path (the per-file ids were only
             # printed scattered across the manager's own output).
             tracked_ids = list(getattr(manager, "legacy_job_status", {}).get("submitted", {}).keys())
             if tracked_ids:
-                print(f"Job ID(s): {', '.join(str(j) for j in tracked_ids)}")
+                ui.info(f"Job ID(s): {', '.join(str(j) for j in tracked_ids)}")
             sys.exit(0 if submitted == len(selected) else 1)
 
         # Check what type of files we're dealing with
@@ -1371,7 +1466,7 @@ More Help:
                 from submission.crystal import main as submit_crystal
                 submit_crystal()
             else:
-                print(f"Error: {target} is not a D12 or D3 file")
+                ui.err(f"Error: {target} is not a D12 or D3 file")
                 sys.exit(1)
         
         elif os.path.isdir(target):
@@ -1381,18 +1476,18 @@ More Help:
             d3_files = [f for f in files if f.endswith('.d3') and os.path.isfile(os.path.join(target, f))]
 
             if not d12_files and not d3_files:
-                print(f"No D12 or D3 files found in {target}")
+                ui.err(f"No D12 or D3 files found in {target}")
                 sys.exit(1)
 
             # Handle mixed directories
             if d12_files and d3_files:
-                print(f"\nFound both D12 and D3 files in {target}:")
-                print(f"  {len(d12_files)} D12 file(s) (CRYSTAL calculations)")
-                print(f"  {len(d3_files)} D3 file(s) (property calculations)")
-                print("\nWhat would you like to submit?")
-                print("1. D12 files only")
-                print("2. D3 files only")
-                print("3. Both D12 and D3 files")
+                ui.info(f"\nFound both D12 and D3 files in {target}:")
+                ui.info(f"  {len(d12_files)} D12 file(s) (CRYSTAL calculations)")
+                ui.info(f"  {len(d3_files)} D3 file(s) (property calculations)")
+                ui.info("\nWhat would you like to submit?")
+                ui.info("1. D12 files only")
+                ui.info("2. D3 files only")
+                ui.info("3. Both D12 and D3 files")
 
                 choice = input("\nSelect option (1-3): ").strip()
 
@@ -1424,7 +1519,7 @@ More Help:
                     submit_properties()
                 elif choice == '3':
                     # Submit both
-                    print("\n=== Submitting D12 files ===")
+                    ui.rule("Submitting D12 files")
                     sys.argv = ['submit_script', target]
                     if interactive:
                         sys.argv.append('--interactive')
@@ -1437,7 +1532,7 @@ More Help:
                     from submission.crystal import main as submit_crystal
                     submit_crystal()
 
-                    print("\n=== Submitting D3 files ===")
+                    ui.rule("Submitting D3 files")
                     sys.argv = ['submit_script', target]
                     if interactive:
                         sys.argv.append('--interactive')
@@ -1450,7 +1545,7 @@ More Help:
                     from submission.properties import main as submit_properties
                     submit_properties()
                 else:
-                    print("Invalid choice. Exiting.")
+                    ui.err("Invalid choice. Exiting.")
                     sys.exit(1)
 
             elif d12_files:
@@ -1480,11 +1575,11 @@ More Help:
                     sys.argv.extend(['--exclude-nodes', exclude_string])
                 from submission.properties import main as submit_properties
                 submit_properties()
-        
+
         else:
-            print(f"Error: {target} is not a valid file or directory")
+            ui.err(f"Error: {target} is not a valid file or directory")
             sys.exit(1)
-            
+
     elif args.command == 'monitor':
         # Launch monitoring dashboard or show status
         # 'status' is redirected here with --status prepended to args.args,
@@ -1523,52 +1618,52 @@ More Help:
             # Show context information
             ctx = get_current_context()
             if ctx:
-                print(f"\n=== MACE Status (Workflow: {ctx.workflow_id}) ===")
-                print(f"Isolation Mode: {ctx.isolation_mode}")
-                print(f"Database: {ctx.db_path}")
+                ui.rule(f"MACE Status (Workflow: {ctx.workflow_id})")
+                ui.info(f"Isolation Mode: {ctx.isolation_mode}")
+                ui.info(f"Database: {ctx.db_path}")
             else:
-                print("\n=== MACE Status ===")
-            
+                ui.rule("MACE Status")
+
             # Get statistics
             stats = db.get_database_stats()
-            print(f"\nMaterials: {stats.get('total_materials', 0)}")
-            
+            ui.info(f"\nMaterials: {stats.get('total_materials', 0)}")
+
             # Calculate total calculations
             status_dist = stats.get('calculations_by_status', {})
             total_calcs = sum(status_dist.values())
-            print(f"Calculations: {total_calcs}")
-            
+            ui.info(f"Calculations: {total_calcs}")
+
             # Show status distribution
             if status_dist and not summary:
-                print(f"  Pending: {status_dist.get('pending', 0)}")
-                print(f"  Running: {status_dist.get('running', 0)}")  
-                print(f"  Completed: {status_dist.get('completed', 0)}")
-                print(f"  Failed: {status_dist.get('failed', 0)}")
-            
+                ui.info(f"  Pending: {status_dist.get('pending', 0)}")
+                ui.info(f"  Running: {status_dist.get('running', 0)}")
+                ui.info(f"  Completed: {status_dist.get('completed', 0)}")
+                ui.info(f"  Failed: {status_dist.get('failed', 0)}")
+
             if detailed and not summary:
                 # Show calculation types
                 calc_types = stats.get('calculations_by_type', {})
                 if calc_types:
-                    print("\nCalculation Types:")
+                    ui.info("\nCalculation Types:")
                     for calc_type, count in calc_types.items():
-                        print(f"  {calc_type}: {count}")
-                
+                        ui.info(f"  {calc_type}: {count}")
+
                 # Show recent activity
                 recent_calcs = db.get_recent_calculations(limit=10)
                 if recent_calcs:
-                    print("\nRecent Activity:")
+                    ui.info("\nRecent Activity:")
                     for calc in recent_calcs:
-                        print(f"  {calc['calc_id']} ({calc['material_id']}): {calc['status']}")
+                        ui.info(f"  {calc['calc_id']} ({calc['material_id']}): {calc['status']}")
                         if calc.get('error_message'):
-                            print(f"    Error: {calc['error_message']}")
-            
+                            ui.info(f"    Error: {calc['error_message']}")
+
             elif not summary:
                 # Standard view - show last 5 calculations
                 recent_calcs = db.get_recent_calculations(limit=5)
                 if recent_calcs:
-                    print("\nRecent Activity:")
+                    ui.info("\nRecent Activity:")
                     for calc in recent_calcs:
-                        print(f"  {calc['calc_id']} ({calc['material_id']}): {calc['status']}")
+                        ui.info(f"  {calc['calc_id']} ({calc['material_id']}): {calc['status']}")
             
         else:
             # Run normal monitor dashboard
@@ -1599,8 +1694,10 @@ More Help:
             sys.argv = ['property_extractor.py'] + extractor_args
             extract_main()
         else:
+            # Literal [options] placeholder must survive: use print() (ui's markup
+            # stripper / rich would treat [options] as a style tag and remove it).
             print("Usage: mace analyze --extract-properties <directory> [options]")
-            print("Run 'mace analyze --help' for full options")
+            ui.info("Run 'mace analyze --help' for full options")
             
     # These commands are handled in the passthrough section above
     elif args.command in ['convert', 'opt2d12', 'opt2d3', 'opt2cif']:
@@ -1612,16 +1709,16 @@ More Help:
         # Only show credits here if banner was suppressed
         if args.no_banner:
             if BANNER_AVAILABLE:
-                print(get_credits())
+                ui.print(get_credits())
             else:
-                print("\nMACE Development Team:")
-                print("Primary Developer: Marcus Djokic")
-                print("Contributors: Daniel Maldonado Lopez, Brandon Lewis, Dr. William Comaskey")
-                print("PI: Prof. Jose Luis Mendoza-Cortes")
-            
+                ui.print("\nMACE Development Team:")
+                ui.print("Primary Developer: Marcus Djokic")
+                ui.print("Contributors: Daniel Maldonado Lopez, Brandon Lewis, Dr. William Comaskey")
+                ui.print("PI: Prof. Jose Luis Mendoza-Cortes")
+
     elif args.command == 'status':
         # Redirect to monitor --status for backward compatibility
-        print("Note: 'mace status' has been merged into 'mace monitor --status'")
+        ui.info("Note: 'mace status' has been merged into 'mace monitor --status'")
         extra = command_args('status')
         if '--status' not in extra:
             extra = ['--status'] + extra
@@ -1684,21 +1781,21 @@ More Help:
             try:
                 running, pending = manager.check_queue()
                 available = max_jobs - running
-                
-                print("\n=== Queue Status ===")
-                print(f"Running Jobs: {running}")
-                print(f"Pending Jobs: {pending}")
-                print(f"Available Slots: {available}")
-                print(f"Max Jobs: {max_jobs}")
-                print(f"Reserved Slots: {reserve}")
+
+                ui.rule("Queue Status")
+                ui.info(f"Running Jobs: {running}")
+                ui.info(f"Pending Jobs: {pending}")
+                ui.info(f"Available Slots: {available}")
+                ui.info(f"Max Jobs: {max_jobs}")
+                ui.info(f"Reserved Slots: {reserve}")
             except Exception as e:
-                print("\n=== Queue Status ===")
-                print(f"Error: Unable to check SLURM queue - {e}")
-                print("\nNote: This command requires SLURM to be available.")
-                print("On non-SLURM systems, use 'mace monitor --status' for database statistics.")
+                ui.rule("Queue Status")
+                ui.err(f"Error: Unable to check SLURM queue - {e}")
+                ui.info("\nNote: This command requires SLURM to be available.")
+                ui.info("On non-SLURM systems, use 'mace monitor --status' for database statistics.")
         else:
             # Run queue manager
-            print(f"Running queue manager (max_jobs={max_jobs}, reserve={reserve})...")
+            ui.info(f"Running queue manager (max_jobs={max_jobs}, reserve={reserve})...")
             
             # The manager needs to be called with proper arguments
             from queue.manager import main as queue_main
@@ -1718,15 +1815,15 @@ More Help:
             if dry_run:
                 # manager.py argparse does not implement --dry-run;
                 # forwarding it made argparse exit with an error
-                print("Note: --dry-run is not supported by the queue manager; ignoring.")
+                ui.warn("Note: --dry-run is not supported by the queue manager; ignoring.")
 
             # Call the main function
             queue_main()
     
     elif args.command == 'queue':
         # Redirect to manager command for backward compatibility
-        print("Note: 'mace queue' is deprecated. Use 'mace manager' instead.")
-        print("This command will be removed in a future version.\n")
+        ui.warn("Note: 'mace queue' is deprecated. Use 'mace manager' instead.")
+        ui.warn("This command will be removed in a future version.\n")
         # Re-process as manager command, forwarding ALL arguments (flags
         # previously landed in `remaining` and were dropped, so e.g.
         # `mace queue --status` launched the full job-submitting manager)
@@ -1806,31 +1903,31 @@ More Help:
         if action == 'stats':
             # Show database statistics
             stats = db.get_database_stats()
-            print("\n=== Database Statistics ===")
-            print(f"Total Materials: {stats.get('total_materials', 0)}")
-            
+            ui.rule("Database Statistics")
+            ui.info(f"Total Materials: {stats.get('total_materials', 0)}")
+
             # Calculate total calculations
             status_dist = stats.get('calculations_by_status', {})
             total_calcs = sum(status_dist.values())
-            print(f"Total Calculations: {total_calcs}")
-            
+            ui.info(f"Total Calculations: {total_calcs}")
+
             # Get calculation types
             calc_types = stats.get('calculations_by_type', {})
             if calc_types:
-                print("\nCalculation Types:")
+                ui.info("\nCalculation Types:")
                 for calc_type, count in calc_types.items():
-                    print(f"  {calc_type}: {count}")
-            
+                    ui.info(f"  {calc_type}: {count}")
+
             # Get status distribution
             status_dist = stats.get('calculations_by_status', {})
             if status_dist:
-                print("\nStatus Distribution:")
+                ui.info("\nStatus Distribution:")
                 for status, count in status_dist.items():
-                    print(f"  {status}: {count}")
-            
+                    ui.info(f"  {status}: {count}")
+
             # Add hint about other actions
-            print("\nUse --action query to list materials")
-            print("Use --action export --export-csv FILE to export data")
+            ui.info("\nUse --action query to list materials")
+            ui.info("Use --action export --export-csv FILE to export data")
                 
         elif action == 'query':
             # Parse filter options
@@ -1851,19 +1948,19 @@ More Help:
             if material_id:
                 material = db.get_material(material_id)
                 if material:
-                    print(f"\n=== Material: {material_id} ===")
+                    ui.rule(f"Material: {material_id}")
                     for key, value in material.items():
                         if key != 'structure_json':  # Skip large JSON fields
-                            print(f"{key}: {value}")
-                    
+                            ui.info(f"{key}: {value}")
+
                     # Get calculations
                     calcs = db.get_calculations_by_status(material_id=material_id)
                     if calcs:
-                        print(f"\nCalculations ({len(calcs)}):")
+                        ui.info(f"\nCalculations ({len(calcs)}):")
                         for calc in calcs:
-                            print(f"  {calc['calc_id']} ({calc['calc_type']}): {calc['status']}")
+                            ui.info(f"  {calc['calc_id']} ({calc['calc_type']}): {calc['status']}")
                 else:
-                    print(f"Material '{material_id}' not found")
+                    ui.err(f"Material '{material_id}' not found")
             else:
                 # General query - list all materials
                 if filter_strings:
@@ -1887,33 +1984,33 @@ More Help:
                         if is_advanced:
                             # Use advanced filtering
                             materials = db.filter_materials_advanced(filter_strings[0])
-                            print(f"\n=== Filtered Materials ({len(materials)} matching) ===")
-                            print(f"Advanced filter: {filter_strings[0]}")
+                            ui.rule(f"Filtered Materials ({len(materials)} matching)")
+                            ui.info(f"Advanced filter: {filter_strings[0]}")
                         else:
                             # Use regular filtering
                             materials = db.filter_materials_by_properties(filter_strings, filter_logic)
-                            print(f"\n=== Filtered Materials ({len(materials)} matching) ===")
+                            ui.rule(f"Filtered Materials ({len(materials)} matching)")
                             if filter_strings:
-                                print(f"Filters ({filter_logic}): {', '.join(filter_strings)}")
+                                ui.info(f"Filters ({filter_logic}): {', '.join(filter_strings)}")
                     except Exception as e:
-                        print(f"Error applying filters: {e}")
+                        ui.err(f"Error applying filters: {e}")
                         materials = []
                 else:
                     materials = db.get_all_materials()
-                print(f"\n=== All Materials in Database ({len(materials)} total) ===")
+                ui.rule(f"All Materials in Database ({len(materials)} total)")
                 print(f"{'Material ID':<30} {'Formula':<20} {'Space Group':<15} {'Created':<20}")
                 print("-" * 85)
-                
+
                 for mat in materials[:20]:  # Show first 20
                     material_id = mat['material_id'][:30]  # Truncate long IDs
                     formula = mat.get('formula', 'Unknown')[:20]
                     space_group = str(mat.get('space_group', 'Unknown'))[:15]
                     created = mat.get('created_at', 'Unknown')[:20]
                     print(f"{material_id:<30} {formula:<20} {space_group:<15} {created:<20}")
-                    
+
                 if len(materials) > 20:
-                    print(f"\n... and {len(materials) - 20} more materials")
-                    print("Use --material-id <ID> to see details for a specific material")
+                    ui.info(f"\n... and {len(materials) - 20} more materials")
+                    ui.info("Use --material-id <ID> to see details for a specific material")
                     
         elif action == 'properties':
             # Parse additional filtering options
@@ -1956,9 +2053,9 @@ More Help:
             # Show all available units if requested
             if show_all_units:
                 from mace.database.utils import get_property_units, get_default_unit
-                
-                print("\n=== Available Units for Properties ===\n")
-                
+
+                ui.rule("Available Units for Properties")
+
                 # Common properties with units
                 properties_with_units = [
                     'total_energy', 'fermi_energy', 'band_gap', 'cohesive_energy',
@@ -1967,22 +2064,22 @@ More Help:
                     'pressure', 'bulk_modulus', 'young_modulus',
                     'phonon_frequencies', 'temperature'
                 ]
-                
+
                 for prop in properties_with_units:
                     units = get_property_units(prop)
                     if units:
                         default = get_default_unit(prop)
-                        print(f"{prop}:")
+                        ui.info(f"{prop}:")
                         units_str = ", ".join(units)
                         if default:
-                            print(f"  Units: {units_str}")
-                            print(f"  Default: {default}")
+                            ui.info(f"  Units: {units_str}")
+                            ui.info(f"  Default: {default}")
                         else:
-                            print(f"  Units: {units_str}")
+                            ui.info(f"  Units: {units_str}")
                         print()
-                
-                print("Use --units \"property:unit\" to convert units during display")
-                print("Example: --units \"band_gap:eV,total_energy:kcal/mol\"")
+
+                ui.info("Use --units \"property:unit\" to convert units during display")
+                ui.info("Example: --units \"band_gap:eV,total_energy:kcal/mol\"")
                 return
             
             # Show material properties and statistics
@@ -2004,14 +2101,14 @@ More Help:
                 if props:
                     # Get material info for header
                     mat_info = db.get_material(material_id)
-                    
+
                     print(f"\n{'=' * 70}")
-                    print(f"Material: {material_id}")
+                    ui.print(f"Material: {material_id}")
                     if mat_info:
-                        print(f"Formula: {mat_info.get('formula', 'N/A')}")
-                        print(f"Space Group: {mat_info.get('space_group', 'N/A')}")
+                        ui.print(f"Formula: {mat_info.get('formula', 'N/A')}")
+                        ui.print(f"Space Group: {mat_info.get('space_group', 'N/A')}")
                     if calc_type_filter:
-                        print(f"Properties from: {calc_type_filter} calculations only")
+                        ui.print(f"Properties from: {calc_type_filter} calculations only")
                     print(f"{'=' * 70}")
                     
                     # Group properties by category
@@ -2025,20 +2122,20 @@ More Help:
                         props_by_category[category].append(prop)
                     
                     if not props_by_category:
-                        print(f"\nNo properties found matching filters.")
+                        ui.warn(f"\nNo properties found matching filters.")
                         if category_filter:
-                            print(f"Category filter: {category_filter}")
+                            ui.info(f"Category filter: {category_filter}")
                         if calc_type_filter:
-                            print(f"Calculation type filter: {calc_type_filter}")
+                            ui.info(f"Calculation type filter: {calc_type_filter}")
                     else:
                         # Display properties by category
                         for category, cat_props in sorted(props_by_category.items()):
                             if not compact:
                                 print(f"\n{'-' * 50}")
-                                print(f"{category.upper()}")
+                                ui.print(f"{category.upper()}")
                                 print(f"{'-' * 50}")
                             else:
-                                print(f"\n{category}:")
+                                ui.print(f"\n{category}:")
                             
                             # Sort properties with custom ordering
                             def property_sort_key(prop):
@@ -2077,12 +2174,12 @@ More Help:
                                 if is_json_value and not show_json:
                                     # Show simplified version for JSON data
                                     if compact:
-                                        print(f"  {name}: <complex data>")
+                                        ui.print(f"  {name}: <complex data>")
                                     else:
-                                        print(f"  {display_name:.<40} <complex data - use --json to show>")
+                                        ui.print(f"  {display_name:.<40} <complex data - use --json to show>")
                                 elif is_json_value and show_json:
                                     # Show full JSON data
-                                    print(f"  {display_name}:")
+                                    ui.print(f"  {display_name}:")
                                     if isinstance(value, str):
                                         try:
                                             import json
@@ -2121,31 +2218,31 @@ More Help:
                                         value_str = str(display_value)
                                     
                                     if compact:
-                                        print(f"  {name}: {value_str} {display_unit}".strip())
+                                        ui.print(f"  {name}: {value_str} {display_unit}".strip())
                                     else:
                                         # Aligned display with dots
                                         if display_unit:
-                                            print(f"  {display_name:.<40} {value_str} {display_unit}")
+                                            ui.print(f"  {display_name:.<40} {value_str} {display_unit}")
                                         else:
-                                            print(f"  {display_name:.<40} {value_str}")
-                        
+                                            ui.print(f"  {display_name:.<40} {value_str}")
+
                         # Show summary
                         total_props = sum(len(props) for props in props_by_category.values())
                         print(f"\n{'-' * 50}")
-                        print(f"Total properties: {total_props}")
-                        print(f"Categories: {', '.join(sorted(props_by_category.keys()))}")
-                        
+                        ui.info(f"Total properties: {total_props}")
+                        ui.info(f"Categories: {', '.join(sorted(props_by_category.keys()))}")
+
                         # Show available options
-                        print(f"\nOptions:")
-                        print(f"  --category <name>   Show only properties from specific category")
-                        print(f"  --from-calc <type>  Show only properties from specific calculation type")
-                        print(f"  --compact           Compact display format")
-                        print(f"  --json              Show full JSON data for complex properties")
-                        
+                        ui.info(f"\nOptions:")
+                        ui.print(f"  --category <name>   Show only properties from specific category")
+                        ui.print(f"  --from-calc <type>  Show only properties from specific calculation type")
+                        ui.print(f"  --compact           Compact display format")
+                        ui.print(f"  --json              Show full JSON data for complex properties")
+
                 else:
-                    print(f"\nNo properties found for material '{material_id}'")
+                    ui.warn(f"\nNo properties found for material '{material_id}'")
                     if calc_type_filter:
-                        print(f"(filtered by calculation type: {calc_type_filter})")
+                        ui.info(f"(filtered by calculation type: {calc_type_filter})")
             else:
                 # Show property statistics across all materials
                 # Check for formatting options and filters
@@ -2200,15 +2297,15 @@ More Help:
                     # Display header
                     if not compact:
                         print("\n" + "=" * 70)
-                        print("PROPERTY STATISTICS DATABASE")
+                        ui.print("PROPERTY STATISTICS DATABASE")
                         print("=" * 70)
-                        print(f"\nMaterials with properties: {len(materials_with_props)}")
-                        print(f"Total property entries: {len(all_props)}")
-                        print(f"Unique properties tracked: {len(prop_counts)}")
+                        ui.info(f"\nMaterials with properties: {len(materials_with_props)}")
+                        ui.info(f"Total property entries: {len(all_props)}")
+                        ui.info(f"Unique properties tracked: {len(prop_counts)}")
                     else:
-                        print("\n=== Property Statistics ===")
-                        print(f"Materials with properties: {len(materials_with_props)}")
-                        print(f"Total property entries: {len(all_props)}")
+                        ui.rule("Property Statistics")
+                        ui.info(f"Materials with properties: {len(materials_with_props)}")
+                        ui.info(f"Total property entries: {len(all_props)}")
                     
                     # Skip certain non-meaningful properties in stats
                     skip_props = ['advanced_analysis_available', 'has_dielectric_data',
@@ -2228,24 +2325,24 @@ More Help:
                     if not compact:
                         # Show property availability by category
                         print("\n" + "-" * 50)
-                        print("PROPERTY AVAILABILITY BY CATEGORY")
+                        ui.print("PROPERTY AVAILABILITY BY CATEGORY")
                         print("-" * 50)
-                        
-                        sorted_categories = sorted(prop_by_category.items(), 
-                                                 key=lambda x: (category_order.index(x[0].lower()) 
+
+                        sorted_categories = sorted(prop_by_category.items(),
+                                                 key=lambda x: (category_order.index(x[0].lower())
                                                                if x[0].lower() in category_order else 999, x[0]))
-                        
+
                         # Apply category filter if specified
                         if category_filter:
-                            sorted_categories = [(cat, props) for cat, props in sorted_categories 
+                            sorted_categories = [(cat, props) for cat, props in sorted_categories
                                                if cat.lower() == category_filter.lower()]
                             if not sorted_categories:
-                                print(f"\nNo properties found in category '{category_filter}'")
-                                print(f"Available categories: {', '.join(sorted(prop_by_category.keys()))}")
+                                ui.warn(f"\nNo properties found in category '{category_filter}'")
+                                ui.info(f"Available categories: {', '.join(sorted(prop_by_category.keys()))}")
                                 return
-                        
+
                         for category, props in sorted_categories:
-                            print(f"\n{category.upper()}:")
+                            ui.print(f"\n{category.upper()}:")
                             # Sort properties within category
                             def prop_sort_key(item):
                                 name = item[0]
@@ -2259,37 +2356,37 @@ More Help:
                             sorted_props = sorted(props.items(), key=prop_sort_key)
                             for prop_name, count in sorted_props:
                                 display_name = prop_name.replace('_', ' ').title()
-                                print(f"  {display_name:.<50} {count} materials")
+                                ui.print(f"  {display_name:.<50} {count} materials")
                     else:
                         # Compact view - just show counts
-                        print("\nProperty availability:")
-                        
+                        ui.print("\nProperty availability:")
+
                         # Apply category filter if specified
                         if category_filter:
                             filtered_props = {name: count for name, count in prop_counts.items()
                                             if prop_categories.get(name, 'Other').lower() == category_filter.lower()}
                             if not filtered_props:
-                                print(f"\nNo properties found in category '{category_filter}'")
-                                print(f"Available categories: {', '.join(sorted(set(prop_categories.values())))}")
+                                ui.warn(f"\nNo properties found in category '{category_filter}'")
+                                ui.info(f"Available categories: {', '.join(sorted(set(prop_categories.values())))}")
                                 return
                             props_to_show = filtered_props
-                            print(f"Category: {category_filter.upper()}")
+                            ui.info(f"Category: {category_filter.upper()}")
                         else:
                             props_to_show = prop_counts
-                        
+
                         sorted_props = sorted(props_to_show.items(), key=lambda x: x[1], reverse=True)
                         for prop_name, count in sorted_props[:20]:
-                            print(f"  {prop_name}: {count} materials")
+                            ui.print(f"  {prop_name}: {count} materials")
                         if len(sorted_props) > 20:
-                            print(f"  ... and {len(sorted_props) - 20} more properties")
-                    
+                            ui.print(f"  ... and {len(sorted_props) - 20} more properties")
+
                     # Show statistics for numeric properties
                     if not compact:
                         print("\n" + "-" * 50)
-                        print("NUMERIC PROPERTY RANGES")
+                        ui.print("NUMERIC PROPERTY RANGES")
                         print("-" * 50)
                     else:
-                        print("\nNumeric property ranges:")
+                        ui.print("\nNumeric property ranges:")
                     
                     # Group numeric properties by category
                     numeric_by_category = {}
@@ -2313,7 +2410,7 @@ More Help:
                         
                         for category, props in sorted_num_categories:
                             if not compact:
-                                print(f"\n{category.upper()}:")
+                                ui.print(f"\n{category.upper()}:")
                             
                             # Sort properties within category
                             def prop_sort_key(item):
@@ -2335,11 +2432,11 @@ More Help:
                                 
                                 if compact:
                                     # Compact format
-                                    print(f"  {prop_name}: min={min_val:.3g}, max={max_val:.3g}, avg={avg_val:.3g} {unit}".strip())
+                                    ui.print(f"  {prop_name}: min={min_val:.3g}, max={max_val:.3g}, avg={avg_val:.3g} {unit}".strip())
                                 else:
                                     # Full format
                                     display_name = prop_name.replace('_', ' ').title()
-                                    print(f"\n  {display_name}:")
+                                    ui.print(f"\n  {display_name}:")
                                     
                                     # Format values based on magnitude
                                     if abs(min_val) < 0.001 or abs(min_val) > 10000:
@@ -2357,14 +2454,14 @@ More Help:
                                     else:
                                         avg_str = f"{avg_val:.6f}".rstrip('0').rstrip('.')
                                     
-                                    print(f"    Minimum....................... {min_str} {unit}")
-                                    print(f"    Maximum....................... {max_str} {unit}")
-                                    print(f"    Average....................... {avg_str} {unit}")
-                                    print(f"    Materials with data.......... {len(values)}")
-                                    
+                                    ui.print(f"    Minimum....................... {min_str} {unit}")
+                                    ui.print(f"    Maximum....................... {max_str} {unit}")
+                                    ui.print(f"    Average....................... {avg_str} {unit}")
+                                    ui.print(f"    Materials with data.......... {len(values)}")
+
                                     if show_json:
                                         # Show distribution data
-                                        print(f"    Distribution:")
+                                        ui.print(f"    Distribution:")
                                         import json
                                         dist_data = {
                                             "values": sorted(values)[:10],  # First 10 values
@@ -2376,23 +2473,23 @@ More Help:
                     if not compact:
                         # Show summary and options
                         print("\n" + "=" * 70)
-                        print("\nOptions:")
-                        print("  --material-id ID    View properties for a specific material")
-                        print("  --category <name>   Show only properties from specific category")
-                        print("  --compact           Compact display format")
-                        print("  --json              Show distribution data for numeric properties")
-                        
-                        print("\nExamples:")
-                        print("  mace database --action properties --compact")
-                        print("  mace database --action properties --json")
-                        print("  mace database --action properties --category electronic")
-                        print("  mace database --action properties --material-id 1_dia")
+                        ui.info("\nOptions:")
+                        ui.print("  --material-id ID    View properties for a specific material")
+                        ui.print("  --category <name>   Show only properties from specific category")
+                        ui.print("  --compact           Compact display format")
+                        ui.print("  --json              Show distribution data for numeric properties")
+
+                        ui.info("\nExamples:")
+                        ui.print("  mace database --action properties --compact")
+                        ui.print("  mace database --action properties --json")
+                        ui.print("  mace database --action properties --category electronic")
+                        ui.print("  mace database --action properties --material-id 1_dia")
                 else:
-                    print("No properties found in database")
-                    
+                    ui.warn("No properties found in database")
+
                 if compact:
-                    print("\nUse --material-id ID to see properties for a specific material")
-                    print("Use without --compact for detailed view")
+                    ui.info("\nUse --material-id ID to see properties for a specific material")
+                    ui.info("Use without --compact for detailed view")
                     
         elif action == 'export':
             # Parse export options
@@ -2451,27 +2548,27 @@ More Help:
                 )
                 
                 if exported_file:
-                    print(f"\nSuccessfully exported to: {exported_file}")
-                    print(f"Format: {export_format}")
-                    
+                    ui.ok(f"\nSuccessfully exported to: {exported_file}")
+                    ui.info(f"Format: {export_format}")
+
                     # Show what was exported
                     if properties_only:
-                        print("Exported: All properties")
+                        ui.info("Exported: All properties")
                     elif filter_strings:
-                        print(f"Exported: Filtered materials ({filter_logic} logic)")
+                        ui.info(f"Exported: Filtered materials ({filter_logic} logic)")
                         for f in filter_strings:
-                            print(f"  - {f}")
+                            ui.info(f"  - {f}")
                     else:
-                        print("Exported: All materials")
-                        
+                        ui.info("Exported: All materials")
+
                     if include_properties and not properties_only:
-                        print(f"Included properties: {', '.join(include_properties)}")
+                        ui.info(f"Included properties: {', '.join(include_properties)}")
                 else:
-                    print("Export failed.")
-                    
+                    ui.err("Export failed.")
+
             except ImportError as e:
-                print(f"Error: {e}")
-                print("\nFalling back to basic CSV export...")
+                ui.err(f"Error: {e}")
+                ui.warn("\nFalling back to basic CSV export...")
                 # Fallback to basic export
                 if output_file:
                     materials = db.get_all_materials()
@@ -2481,11 +2578,11 @@ More Help:
                             writer = csv.DictWriter(f, fieldnames=materials[0].keys())
                             writer.writeheader()
                             writer.writerows(materials)
-                    print(f"Exported {len(materials)} materials to {output_file}")
+                    ui.ok(f"Exported {len(materials)} materials to {output_file}")
                 else:
-                    print("Please specify --export-csv FILE or --output FILE")
+                    ui.err("Please specify --export-csv FILE or --output FILE")
             except Exception as e:
-                print(f"Export error: {e}")
+                ui.err(f"Export error: {e}")
                 
         elif action == 'compare':
             # Compare materials
@@ -2511,29 +2608,29 @@ More Help:
                     i += 1
                     
             if not materials_to_compare:
-                print("Error: Please specify materials to compare with --materials")
-                print("Example: mace database --action compare --materials '1_dia,2_dia2,3_dia3'")
+                ui.err("Error: Please specify materials to compare with --materials")
+                ui.info("Example: mace database --action compare --materials '1_dia,2_dia2,3_dia3'")
             else:
                 try:
                     from database.analysis import compare_materials
-                    
+
                     # If no properties specified, compare all
                     if not properties_to_compare:
                         properties_to_compare = None
-                        
+
                     result = compare_materials(
                         db,
                         materials_to_compare,
                         properties_to_compare,
                         output_format
                     )
-                    
+
                     print(result)
-                    
+
                 except ImportError as e:
-                    print(f"Error importing comparison module: {e}")
+                    ui.err(f"Error importing comparison module: {e}")
                 except Exception as e:
-                    print(f"Comparison error: {e}")
+                    ui.err(f"Comparison error: {e}")
                     
         elif action == 'missing':
             # Analyze missing data
@@ -2573,7 +2670,7 @@ More Help:
                 )
                 print(result)
             except Exception as e:
-                print(f"Missing data analysis error: {e}")
+                ui.err(f"Missing data analysis error: {e}")
                     
         elif action == 'correlate':
             # Calculate property correlations
@@ -2616,7 +2713,7 @@ More Help:
                 )
                 print(result)
             except Exception as e:
-                print(f"Correlation analysis error: {e}")
+                ui.err(f"Correlation analysis error: {e}")
                 
         elif action == 'distribution' or action == 'distribute':
             # Analyze property distributions
@@ -2655,7 +2752,7 @@ More Help:
                 )
                 print(result)
             except Exception as e:
-                print(f"Distribution analysis error: {e}")
+                ui.err(f"Distribution analysis error: {e}")
                 
         elif action == 'workflow':
             # Track workflow progress
@@ -2697,7 +2794,7 @@ More Help:
                 )
                 print(result)
             except Exception as e:
-                print(f"Workflow tracking error: {e}")
+                ui.err(f"Workflow tracking error: {e}")
                     
         elif action == 'validate':
             # Validate data integrity
@@ -2729,24 +2826,24 @@ More Help:
                 # Validate materials
                 result = validate_materials(db, material_ids, fix_issues, output_format)
                 print(result)
-                
+
                 # Check database integrity if requested
                 if check_integrity:
                     validator = DatabaseValidator(db)
                     integrity_report = validator.check_database_integrity()
-                    
-                    print("\n=== Database Integrity Check ===")
-                    print(f"Schema valid: {integrity_report['schema_valid']}")
-                    print(f"Orphaned properties: {integrity_report['orphaned_properties']}")
-                    print(f"Duplicate properties: {integrity_report['duplicate_properties']}")
-                    
+
+                    ui.rule("Database Integrity Check")
+                    ui.info(f"Schema valid: {integrity_report['schema_valid']}")
+                    ui.info(f"Orphaned properties: {integrity_report['orphaned_properties']}")
+                    ui.info(f"Duplicate properties: {integrity_report['duplicate_properties']}")
+
                     if integrity_report['integrity_issues']:
-                        print("\nIntegrity issues found:")
+                        ui.warn("\nIntegrity issues found:")
                         for issue in integrity_report['integrity_issues'][:10]:
-                            print(f"  - {issue}")
-                            
+                            ui.info(f"  - {issue}")
+
             except Exception as e:
-                print(f"Validation error: {e}")
+                ui.err(f"Validation error: {e}")
                     
         elif action == 'history':
             # Property history and versioning
@@ -2786,78 +2883,78 @@ More Help:
                 
                 if operation == 'view':
                     if not material_id:
-                        print("Error: --material-id required for viewing history")
+                        ui.err("Error: --material-id required for viewing history")
                         return
-                        
+
                     report = history.format_history_report(material_id, property_name)
                     print(report)
-                    
+
                 elif operation == 'snapshot':
                     if not material_id:
-                        print("Error: --material-id required for creating snapshot")
+                        ui.err("Error: --material-id required for creating snapshot")
                         return
-                        
+
                     version_num = history.create_material_snapshot(material_id, 'user', reason)
-                    print(f"Created snapshot version {version_num} for {material_id}")
-                    
+                    ui.ok(f"Created snapshot version {version_num} for {material_id}")
+
                 elif operation == 'compare':
                     if not material_id or not version or not version2:
-                        print("Error: --material-id, --version, and --version2 required for comparison")
+                        ui.err("Error: --material-id, --version, and --version2 required for comparison")
                         return
-                        
+
                     comparison = history.compare_versions(material_id, version, version2)
-                    
+
                     if 'error' in comparison:
-                        print(f"Error: {comparison['error']}")
+                        ui.err(f"Error: {comparison['error']}")
                     else:
-                        print(f"\n=== Version Comparison: {material_id} ===")
-                        print(f"Version {version} ({comparison['version1']['created_at']}) vs "
+                        ui.rule(f"Version Comparison: {material_id}")
+                        ui.info(f"Version {version} ({comparison['version1']['created_at']}) vs "
                               f"Version {version2} ({comparison['version2']['created_at']})")
-                        print(f"\nTotal changes: {comparison['total_changes']}")
-                        
+                        ui.info(f"\nTotal changes: {comparison['total_changes']}")
+
                         if comparison['added']:
-                            print(f"\nAdded properties ({len(comparison['added'])}):")
+                            ui.info(f"\nAdded properties ({len(comparison['added'])}):")
                             for prop in comparison['added']:
-                                print(f"  + {prop['property']}: {prop['new_value']} {prop.get('new_unit', '')}")
-                                
+                                ui.print(f"  + {prop['property']}: {prop['new_value']} {prop.get('new_unit', '')}")
+
                         if comparison['removed']:
-                            print(f"\nRemoved properties ({len(comparison['removed'])}):")
+                            ui.info(f"\nRemoved properties ({len(comparison['removed'])}):")
                             for prop in comparison['removed']:
-                                print(f"  - {prop['property']}: {prop['old_value']} {prop.get('old_unit', '')}")
-                                
+                                ui.print(f"  - {prop['property']}: {prop['old_value']} {prop.get('old_unit', '')}")
+
                         if comparison['changed']:
-                            print(f"\nChanged properties ({len(comparison['changed'])}):")
+                            ui.info(f"\nChanged properties ({len(comparison['changed'])}):")
                             for prop in comparison['changed']:
-                                print(f"  ~ {prop['property']}: {prop['old_value']} → {prop['new_value']}")
-                                
+                                ui.print(f"  ~ {prop['property']}: {prop['old_value']} → {prop['new_value']}")
+
                 elif operation == 'rollback':
                     if not material_id or not property_name or not version or not reason:
-                        print("Error: --material-id, --property, --version, and --reason required for rollback")
+                        ui.err("Error: --material-id, --property, --version, and --reason required for rollback")
                         return
-                        
+
                     success = history.rollback_property(material_id, property_name, version, reason)
                     if success:
-                        print(f"Successfully rolled back {property_name} to version {version}")
+                        ui.ok(f"Successfully rolled back {property_name} to version {version}")
                     else:
-                        print("Rollback failed - version not found")
-                        
+                        ui.err("Rollback failed - version not found")
+
                 elif operation == 'recent':
                     changes = history.get_recent_changes(limit, material_id)
-                    
-                    print(f"\n=== Recent Property Changes ===")
-                    print(f"Showing last {min(len(changes), limit)} changes")
-                    
+
+                    ui.rule("Recent Property Changes")
+                    ui.info(f"Showing last {min(len(changes), limit)} changes")
+
                     for change in changes:
-                        print(f"\n{change['changed_at']} - {change['material_id']} ({change.get('formula', 'N/A')})")
-                        print(f"  {change['property_name']}: {change['old_value']} → {change['property_value']}")
+                        ui.info(f"\n{change['changed_at']} - {change['material_id']} ({change.get('formula', 'N/A')})")
+                        ui.print(f"  {change['property_name']}: {change['old_value']} → {change['property_value']}")
                         if change.get('change_reason'):
-                            print(f"  Reason: {change['change_reason']}")
-                            
+                            ui.info(f"  Reason: {change['change_reason']}")
+
                 else:
-                    print(f"Unknown operation: {operation}")
-                    
+                    ui.err(f"Unknown operation: {operation}")
+
             except Exception as e:
-                print(f"History error: {e}")
+                ui.err(f"History error: {e}")
                 import traceback
                 traceback.print_exc()
                     
@@ -2867,7 +2964,7 @@ More Help:
                 from mace.database.interactive import run_interactive_explorer
                 run_interactive_explorer(db.db_path)
             except Exception as e:
-                print(f"Interactive mode error: {e}")
+                ui.err(f"Interactive mode error: {e}")
                 import traceback
                 traceback.print_exc()
                     
@@ -2904,10 +3001,10 @@ More Help:
                     i += 1
                     
             if not group_by or not properties:
-                print("Error: --group-by and --properties are required")
-                print("Use 'mace database --action aggregate --help' for usage")
+                ui.err("Error: --group-by and --properties are required")
+                ui.info("Use 'mace database --action aggregate --help' for usage")
                 return
-                
+
             try:
                 from mace.database.analysis import aggregate_by_groups
                 result = aggregate_by_groups(
@@ -2917,13 +3014,13 @@ More Help:
                 )
                 print(result)
             except Exception as e:
-                print(f"Aggregation error: {e}")
+                ui.err(f"Aggregation error: {e}")
                 import traceback
                 traceback.print_exc()
-                    
+
         elif action == 'clean':
             # Clean up orphaned records
-            print("Database cleanup not yet implemented")
+            ui.warn("Database cleanup not yet implemented")
             
     elif args.command == 'engine':
         # Workflow engine command
@@ -2942,8 +3039,8 @@ More Help:
             try:
                 from mace.plotting.main import main as plotting_main
             except ImportError:
-                print("Error: Could not import plotting module.")
-                print("Please ensure the mace package is properly installed.")
+                ui.err("Error: Could not import plotting module.")
+                ui.info("Please ensure the mace package is properly installed.")
                 sys.exit(1)
 
         # Combine all arguments
@@ -2954,12 +3051,12 @@ More Help:
         # Show version with main banner
         if BANNER_AVAILABLE:
             print_banner('banner')  # Use main banner
-            print(f"\n    Version: {__version__}")
-            print("    CRYSTAL Support: CRYSTAL17, CRYSTAL23")
+            ui.print(f"\n    Version: {__version__}")
+            ui.print("    CRYSTAL Support: CRYSTAL17, CRYSTAL23")
         else:
-            print(f"\nMACE v{__version__}")
-            print("Mendoza Automated CRYSTAL Engine")
-            print("CRYSTAL Support: CRYSTAL17, CRYSTAL23")
+            ui.print(f"\nMACE v{__version__}")
+            ui.print("Mendoza Automated CRYSTAL Engine")
+            ui.print("CRYSTAL Support: CRYSTAL17, CRYSTAL23")
 
 if __name__ == "__main__":
     main()
