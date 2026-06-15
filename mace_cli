@@ -1106,6 +1106,33 @@ def main():
     # Save original sys.argv before any modifications
     original_argv = sys.argv[:]
     
+    # Handle --theme early (the banner can render before argparse): pick the UI
+    # color palette for the whole run, and export it so child processes match.
+    # Default stays crystal-if-color-else-mono; MACE_THEME=<name> works without a flag.
+    def _apply_theme(name):
+        name = (name or "").strip().lower()
+        if hasattr(ui, "configure"):
+            try:
+                ui.configure(palette=name)
+            except Exception:
+                print(f"Unknown theme '{name}' — using default. "
+                      f"Choices: crystal, mono, ember.", file=sys.stderr)
+                return
+        os.environ['MACE_THEME'] = name
+
+    _ti = 0
+    while _ti < len(sys.argv):
+        _ta = sys.argv[_ti]
+        if _ta == '--theme' and _ti + 1 < len(sys.argv):
+            _apply_theme(sys.argv[_ti + 1])
+            del sys.argv[_ti:_ti + 2]
+            break
+        if _ta.startswith('--theme='):
+            _apply_theme(_ta.split('=', 1)[1])
+            del sys.argv[_ti]
+            break
+        _ti += 1
+
     # Check for action-specific help before argparse for any command
     if len(sys.argv) >= 5 and sys.argv[2] == '--action' and sys.argv[4] == '--help':
         command = sys.argv[1]
@@ -1218,6 +1245,8 @@ More Help:
                        help='Command to run')
     parser.add_argument('args', nargs='*', help='Arguments for the command')
     parser.add_argument('--no-banner', action='store_true', help='Suppress ASCII art banner')
+    parser.add_argument('--theme', choices=['crystal', 'mono', 'ember'], metavar='NAME',
+                        help='UI color theme (default: crystal if color available, else mono; or set MACE_THEME)')
     parser.add_argument('--version', action='version', version=f'MACE v{__version__}')
     parser.add_argument('--credits', action='store_true', help='Show developer credits')
     

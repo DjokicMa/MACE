@@ -570,6 +570,42 @@ def test_banner_static_themed_wordmark_in_tty(ui):
 
 
 # ===========================================================================
+# Stage 2 — color theme selection (ember palette, MACE_THEME, consistency)
+# ===========================================================================
+def test_ember_palette_selectable(ui):
+    ui2 = _rich_ui(ui)
+    ui2.configure(force_color=True, force_tty=True, palette="ember")
+    assert ui2.active_palette() is ui2.EMBER
+    assert ui2.active_palette().name == "ember"
+    assert ui2.EMBER.gradient[0] == "#7f1d1d"
+
+
+def test_mace_theme_env_selects_palette(ui, monkeypatch):
+    """MACE_THEME picks the palette with no explicit configure(palette=...); an
+    invalid value falls back to the auto default (crystal when color is available)."""
+    ui2 = _rich_ui(ui)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    caps = ui2._Caps()            # fresh caps -> no palette_name override
+    caps.force_color = True
+    caps.force_tty = True
+    monkeypatch.setenv("MACE_THEME", "ember")
+    assert caps.palette is ui2.EMBER
+    monkeypatch.setenv("MACE_THEME", "bogus")
+    assert caps.palette is ui2.CRYSTAL
+
+
+def test_banner_theme_consistency_static_uses_selected_palette(ui, monkeypatch):
+    """A selected theme drives the static banner (and, by construction, the same
+    _CAPS.palette drives the animation) — so the two never mix crystal/ember."""
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    ui2 = _rich_ui(ui)
+    ui2.configure(force_color=True, force_tty=True, palette="ember")
+    text = _capture_stdout_stderr(lambda: ui2.banner("1.1.0", animate=False))
+    assert "38;2;127;29;29" in text       # ember gradient[0] = #7f1d1d
+    assert "38;2;45;212;191" not in text   # crystal gradient[0] must be absent
+
+
+# ===========================================================================
 # Stage 2 — startup animation color-leak guard (deterministic, no PTY)
 # ===========================================================================
 def _rich_ui(ui):

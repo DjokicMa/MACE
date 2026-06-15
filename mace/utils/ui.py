@@ -98,7 +98,19 @@ MONO = Palette(
     spinner="line",
 )
 
-_PALETTES = {"crystal": CRYSTAL, "mono": MONO}
+# Optional warm theme — opt in via ``--theme ember`` or ``MACE_THEME=ember``.
+EMBER = Palette(
+    name="ember",
+    gradient=("#7f1d1d", "#b91c1c", "#ea580c", "#f59e0b", "#fbbf24", "#fde68a"),
+    accent="#f59e0b",
+    bar="#ea580c",
+    ok="#a3e635",
+    warn="#fbbf24",
+    err="#ef4444",
+    spinner="dots",
+)
+
+_PALETTES = {"crystal": CRYSTAL, "mono": MONO, "ember": EMBER}
 
 # MACE wordmark block art (reused from banner.py / the demos).
 WORDMARK = [
@@ -180,8 +192,14 @@ class _Caps:
 
     @property
     def palette(self) -> Palette:
-        if self.palette_name in _PALETTES:
-            return _PALETTES[self.palette_name]
+        # Precedence: explicit override (configure / --theme) → MACE_THEME env
+        # (set-once selection) → auto default (crystal in color, else mono). Exactly
+        # one palette per process, so the animated and static banners always match.
+        name = self.palette_name
+        if name not in _PALETTES:
+            name = os.environ.get("MACE_THEME", "").strip().lower()
+        if name in _PALETTES:
+            return _PALETTES[name]
         return CRYSTAL if self.color_ok else MONO
 
     def banner_suppressed(self) -> bool:
