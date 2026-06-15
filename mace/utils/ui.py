@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import io
 import os
+import random
 import re
 import sys
 import contextlib
@@ -459,6 +460,95 @@ def _styled_wordmark(reveal_lines: Optional[int] = None):
     return t
 
 
+# ---------------------------------------------------------------------------
+# Startup animations (§5.2) — ported from the approved demo
+# ``mace_visual_demo_anim.py``. PALETTE-CORRECT: every color is derived from the
+# passed ``grad`` (= ``_CAPS.palette.gradient``) so mono NEVER leaks a crystal
+# color. ``banner()`` picks one at random each launch.
+#
+# Import-safe with rich absent: the bodies reference ``_Text`` only at CALL time,
+# and they are only called from the interactive path (which requires rich). The
+# module-level names below use only stdlib + ``WORDMARK``.
+# ---------------------------------------------------------------------------
+_WM_H = len(WORDMARK)
+_WM_W = max(len(_l) for _l in WORDMARK)
+_DECODE_SYM = "█▓▒░╔╗║═╬◆◇▪▫01∎⬡"
+
+
+def _wm_compose(grad, style_fn, char_fn=None):
+    """Build the wordmark as a rich Text from per-cell style/char callbacks."""
+    t = _Text(justify="left")
+    for r, line in enumerate(WORDMARK):
+        for c in range(_WM_W):
+            ch = line[c] if c < len(line) else " "
+            cc = char_fn(r, c, ch) if char_fn else ch
+            t.append(cc, style=style_fn(r, c, ch))
+        if r < _WM_H - 1:
+            t.append("\n")
+    return t
+
+
+def _wm_final(grad):
+    return _wm_compose(grad, lambda r, c, ch: None if ch == " " else grad[r])
+
+
+def _gen_shimmer(grad):
+    for f in range(_WM_W + 14):
+        pos = f - 7
+
+        def sf(r, c, ch, pos=pos, grad=grad):
+            if ch == " ":
+                return None
+            d = abs(c - pos)
+            if d <= 1:
+                return "bold white"
+            if d <= 3:
+                return f"bold {grad[r]}"
+            return grad[r]
+
+        yield _wm_compose(grad, sf)
+
+
+def _gen_decode(grad):
+    lock = {c: 5 + c * 0.6 for c in range(_WM_W)}
+    for f in range(int(max(lock.values())) + 5):
+
+        def cf(r, c, ch, f=f):
+            if ch == " ":
+                return " "
+            return ch if f >= lock[c] else random.choice(_DECODE_SYM)
+
+        def sf(r, c, ch, f=f, grad=grad):
+            if ch == " ":
+                return None
+            # scramble color derives from the ACTIVE palette (never hardcoded) so
+            # mono never flashes a crystal color; locked cells use the row gradient.
+            return grad[r] if f >= lock[c] else random.choice([grad[1], grad[4], "grey50"])
+
+        yield _wm_compose(grad, sf, cf)
+
+
+def _gen_phonon(grad):
+    for f in range(42):
+        amp = max(0.0, 3.0 - f * 0.09)
+        t = _Text(justify="left")
+        for r, line in enumerate(WORDMARK):
+            off = int(round(random.uniform(-amp, amp)))
+            t.append(" " * max(0, off + 3))
+            t.append(line, style=grad[r])
+            if r < _WM_H - 1:
+                t.append("\n")
+        yield t
+    yield _wm_final(grad)
+
+
+_BANNER_ANIMS = {
+    "phonon":  (_gen_phonon, 0.045),
+    "decode":  (_gen_decode, 0.05),
+    "shimmer": (_gen_shimmer, 0.028),
+}
+
+
 def banner(
     version: str,
     *,
@@ -467,8 +557,10 @@ def banner(
 ) -> None:
     """Render the MACE wordmark adaptively.
 
-    Interactive (rich + TTY + color): gradient wordmark revealed line-by-line via
-    ``rich.Live`` **in place** (no clear, no forced delay beyond the brief reveal).
+    Interactive (rich + TTY + color): ONE startup animation chosen at random each
+    call from {phonon, decode, shimmer}, played via ``rich.Live`` **in place** (no
+    clear, no forced delay beyond the animation frames), then settling on a SINGLE
+    final frame (wordmark + subtitle + meta).
     Non-interactive / no rich: a single concise line ``MACE v{version} — {subtitle}``.
     Honors ``MACE_NO_BANNER`` / ``--no-banner`` (returns immediately when suppressed).
     """
@@ -486,20 +578,18 @@ def banner(
             _CAPS.console().print(line)
         return
 
-    # Interactive: animated, in-place reveal. NO \033[2J\033[H, no fake sleep.
+    # Interactive: random startup animation, in-place. NO \033[2J\033[H, no fake sleep.
     console = _CAPS.console()
     p = _CAPS.palette
     import time as _time
-
-    with _Live(console=console, refresh_per_second=30, transient=False) as live:
-        for n in range(1, len(WORDMARK) + 1):
-            live.update(_Align.center(_styled_wordmark(n)))
-            _time.sleep(0.07)  # short reveal only; not a fake "loading" delay
+    gen, dt = _BANNER_ANIMS[random.choice(list(_BANNER_ANIMS))]
+    with _Live(console=console, refresh_per_second=60, transient=False) as live:
+        for frame in gen(p.gradient):
+            live.update(_Align.center(frame))
+            _time.sleep(dt)
         sub = _Text(subtitle, style="bold")
-        parts = [_styled_wordmark(), _Text(), sub]
         meta_text = meta if meta is not None else f"v{version}  ·  Michigan State University  ·  Mendoza Group"
-        parts.append(_Text(meta_text, style="dim"))
-        live.update(_Align.center(_Group(*parts)))
+        live.update(_Align.center(_Group(_wm_final(p.gradient), _Text(), sub, _Text(meta_text, style="dim"))))
 
 
 def credits() -> None:
@@ -796,18 +886,26 @@ def badge(state: str) -> str:
     return st
 
 
-def status_dashboard(
+def build_status_dashboard(
     title: str,
     rows: Sequence,
     *,
     overall: Optional[str] = None,
     subtitle: Optional[str] = None,
-) -> None:
-    """Render a status table. Never clears the screen.
+):
+    """BUILD (do not print) the status dashboard renderable.
+
+    Rich + color: return a rich ``Panel(Table)`` (the same look
+    :func:`status_dashboard` prints today).
+    Fallback (no rich / no color): return a plain multi-line ``str`` (no ANSI, no
+    clear).
+
+    Consumed by :func:`status_dashboard` (which prints it) and by
+    :func:`live_dashboard` (which refreshes it in place for ``monitor --watch``).
 
     Each row is a ``StatusRow=(subsystem, state, detail)``; ``state`` ∈
     {OK,WARN,ERROR,IDLE} renders as a colored badge. ``overall`` is an optional
-    summary line. Fallback: fixed-width plain table, uppercase states, no color.
+    summary line.
     """
     norm = [StatusRow(*r) if not isinstance(r, StatusRow) else r for r in rows]
     console = _CAPS.console()
@@ -824,25 +922,48 @@ def status_dashboard(
         if overall:
             extra = f"overall: {overall}"
             sub_markup = f"{sub_markup} · {extra}" if sub_markup else f"[dim]{extra}[/dim]"
-        console.print(_Panel(t, title=f"[bold {p.accent}]{title}[/]",
-                             subtitle=sub_markup, border_style=p.accent))
-        return
-    # Plain fixed-width table.
-    import builtins
-
-    builtins.print(_plain(title))
+        return _Panel(t, title=f"[bold {p.accent}]{title}[/]",
+                      subtitle=sub_markup, border_style=p.accent)
+    # Plain fixed-width table — assembled into a string (no ANSI, no clear).
+    lines = [_plain(title)]
     if subtitle:
-        builtins.print(_plain(subtitle))
+        lines.append(_plain(subtitle))
     sub_w = max([len("Subsystem")] + [len(r.subsystem) for r in norm], default=9)
     st_w = max([len("Status")] + [len(str(r.state).upper()) for r in norm], default=6)
-    builtins.print(f"  {'Subsystem'.ljust(sub_w)}  {'Status'.ljust(st_w)}  Detail")
+    lines.append(f"  {'Subsystem'.ljust(sub_w)}  {'Status'.ljust(st_w)}  Detail")
     for r in norm:
-        builtins.print(
+        lines.append(
             f"  {r.subsystem.ljust(sub_w)}  {str(r.state).upper().ljust(st_w)}  "
             f"{_plain(r.detail)}"
         )
     if overall:
-        builtins.print(f"  overall: {_plain(overall)}")
+        lines.append(f"  overall: {_plain(overall)}")
+    return "\n".join(lines)
+
+
+def status_dashboard(
+    title: str,
+    rows: Sequence,
+    *,
+    overall: Optional[str] = None,
+    subtitle: Optional[str] = None,
+) -> None:
+    """Render a status table. Never clears the screen.
+
+    Thin wrapper over :func:`build_status_dashboard`: builds the renderable then
+    prints it (rich: ``console.print``; fallback: ``builtins.print`` of the plain
+    string). Each row is a ``StatusRow=(subsystem, state, detail)``; ``state`` ∈
+    {OK,WARN,ERROR,IDLE} renders as a colored badge. ``overall`` is an optional
+    summary line. Fallback: fixed-width plain table, uppercase states, no color.
+    """
+    built = build_status_dashboard(title, rows, overall=overall, subtitle=subtitle)
+    console = _CAPS.console()
+    if console is not None and _CAPS.color_ok:
+        console.print(built)
+        return
+    import builtins
+
+    builtins.print(built)
 
 
 class LiveHandle:

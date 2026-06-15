@@ -377,6 +377,12 @@ def test_rich_absent_path(monkeypatch):
     finally:
         # Remove the rich-less ui so the rest of the suite reimports the real one.
         sys.modules.pop("mace.utils.ui", None)
+        # monkeypatch.delitem restores the sys.modules entry on teardown but NOT
+        # the stale rich-less attribute it leaves on the parent package; drop it
+        # so the next `import mace.utils.ui` rebinds to the real (rich-ful) module.
+        import mace.utils as _mace_utils
+        if getattr(_mace_utils, "ui", None) is ui_mod:
+            del _mace_utils.ui
 
 
 def test_rich_absent_print_strips_markup(monkeypatch):
@@ -423,6 +429,11 @@ def test_rich_absent_print_strips_markup(monkeypatch):
         assert "[1, 2, 3]" in t2 and "[OK]" in t2  # prose preserved
     finally:
         sys.modules.pop("mace.utils.ui", None)
+        # Also drop the stale rich-less attribute monkeypatch won't restore on the
+        # parent package (see test_rich_absent_path), so later tests reimport real.
+        import mace.utils as _mace_utils
+        if getattr(_mace_utils, "ui", None) is ui_mod:
+            del _mace_utils.ui
 
 
 # ===========================================================================
@@ -521,6 +532,125 @@ def test_real_invocation_no_escapes_when_piped():
     assert "[WARN] seekpath not installed" in err
     assert "[ERROR] mat_207 SCF did not converge" in err
     assert "[WARN]" not in out and "[ERROR]" not in out
+
+
+def test_banner_plain_no_ansi_and_no_clear(ui):
+    """banner() under force_color=False (non-interactive) prints the concise line
+    with no '\\x1b' and no '\\033[2J' full-screen clear."""
+    ui.configure(force_color=False, force_tty=False)
+    text = _capture_stdout_stderr(lambda: ui.banner("5.6.7", subtitle="Concise Sub"))
+    assert ESC not in text
+    assert CLEAR not in text and "\033[2J" not in text
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    assert lines == ["MACE v5.6.7 — Concise Sub"]
+
+
+# ===========================================================================
+# Stage 2 — startup animation color-leak guard (deterministic, no PTY)
+# ===========================================================================
+def _rich_ui(ui):
+    """Return a rich-ENABLED ui module.
+
+    The rich-absent tests reimport ``mace.utils.ui`` with rich blocked and the
+    monkeypatch ``delitem`` restore can leave a rich-less (and possibly
+    sys.modules-orphaned) module for a later test to inherit. These Stage-2 tests
+    need the real rich path, so force a clean fresh import when the inherited
+    module came up rich-less.
+    """
+    if not getattr(ui, "_RICH_AVAILABLE", False):
+        sys.modules.pop("mace.utils.ui", None)
+        ui = importlib.import_module("mace.utils.ui")
+    return ui
+
+
+def _frame_styles(frame):
+    """Collect every style string referenced by a rich Text frame.
+
+    Covers the base ``frame.style`` and each span's style (spans carry the
+    per-cell styles produced by the generators)."""
+    styles = []
+    base = getattr(frame, "style", None)
+    if base is not None:
+        styles.append(str(base))
+    for span in getattr(frame, "spans", []) or []:
+        st = getattr(span, "style", None)
+        if st is not None:
+            styles.append(str(st))
+    return styles
+
+
+def test_banner_anim_generators_no_crystal_leak_in_mono(ui):
+    """For each generator, ALL frames built with MONO.gradient must NEVER contain
+    a crystal hex anywhere in their span styles (mono must not flash crystal)."""
+    ui = _rich_ui(ui)
+    ui.configure(force_color=True, force_tty=True, palette="crystal")  # rich available
+    crystal_hexes = set(ui.CRYSTAL.gradient)
+    mono_grad = ui.MONO.gradient
+    for gen in (ui._gen_phonon, ui._gen_decode, ui._gen_shimmer):
+        for frame in gen(mono_grad):
+            for style in _frame_styles(frame):
+                for chex in crystal_hexes:
+                    assert chex not in style, (
+                        f"{gen.__name__} leaked crystal color {chex!r} "
+                        f"in mono frame style {style!r}")
+
+
+def test_banner_anim_generators_render_with_crystal(ui):
+    """All generators must produce frames with CRYSTAL.gradient without raising,
+    and render to a string via the rich console."""
+    ui = _rich_ui(ui)
+    ui.configure(force_color=True, force_tty=True, palette="crystal")
+    console = ui._CAPS.console()
+    grad = ui.CRYSTAL.gradient
+    for gen in (ui._gen_phonon, ui._gen_decode, ui._gen_shimmer):
+        frames = list(gen(grad))
+        assert frames, f"{gen.__name__} yielded no frames"
+        for frame in frames:
+            # rendering must not raise (exercises the Text + styles end-to-end)
+            with console.capture() as cap:
+                console.print(frame)
+            assert cap.get() is not None
+
+
+# ===========================================================================
+# Stage 2 — build_status_dashboard() entry point
+# ===========================================================================
+def test_build_status_dashboard_plain_returns_str(ui):
+    """In plain mode build_status_dashboard returns a str with title + each row's
+    subsystem and zero ANSI escapes; status_dashboard prints the same content."""
+    ui.configure(force_color=False, force_tty=False)
+    rows = [ui.StatusRow("DATABASE", "OK", "ok-detail"),
+            ("ERRORS", "ERROR", "err-detail"),
+            ui.StatusRow("QUEUE", "IDLE", "nothing")]
+    built = ui.build_status_dashboard("monitor", rows, overall="DEGRADED",
+                                      subtitle="real data")
+    assert isinstance(built, str)
+    assert ESC not in built
+    assert "monitor" in built and "real data" in built
+    for sub in ("DATABASE", "ERRORS", "QUEUE"):
+        assert sub in built
+    assert "overall: DEGRADED" in built
+    # status_dashboard prints exactly the built string (+ trailing newline).
+    printed = _capture_stdout_stderr(lambda: ui.status_dashboard(
+        "monitor", rows, overall="DEGRADED", subtitle="real data"))
+    assert printed == built + "\n"
+    assert ESC not in printed
+
+
+def test_build_status_dashboard_rich_returns_renderable(ui):
+    """In forced-color mode build_status_dashboard returns a non-str rich
+    renderable (a Panel), not a plain string."""
+    ui = _rich_ui(ui)
+    ui.configure(force_color=True, force_tty=True, palette="crystal")
+    built = ui.build_status_dashboard(
+        "monitor", [ui.StatusRow("DATABASE", "OK", "312 materials")],
+        overall="ok")
+    assert not isinstance(built, str)
+    # It renders through the rich console without raising.
+    console = ui._CAPS.console()
+    with console.capture() as cap:
+        console.print(built)
+    assert "DATABASE" in cap.get()
 
 
 def test_real_invocation_no_banner_env_piped():
