@@ -145,6 +145,52 @@ except ImportError:
 # Import write_scf_section from d12_writer
 from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES
 
+# MACE visual layer (ui facade). This script also runs standalone via
+# `python NewCifToD12.py`, where `mace` may NOT be importable, so the import is
+# fully guarded and falls back to a markup-stripping shim that preserves streams.
+try:
+    from mace.utils import ui
+except Exception:
+    import sys as _sys, re as _re
+
+    class _UIShim:
+        _TAG = _re.compile(r"\[/?[a-z#][^\[\]]*\]")
+
+        def _p(self, m):
+            return self._TAG.sub("", str(m))
+
+        def ok(self, m):
+            print(self._p(m))
+
+        def info(self, m):
+            print(self._p(m))
+
+        def print(self, m):
+            print(self._p(m))
+
+        def warn(self, m):
+            print(self._p(m), file=_sys.stderr)
+
+        def err(self, m):
+            print(self._p(m), file=_sys.stderr)
+
+        def rule(self, t=""):
+            print(self._p(t))
+
+        def table(self, cols, rows, title=None):
+            if title:
+                print(self._p(title))
+            for r in rows:
+                print("  ".join(str(c) for c in r))
+
+        def progress(self, it, **k):
+            return it
+
+        def badge(self, s):
+            return str(s).upper()
+
+    ui = _UIShim()
+
 # Try to import spglib for symmetry operations
 try:
     import spglib
@@ -152,8 +198,8 @@ try:
     SPGLIB_AVAILABLE = True
 except ImportError:
     SPGLIB_AVAILABLE = False
-    print("Warning: spglib not found. Symmetry reduction features will be limited.")
-    print("Install spglib for full symmetry functionality: pip install spglib")
+    ui.warn("Warning: spglib not found. Symmetry reduction features will be limited.")
+    ui.print("Install spglib for full symmetry functionality: pip install spglib")
 
 
 def parse_cif(cif_file):
@@ -208,9 +254,9 @@ def parse_cif(cif_file):
 
         # If still not found, prompt user
         if spacegroup is None:
-            print(f"Warning: Space group not found in {cif_file}")
+            ui.warn(f"Warning: Space group not found in {cif_file}")
             if cif_symmetry_name:
-                print(f"Found Hermann-Mauguin symbol: {cif_symmetry_name}")
+                ui.print(f"Found Hermann-Mauguin symbol: {cif_symmetry_name}")
             spacegroup = int(input("Please enter the space group number: "))
 
         # Convert symbols to atomic numbers
@@ -238,8 +284,8 @@ def parse_cif(cif_file):
 
     except Exception as e:
         # If ASE fails, use manual parsing
-        print(f"ASE parsing failed: {e}")
-        print("Falling back to manual parsing...")
+        ui.warn(f"ASE parsing failed: {e}")
+        ui.print("Falling back to manual parsing...")
 
         with open(cif_file, "r") as f:
             contents = f.readlines()
@@ -361,7 +407,7 @@ def parse_cif(cif_file):
             except (AttributeError, ValueError):
                 atomic_num = SYMBOL_TO_NUMBER.get(name)
                 if atomic_num is None:
-                    print(
+                    ui.warn(
                         f"Warning: Unknown element symbol '{name}' at position {i} - skipping"
                     )
                     continue
@@ -386,9 +432,9 @@ def select_method():
     """
     method_options = {"1": "DFT", "2": "HF"}
 
-    print("\nSelect calculation method:")
-    print("1: DFT - Density Functional Theory")
-    print("2: HF - Hartree-Fock")
+    ui.print("\nSelect calculation method:")
+    ui.print("1: DFT - Density Functional Theory")
+    ui.print("2: HF - Hartree-Fock")
 
     method_choice = get_user_input("Select method", method_options, "1")
     return method_options[method_choice]
@@ -407,15 +453,15 @@ def select_dft_functional():
 
     for i, (key, info) in enumerate(dft_categories.items(), 1):
         category_options[str(i)] = key
-        print(f"\n{i}. {info['name']}")
-        print(f"   {info['description']}")
+        ui.print(f"\n{i}. {info['name']}")
+        ui.print(f"   {info['description']}")
         # Show appropriate examples for each category
         if key == "HYBRID":
-            print(f"   Examples: B3LYP, PBE0, HSE06, LC-wPBE")
+            ui.print(f"   Examples: B3LYP, PBE0, HSE06, LC-wPBE")
         elif key == "3C":
-            print(f"   Examples: PBEh-3C, HSE-3C, B97-3C")
+            ui.print(f"   Examples: PBEh-3C, HSE-3C, B97-3C")
         else:
-            print(f"   Examples: {', '.join(info['functionals'][:4])}")
+            ui.print(f"   Examples: {', '.join(info['functionals'][:4])}")
 
     category_choice = get_user_input(
         "Select functional category", category_options, "3"
@@ -428,7 +474,7 @@ def select_dft_functional():
         str(i + 1): func for i, func in enumerate(category_info["functionals"])
     }
 
-    print(f"\nAvailable {category_info['name']}:")
+    ui.print(f"\nAvailable {category_info['name']}:")
     for key, func in functional_options.items():
         # Build the description string
         desc_parts = []
@@ -448,9 +494,9 @@ def select_dft_functional():
 
         # Print the functional with description
         if desc_parts:
-            print(f"{key}: {func} - {' '.join(desc_parts)}")
+            ui.print(f"{key}: {func} - {' '.join(desc_parts)}")
         else:
-            print(f"{key}: {func}")
+            ui.print(f"{key}: {func}")
 
     functional_choice = get_user_input(
         f"Select {category_info['name']}", functional_options, "1"
@@ -524,8 +570,8 @@ def verify_and_reduce_to_asymmetric_unit(
         dict: Modified CIF data with only asymmetric unit atoms, or original if verification fails
     """
     if not SPGLIB_AVAILABLE:
-        print("Warning: spglib not available, cannot reduce to asymmetric unit.")
-        print("Using all atoms from the CIF file.")
+        ui.warn("Warning: spglib not available, cannot reduce to asymmetric unit.")
+        ui.print("Using all atoms from the CIF file.")
         return cif_data
 
     try:
@@ -571,35 +617,35 @@ def verify_and_reduce_to_asymmetric_unit(
         dataset = spglib.get_symmetry_dataset(cell, symprec=tolerance)
 
         if dataset is None:
-            print("Warning: spglib could not analyze the structure symmetry.")
-            print("Using all atoms from the CIF file.")
+            ui.warn("Warning: spglib could not analyze the structure symmetry.")
+            ui.print("Using all atoms from the CIF file.")
             return cif_data
 
         detected_spacegroup_num = dataset["number"]
         original_spacegroup_num = cif_data["spacegroup"]
 
-        print(f"\nSymmetry Analysis Results:")
-        print(f"  CIF space group: {original_spacegroup_num}")
-        print(f"  spglib detected: {detected_spacegroup_num} ({spacegroup_info})")
+        ui.print(f"\nSymmetry Analysis Results:")
+        ui.print(f"  CIF space group: {original_spacegroup_num}")
+        ui.print(f"  spglib detected: {detected_spacegroup_num} ({spacegroup_info})")
 
         # Check if space groups match
         spacegroup_match = detected_spacegroup_num == original_spacegroup_num
 
         if not spacegroup_match:
-            print(f"\n⚠️  WARNING: Space group mismatch!")
-            print(f"     CIF file specifies space group {original_spacegroup_num}")
-            print(f"     spglib detects space group {detected_spacegroup_num}")
-            print(f"     Current tolerance: {tolerance}")
-            print(f"     This could indicate:")
-            print(f"       - Tolerance issues (try different tolerance)")
-            print(f"       - Incorrect CIF space group assignment")
-            print(f"       - Non-standard atomic positions in CIF")
+            ui.warn(f"⚠️  WARNING: Space group mismatch!")
+            ui.print(f"     CIF file specifies space group {original_spacegroup_num}")
+            ui.print(f"     spglib detects space group {detected_spacegroup_num}")
+            ui.print(f"     Current tolerance: {tolerance}")
+            ui.print(f"     This could indicate:")
+            ui.print(f"       - Tolerance issues (try different tolerance)")
+            ui.print(f"       - Incorrect CIF space group assignment")
+            ui.print(f"       - Non-standard atomic positions in CIF")
 
             # Offer options to the user
-            print(f"\nOptions:")
-            print(f"  1: Try different tolerance values")
-            print(f"  2: Proceed with spglib space group {detected_spacegroup_num}")
-            print(
+            ui.print(f"\nOptions:")
+            ui.print(f"  1: Try different tolerance values")
+            ui.print(f"  2: Proceed with spglib space group {detected_spacegroup_num}")
+            ui.print(
                 f"  3: Use original CIF space group {original_spacegroup_num} (no reduction)"
             )
 
@@ -611,7 +657,7 @@ def verify_and_reduce_to_asymmetric_unit(
                 # Try different tolerances
                 for test_tolerance in [1e-3, 1e-4, 1e-6, 1e-7]:
                     if test_tolerance != tolerance:
-                        print(f"\nTrying tolerance {test_tolerance}...")
+                        ui.print(f"\nTrying tolerance {test_tolerance}...")
                         test_dataset = spglib.get_symmetry_dataset(
                             cell, symprec=test_tolerance
                         )
@@ -619,7 +665,7 @@ def verify_and_reduce_to_asymmetric_unit(
                             test_dataset
                             and test_dataset["number"] == original_spacegroup_num
                         ):
-                            print(f"✓ Match found with tolerance {test_tolerance}!")
+                            ui.ok(f"Match found with tolerance {test_tolerance}!")
                             use_tolerance = yes_no_prompt(
                                 f"Use tolerance {test_tolerance}?", "yes"
                             )
@@ -628,27 +674,27 @@ def verify_and_reduce_to_asymmetric_unit(
                                     cif_data, test_tolerance
                                 )
 
-                print("\nNo tolerance found that matches CIF space group.")
+                ui.print("\nNo tolerance found that matches CIF space group.")
                 final_choice = get_user_input(
                     "Final choice", {"1": "spglib", "2": "original"}, "2"
                 )
                 if final_choice == "2":
-                    print("Using all atoms from the CIF file without reduction.")
+                    ui.print("Using all atoms from the CIF file without reduction.")
                     return cif_data
                 else:
-                    print(
+                    ui.print(
                         f"Proceeding with spglib space group {detected_spacegroup_num}"
                     )
                     cif_data["spacegroup"] = detected_spacegroup_num
 
             elif choice == "2":
-                print(f"Proceeding with spglib space group {detected_spacegroup_num}")
+                ui.print(f"Proceeding with spglib space group {detected_spacegroup_num}")
                 cif_data["spacegroup"] = detected_spacegroup_num
             else:
-                print("Using all atoms from the CIF file without reduction.")
+                ui.print("Using all atoms from the CIF file without reduction.")
                 return cif_data
         else:
-            print(f"✓ Space group verification successful!")
+            ui.ok(f"Space group verification successful!")
 
         # Get unique atoms (asymmetric unit)
         equivalent_atoms = dataset["equivalent_atoms"]
@@ -665,23 +711,23 @@ def verify_and_reduce_to_asymmetric_unit(
         unique_atom_count = len(unique_indices)
         symmetry_operations = len(dataset["rotations"])
 
-        print(f"\nAsymmetric Unit Analysis:")
-        print(f"  Original atoms: {original_atom_count}")
-        print(f"  Unique atoms: {unique_atom_count}")
-        print(f"  Symmetry operations: {symmetry_operations}")
-        print(f"  Expected multiplicity: {original_atom_count / unique_atom_count:.1f}")
+        ui.print(f"\nAsymmetric Unit Analysis:")
+        ui.print(f"  Original atoms: {original_atom_count}")
+        ui.print(f"  Unique atoms: {unique_atom_count}")
+        ui.print(f"  Symmetry operations: {symmetry_operations}")
+        ui.print(f"  Expected multiplicity: {original_atom_count / unique_atom_count:.1f}")
 
         # Check if the reduction makes sense
         if unique_atom_count >= original_atom_count:
-            print("\n⚠️  WARNING: Asymmetric unit contains all or almost all atoms.")
-            print(
+            ui.warn("⚠️  WARNING: Asymmetric unit contains all or almost all atoms.")
+            ui.print(
                 "     This suggests the structure may already be in the asymmetric unit,"
             )
-            print("     or there's an issue with symmetry detection.")
+            ui.print("     or there's an issue with symmetry detection.")
 
             use_reduction = yes_no_prompt("Use the 'reduced' structure anyway?", "yes")
             if not use_reduction:
-                print("Using all atoms from the CIF file.")
+                ui.print("Using all atoms from the CIF file.")
                 return cif_data
 
         # Create new cif_data with only asymmetric unit atoms
@@ -691,7 +737,7 @@ def verify_and_reduce_to_asymmetric_unit(
         new_cif_data["positions"] = [positions[i] for i in unique_indices]
 
         # Verify the positions are reasonable and show mapping
-        print(f"\nAsymmetric unit atoms (with original indices):")
+        ui.print(f"\nAsymmetric unit atoms (with original indices):")
         for i, idx in enumerate(unique_indices):
             symbol = cif_data["symbols"][idx]
             pos = positions[idx]
@@ -704,7 +750,7 @@ def verify_and_reduce_to_asymmetric_unit(
 
         # Show which atoms are equivalent to which
         if len(unique_indices) < original_atom_count:
-            print(f"\nEquivalence mapping:")
+            ui.print(f"\nEquivalence mapping:")
             for i, representative in enumerate(equivalent_atoms):
                 if i not in unique_indices:
                     rep_idx = (
@@ -713,13 +759,13 @@ def verify_and_reduce_to_asymmetric_unit(
                         else -1
                     )
                     if rep_idx >= 0:
-                        print(
+                        ui.print(
                             f"  Atom {i + 1} ({cif_data['symbols'][i]}) → equivalent to asymmetric atom {rep_idx + 1}"
                         )
 
         # Optional: Validate that symmetry operations can reconstruct original structure
         if validate_symmetry:
-            print("\nPerforming symmetry validation...")
+            ui.print("\nPerforming symmetry validation...")
             try:
                 # Apply symmetry operations to asymmetric unit
                 rotations = dataset["rotations"]
@@ -741,24 +787,24 @@ def verify_and_reduce_to_asymmetric_unit(
 
                 # Check if we get the same number of atoms
                 if len(reconstructed_positions) >= original_atom_count:
-                    print(
-                        f"✓ Symmetry validation: Generated {len(reconstructed_positions)} positions from {len(unique_indices)} asymmetric atoms"
+                    ui.ok(
+                        f"Symmetry validation: Generated {len(reconstructed_positions)} positions from {len(unique_indices)} asymmetric atoms"
                     )
-                    print(f"  Original structure had {original_atom_count} atoms")
+                    ui.print(f"  Original structure had {original_atom_count} atoms")
                 else:
-                    print(
+                    ui.warn(
                         f"⚠️  Symmetry validation: Only generated {len(reconstructed_positions)} positions, expected {original_atom_count}"
                     )
 
             except Exception as e:
-                print(f"⚠️  Symmetry validation failed: {e}")
+                ui.warn(f"⚠️  Symmetry validation failed: {e}")
 
-        print(f"\n✓ Successfully reduced structure to asymmetric unit.")
+        ui.ok(f"Successfully reduced structure to asymmetric unit.")
         return new_cif_data
 
     except Exception as e:
-        print(f"\n❌ Error during symmetry analysis: {e}")
-        print("Using all atoms from the CIF file.")
+        ui.err(f"❌ Error during symmetry analysis: {e}")
+        ui.print("Using all atoms from the CIF file.")
         return cif_data
 
 
@@ -799,14 +845,14 @@ def create_d12_file(cif_data, output_file, options):
     )
 
     if not is_compatible:
-        print(
-            f"\nWARNING: The selected basis set '{options['basis_set']}' does not support all elements in your structure!"
+        ui.warn(
+            f"WARNING: The selected basis set '{options['basis_set']}' does not support all elements in your structure!"
         )
-        print(
+        ui.print(
             f"Missing elements: {', '.join([f'{ATOMIC_NUMBER_TO_SYMBOL.get(z, z)} (Z={z})' for z in missing_elements])}"
         )
         if not yes_no_prompt("Continue anyway?", "no"):
-            print("Aborting D12 file creation.")
+            ui.err("Aborting D12 file creation.")
             return
 
     # Extract options
@@ -854,17 +900,17 @@ def create_d12_file(cif_data, output_file, options):
         # Handle origin setting
         if origin_setting == "STANDARD":
             origin_directive = spg_info["crystal_code"]
-            print(
+            ui.print(
                 f"Using standard origin setting ({spg_info['default']}) for space group {spacegroup} ({spg_info['name']})"
             )
-            print(f"CRYSTAL directive: {origin_directive}")
+            ui.print(f"CRYSTAL directive: {origin_directive}")
 
         elif origin_setting == "ALTERNATE" and "alt_crystal_code" in spg_info:
             origin_directive = spg_info["alt_crystal_code"]
-            print(
+            ui.print(
                 f"Using alternate origin setting ({spg_info['alt']}) for space group {spacegroup} ({spg_info['name']})"
             )
-            print(f"CRYSTAL directive: {origin_directive}")
+            ui.print(f"CRYSTAL directive: {origin_directive}")
 
         elif (
             origin_setting == "AUTO" and spacegroup == 227
@@ -897,19 +943,19 @@ def create_d12_file(cif_data, output_file, options):
             if alt_detected and not std_detected:
                 # If only alternate position atoms found, use alternate origin
                 origin_directive = spg_info["alt_crystal_code"]
-                print(
+                ui.print(
                     f"Detected alternate origin ({spg_info['alt']}) for space group 227 (atoms at {alt_pos})"
                 )
-                print(
+                ui.print(
                     f"Using CRYSTAL directive: {origin_directive} (fewer symmetry operators with translational components)"
                 )
             else:
                 # Default to standard origin
                 origin_directive = spg_info["crystal_code"]
-                print(
+                ui.print(
                     f"Using standard origin ({spg_info['default']}) for space group 227"
                 )
-                print(f"CRYSTAL directive: {origin_directive}")
+                ui.print(f"CRYSTAL directive: {origin_directive}")
 
     # Handle trigonal space groups for rhombohedral axes directive
     use_rhombohedral_axes = False
@@ -917,7 +963,7 @@ def create_d12_file(cif_data, output_file, options):
         trigonal_axes = options.get("trigonal_axes", "AUTO")
         if trigonal_axes == "RHOMBOHEDRAL_AXES":
             use_rhombohedral_axes = True
-            print(
+            ui.print(
                 f"Using rhombohedral axes (0 1 0) for trigonal space group {spacegroup}"
             )
         elif trigonal_axes == "AUTO":
@@ -925,7 +971,7 @@ def create_d12_file(cif_data, output_file, options):
             trigonal_setting = detect_trigonal_setting(cif_data)
             if trigonal_setting == "rhombohedral_axes":
                 use_rhombohedral_axes = True
-                print(
+                ui.print(
                     f"Detected rhombohedral axes setting for space group {spacegroup}"
                 )
 
@@ -1079,7 +1125,7 @@ def create_d12_file(cif_data, output_file, options):
             if "method_modifications" in options:
                 modifications = options["method_modifications"]
                 if "functional" in modifications:
-                    print(
+                    ui.print(
                         f"Overriding functional from method_modifications: {modifications['functional']}"
                     )
                     dft_functional = modifications["functional"]
@@ -1167,10 +1213,10 @@ def process_cifs(cif_directory, options, output_directory=None):
     cif_files = glob.glob(os.path.join(cif_directory, "*.cif"))
 
     if not cif_files:
-        print(f"No CIF files found in {cif_directory}")
+        ui.print(f"No CIF files found in {cif_directory}")
         return
 
-    print(f"Found {len(cif_files)} CIF files to process")
+    ui.print(f"Found {len(cif_files)} CIF files to process")
 
     # Process each CIF file
     for cif_file in cif_files:
@@ -1219,7 +1265,7 @@ def process_cifs(cif_directory, options, output_directory=None):
         output_file = os.path.join(output_directory, output_name)
 
         try:
-            print(f"Processing {cif_file}...")
+            ui.print(f"Processing {cif_file}...")
 
             # Parse CIF file
             cif_data = parse_cif(cif_file)
@@ -1228,11 +1274,11 @@ def process_cifs(cif_directory, options, output_directory=None):
             if options["symmetry_handling"] == "P1":
                 # If P1 symmetry requested, override the spacegroup
                 cif_data["spacegroup"] = 1
-                print("Using P1 symmetry (no symmetry operations, all atoms explicit)")
+                ui.print("Using P1 symmetry (no symmetry operations, all atoms explicit)")
             elif options["symmetry_handling"] == "SPGLIB":
                 # If spglib symmetry requested and reduction is enabled
                 if SPGLIB_AVAILABLE and options.get("reduce_to_asymmetric", True):
-                    print("\nPerforming spglib symmetry analysis with verification...")
+                    ui.print("\nPerforming spglib symmetry analysis with verification...")
                     tolerance = options.get("symmetry_tolerance", 1e-5)
                     validate_symmetry = options.get("validate_symmetry", False)
                     cif_data = verify_and_reduce_to_asymmetric_unit(
@@ -1242,7 +1288,7 @@ def process_cifs(cif_directory, options, output_directory=None):
                 # For CIF symmetry, optionally reduce to unique atoms based on user preference
                 if options.get("write_only_unique", True):
                     if SPGLIB_AVAILABLE:
-                        print(
+                        ui.print(
                             "\nUsing CIF symmetry - verifying with spglib and reducing to asymmetric unit..."
                         )
                         tolerance = options.get("symmetry_tolerance", 1e-5)
@@ -1251,74 +1297,74 @@ def process_cifs(cif_directory, options, output_directory=None):
                             cif_data, tolerance, validate_symmetry
                         )
                     else:
-                        print(
+                        ui.warn(
                             "Warning: Cannot identify unique atoms without spglib. Writing all atoms."
                         )
-                        print(
+                        ui.print(
                             "Install spglib to enable asymmetric unit reduction: pip install spglib"
                         )
                 else:
-                    print("Using CIF symmetry but writing all atoms explicitly")
+                    ui.print("Using CIF symmetry but writing all atoms explicitly")
 
             # Create D12 file
             create_d12_file(cif_data, output_file, options)
 
-            print(f"Created {output_file}")
+            ui.ok(f"Created {output_file}")
 
         except Exception as e:
-            print(f"Error processing {cif_file}: {e}")
+            ui.err(f"Error processing {cif_file}: {e}")
             continue
 
 
 def print_summary(options):
     """Print a summary of the selected options"""
-    print("\n--- Selected Options Summary ---")
+    ui.print("\n--- Selected Options Summary ---")
 
     # Method and functional
     if options.get("method") == "HF":
-        print(f"Method: Hartree-Fock ({options.get('hf_method', 'RHF')})")
+        ui.print(f"Method: Hartree-Fock ({options.get('hf_method', 'RHF')})")
     else:
         functional = options.get("dft_functional", "")
         if options.get("use_dispersion") and "-D3" not in functional and "3C" not in functional:
             functional += "-D3"
-        print(f"Method: DFT")
-        print(f"Functional: {functional}")
+        ui.print(f"Method: DFT")
+        ui.print(f"Functional: {functional}")
 
     # Basic settings
-    print(f"Dimensionality: {options.get('dimensionality', 'CRYSTAL')}")
-    print(f"Calculation type: {options.get('calculation_type', 'SP')}")
+    ui.print(f"Dimensionality: {options.get('dimensionality', 'CRYSTAL')}")
+    ui.print(f"Calculation type: {options.get('calculation_type', 'SP')}")
     if options.get("calculation_type") == "OPT":
-        print(f"Optimization type: {options.get('optimization_type', 'FULLOPTG')}")
+        ui.print(f"Optimization type: {options.get('optimization_type', 'FULLOPTG')}")
 
     # Symmetry settings
-    print(f"Symmetry handling: {options.get('symmetry_handling', 'CIF')}")
+    ui.print(f"Symmetry handling: {options.get('symmetry_handling', 'CIF')}")
     if options.get("symmetry_handling") == "SPGLIB":
-        print(f"  - Tolerance: {options.get('symmetry_tolerance', 1e-5)}")
-        print(f"  - Reduce to asymmetric: {options.get('reduce_to_asymmetric', False)}")
+        ui.print(f"  - Tolerance: {options.get('symmetry_tolerance', 1e-5)}")
+        ui.print(f"  - Reduce to asymmetric: {options.get('reduce_to_asymmetric', False)}")
 
     # Basis set
-    print(f"Basis set type: {options.get('basis_set_type', 'INTERNAL')}")
-    print(f"Basis set: {options.get('basis_set', 'N/A')}")
+    ui.print(f"Basis set type: {options.get('basis_set_type', 'INTERNAL')}")
+    ui.print(f"Basis set: {options.get('basis_set', 'N/A')}")
 
     # Additional settings
     if options.get("method") == "DFT":
-        print(f"DFT grid: {options.get('dft_grid', 'XLGRID')}")
-    print(f"Spin polarized: {options.get('is_spin_polarized', False)}")
+        ui.print(f"DFT grid: {options.get('dft_grid', 'XLGRID')}")
+    ui.print(f"Spin polarized: {options.get('is_spin_polarized', False)}")
     if options.get("use_smearing"):
-        print(f"Fermi smearing: Yes (width={options.get('smearing_width', 0.01)})")
+        ui.print(f"Fermi smearing: Yes (width={options.get('smearing_width', 0.01)})")
 
     # Tolerances
     if "tolerances" in options:
-        print(f"Tolerances:")
+        ui.print(f"Tolerances:")
         for key, value in options["tolerances"].items():
-            print(f"  - {key}: {value}")
+            ui.print(f"  - {key}: {value}")
 
     # SCF settings
-    print(f"SCF method: {options.get('scf_method', 'DIIS')}")
-    print(f"SCF maxcycle: {options.get('scf_maxcycle', 800)}")
-    print(f"FMIXING: {options.get('fmixing', 30)}%")
+    ui.print(f"SCF method: {options.get('scf_method', 'DIIS')}")
+    ui.print(f"SCF maxcycle: {options.get('scf_maxcycle', 800)}")
+    ui.print(f"FMIXING: {options.get('fmixing', 30)}%")
 
-    print("-------------------------------\n")
+    ui.print("-------------------------------\n")
 
 
 def main():
@@ -1356,17 +1402,17 @@ def main():
         try:
             with open(args.options_file, "r") as f:
                 options = json.load(f)
-            print(f"Loaded options from {args.options_file}")
+            ui.print(f"Loaded options from {args.options_file}")
             print_summary(options)
         except Exception as e:
-            print(f"Error loading options from {args.options_file}: {e}")
-            print("Please run the script without --batch to create options file first")
+            ui.err(f"Error loading options from {args.options_file}: {e}")
+            ui.print("Please run the script without --batch to create options file first")
             return
     else:
         # Get options interactively
-        print("CIF to D12 Converter for CRYSTAL23")
+        ui.print("CIF to D12 Converter for CRYSTAL23")
         print("=" * 60)
-        print("Enhanced by Marcus Djokic with AI assistance")
+        ui.print("Enhanced by Marcus Djokic with AI assistance")
         print("")
         options = get_calculation_options_new()
         print_summary(options)
@@ -1380,9 +1426,9 @@ def main():
             try:
                 with open(args.options_file, "w") as f:
                     json.dump(options, f, indent=2)
-                print(f"Saved options to {args.options_file}")
+                ui.ok(f"Saved options to {args.options_file}")
             except Exception as e:
-                print(f"Error saving options to {args.options_file}: {e}")
+                ui.err(f"Error saving options to {args.options_file}: {e}")
 
     # Process CIF files
     process_cifs(args.cif_dir, options, args.output_dir)

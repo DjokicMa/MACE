@@ -76,6 +76,30 @@ from d12_interactive import (
     save_options_to_file, load_options_from_file
 )
 
+# Shared UI layer. This file runs both via `mace opt2d12` (mace on sys.path)
+# and standalone (`python CRYSTALOptToD12.py`, where mace may not import). The
+# import is fully guarded with a plain-text shim so styling never breaks the
+# standalone path or alters exit codes / stream routing.
+try:
+    from mace.utils import ui
+except Exception:
+    import sys as _sys, re as _re
+    class _UIShim:
+        _TAG = _re.compile(r"\[/?[a-z#][^\[\]]*\]")
+        def _p(self, m): return self._TAG.sub("", str(m))
+        def ok(self, m): print(self._p(m))
+        def info(self, m): print(self._p(m))
+        def print(self, m): print(self._p(m))
+        def warn(self, m): print(self._p(m), file=_sys.stderr)
+        def err(self, m): print(self._p(m), file=_sys.stderr)
+        def rule(self, t=""): print(self._p(t))
+        def table(self, cols, rows, title=None):
+            if title: print(self._p(title))
+            for r in rows: print("  ".join(str(c) for c in r))
+        def progress(self, it, **k): return it
+        def badge(self, s): return str(s).upper()
+    ui = _UIShim()
+
 
 def dedupe_dispersion_suffix(functional: str) -> str:
     """Collapse any accidental repeated '-D3' in a functional name to one.
@@ -249,12 +273,12 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         if use_conventional and crystallographic_coords:
             # Use crystallographic coordinates to match conventional cell
             coords = crystallographic_coords
-            print(f"  Using crystallographic coordinates ({len(coords)} atoms) with conventional cell")
+            ui.info(f"  Using crystallographic coordinates ({len(coords)} atoms) with conventional cell")
         else:
             # Use primitive coordinates (default)
             coords = geometry_data["coordinates"]
             if use_conventional and not crystallographic_coords:
-                print(f"  Warning: Conventional cell used but crystallographic coordinates not found")
+                ui.warn(f"  Warning: Conventional cell used but crystallographic coordinates not found")
 
         # Filter coordinates if requested
         if settings.get("write_only_unique", False):
@@ -408,7 +432,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 elif settings.get("basis_set_path"):
                     # Read basis sets from specified path
                     # Note: CRYSTAL doesn't support comments, so we just print the path info
-                    print(f"  External basis set from: {settings['basis_set_path']}")
+                    ui.info(f"  External basis set from: {settings['basis_set_path']}")
                     unique_atoms = set()
                     for atom in coords_to_write:
                         unique_atoms.add(int(atom["atom_number"]))
@@ -423,7 +447,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                             with open(basis_file, "r") as bf:
                                 f.write(bf.read())
                         else:
-                            print(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
+                            ui.warn(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
 
                     f.write("99 0\n")
                     f.write("END\n")
@@ -431,7 +455,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                     # Fallback: basis_set_type is EXTERNAL but no path provided
                     legacy_path = settings.get("basis_set")
                     if legacy_path and os.path.isdir(legacy_path):
-                        print(f"  Note: Using legacy basis_set field as path: {legacy_path}")
+                        ui.info(f"  Note: Using legacy basis_set field as path: {legacy_path}")
                         unique_atoms = set()
                         for atom in coords_to_write:
                             unique_atoms.add(int(atom["atom_number"]))
@@ -444,14 +468,14 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                                 with open(basis_file, "r") as bf:
                                     f.write(bf.read())
                             else:
-                                print(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
+                                ui.warn(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
 
                         f.write("99 0\n")
                         f.write("END\n")
                     else:
-                        print("ERROR: External basis set type selected but no valid path provided!")
-                        print(f"  basis_set_path: {settings.get('basis_set_path')}")
-                        print(f"  basis_set: {settings.get('basis_set')}")
+                        ui.err("ERROR: External basis set type selected but no valid path provided!")
+                        ui.err(f"  basis_set_path: {settings.get('basis_set_path')}")
+                        ui.err(f"  basis_set: {settings.get('basis_set')}")
                         raise ValueError("External basis set path not configured properly")
             else:
                 # Internal basis set
@@ -489,7 +513,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 elif settings.get("basis_set_path"):
                     # Read basis sets from specified path
                     # Note: CRYSTAL doesn't support comments, so we just print the path info
-                    print(f"  External basis set from: {settings['basis_set_path']}")
+                    ui.info(f"  External basis set from: {settings['basis_set_path']}")
                     unique_atoms = set()
                     for atom in coords_to_write:
                         unique_atoms.add(int(atom["atom_number"]))
@@ -506,7 +530,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                             with open(basis_file, "r") as bf:
                                 f.write(bf.read())
                         else:
-                            print(
+                            ui.warn(
                                 f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})"
                             )
 
@@ -517,7 +541,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                     # This can happen if basis_set contains a path (legacy behavior)
                     legacy_path = settings.get("basis_set")
                     if legacy_path and os.path.isdir(legacy_path):
-                        print(f"  Note: Using legacy basis_set field as path: {legacy_path}")
+                        ui.info(f"  Note: Using legacy basis_set field as path: {legacy_path}")
                         unique_atoms = set()
                         for atom in coords_to_write:
                             unique_atoms.add(int(atom["atom_number"]))
@@ -530,14 +554,14 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                                 with open(basis_file, "r") as bf:
                                     f.write(bf.read())
                             else:
-                                print(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
+                                ui.warn(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
 
                         f.write("99 0\n")
                         f.write("END\n")
                     else:
-                        print("ERROR: External basis set type selected but no valid path provided!")
-                        print(f"  basis_set_path: {settings.get('basis_set_path')}")
-                        print(f"  basis_set: {settings.get('basis_set')}")
+                        ui.err("ERROR: External basis set type selected but no valid path provided!")
+                        ui.err(f"  basis_set_path: {settings.get('basis_set_path')}")
+                        ui.err(f"  basis_set: {settings.get('basis_set')}")
                         raise ValueError("External basis set path not configured properly")
             else:
                 # Internal basis set
@@ -578,19 +602,19 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             )
 
         if not is_compatible:
-            print(
+            ui.warn(
                 f"\nWARNING: The selected basis set '{settings.get('basis_set')}' does not support all elements in your structure!"
             )
-            print(
+            ui.warn(
                 f"Missing elements: {', '.join([f'{ATOMIC_NUMBER_TO_SYMBOL.get(z, z)} (Z={z})' for z in missing_elements])}"
             )
             if not sys.stdin.isatty():
                 # Non-interactive (workflow callback): fail cleanly instead of
                 # crashing with EOFError at the prompt
-                print("Non-interactive mode: aborting D12 file creation.")
+                ui.err("Non-interactive mode: aborting D12 file creation.")
                 return
             if not yes_no_prompt("\nDo you want to continue anyway?"):
-                print("Aborting D12 file creation.")
+                ui.err("Aborting D12 file creation.")
                 return
 
         # Prepare k-points with same logic as d12creation.py
@@ -634,7 +658,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 # Use maximum k-point for uniform sampling in symmetrized structures
                 k_max = max(ka, kb, kc)
                 enhanced_k_points = (k_max, k_max, k_max)
-                print(f"Note: Using uniform k-points ({k_max},{k_max},{k_max}) for symmetrized structure (space group {spacegroup})")
+                ui.info(f"Note: Using uniform k-points ({k_max},{k_max},{k_max}) for symmetrized structure (space group {spacegroup})")
 
         write_scf_section(
             f,
@@ -678,12 +702,12 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     """
 
     # Parse output file
-    print(f"\nParsing output file: {output_file}")
+    ui.info(f"\nParsing output file: {output_file}")
     out_parser = CrystalOutputParser(output_file)
     try:
         out_data = out_parser.parse()
     except Exception as e:
-        print(f"Error parsing output file: {e}")
+        ui.err(f"Error parsing output file: {e}")
         return False, None
 
     # Parse input file if provided
@@ -691,7 +715,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     external_basis_data = []
 
     if input_file and os.path.exists(input_file):
-        print(f"Parsing input file: {input_file}")
+        ui.info(f"Parsing input file: {input_file}")
         in_parser = CrystalInputParser(input_file)
         try:
             in_data = in_parser.parse()
@@ -714,9 +738,9 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                         settings[key] = value
                         # Debug output for symmetry-related settings
                         if key in ["origin_setting", "spacegroup", "dimensionality"]:
-                            print(f"  Preserving {key} from D12 file: {value} (was {settings.get(key, 'not set')} from output)")
+                            ui.info(f"  Preserving {key} from D12 file: {value} (was {settings.get(key, 'not set')} from output)")
                         elif key in ["basis_set", "basis_set_type"]:
-                            print(f"  Preserving {key} from D12 file: {value}")
+                            ui.info(f"  Preserving {key} from D12 file: {value}")
                 elif key == "scf_settings":
                     # Merge SCF settings
                     if "scf_settings" not in settings:
@@ -729,17 +753,17 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             # If we have external basis data from D12, mark it for potential reuse
             if external_basis_data:
                 settings["has_original_external_basis"] = True
-                print(f"  Found external basis set data in D12 file ({len(external_basis_data)} lines)")
+                ui.info(f"  Found external basis set data in D12 file ({len(external_basis_data)} lines)")
         except Exception as e:
-            print(f"Warning: Error parsing input file: {e}")
-            print("Continuing with output file data only")
+            ui.warn(f"Warning: Error parsing input file: {e}")
+            ui.warn("Continuing with output file data only")
 
     # Set defaults if not found
     if not settings.get("spacegroup"):
         if settings["dimensionality"] == "MOLECULE":
             settings["spacegroup"] = 1
         else:
-            print("Warning: Space group not found. Defaulting to P1")
+            ui.warn("Warning: Space group not found. Defaulting to P1")
             settings["spacegroup"] = 1
 
     # Handle external basis sets - this must be checked BEFORE setting defaults
@@ -750,7 +774,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         settings["use_original_external_basis"] = True
         if not settings.get("basis_set"):
             settings["basis_set"] = "EXTERNAL (from original D12)"
-        print("  Using external basis set from original D12 file")
+        ui.info("  Using external basis set from original D12 file")
     elif not settings.get("basis_set"):
         # No external basis and no basis set specified - use default internal
         settings["basis_set"] = "POB-TZVP-REV2"
@@ -768,47 +792,46 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     if config_file:
         # Config file takes precedence - process it first
         # Load settings from config file
-        print(f"\nLoading settings from config file: {config_file}")
+        ui.info(f"\nLoading settings from config file: {config_file}")
         try:
             with open(config_file, 'r') as f:
                 config_data = json.load(f)
-            
+
             # Show config summary
-            print("\n" + "="*60)
-            print("CONFIG FILE SETTINGS")
-            print("="*60)
-            print(f"Calculation type: {config_data.get('calculation_type', 'Not specified')}")
-            
+            print()
+            ui.rule("CONFIG FILE SETTINGS")
+            ui.info(f"Calculation type: {config_data.get('calculation_type', 'Not specified')}")
+
             # Check for method_modifications
             if 'method_modifications' in config_data:
                 method_mods = config_data['method_modifications']
                 if 'new_functional' in method_mods:
-                    print(f"Functional: {method_mods['new_functional']} (via method_modifications)")
+                    ui.info(f"Functional: {method_mods['new_functional']} (via method_modifications)")
                 elif 'functional' in method_mods:
-                    print(f"Functional: {method_mods['functional']} (via method_modifications)")
+                    ui.info(f"Functional: {method_mods['functional']} (via method_modifications)")
                 else:
-                    print(f"Functional: {config_data.get('functional', 'Not specified')}")
+                    ui.info(f"Functional: {config_data.get('functional', 'Not specified')}")
             else:
-                print(f"Method: {config_data.get('method', 'Not specified')}")
-                print(f"Functional: {config_data.get('functional', 'Not specified')}")
-            
+                ui.info(f"Method: {config_data.get('method', 'Not specified')}")
+                ui.info(f"Functional: {config_data.get('functional', 'Not specified')}")
+
             if config_data.get('dispersion'):
-                print(f"Dispersion: Yes")
-            print(f"Basis set: {config_data.get('basis_set', 'Not specified')}")
-            print(f"DFT grid: {config_data.get('dft_grid', 'Not specified')}")
-            
+                ui.info(f"Dispersion: Yes")
+            ui.info(f"Basis set: {config_data.get('basis_set', 'Not specified')}")
+            ui.info(f"DFT grid: {config_data.get('dft_grid', 'Not specified')}")
+
             # Show tolerance modifications if present
             if 'tolerance_modifications' in config_data:
                 tol_mods = config_data['tolerance_modifications']
                 if 'custom_tolerances' in tol_mods:
-                    print(f"Custom tolerances: {tol_mods['custom_tolerances']}")
-            
-            print("="*60)
-            
+                    ui.info(f"Custom tolerances: {tol_mods['custom_tolerances']}")
+
+            ui.rule()
+
             # Ask user if they want to apply these settings (skip in non-interactive mode)
             if non_interactive:
                 apply_config = True
-                print("\nApplying config file settings (non-interactive mode).")
+                ui.info("\nApplying config file settings (non-interactive mode).")
             else:
                 apply_config = yes_no_prompt("\nApply these settings from config file?", default="yes")
             
@@ -840,7 +863,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 if had_external_basis and "basis_set_type" not in config_data and "basis_set_path" not in config_data:
                     options["use_original_external_basis"] = True
                     options["basis_set_type"] = external_basis_type
-                    print("  Preserving external basis settings from original D12")
+                    ui.info("  Preserving external basis settings from original D12")
 
                 # Handle both "frequency_settings" (from workflow) and "freq_settings" (direct usage)
                 freq_key = None
@@ -886,10 +909,10 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                     method_mods = config_data["method_modifications"]
                     if "new_functional" in method_mods:
                         options["functional"] = method_mods["new_functional"]
-                        print(f"  Functional changed to: {method_mods['new_functional']}")
+                        ui.info(f"  Functional changed to: {method_mods['new_functional']}")
                     elif "functional" in method_mods:
                         options["functional"] = method_mods["functional"]
-                        print(f"  Functional changed to: {method_mods['functional']}")
+                        ui.info(f"  Functional changed to: {method_mods['functional']}")
                     
                     # Check if the selected functional is a 3C method
                     functional_name = method_mods.get("new_functional") or method_mods.get("functional")
@@ -904,11 +927,11 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                                 if "basis_requirements" in category:
                                     if functional_name in category["basis_requirements"]:
                                         options["basis_set"] = category["basis_requirements"][functional_name]
-                                        print(f"  Basis set updated to: {options['basis_set']} (required for 3C method)")
+                                        ui.info(f"  Basis set updated to: {options['basis_set']} (required for 3C method)")
                             # For HSESOL3C, ensure XLGRID is set
                             if functional_name == "HSESOL3C":
                                 options["dft_grid"] = "XLGRID"
-                                print(f"  DFT grid set to: XLGRID (required for HSESOL3C)")
+                                ui.info(f"  DFT grid set to: XLGRID (required for HSESOL3C)")
                     if "keep_spin" in method_mods and not method_mods["keep_spin"]:
                         options["spin_polarized"] = False
                     if "keep_grid" in method_mods and not method_mods["keep_grid"]:
@@ -919,16 +942,16 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                     tol_mods = config_data["tolerance_modifications"]
                     if "custom_tolerances" in tol_mods:
                         options["tolerances"] = tol_mods["custom_tolerances"]
-                        print(f"  Tolerances updated: {tol_mods['custom_tolerances']}")
-                    
-                print("Config file settings applied.")
+                        ui.info(f"  Tolerances updated: {tol_mods['custom_tolerances']}")
+
+                ui.ok("Config file settings applied.")
             else:
                 # Fall back to interactive mode
                 options = get_calculation_options_from_current(settings)
-                
+
         except Exception as e:
-            print(f"Error loading config file: {e}")
-            print("Falling back to interactive mode.")
+            ui.err(f"Error loading config file: {e}")
+            ui.warn("Falling back to interactive mode.")
             options = get_calculation_options_from_current(settings)
     elif non_interactive and not calc_type:
         # True non-interactive mode (no config file, no calc type specified)
@@ -965,11 +988,11 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 # For P1 structures, write all atoms
                 options["write_only_unique"] = False
             
-        print("\nRunning in non-interactive mode with settings:")
-        print(f"  Calculation type: {options['calculation_type']}")
+        ui.info("\nRunning in non-interactive mode with settings:")
+        ui.info(f"  Calculation type: {options['calculation_type']}")
         if options['calculation_type'] == 'OPT':
-            print(f"  Optimization type: {options['optimization_type']}")
-        print(f"  Origin setting: {options['origin_setting']}")
+            ui.info(f"  Optimization type: {options['optimization_type']}")
+        ui.info(f"  Origin setting: {options['origin_setting']}")
     elif non_interactive and calc_type:
         # When calc_type is provided but --non-interactive is set,
         # we still want interactive mode like the D3 scripts
@@ -999,7 +1022,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         if had_external_basis and "basis_set_type" not in shared_settings and "basis_set_path" not in shared_settings:
             options["use_original_external_basis"] = True
             options["basis_set_type"] = external_basis_type
-            print("  Preserving external basis settings from original D12")
+            ui.info("  Preserving external basis settings from original D12")
 
         # Ensure consistency for 3C methods
         if options.get("functional") in [
@@ -1069,14 +1092,14 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     new_filename = f"{base_name}_{calc_type.lower()}_{functional}_optimized.d12"
 
     # Write new D12 file
-    print(f"\nWriting new D12 file: {new_filename}")
-    
+    ui.info(f"\nWriting new D12 file: {new_filename}")
+
     # Debug output for symmetry settings
-    print(f"Symmetry settings:")
-    print(f"  Space group: {options.get('spacegroup', 'Not set')}")
-    print(f"  Origin setting: {options.get('origin_setting', 'Not set')}")
-    print(f"  Dimensionality: {options.get('dimensionality', 'Not set')}")
-    print(f"  Write only unique atoms: {options.get('write_only_unique', 'Not set')}")
+    ui.info(f"Symmetry settings:")
+    ui.info(f"  Space group: {options.get('spacegroup', 'Not set')}")
+    ui.info(f"  Origin setting: {options.get('origin_setting', 'Not set')}")
+    ui.info(f"  Dimensionality: {options.get('dimensionality', 'Not set')}")
+    ui.info(f"  Write only unique atoms: {options.get('write_only_unique', 'Not set')}")
     
     # Convert frequency settings if present
     if "freq_settings" in options:
@@ -1187,7 +1210,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     # The settings (options) contains the preserved symmetry and other settings from D12
     write_d12_file(new_filename, out_data, converted_options, external_basis_data)
 
-    print(f"\nSuccessfully created {new_filename}")
+    ui.ok(f"\nSuccessfully created {new_filename}")
 
     return True, options
 
@@ -1282,11 +1305,10 @@ def main():
 
     args = parser.parse_args()
 
-    print("CRYSTAL17/23 Optimization Output to D12 Converter")
-    print("=" * 60)
-    print("Enhanced version matching NewCifToD12.py configurations")
-    print("New entirely reworked script by Marcus Djokic")
-    print(
+    ui.rule("CRYSTAL17/23 Optimization Output to D12 Converter")
+    ui.info("Enhanced version matching NewCifToD12.py configurations")
+    ui.info("New entirely reworked script by Marcus Djokic")
+    ui.info(
         "Based on old versions by Wangwei Lan, Kevin Lucht, Danny Maldonado, Marcus Djokic"
     )
     print("")
@@ -1298,7 +1320,7 @@ def main():
     # Single file processing
     if args.out_file:
         if not os.path.exists(args.out_file):
-            print(f"Error: Output file {args.out_file} not found")
+            ui.err(f"Error: Output file {args.out_file} not found")
             return
 
         success, options = process_files(
@@ -1319,26 +1341,26 @@ def main():
                     if k not in ["coordinates", "primitive_cell", "conventional_cell"]:
                         save_options[k] = v
                 json.dump(save_options, f, indent=2)
-            print(f"Settings saved to {args.options_file}")
+            ui.ok(f"Settings saved to {args.options_file}")
 
     else:
         # Directory processing
         file_pairs = find_file_pairs(args.directory)
 
         if not file_pairs:
-            print(f"No .out files found in {args.directory}")
+            ui.warn(f"No .out files found in {args.directory}")
             # Ask for output file path
             print()
             input_file = input("Enter CRYSTAL output file path: ").strip()
-            
+
             if not input_file:
-                print("No file path provided. Exiting.")
+                ui.warn("No file path provided. Exiting.")
                 return
-                
+
             input_path = Path(input_file)
-            
+
             if not input_path.exists():
-                print(f"Error: File or directory not found: {input_file}")
+                ui.err(f"Error: File or directory not found: {input_file}")
                 return
             
             # Check if it's a directory
@@ -1346,54 +1368,52 @@ def main():
                 # Look for .out files in the directory
                 file_pairs = find_file_pairs(input_path)
                 if not file_pairs:
-                    print(f"\nError: No CRYSTAL output files (.out) found in directory: {input_path}")
-                    print("Please specify a CRYSTAL output file (e.g., material.out) or a directory containing .out files.")
+                    ui.err(f"\nError: No CRYSTAL output files (.out) found in directory: {input_path}")
+                    ui.err("Please specify a CRYSTAL output file (e.g., material.out) or a directory containing .out files.")
                     return
                 else:
-                    print(f"\nFound {len(file_pairs)} output file(s) in {input_path.name}:")
+                    ui.info(f"\nFound {len(file_pairs)} output file(s) in {input_path.name}:")
                     for pair in sorted(file_pairs)[:10]:  # Show first 10
                         # pair[0] is a string path, so we need to convert it to Path to get the name
-                        print(f"  - {Path(pair[0]).name}")
+                        ui.info(f"  - {Path(pair[0]).name}")
                     if len(file_pairs) > 10:
-                        print(f"  ... and {len(file_pairs) - 10} more")
+                        ui.info(f"  ... and {len(file_pairs) - 10} more")
             elif input_path.is_file():
                 # Convert single file mode - process as single file
                 # Create a single file pair for processing
                 file_pairs = [(input_path, None)]
             else:
-                print(f"Error: {input_path} is not a valid file or directory.")
+                ui.err(f"Error: {input_path} is not a valid file or directory.")
                 return
 
-        print(f"Found {len(file_pairs)} output file(s) to process")
+        ui.info(f"Found {len(file_pairs)} output file(s) to process")
 
         # Ask about shared settings mode if multiple files and not specified
         use_shared_settings = args.shared_settings
         if not args.non_interactive and len(file_pairs) > 1 and not args.config_file:
-            print("\n" + "=" * 60)
-            print("MULTIPLE FILE PROCESSING OPTIONS")
-            print("=" * 60)
-            print("You can either:")
-            print("1. Use shared settings for all files (faster, applies same calculation settings)")
-            print("2. Configure each file individually (more control per file)")
-            print("\nNote: Geometry and symmetry are always preserved from each file.")
-            
+            print()
+            ui.rule("MULTIPLE FILE PROCESSING OPTIONS")
+            ui.info("You can either:")
+            ui.info("1. Use shared settings for all files (faster, applies same calculation settings)")
+            ui.info("2. Configure each file individually (more control per file)")
+            ui.info("\nNote: Geometry and symmetry are always preserved from each file.")
+
             use_shared = input("\nUse shared settings for all files? [Y/n]: ").strip().lower()
             use_shared_settings = use_shared != 'n'
         
         # If shared settings requested, get them once
         shared_settings = None
         if use_shared_settings and len(file_pairs) > 1:
-            print("\n" + "=" * 60)
-            print("SHARED SETTINGS MODE")
-            print("=" * 60)
-            print("Define calculation settings to apply to all files.")
-            print(
+            print()
+            ui.rule("SHARED SETTINGS MODE")
+            ui.info("Define calculation settings to apply to all files.")
+            ui.info(
                 "Note: Geometry, symmetry, and space group info will be preserved from each file."
             )
 
             # Use first file as template for getting settings
             first_out, first_d12 = file_pairs[0]
-            print(f"\nUsing {os.path.basename(first_out)} as template for settings...")
+            ui.info(f"\nUsing {os.path.basename(first_out)} as template for settings...")
 
             # Parse first file to get baseline settings
             out_parser = CrystalOutputParser(first_out)
@@ -1430,31 +1450,29 @@ def main():
                         template_external_basis = in_data.get("external_basis_data", [])
                         if template_external_basis:
                             settings["has_original_external_basis"] = True
-                            print(f"  Found external basis set data in D12 file ({len(template_external_basis)} lines)")
+                            ui.info(f"  Found external basis set data in D12 file ({len(template_external_basis)} lines)")
                     except:
                         pass
 
                 # Get shared settings
                 shared_settings = get_calculation_options_from_current(settings, shared_mode=True)
 
-                print("\n" + "=" * 60)
-                print("Shared settings defined. These will be applied to all files.")
-                print("=" * 60)
+                print()
+                ui.rule("Shared settings defined. These will be applied to all files.")
 
             except Exception as e:
-                print(f"Error getting shared settings: {e}")
+                ui.err(f"Error getting shared settings: {e}")
                 return
 
         # Process all file pairs
         success_count = 0
         for out_file, d12_file in file_pairs:
-            print(f"\n{'=' * 70}")
-            print(f"Processing: {os.path.basename(out_file)}")
+            print()
+            ui.rule(f"Processing: {os.path.basename(out_file)}")
             if d12_file:
-                print(f"With input: {os.path.basename(d12_file)}")
+                ui.info(f"With input: {os.path.basename(d12_file)}")
             else:
-                print("No corresponding .d12 file found")
-            print("=" * 70)
+                ui.info("No corresponding .d12 file found")
 
             success, options = process_files(
                 out_file, 
@@ -1469,11 +1487,11 @@ def main():
             if success:
                 success_count += 1
 
-        print(f"\n{'=' * 70}")
-        print(
+        print()
+        ui.rule()
+        ui.ok(
             f"Processing complete: {success_count}/{len(file_pairs)} files processed successfully"
         )
-        print("=" * 60)
 
         # Save options if requested
         if args.save_options and shared_settings:
@@ -1483,7 +1501,7 @@ def main():
                     if k not in ["coordinates", "primitive_cell", "conventional_cell"]:
                         save_options[k] = v
                 json.dump(save_options, f, indent=2)
-            print(f"\nShared settings saved to {args.options_file}")
+            ui.ok(f"\nShared settings saved to {args.options_file}")
 
 
 if __name__ == "__main__":

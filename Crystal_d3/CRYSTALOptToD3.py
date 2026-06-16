@@ -69,8 +69,31 @@ try:
 except Exception:  # pragma: no cover - defensive fallback
     def _run_with_back(flow_fn):
         return flow_fn()
-from d12_constants import (SPACEGROUP_SYMBOLS, SPACEGROUP_ALTERNATIVES, 
+from d12_constants import (SPACEGROUP_SYMBOLS, SPACEGROUP_ALTERNATIVES,
                           SPACEGROUP_SYMBOL_TO_NUMBER)
+
+# Unified MACE visual layer. This file runs both via `mace opt2d3` (mace on
+# sys.path) AND standalone (`python CRYSTALOptToD3.py`, where mace may be
+# absent), so the import is fully guarded with a plain-text shim fallback.
+try:
+    from mace.utils import ui
+except Exception:
+    import sys as _sys, re as _re
+    class _UIShim:
+        _TAG = _re.compile(r"\[/?[a-z#][^\[\]]*\]")
+        def _p(self, m): return self._TAG.sub("", str(m))
+        def ok(self, m): print(self._p(m))
+        def info(self, m): print(self._p(m))
+        def print(self, m): print(self._p(m))
+        def warn(self, m): print(self._p(m), file=_sys.stderr)
+        def err(self, m): print(self._p(m), file=_sys.stderr)
+        def rule(self, t=""): print(self._p(t))
+        def table(self, cols, rows, title=None):
+            if title: print(self._p(title))
+            for r in rows: print("  ".join(str(c) for c in r))
+        def progress(self, it, **k): return it
+        def badge(self, s): return str(s).upper()
+    ui = _UIShim()
 
 
 class D3Generator:
@@ -108,7 +131,7 @@ class D3Generator:
         }
         
         if not self.input_file.exists():
-            print(f"Warning: Output file not found: {self.input_file}")
+            ui.warn(f"Warning: Output file not found: {self.input_file}")
             return info
         
         with open(self.input_file, 'r') as f:
@@ -247,8 +270,9 @@ class D3Generator:
                 break
         
         if not source_wf:
-            print("\nWarning: No wavefunction file (fort.9/fort.98) found!")
-            print("The D3 calculation will fail without the wavefunction file.")
+            print()
+            ui.warn("Warning: No wavefunction file (fort.9/fort.98) found!")
+            ui.warn("The D3 calculation will fail without the wavefunction file.")
             cont = yes_no_prompt("Continue anyway?", "no")
             return cont
         
@@ -261,7 +285,8 @@ class D3Generator:
         
         # Copy if needed
         if source_wf != target_wf:
-            print(f"\nCopying wavefunction: {source_wf.name} -> {target_wf.name}")
+            print()
+            ui.info(f"Copying wavefunction: {source_wf.name} -> {target_wf.name}")
             shutil.copy2(source_wf, target_wf)
         
         return True
@@ -455,7 +480,7 @@ class D3Generator:
 
             if not labels_valid:
                 # Switch to coordinate mode if any labels are invalid
-                print("Switching to coordinate mode due to invalid k-point labels")
+                ui.warn("Switching to coordinate mode due to invalid k-point labels")
                 # Convert to coordinate format
                 segments = []
                 current_segment = []
@@ -628,10 +653,11 @@ class D3Generator:
         lines.append("DOSS")
         
         # Debug output
-        print(f"\nDOSS configuration:")
-        print(f"  project_orbital_types: {config.get('project_orbital_types', True)}")
-        print(f"  n_atoms: {self.structure_info.get('n_atoms', 0)}")
-        print(f"  n_ao: {self.structure_info.get('n_ao', 0)}")
+        print()
+        ui.info(f"DOSS configuration:")
+        ui.info(f"  project_orbital_types: {config.get('project_orbital_types', True)}")
+        ui.info(f"  n_atoms: {self.structure_info.get('n_atoms', 0)}")
+        ui.info(f"  n_ao: {self.structure_info.get('n_ao', 0)}")
         
         # Determine projection type
         if config.get("manual_projections"):
@@ -658,12 +684,12 @@ class D3Generator:
                 if parsed_proj:
                     projections.append(parsed_proj)
                 else:
-                    print(f"Warning: Skipping invalid projection specification: '{spec}'")
-            
+                    ui.warn(f"Warning: Skipping invalid projection specification: '{spec}'")
+
             # Update npro to match actual valid projections
             npro = len(projections)
             if npro == 0:
-                print("Error: No valid projections found. Using total DOS only.")
+                ui.err("Error: No valid projections found. Using total DOS only.")
                 npro = 0
                 projections = []
         elif config.get("project_orbital_types", True):
@@ -683,12 +709,12 @@ class D3Generator:
                 include_totals = config.get("include_element_totals", True)
                 projections = create_doss_projections(total_shells, element_only, include_totals)
                 npro = len(projections)
-                print(f"  Generated {npro} orbital projections")
+                ui.info(f"  Generated {npro} orbital projections")
             else:
                 # Fallback when detailed basis set parsing fails
-                print(f"Warning: Could not parse detailed basis set information from {self.input_file}")
-                print("  Cannot create orbital-resolved projections without basis set info")
-                print("  Using total DOS only")
+                ui.warn(f"Warning: Could not parse detailed basis set information from {self.input_file}")
+                ui.warn("  Cannot create orbital-resolved projections without basis set info")
+                ui.warn("  Using total DOS only")
                 npro = 0
                 projections = []
         elif config.get("project_all_atoms") or config.get("project_atoms"):
@@ -742,11 +768,11 @@ class D3Generator:
                     if fermi is not None:
                         bmi += fermi
                         bma += fermi
-                        print(f"  Energy window centered on Fermi level ({fermi:.6f} Ha)")
+                        ui.info(f"  Energy window centered on Fermi level ({fermi:.6f} Ha)")
                     else:
-                        print("  Warning: Fermi energy not found; BMI/BMA window left centered on E=0")
+                        ui.warn("  Warning: Fermi energy not found; BMI/BMA window left centered on E=0")
                 except Exception as e:
-                    print(f"  Warning: could not center energy window on Fermi level: {e}")
+                    ui.warn(f"  Warning: could not center energy window on Fermi level: {e}")
         elif config.get("band_range"):
             # Specific band range
             first_band, last_band = config["band_range"]
@@ -837,7 +863,8 @@ class D3Generator:
                 if config.get("use_range", False):
                     lines.append("RANGE")
                     # Would need to get ranges interactively
-                    print("\nDefine explicit ranges for non-periodic directions:")
+                    print()
+                    ui.info("Define explicit ranges for non-periodic directions:")
                     if self.structure_info['dimensionality'] == 2:
                         z_min = float(input("Z min (bohr): "))
                         z_max = float(input("Z max (bohr): "))
@@ -878,8 +905,9 @@ class D3Generator:
             
             # Need MAPNET input
             if config.get("need_map_points", False):
-                print("\nDefine map plane by three points A, B, C")
-                print("Enter coordinates in fractional (crystal) or Cartesian (Angstrom) units")
+                print()
+                ui.info("Define map plane by three points A, B, C")
+                ui.info("Enter coordinates in fractional (crystal) or Cartesian (Angstrom) units")
                 
                 coord_type = input("Coordinate type (F)ractional or (C)artesian [F]: ").upper() or "F"
                 
@@ -920,7 +948,8 @@ class D3Generator:
                 if config.get("use_range", False):
                     lines.append("RANGE")
                     # Would need to get ranges interactively (same as charge)
-                    print("\nDefine explicit ranges for non-periodic directions:")
+                    print()
+                    ui.info("Define explicit ranges for non-periodic directions:")
                     if self.structure_info['dimensionality'] == 2:
                         z_min = float(input("Z min (bohr): "))
                         z_max = float(input("Z max (bohr): "))
@@ -973,7 +1002,8 @@ class D3Generator:
                 
                 # Add custom points if needed
                 if config.get("custom_points", False) and npu > 0:
-                    print("\nEnter point coordinates (Cartesian, bohr):")
+                    print()
+                    ui.info("Enter point coordinates (Cartesian, bohr):")
                     for i in range(npu):
                         coords = input(f"Point {i+1} (x y z): ").strip()
                         lines.append(coords)
@@ -998,9 +1028,10 @@ class D3Generator:
         Returns:
             Configuration dictionary if successful, None otherwise
         """
-        print(f"\n=== Generating {self.calc_type} D3 file ===")
-        print(f"Input file: {self.input_file}")
-        print(f"Base name: {self.base_name}")
+        print()
+        ui.rule(f"Generating {self.calc_type} D3 file")
+        ui.info(f"Input file: {self.input_file}")
+        ui.info(f"Base name: {self.base_name}")
         
         # Check if wavefunction exists and copy it
         # ALL calculation types need the wavefunction file
@@ -1022,7 +1053,7 @@ class D3Generator:
                     from d3_kpoints import get_band_path_from_symmetry
                     config["path"] = get_band_path_from_symmetry(space_group, lattice_type)
                     config["kpath_source"] = "default"  # Label-based paths use default source
-                    print(f"  Using band path for space group {space_group}: {' → '.join(config['path'])}")
+                    ui.info(f"  Using band path for space group {space_group}: {' → '.join(config['path'])}")
                 elif config.get("path_method") == "coordinates":
                     # Convert labels to coordinates for THIS material's symmetry
                     from d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
@@ -1038,7 +1069,7 @@ class D3Generator:
                             # This ensures exact integer representation of parametric k-points
                             if kpath_info.get('source') == 'seekpath_library' and 'shrink_factor' in kpath_info:
                                 shrink = kpath_info['shrink_factor']
-                                print(f"    Using seekpath library's shrink factor: {shrink}")
+                                ui.info(f"    Using seekpath library's shrink factor: {shrink}")
                             else:
                                 # Fall back to D12's shrink factor
                                 shrink = extract_and_process_shrink(str(self.input_file), self.base_name,
@@ -1059,7 +1090,7 @@ class D3Generator:
                                 config["kpath_source"] = "seekpath_inv"
                             else:
                                 config["kpath_source"] = "seekpath_noinv"
-                            print(f"  Using SeeK-path full k-path for space group {space_group} with shrink={adjusted_shrink}")
+                            ui.info(f"  Using SeeK-path full k-path for space group {space_group} with shrink={adjusted_shrink}")
                         else:
                             # Fallback - try literature path first
                             frac_segments = get_literature_kpath_vectors(space_group, lattice_type)
@@ -1072,7 +1103,7 @@ class D3Generator:
                                 config["shrink"] = adjusted_shrink
                                 config["path_labels"] = get_band_path_from_symmetry(space_group, lattice_type)
                                 config["kpath_source"] = "literature"
-                                print(f"  SeeK-path not available, using literature k-path for space group {space_group}")
+                                ui.info(f"  SeeK-path not available, using literature k-path for space group {space_group}")
                             else:
                                 # Final fallback to standard path
                                 path_labels = get_band_path_from_symmetry(space_group, lattice_type)
@@ -1080,7 +1111,7 @@ class D3Generator:
                                 config["segments"] = coord_segments
                                 config["path_labels"] = path_labels  # Store labels for title
                                 config["kpath_source"] = "default"
-                                print(f"  SeeK-path not available, using standard k-point vectors for space group {space_group}")
+                                ui.info(f"  SeeK-path not available, using standard k-point vectors for space group {space_group}")
                     
                     elif config.get("literature_path", False):
                         # Use literature path
@@ -1097,14 +1128,14 @@ class D3Generator:
                             config["shrink"] = adjusted_shrink
                             # Store path labels (literature paths use standard labels for now)
                             config["path_labels"] = get_band_path_from_symmetry(space_group, lattice_type)
-                            print(f"  Using literature k-path for space group {space_group} with shrink={adjusted_shrink}")
+                            ui.info(f"  Using literature k-path for space group {space_group} with shrink={adjusted_shrink}")
                         else:
                             # Fallback
                             path_labels = get_band_path_from_symmetry(space_group, lattice_type)
                             coord_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
                             config["segments"] = coord_segments
                             config["path_labels"] = path_labels  # Store labels for title
-                            print(f"  Literature path not available, using standard k-point vectors for space group {space_group}")
+                            ui.info(f"  Literature path not available, using standard k-point vectors for space group {space_group}")
                     
                     else:
                         # Standard path - need to scale coordinates
@@ -1122,7 +1153,7 @@ class D3Generator:
                         config["segments"] = coord_segments
                         config["path_labels"] = path_labels  # Store labels for title
                         config["shrink"] = adjusted_shrink
-                        print(f"  Using k-point vectors for space group {space_group} with shrink={adjusted_shrink}")
+                        ui.info(f"  Using k-point vectors for space group {space_group} with shrink={adjusted_shrink}")
 
             # For BAND calculations with bands around Fermi, recalculate for each material
             if self.calc_type == "BAND" and config.get("bands") == "fermi":
@@ -1144,11 +1175,11 @@ class D3Generator:
 
                     config["first_band"] = first
                     config["last_band"] = last
-                    print(f"  Material has {band_info['valence_bands']} valence bands (Fermi level)")
-                    print(f"  Selected bands {first} to {last} ({bands_below} below + {bands_above} above Fermi)")
+                    ui.info(f"  Material has {band_info['valence_bands']} valence bands (Fermi level)")
+                    ui.info(f"  Selected bands {first} to {last} ({bands_below} below + {bands_above} above Fermi)")
                 else:
                     # Fallback to all bands
-                    print("  Warning: Could not determine Fermi level, using all bands")
+                    ui.warn("  Warning: Could not determine Fermi level, using all bands")
                     config["first_band"] = 1
                     config["last_band"] = None
 
@@ -1178,10 +1209,10 @@ class D3Generator:
                     mu_min_abs = fermi_energy_ev + mu_min_rel
                     mu_max_abs = fermi_energy_ev + mu_max_rel
                     config["mu_range"] = (mu_min_abs, mu_max_abs, mu_step)
-                    print(f"  Using Fermi energy {fermi_energy_ev:.3f} eV")
-                    print(f"  Chemical potential range: {mu_min_abs:.3f} to {mu_max_abs:.3f} eV")
+                    ui.info(f"  Using Fermi energy {fermi_energy_ev:.3f} eV")
+                    ui.info(f"  Chemical potential range: {mu_min_abs:.3f} to {mu_max_abs:.3f} eV")
                 else:
-                    print("  Warning: Could not extract Fermi energy, using manual values")
+                    ui.warn("  Warning: Could not extract Fermi energy, using manual values")
         else:
             config = configure_d3_calculation(self.calc_type, str(self.input_file))
         
@@ -1205,7 +1236,7 @@ class D3Generator:
                 potential_config = config["potential_config"]
             else:
                 # This shouldn't happen if configure_d3_calculation worked correctly
-                print("\nError: CHARGE+POTENTIAL configuration missing charge_config or potential_config")
+                ui.err("Error: CHARGE+POTENTIAL configuration missing charge_config or potential_config")
                 return None
             
             # Write combined file
@@ -1213,7 +1244,7 @@ class D3Generator:
             d3_content += "\n" + self._write_potential_d3(potential_config)
             
         else:
-            print(f"Error: Unknown calculation type {self.calc_type}")
+            ui.err(f"Error: Unknown calculation type {self.calc_type}")
             return False
         
         # Write D3 file
@@ -1223,28 +1254,33 @@ class D3Generator:
         with open(d3_path, 'w') as f:
             f.write(d3_content)
         
-        print(f"\n✓ D3 file written: {d3_path}")
-        
+        print()
+        ui.ok(f"D3 file written: {d3_path}")
+
         # Additional instructions
-        print("\nTo run the calculation:")
-        print(f"1. Make sure the wavefunction file is present: {self.base_name}_{self.calc_type.lower()}.f9")
-        print(f"2. Submit the job with the D3 file: {d3_filename}")
-        
+        print()
+        ui.info("To run the calculation:")
+        ui.info(f"1. Make sure the wavefunction file is present: {self.base_name}_{self.calc_type.lower()}.f9")
+        ui.info(f"2. Submit the job with the D3 file: {d3_filename}")
+
         if self.calc_type == "BAND":
-            print("\nOutput files:")
-            print("  - BAND.DAT: Band structure data")
-            print("  - fort.25: Band structure for plotting")
+            print()
+            ui.info("Output files:")
+            ui.info("  - BAND.DAT: Band structure data")
+            ui.info("  - fort.25: Band structure for plotting")
         elif self.calc_type == "DOSS":
-            print("\nOutput files:")
-            print("  - DOSS.DAT: Density of states data")
-            print("  - fort.25: DOS for plotting (if requested)")
+            print()
+            ui.info("Output files:")
+            ui.info("  - DOSS.DAT: Density of states data")
+            ui.info("  - fort.25: DOS for plotting (if requested)")
         elif self.calc_type == "TRANSPORT":
-            print("\nOutput files:")
-            print("  - SIGMA.DAT: Electrical conductivity")
-            print("  - SEEBECK.DAT: Seebeck coefficient")
-            print("  - SIGMAS.DAT: σS product")
-            print("  - KAPPA.DAT: Thermal conductivity")
-            print("  - TDF.DAT: Transport distribution function")
+            print()
+            ui.info("Output files:")
+            ui.info("  - SIGMA.DAT: Electrical conductivity")
+            ui.info("  - SEEBECK.DAT: Seebeck coefficient")
+            ui.info("  - SIGMAS.DAT: σS product")
+            ui.info("  - KAPPA.DAT: Thermal conductivity")
+            ui.info("  - TDF.DAT: Transport distribution function")
         
         # Return the configuration for potential saving
         return config
@@ -1307,11 +1343,13 @@ def main():
     if args.list_configs:
         configs = list_available_d3_configs()
         if configs:
-            print("\nAvailable D3 configuration files:")
+            print()
+            ui.info("Available D3 configuration files:")
             for config in configs:
-                print(f"  - {config}")
+                ui.info(f"  - {config}")
         else:
-            print("\nNo D3 configuration files found in current directory.")
+            print()
+            ui.info("No D3 configuration files found in current directory.")
         return
     
     # If no input file and not batch mode, check if there are .out files in current dir
@@ -1320,11 +1358,12 @@ def main():
         if out_files:
             # Automatically switch to batch mode if .out files found
             args.batch = True
-            print(f"\nFound {len(out_files)} output file(s) in current directory:")
+            print()
+            ui.info(f"Found {len(out_files)} output file(s) in current directory:")
             for f in sorted(out_files)[:5]:  # Show first 5
-                print(f"  - {f.name}")
+                ui.info(f"  - {f.name}")
             if len(out_files) > 5:
-                print(f"  ... and {len(out_files) - 5} more")
+                ui.info(f"  ... and {len(out_files) - 5} more")
     
     if args.batch:
         # Batch mode
@@ -1338,21 +1377,22 @@ def main():
             batch_dir = Path.cwd()
             
         if not out_files:
-            print(f"No .out files found in {batch_dir}")
+            ui.info(f"No .out files found in {batch_dir}")
             return
-        
-        print(f"Found {len(out_files)} output files")
-        
+
+        ui.info(f"Found {len(out_files)} output files")
+
         # Get calculation type
         if not args.calc_type:
-            print("\nSelect calculation type for all files:")
-            print("1: BAND - Electronic band structure")
-            print("2: DOSS - Density of states")
-            print("3: TRANSPORT - Transport properties")
-            print("4: CHARGE - Charge density")
-            print("5: POTENTIAL - Electrostatic potential")
-            print("6: CHARGE+POTENTIAL - Combined calculation")
-            
+            print()
+            ui.info("Select calculation type for all files:")
+            ui.info("1: BAND - Electronic band structure")
+            ui.info("2: DOSS - Density of states")
+            ui.info("3: TRANSPORT - Transport properties")
+            ui.info("4: CHARGE - Charge density")
+            ui.info("5: POTENTIAL - Electrostatic potential")
+            ui.info("6: CHARGE+POTENTIAL - Combined calculation")
+
             choice = input("\nSelect type (1-6): ").strip()
             calc_types = {
                 "1": "BAND", "2": "DOSS", "3": "TRANSPORT",
@@ -1364,7 +1404,8 @@ def main():
         
         # Ask about shared settings if not specified and more than one file
         if not args.shared_settings and len(out_files) > 1:
-            print("\nMultiple files detected. Use shared settings for all files?")
+            print()
+            ui.info("Multiple files detected. Use shared settings for all files?")
             use_shared = yes_no_prompt("Use same configuration for all files?", "yes")
             args.shared_settings = use_shared
         
@@ -1379,18 +1420,19 @@ def main():
                 # Validate configuration
                 is_valid, errors = validate_d3_config(shared_config)
                 if not is_valid:
-                    print("\nConfiguration validation errors:")
+                    ui.err("Configuration validation errors:")
                     for error in errors:
-                        print(f"  - {error}")
+                        ui.err(f"  - {error}")
                     return
                 # Override calc_type from config if present
                 if "calculation_type" in shared_config:
                     calc_type = shared_config["calculation_type"]
             else:
-                print(f"Failed to load configuration from {args.config_file}")
+                ui.err(f"Failed to load configuration from {args.config_file}")
                 return
         elif args.shared_settings:
-            print("\n=== Configuring shared settings for all files ===")
+            print()
+            ui.rule("Configuring shared settings for all files")
             # Use first file as reference for getting structure info
             first_file = str(out_files[0])
             # Shared-settings config is gathered BEFORE any per-file mkdir/copy, so it is
@@ -1398,21 +1440,22 @@ def main():
             # (generate_d3, line ~1173) runs AFTER _copy_wavefunction's mkdir+copy, so it is
             # intentionally left unwrapped to avoid replaying filesystem mutations.
             shared_config = _run_with_back(lambda: configure_d3_calculation(calc_type, first_file))
-            print("\n✓ Shared settings configured")
-            
+            print()
+            ui.ok("Shared settings configured")
+
             # Option to save configuration
             if args.save_config or yes_no_prompt("\nSave this configuration for future use?", "no"):
                 if args.options_file:
                     # Use specified filename without prompting
                     save_d3_config(shared_config, args.options_file)
-                    print(f"Configuration saved to {args.options_file}")
+                    ui.ok(f"Configuration saved to {args.options_file}")
                 else:
                     save_d3_options_prompt(shared_config, skip_prompt=True)
         
         # Process each file
         for out_file in out_files:
-            print(f"\n{'='*60}")
-            print(f"Processing: {out_file}")
+            print()
+            ui.rule(f"Processing: {out_file}")
             generator = D3Generator(str(out_file), calc_type, args.output_dir)
             generator.generate_d3(shared_config)
     
@@ -1427,7 +1470,7 @@ def main():
         
         # Check if the input exists
         if not input_path.exists():
-            print(f"\nError: File or directory not found: {input_file}")
+            ui.err(f"Error: File or directory not found: {input_file}")
             return
         
         # Check if it's a directory
@@ -1435,27 +1478,29 @@ def main():
             # Look for .out files in the directory
             out_files = list(input_path.glob('*.out'))
             if not out_files:
-                print(f"\nError: No CRYSTAL output files (.out) found in directory: {input_path}")
-                print("Please specify a CRYSTAL output file (e.g., material.out) or a directory containing .out files.")
+                ui.err(f"Error: No CRYSTAL output files (.out) found in directory: {input_path}")
+                ui.err("Please specify a CRYSTAL output file (e.g., material.out) or a directory containing .out files.")
                 return
             else:
                 # Process all files in the directory
-                print(f"\nFound {len(out_files)} output file(s) in {input_path.name}:")
+                print()
+                ui.info(f"Found {len(out_files)} output file(s) in {input_path.name}:")
                 for f in sorted(out_files)[:10]:  # Show first 10
-                    print(f"  - {f.name}")
+                    ui.info(f"  - {f.name}")
                 if len(out_files) > 10:
-                    print(f"  ... and {len(out_files) - 10} more")
+                    ui.info(f"  ... and {len(out_files) - 10} more")
                 
                 # Get calculation type
                 if not args.calc_type:
-                    print("\nSelect calculation type for all files:")
-                    print("1: BAND - Electronic band structure")
-                    print("2: DOSS - Density of states")
-                    print("3: TRANSPORT - Transport properties")
-                    print("4: CHARGE - Charge density")
-                    print("5: POTENTIAL - Electrostatic potential")
-                    print("6: CHARGE+POTENTIAL - Combined calculation")
-                    
+                    print()
+                    ui.info("Select calculation type for all files:")
+                    ui.info("1: BAND - Electronic band structure")
+                    ui.info("2: DOSS - Density of states")
+                    ui.info("3: TRANSPORT - Transport properties")
+                    ui.info("4: CHARGE - Charge density")
+                    ui.info("5: POTENTIAL - Electrostatic potential")
+                    ui.info("6: CHARGE+POTENTIAL - Combined calculation")
+
                     choice = input("\nSelect type (1-6): ").strip()
                     calc_types = {
                         "1": "BAND", "2": "DOSS", "3": "TRANSPORT",
@@ -1468,27 +1513,31 @@ def main():
                 # Ask about shared settings if more than one file
                 shared_config = None
                 if len(out_files) > 1:
-                    print("\nMultiple files detected. Use shared settings for all files?")
+                    print()
+                    ui.info("Multiple files detected. Use shared settings for all files?")
                     use_shared = yes_no_prompt("Use same configuration for all files?", "yes")
-                    
+
                     if use_shared:
-                        print("\n=== Configuring shared settings for all files ===")
+                        print()
+                        ui.rule("Configuring shared settings for all files")
                         # Use first file as reference for getting structure info
                         first_file = str(out_files[0])
                         temp_generator = D3Generator(first_file, calc_type, args.output_dir)
                         shared_config = temp_generator.generate_d3()
                         if shared_config:
-                            print("\n✓ Shared settings configured")
+                            print()
+                            ui.ok("Shared settings configured")
                             
                             # Option to save configuration
                             if yes_no_prompt("\nSave this configuration for future use?", "no"):
                                 save_d3_options_prompt(shared_config, skip_prompt=True)
                 
                 # Process all files
-                print(f"\nProcessing {len(out_files)} files...")
+                print()
+                ui.info(f"Processing {len(out_files)} files...")
                 for out_file in sorted(out_files):
-                    print(f"\n{'='*60}")
-                    print(f"Processing: {out_file.name}")
+                    print()
+                    ui.rule(f"Processing: {out_file.name}")
                     generator = D3Generator(str(out_file), calc_type, args.output_dir)
                     
                     if shared_config:
@@ -1496,17 +1545,18 @@ def main():
                     else:
                         # Interactive configuration for each file
                         config = generator.generate_d3()
-                
-                print(f"\n{'='*60}")
-                print(f"✓ Completed processing {len(out_files)} files")
+
+                print()
+                ui.rule()
+                ui.ok(f"Completed processing {len(out_files)} files")
                 return
         elif not input_path.is_file():
-            print(f"\nError: {input_path} is not a valid file.")
-            print("Please specify a CRYSTAL output file (e.g., material.out).")
+            ui.err(f"Error: {input_path} is not a valid file.")
+            ui.err("Please specify a CRYSTAL output file (e.g., material.out).")
             return
         elif not input_path.suffix.lower() in ['.out', '.log']:
-            print(f"\nWarning: {input_path.name} may not be a CRYSTAL output file.")
-            print("CRYSTAL output files typically have .out or .log extensions.")
+            ui.warn(f"Warning: {input_path.name} may not be a CRYSTAL output file.")
+            ui.warn("CRYSTAL output files typically have .out or .log extensions.")
         
         # If we're in batch mode (directory was provided), skip single-file processing
         if not (hasattr(args, 'batch') and args.batch and input_file is None):
@@ -1520,19 +1570,20 @@ def main():
             if args.config_file:
                 config = load_d3_config(args.config_file)
                 if not config:
-                    print(f"Failed to load configuration from {args.config_file}")
+                    ui.err(f"Failed to load configuration from {args.config_file}")
                     return
                 if not args.calc_type and config.get('calculation_type'):
                     args.calc_type = config['calculation_type']
 
             if not args.calc_type:
-                print("\nSelect calculation type:")
-                print("1: BAND - Electronic band structure")
-                print("2: DOSS - Density of states")
-                print("3: TRANSPORT - Transport properties (Boltzmann)")
-                print("4: CHARGE - Charge density (3D or 2D)")
-                print("5: POTENTIAL - Electrostatic potential")
-                print("6: CHARGE+POTENTIAL - Combined calculation")
+                print()
+                ui.info("Select calculation type:")
+                ui.info("1: BAND - Electronic band structure")
+                ui.info("2: DOSS - Density of states")
+                ui.info("3: TRANSPORT - Transport properties (Boltzmann)")
+                ui.info("4: CHARGE - Charge density (3D or 2D)")
+                ui.info("5: POTENTIAL - Electrostatic potential")
+                ui.info("6: CHARGE+POTENTIAL - Combined calculation")
 
                 calc_types = {
                     "1": "BAND", "2": "DOSS", "3": "TRANSPORT",
@@ -1542,7 +1593,7 @@ def main():
                 while choice not in calc_types:
                     # Re-prompt instead of silently defaulting a typo to BAND, which
                     # would generate the wrong property calculation with no warning.
-                    print(f"  '{choice}' is not a valid choice; enter a number 1-6.")
+                    ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-6.")
                     choice = input("Select type (1-6): ").strip()
                 calc_type = calc_types[choice]
             else:
@@ -1553,9 +1604,9 @@ def main():
                 print_d3_config_summary(config)
                 is_valid, errors = validate_d3_config(config)
                 if not is_valid:
-                    print("\nConfiguration validation errors:")
+                    ui.err("Configuration validation errors:")
                     for error in errors:
-                        print(f"  - {error}")
+                        ui.err(f"  - {error}")
                     return
                 # Override calc_type from config if present
                 if "calculation_type" in config:
@@ -1575,7 +1626,7 @@ def main():
                     if args.options_file:
                         # Use specified filename without prompting
                         save_d3_config(config, args.options_file)
-                        print(f"Configuration saved to {args.options_file}")
+                        ui.ok(f"Configuration saved to {args.options_file}")
                     else:
                         save_d3_options_prompt(config, skip_prompt=True)
 
