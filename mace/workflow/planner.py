@@ -183,19 +183,32 @@ class WorkflowPlanner:
 
     def display_welcome(self):
         """Display welcome message and overview"""
-        # Banner is shown by run_workflow.py, so we just show the title
-        print("=" * 60)
-        print("MACE Workflow Planner")
-        print("=" * 60)
-        print("Comprehensive workflow planning for CRYSTAL calculations")
-        print()
-        print("This planner will help you:")
-        print("  1. Set up input files (from CIFs or existing D12s)")
-        print("  2. Plan your complete calculation workflow")
-        print("  3. Configure all calculation settings")
-        print("  4. Save configurations for reproducibility")
-        print("  5. Execute the planned workflow")
-        print()
+        # The startup banner is shown by mace_cli (ui.banner); here we show only the
+        # planner title — themed through the ui facade so it matches the banner's
+        # palette (no jarring plain ASCII box after a colored animation).
+        lines = [
+            "Comprehensive workflow planning for CRYSTAL calculations",
+            "",
+            "This planner will help you:",
+            "  1. Set up input files (from CIFs or existing D12s)",
+            "  2. Plan your complete calculation workflow",
+            "  3. Configure all calculation settings",
+            "  4. Save configurations for reproducibility",
+            "  5. Execute the planned workflow",
+            "",
+        ]
+        try:
+            from mace.utils import ui
+            ui.rule("MACE Workflow Planner")
+            for line in lines:
+                ui.print(line)
+        except Exception:
+            # Fallback to the original plain header if the ui facade is unavailable.
+            print("=" * 60)
+            print("MACE Workflow Planner")
+            print("=" * 60)
+            for line in lines:
+                print(line)
 
     def create_material_id_from_file(self, filepath: Path) -> str:
         """Wrapper for the imported create_material_id_from_file function"""
