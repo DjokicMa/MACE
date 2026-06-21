@@ -35,7 +35,7 @@ sys.path.insert(0, str(MACE_DIR))
 # retired here (animation.py itself is kept for its standalone demo + the version
 # single-source check).
 try:
-    from utils.banner import get_credits, print_banner
+    from utils.banner import get_credits
     BANNER_AVAILABLE = True
 except ImportError:
     BANNER_AVAILABLE = False

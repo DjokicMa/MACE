@@ -351,12 +351,15 @@ echo "  All script directories are in PATH"
     
     def run_setup(self, args):
         """Run the complete setup process"""
-        # Try to import and show banner
+        # Show the themed MACE banner (static -- no animation during setup).
+        # Routed through the mace.utils.ui facade; guarded so a pre-install env
+        # without rich/mace cleanly falls back to plain text.
         try:
-            sys.path.insert(0, str(self.repo_root / 'code' / 'Job_Scripts'))
-            from mace_banner import print_banner
-            print_banner('banner')  # Use main banner style
-        except:
+            sys.path.insert(0, str(self.repo_root))
+            from mace.utils import ui
+            from mace import __version__ as _mace_version
+            ui.banner(_mace_version, animate=False)
+        except Exception:
             print("MACE (Mendoza Automated CRYSTAL Engine) Setup")
             print("=============================================")
         
