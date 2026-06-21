@@ -54,10 +54,14 @@ try:  # mirrors mace_cli's BANNER_AVAILABLE pattern
         TimeRemainingColumn as _TimeRemainingColumn,
         TimeElapsedColumn as _TimeElapsedColumn,
     )
+    from rich.markup import escape as _escape
 
     _RICH_AVAILABLE = True
 except ImportError:  # pragma: no cover - exercised via monkeypatched sys.modules
     _RICH_AVAILABLE = False
+
+    def _escape(s):  # rich-absent fallback; the styled paths that call it need rich
+        return s
 
 
 # ===========================================================================
@@ -403,6 +407,9 @@ def print(*objects: Any, **kwargs: Any) -> None:  # noqa: A001 (shadow builtin o
     """
     console = _CAPS.console()
     if console is not None and _CAPS.color_ok:
+        # Treat string args as LITERAL data by default — callers pass filenames,
+        # formulas, error text etc., not markup. Opt into markup with markup=True.
+        kwargs.setdefault("markup", False)
         console.print(*objects, **kwargs)
         return
     # Plain path: strip markup, route to the requested file (default stdout).
@@ -427,7 +434,10 @@ def _emit(marker_markup: str, marker_plain: str, text: str, *, file=None) -> Non
             file=file, force_terminal=_CAPS.is_tty or bool(_CAPS.force_color),
             no_color=not _CAPS.color_ok, highlight=False,
         )
-        target.print(f"{marker_markup} {text}")
+        # The marker is our own trusted markup; the caller's text is data -> escape
+        # it so brackets ([/], [Errno 2], a path with [..]) never raise MarkupError
+        # or get silently swallowed by the rich markup parser.
+        target.print(f"{marker_markup} {_escape(text)}")
     else:
         import builtins
 
@@ -463,7 +473,7 @@ def rule(title: str = "") -> None:
     console = _CAPS.console()
     if console is not None and _CAPS.color_ok:
         p = _CAPS.palette
-        console.print(_Rule(title, style=p.accent) if title else _Rule(style=p.accent))
+        console.print(_Rule(_escape(title), style=p.accent) if title else _Rule(style=p.accent))
         return
     width = _plain_width()
     title = _plain(title)
@@ -499,15 +509,15 @@ def table(
     if console is not None and _CAPS.color_ok:
         p = _CAPS.palette
         t = _Table(
-            title=f"[bold {p.accent}]{title}[/]" if title else None,
+            title=f"[bold {p.accent}]{_escape(title)}[/]" if title else None,
             header_style=f"bold {p.accent}",
             border_style="grey37",
             padding=(0, 1),
         )
         for col in columns:
-            t.add_column(str(col))
+            t.add_column(_escape(str(col)))
         for r in rows:
-            t.add_row(*[str(c) for c in r])
+            t.add_row(*[_escape(str(c)) for c in r])
         console.print(t)
         return
     # Plain aligned columns.
@@ -534,18 +544,6 @@ def table(
 # ===========================================================================
 # Surface 1 — startup banner (§5.2)
 # ===========================================================================
-def _styled_wordmark(reveal_lines: Optional[int] = None):
-    """Gradient wordmark as a rich Text, optionally only the first N lines."""
-    p = _CAPS.palette
-    n = len(WORDMARK) if reveal_lines is None else reveal_lines
-    t = _Text(justify="center")
-    for i, line in enumerate(WORDMARK):
-        if i >= n:
-            break
-        t.append(line + ("\n" if i < len(WORDMARK) - 1 else ""), style=p.gradient[i])
-    return t
-
-
 # ---------------------------------------------------------------------------
 # Startup animations (§5.2) — ported from the approved demo
 # ``mace_visual_demo_anim.py``. PALETTE-CORRECT: every color is derived from the
@@ -563,7 +561,7 @@ _DECODE_SYM = "█▓▒░╔╗║═╬◆◇▪▫01∎⬡"
 
 def _wm_compose(grad, style_fn, char_fn=None):
     """Build the wordmark as a rich Text from per-cell style/char callbacks."""
-    t = _Text(justify="left")
+    t = _Text(justify="left", no_wrap=True, overflow="crop")
     for r, line in enumerate(WORDMARK):
         for c in range(_WM_W):
             ch = line[c] if c < len(line) else " "
@@ -622,7 +620,7 @@ def _gen_phonon(grad):
     pad = 3
     for f in range(42):
         amp = max(0.0, 3.0 - f * 0.09)
-        t = _Text(justify="left")
+        t = _Text(justify="left", no_wrap=True, overflow="crop")
         for r, line in enumerate(WORDMARK):
             off = int(round(random.uniform(-amp, amp)))
             lead = max(0, min(2 * pad, off + pad))
@@ -656,8 +654,8 @@ def _wm_settled(version: str, subtitle: str, meta: Optional[str], palette: Palet
     return _Group(
         _Align.center(_wm_final(palette.gradient)),
         _Text(""),
-        _Align.center(_Text(subtitle, style="bold")),
-        _Align.center(_Text(meta_text, style="dim")),
+        _Align.center(_Text(subtitle, style="bold", no_wrap=True, overflow="crop")),
+        _Align.center(_Text(meta_text, style="dim", no_wrap=True, overflow="crop")),
     )
 
 
@@ -700,6 +698,11 @@ def banner(
             _concise_line()
             return
         console = _CAPS.console()
+        # Width guard: the wordmark (35) / phonon canvas (41) need room; below that
+        # the centered art wraps and breaks, so show the concise line instead.
+        if console.width < _WM_W + 6:
+            _concise_line()
+            return
         p = _CAPS.palette
         import time as _time
         gen, dt = _BANNER_ANIMS[random.choice(list(_BANNER_ANIMS))]
@@ -718,7 +721,11 @@ def banner(
     if not _RICH_AVAILABLE or not _CAPS.is_tty:
         _concise_line()
         return
-    _CAPS.console().print(_wm_settled(version, subtitle, meta, _CAPS.palette))
+    console = _CAPS.console()
+    if console.width < _WM_W + 6:   # too narrow for the art -> concise line
+        _concise_line()
+        return
+    console.print(_wm_settled(version, subtitle, meta, _CAPS.palette))
 
 
 def credits() -> None:
@@ -1011,7 +1018,7 @@ def badge(state: str) -> str:
         p = _CAPS.palette
         colors = {"OK": p.ok, "WARN": p.warn, "ERROR": p.err, "IDLE": "grey50"}
         color = colors.get(st, p.accent)
-        return f"[bold {color}]● {st}[/]"
+        return f"[bold {color}]● {_escape(st)}[/]"
     return st
 
 
@@ -1046,12 +1053,12 @@ def build_status_dashboard(
         t.add_column("Status", no_wrap=True)
         t.add_column("Detail", style="dim")
         for r in norm:
-            t.add_row(r.subsystem, badge(r.state), r.detail)
-        sub_markup = f"[dim]{subtitle}[/dim]" if subtitle else None
+            t.add_row(_escape(str(r.subsystem)), badge(r.state), _escape(str(r.detail)))
+        sub_markup = f"[dim]{_escape(subtitle)}[/dim]" if subtitle else None
         if overall:
-            extra = f"overall: {overall}"
+            extra = f"overall: {_escape(overall)}"
             sub_markup = f"{sub_markup} · {extra}" if sub_markup else f"[dim]{extra}[/dim]"
-        return _Panel(t, title=f"[bold {p.accent}]{title}[/]",
+        return _Panel(t, title=f"[bold {p.accent}]{_escape(title)}[/]",
                       subtitle=sub_markup, border_style=p.accent)
     # Plain fixed-width table — assembled into a string (no ANSI, no clear).
     lines = [_plain(title)]

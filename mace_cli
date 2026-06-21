@@ -1111,23 +1111,17 @@ def main():
     # match, and optionally persist it as the default for future runs. Precedence:
     # --theme flag > MACE_THEME env > saved config (~/.config/mace) > auto default.
     # (A saved theme is auto-applied by the ui facade, so no flag/env is needed.)
-    _save_theme = False
-    _ti = 0
-    while _ti < len(sys.argv):
-        if sys.argv[_ti] == '--save-theme':
-            _save_theme = True
-            del sys.argv[_ti]
-        else:
-            _ti += 1
-
     def _apply_theme(name, persist=False):
         name = (name or "").strip().lower()
         if hasattr(ui, "configure"):
             try:
                 ui.configure(palette=name)
             except Exception:
-                print(f"Unknown theme '{name}' — using default. "
-                      f"Choices: crystal, mono, ember.", file=sys.stderr)
+                msg = (f"Unknown theme '{name}' — using default. "
+                       f"Choices: crystal, mono, ember.")
+                if persist:
+                    msg += " (Not saved.)"
+                print(msg, file=sys.stderr)
                 return
         os.environ['MACE_THEME'] = name
         if persist and hasattr(ui, "save_theme"):
@@ -1137,22 +1131,45 @@ def main():
             except Exception as _e:
                 print(f"Could not save theme: {_e}", file=sys.stderr)
 
+    # Honor --theme / --save-theme only in the GLOBAL position (before the
+    # subcommand), so we never consume a token belonging to a subcommand's own
+    # options (e.g. `mace opt2d3 --input --theme ...`). --theme takes a value;
+    # --save-theme is boolean. Both are stripped from argv before dispatch.
+    _save_theme = False
     _theme_flag = None
-    _ti = 0
-    while _ti < len(sys.argv):
-        _ta = sys.argv[_ti]
-        if _ta == '--theme' and _ti + 1 < len(sys.argv):
-            _theme_flag = sys.argv[_ti + 1]
-            del sys.argv[_ti:_ti + 2]
-            break
-        if _ta.startswith('--theme='):
-            _theme_flag = _ta.split('=', 1)[1]
-            del sys.argv[_ti]
-            break
-        _ti += 1
+    _consumed = []
+    _i = 1
+    while _i < len(sys.argv):
+        _a = sys.argv[_i]
+        if _a == '--save-theme':
+            _save_theme = True
+            _consumed.append(_i)
+            _i += 1
+        elif _a == '--theme':
+            _consumed.append(_i)
+            _nxt = sys.argv[_i + 1] if _i + 1 < len(sys.argv) else None
+            if _nxt is not None and not _nxt.startswith('-'):
+                _theme_flag = _nxt
+                _consumed.append(_i + 1)
+                _i += 2
+            else:
+                _theme_flag = ''       # dangling --theme (missing/flag-like value)
+                _i += 1
+        elif _a.startswith('--theme='):
+            _theme_flag = _a.split('=', 1)[1]
+            _consumed.append(_i)
+            _i += 1
+        elif _a.startswith('-'):
+            _i += 1                     # another global flag (e.g. --no-banner)
+        else:
+            break                        # the subcommand — stop; leave its args alone
+    for _idx in sorted(_consumed, reverse=True):
+        del sys.argv[_idx]
 
-    if _theme_flag is not None:
+    if _theme_flag:
         _apply_theme(_theme_flag, persist=_save_theme)
+    elif _theme_flag == '':
+        print("--theme requires a name (crystal, mono, ember).", file=sys.stderr)
     elif _save_theme:
         print("--save-theme requires --theme NAME (e.g. mace --theme ember --save-theme).",
               file=sys.stderr)

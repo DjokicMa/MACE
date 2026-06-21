@@ -649,6 +649,45 @@ def test_save_and_load_theme_roundtrip(ui, monkeypatch, tmp_path):
         ui2.save_theme("rainbow")
 
 
+def test_data_with_markup_does_not_crash_rich_path(ui):
+    """Regression: the sub-tool sweep routes DATA (filenames, formulas, error text)
+    through ui.*; on the rich path that data must not be parsed as markup and crash
+    with MarkupError. Escape it; literal brackets survive."""
+    import re
+    ui2 = _rich_ui(ui)
+    ui2.configure(force_color=True, force_tty=True, palette="crystal")
+    danger = ["[/]", "[/red]", "[bad", "bad: [Errno 2]", "Fe2O3_[mp-19770][/].cif", "[red]x[/red]"]
+    for d in danger:
+        for fn in ("print", "info", "ok", "warn", "err", "rule"):
+            _capture_stdout_stderr(lambda fn=fn, d=d: getattr(ui2, fn)(d))   # must not raise
+        _capture_stdout_stderr(lambda d=d: ui2.table(["C"], [[d]], title=d))
+        _capture_stdout_stderr(
+            lambda d=d: ui2.status_dashboard(d, [ui2.StatusRow("db", "ERROR", d)],
+                                             overall=d, subtitle=d))
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", _capture_stdout_stderr(lambda: ui2.err("x [Errno 2] y")))
+    assert "[Errno 2]" in clean   # data preserved, not swallowed
+
+
+def test_banner_width_guard_narrow_falls_back_to_concise(ui, monkeypatch):
+    """Narrow terminal: the banner shows the concise line, not the wrapping art."""
+    from rich.console import Console
+    import io
+    ui2 = _rich_ui(ui)
+    ui2.configure(force_color=True, force_tty=True, palette="crystal")
+
+    def render(width):
+        buf = io.StringIO()
+        c = Console(force_terminal=True, width=width, color_system="truecolor",
+                    file=buf, highlight=False)
+        monkeypatch.setattr(ui2._CAPS, "console", lambda c=c: c)
+        ui2.banner("1.1.0", animate=False)
+        return buf.getvalue()
+
+    narrow, wide = render(30), render(80)
+    assert "█" not in narrow and "MACE v1.1.0" in narrow   # concise, no art
+    assert "█" in wide                                      # full art when wide
+
+
 # ===========================================================================
 # Stage 2 — startup animation color-leak guard (deterministic, no PTY)
 # ===========================================================================
