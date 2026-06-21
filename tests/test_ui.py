@@ -65,6 +65,33 @@ def _hermetic_theme_config(tmp_path_factory, monkeypatch):
     ui_mod._saved_theme = ui_mod._UNSET
 
 
+@pytest.fixture
+def force_color_ui(ui, monkeypatch):
+    """A ui module GUARANTEED to be on the real rich/color path.
+
+    Anti-masking. The CI/ctx environment can set ``NO_COLOR=1`` (or ``TERM=dumb``),
+    which per no-color.org vetoes color *before* ``force_color`` is even consulted
+    (see ``_Caps.color_ok`` rule 1). That silently downgrades a "rich-path" test to
+    the PLAIN path — exercising none of the rich-only code and giving false
+    confidence. That is exactly how the markup-injection crash slipped through the
+    whole sub-tool sweep. This fixture strips the env vetoes, forces color, and then
+    ASSERTS ``color_ok`` so a still-plain environment fails LOUDLY right here instead
+    of masking a rich-path bug downstream.
+    """
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")  # also neutralizes TERM=dumb
+    ui2 = _rich_ui(ui)
+    ui2.configure(force_color=True, force_tty=True, palette="crystal")
+    assert ui2._CAPS.color_ok is True, (
+        "force_color_ui could not enable the rich path — the environment still "
+        "vetoes color (NO_COLOR / TERM=dumb / rich missing). Rich-path coverage "
+        "would otherwise run silently on the plain path."
+    )
+    assert ui2.is_interactive() is True
+    return ui2
+
+
 def _capture_stdout_stderr(fn):
     """Run ``fn`` capturing both stdout and stderr into one string."""
     out, err = io.StringIO(), io.StringIO()
@@ -649,13 +676,15 @@ def test_save_and_load_theme_roundtrip(ui, monkeypatch, tmp_path):
         ui2.save_theme("rainbow")
 
 
-def test_data_with_markup_does_not_crash_rich_path(ui):
+def test_data_with_markup_does_not_crash_rich_path(force_color_ui):
     """Regression: the sub-tool sweep routes DATA (filenames, formulas, error text)
     through ui.*; on the rich path that data must not be parsed as markup and crash
-    with MarkupError. Escape it; literal brackets survive."""
+    with MarkupError. Escape it; literal brackets survive.
+
+    Uses ``force_color_ui`` so NO_COLOR in the CI env can't silently downgrade this
+    to the plain path (which would mask the very crash it guards against)."""
     import re
-    ui2 = _rich_ui(ui)
-    ui2.configure(force_color=True, force_tty=True, palette="crystal")
+    ui2 = force_color_ui
     danger = ["[/]", "[/red]", "[bad", "bad: [Errno 2]", "Fe2O3_[mp-19770][/].cif", "[red]x[/red]"]
     for d in danger:
         for fn in ("print", "info", "ok", "warn", "err", "rule"):
@@ -818,3 +847,74 @@ def test_real_invocation_no_banner_env_piped():
     assert "MACE v4.4.4" not in out  # banner suppressed
     assert "[OK] after-banner" in out
     assert b"\x1b[" not in proc.stdout
+
+
+# ===========================================================================
+# Test hardening — force the REAL rich path so NO_COLOR can't MASK rich-path
+# bugs (the env veto in _Caps.color_ok silently downgrades to plain; that hid
+# the markup-injection crash through the whole sub-tool sweep).
+# ===========================================================================
+# Bracketed data that rich's markup parser would choke on or silently swallow
+# unless escaped — mirrors what the sub-tools route through ui.* (paths,
+# formulas, errno text). Includes a pathological *over-closer* that raises
+# MarkupError if it ever reaches rich unescaped.
+_MARKUP_DANGER = [
+    "[/]", "[/red]", "[bad", "bad: [Errno 2]", "Fe2O3_[mp-19770][/].cif",
+    "[red]x[/red]", "[1, 2, 3]", "[OK] done", "done [/] then [/]",
+]
+
+
+def _strip_ansi(s):
+    import re
+    return re.sub(r"\x1b\[[0-9;]*m", "", s)
+
+
+def test_force_color_fixture_is_genuinely_on_rich_path(force_color_ui):
+    """Canary for the anti-masking fixture: it MUST emit real ANSI color.
+
+    If this fails, every ``force_color_ui`` test is silently running on the plain
+    path and rich-only regressions (markup crashes, palette flips) go undetected."""
+    out = _capture_stdout_stderr(lambda: force_color_ui.ok("rich-path canary"))
+    assert ESC in out, "force_color_ui produced no ANSI — the rich path is NOT active"
+
+
+@pytest.mark.parametrize("data", _MARKUP_DANGER)
+def test_rich_path_survives_markup_in_data(force_color_ui, data):
+    """On the REAL rich path, every data-bearing surface must (1) not raise on
+    bracketed data and (2) genuinely be on the rich path (some surface emits ANSI),
+    so this coverage can never be silently downgraded to the plain path."""
+    ui2 = force_color_ui
+    saw_ansi = []
+
+    def cap(fn):
+        out = _capture_stdout_stderr(fn)   # must not raise
+        if ESC in out:
+            saw_ansi.append(True)
+
+    for name in ("print", "info", "ok", "warn", "err", "rule"):
+        cap(lambda name=name: getattr(ui2, name)(data))
+    cap(lambda: ui2.table(["C", "X"], [[data, data]], title=data))
+    cap(lambda: ui2.status_dashboard(
+        data, [ui2.StatusRow("db", "ERROR", data)], overall=data, subtitle=data))
+    ui2.badge(data)  # returns a markup string; must not raise building it
+    assert saw_ansi, "no surface emitted ANSI — the rich path was not exercised"
+
+
+def test_rich_path_preserves_literal_bracketed_data(force_color_ui):
+    """Escaped, not parsed: literal bracket data survives verbatim on the rich path
+    (would be silently swallowed by the markup parser if not escaped)."""
+    ui2 = force_color_ui
+
+    def render(fn):
+        # The stdout rich console is cached on first build (bound to sys.stdout at
+        # that moment), so redirect_stdout must be active *when it is built*.
+        # Invalidate the lazy cache before each capture so it rebuilds inside the
+        # redirect and the output is captured.
+        ui2._CAPS._console = None
+        return _strip_ansi(_capture_stdout_stderr(fn))
+
+    for data, needle in [("err [Errno 2] missing", "[Errno 2]"),
+                         ("Fe2O3_[mp-19770].cif", "[mp-19770]"),
+                         ("values [1, 2, 3] ok", "[1, 2, 3]")]:
+        clean = render(lambda d=data: ui2.info(d))
+        assert needle in clean, (needle, clean)
