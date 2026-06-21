@@ -192,12 +192,15 @@ class _Caps:
 
     @property
     def palette(self) -> Palette:
-        # Precedence: explicit override (configure / --theme) → MACE_THEME env
-        # (set-once selection) → auto default (crystal in color, else mono). Exactly
-        # one palette per process, so the animated and static banners always match.
+        # Precedence: explicit override (configure / --theme) → MACE_THEME env →
+        # saved config (~/.config/mace) → auto default (crystal in color, else mono).
+        # Exactly one palette per process; the banner captures it ONCE before
+        # rich.Live (which redirects stdout and would otherwise flip color_ok->mono).
         name = self.palette_name
         if name not in _PALETTES:
             name = os.environ.get("MACE_THEME", "").strip().lower()
+        if name not in _PALETTES:
+            name = load_saved_theme() or ""
         if name in _PALETTES:
             return _PALETTES[name]
         return CRYSTAL if self.color_ok else MONO
@@ -275,6 +278,71 @@ def is_interactive() -> bool:
 def active_palette() -> Palette:
     """The current palette record; ``mono`` whenever color is off."""
     return _CAPS.palette
+
+
+# ---------------------------------------------------------------------------
+# Persisted theme — survives across runs via a small user config file.
+# Precedence at render time (see _Caps.palette): --theme/configure > MACE_THEME
+# env > THIS saved theme > auto (crystal if color else mono).
+# ---------------------------------------------------------------------------
+def _config_path() -> str:
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
+        os.path.expanduser("~"), ".config")
+    return os.path.join(base, "mace", "config.json")
+
+
+_UNSET = object()
+_saved_theme = _UNSET  # process cache: None = nothing saved, str = a palette name
+
+
+def load_saved_theme() -> Optional[str]:
+    """Return the theme persisted by :func:`save_theme`, or ``None``.
+
+    Read once and cached for the process. Never raises — a missing/garbled config
+    file just yields ``None`` (auto default).
+    """
+    global _saved_theme
+    if _saved_theme is not _UNSET:
+        return _saved_theme
+    name = None
+    try:
+        import json
+        with open(_config_path(), encoding="utf-8") as f:
+            val = json.load(f).get("theme")
+        if isinstance(val, str) and val.strip().lower() in _PALETTES:
+            name = val.strip().lower()
+    except Exception:
+        name = None
+    _saved_theme = name
+    return name
+
+
+def save_theme(name: str) -> str:
+    """Persist ``name`` as the default UI theme; return the config file path.
+
+    Merges into any existing config JSON (so other future settings survive).
+    Raises ``ValueError`` on an unknown theme name.
+    """
+    name = (name or "").strip().lower()
+    if name not in _PALETTES:
+        raise ValueError(f"unknown theme {name!r} — choose from {', '.join(_PALETTES)}")
+    import json
+    path = _config_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    data = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            loaded = json.load(f)
+        if isinstance(loaded, dict):
+            data = loaded
+    except Exception:
+        data = {}
+    data["theme"] = name
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    global _saved_theme
+    _saved_theme = name
+    return path
 
 
 # ===========================================================================
@@ -547,13 +615,20 @@ def _gen_decode(grad):
 
 
 def _gen_phonon(grad):
+    # Vibrate the lattice horizontally. Each row is padded to a CONSTANT width
+    # (_WM_W + 2*pad) with the glyphs at offset ``pad ± jitter``, so rich.Align
+    # centers every frame on the same basis and the wordmark doesn't drift; at rest
+    # (lead == pad) it lines up exactly with the settled _wm_final.
+    pad = 3
     for f in range(42):
         amp = max(0.0, 3.0 - f * 0.09)
         t = _Text(justify="left")
         for r, line in enumerate(WORDMARK):
             off = int(round(random.uniform(-amp, amp)))
-            t.append(" " * max(0, off + 3))
-            t.append(line, style=grad[r])
+            lead = max(0, min(2 * pad, off + pad))
+            t.append(" " * lead)
+            t.append(line.ljust(_WM_W), style=grad[r])
+            t.append(" " * (2 * pad - lead))
             if r < _WM_H - 1:
                 t.append("\n")
         yield t
@@ -567,12 +642,23 @@ _BANNER_ANIMS = {
 }
 
 
-def _wm_settled(version: str, subtitle: str, meta: Optional[str]):
-    """The settled banner frame: gradient wordmark + subtitle + meta, centered."""
-    p = _CAPS.palette
-    sub = _Text(subtitle, style="bold")
+def _wm_settled(version: str, subtitle: str, meta: Optional[str], palette: Palette):
+    """The settled banner frame: gradient wordmark + subtitle + meta.
+
+    ``palette`` is passed in (captured BEFORE entering ``rich.Live``) and never
+    re-read from ``_CAPS`` here: Live redirects stdout, so ``is_tty``/``color_ok``
+    — and thus the auto palette — flip to mono mid-animation. Each component is
+    centered INDEPENDENTLY; centering the wordmark inside a Group whose width is
+    dominated by the longer meta line would shove the wordmark left of where the
+    animation frames drew it.
+    """
     meta_text = meta if meta is not None else f"v{version}  ·  Michigan State University  ·  Mendoza Group"
-    return _Align.center(_Group(_wm_final(p.gradient), _Text(), sub, _Text(meta_text, style="dim")))
+    return _Group(
+        _Align.center(_wm_final(palette.gradient)),
+        _Text(""),
+        _Align.center(_Text(subtitle, style="bold")),
+        _Align.center(_Text(meta_text, style="dim")),
+    )
 
 
 def banner(
@@ -621,7 +707,9 @@ def banner(
             for frame in gen(p.gradient):
                 live.update(_Align.center(frame))
                 _time.sleep(dt)
-            live.update(_wm_settled(version, subtitle, meta))
+            # Pass the palette captured BEFORE Live: re-reading _CAPS.palette here
+            # would flip to mono (Live redirected stdout -> isatty() False).
+            live.update(_wm_settled(version, subtitle, meta, p))
         return
 
     # Static themed logo: gradient wordmark in a TTY (no animation), concise line
@@ -630,7 +718,7 @@ def banner(
     if not _RICH_AVAILABLE or not _CAPS.is_tty:
         _concise_line()
         return
-    _CAPS.console().print(_wm_settled(version, subtitle, meta))
+    _CAPS.console().print(_wm_settled(version, subtitle, meta, _CAPS.palette))
 
 
 def credits() -> None:

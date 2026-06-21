@@ -55,6 +55,16 @@ def ui():
          caps.no_banner, caps._console) = saved
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_theme_config(tmp_path_factory, monkeypatch):
+    """Keep theme persistence out of the user's real ~/.config/mace during tests:
+    point XDG_CONFIG_HOME at an empty temp dir and reset the per-process cache, so
+    every test sees 'no saved theme' unless it sets one itself."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path_factory.mktemp("xdg")))
+    import mace.utils.ui as ui_mod
+    ui_mod._saved_theme = ui_mod._UNSET
+
+
 def _capture_stdout_stderr(fn):
     """Run ``fn`` capturing both stdout and stderr into one string."""
     out, err = io.StringIO(), io.StringIO()
@@ -603,6 +613,40 @@ def test_banner_theme_consistency_static_uses_selected_palette(ui, monkeypatch):
     text = _capture_stdout_stderr(lambda: ui2.banner("1.1.0", animate=False))
     assert "38;2;127;29;29" in text       # ember gradient[0] = #7f1d1d
     assert "38;2;45;212;191" not in text   # crystal gradient[0] must be absent
+
+
+def test_wm_settled_uses_passed_palette_not_caps(ui):
+    """Regression: rich.Live redirects stdout, so a settle that re-read _CAPS.palette
+    saw isatty()=False -> mono mid-animation. The settle MUST use the palette passed
+    in. With _CAPS pinned to crystal, rendering the settle with MONO yields mono."""
+    from rich.console import Console
+    ui2 = _rich_ui(ui)
+    ui2.configure(force_color=True, force_tty=True, palette="crystal")
+
+    def render(pal):
+        c = Console(force_terminal=True, width=100, record=True, color_system="truecolor")
+        c.print(ui2._wm_settled("1.1.0", "Sub", None, pal))
+        return c.export_text(styles=True)
+
+    crystal_out, mono_out = render(ui2.CRYSTAL), render(ui2.MONO)
+    assert "45;212;191" in crystal_out         # crystal gradient[0]
+    assert "45;212;191" not in mono_out         # mono settle has NO crystal, despite _CAPS=crystal
+    assert "82;82;82" in mono_out               # mono gradient[0] = #525252
+
+
+def test_save_and_load_theme_roundtrip(ui, monkeypatch, tmp_path):
+    """Persisted theme survives across processes (saved to ~/.config/mace)."""
+    import os
+    ui2 = _rich_ui(ui)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    ui2._saved_theme = ui2._UNSET
+    assert ui2.load_saved_theme() is None
+    path = ui2.save_theme("ember")
+    assert os.path.exists(path)
+    ui2._saved_theme = ui2._UNSET               # force a fresh read from disk
+    assert ui2.load_saved_theme() == "ember"
+    with pytest.raises(ValueError):
+        ui2.save_theme("rainbow")
 
 
 # ===========================================================================
