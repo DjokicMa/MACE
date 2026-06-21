@@ -918,3 +918,102 @@ def test_rich_path_preserves_literal_bracketed_data(force_color_ui):
                          ("values [1, 2, 3] ok", "[1, 2, 3]")]:
         clean = render(lambda d=data: ui2.info(d))
         assert needle in clean, (needle, clean)
+
+
+# ===========================================================================
+# Latent/cosmetic fix regressions
+# ===========================================================================
+def test_progress_description_with_markup_does_not_crash_rich_path(force_color_ui):
+    """Regression: a progress/spinner ``description`` carrying unbalanced markup is
+    rendered via a markup TextColumn ("[bold]{task.description}"); an over-closer
+    raises MarkupError unless the description is escaped. Must not crash."""
+    ui2 = force_color_ui
+    bad = "done [/] then [/]"   # over-closes once prefixed with [bold] -> MarkupError if unescaped
+    _capture_stdout_stderr(lambda: [None for _ in ui2.progress([1], description=bad)])
+
+    def task():
+        with ui2.progress_task(bad, total=1) as h:
+            h.advance()
+            h.update(completed=1, description=bad)
+    _capture_stdout_stderr(task)
+
+    def spin():
+        with ui2.spinner(bad, success="ok"):
+            pass
+    _capture_stdout_stderr(spin)
+
+
+def test_table_plain_renders_overflow_cells(ui):
+    """A row with MORE cells than declared columns must render the overflow (mirror
+    rich's auto-extend), not silently drop it (data loss)."""
+    ui.configure(force_color=False, force_tty=False)
+    text = _capture_stdout_stderr(lambda: ui.table(
+        ["A", "B"], [["1", "2", "OVERFLOW3"]]))
+    assert "OVERFLOW3" in text   # extra cell preserved, not dropped
+    assert "1" in text and "2" in text
+    assert ESC not in text
+
+
+def test_live_dashboard_plain_no_eager_double_render(ui):
+    """Plain mode must not eagerly pre-render: enter + a single refresh() yields
+    exactly ONE block (the monitor enters then refreshes in its loop; an eager
+    render would duplicate the first block)."""
+    ui.configure(force_color=False, force_tty=False)
+    calls = {"n": 0}
+
+    def render():
+        calls["n"] += 1
+        return f"BLOCK-{calls['n']}"
+
+    def drive():
+        with ui.live_dashboard(render) as lh:
+            lh.refresh()  # the first and only refresh
+
+    text = _capture_stdout_stderr(drive)
+    assert text.count("BLOCK-") == 1, text   # no eager duplicate
+    assert "BLOCK-1" in text
+    assert calls["n"] == 1                    # render_fn invoked exactly once
+
+
+def test_uishim_fallback_regexes_consistent_and_correct(ui):
+    """The inlined ``_UIShim`` markup-strip regexes (rich-absent fallback in mace_cli
+    + the 6 sub-tools) must all use ONE pattern, and that pattern must behave like
+    ui.py's canonical plain stripper ``_strip_markup``: strip [tag]/[/tag]/[/]/[#hex]
+    while preserving non-tag-shaped brackets ([OK], [Errno 2], [1, 2, 3]).
+
+    The old patterns DIVERGED and were each wrong in opposite ways: mace_cli's
+    ``\\[/?[^\\[\\]]*\\]`` over-stripped data ([OK], [Errno 2]); the sub-tools'
+    ``\\[/?[a-z#]...`` leaked the bare [/] close tag."""
+    import re
+    sources = [
+        ("mace_cli", "_MARKUP"),
+        ("Crystal_d12/CRYSTALOptToD12.py", "_TAG"),
+        ("Crystal_d12/NewCifToD12.py", "_TAG"),
+        ("Crystal_d3/CRYSTALOptToD3.py", "_TAG"),
+        ("mace/workflow/planner.py", "_TAG"),
+        ("mace/workflow/executor.py", "_TAG"),
+        ("mace/database/interactive/interactive.py", "_TAG"),
+    ]
+    patterns = set()
+    for rel, var in sources:
+        src = (REPO_ROOT / rel).read_text()
+        m = re.search(rf'{var}\s*=\s*_re\.compile\(r"(.+?)"\)', src)
+        assert m, f"no {var} regex found in {rel}"
+        patterns.add(m.group(1))
+    assert len(patterns) == 1, f"_UIShim regexes diverge across files: {patterns}"
+    shim = re.compile(patterns.pop())
+    # The shim is a deliberately SIMPLER (one-line) approximation of the canonical
+    # multi-atom _MARKUP_TOKEN, used only on the degraded path (rich + mace.utils.ui
+    # both unavailable). It agrees with _strip_markup on everything MACE actually
+    # emits (uppercase markers, [Errno N], [mp-xxxx] IDs). It is looser ONLY on
+    # lowercase-led bracketed PROSE that MACE never emits as data (e.g. "[errno 2]",
+    # "[link=http://x]"), which it over-strips -- harmless, and strictly better than
+    # the two divergent patterns it replaced. The cases below all agree exactly.
+    for s in ["[bold]X[/bold]", "[/]", "[/red]", "[red]x[/red]", "[#aabbcc]y",
+              "[OK]", "[WARN]", "[Errno 2]", "[1, 2, 3]", "log [mp-19770] done",
+              "plain text"]:
+        assert shim.sub("", s) == ui._strip_markup(s), (
+            s, shim.sub("", s), ui._strip_markup(s))
+    # Explicit anchors for the two bugs the alignment fixes:
+    assert shim.sub("", "[/]") == ""          # sub-tools used to leak this
+    assert shim.sub("", "[Errno 2]") == "[Errno 2]"   # mace_cli used to eat this

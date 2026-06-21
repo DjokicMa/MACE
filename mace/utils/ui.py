@@ -520,24 +520,27 @@ def table(
             t.add_row(*[_escape(str(c)) for c in r])
         console.print(t)
         return
-    # Plain aligned columns.
+    # Plain aligned columns. Match the rich path, which auto-extends the table with
+    # a blank header when a row carries MORE cells than declared columns -- render
+    # the overflow rather than silently dropping it (data loss).
     cols = [str(c) for c in columns]
     str_rows = [[_plain(str(c)) for c in r] for r in rows]
-    widths = [len(c) for c in cols]
+    ncols = max([len(cols)] + [len(r) for r in str_rows])
+    header_cells = list(cols) + [""] * (ncols - len(cols))
+    widths = [len(c) for c in header_cells]
     for r in str_rows:
         for i, cell in enumerate(r):
-            if i < len(widths):
-                widths[i] = max(widths[i], len(cell))
+            widths[i] = max(widths[i], len(cell))
     import builtins
 
     if title:
         builtins.print(_plain(title))
-    header = "  ".join(c.ljust(widths[i]) for i, c in enumerate(cols))
+    header = "  ".join(c.ljust(widths[i]) for i, c in enumerate(header_cells))
     builtins.print(header)
     builtins.print("  ".join("-" * w for w in widths))
     for r in str_rows:
         builtins.print("  ".join(
-            (r[i] if i < len(r) else "").ljust(widths[i]) for i in range(len(cols))
+            (r[i] if i < len(r) else "").ljust(widths[i]) for i in range(ncols)
         ))
 
 
@@ -869,7 +872,7 @@ class TaskHandle:
             if completed is not None:
                 kwargs["completed"] = completed
             if description is not None:
-                kwargs["description"] = description
+                kwargs["description"] = _escape(description)  # data -> escape (markup column)
             if kwargs:
                 self._prog.update(self._task, **kwargs)
         elif completed is not None:
@@ -892,7 +895,7 @@ def progress_task(
         prog = _Progress(*_bar_columns(unit, eta=eta and total is not None),
                          console=_CAPS.console())
         with prog:
-            task_id = prog.add_task(description, total=total)
+            task_id = prog.add_task(_escape(description), total=total)  # data -> escape
             yield TaskHandle(rich_progress=prog, task_id=task_id,
                              description=description, total=total, unit=unit)
     else:
@@ -939,7 +942,10 @@ def _progress_rich(iterable, total, description, unit, eta, capture):
     prog = _Progress(*_bar_columns(unit, eta=eta and total is not None),
                      console=_CAPS.console())
     with prog:
-        task_id = prog.add_task(description, total=total)
+        # Escape: the description is data, rendered via a markup TextColumn
+        # ("[bold]{task.description}"); an unbalanced tag (e.g. "x [/]") would
+        # otherwise raise MarkupError, and "[red]x" would be silently swallowed.
+        task_id = prog.add_task(_escape(description), total=total)
         for item in iterable:
             if capture:
                 with captured():
@@ -981,7 +987,7 @@ def spinner(description: str, *, success: Optional[str] = None) -> Iterator:
             transient=True,
         )
         with prog:
-            prog.add_task(description, total=None)
+            prog.add_task(_escape(description), total=None)  # data -> escape
             yield
         if success:
             ok(success)
@@ -1144,6 +1150,9 @@ def live_dashboard(
                    refresh_per_second=refresh_per_second, transient=False) as live:
             yield LiveHandle(render_fn, live=live)
     else:
-        handle = LiveHandle(render_fn, plain=True)
-        handle.refresh()  # render the first block immediately
-        yield handle
+        # Plain: the caller's refresh() drives each appended block. No eager
+        # pre-render here -- the monitor enters this context then refresh()es on the
+        # first loop iteration, so an eager render would duplicate the first block.
+        # (The rich branch above still renders eagerly on __enter__, which the
+        # monitor's last-good seeding already accounts for.)
+        yield LiveHandle(render_fn, plain=True)

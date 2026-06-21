@@ -154,7 +154,9 @@ except Exception:
     import sys as _sys, re as _re
 
     class _UIShim:
-        _TAG = _re.compile(r"\[/?[a-z#][^\[\]]*\]")
+        # Mirror ui.py _MARKUP_TOKEN: also strip the bare [/] close tag (the old
+        # r"\[/?[a-z#]..." required a char after /, so [/] leaked through).
+        _TAG = _re.compile(r"\[/[^\[\]]*\]|\[[a-z#][^\[\]]*\]")
 
         def _p(self, m):
             return self._TAG.sub("", str(m))

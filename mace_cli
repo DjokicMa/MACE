@@ -54,7 +54,10 @@ if not UI_AVAILABLE:
     import re as _re
 
     class _UIShim:
-        _MARKUP = _re.compile(r"\[/?[^\[\]]*\]")
+        # Mirror ui.py _MARKUP_TOKEN: strip [/...] close tags (incl. bare [/]) and
+        # [word]/[#hex] open tags, but PRESERVE bracketed data ([OK], [Errno 2],
+        # [1, 2, 3]). The old r"\[/?[^\[\]]*\]" over-stripped that data.
+        _MARKUP = _re.compile(r"\[/[^\[\]]*\]|\[[a-z#][^\[\]]*\]")
 
         def _plain(self, text):
             return self._MARKUP.sub("", str(text))

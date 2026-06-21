@@ -437,7 +437,7 @@ class MaterialMonitor:
         rows = []
 
         # Database
-        db = status['database']
+        db = status.get('database', {})
         db_stats = db.get('stats', {})
         if db.get('accessible'):
             db_detail = (
@@ -449,20 +449,20 @@ class MaterialMonitor:
             db_detail = "not accessible"
         if db.get('issues'):
             db_detail += " · " + " · ".join(db['issues'])
-        rows.append(ui.StatusRow("DATABASE", self._state_for(db['status']), db_detail))
+        rows.append(ui.StatusRow("DATABASE", self._state_for(db.get('status', 'unknown')), db_detail))
 
         # Queue
-        queue = status['queue']
+        queue = status.get('queue', {})
         queue_detail = (
             f"{queue.get('total_jobs', 0)} jobs"
             f" · {queue.get('by_status', {})}"
         )
         if queue.get('issues'):
             queue_detail += " · " + " · ".join(queue['issues'])
-        rows.append(ui.StatusRow("QUEUE", self._state_for(queue['status']), queue_detail))
+        rows.append(ui.StatusRow("QUEUE", self._state_for(queue.get('status', 'unknown')), queue_detail))
 
         # Files
-        files = status['files']
+        files = status.get('files', {})
         files_detail = (
             f"{files.get('total_materials', 0)} materials"
             f" · {files.get('total_files', 0)} files"
@@ -471,10 +471,10 @@ class MaterialMonitor:
         )
         if files.get('issues'):
             files_detail += " · " + " · ".join(files['issues'])
-        rows.append(ui.StatusRow("FILES", self._state_for(files['status']), files_detail))
+        rows.append(ui.StatusRow("FILES", self._state_for(files.get('status', 'unknown')), files_detail))
 
         # Errors
-        errors = status['errors']
+        errors = status.get('errors', {})
         errors_detail = (
             f"{errors.get('recent_count', 0)} in 24h"
             f" · rate {errors.get('error_rate', 0):.1f}%"
@@ -484,10 +484,10 @@ class MaterialMonitor:
             errors_detail += " · trending up: " + ", ".join(errors['trending_up'])
         if errors.get('issues'):
             errors_detail += " · " + " · ".join(errors['issues'])
-        rows.append(ui.StatusRow("ERRORS", self._state_for(errors['status']), errors_detail))
+        rows.append(ui.StatusRow("ERRORS", self._state_for(errors.get('status', 'unknown')), errors_detail))
 
         # Performance
-        perf = status['performance']
+        perf = status.get('performance', {})
         perf_detail = (
             f"success {perf.get('success_rate', 0):.1f}%"
             f" · avg {perf.get('avg_job_time', 0):.1f}h"
@@ -495,15 +495,16 @@ class MaterialMonitor:
         )
         if perf.get('issues'):
             perf_detail += " · " + " · ".join(perf['issues'])
-        rows.append(ui.StatusRow("PERFORMANCE", self._state_for(perf['status']), perf_detail))
+        rows.append(ui.StatusRow("PERFORMANCE", self._state_for(perf.get('status', 'unknown')), perf_detail))
 
-        # Overall system health (mirror the legacy computation)
+        # Overall system health (mirror the legacy computation). Reuse the locals
+        # extracted above (all .get-guarded) so a sparse status dict can't KeyError.
         all_statuses = [
-            status['database']['status'],
-            status['queue']['status'],
-            status['files']['status'],
-            status['errors']['status'],
-            status['performance']['status']
+            db.get('status', 'unknown'),
+            queue.get('status', 'unknown'),
+            files.get('status', 'unknown'),
+            errors.get('status', 'unknown'),
+            perf.get('status', 'unknown'),
         ]
         if 'error' in all_statuses:
             overall = 'CRITICAL'
@@ -512,7 +513,7 @@ class MaterialMonitor:
         else:
             overall = 'HEALTHY'
 
-        subtitle = f"Last Updated: {status['timestamp']}"
+        subtitle = f"Last Updated: {status.get('timestamp', 'unknown')}"
 
         return rows, overall, subtitle
 
