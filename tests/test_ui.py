@@ -1017,3 +1017,60 @@ def test_uishim_fallback_regexes_consistent_and_correct(ui):
     # Explicit anchors for the two bugs the alignment fixes:
     assert shim.sub("", "[/]") == ""          # sub-tools used to leak this
     assert shim.sub("", "[Errno 2]") == "[Errno 2]"   # mace_cli used to eat this
+
+
+# ===========================================================================
+# Banner width floor keyed to the credits line + viridis/ocean palettes
+# ===========================================================================
+def test_banner_width_guard_uses_credits_width_not_wordmark(ui, monkeypatch):
+    """Regression (shrink-terminal break): the full banner renders only when the
+    WIDER credits/meta line fits. At a width that fits the wordmark (35) but not the
+    credits, fall back to concise — never crop the author line. The floor follows
+    the actual meta text, so a longer custom meta raises it."""
+    from rich.console import Console
+    import io, re
+    ui2 = _rich_ui(ui)
+    ui2.configure(force_color=True, force_tty=True, palette="crystal")
+    meta_w = len(ui2._meta_text("1.1.0", None))   # ~54, wider than the 35-col wordmark
+
+    def render(width, meta=None):
+        buf = io.StringIO()
+        c = Console(force_terminal=True, width=width, color_system="truecolor",
+                    file=buf, highlight=False)
+        monkeypatch.setattr(ui2._CAPS, "console", lambda c=c: c)
+        ui2.banner("1.1.0", animate=False, meta=meta)
+        return re.sub(r"\x1b\[[0-9;]*m", "", buf.getvalue())
+
+    # Fits the wordmark but NOT the credits -> concise, no art, no cropped author.
+    narrow = render(meta_w - 4)
+    assert "█" not in narrow and "MACE v1.1.0" in narrow
+    # Comfortably above the credits -> full art with the author line UNCROPPED.
+    wide = render(meta_w + 12)
+    assert "█" in wide and "Mendoza Group" in wide
+    # A longer custom meta raises the floor: the same width that drew the default
+    # banner now falls back to concise because the custom credits wouldn't fit.
+    long_meta = "v1.1.0 · A Very Long Institution Name For Testing The Width Floor"
+    assert "█" not in render(meta_w + 12, meta=long_meta)
+
+
+def test_viridis_and_ocean_palettes_selectable(ui):
+    """The viridis (matplotlib) and ocean palettes are registered and selectable,
+    and palette_names() is the single source of truth for the CLI's --theme."""
+    ui2 = _rich_ui(ui)
+    for name, grad0 in [("viridis", "#440154"), ("ocean", "#0c4a6e")]:
+        ui2.configure(force_color=True, force_tty=True, palette=name)
+        assert ui2.active_palette().name == name
+        assert ui2.active_palette().gradient[0] == grad0
+    assert set(ui2.palette_names()) == {"crystal", "mono", "ember", "viridis", "ocean"}
+
+
+def test_cli_accepts_new_theme_real_invocation():
+    """The real CLI accepts a new palette via --theme (the early argv scan validates
+    against ui._PALETTES, and argparse choices derive from palette_names())."""
+    proc = subprocess.run(
+        [PYTHON, str(REPO_ROOT / "mace_cli"), "--theme", "ocean", "--version"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=str(REPO_ROOT))
+    out = (proc.stdout + proc.stderr).decode(errors="replace")
+    assert proc.returncode == 0, out
+    assert "Unknown theme" not in out
+    assert "MACE v" in out

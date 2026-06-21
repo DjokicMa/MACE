@@ -134,6 +134,13 @@ if not UI_AVAILABLE:
     ui = _UIShim()
     UI_AVAILABLE = True
 
+# Theme choices for --theme: derive from the ui facade so they never drift from
+# ui._PALETTES; fall back to the known set when ui is the plain shim.
+try:
+    _THEME_CHOICES = list(ui.palette_names())
+except Exception:
+    _THEME_CHOICES = ['crystal', 'mono', 'ember', 'viridis', 'ocean']
+
 def show_banner():
     """Show the MACE animated banner and credits"""
     # Check environment variable in case we're called from a subprocess
@@ -1121,7 +1128,7 @@ def main():
                 ui.configure(palette=name)
             except Exception:
                 msg = (f"Unknown theme '{name}' — using default. "
-                       f"Choices: crystal, mono, ember.")
+                       f"Choices: {', '.join(_THEME_CHOICES)}.")
                 if persist:
                     msg += " (Not saved.)"
                 print(msg, file=sys.stderr)
@@ -1172,7 +1179,7 @@ def main():
     if _theme_flag:
         _apply_theme(_theme_flag, persist=_save_theme)
     elif _theme_flag == '':
-        print("--theme requires a name (crystal, mono, ember).", file=sys.stderr)
+        print(f"--theme requires a name ({', '.join(_THEME_CHOICES)}).", file=sys.stderr)
     elif _save_theme:
         print("--save-theme requires --theme NAME (e.g. mace --theme ember --save-theme).",
               file=sys.stderr)
@@ -1289,7 +1296,7 @@ More Help:
                        help='Command to run')
     parser.add_argument('args', nargs='*', help='Arguments for the command')
     parser.add_argument('--no-banner', action='store_true', help='Suppress ASCII art banner')
-    parser.add_argument('--theme', choices=['crystal', 'mono', 'ember'], metavar='NAME',
+    parser.add_argument('--theme', choices=_THEME_CHOICES, metavar='NAME',
                         help='UI color theme for this run (default: saved theme, else crystal if color else mono; also MACE_THEME env)')
     parser.add_argument('--save-theme', action='store_true',
                         help='With --theme, save it as the default for future runs (~/.config/mace/config.json)')

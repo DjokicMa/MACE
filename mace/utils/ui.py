@@ -114,7 +114,32 @@ EMBER = Palette(
     spinner="dots",
 )
 
-_PALETTES = {"crystal": CRYSTAL, "mono": MONO, "ember": EMBER}
+# Optional matplotlib-viridis theme — familiar to materials scientists.
+VIRIDIS = Palette(
+    name="viridis",
+    gradient=("#440154", "#414487", "#2a788e", "#22a884", "#7ad151", "#fde725"),
+    accent="#22a884",
+    bar="#2a788e",
+    ok="#7ad151",
+    warn="#fde725",
+    err="#fd7e14",
+    spinner="dots",
+)
+
+# Optional deep-blue monochromatic theme — calm, low-contrast.
+OCEAN = Palette(
+    name="ocean",
+    gradient=("#0c4a6e", "#075985", "#0369a1", "#0891b2", "#06b6d4", "#67e8f9"),
+    accent="#06b6d4",
+    bar="#0891b2",
+    ok="#2dd4bf",
+    warn="#fcd34d",
+    err="#fb7185",
+    spinner="dots",
+)
+
+_PALETTES = {"crystal": CRYSTAL, "mono": MONO, "ember": EMBER,
+             "viridis": VIRIDIS, "ocean": OCEAN}
 
 # MACE wordmark block art (reused from banner.py / the demos).
 WORDMARK = [
@@ -282,6 +307,14 @@ def is_interactive() -> bool:
 def active_palette() -> Palette:
     """The current palette record; ``mono`` whenever color is off."""
     return _CAPS.palette
+
+
+def palette_names() -> list:
+    """The names of all selectable palettes (for ``--theme`` choices / help text).
+
+    Single source of truth so the CLI's theme choices never drift from
+    ``_PALETTES`` (which is exactly the bug that left viridis/ocean unselectable)."""
+    return list(_PALETTES)
 
 
 # ---------------------------------------------------------------------------
@@ -643,22 +676,39 @@ _BANNER_ANIMS = {
 }
 
 
+def _meta_text(version: str, meta: Optional[str]) -> str:
+    """The banner's bottom credits line (author/affiliation), default or override."""
+    return (meta if meta is not None
+            else f"v{version}  ·  Michigan State University  ·  Mendoza Group")
+
+
+def _banner_min_width(version: str, subtitle: str, meta: Optional[str]) -> int:
+    """Minimum console width to render the full banner without cropping anything.
+
+    The banner renders fully only when its WIDEST element fits. The credits/meta
+    line is wider than the wordmark, so it sets the floor: below it the credits get
+    truncated (``overflow="crop"``) while the logo still shows — which is what looks
+    "broken" when the terminal is shrunk. Keyed off the actual text so a custom meta
+    or a longer version string raises the floor accordingly.
+    """
+    return max(_WM_W, len(subtitle), len(_meta_text(version, meta)))
+
+
 def _wm_settled(version: str, subtitle: str, meta: Optional[str], palette: Palette):
     """The settled banner frame: gradient wordmark + subtitle + meta.
 
     ``palette`` is passed in (captured BEFORE entering ``rich.Live``) and never
     re-read from ``_CAPS`` here: Live redirects stdout, so ``is_tty``/``color_ok``
     — and thus the auto palette — flip to mono mid-animation. Each component is
-    centered INDEPENDENTLY; centering the wordmark inside a Group whose width is
-    dominated by the longer meta line would shove the wordmark left of where the
-    animation frames drew it.
+    centered INDEPENDENTLY on the console axis; the wordmark and the (wider) credits
+    line therefore share the same center. The caller's width guard
+    (:func:`_banner_min_width`) guarantees the credits fit, so nothing is cropped.
     """
-    meta_text = meta if meta is not None else f"v{version}  ·  Michigan State University  ·  Mendoza Group"
     return _Group(
         _Align.center(_wm_final(palette.gradient)),
         _Text(""),
         _Align.center(_Text(subtitle, style="bold", no_wrap=True, overflow="crop")),
-        _Align.center(_Text(meta_text, style="dim", no_wrap=True, overflow="crop")),
+        _Align.center(_Text(_meta_text(version, meta), style="dim", no_wrap=True, overflow="crop")),
     )
 
 
@@ -701,9 +751,11 @@ def banner(
             _concise_line()
             return
         console = _CAPS.console()
-        # Width guard: the wordmark (35) / phonon canvas (41) need room; below that
-        # the centered art wraps and breaks, so show the concise line instead.
-        if console.width < _WM_W + 6:
+        # Width guard: render the full banner only when the WIDEST element — the
+        # credits/meta line, which is wider than the wordmark — fits. Below that the
+        # credits crop (overflow="crop") while the logo still shows, which is what
+        # looks broken on a shrunk terminal; show the concise line instead.
+        if console.width < _banner_min_width(version, subtitle, meta) + 2:
             _concise_line()
             return
         p = _CAPS.palette
@@ -725,7 +777,7 @@ def banner(
         _concise_line()
         return
     console = _CAPS.console()
-    if console.width < _WM_W + 6:   # too narrow for the art -> concise line
+    if console.width < _banner_min_width(version, subtitle, meta) + 2:  # credits wouldn't fit -> concise
         _concise_line()
         return
     console.print(_wm_settled(version, subtitle, meta, _CAPS.palette))
