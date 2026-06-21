@@ -149,12 +149,22 @@ def test_power_factor_and_zt_finite_and_consistent(afi_props):
 
 def test_units_recorded(afi_props):
     """Units are captured (Seebeck in V/K from the .dat header) so the stored
-    scalars are self-describing."""
+    scalars are self-describing. The seebeck unit is the CLEAN 'V/K', not the
+    verbose '.dat' descriptor ("Seebeck coefficient in SI units, i.e. in V/K")."""
     t = afi_props["transport"]
     units = t["units"]
-    assert "V/K" in units["seebeck"]
+    assert units["seebeck"] == "V/K"          # cleaned, not the verbose descriptor
     assert units["power_factor"] == "W/m/K^2"
     assert "zt" in units
+
+
+def test_tensor_reduction_noted(afi_props):
+    """The stored scalars are a diagonal-isotropic average of the property tensor;
+    the summary must say so, so a consumer isn't misled into thinking it's a full
+    tensor or a single component."""
+    t = afi_props["transport"]
+    note = t.get("tensor_reduction", "")
+    assert "diagonal" in note.lower() and "average" in note.lower()
 
 
 def test_transport_summary_json_serializable_and_native(afi_props):

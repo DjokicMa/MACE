@@ -2408,7 +2408,13 @@ class CrystalPropertyExtractor:
                 if unit is None and 'units' in s.lower() and 'mu(ev)' not in s.lower():
                     m = re.search(r'\[(.*)\]', s)
                     if m:
-                        unit = m.group(1).strip()
+                        desc = m.group(1).strip()
+                        # The descriptor is verbose ("Seebeck coefficient in SI
+                        # units, i.e. in V/K"); keep just the clean trailing unit
+                        # ("... in V/K" -> "V/K"). Fall back to the full descriptor
+                        # if no "in <unit>" tail is present.
+                        um = re.search(r'\bin\s+(\S+)\s*$', desc)
+                        unit = um.group(1) if um else desc
                 continue
             parts = s.split()
             if len(parts) < 4:
@@ -2597,6 +2603,8 @@ class CrystalPropertyExtractor:
                 'n_usable_points': int(n_usable),
                 'has_usable_data': bool(has_usable),
                 'carrier_type': carrier_type,
+                'tensor_reduction': ('diagonal isotropic average (xx+yy+zz)/3; '
+                                     'off-diagonal tensor components discarded'),
                 'units': {
                     'seebeck': s_unit or 'V/K',
                     'electrical_conductivity': '1/Ohm/m',
@@ -3143,7 +3151,11 @@ class CrystalPropertyExtractor:
                 output_dir = output_file.parent
                 stem = output_file.stem  # e.g. ..._charge+potential
                 for cube in sorted(output_dir.glob('*.CUBE')):
-                    if cube.stem.startswith(stem):
+                    # Require a separator boundary after the stem so a sibling
+                    # material whose stem is a PREFIX of this one (e.g. "mat_1"
+                    # vs "mat_12_DENS.CUBE") is not mis-attributed. CRYSTAL names
+                    # the sidecars "<stem>_DENS/_POT/_SPIN.CUBE".
+                    if cube.stem == stem or cube.stem.startswith(stem + '_'):
                         grid_files.append(cube.name)
             except OSError:
                 grid_files = []

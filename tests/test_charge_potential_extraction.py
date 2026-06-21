@@ -103,6 +103,27 @@ def test_grid_file_references(chargepot_props, chargepot_out):
     assert "POT" in joined
 
 
+def test_grid_file_attribution_respects_stem_boundary(chargepot_out, tmp_path):
+    """Hardening regression: cube attribution requires a separator boundary after
+    the .out stem, so a sibling material whose stem is a PREFIX (e.g. our stem vs
+    '<stem>2_DENS.CUBE') is NOT mis-attributed. Real ECH3/POT3 .out content is
+    reused (markers/grid parse identically); only the sidecar names are controlled.
+    Fails on the old ``cube.stem.startswith(stem)`` (no boundary)."""
+    content = Path(chargepot_out).read_text(errors="ignore")
+    out = tmp_path / "job1_charge+potential.out"
+    out.write_text(content)
+    stem = out.stem  # "job1_charge+potential"
+    (tmp_path / f"{stem}_DENS.CUBE").write_text("x")          # own -> attribute
+    (tmp_path / f"{stem}_POT.CUBE").write_text("x")           # own -> attribute
+    (tmp_path / f"{stem}2_DENS.CUBE").write_text("x")         # sibling -> reject
+
+    extractor = CrystalPropertyExtractor(enable_tracking=False)
+    grid = extractor.extract_all_properties(out)["charge_potential"]["grid_files"]
+    assert f"{stem}_DENS.CUBE" in grid
+    assert f"{stem}_POT.CUBE" in grid
+    assert f"{stem}2_DENS.CUBE" not in grid   # boundary prevents the collision
+
+
 def test_flat_scalar_rows(chargepot_props):
     """Queryable flat scalar/string rows populate sanely (distinct from the JSON
     blob) and agree with the summary."""
