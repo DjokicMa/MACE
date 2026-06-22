@@ -1053,6 +1053,51 @@ def test_banner_width_guard_uses_credits_width_not_wordmark(ui, monkeypatch):
     assert "█" not in render(meta_w + 12, meta=long_meta)
 
 
+def test_banner_lines_are_constant_width_resize_stable(ui, monkeypatch):
+    """Regression (terminal-resize break): every printed banner line is the SAME
+    fixed block width regardless of console width, so shrinking the terminal down to
+    the block width never reflows/wraps the logo. The old console-centered layout
+    padded each line out to the full terminal width, which wrapped on resize."""
+    from rich.console import Console
+    import io, re
+    ui2 = _rich_ui(ui)
+    ui2.configure(force_color=True, force_tty=True, palette="crystal")
+    block = ui2._banner_min_width("1.1.0", ui2._SUBTITLE, None)
+
+    def line_widths(width):
+        buf = io.StringIO()
+        c = Console(force_terminal=True, width=width, color_system="truecolor",
+                    file=buf, highlight=False)
+        monkeypatch.setattr(ui2._CAPS, "console", lambda c=c: c)
+        ui2.banner("1.1.0", animate=False)
+        txt = re.sub(r"\x1b\[[0-9;]*m", "", buf.getvalue())
+        return {len(l) for l in txt.split("\n") if l.strip()}
+
+    for w in (block + 2, 60, 80, 120, 200):
+        assert line_widths(w) == {block}, (w, line_widths(w))
+
+
+def test_banner_animation_frames_match_settle_block_width(ui):
+    """The animation frames render at the SAME constant block width as the settle
+    frame, so the logo neither jumps when it settles nor reflows on resize."""
+    from rich.console import Console
+    import io, re
+    ui2 = _rich_ui(ui)
+    grad = ui2.CRYSTAL.gradient
+    block = 54
+
+    def widths(renderable):
+        buf = io.StringIO()
+        Console(force_terminal=True, width=200, color_system="truecolor",
+                file=buf, highlight=False).print(renderable)
+        txt = re.sub(r"\x1b\[[0-9;]*m", "", buf.getvalue())
+        return {len(l) for l in txt.split("\n") if l.strip()}
+
+    for gen in (ui2._gen_phonon, ui2._gen_decode, ui2._gen_shimmer):
+        for frame in gen(grad, block):
+            assert widths(frame) == {block}, (gen.__name__, widths(frame))
+
+
 def test_viridis_and_ocean_palettes_selectable(ui):
     """The viridis (matplotlib) and ocean palettes are registered and selectable,
     and palette_names() is the single source of truth for the CLI's --theme."""

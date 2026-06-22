@@ -595,24 +595,41 @@ _WM_W = max(len(_l) for _l in WORDMARK)
 _DECODE_SYM = "█▓▒░╔╗║═╬◆◇▪▫01∎⬡"
 
 
-def _wm_compose(grad, style_fn, char_fn=None):
-    """Build the wordmark as a rich Text from per-cell style/char callbacks."""
-    t = _Text(justify="left", no_wrap=True, overflow="crop")
+def _center_in_block(content_width: int, block: int):
+    """Leading/trailing space counts to center ``content_width`` within ``block``."""
+    lead = max(0, (block - content_width) // 2)
+    return lead, max(0, block - content_width - lead)
+
+
+def _wm_compose(grad, style_fn, char_fn=None, block=None):
+    """Build the wordmark as a rich Text from per-cell style/char callbacks.
+
+    Every row is padded to a CONSTANT ``block`` width (the wordmark centered within
+    it) and the Text uses the DEFAULT justify — NOT ``justify="left"``, which would
+    let the console pad each line out to the full terminal width. Constant-width
+    lines are what make the banner survive a terminal resize without reflowing
+    (the bug: console-width lines wrap when the terminal is shrunk).
+    """
+    block = block or _WM_W
+    lead, trail = _center_in_block(_WM_W, block)
+    t = _Text(no_wrap=True, overflow="crop")
     for r, line in enumerate(WORDMARK):
+        t.append(" " * lead)
         for c in range(_WM_W):
             ch = line[c] if c < len(line) else " "
             cc = char_fn(r, c, ch) if char_fn else ch
             t.append(cc, style=style_fn(r, c, ch))
+        t.append(" " * trail)
         if r < _WM_H - 1:
             t.append("\n")
     return t
 
 
-def _wm_final(grad):
-    return _wm_compose(grad, lambda r, c, ch: None if ch == " " else grad[r])
+def _wm_final(grad, block=None):
+    return _wm_compose(grad, lambda r, c, ch: None if ch == " " else grad[r], block=block)
 
 
-def _gen_shimmer(grad):
+def _gen_shimmer(grad, block=None):
     for f in range(_WM_W + 14):
         pos = f - 7
 
@@ -626,10 +643,10 @@ def _gen_shimmer(grad):
                 return f"bold {grad[r]}"
             return grad[r]
 
-        yield _wm_compose(grad, sf)
+        yield _wm_compose(grad, sf, block=block)
 
 
-def _gen_decode(grad):
+def _gen_decode(grad, block=None):
     lock = {c: 5 + c * 0.6 for c in range(_WM_W)}
     for f in range(int(max(lock.values())) + 5):
 
@@ -645,28 +662,31 @@ def _gen_decode(grad):
             # mono never flashes a crystal color; locked cells use the row gradient.
             return grad[r] if f >= lock[c] else random.choice([grad[1], grad[4], "grey50"])
 
-        yield _wm_compose(grad, sf, cf)
+        yield _wm_compose(grad, sf, cf, block=block)
 
 
-def _gen_phonon(grad):
-    # Vibrate the lattice horizontally. Each row is padded to a CONSTANT width
-    # (_WM_W + 2*pad) with the glyphs at offset ``pad ± jitter``, so rich.Align
-    # centers every frame on the same basis and the wordmark doesn't drift; at rest
-    # (lead == pad) it lines up exactly with the settled _wm_final.
+def _gen_phonon(grad, block=None):
+    # Vibrate the lattice horizontally inside a CONSTANT-width canvas. Each row is
+    # ``block`` wide: a fixed outer lead centers the _WM_W+2*pad canvas in the block,
+    # then the glyphs sit at offset ``pad ± jitter`` within it. At rest (lead == pad)
+    # it lines up exactly with the settled _wm_final, so settling causes no jump, and
+    # the constant block width means a terminal resize never reflows the frame.
     pad = 3
+    block = block or (_WM_W + 2 * pad)
+    base_lead, base_trail = _center_in_block(_WM_W + 2 * pad, block)
     for f in range(42):
         amp = max(0.0, 3.0 - f * 0.09)
-        t = _Text(justify="left", no_wrap=True, overflow="crop")
+        t = _Text(no_wrap=True, overflow="crop")
         for r, line in enumerate(WORDMARK):
             off = int(round(random.uniform(-amp, amp)))
             lead = max(0, min(2 * pad, off + pad))
-            t.append(" " * lead)
+            t.append(" " * (base_lead + lead))
             t.append(line.ljust(_WM_W), style=grad[r])
-            t.append(" " * (2 * pad - lead))
+            t.append(" " * (base_trail + (2 * pad - lead)))
             if r < _WM_H - 1:
                 t.append("\n")
         yield t
-    yield _wm_final(grad)
+    yield _wm_final(grad, block=block)
 
 
 _BANNER_ANIMS = {
@@ -695,21 +715,30 @@ def _banner_min_width(version: str, subtitle: str, meta: Optional[str]) -> int:
 
 
 def _wm_settled(version: str, subtitle: str, meta: Optional[str], palette: Palette):
-    """The settled banner frame: gradient wordmark + subtitle + meta.
+    """The settled banner: gradient wordmark + subtitle + credits as ONE constant-
+    width ``Text`` block.
 
-    ``palette`` is passed in (captured BEFORE entering ``rich.Live``) and never
-    re-read from ``_CAPS`` here: Live redirects stdout, so ``is_tty``/``color_ok``
-    — and thus the auto palette — flip to mono mid-animation. Each component is
-    centered INDEPENDENTLY on the console axis; the wordmark and the (wider) credits
-    line therefore share the same center. The caller's width guard
-    (:func:`_banner_min_width`) guarantees the credits fit, so nothing is cropped.
+    The wordmark and subtitle are centered WITHIN the credits-width block (so the
+    logo sits centered over the author/affiliation line — "centered on the text",
+    not on the terminal), and the block is printed at its natural width (default
+    justify, left-placed). Because every line is the SAME fixed width regardless of
+    terminal size, shrinking the terminal down to the block width never reflows or
+    breaks the logo — the previous console-centered layout padded each line to the
+    full terminal width, which wrapped on resize.
+
+    ``palette`` is passed in (captured BEFORE rich.Live) and never re-read from
+    ``_CAPS`` here: Live redirects stdout, flipping the auto palette to mono.
     """
-    return _Group(
-        _Align.center(_wm_final(palette.gradient)),
-        _Text(""),
-        _Align.center(_Text(subtitle, style="bold", no_wrap=True, overflow="crop")),
-        _Align.center(_Text(_meta_text(version, meta), style="dim", no_wrap=True, overflow="crop")),
-    )
+    block = _banner_min_width(version, subtitle, meta)
+    t = _wm_final(palette.gradient, block=block)        # block-wide gradient art rows
+    t.append("\n\n")
+    s_lead, s_trail = _center_in_block(len(subtitle), block)
+    t.append(" " * s_lead); t.append(subtitle, style="bold"); t.append(" " * s_trail)
+    t.append("\n")
+    meta_text = _meta_text(version, meta)
+    m_lead, m_trail = _center_in_block(len(meta_text), block)
+    t.append(" " * m_lead); t.append(meta_text, style="dim"); t.append(" " * m_trail)
+    return t
 
 
 def banner(
@@ -761,9 +790,14 @@ def banner(
         p = _CAPS.palette
         import time as _time
         gen, dt = _BANNER_ANIMS[random.choice(list(_BANNER_ANIMS))]
+        # Render every frame at a CONSTANT block width (left-placed, NOT console-
+        # centered): console-centering padded each line to the terminal width, which
+        # reflowed/broke the logo when the terminal was shrunk. The block-width frames
+        # share the settle frame's geometry, so settling causes no jump.
+        block = _banner_min_width(version, subtitle, meta)
         with _Live(console=console, refresh_per_second=60, transient=False) as live:
-            for frame in gen(p.gradient):
-                live.update(_Align.center(frame))
+            for frame in gen(p.gradient, block):
+                live.update(frame)
                 _time.sleep(dt)
             # Pass the palette captured BEFORE Live: re-reading _CAPS.palette here
             # would flip to mono (Live redirected stdout -> isatty() False).
