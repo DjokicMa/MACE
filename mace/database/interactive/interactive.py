@@ -24,6 +24,28 @@ from ..export import export_materials
 from ..utils import convert_units, get_property_units, validate_materials
 from ..utils.history import PropertyHistory
 
+try:
+    from mace.utils import ui
+except Exception:
+    import sys as _sys, re as _re
+    class _UIShim:
+        # Mirror ui.py _MARKUP_TOKEN: also strip the bare [/] close tag (the old
+        # r"\[/?[a-z#]..." required a char after /, so [/] leaked through).
+        _TAG = _re.compile(r"\[/[^\[\]]*\]|\[[a-z#][^\[\]]*\]")
+        def _p(self, m): return self._TAG.sub("", str(m))
+        def ok(self, m): print(self._p(m))
+        def info(self, m): print(self._p(m))
+        def print(self, m): print(self._p(m))
+        def warn(self, m): print(self._p(m), file=_sys.stderr)
+        def err(self, m): print(self._p(m), file=_sys.stderr)
+        def rule(self, t=""): print(self._p(t))
+        def table(self, cols, rows, title=None):
+            if title: print(self._p(title))
+            for r in rows: print("  ".join(str(c) for c in r))
+        def progress(self, it, **k): return it
+        def badge(self, s): return str(s).upper()
+    ui = _UIShim()
+
 
 class DatabaseExplorer(cmd.Cmd):
     """Interactive database explorer with command completion."""
@@ -76,7 +98,7 @@ Current context: No material selected
     def do_exit(self, arg):
         """Exit the interactive explorer."""
         self._save_history()
-        print("\nGoodbye!")
+        ui.print("\nGoodbye!")
         return True
         
     def do_quit(self, arg):
@@ -134,19 +156,19 @@ Current context: No material selected
         """Select a material for detailed exploration.
         Usage: select <material_id>"""
         if not arg:
-            print("Usage: select <material_id>")
+            ui.print("Usage: select <material_id>")
             return
-            
+
         material = self.db.get_material(arg)
         if material:
             self.current_material = arg
-            print(f"\nSelected material: {arg}")
+            ui.print(f"\nSelected material: {arg}")
             if material.get('formula'):
-                print(f"Formula: {material['formula']}")
+                ui.print(f"Formula: {material['formula']}")
             if material.get('space_group'):
-                print(f"Space Group: {material['space_group']}")
+                ui.print(f"Space Group: {material['space_group']}")
         else:
-            print(f"Material '{arg}' not found")
+            ui.warn(f"Material '{arg}' not found")
             
     def complete_select(self, text, line, begidx, endidx):
         """Auto-complete material IDs."""
@@ -162,14 +184,14 @@ Current context: No material selected
             try:
                 limit = int(arg)
             except ValueError:
-                print("Invalid limit. Using default: 20")
-                
+                ui.warn("Invalid limit. Using default: 20")
+
         materials = self.db.get_all_materials()[:limit]
         self.last_results = materials
-        
-        print(f"\n{'Material ID':20} {'Formula':15} {'Space Group':12} {'Properties':10}")
-        print("-" * 60)
-        
+
+        ui.print(f"\n{'Material ID':20} {'Formula':15} {'Space Group':12} {'Properties':10}")
+        ui.print("-" * 60)
+
         for mat in materials:
             mat_id = mat['material_id'][:20]
             formula = (mat.get('formula') or 'N/A')[:15]
@@ -179,18 +201,18 @@ Current context: No material selected
             props = self.db.get_material_properties(mat['material_id'])
             prop_count = len(props) if props else 0
             
-            print(f"{mat_id:20} {formula:15} {sg:12} {prop_count:10}")
-            
+            ui.print(f"{mat_id:20} {formula:15} {sg:12} {prop_count:10}")
+
         if len(materials) < len(self.db.get_all_materials()):
-            print(f"\nShowing {len(materials)} of {len(self.db.get_all_materials())} materials")
+            ui.print(f"\nShowing {len(materials)} of {len(self.db.get_all_materials())} materials")
             
     def do_search(self, arg):
         """Search materials by ID or formula.
         Usage: search <query>"""
         if not arg:
-            print("Usage: search <query>")
+            ui.print("Usage: search <query>")
             return
-            
+
         materials = self.db.get_all_materials()
         results = []
         
@@ -203,18 +225,18 @@ Current context: No material selected
         self.last_results = results
         
         if results:
-            print(f"\nFound {len(results)} materials:")
-            print(f"\n{'Material ID':20} {'Formula':15} {'Space Group':12}")
-            print("-" * 50)
-            
+            ui.print(f"\nFound {len(results)} materials:")
+            ui.print(f"\n{'Material ID':20} {'Formula':15} {'Space Group':12}")
+            ui.print("-" * 50)
+
             for mat in results[:20]:
                 mat_id = mat['material_id'][:20]
                 formula = (mat.get('formula') or 'N/A')[:15]
                 sg = str(mat.get('space_group') or 'N/A')[:12]
-                print(f"{mat_id:20} {formula:15} {sg:12}")
-                
+                ui.print(f"{mat_id:20} {formula:15} {sg:12}")
+
             if len(results) > 20:
-                print(f"\n... and {len(results) - 20} more")
+                ui.print(f"\n... and {len(results) - 20} more")
         else:
             print(f"No materials found matching '{arg}'")
             
@@ -223,14 +245,14 @@ Current context: No material selected
         Usage: filter <property> <operator> <value>
         Example: filter band_gap > 3.0"""
         if not arg:
-            print("Usage: filter <property> <operator> <value>")
-            print("Example: filter band_gap > 3.0")
+            ui.print("Usage: filter <property> <operator> <value>")
+            ui.print("Example: filter band_gap > 3.0")
             return
-            
+
         # Parse filter expression
         parts = arg.split()
         if len(parts) < 3:
-            print("Invalid filter format")
+            ui.warn("Invalid filter format")
             return
             
         property_name = parts[0]
@@ -251,29 +273,29 @@ Current context: No material selected
                 
         try:
             self.filter.add_filter(property_name, operator, value)
-            print(f"Added filter: {property_name} {operator} {value}")
+            ui.ok(f"Added filter: {property_name} {operator} {value}")
         except ValueError as e:
-            print(f"Invalid filter: {e}")
+            ui.err(f"Invalid filter: {e}")
             
     def do_clearfilter(self, arg):
         """Clear all filters."""
         self.filter = PropertyFilter()
-        print("All filters cleared")
-        
+        ui.ok("All filters cleared")
+
     def do_showfilter(self, arg):
         """Show current filters."""
         filters = self.filter.get_filters()
         if filters:
-            print("\nCurrent filters:")
+            ui.print("\nCurrent filters:")
             for f in filters:
-                print(f"  {f['property']} {f['operator']} {f['value']}")
+                ui.print(f"  {f['property']} {f['operator']} {f['value']}")
         else:
-            print("No filters set")
+            ui.print("No filters set")
             
     def do_query(self, arg):
         """Execute query with current filters."""
         if not self.filter.get_filters():
-            print("No filters set. Use 'filter' command to add filters.")
+            ui.print("No filters set. Use 'filter' command to add filters.")
             return
             
         # Apply filters
@@ -286,11 +308,11 @@ Current context: No material selected
                 
         self.last_results = results
         
-        print(f"\nFound {len(results)} materials matching filters:")
-        
+        ui.print(f"\nFound {len(results)} materials matching filters:")
+
         if results:
-            print(f"\n{'Material ID':20} {'Formula':15} {'Matched Properties':30}")
-            print("-" * 70)
+            ui.print(f"\n{'Material ID':20} {'Formula':15} {'Matched Properties':30}")
+            ui.print("-" * 70)
             
             for mat in results[:20]:
                 mat_id = mat['material_id'][:20]
@@ -308,22 +330,22 @@ Current context: No material selected
                 if len(matched) > 2:
                     matched_str += f" (+{len(matched)-2})"
                     
-                print(f"{mat_id:20} {formula:15} {matched_str:30}")
-                
+                ui.print(f"{mat_id:20} {formula:15} {matched_str:30}")
+
             if len(results) > 20:
-                print(f"\n... and {len(results) - 20} more")
-                
+                ui.print(f"\n... and {len(results) - 20} more")
+
     def do_props(self, arg):
         """Show properties of current material.
         Usage: props [category]"""
         if not self.current_material:
-            print("No material selected. Use 'select' command first.")
+            ui.print("No material selected. Use 'select' command first.")
             return
-            
+
         props = self.db.get_material_properties(self.current_material)
-        
+
         if not props:
-            print(f"No properties found for {self.current_material}")
+            ui.print(f"No properties found for {self.current_material}")
             return
             
         # Group by category
@@ -337,43 +359,43 @@ Current context: No material selected
             by_category[cat].append(prop)
             
         if not by_category:
-            print(f"No properties found in category '{arg}'")
+            ui.print(f"No properties found in category '{arg}'")
             return
-            
+
         for category, cat_props in sorted(by_category.items()):
-            print(f"\n=== {category} ===")
+            ui.print(f"\n=== {category} ===")
             for prop in sorted(cat_props, key=lambda x: x['property_name']):
                 name = prop['property_name']
                 value = prop['property_value']
                 unit = prop.get('property_unit', '')
-                print(f"  {name:.<30} {value} {unit}")
+                ui.print(f"  {name:.<30} {value} {unit}")
                 
     def do_value(self, arg):
         """Show specific property value.
         Usage: value <property_name>"""
         if not self.current_material:
-            print("No material selected. Use 'select' command first.")
+            ui.print("No material selected. Use 'select' command first.")
             return
-            
+
         if not arg:
-            print("Usage: value <property_name>")
+            ui.print("Usage: value <property_name>")
             return
-            
+
         props = self.db.get_material_properties(self.current_material)
-        
+
         for prop in props:
             if prop['property_name'] == arg:
-                print(f"\n{arg}: {prop['property_value']} {prop.get('property_unit', '')}")
-                
+                ui.print(f"\n{arg}: {prop['property_value']} {prop.get('property_unit', '')}")
+
                 # Show metadata
                 if prop.get('calc_id'):
                     calc = self.db.get_calculation(prop['calc_id'])
                     if calc:
-                        print(f"  From: {calc.get('calculation_type', 'Unknown')} calculation")
-                        print(f"  Status: {calc.get('status', 'Unknown')}")
+                        ui.print(f"  From: {calc.get('calculation_type', 'Unknown')} calculation")
+                        ui.print(f"  Status: {calc.get('status', 'Unknown')}")
                 return
-                
-        print(f"Property '{arg}' not found")
+
+        ui.warn(f"Property '{arg}' not found")
         
     def complete_value(self, text, line, begidx, endidx):
         """Auto-complete property names."""
@@ -388,12 +410,12 @@ Current context: No material selected
         """Convert property to different unit.
         Usage: convert <property> <unit>"""
         if not self.current_material:
-            print("No material selected. Use 'select' command first.")
+            ui.print("No material selected. Use 'select' command first.")
             return
-            
+
         parts = arg.split()
         if len(parts) != 2:
-            print("Usage: convert <property> <unit>")
+            ui.print("Usage: convert <property> <unit>")
             return
             
         prop_name, target_unit = parts
@@ -408,49 +430,49 @@ Current context: No material selected
                     
                     if from_unit:
                         converted = convert_units(value, from_unit, target_unit, prop_name)
-                        print(f"\n{prop_name}:")
-                        print(f"  Original: {value} {from_unit}")
-                        print(f"  Converted: {converted:.6f} {target_unit}")
+                        ui.print(f"\n{prop_name}:")
+                        ui.print(f"  Original: {value} {from_unit}")
+                        ui.print(f"  Converted: {converted:.6f} {target_unit}")
                     else:
-                        print(f"No unit information for {prop_name}")
-                        
+                        ui.print(f"No unit information for {prop_name}")
+
                 except Exception as e:
-                    print(f"Conversion error: {e}")
-                    
+                    ui.err(f"Conversion error: {e}")
+
                 return
-                
-        print(f"Property '{prop_name}' not found")
+
+        ui.warn(f"Property '{prop_name}' not found")
         
     def do_units(self, arg):
         """Show available units for a property.
         Usage: units <property>"""
         if not arg:
-            print("Usage: units <property>")
+            ui.print("Usage: units <property>")
             return
-            
+
         units = get_property_units(arg)
-        
+
         if units:
-            print(f"\nAvailable units for '{arg}':")
+            ui.print(f"\nAvailable units for '{arg}':")
             for unit in units:
-                print(f"  {unit}")
+                ui.print(f"  {unit}")
         else:
-            print(f"No unit information available for '{arg}'")
+            ui.print(f"No unit information available for '{arg}'")
             
     def do_compare(self, arg):
         """Compare multiple materials.
         Usage: compare <material1,material2,...>"""
         if not arg:
-            print("Usage: compare <material1,material2,...>")
+            ui.print("Usage: compare <material1,material2,...>")
             return
-            
+
         material_ids = [m.strip() for m in arg.split(',')]
-        
+
         try:
             result = compare_materials(self.db, material_ids, output_format='report')
             print(result)
         except Exception as e:
-            print(f"Comparison error: {e}")
+            ui.err(f"Comparison error: {e}")
             
     def do_stats(self, arg):
         """Show database statistics."""
@@ -463,15 +485,15 @@ Current context: No material selected
             name = prop['property_name']
             prop_counts[name] = prop_counts.get(name, 0) + 1
             
-        print("\n=== Database Statistics ===")
-        print(f"Total materials: {len(materials)}")
-        print(f"Total properties: {len(all_props)}")
-        print(f"Unique property types: {len(prop_counts)}")
-        
-        print("\n=== Top Properties ===")
+        ui.print("\n=== Database Statistics ===")
+        ui.print(f"Total materials: {len(materials)}")
+        ui.print(f"Total properties: {len(all_props)}")
+        ui.print(f"Unique property types: {len(prop_counts)}")
+
+        ui.print("\n=== Top Properties ===")
         sorted_props = sorted(prop_counts.items(), key=lambda x: x[1], reverse=True)
         for prop, count in sorted_props[:10]:
-            print(f"  {prop:.<30} {count}")
+            ui.print(f"  {prop:.<30} {count}")
             
     def do_export(self, arg):
         """Export results to file.
@@ -479,14 +501,14 @@ Current context: No material selected
         parts = arg.split()
         if not parts:
             print("Usage: export <format> [filename]")
-            print("Formats: csv, json, excel")
+            ui.print("Formats: csv, json, excel")
             return
             
         format_type = parts[0]
         filename = parts[1] if len(parts) > 1 else None
         
         if not self.last_results:
-            print("No results to export. Run a query first.")
+            ui.print("No results to export. Run a query first.")
             return
             
         # Convert results to material IDs
@@ -499,17 +521,17 @@ Current context: No material selected
                 output_file=filename,
                 material_ids=material_ids
             )
-            print(f"Exported to: {exported_file}")
+            ui.ok(f"Exported to: {exported_file}")
         except Exception as e:
-            print(f"Export error: {e}")
+            ui.err(f"Export error: {e}")
             
     def do_history(self, arg):
         """Show property history.
         Usage: history [property_name]"""
         if not self.current_material:
-            print("No material selected. Use 'select' command first.")
+            ui.print("No material selected. Use 'select' command first.")
             return
-            
+
         report = self.history_manager.format_history_report(
             self.current_material, 
             arg if arg else None
@@ -519,9 +541,9 @@ Current context: No material selected
     def do_validate(self, arg):
         """Validate current material data."""
         if not self.current_material:
-            print("No material selected. Use 'select' command first.")
+            ui.print("No material selected. Use 'select' command first.")
             return
-            
+
         result = validate_materials(
             self.db, 
             [self.current_material],
@@ -566,7 +588,7 @@ Current context: No material selected
         Usage: correlate <property1> <property2>"""
         parts = arg.split()
         if len(parts) != 2:
-            print("Usage: correlate <property1> <property2>")
+            ui.print("Usage: correlate <property1> <property2>")
             return
             
         prop1, prop2 = parts
@@ -582,7 +604,7 @@ Current context: No material selected
         """Show property distribution.
         Usage: distribution <property>"""
         if not arg:
-            print("Usage: distribution <property>")
+            ui.print("Usage: distribution <property>")
             return
             
         result = analyze_property_distributions(
@@ -599,5 +621,5 @@ def run_interactive_explorer(db_path: str = 'materials.db'):
     try:
         explorer.cmdloop()
     except KeyboardInterrupt:
-        print("\n\nInterrupted. Use 'exit' to quit properly.")
+        ui.print("\n\nInterrupted. Use 'exit' to quit properly.")
         explorer.cmdloop()

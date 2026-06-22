@@ -46,6 +46,13 @@ except ImportError as e:
     print(f"Make sure all required Python files are in the same directory as {__file__}")
     sys.exit(1)
 
+# MACE visual layer facade (optional; never break a call site on missing rich)
+try:
+    from mace.utils import ui
+    UI_AVAILABLE = True
+except Exception:
+    UI_AVAILABLE = False
+
 
 class MaterialMonitor:
     """
@@ -404,18 +411,135 @@ class MaterialMonitor:
             
         return performance
         
+    def _state_for(self, status: str) -> str:
+        """Map a subsystem status string to a ui badge state.
+
+        Mirrors the thresholds of :meth:`_get_status_color`:
+        ``healthy`` (green) -> OK, ``warning`` (yellow) -> WARN,
+        ``error`` (red) -> ERROR; anything else (e.g. ``unknown``) -> IDLE.
+        """
+        if status == 'healthy':
+            return 'OK'
+        elif status == 'warning':
+            return 'WARN'
+        elif status == 'error':
+            return 'ERROR'
+        else:
+            return 'IDLE'
+
+    def _dashboard_rows(self, status: Dict[str, any]):
+        """Build (rows, overall, subtitle) for the ui status dashboard.
+
+        Each StatusRow preserves every datum the legacy text dashboard printed
+        for its subsystem (numbers + any issues/trends), and the badge state is
+        derived via the same thresholds as :meth:`_get_status_color`.
+        """
+        rows = []
+
+        # Database
+        db = status.get('database', {})
+        db_stats = db.get('stats', {})
+        if db.get('accessible'):
+            db_detail = (
+                f"{db_stats.get('total_materials', 0)} materials"
+                f" · {db.get('size_mb', 0):.1f} MB"
+                f" · {db_stats.get('calculations_by_status', {})}"
+            )
+        else:
+            db_detail = "not accessible"
+        if db.get('issues'):
+            db_detail += " · " + " · ".join(db['issues'])
+        rows.append(ui.StatusRow("DATABASE", self._state_for(db.get('status', 'unknown')), db_detail))
+
+        # Queue
+        queue = status.get('queue', {})
+        queue_detail = (
+            f"{queue.get('total_jobs', 0)} jobs"
+            f" · {queue.get('by_status', {})}"
+        )
+        if queue.get('issues'):
+            queue_detail += " · " + " · ".join(queue['issues'])
+        rows.append(ui.StatusRow("QUEUE", self._state_for(queue.get('status', 'unknown')), queue_detail))
+
+        # Files
+        files = status.get('files', {})
+        files_detail = (
+            f"{files.get('total_materials', 0)} materials"
+            f" · {files.get('total_files', 0)} files"
+            f" · {files.get('total_size_mb', 0):.1f} MB"
+            f" · org {files.get('organization_score', 0):.1f}%"
+        )
+        if files.get('issues'):
+            files_detail += " · " + " · ".join(files['issues'])
+        rows.append(ui.StatusRow("FILES", self._state_for(files.get('status', 'unknown')), files_detail))
+
+        # Errors
+        errors = status.get('errors', {})
+        errors_detail = (
+            f"{errors.get('recent_count', 0)} in 24h"
+            f" · rate {errors.get('error_rate', 0):.1f}%"
+            f" · {errors.get('critical_errors', 0)} critical"
+        )
+        if errors.get('trending_up'):
+            errors_detail += " · trending up: " + ", ".join(errors['trending_up'])
+        if errors.get('issues'):
+            errors_detail += " · " + " · ".join(errors['issues'])
+        rows.append(ui.StatusRow("ERRORS", self._state_for(errors.get('status', 'unknown')), errors_detail))
+
+        # Performance
+        perf = status.get('performance', {})
+        perf_detail = (
+            f"success {perf.get('success_rate', 0):.1f}%"
+            f" · avg {perf.get('avg_job_time', 0):.1f}h"
+            f" · {perf.get('queue_throughput', 0):.1f}/day"
+        )
+        if perf.get('issues'):
+            perf_detail += " · " + " · ".join(perf['issues'])
+        rows.append(ui.StatusRow("PERFORMANCE", self._state_for(perf.get('status', 'unknown')), perf_detail))
+
+        # Overall system health (mirror the legacy computation). Reuse the locals
+        # extracted above (all .get-guarded) so a sparse status dict can't KeyError.
+        all_statuses = [
+            db.get('status', 'unknown'),
+            queue.get('status', 'unknown'),
+            files.get('status', 'unknown'),
+            errors.get('status', 'unknown'),
+            perf.get('status', 'unknown'),
+        ]
+        if 'error' in all_statuses:
+            overall = 'CRITICAL'
+        elif 'warning' in all_statuses:
+            overall = 'WARNING'
+        else:
+            overall = 'HEALTHY'
+
+        subtitle = f"Last Updated: {status.get('timestamp', 'unknown')}"
+
+        return rows, overall, subtitle
+
     def print_status_dashboard(self, status: Dict[str, any]):
-        """Print a formatted status dashboard to console."""
-        # Clear screen
-        os.system('clear' if os.name == 'posix' else 'cls')
-        
+        """Print a formatted status dashboard to console (never clears screen)."""
+        if UI_AVAILABLE:
+            rows, overall, subtitle = self._dashboard_rows(status)
+            ui.status_dashboard(
+                "MACE — CRYSTAL Material Tracking",
+                rows,
+                overall=overall,
+                subtitle=subtitle,
+            )
+        else:
+            self._print_status_dashboard_legacy(status)
+
+    def _print_status_dashboard_legacy(self, status: Dict[str, any]):
+        """Legacy plain/ANSI dashboard. Reachable only if the ui facade failed to
+        import. The screen-clear has been removed."""
         print("=" * 60)
         print("MACE - CRYSTAL MATERIAL TRACKING SYSTEM")
         print("STATUS DASHBOARD")
         print("=" * 60)
         print(f"Last Updated: {status['timestamp']}")
         print()
-        
+
         # Database Status
         db = status['database']
         db_status_color = self._get_status_color(db['status'])
@@ -428,8 +552,8 @@ class MaterialMonitor:
             for issue in db['issues']:
                 print(f"  ⚠️  {issue}")
         print()
-        
-        # Queue Status  
+
+        # Queue Status
         queue = status['queue']
         queue_status_color = self._get_status_color(queue['status'])
         print(f"QUEUE: {queue_status_color}{queue['status'].upper()}\033[0m")
@@ -439,7 +563,7 @@ class MaterialMonitor:
             for issue in queue['issues']:
                 print(f"  ⚠️  {issue}")
         print()
-        
+
         # File System Status
         files = status['files']
         files_status_color = self._get_status_color(files['status'])
@@ -452,7 +576,7 @@ class MaterialMonitor:
             for issue in files['issues']:
                 print(f"  ⚠️  {issue}")
         print()
-        
+
         # Error Status
         errors = status['errors']
         errors_status_color = self._get_status_color(errors['status'])
@@ -466,7 +590,7 @@ class MaterialMonitor:
             for issue in errors['issues']:
                 print(f"  ⚠️  {issue}")
         print()
-        
+
         # Performance Status
         perf = status['performance']
         perf_status_color = self._get_status_color(perf['status'])
@@ -478,16 +602,16 @@ class MaterialMonitor:
             for issue in perf['issues']:
                 print(f"  ⚠️  {issue}")
         print()
-        
+
         # Overall system health
         all_statuses = [
             status['database']['status'],
-            status['queue']['status'], 
+            status['queue']['status'],
             status['files']['status'],
             status['errors']['status'],
             status['performance']['status']
         ]
-        
+
         if 'error' in all_statuses:
             overall = 'CRITICAL'
             color = '\033[91m'  # Red
@@ -497,12 +621,12 @@ class MaterialMonitor:
         else:
             overall = 'HEALTHY'
             color = '\033[92m'  # Green
-            
+
         print("=" * 60)
         print(f"OVERALL SYSTEM STATUS: {color}{overall}\033[0m")
         print("=" * 60)
         print(f"Press Ctrl+C to stop monitoring")
-        
+
     def _get_status_color(self, status: str) -> str:
         """Get ANSI color code for status."""
         if status == 'healthy':
@@ -515,16 +639,90 @@ class MaterialMonitor:
             return '\033[0m'   # Default
             
     def run_continuous_monitoring(self, interval: int = 30):
-        """Run continuous monitoring with dashboard updates."""
+        """Run continuous monitoring with dashboard updates (in-place, no clear)."""
         self.refresh_interval = interval
         self.running = True
-        
+
         print(f"Starting continuous monitoring (refresh every {interval} seconds)...")
         print("Press Ctrl+C to stop")
-        
+
         # Store last good status to prevent corruption on Ctrl+C
+        self._last_good = None
+
+        if UI_AVAILABLE:
+            self._run_continuous_monitoring_ui(interval)
+        else:
+            self._run_continuous_monitoring_legacy(interval)
+
+    def _run_continuous_monitoring_ui(self, interval: int):
+        """Continuous monitoring rendered in place via ``ui.live_dashboard``."""
+        def _render():
+            # Gather fresh status using the same call the loop already uses,
+            # preserving the last-good retry behavior.
+            try:
+                status = self.get_system_status()
+                self._last_good = status
+            except Exception:
+                status = getattr(self, "_last_good", None)
+                if status is None:
+                    raise
+            rows, overall, subtitle = self._dashboard_rows(status)
+            return ui.build_status_dashboard(
+                "MACE — CRYSTAL Material Tracking",
+                rows,
+                overall=overall,
+                subtitle=subtitle,
+            )
+
+        try:
+            # ``ui.live_dashboard`` renders eagerly on ``__enter__`` -- before the
+            # loop's per-refresh guard below -- so seed a last-good status first,
+            # using the same retry/backoff the loop uses. Without this, a transient
+            # first-call failure would escape uncaught (the legacy loop retried it
+            # because its first ``get_system_status()`` sat inside the loop's guard).
+            while self.running and self._last_good is None:
+                try:
+                    self._last_good = self.get_system_status()
+                except KeyboardInterrupt:
+                    raise
+                except Exception as e:
+                    print(f"Error gathering status: {e}")
+                    for _ in range(5):  # interruptible backoff before retry
+                        if not self.running:
+                            break
+                        time.sleep(1)
+            if not self.running or self._last_good is None:
+                return
+
+            with ui.live_dashboard(_render, refresh_per_second=2) as handle:
+                while self.running:
+                    try:
+                        handle.refresh()
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as e:
+                        print(f"Error in monitoring loop: {e}")
+                        time.sleep(5)  # Brief pause before retry
+                        continue
+
+                    # Sleep with interruption check
+                    for _ in range(interval):
+                        if not self.running:
+                            break
+                        time.sleep(1)
+        except KeyboardInterrupt:
+            if self._last_good:
+                print("\n[MONITORING STOPPED BY USER - Final Status Shown Above]")
+            else:
+                print("\nMonitoring stopped by user (no status to display).")
+
+    def _run_continuous_monitoring_legacy(self, interval: int):
+        """Legacy continuous monitoring loop (ui facade unavailable).
+
+        Same control flow as before, minus the screen-clear (which lived in the
+        now-clearless legacy dashboard renderer)."""
         last_good_status = None
-        
+
         try:
             while self.running:
                 try:
@@ -532,20 +730,21 @@ class MaterialMonitor:
                     self.print_status_dashboard(status)
                     # Only update last_good_status if we successfully printed
                     last_good_status = status
-                    
+                    self._last_good = status
+
                     # Sleep with interruption check
                     for _ in range(interval):
                         if not self.running:
                             break
                         time.sleep(1)
-                        
+
                 except KeyboardInterrupt:
                     # Re-raise to be caught by outer try-except
                     raise
                 except Exception as e:
                     print(f"Error in monitoring loop: {e}")
                     time.sleep(5)  # Brief pause before retry
-                    
+
         except KeyboardInterrupt:
             # Clear any partial output and display the last good status
             print("\n" * 3)  # Add some space

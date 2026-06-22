@@ -59,7 +59,7 @@ try:
         except ImportError:
             DummyFileCreator = None
 except ImportError as e:
-    print(f"Warning: Could not import d12_constants: {e}")
+    ui.warn(f"Warning: Could not import d12_constants: {e}")
     D12_CONSTANTS_AVAILABLE = False
     # Provide minimal fallbacks
     FREQ_TEMPLATES = {}
@@ -85,7 +85,31 @@ except ImportError as e:
                 from mace.workflow.dummy_file_creator import DummyFileCreator
             except ImportError:
                 DummyFileCreator = None
-                print("Warning: DummyFileCreator not available - will use fallback dummy files")
+                ui.warn("Warning: DummyFileCreator not available - will use fallback dummy files")
+
+
+# Guarded UI facade import with a stdlib fallback shim so ``ui`` is always usable.
+try:
+    from mace.utils import ui
+except Exception:
+    import sys as _sys, re as _re
+    class _UIShim:
+        # Mirror ui.py _MARKUP_TOKEN: also strip the bare [/] close tag (the old
+        # r"\[/?[a-z#]..." required a char after /, so [/] leaked through).
+        _TAG = _re.compile(r"\[/[^\[\]]*\]|\[[a-z#][^\[\]]*\]")
+        def _p(self, m): return self._TAG.sub("", str(m))
+        def ok(self, m): print(self._p(m))
+        def info(self, m): print(self._p(m))
+        def print(self, m): print(self._p(m))
+        def warn(self, m): print(self._p(m), file=_sys.stderr)
+        def err(self, m): print(self._p(m), file=_sys.stderr)
+        def rule(self, t=""): print(self._p(t))
+        def table(self, cols, rows, title=None):
+            if title: print(self._p(title))
+            for r in rows: print("  ".join(str(c) for c in r))
+        def progress(self, it, **k): return it
+        def badge(self, s): return str(s).upper()
+    ui = _UIShim()
 
 
 class WorkflowPlanner:
@@ -183,19 +207,32 @@ class WorkflowPlanner:
 
     def display_welcome(self):
         """Display welcome message and overview"""
-        # Banner is shown by run_workflow.py, so we just show the title
-        print("=" * 60)
-        print("MACE Workflow Planner")
-        print("=" * 60)
-        print("Comprehensive workflow planning for CRYSTAL calculations")
-        print()
-        print("This planner will help you:")
-        print("  1. Set up input files (from CIFs or existing D12s)")
-        print("  2. Plan your complete calculation workflow")
-        print("  3. Configure all calculation settings")
-        print("  4. Save configurations for reproducibility")
-        print("  5. Execute the planned workflow")
-        print()
+        # The startup banner is shown by mace_cli (ui.banner); here we show only the
+        # planner title — themed through the ui facade so it matches the banner's
+        # palette (no jarring plain ASCII box after a colored animation).
+        lines = [
+            "Comprehensive workflow planning for CRYSTAL calculations",
+            "",
+            "This planner will help you:",
+            "  1. Set up input files (from CIFs or existing D12s)",
+            "  2. Plan your complete calculation workflow",
+            "  3. Configure all calculation settings",
+            "  4. Save configurations for reproducibility",
+            "  5. Execute the planned workflow",
+            "",
+        ]
+        try:
+            from mace.utils import ui
+            ui.rule("MACE Workflow Planner")
+            for line in lines:
+                ui.print(line)
+        except Exception:
+            # Fallback to the original plain header if the ui facade is unavailable.
+            print("=" * 60)
+            print("MACE Workflow Planner")
+            print("=" * 60)
+            for line in lines:
+                print(line)
 
     def create_material_id_from_file(self, filepath: Path) -> str:
         """Wrapper for the imported create_material_id_from_file function"""
@@ -203,8 +240,8 @@ class WorkflowPlanner:
 
     def get_input_type(self) -> str:
         """Determine input type and location"""
-        print("Step 1: Input Configuration")
-        print("-" * 40)
+        ui.info("Step 1: Input Configuration")
+        ui.rule()
 
         input_options = {
             "1": "CIF files (will convert to D12s)",
@@ -237,13 +274,13 @@ class WorkflowPlanner:
             if input_path.exists() and input_path.is_dir():
                 return input_path
             else:
-                print(f"Directory {input_path} does not exist. Please try again.")
+                ui.err(f"Directory {input_path} does not exist. Please try again.")
 
     def scan_input_files(
         self, input_dir: Path, input_type: str
     ) -> Dict[str, List[Path]]:
         """Scan directory for input files"""
-        print(f"\nScanning {input_dir} for input files...")
+        ui.info(f"\nScanning {input_dir} for input files...")
 
         files = {"cif": [], "d12": []}
 
@@ -254,27 +291,27 @@ class WorkflowPlanner:
             files["d12"] = list(input_dir.glob("*.d12"))
 
         total_files = len(files["cif"]) + len(files["d12"])
-        print(f"Found {len(files['cif'])} CIF files and {len(files['d12'])} D12 files")
-        print(f"Total: {total_files} input files")
+        ui.info(f"Found {len(files['cif'])} CIF files and {len(files['d12'])} D12 files")
+        ui.info(f"Total: {total_files} input files")
 
         if total_files == 0:
-            print("No input files found!")
+            ui.info("No input files found!")
             return files
 
         # Show sample files
         if files["cif"]:
-            print(f"\nSample CIF files:")
+            ui.info(f"\nSample CIF files:")
             for i, f in enumerate(files["cif"][:3]):
-                print(f"  {f.name}")
+                ui.info(f"  {f.name}")
             if len(files["cif"]) > 3:
-                print(f"  ... and {len(files['cif']) - 3} more")
+                ui.info(f"  ... and {len(files['cif']) - 3} more")
 
         if files["d12"]:
-            print(f"\nSample D12 files:")
+            ui.info(f"\nSample D12 files:")
             for i, f in enumerate(files["d12"][:3]):
-                print(f"  {f.name}")
+                ui.info(f"  {f.name}")
             if len(files["d12"]) > 3:
-                print(f"  ... and {len(files['d12']) - 3} more")
+                ui.info(f"  ... and {len(files['d12']) - 3} more")
 
         return files
 
@@ -282,9 +319,9 @@ class WorkflowPlanner:
         self, cif_files: List[Path], first_calc_type: str = "OPT"
     ) -> Dict[str, Any]:
         """Set up CIF to D12 conversion using NewCifToD12.py"""
-        print("\nStep 3: CIF Conversion Setup")
-        print("-" * 40)
-        print(f"Configuring CIF to D12 conversion for {first_calc_type} calculation")
+        ui.info("\nStep 3: CIF Conversion Setup")
+        ui.rule()
+        ui.info(f"Configuring CIF to D12 conversion for {first_calc_type} calculation")
 
         # Ask if user wants to use default settings or customize
         use_defaults = yes_no_prompt("Use default CIF conversion settings?", "yes")
@@ -310,27 +347,23 @@ class WorkflowPlanner:
                 "scf_maxcycle": 800,
                 "fmixing": 30,
             }
-            print("Using default settings for CIF conversion:")
-            print(f"  Method: DFT/HSE06-D3")
-            print(f"  Basis set: POB-TZVP-REV2 (internal)")
-            print(
-                f"  Calculation: {first_calc_type} ({'Geometry optimization' if first_calc_type != 'SP' else 'Single point energy'})"
-            )
-            print(f"  Symmetry: Use CIF symmetry information")
+            ui.info("Using default settings for CIF conversion:")
+            ui.info(f"  Method: DFT/HSE06-D3")
+            ui.info(f"  Basis set: POB-TZVP-REV2 (internal)")
+            ui.info(f"  Calculation: {first_calc_type} ({'Geometry optimization' if first_calc_type != 'SP' else 'Single point energy'})")
+            ui.info(f"  Symmetry: Use CIF symmetry information")
         else:
-            print("Custom CIF conversion setup:")
-            print("Choose customization level:")
-            print("  1: Basic (functional + basis set)")
-            print("     - Time to configure: ~30 seconds")
-            print("     - Good for: Quick calculations with different methods")
-            print("  2: Advanced (most common settings)")
-            print("     - Time to configure: ~2-3 minutes")
-            print("     - Good for: Production calculations, specific requirements")
-            print("  3: Expert (full NewCifToD12.py integration)")
-            print("     - Time to configure: ~5-10 minutes")
-            print(
-                "     - Good for: Complex systems, special basis sets, custom settings"
-            )
+            ui.info("Custom CIF conversion setup:")
+            ui.info("Choose customization level:")
+            ui.info("  1: Basic (functional + basis set)")
+            ui.info("     - Time to configure: ~30 seconds")
+            ui.info("     - Good for: Quick calculations with different methods")
+            ui.info("  2: Advanced (most common settings)")
+            ui.info("     - Time to configure: ~2-3 minutes")
+            ui.info("     - Good for: Production calculations, specific requirements")
+            ui.info("  3: Expert (full NewCifToD12.py integration)")
+            ui.info("     - Time to configure: ~5-10 minutes")
+            ui.info("     - Good for: Complex systems, special basis sets, custom settings")
 
             level_choice = self.get_safe_choice_input(
                 "Customization level", valid_choices=["1", "2", "3"], default="1"
@@ -341,15 +374,13 @@ class WorkflowPlanner:
             elif level_choice == "2":
                 cif_config = self.get_advanced_customization(first_calc_type)
             elif level_choice == "3":
-                print("\nLaunching NewCifToD12.py for full configuration...")
-                print(
-                    "This will run the interactive configuration and save the results."
-                )
+                ui.info("\nLaunching NewCifToD12.py for full configuration...")
+                ui.info("This will run the interactive configuration and save the results.")
                 cif_config = self.run_full_cif_customization(
                     cif_files[0], first_calc_type
                 )
             else:
-                print("Invalid choice. Using basic customization.")
+                ui.err("Invalid choice. Using basic customization.")
                 cif_config = self.get_basic_customization(first_calc_type)
 
         # Save CIF configuration
@@ -357,7 +388,7 @@ class WorkflowPlanner:
         with open(cif_config_file, "w") as f:
             json.dump(cif_config, f, indent=2)
 
-        print(f"CIF conversion config saved to: {cif_config_file}")
+        ui.ok(f"CIF conversion config saved to: {cif_config_file}")
 
         return cif_config
 
@@ -391,17 +422,17 @@ class WorkflowPlanner:
 
     def get_basic_customization(self, first_calc_type: str = "OPT") -> Dict[str, Any]:
         """Get basic CIF customization options"""
-        print("\nBasic customization options:")
+        ui.info("\nBasic customization options:")
 
         # Common functionals for quick selection
-        print("Common DFT Functionals:")
-        print("  1: HSE06 (hybrid, good for band gaps)")
-        print("  2: PBE0 (hybrid)")
-        print("  3: B3LYP (hybrid)")
-        print("  4: PBE (GGA)")
-        print("  5: PBESOL (GGA for solids)")
-        print("  6: HF3C (low-cost with corrections)")
-        print("  7: Custom (type any functional name)")
+        ui.info("Common DFT Functionals:")
+        ui.info("  1: HSE06 (hybrid, good for band gaps)")
+        ui.info("  2: PBE0 (hybrid)")
+        ui.info("  3: B3LYP (hybrid)")
+        ui.info("  4: PBE (GGA)")
+        ui.info("  5: PBESOL (GGA for solids)")
+        ui.info("  6: HF3C (low-cost with corrections)")
+        ui.info("  7: Custom (type any functional name)")
 
         func_choice = input("Select functional [1]: ").strip() or "1"
         func_map = {
@@ -438,7 +469,7 @@ class WorkflowPlanner:
 
         if functional_choice in three_c_basis_map:
             basis_choice = three_c_basis_map[functional_choice]
-            print(f"{functional_choice} requires specific basis set: {basis_choice}")
+            ui.info(f"{functional_choice} requires specific basis set: {basis_choice}")
         else:
             basis_choice = (
                 input("Basis set [POB-TZVP-REV2]: ").strip() or "POB-TZVP-REV2"
@@ -468,11 +499,11 @@ class WorkflowPlanner:
         elif functional_choice in three_c_basis_map:
             cif_config["use_dispersion"] = False  # Already included in 3c methods
 
-        print(f"\nUsing customized settings:")
-        print(f"  Method: DFT/{functional_choice}")
-        print(f"  Basis set: {basis_choice}")
-        print(f"  Dispersion: {'Yes' if cif_config.get('use_dispersion') else 'No'}")
-        print(f"  Other settings: Using defaults")
+        ui.info(f"\nUsing customized settings:")
+        ui.info(f"  Method: DFT/{functional_choice}")
+        ui.info(f"  Basis set: {basis_choice}")
+        ui.info(f"  Dispersion: {'Yes' if cif_config.get('use_dispersion') else 'No'}")
+        ui.info(f"  Other settings: Using defaults")
 
         return cif_config
 
@@ -480,35 +511,35 @@ class WorkflowPlanner:
         self, first_calc_type: str = "OPT"
     ) -> Dict[str, Any]:
         """Get advanced CIF customization options"""
-        print("\nAdvanced customization options:")
+        ui.info("\nAdvanced customization options:")
 
         # Method choice
-        print("Method:")
-        print("  1: DFT")
-        print("  2: HF")
+        ui.info("Method:")
+        ui.info("  1: DFT")
+        ui.info("  2: HF")
         method_choice = input("Method [1]: ").strip() or "1"
         method = "DFT" if method_choice == "1" else "HF"
 
         # DFT functional (if DFT)
         functional = "HSE06"
         if method == "DFT":
-            print("\nDFT Functional Categories:")
-            print("  1: Hybrid (HSE06, PBE0, B3LYP, etc.)")
-            print("  2: GGA (PBE, PBESOL, BLYP, etc.)")
-            print("  3: LDA (SVWN, PZ, PWLDA)")
-            print("  4: meta-GGA (SCAN, M06, M06-L)")
-            print("  5: 3c methods (HF-3c, B97-3c, PBE0-3c)")
+            ui.info("\nDFT Functional Categories:")
+            ui.info("  1: Hybrid (HSE06, PBE0, B3LYP, etc.)")
+            ui.info("  2: GGA (PBE, PBESOL, BLYP, etc.)")
+            ui.info("  3: LDA (SVWN, PZ, PWLDA)")
+            ui.info("  4: meta-GGA (SCAN, M06, M06-L)")
+            ui.info("  5: 3c methods (HF-3c, B97-3c, PBE0-3c)")
 
             cat_choice = input("Category [1]: ").strip() or "1"
 
             if cat_choice == "1":  # Hybrid
-                print("\nHybrid Functionals:")
-                print("  1: HSE06 (recommended for band gaps)")
-                print("  2: PBE0")
-                print("  3: B3LYP")
-                print("  4: PBESOL0")
-                print("  5: HSEsol")
-                print("  6: PBE0-13")
+                ui.info("\nHybrid Functionals:")
+                ui.info("  1: HSE06 (recommended for band gaps)")
+                ui.info("  2: PBE0")
+                ui.info("  3: B3LYP")
+                ui.info("  4: PBESOL0")
+                ui.info("  5: HSEsol")
+                ui.info("  6: PBE0-13")
                 func_choice = input("Select [1]: ").strip() or "1"
                 functionals = {
                     "1": "HSE06",
@@ -521,12 +552,12 @@ class WorkflowPlanner:
                 functional = functionals.get(func_choice, "HSE06")
 
             elif cat_choice == "2":  # GGA
-                print("\nGGA Functionals:")
-                print("  1: PBE")
-                print("  2: PBESOL (for solids)")
-                print("  3: BLYP")
-                print("  4: SOGGA")
-                print("  5: WCGGA")
+                ui.info("\nGGA Functionals:")
+                ui.info("  1: PBE")
+                ui.info("  2: PBESOL (for solids)")
+                ui.info("  3: BLYP")
+                ui.info("  4: SOGGA")
+                ui.info("  5: WCGGA")
                 func_choice = input("Select [1]: ").strip() or "1"
                 functionals = {
                     "1": "PBE",
@@ -538,33 +569,33 @@ class WorkflowPlanner:
                 functional = functionals.get(func_choice, "PBE")
 
             elif cat_choice == "3":  # LDA
-                print("\nLDA Functionals:")
-                print("  1: SVWN")
-                print("  2: PZ")
-                print("  3: PWLDA")
+                ui.info("\nLDA Functionals:")
+                ui.info("  1: SVWN")
+                ui.info("  2: PZ")
+                ui.info("  3: PWLDA")
                 func_choice = input("Select [1]: ").strip() or "1"
                 functionals = {"1": "SVWN", "2": "PZ", "3": "PWLDA"}
                 functional = functionals.get(func_choice, "SVWN")
 
             elif cat_choice == "4":  # meta-GGA
-                print("\nmeta-GGA Functionals:")
-                print("  1: SCAN")
-                print("  2: M06")
-                print("  3: M06-L")
-                print("  4: M06-2X")
+                ui.info("\nmeta-GGA Functionals:")
+                ui.info("  1: SCAN")
+                ui.info("  2: M06")
+                ui.info("  3: M06-L")
+                ui.info("  4: M06-2X")
                 func_choice = input("Select [1]: ").strip() or "1"
                 functionals = {"1": "SCAN", "2": "M06", "3": "M06-L", "4": "M06-2X"}
                 functional = functionals.get(func_choice, "SCAN")
 
             elif cat_choice == "5":  # 3c methods
-                print("\n3c Methods (include dispersion and BSSE corrections):")
-                print("  1: HF3C (uses MINIX basis)")
-                print("  2: B973C (uses mTZVP basis)")
-                print("  3: PBEH3C / PBE03C (uses def2-mSVP basis)")
-                print("  4: HSE3C (uses def2-mSVP basis)")
-                print("  5: HFSOL3C (for solids, uses SOLMINIX basis)")
-                print("  6: PBESOL03C (for solids, uses SOLDEF2MSVP basis)")
-                print("  7: HSESOL3C (for solids, uses SOLDEF2MSVP basis)")
+                ui.info("\n3c Methods (include dispersion and BSSE corrections):")
+                ui.info("  1: HF3C (uses MINIX basis)")
+                ui.info("  2: B973C (uses mTZVP basis)")
+                ui.info("  3: PBEH3C / PBE03C (uses def2-mSVP basis)")
+                ui.info("  4: HSE3C (uses def2-mSVP basis)")
+                ui.info("  5: HFSOL3C (for solids, uses SOLMINIX basis)")
+                ui.info("  6: PBESOL03C (for solids, uses SOLDEF2MSVP basis)")
+                ui.info("  7: HSESOL3C (for solids, uses SOLDEF2MSVP basis)")
                 func_choice = input("Select [1]: ").strip() or "1"
                 functionals = {
                     "1": "HF3C",
@@ -592,16 +623,16 @@ class WorkflowPlanner:
 
         if functional in three_c_basis_map:
             basis_set = three_c_basis_map[functional]
-            print(f"\n{functional} requires specific basis set: {basis_set}")
+            ui.info(f"\n{functional} requires specific basis set: {basis_set}")
             basis_type = "INTERNAL"
             # 3c methods include dispersion by design
             dispersion = False
         else:
-            print("\nBasis set:")
-            print("  1: POB-TZVP-REV2 (internal)")
-            print("  2: 6-31G* (internal)")
-            print("  3: def2-TZVP (internal)")
-            print("  4: Custom external")
+            ui.info("\nBasis set:")
+            ui.info("  1: POB-TZVP-REV2 (internal)")
+            ui.info("  2: 6-31G* (internal)")
+            ui.info("  3: def2-TZVP (internal)")
+            ui.info("  4: Custom external")
             basis_choice = input("Basis set [1]: ").strip() or "1"
             basis_options = {
                 "1": "POB-TZVP-REV2",
@@ -631,17 +662,17 @@ class WorkflowPlanner:
                     f"\nUse D3 dispersion correction? ({functional} supports D3)", "yes"
                 )
             else:
-                print(f"\nNote: {functional} does not support D3 dispersion correction")
+                ui.info(f"\nNote: {functional} does not support D3 dispersion correction")
                 dispersion = False
 
         # Spin polarization
         spin_polarized = yes_no_prompt("Use spin polarization?", "yes")
 
         # Optimization type
-        print("Optimization type:")
-        print("  1: FULLOPTG (full optimization)")
-        print("  2: CELLONLY (cell only)")
-        print("  3: ATOMONLY (atomic positions only)")
+        ui.info("Optimization type:")
+        ui.info("  1: FULLOPTG (full optimization)")
+        ui.info("  2: CELLONLY (cell only)")
+        ui.info("  3: ATOMONLY (atomic positions only)")
         opt_choice = input("Optimization [1]: ").strip() or "1"
         opt_types = {"1": "FULLOPTG", "2": "CELLONLY", "3": "ATOMONLY"}
         opt_type = opt_types.get(opt_choice, "FULLOPTG")
@@ -669,12 +700,12 @@ class WorkflowPlanner:
             }
         )
 
-        print(f"\nAdvanced configuration:")
-        print(f"  Method: {method}/{functional if method == 'DFT' else 'HF'}")
-        print(f"  Basis set: {basis_set} ({basis_type})")
-        print(f"  Dispersion: {'Yes' if dispersion else 'No'}")
-        print(f"  Spin polarized: {'Yes' if spin_polarized else 'No'}")
-        print(f"  Optimization: {opt_type}")
+        ui.info(f"\nAdvanced configuration:")
+        ui.info(f"  Method: {method}/{functional if method == 'DFT' else 'HF'}")
+        ui.info(f"  Basis set: {basis_set} ({basis_type})")
+        ui.info(f"  Dispersion: {'Yes' if dispersion else 'No'}")
+        ui.info(f"  Spin polarized: {'Yes' if spin_polarized else 'No'}")
+        ui.info(f"  Optimization: {opt_type}")
 
         return cif_config
 
@@ -686,14 +717,14 @@ class WorkflowPlanner:
         script_path = Path(__file__).parent.parent.parent / "Crystal_d12" / "NewCifToD12.py"
 
         if not script_path.exists():
-            print(f"Error: NewCifToD12.py not found at {script_path}")
-            print("Using advanced customization instead...")
+            ui.err(f"Error: NewCifToD12.py not found at {script_path}")
+            ui.info("Using advanced customization instead...")
             return self.get_advanced_customization(first_calc_type)
 
-        print(f"\nRunning NewCifToD12.py with sample file: {sample_cif.name}")
-        print("This will launch the full interactive configuration.")
-        print("At the end, choose to SAVE the configuration for batch processing.")
-        print("Press Enter to continue...")
+        ui.info(f"\nRunning NewCifToD12.py with sample file: {sample_cif.name}")
+        ui.info("This will launch the full interactive configuration.")
+        ui.info("At the end, choose to SAVE the configuration for batch processing.")
+        ui.info("Press Enter to continue...")
         input()
 
         # Create temporary options file
@@ -710,7 +741,7 @@ class WorkflowPlanner:
             str(temp_options),
         ]
 
-        print("Launching NewCifToD12.py...")
+        ui.info("Launching NewCifToD12.py...")
         try:
             # Run interactively (not captured)
             result = subprocess.run(cmd, cwd=str(sample_cif.parent))
@@ -719,29 +750,29 @@ class WorkflowPlanner:
                 # Load the saved configuration
                 with open(temp_options, "r") as f:
                     cif_config = json.load(f)
-                print("Successfully loaded configuration from NewCifToD12.py")
+                ui.ok("Successfully loaded configuration from NewCifToD12.py")
                 return cif_config
             else:
-                print("NewCifToD12.py configuration failed or was cancelled.")
-                print("Using default configuration...")
+                ui.err("NewCifToD12.py configuration failed or was cancelled.")
+                ui.info("Using default configuration...")
                 return self.get_default_cif_config(first_calc_type)
 
         except Exception as e:
-            print(f"Error running NewCifToD12.py: {e}")
-            print("Using default configuration...")
+            ui.err(f"Error running NewCifToD12.py: {e}")
+            ui.info("Using default configuration...")
             return self.get_default_cif_config(first_calc_type)
 
     def plan_workflow_sequence(self) -> List[str]:
         """Plan the complete workflow sequence"""
-        print("\nStep 3: Workflow Sequence Planning")
-        print("-" * 40)
+        ui.info("\nStep 3: Workflow Sequence Planning")
+        ui.rule()
 
-        print("Available workflow templates:")
+        ui.info("Available workflow templates:")
         for i, (key, sequence) in enumerate(self.workflow_templates.items(), 1):
             if key == "custom":
-                print(f"{i}: Custom workflow (define your own sequence)")
+                ui.info(f"{i}: Custom workflow (define your own sequence)")
             else:
-                print(f"{i}: {key.replace('_', ' ').title()} - {' → '.join(sequence)}")
+                ui.info(f"{i}: {key.replace('_', ' ').title()} - {' → '.join(sequence)}")
 
         template_options = {
             str(i): key for i, key in enumerate(self.workflow_templates.keys(), 1)
@@ -751,13 +782,13 @@ class WorkflowPlanner:
             "Select workflow template", template_options, "3"
         )
         selected_template = template_options[template_choice]
-        print(f"Selected template: {selected_template}")
+        ui.info(f"Selected template: {selected_template}")
 
         if selected_template == "custom":
             return self.design_custom_workflow()
         else:
             sequence = self.workflow_templates[selected_template]
-            print(f"\nSelected workflow: {' → '.join(sequence)}")
+            ui.info(f"\nSelected workflow: {' → '.join(sequence)}")
 
             # Ask if user wants to modify
             modify = yes_no_prompt("Modify this workflow?", "no")
@@ -768,8 +799,8 @@ class WorkflowPlanner:
 
     def design_custom_workflow(self) -> List[str]:
         """Design a custom workflow sequence"""
-        print("\nCustom Workflow Designer")
-        print("Available calculation types:")
+        ui.info("\nCustom Workflow Designer")
+        ui.info("Available calculation types:")
 
         for calc_type, info in self.calc_types.items():
             deps = (
@@ -777,16 +808,14 @@ class WorkflowPlanner:
                 if info["depends_on"]
                 else ""
             )
-            print(f"  {calc_type}: {info['name']}{deps}")
+            ui.info(f"  {calc_type}: {info['name']}{deps}")
 
-        print(
-            "\nNOTE: Numbered calculations (OPT2, SP2, BAND2, etc.) will be automatically assigned"
-        )
-        print("when you add multiple calculations of the same type.\n")
+        ui.info("\nNOTE: Numbered calculations (OPT2, SP2, BAND2, etc.) will be automatically assigned")
+        ui.info("when you add multiple calculations of the same type.\n")
 
-        print("Build your workflow sequence:")
-        print("Enter calculation types in order (e.g., OPT SP BAND DOSS)")
-        print("Type 'help' for workflow examples, 'list' to see available types again")
+        ui.info("Build your workflow sequence:")
+        ui.info("Enter calculation types in order (e.g., OPT SP BAND DOSS)")
+        ui.info("Type 'help' for workflow examples, 'list' to see available types again")
 
         sequence = []
         while True:
@@ -794,7 +823,7 @@ class WorkflowPlanner:
             if sequence:
                 self._display_workflow_sequence(sequence)
             else:
-                print("\nCurrent sequence: Empty")
+                ui.info("\nCurrent sequence: Empty")
 
             user_input = input("\nNext calculation (or 'done'): ").strip().upper()
 
@@ -804,52 +833,52 @@ class WorkflowPlanner:
                 self.show_workflow_help()
             elif user_input == "LIST" or user_input == "":
                 # Show available types again
-                print("\nAvailable calculation types:")
+                ui.info("\nAvailable calculation types:")
                 for calc_type, info in self.calc_types.items():
                     deps = (
                         " (depends on: " + ", ".join(info["depends_on"]) + ")"
                         if info["depends_on"]
                         else ""
                     )
-                    print(f"  {calc_type}: {info['name']}{deps}")
-                print("\nType 'help' for workflow examples")
+                    ui.info(f"  {calc_type}: {info['name']}{deps}")
+                ui.info("\nType 'help' for workflow examples")
             elif user_input in self.calc_types:
                 # Get properly numbered version
                 numbered_calc = self._get_next_numbered_calc(sequence, user_input)
                 if self._validate_numbered_calc_addition(sequence, numbered_calc):
                     sequence.append(numbered_calc)
-                    print(f"✅ Added {numbered_calc}")
+                    ui.ok(f"✅ Added {numbered_calc}")
                 else:
                     deps = ", ".join(self.calc_types[user_input]["depends_on"])
-                    print(f"❌ Cannot add {user_input}. Missing dependencies: {deps}")
+                    ui.err(f"❌ Cannot add {user_input}. Missing dependencies: {deps}")
             else:
-                print(f"Unknown calculation type: {user_input}")
+                ui.info(f"Unknown calculation type: {user_input}")
                 print("Available types:", ", ".join(self.calc_types.keys()))
-                print("Type 'list' to see full descriptions")
+                ui.info("Type 'list' to see full descriptions")
 
         if not sequence:
-            print("No calculations selected. Using basic optimization.")
+            ui.info("No calculations selected. Using basic optimization.")
             sequence = ["OPT"]
 
         return sequence
 
     def modify_workflow_sequence(self, sequence: List[str]) -> List[str]:
         """Modify an existing workflow sequence"""
-        print(f"\nModifying workflow: {' → '.join(sequence)}")
+        ui.info(f"\nModifying workflow: {' → '.join(sequence)}")
 
         while True:
-            print("\nOptions:")
-            print("1: Add calculation")
-            print("2: Remove calculation")
-            print("3: Insert calculation")
-            print("4: Show current sequence")
-            print("5: Done")
+            ui.info("\nOptions:")
+            ui.info("1: Add calculation")
+            ui.info("2: Remove calculation")
+            ui.info("3: Insert calculation")
+            ui.info("4: Show current sequence")
+            ui.info("5: Done")
 
             choice = input("Select option: ").strip()
 
             if choice == "1":
                 # Show available calculation types with smart numbering
-                print("\nAvailable calculation types to add:")
+                ui.info("\nAvailable calculation types to add:")
                 available_types = self._get_available_calc_types(sequence)
                 for i, calc_type in enumerate(available_types, 1):
                     base = calc_type.rstrip("0123456789")
@@ -862,8 +891,8 @@ class WorkflowPlanner:
                         "TRANSPORT": "Transport Properties",
                         "CHARGE+POTENTIAL": "Charge Density & Electrostatic Potential",
                     }.get(base, base)
-                    print(f"  {i}. {calc_type} - {desc}")
-                print("\nEnter number or type name directly")
+                    ui.info(f"  {i}. {calc_type} - {desc}")
+                ui.info("\nEnter number or type name directly")
 
                 calc_input = input("\nAdd calculation: ").strip()
 
@@ -873,7 +902,7 @@ class WorkflowPlanner:
                     if 0 <= idx < len(available_types):
                         calc = available_types[idx]
                     else:
-                        print("Invalid number")
+                        ui.err("Invalid number")
                         continue
                 else:
                     calc = calc_input.upper()
@@ -882,38 +911,36 @@ class WorkflowPlanner:
                 if calc in available_types:
                     if self._validate_numbered_calc_addition(sequence, calc):
                         sequence.append(calc)
-                        print(f"Added {calc}. Current: {' → '.join(sequence)}")
+                        ui.info(f"Added {calc}. Current: {' → '.join(sequence)}")
                     else:
-                        print(f"Cannot add {calc} - check dependencies")
+                        ui.err(f"Cannot add {calc} - check dependencies")
                 # Handle base calculations (OPT, SP, etc.) - auto-number them
                 elif calc in ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL"]:
                     numbered_calc = self._get_next_numbered_calc(sequence, calc)
                     if self._validate_numbered_calc_addition(sequence, numbered_calc):
                         sequence.append(numbered_calc)
-                        print(f"Added {numbered_calc}. Current: {' → '.join(sequence)}")
+                        ui.info(f"Added {numbered_calc}. Current: {' → '.join(sequence)}")
                     else:
-                        print(f"Cannot add {numbered_calc} - check dependencies")
+                        ui.err(f"Cannot add {numbered_calc} - check dependencies")
                 else:
-                    print(f"Unknown calculation type: {calc}")
+                    ui.info(f"Unknown calculation type: {calc}")
 
             elif choice == "2":
                 if sequence:
-                    print(f"\nCurrent sequence: {' → '.join(sequence)}")
-                    print(
-                        "Enter the exact calculation to remove (e.g., OPT2, SP, BAND2):"
-                    )
+                    ui.info(f"\nCurrent sequence: {' → '.join(sequence)}")
+                    ui.info("Enter the exact calculation to remove (e.g., OPT2, SP, BAND2):")
                     calc = input("Remove: ").strip().upper()
                     if calc in sequence:
                         sequence.remove(calc)
-                        print(f"Removed {calc}. Current: {' → '.join(sequence)}")
+                        ui.info(f"Removed {calc}. Current: {' → '.join(sequence)}")
                     else:
-                        print(f"{calc} not found in sequence")
+                        ui.err(f"{calc} not found in sequence")
 
             elif choice == "3":
-                print("\nAvailable calculation types to insert:")
+                ui.info("\nAvailable calculation types to insert:")
                 available_types = self._get_available_calc_types(sequence)
                 for calc_type in available_types:
-                    print(f"  {calc_type}")
+                    ui.info(f"  {calc_type}")
 
                 calc = input("\nInsert calculation type: ").strip().upper()
 
@@ -921,17 +948,15 @@ class WorkflowPlanner:
                 if calc in ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL"]:
                     numbered_calc = self._get_next_numbered_calc(sequence, calc)
 
-                    print(f"\nCurrent sequence: {' → '.join(sequence)}")
-                    print("Positions:")
+                    ui.info(f"\nCurrent sequence: {' → '.join(sequence)}")
+                    ui.info("Positions:")
                     for i in range(len(sequence) + 1):
                         if i == 0:
-                            print(f"  1: Before {sequence[0]}")
+                            ui.info(f"  1: Before {sequence[0]}")
                         elif i == len(sequence):
-                            print(f"  {i + 1}: After {sequence[-1]}")
+                            ui.info(f"  {i + 1}: After {sequence[-1]}")
                         else:
-                            print(
-                                f"  {i + 1}: Between {sequence[i - 1]} and {sequence[i]}"
-                            )
+                            ui.info(f"  {i + 1}: Between {sequence[i - 1]} and {sequence[i]}")
 
                     pos = input("Insert at position: ").strip()
                     try:
@@ -941,22 +966,18 @@ class WorkflowPlanner:
                                 sequence[:pos] + sequence[pos:], numbered_calc
                             ):
                                 sequence.insert(pos, numbered_calc)
-                                print(
-                                    f"Inserted {numbered_calc}. Current: {' → '.join(sequence)}"
-                                )
+                                ui.info(f"Inserted {numbered_calc}. Current: {' → '.join(sequence)}")
                             else:
-                                print(
-                                    f"Cannot insert {numbered_calc} at this position - check dependencies"
-                                )
+                                ui.err(f"Cannot insert {numbered_calc} at this position - check dependencies")
                     except ValueError:
-                        print("Invalid position")
+                        ui.err("Invalid position")
 
             elif choice == "4":
                 self._display_workflow_sequence(sequence)
 
             elif choice == "5":
                 if not sequence:
-                    print("\nError: Cannot have empty workflow!")
+                    ui.err("\nError: Cannot have empty workflow!")
                     continue
                 break
 
@@ -999,11 +1020,11 @@ class WorkflowPlanner:
 
     def _display_workflow_sequence(self, sequence: List[str]):
         """Display the workflow sequence with details"""
-        print(f"\nCurrent workflow sequence ({len(sequence)} steps):")
-        print("─" * 70)
+        ui.info(f"\nCurrent workflow sequence ({len(sequence)} steps):")
+        ui.info("─" * 70)
 
         if not sequence:
-            print("  (Empty workflow)")
+            ui.info("  (Empty workflow)")
             return
 
         # Create visual representation
@@ -1054,12 +1075,12 @@ class WorkflowPlanner:
                 source = "From previous step"
 
             # Print step info
-            print(f"  Step {i + 1}: {calc:<8} - {desc:<25} [{source}]")
+            ui.info(f"  Step {i + 1}: {calc:<8} - {desc:<25} [{source}]")
 
             if i < len(sequence) - 1:
-                print("    ↓")
+                ui.info("    ↓")
 
-        print("─" * 70)
+        ui.info("─" * 70)
 
     def _validate_numbered_calc_addition(
         self, sequence: List[str], new_calc: str
@@ -1106,37 +1127,35 @@ class WorkflowPlanner:
 
     def show_workflow_help(self):
         """Show workflow design help"""
-        print("\nWorkflow Help:")
-        print("Common patterns:")
-        print("  Basic: OPT")
-        print("  Single point: SP")
-        print("  Electronic: OPT SP  or  SP BAND DOSS")
-        print("  Analysis: OPT SP BAND DOSS")
-        print("  Complete: OPT SP BAND DOSS FREQ")
-        print("  Transport: OPT SP TRANSPORT")
-        print("  Charge analysis: OPT SP CHARGE+POTENTIAL")
-        print("  Double opt: OPT OPT2 SP")
-        print("\nAdvanced patterns:")
-        print("  SP-first: SP BAND DOSS")
-        print("  Multi-stage: OPT SP BAND DOSS OPT2 OPT3 SP2 BAND2 DOSS2 FREQ")
-        print("  Combined analysis: OPT SP BAND DOSS TRANSPORT CHARGE+POTENTIAL")
-        print("  Iterative opt: OPT OPT2 OPT3 SP")
-        print("  Multiple properties: OPT SP BAND DOSS BAND2 DOSS2")
-        print("\nDependencies:")
+        ui.info("\nWorkflow Help:")
+        ui.info("Common patterns:")
+        ui.info("  Basic: OPT")
+        ui.info("  Single point: SP")
+        ui.info("  Electronic: OPT SP  or  SP BAND DOSS")
+        ui.info("  Analysis: OPT SP BAND DOSS")
+        ui.info("  Complete: OPT SP BAND DOSS FREQ")
+        ui.info("  Transport: OPT SP TRANSPORT")
+        ui.info("  Charge analysis: OPT SP CHARGE+POTENTIAL")
+        ui.info("  Double opt: OPT OPT2 SP")
+        ui.info("\nAdvanced patterns:")
+        ui.info("  SP-first: SP BAND DOSS")
+        ui.info("  Multi-stage: OPT SP BAND DOSS OPT2 OPT3 SP2 BAND2 DOSS2 FREQ")
+        ui.info("  Combined analysis: OPT SP BAND DOSS TRANSPORT CHARGE+POTENTIAL")
+        ui.info("  Iterative opt: OPT OPT2 OPT3 SP")
+        ui.info("  Multiple properties: OPT SP BAND DOSS BAND2 DOSS2")
+        ui.info("\nDependencies:")
         for calc, info in self.calc_types.items():
             if info["depends_on"]:
-                print(f"  {calc} requires: {', '.join(info['depends_on'])}")
-        print(
-            "\nNOTE: Numbered calculations (OPT2, SP2, etc.) are automatically assigned"
-        )
-        print("      when you add multiple calculations of the same type.")
+                ui.info(f"  {calc} requires: {', '.join(info['depends_on'])}")
+        ui.info("\nNOTE: Numbered calculations (OPT2, SP2, etc.) are automatically assigned")
+        ui.info("      when you add multiple calculations of the same type.")
 
     def configure_workflow_steps(
         self, sequence: List[str], has_cifs: bool
     ) -> Dict[str, Dict[str, Any]]:
         """Configure settings for each workflow step"""
-        print(f"\nStep 4: Configure Workflow Steps")
-        print("-" * 40)
+        ui.info(f"\nStep 4: Configure Workflow Steps")
+        ui.rule()
 
         step_configs = {}
 
@@ -1147,20 +1166,16 @@ class WorkflowPlanner:
                 calc_name = self.calc_types[base_type]["name"]
             else:
                 calc_name = calc_type
-            print(f"\nConfiguring {calc_type} ({calc_name}):")
+            ui.info(f"\nConfiguring {calc_type} ({calc_name}):")
 
             if (calc_type == "OPT" or calc_type == "SP") and i == 0 and has_cifs:
-                print(
-                    f"  Using CIF conversion configuration for first {calc_type} step"
-                )
+                ui.info(f"  Using CIF conversion configuration for first {calc_type} step")
                 step_configs[f"{calc_type}_1"] = {"source": "cif_conversion"}
 
             elif (calc_type == "OPT" or calc_type == "SP") and i == 0 and not has_cifs:
-                print(f"  Using existing D12 files for first {calc_type} step")
-                print("    Settings from D12 files will be used as-is")
-                print(
-                    "    This includes: functional, basis set, tolerances, grid, etc."
-                )
+                ui.info(f"  Using existing D12 files for first {calc_type} step")
+                ui.info("    Settings from D12 files will be used as-is")
+                ui.info("    This includes: functional, basis set, tolerances, grid, etc.")
                 step_configs[f"{calc_type}_1"] = {"source": "existing_d12"}
 
             elif calc_type == "OPT2":
@@ -1170,9 +1185,7 @@ class WorkflowPlanner:
 
             elif calc_type == "OPT" and i > 0:
                 # This shouldn't happen - subsequent OPTs should be OPT2, OPT3, etc.
-                print(
-                    f"  Warning: Found duplicate OPT at position {i + 1}. This should be OPT2."
-                )
+                ui.warn(f"  Warning: Found duplicate OPT at position {i + 1}. This should be OPT2.")
                 config = self.configure_optimization_step(calc_type, i + 1)
                 step_configs[f"{calc_type}_{i + 1}"] = config
 
@@ -1223,31 +1236,31 @@ class WorkflowPlanner:
         self, calc_type: str, step_num: int
     ) -> Dict[str, Any]:
         """Configure optimization calculation step"""
-        print(f"  Configuring {calc_type} step {step_num}")
+        ui.info(f"  Configuring {calc_type} step {step_num}")
 
-        print(f"    Choose {calc_type} customization level:")
-        print(f"      0: Use sensible defaults")
-        print(f"         - Type: FULLOPTG (optimize both atoms and cell)")
-        print(f"         - TOLDEG: 3.0E-5, TOLDEX: 1.2E-4, TOLDEE: 7")
-        print(f"         - MAXCYCLE: 800, Method/basis: inherited from previous step")
-        print(f"      1: Basic (optimization type + tolerances)")
-        print(f"         - Configure: FULLOPTG vs ATOMSONLY, convergence criteria")
-        print(f"         - Time impact: Can reduce optimization time by 30-50%")
-        print(f"      2: Advanced (method + basis set modifications)")
-        print(f"         - Configure: Change functional/basis from initial calculation")
-        print(f"         - Use case: Re-optimize with better method")
-        print(f"      3: Expert (full CRYSTALOptToD12.py integration)")
-        print(f"         - Configure: All CRYSTAL keywords interactively")
-        print(f"         - Use case: Complex optimizations, constraints, special settings")
+        ui.info(f"    Choose {calc_type} customization level:")
+        ui.info(f"      0: Use sensible defaults")
+        ui.info(f"         - Type: FULLOPTG (optimize both atoms and cell)")
+        ui.info(f"         - TOLDEG: 3.0E-5, TOLDEX: 1.2E-4, TOLDEE: 7")
+        ui.info(f"         - MAXCYCLE: 800, Method/basis: inherited from previous step")
+        ui.info(f"      1: Basic (optimization type + tolerances)")
+        ui.info(f"         - Configure: FULLOPTG vs ATOMSONLY, convergence criteria")
+        ui.info(f"         - Time impact: Can reduce optimization time by 30-50%")
+        ui.info(f"      2: Advanced (method + basis set modifications)")
+        ui.info(f"         - Configure: Change functional/basis from initial calculation")
+        ui.info(f"         - Use case: Re-optimize with better method")
+        ui.info(f"      3: Expert (full CRYSTALOptToD12.py integration)")
+        ui.info(f"         - Configure: All CRYSTAL keywords interactively")
+        ui.info(f"         - Use case: Complex optimizations, constraints, special settings")
 
         while True:
             try:
                 level = int(input("    Enter level (0-3): ").strip())
                 if level in [0, 1, 2, 3]:
                     break
-                print("    Please enter 0, 1, 2, or 3")
+                ui.info("    Please enter 0, 1, 2, or 3")
             except ValueError:
-                print("    Please enter a valid number")
+                ui.info("    Please enter a valid number")
 
         if level == 0:
             # Use sensible defaults
@@ -1264,7 +1277,7 @@ class WorkflowPlanner:
                 "inherit_settings": True,
                 "customization_level": 0,
             }
-            print(f"\n    Using default {calc_type} configuration")
+            ui.info(f"\n    Using default {calc_type} configuration")
         else:
             # Get detailed configuration for levels 1-3
             config = {
@@ -1285,19 +1298,19 @@ class WorkflowPlanner:
 
             # Show summary of selected configuration
             if config.get("customization_level") == 1:
-                print(f"\n    {calc_type} configuration summary:")
-                print(f"      - Type: {config.get('optimization_type', 'FULLOPTG')}")
+                ui.info(f"\n    {calc_type} configuration summary:")
+                ui.info(f"      - Type: {config.get('optimization_type', 'FULLOPTG')}")
                 opt_settings = config.get("optimization_settings", {})
-                print(f"      - TOLDEG: {opt_settings.get('TOLDEG', 3e-5):.1E}")
-                print(f"      - TOLDEX: {opt_settings.get('TOLDEX', 1.2e-4):.1E}")
-                print(f"      - TOLDEE: {opt_settings.get('TOLDEE', 7)}")
-                print(f"      - MAXCYCLE: {opt_settings.get('MAXCYCLE', 800)}")
+                ui.info(f"      - TOLDEG: {opt_settings.get('TOLDEG', 3e-5):.1E}")
+                ui.info(f"      - TOLDEX: {opt_settings.get('TOLDEX', 1.2e-4):.1E}")
+                ui.info(f"      - TOLDEE: {opt_settings.get('TOLDEE', 7)}")
+                ui.info(f"      - MAXCYCLE: {opt_settings.get('MAXCYCLE', 800)}")
                 if config.get("custom_tolerances"):
                     tol = config["custom_tolerances"]
                     if tol.get("TOLINTEG"):
-                        print(f"      - TOLINTEG: {tol['TOLINTEG']}")
+                        ui.info(f"      - TOLINTEG: {tol['TOLINTEG']}")
                     if tol.get("TOLDEE"):
-                        print(f"      - SCF TOLDEE: {tol['TOLDEE']}")
+                        ui.info(f"      - SCF TOLDEE: {tol['TOLDEE']}")
 
         return config
 
@@ -1305,27 +1318,27 @@ class WorkflowPlanner:
         self, calc_type: str = "SP", step_num: int = 2
     ) -> Dict[str, Any]:
         """Configure single point calculation with customization levels"""
-        print(f"  Configuring {calc_type} calculation")
+        ui.info(f"  Configuring {calc_type} calculation")
 
-        print("    Choose SP customization level:")
-        print("      0: Default (inherit all settings from previous OPT)")
-        print("         - Best for: Energy comparison at same level of theory")
-        print("      1: Basic (modify method/basis set)")
-        print("         - Best for: Testing different functionals/basis sets")
-        print("         - Example: OPT with PBE → SP with B3LYP for better energies")
-        print("      2: Advanced (detailed SCF/convergence settings)")
-        print("         - Best for: Difficult convergence, custom requirements")
-        print("      3: Expert (full CRYSTALOptToD12.py integration)")
-        print("         - Best for: Complete control over all parameters")
+        ui.info("    Choose SP customization level:")
+        ui.info("      0: Default (inherit all settings from previous OPT)")
+        ui.info("         - Best for: Energy comparison at same level of theory")
+        ui.info("      1: Basic (modify method/basis set)")
+        ui.info("         - Best for: Testing different functionals/basis sets")
+        ui.info("         - Example: OPT with PBE → SP with B3LYP for better energies")
+        ui.info("      2: Advanced (detailed SCF/convergence settings)")
+        ui.info("         - Best for: Difficult convergence, custom requirements")
+        ui.info("      3: Expert (full CRYSTALOptToD12.py integration)")
+        ui.info("         - Best for: Complete control over all parameters")
 
         while True:
             try:
                 level = int(input("    Enter level (0-3): ").strip())
                 if level in [0, 1, 2, 3]:
                     break
-                print("    Please enter 0, 1, 2, or 3")
+                ui.info("    Please enter 0, 1, 2, or 3")
             except ValueError:
-                print("    Please enter a valid number")
+                ui.info("    Please enter a valid number")
 
         config = {
             "calculation_type": "SP",
@@ -1350,8 +1363,8 @@ class WorkflowPlanner:
 
     def _get_basic_sp_config(self) -> Dict[str, Any]:
         """Get basic SP configuration"""
-        print("\n    Basic SP Setup:")
-        print("    (Single point calculation with modified method/basis)")
+        ui.info("\n    Basic SP Setup:")
+        ui.info("    (Single point calculation with modified method/basis)")
 
         config = {"inherit_geometry": True, "inherit_settings": False}
 
@@ -1362,19 +1375,19 @@ class WorkflowPlanner:
         config["basis_modifications"] = self._get_basis_modifications()
 
         # Ask about tight convergence
-        print("\n    Convergence settings for single point energy:")
-        print("      Standard: Good for energy differences (~0.001 Ha accuracy)")
-        print("      Tight: Required for accurate absolute energies (~0.00001 Ha)")
-        print("      📊 Resource impact of tight convergence:")
-        print("        - Time: +20-50% more SCF iterations")
-        print("        - Memory: No significant change")
-        print("        - Use for: Benchmark calculations, basis set comparisons")
+        ui.info("\n    Convergence settings for single point energy:")
+        ui.info("      Standard: Good for energy differences (~0.001 Ha accuracy)")
+        ui.info("      Tight: Required for accurate absolute energies (~0.00001 Ha)")
+        ui.info("      📊 Resource impact of tight convergence:")
+        ui.info("        - Time: +20-50% more SCF iterations")
+        ui.info("        - Memory: No significant change")
+        ui.info("        - Use for: Benchmark calculations, basis set comparisons")
 
         use_tight = yes_no_prompt("    Use tight convergence?", "no")
         if use_tight:
-            print("      Applying tight convergence tolerances:")
-            print("        - TOLINTEG: 9 9 9 11 38 (high accuracy integrals)")
-            print("        - TOLDEE: 11 (SCF convergence to 10^-11 Ha)")
+            ui.info("      Applying tight convergence tolerances:")
+            ui.info("        - TOLINTEG: 9 9 9 11 38 (high accuracy integrals)")
+            ui.info("        - TOLDEE: 11 (SCF convergence to 10^-11 Ha)")
             config["tolerance_modifications"] = {
                 "custom_tolerances": {"TOLINTEG": "9 9 9 11 38", "TOLDEE": 11}
             }
@@ -1385,7 +1398,7 @@ class WorkflowPlanner:
         """Get advanced SP configuration"""
         config = self._get_basic_sp_config()
 
-        print("\n    Advanced SP Setup:")
+        ui.info("\n    Advanced SP Setup:")
 
         # SCF modifications
         modify_scf = yes_no_prompt("    Modify SCF convergence settings?", "no")
@@ -1401,24 +1414,24 @@ class WorkflowPlanner:
 
     def _get_expert_sp_config(self, calc_type: str, step_num: int) -> Dict[str, Any]:
         """Get expert SP configuration"""
-        print(f"\n    Expert {calc_type} Setup:")
+        ui.info(f"\n    Expert {calc_type} Setup:")
 
         # Skip individual vs shared question for initial step (D12s already have settings)
         if step_num == 1:
-            print("    Initial step - modifying existing D12 settings")
+            ui.info("    Initial step - modifying existing D12 settings")
         else:
             # Ask if user wants per-material configs (to preserve symmetry)
-            print("    Material Configuration Strategy:")
+            ui.info("    Material Configuration Strategy:")
             print("")
-            print("    1. Individual material handling (STRONGLY RECOMMENDED)")
-            print("       Process: Interactive setup (1x) → Automatic per-material optimization")
-            print("       Preserves: Symmetry, k-points, cell parameters, origin settings")
-            print("       Generates: Unique configuration file per material")
+            ui.info("    1. Individual material handling (STRONGLY RECOMMENDED)")
+            ui.info("       Process: Interactive setup (1x) → Automatic per-material optimization")
+            ui.info("       Preserves: Symmetry, k-points, cell parameters, origin settings")
+            ui.info("       Generates: Unique configuration file per material")
             print("       ")
-            print("    2. Batch uniform handling (USE WITH CAUTION)")
-            print("       Process: Interactive setup (1x) → Same config for all")
-            print("       WARNING: Forces all materials to use first material's symmetry")
-            print("       Risk: Incorrect k-points, wrong space groups, failed calculations")
+            ui.info("    2. Batch uniform handling (USE WITH CAUTION)")
+            ui.info("       Process: Interactive setup (1x) → Same config for all")
+            ui.warn("       WARNING: Forces all materials to use first material's symmetry")
+            ui.info("       Risk: Incorrect k-points, wrong space groups, failed calculations")
 
             config_choice = (
                 input("    Choose configuration mode (1/2) [1]: ").strip() or "1"
@@ -1444,39 +1457,37 @@ class WorkflowPlanner:
             found_files = list(self.work_dir.glob(pattern))
             if found_files:
                 real_d12 = found_files[0]
-                print(f"    Found D12 file for configuration: {real_d12.name}")
+                ui.info(f"    Found D12 file for configuration: {real_d12.name}")
                 break
                 
         # Run CRYSTALOptToD12.py interactively NOW during planning
         expert_config = self._run_interactive_crystal_opt_config("SP", real_d12)
 
         if expert_config:
-            print(f"    ✅ Expert SP configuration completed successfully")
+            ui.ok(f"    ✅ Expert SP configuration completed successfully")
             return expert_config
         else:
-            print(
-                f"    ❌ Expert SP configuration failed, falling back to advanced mode"
-            )
+            ui.err(f"    ❌ Expert SP configuration failed, falling back to advanced mode")
             return self._get_advanced_sp_config()
 
     def _get_basis_modifications(self) -> Dict[str, Any]:
         """Get basis set modification settings"""
         modifications = {}
 
-        print("\n      Select basis set (will inherit from previous if unchanged):")
-        print("        1: Keep current basis set")
-        print("        2: POB-TZVP-REV2 (high quality triple-zeta, recommended)")
-        print("        3: POB-TZVP (standard triple-zeta)")
-        print("        4: def2-TZVP (alternative triple-zeta)")
-        print("        5: POB-DZVP-REV2 (double-zeta, faster)")
-        print("        6: STO-3G (minimal, very fast)")
-        print("        7: Custom basis set")
+        ui.info("\n      Select basis set (will inherit from previous if unchanged):")
+        ui.info("        1: Keep current basis set")
+        ui.info("        2: POB-TZVP-REV2 (high quality triple-zeta, recommended)")
+        ui.info("        3: POB-TZVP (standard triple-zeta)")
+        ui.info("        4: def2-TZVP (alternative triple-zeta)")
+        ui.info("        5: POB-DZVP-REV2 (double-zeta, faster)")
+        ui.info("        6: STO-3G (minimal, very fast)")
+        ui.info("        7: Custom basis set")
 
         while True:
             basis_choice = input("      Choose basis set (1-7) [1]: ").strip() or "1"
             if basis_choice in ["1", "2", "3", "4", "5", "6", "7"]:
                 break
-            print("      Please enter a number from 1 to 7")
+            ui.info("      Please enter a number from 1 to 7")
 
         if basis_choice == "1":
             modifications["inherit_basis"] = True
@@ -1503,28 +1514,26 @@ class WorkflowPlanner:
         modifications = {}
 
         # TOLDEE
-        print("\n      SCF convergence threshold (TOLDEE):")
-        print("        Current/inherited: 7 (default)")
-        print(
-            "        Common values: 7 (standard), 8 (tighter), 9 (very tight), 10+ (ultra-tight)"
-        )
+        ui.info("\n      SCF convergence threshold (TOLDEE):")
+        ui.info("        Current/inherited: 7 (default)")
+        ui.info("        Common values: 7 (standard), 8 (tighter), 9 (very tight), 10+ (ultra-tight)")
         toldee = input("      New TOLDEE value [keep current]: ").strip()
         if toldee:
             try:
                 modifications["TOLDEE"] = int(toldee)
             except ValueError:
-                print("      Invalid TOLDEE, keeping current")
+                ui.err("      Invalid TOLDEE, keeping current")
 
         # FMIXING
-        print("\n      SCF mixing factor (FMIXING):")
-        print("        Current/inherited: 30 (default)")
-        print("        Common values: 30 (standard), 20 (more stable), 50 (aggressive)")
+        ui.info("\n      SCF mixing factor (FMIXING):")
+        ui.info("        Current/inherited: 30 (default)")
+        ui.info("        Common values: 30 (standard), 20 (more stable), 50 (aggressive)")
         fmixing = input("      New FMIXING value [keep current]: ").strip()
         if fmixing:
             try:
                 modifications["FMIXING"] = int(fmixing)
             except ValueError:
-                print("      Invalid FMIXING, keeping current")
+                ui.err("      Invalid FMIXING, keeping current")
 
         return modifications
 
@@ -1532,28 +1541,22 @@ class WorkflowPlanner:
         """Get DFT grid modification settings"""
         modifications = {}
 
-        print("\n      DFT integration grid (accuracy vs speed):")
-        print(
-            "        Current/default: XLGRID (CRYSTAL23 default for most functionals)"
-        )
-        print("        1: Keep current grid")
+        ui.info("\n      DFT integration grid (accuracy vs speed):")
+        ui.info("        Current/default: XLGRID (CRYSTAL23 default for most functionals)")
+        ui.info("        1: Keep current grid")
         print("        2: XLGRID - Extra large grid (75,974 points/atom) [default]")
-        print("        3: XXLGRID - Extra extra large (99,1454 points/atom)")
-        print("        4: LGRID - Large grid (75,434 points/atom)")
-        print("        5: DEFAULT - Standard CRYSTAL grid")
-        print("        6: OLDGRID - Legacy grid from CRYSTAL09 (55,434 points/atom)")
-        print(
-            "        7: XXXLGRID - Ultra large (150,1454 points/atom) for high accuracy"
-        )
-        print(
-            "        8: HUGEGRID - Huge grid (300,1454 points/atom) for SCAN functional"
-        )
+        ui.info("        3: XXLGRID - Extra extra large (99,1454 points/atom)")
+        ui.info("        4: LGRID - Large grid (75,434 points/atom)")
+        ui.info("        5: DEFAULT - Standard CRYSTAL grid")
+        ui.info("        6: OLDGRID - Legacy grid from CRYSTAL09 (55,434 points/atom)")
+        ui.info("        7: XXXLGRID - Ultra large (150,1454 points/atom) for high accuracy")
+        ui.info("        8: HUGEGRID - Huge grid (300,1454 points/atom) for SCAN functional")
 
         while True:
             grid_choice = input("      Choose grid (1-8) [1]: ").strip() or "1"
             if grid_choice in ["1", "2", "3", "4", "5", "6", "7", "8"]:
                 break
-            print("      Please enter a number from 1 to 8")
+            ui.info("      Please enter a number from 1 to 8")
 
         if grid_choice != "1":
             grid_map = {
@@ -1571,7 +1574,7 @@ class WorkflowPlanner:
 
     def configure_analysis_step(self, calc_type: str, step_num: int = None) -> Dict[str, Any]:
         """Configure D3 property calculations (BAND, DOSS, TRANSPORT, CHARGE, POTENTIAL)"""
-        print(f"  Configuring {calc_type} calculation")
+        ui.info(f"  Configuring {calc_type} calculation")
         
         # All D3 calculations now use CRYSTALOptToD3.py
         config = {
@@ -1582,19 +1585,19 @@ class WorkflowPlanner:
         }
         
         # Ask for customization level
-        print(f"\n  {calc_type} Calculation Customization Level:")
-        print("    1. Basic (use sensible defaults)")
-        print("    2. Advanced (customize key parameters)")
-        print("    3. Expert (full CRYSTALOptToD3.py integration)")
+        ui.info(f"\n  {calc_type} Calculation Customization Level:")
+        ui.info("    1. Basic (use sensible defaults)")
+        ui.info("    2. Advanced (customize key parameters)")
+        ui.info("    3. Expert (full CRYSTALOptToD3.py integration)")
         
         while True:
             try:
                 level = int(input("\n  Select customization level (1-3): "))
                 if 1 <= level <= 3:
                     break
-                print("  Invalid choice. Please enter 1, 2, or 3.")
+                ui.err("  Invalid choice. Please enter 1, 2, or 3.")
             except ValueError:
-                print("  Invalid input. Please enter a number.")
+                ui.err("  Invalid input. Please enter a number.")
         
         if level == 1:
             # Basic - use default configurations
@@ -1611,51 +1614,51 @@ class WorkflowPlanner:
             config["d3_config_mode"] = "expert"
             config["expert_mode"] = True
             config["interactive_setup"] = True
-            print("\n  Expert mode: Full interactive configuration")
+            ui.info("\n  Expert mode: Full interactive configuration")
             
             # Ask whether to create individual configs per material
-            print("\n  Expert Setup:")
-            print("  Material Configuration Strategy:")
+            ui.info("\n  Expert Setup:")
+            ui.info("  Material Configuration Strategy:")
             print("")
-            print("  1. Individual material handling (STRONGLY RECOMMENDED)")
-            print("     Process: Interactive setup (1x) → Automatic per-material optimization")
-            print("     Preserves: Symmetry, k-points, cell parameters, origin settings")
-            print("     Generates: Unique configuration file per material")
+            ui.info("  1. Individual material handling (STRONGLY RECOMMENDED)")
+            ui.info("     Process: Interactive setup (1x) → Automatic per-material optimization")
+            ui.info("     Preserves: Symmetry, k-points, cell parameters, origin settings")
+            ui.info("     Generates: Unique configuration file per material")
             print("     ")
-            print("  2. Batch uniform handling (USE WITH CAUTION)")
-            print("     Process: Interactive setup (1x) → Same config for all")
-            print("     WARNING: Forces all materials to use first material's symmetry")
-            print("     Risk: Incorrect k-points, wrong space groups, failed calculations")
+            ui.info("  2. Batch uniform handling (USE WITH CAUTION)")
+            ui.info("     Process: Interactive setup (1x) → Same config for all")
+            ui.warn("     WARNING: Forces all materials to use first material's symmetry")
+            ui.info("     Risk: Incorrect k-points, wrong space groups, failed calculations")
             
             config_mode = input("  Choose configuration mode (1/2) [1]: ").strip() or "1"
             
             if config_mode == "1":
                 # Individual configs per material
                 config["per_material_config"] = True
-                print("\n  Individual configuration mode selected")
+                ui.info("\n  Individual configuration mode selected")
                 
                 # Create per-material expert configurations immediately
                 per_material_config = self._get_per_material_expert_d3_config(calc_type, step_num)
                 if per_material_config:
-                    print(f"  ✅ Per-material {calc_type} configurations created successfully")
+                    ui.ok(f"  ✅ Per-material {calc_type} configurations created successfully")
                     config.update(per_material_config)
                 else:
-                    print(f"  ❌ Per-material {calc_type} configuration failed, falling back to basic mode")
+                    ui.err(f"  ❌ Per-material {calc_type} configuration failed, falling back to basic mode")
                     config["d3_config_mode"] = "basic"
                     config["d3_config"] = self._get_basic_d3_config(calc_type)
             else:
                 # Single config for all materials
                 config["per_material_config"] = False
-                print("\n  Shared configuration mode selected")
-                print("  Preparing to launch interactive configuration...")
+                ui.info("\n  Shared configuration mode selected")
+                ui.info("  Preparing to launch interactive configuration...")
                 
                 # Run CRYSTALOptToD3.py interactively NOW during planning
                 expert_config = self._run_interactive_d3_config(calc_type, step_num)
                 if expert_config:
-                    print(f"  ✅ Expert {calc_type} configuration completed successfully")
+                    ui.ok(f"  ✅ Expert {calc_type} configuration completed successfully")
                     config.update(expert_config)
                 else:
-                    print(f"  ❌ Expert {calc_type} configuration failed, falling back to basic mode")
+                    ui.err(f"  ❌ Expert {calc_type} configuration failed, falling back to basic mode")
                     config["d3_config_mode"] = "basic"
                     config["d3_config"] = self._get_basic_d3_config(calc_type)
         
@@ -1708,27 +1711,27 @@ class WorkflowPlanner:
         }
         
         config = configs.get(calc_type, {})
-        print(f"\n  Using basic {calc_type} configuration:")
+        ui.info(f"\n  Using basic {calc_type} configuration:")
         
         if calc_type == "BAND":
-            print("    - Automatic k-path detection based on space group")
-            print("    - All available bands included")
-            print("    - Automatic SHRINK factor from parent calculation")
+            ui.info("    - Automatic k-path detection based on space group")
+            ui.info("    - All available bands included")
+            ui.info("    - Automatic SHRINK factor from parent calculation")
             
         elif calc_type == "DOSS":
-            print("    - Total DOS only (no projections)")
-            print("    - 1000 energy points")
-            print("    - Energy range: -20 to 20 eV")
+            ui.info("    - Total DOS only (no projections)")
+            ui.info("    - 1000 energy points")
+            ui.info("    - Energy range: -20 to 20 eV")
             
         elif calc_type == "TRANSPORT":
-            print("    - Chemical potential range: -2 to +2 eV relative to Fermi")
-            print("    - Temperature range: 100-800 K")
-            print("    - Constant relaxation time: 10 fs")
+            ui.info("    - Chemical potential range: -2 to +2 eV relative to Fermi")
+            ui.info("    - Temperature range: 100-800 K")
+            ui.info("    - Constant relaxation time: 10 fs")
             
         elif calc_type == "CHARGE+POTENTIAL":
-            print("    - 3D charge density and electrostatic potential grids")
-            print("    - 100x100x100 grid points")
-            print("    - Gaussian-compatible output format (cube files)")
+            ui.info("    - 3D charge density and electrostatic potential grids")
+            ui.info("    - 100x100x100 grid points")
+            ui.info("    - Gaussian-compatible output format (cube files)")
             
         return config
     
@@ -1737,12 +1740,12 @@ class WorkflowPlanner:
         config = {"calculation_type": calc_type}
         
         if calc_type == "BAND":
-            print("\n  Advanced BAND configuration:")
+            ui.info("\n  Advanced BAND configuration:")
             
             # Path configuration
-            print("\n  K-point path:")
-            print("    1. Automatic (SeeK-path based on space group)")
-            print("    2. Custom path specification")
+            ui.info("\n  K-point path:")
+            ui.info("    1. Automatic (SeeK-path based on space group)")
+            ui.info("    2. Custom path specification")
             
             path_choice = input("  Select path option [1]: ").strip() or "1"
             
@@ -1751,11 +1754,11 @@ class WorkflowPlanner:
                 config["auto_path"] = True
                 
                 # Path format selection
-                print("\n  Path format for automatic k-path:")
-                print("    1. High-symmetry labels (CRYSTAL-compatible subset)")
-                print("    2. K-point vectors (fractional coordinates)")
-                print("    3. Literature path with vectors (comprehensive)")
-                print("    4. SeeK-path full paths (extended Bravais lattice notation)")
+                ui.info("\n  Path format for automatic k-path:")
+                ui.info("    1. High-symmetry labels (CRYSTAL-compatible subset)")
+                ui.info("    2. K-point vectors (fractional coordinates)")
+                ui.info("    3. Literature path with vectors (comprehensive)")
+                ui.info("    4. SeeK-path full paths (extended Bravais lattice notation)")
                 
                 format_choice = input("  Select format [1]: ").strip() or "1"
                 format_map = {
@@ -1767,8 +1770,8 @@ class WorkflowPlanner:
                 config["path_format"] = format_map.get(format_choice, "labels")
                 config["labels"] = "auto" if config["path_format"] == "labels" else "none"
             else:
-                print("  Custom path configuration selected")
-                print("  You will specify the path during execution")
+                ui.info("  Custom path configuration selected")
+                ui.info("  You will specify the path during execution")
                 config["custom_path"] = True
             
             # Band selection
@@ -1793,15 +1796,15 @@ class WorkflowPlanner:
                 config["path_method"] = "coordinates"  # Default to coordinates for compatibility
             
         elif calc_type == "DOSS":
-            print("\n  Advanced DOSS configuration:")
+            ui.info("\n  Advanced DOSS configuration:")
             
             # Projection type
-            print("\n  DOS projection type:")
-            print("    0. Total DOS only")
-            print("    1. Atom contributions") 
-            print("    2. Shell contributions")
-            print("    3. Atomic orbital contributions")
-            print("    4. Shell + AO contributions")
+            ui.info("\n  DOS projection type:")
+            ui.info("    0. Total DOS only")
+            ui.info("    1. Atom contributions")
+            ui.info("    2. Shell contributions")
+            ui.info("    3. Atomic orbital contributions")
+            ui.info("    4. Shell + AO contributions")
             
             proj_type = input("  Select projection type [4]: ").strip() or "4"
             config["projection_type"] = int(proj_type)
@@ -1811,9 +1814,9 @@ class WorkflowPlanner:
                 auto_proj = input("  Auto-generate projections from basis set? [Y/n]: ").strip().lower()
                 if auto_proj != 'n':
                     config["project_orbital_types"] = True
-                    print("  ✓ Projections will be generated automatically")
+                    ui.ok("  ✓ Projections will be generated automatically")
                 else:
-                    print("  Manual projection configuration selected")
+                    ui.info("  Manual projection configuration selected")
                     config["manual_projections"] = True
             
             # Energy range
@@ -1829,13 +1832,13 @@ class WorkflowPlanner:
             config["n_points"] = int(npoints) if npoints else 10000
             
         elif calc_type == "TRANSPORT":
-            print("\n  Advanced TRANSPORT configuration:")
+            ui.info("\n  Advanced TRANSPORT configuration:")
             
             # Chemical potential reference
-            print("\n  Chemical potential reference:")
-            print("    1. Relative to Fermi energy (automatic)")
-            print("    2. Relative to VBM (manual)")
-            print("    3. Absolute values")
+            ui.info("\n  Chemical potential reference:")
+            ui.info("    1. Relative to Fermi energy (automatic)")
+            ui.info("    2. Relative to VBM (manual)")
+            ui.info("    3. Absolute values")
             
             mu_ref = input("  Select reference [1]: ").strip() or "1"
             
@@ -1851,7 +1854,7 @@ class WorkflowPlanner:
                 ]
             elif mu_ref == "2":
                 config["mu_reference"] = "vbm"
-                print("  You will need to specify VBM value during execution")
+                ui.info("  You will need to specify VBM value during execution")
             else:
                 config["mu_reference"] = "absolute"
                 mu_min = input("  Min μ absolute (eV): ").strip()
@@ -1873,14 +1876,14 @@ class WorkflowPlanner:
             config["relaxation_time"] = float(relax) if relax else 10
             
         elif calc_type == "CHARGE+POTENTIAL":
-            print(f"\n  Advanced {calc_type} configuration:")
+            ui.info(f"\n  Advanced {calc_type} configuration:")
             
             # Output type
-            print("\n  Output type:")
-            print("    1. 3D grid (for visualization)")
-            print("    2. 2D plane")
-            print("    3. 1D line")
-            print("    4. Points at atomic positions")
+            ui.info("\n  Output type:")
+            ui.info("    1. 3D grid (for visualization)")
+            ui.info("    2. 2D plane")
+            ui.info("    3. 1D line")
+            ui.info("    4. Points at atomic positions")
             
             out_type = input("  Select output type [1]: ").strip() or "1"
             
@@ -1898,14 +1901,14 @@ class WorkflowPlanner:
                     int(nz) if nz else 100
                 ]
             elif out_type in ["2", "3"]:
-                print("  Plane/line parameters will be configured during execution")
+                ui.info("  Plane/line parameters will be configured during execution")
                 config["requires_geometry_input"] = True
             
             # Output format
-            print("\n  Output format:")
-            print("    1. GAUSSIAN (cube file)")
-            print("    2. XCRYSDEN")
-            print("    3. Standard CRYSTAL")
+            ui.info("\n  Output format:")
+            ui.info("    1. GAUSSIAN (cube file)")
+            ui.info("    2. XCRYSDEN")
+            ui.info("    3. Standard CRYSTAL")
             
             fmt_choice = input("  Select format [1]: ").strip() or "1"
             format_map = {"1": "GAUSSIAN", "2": "XCRYSDEN", "3": "CRYSTAL"}
@@ -1917,40 +1920,40 @@ class WorkflowPlanner:
         self, calc_type: str = "FREQ", step_num: int = 2
     ) -> Dict[str, Any]:
         """Configure frequency calculation with customization levels"""
-        print(f"  Configuring {calc_type} calculation")
-        print("\n  ⚠️  Note: To calculate IR or Raman spectra, use Advanced or Expert mode")
-        print("  Basic mode provides frequencies for thermodynamics only")
+        ui.info(f"  Configuring {calc_type} calculation")
+        ui.warn("\n  ⚠️  Note: To calculate IR or Raman spectra, use Advanced or Expert mode")
+        ui.info("  Basic mode provides frequencies for thermodynamics only")
 
         # Ask for customization level
-        print("\n  Frequency Calculation Customization Level:")
-        print("    1. Basic (use sensible defaults)")
-        print("    2. Advanced (customize key parameters)")
-        print("    3. Expert (full control)")
+        ui.info("\n  Frequency Calculation Customization Level:")
+        ui.info("    1. Basic (use sensible defaults)")
+        ui.info("    2. Advanced (customize key parameters)")
+        ui.info("    3. Expert (full control)")
 
         while True:
             try:
                 level = int(input("\n  Select customization level (1-3): "))
                 if 1 <= level <= 3:
                     break
-                print("  Invalid choice. Please enter 1, 2, or 3.")
+                ui.err("  Invalid choice. Please enter 1, 2, or 3.")
             except ValueError:
-                print("  Invalid input. Please enter a number.")
+                ui.err("  Invalid input. Please enter a number.")
 
         if level == 1:
             # Basic - use defaults
-            print("\n  Using simple frequency calculation defaults:")
-            print("    - Mode: FREQCALC (gamma point vibrational analysis)")
-            print("    - IR intensities: No (faster calculation)")
-            print("    - Raman intensities: No")
-            print("    - High accuracy tolerances for frequencies:")
-            print("      - TOLINTEG: 9 9 9 11 38")
-            print("      - TOLDEE: 11 (SCF convergence 10^-11 Ha)")
-            print("\n  📊 Resource estimate:")
-            print("    - Time: ~1-3x optimization time")
-            print("    - Memory: Similar to optimization")
-            print("    - Quality: Good for thermodynamics, no spectroscopy")
-            print("    - Numerical derivatives: 2-point (two displacements per atom)")
-            print("    - Method/basis: inherited from optimized geometry")
+            ui.info("\n  Using simple frequency calculation defaults:")
+            ui.info("    - Mode: FREQCALC (gamma point vibrational analysis)")
+            ui.info("    - IR intensities: No (faster calculation)")
+            ui.info("    - Raman intensities: No")
+            ui.info("    - High accuracy tolerances for frequencies:")
+            ui.info("      - TOLINTEG: 9 9 9 11 38")
+            ui.info("      - TOLDEE: 11 (SCF convergence 10^-11 Ha)")
+            ui.info("\n  📊 Resource estimate:")
+            ui.info("    - Time: ~1-3x optimization time")
+            ui.info("    - Memory: Similar to optimization")
+            ui.info("    - Quality: Good for thermodynamics, no spectroscopy")
+            ui.info("    - Numerical derivatives: 2-point (two displacements per atom)")
+            ui.info("    - Method/basis: inherited from optimized geometry")
 
             config = {
                 "calculation_type": "FREQ",
@@ -1967,7 +1970,7 @@ class WorkflowPlanner:
 
         elif level == 2:
             # Advanced - comprehensive frequency settings
-            print("\n    Advanced frequency calculation setup:")
+            ui.info("\n    Advanced frequency calculation setup:")
 
             config = {
                 "calculation_type": "FREQ",
@@ -1977,91 +1980,81 @@ class WorkflowPlanner:
             }
 
             # Frequency calculation mode
-            print("\n  Frequency calculation mode:")
-            print("    1. Gamma point only (REQUIRED for IR/Raman spectra)")
-            print("       - Fastest option, suitable for molecules and large cells")
-            print("       - Provides: frequencies, ZPE, thermal corrections, entropy")
-            print("       - Enables: IR and Raman intensity calculations")
-            print("       - Time: ~1-3x optimization time")
-            print("       - Memory: Similar to optimization")
-            print(
-                "    2. Phonon calculations (band structure, DOS, or custom k-points)"
-            )
-            print(
-                "       - For solid-state phonon properties (NOT for IR/Raman spectra)"
-            )
-            print(
-                "       - Options: Full dispersion, specific k-points, or custom paths"
-            )
-            print("       - Time: Varies (4-60x optimization time)")
-            print("       - Memory: Scales with calculation type")
-            print("       - Note: Cannot calculate molecular IR/Raman intensities")
+            ui.info("\n  Frequency calculation mode:")
+            ui.info("    1. Gamma point only (REQUIRED for IR/Raman spectra)")
+            ui.info("       - Fastest option, suitable for molecules and large cells")
+            ui.info("       - Provides: frequencies, ZPE, thermal corrections, entropy")
+            ui.info("       - Enables: IR and Raman intensity calculations")
+            ui.info("       - Time: ~1-3x optimization time")
+            ui.info("       - Memory: Similar to optimization")
+            ui.info("    2. Phonon calculations (band structure, DOS, or custom k-points)")
+            ui.info("       - For solid-state phonon properties (NOT for IR/Raman spectra)")
+            ui.info("       - Options: Full dispersion, specific k-points, or custom paths")
+            ui.info("       - Time: Varies (4-60x optimization time)")
+            ui.info("       - Memory: Scales with calculation type")
+            ui.info("       - Note: Cannot calculate molecular IR/Raman intensities")
 
             mode_choice = input("  Select mode [1]: ").strip() or "1"
             if mode_choice == "1":
                 config["frequency_settings"]["mode"] = "GAMMA"
-                print(
-                    "\n  ✓ Gamma point mode selected - IR/Raman intensities available"
-                )
+                ui.ok("\n  ✓ Gamma point mode selected - IR/Raman intensities available")
             elif mode_choice == "2":
                 # Phonon calculations - ask for sub-option
-                print("\n  Phonon calculation type:")
-                print("    1. Full dispersion with supercell (recommended)")
-                print("       - Complete phonon band structure and DOS")
-                print("       - Uses SCELPHONO for supercell generation")
-                print("       - Time: ~4-20x optimization (depends on supercell size)")
-                print("    2. Custom k-points only")
-                print("       - Calculate at specific k-points without full dispersion")
-                print("       - Faster for targeted analysis")
-                print("       - Time: Proportional to number of k-points")
-                print("    3. High-symmetry points only")
-                print("       - Just critical points (Gamma, X, M, etc.)")
-                print("       - Quick check of key phonon frequencies")
-                print("       - Time: ~2-4x optimization")
+                ui.info("\n  Phonon calculation type:")
+                ui.info("    1. Full dispersion with supercell (recommended)")
+                ui.info("       - Complete phonon band structure and DOS")
+                ui.info("       - Uses SCELPHONO for supercell generation")
+                ui.info("       - Time: ~4-20x optimization (depends on supercell size)")
+                ui.info("    2. Custom k-points only")
+                ui.info("       - Calculate at specific k-points without full dispersion")
+                ui.info("       - Faster for targeted analysis")
+                ui.info("       - Time: Proportional to number of k-points")
+                ui.info("    3. High-symmetry points only")
+                ui.info("       - Just critical points (Gamma, X, M, etc.)")
+                ui.info("       - Quick check of key phonon frequencies")
+                ui.info("       - Time: ~2-4x optimization")
 
                 phonon_type = input("  Select phonon type [1]: ").strip() or "1"
 
                 if phonon_type == "1":
                     config["frequency_settings"]["mode"] = "DISPERSION"
                     config["frequency_settings"]["dispersion"] = True
-                    print("\n  ✓ Full phonon dispersion mode selected")
-                    print("  ⚠️  Note: IR/Raman intensities NOT available in this mode")
-                    print("  For molecular spectra, use gamma point mode instead")
+                    ui.ok("\n  ✓ Full phonon dispersion mode selected")
+                    ui.warn("  ⚠️  Note: IR/Raman intensities NOT available in this mode")
+                    ui.info("  For molecular spectra, use gamma point mode instead")
 
                     # Ask for output type
-                    print("\n  Phonon calculation output type:")
-                    print("    1. Phonon band structure")
-                    print("    2. Phonon density of states")
-                    print("    3. Both band structure and DOS")
+                    ui.info("\n  Phonon calculation output type:")
+                    ui.info("    1. Phonon band structure")
+                    ui.info("    2. Phonon density of states")
+                    ui.info("    3. Both band structure and DOS")
                     
                     output_type = input("  Select output type [1]: ").strip() or "1"
                     
                     if output_type == "1":
                         config["frequency_settings"]["calculation_type"] = "bands"
-                        print("  ✓ Phonon band structure selected")
+                        ui.ok("  ✓ Phonon band structure selected")
                     elif output_type == "2":
                         config["frequency_settings"]["calculation_type"] = "dos"
-                        print("  ✓ Phonon density of states selected")
+                        ui.ok("  ✓ Phonon density of states selected")
                     elif output_type == "3":
                         config["frequency_settings"]["calculation_type"] = "both"
-                        print("  ✓ Both phonon bands and DOS selected")
+                        ui.ok("  ✓ Both phonon bands and DOS selected")
                     else:
                         config["frequency_settings"]["calculation_type"] = "bands"
-                        print("  Invalid choice - defaulting to band structure")
+                        ui.err("  Invalid choice - defaulting to band structure")
 
                     # Supercell for phonon calculation
-                    print("\n  Supercell for phonon calculation (SCELPHONO):")
-                    print("    Larger supercells = better accuracy but much higher cost")
-                    print("    1. Default 2x2x2 (8x more atoms)")
-                    print("       - Time: ~4-8x optimization time")
-                    print("       - Memory: ~8x optimization memory")
-                    print("       - Quality: Good for most phonon properties")
-                    print("    2. Custom expansion factors")
-                    print(
-                        "       - 3x3x3: ~10-20x time, ~27x memory, better for soft modes"
-                    )
-                    print("       - 4x4x4: ~30-60x time, ~64x memory, publication quality")
-                    print("    Note: For 2D materials, use 2x2x1 or 3x3x1")
+                    ui.info("\n  Supercell for phonon calculation (SCELPHONO):")
+                    ui.info("    Larger supercells = better accuracy but much higher cost")
+                    ui.info("    1. Default 2x2x2 (8x more atoms)")
+                    ui.info("       - Time: ~4-8x optimization time")
+                    ui.info("       - Memory: ~8x optimization memory")
+                    ui.info("       - Quality: Good for most phonon properties")
+                    ui.info("    2. Custom expansion factors")
+                    ui.info("       - 3x3x3: ~10-20x time, ~27x memory, better for soft modes")
+                    ui.info("       - 4x4x4: ~30-60x time, ~64x memory, publication quality")
+                    ui.info("    Note: For 2D materials, use 2x2x1 or 3x3x1")
                     supercell_choice = input("  Select supercell [1]: ").strip() or "1"
                     if supercell_choice == "2":
                         nx = input("    Expansion in x [2]: ").strip()
@@ -2091,9 +2084,9 @@ class WorkflowPlanner:
                     # Custom k-points
                     config["frequency_settings"]["mode"] = "CUSTOM"
                     config["frequency_settings"]["custom_kpoints"] = True
-                    print("\n  ✓ Custom k-point mode selected")
-                    print("  You'll specify k-points manually in the configuration")
-                    print("  Example: Calculate at specific q-points for testing")
+                    ui.ok("\n  ✓ Custom k-point mode selected")
+                    ui.info("  You'll specify k-points manually in the configuration")
+                    ui.info("  Example: Calculate at specific q-points for testing")
 
                     # Ask how many k-points
                     nkpoints = input(
@@ -2108,52 +2101,52 @@ class WorkflowPlanner:
                     config["frequency_settings"]["mode"] = "DISPERSION"
                     config["frequency_settings"]["high_symmetry_only"] = True
                     config["frequency_settings"]["scelphono"] = [1, 1, 1]
-                    print("\n  ✓ High-symmetry points mode selected")
-                    print("  Will calculate phonons at critical points only")
-                    print("  Typical points: Gamma, X, M, K, etc.")
-                    print("  ⚠️  Note: IR/Raman intensities NOT available in this mode")
+                    ui.ok("\n  ✓ High-symmetry points mode selected")
+                    ui.info("  Will calculate phonons at critical points only")
+                    ui.info("  Typical points: Gamma, X, M, K, etc.")
+                    ui.warn("  ⚠️  Note: IR/Raman intensities NOT available in this mode")
 
             else:
                 # Invalid choice - default to gamma
                 config["frequency_settings"]["mode"] = "GAMMA"
-                print("\n  Invalid choice - defaulting to gamma point mode")
+                ui.err("\n  Invalid choice - defaulting to gamma point mode")
 
             # Numerical derivative method
-            print("\n  Numerical derivative method:")
-            print("    1: One displacement per atom (faster, less accurate)")
-            print("       - Forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
-            print("       - Time: N atoms × 1 SCF per atom")
-            print("       - Error: O(t), suitable for quick estimates")
-            print("       - Quality: May miss soft modes, less accurate frequencies")
-            print("    2: Two displacements per atom (recommended)")
-            print("       - Central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
-            print("       - Time: N atoms × 2 SCF per atom (2x slower)")
-            print("       - Error: O(t²), much more accurate")
-            print("       - Quality: Reliable frequencies, better for publication")
+            ui.info("\n  Numerical derivative method:")
+            ui.info("    1: One displacement per atom (faster, less accurate)")
+            ui.info("       - Forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
+            ui.info("       - Time: N atoms × 1 SCF per atom")
+            ui.info("       - Error: O(t), suitable for quick estimates")
+            ui.info("       - Quality: May miss soft modes, less accurate frequencies")
+            ui.info("    2: Two displacements per atom (recommended)")
+            ui.info("       - Central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
+            ui.info("       - Time: N atoms × 2 SCF per atom (2x slower)")
+            ui.info("       - Error: O(t²), much more accurate")
+            ui.info("       - Quality: Reliable frequencies, better for publication")
             numderiv = input("  Select method (1 or 2) [2]: ").strip() or "2"
             config["frequency_settings"]["numderiv"] = int(numderiv)
 
             # Gamma point spectroscopy options
             if config["frequency_settings"]["mode"] == "GAMMA":
-                print("\n  Gamma point calculation type:")
-                print("    1. Pure frequencies (thermodynamics only)")
-                print("       - Fastest: Just vibrational frequencies")
-                print("       - Provides: ZPE, thermal corrections, entropy")
-                print("       - No spectroscopy data")
-                print("    2. IR spectroscopy")
-                print("       - Always calculates IR intensities")
-                print("       - Optional: Generate spectrum plot (IRSPEC)")
-                print("       - Multiple methods available (Berry phase, Wannier, CPHF)")
-                print("    3. Raman spectroscopy")
-                print("       - Always calculates Raman activities")
-                print("       - Optional: Generate spectrum plot (RAMSPEC)")
-                print("       - Requires CPHF calculation")
-                print("       - Significantly more expensive than IR")
-                print("    4. Both IR and Raman")
-                print("       - Always calculates both IR intensities and Raman activities")
-                print("       - Optional: Generate spectrum plots (IRSPEC/RAMSPEC)")
-                print("       - Complete vibrational spectroscopy")
-                print("       - Most expensive option")
+                ui.info("\n  Gamma point calculation type:")
+                ui.info("    1. Pure frequencies (thermodynamics only)")
+                ui.info("       - Fastest: Just vibrational frequencies")
+                ui.info("       - Provides: ZPE, thermal corrections, entropy")
+                ui.info("       - No spectroscopy data")
+                ui.info("    2. IR spectroscopy")
+                ui.info("       - Always calculates IR intensities")
+                ui.info("       - Optional: Generate spectrum plot (IRSPEC)")
+                ui.info("       - Multiple methods available (Berry phase, Wannier, CPHF)")
+                ui.info("    3. Raman spectroscopy")
+                ui.info("       - Always calculates Raman activities")
+                ui.info("       - Optional: Generate spectrum plot (RAMSPEC)")
+                ui.info("       - Requires CPHF calculation")
+                ui.info("       - Significantly more expensive than IR")
+                ui.info("    4. Both IR and Raman")
+                ui.info("       - Always calculates both IR intensities and Raman activities")
+                ui.info("       - Optional: Generate spectrum plots (IRSPEC/RAMSPEC)")
+                ui.info("       - Complete vibrational spectroscopy")
+                ui.info("       - Most expensive option")
                 
                 gamma_type = input("\n  Select calculation type [1]: ").strip() or "1"
                 
@@ -2161,39 +2154,39 @@ class WorkflowPlanner:
                     # Pure frequencies - no intensities
                     config["frequency_settings"]["intensities"] = False
                     config["frequency_settings"]["raman"] = False
-                    print("\n  ✓ Pure frequency calculation selected")
-                    print("  No IR or Raman intensities will be calculated")
+                    ui.ok("\n  ✓ Pure frequency calculation selected")
+                    ui.info("  No IR or Raman intensities will be calculated")
                     
                 elif gamma_type == "2":
                     # IR only
                     config["frequency_settings"]["intensities"] = True
                     config["frequency_settings"]["raman"] = False
-                    print("\n  ✓ IR spectroscopy selected")
-                    print("  Note: IR intensities are ALWAYS calculated when IR is selected")
-                    print("        Spectrum plot generation is optional (asked later)")
+                    ui.ok("\n  ✓ IR spectroscopy selected")
+                    ui.info("  Note: IR intensities are ALWAYS calculated when IR is selected")
+                    ui.info("        Spectrum plot generation is optional (asked later)")
                     
-                    print("\n  IR intensity calculation method:")
-                    print("    1. Berry phase (INTPOL) - Default, efficient")
-                    print("       - Best for: Periodic solids, semiconductors, insulators")
-                    print("       - Works well: Covalent materials, MOFs, zeolites")
-                    print("       - Limitations: Requires insulating state")
-                    print("       - Time: +10-20% over base frequency")
-                    print("       - Memory: Minimal overhead")
-                    print("    2. Wannier functions (INTLOC) - Localized approach")
-                    print("       - Best for: Molecular crystals, ionic solids")
-                    print("       - Works well: Systems with localized bonds/charges")
-                    print("       - Limitations: Requires insulating state, higher memory")
-                    print("       - Time: +20-30% over base frequency")
-                    print("       - Memory: +10-20% overhead")
-                    print("    3. CPHF (INTCPHF) - Most accurate, analytical")
-                    print("       - Best for: Any material (metals, semiconductors, insulators)")
-                    print("       - Works well: Small unit cells, high accuracy needed")
-                    print("       - Benefits: Also enables Raman, most reliable")
-                    print("       - Time: +50-100% over base frequency")
-                    print("       - Memory: ~2x base requirement")
+                    ui.info("\n  IR intensity calculation method:")
+                    ui.info("    1. Berry phase (INTPOL) - Default, efficient")
+                    ui.info("       - Best for: Periodic solids, semiconductors, insulators")
+                    ui.info("       - Works well: Covalent materials, MOFs, zeolites")
+                    ui.info("       - Limitations: Requires insulating state")
+                    ui.info("       - Time: +10-20% over base frequency")
+                    ui.info("       - Memory: Minimal overhead")
+                    ui.info("    2. Wannier functions (INTLOC) - Localized approach")
+                    ui.info("       - Best for: Molecular crystals, ionic solids")
+                    ui.info("       - Works well: Systems with localized bonds/charges")
+                    ui.info("       - Limitations: Requires insulating state, higher memory")
+                    ui.info("       - Time: +20-30% over base frequency")
+                    ui.info("       - Memory: +10-20% overhead")
+                    ui.info("    3. CPHF (INTCPHF) - Most accurate, analytical")
+                    ui.info("       - Best for: Any material (metals, semiconductors, insulators)")
+                    ui.info("       - Works well: Small unit cells, high accuracy needed")
+                    ui.info("       - Benefits: Also enables Raman, most reliable")
+                    ui.info("       - Time: +50-100% over base frequency")
+                    ui.info("       - Memory: ~2x base requirement")
                     
-                    print("\n  Note: Berry phase (1) is the default as it works well for most")
-                    print("        periodic systems and has the best speed/accuracy balance")
+                    ui.info("\n  Note: Berry phase (1) is the default as it works well for most")
+                    ui.info("        periodic systems and has the best speed/accuracy balance")
                     ir_method = input("\n  Select method [1]: ").strip() or "1"
                     ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
                     config["frequency_settings"]["ir_method"] = ir_methods.get(ir_method, "BERRY")
@@ -2206,15 +2199,15 @@ class WorkflowPlanner:
                         config["frequency_settings"]["cphf_tolerance"] = int(tol) if tol else 6
                     
                     # Ask about minimal IR
-                    print("\n  Spectrum plot generation:")
-                    print("    By default: Intensities only (no spectrum plot)")
-                    print("    Optional: Generate broadened IR spectrum plot (IRSPEC)")
-                    print("\n  Do you want to skip spectrum plot generation?")
-                    print("    - YES (minimal): Only calculate intensities")
-                    print("    - NO: Calculate intensities AND generate spectrum plot")
-                    print("\n  Computational cost of spectrum generation:")
-                    print("    - Minimal overhead (<1% additional time)")
-                    print("    - Can be generated later from .out file if needed")
+                    ui.info("\n  Spectrum plot generation:")
+                    ui.info("    By default: Intensities only (no spectrum plot)")
+                    ui.info("    Optional: Generate broadened IR spectrum plot (IRSPEC)")
+                    ui.info("\n  Do you want to skip spectrum plot generation?")
+                    ui.info("    - YES (minimal): Only calculate intensities")
+                    ui.info("    - NO: Calculate intensities AND generate spectrum plot")
+                    ui.info("\n  Computational cost of spectrum generation:")
+                    ui.info("    - Minimal overhead (<1% additional time)")
+                    ui.info("    - Can be generated later from .out file if needed")
                     minimal_ir = input("  Skip IR spectrum plot (minimal mode)? [Y/n]: ").strip().lower()
                     if minimal_ir != "n":
                         config["frequency_settings"]["minimal_ir"] = True
@@ -2224,10 +2217,10 @@ class WorkflowPlanner:
                     config["frequency_settings"]["intensities"] = True  # Needed for CPHF
                     config["frequency_settings"]["raman"] = True
                     config["frequency_settings"]["ir_method"] = "CPHF"  # Required for Raman
-                    print("\n  ✓ Raman spectroscopy selected")
-                    print("  Note: Raman activities are ALWAYS calculated when Raman is selected")
-                    print("        Spectrum plot generation is optional (asked later)")
-                    print("        CPHF will be used (required for Raman)")
+                    ui.ok("\n  ✓ Raman spectroscopy selected")
+                    ui.info("  Note: Raman activities are ALWAYS calculated when Raman is selected")
+                    ui.info("        Spectrum plot generation is optional (asked later)")
+                    ui.info("        CPHF will be used (required for Raman)")
                     
                     # CPHF settings
                     max_iter = input("\n  CPHF max iterations [30]: ").strip()
@@ -2236,15 +2229,15 @@ class WorkflowPlanner:
                     config["frequency_settings"]["cphf_tolerance"] = int(tol) if tol else 6
                     
                     # Ask about minimal Raman
-                    print("\n  Spectrum plot generation:")
-                    print("    By default: Activities only (no spectrum plot)")
-                    print("    Optional: Generate broadened Raman spectrum plot (RAMSPEC)")
-                    print("\n  Do you want to skip spectrum plot generation?")
-                    print("    - YES (minimal): Only calculate activities")
-                    print("    - NO: Calculate activities AND generate spectrum plot")
-                    print("\n  Computational cost of spectrum generation:")
-                    print("    - Minimal overhead (<1% additional time)")
-                    print("    - Can be generated later from .out file if needed")
+                    ui.info("\n  Spectrum plot generation:")
+                    ui.info("    By default: Activities only (no spectrum plot)")
+                    ui.info("    Optional: Generate broadened Raman spectrum plot (RAMSPEC)")
+                    ui.info("\n  Do you want to skip spectrum plot generation?")
+                    ui.info("    - YES (minimal): Only calculate activities")
+                    ui.info("    - NO: Calculate activities AND generate spectrum plot")
+                    ui.info("\n  Computational cost of spectrum generation:")
+                    ui.info("    - Minimal overhead (<1% additional time)")
+                    ui.info("    - Can be generated later from .out file if needed")
                     minimal = input("  Skip Raman spectrum plot (minimal mode)? [Y/n]: ").strip().lower()
                     if minimal != "n":
                         config["frequency_settings"]["minimal_raman"] = True
@@ -2254,10 +2247,10 @@ class WorkflowPlanner:
                     config["frequency_settings"]["intensities"] = True
                     config["frequency_settings"]["raman"] = True
                     config["frequency_settings"]["ir_method"] = "CPHF"  # Required for Raman
-                    print("\n  ✓ Both IR and Raman spectroscopy selected")
-                    print("  Note: IR intensities AND Raman activities are ALWAYS calculated")
-                    print("        Spectrum plot generation is optional (asked later)")
-                    print("        CPHF will be used (required for Raman)")
+                    ui.ok("\n  ✓ Both IR and Raman spectroscopy selected")
+                    ui.info("  Note: IR intensities AND Raman activities are ALWAYS calculated")
+                    ui.info("        Spectrum plot generation is optional (asked later)")
+                    ui.info("        CPHF will be used (required for Raman)")
                     
                     # CPHF settings
                     max_iter = input("\n  CPHF max iterations [30]: ").strip()
@@ -2266,22 +2259,22 @@ class WorkflowPlanner:
                     config["frequency_settings"]["cphf_tolerance"] = int(tol) if tol else 6
                     
                     # Ask about minimal options
-                    print("\n  Spectrum plot generation options:")
-                    print("  Note: Intensities/activities are ALWAYS calculated")
-                    print("        You're choosing whether to also generate spectrum plots")
+                    ui.info("\n  Spectrum plot generation options:")
+                    ui.info("  Note: Intensities/activities are ALWAYS calculated")
+                    ui.info("        You're choosing whether to also generate spectrum plots")
                     
-                    print("\n  IR spectrum plot:")
-                    print("    - Skip plot (minimal): Only intensities in .out file")
-                    print("    - Generate plot: Intensities + broadened spectrum (IRSPEC)")
-                    print("    - Cost: <1% additional time, can be done later")
+                    ui.info("\n  IR spectrum plot:")
+                    ui.info("    - Skip plot (minimal): Only intensities in .out file")
+                    ui.info("    - Generate plot: Intensities + broadened spectrum (IRSPEC)")
+                    ui.info("    - Cost: <1% additional time, can be done later")
                     minimal_ir = input("  Skip IR spectrum plot (minimal mode)? [Y/n]: ").strip().lower()
                     if minimal_ir != "n":
                         config["frequency_settings"]["minimal_ir"] = True
                         
-                    print("\n  Raman spectrum plot:")
-                    print("    - Skip plot (minimal): Only activities in .out file")
-                    print("    - Generate plot: Activities + broadened spectrum (RAMSPEC)")
-                    print("    - Cost: <1% additional time, can be done later")
+                    ui.info("\n  Raman spectrum plot:")
+                    ui.info("    - Skip plot (minimal): Only activities in .out file")
+                    ui.info("    - Generate plot: Activities + broadened spectrum (RAMSPEC)")
+                    ui.info("    - Cost: <1% additional time, can be done later")
                     minimal_raman = input("  Skip Raman spectrum plot (minimal mode)? [Y/n]: ").strip().lower()
                     if minimal_raman != "n":
                         config["frequency_settings"]["minimal_raman"] = True
@@ -2289,7 +2282,7 @@ class WorkflowPlanner:
                     # Default to pure frequencies
                     config["frequency_settings"]["intensities"] = False
                     config["frequency_settings"]["raman"] = False
-                    print("\n  Invalid choice - defaulting to pure frequencies")
+                    ui.err("\n  Invalid choice - defaulting to pure frequencies")
                     
                 # Spectral generation (only ask if not minimal)
                 if (config["frequency_settings"].get("intensities") or config["frequency_settings"].get("raman")) and \
@@ -2315,30 +2308,30 @@ class WorkflowPlanner:
                                 config["frequency_settings"]["spec_dampfac"] = float(width) if width else 10
 
                                 # Dielectric information required for IRSPEC
-                                print("\n  Dielectric information (required for IR spectrum):")
-                                print("    1. Constant - Single isotropic value")
-                                print("    2. Tensor - Full 3x3 anisotropic tensor")
+                                ui.info("\n  Dielectric information (required for IR spectrum):")
+                                ui.info("    1. Constant - Single isotropic value")
+                                ui.info("    2. Tensor - Full 3x3 anisotropic tensor")
                                 diel_type = input("  Select type [1]: ").strip() or "1"
 
                                 if diel_type == "1":
                                     diel_const = input("  Dielectric constant [2.5]: ").strip()
                                     config["frequency_settings"]["dielectric_constant"] = float(diel_const) if diel_const else 2.5
-                                    print(f"  ✓ Using dielectric constant: {config['frequency_settings']['dielectric_constant']}")
+                                    ui.ok(f"  ✓ Using dielectric constant: {config['frequency_settings']['dielectric_constant']}")
                                 else:
-                                    print("  Enter 3x3 dielectric tensor (9 values, row-wise):")
-                                    print("  Example: 2.5 0.0 0.0 0.0 2.5 0.0 0.0 0.0 2.5")
+                                    ui.info("  Enter 3x3 dielectric tensor (9 values, row-wise):")
+                                    ui.info("  Example: 2.5 0.0 0.0 0.0 2.5 0.0 0.0 0.0 2.5")
                                     tensor_input = input("  Tensor values: ").strip()
                                     if tensor_input:
                                         try:
                                             tensor_values = [float(x) for x in tensor_input.split()]
                                             if len(tensor_values) == 9:
                                                 config["frequency_settings"]["dielectric_tensor"] = tensor_values
-                                                print("  ✓ Using dielectric tensor")
+                                                ui.ok("  ✓ Using dielectric tensor")
                                             else:
-                                                print("  Invalid tensor (using default constant 2.5)")
+                                                ui.err("  Invalid tensor (using default constant 2.5)")
                                                 config["frequency_settings"]["dielectric_constant"] = 2.5
                                         except ValueError:
-                                            print("  Invalid tensor values (using default constant 2.5)")
+                                            ui.err("  Invalid tensor values (using default constant 2.5)")
                                             config["frequency_settings"]["dielectric_constant"] = 2.5
                                     else:
                                         config["frequency_settings"]["dielectric_constant"] = 2.5
@@ -2360,20 +2353,20 @@ class WorkflowPlanner:
 
             # Vibrational mode calculation selection
             if config["frequency_settings"].get("mode") == "GAMMA":
-                print("\n  Vibrational mode calculation:")
-                print("    1. IRRAMAN - Both IR and Raman modes (default)")
-                print("    2. IR - Only IR active modes")
-                print("    3. RAMAN - Only Raman active modes")
-                print("    4. ALL - All vibrational modes")
+                ui.info("\n  Vibrational mode calculation:")
+                ui.info("    1. IRRAMAN - Both IR and Raman modes (default)")
+                ui.info("    2. IR - Only IR active modes")
+                ui.info("    3. RAMAN - Only Raman active modes")
+                ui.info("    4. ALL - All vibrational modes")
                 mode_choice = input("  Select mode type [1]: ").strip() or "1"
                 mode_map = {"1": "IRRAMAN", "2": "IR", "3": "RAMAN", "4": "ALL"}
                 config["frequency_settings"]["mode_selection"] = mode_map.get(mode_choice, "IRRAMAN")
 
                 if mode_choice != "1":
                     mode_name = mode_map[mode_choice]
-                    print(f"  ✓ Mode selection: {mode_name}")
+                    ui.ok(f"  ✓ Mode selection: {mode_name}")
                 else:
-                    print("  ✓ Using default mode (IRRAMAN)")
+                    ui.ok("  ✓ Using default mode (IRRAMAN)")
 
             # Anharmonic calculations
             calc_anharm = (
@@ -2381,21 +2374,21 @@ class WorkflowPlanner:
             )
             if calc_anharm == "y":
                 config["frequency_settings"]["anharmonic"] = True
-                print("\n  Anharmonic calculation type:")
-                print("    1. ANHARM (basic X-H stretches)")
-                print("       - Time: ~5-10x base frequency time")
-                print("       - Quality: Good for X-H stretches only")
-                print("       - Use for: H-bonded systems, OH/NH/CH groups")
-                print("    2. VSCF (Vibrational SCF)")
-                print("       - Time: ~10-20x base frequency time")
-                print("       - Memory: ~2-3x base requirement")
-                print("       - Quality: Good for fundamental transitions")
-                print("       - Use for: Moderately anharmonic systems")
-                print("    3. VCI (Vibrational CI)")
-                print("       - Time: ~30-50x base frequency time")
-                print("       - Memory: ~4-5x base requirement")
-                print("       - Quality: Includes overtones and combinations")
-                print("       - Use for: Highly anharmonic systems, complete spectra")
+                ui.info("\n  Anharmonic calculation type:")
+                ui.info("    1. ANHARM (basic X-H stretches)")
+                ui.info("       - Time: ~5-10x base frequency time")
+                ui.info("       - Quality: Good for X-H stretches only")
+                ui.info("       - Use for: H-bonded systems, OH/NH/CH groups")
+                ui.info("    2. VSCF (Vibrational SCF)")
+                ui.info("       - Time: ~10-20x base frequency time")
+                ui.info("       - Memory: ~2-3x base requirement")
+                ui.info("       - Quality: Good for fundamental transitions")
+                ui.info("       - Use for: Moderately anharmonic systems")
+                ui.info("    3. VCI (Vibrational CI)")
+                ui.info("       - Time: ~30-50x base frequency time")
+                ui.info("       - Memory: ~4-5x base requirement")
+                ui.info("       - Quality: Includes overtones and combinations")
+                ui.info("       - Use for: Highly anharmonic systems, complete spectra")
                 anharm_type = input("  Select type [1]: ").strip() or "1"
                 anharm_types = {"1": "ANHARM", "2": "VSCF", "3": "VCI"}
                 config["frequency_settings"]["anharm_type"] = anharm_types.get(
@@ -2415,9 +2408,9 @@ class WorkflowPlanner:
                     config["frequency_settings"]["temperatures"] = [298.15]
 
             # Always use high accuracy tolerances for FREQ
-            print("\n  Using high accuracy tolerances for frequency calculations:")
-            print("    TOLINTEG: 9 9 9 11 38")
-            print("    TOLDEE: 11")
+            ui.info("\n  Using high accuracy tolerances for frequency calculations:")
+            ui.info("    TOLINTEG: 9 9 9 11 38")
+            ui.info("    TOLDEE: 11")
             config["frequency_settings"]["custom_tolerances"] = {
                 "TOLINTEG": "9 9 9 11 38",
                 "TOLDEE": 11,
@@ -2425,21 +2418,21 @@ class WorkflowPlanner:
 
         else:
             # Expert - run CRYSTALOptToD12.py interactively
-            print("\n  Expert mode: Full interactive configuration")
+            ui.info("\n  Expert mode: Full interactive configuration")
 
             # Ask whether to create individual configs per material
-            print("\n  Expert Setup:")
-            print("  Material Configuration Strategy:")
+            ui.info("\n  Expert Setup:")
+            ui.info("  Material Configuration Strategy:")
             print("")
-            print("  1. Individual material handling (STRONGLY RECOMMENDED)")
-            print("     Process: Interactive setup (1x) → Automatic per-material optimization")
-            print("     Preserves: Symmetry, k-points, cell parameters, origin settings")
-            print("     Generates: Unique configuration file per material")
+            ui.info("  1. Individual material handling (STRONGLY RECOMMENDED)")
+            ui.info("     Process: Interactive setup (1x) → Automatic per-material optimization")
+            ui.info("     Preserves: Symmetry, k-points, cell parameters, origin settings")
+            ui.info("     Generates: Unique configuration file per material")
             print("     ")
-            print("  2. Batch uniform handling (USE WITH CAUTION)")
-            print("     Process: Interactive setup (1x) → Same config for all")
-            print("     WARNING: Forces all materials to use first material's symmetry")
-            print("     Risk: Incorrect k-points, wrong space groups, failed calculations")
+            ui.info("  2. Batch uniform handling (USE WITH CAUTION)")
+            ui.info("     Process: Interactive setup (1x) → Same config for all")
+            ui.warn("     WARNING: Forces all materials to use first material's symmetry")
+            ui.info("     Risk: Incorrect k-points, wrong space groups, failed calculations")
 
             config_choice = (
                 input("  Choose configuration mode (1/2) [1]: ").strip() or "1"
@@ -2451,7 +2444,7 @@ class WorkflowPlanner:
             # Copy required scripts early
             self._copy_required_scripts_for_expert_mode()
 
-            print("\n    Expert mode: Full interactive configuration")
+            ui.info("\n    Expert mode: Full interactive configuration")
 
             # Try to find a real D12 file from previous steps or current directory
             real_d12 = None
@@ -2467,17 +2460,17 @@ class WorkflowPlanner:
                 found_files = list(self.work_dir.glob(pattern))
                 if found_files:
                     real_d12 = found_files[0]
-                    print(f"    Found D12 file for configuration: {real_d12.name}")
+                    ui.info(f"    Found D12 file for configuration: {real_d12.name}")
                     break
                     
             # Run CRYSTALOptToD12.py interactively for FREQ configuration
             expert_config = self._run_interactive_crystal_opt_config("FREQ", real_d12)
 
             if expert_config:
-                print("  ✅ Expert FREQ configuration completed successfully")
+                ui.ok("  ✅ Expert FREQ configuration completed successfully")
                 return expert_config
             else:
-                print("  ❌ Expert FREQ configuration failed, using advanced settings")
+                ui.err("  ❌ Expert FREQ configuration failed, using advanced settings")
                 # Fall back to advanced settings
                 config = {
                     "calculation_type": "FREQ",
@@ -2507,13 +2500,13 @@ class WorkflowPlanner:
 
     def _get_basic_opt_config(self) -> Dict[str, Any]:
         """Get basic optimization configuration"""
-        print("\n    Basic Optimization Setup:")
+        ui.info("\n    Basic Optimization Setup:")
 
         # Optimization type
-        print("    Optimization type:")
-        print("      1: FULLOPTG (optimize atoms and cell)")
-        print("      2: ATOMSONLY (optimize atoms only)")
-        print("      3: CELLONLY (optimize cell only)")
+        ui.info("    Optimization type:")
+        ui.info("      1: FULLOPTG (optimize atoms and cell)")
+        ui.info("      2: ATOMSONLY (optimize atoms only)")
+        ui.info("      3: CELLONLY (optimize cell only)")
 
         opt_choice = (
             input("    Choose optimization type (1-3, default 1): ").strip() or "1"
@@ -2522,17 +2515,17 @@ class WorkflowPlanner:
         opt_type = opt_types.get(opt_choice, "FULLOPTG")
 
         # Enhanced tolerances for subsequent optimizations
-        print("\n    Convergence settings:")
-        print("    Standard convergence:")
-        print("      - TOLDEG: 3.0E-5 (RMS gradient threshold)")
-        print("      - TOLDEX: 1.2E-4 (RMS displacement threshold)")
-        print("      - TOLDEE: 7 (energy convergence 10^-7 Ha)")
-        print("      - MAXCYCLE: 800 (maximum optimization steps)")
-        print("    Tighter convergence (recommended for refined optimization):")
-        print("      - TOLDEG: 1.5E-5 (2x tighter gradient)")
-        print("      - TOLDEX: 6.0E-5 (2x tighter displacement)")
-        print("      - TOLDEE: 8 (10x tighter energy, 10^-8 Ha)")
-        print("      - MAXCYCLE: 1000 (25% more steps allowed)")
+        ui.info("\n    Convergence settings:")
+        ui.info("    Standard convergence:")
+        ui.info("      - TOLDEG: 3.0E-5 (RMS gradient threshold)")
+        ui.info("      - TOLDEX: 1.2E-4 (RMS displacement threshold)")
+        ui.info("      - TOLDEE: 7 (energy convergence 10^-7 Ha)")
+        ui.info("      - MAXCYCLE: 800 (maximum optimization steps)")
+        ui.info("    Tighter convergence (recommended for refined optimization):")
+        ui.info("      - TOLDEG: 1.5E-5 (2x tighter gradient)")
+        ui.info("      - TOLDEX: 6.0E-5 (2x tighter displacement)")
+        ui.info("      - TOLDEE: 8 (10x tighter energy, 10^-8 Ha)")
+        ui.info("      - MAXCYCLE: 1000 (25% more steps allowed)")
 
         use_tight = yes_no_prompt(
             "    Use tighter convergence for refined optimization?", "yes"
@@ -2563,7 +2556,7 @@ class WorkflowPlanner:
         """Get advanced optimization configuration"""
         config = self._get_basic_opt_config()
 
-        print("\n    Advanced Optimization Setup:")
+        ui.info("\n    Advanced Optimization Setup:")
 
         # Method modifications - always ask
         config["method_settings"] = self._get_method_modifications()
@@ -2572,31 +2565,31 @@ class WorkflowPlanner:
         config["basis_settings"] = self._get_basis_modifications()
 
         # Custom tolerances
-        print("\n    Convergence tolerances:")
+        ui.info("\n    Convergence tolerances:")
         config["custom_tolerances"] = self._get_custom_tolerances()
 
         return config
 
     def _get_expert_opt_config(self, calc_type: str, step_num: int) -> Dict[str, Any]:
         """Get expert optimization configuration with full CRYSTALOptToD12.py integration"""
-        print(f"\n    Expert {calc_type} Setup:")
+        ui.info(f"\n    Expert {calc_type} Setup:")
 
         # Skip individual vs shared question for initial step (D12s already have settings)
         if step_num == 1:
-            print("    Initial step - modifying existing D12 settings")
+            ui.info("    Initial step - modifying existing D12 settings")
         else:
             # For subsequent OPT steps, ask if user wants per-material configs
-            print("    Material Configuration Strategy:")
+            ui.info("    Material Configuration Strategy:")
             print("")
-            print("    1. Individual material handling (STRONGLY RECOMMENDED)")
-            print("       Process: Interactive setup (1x) → Automatic per-material optimization")
-            print("       Preserves: Symmetry, k-points, cell parameters, origin settings")
-            print("       Generates: Unique configuration file per material")
+            ui.info("    1. Individual material handling (STRONGLY RECOMMENDED)")
+            ui.info("       Process: Interactive setup (1x) → Automatic per-material optimization")
+            ui.info("       Preserves: Symmetry, k-points, cell parameters, origin settings")
+            ui.info("       Generates: Unique configuration file per material")
             print("       ")
-            print("    2. Batch uniform handling (USE WITH CAUTION)")
-            print("       Process: Interactive setup (1x) → Same config for all")
-            print("       WARNING: Forces all materials to use first material's symmetry")
-            print("       Risk: Incorrect k-points, wrong space groups, failed calculations")
+            ui.info("    2. Batch uniform handling (USE WITH CAUTION)")
+            ui.info("       Process: Interactive setup (1x) → Same config for all")
+            ui.warn("       WARNING: Forces all materials to use first material's symmetry")
+            ui.info("       Risk: Incorrect k-points, wrong space groups, failed calculations")
 
             config_choice = (
                 input("    Choose configuration mode (1/2) [1]: ").strip() or "1"
@@ -2622,7 +2615,7 @@ class WorkflowPlanner:
             found_files = list(self.work_dir.glob(pattern))
             if found_files:
                 real_d12 = found_files[0]
-                print(f"    Found D12 file for configuration: {real_d12.name}")
+                ui.info(f"    Found D12 file for configuration: {real_d12.name}")
                 break
                 
         # Run CRYSTALOptToD12.py interactively NOW during planning
@@ -2637,12 +2630,10 @@ class WorkflowPlanner:
             expert_config["workflow_calc_type"] = (
                 calc_type  # Keep original OPT2, OPT3 etc.
             )
-            print(f"    ✅ Expert {calc_type} configuration completed successfully")
+            ui.ok(f"    ✅ Expert {calc_type} configuration completed successfully")
             return expert_config
         else:
-            print(
-                f"    ❌ Expert {calc_type} configuration failed, falling back to advanced mode"
-            )
+            ui.err(f"    ❌ Expert {calc_type} configuration failed, falling back to advanced mode")
             return self._get_advanced_opt_config()
 
     def _get_method_modifications(self) -> Dict[str, Any]:
@@ -2650,20 +2641,20 @@ class WorkflowPlanner:
         modifications = {}
 
         # Functional change - always ask which functional to use
-        print("      Select DFT functional (will inherit from previous if unchanged):")
-        print("        1: Keep current functional")
-        print("        2: PBE-D3 (GGA, fast and reliable)")
-        print("        3: B3LYP-D3 (hybrid, good for organics)")
-        print("        4: HSE06 (hybrid, accurate band gaps)")
-        print("        5: PBE0 (hybrid, general purpose)")
-        print("        6: M06-2X (meta-GGA, for kinetics)")
-        print("        7: Custom functional (select from full list)")
+        ui.info("      Select DFT functional (will inherit from previous if unchanged):")
+        ui.info("        1: Keep current functional")
+        ui.info("        2: PBE-D3 (GGA, fast and reliable)")
+        ui.info("        3: B3LYP-D3 (hybrid, good for organics)")
+        ui.info("        4: HSE06 (hybrid, accurate band gaps)")
+        ui.info("        5: PBE0 (hybrid, general purpose)")
+        ui.info("        6: M06-2X (meta-GGA, for kinetics)")
+        ui.info("        7: Custom functional (select from full list)")
 
         while True:
             func_choice = input("      Choose functional (1-7) [1]: ").strip() or "1"
             if func_choice in ["1", "2", "3", "4", "5", "6", "7"]:
                 break
-            print("      Please enter a number from 1 to 7")
+            ui.info("      Please enter a number from 1 to 7")
 
         if func_choice == "1":
             modifications["inherit_functional"] = True
@@ -2674,10 +2665,8 @@ class WorkflowPlanner:
 
             # Ask about dispersion for non-3C methods
             if selected_functional and "3C" not in selected_functional.upper():
-                print(f"\n      Add dispersion correction to {selected_functional}?")
-                print(
-                    "        Dispersion correction (D3) improves description of van der Waals interactions"
-                )
+                ui.info(f"\n      Add dispersion correction to {selected_functional}?")
+                ui.info("        Dispersion correction (D3) improves description of van der Waals interactions")
                 use_d3 = yes_no_prompt("      Use D3 dispersion correction?", "yes")
                 if use_d3:
                     modifications["custom_functional"] = f"{selected_functional}-D3"
@@ -2699,13 +2688,13 @@ class WorkflowPlanner:
 
     def _select_custom_functional(self) -> str:
         """Show full functional selection menu"""
-        print("\n      Select functional category:")
-        print("        1: Hartree-Fock methods")
-        print("        2: LDA (Local Density Approximation)")
-        print("        3: GGA (Generalized Gradient Approximation)")
-        print("        4: Hybrid (mix of HF and DFT)")
-        print("        5: Meta-GGA (includes kinetic energy density)")
-        print("        6: 3C Composite methods")
+        ui.info("\n      Select functional category:")
+        ui.info("        1: Hartree-Fock methods")
+        ui.info("        2: LDA (Local Density Approximation)")
+        ui.info("        3: GGA (Generalized Gradient Approximation)")
+        ui.info("        4: Hybrid (mix of HF and DFT)")
+        ui.info("        5: Meta-GGA (includes kinetic energy density)")
+        ui.info("        6: 3C Composite methods")
 
         category_map = {
             "1": "HF",
@@ -2720,7 +2709,7 @@ class WorkflowPlanner:
             cat_choice = input("      Choose category (1-6): ").strip()
             if cat_choice in category_map:
                 break
-            print("      Please enter a number from 1 to 6")
+            ui.info("      Please enter a number from 1 to 6")
 
         category = category_map[cat_choice]
 
@@ -2753,7 +2742,7 @@ class WorkflowPlanner:
 
         func_list = functionals.get(category, [])
 
-        print(f"\n      Available {category} functionals:")
+        ui.info(f"\n      Available {category} functionals:")
         for i, func in enumerate(func_list, 1):
             # Add descriptions for common functionals
             desc = ""
@@ -2775,7 +2764,7 @@ class WorkflowPlanner:
                 desc = " - strongly constrained meta-GGA"
             elif func == "SVWN":
                 desc = " - Slater exchange + VWN5 correlation"
-            print(f"        {i}: {func}{desc}")
+            ui.info(f"        {i}: {func}{desc}")
 
         while True:
             try:
@@ -2784,32 +2773,32 @@ class WorkflowPlanner:
                 )
                 if 1 <= func_idx <= len(func_list):
                     return func_list[func_idx - 1]
-                print(f"      Please enter a number from 1 to {len(func_list)}")
+                ui.info(f"      Please enter a number from 1 to {len(func_list)}")
             except ValueError:
-                print("      Please enter a valid number")
+                ui.info("      Please enter a valid number")
 
     def _get_custom_tolerances(self) -> Dict[str, Any]:
         """Get custom tolerance settings"""
         tolerances = {}
 
         # TOLINTEG
-        print("      TOLINTEG (Coulomb/exchange integral tolerances):")
-        print("        Current/default: 7 7 7 7 14")
-        print("        Tighter: 8 8 8 8 16 or 9 9 9 9 18")
+        ui.info("      TOLINTEG (Coulomb/exchange integral tolerances):")
+        ui.info("        Current/default: 7 7 7 7 14")
+        ui.info("        Tighter: 8 8 8 8 16 or 9 9 9 9 18")
         custom_tolinteg = input("      New TOLINTEG [keep current]: ").strip()
         if custom_tolinteg:
             tolerances["TOLINTEG"] = custom_tolinteg
 
         # TOLDEE
-        print("\n      TOLDEE (SCF energy convergence):")
-        print("        Current/default: 7")
-        print("        Tighter: 8, 9, or 10")
+        ui.info("\n      TOLDEE (SCF energy convergence):")
+        ui.info("        Current/default: 7")
+        ui.info("        Tighter: 8, 9, or 10")
         custom_toldee = input("      New TOLDEE [keep current]: ").strip()
         if custom_toldee:
             try:
                 tolerances["TOLDEE"] = int(custom_toldee)
             except ValueError:
-                print("      Invalid TOLDEE, keeping current")
+                ui.err("      Invalid TOLDEE, keeping current")
 
         return tolerances
 
@@ -2877,7 +2866,7 @@ class WorkflowPlanner:
         self, calc_type: str, step_num: int
     ) -> Dict[str, Any]:
         """Create individual expert D3 configurations for each material"""
-        print(f"\n    Creating per-material {calc_type} configurations...")
+        ui.info(f"\n    Creating per-material {calc_type} configurations...")
         
         # Find OUT files from SP step (or previous appropriate step)
         out_files = []
@@ -2897,10 +2886,10 @@ class WorkflowPlanner:
                 break
                 
         if not out_files:
-            print("    No OUT files found. Using single configuration mode.")
+            ui.info("    No OUT files found. Using single configuration mode.")
             return self._run_interactive_d3_config(calc_type, step_num)
             
-        print(f"    Found {len(out_files)} materials to configure")
+        ui.info(f"    Found {len(out_files)} materials to configure")
         
         # Create config directory
         config_dir = (
@@ -2921,19 +2910,19 @@ class WorkflowPlanner:
             )
             
         if not script_path.exists():
-            print("    Error: CRYSTALOptToD3.py not found")
+            ui.err("    Error: CRYSTALOptToD3.py not found")
             return self._get_advanced_d3_config(calc_type)
             
         # Create individual configurations for each material
         material_configs = {}
-        print(f"\n    Creating per-material {calc_type} configurations...")
-        print(f"    Note: You will configure each material interactively")
+        ui.info(f"\n    Creating per-material {calc_type} configurations...")
+        ui.info(f"    Note: You will configure each material interactively")
         
         for i, out_file in enumerate(out_files):
             material_name = self.create_material_id_from_file(out_file)
             
-            print(f"\n    Material {i+1}/{len(out_files)}: {material_name}")
-            print(f"    Source file: {out_file.name}")
+            ui.info(f"\n    Material {i+1}/{len(out_files)}: {material_name}")
+            ui.info(f"    Source file: {out_file.name}")
             
             # Create config file path
             config_file = (
@@ -2959,7 +2948,7 @@ class WorkflowPlanner:
             ]
             
             try:
-                print(f"    Launching interactive configuration for {material_name}...")
+                ui.info(f"    Launching interactive configuration for {material_name}...")
                 result = subprocess.run(cmd, cwd=str(self.work_dir))
                 
                 if result.returncode == 0 and config_file.exists():
@@ -2967,15 +2956,15 @@ class WorkflowPlanner:
                         "config_file": str(config_file),
                         "source_out": str(out_file),
                     }
-                    print(f"      ✅ {material_name}: {calc_type} configuration saved")
+                    ui.ok(f"      ✅ {material_name}: {calc_type} configuration saved")
                 else:
-                    print(f"      ❌ {material_name}: Configuration failed or cancelled")
+                    ui.err(f"      ❌ {material_name}: Configuration failed or cancelled")
                     
             except Exception as e:
-                print(f"      ❌ Error configuring {material_name}: {e}")
+                ui.err(f"      ❌ Error configuring {material_name}: {e}")
             
         if not material_configs:
-            print("    No configurations created successfully")
+            ui.ok("    No configurations created successfully")
             return self._get_advanced_d3_config(calc_type)
             
         return {
@@ -3005,11 +2994,11 @@ class WorkflowPlanner:
             import shutil
             if template_out.exists():
                 shutil.copy2(template_out, sample_out)
-                print(f"      Using real output file as template: {template_out.name}")
+                ui.info(f"      Using real output file as template: {template_out.name}")
             else:
                 raise FileNotFoundError("Template OUT file not found")
         except Exception as e:
-            print(f"      Warning: Could not copy template OUT: {e}")
+            ui.warn(f"      Warning: Could not copy template OUT: {e}")
             # Create minimal dummy output file
             with open(sample_out, "w") as f:
                 f.write("CRYSTAL23 OUTPUT\n")
@@ -3043,10 +3032,8 @@ class WorkflowPlanner:
         # Strip any instance numbers for CRYSTALOptToD3.py compatibility
         base_calc_type = re.sub(r'\d+$', '', calc_type)
         
-        print(f"\n      Launching CRYSTALOptToD3.py for {calc_type} base configuration...")
-        print(
-            f"      Note: This creates the base configuration for all materials"
-        )
+        ui.info(f"\n      Launching CRYSTALOptToD3.py for {calc_type} base configuration...")
+        ui.info(f"      Note: This creates the base configuration for all materials")
         print("")
         
         # Run CRYSTALOptToD3.py interactively
@@ -3072,7 +3059,7 @@ class WorkflowPlanner:
                     return json.load(f)
                     
         except Exception as e:
-            print(f"      Error running CRYSTALOptToD3.py: {e}")
+            ui.err(f"      Error running CRYSTALOptToD3.py: {e}")
             
         return None
 
@@ -3090,7 +3077,7 @@ class WorkflowPlanner:
             )
 
         if not script_path.exists():
-            print(f"      Error: CRYSTALOptToD3.py not found")
+            ui.err(f"      Error: CRYSTALOptToD3.py not found")
             return None
 
         # Create a temporary directory for configuration
@@ -3108,7 +3095,7 @@ class WorkflowPlanner:
         if real_out_path and real_out_path.exists():
             source_out = real_out_path
             real_out_found = True
-            print(f"      Using provided output file: {source_out.name}")
+            ui.info(f"      Using provided output file: {source_out.name}")
         else:
             # Search for .out files
             out_search_dirs = [
@@ -3122,7 +3109,7 @@ class WorkflowPlanner:
                     out_files = list(search_dir.glob("*.out"))
                     if out_files:
                         source_out = out_files[0]
-                        print(f"      Using real output file as template: {source_out.name}")
+                        ui.info(f"      Using real output file as template: {source_out.name}")
                         real_out_found = True
                         break
                         
@@ -3134,7 +3121,7 @@ class WorkflowPlanner:
                 with open(sample_out, "w") as f:
                     f.write(out_content)
             except Exception as e:
-                print(f"      Warning: Could not read output file: {e}")
+                ui.warn(f"      Warning: Could not read output file: {e}")
                 real_out_found = False
         
         # Also try to find a D12 file for extracting settings
@@ -3187,10 +3174,8 @@ class WorkflowPlanner:
         with open(sample_f9, "w") as f:
             f.write("DUMMY WAVEFUNCTION FILE\n")
 
-        print(f"\n      Launching CRYSTALOptToD3.py for {calc_type} configuration...")
-        print(
-            f"      Note: This is for configuration only - actual files will be processed during execution"
-        )
+        ui.info(f"\n      Launching CRYSTALOptToD3.py for {calc_type} configuration...")
+        ui.info(f"      Note: This is for configuration only - actual files will be processed during execution")
         print("")
 
         # Generate config filename with step info and timestamp to ensure uniqueness
@@ -3269,14 +3254,14 @@ class WorkflowPlanner:
                         "source": "CRYSTALOptToD3.py",
                     }
 
-                    print(f"      ✓ Configuration saved: {config_file.name}")
+                    ui.ok(f"      ✓ Configuration saved: {config_file.name}")
                     return workflow_config
                 else:
-                    print(f"      Warning: No configuration file found after running CRYSTALOptToD3.py")
+                    ui.warn(f"      Warning: No configuration file found after running CRYSTALOptToD3.py")
                     return None
 
         except Exception as e:
-            print(f"      Error running CRYSTALOptToD3.py: {e}")
+            ui.err(f"      Error running CRYSTALOptToD3.py: {e}")
 
         return None
 
@@ -3298,7 +3283,7 @@ class WorkflowPlanner:
             import shutil
             shutil.copy2(template_d12, sample_d12)
         except Exception as e:
-            print(f"      Error copying template D12: {e}")
+            ui.err(f"      Error copying template D12: {e}")
             return None
 
         # Use DummyFileCreator to create proper dummy output file
@@ -3363,7 +3348,7 @@ class WorkflowPlanner:
                     return json.load(f)
 
         except Exception as e:
-            print(f"      Error running CRYSTALOptToD12.py: {e}")
+            ui.err(f"      Error running CRYSTALOptToD12.py: {e}")
 
         return None
 
@@ -3371,7 +3356,7 @@ class WorkflowPlanner:
         self, calc_type: str, step_num: int
     ) -> Dict[str, Any]:
         """Create individual expert configurations for each material"""
-        print(f"\n    Creating per-material {calc_type} configurations...")
+        ui.info(f"\n    Creating per-material {calc_type} configurations...")
 
         # Find D12 files from previous step
         d12_files = []
@@ -3391,10 +3376,10 @@ class WorkflowPlanner:
                 break
 
         if not d12_files:
-            print("    No D12 files found. Using single configuration mode.")
+            ui.info("    No D12 files found. Using single configuration mode.")
             return self._run_interactive_crystal_opt_config(calc_type)
 
-        print(f"    Found {len(d12_files)} materials to configure")
+        ui.info(f"    Found {len(d12_files)} materials to configure")
 
         # Create config directory
         config_dir = (
@@ -3415,23 +3400,23 @@ class WorkflowPlanner:
             )
 
         if not script_path.exists():
-            print("    Error: CRYSTALOptToD12.py not found")
+            ui.err("    Error: CRYSTALOptToD12.py not found")
             return self._get_advanced_opt_config()
 
         # First, create base configuration using first D12 as template
-        print("\n    Creating base configuration...")
+        ui.info("\n    Creating base configuration...")
         base_config = self._create_base_expert_config(calc_type, d12_files[0])
 
         if not base_config:
-            print("    Failed to create base configuration")
+            ui.err("    Failed to create base configuration")
             return self._get_advanced_opt_config()
 
-        print("    ✅ Base configuration created")
+        ui.ok("    ✅ Base configuration created")
 
         # Now create per-material configs by modifying only symmetry fields
         material_configs = {}
 
-        print(f"\n    Creating per-material symmetry configurations...")
+        ui.info(f"\n    Creating per-material symmetry configurations...")
         for i, d12_file in enumerate(d12_files):
             material_name = self.create_material_id_from_file(d12_file)
 
@@ -3484,13 +3469,11 @@ class WorkflowPlanner:
             }
 
             kpoints_str = material_config.get('k_points', 'not calculated')
-            print(
-                f"      ✅ {material_name}: spacegroup={material_config['spacegroup']}, "
-                + f"origin={material_config['origin_setting']}, k-points={kpoints_str}"
-            )
+            ui.ok(f"      ✅ {material_name}: spacegroup={material_config['spacegroup']}, "
+                + f"origin={material_config['origin_setting']}, k-points={kpoints_str}")
 
         if not material_configs:
-            print("    No configurations created successfully")
+            ui.ok("    No configurations created successfully")
             return self._get_advanced_opt_config()
 
         return {
@@ -3516,7 +3499,7 @@ class WorkflowPlanner:
             )
 
         if not script_path.exists():
-            print(f"      Error: CRYSTALOptToD12.py not found")
+            ui.err(f"      Error: CRYSTALOptToD12.py not found")
             return None
 
         # Create a temporary output and D12 file for configuration
@@ -3534,7 +3517,7 @@ class WorkflowPlanner:
         if real_d12_path and real_d12_path.exists():
             source_d12 = real_d12_path
             real_d12_found = True
-            print(f"      Using provided D12 as template: {source_d12.name}")
+            ui.info(f"      Using provided D12 as template: {source_d12.name}")
         else:
             # Search for D12 files
             d12_search_dirs = [
@@ -3549,7 +3532,7 @@ class WorkflowPlanner:
                     if d12_files:
                         # Copy the first D12 file found
                         source_d12 = d12_files[0]
-                        print(f"      Using real D12 as template: {source_d12.name}")
+                        ui.info(f"      Using real D12 as template: {source_d12.name}")
                         real_d12_found = True
                         break
                         
@@ -3563,11 +3546,11 @@ class WorkflowPlanner:
                 shutil.copy2(source_d12, sample_d12)
 
             except Exception as e:
-                print(f"      Warning: Could not process D12 file: {e}")
+                ui.warn(f"      Warning: Could not process D12 file: {e}")
                 real_d12_found = False
 
         if not real_d12_found:
-            print("      No real D12 found, using minimal template")
+            ui.info("      No real D12 found, using minimal template")
             # Fall back to minimal template
             with open(sample_d12, "w") as f:
                 f.write("Sample D12 for configuration\n")
@@ -3595,9 +3578,9 @@ class WorkflowPlanner:
                     with open(sample_out, "w") as f:
                         f.write(out_content)
                     real_out_found = True
-                    print(f"      Using real output file: {out_path.name}")
+                    ui.info(f"      Using real output file: {out_path.name}")
                 except Exception as e:
-                    print(f"      Warning: Could not read output file: {e}")
+                    ui.warn(f"      Warning: Could not read output file: {e}")
                     
         if not real_out_found:
             # Write minimal output file using DummyFileCreator
@@ -3635,7 +3618,7 @@ class WorkflowPlanner:
         if calc_type.startswith('OPT') and calc_type != 'OPT':
             display_calc_type = f"{calc_type} (Optimization)"
         
-        print(f"\n      Launching CRYSTALOptToD12.py for Expert {display_calc_type} configuration...")
+        ui.info(f"\n      Launching CRYSTALOptToD12.py for Expert {display_calc_type} configuration...")
 
         # Build command with calc-type to pre-select calculation type
         # But still run interactively like the D3 scripts do
@@ -3689,11 +3672,11 @@ class WorkflowPlanner:
 
                 return expert_config
             else:
-                print(f"      CRYSTALOptToD12.py configuration failed or was cancelled")
+                ui.err(f"      CRYSTALOptToD12.py configuration failed or was cancelled")
                 return None
 
         except Exception as e:
-            print(f"      Error running CRYSTALOptToD12.py: {e}")
+            ui.err(f"      Error running CRYSTALOptToD12.py: {e}")
             return None
 
     def get_custom_sp_settings(self) -> Dict[str, Any]:
@@ -3702,7 +3685,7 @@ class WorkflowPlanner:
 
     def configure_slurm_scripts(self, calc_type: str, step_num: int) -> Dict[str, Any]:
         """Configure and copy SLURM submission scripts for this calculation step"""
-        print(f"    Configuring SLURM scripts for {calc_type} step {step_num}")
+        ui.info(f"    Configuring SLURM scripts for {calc_type} step {step_num}")
 
         # Determine which scripts are needed
         scripts_needed = self.get_required_scripts(calc_type)
@@ -3710,7 +3693,7 @@ class WorkflowPlanner:
         slurm_config = {"scripts": {}, "resources": {}, "modules": {}}
 
         for script_name in scripts_needed:
-            print(f"      Setting up {script_name}...")
+            ui.info(f"      Setting up {script_name}...")
             script_config = self.setup_slurm_script(script_name, calc_type, step_num)
             slurm_config["scripts"][script_name] = script_config
 
@@ -3736,73 +3719,57 @@ class WorkflowPlanner:
         # Get default resource settings based on script and calc type
         default_resources = self.get_default_resources(script_name, calc_type)
 
-        print(f"        Default resources for {calc_type}:")
-        print(f"          Cores: {default_resources['ntasks']}")
+        ui.info(f"        Default resources for {calc_type}:")
+        ui.info(f"          Cores: {default_resources['ntasks']}")
 
         # Add calculation-specific resource explanations
         if calc_type.startswith("FREQ"):
-            print(f"          📊 FREQ resource notes:")
-            print(
-                f"            - Time scales with number of atoms (N_atoms × 2 displacements)"
-            )
-            print(f"            - Memory increases for CPHF/Raman calculations (~2-3x)")
-            print(
-                f"            - Phonon dispersion needs more time (supercell calculations)"
-            )
+            ui.info(f"          📊 FREQ resource notes:")
+            ui.info(f"            - Time scales with number of atoms (N_atoms × 2 displacements)")
+            ui.info(f"            - Memory increases for CPHF/Raman calculations (~2-3x)")
+            ui.info(f"            - Phonon dispersion needs more time (supercell calculations)")
         elif calc_type.startswith("SP"):
-            print(f"          📊 SP resource notes:")
-            print(f"            - Single SCF calculation, typically faster than OPT")
-            print(
-                f"            - Tight convergence may require +20-50% more iterations"
-            )
+            ui.info(f"          📊 SP resource notes:")
+            ui.info(f"            - Single SCF calculation, typically faster than OPT")
+            ui.info(f"            - Tight convergence may require +20-50% more iterations")
 
         # Display memory with clear indication of per-cpu vs total
         # This addresses user confusion about memory specifications in SLURM
         # submitcrystal23.sh uses --mem-per-cpu while submit_prop.sh uses --mem (total)
         if "memory_per_cpu" in default_resources:
-            print(f"          Memory per CPU: {default_resources['memory_per_cpu']}")
+            ui.info(f"          Memory per CPU: {default_resources['memory_per_cpu']}")
             # Try to calculate total memory
             mem_str = default_resources["memory_per_cpu"].upper()
             if mem_str.endswith("G") or mem_str.endswith("GB"):
                 mem_val = int(mem_str.rstrip("GB"))
                 total_mem_gb = mem_val * default_resources["ntasks"]
-                print(
-                    f"          Total Memory: {total_mem_gb}G ({default_resources['ntasks']} cores × {default_resources['memory_per_cpu']})"
-                )
+                ui.info(f"          Total Memory: {total_mem_gb}G ({default_resources['ntasks']} cores × {default_resources['memory_per_cpu']})")
             elif mem_str.endswith("M") or mem_str.endswith("MB"):
                 mem_val = int(mem_str.rstrip("MB"))
                 total_mem_mb = mem_val * default_resources["ntasks"]
                 total_mem_gb = total_mem_mb // 1000
-                print(
-                    f"          Total Memory: ~{total_mem_gb}G ({default_resources['ntasks']} cores × {default_resources['memory_per_cpu']})"
-                )
+                ui.info(f"          Total Memory: ~{total_mem_gb}G ({default_resources['ntasks']} cores × {default_resources['memory_per_cpu']})")
         elif "memory" in default_resources:
-            print(f"          Total Memory: {default_resources['memory']}")
+            ui.info(f"          Total Memory: {default_resources['memory']}")
             # Try to calculate per-cpu memory
             mem_str = default_resources["memory"].upper()
             if mem_str.endswith("G") or mem_str.endswith("GB"):
                 mem_val = int(mem_str.rstrip("GB"))
                 per_cpu_gb = mem_val // default_resources["ntasks"]
-                print(
-                    f"          Memory per CPU: ~{per_cpu_gb}G ({default_resources['memory']} ÷ {default_resources['ntasks']} cores)"
-                )
+                ui.info(f"          Memory per CPU: ~{per_cpu_gb}G ({default_resources['memory']} ÷ {default_resources['ntasks']} cores)")
             elif mem_str.endswith("M") or mem_str.endswith("MB"):
                 mem_val = int(mem_str.rstrip("MB"))
                 per_cpu_mb = mem_val // default_resources["ntasks"]
                 per_cpu_gb = per_cpu_mb // 1000
                 if per_cpu_gb > 0:
-                    print(
-                        f"          Memory per CPU: ~{per_cpu_gb}G ({default_resources['memory']} ÷ {default_resources['ntasks']} cores)"
-                    )
+                    ui.info(f"          Memory per CPU: ~{per_cpu_gb}G ({default_resources['memory']} ÷ {default_resources['ntasks']} cores)")
                 else:
-                    print(
-                        f"          Memory per CPU: ~{per_cpu_mb}M ({default_resources['memory']} ÷ {default_resources['ntasks']} cores)"
-                    )
+                    ui.info(f"          Memory per CPU: ~{per_cpu_mb}M ({default_resources['memory']} ÷ {default_resources['ntasks']} cores)")
         else:
-            print(f"          Memory: N/A")
+            ui.info(f"          Memory: N/A")
 
-        print(f"          Walltime: {default_resources['walltime']}")
-        print(f"          Account: {default_resources.get('account', 'mendoza_q')}")
+        ui.info(f"          Walltime: {default_resources['walltime']}")
+        ui.info(f"          Account: {default_resources.get('account', 'mendoza_q')}")
 
         # Ask user if they want to customize
         customize = yes_no_prompt(
@@ -3833,7 +3800,7 @@ class WorkflowPlanner:
                 exclude_str = self.prompt_node_exclusion()
                 if exclude_str:
                     script_config["node_exclusion"] = exclude_str
-                    print(f"        Node exclusion configured: {exclude_str}")
+                    ui.info(f"        Node exclusion configured: {exclude_str}")
 
         # Ask about additional customizations
         additional_custom = yes_no_prompt(
@@ -3973,9 +3940,7 @@ class WorkflowPlanner:
             if user_input in valid_choices:
                 return user_input
             else:
-                print(
-                    f"⚠️  Invalid choice '{user_input}'. Valid options: {', '.join(valid_choices)}"
-                )
+                ui.warn(f"⚠️  Invalid choice '{user_input}'. Valid options: {', '.join(valid_choices)}")
                 continue
 
     def get_safe_integer_input(
@@ -3990,20 +3955,14 @@ class WorkflowPlanner:
             try:
                 value = int(user_input)
                 if value < min_val:
-                    print(
-                        f"          ⚠️  Value must be at least {min_val}. Please try again."
-                    )
+                    ui.warn(f"          ⚠️  Value must be at least {min_val}. Please try again.")
                     continue
                 if max_val and value > max_val:
-                    print(
-                        f"          ⚠️  Value must be at most {max_val}. Please try again."
-                    )
+                    ui.warn(f"          ⚠️  Value must be at most {max_val}. Please try again.")
                     continue
                 return value
             except ValueError:
-                print(
-                    f"          ⚠️  Invalid input '{user_input}'. Please enter a number."
-                )
+                ui.warn(f"          ⚠️  Invalid input '{user_input}'. Please enter a number.")
                 continue
 
     def get_safe_memory_input(self, prompt: str, default: str) -> str:
@@ -4024,9 +3983,9 @@ class WorkflowPlanner:
                     return f"{user_input}G"  # Default to GB if no unit
                 return user_input.upper()
             else:
-                print(f"          ⚠️  Invalid memory format '{user_input}'.")
-                print(f"          Valid formats: 4G, 4GB, 4000M, 4000MB")
-                print(f"          Examples: 5G, 48G, 4000M")
+                ui.warn(f"          ⚠️  Invalid memory format '{user_input}'.")
+                ui.info(f"          Valid formats: 4G, 4GB, 4000M, 4000MB")
+                ui.info(f"          Examples: 5G, 48G, 4000M")
                 continue
 
     def get_safe_walltime_input(self, prompt: str, default: str) -> str:
@@ -4048,9 +4007,9 @@ class WorkflowPlanner:
             if any(re.match(pattern, user_input) for pattern in patterns):
                 return user_input
             else:
-                print(f"          ⚠️  Invalid walltime format '{user_input}'.")
-                print(f"          Valid formats: HH:MM:SS, D-HH:MM:SS, or DD-HH:MM:SS")
-                print(f"          Examples: 24:00:00, 3-00:00:00, 7-00:00:00")
+                ui.warn(f"          ⚠️  Invalid walltime format '{user_input}'.")
+                ui.info(f"          Valid formats: HH:MM:SS, D-HH:MM:SS, or DD-HH:MM:SS")
+                ui.info(f"          Examples: 24:00:00, 3-00:00:00, 7-00:00:00")
                 continue
 
     def get_custom_resources(
@@ -4059,7 +4018,7 @@ class WorkflowPlanner:
         """Get custom resource settings from user"""
         resources = default_resources.copy()
 
-        print(f"        Customize resources for {calc_type}:")
+        ui.info(f"        Customize resources for {calc_type}:")
 
         # Cores
         resources["ntasks"] = self.get_safe_integer_input(
@@ -4100,10 +4059,8 @@ class WorkflowPlanner:
         """Get additional SLURM customizations from user"""
         customizations = []
 
-        print(f"        Additional SLURM directives for {calc_type}:")
-        print(
-            "        Enter SLURM directives (without #SBATCH). Press Enter when done."
-        )
+        ui.info(f"        Additional SLURM directives for {calc_type}:")
+        ui.info("        Enter SLURM directives (without #SBATCH). Press Enter when done.")
 
         common_options = {
             "1": "--constraint=intel18",
@@ -4114,10 +4071,10 @@ class WorkflowPlanner:
             "6": "Custom directive",
         }
 
-        print("        Common options:")
+        ui.info("        Common options:")
         for key, option in common_options.items():
-            print(f"          {key}: {option}")
-        print("          Enter: Finish")
+            ui.info(f"          {key}: {option}")
+        ui.info("          Enter: Finish")
 
         while True:
             choice = input("        Select option or enter custom directive: ").strip()
@@ -4147,45 +4104,45 @@ class WorkflowPlanner:
         if not self.node_manager:
             return None
 
-        print("\n        " + "="*60)
-        print("        SLURM Node Exclusion Configuration")
-        print("        " + "="*60)
+        ui.info("\n        " + "="*60)
+        ui.info("        SLURM Node Exclusion Configuration")
+        ui.info("        " + "="*60)
 
-        print("\n        Select node exclusion option:")
-        print("        1) No exclusions (use all available nodes)")
-        print("        2) Exclude all AMD20 nodes (amr + nvf types) [RECOMMENDED]")
-        print("        3) Exclude Mendoza group nodes (agg-[011-012], amr-[163,178-179])")
-        print("        4) Exclude all nodes of a specific type (amr, nvf, agg, etc.)")
-        print("        5) Custom node exclusion list")
+        ui.info("\n        Select node exclusion option:")
+        ui.info("        1) No exclusions (use all available nodes)")
+        ui.info("        2) Exclude all AMD20 nodes (amr + nvf types) [RECOMMENDED]")
+        ui.info("        3) Exclude Mendoza group nodes (agg-[011-012], amr-[163,178-179])")
+        ui.info("        4) Exclude all nodes of a specific type (amr, nvf, agg, etc.)")
+        ui.info("        5) Custom node exclusion list")
 
         choice = input("\n        Enter choice [1-5] (default: 2): ").strip() or "2"
 
         if choice == "1":
-            print("        No node exclusions will be applied.")
+            ui.info("        No node exclusions will be applied.")
             return None
 
         elif choice == "2":
             # Exclude AMD20 nodes
-            print("        Querying SLURM for all AMD20 nodes (amr + nvf)...")
+            ui.info("        Querying SLURM for all AMD20 nodes (amr + nvf)...")
             amd20_nodes = self.node_manager.get_amd20_nodes()
             if amd20_nodes:
                 amr_count = sum(1 for n in amd20_nodes if n.startswith('amr-'))
                 nvf_count = sum(1 for n in amd20_nodes if n.startswith('nvf-'))
-                print(f"        Found {len(amd20_nodes)} AMD20 nodes:")
-                print(f"          - amr (AMD EPYC 7452): {amr_count} nodes")
-                print(f"          - nvf (AMD EPYC 7452 + V100): {nvf_count} nodes")
+                ui.info(f"        Found {len(amd20_nodes)} AMD20 nodes:")
+                ui.info(f"          - amr (AMD EPYC 7452): {amr_count} nodes")
+                ui.info(f"          - nvf (AMD EPYC 7452 + V100): {nvf_count} nodes")
                 exclude_str = self.node_manager.create_exclude_string(amd20_nodes)
-                print(f"        Exclude string: {exclude_str}")
+                ui.info(f"        Exclude string: {exclude_str}")
                 return exclude_str
             else:
-                print("        Warning: No AMD20 nodes found")
+                ui.warn("        Warning: No AMD20 nodes found")
                 return None
 
         elif choice == "3":
             exclude_str = self.node_manager.create_exclude_string(
                 self.node_manager.MENDOZA_NODES
             )
-            print(f"        Excluding Mendoza nodes: {exclude_str}")
+            ui.info(f"        Excluding Mendoza nodes: {exclude_str}")
             return exclude_str
 
         elif choice == "4":
@@ -4195,15 +4152,15 @@ class WorkflowPlanner:
             return self._custom_exclusion_prompt()
 
         else:
-            print("        Invalid choice. No exclusions will be applied.")
+            ui.err("        Invalid choice. No exclusions will be applied.")
             return None
 
     def _exclude_by_type_prompt(self) -> Optional[str]:
         """Handle exclusion of all nodes by type"""
-        print("\n        Available node types:")
+        ui.info("\n        Available node types:")
         for i, node_type in enumerate(self.node_manager.KNOWN_NODE_TYPES, 1):
-            print(f"        {i}) {node_type}")
-        print(f"        {len(self.node_manager.KNOWN_NODE_TYPES) + 1}) Enter custom type")
+            ui.info(f"        {i}) {node_type}")
+        ui.info(f"        {len(self.node_manager.KNOWN_NODE_TYPES) + 1}) Enter custom type")
 
         choice = input(
             f"\n        Select node type [1-{len(self.node_manager.KNOWN_NODE_TYPES) + 1}]: "
@@ -4216,20 +4173,20 @@ class WorkflowPlanner:
             elif choice_num == len(self.node_manager.KNOWN_NODE_TYPES) + 1:
                 node_type = input("        Enter custom node type prefix: ").strip()
             else:
-                print("        Invalid choice.")
+                ui.err("        Invalid choice.")
                 return None
         except ValueError:
-            print("        Invalid input.")
+            ui.err("        Invalid input.")
             return None
 
-        print(f"\n        Querying SLURM for all '{node_type}' nodes...")
+        ui.info(f"\n        Querying SLURM for all '{node_type}' nodes...")
         nodes = self.node_manager.query_nodes_by_type(node_type)
 
         if not nodes:
-            print(f"        No nodes found for type '{node_type}'")
+            ui.info(f"        No nodes found for type '{node_type}'")
             return None
 
-        print(f"        Found {len(nodes)} nodes: {nodes[0]} to {nodes[-1]}")
+        ui.info(f"        Found {len(nodes)} nodes: {nodes[0]} to {nodes[-1]}")
 
         confirm = input(
             f"\n        Exclude all {len(nodes)} '{node_type}' nodes? [y/N]: "
@@ -4237,28 +4194,28 @@ class WorkflowPlanner:
 
         if confirm == 'y':
             exclude_str = self.node_manager.create_exclude_string(nodes)
-            print(f"        Exclude string: {exclude_str}")
+            ui.info(f"        Exclude string: {exclude_str}")
             return exclude_str
         else:
-            print("        Exclusion cancelled.")
+            ui.info("        Exclusion cancelled.")
             return None
 
     def _custom_exclusion_prompt(self) -> Optional[str]:
         """Handle custom node exclusion list"""
-        print("\n        Enter nodes to exclude (comma-separated).")
-        print("        Examples:")
-        print("          - Single nodes: amr-042,amr-050,nvf-123")
-        print("          - With ranges: amr-[042-050],nvf-[100-110]")
+        ui.info("\n        Enter nodes to exclude (comma-separated).")
+        ui.info("        Examples:")
+        ui.info("          - Single nodes: amr-042,amr-050,nvf-123")
+        ui.info("          - With ranges: amr-[042-050],nvf-[100-110]")
 
         custom_input = input("\n        Nodes to exclude: ").strip()
 
         if not custom_input:
-            print("        No exclusions specified.")
+            ui.info("        No exclusions specified.")
             return None
 
         # Check if already in SLURM format
         if '[' in custom_input and ']' in custom_input:
-            print(f"        Using provided exclude string: {custom_input}")
+            ui.info(f"        Using provided exclude string: {custom_input}")
             return custom_input
 
         # Parse comma-separated node names
@@ -4274,7 +4231,7 @@ class WorkflowPlanner:
                     node_groups[prefix] = []
                 node_groups[prefix].append(node)
             else:
-                print(f"        Warning: Invalid node format '{node}', skipping")
+                ui.warn(f"        Warning: Invalid node format '{node}', skipping")
 
         # Create exclude strings for each type
         exclude_dict = {}
@@ -4282,7 +4239,7 @@ class WorkflowPlanner:
             exclude_dict[prefix] = prefix_nodes
 
         exclude_str = self.node_manager.create_multi_type_exclude_string(exclude_dict)
-        print(f"        Compact exclude string: {exclude_str}")
+        ui.info(f"        Compact exclude string: {exclude_str}")
 
         return exclude_str
 
@@ -4290,8 +4247,8 @@ class WorkflowPlanner:
         self, step_configs: Dict[str, Dict[str, Any]], workflow_id: str, queue_config: Dict[str, Any]
     ):
         """Copy and customize all SLURM scripts for the workflow"""
-        print("\nStep 4.5: Setting up SLURM scripts and configuration files")
-        print("-" * 40)
+        ui.info("\nStep 4.5: Setting up SLURM scripts and configuration files")
+        ui.rule()
 
         scripts_dir = self.work_dir / "workflow_scripts"
         scripts_dir.mkdir(exist_ok=True)
@@ -4326,10 +4283,10 @@ class WorkflowPlanner:
         source_script = bin_dir / script_config["source_script"]
         target_script = scripts_dir / script_config["step_specific_name"]
 
-        print(f"    Creating {target_script.name} for {step_key}")
+        ui.info(f"    Creating {target_script.name} for {step_key}")
 
         if not source_script.exists():
-            print(f"      Warning: Source script {source_script} not found")
+            ui.warn(f"      Warning: Source script {source_script} not found")
             return
 
         # Read source script
@@ -4346,11 +4303,9 @@ class WorkflowPlanner:
         # Make executable
         target_script.chmod(0o755)
 
-        print(f"      Created: {target_script}")
-        print(
-            f"      Resources: {script_config['resources']['ntasks']} cores, "
-            f"{script_config['resources']['walltime']} walltime"
-        )
+        ui.ok(f"      Created: {target_script}")
+        ui.info(f"      Resources: {script_config['resources']['ntasks']} cores, "
+            f"{script_config['resources']['walltime']} walltime")
 
     def apply_script_customizations(
         self, content: str, script_config: Dict[str, Any], queue_config: Dict[str, Any]
@@ -4462,7 +4417,7 @@ class WorkflowPlanner:
 
     def copy_additional_files(self, bin_dir: Path, workflow_id: str):
         """Copy additional required files (minimal with centralized installation)"""
-        print("    Setting up workflow directory...")
+        ui.info("    Setting up workflow directory...")
 
         # With centralized MACE installation, we only need to ensure directories exist
         # All scripts are accessible via PATH or $MACE_HOME
@@ -4478,8 +4433,8 @@ class WorkflowPlanner:
         for dir_path in essential_dirs:
             dir_path.mkdir(parents=True, exist_ok=True)
             
-        print(f"    ✓ Created essential workflow directories")
-        print(f"    Note: Using centralized MACE installation from $MACE_HOME")
+        ui.ok(f"    ✓ Created essential workflow directories")
+        ui.info(f"    Note: Using centralized MACE installation from $MACE_HOME")
         
         # With centralized installation, scripts are accessed via:
         # - Direct execution: enhanced_queue_manager.py (via PATH)
@@ -4511,62 +4466,58 @@ class WorkflowPlanner:
         with open(plan_file, "w") as f:
             json.dump(workflow_plan, f, indent=2, default=str)
 
-        print(f"\n✅ Workflow plan saved to: {plan_file}")
-        print(f"\n📁 Configuration locations:")
-        print(f"   Main plan: {plan_file}")
-        print(f"   CIF config: {self.configs_dir}/cif_conversion_config.json")
-        print(f"   Step configs: {self.configs_dir}/step_configs/workflow_*_step_*.json")
-        print(f"   All configs: {self.configs_dir}/")
+        ui.ok(f"\n✅ Workflow plan saved to: {plan_file}")
+        ui.info(f"\n📁 Configuration locations:")
+        ui.info(f"   Main plan: {plan_file}")
+        ui.info(f"   CIF config: {self.configs_dir}/cif_conversion_config.json")
+        ui.info(f"   Step configs: {self.configs_dir}/step_configs/workflow_*_step_*.json")
+        ui.info(f"   All configs: {self.configs_dir}/")
         return plan_file
 
     def execute_workflow_plan(self, plan_file: Path):
         """Execute the planned workflow using WorkflowExecutor for proper isolation support"""
-        print(f"\nStep 5: Execute Workflow")
-        print("-" * 40)
+        ui.info(f"\nStep 5: Execute Workflow")
+        ui.rule()
 
         with open(plan_file, "r") as f:
             plan = json.load(f)
 
-        print("Workflow execution summary:")
-        print(
-            f"  Input files: {len(plan['input_files']['cif'])} CIFs, {len(plan['input_files']['d12'])} D12s"
-        )
-        print(f"  Workflow sequence: {' → '.join(plan['workflow_sequence'])}")
-        print(
-            f"  Total materials: {len(plan['input_files']['cif']) + len(plan['input_files']['d12'])}"
-        )
+        ui.info("Workflow execution summary:")
+        ui.info(f"  Input files: {len(plan['input_files']['cif'])} CIFs, {len(plan['input_files']['d12'])} D12s")
+        ui.info(f"  Workflow sequence: {' → '.join(plan['workflow_sequence'])}")
+        ui.info(f"  Total materials: {len(plan['input_files']['cif']) + len(plan['input_files']['d12'])}")
         
         # Show isolation mode if set
         isolation_mode = plan.get('isolation_mode', 'shared')
         if isolation_mode != 'shared':
-            print(f"  Isolation mode: {isolation_mode}")
+            ui.info(f"  Isolation mode: {isolation_mode}")
             post_action = plan.get('post_completion_action', 'keep')
-            print(f"  Post-completion: {post_action}")
+            ui.info(f"  Post-completion: {post_action}")
 
         proceed = yes_no_prompt("Proceed with workflow execution?", "yes")
         if not proceed:
-            print("Workflow execution cancelled.")
+            ui.info("Workflow execution cancelled.")
             return
 
         # Use WorkflowExecutor for proper isolation support
         try:
             from mace.workflow.executor import WorkflowExecutor
             
-            print("\nStarting workflow execution...")
+            ui.info("\nStarting workflow execution...")
             executor = WorkflowExecutor(str(self.work_dir), self.db_path)
             
             # Execute through the proper workflow executor which handles contexts
             executor.execute_workflow_plan(plan_file)
             
         except Exception as e:
-            print(f"\nError during workflow execution: {e}")
+            ui.err(f"\nError during workflow execution: {e}")
             import traceback
             traceback.print_exc()
             
             # Ask if user wants to try fallback execution
             use_fallback = yes_no_prompt("\nTry fallback execution without isolation?", "no")
             if use_fallback:
-                print("\nUsing fallback execution (no isolation support)...")
+                ui.info("\nUsing fallback execution (no isolation support)...")
                 # Initialize queue manager for fallback
                 queue_manager = EnhancedCrystalQueueManager(
                     d12_dir=str(Path.cwd()),
@@ -4579,15 +4530,15 @@ class WorkflowPlanner:
 
     def run_workflow_execution(self, plan: Dict[str, Any], queue_manager):
         """Run the actual workflow execution"""
-        print("\nStarting workflow execution...")
+        ui.info("\nStarting workflow execution...")
 
         # Phase 1: Convert CIFs to D12s if needed
         if plan["input_files"]["cif"]:
-            print("Phase 1: Converting CIF files to D12 format...")
+            ui.info("Phase 1: Converting CIF files to D12 format...")
             self.convert_cifs_to_d12s(plan)
 
         # Phase 2: Execute planned calculation sequence using WorkflowExecutor
-        print("Phase 2: Executing calculation sequence...")
+        ui.info("Phase 2: Executing calculation sequence...")
         try:
             from mace.workflow.executor import WorkflowExecutor
 
@@ -4598,9 +4549,7 @@ class WorkflowPlanner:
             if not workflow_id:
                 # Only generate a new one if missing (shouldn't happen)
                 workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                print(
-                    f"WARNING: No workflow_id in plan, generated new one: {workflow_id}"
-                )
+                ui.warn(f"WARNING: No workflow_id in plan, generated new one: {workflow_id}")
 
             # Prepare the workflow directory structure for the executor
             workflow_dir = executor.outputs_dir / workflow_id
@@ -4614,9 +4563,7 @@ class WorkflowPlanner:
             input_dir = Path(plan["input_directory"])
             d12_files = list(input_dir.glob("*.d12"))
 
-            print(
-                f"  Found {len(d12_files)} D12 files for workflow execution"
-            )
+            ui.info(f"  Found {len(d12_files)} D12 files for workflow execution")
             # Don't copy files here - let the executor handle it to avoid duplication
             # The executor will create individual material folders and copy files there
 
@@ -4624,8 +4571,8 @@ class WorkflowPlanner:
             executor.execute_workflow_steps(plan, workflow_id)
 
         except Exception as e:
-            print(f"Error executing workflow: {e}")
-            print("Falling back to basic execution...")
+            ui.err(f"Error executing workflow: {e}")
+            ui.info("Falling back to basic execution...")
             self.execute_calculation_sequence(plan, queue_manager)
 
     def convert_cifs_to_d12s(self, plan: Dict[str, Any]):
@@ -4636,19 +4583,17 @@ class WorkflowPlanner:
         cif_files = list(input_dir.glob("*.cif"))
 
         if len(existing_d12s) >= len(cif_files):
-            print(
-                f"Found {len(existing_d12s)} D12 files already exist for {len(cif_files)} CIF files."
-            )
-            print("Skipping CIF conversion - using existing D12 files.")
+            ui.info(f"Found {len(existing_d12s)} D12 files already exist for {len(cif_files)} CIF files.")
+            ui.warn("Skipping CIF conversion - using existing D12 files.")
 
             # D12 files already exist in input directory, no need to copy to separate input directory
             # They will be used directly by the workflow executor
-            print(f"  Using existing D12 files from: {input_dir}")
+            ui.info(f"  Using existing D12 files from: {input_dir}")
 
             return
 
         # If we need to convert, use the WorkflowExecutor
-        print("Converting CIF files to D12 format...")
+        ui.info("Converting CIF files to D12 format...")
         try:
             from mace.workflow.executor import WorkflowExecutor
 
@@ -4659,25 +4604,25 @@ class WorkflowPlanner:
 
             # Run the conversion using the proper executor
             executor.convert_cifs_with_config(plan, workflow_id)
-            print("CIF conversion completed successfully!")
+            ui.ok("CIF conversion completed successfully!")
 
         except Exception as e:
-            print(f"CIF conversion failed: {e}")
-            print("Please check the configuration and try again.")
+            ui.err(f"CIF conversion failed: {e}")
+            ui.info("Please check the configuration and try again.")
 
     def execute_calculation_sequence(self, plan: Dict[str, Any], queue_manager):
         """Execute the planned calculation sequence"""
-        print("Starting calculation sequence execution...")
+        ui.info("Starting calculation sequence execution...")
 
         # Get the input files for the first step from the input directory
         input_dir = Path(plan["input_directory"])
         d12_files = list(input_dir.glob("*.d12"))
 
         if not d12_files:
-            print("Error: No D12 files found for job submission!")
+            ui.err("Error: No D12 files found for job submission!")
             return
 
-        print(f"Found {len(d12_files)} D12 files to submit")
+        ui.info(f"Found {len(d12_files)} D12 files to submit")
 
         # Submit the initial OPT calculations using the enhanced queue manager
         try:
@@ -4688,27 +4633,27 @@ class WorkflowPlanner:
                 dest_file = Path.cwd() / clean_filename
                 if not dest_file.exists():
                     shutil.copy2(d12_file, dest_file)
-                    print(f"  Prepared: {d12_file.name} → {clean_filename}")
+                    ui.info(f"  Prepared: {d12_file.name} → {clean_filename}")
 
             # Submit jobs using the queue manager
-            print(f"\nSubmitting {len(d12_files)} OPT jobs...")
+            ui.info(f"\nSubmitting {len(d12_files)} OPT jobs...")
             queue_manager.process_new_d12_files()
 
-            print("Job submission completed!")
-            print("Monitor progress with:")
-            print(f"  mace monitor --status")
-            print(f"  Database: {self.db_path}")
+            ui.ok("Job submission completed!")
+            ui.info("Monitor progress with:")
+            ui.info(f"  mace monitor --status")
+            ui.info(f"  Database: {self.db_path}")
 
         except Exception as e:
-            print(f"Error during job submission: {e}")
-            print("You can manually submit jobs using:")
-            print(f"  cd {input_dir}")
-            print("  mace submit --max-jobs 200")
+            ui.err(f"Error during job submission: {e}")
+            ui.info("You can manually submit jobs using:")
+            ui.info(f"  cd {input_dir}")
+            ui.info("  mace submit --max-jobs 200")
 
     def configure_queue_management(self) -> Dict[str, Any]:
         """Configure SLURM queue management settings with streamlined interface"""
-        print("\nStep 4.8: Queue Management Configuration")
-        print("-" * 40)
+        ui.info("\nStep 4.8: Queue Management Configuration")
+        ui.rule()
         
         # Default settings optimized for 1000-job SLURM limit
         default_config = {
@@ -4718,55 +4663,55 @@ class WorkflowPlanner:
             "max_recovery_attempts": 3 # Error recovery attempts
         }
         
-        print("Default queue management settings:")
-        print(f"  • Maximum total jobs: {default_config['max_jobs']}")
-        print(f"  • Reserve slots: {default_config['reserve_slots']}")
-        print(f"  • Max submit per callback: {default_config['max_submit_batch']}")
-        print(f"  • Recovery attempts: {default_config['max_recovery_attempts']}")
-        print("\nThese settings prevent hitting SLURM job limits and are optimized")
-        print("for most HPC clusters with 1000-job limits.")
+        ui.info("Default queue management settings:")
+        ui.info(f"  • Maximum total jobs: {default_config['max_jobs']}")
+        ui.info(f"  • Reserve slots: {default_config['reserve_slots']}")
+        ui.info(f"  • Max submit per callback: {default_config['max_submit_batch']}")
+        ui.info(f"  • Recovery attempts: {default_config['max_recovery_attempts']}")
+        ui.info("\nThese settings prevent hitting SLURM job limits and are optimized")
+        ui.info("for most HPC clusters with 1000-job limits.")
         
         modify = yes_no_prompt("\nModify queue management settings?", "no")
         
         if not modify:
             return default_config
             
-        print("\nCustomizing queue management settings:")
+        ui.info("\nCustomizing queue management settings:")
         config = {}
         
         # Max total jobs
-        print(f"\n1. Maximum total SLURM jobs allowed:")
-        print(f"   Current default: {default_config['max_jobs']}")
-        print(f"   This prevents exceeding your cluster's job limit")
-        print(f"   Recommended: 950 for clusters with 1000-job limits")
+        ui.info(f"\n1. Maximum total SLURM jobs allowed:")
+        ui.info(f"   Current default: {default_config['max_jobs']}")
+        ui.info(f"   This prevents exceeding your cluster's job limit")
+        ui.info(f"   Recommended: 950 for clusters with 1000-job limits")
         max_jobs_input = input(f"   Enter value [{default_config['max_jobs']}]: ").strip()
         config['max_jobs'] = int(max_jobs_input) if max_jobs_input else default_config['max_jobs']
         
         # Reserve slots
-        print(f"\n2. SLURM slots to keep in reserve:")
-        print(f"   Current default: {default_config['reserve_slots']}")
-        print(f"   Safety buffer to prevent submitting too close to limit")
+        ui.info(f"\n2. SLURM slots to keep in reserve:")
+        ui.info(f"   Current default: {default_config['reserve_slots']}")
+        ui.info(f"   Safety buffer to prevent submitting too close to limit")
         reserve_input = input(f"   Enter value [{default_config['reserve_slots']}]: ").strip()
         config['reserve_slots'] = int(reserve_input) if reserve_input else default_config['reserve_slots']
         
         # Max submit per callback
-        print(f"\n3. Maximum jobs to submit per callback:")
-        print(f"   Current default: {default_config['max_submit_batch']}")
-        print(f"   Controls batch size when completed jobs trigger new submissions")
-        print(f"   Higher values = faster throughput, lower values = more stability")
+        ui.info(f"\n3. Maximum jobs to submit per callback:")
+        ui.info(f"   Current default: {default_config['max_submit_batch']}")
+        ui.info(f"   Controls batch size when completed jobs trigger new submissions")
+        ui.info(f"   Higher values = faster throughput, lower values = more stability")
         submit_input = input(f"   Enter value [{default_config['max_submit_batch']}]: ").strip()
         config['max_submit_batch'] = int(submit_input) if submit_input else default_config['max_submit_batch']
         
         # Recovery attempts
-        print(f"\n4. Maximum error recovery attempts:")
-        print(f"   Current default: {default_config['max_recovery_attempts']}")
-        print(f"   How many times to retry failed calculations with fixes")
+        ui.info(f"\n4. Maximum error recovery attempts:")
+        ui.info(f"   Current default: {default_config['max_recovery_attempts']}")
+        ui.info(f"   How many times to retry failed calculations with fixes")
         recovery_input = input(f"   Enter value [{default_config['max_recovery_attempts']}]: ").strip()
         config['max_recovery_attempts'] = int(recovery_input) if recovery_input else default_config['max_recovery_attempts']
         
-        print(f"\nQueue management configuration:")
+        ui.info(f"\nQueue management configuration:")
         for key, value in config.items():
-            print(f"  {key}: {value}")
+            ui.info(f"  {key}: {value}")
             
         return config
 
@@ -4780,7 +4725,7 @@ class WorkflowPlanner:
         input_files = self.scan_input_files(input_dir, input_type)
 
         if not input_files["cif"] and not input_files["d12"]:
-            print("No input files found. Exiting.")
+            ui.info("No input files found. Exiting.")
             return
 
         # Step 2: Plan workflow sequence first to know what type of calculation we're starting with
@@ -4799,20 +4744,20 @@ class WorkflowPlanner:
         )
         
         # Step 4.5: Choose workflow isolation mode
-        print("\nStep 4.5: Workflow Isolation Settings")
-        print("-" * 40)
-        print("Choose how this workflow should handle its data:")
-        print("  1. Isolated (recommended) - Separate database per workflow")
-        print("     • No conflicts with other workflows")
-        print("     • Clean separation of data")
-        print("     • Easy to archive/delete")
-        print("  2. Shared - Use shared database (legacy behavior)")
-        print("     • All workflows share same database")
-        print("     • Traditional MACE behavior")
-        print("     • Risk of conflicts with concurrent workflows")
-        print("  3. Hybrid - Shared schema, isolated data")
-        print("     • Uses shared database structure")
-        print("     • But keeps data separate")
+        ui.info("\nStep 4.5: Workflow Isolation Settings")
+        ui.rule()
+        ui.info("Choose how this workflow should handle its data:")
+        ui.info("  1. Isolated (recommended) - Separate database per workflow")
+        ui.info("     • No conflicts with other workflows")
+        ui.info("     • Clean separation of data")
+        ui.info("     • Easy to archive/delete")
+        ui.info("  2. Shared - Use shared database (legacy behavior)")
+        ui.info("     • All workflows share same database")
+        ui.info("     • Traditional MACE behavior")
+        ui.info("     • Risk of conflicts with concurrent workflows")
+        ui.info("  3. Hybrid - Shared schema, isolated data")
+        ui.info("     • Uses shared database structure")
+        ui.info("     • But keeps data separate")
         
         isolation_choice = input("\nSelect isolation mode [1]: ").strip() or "1"
         isolation_map = {"1": "isolated", "2": "shared", "3": "hybrid"}
@@ -4821,10 +4766,10 @@ class WorkflowPlanner:
         # Ask about post-completion actions if using isolation
         post_completion_action = "keep"
         if isolation_mode != "shared":
-            print("\nPost-completion actions:")
-            print("  1. Keep workflow context active (default)")
-            print("  2. Archive workflow context after completion")
-            print("  3. Export results and delete context after completion")
+            ui.info("\nPost-completion actions:")
+            ui.info("  1. Keep workflow context active (default)")
+            ui.info("  2. Archive workflow context after completion")
+            ui.info("  3. Export results and delete context after completion")
             
             action_choice = input("\nSelect action [1]: ").strip() or "1"
             action_map = {"1": "keep", "2": "archive", "3": "export_and_delete"}
@@ -4867,8 +4812,8 @@ class WorkflowPlanner:
         if execute_now:
             self.execute_workflow_plan(plan_file)
         else:
-            print(f"\nWorkflow plan saved. Execute later with:")
-            print(f"  python workflow_planner.py --execute {plan_file}")
+            ui.ok(f"\nWorkflow plan saved. Execute later with:")
+            ui.info(f"  python workflow_planner.py --execute {plan_file}")
 
     def create_clean_material_id(self, file_path: Path) -> str:
         """Create a clean material ID from file path using smart suffix removal"""
@@ -4962,16 +4907,16 @@ def main():
         if plan_file.exists():
             planner.execute_workflow_plan(plan_file)
         else:
-            print(f"Workflow plan file not found: {plan_file}")
+            ui.err(f"Workflow plan file not found: {plan_file}")
     else:
         planner.main_interactive_workflow()
 
 
 def get_user_input(prompt: str, options: Dict[str, str], default: str = "") -> str:
     """Get user input with options"""
-    print(f"\n{prompt}:")
+    ui.info(f"\n{prompt}:")
     for key, desc in options.items():
-        print(f"  {key}: {desc}")
+        ui.info(f"  {key}: {desc}")
 
     while True:
         choice = input(f"Enter choice [{default}]: ").strip()
@@ -4980,7 +4925,7 @@ def get_user_input(prompt: str, options: Dict[str, str], default: str = "") -> s
         elif choice in options:
             return choice
         else:
-            print(f"Invalid choice. Please select from: {', '.join(options.keys())}")
+            ui.err(f"Invalid choice. Please select from: {', '.join(options.keys())}")
 
 
 def yes_no_prompt(prompt: str, default: str = "yes") -> bool:
@@ -4998,7 +4943,7 @@ def yes_no_prompt(prompt: str, default: str = "yes") -> bool:
         elif response in ["n", "no", "false", "0"]:
             return False
         else:
-            print(f"⚠️  Invalid response '{response}'. Please enter yes/no (y/n).")
+            ui.warn(f"⚠️  Invalid response '{response}'. Please enter yes/no (y/n).")
             continue
 
 
