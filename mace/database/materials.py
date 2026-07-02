@@ -1368,11 +1368,14 @@ def create_material_id_from_file(file_path: str) -> str:
             # This looks like "test1_opt" - the opt is a calc type, not part of material name
             break
         # Check if this part matches a calculation type with optional number (opt, opt2, opt10, etc.)
-        if re.match(r'^(opt|sp|band|doss|freq)\d*$', part.lower()):
-            # This looks like opt, opt2, sp10, band3, etc. - stop here
+        # transport/charge/potential/charge+potential are calc types too — without them,
+        # simple-named TRANSPORT / CHARGE+POTENTIAL outputs registered as brand-new
+        # (duplicate) materials, the exact bug the canonical-ID routing exists to fix.
+        if re.match(r'^(opt|sp|band|doss|freq|transport|charge\+potential|charge|potential)\d*$', part.lower()):
+            # This looks like opt, opt2, sp10, band3, transport2, etc. - stop here
             break
         # Check if this part is a technical suffix (removed OPT from this list since we handle it specially)
-        elif part.upper() in ['SP', 'FREQ', 'BAND', 'DOSS', 'BULK', 'OPTGEOM', 
+        elif part.upper() in ['SP', 'FREQ', 'BAND', 'DOSS', 'BULK', 'OPTGEOM',
                             'CRYSTAL', 'SLAB', 'POLYMER', 'MOLECULE', 'SYMM', 'TZ', 'DZ', 'SZ']:
             break
         # Check if this part is a DFT functional

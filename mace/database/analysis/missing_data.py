@@ -61,16 +61,23 @@ class MissingDataAnalyzer:
                          'doss_dat_num_energy_points', 'fermi_energy_dos', 'dos_at_fermi_level',
                          'band_gap', 'vbm_energy']
         },
-        # The extractor does not yet parse transport coefficients or charge/
-        # potential grid statistics, so these types have no type-specific
-        # properties to require (listing any would force a false "missing").
+        # v1.1.0: the extractor parses BoltzTraP transport summaries and ECH3/
+        # POT3 grid statistics. Required keys are the unconditionally-emitted
+        # markers (booleans persist as 0/1 rows); everything data-dependent
+        # (e.g. PF/ZT need SIGMA.dat) stays optional.
         'TRANSPORT': {
-            'required': [],
-            'optional': ['band_gap', 'electronic_classification', 'conductivity_type']
+            'required': ['transport_data_available'],
+            'optional': ['transport_n_temperatures', 'transport_n_data_points',
+                         'transport_seebeck_max_uv_per_k', 'transport_power_factor_max',
+                         'transport_zt_max', 'transport_carrier_type',
+                         'band_gap', 'electronic_classification', 'conductivity_type']
         },
         'CHARGE+POTENTIAL': {
-            'required': [],
-            'optional': []
+            'required': ['chargepot_has_ech3', 'chargepot_has_pot3'],
+            'optional': ['chargepot_grid_dims', 'chargepot_grid_points',
+                         'chargepot_computed_properties', 'chargepot_grid_files',
+                         'chargepot_num_grid_files', 'chargepot_scf_total_energy_au',
+                         'chargepot_spin_polarized']
         }
     }
 

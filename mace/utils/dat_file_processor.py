@@ -396,10 +396,13 @@ class DatFileProcessor:
             pass
 
         # DOS at the Fermi level: the value at the first grid point AT or ABOVE
-        # E = 0. (Taking max over a +/-window, or even the closest point, returned
-        # the nonzero valence-band tail at E=0^- for an insulator instead of ~0;
-        # the first point >= E_F sits in the gap and reports ~0 correctly, while a
-        # true metal still reports its finite Fermi-level DOS.)
+        # E = 0. (Taking max over a +/-window, or the closest point, returned the
+        # valence-band tail at E=0^- instead of the E>=0 value.) CAVEAT for
+        # consumers: CRYSTAL pins E=0 at the VBM for insulators, so the first
+        # point >= 0 can be the VBM edge itself and report a LARGE value — do
+        # NOT screen metals vs insulators with dos_at_fermi ~ 0; use the
+        # gap-window analysis ('metallic' / 'band_gap_ev' below), which is what
+        # classification is actually keyed on.
         at_or_above = [(e, d) for e, d in zip(es, ds) if e >= 0]
         analysis['dos_at_fermi'] = (min(at_or_above, key=lambda ed: ed[0])[1] if at_or_above
                                     else ds[min(range(len(es)), key=lambda i: abs(es[i]))])

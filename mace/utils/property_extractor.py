@@ -2295,6 +2295,12 @@ class CrystalPropertyExtractor:
                 # modes into one row (e.g. "4-   6"); num_vibrational_modes is
                 # the number of parsed rows so it matches len(vibrational_frequencies).
                 props['num_vibrational_modes'] = len(freq_data)
+                # Degeneracy-expanded count (sums each row's mode range) — this
+                # is the 3N-consistent number consumers should use for mode
+                # bookkeeping; the row count above is kept for back-compat.
+                props['num_vibrational_modes_total'] = sum(
+                    (f['mode_end'] - f['mode_start'] + 1) for f in freq_data
+                )
 
                 # Imaginary modes are flagged by a NEGATIVE frequency in CRYSTAL
                 # output (no trailing 'i'); use the cm**-1 sign as the primary
@@ -2500,13 +2506,23 @@ class CrystalPropertyExtractor:
             stem = output_file.stem
 
             def _find(suffix):
-                # Prefer the exact-stem companion; fall back to any in the dir.
+                # Prefer the exact-stem companion; fall back to a companion
+                # whose stem starts at a separator boundary (same rule as the
+                # CUBE sidecar match) so a sibling material's data in a shared
+                # directory is never silently attributed to this one.
                 exact = out_dir / f"{stem}.{suffix}"
                 if exact.exists():
                     return exact
-                cands = (list(out_dir.glob(f"*.{suffix}"))
-                         + list(out_dir.glob(f"*.{suffix.lower()}")))
-                return cands[0] if cands else None
+                cands = sorted(set(list(out_dir.glob(f"*.{suffix}"))
+                                   + list(out_dir.glob(f"*.{suffix.lower()}"))))
+                for c in cands:
+                    c_stem = c.name[:-(len(suffix) + 1)]
+                    if (c_stem == stem or c_stem.startswith(stem + '_')
+                            or stem.startswith(c_stem + '_')):
+                        return c
+                # Unambiguous single companion: accept it (common layout —
+                # one material per calc dir with differently-styled names).
+                return cands[0] if len(cands) == 1 else None
 
             seebeck_file = _find('SEEBECK.dat')
             sigma_file = _find('SIGMA.dat')
@@ -2534,6 +2550,11 @@ class CrystalPropertyExtractor:
             sig_abs = [abs(v) for v in sig_lut.values() if v != 0.0]
             sig_max = max(sig_abs) if sig_abs else 0.0
             sig_floor = sig_max * 1e-3  # exclude determinant-singularity points
+            # SEEBECK-only runs (no SIGMA.dat): the conductivity gate would
+            # otherwise skip every row and store misleading zeros for a valid
+            # Seebeck dataset. Compute Seebeck statistics unconditionally and
+            # leave only the sigma-dependent PF/ZT unavailable.
+            have_sigma = bool(sig_lut)
 
             temperatures = sorted({round(r[0], 3) for r in s_rows})
             mus = [r[1] for r in s_rows]
@@ -2552,24 +2573,26 @@ class CrystalPropertyExtractor:
             for (T, mu, n_carr, s_val) in s_rows:
                 key = (round(T, 3), round(mu, 4))
                 g = sig_lut.get(key)
-                # Require a physically meaningful conductivity at this point.
-                if sig_floor <= 0.0 or g is None or abs(g) < sig_floor:
-                    continue
+                if have_sigma:
+                    # Require a physically meaningful conductivity at this point.
+                    if sig_floor <= 0.0 or g is None or abs(g) < sig_floor:
+                        continue
                 n_usable += 1
                 if abs(s_val) > abs(peak_s):
                     peak_s = s_val
                     peak_s_loc = (T, mu)
                     peak_s_ncarr = n_carr
-                pf = s_val * s_val * abs(g)
-                if pf > peak_pf:
-                    peak_pf = pf
-                    peak_pf_loc = (T, mu)
-                k = kap_lut.get(key)
-                if k and abs(k) > 0.0:
-                    zt = pf * T / abs(k)
-                    if zt > peak_zt:
-                        peak_zt = zt
-                        peak_zt_loc = (T, mu)
+                if g is not None:
+                    pf = s_val * s_val * abs(g)
+                    if pf > peak_pf:
+                        peak_pf = pf
+                        peak_pf_loc = (T, mu)
+                    k = kap_lut.get(key)
+                    if k and abs(k) > 0.0:
+                        zt = pf * T / abs(k)
+                        if zt > peak_zt:
+                            peak_zt = zt
+                            peak_zt_loc = (T, mu)
 
             has_usable = abs(peak_s) > 0.0
             # Carrier-type convention: N(#carriers) > 0 -> holes (p-type),
@@ -2602,6 +2625,8 @@ class CrystalPropertyExtractor:
                 'n_data_points': int(len(s_rows)),
                 'n_usable_points': int(n_usable),
                 'has_usable_data': bool(has_usable),
+                # False => SEEBECK-only run: PF/ZT peaks below are not computed.
+                'sigma_data_available': bool(have_sigma),
                 'carrier_type': carrier_type,
                 'tensor_reduction': ('diagonal isotropic average (xx+yy+zz)/3; '
                                      'off-diagonal tensor components discarded'),
@@ -2615,9 +2640,10 @@ class CrystalPropertyExtractor:
                 'seebeck_max_signed_v_per_k': float(peak_s),
                 'seebeck_max_abs_uv_per_k': float(abs(peak_s) * 1.0e6),
                 'seebeck_max_at': _loc(peak_s_loc),
-                'power_factor_max_w_per_m_k2': float(peak_pf),
+                'power_factor_max_w_per_m_k2': (float(peak_pf) if have_sigma
+                                                else None),
                 'power_factor_max_at': _loc(peak_pf_loc),
-                'zt_electronic_max': float(peak_zt),
+                'zt_electronic_max': (float(peak_zt) if have_sigma else None),
                 'zt_electronic_max_at': _loc(peak_zt_loc),
             }
             props['transport'] = summary
@@ -2628,8 +2654,11 @@ class CrystalPropertyExtractor:
             props['transport_data_available'] = bool(has_usable)
             if has_usable:
                 props['transport_seebeck_max_uv_per_k'] = float(abs(peak_s) * 1.0e6)
-                props['transport_power_factor_max'] = float(peak_pf)
-                props['transport_zt_max'] = float(peak_zt)
+                if have_sigma:
+                    # PF/ZT need conductivity; for SEEBECK-only runs storing
+                    # 0.0 here would be the same misleading-zero bug.
+                    props['transport_power_factor_max'] = float(peak_pf)
+                    props['transport_zt_max'] = float(peak_zt)
                 if carrier_type:
                     props['transport_carrier_type'] = carrier_type
 

@@ -2,13 +2,14 @@
 
 Pure literals, zero imports — any layer can import this without creating cycles.
 
-These full-precision (CODATA 2018) values were ALREADY used, byte-identical, by
-the canonical sites (mace/database/utils/units.py, mace/utils/dat_file_processor.py)
-and the regression tests; this module just removes the duplicate literals so they
-share one definition. Truncated copies elsewhere (e.g. ``27.2114`` inside the
-validated property_extractor parser, and the d3/plotting scripts) are deliberately
-NOT changed here — replacing those alters computed output and is a separate,
-regression-pinned precision fix, not this byte-identical consolidation.
+These full-precision (CODATA 2018) values are the single definition shared by
+the mace package (units.py, dat_file_processor.py, property_extractor.py all
+import from here; the extractor's former truncated ``27.2114`` literals were
+replaced with HARTREE_TO_EV in the v1.1.0 extraction wave — a ~2e-6 relative
+shift in derived ``*_ev`` values, covered by the extraction regression tests).
+Truncated copies remain ONLY in the frozen legacy scripts under
+``code/NewPlotting_Scripts/`` — those are preserved-for-compatibility tools and
+are deliberately not modified.
 """
 
 # Hartree <-> electron-volt

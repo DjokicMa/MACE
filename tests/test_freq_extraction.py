@@ -97,3 +97,18 @@ def test_freq_periodic_grouped_degenerate_modes():
     for m in freqs:
         assert math.isfinite(m["frequency_cm"])
     assert props.get("num_vibrational_modes") == len(freqs)
+
+
+def test_degeneracy_expanded_mode_count():
+    """num_vibrational_modes_total sums each printed row's mode RANGE, so it is
+    the 3N-consistent count (num_vibrational_modes stays the row count for
+    back-compat). On any real output: total >= rows, and total equals the
+    span of the highest mode index parsed."""
+    props = _extract(
+        "FREQ/EC_MOLECULE_OPT_symm_HSESOL3C*freq_HSESOL3C_optimized.out"
+    )
+    freqs = props["vibrational_frequencies"]
+    total = props["num_vibrational_modes_total"]
+    assert total == sum(m["mode_end"] - m["mode_start"] + 1 for m in freqs)
+    assert total >= props["num_vibrational_modes"]
+    assert total == max(m["mode_end"] for m in freqs)  # contiguous from mode 1

@@ -258,3 +258,76 @@ def test_non_transport_file_has_no_transport_key(extractor):
     props = extractor._extract_transport_properties(content, band_out)
     assert "transport" not in props
     assert "calculation_type" not in props  # not claimed as TRANSPORT
+
+
+# ---------------------------------------------------------------------------
+# SEEBECK-only runs (no SIGMA.dat) and companion-file attribution
+# ---------------------------------------------------------------------------
+
+def _copy_transport_subset(tmp_path, *, seebeck=True, sigma=False, kappa=False,
+                           rename_stem=None):
+    """Copy the real afi transport .out (+ selected companion .dat files) into
+    an isolated dir, optionally renaming the companions to a foreign stem."""
+    import shutil
+    out = find_data(_USABLE_OUT, must_contain=_TRANSPORT_HEADER)
+    dst_out = tmp_path / out.name
+    shutil.copy(out, dst_out)
+    for flag, suffix in ((seebeck, "SEEBECK.dat"), (sigma, "SIGMA.dat"),
+                         (kappa, "KAPPA.dat")):
+        if not flag:
+            continue
+        src = out.parent / f"{out.stem}.{suffix}"
+        stem = rename_stem if rename_stem else out.stem
+        shutil.copy(src, tmp_path / f"{stem}.{suffix}")
+    return dst_out
+
+
+def test_seebeck_only_run_not_zeroed(tmp_path):
+    """A valid SEEBECK.dat with no SIGMA.dat must yield real Seebeck statistics
+    (was: the conductivity gate skipped every row and stored 0.0), with the
+    sigma-dependent PF/ZT marked unavailable rather than stored as zeros."""
+    dst_out = _copy_transport_subset(tmp_path, seebeck=True, sigma=False)
+    extractor = CrystalPropertyExtractor(enable_tracking=False)
+    props = extractor.extract_all_properties(dst_out)
+
+    t = props["transport"]
+    assert t["sigma_data_available"] is False
+    assert t["has_usable_data"] is True
+    assert t["seebeck_max_abs_uv_per_k"] > 0.0          # the actual regression
+    assert t["power_factor_max_w_per_m_k2"] is None      # not a misleading 0.0
+    assert t["zt_electronic_max"] is None
+    assert props["transport_data_available"] is True
+    assert props["transport_seebeck_max_uv_per_k"] > 0.0
+    assert "transport_power_factor_max" not in props
+    assert "transport_zt_max" not in props
+
+
+def test_full_dat_set_behavior_unchanged(tmp_path):
+    """With SEEBECK+SIGMA+KAPPA all present the summary matches the in-place
+    corpus extraction (the sigma gate and PF/ZT math are untouched)."""
+    dst_out = _copy_transport_subset(tmp_path, seebeck=True, sigma=True, kappa=True)
+    extractor = CrystalPropertyExtractor(enable_tracking=False)
+    props = extractor.extract_all_properties(dst_out)
+    t = props["transport"]
+    assert t["sigma_data_available"] is True
+    assert t["has_usable_data"] is True
+    assert t["power_factor_max_w_per_m_k2"] > 0.0
+    assert t["zt_electronic_max"] > 0.0
+
+
+def test_foreign_stem_companions_not_misattributed(tmp_path):
+    """Two sibling materials' .dat files in the dir, neither sharing this
+    .out's stem at a separator boundary: they must NOT be silently attributed
+    to this calculation (was: cands[0] grabbed whichever globbed first)."""
+    import shutil
+    out = find_data(_USABLE_OUT, must_contain=_TRANSPORT_HEADER)
+    dst_out = tmp_path / out.name
+    shutil.copy(out, dst_out)
+    src = out.parent / f"{out.stem}.SEEBECK.dat"
+    shutil.copy(src, tmp_path / "OTHER-material-A.SEEBECK.dat")
+    shutil.copy(src, tmp_path / "OTHER-material-B.SEEBECK.dat")
+
+    extractor = CrystalPropertyExtractor(enable_tracking=False)
+    props = extractor.extract_all_properties(dst_out)
+    assert props["transport_data_available"] is False
+    assert "transport" not in props
