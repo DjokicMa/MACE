@@ -113,8 +113,13 @@ def configure_cube_plot(interactive: bool = True) -> Dict[str, Any]:
         if yes_no_prompt("Auto-select isovalues (recommended)?", "yes"):
             config["iso"] = None
         else:
-            raw = get_string_input("  Isovalues, comma-separated (e.g. 0.001,0.01)", "0.001,0.01")
-            config["iso"] = [float(x) for x in raw.split(",") if x.strip()]
+            while True:
+                raw = get_string_input("  Isovalues, comma-separated (e.g. 0.001,0.01)", "0.001,0.01")
+                try:
+                    config["iso"] = [float(x) for x in raw.split(",") if x.strip()]
+                    break
+                except ValueError:
+                    print(f"  '{raw}' is not a comma-separated list of numbers; try again.")
     else:
         axis_choice = select_option(
             "  Slice/stack axis:",
@@ -165,7 +170,12 @@ def _cube_config_from_args(args) -> Dict[str, Any]:
 
     iso = getattr(args, "iso", None)
     if iso:
-        cfg["iso"] = [float(x) for x in str(iso).split(",") if x.strip()]
+        try:
+            cfg["iso"] = [float(x) for x in str(iso).split(",") if x.strip()]
+        except ValueError:
+            # argparse-style usage error, not a traceback
+            print(f"Error: --iso expects comma-separated numbers (e.g. 0.001,0.01), got '{iso}'")
+            raise SystemExit(2)
 
     if getattr(args, "diff", None):
         cfg["operation"] = "diff"
@@ -254,7 +264,15 @@ def _run_engine(argv: List[str]) -> None:
         sys.argv = ["crystal_cubeviz_plotly.py", *argv]
         main()
     except (Exception, SystemExit) as e:  # engines sys.exit() on bad input
-        print(f"    Error: {e}")
+        # Same contract as the freq handler: SystemExit(0/None) is a normal
+        # engine exit (e.g. the all-zeros warning path), not an error; a bare
+        # integer exit code means the engine already printed its message.
+        if isinstance(e, SystemExit):
+            if e.code in (0, None):
+                return
+            print(f"    Engine aborted (exit {e.code}) — see message above.")
+        else:
+            print(f"    Error: {e}")
     finally:
         sys.argv = argv_backup
 

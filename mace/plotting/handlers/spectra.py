@@ -79,10 +79,11 @@ def plot_ir_spectra(files: List[str], config: Dict[str, Any], output_dir: str = 
 
     individual = files
     if config.get("average") and conf:
-        by_name = {Path(f).name: f for f in conf}
-        groups = api.group_files_by_material(list(by_name))
-        for material, names in sorted(groups.items()):
-            res = api.average_spectrum([by_name[n] for n in names], min_cols=ir_column + 1)
+        # Group by full path (dedup exact duplicates only): keying by basename
+        # silently collapsed same-named conf files from different directories.
+        groups = api.group_files_by_material(sorted(set(conf)))
+        for material, paths in sorted(groups.items()):
+            res = api.average_spectrum(paths, min_cols=ir_column + 1)
             if not res:
                 continue
             avg, n = res
@@ -157,10 +158,10 @@ def plot_raman_spectra(files: List[str], config: Dict[str, Any], output_dir: str
 
     individual = files
     if config.get("average") and conf:
-        by_name = {Path(f).name: f for f in conf}
-        groups = api.group_files_by_material(list(by_name))
-        for material, names in sorted(groups.items()):
-            res = api.average_spectrum([by_name[n] for n in names], min_cols=min_cols)
+        # Group by full path (dedup exact duplicates only) — see IR branch.
+        groups = api.group_files_by_material(sorted(set(conf)))
+        for material, paths in sorted(groups.items()):
+            res = api.average_spectrum(paths, min_cols=min_cols)
             if not res:
                 continue
             avg, n = res

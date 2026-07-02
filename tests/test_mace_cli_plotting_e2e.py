@@ -111,3 +111,34 @@ def test_mace_cli_plotting_help_is_clean():
     assert proc.returncode == 0
     assert "Traceback (most recent call last)" not in (proc.stdout + proc.stderr)
     assert "--cube" in proc.stdout and "--freq" in proc.stdout and "--ir" in proc.stdout
+
+
+def test_missing_spectra_file_is_clean_error(tmp_path):
+    """A nonexistent IRSPEC path must produce a clean per-file error, not the
+    raw FileNotFoundError traceback that spectra (alone among handler kinds)
+    used to leak."""
+    proc = _run_plotting(["--ir", str(tmp_path / "definitely_missing_IRSPEC.DAT"),
+                          "-o", str(tmp_path)], timeout=120)
+    combined = proc.stdout + proc.stderr
+    assert "Traceback (most recent call last)" not in combined, combined[-2000:]
+    assert "Error reading" in combined
+
+
+def test_no_files_exit_code_propagates(tmp_path):
+    """`mace plotting --band` over a dir with no band data returns exit 1
+    (plotting_main's status used to be discarded, so scripts always saw 0)."""
+    proc = _run_plotting(["--band", "-d", str(tmp_path), "-o", str(tmp_path)],
+                         timeout=120)
+    assert proc.returncode == 1, (proc.stdout + proc.stderr)[-1000:]
+
+
+def test_bad_iso_value_is_usage_error(tmp_path):
+    """Malformed --iso must be an argparse-style usage error (exit 2, clean
+    message), not a ValueError traceback."""
+    proc = _run_plotting(["--cube", "--iso", "abc",
+                          str(tmp_path / "x.CUBE"), "-o", str(tmp_path)],
+                         timeout=120)
+    combined = proc.stdout + proc.stderr
+    assert "Traceback (most recent call last)" not in combined, combined[-2000:]
+    assert "--iso expects comma-separated numbers" in combined
+    assert proc.returncode == 2

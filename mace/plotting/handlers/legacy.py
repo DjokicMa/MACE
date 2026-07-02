@@ -328,7 +328,7 @@ def configure_structure_plot(interactive: bool = True) -> Dict[str, Any]:
         'canvas_size': 800,
         'bond_cutoff': 1.9,
         'color_by_coord': True,
-        'parallel_jobs': max(1, os.cpu_count() - 1),
+        'parallel_jobs': max(1, (os.cpu_count() or 2) - 1),
     }
 
     if not interactive:
@@ -371,7 +371,7 @@ def plot_structures(files: List[str], config: Dict[str, Any], output_dir: str = 
     output_path = Path(output_dir)
 
     svg_dir = output_path / "structure_svgs"
-    svg_dir.mkdir(exist_ok=True)
+    svg_dir.mkdir(parents=True, exist_ok=True)  # -o may name a nested, not-yet-created dir
 
     print(f"\n  Processing {len(files)} CIF file(s)...")
     print(f"  Output directory: {svg_dir}")
@@ -411,7 +411,7 @@ def _structure_config_from_args(args) -> Dict[str, Any]:
         'canvas_size': 800,
         'bond_cutoff': args.bond_cutoff,
         'color_by_coord': args.color_by_coord,
-        'parallel_jobs': max(1, os.cpu_count() - 1),
+        'parallel_jobs': max(1, (os.cpu_count() or 2) - 1),
     }
 
 

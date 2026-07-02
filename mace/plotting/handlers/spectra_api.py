@@ -45,18 +45,24 @@ def read_spectrum(file_path: str) -> np.ndarray:
     """Read an IRSPEC/RAMSPEC .DAT file into a 2D float array.
 
     Skips blank and ``#`` comment lines and any row that does not parse as
-    floats. Returns an empty array for an empty/unparseable file.
+    floats. Returns an empty array for an empty/unparseable file — and for a
+    missing/unreadable one (with a printed error): spectra was the only
+    handler kind that let OSError escape as a raw traceback.
     """
     data = []
-    with open(file_path, 'r', errors='replace') as fh:
-        for line in fh:
-            clean = line.strip()
-            if clean == '' or clean.startswith('#'):
-                continue
-            try:
-                data.append([float(x) for x in clean.split()])
-            except ValueError:
-                continue
+    try:
+        with open(file_path, 'r', errors='replace') as fh:
+            for line in fh:
+                clean = line.strip()
+                if clean == '' or clean.startswith('#'):
+                    continue
+                try:
+                    data.append([float(x) for x in clean.split()])
+                except ValueError:
+                    continue
+    except OSError as e:
+        print(f"    Error reading {os.path.basename(str(file_path))}: {e}")
+        return np.array([])
     return np.array(data)
 
 

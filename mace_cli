@@ -3115,19 +3115,17 @@ More Help:
     elif args.command == 'plotting':
         # Import and run the plotting module
         try:
-            from plotting.main import main as plotting_main
+            from mace.plotting.main import main as plotting_main
         except ImportError:
-            # Try with mace prefix
-            try:
-                from mace.plotting.main import main as plotting_main
-            except ImportError:
-                ui.err("Error: Could not import plotting module.")
-                ui.info("Please ensure the mace package is properly installed.")
-                sys.exit(1)
+            ui.err("Error: Could not import plotting module.")
+            ui.info("Please ensure the mace package is properly installed.")
+            sys.exit(1)
 
-        # Combine all arguments
+        # Combine all arguments; propagate the module's exit status (it
+        # returns 1 when a requested kind has no files) so scripts can
+        # detect failure instead of always seeing exit 0.
         all_args = command_args('plotting')
-        plotting_main(all_args)
+        sys.exit(plotting_main(all_args))
 
     elif args.command == 'version':
         # Show version with main banner

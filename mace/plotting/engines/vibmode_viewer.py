@@ -1,4 +1,4 @@
-#!/home/marcus/anaconda3/bin/python
+#!/usr/bin/env python3
 """
 Vibrational Mode Viewer for CRYSTAL23 frequency calculations.
 
