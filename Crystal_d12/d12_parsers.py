@@ -889,19 +889,20 @@ class CrystalOutputParser:
             # as "7" in input files. POSITIVE exponents (pure-DFT runs print
             # "10**  20" for T3-T5: exchange screening disabled) are NOT
             # tolerances — abs()'ing them re-emitted absurd "7 7 20 20 20"
-            # inputs. Skip extraction in that case and keep defaults.
+            # inputs. Keep the real (negative) exponents and substitute the
+            # per-position default only for disabled slots, so a custom T1/T2
+            # (e.g. "9 9 ...") survives regeneration instead of the whole
+            # quintet silently reverting to the "7 7 7 7 14" default.
+            defaults = ["7", "7", "7", "7", "14"]
             exponents = []
             valid = True
-            for val in tolinteg_values:
+            for pos, val in enumerate(tolinteg_values):
                 try:
                     num = int(val)
                 except ValueError:
                     valid = False
                     break
-                if num >= 0:
-                    valid = False
-                    break
-                exponents.append(str(-num))
+                exponents.append(str(-num) if num < 0 else defaults[pos])
             if valid:
                 self.data["tolerances"]["TOLINTEG"] = " ".join(exponents)
 

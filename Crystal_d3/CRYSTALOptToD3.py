@@ -1400,7 +1400,13 @@ def main():
                 "1": "BAND", "2": "DOSS", "3": "TRANSPORT",
                 "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL"
             }
-            calc_type = calc_types.get(choice, "BAND")
+            while choice not in calc_types:
+                # Re-prompt instead of silently defaulting a typo to BAND, which
+                # would generate the wrong property calculation with no warning
+                # (same contract as the single-file path).
+                ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-6.")
+                choice = input("Select type (1-6): ").strip()
+            calc_type = calc_types[choice]
         else:
             calc_type = args.calc_type
         
@@ -1508,7 +1514,12 @@ def main():
                         "1": "BAND", "2": "DOSS", "3": "TRANSPORT",
                         "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL"
                     }
-                    calc_type = calc_types.get(choice, "BAND")
+                    while choice not in calc_types:
+                        # Re-prompt instead of silently defaulting a typo to BAND
+                        # (same contract as the single-file path).
+                        ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-6.")
+                        choice = input("Select type (1-6): ").strip()
+                    calc_type = calc_types[choice]
                 else:
                     calc_type = args.calc_type
                 

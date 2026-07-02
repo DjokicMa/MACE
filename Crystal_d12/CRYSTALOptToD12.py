@@ -206,7 +206,12 @@ def _get_phonon_band_path_title(band_settings, geometry_data):
 
 
 def write_d12_file(output_file, geometry_data, settings, external_basis_data=None):
-    """Write new D12 file with optimized geometry and settings"""
+    """Write new D12 file with optimized geometry and settings.
+
+    Returns True on success. Returns False when creation is aborted (basis-set
+    incompatibility declined interactively, or hit non-interactively); the
+    partially written file is removed so no truncated deck reaches submission.
+    """
 
     with open(output_file, "w") as f:
         # Title
@@ -612,12 +617,18 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             )
             if not sys.stdin.isatty():
                 # Non-interactive (workflow callback): fail cleanly instead of
-                # crashing with EOFError at the prompt
+                # crashing with EOFError at the prompt. The deck is partially
+                # written at this point — remove it so the caller can't submit
+                # a truncated d12, and signal failure.
                 ui.err("Non-interactive mode: aborting D12 file creation.")
-                return
+                f.close()
+                os.remove(output_file)
+                return False
             if not yes_no_prompt("\nDo you want to continue anyway?"):
                 ui.err("Aborting D12 file creation.")
-                return
+                f.close()
+                os.remove(output_file)
+                return False
 
         # Prepare k-points with same logic as d12creation.py
         k_points_info = None
@@ -682,8 +693,10 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             # with e.g. 'SPINLOCK 2 30' is silently regenerated as '2 50'.
             spinlock_cycles=settings.get("spinlock_cycles", DEFAULT_SPINLOCK_CYCLES),
         )
-        
+
         # Note: The single END at the very end is written by write_scf_section
+
+    return True
 
 
 def process_files(output_file, input_file=None, shared_settings=None, config_file=None, non_interactive=False, calc_type=None, opt_type=None, origin_setting="auto"):
@@ -1210,7 +1223,9 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     # Use optimized geometry from output but with preserved settings
     # The geometry_data (out_data) contains the optimized coordinates with is_unique flags
     # The settings (options) contains the preserved symmetry and other settings from D12
-    write_d12_file(new_filename, out_data, converted_options, external_basis_data)
+    if not write_d12_file(new_filename, out_data, converted_options, external_basis_data):
+        ui.err(f"\nFailed to create {new_filename}: D12 creation aborted.")
+        return False, options
 
     ui.ok(f"\nSuccessfully created {new_filename}")
 
@@ -1476,16 +1491,23 @@ def main():
             else:
                 ui.info("No corresponding .d12 file found")
 
-            success, options = process_files(
-                out_file, 
-                d12_file, 
-                shared_settings, 
-                config_file=args.config_file,
-                non_interactive=args.non_interactive,
-                calc_type=args.calc_type,
-                opt_type=args.opt_type,
-                origin_setting=args.origin_setting
-            )
+            try:
+                success, options = process_files(
+                    out_file,
+                    d12_file,
+                    shared_settings,
+                    config_file=args.config_file,
+                    non_interactive=args.non_interactive,
+                    calc_type=args.calc_type,
+                    opt_type=args.opt_type,
+                    origin_setting=args.origin_setting
+                )
+            except Exception as e:
+                # Per-file isolation (same contract as NewCifToD12): one bad
+                # structure — e.g. the deliberate monoclinic unique-axis
+                # ValueError — must not abort the rest of the batch.
+                ui.err(f"Error processing {os.path.basename(out_file)}: {e}")
+                success = False
             if success:
                 success_count += 1
 

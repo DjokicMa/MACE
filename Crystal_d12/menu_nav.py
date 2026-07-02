@@ -235,8 +235,20 @@ def run_with_back(flow_fn):
     Returns flow_fn()'s result once it completes. If stdin is not a TTY the controller is a
     pure pass-through (flow_fn() is called once, unpatched). builtins.input and sys.stdout
     are restored on every exit path.
+
+    NOT re-entrant by design: sessions do not nest. If a wrapped flow calls
+    run_with_back again, the inner call is inert — flow_fn runs directly and its
+    prompts join the OUTER session's back-stack (single coherent history) instead
+    of stacking a second input patch + replay buffer, whose back-past-the-inner-
+    boundary behavior would replay outer answers while buffering inner output
+    (looks like a hang). No nested call sites exist today; this guard keeps a
+    future one safe.
     """
     if not _enabled():
+        return flow_fn()
+
+    if _active_session.get() is not None:
+        # Nested call inside an active session: participate, don't re-wrap.
         return flow_fn()
 
     session = NavSession()

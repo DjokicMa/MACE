@@ -236,7 +236,25 @@ def t15():
     check("T15 nav_choice keeps 'b' when valid", r2 == "b", str(r2))
 
 
-_ALL_TESTS = [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15]
+# T16: nested run_with_back is inert — inner call joins the outer session
+# (single coherent back-stack; no second input patch / replay buffer)
+def t16():
+    def inner():
+        return nav_read("q2", {"x", "y"})
+    use(["1", "x", "b", "y", "p"])
+    r = run_with_back(lambda: (nav_read("q1", {"1", "2"}),
+                               run_with_back(inner),
+                               nav_read("q3", {"p", "q"})))
+    check("T16 nested run_with_back joins outer session", r == ("1", "y", "p"), str(r))
+    # back-equals-no-back still holds across the nested boundary
+    use(["1", "y", "p"])
+    r2 = run_with_back(lambda: (nav_read("q1", {"1", "2"}),
+                                run_with_back(inner),
+                                nav_read("q3", {"p", "q"})))
+    check("T16 nested boundary back-equals-no-back", r == r2, f"{r} vs {r2}")
+
+
+_ALL_TESTS = [t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16]
 
 
 def test_menu_nav():
