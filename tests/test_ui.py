@@ -180,13 +180,26 @@ def test_plain_mode_has_no_ansi(ui):
     text = _exercise_all(ui)
     assert ESC not in text, f"plain output leaked an escape code: {text!r}"
     assert CLEAR not in text
-    # Plain markers are present, markup is stripped.
+    # Plain markers are present.
     assert "[OK] converged" in text
     assert "[WARN] a warning" in text
     assert "[ERROR] an error" in text
     assert "[i] informational" in text
-    # rich markup must not leak literally into the message text path.
-    assert "[bold]" not in text
+    # Text is DATA on both paths: the plain path prints it verbatim, exactly
+    # like the rich path (markup=False shows tags literally). Stripping
+    # bracket tokens here mangled filenames/messages containing [..] and made
+    # the same call render differently by environment.
+    assert "[bold]markup[/bold] passthrough" in text
+
+
+def test_plain_status_lines_preserve_bracketed_data(ui):
+    """ok/info/warn/err carry user data (filenames, OS errors): brackets must
+    survive the plain path verbatim (the rich path already preserves them)."""
+    ui.configure(force_color=False, force_tty=False)
+    text = _capture_stdout_stderr(lambda: (ui.ok("file [with] brackets.d12"),
+                                           ui.err("[Errno 2] No such file")))
+    assert "[OK] file [with] brackets.d12" in text
+    assert "[ERROR] [Errno 2] No such file" in text
 
 
 def test_no_color_env_forces_plain(ui, monkeypatch):
@@ -222,9 +235,10 @@ def test_no_color_beats_force_color_true(ui, monkeypatch):
     text = _exercise_all(ui)
     assert ESC not in text, f"NO_COLOR + force_color leaked escapes: {text!r}"
     assert CLEAR not in text
-    # Plain markers present, markup stripped — proves the plain path was taken.
+    # Plain markers present — proves the plain path was taken (text itself is
+    # verbatim on both paths; see test_plain_mode_has_no_ansi).
     assert "[OK] converged" in text
-    assert "[bold]" not in text
+    assert "[bold]markup[/bold] passthrough" in text
 
 
 def test_term_dumb_beats_force_color_true(ui, monkeypatch):
@@ -422,11 +436,13 @@ def test_rich_absent_path(monkeypatch):
             del _mace_utils.ui
 
 
-def test_rich_absent_print_strips_markup(monkeypatch):
-    """With rich BLOCKED, ui.print() must strip rich markup, not leak the tags.
+def test_rich_absent_print_passes_text_verbatim(monkeypatch):
+    """With rich BLOCKED, ui.print() passes strings through verbatim.
 
-    Reproduces the markup-leak finding: ``ui.print('[bold]hi[/] there')`` should
-    emit ``hi there`` (no ``[bold]`` / ``[/]`` brackets) on the stdlib path.
+    This matches the rich path exactly (markup=False renders tags literally),
+    so the same call now produces the same text in every environment — and
+    data containing brackets (filenames, '[Errno 2]', lists) is never mangled.
+    The old behavior stripped bracket tokens on this path only.
     """
     import builtins
 
@@ -449,21 +465,18 @@ def test_rich_absent_print_strips_markup(monkeypatch):
         with contextlib.redirect_stdout(out):
             ui_mod.print("[bold]hi[/] there")
         text = out.getvalue()
-        assert text == "hi there\n", f"markup leaked on rich-absent path: {text!r}"
-        assert "[bold]" not in text
-        assert "[/]" not in text
-        assert "[" not in text and "]" not in text
+        assert text == "[bold]hi[/] there\n", f"text not verbatim: {text!r}"
         assert ESC not in text
 
-        # A few more shapes: closing tags and hex-colored markers are stripped,
-        # while non-tag bracketed prose (our own [OK] markers, lists) survives.
+        # Bracketed DATA survives untouched — this is the regression the old
+        # stripping caused (mangled 'file [with] brackets.d12' in logs).
         out2 = io.StringIO()
         with contextlib.redirect_stdout(out2):
-            ui_mod.print("[bold #34d399]done[/bold #34d399]")
             ui_mod.print("values [1, 2, 3] and [OK] marker")
+            ui_mod.print("file [with] brackets.d12")
         t2 = out2.getvalue()
-        assert "done" in t2 and "[bold" not in t2 and "#34d399" not in t2
-        assert "[1, 2, 3]" in t2 and "[OK]" in t2  # prose preserved
+        assert "[1, 2, 3]" in t2 and "[OK]" in t2
+        assert "file [with] brackets.d12" in t2
     finally:
         sys.modules.pop("mace.utils.ui", None)
         # Also drop the stale rich-less attribute monkeypatch won't restore on the

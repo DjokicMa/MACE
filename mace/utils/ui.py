@@ -18,9 +18,8 @@ Every public function has two code paths — a rich path and a stdlib path — a
 ANSI escape sequences and no full-screen clear. The string ``\\033[2J\\033[H`` is
 banned, and there is no fake ``time.sleep`` delay.
 
-See ``docs/superpowers/specs/2026-06-14-mace-visual-layer-design.md`` for the full
-design + API contract, and ``mace_visual_demo.py`` / ``mace_visual_demo_real.py``
-for the reference look & feel.
+This module is the design + API contract for the visual layer: the docstrings
+on each public function below are the reference for look & feel.
 """
 
 from __future__ import annotations
@@ -445,16 +444,18 @@ def print(*objects: Any, **kwargs: Any) -> None:  # noqa: A001 (shadow builtin o
         kwargs.setdefault("markup", False)
         console.print(*objects, **kwargs)
         return
-    # Plain path: strip markup, route to the requested file (default stdout).
+    # Plain path: route to the requested file (default stdout). Strings pass
+    # through RAW — the rich path above prints them literally (markup=False),
+    # so stripping bracket tokens here mangled data ('file [with] brackets')
+    # and made the same call render differently by environment.
     file = kwargs.pop("file", sys.stdout)
     kwargs.pop("style", None)
     kwargs.pop("markup", None)
     kwargs.pop("highlight", None)
     kwargs.pop("justify", None)
-    cleaned = [_plain(o) if isinstance(o, str) else o for o in objects]
     import builtins
 
-    builtins.print(*cleaned, file=file, **kwargs)
+    builtins.print(*objects, file=file, **kwargs)
 
 
 def _emit(marker_markup: str, marker_plain: str, text: str, *, file=None) -> None:
@@ -474,7 +475,10 @@ def _emit(marker_markup: str, marker_plain: str, text: str, *, file=None) -> Non
     else:
         import builtins
 
-        builtins.print(f"{marker_plain} {_plain(text)}", file=file)
+        # Text is DATA here too: print it raw. Stripping bracket tokens mangled
+        # filenames/messages containing [..] in exactly the piped/log output
+        # where fidelity matters most (the rich path above preserves them).
+        builtins.print(f"{marker_plain} {text}", file=file)
 
 
 def ok(text: str) -> None:
@@ -581,8 +585,7 @@ def table(
 # Surface 1 — startup banner (§5.2)
 # ===========================================================================
 # ---------------------------------------------------------------------------
-# Startup animations (§5.2) — ported from the approved demo
-# ``mace_visual_demo_anim.py``. PALETTE-CORRECT: every color is derived from the
+# Startup animations (§5.2). PALETTE-CORRECT: every color is derived from the
 # passed ``grad`` (= ``_CAPS.palette.gradient``) so mono NEVER leaks a crystal
 # color. ``banner()`` picks one at random each launch.
 #
@@ -859,7 +862,7 @@ def captured(stderr: bool = False) -> Iterator[io.StringIO]:
 
 
 # ---------------------------------------------------------------------------
-# Progress columns (mirrors mace_visual_demo_real._bar_columns)
+# Progress columns
 # ---------------------------------------------------------------------------
 if _RICH_AVAILABLE:
 
