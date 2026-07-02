@@ -1163,7 +1163,7 @@ if [ ! -z "$QUEUE_MANAGER" ]; then
     fi
 else
     echo "Warning: Queue manager not found. Checked:"
-    echo "  - \$MACE_HOME/mace/queue/manager.py"
+    echo "  - \\$MACE_HOME/mace/queue/manager.py"
     echo "  - Various relative paths from $DIR"
     echo "  Workflow progression may not continue automatically"
 fi'''

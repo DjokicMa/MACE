@@ -72,3 +72,33 @@ def test_tracked_submission_records_calc_in_place(monkeypatch, tmp_path):
     # in-place: the recorded + submitted input is the original file, not a copy
     assert Path(calc["input_file"]).name == "job.d12"
     assert captured["input"].name == "job.d12"
+
+
+def test_recovered_resubmission_records_override_script(monkeypatch, tmp_path):
+    """When a recovery handler resubmits with a bumped *_recovery_N.sh via
+    job_script_override, the DB must record THAT script as job_script — not the
+    original generated one. Recording the original made the next memory/timeout
+    bump restart from the original resources, so escalation plateaued after a
+    single bump instead of compounding."""
+    import shutil
+    from mace.queue.manager import EnhancedCrystalQueueManager
+
+    real = find_data("OPT/1LiFSI-3EMS-conf4*opt_HSESOL3C_optimized.d12")
+    d12 = tmp_path / "job.d12"
+    shutil.copy2(real, d12)
+    monkeypatch.chdir(tmp_path)
+
+    bumped = tmp_path / "job_recovery_1.sh"
+    bumped.write_text("#!/bin/bash\n#SBATCH --mem=200G\n#SBATCH -t 7-00:00:00\n")
+
+    mgr = EnhancedCrystalQueueManager(
+        d12_dir=str(tmp_path), db_path=str(tmp_path / "materials.db"),
+        enable_tracking=True, organize_outputs=False)
+    mgr.is_workflow_context = False
+    mgr.submit_to_slurm = (
+        lambda input_file, work_dir, calc_type, submit_script_override=None: "JOB2")
+
+    calc_id = mgr.submit_calculation(Path(d12), job_script_override=bumped)
+    assert calc_id
+    calc = mgr.db.get_calculation(calc_id)
+    assert calc["job_script"] == str(bumped)

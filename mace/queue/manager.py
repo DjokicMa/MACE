@@ -648,16 +648,23 @@ class EnhancedCrystalQueueManager:
                     'submitted',
                     slurm_job_id=slurm_job_id
                 )
-                # Record the generated SLURM script so the memory/timeout
-                # recovery handlers (which edit resource directives) can
-                # find it — the job_script column was never written before
+                # Record the SLURM script that was ACTUALLY submitted so the
+                # memory/timeout recovery handlers (which edit resource
+                # directives) can find it. On a recovered resubmission that is
+                # the bumped *_recovery_N.sh override — recording the original
+                # generated script instead made every subsequent bump restart
+                # from the original resources (escalation plateaued at one
+                # bump instead of compounding).
                 try:
-                    generated_script = calc_dir / f"{calc_input_file.stem}.sh"
-                    if generated_script.exists():
+                    if job_script_override:
+                        submitted_script = Path(job_script_override)
+                    else:
+                        submitted_script = calc_dir / f"{calc_input_file.stem}.sh"
+                    if submitted_script.exists():
                         with self.db._get_connection() as conn:
                             conn.execute(
                                 "UPDATE calculations SET job_script = ? WHERE calc_id = ?",
-                                (str(generated_script), calc_id)
+                                (str(submitted_script), calc_id)
                             )
                 except Exception:
                     pass

@@ -2964,7 +2964,7 @@ class WorkflowPlanner:
                 ui.err(f"      ❌ Error configuring {material_name}: {e}")
             
         if not material_configs:
-            ui.ok("    No configurations created successfully")
+            ui.err("    No configurations created successfully")
             return self._get_advanced_d3_config(calc_type)
             
         return {
@@ -3473,7 +3473,7 @@ class WorkflowPlanner:
                 + f"origin={material_config['origin_setting']}, k-points={kpoints_str}")
 
         if not material_configs:
-            ui.ok("    No configurations created successfully")
+            ui.err("    No configurations created successfully")
             return self._get_advanced_opt_config()
 
         return {
