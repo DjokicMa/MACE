@@ -55,3 +55,9 @@ MACE_PLOTTING_INTEGRATION_PLAN.md
 Crystal_d3/SEEKPATH_INTEGRATION_PLAN.md
 Crystal_d3/D3_IMPROVEMENTS.md
 Crystal_d12/CRYSTAL_TO_CIF_IMPLEMENTATION_PLAN.md
+
+# macOS Finder junk
+.DS_Store
+
+# Internal AI-workflow design specs (local-only)
+docs/superpowers/

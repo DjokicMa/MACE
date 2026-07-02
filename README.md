@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 1.0.0</strong>
+  <strong>Version 1.1.0</strong>
 </p>
 
 ---
@@ -49,7 +49,8 @@ reorganization/
 │   ├── database/              # Material tracking database
 │   ├── submission/            # SLURM job submission
 │   ├── recovery/              # Error detection and recovery
-│   └── utils/                 # Analysis and utility tools
+│   ├── plotting/              # `mace plotting` (band/DOS/structure/cube/FREQ/IR/Raman)
+│   └── utils/                 # Analysis, themed terminal UI, utility tools
 │
 ├── Crystal_d12/               # D12 input file generation
 │   ├── README.md              # D12 tools documentation
@@ -94,7 +95,18 @@ Generate property calculation inputs:
 - **Transport Properties**: Boltzmann transport calculations
 - **Charge/Potential**: 3D charge density and electrostatic potential
 
-### 4. **Legacy Tools** (`code/`)
+### 4. **Plotting & Visualization** (`mace/plotting/`, NEW in v1.1.0)
+One command for publication-ready plots from CRYSTAL outputs:
+- **`mace plotting`**: band structures, DOS, crystal structures (SVG), cube
+  volumetrics (isosurface/slices), FREQ normal-mode viewers, IR/Raman spectra
+- Content-based file detection (`--all`, explicit files, or per-kind flags)
+- Interactive menu when run with no flags
+
+### 5. **Themed Terminal UI** (`mace/utils/ui.py`, NEW in v1.1.0)
+- Selectable color themes: `--theme <name>` / `--save-theme` / `MACE_THEME`
+- Degrades gracefully to plain text without `rich`; honors `NO_COLOR`/`TERM=dumb`
+
+### 6. **Legacy Tools** (`code/`)
 Original scripts maintained for compatibility:
 - Job submission and monitoring
 - Output file analysis
@@ -204,6 +216,15 @@ mace workflow --interactive
 mace workflow --quick-start --cif-dir ./cifs --workflow full_electronic
 ```
 
+#### Plotting
+```bash
+# Interactive menu over everything plottable in the current directory
+mace plotting
+
+# Or per kind: --band --dos --structure --cube --freq --ir --raman --all
+mace plotting --band -d ./band_calcs -o ./plots
+```
+
 #### Direct Script Usage
 ```bash
 # Convert CIF to D12
@@ -242,10 +263,13 @@ python Crystal_d3/CRYSTALOptToD3.py --input optimized.out --calc-type BAND
 Core requirements:
 - Python 3.7+
 - NumPy, Matplotlib, ASE, spglib
-- PyYAML, pandas, PyPDF2
+- PyYAML, pandas
 
 Optional (recommended):
 - **seekpath** - Accurate band structure k-path generation for all crystal systems
+- **rich** - Themed terminal UI (progress bars, dashboards, color themes); MACE
+  falls back to plain text without it
+- **plotly + scipy + kaleido** - Interactive cube/FREQ plotting engines (`mace plotting`)
 
 HPC requirements:
 - SLURM workload manager
@@ -255,7 +279,7 @@ HPC requirements:
 Install all dependencies:
 ```bash
 # Core dependencies
-pip install numpy matplotlib ase spglib PyPDF2 pyyaml pandas
+pip install numpy matplotlib ase spglib pyyaml pandas
 
 # Recommended: accurate band structure k-paths
 pip install seekpath

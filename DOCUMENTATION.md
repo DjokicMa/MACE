@@ -175,7 +175,7 @@ python mace/run_workflow.py --show-templates
 #### Core Dependencies (Required)
 ```bash
 # Scientific computing stack
-pip install numpy>=1.21.0 matplotlib>=3.5.0 ase>=3.22.0 spglib>=1.16.0 PyPDF2>=2.0.0
+pip install numpy>=1.21.0 matplotlib>=3.5.0 ase>=3.22.0 spglib>=1.16.0
 
 # Material tracking system dependencies (Phase 2)
 pip install pyyaml>=6.0 pandas>=1.3.0
@@ -183,7 +183,7 @@ pip install pyyaml>=6.0 pandas>=1.3.0
 
 #### One-Line Installation
 ```bash
-pip install numpy matplotlib ase spglib PyPDF2 pyyaml pandas
+pip install numpy matplotlib ase spglib pyyaml pandas
 ```
 
 #### Package Purposes
@@ -191,7 +191,6 @@ pip install numpy matplotlib ase spglib PyPDF2 pyyaml pandas
 - **matplotlib**: Plotting, visualization, and multi-page PDFs
 - **ase**: Atomic Simulation Environment for structure storage and manipulation
 - **spglib**: Space group operations and symmetry analysis
-- **PyPDF2**: PDF processing and generation
 - **pyyaml**: YAML configuration file handling for workflow automation
 - **pandas**: Data analysis and CSV processing
 
@@ -211,7 +210,7 @@ pip install seekpath>=2.0.0
 
 #### Installation Verification
 ```bash
-python -c "import numpy, matplotlib, ase, spglib, PyPDF2, yaml, pandas; print('All dependencies installed successfully')"
+python -c "import numpy, matplotlib, ase, spglib, yaml, pandas; print('All dependencies installed successfully')"
 
 # Verify seekpath (optional but recommended)
 python -c "import seekpath; print('seekpath available for accurate band paths')"

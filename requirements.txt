@@ -11,8 +11,9 @@ ase>=3.22.0
 # Symmetry analysis
 spglib>=1.16.0
 
-# PDF processing
-PyPDF2>=2.0.0
+# Themed terminal UI (optional but recommended: mace degrades to plain
+# text without it; NO_COLOR / TERM=dumb are honored either way)
+rich>=13.0
 
 # Configuration and data handling
 pyyaml>=6.0

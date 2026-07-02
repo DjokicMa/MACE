@@ -5,9 +5,27 @@ All notable changes to MACE (Mendoza Automated CRYSTAL Engine) will be documente
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] - 2026-06-14
+## [1.1.0] - 2026-07-02
 
 ### Added
+
+#### Plotting subsystem (`mace plotting`)
+One command for publication-ready plots from CRYSTAL outputs, with content-based
+file detection, per-kind flags (`--band --dos --structure --cube --freq --ir
+--raman --all`), an interactive menu, and `-o` output routing:
+- **Band / DOS / structures** — the validated legacy plotters (ipBANDS/ipDOS/CIF
+  renderers) wired through a registry + classifier
+- **Cube volumetrics** — plotly isosurface / slice / slice-stack rendering of
+  ECH3/POT3 `.CUBE` grids, incl. non-orthogonal cells and cube-difference plots
+- **FREQ normal modes** — interactive HTML vibrational-mode viewers
+- **IR / Raman spectra** — per-file and conformer-averaged spectra
+
+#### Themed terminal UI (visual layer)
+- `mace/utils/ui.py` rich-based facade: status lines, tables, progress bars,
+  spinners, live dashboards, themed startup banner
+- Selectable color themes (`--theme <name>`, `--save-theme`, `MACE_THEME`)
+- Fully optional: degrades to plain text without `rich`; honors `NO_COLOR` and
+  `TERM=dumb`; user text is never interpreted as markup (injection-safe)
 
 #### Deep property extraction
 The materials database now stores the full scientific results of each calculation
@@ -19,11 +37,24 @@ in the existing `properties` table (no schema change):
 - **TRANSPORT** — BoltzTraP Seebeck / power-factor / electronic-ZT peaks vs (T, µ), carrier type
 - **CHARGE+POTENTIAL** — ECH3/POT3 grid metadata, coordinate box, and references to the generated `.CUBE` grid files
 
+#### Queue / submission
+- In-place submission for manual `mace submit` (no forced reorganization);
+  `--organize` restores the copy-into-folders layout
+- `completion` command surfaced in `mace --help`; all command help audited
+  against the real parsers (fabricated flags removed)
+
 ### Fixed
 - **FREQ extractor** previously parsed vibrational data into a discarded local variable; frequencies/IR/Raman now actually persist (fixed the units-anchor `(CM**-1)` and mode-range parse bugs).
+- **Error-recovery chain** — previously-dead paths called nonexistent DB/manager APIs (errors swallowed): max-recovery-attempts, recovered-job resubmission, and workflow-engine step submission now work end-to-end; the timeout handler parses the `-t 7-00:00:00` day form and never shrinks walltime; the memory handler preserves `--mem-per-cpu` vs `--mem`; recovered resubmissions record the bumped script so repeated failures escalate cumulatively.
+- **d12/d3 generation correctness** — SPINLOCK parse + round-trip (a configured spin lock survives OPT continuation and JSON-config reuse); origin-setting preservation; k-point table fixes (C-/I-centered orthorhombic assignments, duplicate table key); DOSS Fermi-window unit consistency; aborted D12 creation no longer leaves a truncated deck reported as success; TOLINTEG extraction preserves custom tolerances on pure-DFT outputs.
+- **JSON config save/apply round-trips** for `opt2d12` / `opt2d3` (settings no longer drift through a save→load cycle); invalid interactive calc-type choices re-prompt instead of silently defaulting to BAND.
+- **Database correctness** — canonical material-ID derivation everywhere (incl. TRANSPORT / CHARGE+POTENTIAL outputs), NULL-safe dedup on re-extraction, pressure unit-conversion table (kbar/Mbar swap, atm factor), enthalpy H = G + TS, full-precision Hartree↔eV constants (single source: `mace/constants.py`), pyarrow import-order crash guard.
+- **Plotting/UX polish** — missing/unreadable spectra files give clean errors instead of tracebacks; `mace plotting` propagates its exit status; malformed `--iso` is a usage error; plain-mode (no-rich) output preserves bracketed text verbatim.
 
 ### Changed
-- **Repo hygiene** — internal planning/audit docs untracked (kept on disk), ad-hoc validation scripts centralized under `tests/`, and generated artifacts gitignored.
+- **Repo hygiene** — internal planning/audit docs untracked (kept on disk), ad-hoc validation scripts centralized under `tests/`, generated artifacts gitignored, unused legacy modules removed (legacy queue manager, portable SLURM generator, contextual executor/planner variants, installer/env-helper utilities); PyPDF2 dropped as a dependency (nothing imports it).
+- **Formula ordering** for newly extracted formulas follows a revised element convention (e.g. `TiPbO3` vs the older `PbO3Ti`); previously stored rows are unaffected. `fermi_energy` rows written by v1.1.0 carry the correct `Hartree` unit label (older rows said `eV` while storing Hartree values).
+- **CI** — GitHub Actions runs the self-contained test suite on a fresh clone (data-dependent tests skip without the local `test/` corpus).
 
 ## [1.0.0] - 2025-02-12
 

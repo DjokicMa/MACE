@@ -6,7 +6,9 @@
 # Contributors: Daniel Maldonado Lopez, Brandon Lewis, William Comaskey
 # Mendoza Group, Michigan State University
 
-export MACE_HOME="/mnt/iscsi/UsefulScripts/Codebase/reorganization"
+# Self-locating: MACE_HOME is wherever this script lives (works from any
+# clone without running setup_mace.py; bash and zsh both supported).
+export MACE_HOME="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
 # Add MACE scripts to PATH - using reorganized structure
 export PATH="$MACE_HOME:$PATH"  # For mace.py and mace_cli

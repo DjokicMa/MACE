@@ -148,25 +148,15 @@ This document provides comprehensive authorship attribution for the MACE (Mendoz
 - All submission template scripts (Prior contributions from Wangwei Lan, Kevin Lucht, Danny Maldonado, Marcus Djokic)
 
 #### Unknown/To Be Determined
-**Check_Scripts/Archived:**
-- `createTodoLists.py`
-- `check_erroredJobs.py`
-
-**Plotting_Scripts:**
+**code/NewPlotting_Scripts:**
 - `autoBands.py`
 - `autoPhononBands.py`
-- `crystalOutputToJson.py`
-- `getOptimizationProgress.py`
-- `getPropertyData.py`
-- `getSpecialKPoints.py`
-- `makelatexTable.py`
-- `makePlot.py`
-- `plotResultsParallel.py`
 
-**Plotting_Scripts/Archived:**
-- `autoDOS_new.py`
-- `plotResults.py`
-- `result_pdf.py`
+(Other previously listed unattributed scripts — crystalOutputToJson.py,
+getOptimizationProgress.py, getPropertyData.py, getSpecialKPoints.py,
+makelatexTable.py, makePlot.py, plotResultsParallel.py, createTodoLists.py,
+check_erroredJobs.py, autoDOS_new.py, plotResults.py, result_pdf.py — were
+removed from the repository in the v1.1.0 cleanup; see git history.)
 
 ---
 
@@ -184,4 +174,4 @@ For scripts without clear attribution, it is recommended to:
 2. Include creation date and modification history
 3. Reference this document for comprehensive attribution
 
-Last Updated: July 22, 2025
+Last Updated: July 2, 2026

@@ -44,7 +44,7 @@
 
 ```bash
 # Core dependencies (required)
-pip install numpy matplotlib ase spglib PyPDF2 pyyaml pandas
+pip install numpy matplotlib ase spglib pyyaml pandas
 
 # Recommended: accurate band structure k-paths for all crystal systems
 pip install seekpath
@@ -53,7 +53,7 @@ pip install seekpath
 pip install scipy scikit-learn
 
 # Verify installation
-python -c "import numpy, matplotlib, ase, spglib, PyPDF2, yaml, pandas; print('All dependencies installed successfully')"
+python -c "import numpy, matplotlib, ase, spglib, yaml, pandas; print('All dependencies installed successfully')"
 python -c "import seekpath; print('seekpath available for accurate band paths')"
 ```
 
@@ -212,7 +212,7 @@ To update your installation:
 
 3. **Update dependencies**
    ```bash
-   pip install --upgrade numpy matplotlib ase spglib PyPDF2 pyyaml pandas
+   pip install --upgrade numpy matplotlib ase spglib pyyaml pandas
    ```
 
 ## Usage After Installation

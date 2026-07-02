@@ -110,6 +110,8 @@ class MACESetup:
     
     def update_shell_config(self, add_to_path=True):
         """Update shell configuration file(s)"""
+        # The user's shell rc gets the ABSOLUTE repo path (self-locating
+        # $BASH_SOURCE would resolve to the rc file's own directory there).
         export_line = f'export MACE_HOME="{self.repo_root}"'
         pythonpath_line = 'export PYTHONPATH="$MACE_HOME:$PYTHONPATH"'
         # Add all script directories to PATH
@@ -193,7 +195,9 @@ class MACESetup:
 # Contributors: Daniel Maldonado Lopez, Brandon Lewis, William Comaskey
 # Mendoza Group, Michigan State University
 
-export MACE_HOME="{self.repo_root}"
+# Self-locating: MACE_HOME is wherever this script lives (works from any
+# clone without running setup_mace.py; bash and zsh both supported).
+export MACE_HOME="$(cd "$(dirname "${{BASH_SOURCE[0]:-$0}}")" && pwd)"
 
 # Add MACE scripts to PATH - using reorganized structure
 export PATH="$MACE_HOME:$PATH"  # For mace.py and mace_cli
@@ -274,7 +278,7 @@ echo "    - Legacy scripts (Check, Plotting, Post-Processing)"
     
     def check_dependencies(self):
         """Check if required Python packages are installed"""
-        required = ['numpy', 'matplotlib', 'ase', 'spglib', 'PyPDF2', 'yaml', 'pandas']
+        required = ['numpy', 'matplotlib', 'ase', 'spglib', 'yaml', 'pandas']
         missing = []
         
         print("\nChecking Python dependencies...")
@@ -412,13 +416,13 @@ echo "  All script directories are in PATH"
             print("\n4. You can now run MACE commands from anywhere:")
             print("   mace workflow --interactive       # Interactive workflow planning")
             print("   mace submit file.d12              # Submit calculations")
-            print("   mace monitor --dashboard          # Monitor progress")
+            print("   mace monitor                      # Monitor progress (live dashboard)")
             print("   mace analyze --extract-properties # Extract properties")
-            print("   mace convert --from-cif *.cif     # Convert CIF files")
+            print("   mace convert                      # Convert CIFs (run in the CIF directory)")
             print("\n   More commands:")
             print("   mace opt2d12 file.out             # D12 creation")
             print("   mace opt2d3 file.out              # D3 creation")
-            print("   mace workflow --interactive       # Workflow management")
+            print("   mace plotting                     # Plot band/DOS/cube/FREQ/IR/Raman")
             print("   mace monitor --status             # Queue status")
 
 def main():

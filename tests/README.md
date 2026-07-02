@@ -7,10 +7,10 @@ remediation campaign so it cannot silently regress (the recurring
 ## Running
 
 ```bash
-/home/marcus/anaconda3/bin/python -m pytest          # from the repo root
+python -m pytest                       # from the repo root
 ```
 
-Use the Anaconda Python (`ase`/`spglib`/`seekpath` live only there).
+Use a Python with `numpy` installed (`ase`/`spglib`/`scipy`/`rich` unlock more of the suite; missing extras skip their tests).
 
 ## Data dependency
 
