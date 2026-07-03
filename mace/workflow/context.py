@@ -409,6 +409,40 @@ def get_current_context() -> Optional[WorkflowContext]:
     return WorkflowContext.get_active()
 
 
+def auto_activate_context(base_dir: Optional[str] = None,
+                          workflow_id: Optional[str] = None) -> Optional[WorkflowContext]:
+    """Auto-detect and activate an isolated workflow context if none is active yet.
+
+    Non-interactive counterpart to the monitor dashboard's context detection: scans
+    ``base_dir`` (default: cwd) for ``.mace_context_*`` directories and activates one
+    when the choice is unambiguous -- either the given ``workflow_id`` or exactly one
+    context present. Returns the active context (existing or newly activated), or
+    ``None`` when there is nothing to activate or the choice is ambiguous. Never
+    prompts and never raises.
+
+    This is what lets ``mace monitor --status`` / ``mace database`` read the
+    workflow's isolated database instead of the empty default ``materials.db``.
+    """
+    existing = get_current_context()
+    if existing is not None:
+        return existing
+    try:
+        base = Path(base_dir) if base_dir else Path.cwd()
+        if workflow_id:
+            target = base / f".mace_context_{workflow_id}"
+            dirs = [target] if target.is_dir() else []
+        else:
+            dirs = sorted(base.glob(".mace_context_*"))
+        if len(dirs) == 1:
+            wid = dirs[0].name.replace(".mace_context_", "")
+            ctx = WorkflowContext(wid, base_dir=str(base))
+            ctx.activate()
+            return ctx
+    except Exception:
+        return None
+    return None
+
+
 def require_context(isolation_mode: Optional[str] = None) -> WorkflowContext:
     """
     Get current context or create a default one.

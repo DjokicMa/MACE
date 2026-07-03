@@ -314,7 +314,9 @@ class WorkflowProgress:
         summary = results['summary']
         lines.append("=== Summary ===")
         lines.append(f"Total materials: {summary['total_materials']}")
-        lines.append(f"Completed: {summary['completed']} ({summary['completed']/summary['total_materials']*100:.1f}%)")
+        _total = summary['total_materials']
+        _pct = (summary['completed'] / _total * 100) if _total else 0.0
+        lines.append(f"Completed: {summary['completed']} ({_pct:.1f}%)")
         lines.append(f"In progress: {summary['in_progress']}")
         lines.append(f"Not started: {summary['not_started']}")
         lines.append(f"Failed: {summary['failed']}")

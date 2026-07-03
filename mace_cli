@@ -1675,8 +1675,8 @@ More Help:
         if '--status' in all_args or '--summary' in all_args or '--detailed' in all_args:
             # Show status information
             from database.materials_contextual import ContextualMaterialDatabase
-            from workflow.context import get_current_context
-            
+            from workflow.context import get_current_context, auto_activate_context
+
             # Parse status arguments
             material_id = None
             workflow_id = None
@@ -1694,9 +1694,13 @@ More Help:
                 else:
                     i += 1
             
+            # Auto-activate the isolated workflow context (like the dashboard does)
+            # so --status reads the workflow's DB, not the empty default materials.db.
+            auto_activate_context(workflow_id=workflow_id)
+
             # Initialize database
             db = ContextualMaterialDatabase()
-            
+
             # Show context information
             ctx = get_current_context()
             if ctx:
@@ -1955,11 +1959,15 @@ More Help:
         calc_type = None
         status = None
         export_csv = None
-        
+        workflow_id = None
+
         i = 0
         while i < len(all_args):
             if all_args[i] == '--action' and i + 1 < len(all_args):
                 action = all_args[i + 1]
+                i += 2
+            elif all_args[i] == '--workflow-id' and i + 1 < len(all_args):
+                workflow_id = all_args[i + 1]
                 i += 2
             elif all_args[i] == '--material-id' and i + 1 < len(all_args):
                 material_id = all_args[i + 1]
@@ -1976,9 +1984,14 @@ More Help:
             else:
                 i += 1
         
+        # Auto-activate the isolated workflow context so database actions read the
+        # workflow's DB, not the empty default materials.db.
+        from workflow.context import auto_activate_context
+        auto_activate_context(workflow_id=workflow_id)
+
         # Initialize database
         db = ContextualMaterialDatabase()
-        
+
         # Debug: show what action was selected
         # print(f"DEBUG: Selected action = '{action}', all_args = {all_args}")
         
