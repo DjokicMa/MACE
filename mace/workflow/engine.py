@@ -1456,9 +1456,13 @@ fi'''
             # Get the generated D3 file
             d3_file = d3_files[0]
             
-            # Create final directories in proper workflow step location
-            base_type, calc_num = self._parse_calc_type(target_calc_type)
-            final_dir = step_dir / f"{base_type}{calc_num}"
+            # Final location is the material's step directory itself. The old
+            # extra {BAND1,DOSS1,...} instance level was redundant: repeat
+            # property runs are already disambiguated by BOTH the material dir
+            # suffix (get_next_calc_suffix -> 1_dia_band2) and the step folder
+            # (step_0XX_BAND2), so every calc just landed in a needless
+            # single-child subdirectory.
+            final_dir = step_dir
             final_dir.mkdir(parents=True, exist_ok=True)
             
             # Copy files to final location

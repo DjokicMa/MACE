@@ -68,7 +68,9 @@ def engine(tmp_path):
     ("DOSS", "1_dia_doss"),
 ])
 def test_d3_submit_script_job_matches_deck_on_disk(engine, tmp_path, calc_type, stem):
-    work_dir = tmp_path / f"step_003_{calc_type}" / f"1_dia_{calc_type.lower()}" / f"{calc_type}1"
+    # Flattened layout: the deck sits directly in the material's step dir
+    # (no BAND1/DOSS1 instance level).
+    work_dir = tmp_path / f"step_003_{calc_type}" / f"1_dia_{calc_type.lower()}"
     work_dir.mkdir(parents=True)
     d3_file = work_dir / f"{stem}.d3"
     d3_file.write_text("BAND\ndummy deck\nEND\n")
@@ -90,3 +92,57 @@ def test_d3_submit_script_job_matches_deck_on_disk(engine, tmp_path, calc_type, 
     assert (work_dir / f"{job}.d3").exists(), \
         f"JOB={job} but {job}.d3 is not on disk (deck is {d3_file.name})"
     assert (work_dir / f"{job}.f9").exists()
+
+
+def test_generate_d3_places_deck_flat_in_step_dir(engine, tmp_path, monkeypatch):
+    """generate_d3_calculation_new must place the deck directly in the
+    material's step dir — the old extra BAND1/DOSS1 instance level was a
+    needless single-child subdirectory (numbered repeats are disambiguated by
+    the material-dir suffix and the step folder instead)."""
+    import mace.workflow.engine as eng_mod
+
+    wf_out = tmp_path / "workflow_outputs" / "workflow_test"
+    wf_out.mkdir(parents=True)
+
+    db = engine.db
+    db.get_calculation = lambda cid: {
+        "calc_id": cid, "material_id": "1_dia", "status": "completed",
+        "output_file": str(tmp_path / "1_dia_sp.out"),
+        "settings_json": json.dumps({"workflow_id": "workflow_test"}),
+    }
+    engine._find_most_recent_wavefunction_calc = lambda mid: "wf_calc_1"
+    engine.get_workflow_output_base = lambda calc: wf_out
+    fake_script = tmp_path / "CRYSTALOptToD3.py"
+    fake_script.write_text("# stub\n")
+    engine.script_paths = {"crystal_to_d3": str(fake_script)}
+
+    def fake_run(cmd, **kwargs):
+        # Emulate CRYSTALOptToD3.py: drop a *_band.d3 (+.f9) into --output-dir
+        out_dir = Path(cmd[cmd.index("--output-dir") + 1])
+        (out_dir / "1_dia_sp_band.d3").write_text("BAND\nEND\n")
+        (out_dir / "1_dia_sp_band.f9").write_bytes(b"\x00")
+
+        class R:
+            returncode = 0
+            stdout = stderr = ""
+        return R()
+
+    monkeypatch.setattr(eng_mod.subprocess, "run", fake_run)
+
+    captured = {}
+
+    def fake_submit(material_id, calc_type, d3_file, final_dir, parent_id):
+        captured.update(d3=Path(d3_file), final_dir=Path(final_dir))
+        return "calc_ok"
+
+    engine._create_and_submit_d3_calculation = fake_submit
+
+    calc_id = engine.generate_d3_calculation_new("src_sp_1", "BAND")
+    assert calc_id == "calc_ok"
+
+    step_dir = wf_out / "step_003_BAND" / "1_dia_band"
+    assert captured["final_dir"] == step_dir, \
+        f"deck dir {captured['final_dir']} (expected flat {step_dir})"
+    assert captured["d3"].parent == step_dir
+    assert captured["d3"].exists()
+    assert not (step_dir / "BAND1").exists(), "redundant instance dir recreated"
