@@ -1235,9 +1235,20 @@ def live_dashboard(
     blocks separated by a rule (no clear).
     """
     if _CAPS.interactive:
-        with _Live(render_fn(), console=_CAPS.console(),
-                   refresh_per_second=refresh_per_second, transient=False) as live:
-            yield LiveHandle(render_fn, live=live)
+        # Pin the TTY decision for the Live's lifetime. rich.Live redirects
+        # sys.stdout to a non-TTY proxy, and capability detection is live —
+        # without the pin, the first refresh() re-ran build_status_dashboard
+        # with color_ok=False and the boxed Panel "instantly went to text":
+        # Live kept redrawing the plain-string fallback. (Same failure class
+        # the banner already guards against by capturing its palette early.)
+        prev_force_tty = _CAPS.force_tty
+        _CAPS.force_tty = True
+        try:
+            with _Live(render_fn(), console=_CAPS.console(),
+                       refresh_per_second=refresh_per_second, transient=False) as live:
+                yield LiveHandle(render_fn, live=live)
+        finally:
+            _CAPS.force_tty = prev_force_tty
     else:
         # Plain: the caller's refresh() drives each appended block. No eager
         # pre-render here -- the monitor enters this context then refresh()es on the

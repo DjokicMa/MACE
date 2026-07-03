@@ -1132,3 +1132,42 @@ def test_cli_accepts_new_theme_real_invocation():
     assert proc.returncode == 0, out
     assert "Unknown theme" not in out
     assert "MACE v" in out
+
+
+# ===========================================================================
+# live_dashboard must not degrade to the plain renderable mid-Live
+# ===========================================================================
+def test_live_dashboard_renderable_stays_rich_after_stdout_redirect(ui, monkeypatch):
+    """rich.Live redirects sys.stdout to a non-TTY proxy, and capability
+    detection re-runs isatty() on every call — so the FIRST refresh() inside
+    the Live rebuilt the dashboard with color_ok=False: the boxed Panel
+    flashed for a split second, then the Live redrew the plain-string
+    fallback forever ('mace monitor' cool-table-then-text bug).
+    live_dashboard now pins the TTY decision for the Live's lifetime."""
+    class _FakeTTY(io.StringIO):
+        def isatty(self):
+            return True
+
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setattr(sys, "stdout", _FakeTTY())
+    # Full auto-detect — the mode `mace monitor` actually runs in. (force_color
+    # would short-circuit color_ok before the isatty() check and mask the bug.)
+    ui._CAPS.force_color = None
+    ui._CAPS.force_tty = None
+    ui._CAPS._console = None       # (re)build the console over the fake tty
+    assert ui._CAPS.interactive is True
+
+    kinds = []
+
+    def render():
+        out = ui.build_status_dashboard("T", [ui.StatusRow("A", "OK", "d")])
+        kinds.append(type(out).__name__)
+        return out
+
+    with ui.live_dashboard(render) as h:
+        h.refresh()   # runs while rich.Live has stdout redirected
+
+    assert len(kinds) >= 2  # eager __enter__ render + our refresh
+    assert all(k != "str" for k in kinds), \
+        f"dashboard renderable degraded to plain text mid-Live: {kinds}"
