@@ -55,9 +55,19 @@ class WorkflowProgress:
             sequence = self.WORKFLOWS[workflow]
             workflow_name = workflow
         else:
-            # Default to full electronic workflow
-            sequence = self.WORKFLOWS['full_electronic']
-            workflow_name = 'full_electronic'
+            # Prefer the ACTUAL saved plan (workflow_configs/workflow_plan_*.json,
+            # same source the engine's progression reads) over the template
+            # defaults — reporting 'full_electronic (4 steps)' against a 7-step
+            # plan showed 50% complete instead of 2/7 and hid FREQ/CHARGE+
+            # POTENTIAL/OPT2 from the report entirely.
+            planned_name, planned_seq = self._load_planned_sequence()
+            if planned_seq:
+                sequence = planned_seq
+                workflow_name = planned_name
+            else:
+                # Default to full electronic workflow
+                sequence = self.WORKFLOWS['full_electronic']
+                workflow_name = 'full_electronic'
             
         # Get materials
         if material_ids:
@@ -109,15 +119,61 @@ class WorkflowProgress:
         
         return results
         
+    def _load_planned_sequence(self) -> Tuple[Optional[str], Optional[List[str]]]:
+        """Best-effort load of the saved workflow plan's sequence.
+
+        Looks for ``workflow_configs/workflow_plan_<id>.json`` next to the
+        working directory — the same artifact the workflow engine's
+        progression reads. Prefers the plan matching the active isolated
+        workflow context; otherwise accepts a single unambiguous plan file.
+        Returns ``(workflow_id, sequence)`` or ``(None, None)``. Never raises.
+        """
+        try:
+            from pathlib import Path
+
+            cfg_dir = Path.cwd() / "workflow_configs"
+            if not cfg_dir.is_dir():
+                return None, None
+
+            plans = sorted(cfg_dir.glob("workflow_plan_*.json"))
+            chosen = None
+            try:
+                from mace.workflow.context import get_current_context
+                ctx = get_current_context()
+                if ctx is not None:
+                    wid = ctx.workflow_id.replace("workflow_", "")
+                    match = cfg_dir / f"workflow_plan_{wid}.json"
+                    if match.exists():
+                        chosen = match
+            except Exception:
+                pass
+            if chosen is None and len(plans) == 1:
+                chosen = plans[0]
+            if chosen is None:
+                return None, None
+
+            with open(chosen) as f:
+                plan = json.load(f)
+            sequence = plan.get("workflow_sequence")
+            if sequence and isinstance(sequence, list):
+                name = chosen.stem.replace("workflow_plan_", "workflow_")
+                return name, list(sequence)
+        except Exception:
+            pass
+        return None, None
+
     def _track_material_progress(self, material_id: str, sequence: List[str]) -> Dict[str, Any]:
         """Track progress for a single material."""
-        # Get all calculations for this material
-        calculations = self.db.get_calculations_for_material(material_id)
-        
+        # Get all calculations for this material (real schema: calc_id /
+        # calc_type / slurm_job_id — this module used to call a phantom
+        # 'get_calculations_for_material' and read a 'calculation_type'
+        # column that never existed, so it crashed with AttributeError)
+        calculations = self.db.get_material_calculations(material_id)
+
         # Group by calculation type
         calc_by_type = defaultdict(list)
         for calc in calculations:
-            calc_type = calc.get('calculation_type', 'UNKNOWN')
+            calc_type = calc.get('calc_type', 'UNKNOWN')
             calc_by_type[calc_type].append(calc)
             
         # Track each step in sequence
@@ -142,11 +198,15 @@ class WorkflowProgress:
             if calc_type in calc_by_type:
                 calcs = calc_by_type[calc_type]
                 
-                # Find the most recent calculation
-                latest_calc = max(calcs, key=lambda c: c.get('started_at', ''))
-                
-                step_info['calculation_id'] = latest_calc.get('calculation_id')
-                step_info['job_id'] = latest_calc.get('job_id')
+                # Find the most recent calculation. started_at is NULL until a
+                # job actually starts (dict.get would return None and break the
+                # max() comparison) — fall back to created_at.
+                latest_calc = max(
+                    calcs,
+                    key=lambda c: (c.get('started_at') or c.get('created_at') or ''))
+
+                step_info['calculation_id'] = latest_calc.get('calc_id')
+                step_info['job_id'] = latest_calc.get('slurm_job_id')
                 step_info['started_at'] = latest_calc.get('started_at')
                 step_info['completed_at'] = latest_calc.get('completed_at')
                 
@@ -175,8 +235,10 @@ class WorkflowProgress:
                     step_info['status'] = 'failed'
                     overall_status = 'failed'
                     
-                    # Check for recovery attempts
-                    recovery_count = sum(1 for c in calcs if 'recovery' in c.get('notes', ''))
+                    # Check for recovery attempts (real column; the schema has
+                    # no 'notes' field — that read also crashed on None)
+                    recovery_count = max(
+                        (c.get('recovery_attempts') or 0) for c in calcs)
                     if recovery_count > 0:
                         step_info['recovery_attempts'] = recovery_count
                         

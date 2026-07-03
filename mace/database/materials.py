@@ -336,16 +336,28 @@ class MaterialDatabase:
             
         now = datetime.now().isoformat()
         settings_json = json.dumps(settings) if settings else None
-        
+
+        # The timestamp in calc_id only has millisecond resolution ([:-3]
+        # truncates %f), so two rapid same-type creations can collide on the
+        # PRIMARY KEY — uniquify with a suffix instead of raising.
+        base_calc_id = calc_id
         with self._get_connection() as conn:
-            conn.execute("""
-                INSERT INTO calculations (
-                    calc_id, material_id, calc_type, calc_subtype, priority,
-                    created_at, input_file, work_dir, settings_json, prerequisite_calc_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (calc_id, material_id, calc_type, calc_subtype, priority,
-                  now, input_file, work_dir, settings_json, prerequisite_calc_id))
-                  
+            for suffix in range(2, 100):
+                try:
+                    conn.execute("""
+                        INSERT INTO calculations (
+                            calc_id, material_id, calc_type, calc_subtype, priority,
+                            created_at, input_file, work_dir, settings_json, prerequisite_calc_id
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (calc_id, material_id, calc_type, calc_subtype, priority,
+                          now, input_file, work_dir, settings_json, prerequisite_calc_id))
+                    break
+                except sqlite3.IntegrityError:
+                    calc_id = f"{base_calc_id}_{suffix}"
+            else:
+                raise sqlite3.IntegrityError(
+                    f"could not create a unique calc_id from {base_calc_id}")
+
         return calc_id
         
     def update_calculation_status(self, calc_id: str, status: str, slurm_job_id: str = None,
