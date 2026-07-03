@@ -1704,16 +1704,25 @@ fi'''
         # Simply delegate to generate_numbered_calculation which handles all types
         return self.generate_numbered_calculation(opt_calc_id, target_calc_type)
             
-    def _check_and_trigger_pending_calculations(self, material_id: str, planned_sequence: List[str]) -> List[str]:
+    def _check_and_trigger_pending_calculations(self, material_id: str, planned_sequence: List[str],
+                                                skip_geometry_steps: bool = False) -> List[str]:
         """
         Check for any calculations in the planned sequence that should have been triggered
         but haven't been yet. This handles cases where workflow steps might have been missed.
-        
+
+        With ``skip_geometry_steps=True`` (the dependency-driven sweep run after every
+        completion), OPT-type steps are left to strict sequence order: launching e.g. a
+        trailing OPT2 as soon as OPT completes would be computationally valid but could
+        race downstream steps that select "the highest completed OPT" as their geometry
+        source. Property/analysis steps (SP/FREQ/BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL)
+        only consume existing results, so they fire as soon as their real dependency
+        is satisfied.
+
         Returns:
             List of new calculation IDs created
         """
         new_calc_ids = []
-        
+
         if not planned_sequence:
             return new_calc_ids
             
@@ -1732,7 +1741,11 @@ fi'''
         # Check if any pending calculations can now be started
         for planned_type in planned_sequence:
             base_type, type_num = self._parse_calc_type(planned_type)
-            
+
+            # Geometry-chain steps stay strictly sequence-ordered in sweep mode.
+            if skip_geometry_steps and base_type == "OPT":
+                continue
+
             # Skip if already completed or in progress
             if self._calculation_already_exists(material_id, planned_type):
                 existing_status = [c['status'] for c in all_calcs if c['calc_type'] == planned_type]
@@ -1769,9 +1782,9 @@ fi'''
                         can_start = True
                         source_calc_id = opt_source  # Use highest completed OPT for FREQ generation
                     
-            elif base_type in ["BAND", "DOSS"]:
-                # BAND/DOSS calculations depend on their previous step in the workflow sequence
-                # They typically need a wavefunction from SP or OPT
+            elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+                # D3 property calculations need a wavefunction from SP or OPT
+                # (_find_dependency_in_sequence resolves to the real provider).
                 prev_step = self._find_dependency_in_sequence(planned_type, planned_sequence)
                 if prev_step and prev_step in completed_by_type:
                     can_start = True
@@ -1825,8 +1838,12 @@ fi'''
                     # FREQ always uses generate_freq_from_opt with an OPT calculation
                     # source_calc_id should already be from an OPT due to fixed dependency logic
                     calc_id = self.generate_freq_from_opt(source_calc_id, planned_type)
-                elif base_type in ["BAND", "DOSS"]:
-                    calc_id = self.generate_property_calculation(source_calc_id, planned_type)
+                elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+                    # Same new-vs-legacy gate as generate_band_from_sp/doss_from_sp
+                    if self._use_new_d3_generation():
+                        calc_id = self.generate_d3_calculation_new(source_calc_id, planned_type)
+                    else:
+                        calc_id = self.generate_property_calculation(source_calc_id, planned_type)
                 elif base_type == "OPT":
                     if source_calc_id == 'CIF':
                         # Generate from CIF
@@ -2207,10 +2224,23 @@ fi'''
                                     new_calc_ids.append(freq_calc_id)
                         # Add other calculation types as needed
         
-        # Note: We do NOT check for all pending calculations here anymore
-        # The workflow should progress step by step based on actual dependencies
-        # This prevents premature triggering of later steps
-        
+        # Dependency-driven sweep: after the sequence-order handling above,
+        # trigger ANY later planned step whose REAL dependency is now satisfied
+        # (e.g. FREQ needs only OPT — without this it sat dammed behind
+        # BAND/DOSS, and a single failed DOSS meant FREQ/TRANSPORT/... never
+        # ran at all). _calculation_already_exists() makes this idempotent
+        # (steps just created above are skipped), and skip_geometry_steps=True
+        # keeps OPT2/OPT3 chains strictly sequence-ordered so geometry
+        # provenance can't race.
+        if planned_sequence:
+            try:
+                for pending_id in self._check_and_trigger_pending_calculations(
+                        material_id, planned_sequence, skip_geometry_steps=True):
+                    if pending_id not in new_calc_ids:
+                        new_calc_ids.append(pending_id)
+            except Exception as e:
+                print(f"Warning: dependency-driven trigger sweep failed: {e}")
+
         # Update workflow state if we have a workflow_id
         if workflow_id:
             try:
@@ -2474,9 +2504,12 @@ fi'''
                     return planned_sequence[i]
             return None
             
-        elif base_type in ["BAND", "DOSS"]:
-            # BAND and DOSS depend on SP or OPT (for wavefunction)
-            # Look backwards for the most recent SP or OPT
+        elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+            # All D3 property calculations depend on SP or OPT (they consume the
+            # fort.9 wavefunction) — NOT on whatever step happens to precede
+            # them in the sequence. The old previous-step fallback made
+            # CHARGE+POTENTIAL "depend on" FREQ, serializing property runs
+            # behind unrelated steps.
             for i in range(calc_index - 1, -1, -1):
                 prev_base, _ = self._parse_calc_type(planned_sequence[i])
                 if prev_base in ["SP", "OPT"]:

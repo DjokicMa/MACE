@@ -46,6 +46,12 @@ def test_parse_calc_type(eng, raw, expected):
     ("OPT2", ["OPT", "OPT2"], "OPT"),
     ("OPT2", ["OPT", "FREQ", "OPT2"], "OPT"),           # skips FREQ
     ("DOSS", ["OPT", "SP"], None),                      # not in sequence
+    # D3 property types resolve to the wavefunction provider, NOT whatever step
+    # precedes them (CHARGE+POTENTIAL used to "depend on" FREQ via the
+    # previous-step fallback, serializing it behind an unrelated calc).
+    ("TRANSPORT", ["OPT", "SP", "BAND", "TRANSPORT"], "SP"),
+    ("CHARGE+POTENTIAL", ["OPT", "SP", "BAND", "DOSS", "FREQ", "CHARGE+POTENTIAL"], "SP"),
+    ("FREQ", ["OPT", "SP", "BAND", "DOSS", "FREQ"], "OPT"),  # the real testMACE1.1 sequence
 ])
 def test_find_dependency_in_sequence(eng, calc, seq, expected):
     assert eng._find_dependency_in_sequence(calc, seq) == expected
