@@ -1575,9 +1575,14 @@ fi'''
                     workflow_id = None
         workflow_id = workflow_id or 'manual'
         
-        # Generate SLURM script
+        # Generate SLURM script. The job name MUST be the on-disk deck's stem
+        # (e.g. '1_dia_band'), not the bare material_id: submit_prop.sh does
+        # `cp $DIR/$JOB.d3 INPUT` / `cp $DIR/$JOB.f9 fort.9`, so a bare
+        # 'JOB=1_dia' against '1_dia_band.d3' copied nothing and Pproperties
+        # MPI_Aborted with an empty INPUT — every workflow BAND/DOSS failed.
+        # (All the d12 call sites already pass their suffixed stem.)
         slurm_script = self._create_slurm_script_for_calculation(
-            work_dir, material_id, calc_type, step_num, workflow_id
+            work_dir, d3_file.stem, calc_type, step_num, workflow_id
         )
         
         if not slurm_script:
