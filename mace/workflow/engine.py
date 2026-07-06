@@ -71,11 +71,16 @@ class WorkflowEngine:
         # Clean up old workflow staging directories (older than 7 days)
         self._cleanup_old_workflow_dirs()
         
-    def get_workflow_sequence(self, workflow_id: str) -> Optional[List[str]]:
-        """Get the planned workflow sequence for a workflow ID"""
+    def _load_workflow_plan(self, workflow_id: str) -> Optional[Dict[str, Any]]:
+        """Locate and parse ``workflow_configs/workflow_plan_<id>.json``.
+
+        Single source for everything the plan carries (sequence AND per-step
+        settings). Returns the parsed plan dict, or None when the plan file
+        cannot be found/read.
+        """
         if not workflow_id:
             return None
-            
+
         # Search multiple locations for workflow_configs directory
         search_paths = [
             self.base_work_dir / "workflow_configs",
@@ -85,29 +90,86 @@ class WorkflowEngine:
             Path.cwd().parent.parent.parent / "workflow_configs",
             Path.cwd().parent.parent.parent.parent / "workflow_configs"
         ]
-        
-        workflow_plan_file = None
+
         for search_dir in search_paths:
             if search_dir.exists():
                 candidate = search_dir / f"workflow_plan_{workflow_id.replace('workflow_', '')}.json"
                 if candidate.exists():
-                    workflow_plan_file = candidate
-                    break
-        
-        if not workflow_plan_file:
-            print(f"DEBUG: Could not find workflow plan file for {workflow_id}")
-            print(f"DEBUG: Searched in: {[str(p) for p in search_paths if p.exists()]}")
+                    try:
+                        with open(candidate, 'r') as f:
+                            return json.load(f)
+                    except Exception as e:
+                        print(f"DEBUG: Error reading workflow plan: {e}")
+                        return None
+
+        print(f"DEBUG: Could not find workflow plan file for {workflow_id}")
+        print(f"DEBUG: Searched in: {[str(p) for p in search_paths if p.exists()]}")
+        return None
+
+    def get_workflow_sequence(self, workflow_id: str) -> Optional[List[str]]:
+        """Get the planned workflow sequence for a workflow ID"""
+        plan = self._load_workflow_plan(workflow_id)
+        if plan is None:
             return None
-            
-        try:
-            with open(workflow_plan_file, 'r') as f:
-                plan = json.load(f)
-                sequence = plan.get('workflow_sequence', [])
-                print(f"DEBUG: Found workflow sequence: {sequence}")
-                return sequence
-        except Exception as e:
-            print(f"DEBUG: Error reading workflow plan: {e}")
+        sequence = plan.get('workflow_sequence', [])
+        print(f"DEBUG: Found workflow sequence: {sequence}")
+        return sequence
+
+    def _get_plan_step_config(self, workflow_id: str, calc_type: str) -> Dict[str, Any]:
+        """The plan's ``step_configurations`` entry for ``calc_type``, or ``{}``.
+
+        Keys are ``f"{calc_type}_{position}"`` (``BAND_3``, ``CHARGE+POTENTIAL_6``,
+        ``OPT2_7``) — match on the type part. This is what makes progression
+        execute the USER'S plan: SP method modifications, BAND/DOSS/C+P d3
+        settings and OPT2 optimization settings all live here and were
+        previously ignored in favor of engine defaults / pure inheritance.
+        """
+        plan = self._load_workflow_plan(workflow_id) if workflow_id else None
+        if not plan:
+            return {}
+        for key, cfg in (plan.get('step_configurations') or {}).items():
+            if key.rsplit('_', 1)[0] == calc_type and isinstance(cfg, dict):
+                return cfg
+        return {}
+
+    def _build_numbered_calc_config(self, workflow_id: str, target_calc_type: str,
+                                    target_base_type: str,
+                                    functional: Optional[str]) -> Optional[Dict[str, Any]]:
+        """Config dict for a numbered d12 generation (SP/OPT2/OPT3/...).
+
+        Merges the functional extracted from the parent deck with the plan
+        step's inline overrides — previously ignored, so an SP step planned
+        with ``new_functional: B3LYP`` silently re-ran the parent's PBE-D3 and
+        OPT2 ``optimization_settings`` only ever came from inheritance.
+        Returns None when there is nothing usable to write.
+        """
+        plan_cfg = self._get_plan_step_config(workflow_id, target_calc_type)
+        mm = plan_cfg.get('method_modifications') or {}
+        if mm.get('new_functional'):
+            functional = str(mm['new_functional'])
+            if mm.get('use_dispersion') and not functional.upper().endswith('-D3'):
+                functional += '-D3'
+            print(f"    Plan method modification: functional -> {functional}")
+
+        opt_settings = (plan_cfg.get('optimization_settings')
+                        if target_base_type == "OPT" else None)
+
+        if not functional and not opt_settings:
             return None
+
+        config_data: Dict[str, Any] = {"calculation_type": target_base_type}
+        if functional:
+            config_data["functional"] = functional
+        if mm.get('use_dispersion'):
+            config_data["dispersion"] = True
+        if opt_settings:
+            # apply_config_to_options maps these onto optimization_type +
+            # opt_* keys for the d12 writer
+            config_data["optimization_settings"] = dict(opt_settings)
+            config_data["optimization_type"] = plan_cfg.get(
+                'optimization_type', 'FULLOPTG')
+            print(f"    Plan optimization settings applied: {sorted(opt_settings)}")
+        return config_data
     
     def get_workflow_step_number(self, workflow_id: str, calc_type: str) -> int:
         """Get the correct step number for a calculation type in the workflow"""
@@ -1415,20 +1477,57 @@ fi'''
                 print("CRYSTALOptToD3.py not found")
                 return None
                 
-            # Create basic D3 configuration based on calc type
-            d3_config = self._get_default_d3_config(target_calc_type)
-            
-            # Save configuration to temp file
-            config_file = work_dir / f"{target_calc_type.lower()}_config.json"
-            import json
-            with open(config_file, 'w') as f:
-                json_config = {
-                    "version": "1.0",
-                    "type": "d3_configuration",
-                    "calculation_type": target_calc_type,
-                    "configuration": d3_config
-                }
-                json.dump(json_config, f, indent=2)
+            # Resolve the D3 configuration with plan-aware precedence. The
+            # workflow plan's step_configurations were previously ignored here:
+            # BAND ran with the 10000-point default table path while the plan
+            # said 1000-point seekpath, and DOSS energy windows were dropped.
+            #   1. the plan step's expert_config_file (planner-written JSON)
+            #   2. the plan step's inline d3_settings (full envelope) or
+            #      d3_config (bare configuration block)
+            #   3. engine defaults (_get_default_d3_config)
+            plan_workflow_id = None
+            try:
+                plan_workflow_id = json.loads(
+                    source_calc.get('settings_json') or '{}').get('workflow_id')
+            except (json.JSONDecodeError, TypeError):
+                pass
+            step_cfg = self._get_plan_step_config(plan_workflow_id, target_calc_type)
+
+            config_file = None
+            expert_path = step_cfg.get('expert_config_file')
+            if expert_path:
+                cand = Path(expert_path)
+                if not cand.exists():
+                    # The plan may carry an absolute path from another machine;
+                    # retry relative to this run's workflow_configs.
+                    cand = (self.base_work_dir / "workflow_configs"
+                            / "expert_d3_configs" / cand.name)
+                if cand.exists():
+                    config_file = cand
+                    print(f"  Using plan expert D3 config: {config_file.name}")
+
+            if config_file is None:
+                if step_cfg.get('d3_settings'):
+                    json_config = step_cfg['d3_settings']
+                    print(f"  Using plan d3_settings for {target_calc_type}")
+                elif step_cfg.get('d3_config'):
+                    json_config = {
+                        "version": "1.0",
+                        "type": "d3_configuration",
+                        "calculation_type": target_calc_type,
+                        "configuration": step_cfg['d3_config']
+                    }
+                    print(f"  Using plan d3_config for {target_calc_type}")
+                else:
+                    json_config = {
+                        "version": "1.0",
+                        "type": "d3_configuration",
+                        "calculation_type": target_calc_type,
+                        "configuration": self._get_default_d3_config(target_calc_type)
+                    }
+                config_file = work_dir / f"{target_calc_type.lower()}_config.json"
+                with open(config_file, 'w') as f:
+                    json.dump(json_config, f, indent=2)
             
             # Run CRYSTALOptToD3.py
             cmd = [
@@ -3077,18 +3176,17 @@ fi'''
                     elif functional_info.get('method') == 'HF':
                         functional = 'RHF'
                     
-                    if functional:
-                        # Create a temporary config file for SP/FREQ generation
+                    config_data = self._build_numbered_calc_config(
+                        workflow_id, target_calc_type, target_base_type, functional)
+
+                    if config_data:
+                        # Create a temporary config file for SP/FREQ/OPT generation
                         temp_config = work_dir / f"{target_base_type.lower()}_config.json"
-                        config_data = {
-                            "functional": functional,
-                            "calculation_type": target_base_type
-                        }
                         with open(temp_config, 'w') as f:
                             json.dump(config_data, f, indent=2)
-                        
+
                         args.extend(["--config-file", str(temp_config)])
-                        print(f"    Created config with functional: {functional}")
+                        print(f"    Created config: {config_data}")
                         expert_config_file = temp_config  # Mark that we have a config
                     else:
                         print(f"    Could not determine functional from d12 settings: {functional_info}")
