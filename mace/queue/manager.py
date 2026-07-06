@@ -145,7 +145,13 @@ class EnhancedCrystalQueueManager:
                 if ctx:
                     lock_dir = ctx.get_lock_dir()
                 else:
-                    lock_dir = self.d12_dir / ".queue_locks"
+                    # Anchor the lock to the DATABASE being protected, not the
+                    # callback's cwd: follow-up jobs run in their own dirs, so
+                    # cwd-anchored locks gave every concurrent completion
+                    # callback its own lock dir — no mutual exclusion at all,
+                    # and near-simultaneous completions duplicated the same
+                    # follow-up calculations (sp2, 4x band/doss).
+                    lock_dir = Path(self.db_path).resolve().parent / ".queue_locks"
                     
                 self.lock_manager = QueueLockManager(lock_dir=lock_dir, lock_timeout=300)
                 self.throttler = CallbackThrottler(min_delay=0.5, max_delay=2.0)

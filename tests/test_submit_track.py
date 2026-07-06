@@ -102,3 +102,20 @@ def test_recovered_resubmission_records_override_script(monkeypatch, tmp_path):
     assert calc_id
     calc = mgr.db.get_calculation(calc_id)
     assert calc["job_script"] == str(bumped)
+
+
+def test_lock_dir_anchored_to_database(tmp_path):
+    """Completion callbacks run in each job's own cwd but share one
+    materials.db — the queue lock must live beside the DB, not the cwd:
+    per-cwd lock dirs gave concurrent callbacks no mutual exclusion and
+    near-simultaneous completions duplicated follow-up calculations."""
+    from mace.queue.manager import EnhancedCrystalQueueManager
+    job_dir = tmp_path / "wf" / "step_002_SP" / "mat_sp"
+    job_dir.mkdir(parents=True)
+    db = tmp_path / "materials.db"
+    mgr = EnhancedCrystalQueueManager(
+        d12_dir=str(job_dir), db_path=str(db), enable_tracking=True)
+    if mgr.lock_manager is None:
+        import pytest
+        pytest.skip("queue locking unavailable in this environment")
+    assert Path(str(mgr.lock_manager.lock_dir)).resolve() == (tmp_path / ".queue_locks").resolve()

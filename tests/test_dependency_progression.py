@@ -125,3 +125,40 @@ def test_execute_workflow_step_runs_dependency_sweep(engine):
 
     assert seen == {"material_id": "mat", "seq": SEQ, "skip": True}
     assert "id_FREQ" in new_ids
+
+
+def test_no_plan_defaults_are_idempotent(engine, monkeypatch):
+    """Manual (no-plan) submissions: re-firing progression for a completed OPT
+    must NOT generate another SP once one exists (real-world: every completion
+    callback re-fired the unguarded default and produced sp2 + 4x duplicate
+    band/doss jobs); same guard for the SP -> BAND+DOSS default."""
+    monkeypatch.delenv("MACE_WORKFLOW_ID", raising=False)
+    engine._cleanup_failed_workflow_dirs = lambda: None
+    engine.get_workflow_sequence = lambda wid: None
+    engine.generate_sp_from_opt = (
+        lambda cid: engine.triggered.append(("SP", cid)) or "sp_new")
+    engine.generate_doss_from_sp = (
+        lambda cid: engine.triggered.append(("DOSS", cid)) or "doss_new")
+    engine.generate_band_from_sp = (
+        lambda cid: engine.triggered.append(("BAND", cid)) or "band_new")
+
+    # OPT completed, SP already submitted -> re-fire generates NOTHING
+    opt = _calc("OPT", cid="opt_1"); opt["settings_json"] = None
+    engine.db = _FakeDB([opt, _calc("SP", status="submitted")])
+    engine.db.get_calculation = lambda cid: opt
+    engine.execute_workflow_step("mat", "opt_1")
+    assert engine.triggered == []
+
+    # OPT completed, no SP yet -> generated exactly once
+    engine.db = _FakeDB([opt])
+    engine.db.get_calculation = lambda cid: opt
+    engine.execute_workflow_step("mat", "opt_1")
+    assert engine.triggered == [("SP", "opt_1")]
+
+    # SP completed, BAND pending + DOSS absent -> only DOSS generated
+    engine.triggered.clear()
+    sp = _calc("SP", cid="sp_1"); sp["settings_json"] = None
+    engine.db = _FakeDB([opt, sp, _calc("BAND", status="pending")])
+    engine.db.get_calculation = lambda cid: sp
+    engine.execute_workflow_step("mat", "sp_1")
+    assert engine.triggered == [("DOSS", "sp_1")]

@@ -2099,9 +2099,16 @@ fi'''
                             failed_generations.add(next_calc_type)
             else:
                 # Default behavior: generate SP only (FREQ should be explicitly requested in workflow)
-                sp_calc_id = self.generate_sp_from_opt(completed_calc_id)
-                if sp_calc_id:
-                    new_calc_ids.append(sp_calc_id)
+                # Idempotency guard: progression can re-fire for the same
+                # completed calc (retry callbacks, concurrent completions) —
+                # without this check every re-fire generated ANOTHER SP
+                # (sp2, sp3, ...) for manual/no-plan submissions.
+                if self._calculation_already_exists(material_id, 'SP'):
+                    print(f"SP already exists for {material_id}, skipping default generation")
+                else:
+                    sp_calc_id = self.generate_sp_from_opt(completed_calc_id)
+                    if sp_calc_id:
+                        new_calc_ids.append(sp_calc_id)
                 # Note: FREQ generation removed from default behavior - should be explicitly in workflow plan
         
         elif base_type == "SP":
@@ -2265,14 +2272,22 @@ fi'''
                         continue
             else:
                 # Default behavior: generate both DOSS and BAND
+                # (idempotency-guarded — see the OPT default branch: unguarded
+                # re-fires produced 4x duplicate band/doss jobs in manual mode)
                 print("No planned sequence found. Using default: generating both DOSS and BAND...")
-                doss_calc_id = self.generate_doss_from_sp(completed_calc_id)
-                if doss_calc_id:
-                    new_calc_ids.append(doss_calc_id)
-                    
-                band_calc_id = self.generate_band_from_sp(completed_calc_id)
-                if band_calc_id:
-                    new_calc_ids.append(band_calc_id)
+                if self._calculation_already_exists(material_id, 'DOSS'):
+                    print(f"DOSS already exists for {material_id}, skipping default generation")
+                else:
+                    doss_calc_id = self.generate_doss_from_sp(completed_calc_id)
+                    if doss_calc_id:
+                        new_calc_ids.append(doss_calc_id)
+
+                if self._calculation_already_exists(material_id, 'BAND'):
+                    print(f"BAND already exists for {material_id}, skipping default generation")
+                else:
+                    band_calc_id = self.generate_band_from_sp(completed_calc_id)
+                    if band_calc_id:
+                        new_calc_ids.append(band_calc_id)
                 
         elif base_type in ["FREQ", "BAND", "DOSS"]:
             # These calculations are often terminal, but sometimes workflow continues
@@ -2710,7 +2725,8 @@ fi'''
         for calc in all_calcs:
             if calc['calc_type'] == calc_type:
                 # Check if it's not in a terminal failed state that needs retry
-                if calc['status'] in ['submitted', 'running', 'completed']:
+                # ('pending' = created but not yet submitted — still exists)
+                if calc['status'] in ['pending', 'submitted', 'running', 'completed']:
                     return True
                 elif calc['status'] == 'failed':
                     # Could check if it's eligible for retry, but for now just say it exists
