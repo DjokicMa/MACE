@@ -4353,8 +4353,9 @@ class WorkflowPlanner:
             # Add workflow context environment variables after export JOB line
             elif line.startswith("echo 'export JOB="):
                 modified_lines.append(line)
-                # Add workflow context environment variables
-                workflow_id = script_config.get('workflow_id', f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+                # Add workflow context environment variables ('or'-form: a
+                # None/missing id must never mint a second, divergent one)
+                workflow_id = script_config.get('workflow_id') or f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 # Use absolute path to workflow context directory
                 context_dir = str(Path(self.work_dir).resolve() / f".mace_context_{workflow_id}")
                 modified_lines.append(f"echo '# Workflow context for queue manager' >> $1.sh")

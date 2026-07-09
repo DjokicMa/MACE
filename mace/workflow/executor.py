@@ -139,9 +139,15 @@ class WorkflowExecutor:
         # Get the base MACE directory
         mace_dir = Path(__file__).parent.parent
         
-        # Get workflow_id from plan
-        workflow_id = plan.get('workflow_id', f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-        
+        # Get workflow_id from plan. 'or'-form + write-back: quick-start
+        # plans arrive without a workflow_id, and independent minting here
+        # produced an id one second after execute_workflow_plan's (e.g.
+        # ..._000104 vs ..._000103) — templates then pointed every job
+        # callback at a shadow context, splitting the workflow across two
+        # databases.
+        workflow_id = plan.get('workflow_id') or f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        plan['workflow_id'] = workflow_id
+
         # Iterate through all step configurations
         for step_key, step_config in plan.get('step_configurations', {}).items():
             if 'slurm_config' in step_config and 'scripts' in step_config['slurm_config']:
@@ -242,7 +248,9 @@ class WorkflowExecutor:
                     if line.startswith("echo 'export JOB="):
                         modified_lines.append(line)
                         # Add workflow context environment variables for script generators
-                        workflow_id = script_config.get('workflow_id', f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+                        # ('or'-form: a None/missing id must never mint a
+                        # second, divergent workflow id here)
+                        workflow_id = script_config.get('workflow_id') or f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                         modified_lines.append(f"echo '# Workflow context for queue manager' >> $1.sh")
                         modified_lines.append(f"echo 'export MACE_WORKFLOW_ID=\"{workflow_id}\"' >> $1.sh")
                         # Use absolute path for MACE_CONTEXT_DIR
@@ -292,8 +300,12 @@ class WorkflowExecutor:
         with open(plan_file, 'r') as f:
             plan = json.load(f)
             
-        # Use workflow_id from plan, or generate new one if missing
-        workflow_id = plan.get('workflow_id', f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        # Use workflow_id from plan, or generate new one if missing/None —
+        # and write it back so every later consumer of this plan dict
+        # (script preparation, step execution) sees the SAME id instead of
+        # minting its own a second later.
+        workflow_id = plan.get('workflow_id') or f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        plan['workflow_id'] = workflow_id
         ui.info(f"Using workflow_id: {workflow_id}")
         
         # Get isolation mode from plan (default to 'isolated' if not specified)
