@@ -103,3 +103,35 @@ def test_existing_mace_context_dir_still_preferred(engine, tmp_path):
 
     assert f'export MACE_CONTEXT_DIR="{ctx.resolve()}"' in script.read_text() or \
            f'export MACE_CONTEXT_DIR="{ctx}"' in script.read_text()
+
+
+def test_stale_template_context_exports_are_replaced(engine, tmp_path):
+    """Real failure (phase-3 QA): generic workflow_scripts/ templates carry
+    the workflow id minted at TEMPLATE-creation time (....000104), one second
+    after the plan id (....000103). The engine skipped injection when any
+    MACE_WORKFLOW_ID export was present, so follow-up scripts kept the stale
+    id, the runtime materials.db check failed, and the SP callback opened a
+    fresh cwd-local DB (nested-DB tripwire, job 12086806)."""
+    scripts = tmp_path / "workflow_scripts"
+    scripts.mkdir()
+    (scripts / "submitcrystal23_sp.sh").write_text(
+        '#!/bin/bash --login\n'
+        '#SBATCH -J stale\n'
+        'export JOB=placeholder\n'
+        '# Workflow context for queue manager\n'
+        'export MACE_WORKFLOW_ID="workflow_20260709_000104"\n'
+        'export MACE_CONTEXT_DIR="/nonexistent/.mace_context_workflow_20260709_000104"\n'
+        'export MACE_ISOLATION_MODE="isolated"\n'
+        'export scratch=$SCRATCH/crys23\n'
+        'echo run\n')
+    calc_dir = _calc_dir(tmp_path, "step_002_SP", "4_dia_sp")
+    (calc_dir / "4_dia_sp.d12").write_text("dummy\n")
+
+    script = engine._create_slurm_script_for_calculation(
+        calc_dir, "4_dia_sp", "SP", 2, "workflow_20260709_000103")
+
+    content = script.read_text()
+    assert 'MACE_WORKFLOW_ID="workflow_20260709_000103"' in content
+    assert "000104" not in content, "stale template exports survived"
+    assert content.count("export MACE_WORKFLOW_ID=") == 1
+    assert content.count("export MACE_CONTEXT_DIR=") == 1

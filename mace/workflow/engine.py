@@ -624,8 +624,24 @@ class WorkflowEngine:
             flags=re.MULTILINE
         )
         
+        # Strip any pre-existing context exports before injecting ours:
+        # generic workflow_scripts/ templates carry the workflow id minted
+        # when the TEMPLATE was created — one second after the plan id in
+        # real runs (....000104 vs ....000103) — so trusting them sent
+        # follow-up callbacks to a nonexistent .mace_context_*; the runtime
+        # [ -f "$MACE_CONTEXT_DIR/materials.db" ] check failed and the
+        # callback opened a fresh cwd-local materials.db in the step dir.
+        if 'export MACE_WORKFLOW_ID=' in customized:
+            stale = ('export MACE_WORKFLOW_ID=', 'export MACE_CONTEXT_DIR=',
+                     'export MACE_ISOLATION_MODE=')
+            customized = '\n'.join(
+                l for l in customized.split('\n')
+                if not l.strip().startswith(stale)
+                and l.strip() != '# Workflow context for queue manager')
+
         # Add workflow context environment variables with absolute paths
-        # Check if we already have MACE_WORKFLOW_ID exported
+        # (any template-provided exports were stripped above, so this always
+        # injects the authoritative pair)
         if 'export MACE_WORKFLOW_ID=' not in customized:
             # Find where to insert - after export JOB= line
             lines = customized.split('\n')
