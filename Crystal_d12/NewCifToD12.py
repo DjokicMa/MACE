@@ -269,6 +269,12 @@ def parse_cif(cif_file):
                 raise ValueError(f"Unknown element symbol '{sym}' in CIF file")
             atomic_numbers.append(atomic_num)
 
+        # Keep the raw _atom_site_ records too: per the CIF spec they are the
+        # asymmetric unit, while ASE's positions above are the full
+        # symmetry-expanded cell. Reduction falls back on them when spglib
+        # is unavailable.
+        raw_records = _parse_cif_atom_site_records(cif_file)
+
         return {
             "a": a,
             "b": b,
@@ -281,6 +287,8 @@ def parse_cif(cif_file):
             "atomic_numbers": atomic_numbers,
             "symbols": symbols,
             "positions": positions,
+            "cif_atom_symbols": raw_records[0] if raw_records else None,
+            "cif_atom_positions": raw_records[1] if raw_records else None,
             "name": os.path.basename(cif_file).replace(".cif", ""),
         }
 
@@ -557,6 +565,66 @@ def detect_trigonal_setting(cif_data):
     return "hexagonal_axes"
 
 
+def _parse_cif_atom_site_records(cif_file):
+    """Return (symbols, fractional_positions) from the raw ``_atom_site_`` loop.
+
+    Per the CIF specification these records are the asymmetric unit — CIF
+    readers (ASE) expand them with ``_symmetry_equiv_pos_as_xyz`` into the
+    full cell. CRYSTAL wants the asymmetric unit alongside the space-group
+    number, so the raw records are exactly the safe no-spglib fallback:
+    writing the EXPANDED cell with a declared space group makes CRYSTAL
+    re-apply the operators and generate clashing duplicates for any
+    structure with general positions (real case: 3_dia3, Fd-3m, atoms
+    0.685 A apart -> ERROR NEIGHB). Returns None if the loop can't be parsed.
+    """
+    try:
+        with open(cif_file, "r", errors="ignore") as f:
+            lines = f.read().splitlines()
+        for i, line in enumerate(lines):
+            if line.strip().lower() != "loop_":
+                continue
+            tags = []
+            j = i + 1
+            while j < len(lines) and lines[j].strip().startswith("_"):
+                tags.append(lines[j].strip().split()[0].lower())
+                j += 1
+            if "_atom_site_fract_x" not in tags:
+                continue
+            ix = tags.index("_atom_site_fract_x")
+            iy = tags.index("_atom_site_fract_y")
+            iz = tags.index("_atom_site_fract_z")
+            if "_atom_site_type_symbol" in tags:
+                isym = tags.index("_atom_site_type_symbol")
+            elif "_atom_site_label" in tags:
+                isym = tags.index("_atom_site_label")
+            else:
+                return None
+            symbols, positions = [], []
+            while j < len(lines):
+                row = lines[j].strip()
+                if not row or row.startswith(("_", "#")) or \
+                        row.lower().startswith(("loop_", "data_")):
+                    break
+                parts = row.split()
+                if len(parts) < len(tags):
+                    break
+                alpha = "".join(ch for ch in parts[isym] if ch.isalpha())
+                sym = alpha[:2].capitalize()
+                if sym not in SYMBOL_TO_NUMBER:
+                    sym = alpha[:1].upper()
+                if sym not in SYMBOL_TO_NUMBER:
+                    return None
+                symbols.append(sym)
+                # strip esd parentheses, e.g. "0.1234(5)"
+                positions.append([float(parts[k].split("(")[0])
+                                  for k in (ix, iy, iz)])
+                j += 1
+            return (symbols, positions) if symbols else None
+        return None
+    except Exception:
+        return None
+
+
 def verify_and_reduce_to_asymmetric_unit(
     cif_data, tolerance=1e-5, validate_symmetry=False
 ):
@@ -572,6 +640,18 @@ def verify_and_reduce_to_asymmetric_unit(
         dict: Modified CIF data with only asymmetric unit atoms, or original if verification fails
     """
     if not SPGLIB_AVAILABLE:
+        raw_syms = cif_data.get("cif_atom_symbols")
+        raw_pos = cif_data.get("cif_atom_positions")
+        if raw_syms and len(raw_syms) < len(cif_data.get("symbols", [])):
+            ui.warn(
+                "Warning: spglib not available - using the CIF's own atom "
+                "records as the asymmetric unit."
+            )
+            reduced = dict(cif_data)
+            reduced["symbols"] = list(raw_syms)
+            reduced["atomic_numbers"] = [SYMBOL_TO_NUMBER[s] for s in raw_syms]
+            reduced["positions"] = [[p % 1.0 for p in pos] for pos in raw_pos]
+            return reduced
         ui.warn("Warning: spglib not available, cannot reduce to asymmetric unit.")
         ui.print("Using all atoms from the CIF file.")
         return cif_data
@@ -1278,9 +1358,12 @@ def process_cifs(cif_directory, options, output_directory=None):
                 cif_data["spacegroup"] = 1
                 ui.print("Using P1 symmetry (no symmetry operations, all atoms explicit)")
             elif options["symmetry_handling"] == "SPGLIB":
-                # If spglib symmetry requested and reduction is enabled
-                if SPGLIB_AVAILABLE and options.get("reduce_to_asymmetric", True):
-                    ui.print("\nPerforming spglib symmetry analysis with verification...")
+                # If spglib symmetry requested and reduction is enabled.
+                # Without spglib the function falls back to the CIF's own
+                # _atom_site_ records (asymmetric unit per the CIF spec) —
+                # never write the expanded cell under a declared space group.
+                if options.get("reduce_to_asymmetric", True):
+                    ui.print("\nPerforming symmetry analysis with verification...")
                     tolerance = options.get("symmetry_tolerance", 1e-5)
                     validate_symmetry = options.get("validate_symmetry", False)
                     cif_data = verify_and_reduce_to_asymmetric_unit(
@@ -1300,11 +1383,14 @@ def process_cifs(cif_directory, options, output_directory=None):
                         )
                     else:
                         ui.warn(
-                            "Warning: Cannot identify unique atoms without spglib. Writing all atoms."
+                            "spglib not available - falling back to the CIF's own atom records."
                         )
                         ui.print(
-                            "Install spglib to enable asymmetric unit reduction: pip install spglib"
+                            "Install spglib for full asymmetric-unit verification: pip install spglib"
                         )
+                        # no-spglib path inside falls back to the CIF's raw
+                        # _atom_site_ records (the asymmetric unit per spec)
+                        cif_data = verify_and_reduce_to_asymmetric_unit(cif_data)
                 else:
                     ui.print("Using CIF symmetry but writing all atoms explicitly")
 
