@@ -95,3 +95,35 @@ def test_sigkill_oom_is_memory_error(mgr):
     out = find_data("FAILED_QA/3_dia3_opt_killed_signal9_oom.out")
     error_type, msg = _classify(mgr, out)
     assert error_type == "memory_error", (error_type, msg)
+
+
+def test_recovery_attempt_cap_counts_the_lineage(mgr):
+    """Real incident (phase-3 QA): every recovery resubmission creates a
+    fresh calc record whose recovery_attempts starts at 0, so the 3-attempt
+    cap reset on every link — persistently failing jobs spawned recovery
+    chains forever (9 'resubmitted' OPT records and climbing). The count
+    must cover the whole lineage: superseded links carry
+    status='resubmitted' for the same material + calc type."""
+    db = mgr.db
+    db.create_material(material_id="m", formula="C")
+    ids = []
+    for i, status in enumerate(["resubmitted", "resubmitted", "failed"]):
+        cid = db.create_calculation(material_id="m", calc_type="OPT",
+                                    input_file=f"/x/in{i}.d12", work_dir="/x")
+        db.update_calculation_status(cid, status)
+        ids.append(cid)
+    # the original spent one attempt spawning link 1
+    mgr.increment_recovery_attempt_count(ids[0])
+
+    assert mgr.get_recovery_attempt_count(ids[2]) >= 2, (
+        "a fresh recovery record must inherit its lineage's spent attempts")
+
+    # and at >= max_recovery_attempts the gate refuses further recovery
+    third = db.create_calculation(material_id="m", calc_type="OPT",
+                                  input_file="/x/in3.d12", work_dir="/x")
+    db.update_calculation_status(ids[2], "resubmitted")
+    db.update_calculation_status(third, "failed")
+    mgr.max_recovery_attempts = 3
+    ok = mgr.attempt_error_recovery(
+        {"calc_id": third, "material_id": "m"}, "memory_error", "Detected: OOM")
+    assert ok is False, "lineage exhausted its attempts - recovery must stop"

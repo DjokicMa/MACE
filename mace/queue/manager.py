@@ -1279,7 +1279,16 @@ class EnhancedCrystalQueueManager:
             return False
     
     def get_recovery_attempt_count(self, calc_id: str) -> int:
-        """Get the number of recovery attempts for a calculation."""
+        """Recovery attempts already spent on this calculation's LINEAGE.
+
+        Every recovery resubmission creates a fresh calc record whose own
+        recovery_attempts starts at 0 — counting per-record reset the
+        3-attempt cap on every link, so a persistently failing job spawned
+        recovery chains forever (phase-3 QA: 9 resubmitted OPT records and
+        climbing). Superseded links in the lineage carry
+        status='resubmitted' for the same material and calc type; count
+        them in addition to this record's own attempts.
+        """
         if not self.db:
             return 0
         try:
@@ -1288,7 +1297,13 @@ class EnhancedCrystalQueueManager:
             # max_recovery_attempts was never enforced
             with self.db._get_connection() as conn:
                 cursor = conn.execute(
-                    "SELECT recovery_attempts FROM calculations WHERE calc_id = ?",
+                    "SELECT COALESCE(c1.recovery_attempts, 0) + ("
+                    "  SELECT COUNT(*) FROM calculations c2"
+                    "  WHERE c2.material_id = c1.material_id"
+                    "    AND c2.calc_type = c1.calc_type"
+                    "    AND c2.status = 'resubmitted'"
+                    "    AND c2.calc_id != c1.calc_id)"
+                    " FROM calculations c1 WHERE c1.calc_id = ?",
                     (calc_id,)
                 )
                 row = cursor.fetchone()
