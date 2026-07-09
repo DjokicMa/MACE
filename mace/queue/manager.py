@@ -1133,12 +1133,19 @@ class EnhancedCrystalQueueManager:
                     "CONVERGENCE NOT ACHIEVED",
                     # CRYSTAL prints "TOO MANY CYCLES" (matches detector.py);
                     # the old "TOO MANY SCF CYCLES" never matched real output.
-                    "TOO MANY CYCLES"
+                    "TOO MANY CYCLES",
+                    # SCF blow-up (real case: diamond + B3LYP-D3 diverged over
+                    # 206 cycles then "ERROR **** ZERO **** FERMI ENERGY NOT
+                    # IN INTERVAL") — recoverable via the convergence handler
+                    "FERMI ENERGY NOT IN INTERVAL"
                 ],
                 'geometry_error': [
                     "ATOMS TOO CLOSE",
                     "GEOMETRY OPTIMIZATION FAILED",
-                    "SMALL DISTANCE BETWEEN ATOMS"
+                    "SMALL DISTANCE BETWEEN ATOMS",
+                    # real CRYSTAL text is "DISTANCE BETWEEN ATOMS N M TOO
+                    # SMALL" + "ERROR **** NEIGHB ****" (matches detector.py)
+                    "**** NEIGHB ****"
                 ],
                 'timeout_error': [
                     "DUE TO TIME LIMIT",

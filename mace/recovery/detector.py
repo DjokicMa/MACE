@@ -64,7 +64,8 @@ class CrystalErrorDetector:
         # Enhanced error patterns based on updatelists2.py with additional context
         self.error_patterns = {
             'scf_convergence': {
-                'patterns': ["TOO MANY CYCLES", "SCF NOT CONVERGED", "CONVERGENCE NOT ACHIEVED"],
+                'patterns': ["TOO MANY CYCLES", "SCF NOT CONVERGED", "CONVERGENCE NOT ACHIEVED",
+                             "FERMI ENERGY NOT IN INTERVAL"],
                 'severity': 'medium',
                 'recoverable': True,
                 'description': 'SCF convergence failure',
