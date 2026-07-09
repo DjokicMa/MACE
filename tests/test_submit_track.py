@@ -119,3 +119,51 @@ def test_lock_dir_anchored_to_database(tmp_path):
         import pytest
         pytest.skip("queue locking unavailable in this environment")
     assert Path(str(mgr.lock_manager.lock_dir)).resolve() == (tmp_path / ".queue_locks").resolve()
+
+
+def test_completion_callback_classifies_its_own_job(monkeypatch, tmp_path):
+    """The completion callback is the LAST line of the job script itself, so
+    squeue still lists the invoking job as RUNNING when the callback checks it.
+    Real-world (phase-1 smoke, job 12082006): a lone tracked manual job
+    finished, its own callback saw itself RUNNING, left the record 'running'
+    and never generated the SP — with no later job's callback to sweep it up,
+    the chain stalled forever. The calc belonging to $SLURM_JOB_ID must be
+    classified from its output file, not from queue state."""
+    import shutil
+    import mace.queue.manager as qm
+    from mace.queue.manager import EnhancedCrystalQueueManager
+
+    real_d12 = find_data("OPT/1LiFSI-3EMS-conf4*opt_HSESOL3C_optimized.d12")
+    real_out = find_data("OPT/*.out", must_contain="OPT END")
+    shutil.copy2(real_d12, tmp_path / "job.d12")
+    shutil.copy2(real_out, tmp_path / "job.out")
+    monkeypatch.chdir(tmp_path)
+
+    mgr = EnhancedCrystalQueueManager(
+        d12_dir=str(tmp_path), db_path=str(tmp_path / "materials.db"),
+        enable_tracking=True, organize_outputs=False)
+    mgr.is_workflow_context = False
+    mgr.submit_to_slurm = (
+        lambda input_file, work_dir, calc_type, submit_script_override=None: "777001")
+    calc_id = mgr.submit_calculation(tmp_path / "job.d12")
+    assert mgr.db.get_calculation(calc_id)["slurm_job_id"] == "777001"
+
+    # squeue reports the job as still RUNNING (it is: we're inside it)
+    def fake_squeue(cmd, capture_output=True, text=True, **kw):
+        class R:
+            returncode = 0
+            stdout = "JOBID,STATE,START\n777001,RUNNING,2026-07-08T22:44:00\n"
+            stderr = ""
+        return R()
+
+    monkeypatch.setattr(qm.subprocess, "run", fake_squeue)
+    monkeypatch.setenv("SLURM_JOB_ID", "777001")
+    handled = []
+    mgr.handle_completed_calculation = handled.append
+
+    mgr.check_queue_status()
+
+    calc = mgr.db.get_calculation(calc_id)
+    assert calc["status"] == "completed", (
+        f"own job left '{calc['status']}': callback trusted squeue over output")
+    assert handled == [calc_id]

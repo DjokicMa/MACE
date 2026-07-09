@@ -879,14 +879,25 @@ class EnhancedCrystalQueueManager:
             
         # Update calculation statuses
         if self.enable_tracking:
+            # A completion callback runs as the final line of the job script
+            # itself, so squeue still lists the invoking job as RUNNING even
+            # though its CRYSTAL run has finished. Classify that calc from its
+            # output file instead of queue state — a lone manual job has no
+            # later callback to sweep it up and would stay 'running' forever.
+            own_job_id = os.environ.get('SLURM_JOB_ID')
+
             running_calcs = self.db.get_calculations_by_status('submitted') + \
                            self.db.get_calculations_by_status('running')
-                           
+
             for calc in running_calcs:
                 slurm_job_id = calc['slurm_job_id']
                 if not slurm_job_id:
                     continue
-                    
+
+                if own_job_id and str(slurm_job_id) == own_job_id:
+                    self.check_completed_or_failed_job(calc)
+                    continue
+
                 if slurm_job_id in queue_jobs:
                     slurm_state = queue_jobs[slurm_job_id]
                     
