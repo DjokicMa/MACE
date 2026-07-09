@@ -167,3 +167,55 @@ def test_completion_callback_classifies_its_own_job(monkeypatch, tmp_path):
     assert calc["status"] == "completed", (
         f"own job left '{calc['status']}': callback trusted squeue over output")
     assert handled == [calc_id]
+
+
+def test_plan_next_does_not_resubmit_engine_submitted_calcs(monkeypatch, tmp_path):
+    """execute_workflow_step submits what it generates; the manager's
+    auto-submit loop then submitted the SAME calc again (phase-1 smoke: SP
+    jobs 12083826 + 12083827 from one OPT), re-running the raw script
+    generator in place and wiping the workflow context exports — the
+    duplicate's callbacks then opened a fresh cwd-local DB and fanned out
+    duplicate BAND/DOSS. Calcs that already carry a slurm_job_id must be
+    left alone; ones the engine failed to submit are still picked up."""
+    import mace.queue.manager as qm
+    from mace.queue.manager import EnhancedCrystalQueueManager
+
+    mgr = EnhancedCrystalQueueManager(
+        d12_dir=str(tmp_path), db_path=str(tmp_path / "materials.db"),
+        enable_tracking=True, organize_outputs=False)
+    mgr.is_workflow_context = False
+    mgr.auto_submit_followups = True
+
+    mgr.db.create_material(material_id="1_dia", formula="C")
+    d12 = tmp_path / "1_dia_sp.d12"
+    d12.write_text("dummy\n")
+    submitted_id = mgr.db.create_calculation(
+        material_id="1_dia", calc_type="SP",
+        input_file=str(d12), work_dir=str(tmp_path))
+    mgr.db.update_calculation_status(submitted_id, "submitted",
+                                     slurm_job_id="12083826")
+    unsubmitted_id = mgr.db.create_calculation(
+        material_id="1_dia", calc_type="BAND",
+        input_file=str(d12), work_dir=str(tmp_path))
+
+    class _FakeEngine:
+        def __init__(self, *a, **k):
+            pass
+
+        def execute_workflow_step(self, material_id, calc_id):
+            return [submitted_id, unsubmitted_id]
+
+    import mace.workflow.engine as eng_mod
+    monkeypatch.setattr(eng_mod, "WorkflowEngine", _FakeEngine)
+
+    resubmitted = []
+    mgr.submit_to_slurm = (
+        lambda input_file, work_dir, calc_type, submit_script_override=None:
+        resubmitted.append(calc_type) or "999999")
+
+    mgr.plan_next_calculation("1_dia", "opt_1")
+
+    assert "SP" not in resubmitted, "already-submitted calc was re-submitted"
+    assert resubmitted == ["BAND"], "engine-unsubmitted calc must still be picked up"
+    calc = mgr.db.get_calculation(submitted_id)
+    assert calc["slurm_job_id"] == "12083826", "duplicate submission overwrote the real job id"

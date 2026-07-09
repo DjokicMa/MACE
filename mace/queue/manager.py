@@ -1508,8 +1508,16 @@ class EnhancedCrystalQueueManager:
                 # If auto-submission is enabled, submit the new calculations
                 if self.auto_submit_followups:
                     for calc_id in new_calc_ids:
-                        calc = next((c for c in self.db.get_all_calculations() 
+                        calc = next((c for c in self.db.get_all_calculations()
                                    if c['calc_id'] == calc_id), None)
+                        if calc and calc.get('slurm_job_id'):
+                            # execute_workflow_step already submitted it (and
+                            # its script carries the workflow context exports).
+                            # Re-submitting here launched a duplicate job AND
+                            # re-ran the raw script generator in place, wiping
+                            # those exports — so the duplicate's callbacks
+                            # opened a fresh cwd-local DB and fanned out again.
+                            continue
                         if calc and calc.get('input_file'):
                             print(f"Auto-submitting generated calculation: {calc_id}")
                             slurm_job_id = self.submit_to_slurm(
