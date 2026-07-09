@@ -270,6 +270,24 @@ class WorkflowExecutor:
         
         return content
         
+    def _persist_plan_for_callbacks(self, plan: Dict[str, Any], workflow_id: str):
+        """Write the plan to <work_dir>/workflow_configs/workflow_plan_<id>.json.
+
+        The engine's _load_workflow_plan searches workflow_configs/ from the
+        callback's cwd upward and from its base dir — the plan must exist in
+        the EXECUTION tree for progression to honor step_configurations.
+        """
+        try:
+            self.configs_dir.mkdir(parents=True, exist_ok=True)
+            dest = self.configs_dir / (
+                f"workflow_plan_{workflow_id.replace('workflow_', '')}.json")
+            if not dest.exists():
+                with open(dest, 'w') as f:
+                    json.dump(plan, f, indent=2)
+                ui.info(f"Plan persisted for callbacks: {dest}")
+        except Exception as e:
+            ui.warn(f"Could not persist plan into {self.configs_dir}: {e}")
+
     def copy_config_files(self, plan: Dict[str, Any], workflow_id: str):
         """Copy configuration files from temp to workflow_configs directory"""
         # Only copy if there are config files to copy
@@ -307,7 +325,15 @@ class WorkflowExecutor:
         workflow_id = plan.get('workflow_id') or f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         plan['workflow_id'] = workflow_id
         ui.info(f"Using workflow_id: {workflow_id}")
-        
+
+        # Persist the plan into THIS work dir's workflow_configs: job
+        # callbacks locate the plan by searching workflow_configs/ upward
+        # from their job dirs, so executing a plan FILE that lives in some
+        # other tree left the engine planless — it silently fell back to
+        # template defaults (wrong SP functional, 10000-pt BAND, band-index
+        # DOSS, and no FREQ/CHARGE+POTENTIAL/OPT2 steps at all).
+        self._persist_plan_for_callbacks(plan, workflow_id)
+
         # Get isolation mode from plan (default to 'isolated' if not specified)
         isolation_mode = plan.get('isolation_mode', 'isolated')
         post_completion_action = plan.get('post_completion_action', 'keep')
