@@ -162,3 +162,28 @@ def test_no_plan_defaults_are_idempotent(engine, monkeypatch):
     engine.db.get_calculation = lambda cid: sp
     engine.execute_workflow_step("mat", "sp_1")
     assert engine.triggered == [("DOSS", "sp_1")]
+
+
+def test_wavefunction_selector_skips_empty_f9(engine, tmp_path):
+    """Real incident (phase-3 QA): an OOM-killed SP left a 0-byte .f9; BAND
+    and DOSS generated from it aborted instantly. The selector must skip
+    empty wavefunctions and fall back to the previous valid one (OPT)."""
+    opt_out = tmp_path / "mat_opt.out"
+    opt_out.write_text("done\n")
+    (tmp_path / "mat_opt.f9").write_bytes(b"WAVEFUNCTION")
+    sp_out = tmp_path / "mat_sp.out"
+    sp_out.write_text("done\n")
+    (tmp_path / "mat_sp.f9").write_bytes(b"")  # OOM-killed: empty
+
+    opt = _calc("OPT", cid="opt_1")
+    opt["output_file"] = str(opt_out)
+    opt["end_time"] = "2026-07-09T00:10:00"
+    sp = _calc("SP", cid="sp_1")
+    sp["output_file"] = str(sp_out)
+    sp["end_time"] = "2026-07-09T00:20:00"
+    engine.db = _FakeDB([opt, sp])
+
+    picked = engine._find_most_recent_wavefunction_calc("mat")
+
+    assert picked == "opt_1", (
+        f"selector picked {picked}: an empty f9 must be skipped")

@@ -1825,8 +1825,8 @@ fi'''
             work_dir = Path(wf_calc.get('work_dir', wf_output_file.parent))
             wf_f9_file = work_dir / f"{wf_output_file.stem}.f9"
             
-        if not wf_f9_file.exists():
-            print(f"Wavefunction .f9 file not found for {wavefunction_calc_id}")
+        if not wf_f9_file.exists() or wf_f9_file.stat().st_size == 0:
+            print(f"Wavefunction .f9 file not found (or empty) for {wavefunction_calc_id}")
             return None
             
         # Determine which script to use based on target type
@@ -3637,12 +3637,17 @@ fi'''
             if calc['status'] == 'completed':
                 calc_base, _ = self._parse_calc_type(calc['calc_type'])
                 if calc_base in ['SP', 'OPT']:
-                    # Check if output file exists and wavefunction file exists
+                    # Check if output file exists and wavefunction file exists.
+                    # Size must be non-zero: an OOM-killed SP (phase-3 QA,
+                    # job 12086824) left a 0-byte f9 and BAND/DOSS generated
+                    # from it aborted instantly — skip it so the selector
+                    # falls back to the previous valid wavefunction (OPT).
                     output_file = Path(calc.get('output_file', ''))
                     if output_file.exists():
                         wf_file = output_file.parent / 'fort.9'
                         f9_file = output_file.with_suffix('.f9')
-                        if wf_file.exists() or f9_file.exists():
+                        if any(f.exists() and f.stat().st_size > 0
+                               for f in (wf_file, f9_file)):
                             wf_calcs.append(calc)
         
         # Sort by completion time and return most recent

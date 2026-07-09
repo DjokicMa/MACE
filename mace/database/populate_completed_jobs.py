@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 import json
 from datetime import datetime
 
+from mace.completion_checker import categorize_output_file
 from mace.database.materials import create_material_id_from_file
 
 
@@ -31,12 +32,15 @@ def scan_for_completed_calculations(base_dir: Path) -> List[Dict]:
         if not out_file.exists() or out_file.stat().st_size == 0:
             continue
             
-        # Check if calculation completed
+        # Check if calculation completed — same validated detector as the
+        # rest of the pipeline. The old test was `"TERMINATION" in content`,
+        # which the MPI "BAD TERMINATION" failure banner itself satisfies:
+        # an OOM-killed SP (0-byte fort.9) was adopted as completed and
+        # BAND/DOSS were fanned out from its empty wavefunction.
         try:
-            with open(out_file, 'r') as f:
-                content = f.read()
-                if "TERMINATION" not in content:
-                    continue
+            category, _ = categorize_output_file(out_file)
+            if not category.startswith('complete'):
+                continue
                     
             # Derive the material id with the SAME canonical function the workflow
             # engine/executor use (create_material_id_from_file). A local

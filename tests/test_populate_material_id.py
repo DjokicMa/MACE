@@ -24,7 +24,7 @@ def test_scan_material_id_matches_canonical(tmp_path, fname, expected_calc):
     from mace.database.populate_completed_jobs import scan_for_completed_calculations
     from mace.database.materials import create_material_id_from_file
     out = tmp_path / fname
-    out.write_text("CRYSTAL run\n OPT END - CONVERGENCE\n TTTTTT TERMINATION TTTTTT\n")
+    out.write_text("CRYSTAL run\n * OPT END - CONVERGED * E(AU): -1.0 POINTS 1 *\n    TOTAL CPU TIME =        1.0\n TTTTTT TERMINATION TTTTTT\n")
     calcs = scan_for_completed_calculations(tmp_path)
     assert len(calcs) == 1
     c = calcs[0]
@@ -38,7 +38,7 @@ def test_scan_continuation_id_is_not_the_full_stem(tmp_path):
     leak through as the material id (that created the duplicate material rows)."""
     from mace.database.populate_completed_jobs import scan_for_completed_calculations
     out = tmp_path / "mat_opt_B3LYP-D3_optimized.out"
-    out.write_text("CRYSTAL run\n TTTTTT TERMINATION TTTTTT\n")
+    out.write_text("CRYSTAL run\n    TOTAL CPU TIME =        1.0\n TTTTTT TERMINATION TTTTTT\n")
     c = scan_for_completed_calculations(tmp_path)[0]
     assert c["material_id"] == "mat"
     assert c["material_id"] != "mat_opt_B3LYP-D3_optimized"
@@ -66,3 +66,27 @@ def test_transport_id_matches_sibling_sp_id():
     from mace.database.materials import create_material_id_from_file as cmif
     assert (cmif("C1-RCSR-ana_optimized_TRANSPORT.out")
             == cmif("C1-RCSR-ana_optimized_sp_B3LYP-D3_optimized.out"))
+
+
+def test_bad_termination_output_is_not_adopted_as_completed(tmp_path):
+    """Real incident (phase-3 QA, SP job 12086824): an OOM-killed SP ends
+    with MPI's "BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES" — and
+    the old completion test (`"TERMINATION" in content`) was satisfied BY THE
+    FAILURE BANNER ITSELF. The dead SP (0-byte fort.9) was adopted as
+    completed and BAND/DOSS fanned out from an empty wavefunction. The scan
+    must route through categorize_output_file like everything else."""
+    import shutil
+    from pathlib import Path
+    from conftest import find_data
+    from mace.database.populate_completed_jobs import scan_for_completed_calculations
+
+    bad = find_data("FAILED_QA/T7_sp_killed_signal9_scf_converged.out")
+    good = find_data("SP/*.out", must_contain="SCF ENDED - CONVERGENCE ON ENERGY")
+    shutil.copy2(bad, tmp_path / "mat1_sp.out")
+    shutil.copy2(good, tmp_path / "mat2_sp.out")
+
+    found = scan_for_completed_calculations(tmp_path)
+
+    outs = {Path(c["output_file"]).name for c in found}
+    assert "mat1_sp.out" not in outs, "OOM-killed output adopted as completed"
+    assert "mat2_sp.out" in outs
