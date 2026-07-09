@@ -149,13 +149,22 @@ class MaterialMonitor:
             if health['size_mb'] > 1000:  # Larger than 1GB
                 health['issues'].append('Large database size - consider cleanup')
                 
-            # Check database file age
+            # Check database file age — staleness only matters while work is
+            # supposedly ACTIVE. A finished workflow's DB is legitimately quiet
+            # (flagging it made every completed run show WARN forever); but
+            # records still claiming pending/running with a silent DB indicate
+            # a real tracking inconsistency worth surfacing.
             db_file = Path(self.db_path)
             if db_file.exists():
                 mod_time = datetime.fromtimestamp(db_file.stat().st_mtime)
                 age = datetime.now() - mod_time
-                if age > timedelta(hours=24):
-                    health['issues'].append('Database not updated in 24+ hours')
+                by_status = stats.get('calculations_by_status', {}) or {}
+                active = sum(by_status.get(s, 0) for s in
+                             ('pending', 'submitted', 'running', 'resubmitted'))
+                if age > timedelta(hours=24) and active > 0:
+                    health['issues'].append(
+                        f'{active} calculation(s) marked active but database '
+                        f'not updated in 24+ hours')
                     
             health['status'] = 'healthy' if not health['issues'] else 'warning'
             
@@ -208,15 +217,19 @@ class MaterialMonitor:
                 queue['status'] = 'healthy' if not queue['issues'] else 'warning'
                 
             else:
-                queue['status'] = 'error'
+                # Not being able to SEE the queue is degraded observability,
+                # not a system failure — 'error' here forced overall:CRITICAL
+                # on healthy, finished runs (e.g. squeue transiently failing
+                # or monitoring from a machine without SLURM).
+                queue['status'] = 'warning'
                 queue['issues'].append('Cannot access SLURM queue')
-                
+
         except subprocess.TimeoutExpired:
-            queue['status'] = 'error'
+            queue['status'] = 'warning'
             queue['issues'].append('SLURM queue check timed out')
         except Exception as e:
-            queue['status'] = 'error'
-            queue['issues'].append(f'Queue check failed: {e}')
+            queue['status'] = 'warning'
+            queue['issues'].append(f'Queue check unavailable: {e}')
             
         return queue
         
@@ -255,10 +268,12 @@ class MaterialMonitor:
                 files['total_size_mb'] = total_size / (1024 * 1024)
                 files['organization_score'] = 100.0  # Workflow outputs are always organized
                 
-                # Also check for files in base directory
+                # Input .d12 files sitting in the base directory are the
+                # user's own inputs — informational, NOT a warning condition.
                 d12_files = list(self.base_dir.glob("*.d12"))
                 if d12_files:
-                    files['issues'].append(f'{len(d12_files)} D12 files in base directory')
+                    files.setdefault('notes', []).append(
+                        f'{len(d12_files)} input D12 file(s) in base directory')
                     
             else:
                 # Traditional file report
@@ -390,17 +405,29 @@ class MaterialMonitor:
                     if valid_times > 0:
                         performance['avg_job_time'] = total_time / valid_times
                         
-                # Calculate throughput (jobs per day)
+                # Throughput: per STEP (each calc is one workflow step) and per
+                # MATERIAL — steps/day alone scales with workload size (100
+                # materials vs 2 read drastically differently), so report both.
                 performance['queue_throughput'] = len(recent_calcs) / 7
-                
+                performance['materials_per_day'] = len(
+                    {c.get('material_id') for c in recent_calcs if c.get('material_id')}) / 7
+
             # Check for performance issues
             if performance['success_rate'] < 75:
                 performance['issues'].append(f'Low success rate: {performance["success_rate"]:.1f}%')
-                
+
             if performance['avg_job_time'] > 24:
                 performance['issues'].append(f'Long average job time: {performance["avg_job_time"]:.1f} hours')
-                
-            if performance['queue_throughput'] < 1:
+
+            # Low throughput is only a problem while work is supposedly active;
+            # an idle/finished queue is not a performance issue.
+            try:
+                by_status = self.db.get_database_stats().get('calculations_by_status', {}) or {}
+                active_now = sum(by_status.get(s, 0) for s in
+                                 ('pending', 'submitted', 'running', 'resubmitted'))
+            except Exception:
+                active_now = 0
+            if performance['queue_throughput'] < 1 and active_now > 0:
                 performance['issues'].append('Low queue throughput')
                 
             performance['status'] = 'healthy' if not performance['issues'] else 'warning'
@@ -471,6 +498,8 @@ class MaterialMonitor:
         )
         if files.get('issues'):
             files_detail += " · " + " · ".join(files['issues'])
+        if files.get('notes'):
+            files_detail += " · " + " · ".join(files['notes'])
         rows.append(ui.StatusRow("FILES", self._state_for(files.get('status', 'unknown')), files_detail))
 
         # Errors
@@ -490,8 +519,9 @@ class MaterialMonitor:
         perf = status.get('performance', {})
         perf_detail = (
             f"success {perf.get('success_rate', 0):.1f}%"
-            f" · avg {perf.get('avg_job_time', 0):.1f}h"
-            f" · {perf.get('queue_throughput', 0):.1f}/day"
+            f" · avg {perf.get('avg_job_time', 0):.1f}h/step"
+            f" · {perf.get('queue_throughput', 0):.1f} steps/day"
+            f" · {perf.get('materials_per_day', 0):.1f} materials/day"
         )
         if perf.get('issues'):
             perf_detail += " · " + " · ".join(perf['issues'])
