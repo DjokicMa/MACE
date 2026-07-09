@@ -927,9 +927,38 @@ class EnhancedCrystalQueueManager:
                         self.handle_failed_calculation(calc['calc_id'], slurm_state)
                         
                 else:
-                    # Job not in queue - check if it completed or failed
+                    # Job not in queue. squeue transiently returns an empty
+                    # or partial list on gateway nodes (observed repeatedly),
+                    # and a callback firing in that window marked every
+                    # in-flight job failed from its half-written output.
+                    # Confirm with sacct — authoritative — before classifying.
+                    state = self._sacct_job_state(slurm_job_id)
+                    if state in ('RUNNING', 'COMPLETING', 'SUSPENDED'):
+                        if calc['status'] != 'running':
+                            self.db.update_calculation_status(
+                                calc['calc_id'], 'running', slurm_state=state)
+                        continue
+                    if state in ('PENDING', 'CONFIGURING', 'REQUEUED'):
+                        continue
+                    # terminal, unknown to sacct, or sacct unavailable:
+                    # classify from the output file as before
                     self.check_completed_or_failed_job(calc)
-                    
+
+    def _sacct_job_state(self, job_id):
+        """Job state per sacct, '' if sacct has no record, None if unavailable."""
+        try:
+            result = subprocess.run(
+                ['sacct', '-j', str(job_id), '--format=State', '-n', '-X'],
+                capture_output=True, text=True, timeout=30
+            )
+            if result.returncode != 0:
+                return None
+            lines = [l.strip() for l in result.stdout.splitlines() if l.strip()]
+            # e.g. "CANCELLED by 12345" -> "CANCELLED"
+            return lines[0].split()[0].rstrip('+') if lines else ''
+        except Exception:
+            return None
+
     def check_early_job_failure(self):
         """Check for jobs that are failing early and cancel them if needed."""
         if not self.enable_tracking:

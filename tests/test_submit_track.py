@@ -219,3 +219,73 @@ def test_plan_next_does_not_resubmit_engine_submitted_calcs(monkeypatch, tmp_pat
     assert resubmitted == ["BAND"], "engine-unsubmitted calc must still be picked up"
     calc = mgr.db.get_calculation(submitted_id)
     assert calc["slurm_job_id"] == "12083826", "duplicate submission overwrote the real job id"
+
+
+def _mgr_with_tracked_job(monkeypatch, tmp_path, job_id="777001"):
+    import shutil
+    from mace.queue.manager import EnhancedCrystalQueueManager
+
+    real = find_data("OPT/1LiFSI-3EMS-conf4*opt_HSESOL3C_optimized.d12")
+    shutil.copy2(real, tmp_path / "job.d12")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    mgr = EnhancedCrystalQueueManager(
+        d12_dir=str(tmp_path), db_path=str(tmp_path / "materials.db"),
+        enable_tracking=True, organize_outputs=False)
+    mgr.is_workflow_context = False
+    mgr.submit_to_slurm = (
+        lambda input_file, work_dir, calc_type, submit_script_override=None: job_id)
+    calc_id = mgr.submit_calculation(tmp_path / "job.d12")
+    return mgr, calc_id
+
+
+def test_empty_squeue_blip_does_not_fail_running_jobs(monkeypatch, tmp_path):
+    """Real incident (phase-3 QA, 2026-07-09): gateway squeue transiently
+    returned an EMPTY list while 4 OPTs were RUNNING (sacct proved it); a
+    callback in that window classified every in-flight job from its
+    half-written output and marked them all failed. A job missing from
+    squeue must be confirmed terminal via sacct before classification."""
+    import mace.queue.manager as qm
+    mgr, calc_id = _mgr_with_tracked_job(monkeypatch, tmp_path)
+
+    def fake_run(cmd, capture_output=True, text=True, **kw):
+        class R:
+            returncode = 0
+            stderr = ""
+        r = R()
+        r.stdout = "JOBID,STATE,START\n" if cmd[0] == "squeue" else "   RUNNING \n"
+        return r
+
+    monkeypatch.setattr(qm.subprocess, "run", fake_run)
+    classified = []
+    mgr.check_completed_or_failed_job = classified.append
+
+    mgr.check_queue_status()
+
+    calc = mgr.db.get_calculation(calc_id)
+    assert calc["status"] == "running", (
+        f"squeue blip marked job '{calc['status']}' though sacct says RUNNING")
+    assert classified == []
+
+
+def test_sacct_terminal_state_still_classified_by_output(monkeypatch, tmp_path):
+    """When sacct confirms the job left the queue, output-based
+    classification must still run (previous behavior preserved)."""
+    import mace.queue.manager as qm
+    mgr, calc_id = _mgr_with_tracked_job(monkeypatch, tmp_path)
+
+    def fake_run(cmd, capture_output=True, text=True, **kw):
+        class R:
+            returncode = 0
+            stderr = ""
+        r = R()
+        r.stdout = "JOBID,STATE,START\n" if cmd[0] == "squeue" else " CANCELLED by 12345 \n"
+        return r
+
+    monkeypatch.setattr(qm.subprocess, "run", fake_run)
+    classified = []
+    mgr.check_completed_or_failed_job = classified.append
+
+    mgr.check_queue_status()
+
+    assert len(classified) == 1 and classified[0]["calc_id"] == calc_id
