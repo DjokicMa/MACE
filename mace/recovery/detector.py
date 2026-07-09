@@ -80,7 +80,8 @@ class CrystalErrorDetector:
             'memory_error': {
                 'patterns': [
                     "out-of-memory handler", "INSUFFICIENT MEMORY", "OUT OF MEMORY",
-                    "MEMORY ALLOCATION", "segmentation fault", "Stack trace terminated abnormally"
+                    "MEMORY ALLOCATION", "segmentation fault", "Stack trace terminated abnormally",
+                    "KILLED BY SIGNAL: 9"
                 ],
                 'severity': 'high',
                 'recoverable': True,

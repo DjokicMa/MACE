@@ -1155,7 +1155,12 @@ class EnhancedCrystalQueueManager:
                     "INSUFFICIENT MEMORY",
                     "OUT OF MEMORY",
                     "MEMORY ALLOCATION",
-                    "SEGMENTATION FAULT"
+                    "SEGMENTATION FAULT",
+                    # OOM-killer signature: MPI reports the rank SIGKILLed
+                    # while SLURM still records the job COMPLETED (real case:
+                    # 3_dia3 B3LYP OPT, job 12091685 — classified unknown and
+                    # left unrecovered though a memory bump is exactly the fix)
+                    "KILLED BY SIGNAL: 9"
                 ],
                 'convergence_error': [
                     "SCF NOT CONVERGED",

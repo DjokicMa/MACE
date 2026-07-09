@@ -85,3 +85,13 @@ def test_memory_handler_survives_none_job_script(tmp_path):
     bumped = list(tmp_path.glob("mat_recovery_*.sh"))
     assert bumped, "no bumped recovery script written"
     assert "--mem-per-cpu=7GB" in bumped[0].read_text()
+
+
+def test_sigkill_oom_is_memory_error(mgr):
+    """Real incident (phase-3 QA, 3_dia3 OPT job 12091685): the OOM killer
+    SIGKILLs MPI ranks ("KILLED BY SIGNAL: 9") while SLURM records the job
+    COMPLETED — classified unknown_error and left unrecovered even though a
+    memory bump is exactly the fix."""
+    out = find_data("FAILED_QA/3_dia3_opt_killed_signal9_oom.out")
+    error_type, msg = _classify(mgr, out)
+    assert error_type == "memory_error", (error_type, msg)
