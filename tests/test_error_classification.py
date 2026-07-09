@@ -127,3 +127,57 @@ def test_recovery_attempt_cap_counts_the_lineage(mgr):
     ok = mgr.attempt_error_recovery(
         {"calc_id": third, "material_id": "m"}, "memory_error", "Detected: OOM")
     assert ok is False, "lineage exhausted its attempts - recovery must stop"
+
+
+def test_resubmission_of_previous_rounds_copy_does_not_selfcopy(monkeypatch, tmp_path):
+    """Real incident (phase-3 QA, T7 second memory bump): the first recovery
+    copies the input to <material>_<type>.d12; the second recovery hands that
+    copy back in, and shutil.copy2(src, src) raised SameFileError, killing
+    the resubmission."""
+    from pathlib import Path
+    from conftest import find_data
+    import shutil
+    from mace.queue.manager import EnhancedCrystalQueueManager
+
+    real = find_data("OPT/1LiFSI-3EMS-conf4*opt_HSESOL3C_optimized.d12")
+    monkeypatch.chdir(tmp_path)
+    mgr = EnhancedCrystalQueueManager(
+        d12_dir=str(tmp_path), db_path=str(tmp_path / "materials.db"),
+        enable_tracking=True, organize_outputs=True)
+    mgr.is_workflow_context = False
+    seq = iter(("1111", "2222"))
+    mgr.submit_to_slurm = (
+        lambda input_file, work_dir, calc_type, submit_script_override=None: next(seq))
+
+    first = mgr.submit_calculation(Path(shutil.copy2(real, tmp_path / "mat.d12")))
+    assert first
+    prev_copy = Path(mgr.db.get_calculation(first)["input_file"])
+    assert prev_copy.exists() and prev_copy.name != "mat.d12"
+
+    second = mgr.submit_calculation(prev_copy, calc_type="OPT", material_id="mat")
+    assert second, "resubmitting the previous round's copy must not SameFileError"
+
+
+def test_parent_not_superseded_when_resubmission_fails(monkeypatch, tmp_path):
+    """Real incident (phase-3 QA, T7): the parent was marked 'resubmitted'
+    BEFORE submission; when the submission then failed, the lineage was left
+    with no active and no failed record — orphaned forever."""
+    from mace.queue.manager import EnhancedCrystalQueueManager
+
+    mgr = EnhancedCrystalQueueManager(
+        d12_dir=str(tmp_path), db_path=str(tmp_path / "materials.db"),
+        enable_tracking=True, organize_outputs=False)
+    mgr.db.create_material(material_id="m", formula="C")
+    d12 = tmp_path / "m.d12"
+    d12.write_text("x\n")
+    cid = mgr.db.create_calculation(material_id="m", calc_type="OPT",
+                                    input_file=str(d12), work_dir=str(tmp_path))
+    mgr.db.update_calculation_status(cid, "failed")
+    monkeypatch.setattr(mgr, "submit_calculation",
+                        lambda *a, **k: None)  # submission fails
+
+    ok = mgr.resubmit_fixed_calculation(mgr.db.get_calculation(cid))
+
+    assert ok is False
+    assert mgr.db.get_calculation(cid)["status"] == "failed", (
+        "failed parent must stay failed when the resubmission fails")

@@ -626,8 +626,12 @@ class EnhancedCrystalQueueManager:
         else:
             input_filename = f"{material_id}_{calc_type.lower()}{file_extension}"
             calc_input_file = calc_dir / input_filename
-            # Copy input file to calculation directory
-            shutil.copy2(d12_file, calc_input_file)
+            # Copy input file to calculation directory. A recovery
+            # resubmission can hand us the previous round's copy — the very
+            # same path — and shutil then raised SameFileError, killing the
+            # resubmission (phase-3 QA: 3,4^2T7_CA second memory bump).
+            if Path(d12_file).resolve() != calc_input_file.resolve():
+                shutil.copy2(d12_file, calc_input_file)
         
         # Create calculation record
         calc_id = None
@@ -1373,10 +1377,26 @@ class EnhancedCrystalQueueManager:
                 if d12_file is None:
                     d12_file = d12_files[0]
 
-            # Update database status to 'resubmitted'
-            self.db.update_calculation_status(calc_id, 'resubmitted', 
+            # Submit the calculation using existing submit logic
+            # (submit_single_calculation never existed on this class —
+            # recovered jobs were silently never resubmitted)
+            new_calc_id = self.submit_calculation(
+                d12_file, calc_type=calc.get('calc_type'),
+                material_id=calc.get('material_id'),
+                job_script_override=fixed_job_script,
+            )
+            if new_calc_id is None:
+                print(f"❌ Resubmission produced no calculation for {calc_id}; "
+                      f"leaving record failed for a later retry")
+                return False
+
+            # Supersede the parent only AFTER the successor exists — marking
+            # it 'resubmitted' before submitting orphaned the lineage when
+            # the submission failed (no active and no failed record left, so
+            # nothing ever retried it).
+            self.db.update_calculation_status(calc_id, 'resubmitted',
                                             error_type=None, error_message="Recovered and resubmitted")
-            
+
             # Mark this as a recovery resubmission
             try:
                 with self.db._get_connection() as conn:
@@ -1387,15 +1407,7 @@ class EnhancedCrystalQueueManager:
             except Exception:
                 pass  # Column might not exist in older databases
 
-            # Submit the calculation using existing submit logic
-            # (submit_single_calculation never existed on this class —
-            # recovered jobs were silently never resubmitted)
-            new_calc_id = self.submit_calculation(
-                d12_file, calc_type=calc.get('calc_type'),
-                material_id=calc.get('material_id'),
-                job_script_override=fixed_job_script,
-            )
-            return new_calc_id is not None
+            return True
             
         except Exception as e:
             print(f"❌ Error resubmitting calculation {calc['calc_id']}: {e}")
