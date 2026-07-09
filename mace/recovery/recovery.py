@@ -57,6 +57,27 @@ def canonical_error_type(error_type: str) -> str:
     return ERROR_TYPE_ALIASES.get(error_type, error_type)
 
 
+def _resolve_job_script(calc: Dict) -> Optional[Path]:
+    """The job script recorded for a calc, or the <input>.sh convention.
+
+    Workflow-submitted calcs can carry job_script=None (key present, so a
+    dict.get default doesn't apply) — Path(None) raised TypeError inside the
+    memory handler and the recovery chain died before ever bumping resources
+    (phase-3 QA, 3,4^2T7_CA OPT OOM). The submit generators always write the
+    script as <input stem>.sh beside the input, so fall back to that.
+    """
+    path = calc.get('job_script')
+    if not path:
+        input_file = calc.get('input_file')
+        if input_file:
+            candidate = Path(input_file).with_suffix('.sh')
+            if candidate.exists():
+                return candidate
+        return None
+    p = Path(path)
+    return p if p.exists() else None
+
+
 class ErrorRecoveryEngine:
     """
     Automated error recovery system for CRYSTAL calculations.
@@ -365,11 +386,11 @@ class ErrorRecoveryEngine:
             Path to fixed input file, or None if fix failed
         """
         print(f"Applying memory fix for {calc['calc_id']}")
-        
+
         # Parse original job script to get current memory
-        job_script = Path(calc.get('job_script', ''))
-        if not job_script.exists():
-            print(f"Job script not found: {job_script}")
+        job_script = _resolve_job_script(calc)
+        if job_script is None:
+            print(f"Job script not found for {calc['calc_id']}")
             return None
             
         try:
@@ -606,9 +627,9 @@ class ErrorRecoveryEngine:
         print(f"Applying timeout fix for {calc['calc_id']}")
         
         # Similar to memory_handler but adjusts walltime
-        job_script = Path(calc.get('job_script', ''))
-        if not job_script.exists():
-            print(f"Job script not found: {job_script}")
+        job_script = _resolve_job_script(calc)
+        if job_script is None:
+            print(f"Job script not found for {calc['calc_id']}")
             return None
             
         try:
@@ -684,7 +705,7 @@ class ErrorRecoveryEngine:
         
         # Clean up scratch space if enabled
         if config.get('cleanup_scratch', True):
-            work_dir = Path(calc.get('work_dir', ''))
+            work_dir = Path(calc.get('work_dir') or '')
             if work_dir.exists():
                 try:
                     # Remove large temporary files. NEVER delete wavefunction

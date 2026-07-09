@@ -60,3 +60,28 @@ def test_convergence_error_passes_recoverable_gate(mgr, monkeypatch):
         {"calc_id": "x", "material_id": "m"}, "convergence_error",
         "Detected: FERMI ENERGY NOT IN INTERVAL")
     assert reached.get("error_type") == "convergence_error"
+
+
+def test_memory_handler_survives_none_job_script(tmp_path):
+    """Real incident (phase-3 QA, 3,4^2T7_CA OPT OOM): workflow-created calc
+    records carry job_script=None (key PRESENT, so dict.get's default never
+    applies) — Path(None) raised TypeError inside memory_handler and the
+    recovery chain died before ever bumping resources. The submit generators
+    always write <input stem>.sh beside the input; the handler must fall
+    back to it and produce the bumped recovery script."""
+    from pathlib import Path
+    from mace.recovery.recovery import ErrorRecoveryEngine
+
+    eng = ErrorRecoveryEngine.__new__(ErrorRecoveryEngine)
+    d12 = tmp_path / "mat.d12"
+    d12.write_text("x\n")
+    (tmp_path / "mat.sh").write_text(
+        "#!/bin/bash\n#SBATCH --mem-per-cpu=5G\n#SBATCH -t 1-00:00:00\n")
+    calc = {"calc_id": "c1", "job_script": None, "input_file": str(d12)}
+
+    result = eng.memory_handler(calc, {"memory_factor": 1.5, "max_memory": "200GB"})
+
+    assert result is not None, "memory fix must succeed via the <input>.sh fallback"
+    bumped = list(tmp_path.glob("mat_recovery_*.sh"))
+    assert bumped, "no bumped recovery script written"
+    assert "--mem-per-cpu=7GB" in bumped[0].read_text()
