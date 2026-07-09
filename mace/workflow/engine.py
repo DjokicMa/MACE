@@ -530,13 +530,19 @@ class WorkflowEngine:
                 print(f"  Fallback exists: {template_script.exists()}")
             else:
                 template_script = base_dir / "submit_prop.sh"
-        
-        if not template_script.exists():
-            raise FileNotFoundError(f"No SLURM template found for {calc_type}")
-        
-        # Read template content
-        with open(template_script, 'r') as f:
-            template_content = f.read()
+
+        if template_script.exists():
+            # Read template content
+            with open(template_script, 'r') as f:
+                template_content = f.read()
+        else:
+            # Bare manual directory: no workflow_scripts/ and no local template
+            # copy. Emit a script with the same generator `mace submit` uses,
+            # so tracked manual progression can submit follow-ups anywhere.
+            template_content = self._generate_template_with_submit_generator(
+                calc_dir, material_name, base_type)
+            if template_content is None:
+                raise FileNotFoundError(f"No SLURM template found for {calc_type}")
             
         # Check if this is an old-style script generator (should be avoided)
         if 'echo \'#!/bin/bash --login\' >' in template_content:
@@ -571,6 +577,34 @@ class WorkflowEngine:
             print(f"  Error creating script {script_path}: {e}")
             raise
     
+    def _generate_template_with_submit_generator(self, calc_dir: Path,
+                                                 material_name: str,
+                                                 base_type: str) -> Optional[str]:
+        """Emit a direct SLURM script with the generators `mace submit` uses.
+
+        Manual (bare-directory) tracked runs have no workflow_scripts/ and no
+        local template, so follow-up submission died with FileNotFoundError —
+        a lone `mace submit --track` job could never progress past its first
+        step. The generator writes <job>.sh in cwd; capture its content and
+        remove the file — the normal customization/write path takes over.
+        """
+        gen_name = ("submitcrystal23.sh" if base_type in ("OPT", "SP", "FREQ")
+                    else "submit_prop.sh")
+        generator = Path(__file__).resolve().parent.parent / "submission" / gen_name
+        if not generator.exists():
+            return None
+        print(f"  No template available - generating with mace submit generator: {gen_name}")
+        result = subprocess.run(["bash", str(generator), material_name, "100"],
+                                cwd=str(calc_dir), capture_output=True, text=True)
+        emitted = calc_dir / f"{material_name}.sh"
+        if result.returncode != 0 or not emitted.exists():
+            if (result.stderr or "").strip():
+                print(f"  Generator failed: {result.stderr.strip()}")
+            return None
+        content = emitted.read_text()
+        emitted.unlink()
+        return content
+
     def _customize_slurm_script(self, template_content: str, material_name: str, 
                               calc_type: str, workflow_id: str, step_num: int) -> str:
         """Customize SLURM script template for specific calculation"""
@@ -620,8 +654,19 @@ class WorkflowEngine:
                             break
                         current = current.parent
                     else:
-                        # Last resort - use self.base_work_dir
-                        context_dir_path = str(self.base_work_dir / f'.mace_context_{workflow_id}')
+                        # Last resort: prefer the directory that holds the DB
+                        # this engine is actually using. Manual (bare-dir) runs
+                        # have no .mace_context_* dir — the .sh runtime check
+                        # [ -f "$MACE_CONTEXT_DIR/materials.db" ] then fails,
+                        # the callback falls back to a cwd-relative DB, and a
+                        # nested follow-up job opens a fresh empty database in
+                        # its own directory and resubmits itself forever.
+                        guess = self.base_work_dir / f'.mace_context_{workflow_id}'
+                        db_path = getattr(getattr(self, 'db', None), 'db_path', None)
+                        if guess.exists() or not db_path:
+                            context_dir_path = str(guess)
+                        else:
+                            context_dir_path = str(Path(db_path).resolve().parent)
                 
                 context_exports = f'''# Workflow context for queue manager
 export MACE_WORKFLOW_ID="{workflow_id}"
