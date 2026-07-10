@@ -73,3 +73,24 @@ def test_spglib_reduction_still_works():
 
     assert len(reduced["symbols"]) == 2
     assert reduced["spacegroup"] == 227
+
+
+def test_planner_band_config_with_first_last_band_validates():
+    """Real incident (phase-4 QA, 9T2 BAND): the planner-written expert BAND
+    config specifies the range as first_band=1/last_band=null ("all bands",
+    resolved per material) and has no literal 'bands' key — the validator
+    rejected it and CRYSTALOptToD3 exited 0 with no D3 file, so the plan's
+    1000-pt seekpath BAND silently never generated."""
+    sys.path.insert(0, str(REPO_ROOT / "Crystal_d3"))
+    from d3_config import validate_d3_config
+
+    planner_cfg = {"calculation_type": "BAND", "n_points": 1000,
+                   "first_band": 1, "last_band": None,
+                   "kpath_source": "seekpath_inv", "path": "auto"}
+    is_valid, errors = validate_d3_config(planner_cfg)
+    assert is_valid, errors
+
+    # a config with NO band range at all must still be rejected
+    is_valid, errors = validate_d3_config(
+        {"calculation_type": "BAND", "n_points": 1000})
+    assert not is_valid

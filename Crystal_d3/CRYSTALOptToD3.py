@@ -1431,7 +1431,9 @@ def main():
                     ui.err("Configuration validation errors:")
                     for error in errors:
                         ui.err(f"  - {error}")
-                    return
+                    # exit non-zero: callers (workflow engine) detect failure
+                    # by exit code / missing output, not by parsing stderr
+                    sys.exit(1)
                 # Override calc_type from config if present
                 if "calculation_type" in shared_config:
                     calc_type = shared_config["calculation_type"]
@@ -1620,7 +1622,9 @@ def main():
                     ui.err("Configuration validation errors:")
                     for error in errors:
                         ui.err(f"  - {error}")
-                    return
+                    # exit non-zero: callers (workflow engine) detect failure
+                    # by exit code / missing output, not by parsing stderr
+                    sys.exit(1)
                 # Override calc_type from config if present
                 if "calculation_type" in config:
                     calc_type = config["calculation_type"]

@@ -229,10 +229,16 @@ def validate_d3_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
     
     # Validate based on calculation type
     if calc_type == "BAND":
-        required = ["n_points", "bands"]
-        for key in required:
-            if key not in config:
-                errors.append(f"Missing required field for BAND: {key}")
+        if "n_points" not in config:
+            errors.append("Missing required field for BAND: n_points")
+        # The band range may be given as bands="auto"/"fermi", a band_range,
+        # or a first_band/last_band pair — planner-written expert configs use
+        # the pair with last_band=null meaning "all bands" (the generator
+        # resolves it to n_ao per material). Requiring the literal 'bands'
+        # key rejected every planner-saved BAND config, and the run then
+        # exited 0 with no D3 file.
+        if not any(k in config for k in ("bands", "band_range", "first_band")):
+            errors.append("Missing required field for BAND: bands")
     
     elif calc_type == "DOSS":
         # energy_range is only present in energy-window mode; the default
