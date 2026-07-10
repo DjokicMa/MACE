@@ -1171,3 +1171,19 @@ def test_live_dashboard_renderable_stays_rich_after_stdout_redirect(ui, monkeypa
     assert len(kinds) >= 2  # eager __enter__ render + our refresh
     assert all(k != "str" for k in kinds), \
         f"dashboard renderable degraded to plain text mid-Live: {kinds}"
+
+
+def test_plotting_forces_headless_backend(monkeypatch):
+    """Real incident (phase-5 QA): on a headless HPC login node matplotlib
+    auto-picked GTK and the band plot died at savefig with a gdk-pixbuf
+    error. Importing the plotting entry must pin MPLBACKEND=Agg (while
+    still honoring an explicit user override)."""
+    import importlib
+    import os
+    import sys
+
+    monkeypatch.delenv("MPLBACKEND", raising=False)
+    for mod in [m for m in sys.modules if m.startswith("mace.plotting")]:
+        sys.modules.pop(mod)
+    importlib.import_module("mace.plotting.main")
+    assert os.environ.get("MPLBACKEND") == "Agg"

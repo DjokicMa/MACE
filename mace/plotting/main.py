@@ -22,6 +22,13 @@ import argparse
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 
+# Force a non-interactive backend for file output BEFORE any plotter pulls
+# in pyplot: on headless HPC nodes matplotlib auto-picks a GUI backend (GTK)
+# and dies at savefig with "gdk-pixbuf-error-quark: Couldn't recognize the
+# image file format" (real case: login-node band plot, phase-5 QA).
+# setdefault keeps an explicit user MPLBACKEND override working.
+os.environ.setdefault("MPLBACKEND", "Agg")
+
 from . import handlers  # noqa: F401  (import side-effect: registers all plotters)
 from . import detect
 from .registry import PlotKind, REGISTRY, entries, get
