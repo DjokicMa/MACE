@@ -289,3 +289,30 @@ def test_sacct_terminal_state_still_classified_by_output(monkeypatch, tmp_path):
     mgr.check_queue_status()
 
     assert len(classified) == 1 and classified[0]["calc_id"] == calc_id
+
+
+def test_manual_d3_submissions_get_correct_calc_type(tmp_path):
+    """Real incident (phase-5 QA): `mace submit 1_dia_transport.d3` recorded
+    the calc as SP — no filename token matched and the content check knew
+    only OPTGEOM/FREQCALC — so its completion callback would have fanned out
+    BAND/DOSS from a BOLTZTRA run. Deck contents below mirror the real
+    generated files."""
+    from mace.queue.manager import EnhancedCrystalQueueManager
+
+    mgr = EnhancedCrystalQueueManager(
+        d12_dir=str(tmp_path), db_path=str(tmp_path / "materials.db"),
+        enable_tracking=False, organize_outputs=False)
+
+    transport = tmp_path / "1_dia_transport.d3"
+    transport.write_text(
+        "BOLTZTRA\nTRANGE\n100 800 50\nMURANGE\n-5.35 -1.35 0.01\n"
+        "TDFRANGE\n-5.0 5.0 0.01\nEND\n")
+    cp = tmp_path / "1_dia_charge+potential.d3"
+    cp.write_text("ECH3\n100\nPOT3\n100\n5\nEND\n")
+    # content-only fallbacks (no type token in the name)
+    anon_transport = tmp_path / "mystery.d3"
+    anon_transport.write_text("BOLTZTRA\nTRANGE\n100 800 50\nEND\n")
+
+    assert mgr.determine_calc_type_from_file(transport) == "TRANSPORT"
+    assert mgr.determine_calc_type_from_file(cp) == "CHARGE+POTENTIAL"
+    assert mgr.determine_calc_type_from_file(anon_transport) == "TRANSPORT"

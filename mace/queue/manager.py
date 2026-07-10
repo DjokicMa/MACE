@@ -545,9 +545,19 @@ class EnhancedCrystalQueueManager:
         """Determine calculation type from filename or file content."""
         filename = d12_file.name.lower()
         
-        # Check filename for type indicators
+        # Check filename for type indicators. TRANSPORT and
+        # CHARGE+POTENTIAL must come before the generic checks: a manual
+        # `mace submit 1_dia_transport.d3` was recorded as SP (no filename
+        # token matched and the content check fell through to the SP
+        # default), so its completion callback would have fanned out
+        # BAND/DOSS from a BOLTZTRA run.
         if '_opt' in filename or 'optim' in filename:
             return 'OPT'
+        elif '_transport' in filename:
+            return 'TRANSPORT'
+        elif ('_charge+potential' in filename or '_charge_potential' in filename
+              or '_potential' in filename or '_charge' in filename):
+            return 'CHARGE+POTENTIAL'
         elif '_sp' in filename or 'single' in filename:
             return 'SP'
         elif '_band' in filename or 'band' in filename:
@@ -556,8 +566,8 @@ class EnhancedCrystalQueueManager:
             return 'DOSS'
         elif '_freq' in filename or 'frequency' in filename:
             return 'FREQ'
-            
-        # Check file content for OPTGEOM keyword
+
+        # Check file content for type keywords
         try:
             with open(d12_file, 'r') as f:
                 content = f.read().upper()
@@ -565,6 +575,14 @@ class EnhancedCrystalQueueManager:
                     return 'OPT'
                 elif 'FREQCALC' in content:
                     return 'FREQ'
+                elif 'BOLTZTRA' in content:
+                    return 'TRANSPORT'
+                elif 'ECH3' in content or 'POT3' in content:
+                    return 'CHARGE+POTENTIAL'
+                elif 'DOSS' in content:
+                    return 'DOSS'
+                elif content.lstrip().startswith('BAND'):
+                    return 'BAND'
                 else:
                     return 'SP'  # Default assumption
         except:
