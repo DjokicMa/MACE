@@ -94,3 +94,29 @@ def test_planner_band_config_with_first_last_band_validates():
     is_valid, errors = validate_d3_config(
         {"calculation_type": "BAND", "n_points": 1000})
     assert not is_valid
+
+
+def test_transport_d3_starts_with_newk(tmp_path):
+    """Real incident (phase-5 QA, job 12185576): the generated BOLTZTRA deck
+    had no NEWK block and CRYSTAL aborted with "NEWK MUST BE CALLED BEFORE
+    BOLTZTRA". The transport writer must emit NEWK + shrink + IFE first,
+    like the DOSS writer does."""
+    sys.path.insert(0, str(REPO_ROOT / "Crystal_d3"))
+    import CRYSTALOptToD3 as mod
+
+    gen = mod.D3Generator.__new__(mod.D3Generator)
+    gen.input_file = tmp_path / "mat_sp.out"
+    gen.input_dir = tmp_path
+    gen.base_name = "mat_sp"
+    gen.structure_info = {"dimensionality": 3}
+    (tmp_path / "mat_sp.d12").write_text("X\nSHRINK\n12 24\nEND\n")
+
+    d3 = gen._write_transport_d3({"temperature_range": (100, 800, 50),
+                                  "mu_range": (-2.0, 2.0, 0.01),
+                                  "tdf_range": (-5.0, 5.0, 0.01)})
+
+    lines = d3.splitlines()
+    assert lines[0] == "NEWK", d3
+    assert "BOLTZTRA" in lines
+    assert lines.index("NEWK") < lines.index("BOLTZTRA")
+    assert "1 0" in lines

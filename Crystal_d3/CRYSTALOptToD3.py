@@ -816,7 +816,29 @@ class D3Generator:
     
     def _write_transport_d3(self, config: Dict[str, Any]) -> str:
         """Write BOLTZTRA transport calculation D3 file."""
-        lines = ["BOLTZTRA"]
+        # CRYSTAL requires the wavefunction to be re-diagonalized first:
+        # a bare BOLTZTRA deck aborts with "NEWK MUST BE CALLED BEFORE
+        # BOLTZTRA" (real case: phase-5 QA, job 12185576). Same NEWK block
+        # the DOSS writer emits.
+        lines = ["NEWK"]
+        d12_file = self.input_file.with_suffix('.d12')
+        if not d12_file.exists():
+            d12_files = list(self.input_dir.glob(f"{self.base_name}*.d12"))
+            if d12_files:
+                d12_file = d12_files[0]
+        if d12_file.exists():
+            dimensionality = self.structure_info.get('dimensionality', 3)
+            shrink_lines = extract_shrink_from_d12(
+                str(d12_file), for_doss=True, dimensionality=dimensionality)
+            for line in shrink_lines:
+                lines.append(line.strip())
+        else:
+            dimensionality = self.structure_info.get('dimensionality', 3)
+            is_val = 8 if dimensionality == 3 else 12
+            lines.append(f"{is_val} {2 * is_val}")
+        lines.append("1 0")  # IFE=1 (Fermi recomputed), IPLO=0
+
+        lines.append("BOLTZTRA")
         
         # Temperature range
         t_min, t_max, t_step = config.get("temperature_range", (100, 800, 50))
