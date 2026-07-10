@@ -1552,6 +1552,13 @@ fi'''
                     source_calc.get('settings_json') or '{}').get('workflow_id')
             except (json.JSONDecodeError, TypeError):
                 pass
+            if not plan_workflow_id:
+                # Recovery resubmissions (and other re-created records) can
+                # lose the parent's workflow_id in settings_json — 9T2's
+                # recovered SP generated a 10000-pt default BAND though the
+                # plan said 1000-pt seekpath. Every workflow job script
+                # exports MACE_WORKFLOW_ID; trust it as the fallback.
+                plan_workflow_id = os.environ.get('MACE_WORKFLOW_ID')
             step_cfg = self._get_plan_step_config(plan_workflow_id, target_calc_type)
 
             config_file = None

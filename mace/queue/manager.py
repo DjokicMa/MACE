@@ -1390,6 +1390,28 @@ class EnhancedCrystalQueueManager:
                       f"leaving record failed for a later retry")
                 return False
 
+            # Carry the parent's workflow lineage into the successor: the
+            # fresh record otherwise loses workflow_id, so its completion
+            # callback could not find the plan and generated follow-ups with
+            # template defaults (9T2's recovered SP -> 10000-pt BAND instead
+            # of the plan's 1000-pt seekpath).
+            try:
+                parent_settings = json.loads(calc.get('settings_json') or '{}')
+                lineage = {k: parent_settings[k] for k in
+                           ('workflow_id', 'workflow_step', 'workflow_calc_type')
+                           if k in parent_settings}
+                if lineage:
+                    new_calc = self.db.get_calculation(new_calc_id)
+                    new_settings = json.loads(
+                        (new_calc or {}).get('settings_json') or '{}')
+                    new_settings.update(lineage)
+                    with self.db._get_connection() as conn:
+                        conn.execute(
+                            "UPDATE calculations SET settings_json = ? WHERE calc_id = ?",
+                            (json.dumps(new_settings), new_calc_id))
+            except Exception as e:
+                print(f"⚠️  Could not propagate workflow lineage to {new_calc_id}: {e}")
+
             # Supersede the parent only AFTER the successor exists — marking
             # it 'resubmitted' before submitting orphaned the lineage when
             # the submission failed (no active and no failed record left, so

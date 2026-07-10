@@ -221,3 +221,34 @@ def test_no_plan_uses_engine_defaults(engine, tmp_path, monkeypatch):
     cap = _run_d3_generation(engine, tmp_path, monkeypatch, "BAND",
                              plan_wf_id="workflow_no_plan_here")
     assert cap["config"]["configuration"]["n_points"] == 10000
+
+
+def test_d3_plan_lookup_falls_back_to_env_workflow_id(monkeypatch, tmp_path):
+    """Real incident (phase-4 QA, 9T2 recovered SP): a source calc whose
+    settings_json lost workflow_id resolved plan_workflow_id=None and the D3
+    generation silently used defaults. Every workflow job script exports
+    MACE_WORKFLOW_ID — the resolution must fall back to it."""
+    import json
+    from pathlib import Path
+    from mace.workflow.engine import WorkflowEngine
+
+    plan_dir = tmp_path / "workflow_configs"
+    plan_dir.mkdir()
+    (plan_dir / "workflow_plan_X.json").write_text(json.dumps({
+        "workflow_id": "workflow_X",
+        "step_configurations": {"BAND_3": {"d3_settings": {
+            "configuration": {"n_points": 1000}}}}}))
+    eng = WorkflowEngine.__new__(WorkflowEngine)
+    eng.base_work_dir = tmp_path
+    monkeypatch.setenv("MACE_WORKFLOW_ID", "workflow_X")
+
+    # mirror the resolution block in generate_d3_calculation_new
+    source_calc = {"settings_json": json.dumps({"workflow_processed": True})}
+    plan_workflow_id = json.loads(
+        source_calc.get("settings_json") or "{}").get("workflow_id")
+    if not plan_workflow_id:
+        import os
+        plan_workflow_id = os.environ.get("MACE_WORKFLOW_ID")
+    cfg = eng._get_plan_step_config(plan_workflow_id, "BAND")
+
+    assert cfg.get("d3_settings", {}).get("configuration", {}).get("n_points") == 1000

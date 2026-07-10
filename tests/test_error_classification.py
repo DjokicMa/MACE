@@ -181,3 +181,37 @@ def test_parent_not_superseded_when_resubmission_fails(monkeypatch, tmp_path):
     assert ok is False
     assert mgr.db.get_calculation(cid)["status"] == "failed", (
         "failed parent must stay failed when the resubmission fails")
+
+
+def test_recovery_successor_inherits_workflow_lineage(monkeypatch, tmp_path):
+    """Real incident (phase-4 QA, 9T2 SP): the recovery successor record lost
+    the parent's workflow_id, so its completion callback could not find the
+    plan and generated a 10000-pt default BAND instead of the plan's 1000-pt
+    seekpath. The successor must inherit workflow_id/step/calc_type."""
+    import json
+    from mace.queue.manager import EnhancedCrystalQueueManager
+
+    mgr = EnhancedCrystalQueueManager(
+        d12_dir=str(tmp_path), db_path=str(tmp_path / "materials.db"),
+        enable_tracking=True, organize_outputs=False)
+    mgr.db.create_material(material_id="m", formula="C")
+    d12 = tmp_path / "m.d12"
+    d12.write_text("x\n")
+    parent = mgr.db.create_calculation(
+        material_id="m", calc_type="SP", input_file=str(d12),
+        work_dir=str(tmp_path),
+        settings={"workflow_id": "workflow_X", "workflow_step": 2})
+    mgr.db.update_calculation_status(parent, "failed")
+
+    successor = mgr.db.create_calculation(
+        material_id="m", calc_type="SP", input_file=str(d12),
+        work_dir=str(tmp_path))
+    monkeypatch.setattr(mgr, "submit_calculation", lambda *a, **k: successor)
+
+    ok = mgr.resubmit_fixed_calculation(mgr.db.get_calculation(parent))
+
+    assert ok is True
+    s = json.loads(mgr.db.get_calculation(successor)["settings_json"] or "{}")
+    assert s.get("workflow_id") == "workflow_X", (
+        "recovery successor lost the workflow lineage")
+    assert s.get("workflow_step") == 2
