@@ -870,10 +870,14 @@ class D3Generator:
             if smear_type != 0:
                 lines.append("SMEARTYP")
                 lines.append(str(smear_type))
-        
+
+        # one END closes the BOLTZTRA block, the second terminates the
+        # properties deck — with a single END the run computes everything,
+        # then aborts with "END OF DATA IN INPUT DECK" while exiting
+        lines.append("END")
         lines.append("END")
         return '\n'.join(lines)
-    
+
     def _write_charge_d3(self, config: Dict[str, Any]) -> str:
         """Write charge density calculation D3 file."""
         lines = []

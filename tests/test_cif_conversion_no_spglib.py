@@ -120,3 +120,6 @@ def test_transport_d3_starts_with_newk(tmp_path):
     assert "BOLTZTRA" in lines
     assert lines.index("NEWK") < lines.index("BOLTZTRA")
     assert "1 0" in lines
+    # BOLTZTRA block END + deck terminator END (single END computed fine
+    # but aborted with "END OF DATA IN INPUT DECK" on exit)
+    assert lines.count("END") == 2
