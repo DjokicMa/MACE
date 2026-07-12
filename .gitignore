@@ -61,3 +61,7 @@ Crystal_d12/CRYSTAL_TO_CIF_IMPLEMENTATION_PLAN.md
 
 # Internal AI-workflow design specs (local-only)
 docs/superpowers/
+
+# QA/deploy artifacts (never commit)
+mace-update.bundle
+testMACE1.1/
