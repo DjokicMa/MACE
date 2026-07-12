@@ -37,7 +37,14 @@ _RENDER_EXTS = {".html", ".gif"}
 
 
 def _engine():
-    from ..engines import vibmode_viewer as vib
+    try:
+        from ..engines import vibmode_viewer as vib
+    except ImportError as e:
+        # see cube.py: clear message instead of a raw traceback on
+        # plotly-less pythons (HPC login nodes)
+        raise SystemExit(
+            f"FREQ mode rendering needs the optional 'plotly' package ({e}).\n"
+            "Install it with: pip install plotly") from e
     return vib
 
 

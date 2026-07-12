@@ -1187,3 +1187,30 @@ def test_plotting_forces_headless_backend(monkeypatch):
         sys.modules.pop(mod)
     importlib.import_module("mace.plotting.main")
     assert os.environ.get("MPLBACKEND") == "Agg"
+
+
+def test_cube_and_freq_engines_name_missing_plotly(monkeypatch):
+    """Real incident (phase-5 QA, HPC login node): --cube/--freq died with a
+    raw ModuleNotFoundError traceback when plotly is absent. The lazy engine
+    imports must convert that into a clear install hint."""
+    import builtins
+    import pytest as _pytest
+
+    real_import = builtins.__import__
+
+    def no_plotly(name, *a, **k):
+        if name.startswith("plotly"):
+            raise ImportError("No module named 'plotly'")
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", no_plotly)
+    import sys
+    for m in [m for m in list(sys.modules)
+              if "plotting.engines" in m or m.startswith("plotly")]:
+        sys.modules.pop(m)
+
+    from mace.plotting.handlers import cube, freq
+    with _pytest.raises(SystemExit, match="pip install plotly"):
+        cube._engine_main()
+    with _pytest.raises(SystemExit, match="pip install plotly"):
+        freq._engine()

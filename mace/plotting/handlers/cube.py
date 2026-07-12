@@ -48,7 +48,15 @@ _FORMAT_FLAG = {
 
 def _engine_main():
     """Import the cube engine lazily (plotly/numpy only needed at render time)."""
-    from ..engines import crystal_cubeviz_plotly as ccp
+    try:
+        from ..engines import crystal_cubeviz_plotly as ccp
+    except ImportError as e:
+        # A bare ModuleNotFoundError traceback on plotly-less pythons (HPC
+        # login nodes) reads like a MACE crash — name the missing optional
+        # dependency and the fix instead.
+        raise SystemExit(
+            f"Cube rendering needs the optional 'plotly' package ({e}).\n"
+            "Install it with: pip install plotly") from e
     return ccp.main
 
 
