@@ -6,10 +6,19 @@ These tests verify the parsers/handlers against the REAL CRYSTAL outputs under
 the data-dependent tests therefore ``skip`` cleanly when it is absent, while the
 self-contained logic tests (recovery input editing, etc.) always run.
 """
+import os
 import sys
 from pathlib import Path
 
 import pytest
+
+# CI terminals advertise no color depth (COLORTERM unset), so rich would
+# auto-detect an 8-color system and downgrade palette hex colors — and since
+# rich caches a Style's first-rendered ANSI codes globally, one downgraded
+# render poisons later truecolor assertions. Pin the depth developers'
+# terminals have so the UI tests' ANSI expectations are deterministic.
+# (NO_COLOR-behavior tests are unaffected: NO_COLOR still overrides.)
+os.environ.setdefault("COLORTERM", "truecolor")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TEST_DATA = REPO_ROOT / "test"
