@@ -22,6 +22,7 @@ from conftest import REPO_ROOT
 
 sys.path.insert(0, str(REPO_ROOT / "Crystal_d12"))
 
+pytest.importorskip("ase", reason="CIF parsing needs ase (absent in CI)")
 import NewCifToD12  # noqa: E402
 
 DATA = Path(__file__).parent / "data"

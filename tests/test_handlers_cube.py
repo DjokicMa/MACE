@@ -29,6 +29,7 @@ def test_cube_engine_does_not_import_plotly_express():
     defined`, crashing `mace plotting`. The engine uses plotly.colors instead.
     Run in a subprocess so other tests' imports can't mask the check.
     """
+    pytest.importorskip("plotly", reason="cube/FREQ rendering needs the optional plotly package")
     import subprocess
     import sys
 
@@ -77,6 +78,7 @@ def test_engine_args_screen_rejects_output_flags():
 
 
 def test_plot_cube_writes_html_for_real_cube(tmp_path):
+    pytest.importorskip("plotly", reason="cube/FREQ rendering needs the optional plotly package")
     cube = find_data("ECH3POT3/*.CUBE")
     cfg = cube_h.configure_cube_plot(interactive=False)
     cfg["view"] = "iso"
@@ -116,6 +118,7 @@ def test_interactive_cube_single_slice_uses_auto_middle(monkeypatch):
 
 
 def test_interactive_cube_slice_auto_renders_a_real_cube(tmp_path):
+    pytest.importorskip("plotly", reason="cube/FREQ rendering needs the optional plotly package")
     # The auto/middle slice path must produce a file (engine resolves the index).
     cube = find_data("ECH3POT3/*.CUBE")
     cfg = cube_h.configure_cube_plot(interactive=False)

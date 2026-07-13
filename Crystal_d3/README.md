@@ -1,6 +1,6 @@
 # Crystal D3 Property Calculation Scripts
 
-This directory contains comprehensive Python scripts for generating CRYSTAL D3 property calculation input files. These tools support band structure, density of states (DOS), charge density, electrostatic potential, and transport property calculations with multiple usage modes: interactive, command-line interface (CLI), and JSON configuration files.
+This directory contains Python scripts for generating CRYSTAL D3 property calculation input files. These tools support band structure, density of states (DOS), charge density, electrostatic potential, and transport property calculations with multiple usage modes: interactive, command-line interface (CLI), and JSON configuration files.
 
 ## Main Scripts
 
@@ -110,7 +110,7 @@ python CRYSTALOptToD3.py --list-configs
 - **NEW**: Cell parameter-aware extended Bravais lattice determination
 - Automatic SHRINK factor extraction and scaling
 - Support for both label-based and coordinate-based paths
-- Comprehensive k-point coordinate dictionaries for all crystal systems
+- K-point coordinate dictionaries for all crystal systems
 
 **SeeKPath Library Integration**:
 
@@ -172,9 +172,12 @@ They remain recoverable from git history if ever needed.
 The `example_configs/` directory contains ready-to-use JSON configuration files:
 
 - `band_high_symmetry.json` - Band structure with automatic path detection
+- `band_auto_everything.json` - Band structure with auto path, bands, and shrink factor
 - `doss_total_only.json` - Total DOS calculation
 - `doss_orbital_projections.json` - DOS with element/orbital projections
+- `doss_element_orbital_auto.json` - DOS with automatic element/orbital projections from the basis set
 - `charge_density_3d.json` - 3D charge density calculation
+- `transport_auto_fermi.json` - Transport with chemical potential range relative to the Fermi energy
 
 ## Workflow Integration
 

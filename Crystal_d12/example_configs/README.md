@@ -6,23 +6,23 @@ This directory contains example JSON configuration files for different D12 calcu
 
 ### Loading a configuration file:
 ```bash
-# With NewCifToD12.py
-python NewCifToD12.py --config-file standard_dft_opt.json structure.cif
+# With NewCifToD12.py (batch mode loads the options file)
+python NewCifToD12.py --batch --options_file standard_dft_opt.json --cif_dir ./cifs
 
 # With CRYSTALOptToD12.py
-python CRYSTALOptToD12.py --config-file high_accuracy_sp.json optimized.out
+python CRYSTALOptToD12.py --config-file high_accuracy_sp.json --out-file optimized.out
 
 # List available configurations
-python NewCifToD12.py --list-configs
+python d12_from_config.py --list-configs
 ```
 
 ### Creating custom configurations:
 ```bash
 # Run interactively and save settings
-python NewCifToD12.py structure.cif --save-config my_custom_config.json
+python NewCifToD12.py --save_options --options_file my_custom_config.json
 
 # Use the saved config for other structures
-python NewCifToD12.py --config-file my_custom_config.json *.cif
+python NewCifToD12.py --batch --options_file my_custom_config.json --cif_dir ./cifs
 ```
 
 ## Available Examples
@@ -183,11 +183,11 @@ Each JSON file contains:
 
 ## Workflow Integration
 
-These configurations work seamlessly with MACE workflows:
+These configurations work with MACE workflows:
 ```bash
 # Use in workflow planning
-mace workflow --interactive --d12-config standard_dft_opt.json
+mace workflow --interactive
 
 # Batch processing with config
-mace convert --from-cif --config-file 3c_composite.json *.cif
+mace convert --cif_dir . --batch --options_file 3c_composite.json
 ```

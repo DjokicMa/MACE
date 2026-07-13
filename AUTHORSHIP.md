@@ -1,6 +1,6 @@
 # MACE Codebase Authorship and Attribution
 
-This document provides comprehensive authorship attribution for the MACE (Mendoza Automated CRYSTAL Engine) codebase.
+This document provides authorship attribution for the MACE (Mendoza Automated CRYSTAL Engine) codebase.
 
 ## Primary Developer
 **Marcus Djokic** (PhD Student) - Primary developer and architect of the MACE system
@@ -71,7 +71,7 @@ This document provides comprehensive authorship attribution for the MACE (Mendoz
 
 ### mace/ Package
 
-#### Marcus Djokic (All 24 scripts)
+#### Marcus Djokic
 **Root Scripts:**
 - `enhanced_queue_manager.py` - Enhanced queue management with material tracking
 - `material_monitor.py` - Material monitoring dashboard
@@ -172,6 +172,6 @@ removed from the repository in the v1.1.0 cleanup; see git history.)
 For scripts without clear attribution, it is recommended to:
 1. Add appropriate header comments with author information
 2. Include creation date and modification history
-3. Reference this document for comprehensive attribution
+3. Reference this document for attribution
 
-Last Updated: July 2, 2026
+Last Updated: July 12, 2026

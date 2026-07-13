@@ -90,7 +90,10 @@ mace queue --status
 mace analyze --extract-properties .
 
 # Convert CIF files
-mace convert --from-cif *.cif
+mace convert --cif_dir ./cifs
+
+# Plot outputs (band/DOS/structure/cube/FREQ/IR/Raman)
+mace plotting
 
 # Quick workflow execution
 mace workflow --quick-start --cif-dir ./cifs --workflow full_electronic
@@ -109,32 +112,20 @@ mace completion --organize                # Sort files by status into folders
 # Enhanced queue management with material tracking
 python mace/enhanced_queue_manager.py --base-dir /path/to/materials --max-jobs 200
 
-# Legacy queue management (still supported)
-./code/Job_Scripts/crystal_queue_manager.py --max-jobs 200 --reserve 20
-
-# Check job status
-./code/Job_Scripts/crystal_queue_manager.py --status
-
 # Submit all .d12 files in directory
 ./mace/submission/submitcrystal23.sh
 
 # Submit properties calculations (.d3 files)
 ./mace/submission/submit_prop.sh
-
-# Cancel jobs above certain ID
-./code/Job_Scripts/cancel-jobs.sh 150000
-
-# Navigate to job scratch directory
-source code/Job_Scripts/cd_job.sh job_output.o
 ```
 
-### Material Tracking System (NEW - Phase 2)
+### Material Tracking System
 ```bash
 # Error recovery and automated fixes
-python mace/recovery/recover.py --action recover --max-recoveries 10
+mace recover --action recover --max-recoveries 10
 
 # View recovery statistics
-python mace/recovery/recover.py --action stats
+mace recover --action stats
 
 # Workflow automation and progression
 python mace/workflow/engine.py --action process
@@ -143,16 +134,16 @@ python mace/workflow/engine.py --action process
 python mace/workflow/engine.py --action status --material-id material_name
 
 # Material monitoring dashboard
-python mace/material_monitor.py --action dashboard --interval 30
+mace monitor --action dashboard --interval 30
 
 # Database health and statistics
-python mace/material_monitor.py --action stats
+mace database --action stats
 
 # File organization and management
 python mace/utils/file_manager.py --action organize --material-id material_name
 ```
 
-### Comprehensive Workflow Manager (NEW - Phase 3)
+### Workflow Manager
 ```bash
 # Interactive workflow planning (recommended for first use)
 python mace/run_workflow.py --interactive
@@ -196,16 +187,20 @@ pip install numpy matplotlib ase spglib pyyaml pandas
 
 #### Optional Dependencies
 ```bash
-# For extended functionality
-pip install scipy>=1.7.0 scikit-learn>=1.0.0
+# Themed terminal UI (MACE falls back to plain text without it)
+pip install rich
+
+# Interactive cube/FREQ plotting engines (mace plotting --cube / --freq)
+pip install plotly scipy kaleido==0.2.1 scikit-image
 
 # For accurate band structure k-paths (highly recommended)
 pip install seekpath>=2.0.0
 ```
 
 #### Package Purposes (Optional)
-- **scipy**: Advanced scientific computing functions
-- **scikit-learn**: Machine learning utilities
+- **rich**: Themed terminal UI (status lines, tables, progress bars, live dashboards)
+- **plotly / scipy / kaleido**: Cube and FREQ plot rendering — HTML output needs only plotly; kaleido adds static PNG/SVG/PDF export; scipy interpolates non-orthogonal cube grids
+- **scikit-image**: Isosurface extraction for cube plots
 - **seekpath**: Accurate band structure k-path generation using the HPKOT methodology (Hinuma et al., Comp. Mat. Sci. 128, 140 (2017)). Provides correct parametric k-points for non-cubic lattices and proper discontinuity detection. Without seekpath, band paths fall back to static dictionaries which are only accurate for cubic systems.
 
 #### Installation Verification
@@ -227,7 +222,7 @@ The codebase is organized into distinct workflow stages:
    - Add ghost atoms for surface calculations
    - Extract optimized geometries from completed calculations
 
-2. **Job Management** (`Job_Scripts/`)
+2. **Job Management** (`mace/queue/`, `mace/submission/`)
    - SLURM-based queue management with fault tolerance
    - Automated job submission, monitoring, and recovery
    - Resource allocation and scratch space management
@@ -251,11 +246,11 @@ The codebase is organized into distinct workflow stages:
 5. **Analysis & Visualization** (`mace plotting` / `Plotting/`, `Band_Alignment/`, `Post_Processing_Scripts/`)
    - Extract electronic properties (band gaps, work functions)
    - Generate publication-quality plots and multi-page PDFs
-   - Comprehensive material property analysis and comparison
+   - Material property analysis and comparison
    - Automated phonon band structure plotting from f25 files
    - Crystal symmetry analysis and labeling utilities
 
-6. **Comprehensive Workflow Manager** (`mace/run_workflow.py`) **(NEW - Phase 3)**
+6. **Workflow Manager** (`mace/run_workflow.py`)
    - Complete end-to-end workflow planning and execution system
    - Interactive configuration with three customization levels
    - Integration with all existing tools (NewCifToD12.py, CRYSTALOptToD12.py, etc.)
@@ -267,7 +262,7 @@ The codebase is organized into distinct workflow stages:
 
 - **File-based workflows**: Scripts process batches of files in directories
 - **CSV output**: Results stored in CSV format for further analysis
-- **Error-tolerant parsing**: Robust handling of CRYSTAL output file variations
+- **Error-tolerant parsing**: Handles variations in CRYSTAL output files
 - **Modular design**: Each script focuses on specific workflow stage
 - **HPC integration**: Sophisticated SLURM job management with resource optimization
 
@@ -305,7 +300,7 @@ The scripts recognize specific CRYSTAL output patterns:
 
 ### RCSR Database Integration
 
-The codebase includes comprehensive integration with the Reticular Chemistry Structure Resource (RCSR):
+The codebase integrates with the Reticular Chemistry Structure Resource (RCSR):
 - **2P Structures**: 2-periodic (layered) materials with space group and vertex coordination data
 - **3P Structures**: 3-periodic (framework) materials
 - **Structure Data**: Each topology includes lattice parameters, atomic positions, vertex symbols, and coordination information
@@ -321,7 +316,7 @@ Scripts implement multiple layers of fault tolerance:
 - Atomic file operations for data integrity
 - Multiple backup locations for critical status files
 
-## Comprehensive Workflow Manager (Phase 3)
+## Workflow Manager (Phase 3)
 
 The workflow manager (`mace/run_workflow.py`) provides a unified interface for planning and executing complex CRYSTAL calculation workflows. It integrates all existing tools into a cohesive, user-friendly system.
 
@@ -374,7 +369,7 @@ The workflow manager (`mace/run_workflow.py`) provides a unified interface for p
    
 5. **`complete`**: OPT → SP → BAND → DOSS → FREQ
    - Full characterization including vibrational analysis
-   - Comprehensive property extraction
+   - Property extraction for every step
 
 6. **`transport_analysis`**: OPT → SP → TRANSPORT
    - Transport properties calculation (conductivity, Seebeck coefficient)
@@ -486,7 +481,7 @@ All workflow configurations are saved as JSON files for:
 
 ### Integration with Existing Tools
 
-#### **Seamless Integration**
+#### **Tool Integration**
 - **NewCifToD12.py**: CIF → D12 conversion with full configuration
 - **CRYSTALOptToD12.py**: OPT → SP/FREQ generation
 - **CRYSTALOptToD3.py**: Band structure / DOS / transport input generation (`--calc-type BAND|DOSS|TRANSPORT`)
@@ -531,7 +526,7 @@ python mace/run_workflow.py --status
 
 ### Error Handling and Recovery
 
-#### **Robust Error Management**
+#### **Error Management**
 - **CIF Conversion**: Timeout protection, file existence checks
 - **Job Submission**: SLURM integration with retry logic
 - **File Operations**: Atomic operations with rollback capability
@@ -591,7 +586,7 @@ Each material gets its own isolated calculation environment:
 1. **Monitor Progress**: Use `--status` to track workflow execution
 2. **Error Recovery**: Check logs and use error recovery tools
 3. **Resource Optimization**: Adjust SLURM settings based on system performance
-4. **Database Integration**: Leverage material tracking for large studies
+4. **Database Integration**: Use material tracking for large studies
 
 ### Advanced Features
 
@@ -607,11 +602,11 @@ Each material gets its own isolated calculation environment:
 - Progress aggregation
 - Parallel execution management
 
-The workflow manager represents the culmination of all CRYSTAL automation tools, providing a comprehensive, user-friendly interface for complex calculation workflows while maintaining the flexibility and power of the underlying components.
+The workflow manager ties the CRYSTAL automation tools together behind one interface for complex calculation workflows while keeping the flexibility of the underlying components.
 
 ### Material Tracking System (Phase 2 - IMPLEMENTED)
 
-The enhanced system provides comprehensive material lifecycle tracking:
+The enhanced system provides material lifecycle tracking:
 
 #### **Core Components**
 - **`mace/database/`**: SQLite database with ASE integration for structure storage
@@ -620,9 +615,8 @@ The enhanced system provides comprehensive material lifecycle tracking:
 - **`mace/workflow/engine.py`**: Orchestrates OPT → SP → BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL workflow progression
 - **`mace/utils/file_manager.py`**: Organized file management by material ID and calculation type
 - **`mace/material_monitor.py`**: Real-time monitoring dashboard and health checks
-- **`mace/utils/storage.py`**: Comprehensive file storage with settings extraction and provenance tracking
 - **`mace/utils/property_extractor.py`**: Complete property extraction from CRYSTAL output files
-- **`mace/utils/formula.py`**: Chemical formula and space group extraction from input/output files
+- **`mace/utils/formula_extractor.py`**: Chemical formula and space group extraction from input/output files
 
 #### **Key Features**
 - **Material ID Consistency**: Handles complex file naming from NewCifToD12.py and CRYSTALOptToD12.py
@@ -658,36 +652,28 @@ All SLURM job scripts now include an enhanced callback mechanism that automatica
 - Also checks for legacy `crystal_queue_manager.py`
 - Ensures workflows continue regardless of execution context
 
-**Callback Logic:**
+**Callback Logic** (abridged from the generated script; see `mace/submission/submitcrystal23.sh`):
 ```bash
-# Enhanced callback automatically added to all SLURM scripts
-# Checks for mace structure first, then legacy locations
-if [ -f $DIR/mace/enhanced_queue_manager.py ]; then
-    cd $DIR
-    python mace/enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
-elif [ -f $DIR/../../../../mace/enhanced_queue_manager.py ]; then
-    cd $DIR/../../../../
-    python mace/enhanced_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
-elif [ -f $DIR/code/Job_Scripts/crystal_queue_manager.py ]; then
-    cd $DIR
-    ./code/Job_Scripts/crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
-elif [ -f $DIR/../../../../code/Job_Scripts/crystal_queue_manager.py ]; then
-    cd $DIR/../../../../
-    ./code/Job_Scripts/crystal_queue_manager.py --max-jobs 250 --reserve 30 --max-submit 5
+# Callback appended to all SLURM scripts: resolve the queue manager, then
+# run it in completion mode. Search order:
+#   1. $MACE_HOME/mace/queue/manager.py   (or $MACE_HOME/enhanced_queue_manager.py)
+#   2. mace/queue/manager.py relative to the job dir (walking up parents)
+#   3. legacy enhanced_queue_manager.py / crystal_queue_manager.py fallbacks
+if [ ! -z "$QUEUE_MANAGER" ]; then
+    python "$QUEUE_MANAGER" --max-jobs 250 --reserve 30 --max-submit 5 --callback-mode completion
 fi
 ```
 
 **Benefits:**
-- **Flexible Deployment**: Works with various directory structures and workflow execution contexts
-- **Automatic Queue Management**: No manual intervention required for job progression
-- **Dual Compatibility**: Supports both enhanced and legacy queue managers
-- **Context Awareness**: Adapts to execution environment automatically
+- Works with various directory structures and workflow execution contexts
+- No manual intervention required for job progression
+- Supports both current and legacy queue manager locations
 
-### Complete File Storage and Provenance System (NEW - Enhanced Phase 2)
+### Complete File Storage and Provenance System
 
-The comprehensive file storage system provides complete calculation provenance tracking, addressing the need to store D12/D3 input files with all settings and maintain complete calculation history.
+The file storage system provides calculation provenance tracking, addressing the need to store D12/D3 input files with all settings and maintain complete calculation history.
 
-#### **File Storage Manager (`file_storage_manager.py`)**
+#### **File Storage**
 
 **Purpose**: Store and manage all calculation files with complete settings extraction and integrity verification.
 
@@ -711,7 +697,7 @@ Config Files:    .conf, .cfg, .ini, .param configuration files
 ```
 
 #### **Settings Extraction Capabilities**
-The system automatically extracts comprehensive settings from D12/D3 input files:
+The system automatically extracts settings from D12/D3 input files:
 
 **CRYSTAL Keywords**: OPTGEOM, DFT, EXCHANGE, CORRELAT, NONLOCAL, SHRINK, TOLINTEG, etc.
 **Calculation Parameters**: SHRINK factors, TOLINTEG values, TOLDEE, MAXCYCLE, FMIXING
@@ -720,39 +706,23 @@ The system automatically extracts comprehensive settings from D12/D3 input files
 **Exchange-Correlation**: Functional types, dispersion corrections
 **SCF Parameters**: Convergence thresholds, mixing algorithms
 
-#### **Usage Examples**
-```bash
-# Store files for a completed calculation
-python file_storage_manager.py --store /path/to/calculation --calc-id calc_diamond_opt_001 --material-id diamond --calc-type OPT
-
-# Retrieve all files for a calculation
-python file_storage_manager.py --retrieve /path/to/destination --calc-id calc_diamond_opt_001
-
-# List stored files
-python file_storage_manager.py --list-files --calc-id calc_diamond_opt_001
-
-# Verify file integrity
-python file_storage_manager.py --verify --calc-id calc_diamond_opt_001
-
-# Show extracted settings
-python file_storage_manager.py --settings --calc-id calc_diamond_opt_001
-```
-
-#### **Query Stored Files (`query_stored_files.py`)**
-Comprehensive querying system for stored files and settings:
+#### **Usage**
+File storage runs automatically when the queue manager registers a completed
+job — no manual step is needed. Stored files, extracted settings, and
+properties are queried through the database command:
 
 ```bash
-# Query files for specific calculation
-python query_stored_files.py --calc-id calc_diamond_opt_001
+# Database health and statistics
+mace database --action stats
 
-# Query all files for a material
-python query_stored_files.py --material-id diamond
+# Query calculations for a material
+mace database --action query --material-id diamond
 
-# List all stored files in database
-python query_stored_files.py --list-all
+# Show extracted properties
+mace database --action properties --material-id diamond
 
-# Show settings summary across all calculations
-python query_stored_files.py --settings-summary
+# Export results (CSV / Excel)
+mace database --action export --format excel --output results.xlsx
 ```
 
 #### **Automatic Integration**
@@ -804,7 +774,7 @@ The file storage system extends the existing database schema:
 ## Development Notes
 
 - Scripts use **Python 3.x** with scientific computing stack (numpy, matplotlib, ase)
-- **TkAgg backend** configured for matplotlib compatibility
+- Plotting pins a headless matplotlib backend (`Agg`) so it runs on compute nodes
 - All file paths should be absolute, not relative
 - Scripts designed for batch processing of hundreds of calculations
 - Job queue manager implements intelligent throttling and resource management

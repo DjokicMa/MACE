@@ -47,6 +47,7 @@ def _assert_clean(proc):
 
 def test_mace_cli_cube_renders(tmp_path):
     """The exact path that crashed: a cube isosurface through the full CLI."""
+    pytest.importorskip("plotly", reason="cube/FREQ rendering needs the optional plotly package")
     cube = find_data("ECH3POT3/*DENS*.CUBE")
     src = tmp_path / "in"
     src.mkdir()
@@ -65,6 +66,7 @@ def test_mace_cli_cube_interactive_session(tmp_path):
     A one-cube directory yields a 2-option menu; the stdin drives:
     pick cube (1), view isosurface (1), then accept defaults through to exit.
     """
+    pytest.importorskip("plotly", reason="cube/FREQ rendering needs the optional plotly package")
     cube = find_data("ECH3POT3/*DENS*.CUBE")
     workdir = tmp_path / "work"
     workdir.mkdir()
@@ -80,6 +82,7 @@ def test_mace_cli_cube_interactive_session(tmp_path):
 
 def test_mace_cli_freq_renders(tmp_path):
     """FREQ vibrational mode render through the full CLI."""
+    pytest.importorskip("plotly", reason="cube/FREQ rendering needs the optional plotly package")
     out = tmp_path / "out"
     f = find_data("FREQ/*MOLECULE*.out", "NORMAL MODES NORMALIZED")
     proc = _run_plotting(["--freq", str(f), "--frames", "3", "-o", str(out)])

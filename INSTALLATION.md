@@ -49,8 +49,11 @@ pip install numpy matplotlib ase spglib pyyaml pandas
 # Recommended: accurate band structure k-paths for all crystal systems
 pip install seekpath
 
-# Optional dependencies
-pip install scipy scikit-learn
+# Recommended: themed terminal UI (MACE falls back to plain text without it)
+pip install rich
+
+# Optional: interactive cube/FREQ plotting engines (mace plotting --cube / --freq)
+pip install plotly scipy kaleido==0.2.1 scikit-image
 
 # Verify installation
 python -c "import numpy, matplotlib, ase, spglib, yaml, pandas; print('All dependencies installed successfully')"
@@ -126,8 +129,8 @@ mace --help
 mace workflow --interactive
 
 # Test direct script access (if PATH configured)
-submitcrystal23.py --help
 NewCifToD12.py --help
+CRYSTALOptToD3.py --help
 ```
 
 ### Alternative: Manual Installation
@@ -222,9 +225,10 @@ After completing installation, you can use MACE commands globally:
 # Using the unified mace command (if PATH configured)
 mace workflow --interactive
 mace submit calculation.d12
-mace monitor --dashboard
+mace monitor
 mace analyze --extract-properties .
-mace convert --from-cif *.cif
+mace convert --cif_dir ./cifs
+mace plotting --all
 
 # Or with full path
 python mace_cli workflow --interactive

@@ -44,12 +44,14 @@ def test_freq_config_from_args_maps_fields():
 
 
 def test_representative_mode_is_a_real_mode():
+    pytest.importorskip("plotly", reason="cube/FREQ rendering needs the optional plotly package")
     f = find_data("FREQ/*.out", "NORMAL MODES NORMALIZED")
     n = freq_h._representative_mode(str(f))
     assert isinstance(n, int) and n > 0
 
 
 def test_plot_freq_list_modes_returns_no_files(tmp_path, capsys):
+    pytest.importorskip("plotly", reason="cube/FREQ rendering needs the optional plotly package")
     f = find_data("FREQ/*.out", "NORMAL MODES NORMALIZED")
     cfg = freq_h.configure_freq_plot(interactive=False)
     cfg["list_modes"] = True
@@ -60,6 +62,7 @@ def test_plot_freq_list_modes_returns_no_files(tmp_path, capsys):
 
 
 def test_plot_freq_writes_html_for_representative_mode(tmp_path):
+    pytest.importorskip("plotly", reason="cube/FREQ rendering needs the optional plotly package")
     # A molecular FREQ run is small -> fast animation render.
     f = find_data("FREQ/*MOLECULE*.out", "NORMAL MODES NORMALIZED")
     cfg = freq_h.configure_freq_plot(interactive=False)

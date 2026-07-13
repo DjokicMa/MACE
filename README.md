@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <strong>A comprehensive scientific computing toolkit for CRYSTAL quantum chemistry workflows</strong>
+  <strong>A scientific computing toolkit for CRYSTAL quantum chemistry workflows</strong>
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
 
 ---
 
-## 🚀 Overview
+## Overview
 
 MACE (Mendoza Automated CRYSTAL Engine) is an advanced automation framework for the CRYSTAL quantum chemistry software package. It provides end-to-end workflow management, from crystal structure preparation through electronic structure calculations to property analysis, all optimized for high-performance computing environments.
 
@@ -30,13 +30,13 @@ MACE (Mendoza Automated CRYSTAL Engine) is an advanced automation framework for 
 **PI**: Prof. Jose Luis Mendoza-Cortes  
 **Institution**: Michigan State University, Mendoza Group
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 reorganization/
 ├── README.md                  # This file
 ├── INSTALLATION.md            # Detailed installation guide
-├── DOCUMENTATION.md                  # Comprehensive technical documentation
+├── DOCUMENTATION.md                  # Full technical documentation
 │
 ├── mace_cli                   # Main MACE command-line interface
 ├── setup_mace.py              # Automated installation script
@@ -65,13 +65,13 @@ reorganization/
 │   └── example_configs/       # Property calculation templates
 │
 └── code/                      # Legacy scripts (preserved for compatibility)
-    ├── Job_Scripts/           # Original job management tools
     ├── Check_Scripts/         # Status checking utilities
     ├── Post_Processing_Scripts/ # Analysis utilities
+    ├── OldSLURMTemplates/     # Original SLURM submission templates
     └── Band_Alignment/        # Band alignment calculations
 ```
 
-## 🎯 Key Components
+## Key Components
 
 ### 1. **MACE Framework** (`mace/`)
 The heart of the automation system, providing:
@@ -113,7 +113,7 @@ Original scripts maintained for compatibility:
 - Property extraction
 - Visualization tools
 
-## 🔒 Workflow Isolation (NEW)
+## Workflow Isolation
 
 MACE now supports **workflow isolation** to prevent conflicts when running multiple workflows in the same directory. This feature addresses database contamination, material ID collisions, and queue manager conflicts that occurred when multiple workflows shared resources.
 
@@ -185,7 +185,7 @@ with workflow_context("my_workflow", isolation_mode="isolated") as ctx:
 
 For technical details, see the implementation in `mace/workflow/context.py`.
 
-## ⚡ Quick Start
+## Quick Start
 
 ### Installation
 ```bash
@@ -234,15 +234,15 @@ python Crystal_d12/NewCifToD12.py --cif_file structure.cif
 python Crystal_d3/CRYSTALOptToD3.py --input optimized.out --calc-type BAND
 ```
 
-## 📚 Documentation
+## Documentation
 
 - **[INSTALLATION.md](INSTALLATION.md)** - Complete installation and setup guide
-- **[DOCUMENTATION.md](DOCUMENTATION.md)** - Comprehensive technical documentation
+- **[DOCUMENTATION.md](DOCUMENTATION.md)** - Technical documentation
 - **[mace/README.md](mace/README.md)** - MACE framework documentation
 - **[Crystal_d12/README.md](Crystal_d12/README.md)** - D12 input generation guide
 - **[Crystal_d3/README.md](Crystal_d3/README.md)** - D3 property calculation guide
 
-## 🔧 Main Scripts
+## Main Scripts
 
 ### Core Interface
 - **`mace_cli`** - Unified command-line interface for all MACE functionality (aliased as `mace`)
@@ -258,7 +258,7 @@ python Crystal_d3/CRYSTALOptToD3.py --input optimized.out --calc-type BAND
 - **`mace/enhanced_queue_manager.py`** - Advanced HPC queue management
 - **`mace/material_monitor.py`** - Real-time calculation monitoring
 
-## 🛠️ Dependencies
+## Dependencies
 
 Core requirements:
 - Python 3.7+
@@ -269,7 +269,8 @@ Optional (recommended):
 - **seekpath** - Accurate band structure k-path generation for all crystal systems
 - **rich** - Themed terminal UI (progress bars, dashboards, color themes); MACE
   falls back to plain text without it
-- **plotly + scipy + kaleido** - Interactive cube/FREQ plotting engines (`mace plotting`)
+- **plotly + scipy + kaleido** - Interactive cube/FREQ plotting engines (`mace plotting`);
+  scikit-image is also needed for cube isosurface rendering
 
 HPC requirements:
 - SLURM workload manager
@@ -283,6 +284,12 @@ pip install numpy matplotlib ase spglib pyyaml pandas
 
 # Recommended: accurate band structure k-paths
 pip install seekpath
+
+# Recommended: themed terminal UI (MACE falls back to plain text without it)
+pip install rich
+
+# Optional: interactive cube/FREQ plotting engines (mace plotting --cube / --freq)
+pip install plotly scipy kaleido==0.2.1 scikit-image
 ```
 
 > **On HPC/SLURM:** the job-completion callback runs under the compute node's
@@ -292,22 +299,22 @@ pip install seekpath
 > See [INSTALLATION.md](INSTALLATION.md) ("HPC / SLURM clusters"). Without seekpath,
 > BAND k-paths fall back to built-in tables (still valid); `pyarrow` is not required.
 
-## 🤝 Contributing
+## Contributing
 
-We welcome contributions! Please:
+Contributions are welcome. Please:
 1. Fork the repository
 2. Create a feature branch
 3. Follow existing code style
 4. Add tests for new functionality
 5. Submit a pull request
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 Copyright (c) 2021-2026 Marcus Djokic, Mendoza Group, Michigan State University
 
-## 📖 Citation
+## Citation
 
 If you use MACE in your research, please cite:
 
@@ -333,10 +340,10 @@ If you use MACE in your research, please cite:
 }
 ```
 
-## 💬 Support
+## Support
 
 - **Issues**: Report bugs via GitHub Issues
-- **Documentation**: See [DOCUMENTATION.md](DOCUMENTATION.md) for comprehensive technical details
+- **Documentation**: See [DOCUMENTATION.md](DOCUMENTATION.md) for technical details
 - **Contact**: [Contact information to be added]
 
 ---

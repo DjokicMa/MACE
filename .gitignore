@@ -32,9 +32,6 @@ test/
 # Graphify build/working output (regenerable)
 graphify-out/
 
-# Claude Code local tooling and agent git worktrees (local-only, never shipped)
-.claude/
-
 # Codebase-mapping / planning tool outputs — internal, regenerable, not for release
 # (graphify -> .planning/graphs/, map-codebase -> .planning/codebase/, pathfinder -> PATHFINDER-*/)
 .planning/

@@ -12,14 +12,14 @@
 </p>
 
 <p align="center">
-  <strong>Comprehensive automation toolkit for CRYSTAL quantum chemistry workflows</strong>
+  <strong>Automation toolkit for CRYSTAL quantum chemistry workflows</strong>
 </p>
 
 ---
 
 ## Overview
 
-MACE (Mendoza Automated CRYSTAL Engine) is a powerful automation framework designed to streamline quantum chemistry calculations using the CRYSTAL software package. It provides end-to-end workflow management, from structure preparation to property analysis, with robust error handling and HPC integration.
+MACE (Mendoza Automated CRYSTAL Engine) is an automation framework for quantum chemistry calculations using the CRYSTAL software package. It provides end-to-end workflow management, from structure preparation to property analysis, with automated error recovery and HPC integration.
 
 **Developed by**: Marcus Djokic (Primary Developer)  
 **Contributors**: Daniel Maldonado Lopez, Brandon Lewis, William Comaskey  
@@ -28,28 +28,28 @@ MACE (Mendoza Automated CRYSTAL Engine) is a powerful automation framework desig
 
 ## Key Features
 
-### 🚀 Workflow Automation
+### Workflow Automation
 - **Interactive workflow planning** with customizable calculation sequences
 - **Automated progression** from geometry optimization to property calculations
-- **Material tracking database** for comprehensive calculation history
+- **Material tracking database** for calculation history
 - **Error recovery** with configurable retry strategies
 
-### 💎 CRYSTAL Integration
+### CRYSTAL Integration
 - **CIF to D12 conversion** with full customization options
 - **Property calculations** including band structures, DOS, transport, and charge analysis
 - **Phonon calculations** with automated band structure plotting
 - **Basis set management** for different calculation types
 
-### 🖥️ HPC Optimization
-- **SLURM integration** with intelligent resource allocation
+### HPC Optimization
+- **SLURM integration** with automatic resource allocation
 - **Queue management** with concurrent job limiting
 - **Scratch space optimization** for large calculations
 - **Multi-node parallelization** support
 
-### 📊 Analysis Tools
+### Analysis Tools
 - **Automated property extraction** from output files
-- **Publication-quality plots** for band structures and DOS
-- **Comprehensive CSV reports** for material properties
+- **Plot generation** (`mace plotting`) for band structures, DOS, crystal structures, cube volumetrics, vibrational modes, and IR/Raman spectra
+- **CSV reports** for material properties
 - **Electronic structure classification** (metal/semiconductor/insulator)
 
 ## Quick Start
@@ -122,8 +122,8 @@ submit_prop.sh property.d3
 
 #### 4. Monitor Progress
 ```bash
-# Real-time monitoring dashboard
-mace monitor --dashboard
+# Real-time monitoring dashboard (default mode)
+mace monitor
 
 # Check queue status
 mace monitor --status
@@ -131,10 +131,36 @@ mace monitor --status
 # View material properties
 mace database --action properties --material-id diamond
 
-# NEW: Filter materials by properties
+# Filter materials by properties
 mace database --action query --filter "band_gap > 3.0"
 mace database --action query --filter "total_energy < -1000" --filter "band_gap > 2" --logic AND
 ```
+
+#### 5. Plot Results
+```bash
+# Interactive plotting (guided configuration)
+mace plotting
+
+# Plot band structures / DOS with defaults
+mace plotting --band
+mace plotting --dos
+
+# Plot everything discovered in the current directory
+mace plotting --all
+```
+`mace plotting` covers band structures, DOS, crystal structures, cube
+volumetrics (density/ESP/spin), FREQ vibrational modes, and IR/Raman spectra.
+Cube and FREQ rendering require the optional `plotly` package.
+
+#### Terminal Appearance
+```bash
+mace --theme mono workflow --interactive   # themes: crystal (default), mono, ember, viridis, ocean
+mace --theme ember --save-theme            # persist the theme as your default
+mace --no-banner monitor                   # suppress the startup banner
+```
+The `MACE_THEME` environment variable also selects a theme, and
+`MACE_NO_BANNER=1` suppresses the banner. Precedence: `--theme` >
+`MACE_THEME` > saved config.
 
 ## Workflow Templates
 
@@ -142,16 +168,19 @@ MACE includes predefined workflow templates:
 
 - **basic_opt**: Geometry optimization only
 - **opt_sp**: OPT → Single point calculation
-- **full_electronic**: OPT → SP → BAND → DOS (recommended)
+- **opt_sp_freq**: OPT → SP → FREQ
+- **full_electronic**: OPT → SP → BAND → DOSS (recommended)
+- **double_opt**: OPT → OPT2 → SP
 - **transport_analysis**: OPT → SP → TRANSPORT
 - **charge_analysis**: OPT → SP → CHARGE+POTENTIAL
-- **complete**: OPT → SP → BAND → DOS → FREQ
+- **combined_analysis**: OPT → SP → BAND → DOSS → TRANSPORT
+- **complete**: OPT → SP → BAND → DOSS → FREQ
 
 ## Database Query and Analysis Features
 
 ### Property-Based Material Filtering
 
-MACE now includes powerful property-based filtering to find materials matching specific criteria:
+MACE includes property-based filtering to find materials matching specific criteria:
 
 #### Basic Usage
 ```bash
@@ -186,7 +215,7 @@ mace database --action query --filter "band_gap > 2.0" --filter "atoms_in_unit_c
 ```
 
 #### Advanced SQL-like Filtering
-MACE now supports advanced SQL-like syntax for complex queries using parentheses, logical operators, and special functions:
+MACE supports advanced SQL-like syntax for complex queries using parentheses, logical operators, and special functions:
 
 ```bash
 # Parentheses and logical operators
@@ -212,8 +241,6 @@ mace database --action query --filter "(band_gap > 2 AND band_gap < 5) AND formu
 
 Note: Advanced filtering is automatically detected when using parentheses, AND/OR keywords, or SQL-style operators (=, LIKE, IN, IS).
 Regular filtering with --logic OR/AND is still supported for simple queries.
-
-```
 
 ### Property Statistics and Visualization
 
@@ -601,7 +628,7 @@ mace database --action properties --units "total_energy:eV"
 Total Energy.......................... -2074.123456 eV
 ```
 
-## Comprehensive Directory Structure
+## Directory Structure
 
 ### Overview
 ```
@@ -613,6 +640,7 @@ mace/
 │
 ├── config/                   # Configuration management
 ├── database/                 # Material tracking database
+├── plotting/                 # Plot generation (band, DOS, structure, cube, FREQ, spectra)
 ├── queue/                    # Job queue management
 ├── recovery/                 # Error detection and recovery
 ├── submission/               # Job submission scripts
@@ -652,14 +680,15 @@ Stores system configuration files for error recovery and workflow settings.
 **Files:**
 - **`recovery_config.yaml`** - Error recovery strategies
   ```yaml
-  SHRINK_ERROR:
-    detection: "SHRINK FACTOR"
-    fix: increase_shrink
-    max_attempts: 3
-  MEMORY_ERROR:
-    detection: "MEMORY ALLOCATION"
-    fix: increase_memory
-    escalation: reduce_cores
+  error_recovery:
+    shrink_error:
+      handler: "fixk_handler"
+      max_retries: 3
+      resubmit_delay: 300
+    memory_error:
+      handler: "memory_handler"
+      memory_factor: 1.5
+      max_retries: 2
   ```
 
 #### **2. database/** - Material Tracking System
@@ -671,21 +700,21 @@ SQLite-based tracking system with ASE integration for complete calculation prove
   - Thread-safe material and calculation tracking
   - Property storage and retrieval
   - ASE structure integration
-  - **NEW: Property-based filtering capabilities**
+  - Property-based filtering capabilities
   - Example usage:
     ```python
     db = MaterialDatabase()
-    db.add_material("diamond", structure)
+    db.create_material("diamond", "C")
     db.update_calculation_status(calc_id, "completed")
     
-    # NEW: Filter materials by properties
+    # Filter materials by properties
     materials = db.filter_materials_by_properties(
         ["band_gap > 3.0", "total_energy < -1000"],
         logic="AND"
     )
     ```
 
-- **`query/`** - Advanced query and filtering module (**NEW**)
+- **`query/`** - Advanced query and filtering module
   - **`filters.py`** - Property range filtering system
     - Support for numeric and string comparisons
     - Operators: >, >=, <, <=, ==, !=
@@ -698,19 +727,19 @@ SQLite-based tracking system with ASE integration for complete calculation prove
       filter.add_filter("space_group", "==", 227)
       ```
 
-- **`create_fresh_database.py`** - Database initialization
+- **`utils/create_fresh_database.py`** - Database initialization
   - Creates schema with proper indices
   - Sets up trigger functions
   - Initializes workflow templates
 
-- **`database_status_report.py`** - Generate reports
+- **`utils/database_status_report.py`** - Generate reports
   - Material statistics
   - Calculation success rates
   - Performance metrics
 
 #### **3. queue/** - Job Queue Management
 
-Sophisticated SLURM integration with intelligent job scheduling.
+SLURM integration with job scheduling and throttling.
 
 **Key Scripts:**
 - **`manager.py`** - Enhanced queue manager class
@@ -743,12 +772,13 @@ Automated error handling with configurable recovery strategies.
   - Applies fixes based on error type
   - Integrates with fixk.py and updatelists2.py
   - Automatic job resubmission
+  - Attempts are capped per calculation lineage (default: 3) so a failing
+    job is not resubmitted indefinitely
   - Example recovery flow:
     ```python
-    error = detector.detect_error(output_file)
-    fix = recovery.get_fix_strategy(error)
-    recovery.apply_fix(input_file, fix)
-    recovery.resubmit_job(job_id)
+    from mace.recovery.recovery import ErrorRecoveryEngine
+    engine = ErrorRecoveryEngine(db_path="materials.db")
+    engine.detect_and_recover_errors(max_recoveries=10)
     ```
 
 #### **5. submission/** - Job Submission
@@ -778,7 +808,7 @@ SLURM script generation and job submission utilities.
 
 #### **6. utils/** - Utility Functions
 
-Comprehensive toolkit for property extraction and analysis.
+Property extraction and analysis utilities.
 
 **Property Extraction:**
 - **`property_extractor.py`** - Extract all properties
@@ -810,6 +840,7 @@ Comprehensive toolkit for property extraction and analysis.
 
 **Display and Visualization:**
 - **`banner.py`** - MACE banner display
+- **`ui.py`** - Themed terminal UI (palettes: crystal, mono, ember, viridis, ocean; honors `--theme`, `MACE_THEME`, `MACE_NO_BANNER`)
 - **`animation.py`** - Progress animations
 - **`show_properties.py`** - Display extracted properties
 
@@ -829,6 +860,11 @@ Complete workflow planning and execution system.
   - Error handling
   - Progress tracking
   - File organization
+
+- **`context.py`** - Workflow context isolation
+  - Each workflow runs in its own `.mace_context_<workflow_id>/` directory
+  - `MACE_WORKFLOW_ID` and `MACE_CONTEXT_DIR` are exported into generated
+    job scripts so completion callbacks resolve the correct database
 
 - **`engine.py`** - Workflow automation
   - Automatic progression (OPT→SP→Properties)
@@ -880,7 +916,7 @@ mace workflow --interactive
 
 **Monitoring:**
 ```bash
-mace monitor --dashboard
+mace monitor
 # Real-time view of all calculations
 ```
 
@@ -892,9 +928,8 @@ mace analyze --extract-properties output_directory/
 
 ## Documentation
 
-- [INSTALLATION.md](INSTALLATION.md) - Installation and setup guide
-- [DOCUMENTATION.md](../DOCUMENTATION.md) - Comprehensive technical documentation
-- [Examples](examples/) - Tutorial notebooks and example workflows
+- [INSTALLATION.md](../INSTALLATION.md) - Installation and setup guide
+- [DOCUMENTATION.md](../DOCUMENTATION.md) - Technical documentation
 
 ## Advanced Features
 
@@ -907,27 +942,29 @@ properties = db.get_material_properties("diamond")
 ```
 
 ### Custom Workflows
-Create complex calculation sequences:
+Design calculation sequences (including custom step orders and per-step
+resources) in the interactive planner:
 ```python
 from mace.workflow.planner import WorkflowPlanner
-planner = WorkflowPlanner()
-planner.add_calculation("OPT", resources={"cores": 32, "walltime": "7-00:00:00"})
-planner.add_calculation("BAND", dependencies=["OPT"])
+planner = WorkflowPlanner(work_dir=".", db_path="materials.db")
+planner.main_interactive_workflow()
 ```
 
 ### Error Recovery
-Automatic error detection and fixing:
+Automatic error detection and fixing, capped at 3 recovery attempts per
+calculation lineage by default (`--max-recovery-attempts`):
 ```yaml
 # recovery_config.yaml
-SHRINK_ERROR:
-  detection: "SHRINK FACTOR"
-  fix: increase_shrink
-  max_attempts: 3
+error_recovery:
+  shrink_error:
+    handler: "fixk_handler"
+    max_retries: 3
+    resubmit_delay: 300
 ```
 
 ## Contributing
 
-We welcome contributions! Please see our contributing guidelines for:
+Contributions are welcome. See the contributing guidelines for:
 - Code style conventions
 - Testing requirements
 - Pull request process
@@ -936,7 +973,7 @@ We welcome contributions! Please see our contributing guidelines for:
 
 - **Issues**: Report bugs via GitHub Issues
 - **Questions**: Contact the development team
-- **Documentation**: See [DOCUMENTATION.md](../DOCUMENTATION.md) for comprehensive docs
+- **Documentation**: See [DOCUMENTATION.md](../DOCUMENTATION.md) for full documentation
 
 ## License
 

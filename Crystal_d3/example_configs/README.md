@@ -30,7 +30,7 @@ python CRYSTALOptToD3.py --input material.out --calc-type BAND --save-config
 ### 2. `band_auto_everything.json`
 - **Fully automatic** band structure
 - Auto-detects: path, bands, shrink factor
-- Uses SeeK-path for comprehensive k-point coverage
+- Uses SeeK-path for full k-point coverage
 - Ideal for batch processing different materials
 
 ### 3. `doss_total_only.json`

@@ -64,7 +64,7 @@ except ImportError:  # pragma: no cover - exercised via monkeypatched sys.module
 
 
 # ===========================================================================
-# Palettes (§2.3) — frozen records. Only crystal + mono ship.
+# Palettes (§2.3) — frozen records: crystal, mono, ember, viridis, ocean.
 # ===========================================================================
 class Palette(NamedTuple):
     """A named color scheme. ``gradient`` = 6 hex stops for the MACE wordmark."""

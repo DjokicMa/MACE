@@ -10,7 +10,9 @@ remediation campaign so it cannot silently regress (the recurring
 python -m pytest                       # from the repo root
 ```
 
-Use a Python with `numpy` installed (`ase`/`spglib`/`scipy`/`rich` unlock more of the suite; missing extras skip their tests).
+Install the pinned test dependencies with `pip install -r requirements-test.txt`
+(pytest, pyyaml, numpy, rich, matplotlib). `ase`/`spglib`/`scipy`/`plotly` unlock
+more of the suite; missing extras skip their tests.
 
 ## Data dependency
 
@@ -24,6 +26,10 @@ Per project policy these tests verify against the **real** CRYSTAL outputs in
 `conftest.find_data(pattern)` locates a real file by glob or skips.
 
 ## Coverage
+
+The suite has grown well beyond this founding set — 60+ test files now also
+cover the plotting handlers, terminal UI, queue/engine logic, and database
+extraction. The table below documents the original remediation wave:
 
 | File | Locks in |
 |------|----------|

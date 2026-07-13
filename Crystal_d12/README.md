@@ -1,6 +1,6 @@
 # CRYSTAL Input File Generation Suite (D12 Creation Scripts)
 
-A comprehensive suite of Python scripts for generating and managing CRYSTAL quantum chemistry input files (.d12) from CIF files and optimized geometries. This modular system supports the entire CRYSTAL calculation workflow including geometry optimization, single point calculations, and advanced frequency/phonon analyses.
+A suite of Python scripts for generating and managing CRYSTAL quantum chemistry input files (.d12) from CIF files and optimized geometries. This modular system supports the entire CRYSTAL calculation workflow including geometry optimization, single point calculations, and advanced frequency/phonon analyses.
 
 ---
 
@@ -22,9 +22,9 @@ This suite represents a complete refactoring of CRYSTAL input generation tools, 
 - **Advanced Frequency Analysis**: IR/Raman spectra, phonon dispersion, anharmonic corrections
 - **Ghost Atom Support**: Automated insertion for surface calculations
 - **Basis Set Management**: Internal and external basis sets with ECP support
-- **DFT Functional Library**: Comprehensive support including dispersion corrections
+- **DFT Functional Library**: Wide range of functionals including dispersion corrections
 - **Database Integration**: Automatic extraction and storage of all calculation parameters
-- **Workflow Automation**: Seamless integration with enhanced queue manager
+- **Workflow Automation**: Integrates with the enhanced queue manager
 
 ---
 
@@ -38,8 +38,8 @@ The refactored system separates concerns into focused modules:
 Core Scripts:
 ├── NewCifToD12.py         # CIF → D12 conversion (main entry point)
 ├── CRYSTALOptToD12.py     # Extract optimized geometry → new D12
-├── create_d12_w-ghosts.py # Automatic ghost atom insertion
-└── manual_create_d12_w-ghosts.py # Manual ghost atom insertion
+├── Ghosts/create_d12_w-ghosts.py # Automatic ghost atom insertion
+└── Ghosts/manual_create_d12_w-ghosts.py # Manual ghost atom insertion
 
 Configuration Modules:
 ├── d12_calc_basic.py      # Basic calculation settings
@@ -97,14 +97,8 @@ python NewCifToD12.py
 # Batch conversion with directory
 python NewCifToD12.py --cif_dir /path/to/cifs
 
-# Single file conversion
-python NewCifToD12.py --cif_file structure.cif
-
-# Specify calculation type
-python NewCifToD12.py --calc_type OPT --cif_dir ./cifs
-
-# Using JSON configuration
-python NewCifToD12.py --options_file standard_dft_opt.json structure.cif
+# Specify output directory
+python NewCifToD12.py --cif_dir ./cifs --output_dir ./d12s
 
 # Save configuration for reuse
 python NewCifToD12.py --save_options --options_file my_settings.json
@@ -155,11 +149,11 @@ python NewCifToD12.py --batch --options_file high_accuracy_sp.json --cif_dir ./c
 
 **Usage with NewCifToD12.py:**
 ```bash
-# Use predefined configuration
-python NewCifToD12.py --options_file example_configs/standard_dft_opt.json structure.cif
+# Use predefined configuration (batch mode loads the options file)
+python NewCifToD12.py --batch --options_file example_configs/standard_dft_opt.json --cif_dir ./cifs
 
 # Create and save custom configuration
-python NewCifToD12.py structure.cif --save_options --options_file my_config.json
+python NewCifToD12.py --save_options --options_file my_config.json
 
 # Batch processing
 python NewCifToD12.py --batch --options_file my_config.json --cif_dir ./cifs
@@ -168,10 +162,10 @@ python NewCifToD12.py --batch --options_file my_config.json --cif_dir ./cifs
 **Usage with CRYSTALOptToD12.py:**
 ```bash
 # Apply configuration to optimized structure
-python CRYSTALOptToD12.py --config-file example_configs/high_accuracy_sp.json optimized.out
+python CRYSTALOptToD12.py --config-file example_configs/high_accuracy_sp.json --out-file optimized.out
 
 # Save current settings
-python CRYSTALOptToD12.py optimized.out --save-options --options-file sp_settings.json
+python CRYSTALOptToD12.py --out-file optimized.out --save-options --options-file sp_settings.json
 ```
 
 **Unified Interface:**
@@ -226,7 +220,7 @@ See `example_configs/README.md` for detailed documentation of each configuration
 **Usage:**
 
 ```bash
-python create_d12_w-ghosts.py
+python Ghosts/create_d12_w-ghosts.py
 ```
 
 **Inputs:** `*_slab.out`, `*_bulk.out`, `*_slab.d12`  
@@ -247,7 +241,7 @@ python create_d12_w-ghosts.py
 **Usage:**
 
 ```bash
-python manual_create_d12_w-ghosts.py
+python Ghosts/manual_create_d12_w-ghosts.py
 ```
 
 **Input:** `*_slab.d12`  
@@ -286,14 +280,14 @@ python manual_create_d12_w-ghosts.py
 # Interactive mode
 python CRYSTALOptToD12.py
 
-# Process single file
-python CRYSTALOptToD12.py --input structure_opt.out --calc_type SP
+# Process single file (non-interactive)
+python CRYSTALOptToD12.py --out-file structure_opt.out --calc-type SP --non-interactive
 
 # Batch processing
-python CRYSTALOptToD12.py --input_dir ./optimized --calc_type FREQ
+python CRYSTALOptToD12.py --directory ./optimized --calc-type FREQ --non-interactive
 
 # Shared settings for batch
-python CRYSTALOptToD12.py --input_dir ./optimized --shared_settings
+python CRYSTALOptToD12.py --directory ./optimized --shared-settings
 ```
 
 **Advanced Features:**
@@ -303,7 +297,7 @@ python CRYSTALOptToD12.py --input_dir ./optimized --shared_settings
 - **Setting Merge Logic**: Prioritizes D12 file for critical parameters like TOLINTEG
 
 **Integration:**
-- Works seamlessly with workflow automation
+- Works with workflow automation
 - Outputs compatible with enhanced queue manager
 - Preserves material ID and calculation history  
 
@@ -331,7 +325,7 @@ All scripts generate CRYSTAL23-compatible `.d12` files:
 
 ### `d12_calc_freq.py`
 
-**Purpose:** Comprehensive frequency calculation configuration module.
+**Purpose:** Frequency calculation configuration module.
 
 **Features:**
 
@@ -402,7 +396,7 @@ All scripts generate CRYSTAL23-compatible `.d12` files:
 - Read existing D12 files for setting preservation
 - Handle fort.34 (GUI) files
 - Extract properties: energy, forces, band gaps
-- Robust error handling for incomplete files
+- Error handling for incomplete files
 
 ### `d12_writer.py`
 
@@ -586,14 +580,14 @@ For issues or questions:
 ### Optimization Convergence Updates
 
 #### Enhanced Menu System
-- **Added**: Comprehensive convergence menu with detailed explanations
+- **Added**: Convergence menu with detailed explanations
 - **Improved**: Clear descriptions of TOLDEG, TOLDEX, TOLDEE, MAXCYCLE
 - **Enhanced**: Context-appropriate recommendations for each level
 
 #### Geometry Tolerance Adjustments
 - **Refined**: Better progression between convergence levels:
   - Standard: TOLDEG=0.0003, TOLDEX=0.0012, TOLDEE=7
-  - Tight: TOLDEG=0.0001, TOLDEX=0.0004, TOLDEE=8 (NEW - 3x tighter)
+  - Tight: TOLDEG=0.0001, TOLDEX=0.0004, TOLDEE=8 (3x tighter than default)
   - Very Tight: TOLDEG=0.00003, TOLDEX=0.00012, TOLDEE=9 (old TIGHTOPT values)
 - **Improved**: Intermediate "Tight" option provides better stepping stone
 

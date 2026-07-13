@@ -4,3 +4,8 @@
 pytest<9
 pyyaml
 numpy<3
+# Core runtime features under test: the terminal UI layer is rich-based and the
+# spectra/plot renderers are matplotlib-based. plotly/ase/spglib/scipy stay
+# optional — tests needing them skip via pytest.importorskip.
+rich<15
+matplotlib<4
