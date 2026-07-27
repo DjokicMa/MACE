@@ -78,9 +78,14 @@ python script_name.py
 mace workflow --interactive
 python mace_cli workflow --interactive  # Or with full path
 
-# Submit calculations
+# Submit calculations (runs exactly what you submit; no workflow is inferred)
 mace submit my_calculation.d12
 mace submit property.d3
+mace submit --track my_calculation.d12           # also record in materials.db
+
+# Submit and plan what follows (opt-in; implies --track)
+mace submit --progress full_electronic my_calculation.d12
+mace submit --progress interactive my_calculation.d12
 
 # Monitor calculations
 mace monitor

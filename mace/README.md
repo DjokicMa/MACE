@@ -115,10 +115,31 @@ mace workflow --quick-start --d12-dir ./d12s --workflow basic_opt
 mace submit calculation.d12
 mace submit property.d3
 
+# Record them in materials.db (enables monitor/analyze/recovery)
+mace submit --track calculation.d12
+
 # Or use direct scripts (if in PATH)
 submitcrystal23.sh calculation.d12
 submit_prop.sh property.d3
 ```
+
+A manual submission runs exactly what you submitted and nothing else — MACE
+does not infer a workflow from a hand-run calculation. To have follow-up steps
+planned and run as each job completes, ask for it explicitly:
+
+```bash
+# Follow a workflow template after these decks finish
+mace submit --progress full_electronic mat_opt.d12
+
+# Configure every follow-up step yourself (same prompts as the planner)
+mace submit --progress interactive mat_sp.d12
+```
+
+`--progress` writes a real workflow plan (into `workflow_configs/`) before
+submitting and tags each job with its workflow ID, so progression follows that
+plan rather than built-in defaults. It implies `--track`. The deck you submit
+can enter the sequence at any point — submitting a hand-made SP under
+`--progress full_electronic` continues with BAND and DOSS.
 
 #### 4. Monitor Progress
 ```bash

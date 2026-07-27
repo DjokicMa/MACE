@@ -5,6 +5,38 @@ All notable changes to MACE (Mendoza Automated CRYSTAL Engine) will be documente
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **A manual submission no longer starts a workflow.** Every job script MACE
+  writes ends with the queue-manager completion callback; outside a workflow
+  that callback used to adopt every untracked `.d12`/`.d3` in the directory
+  tree and then progress the completed job from built-in defaults (OPT → SP,
+  SP → BAND + DOSS) inside a synthesized `workflow_outputs/workflow_<time>/`
+  directory. A hand-run `mace submit` now runs exactly what was submitted;
+  progression requires a plan. `MACE_PLANLESS_PROGRESSION=1` restores the old
+  behavior. `mace manager` and `--callback-mode submit_new` are unchanged —
+  keeping the queue fed is what they are for.
+
+### Added
+
+- `mace submit --progress TEMPLATE|interactive` — plan the steps that should
+  follow decks you built by hand, then run them as each job completes. Writes
+  a real workflow plan (no CIF conversion: the existing decks are the starting
+  point) and stamps each submission with its workflow ID, so progression
+  follows the plan rather than defaults. `interactive` uses the planner's own
+  step prompts. Implies `--track`. A deck may enter the sequence at any step.
+- Short flags for `mace workflow`: `-i/--interactive`, `-e/--execute`,
+  `-q/--quick-start`, `-s/--status`, `-T/--show-templates`, `-c/--cif-dir`,
+  `-d/--d12-dir`, `-w/--workflow`, `-W/--work-dir`, `-D/--db-path`,
+  `-j/--max-jobs`.
+
+### Fixed
+
+- `WORKFLOW_TEMPLATES` was missing `opt_sp_freq`, which the CLI already
+  accepted.
+
 ## [1.1.0] - 2026-07-12
 
 ### Added

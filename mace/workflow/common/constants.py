@@ -48,6 +48,7 @@ CALC_TYPES = {
 WORKFLOW_TEMPLATES = {
     "basic_opt": ["OPT"],
     "opt_sp": ["OPT", "SP"],
+    "opt_sp_freq": ["OPT", "SP", "FREQ"],
     "full_electronic": ["OPT", "SP", "BAND", "DOSS"],
     "double_opt": ["OPT", "OPT2", "SP"],
     "complete": ["OPT", "SP", "BAND", "DOSS", "FREQ"],

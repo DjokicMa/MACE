@@ -40,6 +40,21 @@ from mace.workflow.context import get_current_context
 from mace.utils.settings_extractor import extract_input_settings
 
 
+def _planless_progression_allowed() -> bool:
+    """Whether a completed calculation with NO workflow plan may still spawn
+    follow-ups from the built-in defaults (OPT -> SP, SP -> BAND + DOSS).
+
+    Off by default. Every job script MACE writes ends with the queue-manager
+    completion callback, so leaving this on meant a single hand-run
+    `mace submit` grew itself a 4-step workflow — in a synthesized
+    `workflow_outputs/workflow_<timestamp>/` directory — with settings the
+    user never chose. Progression is a workflow feature: it needs a plan.
+    `mace submit --progress` writes one; MACE_PLANLESS_PROGRESSION=1 restores
+    the old defaults-driven behavior for anyone who relied on it.
+    """
+    return os.environ.get('MACE_PLANLESS_PROGRESSION', '').strip().lower() in ('1', 'true', 'yes')
+
+
 class WorkflowEngine:
     """
     Orchestrates CRYSTAL calculation workflows with material tracking.
@@ -63,6 +78,7 @@ class WorkflowEngine:
         self.script_paths = self.get_script_paths()
         self.lock = threading.RLock()
         self.auto_submit = auto_submit  # Enable automatic submission by default
+        self.allow_planless_progression = _planless_progression_allowed()
         
         # Create workflow working directories
         self.workflow_dir = self.base_work_dir / "workflow_staging"
@@ -2083,7 +2099,19 @@ fi'''
         
         planned_sequence = self.get_workflow_sequence(workflow_id) if workflow_id else None
         print(f"DEBUG: Planned sequence: {planned_sequence}")
-        
+
+        # No plan -> no progression. A hand-submitted calculation reaches this
+        # method through the same completion callback a workflow uses, and the
+        # default branches below would hand it OPT -> SP -> BAND + DOSS built
+        # from template settings it never asked for. Plan first
+        # (`mace submit --progress`, `mace workflow`), then progress.
+        if not planned_sequence and not getattr(self, 'allow_planless_progression', False):
+            print(f"No workflow plan for {calc_type} {completed_calc_id} - recording completion only.")
+            print("  (this calculation was not submitted as part of a workflow;")
+            print("   use 'mace submit --progress' or 'mace workflow' to plan follow-up steps)")
+            return new_calc_ids
+
+
         # Parse current calculation type to handle numbered types
         base_type, type_num = self._parse_calc_type(calc_type)
         

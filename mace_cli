@@ -665,6 +665,12 @@ Options:
   --track              Record calculations in materials.db via the tracking queue
                        manager (in-place; default is no tracking). Enables
                        monitor/analysis/recovery on the submitted jobs.
+  --progress TEMPLATE  Plan the steps that should follow these decks and run them
+                       as each one completes. TEMPLATE is a workflow template
+                       (mace workflow --show-templates) or "interactive" to
+                       configure every step yourself. Implies --track.
+                       Without it, a manual submission runs exactly what you
+                       submitted and nothing else.
 
 Node Exclusion Options (mutually exclusive):
   --exclude-amd20      Exclude all AMD20 nodes (amr + nvf types) [RECOMMENDED]
@@ -694,6 +700,10 @@ Examples:
 
   # With database tracking (records jobs in materials.db, in-place)
   mace submit --track my_calculations/
+
+  # Run the rest of a workflow after these decks finish (opt-in)
+  mace submit --progress full_electronic mat_opt.d12
+  mace submit --progress interactive mat_sp.d12
 
 Note: This command submits files using the appropriate submission script
 (submitcrystal23.sh for D12 files, submit_prop.sh for D3 files).
@@ -1384,6 +1394,12 @@ More Help:
         submit_parser.add_argument('--track', action='store_true',
                                  help='Record calculations in materials.db via the tracking '
                                       'queue manager (in-place; default is no tracking)')
+        submit_parser.add_argument('--progress', metavar='TEMPLATE',
+                                 help='Plan follow-up steps for these decks and run them as they '
+                                      'complete. TEMPLATE is a workflow template (see '
+                                      '`mace workflow --show-templates`) or "interactive" to '
+                                      'configure every step yourself. Implies --track. Without '
+                                      'this flag a manual submission never progresses on its own.')
 
         # Node exclusion options
         exclusion_group = submit_parser.add_mutually_exclusive_group()
@@ -1405,7 +1421,10 @@ More Help:
         interactive = submit_args.interactive
         nosubmit = submit_args.nosubmit
         overwrite_sh = submit_args.overwrite_sh
-        track = submit_args.track
+        progress = submit_args.progress
+        # Progression is recorded and driven through the database, so the
+        # tracking path is the only one that can carry it.
+        track = submit_args.track or bool(progress)
 
         # Process node exclusion flags
         exclude_string = None
@@ -1509,14 +1528,42 @@ More Help:
                 ui.err(f"Error: {target} is not a valid file or directory")
                 sys.exit(1)
 
+            # --progress: write a real workflow plan for these decks BEFORE
+            # submitting, then stamp each submission with its workflow id so
+            # the completion callback can find the plan and follow it. Without
+            # a plan the engine refuses to progress (by design), which is what
+            # keeps a bare `mace submit` a single calculation.
+            plan_file = workflow_id = None
+            sequence = []
+            if progress:
+                from mace.workflow.manual_progress import (
+                    build_progress_plan, describe_plan, position_in_sequence)
+                try:
+                    plan_file, workflow_id, sequence = build_progress_plan(
+                        work_dir=Path(base_dir).resolve(), db_path='materials.db',
+                        input_files=[Path(f) for f in selected], progress=progress)
+                except ValueError as e:
+                    ui.err(f"Error: {e}")
+                    sys.exit(1)
+                describe_plan(plan_file, workflow_id, sequence)
+
             manager = EnhancedCrystalQueueManager(
                 d12_dir=base_dir, enable_tracking=True, organize_outputs=False)
             ui.info(f"\nTracking enabled: recording {len(selected)} calculation(s) in materials.db (in-place)")
             submitted = 0
             for f in ui.progress(selected, total=len(selected), description="Submitting"):
                 try:
-                    if manager.submit_calculation(Path(f)):
+                    calc_id = manager.submit_calculation(Path(f))
+                    if calc_id:
                         submitted += 1
+                        if workflow_id:
+                            calc = manager.db.get_calculation(calc_id)
+                            calc_type = (calc or {}).get('calc_type') or 'OPT'
+                            manager.db.update_calculation_settings(calc_id, {
+                                "workflow_id": workflow_id,
+                                "workflow_step": position_in_sequence(calc_type, sequence) or 1,
+                                "workflow_calc_type": calc_type,
+                            })
                 except Exception as e:
                     ui.err(f"  Failed to submit {f.name}: {e}")
             ui.ok(f"\nSubmitted {submitted}/{len(selected)} tracked calculation(s)")

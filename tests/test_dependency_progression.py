@@ -128,11 +128,18 @@ def test_execute_workflow_step_runs_dependency_sweep(engine):
 
 
 def test_no_plan_defaults_are_idempotent(engine, monkeypatch):
-    """Manual (no-plan) submissions: re-firing progression for a completed OPT
-    must NOT generate another SP once one exists (real-world: every completion
-    callback re-fired the unguarded default and produced sp2 + 4x duplicate
-    band/doss jobs); same guard for the SP -> BAND+DOSS default."""
+    """Re-firing progression for a completed OPT must NOT generate another SP
+    once one exists (real-world: every completion callback re-fired the
+    unguarded default and produced sp2 + 4x duplicate band/doss jobs); same
+    guard for the SP -> BAND+DOSS default.
+
+    These planless defaults no longer run by default — a manual submission
+    stops at what was submitted (see test_manual_no_autoprogression.py). They
+    remain reachable via MACE_PLANLESS_PROGRESSION=1, which is what this test
+    exercises: the escape hatch must still be duplicate-safe."""
     monkeypatch.delenv("MACE_WORKFLOW_ID", raising=False)
+    monkeypatch.setenv("MACE_PLANLESS_PROGRESSION", "1")
+    engine.allow_planless_progression = True
     engine._cleanup_failed_workflow_dirs = lambda: None
     engine.get_workflow_sequence = lambda wid: None
     engine.generate_sp_from_opt = (

@@ -88,29 +88,29 @@ Workflow Templates:
     
     # Main operation modes
     mode_group = parser.add_mutually_exclusive_group(required=True)
-    mode_group.add_argument("--interactive", action="store_true",
+    mode_group.add_argument("--interactive", "-i", action="store_true",
                            help="Run interactive workflow planner")
-    mode_group.add_argument("--execute", metavar="PLAN_FILE",
+    mode_group.add_argument("--execute", "-e", metavar="PLAN_FILE",
                            help="Execute a saved workflow plan")
-    mode_group.add_argument("--quick-start", action="store_true",
+    mode_group.add_argument("--quick-start", "-q", action="store_true",
                            help="Quick start with minimal configuration")
-    mode_group.add_argument("--status", action="store_true",
+    mode_group.add_argument("--status", "-s", action="store_true",
                            help="Show status of running workflows")
-    mode_group.add_argument("--show-templates", action="store_true",
+    mode_group.add_argument("--show-templates", "-T", action="store_true",
                            help="Show available workflow templates")
-    
+
     # Quick start options
-    parser.add_argument("--cif-dir", help="Directory containing CIF files (for quick start)")
-    parser.add_argument("--d12-dir", help="Directory containing D12 files (for quick start)")
-    parser.add_argument("--workflow", default="full_electronic",
+    parser.add_argument("--cif-dir", "-c", help="Directory containing CIF files (for quick start)")
+    parser.add_argument("--d12-dir", "-d", help="Directory containing D12 files (for quick start)")
+    parser.add_argument("--workflow", "-w", default="full_electronic",
                        choices=["basic_opt", "opt_sp", "opt_sp_freq", "full_electronic", "double_opt",
                                "complete", "transport_analysis", "charge_analysis", "combined_analysis"],
                        help="Workflow template for quick start")
-    
+
     # Common options
-    parser.add_argument("--work-dir", default=".", help="Working directory")
-    parser.add_argument("--db-path", default="materials.db", help="Database path")
-    parser.add_argument("--max-jobs", type=int, default=200, help="Maximum concurrent jobs")
+    parser.add_argument("--work-dir", "-W", default=".", help="Working directory")
+    parser.add_argument("--db-path", "-D", default="materials.db", help="Database path")
+    parser.add_argument("--max-jobs", "-j", type=int, default=200, help="Maximum concurrent jobs")
     
     args = parser.parse_args()
     
