@@ -53,12 +53,17 @@ def _mint_workflow_id() -> str:
 
 def _template_plan(planner, sequence: List[str], input_dir: Path,
                    input_files: List[Path], workflow_id: str,
-                   max_jobs: int) -> Dict[str, Any]:
+                   max_jobs: int, walltime: Optional[str] = None) -> Dict[str, Any]:
     """Quick-start's plan builder, fed existing decks instead of CIFs."""
     from mace.run_mace import create_quick_workflow_plan
 
     args = SimpleNamespace(max_jobs=max_jobs, work_dir=str(planner.work_dir))
     plan = create_quick_workflow_plan(input_dir, input_files, "d12", sequence, args)
+
+    # Must precede copy_and_customize_scripts — that is what bakes the resource
+    # directives into workflow_scripts/*.sh.
+    if walltime:
+        _apply_walltime(plan["step_configurations"], walltime)
 
     # Creating the planner turned this directory into a workflow root, so the
     # queue manager now resolves SLURM templates out of workflow_scripts/
@@ -73,12 +78,16 @@ def _template_plan(planner, sequence: List[str], input_dir: Path,
 
 def _interactive_plan(planner, sequence: List[str], input_dir: Path,
                       input_files: List[Path], workflow_id: str,
-                      max_jobs: int) -> Dict[str, Any]:
+                      max_jobs: int, walltime: Optional[str] = None) -> Dict[str, Any]:
     """The planner's real prompts, minus the CIF/first-step questions."""
     # has_cifs=False makes step 1 "use the existing D12 files as-is", which is
     # exactly true here — the user built them.
     step_configs = planner.configure_workflow_steps(sequence, False)
     queue_config = planner.configure_queue_management()
+    # An explicit --walltime wins over whatever the prompts collected, and must
+    # be applied before the scripts are written.
+    if walltime:
+        _apply_walltime(step_configs, walltime)
     planner.copy_and_customize_scripts(step_configs, workflow_id, queue_config)
 
     return {
@@ -100,8 +109,27 @@ def _interactive_plan(planner, sequence: List[str], input_dir: Path,
     }
 
 
+def _apply_walltime(step_configs: Dict[str, Any], walltime: str) -> None:
+    """Force every step's SLURM walltime, in place.
+
+    The per-type defaults are production-sized (7 days for OPT, 3 for SP). For a
+    test run those sit in the queue far longer than the job needs, so allow one
+    override to cover every step of the plan.
+    """
+    for cfg in step_configs.values():
+        slurm = cfg.get("slurm_config")
+        if not isinstance(slurm, dict):
+            continue
+        if isinstance(slurm.get("resources"), dict):
+            slurm["resources"]["walltime"] = walltime
+        for script in (slurm.get("scripts") or {}).values():
+            if isinstance(script, dict) and isinstance(script.get("resources"), dict):
+                script["resources"]["walltime"] = walltime
+
+
 def build_progress_plan(work_dir: Path, db_path: str, input_files: List[Path],
                         progress: str, max_jobs: int = 200,
+                        walltime: Optional[str] = None,
                         ) -> Tuple[Path, str, List[str]]:
     """Write a workflow plan covering ``input_files`` and what follows them.
 
@@ -138,11 +166,11 @@ def build_progress_plan(work_dir: Path, db_path: str, input_files: List[Path],
     if interactive:
         sequence = planner.plan_workflow_sequence()
         plan = _interactive_plan(planner, sequence, input_dir, input_files,
-                                 workflow_id, max_jobs)
+                                 workflow_id, max_jobs, walltime)
     else:
         sequence = list(WORKFLOW_TEMPLATES[progress])
         plan = _template_plan(planner, sequence, input_dir, input_files,
-                              workflow_id, max_jobs)
+                              workflow_id, max_jobs, walltime)
 
     # Mint the id HERE and write it into the plan. Quick-start plans carry no
     # workflow_id and let the executor mint one; there is no executor in this

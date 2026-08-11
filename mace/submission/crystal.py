@@ -294,6 +294,16 @@ def main():
             sys.argv.pop(idx)  # Remove --exclude-nodes
             sys.argv.pop(idx)  # Remove the value
 
+    # Walltime override (e.g. --walltime 2:00:00). Short jobs queue far sooner
+    # than the 7-day default, which matters for test/QA runs.
+    walltime_override = None
+    if '--walltime' in sys.argv:
+        idx = sys.argv.index('--walltime')
+        if idx + 1 < len(sys.argv):
+            walltime_override = sys.argv[idx + 1]
+            sys.argv.pop(idx)
+            sys.argv.pop(idx)
+
     # Get the directory where this script is located
     script_dir = Path(__file__).parent
     submitcrystal_script = script_dir / "submitcrystal23.sh"
@@ -310,11 +320,17 @@ def main():
         # If exclude_string was provided via command line, use it
         if exclude_string and not resources.get('node_exclusion'):
             resources['node_exclusion'] = exclude_string
+        if walltime_override:
+            resources['walltime'] = walltime_override
         custom_script = create_custom_slurm_script(submitcrystal_script, resources)
-    elif exclude_string:
-        # Non-interactive mode but exclusion specified
+    elif exclude_string or walltime_override:
+        # Non-interactive mode but exclusion and/or walltime specified
         resources = get_default_d12_resources()
-        resources['node_exclusion'] = exclude_string
+        if exclude_string:
+            resources['node_exclusion'] = exclude_string
+        if walltime_override:
+            resources['walltime'] = walltime_override
+            print(f"  Walltime override: {walltime_override}")
         custom_script = create_custom_slurm_script(submitcrystal_script, resources)
 
     # Use custom script if created, otherwise use original

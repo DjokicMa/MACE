@@ -1394,6 +1394,10 @@ More Help:
         submit_parser.add_argument('--track', action='store_true',
                                  help='Record calculations in materials.db via the tracking '
                                       'queue manager (in-place; default is no tracking)')
+        submit_parser.add_argument('--walltime', metavar='TIME',
+                                 help='SLURM walltime for these jobs (e.g. 2:00:00 or '
+                                      '7-00:00:00), overriding the per-calc-type defaults. '
+                                      'Short jobs queue sooner, which is useful for tests.')
         submit_parser.add_argument('--progress', metavar='TEMPLATE',
                                  help='Plan follow-up steps for these decks and run them as they '
                                       'complete. TEMPLATE is a workflow template (see '
@@ -1422,6 +1426,7 @@ More Help:
         nosubmit = submit_args.nosubmit
         overwrite_sh = submit_args.overwrite_sh
         progress = submit_args.progress
+        walltime = submit_args.walltime
         # Progression is recorded and driven through the database, so the
         # tracking path is the only one that can carry it.
         track = submit_args.track or bool(progress)
@@ -1541,7 +1546,8 @@ More Help:
                 try:
                     plan_file, workflow_id, sequence = build_progress_plan(
                         work_dir=Path(base_dir).resolve(), db_path='materials.db',
-                        input_files=[Path(f) for f in selected], progress=progress)
+                        input_files=[Path(f) for f in selected], progress=progress,
+                        walltime=walltime)
                 except ValueError as e:
                     ui.err(f"Error: {e}")
                     sys.exit(1)
@@ -1587,6 +1593,8 @@ More Help:
                 sys.argv.append('--overwrite-sh')
             if exclude_string:
                 sys.argv.extend(['--exclude-nodes', exclude_string])
+            if walltime:
+                sys.argv.extend(['--walltime', walltime])
 
             if target.endswith('.d3'):
                 from submission.properties import main as submit_properties
@@ -1631,6 +1639,8 @@ More Help:
                         sys.argv.append('--overwrite-sh')
                     if exclude_string:
                         sys.argv.extend(['--exclude-nodes', exclude_string])
+                    if walltime:
+                        sys.argv.extend(['--walltime', walltime])
                     from submission.crystal import main as submit_crystal
                     submit_crystal()
                 elif choice == '2':
@@ -1644,6 +1654,8 @@ More Help:
                         sys.argv.append('--overwrite-sh')
                     if exclude_string:
                         sys.argv.extend(['--exclude-nodes', exclude_string])
+                    if walltime:
+                        sys.argv.extend(['--walltime', walltime])
                     from submission.properties import main as submit_properties
                     submit_properties()
                 elif choice == '3':
@@ -1658,6 +1670,8 @@ More Help:
                         sys.argv.append('--overwrite-sh')
                     if exclude_string:
                         sys.argv.extend(['--exclude-nodes', exclude_string])
+                    if walltime:
+                        sys.argv.extend(['--walltime', walltime])
                     from submission.crystal import main as submit_crystal
                     submit_crystal()
 
@@ -1671,6 +1685,8 @@ More Help:
                         sys.argv.append('--overwrite-sh')
                     if exclude_string:
                         sys.argv.extend(['--exclude-nodes', exclude_string])
+                    if walltime:
+                        sys.argv.extend(['--walltime', walltime])
                     from submission.properties import main as submit_properties
                     submit_properties()
                 else:
@@ -1688,6 +1704,8 @@ More Help:
                     sys.argv.append('--overwrite-sh')
                 if exclude_string:
                     sys.argv.extend(['--exclude-nodes', exclude_string])
+                if walltime:
+                    sys.argv.extend(['--walltime', walltime])
                 from submission.crystal import main as submit_crystal
                 submit_crystal()
 
@@ -1702,6 +1720,8 @@ More Help:
                     sys.argv.append('--overwrite-sh')
                 if exclude_string:
                     sys.argv.extend(['--exclude-nodes', exclude_string])
+                if walltime:
+                    sys.argv.extend(['--walltime', walltime])
                 from submission.properties import main as submit_properties
                 submit_properties()
 
