@@ -1109,6 +1109,18 @@ fi'''
         except (json.JSONDecodeError, TypeError):
             settings = {}
         workflow_id = settings.get('workflow_id')
+
+        # The record may legitimately carry no workflow_id: in an isolated
+        # context the completion callback re-registers the finished job from its
+        # output file (_populate_completed_jobs_from_outputs), and that scan
+        # records no workflow metadata. The job script still exports the
+        # authoritative id, so trust it before synthesizing a new one — the same
+        # fallback execute_workflow_step and generate_d3_calculation_new use.
+        # Without this the follow-up landed in a freshly minted
+        # workflow_<timestamp> directory that has no plan file, so the NEXT step
+        # found no plan and the chain stopped after SP (HPCC 15338060).
+        if not workflow_id:
+            workflow_id = os.environ.get('MACE_WORKFLOW_ID')
         
         if workflow_id:
             return self.base_work_dir / "workflow_outputs" / workflow_id

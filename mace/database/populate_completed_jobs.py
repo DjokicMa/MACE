@@ -214,6 +214,14 @@ def populate_database(completed_calcs: List[Dict], db) -> int:
                             import json
                             settings = json.loads(current_calc.get('settings_json') or '{}')
                             settings['output_file'] = calc_info.get('output_file')
+                            # Carry the workflow the job belongs to. This scan runs
+                            # from the completion callback, where the job script has
+                            # exported the authoritative id; without it the record
+                            # looks workflow-less and progression cannot resolve the
+                            # plan or the output directory from it.
+                            env_wfid = os.environ.get('MACE_WORKFLOW_ID')
+                            if env_wfid and not settings.get('workflow_id'):
+                                settings['workflow_id'] = env_wfid
                             db.update_calculation_settings(calc_id, settings)
                     except Exception as e:
                         print(f"  Failed to update output file in settings: {e}")
