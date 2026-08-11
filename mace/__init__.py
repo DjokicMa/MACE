@@ -11,6 +11,8 @@ All modules will be re-exported here to ensure existing imports continue to work
 # from .workflow_core.planner import *
 # etc.
 
-# Canonical MACE version. Other display sites (mace_cli, utils/animation.py,
-# database/export/formats.py) mirror this literal -- keep them in sync on bump.
-__version__ = "1.1.0"
+# Canonical MACE version -- the ONLY place a version literal is written.
+# Every display/export site (mace_cli, utils/animation.py, utils/banner.py,
+# database/export/formats.py) imports it from here, so a bump needs no other
+# edit. test_version_single_source.py enforces that; do not reintroduce copies.
+__version__ = "1.1.1"

@@ -5,7 +5,11 @@ All notable changes to MACE (Mendoza Automated CRYSTAL Engine) will be documente
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.1] - 2026-08-11
+
+Verified end-to-end on MSU HPCC (SLURM + CRYSTAL23): a bare submission runs only
+what was submitted, and a `--progress full_electronic` run drove
+OPT → SP → BAND + DOSS to completion inside its own plan directory.
 
 ### Changed
 
@@ -27,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   point) and stamps each submission with its workflow ID, so progression
   follows the plan rather than defaults. `interactive` uses the planner's own
   step prompts. Implies `--track`. A deck may enter the sequence at any step.
+- `mace submit --walltime TIME` — override the SLURM time limit for a
+  submission instead of taking the per-calc-type defaults (OPT 7 days, SP 3
+  days). Short jobs queue sooner, which matters for test and QA runs. Applies
+  to the manual D12/D3 submitters, the tracked path, and every step of a
+  `--progress` plan.
 - Short flags for `mace workflow`: `-i/--interactive`, `-e/--execute`,
   `-q/--quick-start`, `-s/--status`, `-T/--show-templates`, `-c/--cif-dir`,
   `-d/--d12-dir`, `-w/--workflow`, `-W/--work-dir`, `-D/--db-path`,
@@ -34,6 +43,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Follow-up steps could be orphaned from their workflow.** In an isolated
+  context the completion callback re-registers a finished job from its output
+  file, and that scan recorded no workflow metadata. Progression still found
+  the plan (it falls back to `$MACE_WORKFLOW_ID`), but the output-directory
+  resolver read the same empty settings and minted a fresh
+  `workflow_<timestamp>` directory with no plan file — so the step it generated
+  was stamped with a dead id, and when that step finished no plan could be
+  found and the chain stopped. The resolver now uses the same environment
+  fallback, and the scan stamps the workflow id onto the records it creates.
+  Previously masked: the old no-plan branch emitted default BAND + DOSS
+  regardless, so the chain looked correct while the id was already wrong.
 - `WORKFLOW_TEMPLATES` was missing `opt_sp_freq`, which the CLI already
   accepted.
 
