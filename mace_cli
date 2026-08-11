@@ -1554,7 +1554,8 @@ More Help:
                 describe_plan(plan_file, workflow_id, sequence)
 
             manager = EnhancedCrystalQueueManager(
-                d12_dir=base_dir, enable_tracking=True, organize_outputs=False)
+                d12_dir=base_dir, enable_tracking=True, organize_outputs=False,
+                walltime_override=walltime)
             ui.info(f"\nTracking enabled: recording {len(selected)} calculation(s) in materials.db (in-place)")
             submitted = 0
             for f in ui.progress(selected, total=len(selected), description="Submitting"):

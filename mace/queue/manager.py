@@ -67,7 +67,7 @@ class EnhancedCrystalQueueManager:
     def __init__(self, d12_dir, max_jobs=250, reserve_slots=30,
                  db_path="materials.db", enable_tracking=True,
                  enable_error_recovery=True, max_recovery_attempts=3,
-                 organize_outputs=True):
+                 organize_outputs=True, walltime_override=None):
         self.d12_dir = Path(d12_dir).resolve()
         self.max_jobs = max_jobs
         self.reserve_slots = reserve_slots
@@ -76,6 +76,10 @@ class EnhancedCrystalQueueManager:
         # instead of being copied into a <calc_type>/<material_id>/ tree. Workflow runs
         # keep organize_outputs=True (and use their own workflow dirs anyway).
         self.organize_outputs = organize_outputs
+        # SLURM walltime for jobs this manager submits, overriding whatever the
+        # template carries. Only set for explicit user requests (mace submit
+        # --walltime); None leaves the templates untouched.
+        self.walltime_override = walltime_override
         self.enable_error_recovery = enable_error_recovery
         self.max_recovery_attempts = max_recovery_attempts
         self.db_path = db_path
@@ -713,6 +717,34 @@ class EnhancedCrystalQueueManager:
             print(f"Failed to submit calculation for {material_id}")
             return None
             
+    def _template_with_walltime(self, script_path: Path, work_dir: Path) -> Optional[Path]:
+        """A copy of the generator template with ``-t`` set to the override.
+
+        Returns None when no override is configured (callers fall back to the
+        original template). The copy lives beside the job so a failed run leaves
+        the evidence in place, and is regenerated per submission.
+        """
+        walltime = getattr(self, 'walltime_override', None)
+        if not walltime:
+            return None
+        try:
+            text = Path(script_path).read_text()
+            # The template emits directives via `echo '#SBATCH -t ...' >> $1.sh`.
+            new_text, n = re.subn(r"(?m)^(\s*echo\s+'#SBATCH\s+-t\s+)[^']*(')",
+                                  lambda m: f"{m.group(1)}{walltime}{m.group(2)}", text)
+            if not n:
+                print(f"  Warning: no -t directive in {Path(script_path).name}; "
+                      f"walltime override not applied")
+                return None
+            out = Path(work_dir) / f".{Path(script_path).stem}_walltime.sh"
+            out.write_text(new_text)
+            out.chmod(0o755)
+            print(f"  Walltime override: {walltime}")
+            return out
+        except Exception as e:
+            print(f"  Warning: could not apply walltime override: {e}")
+            return None
+
     def submit_to_slurm(self, input_file: Path, work_dir: Path, calc_type: str,
                         submit_script_override: Path = None) -> Optional[str]:
         """
@@ -760,6 +792,11 @@ class EnhancedCrystalQueueManager:
             if 'echo \'#!/bin/bash --login\' >' in script_content or 'echo "#SBATCH' in script_content:
                 # This is a script generator template - run locally to generate actual script
                 print(f"  Running script generator: {script_path.name}")
+                # A walltime override has to be applied to the TEMPLATE: it emits
+                # the #SBATCH lines and then submits, so rewriting the generated
+                # file afterwards would be too late. Only the -t line is touched,
+                # leaving ntasks/memory/account from the template intact.
+                script_path = self._template_with_walltime(script_path, work_dir) or script_path
                 cmd = ['bash', str(script_path), job_name]
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 

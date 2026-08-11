@@ -101,6 +101,43 @@ def test_progress_plan_without_walltime_keeps_defaults(tmp_path, monkeypatch):
     assert walltimes["SP_2"] == "3-00:00:00", walltimes
 
 
+def test_queue_manager_rewrites_template_walltime(tmp_path):
+    """The --track path submits through the queue manager, which runs the
+    GENERATOR template (the template emits the directives and then submits, so
+    rewriting the generated file afterwards is too late). Regression: the first
+    HPCC run of --track --walltime produced -t 7-00:00:00 because this path was
+    not wired."""
+    from mace.queue.manager import EnhancedCrystalQueueManager
+
+    template = tmp_path / "submitcrystal23.sh"
+    template.write_text(
+        "#!/bin/bash\n"
+        "echo '#SBATCH --ntasks=32' >> $1.sh\n"
+        "echo '#SBATCH -t 7-00:00:00' >> $1.sh\n"
+        "echo '#SBATCH --mem-per-cpu=5G' >> $1.sh\n")
+
+    mgr = EnhancedCrystalQueueManager.__new__(EnhancedCrystalQueueManager)
+    mgr.walltime_override = "2:00:00"
+    out = mgr._template_with_walltime(template, tmp_path)
+
+    assert out is not None
+    text = Path(out).read_text()
+    assert "echo '#SBATCH -t 2:00:00' >> $1.sh" in text, text
+    assert "7-00:00:00" not in text
+    # untouched directives survive
+    assert "#SBATCH --ntasks=32" in text and "#SBATCH --mem-per-cpu=5G" in text
+
+
+def test_queue_manager_without_override_uses_original_template(tmp_path):
+    from mace.queue.manager import EnhancedCrystalQueueManager
+
+    template = tmp_path / "submitcrystal23.sh"
+    template.write_text("echo '#SBATCH -t 7-00:00:00' >> $1.sh\n")
+    mgr = EnhancedCrystalQueueManager.__new__(EnhancedCrystalQueueManager)
+    mgr.walltime_override = None
+    assert mgr._template_with_walltime(template, tmp_path) is None
+
+
 @pytest.mark.parametrize("mod_name,script,default,override", [
     ("mace.submission.crystal", "submitcrystal23.sh", "7-00:00:00", "2:00:00"),
     # the D3 default is already 2:00:00, so override with a distinct value or
