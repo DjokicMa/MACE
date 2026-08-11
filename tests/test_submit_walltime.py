@@ -101,20 +101,23 @@ def test_progress_plan_without_walltime_keeps_defaults(tmp_path, monkeypatch):
     assert walltimes["SP_2"] == "3-00:00:00", walltimes
 
 
-def test_queue_manager_rewrites_template_walltime(tmp_path):
+@pytest.mark.parametrize("template_name", ["submitcrystal23.sh", "submit_prop.sh"])
+def test_queue_manager_rewrites_template_walltime(tmp_path, template_name):
     """The --track path submits through the queue manager, which runs the
-    GENERATOR template (the template emits the directives and then submits, so
-    rewriting the generated file afterwards is too late). Regression: the first
-    HPCC run of --track --walltime produced -t 7-00:00:00 because this path was
-    not wired."""
+    GENERATOR template (it emits the directives and then submits, so rewriting
+    the generated .sh afterwards is too late).
+
+    Run against the REAL shipped templates, not a synthetic one: they build the
+    value from shell variables (time=7; wall=-00:00:00; timewall=$time$wall;
+    echo '#SBATCH -t '$timewall). A first attempt patched only the quoted
+    fragment and emitted `-t 2:00:007-00:00:00`, which SLURM rejected on HPCC
+    (job 15337604) even though a synthetic fixture had passed."""
     from mace.queue.manager import EnhancedCrystalQueueManager
 
-    template = tmp_path / "submitcrystal23.sh"
-    template.write_text(
-        "#!/bin/bash\n"
-        "echo '#SBATCH --ntasks=32' >> $1.sh\n"
-        "echo '#SBATCH -t 7-00:00:00' >> $1.sh\n"
-        "echo '#SBATCH --mem-per-cpu=5G' >> $1.sh\n")
+    real = REPO_ROOT / "mace" / "submission" / template_name
+    assert real.exists(), real
+    template = tmp_path / template_name
+    template.write_text(real.read_text())
 
     mgr = EnhancedCrystalQueueManager.__new__(EnhancedCrystalQueueManager)
     mgr.walltime_override = "2:00:00"
@@ -123,9 +126,15 @@ def test_queue_manager_rewrites_template_walltime(tmp_path):
     assert out is not None
     text = Path(out).read_text()
     assert "echo '#SBATCH -t 2:00:00' >> $1.sh" in text, text
-    assert "7-00:00:00" not in text
+    # no leftover shell-built value that would concatenate onto the override
+    assert "$timewall" not in text, text
+
+    # and the emitted directive must be exactly one clean -t line
+    emitted = [ln for ln in text.splitlines() if "#SBATCH -t" in ln]
+    assert emitted == ["echo '#SBATCH -t 2:00:00' >> $1.sh"], emitted
+
     # untouched directives survive
-    assert "#SBATCH --ntasks=32" in text and "#SBATCH --mem-per-cpu=5G" in text
+    assert "#SBATCH -N 1" in text and "#SBATCH -A mendoza_q" in text
 
 
 def test_queue_manager_without_override_uses_original_template(tmp_path):

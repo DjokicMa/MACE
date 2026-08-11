@@ -729,9 +729,15 @@ class EnhancedCrystalQueueManager:
             return None
         try:
             text = Path(script_path).read_text()
-            # The template emits directives via `echo '#SBATCH -t ...' >> $1.sh`.
-            new_text, n = re.subn(r"(?m)^(\s*echo\s+'#SBATCH\s+-t\s+)[^']*(')",
-                                  lambda m: f"{m.group(1)}{walltime}{m.group(2)}", text)
+            # The real templates build the value from shell vars:
+            #     time=7 ; wall=-00:00:00 ; timewall=$time$wall
+            #     echo '#SBATCH -t '$timewall >> $1.sh
+            # so the WHOLE emit line is replaced with a literal (the same thing
+            # mace/submission/crystal.py's create_custom_slurm_script does).
+            # Patching only the quoted part left `-t 2:00:007-00:00:00` and the
+            # job was rejected -- see HPCC job 15337604.
+            new_text, n = re.subn(r"(?m)^\s*echo\s+'#SBATCH\s+-t\s*'?.*$",
+                                  f"echo '#SBATCH -t {walltime}' >> $1.sh", text)
             if not n:
                 print(f"  Warning: no -t directive in {Path(script_path).name}; "
                       f"walltime override not applied")
