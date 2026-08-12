@@ -271,12 +271,28 @@ def _get_basic_d3_config_for_quick_start(calc_type: str) -> Dict[str, Any]:
         "BAND": {
             "calculation_type": "BAND",
             "path": "auto",
-            "bands": "auto", 
+            "bands": "auto",
             "shrink": "auto",
             "labels": "auto",
             "auto_path": True,
             "n_points": 10000,
-            "path_method": "coordinates"
+            "path_method": "coordinates",
+            # Ask for the SeeK-path (HPKOT) k-path. Without this the generator
+            # used its static extended-Bravais tables, which are only accurate
+            # for cubic lattices -- so a quick-start/--progress BAND on a
+            # non-cubic system got a worse path than the interactive planner
+            # (whose expert config sets kpath_source seekpath_*) even when
+            # seekpath was installed.
+            #
+            # Requested unconditionally rather than probed here: the plan is
+            # built wherever `mace workflow`/`mace submit` runs (a login or
+            # gateway node, which may have no scientific python at all), while
+            # the D3 is generated later on a COMPUTE node from the job's module
+            # environment. Probing at plan time would disable seekpath based on
+            # the wrong machine. get_seekpath_full_kpath is import-guarded and
+            # falls back seekpath -> literature -> static on its own, logging
+            # which it used, so this degrades safely where seekpath is absent.
+            "seekpath_full": True
         },
         "DOSS": {
             "calculation_type": "DOSS",
