@@ -5,7 +5,7 @@ All notable changes to MACE (Mendoza Automated CRYSTAL Engine) will be documente
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.1] - 2026-08-11
+## [1.1.1] - 2026-08-18
 
 Verified end-to-end on MSU HPCC (SLURM + CRYSTAL23): a bare submission runs only
 what was submitted, and a `--progress full_electronic` run drove
@@ -56,6 +56,18 @@ OPT → SP → BAND + DOSS to completion inside its own plan directory.
   regardless, so the chain looked correct while the id was already wrong.
 - `WORKFLOW_TEMPLATES` was missing `opt_sp_freq`, which the CLI already
   accepted.
+- **Template BAND steps used a lower-quality k-path than the interactive
+  planner.** `seekpath_full` is the only flag that makes the D3 generator take
+  the SeeK-path (HPKOT) branch, and the quick-start / `--progress <template>`
+  BAND config never set it — so those BANDs fell back to the built-in
+  extended-Bravais tables while the planner's expert config got the full path.
+  Wrong paths only for non-cubic lattices, and silent either way. The flag is
+  now requested unconditionally: plans are built on a login node while the D3
+  is generated later on a compute node, so probing for the library at plan time
+  would test the wrong machine, and `get_seekpath_full_kpath` already degrades
+  seekpath → literature → static on its own. Verified on HPCC (diamond):
+  `default - X-GAMMA-L-W-GAMMA` (4 segments) became
+  `SeeKPath (w.I) - GAMMA-X-U-|-K-GAMMA-L-W-X` (6 segments).
 
 ## [1.1.0] - 2026-07-12
 
