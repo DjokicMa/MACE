@@ -81,6 +81,7 @@ from d12_constants import (
     LAYER_GROUP_CANDIDATES,
     ROD_GROUP_CANDIDATES,
     LAYER_GROUPS_POLAR_IN_Z,
+    LAYER_GROUP_ORIGIN_TOL_FRAC,
     ROD_GROUPS_FREE_OF_AXIS_OPERATIONS,
     # Utility functions
     yes_no_prompt,
@@ -713,6 +714,15 @@ def verify_and_reduce_to_asymmetric_unit(
         detected_spacegroup_num = dataset["number"]
         original_spacegroup_num = cif_data["spacegroup"]
 
+        # Stash spglib's shift from THIS cell's origin to the ITA standard one,
+        # while the full atom set is still in hand - after the reduction below
+        # only the asymmetric unit survives, and spglib run on that alone would
+        # report a different (lower) symmetry and a meaningless shift.
+        # A SLAB deck needs it: the layer group's rotation axis has to sit on
+        # the in-plane origin CRYSTAL assumes. Recorded on cif_data itself so
+        # every return path below carries it, including the early ones.
+        cif_data["spglib_origin_shift"] = [float(v) for v in dataset["origin_shift"]]
+
         ui.print(f"\nSymmetry Analysis Results:")
         ui.print(f"  CIF space group: {original_spacegroup_num}")
         ui.print(f"  spglib detected: {detected_spacegroup_num} ({spacegroup_info})")
@@ -1227,6 +1237,60 @@ def create_d12_file(cif_data, output_file, options):
                     f"element, {by_hand}write the structure in P1."
                 )
                 return False
+            # The polar check above frees the NON-PERIODIC origin. The IN-PLANE
+            # origin is just as load-bearing and is not free: every auto-mapped
+            # layer group other than 1 carries a rotation axis along z that
+            # CRYSTAL places at the in-plane origin, so a structure whose axis
+            # sits anywhere else expands into a different slab - silently,
+            # because the deck is syntactically perfect. Before layer groups
+            # were resolved at all these space groups failed loudly with an
+            # out-of-range group number; without this they would have become
+            # quiet corruption instead.
+            #
+            # spglib's origin_shift is exactly this quantity (the shift from
+            # this cell's origin to the ITA standard one) and it is already
+            # computed during the symmetry step, so the check is free. Only the
+            # in-plane part is examined: z is the polar direction the check
+            # above just established is free. The shift is reduced modulo the
+            # lattice first - spglib reports e.g. 0.945 for a -0.055 offset.
+            # Group 1 is P1 in both appendices: no operations, nothing to place.
+            # In practice this is a SLAB check, since POLYMER's auto-map is
+            # restricted to rod group 1 anyway.
+            if group != 1:
+                shift = cif_data.get("spglib_origin_shift")
+                inplane = None
+                if shift is not None:
+                    axes = (0, 1) if is_slab else (1, 2)
+                    inplane = max(
+                        abs(shift[i] - round(shift[i])) for i in axes
+                    )
+                if inplane is None:
+                    ui.err(
+                        f"Aborting D12 file creation: cannot verify that the "
+                        f"symmetry elements of {dimensionality} group {group} "
+                        f"sit on the origin, because spglib did not analyse "
+                        f"this structure. Install spglib, set options['{key}'] "
+                        f"explicitly to assert the group yourself, or write "
+                        f"the structure in P1."
+                    )
+                    return False
+                if inplane > LAYER_GROUP_ORIGIN_TOL_FRAC:
+                    ui.err(
+                        f"Aborting D12 file creation: space group {spacegroup} "
+                        f"maps to {dimensionality} group {group}, whose "
+                        f"symmetry axis CRYSTAL places at the "
+                        f"{'in-plane' if is_slab else 'rod-axis'} origin, but "
+                        f"this structure sits {inplane:.4f} (fractional) away "
+                        f"from it - spglib reports origin_shift "
+                        f"{[round(v, 4) for v in shift]} to reach the standard "
+                        f"setting. Expanding the asymmetric unit about the "
+                        f"wrong origin builds a different structure, and the "
+                        f"deck would run to completion looking correct. Move "
+                        f"the structure onto the symmetry element, set "
+                        f"options['{key}'] explicitly to assert it anyway, or "
+                        f"write the structure in P1."
+                    )
+                    return False
             ui.print(
                 f"{dimensionality} group {group} from space group "
                 f"{spacegroup} (manual Appendix {appendix})"

@@ -902,3 +902,104 @@ def test_refusal_messages_are_not_malformed(capsys, tmp_path, monkeypatch):
     # The message must still offer both escape routes it promises.
     assert "p1" in lowered, text
     assert "slabcut" in lowered, text
+
+
+# ============================================================
+# In-plane origin: the axis must sit where CRYSTAL puts it
+# ============================================================
+
+_HEX_CIF = """data_t
+_cell_length_a 2.4700
+_cell_length_b 2.4700
+_cell_length_c 20.0000
+_cell_angle_alpha 90.0
+_cell_angle_beta 90.0
+_cell_angle_gamma 120.0
+_space_group_name_H-M_alt 'P 6 m m'
+_space_group_IT_number 183
+loop_
+_space_group_symop_operation_xyz
+'x, y, z'
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+_atom_site_occupancy
+{atoms}
+"""
+# A honeycomb with the 6-fold axis on the cell origin, and the SAME structure
+# rigidly translated in-plane by (+0.17, +0.23) - physically identical, but the
+# axis no longer sits where CRYSTAL will place it.
+_ON_AXIS = ("C1 C 0.333333 0.666667 0.000000 1.0\n"
+            "C2 C 0.666667 0.333333 0.000000 1.0")
+_OFF_AXIS = ("C1 C 0.503333 0.896667 0.000000 1.0\n"
+             "C2 C 0.836667 0.563333 0.000000 1.0")
+
+
+def _slab_from_cif(tmp_path, atoms, extra_options=None):
+    """Run the real converter over a one-CIF directory; return (ok, output)."""
+    writer = _writer()
+    cif_dir = tmp_path / "cif"
+    cif_dir.mkdir(exist_ok=True)
+    (cif_dir / "t.cif").write_text(_HEX_CIF.format(atoms=atoms))
+    opts = {
+        "dimensionality": "SLAB", "calculation_type": "SP", "method": "DFT",
+        "functional": "PBE", "dft_functional": "PBE",
+        "basis_set": "POB-TZVP-REV2", "basis_set_type": "INTERNAL",
+        "dft_grid": "XLGRID", "use_dispersion": False, "dispersion": False,
+        "is_spin_polarized": False, "spin_polarized": False,
+        "tolerances": {"TOLINTEG": "7 7 7 7 14", "TOLDEE": 7},
+        "shrink": [4, 4], "k_points": 4, "scf_maxcycle": 100, "fmixing": 30,
+        "scf_method": "DIIS", "symmetry_handling": "CIF",
+        "optimization_settings": {}, "freq_settings": {},
+    }
+    opts.update(extra_options or {})
+    cif = writer.parse_cif(str(cif_dir / "t.cif"))
+    cif = writer.verify_and_reduce_to_asymmetric_unit(cif, 1e-5, False)
+    out = tmp_path / "t.d12"
+    return writer.create_d12_file(cif, str(out), opts), out
+
+
+def test_structure_on_the_symmetry_axis_is_accepted(tmp_path):
+    """The guard must not refuse a correctly placed slab.
+
+    Graphene's 6-fold axis is on the cell origin and spglib returns an
+    origin_shift of exactly 0.0 for it, so this is the case the tolerance has
+    to let through.
+    """
+    ok, out = _slab_from_cif(tmp_path, _ON_AXIS)
+    assert ok is True
+    text = out.read_text().splitlines()
+    assert text[1] == "SLAB" and text[2] == "77", text[:4]
+
+
+def test_structure_off_the_symmetry_axis_is_refused(tmp_path, capsys):
+    """The whole point: CRYSTAL expands the asymmetric unit about the in-plane
+    origin, so a translated structure builds a DIFFERENT slab and the deck
+    still runs to completion looking correct.
+
+    Before layer groups were resolved, space group 183 failed loudly with an
+    out-of-range group number. Without this guard that loud failure would have
+    become silent corruption.
+    """
+    capsys.readouterr()
+    ok, out = _slab_from_cif(tmp_path, _OFF_AXIS)
+    captured = capsys.readouterr()
+    assert ok is False
+    assert not out.exists(), "refused write must leave no partial deck"
+    msg = (captured.out + captured.err).lower()
+    assert "origin" in msg and "183" in msg
+    assert "p1" in msg, "the message must still offer a way through"
+
+
+def test_naming_the_group_overrides_the_origin_check(tmp_path):
+    """Consistent with the lattice-class check: naming the group asserts it.
+
+    An explicit layer_group is the documented escape hatch the refusal points
+    at, so it must actually work on the same structure the guard rejects.
+    """
+    ok, out = _slab_from_cif(tmp_path, _OFF_AXIS, {"layer_group": 77})
+    assert ok is True
+    assert out.read_text().splitlines()[2] == "77"

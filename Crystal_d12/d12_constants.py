@@ -823,6 +823,18 @@ LAYER_GROUPS_POLAR_IN_Z = frozenset(
 # symmetric about the axis, because the screw axis generates the partners.
 ROD_GROUPS_FREE_OF_AXIS_OPERATIONS = frozenset({1})
 
+# How far (fractional) a structure's symmetry axis may sit from the in-plane
+# origin before an automatically mapped layer group is refused.
+#
+# CRYSTAL places the layer group's rotation axis at the in-plane origin and
+# expands the asymmetric unit about it, so an offset structure expands into a
+# different slab without any error. spglib's origin_shift measures the offset;
+# a correctly placed structure returns exactly 0.0 (measured on a honeycomb
+# with the 6-fold axis on the cell origin), so this only has to absorb
+# numerical noise, not real displacement - it is deliberately an order of
+# magnitude tighter than the lattice-class tolerances below.
+LAYER_GROUP_ORIGIN_TOL_FRAC = 1e-4
+
 # Tolerances for the 2D lattice-class cross-check (check_layer_group_cell).
 #
 # Angles: real optimized slabs in this project's corpus land a few thousandths
