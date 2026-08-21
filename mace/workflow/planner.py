@@ -46,7 +46,7 @@ try:
     parent_dir = Path(__file__).parent.parent.parent  # Go up to reorganization/
     sys.path.insert(0, str(parent_dir / "Crystal_d12"))
     # Import from the new modular structure
-    from d12_constants import FREQ_TEMPLATES, ATOMIC_NUMBER_TO_SYMBOL, SPACEGROUP_SYMBOLS
+    from d12_constants import FREQ_TEMPLATES, ATOMIC_NUMBER_TO_SYMBOL, SPACEGROUP_SYMBOLS, D3_FUNCTIONALS
     # Import succeeded, we should have access to these constants
     D12_CONSTANTS_AVAILABLE = True
     
@@ -63,6 +63,7 @@ except ImportError as e:
     D12_CONSTANTS_AVAILABLE = False
     # Provide minimal fallbacks
     FREQ_TEMPLATES = {}
+    D3_FUNCTIONALS = []
     ATOMIC_NUMBER_TO_SYMBOL = {
         1: 'H', 2: 'He', 3: 'Li', 4: 'Be', 5: 'B', 6: 'C', 7: 'N', 8: 'O',
         9: 'F', 10: 'Ne', 11: 'Na', 12: 'Mg', 13: 'Al', 14: 'Si', 15: 'P',
@@ -581,10 +582,10 @@ class WorkflowPlanner:
                 ui.info("\nmeta-GGA Functionals:")
                 ui.info("  1: SCAN")
                 ui.info("  2: M06")
-                ui.info("  3: M06-L")
-                ui.info("  4: M06-2X")
+                ui.info("  3: M06L")
+                ui.info("  4: M062X")
                 func_choice = input("Select [1]: ").strip() or "1"
-                functionals = {"1": "SCAN", "2": "M06", "3": "M06-L", "4": "M06-2X"}
+                functionals = {"1": "SCAN", "2": "M06", "3": "M06L", "4": "M062X"}
                 functional = functionals.get(func_choice, "SCAN")
 
             elif cat_choice == "5":  # 3c methods
@@ -2564,6 +2565,23 @@ class WorkflowPlanner:
         # Basis set modifications
         config["basis_settings"] = self._get_basis_modifications()
 
+        # 3C composite methods are parametrized for one specific basis set;
+        # pairing them with an inherited basis gives meaningless energies
+        three_c_basis_map = {
+            "HF3C": "MINIX",
+            "HFSOL3C": "SOLMINIX",
+            "PBEH3C": "def2-mSVP",
+            "HSE3C": "def2-mSVP",
+            "B973C": "mTZVP",
+            "PBESOL03C": "SOLDEF2MSVP",
+            "HSESOL3C": "SOLDEF2MSVP",
+        }
+        selected_3c = config["method_settings"].get("custom_functional")
+        if selected_3c in three_c_basis_map:
+            config["basis_settings"].pop("inherit_basis", None)
+            config["basis_settings"]["new_basis"] = three_c_basis_map[selected_3c]
+            ui.info(f"    {selected_3c} requires basis set {three_c_basis_map[selected_3c]}")
+
         # Custom tolerances
         ui.info("\n    Convergence tolerances:")
         config["custom_tolerances"] = self._get_custom_tolerances()
@@ -2647,7 +2665,7 @@ class WorkflowPlanner:
         ui.info("        3: B3LYP-D3 (hybrid, good for organics)")
         ui.info("        4: HSE06 (hybrid, accurate band gaps)")
         ui.info("        5: PBE0 (hybrid, general purpose)")
-        ui.info("        6: M06-2X (meta-GGA, for kinetics)")
+        ui.info("        6: M062X (meta-GGA, for kinetics)")
         ui.info("        7: Custom functional (select from full list)")
 
         while True:
@@ -2663,8 +2681,9 @@ class WorkflowPlanner:
             selected_functional = self._select_custom_functional()
             modifications["custom_functional"] = selected_functional
 
-            # Ask about dispersion for non-3C methods
-            if selected_functional and "3C" not in selected_functional.upper():
+            # Ask about dispersion only for functionals CRYSTAL has D3-parametrized;
+            # the -D3 suffix is rejected for anything outside that list
+            if selected_functional and selected_functional in D3_FUNCTIONALS:
                 ui.info(f"\n      Add dispersion correction to {selected_functional}?")
                 ui.info("        Dispersion correction (D3) improves description of van der Waals interactions")
                 use_d3 = yes_no_prompt("      Use D3 dispersion correction?", "yes")
@@ -2677,7 +2696,7 @@ class WorkflowPlanner:
                 "3": "B3LYP",
                 "4": "HSE06",
                 "5": "PBE0",
-                "6": "M06-2X",
+                "6": "M062X",
             }
             modifications["new_functional"] = functional_map[func_choice]
             # Check if D3 dispersion should be added
@@ -2715,7 +2734,7 @@ class WorkflowPlanner:
 
         # Define functionals by category (matching d12creation.py)
         functionals = {
-            "HF": ["HF", "UHF"],
+            "HF": ["RHF", "UHF"],
             "LDA": ["SVWN", "VBH"],
             "GGA": ["PBE", "BLYP", "PBESOL", "PWGGA", "SOGGA", "WCGGA", "B97"],
             "HYBRID": [
@@ -2729,15 +2748,15 @@ class WorkflowPlanner:
             ],
             "MGGA": [
                 "M06",
-                "M06-2X",
-                "M06-L",
-                "M06-HF",
+                "M062X",
+                "M06L",
+                "M06HF",
                 "SCAN",
                 "r2SCAN",
                 "MN15",
                 "MN15L",
             ],
-            "3C": ["HF-3C", "PBEh-3C", "HSE-3C", "B97-3C", "PBEsol0-3C", "HSEsol-3C"],
+            "3C": ["HF3C", "PBEH3C", "HSE3C", "B973C", "PBESOL03C", "HSESOL3C"],
         }
 
         func_list = functionals.get(category, [])
@@ -2754,7 +2773,7 @@ class WorkflowPlanner:
                 desc = " - screened hybrid, accurate band gaps"
             elif func == "PBE0":
                 desc = " - 25% HF exchange, robust"
-            elif func == "M06-2X":
+            elif func == "M062X":
                 desc = " - 54% HF, good for kinetics"
             elif func == "PBESOL":
                 desc = " - PBE revised for solids"

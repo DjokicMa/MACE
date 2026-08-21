@@ -1,0 +1,100 @@
+basis,Z,status,detail
+def2-mSVP,1,PRESENT,
+def2-mSVP,2,PRESENT,
+def2-mSVP,3,PRESENT,
+def2-mSVP,4,PRESENT,
+def2-mSVP,5,PRESENT,
+def2-mSVP,6,PRESENT,
+def2-mSVP,7,PRESENT,
+def2-mSVP,8,PRESENT,
+def2-mSVP,9,PRESENT,
+def2-mSVP,10,PRESENT,
+def2-mSVP,11,PRESENT,
+def2-mSVP,12,PRESENT,
+def2-mSVP,13,PRESENT,
+def2-mSVP,14,PRESENT,
+def2-mSVP,15,PRESENT,
+def2-mSVP,16,PRESENT,
+def2-mSVP,17,PRESENT,
+def2-mSVP,18,PRESENT,
+def2-mSVP,19,PRESENT,
+def2-mSVP,20,PRESENT,
+def2-mSVP,21,PRESENT,
+def2-mSVP,22,PRESENT,
+def2-mSVP,23,PRESENT,
+def2-mSVP,24,PRESENT,
+def2-mSVP,25,PRESENT,
+def2-mSVP,26,PRESENT,
+def2-mSVP,27,PRESENT,
+def2-mSVP,28,PRESENT,
+def2-mSVP,29,PRESENT,
+def2-mSVP,30,PRESENT,
+def2-mSVP,31,PRESENT,
+def2-mSVP,32,PRESENT,
+def2-mSVP,33,PRESENT,
+def2-mSVP,34,PRESENT,
+def2-mSVP,35,PRESENT,
+def2-mSVP,36,PRESENT,
+def2-mSVP,37,PRESENT,
+def2-mSVP,38,PRESENT,
+def2-mSVP,39,PRESENT,
+def2-mSVP,40,PRESENT,
+def2-mSVP,41,PRESENT,
+def2-mSVP,42,PRESENT,
+def2-mSVP,43,PRESENT,
+def2-mSVP,44,PRESENT,
+def2-mSVP,45,PRESENT,
+def2-mSVP,46,PRESENT,
+def2-mSVP,47,PRESENT,
+def2-mSVP,48,PRESENT,
+def2-mSVP,49,PRESENT,
+def2-mSVP,50,PRESENT,
+def2-mSVP,51,PRESENT,
+def2-mSVP,52,PRESENT,
+def2-mSVP,53,PRESENT,
+def2-mSVP,54,PRESENT,
+def2-mSVP,55,PRESENT,
+def2-mSVP,56,PRESENT,
+def2-mSVP,57,PRESENT,
+def2-mSVP,58,PRESENT,
+def2-mSVP,59,PRESENT,
+def2-mSVP,60,PRESENT,
+def2-mSVP,61,PRESENT,
+def2-mSVP,62,PRESENT,
+def2-mSVP,63,PRESENT,
+def2-mSVP,64,PRESENT,
+def2-mSVP,65,PRESENT,
+def2-mSVP,66,PRESENT,
+def2-mSVP,67,PRESENT,
+def2-mSVP,68,PRESENT,
+def2-mSVP,69,PRESENT,
+def2-mSVP,70,PRESENT,
+def2-mSVP,71,PRESENT,
+def2-mSVP,72,PRESENT,
+def2-mSVP,73,PRESENT,
+def2-mSVP,74,PRESENT,
+def2-mSVP,75,PRESENT,
+def2-mSVP,76,PRESENT,
+def2-mSVP,77,PRESENT,
+def2-mSVP,78,PRESENT,
+def2-mSVP,79,PRESENT,
+def2-mSVP,80,PRESENT,
+def2-mSVP,81,MISSING,ERROR **** LoadBa **** UNIT CELL NOT NEUTRAL
+def2-mSVP,82,MISSING,ERROR **** LoadBa **** UNIT CELL NOT NEUTRAL
+def2-mSVP,83,MISSING,ERROR **** LoadBa **** UNIT CELL NOT NEUTRAL
+def2-mSVP,84,MISSING,ERROR **** LoadBa **** UNIT CELL NOT NEUTRAL
+def2-mSVP,85,MISSING,ERROR **** LoadBa **** UNIT CELL NOT NEUTRAL
+def2-mSVP,86,PRESENT,
+def2-mSVP,87,MISSING,ERROR **** init_def2msvp **** Basis set is not implemented for requested element: 87
+def2-mSVP,88,MISSING,ERROR **** init_def2msvp **** Basis set is not implemented for requested element: 88
+def2-mSVP,89,MISSING,ERROR **** init_def2msvp **** Basis set is not implemented for requested element: 89
+def2-mSVP,90,MISSING,ERROR **** init_def2msvp **** Basis set is not implemented for requested element: 90
+def2-mSVP,91,MISSING,ERROR **** init_def2msvp **** Basis set is not implemented for requested element: 91
+def2-mSVP,92,MISSING,ERROR **** init_def2msvp **** Basis set is not implemented for requested element: 92
+def2-mSVP,93,MISSING,ERROR **** init_def2msvp **** Basis set is not implemented for requested element: 93
+def2-mSVP,94,MISSING,ERROR **** init_def2msvp **** Basis set is not implemented for requested element: 94
+def2-mSVP,95,MISSING,ERROR **** init_def2msvp **** Basis set is not implemented for requested element: 95
+def2-mSVP,96,MISSING,ERROR **** init_def2msvp **** Basis set is not implemented for requested element: 96
+def2-mSVP,97,MISSING,ERROR **** init_def2msvp **** Basis set is not implemented for requested element: 97
+def2-mSVP,98,MISSING,ERROR **** init_def2msvp **** Basis set is not implemented for requested element: 98
+def2-mSVP,99,MISSING,ERROR **** init_def2msvp **** Basis set is not implemented for requested element: 99

@@ -1,0 +1,100 @@
+basis,Z,status,detail
+STO-3G,1,PRESENT,
+STO-3G,2,PRESENT,
+STO-3G,3,PRESENT,
+STO-3G,4,PRESENT,
+STO-3G,5,PRESENT,
+STO-3G,6,PRESENT,
+STO-3G,7,PRESENT,
+STO-3G,8,PRESENT,
+STO-3G,9,PRESENT,
+STO-3G,10,PRESENT,
+STO-3G,11,PRESENT,
+STO-3G,12,PRESENT,
+STO-3G,13,PRESENT,
+STO-3G,14,PRESENT,
+STO-3G,15,PRESENT,
+STO-3G,16,PRESENT,
+STO-3G,17,PRESENT,
+STO-3G,18,PRESENT,
+STO-3G,19,PRESENT,
+STO-3G,20,PRESENT,
+STO-3G,21,PRESENT,
+STO-3G,22,PRESENT,
+STO-3G,23,PRESENT,
+STO-3G,24,PRESENT,
+STO-3G,25,PRESENT,
+STO-3G,26,PRESENT,
+STO-3G,27,PRESENT,
+STO-3G,28,PRESENT,
+STO-3G,29,PRESENT,
+STO-3G,30,PRESENT,
+STO-3G,31,PRESENT,
+STO-3G,32,PRESENT,
+STO-3G,33,PRESENT,
+STO-3G,34,PRESENT,
+STO-3G,35,PRESENT,
+STO-3G,36,PRESENT,
+STO-3G,37,PRESENT,
+STO-3G,38,PRESENT,
+STO-3G,39,PRESENT,
+STO-3G,40,PRESENT,
+STO-3G,41,PRESENT,
+STO-3G,42,PRESENT,
+STO-3G,43,PRESENT,
+STO-3G,44,PRESENT,
+STO-3G,45,PRESENT,
+STO-3G,46,PRESENT,
+STO-3G,47,PRESENT,
+STO-3G,48,PRESENT,
+STO-3G,49,PRESENT,
+STO-3G,50,PRESENT,
+STO-3G,51,PRESENT,
+STO-3G,52,PRESENT,
+STO-3G,53,PRESENT,
+STO-3G,54,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 54
+STO-3G,55,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 55
+STO-3G,56,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 56
+STO-3G,57,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 57
+STO-3G,58,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 58
+STO-3G,59,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 59
+STO-3G,60,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 60
+STO-3G,61,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 61
+STO-3G,62,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 62
+STO-3G,63,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 63
+STO-3G,64,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 64
+STO-3G,65,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 65
+STO-3G,66,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 66
+STO-3G,67,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 67
+STO-3G,68,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 68
+STO-3G,69,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 69
+STO-3G,70,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 70
+STO-3G,71,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 71
+STO-3G,72,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 72
+STO-3G,73,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 73
+STO-3G,74,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 74
+STO-3G,75,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 75
+STO-3G,76,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 76
+STO-3G,77,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 77
+STO-3G,78,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 78
+STO-3G,79,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 79
+STO-3G,80,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 80
+STO-3G,81,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 81
+STO-3G,82,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 82
+STO-3G,83,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 83
+STO-3G,84,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 84
+STO-3G,85,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 85
+STO-3G,86,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 86
+STO-3G,87,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 87
+STO-3G,88,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 88
+STO-3G,89,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 89
+STO-3G,90,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 90
+STO-3G,91,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 91
+STO-3G,92,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 92
+STO-3G,93,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 93
+STO-3G,94,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 94
+STO-3G,95,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 95
+STO-3G,96,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 96
+STO-3G,97,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 97
+STO-3G,98,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 98
+STO-3G,99,MISSING,ERROR **** init_sto3g **** Basis set is not implemented for requested element: 99

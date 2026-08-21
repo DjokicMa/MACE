@@ -907,7 +907,7 @@ def create_d12_file(cif_data, output_file, options):
         options (dict): Calculation options
 
     Returns:
-        None
+        bool: True if the D12 file was written, False if creation was refused
     """
     # Extract CIF data
     a = cif_data["a"]
@@ -933,9 +933,18 @@ def create_d12_file(cif_data, output_file, options):
         ui.print(
             f"Missing elements: {', '.join([f'{ATOMIC_NUMBER_TO_SYMBOL.get(z, z)} (Z={z})' for z in missing_elements])}"
         )
+        # Non-interactive (batch/workflow callback): fail cleanly instead of
+        # raising EOFError at the prompt. Nothing is on disk yet - the deck is
+        # only opened further down - so there is no partial file to remove;
+        # just signal failure so the caller does not report success.
+        if not sys.stdin.isatty():
+            ui.err(
+                "Aborting D12 file creation (unsupported elements, no terminal to confirm)."
+            )
+            return False
         if not yes_no_prompt("Continue anyway?", "no"):
             ui.err("Aborting D12 file creation.")
-            return
+            return False
 
     # Extract options
     dimensionality = options["dimensionality"]
@@ -1186,8 +1195,9 @@ def create_d12_file(cif_data, output_file, options):
                     print("BASISSET", file=f)
                     print(basis_set, file=f)
                 else:
-                    # External basis set handling
+                    # External basis set handling - need END to close geometry section
                     # Note: read_basis_file handles ECP element naming (+200 for Z >= 37)
+                    print("END", file=f)
                     unique_atoms = set(atomic_numbers)
                     for atom_num in sorted(unique_atoms):
                         basis_content = read_basis_file(basis_set, atom_num, "EXTERNAL")
@@ -1249,6 +1259,18 @@ def create_d12_file(cif_data, output_file, options):
         # Prepare k-points
         ka, kb, kc = generate_k_points(a, b, c, dimensionality, spacegroup)
 
+        # SPINLOCK needs an open-shell Hamiltonian to act on (UHF or DFT/SPIN).
+        # Every DFT arm writes SPIN when spin-polarized, but on the HF path only
+        # UHF does - RHF and the 3C variants stay closed shell, so a lock there
+        # would be written against a Hamiltonian that cannot carry it.
+        spinlock = options.get("spinlock", 0) if is_spin_polarized else 0
+        if spinlock and method == "HF" and options.get("hf_method", "RHF") != "UHF":
+            ui.warn(
+                f"SPINLOCK needs an open-shell Hamiltonian; "
+                f"{options.get('hf_method', 'RHF')} is closed-shell - omitting SPINLOCK."
+            )
+            spinlock = 0
+
         write_scf_section(
             f,
             tolerances,
@@ -1264,13 +1286,15 @@ def create_d12_file(cif_data, output_file, options):
             # Emit a configured fixed spin state only for spin-polarized systems;
             # a missing/zero value leaves the SCF block unchanged. Previously a
             # configured SPINLOCK never reached any active writer.
-            spinlock=(options.get("spinlock", 0) if is_spin_polarized else 0),
+            spinlock=spinlock,
             # Preserve the configured SCF-cycle count for the lock (else the writer
             # falls back to DEFAULT_SPINLOCK_CYCLES and a non-default count is lost).
             spinlock_cycles=options.get("spinlock_cycles", DEFAULT_SPINLOCK_CYCLES),
         )
 
         # Note: The single END at the very end is written by write_scf_section
+
+    return True
 
 
 def process_cifs(cif_directory, options, output_directory=None):
@@ -1394,8 +1418,10 @@ def process_cifs(cif_directory, options, output_directory=None):
                 else:
                     ui.print("Using CIF symmetry but writing all atoms explicitly")
 
-            # Create D12 file
-            create_d12_file(cif_data, output_file, options)
+            # Create D12 file - a refused deck was never written, so do not
+            # report it as created
+            if not create_d12_file(cif_data, output_file, options):
+                continue
 
             ui.ok(f"Created {output_file}")
 

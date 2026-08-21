@@ -705,8 +705,12 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
                 else:
                     # Fallback to standard path
                     print("\nLiterature path not available, using standard path")
-                    coord_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
+                    frac_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
+                    # Segment extremes are expressed in units of 1/ISS, so the
+                    # fractional vectors must be scaled by the shrink factor
+                    coord_segments, adjusted_shrink = scale_kpoint_segments(frac_segments, shrink)
                     band_config["segments"] = coord_segments
+                    band_config["shrink"] = adjusted_shrink
             else:
                 # format_choice == "4" - SeeK-path
                 band_config["seekpath_full"] = True
@@ -740,8 +744,12 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
                 else:
                     # Fallback to standard path
                     print("\nSeeK-path full path not available, using standard path")
-                    coord_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
+                    frac_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
+                    # Segment extremes are expressed in units of 1/ISS, so the
+                    # fractional vectors must be scaled by the shrink factor
+                    coord_segments, adjusted_shrink = scale_kpoint_segments(frac_segments, shrink)
                     band_config["segments"] = coord_segments
+                    band_config["shrink"] = adjusted_shrink
     
     elif path_method == "2":
         # Template selection
@@ -1338,17 +1346,22 @@ def configure_charge_density_calculation() -> Dict[str, Any]:
     else:
         charge_config["type"] = "ECHG"
         
-        # Derivative order
+        # Derivative order - CRYSTAL defines IDER 0 and 1 only
         print("\nDerivative order:")
         print("0: Charge density")
-        print("1: Gradient of charge density")
-        print("2: Laplacian of charge density")
+        print("1: Charge density and its gradient")
         
-        deriv = _nav_int("Select order (0-2) [0]: ", default=0)
+        deriv = _nav_int("Select order (0-1) [0]: ", default=0)
+        if deriv not in (0, 1):
+            print("Warning: only IDER=0 and IDER=1 are defined for ECHG, using 0")
+            deriv = 0
         charge_config["derivative_order"] = deriv
         
         # Map plane definition
         charge_config["need_map_points"] = yes_no_prompt("\nDefine charge density map plane?", "yes")
+        if not charge_config["need_map_points"]:
+            print("Warning: ECHG requires the MAPNET map-plane records - the generated")
+            print("         D3 will be incomplete until points A, B, C are added by hand")
     
     return charge_config
 
@@ -1393,13 +1406,17 @@ def configure_potential_calculation() -> Dict[str, Any]:
     else:
         potential_config["type"] = "POTC"
         
-        # ICA parameter
+        # ICA parameter - ICA=1 is not implemented in CRYSTAL, the plane and
+        # volume averages are ICA=2 and ICA=3 (2D systems only)
         print("\nCalculation mode:")
         print("0: Potential at specific points")
-        print("1: Plane-averaged potential")
-        print("2: Volume-averaged potential")
+        print("2: Plane-averaged potential (2D only)")
+        print("3: Volume-averaged potential (2D only)")
         
-        ica = _nav_int("Select mode (0-2) [0]: ", default=0)
+        ica = _nav_int("Select mode (0, 2 or 3) [0]: ", default=0)
+        if ica not in (0, 2, 3):
+            print("Warning: ICA=1 is not implemented in CRYSTAL, using 0")
+            ica = 0
         potential_config["ica"] = ica
         
         if ica == 0:
@@ -1422,7 +1439,9 @@ def configure_potential_calculation() -> Dict[str, Any]:
                 potential_config["n_points"] = n_points
                 potential_config["custom_points"] = True
             else:
-                potential_config["n_points"] = -_nav_int("Number of points in file: ", default=1)
+                # Store the plain count; the writer applies the NPU < 0 flag
+                # that makes CRYSTAL read the coordinates from POTC.INP
+                potential_config["n_points"] = _nav_int("Number of points in file: ", default=1)
                 potential_config["read_file"] = True
         
         else:
@@ -1434,8 +1453,9 @@ def configure_potential_calculation() -> Dict[str, Any]:
             n_planes = _nav_int("Number of planes [100]: ", default=100)
             potential_config["n_planes"] = n_planes
             
-            if ica == 2:
-                thickness = _nav_float("Slice thickness (bohr) [0.5]: ", default=0.5)
+            if ica == 3:
+                # ZD, half thickness of the averaging volume (ICA=3 only)
+                thickness = _nav_float("Half thickness of the volume (bohr) [0.5]: ", default=0.5)
                 potential_config["slice_thickness"] = thickness
     
     return potential_config

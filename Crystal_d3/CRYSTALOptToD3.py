@@ -944,20 +944,23 @@ class D3Generator:
                     coords = input(f"Point {point} (x y z): ").strip().split()
                     points.append([float(x) for x in coords])
                 
-                # MAPNET section
-                lines.append("MAPNET")
-                if coord_type == "C":
-                    lines.append("CARTESIAN") 
-                    lines.append("ANGSTROM")
+                # MAPNET records: NPY first, then the unit of measure (it
+                # applies to subsequent input), then the keyword declaring how
+                # the three points are given. "MAPNET" itself is a dummy
+                # keyword and is never written into the deck. nBC is chosen by
+                # CRYSTAL so the net is as equally spaced as possible.
+                npy = int(input("Number of points along the B-A segment [50]: ") or 50)
+                lines.append(str(npy))
+                if coord_type == "F":
+                    lines.append("FRACTION")
+                lines.append("COORDINA")
                 
                 # Points
                 for i, point in enumerate(points):
                     lines.append(f"{point[0]} {point[1]} {point[2]}")
                 
-                # Number of points
-                n_points_ab = int(input("Number of points along AB [50]: ") or 50)
-                n_points_bc = int(input("Number of points along BC [50]: ") or 50)
-                lines.append(f"{n_points_ab} {n_points_bc}")
+                # End of the MAPNET input block; the deck's own END follows
+                lines.append("END")
         
         lines.append("END")
         return '\n'.join(lines)
@@ -1023,7 +1026,9 @@ class D3Generator:
                 else:
                     npu = config.get("n_points", 0)
                     if config.get("read_file", False):
-                        npu = -npu
+                        # NPU < 0 is the flag that makes CRYSTAL read the point
+                        # coordinates from POTC.INP instead of from the deck
+                        npu = -abs(npu)
                     ipa = 0
                 
                 lines.append(f"{ica} {npu} {ipa}")
@@ -1043,7 +1048,7 @@ class D3Generator:
                 lines.append(f"{ica} {n_planes} 0")
                 lines.append(f"{z_min} {z_max}")
                 
-                if ica == 2:  # Volume averaged
+                if ica == 3:  # Volume averaged - ZD is read only for ICA=3
                     thickness = config.get("slice_thickness", 0.5)
                     lines.append(str(thickness))
         
@@ -1135,8 +1140,14 @@ class D3Generator:
                             else:
                                 # Final fallback to standard path
                                 path_labels = get_band_path_from_symmetry(space_group, lattice_type)
-                                coord_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
+                                frac_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
+                                # Segment extremes are expressed in units of 1/ISS, so the
+                                # fractional vectors must be scaled by the shrink factor
+                                shrink = extract_and_process_shrink(str(self.input_file), self.base_name,
+                                                                   self.input_dir, config)
+                                coord_segments, adjusted_shrink = scale_kpoint_segments(frac_segments, shrink)
                                 config["segments"] = coord_segments
+                                config["shrink"] = adjusted_shrink
                                 config["path_labels"] = path_labels  # Store labels for title
                                 config["kpath_source"] = "default"
                                 ui.info(f"  SeeK-path not available, using standard k-point vectors for space group {space_group}")
@@ -1160,8 +1171,14 @@ class D3Generator:
                         else:
                             # Fallback
                             path_labels = get_band_path_from_symmetry(space_group, lattice_type)
-                            coord_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
+                            frac_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
+                            # Segment extremes are expressed in units of 1/ISS, so the
+                            # fractional vectors must be scaled by the shrink factor
+                            shrink = extract_and_process_shrink(str(self.input_file), self.base_name,
+                                                               self.input_dir, config)
+                            coord_segments, adjusted_shrink = scale_kpoint_segments(frac_segments, shrink)
                             config["segments"] = coord_segments
+                            config["shrink"] = adjusted_shrink
                             config["path_labels"] = path_labels  # Store labels for title
                             ui.info(f"  Literature path not available, using standard k-point vectors for space group {space_group}")
                     
@@ -1267,8 +1284,14 @@ class D3Generator:
                 ui.err("Error: CHARGE+POTENTIAL configuration missing charge_config or potential_config")
                 return None
             
-            # Write combined file
-            d3_content = self._write_charge_d3(charge_config).rstrip('\nEND')
+            # Write combined file - drop the charge block's terminating END so
+            # the combined deck carries exactly one. This must be a SUFFIX
+            # strip: rstrip('\nEND') strips the character SET {\n,E,N,D} and
+            # would eat into a data line ending in any of those characters.
+            charge_block = self._write_charge_d3(charge_config)
+            if charge_block.endswith("\nEND"):
+                charge_block = charge_block[:-len("\nEND")]
+            d3_content = charge_block
             d3_content += "\n" + self._write_potential_d3(potential_config)
             
         else:

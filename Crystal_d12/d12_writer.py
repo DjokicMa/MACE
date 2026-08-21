@@ -400,9 +400,6 @@ def write_dft_section(f: TextIO, functional: str, use_dispersion: bool,
     functional_keyword_map = {
         "PBESOL": "PBESOLXC",
         "SOGGA": "SOGGAXC",
-        "VBH": "VBHLYP",
-        "PWGGA": "PW91GGA",
-        "WCGGA": "WCGGAPBE",
     }
     
     # Handle special functional keywords
@@ -484,13 +481,25 @@ def write_basis_set_section(f: TextIO, basis_type: str, dimensionality: str,
 # without freezing it for the whole run.
 DEFAULT_SPINLOCK_CYCLES = 50
 
+# BROYDEN takes one record of three values, "W0 IMIX ISTART": the W0 parameter
+# of Anderson's paper, the percent of Fock/KS matrix mixing applied once Broyden
+# switches on (this overrides the earlier FMIXING), and the SCF iteration after
+# which Broyden becomes active (minimum 2). These defaults are the values the
+# CRYSTAL23 manual itself suggests for the keyword.
+DEFAULT_BROYDEN_W0 = 0.0001
+DEFAULT_BROYDEN_IMIX = 50
+DEFAULT_BROYDEN_ISTART = 2
+
 
 def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
                      dimensionality: str, use_smearing: bool, smearing_width: float,
                      scf_method: str, scf_maxcycle: int, fmixing: int,
                      num_atoms: int, spacegroup: int = 1,
                      spinlock: Optional[int] = None,
-                     spinlock_cycles: int = DEFAULT_SPINLOCK_CYCLES) -> None:
+                     spinlock_cycles: int = DEFAULT_SPINLOCK_CYCLES,
+                     broyden_w0: float = DEFAULT_BROYDEN_W0,
+                     broyden_imix: int = DEFAULT_BROYDEN_IMIX,
+                     broyden_istart: int = DEFAULT_BROYDEN_ISTART) -> None:
     """Write the SCF parameters section of the D12 file
 
     Args:
@@ -512,6 +521,11 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
             SPIN/UHF to be active.
         spinlock_cycles: Number of SCF cycles to hold the lock (see
             DEFAULT_SPINLOCK_CYCLES).
+        broyden_w0: W0 parameter of the BROYDEN record (see DEFAULT_BROYDEN_W0).
+        broyden_imix: Percent of Fock/KS mixing once Broyden switches on; it
+            overrides the FMIXING value written above (see DEFAULT_BROYDEN_IMIX).
+        broyden_istart: SCF iteration after which Broyden is active, minimum 2
+            (see DEFAULT_BROYDEN_ISTART). Only used when scf_method is BROYDEN.
     """
     # Fixed spin state. CRYSTAL expects SPINLOCK at the top of the SCF block,
     # ahead of TOLINTEG, exactly as it appears in the project's reference inputs.
@@ -612,6 +626,11 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
     print(fmixing, file=f)
 
     print(scf_method, file=f)
+
+    # BROYDEN takes one record of three values, W0 IMIX ISTART; the deck is
+    # incomplete without it.
+    if scf_method == "BROYDEN":
+        print(f"{broyden_w0} {broyden_imix} {broyden_istart}", file=f)
 
     if scf_method == "DIIS":
         print("HISTDIIS", file=f)

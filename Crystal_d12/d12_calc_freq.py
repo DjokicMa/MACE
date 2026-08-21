@@ -1656,7 +1656,27 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
     if freq_settings.get("minimal_raman", False):
         write_minimal_raman_section(f)
         return
-    
+
+    # Supercell for phonon dispersion.
+    # SCELPHONO is a geometry-block keyword (manual sec. 4.21, "Atoms and cell
+    # manipulation") and must be written before FREQCALC, which has to be the
+    # last keyword of the geometry input block. It is NOT a FREQCALC or
+    # DISPERSION sub-keyword.
+    if freq_settings.get("dispersion", False) and "scelphono" in freq_settings:
+        supercell = freq_settings["scelphono"]
+        print("SCELPHONO", file=f)
+        # Expansion matrix E is read by rows: 9 reals for a 3D system
+        if isinstance(supercell, list) and len(supercell) == 3:
+            # Simple expansion factors [nx, ny, nz] -> diagonal expansion matrix
+            for i, n in enumerate(supercell):
+                row = [0, 0, 0]
+                row[i] = n
+                print(" ".join(str(v) for v in row), file=f)
+        elif isinstance(supercell, list) and len(supercell) == 9:
+            # Full transformation matrix (3x3)
+            for i in range(0, 9, 3):
+                print(" ".join(str(supercell[j]) for j in range(i, i+3)), file=f)
+
     print("FREQCALC", file=f)
     
     # Handle restart
@@ -1801,6 +1821,10 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
     # Determine if we need CPHF and where to place it
     has_intensities = freq_settings.get("intensities", False)
     has_raman = freq_settings.get("raman", False)
+    # INTRAMAN must always be used together with INTENS, so asking for Raman
+    # intensities implies INTENS - never NOINTENS
+    if has_raman:
+        has_intensities = True
     ir_method = freq_settings.get("ir_method", "BERRY").upper()
     needs_cphf = (has_intensities and ir_method == "CPHF") or has_raman
 
@@ -1926,19 +1950,9 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
     if freq_settings.get("dispersion", False):
         print("DISPERSION", file=f)
         
-        # Supercell for phonon calculation
-        if "scelphono" in freq_settings:
-            supercell = freq_settings["scelphono"]
-            print("SCELPHONO", file=f)
-            # Can be either expansion factors or full transformation matrix
-            if isinstance(supercell, list) and len(supercell) == 3:
-                # Simple expansion factors [nx, ny, nz]
-                print(" ".join(str(n) for n in supercell), file=f)
-            elif isinstance(supercell, list) and len(supercell) == 9:
-                # Full transformation matrix (3x3)
-                for i in range(0, 9, 3):
-                    print(" ".join(str(supercell[j]) for j in range(i, i+3)), file=f)
-        
+        # Supercell for phonon calculation is written with SCELPHONO in the
+        # geometry block, before FREQCALC - not here
+
         # Fourier interpolation
         if "interphess" in freq_settings:
             interp = freq_settings["interphess"]
@@ -2181,40 +2195,50 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
     
     # IR spectrum generation
     if freq_settings.get("irspec", False):
-        # Validate that IRSPEC has required dielectric information
+        # A dielectric tensor/constant is optional: without one CRYSTAL still
+        # computes the raw absorption spectrum and writes IRSPEC.DAT. Only the
+        # reflectance spectrum, refractive index and dielectric function need
+        # DIELTENS/DIELISO.
         has_dielectric = ("dielectric_tensor" in freq_settings or
                          "dielectric_constant" in freq_settings)
 
         if not has_dielectric:
-            print("Warning: IRSPEC requires either DIELTENS (dielectric_tensor) or DIELISO (dielectric_constant)")
-            print("IRSPEC will be skipped. Add dielectric information to enable IR spectrum.")
-        else:
-            print("IRSPEC", file=f)
+            if not has_intensities:
+                print("Warning: IRSPEC requires IR intensities - set intensities=True so INTENS is written")
+            print("Note: no DIELTENS/DIELISO given - only the raw absorption spectrum will be computed")
+            if freq_settings.get("spec_refrind", False) or freq_settings.get("spec_dielfun", False):
+                print("      REFRIND/DIELFUN produce no output without a dielectric tensor or constant")
 
-            # Spectrum settings
-            if "spec_range" in freq_settings:
-                print("RANGE", file=f)
-                print(f"{freq_settings['spec_range'][0]} {freq_settings['spec_range'][1]}", file=f)
-            if "spec_step" in freq_settings:
-                print("LENSTEP", file=f)
-                print(format_crystal_float(freq_settings["spec_step"]), file=f)
-            if "spec_dampfac" in freq_settings:
-                print("DAMPFAC", file=f)
-                print(format_crystal_float(freq_settings["spec_dampfac"]), file=f)
-            if freq_settings.get("spec_gaussian", False):
-                print("GAUSS", file=f)
-            if "spec_angle" in freq_settings:
-                print("ANGLE", file=f)
-                print(format_crystal_float(freq_settings["spec_angle"]), file=f)
-            if freq_settings.get("spec_refrind", False):
-                print("REFRIND", file=f)
-            if freq_settings.get("spec_dielfun", False):
-                print("DIELFUN", file=f)
+        print("IRSPEC", file=f)
 
-            print("END", file=f)
+        # Spectrum settings
+        if "spec_range" in freq_settings:
+            print("RANGE", file=f)
+            print(f"{freq_settings['spec_range'][0]} {freq_settings['spec_range'][1]}", file=f)
+        if "spec_step" in freq_settings:
+            print("LENSTEP", file=f)
+            print(format_crystal_float(freq_settings["spec_step"]), file=f)
+        if "spec_dampfac" in freq_settings:
+            print("DAMPFAC", file=f)
+            print(format_crystal_float(freq_settings["spec_dampfac"]), file=f)
+        if freq_settings.get("spec_gaussian", False):
+            print("GAUSS", file=f)
+        if "spec_angle" in freq_settings:
+            print("ANGLE", file=f)
+            print(format_crystal_float(freq_settings["spec_angle"]), file=f)
+        if freq_settings.get("spec_refrind", False):
+            print("REFRIND", file=f)
+        if freq_settings.get("spec_dielfun", False):
+            print("DIELFUN", file=f)
+
+        print("END", file=f)
     
     # Raman spectrum generation
     if freq_settings.get("ramspec", False):
+        # RAMSPEC needs Raman intensities (INTENS with the INTRAMAN option)
+        if not has_raman:
+            print("Warning: RAMSPEC requires Raman intensities - set raman=True so INTRAMAN is written")
+
         print("RAMSPEC", file=f)
         
         # Spectrum settings

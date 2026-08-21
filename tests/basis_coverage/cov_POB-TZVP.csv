@@ -1,0 +1,100 @@
+basis,Z,status,detail
+POB-TZVP,1,PRESENT,
+POB-TZVP,2,PRESENT,
+POB-TZVP,3,PRESENT,
+POB-TZVP,4,PRESENT,
+POB-TZVP,5,PRESENT,
+POB-TZVP,6,PRESENT,
+POB-TZVP,7,PRESENT,
+POB-TZVP,8,PRESENT,
+POB-TZVP,9,PRESENT,
+POB-TZVP,10,PRESENT,
+POB-TZVP,11,PRESENT,
+POB-TZVP,12,PRESENT,
+POB-TZVP,13,PRESENT,
+POB-TZVP,14,PRESENT,
+POB-TZVP,15,PRESENT,
+POB-TZVP,16,PRESENT,
+POB-TZVP,17,PRESENT,
+POB-TZVP,18,PRESENT,
+POB-TZVP,19,PRESENT,
+POB-TZVP,20,PRESENT,
+POB-TZVP,21,PRESENT,
+POB-TZVP,22,PRESENT,
+POB-TZVP,23,PRESENT,
+POB-TZVP,24,PRESENT,
+POB-TZVP,25,PRESENT,
+POB-TZVP,26,PRESENT,
+POB-TZVP,27,PRESENT,
+POB-TZVP,28,PRESENT,
+POB-TZVP,29,PRESENT,
+POB-TZVP,30,PRESENT,
+POB-TZVP,31,PRESENT,
+POB-TZVP,32,PRESENT,
+POB-TZVP,33,PRESENT,
+POB-TZVP,34,PRESENT,
+POB-TZVP,35,PRESENT,
+POB-TZVP,36,PRESENT,
+POB-TZVP,37,PRESENT,
+POB-TZVP,38,PRESENT,
+POB-TZVP,39,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 39
+POB-TZVP,40,PRESENT,
+POB-TZVP,41,PRESENT,
+POB-TZVP,42,PRESENT,
+POB-TZVP,43,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 43
+POB-TZVP,44,PRESENT,
+POB-TZVP,45,PRESENT,
+POB-TZVP,46,PRESENT,
+POB-TZVP,47,PRESENT,
+POB-TZVP,48,PRESENT,
+POB-TZVP,49,PRESENT,
+POB-TZVP,50,PRESENT,
+POB-TZVP,51,PRESENT,
+POB-TZVP,52,PRESENT,
+POB-TZVP,53,PRESENT,
+POB-TZVP,54,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 54
+POB-TZVP,55,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 55
+POB-TZVP,56,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 56
+POB-TZVP,57,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 57
+POB-TZVP,58,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 58
+POB-TZVP,59,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 59
+POB-TZVP,60,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 60
+POB-TZVP,61,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 61
+POB-TZVP,62,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 62
+POB-TZVP,63,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 63
+POB-TZVP,64,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 64
+POB-TZVP,65,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 65
+POB-TZVP,66,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 66
+POB-TZVP,67,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 67
+POB-TZVP,68,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 68
+POB-TZVP,69,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 69
+POB-TZVP,70,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 70
+POB-TZVP,71,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 71
+POB-TZVP,72,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 72
+POB-TZVP,73,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 73
+POB-TZVP,74,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 74
+POB-TZVP,75,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 75
+POB-TZVP,76,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 76
+POB-TZVP,77,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 77
+POB-TZVP,78,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 78
+POB-TZVP,79,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 79
+POB-TZVP,80,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 80
+POB-TZVP,81,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 81
+POB-TZVP,82,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 82
+POB-TZVP,83,PRESENT,
+POB-TZVP,84,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 84
+POB-TZVP,85,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 85
+POB-TZVP,86,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 86
+POB-TZVP,87,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 87
+POB-TZVP,88,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 88
+POB-TZVP,89,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 89
+POB-TZVP,90,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 90
+POB-TZVP,91,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 91
+POB-TZVP,92,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 92
+POB-TZVP,93,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 93
+POB-TZVP,94,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 94
+POB-TZVP,95,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 95
+POB-TZVP,96,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 96
+POB-TZVP,97,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 97
+POB-TZVP,98,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 98
+POB-TZVP,99,MISSING,ERROR **** init_pob-TZVP **** Basis set is not implemented for requested element: 99

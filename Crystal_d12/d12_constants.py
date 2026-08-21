@@ -863,7 +863,7 @@ DEFAULT_SETTINGS = {
 OPT_TYPES = {
     "1": "FULLOPTG",
     "2": "CELLONLY", 
-    "3": "INTONLY",
+    "3": "ATOMONLY",  # INTONLY is not a CRYSTAL keyword (manual sec. 7.3.1)
     "4": "ITATOCEL",
     "5": "CVOLOPT"
 }
@@ -1240,7 +1240,6 @@ def select_basis_set(elements: List[int], method: str = "DFT",
                     return basis_config
     
     # Check element compatibility
-    max_z = max(elements) if elements else 1
     heavy_elements = [z for z in elements if z > 86]
     
     print("\n=== BASIS SET SELECTION ===")
@@ -1348,13 +1347,43 @@ def select_basis_set(elements: List[int], method: str = "DFT",
         # Internal basis set selection
         print("\nAvailable internal basis sets:")
         
-        # Filter basis sets by element compatibility
+        # Filter basis sets by element compatibility. The old rule was a guess
+        # (max_z <= 36 or a name whitelist) and got it wrong in both directions:
+        # it hid POB-TZVP-REV2, the only internal set that carries Pb/Bi/Cs, and
+        # it kept sets that do not have the requested elements at all. Ask the
+        # measured coverage tables instead (VERIFIED_INTERNAL_BASIS_ELEMENTS).
+        structure_elements = sorted(set(elements)) if elements else []
         compatible_basis = {}
         for bs_name, bs_info in INTERNAL_BASIS_SETS.items():
-            # Simple compatibility check - could be improved
-            if max_z <= 36 or "ECP" in bs_name or bs_name in ["POB-DZVP", "POB-TZVP"]:
+            is_compatible, _missing = check_basis_set_compatibility(
+                bs_name, structure_elements, "INTERNAL"
+            )
+            if is_compatible:
                 compatible_basis[bs_name] = bs_info
-        
+
+        if not compatible_basis:
+            # Every internal set is missing at least one element. Offering the
+            # menu anyway would write a deck CRYSTAL rejects at LoadBa time.
+            missing_str = ", ".join(
+                str(ELEMENT_SYMBOLS.get(z, z)) for z in structure_elements
+            )
+            print("\nNo internal basis set covers all elements in this structure:")
+            print(f"   {missing_str}")
+            print("Switching to an EXTERNAL basis set (TZVP-REV2),")
+            print("which provides ECPs for elements 37-99.")
+            try:
+                import sys
+                from pathlib import Path
+                sys.path.insert(0, str(Path(__file__).parent.parent))
+                from mace_config import DEFAULT_TZ_PATH
+                fallback_path = DEFAULT_TZ_PATH
+            except ImportError:
+                fallback_path = "./basis_sets/full.basis.triplezeta/"
+            basis_config["basis_set_type"] = "EXTERNAL"
+            basis_config["basis_set"] = fallback_path
+            basis_config["basis_set_path"] = fallback_path
+            return basis_config
+
         # Show standard basis sets first
         print("\n--- STANDARD BASIS SETS ---")
         option_num = 1
@@ -1378,10 +1407,20 @@ def select_basis_set(elements: List[int], method: str = "DFT",
                 print(f"   {element_info}")
                 option_num += 1
         
+        # Default to POB-TZVP-REV2 when it survived the filter - that is what the
+        # old hardcoded "7" resolved to on the full menu. A fixed number cannot
+        # be used any more: get_user_input returns the default verbatim without
+        # a membership test, so "7" on a shorter menu raises KeyError below.
+        default_choice = next(
+            (num for num, name in internal_options.items()
+             if name == "POB-TZVP-REV2"),
+            "1",
+        )
+
         internal_choice = get_user_input(
             "Select internal basis set",
             internal_options,
-            "7"  # Default to POB-TZVP if available
+            default_choice
         )
         basis_config["basis_set"] = internal_options[internal_choice]
     
@@ -1695,16 +1734,53 @@ def safe_int(value: str, default: int) -> int:
         return default
 
 
-def generate_unit_cell_line(spacegroup: int, cell_params: List[float], 
-                           dimensionality: str) -> str:
-    """Generate the unit cell line for CRYSTAL23 input"""
+def _is_rhombohedral_axes(a: float, b: float, c: float,
+                          alpha: float, beta: float, gamma: float) -> bool:
+    """Whether a trigonal cell is given in rhombohedral (not hexagonal) axes.
+
+    Same predicate, same tolerance and same hexagonal-first ordering as
+    NewCifToD12.detect_trigonal_setting, so the two cannot disagree about the
+    same numbers.
+    """
+    if (abs(alpha - 90) < 1e-3 and abs(beta - 90) < 1e-3
+            and abs(gamma - 120) < 1e-3):
+        # alpha ~ 90, beta ~ 90, gamma ~ 120 indicates hexagonal axes
+        return False
+    if abs(alpha - beta) < 1e-3 and abs(beta - gamma) < 1e-3:
+        # alpha = beta = gamma != 90 indicates rhombohedral axes
+        return True
+    return False
+
+
+def generate_unit_cell_line(spacegroup: int, cell_params: List[float],
+                           dimensionality: str,
+                           use_rhombohedral_axes: Optional[bool] = None) -> str:
+    """Generate the unit cell line for CRYSTAL23 input
+
+    use_rhombohedral_axes selects the cell a rhombohedral space group is written
+    in (CRYSTAL's IFHR flag). None means "infer it from the cell parameters".
+    """
     if dimensionality == "MOLECULE":
         return ""  # No unit cell for molecules
     
     a, b, c, alpha, beta, gamma = [float(x) for x in cell_params[:6]]
     
     if dimensionality == "SLAB":
-        return f"{a:.8f} {b:.8f} {gamma:.6f}"
+        # How many values the minimal set has is fixed by the layer group's 2D
+        # lattice type: the SLAB record is "a,[b],[gamma]" with b for
+        # rectangular lattices only and the angle for oblique lattices only,
+        # and Appendix A.2 partitions the 80 layer groups into oblique 1-7,
+        # rectangular 8-48, square 49-64 and hexagonal 65-80. Printing three
+        # values for a square or hexagonal layer group makes CRYSTAL consume
+        # the following line as coordinates.
+        if 1 <= spacegroup <= 7:  # Oblique
+            return f"{a:.8f} {b:.8f} {gamma:.6f}"
+        elif 8 <= spacegroup <= 48:  # Rectangular (P or C)
+            return f"{a:.8f} {b:.8f}"
+        elif 49 <= spacegroup <= 80:  # Square (49-64), hexagonal (65-80)
+            return f"{a:.8f}"
+        else:
+            raise ValueError(f"Invalid layer group: {spacegroup}")
     elif dimensionality == "POLYMER":
         return f"{a:.8f}"
     elif dimensionality == "CRYSTAL":
@@ -1746,6 +1822,20 @@ def generate_unit_cell_line(spacegroup: int, cell_params: List[float],
         elif spacegroup >= 75 and spacegroup <= 142:  # Tetragonal
             return f"{a:.8f} {c:.8f}"
         elif spacegroup >= 143 and spacegroup <= 167:  # Trigonal
+            # A rhombohedral group may be written in either cell, and the two
+            # lines are different quantities: IFHR=0 is the hexagonal cell
+            # (a,c), IFHR=1 the rhombohedral one (a,alpha). Emitting "a c" for
+            # a cell given in rhombohedral axes hands CRYSTAL the a length
+            # where it expects alpha. Non-rhombohedral trigonal groups have
+            # only the hexagonal cell, so they are untouched.
+            if spacegroup in RHOMBOHEDRAL_SPACEGROUPS:
+                rhombohedral = use_rhombohedral_axes
+                if rhombohedral is None:
+                    rhombohedral = _is_rhombohedral_axes(
+                        a, b, c, alpha, beta, gamma
+                    )
+                if rhombohedral:
+                    return f"{a:.8f} {alpha:.6f}"
             return f"{a:.8f} {c:.8f}"
         elif spacegroup >= 168 and spacegroup <= 194:  # Hexagonal
             return f"{a:.8f} {c:.8f}"
@@ -1952,6 +2042,47 @@ def generate_k_points(a: float, b: float, c: float, dimensionality: str, spacegr
     return ka, kb, kc
 
 
+# Element coverage of CRYSTAL23's INTERNAL basis sets, measured rather than
+# assumed. The manual documents no per-element ranges, and the 3c basis sets
+# (def2-mSVP, mTZVP, SOLDEF2MSVP, MINIX, SOLMINIX) are not listed in its
+# internal-library table at all -- so these were mapped by running CRYSTAL23
+# itself on a one-atom cell for every element 1-99 and recording which loaded.
+#
+# Two distinct failure modes were seen, and BOTH are excluded here:
+#   "Basis set is not implemented for requested element: N" -- simply absent.
+#   "ERROR **** LoadBa **** UNIT CELL NOT NEUTRAL"          -- the element is
+#      present but its shell charges disagree with the effective nuclear
+#      charge (an ECP core mismatch in CRYSTAL's own library). Affects
+#      def2-mSVP and MINIX at 81-85, and mTZVP at 79-86. Unusable either way.
+#
+# This is why a lead perovskite under HSE-3c/def2-mSVP dies with a neutrality
+# error on a cell that is perfectly neutral: Pb (82) falls in that broken band.
+#
+# Regenerate with tests/basis_coverage/scan_basis.sh (see AUTHORSHIP notes).
+# Measured against CRYSTAL/23-intel-2023a.
+VERIFIED_INTERNAL_BASIS_ELEMENTS = {
+    # 3c composite-method basis sets (undocumented in the manual)
+    "def2-mSVP": list(range(1, 81)) + [86],
+    "MINIX": list(range(1, 81)) + [86],
+    "mTZVP": list(range(1, 58)) + list(range(72, 79)),
+    "SOLDEF2MSVP": list(range(1, 54)),
+    "SOLMINIX": list(range(1, 54)),
+    # General-purpose internal sets
+    "STO-3G": list(range(1, 54)),
+    "STO-6G": list(range(1, 37)),
+    "POB-DZVP": list(range(1, 43)) + list(range(44, 54)) + [74, 83],
+    "POB-DZVPP": [1] + list(range(3, 10)) + list(range(11, 18))
+    + list(range(19, 36)) + [49, 83],
+    "POB-DZVP-REV2": [1] + list(range(3, 10)) + list(range(11, 18))
+    + list(range(19, 36)),
+    "POB-TZVP": list(range(1, 39)) + list(range(40, 43))
+    + list(range(44, 54)) + [83],
+    "POB-TZVP-REV2": [1] + list(range(3, 10)) + list(range(11, 18))
+    + list(range(19, 36)) + list(range(37, 43)) + list(range(44, 54))
+    + [55, 56] + list(range(72, 85)),
+}
+
+
 def check_basis_set_compatibility(basis_set, atomic_numbers, basis_set_type="INTERNAL"):
     """
     Check if the selected basis set is compatible with all elements in the structure
@@ -1967,16 +2098,63 @@ def check_basis_set_compatibility(basis_set, atomic_numbers, basis_set_type="INT
     missing_elements = []
 
     if basis_set_type == "INTERNAL":
-        if basis_set in INTERNAL_BASIS_SETS:
-            available_elements = INTERNAL_BASIS_SETS[basis_set]["elements"]
+        available_elements = _internal_basis_elements(basis_set)
+        if available_elements is not None:
             for atom_num in set(atomic_numbers):
                 if atom_num not in available_elements:
                     missing_elements.append(atom_num)
     else:  # EXTERNAL
-        # For external basis sets, check if elements need ECP
-        # External basis sets go up to element 99, but some need ECP
+        # An external basis set is a DIRECTORY of per-element files. The only
+        # honest check is whether the file this run would actually read exists:
+        # read_basis_file() returns "" for a missing file, which silently drops
+        # that element's basis block out of the deck.
         for atom_num in set(atomic_numbers):
-            if atom_num > 99:
+            if atom_num > 99 or not _external_basis_file_exists(basis_set, atom_num):
                 missing_elements.append(atom_num)
 
-    return len(missing_elements) == 0, missing_elements
+    return len(missing_elements) == 0, sorted(missing_elements)
+
+
+def _internal_basis_elements(basis_set):
+    """Elements an internal basis set actually supports, or None if unknown.
+
+    Returning None (rather than an empty set) keeps an unrecognised basis name
+    from being reported as "every element is missing"; the caller treats None
+    as "cannot verify" and passes the deck through.
+    """
+    if not isinstance(basis_set, str):
+        # Callers may pass None when no basis has been chosen yet; that is
+        # "cannot verify", not "every element is missing".
+        return None
+    # Measured coverage wins over the hand-written INTERNAL_BASIS_SETS ranges:
+    # several of those were wrong in the dangerous direction (POB-TZVP-REV2
+    # claimed He/Ne/Ar/Tc, which CRYSTAL rejects outright).
+    for table in (VERIFIED_INTERNAL_BASIS_ELEMENTS, INTERNAL_BASIS_SETS):
+        entry = table.get(basis_set)
+        if entry is not None:
+            return set(entry["elements"] if isinstance(entry, dict) else entry)
+        # CRYSTAL keywords are case-insensitive and the 3c names are mixed
+        # case (def2-mSVP, mTZVP), so a user-typed name may not match exactly.
+        lowered = basis_set.lower()
+        for name, value in table.items():
+            if name.lower() == lowered:
+                return set(value["elements"] if isinstance(value, dict) else value)
+    return None
+
+
+def _external_basis_file_exists(basis_dir, atomic_number):
+    """Whether read_basis_file() would find a file for this element.
+
+    Mirrors read_basis_file's lookup exactly, including its +200 ECP naming and
+    its fallback to the un-offset name.
+    """
+    import os
+
+    if not basis_dir or not os.path.isdir(basis_dir):
+        # Not a usable directory - let the existing "basis file not found"
+        # warning in read_basis_file speak rather than blaming the elements.
+        return True
+    candidates = [atomic_number]
+    if atomic_number in ECP_ELEMENTS_EXTERNAL:
+        candidates.insert(0, atomic_number + 200)
+    return any(os.path.isfile(os.path.join(basis_dir, str(n))) for n in candidates)

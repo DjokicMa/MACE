@@ -1,0 +1,100 @@
+basis,Z,status,detail
+mTZVP,1,PRESENT,
+mTZVP,2,PRESENT,
+mTZVP,3,PRESENT,
+mTZVP,4,PRESENT,
+mTZVP,5,PRESENT,
+mTZVP,6,PRESENT,
+mTZVP,7,PRESENT,
+mTZVP,8,PRESENT,
+mTZVP,9,PRESENT,
+mTZVP,10,PRESENT,
+mTZVP,11,PRESENT,
+mTZVP,12,PRESENT,
+mTZVP,13,PRESENT,
+mTZVP,14,PRESENT,
+mTZVP,15,PRESENT,
+mTZVP,16,PRESENT,
+mTZVP,17,PRESENT,
+mTZVP,18,PRESENT,
+mTZVP,19,PRESENT,
+mTZVP,20,PRESENT,
+mTZVP,21,PRESENT,
+mTZVP,22,PRESENT,
+mTZVP,23,PRESENT,
+mTZVP,24,PRESENT,
+mTZVP,25,PRESENT,
+mTZVP,26,PRESENT,
+mTZVP,27,PRESENT,
+mTZVP,28,PRESENT,
+mTZVP,29,PRESENT,
+mTZVP,30,PRESENT,
+mTZVP,31,PRESENT,
+mTZVP,32,PRESENT,
+mTZVP,33,PRESENT,
+mTZVP,34,PRESENT,
+mTZVP,35,PRESENT,
+mTZVP,36,PRESENT,
+mTZVP,37,PRESENT,
+mTZVP,38,PRESENT,
+mTZVP,39,PRESENT,
+mTZVP,40,PRESENT,
+mTZVP,41,PRESENT,
+mTZVP,42,PRESENT,
+mTZVP,43,PRESENT,
+mTZVP,44,PRESENT,
+mTZVP,45,PRESENT,
+mTZVP,46,PRESENT,
+mTZVP,47,PRESENT,
+mTZVP,48,PRESENT,
+mTZVP,49,PRESENT,
+mTZVP,50,PRESENT,
+mTZVP,51,PRESENT,
+mTZVP,52,PRESENT,
+mTZVP,53,PRESENT,
+mTZVP,54,PRESENT,
+mTZVP,55,PRESENT,
+mTZVP,56,PRESENT,
+mTZVP,57,PRESENT,
+mTZVP,58,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 58
+mTZVP,59,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 59
+mTZVP,60,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 60
+mTZVP,61,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 61
+mTZVP,62,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 62
+mTZVP,63,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 63
+mTZVP,64,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 64
+mTZVP,65,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 65
+mTZVP,66,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 66
+mTZVP,67,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 67
+mTZVP,68,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 68
+mTZVP,69,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 69
+mTZVP,70,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 70
+mTZVP,71,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 71
+mTZVP,72,PRESENT,
+mTZVP,73,PRESENT,
+mTZVP,74,PRESENT,
+mTZVP,75,PRESENT,
+mTZVP,76,PRESENT,
+mTZVP,77,PRESENT,
+mTZVP,78,PRESENT,
+mTZVP,79,MISSING,ERROR **** LoadBa **** UNIT CELL NOT NEUTRAL
+mTZVP,80,MISSING,ERROR **** LoadBa **** UNIT CELL NOT NEUTRAL
+mTZVP,81,MISSING,ERROR **** LoadBa **** UNIT CELL NOT NEUTRAL
+mTZVP,82,MISSING,ERROR **** LoadBa **** UNIT CELL NOT NEUTRAL
+mTZVP,83,MISSING,ERROR **** LoadBa **** UNIT CELL NOT NEUTRAL
+mTZVP,84,MISSING,ERROR **** LoadBa **** UNIT CELL NOT NEUTRAL
+mTZVP,85,MISSING,ERROR **** LoadBa **** UNIT CELL NOT NEUTRAL
+mTZVP,86,MISSING,ERROR **** LoadBa **** UNIT CELL NOT NEUTRAL
+mTZVP,87,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 87
+mTZVP,88,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 88
+mTZVP,89,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 89
+mTZVP,90,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 90
+mTZVP,91,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 91
+mTZVP,92,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 92
+mTZVP,93,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 93
+mTZVP,94,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 94
+mTZVP,95,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 95
+mTZVP,96,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 96
+mTZVP,97,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 97
+mTZVP,98,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 98
+mTZVP,99,MISSING,ERROR **** init_def2mtzvp **** Basis set is not implemented for requested element: 99

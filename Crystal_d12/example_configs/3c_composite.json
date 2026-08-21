@@ -10,7 +10,7 @@
     "functional": "PBEH3C",
     "is_3c_method": true,
     "dispersion": false,
-    "basis_set": "MINIX",
+    "basis_set": "def2-mSVP",
     "basis_set_type": "INTERNAL",
     "dft_grid": null,
     "tolerances": {

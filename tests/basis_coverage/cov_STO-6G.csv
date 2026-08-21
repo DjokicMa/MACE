@@ -1,0 +1,100 @@
+basis,Z,status,detail
+STO-6G,1,PRESENT,
+STO-6G,2,PRESENT,
+STO-6G,3,PRESENT,
+STO-6G,4,PRESENT,
+STO-6G,5,PRESENT,
+STO-6G,6,PRESENT,
+STO-6G,7,PRESENT,
+STO-6G,8,PRESENT,
+STO-6G,9,PRESENT,
+STO-6G,10,PRESENT,
+STO-6G,11,PRESENT,
+STO-6G,12,PRESENT,
+STO-6G,13,PRESENT,
+STO-6G,14,PRESENT,
+STO-6G,15,PRESENT,
+STO-6G,16,PRESENT,
+STO-6G,17,PRESENT,
+STO-6G,18,PRESENT,
+STO-6G,19,PRESENT,
+STO-6G,20,PRESENT,
+STO-6G,21,PRESENT,
+STO-6G,22,PRESENT,
+STO-6G,23,PRESENT,
+STO-6G,24,PRESENT,
+STO-6G,25,PRESENT,
+STO-6G,26,PRESENT,
+STO-6G,27,PRESENT,
+STO-6G,28,PRESENT,
+STO-6G,29,PRESENT,
+STO-6G,30,PRESENT,
+STO-6G,31,PRESENT,
+STO-6G,32,PRESENT,
+STO-6G,33,PRESENT,
+STO-6G,34,PRESENT,
+STO-6G,35,PRESENT,
+STO-6G,36,PRESENT,
+STO-6G,37,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 37
+STO-6G,38,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 38
+STO-6G,39,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 39
+STO-6G,40,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 40
+STO-6G,41,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 41
+STO-6G,42,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 42
+STO-6G,43,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 43
+STO-6G,44,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 44
+STO-6G,45,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 45
+STO-6G,46,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 46
+STO-6G,47,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 47
+STO-6G,48,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 48
+STO-6G,49,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 49
+STO-6G,50,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 50
+STO-6G,51,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 51
+STO-6G,52,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 52
+STO-6G,53,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 53
+STO-6G,54,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 54
+STO-6G,55,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 55
+STO-6G,56,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 56
+STO-6G,57,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 57
+STO-6G,58,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 58
+STO-6G,59,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 59
+STO-6G,60,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 60
+STO-6G,61,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 61
+STO-6G,62,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 62
+STO-6G,63,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 63
+STO-6G,64,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 64
+STO-6G,65,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 65
+STO-6G,66,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 66
+STO-6G,67,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 67
+STO-6G,68,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 68
+STO-6G,69,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 69
+STO-6G,70,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 70
+STO-6G,71,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 71
+STO-6G,72,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 72
+STO-6G,73,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 73
+STO-6G,74,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 74
+STO-6G,75,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 75
+STO-6G,76,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 76
+STO-6G,77,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 77
+STO-6G,78,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 78
+STO-6G,79,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 79
+STO-6G,80,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 80
+STO-6G,81,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 81
+STO-6G,82,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 82
+STO-6G,83,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 83
+STO-6G,84,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 84
+STO-6G,85,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 85
+STO-6G,86,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 86
+STO-6G,87,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 87
+STO-6G,88,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 88
+STO-6G,89,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 89
+STO-6G,90,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 90
+STO-6G,91,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 91
+STO-6G,92,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 92
+STO-6G,93,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 93
+STO-6G,94,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 94
+STO-6G,95,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 95
+STO-6G,96,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 96
+STO-6G,97,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 97
+STO-6G,98,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 98
+STO-6G,99,MISSING,ERROR **** init_sto6g **** Basis set is not implemented for requested element: 99

@@ -1,0 +1,100 @@
+basis,Z,status,detail
+SOLDEF2MSVP,1,PRESENT,
+SOLDEF2MSVP,2,PRESENT,
+SOLDEF2MSVP,3,PRESENT,
+SOLDEF2MSVP,4,PRESENT,
+SOLDEF2MSVP,5,PRESENT,
+SOLDEF2MSVP,6,PRESENT,
+SOLDEF2MSVP,7,PRESENT,
+SOLDEF2MSVP,8,PRESENT,
+SOLDEF2MSVP,9,PRESENT,
+SOLDEF2MSVP,10,PRESENT,
+SOLDEF2MSVP,11,PRESENT,
+SOLDEF2MSVP,12,PRESENT,
+SOLDEF2MSVP,13,PRESENT,
+SOLDEF2MSVP,14,PRESENT,
+SOLDEF2MSVP,15,PRESENT,
+SOLDEF2MSVP,16,PRESENT,
+SOLDEF2MSVP,17,PRESENT,
+SOLDEF2MSVP,18,PRESENT,
+SOLDEF2MSVP,19,PRESENT,
+SOLDEF2MSVP,20,PRESENT,
+SOLDEF2MSVP,21,PRESENT,
+SOLDEF2MSVP,22,PRESENT,
+SOLDEF2MSVP,23,PRESENT,
+SOLDEF2MSVP,24,PRESENT,
+SOLDEF2MSVP,25,PRESENT,
+SOLDEF2MSVP,26,PRESENT,
+SOLDEF2MSVP,27,PRESENT,
+SOLDEF2MSVP,28,PRESENT,
+SOLDEF2MSVP,29,PRESENT,
+SOLDEF2MSVP,30,PRESENT,
+SOLDEF2MSVP,31,PRESENT,
+SOLDEF2MSVP,32,PRESENT,
+SOLDEF2MSVP,33,PRESENT,
+SOLDEF2MSVP,34,PRESENT,
+SOLDEF2MSVP,35,PRESENT,
+SOLDEF2MSVP,36,PRESENT,
+SOLDEF2MSVP,37,PRESENT,
+SOLDEF2MSVP,38,PRESENT,
+SOLDEF2MSVP,39,PRESENT,
+SOLDEF2MSVP,40,PRESENT,
+SOLDEF2MSVP,41,PRESENT,
+SOLDEF2MSVP,42,PRESENT,
+SOLDEF2MSVP,43,PRESENT,
+SOLDEF2MSVP,44,PRESENT,
+SOLDEF2MSVP,45,PRESENT,
+SOLDEF2MSVP,46,PRESENT,
+SOLDEF2MSVP,47,PRESENT,
+SOLDEF2MSVP,48,PRESENT,
+SOLDEF2MSVP,49,PRESENT,
+SOLDEF2MSVP,50,PRESENT,
+SOLDEF2MSVP,51,PRESENT,
+SOLDEF2MSVP,52,PRESENT,
+SOLDEF2MSVP,53,PRESENT,
+SOLDEF2MSVP,54,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 54
+SOLDEF2MSVP,55,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 55
+SOLDEF2MSVP,56,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 56
+SOLDEF2MSVP,57,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 57
+SOLDEF2MSVP,58,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 58
+SOLDEF2MSVP,59,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 59
+SOLDEF2MSVP,60,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 60
+SOLDEF2MSVP,61,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 61
+SOLDEF2MSVP,62,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 62
+SOLDEF2MSVP,63,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 63
+SOLDEF2MSVP,64,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 64
+SOLDEF2MSVP,65,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 65
+SOLDEF2MSVP,66,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 66
+SOLDEF2MSVP,67,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 67
+SOLDEF2MSVP,68,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 68
+SOLDEF2MSVP,69,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 69
+SOLDEF2MSVP,70,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 70
+SOLDEF2MSVP,71,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 71
+SOLDEF2MSVP,72,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 72
+SOLDEF2MSVP,73,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 73
+SOLDEF2MSVP,74,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 74
+SOLDEF2MSVP,75,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 75
+SOLDEF2MSVP,76,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 76
+SOLDEF2MSVP,77,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 77
+SOLDEF2MSVP,78,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 78
+SOLDEF2MSVP,79,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 79
+SOLDEF2MSVP,80,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 80
+SOLDEF2MSVP,81,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 81
+SOLDEF2MSVP,82,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 82
+SOLDEF2MSVP,83,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 83
+SOLDEF2MSVP,84,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 84
+SOLDEF2MSVP,85,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 85
+SOLDEF2MSVP,86,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 86
+SOLDEF2MSVP,87,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 87
+SOLDEF2MSVP,88,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 88
+SOLDEF2MSVP,89,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 89
+SOLDEF2MSVP,90,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 90
+SOLDEF2MSVP,91,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 91
+SOLDEF2MSVP,92,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 92
+SOLDEF2MSVP,93,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 93
+SOLDEF2MSVP,94,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 94
+SOLDEF2MSVP,95,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 95
+SOLDEF2MSVP,96,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 96
+SOLDEF2MSVP,97,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 97
+SOLDEF2MSVP,98,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 98
+SOLDEF2MSVP,99,MISSING,ERROR **** init_sol_def2-mSVP **** Basis set is not implemented for requested element: 99

@@ -1,0 +1,100 @@
+basis,Z,status,detail
+SOLMINIX,1,PRESENT,
+SOLMINIX,2,PRESENT,
+SOLMINIX,3,PRESENT,
+SOLMINIX,4,PRESENT,
+SOLMINIX,5,PRESENT,
+SOLMINIX,6,PRESENT,
+SOLMINIX,7,PRESENT,
+SOLMINIX,8,PRESENT,
+SOLMINIX,9,PRESENT,
+SOLMINIX,10,PRESENT,
+SOLMINIX,11,PRESENT,
+SOLMINIX,12,PRESENT,
+SOLMINIX,13,PRESENT,
+SOLMINIX,14,PRESENT,
+SOLMINIX,15,PRESENT,
+SOLMINIX,16,PRESENT,
+SOLMINIX,17,PRESENT,
+SOLMINIX,18,PRESENT,
+SOLMINIX,19,PRESENT,
+SOLMINIX,20,PRESENT,
+SOLMINIX,21,PRESENT,
+SOLMINIX,22,PRESENT,
+SOLMINIX,23,PRESENT,
+SOLMINIX,24,PRESENT,
+SOLMINIX,25,PRESENT,
+SOLMINIX,26,PRESENT,
+SOLMINIX,27,PRESENT,
+SOLMINIX,28,PRESENT,
+SOLMINIX,29,PRESENT,
+SOLMINIX,30,PRESENT,
+SOLMINIX,31,PRESENT,
+SOLMINIX,32,PRESENT,
+SOLMINIX,33,PRESENT,
+SOLMINIX,34,PRESENT,
+SOLMINIX,35,PRESENT,
+SOLMINIX,36,PRESENT,
+SOLMINIX,37,PRESENT,
+SOLMINIX,38,PRESENT,
+SOLMINIX,39,PRESENT,
+SOLMINIX,40,PRESENT,
+SOLMINIX,41,PRESENT,
+SOLMINIX,42,PRESENT,
+SOLMINIX,43,PRESENT,
+SOLMINIX,44,PRESENT,
+SOLMINIX,45,PRESENT,
+SOLMINIX,46,PRESENT,
+SOLMINIX,47,PRESENT,
+SOLMINIX,48,PRESENT,
+SOLMINIX,49,PRESENT,
+SOLMINIX,50,PRESENT,
+SOLMINIX,51,PRESENT,
+SOLMINIX,52,PRESENT,
+SOLMINIX,53,PRESENT,
+SOLMINIX,54,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 54
+SOLMINIX,55,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 55
+SOLMINIX,56,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 56
+SOLMINIX,57,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 57
+SOLMINIX,58,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 58
+SOLMINIX,59,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 59
+SOLMINIX,60,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 60
+SOLMINIX,61,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 61
+SOLMINIX,62,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 62
+SOLMINIX,63,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 63
+SOLMINIX,64,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 64
+SOLMINIX,65,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 65
+SOLMINIX,66,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 66
+SOLMINIX,67,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 67
+SOLMINIX,68,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 68
+SOLMINIX,69,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 69
+SOLMINIX,70,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 70
+SOLMINIX,71,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 71
+SOLMINIX,72,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 72
+SOLMINIX,73,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 73
+SOLMINIX,74,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 74
+SOLMINIX,75,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 75
+SOLMINIX,76,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 76
+SOLMINIX,77,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 77
+SOLMINIX,78,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 78
+SOLMINIX,79,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 79
+SOLMINIX,80,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 80
+SOLMINIX,81,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 81
+SOLMINIX,82,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 82
+SOLMINIX,83,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 83
+SOLMINIX,84,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 84
+SOLMINIX,85,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 85
+SOLMINIX,86,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 86
+SOLMINIX,87,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 87
+SOLMINIX,88,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 88
+SOLMINIX,89,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 89
+SOLMINIX,90,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 90
+SOLMINIX,91,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 91
+SOLMINIX,92,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 92
+SOLMINIX,93,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 93
+SOLMINIX,94,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 94
+SOLMINIX,95,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 95
+SOLMINIX,96,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 96
+SOLMINIX,97,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 97
+SOLMINIX,98,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 98
+SOLMINIX,99,MISSING,ERROR **** init_sol_minix **** Basis set is not implemented for requested element: 99

@@ -134,7 +134,7 @@ def write_sp_calculation(f, calc_settings: Dict[str, Any]):
 OPT_TYPES = {
     "1": "FULLOPTG",
     "2": "CELLONLY", 
-    "3": "ITATOCELL",  # Fixed: was INTONLY
+    "3": "ATOMONLY",  # ITATOCELL is not a CRYSTAL keyword (manual sec. 7.3.1)
     "4": "ITATOCEL",
     "5": "CVOLOPT"
 }
@@ -188,8 +188,8 @@ def _configure_optimization_impl(current_settings: Optional[Dict[str, Any]] = No
     print("\nOptimization types:")
     print("1. FULLOPTG - Full optimization (cell + coordinates)")
     print("2. CELLONLY - Optimize only unit cell")
-    print("3. ITATOCELL - Optimize only internal coordinates iteratively")
-    print("4. ITATOCEL - Iterative cell optimization")
+    print("3. ATOMONLY - Optimize only atomic coordinates (fixed cell)")
+    print("4. ITATOCEL - Iterative optimization (atoms-cell-atoms-cell)")
     print("5. CVOLOPT - Constant volume optimization")
     
     opt_choice = get_user_input("Select optimization type", OPT_TYPES, "1")
