@@ -731,6 +731,20 @@ def verify_and_reduce_to_asymmetric_unit(
                 f"  3: Use original CIF space group {original_spacegroup_num} (no reduction)"
             )
 
+            # Unattended runs cannot answer this. Take the documented default
+            # (keep the CIF's own space group) explicitly and say so, rather
+            # than letting the prompt raise EOFError and surface as a scary
+            # "Error during symmetry analysis" from the outer handler. The
+            # outcome is the same; the difference is that a batch of hundreds
+            # now leaves an auditable record of which structures disagreed.
+            if not sys.stdin.isatty():
+                ui.warn(
+                    f"Space group mismatch (CIF {original_spacegroup_num} vs "
+                    f"spglib {detected_spacegroup_num}) and no terminal to ask - "
+                    f"keeping the CIF space group, no symmetry reduction."
+                )
+                return cif_data
+
             choice = get_user_input(
                 "Select option", {"1": "tolerance", "2": "spglib", "3": "original"}, "3"
             )

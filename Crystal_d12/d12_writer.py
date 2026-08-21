@@ -401,6 +401,22 @@ def write_dft_section(f: TextIO, functional: str, use_dispersion: bool,
         "PBESOL": "PBESOLXC",
         "SOGGA": "SOGGAXC",
     }
+
+    # Functionals CRYSTAL exposes only under EXCHANGE, with no standalone
+    # exchange+correlation keyword: emitting the bare name is not a valid DFT
+    # block. Pairings are the manual's own, not our choice:
+    #   PWGGA and VBH are each listed under BOTH EXCHANGE and CORRELAT, so they
+    #   pair with themselves (the manual shows a literal EXCHANGE PWGGA /
+    #   CORRELAT PWGGA deck).
+    #   WCGGA is EXCHANGE-only; CRYSTAL defines B1WC as EXCHANGE WCGGA /
+    #   CORRELAT PWGGA / HYBRID 16, so PWGGA is its documented partner and
+    #   dropping the HYBRID record leaves the plain Wu-Cohen GGA.
+    #   (WC1LYP attests WCGGA/LYP as the alternative, should it ever be wanted.)
+    EXCHANGE_CORRELATION_PAIRS = {
+        "VBH": ("VBH", "VBH"),
+        "PWGGA": ("PWGGA", "PWGGA"),
+        "WCGGA": ("WCGGA", "PWGGA"),
+    }
     
     # Handle special functional keywords
     if functional in ["PBEH3C", "HSE3C", "B973C", "PBESOL03C", "HSESOL3C"]:
@@ -412,6 +428,17 @@ def write_dft_section(f: TextIO, functional: str, use_dispersion: bool,
             print("XLGRID", file=f)
     elif functional == "mPW1PW91" and use_dispersion:
         print("PW1PW-D3", file=f)
+        # Add DFT grid size only if not default and not None
+        if dft_grid and dft_grid != "DEFAULT":
+            print(dft_grid, file=f)
+    elif functional in EXCHANGE_CORRELATION_PAIRS:
+        # CRYSTAL offers these only as an EXCHANGE choice - there is no
+        # standalone keyword - so the DFT block needs an explicit pair.
+        exchange_kw, correlat_kw = EXCHANGE_CORRELATION_PAIRS[functional]
+        print("EXCHANGE", file=f)
+        print(exchange_kw, file=f)
+        print("CORRELAT", file=f)
+        print(correlat_kw, file=f)
         # Add DFT grid size only if not default and not None
         if dft_grid and dft_grid != "DEFAULT":
             print(dft_grid, file=f)

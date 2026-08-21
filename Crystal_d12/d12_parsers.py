@@ -117,6 +117,25 @@ def rotation_matrix_to_xyz(rotation: List[List[float]], translation: List[float]
     return ', '.join(result)
 
 
+# What the writer emits -> the single functional name the rest of MACE uses.
+# Without these a generated deck cannot be read back: the writer has always
+# emitted the standalone exchange+correlation keyword for PBESOL/SOGGA, and now
+# emits an EXCHANGE/CORRELAT pair for the functionals CRYSTAL has no standalone
+# keyword for. Keep in step with d12_writer.functional_keyword_map and
+# d12_writer.EXCHANGE_CORRELATION_PAIRS.
+STANDALONE_XC_TO_FUNCTIONAL = {
+    "PBESOLXC": "PBESOL",
+    "SOGGAXC": "SOGGA",
+    "PBEXC": "PBE",
+}
+
+XC_PAIR_TO_FUNCTIONAL = {
+    ("VBH", "VBH"): "VBH",
+    ("PWGGA", "PWGGA"): "PWGGA",
+    ("WCGGA", "PWGGA"): "WCGGA",
+}
+
+
 class CrystalOutputParser:
     """Enhanced parser for CRYSTAL17/23 output files"""
 
@@ -1177,6 +1196,7 @@ class CrystalInputParser:
     def _extract_dft_settings(self, lines: List[str]) -> None:
         """Extract DFT functional and settings from input file"""
         in_dft_block = False
+        pending_xc = {}
         for i, line in enumerate(lines):
             stripped = line.strip()
             
@@ -1196,11 +1216,35 @@ class CrystalInputParser:
                 
             if in_dft_block:
                 # Check for all functional categories from d12creation.py
-                
+
+                # EXCHANGE/CORRELAT pair: the writer emits these for functionals
+                # CRYSTAL has no standalone keyword for. Read the pair back to
+                # the single name the rest of MACE uses, so a deck round-trips.
+                if stripped in ("EXCHANGE", "CORRELAT"):
+                    pending_xc[stripped] = (
+                        lines[i + 1].strip() if i + 1 < len(lines) else None
+                    )
+                    if pending_xc.get("EXCHANGE") and pending_xc.get("CORRELAT"):
+                        pair = (pending_xc["EXCHANGE"], pending_xc["CORRELAT"])
+                        self.data["functional"] = XC_PAIR_TO_FUNCTIONAL.get(
+                            pair, pending_xc["EXCHANGE"]
+                        )
+                    continue
+                # The value line belonging to a just-seen EXCHANGE/CORRELAT
+                # keyword is consumed above; don't re-read it as a functional.
+                if i > 0 and lines[i - 1].strip() in ("EXCHANGE", "CORRELAT"):
+                    continue
+
+                # Standalone exchange+correlation keywords. These are what the
+                # writer actually emits for PBESOL/SOGGA, so recognising only the
+                # bare names meant those decks never round-tripped.
+                if stripped in STANDALONE_XC_TO_FUNCTIONAL:
+                    self.data["functional"] = STANDALONE_XC_TO_FUNCTIONAL[stripped]
+
                 # LDA functionals
-                if stripped in ["SVWN", "LDA", "VBH"]:
+                elif stripped in ["SVWN", "LDA", "VBH"]:
                     self.data["functional"] = stripped
-                    
+
                 # GGA functionals
                 elif stripped in ["BLYP", "PBE", "PBESOL", "PWGGA", "SOGGA", "WCGGA", "B97"]:
                     self.data["functional"] = stripped

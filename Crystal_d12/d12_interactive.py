@@ -739,7 +739,9 @@ def configure_spin_polarization_with_defaults(current_settings: Dict[str, Any],
         print("SPINLOCK options (number of unpaired electrons, nα-nβ):")
         print("  - Enter 0 for automatic spin optimization")
         print("  - Enter positive integer for fixed spin multiplicity (e.g., 2 for triplet)")
-        print("  - Enter -1 for antiferromagnetic initial guess")
+        print("  - Enter a negative integer for a net beta-electron excess")
+        print("    (this is a CELL TOTAL, not an ordering: CRYSTAL has no way to")
+        print("     express an antiferromagnetic sublattice from SPINLOCK alone)")
         
         spinlock_input = input(f"SPINLOCK value (nα-nβ) [{current_spinlock}]: ").strip()
         if spinlock_input:

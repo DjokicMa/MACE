@@ -59,15 +59,39 @@ def _block(lines, start, end):
 
 # --- DFT functional keyword mapping ---------------------------------------
 
-@pytest.mark.parametrize("functional", ["VBH", "PWGGA", "WCGGA"])
-def test_gga_records_are_not_rewritten_to_invented_keywords(functional):
-    """VBH/PWGGA/WCGGA were mapped to VBHLYP/PW91GGA/WCGGAPBE, none of which
-    appear in the CRYSTAL23 manual, so the deck named a keyword CRYSTAL cannot
-    resolve. They must now pass through verbatim."""
+@pytest.mark.parametrize("functional,exchange,correlat", [
+    # Manual lists PWGGA and VBH under BOTH EXCHANGE and CORRELAT, so each
+    # pairs with itself. WCGGA is EXCHANGE-only; CRYSTAL's own B1WC is
+    # "EXCHANGE WCGGA / CORRELAT PWGGA / HYBRID 16", so PWGGA is its
+    # documented partner and dropping HYBRID gives the plain Wu-Cohen GGA.
+    ("VBH", "VBH", "VBH"),
+    ("PWGGA", "PWGGA", "PWGGA"),
+    ("WCGGA", "WCGGA", "PWGGA"),
+])
+def test_exchange_only_functionals_emit_a_valid_pair(functional, exchange, correlat):
+    """These were first mapped to VBHLYP/PW91GGA/WCGGAPBE, which appear nowhere
+    in the manual, then passed through bare - but bare is not a valid DFT block
+    either, since CRYSTAL exposes them only as an EXCHANGE choice. The deck must
+    carry an explicit EXCHANGE/CORRELAT pair."""
     lines = _dft(functional)
-    assert lines == ["DFT", functional, "ENDDFT"]
+    assert lines == ["DFT", "EXCHANGE", exchange, "CORRELAT", correlat, "ENDDFT"]
     for invented in ("VBHLYP", "PW91GGA", "WCGGAPBE"):
         assert invented not in lines
+
+
+@pytest.mark.parametrize("functional", ["VBH", "PWGGA", "WCGGA"])
+def test_exchange_correlat_pair_round_trips_through_the_input_parser(functional, tmp_path):
+    """A deck MACE writes must be a deck MACE can read back, or the planned
+    ingest/modify flow silently loses the functional."""
+    from d12_parsers import CrystalInputParser
+
+    deck = tmp_path / "rt.d12"
+    deck.write_text(
+        "rt\nCRYSTAL\n0 0 0\n1\n4.0 4.0 4.0 90.0 90.0 90.0\n"
+        "1\n6 0.0 0.0 0.0\nBASISSET\nPOB-TZVP-REV2\n"
+        + "\n".join(_dft(functional)) + "\nSHRINK\n4 4\nEND\n"
+    )
+    assert CrystalInputParser(str(deck)).parse()["functional"] == functional
 
 
 @pytest.mark.parametrize("functional,keyword", [
