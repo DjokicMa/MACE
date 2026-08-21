@@ -109,7 +109,13 @@ class _Prompts:
 
 
 def _stub_input(monkeypatch, answers):
-    """builtins.input stub keyed on prompt substrings (writer-side prompts)."""
+    """builtins.input stub keyed on prompt substrings (writer-side prompts).
+
+    The writers now refuse to prompt without a terminal (they report and return
+    None instead of raising EOFError in a workflow callback), and that guard runs
+    before input() is reached — so a scripted answer set also has to claim a tty.
+    """
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True, raising=False)
 
     def fake_input(prompt=""):
         for fragment, value in answers.items():

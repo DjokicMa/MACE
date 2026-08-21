@@ -76,11 +76,18 @@ from d12_constants import (
     MULTI_ORIGIN_SPACEGROUPS,
     ATOMIC_NUMBER_TO_SYMBOL,
     ECP_ELEMENTS_EXTERNAL,
+    LAYER_GROUP_FROM_SPACEGROUP,
+    ROD_GROUP_FROM_SPACEGROUP,
+    LAYER_GROUP_CANDIDATES,
+    ROD_GROUP_CANDIDATES,
+    LAYER_GROUPS_POLAR_IN_Z,
+    ROD_GROUPS_FREE_OF_AXIS_OPERATIONS,
     # Utility functions
     yes_no_prompt,
     get_valid_input,
     safe_float,
     safe_int,
+    check_layer_group_cell,
     generate_unit_cell_line,
     read_basis_file,
     generate_k_points,
@@ -1080,6 +1087,260 @@ def create_d12_file(cif_data, output_file, options):
                     f"Detected rhombohedral axes setting for space group {spacegroup}"
                 )
 
+    # Resolve the layer group (SLAB) / rod group (POLYMER)
+    # ---------------------------------------------------
+    # The record after SLAB is a LAYER group (IGR 1-80, Appendix A.2) and the
+    # record after POLYMER a ROD group (IGR 1-99, Appendix A.3). Writing the 3D
+    # space-group number there is wrong in both cases, and the two fail
+    # differently: for a SLAB anything above 80 is out of range (a hexagonal
+    # slab wrote 191 and CRYSTAL aborted before producing any output at all, so
+    # even the fort.87-based error classification saw nothing), while for a
+    # POLYMER a wrong number is usually still inside 1-99, so it is accepted
+    # and silently builds a different chain.
+    #
+    # The appendices settle the reverse lookup only for a space group that
+    # appears on exactly ONE row and is printed there WITHOUT parentheses. A
+    # parenthesised number means the operators are not in the International
+    # Tables first setting; several rows for the same number mean several
+    # orientations of the same group type, which the number cannot tell apart
+    # (A.2 has C2v^1 as both Pmm2, N = 25, and P2mm, N = (25)).
+    #
+    # Even that is only a NECESSARY condition, because this code does not put
+    # the cell into the first setting: the symmetry step asks spglib for the
+    # group NUMBER only (verify_and_reduce_to_asymmetric_unit reads
+    # dataset["number"] and dataset["equivalent_atoms"]) and then keeps the
+    # CIF's own cell with a subset of its own positions - transformation_matrix
+    # and std_lattice are never applied. A standard number can therefore arrive
+    # with the cell in a non-standard setting, which is why the lattice-class
+    # cross-check below is a refusal for an automatically mapped group. When
+    # the caller named the group it is downgraded to a warning: naming the
+    # group asserts the group, and a relaxed cell a few hundredths of a degree
+    # outside the tolerance would otherwise have no route through at all.
+    #
+    # The automatic map is additionally restricted to groups for which the
+    # NON-PERIODIC coordinate has a free origin (LAYER_GROUPS_POLAR_IN_Z,
+    # ROD_GROUPS_FREE_OF_AXIS_OPERATIONS). A SLAB z and a POLYMER y/z are
+    # Cartesian distances from the group's own origin (manual L1021-1022),
+    # while the loops below write positions[i][2] * c and positions[i][1] * b
+    # straight from fractional coordinates - which lands the slab in [0, c) and
+    # the chain at roughly (b/2, c/2). For a group with a z-reversing operation
+    # or an operation about the rod axis that offset is load-bearing and cannot
+    # be recovered from the coordinates (an asymmetric unit legitimately sits
+    # on one side of the mirror), so those groups are only written when the
+    # caller names them and thereby asserts the origin as well.
+    layer_group = None
+    rod_group = None
+    if dimensionality in ("SLAB", "POLYMER"):
+        is_slab = dimensionality == "SLAB"
+        key = "layer_group" if is_slab else "rod_group"
+        appendix = "A.2" if is_slab else "A.3"
+        upper = 80 if is_slab else 99
+        group = options.get(key, None)
+        explicit = group is not None
+        if explicit:
+            # Explicit request. Validate here, before the file is opened:
+            # generate_unit_cell_line raises on an out-of-range layer group and
+            # would leave a truncated deck on disk, and the POLYMER branch does
+            # not range-check at all.
+            try:
+                # bool is a subclass of int, so True would otherwise sail
+                # through as group 1 and silently write a P1 deck.
+                group = None if isinstance(group, bool) else int(group)
+            except (TypeError, ValueError):
+                group = None
+            if group is None or not 1 <= group <= upper:
+                ui.err(
+                    f"Aborting D12 file creation: options['{key}'] = "
+                    f"{options[key]!r} is not a {dimensionality} group number "
+                    f"(1-{upper}, manual Appendix {appendix})."
+                )
+                return False
+        else:
+            table = (
+                LAYER_GROUP_FROM_SPACEGROUP if is_slab else ROD_GROUP_FROM_SPACEGROUP
+            )
+            free_origin = (
+                LAYER_GROUPS_POLAR_IN_Z
+                if is_slab
+                else ROD_GROUPS_FREE_OF_AXIS_OPERATIONS
+            )
+            candidates = (
+                LAYER_GROUP_CANDIDATES if is_slab else ROD_GROUP_CANDIDATES
+            ).get(spacegroup, ())
+            group = table.get(spacegroup, None)
+            if group is None:
+                if len(candidates) > 1:
+                    # Same group type, different orientations of the operators.
+                    why = (
+                        f"the appendix lists {len(candidates)} of them for it "
+                        "(IGR "
+                        + ", ".join(str(g) for g in candidates)
+                        + "), which differ only in the orientation of the "
+                        "symmetry operators, and a space group number cannot "
+                        "tell them apart"
+                    )
+                elif candidates:
+                    why = (
+                        "the appendix prints its number only in parentheses, "
+                        "so the operators are not in the International Tables "
+                        "first setting and the mapping is ambiguous"
+                    )
+                else:
+                    why = "the appendix does not list it"
+                ui.err(
+                    f"Aborting D12 file creation: space group {spacegroup} has "
+                    f"no unambiguous {dimensionality} group in manual Appendix "
+                    f"{appendix} - {why}. Set options['{key}'] explicitly if "
+                    f"you know the right one, or write the structure in P1"
+                    + (
+                        ", or cut the slab from the 3D cell with SLABCUT "
+                        "(options['slabcut'], two runs: a probe run to number "
+                        "the layers, then the real one)"
+                        if is_slab
+                        else ""
+                    )
+                    + "."
+                )
+                return False
+            if group not in free_origin:
+                nonperiodic = "z" if is_slab else "y and z"
+                by_hand = (
+                    "cut the slab from the 3D cell with SLABCUT instead "
+                    "(options['slabcut'], two runs: a probe run to number the "
+                    "layers, then the real one), or "
+                    if is_slab
+                    else ""
+                )
+                ui.err(
+                    f"Aborting D12 file creation: space group {spacegroup} maps "
+                    f"to {dimensionality} group {group} (manual Appendix "
+                    f"{appendix}), which has symmetry operations that fix the "
+                    f"origin of the non-periodic coordinate{'s' if not is_slab else ''} "
+                    f"({nonperiodic}, Cartesian in a {dimensionality} deck - "
+                    f"manual {'L1021-1022' if is_slab else 'L1019-1020'}). "
+                    f"CRYSTAL generates the rest of the "
+                    f"structure from that origin, and this converter derives "
+                    f"{nonperiodic} from fractional coordinates whose origin is "
+                    f"the cell corner, not the symmetry element - so the deck "
+                    f"would describe a different system. Set options['{key}'] "
+                    f"explicitly once the structure is placed on the symmetry "
+                    f"element, {by_hand}write the structure in P1."
+                )
+                return False
+            ui.print(
+                f"{dimensionality} group {group} from space group "
+                f"{spacegroup} (manual Appendix {appendix})"
+            )
+
+        if is_slab:
+            problem = check_layer_group_cell(group, a, b, gamma)
+            if problem is not None:
+                if explicit:
+                    ui.warn(
+                        f"Warning: {problem} Writing the deck anyway because "
+                        f"options['layer_group'] named the group explicitly - "
+                        f"check the CELL printed by CRYSTAL against the input."
+                    )
+                else:
+                    ui.err(f"Aborting D12 file creation: {problem}")
+                    return False
+            layer_group = group
+        else:
+            rod_group = group
+
+    # Resolve SLABCUT (opt-in, options["slabcut"])
+    # -------------------------------------------
+    # The other route to a 2D system: instead of naming a layer group, keep the
+    # 3D deck and let CRYSTAL cut the slab. "A two-sided layer group is derived
+    # from the 3D symmetry group of the original crystal structure" (SLABCUT
+    # note 2, manual L4751-4753), so CRYSTAL picks the layer group and the z
+    # origin itself and neither the appendix lookup nor the origin-freedom
+    # guard above applies. Absent from options, nothing below runs and the deck
+    # is byte-identical to before.
+    slabcut = options.get("slabcut", None)
+    if slabcut is not None:
+        if not isinstance(slabcut, dict):
+            ui.err(
+                "Aborting D12 file creation: options['slabcut'] must be a "
+                "mapping with 'miller' and (unless 'probe') 'isup' and "
+                "'nlayers' (manual SLABCUT, page 71)."
+            )
+            return False
+        if dimensionality != "CRYSTAL":
+            ui.err(
+                f"Aborting D12 file creation: options['slabcut'] cuts a slab "
+                f"out of a 3D structure and belongs in the geometry editing "
+                f"section of a CRYSTAL deck (manual page 71), but "
+                f"dimensionality is {dimensionality}."
+            )
+            return False
+        miller = slabcut.get("miller", None)
+        try:
+            miller = [
+                None if isinstance(v, bool) else int(v) for v in tuple(miller)
+            ]
+        except (TypeError, ValueError):
+            miller = None
+        if (
+            miller is None
+            or len(miller) != 3
+            or None in miller
+            or not any(miller)
+        ):
+            ui.err(
+                f"Aborting D12 file creation: options['slabcut']['miller'] = "
+                f"{slabcut.get('miller')!r} is not three crystallographic "
+                f"(Miller) indices of the plane parallel to the surface "
+                f"(manual L4729-4731)."
+            )
+            return False
+        slabcut = dict(slabcut, miller=miller)
+        if slabcut.get("probe"):
+            # ISUP is not knowable before run 1 - "The surface layer ISUP may
+            # be found from an analysis of the information printed by the
+            # SLABINFO option" (manual L4759-4760) - so a probe deck requires
+            # nothing but the Miller indices.
+            ui.print(
+                f"SLABCUT probe deck for ({miller[0]} {miller[1]} {miller[2]}): "
+                f"SLABINFO + TESTGEOM. CRYSTAL stops after the geometry block "
+                f"and prints the atomic layers numbered by z; take ISUP from "
+                f"that listing and re-run without 'probe'."
+            )
+        else:
+            isup = slabcut.get("isup", None)
+            nlayers = slabcut.get("nlayers", None)
+            try:
+                isup = None if isinstance(isup, bool) else int(isup)
+                nlayers = None if isinstance(nlayers, bool) else int(nlayers)
+            except (TypeError, ValueError):
+                isup = nlayers = None
+            if isup is None or nlayers is None or isup < 1 or nlayers < 1:
+                ui.err(
+                    f"Aborting D12 file creation: options['slabcut'] needs "
+                    f"'isup' (label of the surface layer) and 'nlayers' "
+                    f"(number of atomic layers), both >= 1 - got "
+                    f"{slabcut.get('isup')!r} and {slabcut.get('nlayers')!r}. "
+                    f"The manual requires two separate runs (L4763-4771): set "
+                    f"'probe': True first to get the layers numbered by "
+                    f"SLABINFO, then read ISUP off that listing."
+                )
+                return False
+            slabcut = dict(slabcut, isup=isup, nlayers=nlayers)
+            # SLABCUT chooses NEW 2D lattice vectors - "minimal cell area,
+            # shortest translation vectors, minimum |cos(gamma)|" (note 4,
+            # manual L4755-4758) - which for a general (hkl) are not the bulk
+            # a and b. IS3 is forced to 1 by CRYSTAL for a 2D system (manual
+            # L1772, L9356), but IS1 and IS2 below are still derived from the
+            # 3D cell, and SLABINFO note 5 warns that "The shape of the new
+            # cell may be very different, computational parameters must be
+            # carefully checked."
+            ui.warn(
+                f"Warning: SLABCUT ({miller[0]} {miller[1]} {miller[2]}) makes "
+                f"CRYSTAL choose new 2D lattice vectors; the SHRINK factors "
+                f"below are computed from the 3D cell. Check them against the "
+                f"2D cell CRYSTAL prints."
+            )
+
     # Open output file
     with open(output_file, "w") as f:
         # Write title
@@ -1106,12 +1367,24 @@ def create_d12_file(cif_data, output_file, options):
             print(cell_line, file=f)
         elif dimensionality == "SLAB":
             print("SLAB", file=f)
-            print(spacegroup, file=f)
-            print(f"{a:.8f} {b:.8f} {gamma:.6f}", file=f)
+            print(layer_group, file=f)
+            # The minimal set of lattice vectors depends on the layer group's
+            # 2D lattice class (manual L999-1002), not on the numbers: layer
+            # group 1 is oblique and still takes a, b and gamma, so every
+            # existing P1 slab deck is byte-identical.
+            cell_params = [a, b, c, alpha, beta, gamma]
+            print(
+                generate_unit_cell_line(layer_group, cell_params, dimensionality),
+                file=f,
+            )
         elif dimensionality == "POLYMER":
             print("POLYMER", file=f)
-            print(spacegroup, file=f)
-            print(f"{a:.8f}", file=f)
+            print(rod_group, file=f)
+            cell_params = [a, b, c, alpha, beta, gamma]
+            print(
+                generate_unit_cell_line(rod_group, cell_params, dimensionality),
+                file=f,
+            )
         elif dimensionality == "MOLECULE":
             print("MOLECULE", file=f)
             print("1", file=f)  # C1 symmetry for molecules
@@ -1158,6 +1431,33 @@ def create_d12_file(cif_data, output_file, options):
                     f"{atomic_number} {positions[i][0]:.10f} {positions[i][1]:.10f} {positions[i][2]:.10f} Biso 1.000000 {symbols[i]}",
                     file=f,
                 )
+
+        # Geometry editing: cut a 2D slab out of the 3D cell (manual page 71).
+        # The manual's own alpha-Al2O3 (001) example (L30416-30436) puts these
+        # records straight after the coordinates, with no END in between:
+        # "CRYSTAL / 0 0 0 / 167 / 4.7602 12.9933 / 2 / <2 atoms> / SLABCUT /
+        # 0 0 1 / 1 6 / OPTGEOM / ...". The geometry block is still closed
+        # further down by BASISSET or END, exactly as before.
+        if slabcut is not None:
+            h, k, l = slabcut["miller"]
+            if slabcut.get("probe"):
+                # Run 1 of the two the manual requires: "keyword SLABINFO:
+                # Rotation of the 3D cell, to have the z axis perpendicular to
+                # the (hkl) place, with numbering of the atomic layers in the
+                # rotated reference cell" (L4763-4767). ISUP for run 2 is read
+                # off that numbering. TESTGEOM is the manual's own prescription
+                # for stopping there: "This information can be obtained by a
+                # test run, inserting in the geometry input block the keyword
+                # TESTGEOM. Only the geometry input block is processed, then
+                # the program stops" (L4759-4762).
+                print("SLABINFO", file=f)
+                print(f"{h} {k} {l}", file=f)
+                print("TESTGEOM", file=f)
+            else:
+                print("SLABCUT", file=f)
+                print(f"{h} {k} {l}", file=f)
+                # ISUP and NL share one record (manual L4731-4735).
+                print(f"{slabcut['isup']} {slabcut['nlayers']}", file=f)
 
         # Write calculation-type specific parameters BEFORE basis set
         if calculation_type == "OPT":
@@ -1460,6 +1760,20 @@ def print_summary(options):
 
     # Basic settings
     ui.print(f"Dimensionality: {options.get('dimensionality', 'CRYSTAL')}")
+    if options.get("layer_group") is not None:
+        ui.print(f"Layer group (Appendix A.2): {options['layer_group']}")
+    if options.get("rod_group") is not None:
+        ui.print(f"Rod group (Appendix A.3): {options['rod_group']}")
+    slabcut = options.get("slabcut")
+    if isinstance(slabcut, dict):
+        miller = " ".join(str(v) for v in slabcut.get("miller", []))
+        if slabcut.get("probe"):
+            ui.print(f"SLABCUT: probe run (SLABINFO {miller} + TESTGEOM)")
+        else:
+            ui.print(
+                f"SLABCUT: ({miller}), ISUP {slabcut.get('isup')}, "
+                f"{slabcut.get('nlayers')} layers"
+            )
     ui.print(f"Calculation type: {options.get('calculation_type', 'SP')}")
     if options.get("calculation_type") == "OPT":
         ui.print(f"Optimization type: {options.get('optimization_type', 'FULLOPTG')}")

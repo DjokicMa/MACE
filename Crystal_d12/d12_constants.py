@@ -490,6 +490,356 @@ RHOMBOHEDRAL_SPACEGROUPS = [146, 148, 155, 160, 161, 166, 167]
 
 
 # ============================================================
+# Layer groups (SLAB) and rod groups (POLYMER)
+# ============================================================
+
+# The record after the SLAB keyword is a LAYER group and the record after
+# POLYMER a ROD group - CRYSTAL's own IGR numbering, NOT the 3D space group.
+# Appendix A.2 (manual page 421) lists the 80 layer groups, Appendix A.3
+# (pages 422-424) the 99 rod groups; manual L434 confirms the counts: "230
+# space groups, 80 layer groups, 99 rod groups, 45 point groups are available
+# (Appendix A)".
+#
+# Both appendices also print the corresponding 3D space group, which is what
+# makes the reverse lookup below possible. A.2's header states the one
+# restriction on it: "The number of the space group is written in parentheses
+# when the orientation of the symmetry operators does not correspond to the
+# first setting in the I. T." A.3 repeats that sentence and adds that "the
+# symmetry operators are generated for the space groups (principal axis z) and
+# then rotated by 90 degrees through y, to have the polymer axis along x
+# (CRYSTAL convention)" - a relabelling of axes, which leaves the
+# International Tables NUMBER unchanged.
+#
+# The reverse lookup is NOT one-to-one and the parentheses alone do not make it
+# one. A space group can appear on several rows, at most one of them
+# unparenthesised, and those rows are the same group type in different
+# orientations: A.2 rows 23 and 27 are both C2v^1 with N = 25 and N = (25) -
+# Pmm2 has its 2-fold along the surface normal, P2mm in the plane - and a space
+# group number cannot tell them apart. The same holds for A.2 25/(25) siblings
+# at N = 28 and N = 51, and for A.3 N = 25 (rows 20, 24, 26) and N = 26 (rows
+# 21, 22). So the map keeps a space group only when the appendix lists exactly
+# ONE row for it AND that row is unparenthesised.
+#
+# Even then the map is only a NECESSARY condition. Being unparenthesised is a
+# property of CRYSTAL's table, not of the caller's structure: it says the
+# table's operators are in the International Tables first setting, and the
+# lookup is therefore correct only if the incoming cell is in that setting too,
+# with the non-periodic direction along c (SLAB) or the chain along a (POLYMER,
+# manual note 18 at L1232-1233). Nothing in this converter enforces or checks
+# that - the CIF/spglib path reads only the space-group NUMBER and writes the
+# CIF's own cell back out - which is why callers of these maps must also run
+# check_layer_group_cell and the origin-freedom guards below.
+#
+# The rows are transcribed from the PDF appendix; the plain-text dump of the
+# manual interleaves the two printed columns of A.2 and cannot be used. The
+# space-group column keeps the manual's parentheses verbatim so that the
+# first-setting flag is derived from the manual's own notation rather than
+# re-asserted here. Layer groups 17 and 18 both print "P2/b11" in A.2, which
+# reads as a typographical slip - they are distinguished only by C2h^4/(13)
+# against C2h^5/(14) - and are kept exactly as printed. (A.3's row 78 has a
+# similar oddity, "P6_6" in the Hermann-Mauguin column against C6^6 and space
+# group 173; that column is not carried here, only A.3's "polymer" symbol,
+# which reads P6_3.) None of the symbol strings are used to make a decision.
+
+# (IGR, Hermann-Mauguin, Schoenflies, space group as printed)
+LAYER_GROUP_ROWS = (
+    # Oblique lattices (P)
+    (1, "P1", "C1^1", "1"),
+    (2, "P-1", "Ci^1", "2"),
+    (3, "P112", "C2^1", "(3)"),
+    (4, "P11m", "Cs^1", "(6)"),
+    (5, "P11a", "Cs^2", "(7)"),
+    (6, "P112/m", "C2h^1", "(10)"),
+    (7, "P112/a", "C2h^4", "(13)"),
+    # Rectangular lattices (P or C)
+    (8, "P211", "C2^1", "(3)"),
+    (9, "P2_111", "C2^2", "(4)"),
+    (10, "C211", "C2^3", "(5)"),
+    (11, "Pm11", "Cs^1", "(6)"),
+    (12, "Pb11", "Cs^2", "(7)"),
+    (13, "Cm11", "Cs^3", "(8)"),
+    (14, "P2/m11", "C2h^1", "(10)"),
+    (15, "P2_1/m11", "C2h^2", "(11)"),
+    (16, "C2/m11", "C2h^3", "(12)"),
+    (17, "P2/b11", "C2h^4", "(13)"),
+    (18, "P2/b11", "C2h^5", "(14)"),
+    (19, "P222", "D2^1", "16"),
+    (20, "P22_12", "D2^2", "(17)"),
+    (21, "P2_12_12", "D2^3", "18"),
+    (22, "C222", "D2^6", "21"),
+    (23, "Pmm2", "C2v^1", "25"),
+    (24, "Pma2", "C2v^4", "28"),
+    (25, "Pba2", "C2v^8", "32"),
+    (26, "Cmm2", "C2v^11", "35"),
+    (27, "P2mm", "C2v^1", "(25)"),
+    (28, "P2_1am", "C2v^2", "(26)"),
+    (29, "P2_1ma", "C2v^2", "(26)"),
+    (30, "P2mb", "C2v^4", "(28)"),
+    (31, "P2_1mn", "C2v^7", "(31)"),
+    (32, "P2aa", "C2v^3", "(27)"),
+    (33, "P2_1ab", "C2v^5", "(29)"),
+    (34, "P2an", "C2v^6", "(30)"),
+    (35, "C2mm", "C2v^1", "(38)"),
+    (36, "C2mb", "C2v^5", "(39)"),
+    (37, "Pmmm", "D2h^1", "47"),
+    (38, "Pmam", "D2h^5", "(51)"),
+    (39, "Pmma", "D2h^5", "51"),
+    (40, "Pmmn", "D2h^13", "59"),
+    (41, "Pbam", "D2h^9", "55"),
+    (42, "Pmaa", "D2h^3", "(49)"),
+    (43, "Pman", "D2h^7", "(53)"),
+    (44, "Pbma", "D2h^11", "(57)"),
+    (45, "Pbaa", "D2h^8", "(54)"),
+    (46, "Pban", "D2h^4", "50"),
+    (47, "Cmmm", "D2h^19", "65"),
+    (48, "Cmma", "D2h^21", "67"),
+    # Square lattices (P)
+    (49, "P4", "C4^1", "75"),
+    (50, "P-4", "S4^1", "81"),
+    (51, "P4/m", "C4h^1", "83"),
+    (52, "P4/n", "C4h^3", "85"),
+    (53, "P422", "D4^1", "89"),
+    (54, "P42_12", "D4^2", "90"),
+    (55, "P4mm", "C4v^1", "99"),
+    (56, "P4bm", "C4v^2", "100"),
+    (57, "P-42m", "D2d^1", "111"),
+    (58, "P-42_1m", "D2d^3", "113"),
+    (59, "P-4m2", "D2d^5", "115"),
+    (60, "P-4b2", "D2d^7", "117"),
+    (61, "P4/mmm", "D4h^1", "123"),
+    (62, "P4/nbm", "D4h^3", "125"),
+    (63, "P4/mbm", "D4h^5", "127"),
+    (64, "P4/nmm", "D4h^7", "129"),
+    # Hexagonal lattices (P)
+    (65, "P3", "C3^1", "143"),
+    (66, "P-3", "C3i^1", "147"),
+    (67, "P312", "D3^1", "149"),
+    (68, "P321", "D3^2", "150"),
+    (69, "P3m1", "C3v^1", "156"),
+    (70, "P31m", "C3v^2", "157"),
+    (71, "P-31m", "D3d^1", "162"),
+    (72, "P-3m1", "D3d^3", "164"),
+    (73, "P6", "C6^1", "168"),
+    (74, "P-6", "C3h^1", "174"),
+    (75, "P6/m", "C6h^1", "175"),
+    (76, "P622", "D6^1", "177"),
+    (77, "P6mm", "C6v^1", "183"),
+    (78, "P-6m2", "D3h^1", "187"),
+    (79, "P-62m", "D3h^3", "189"),
+    (80, "P6/mmm", "D6h^1", "191"),
+)
+
+# (IGR, "polymer" symbol along x, Schoenflies, space group as printed).
+# A.3 also prints the Hermann-Mauguin symbol in the z-axis setting; it is
+# documentation only and is not carried here.
+ROD_GROUP_ROWS = (
+    (1, "P1", "C1^1", "1"),
+    (2, "P-1", "Ci^1", "2"),
+    (3, "P211", "C2^1", "(3)"),
+    (4, "P2_111", "C2^2", "(4)"),
+    (5, "P121", "C2^1", "(3)"),
+    (6, "P112", "C2^1", "(3)"),
+    (7, "Pm11", "Cs^1", "(6)"),
+    (8, "P1m1", "Cs^1", "(6)"),
+    (9, "P1a1", "Cs^2", "(7)"),
+    (10, "P11m", "Cs^1", "(6)"),
+    (11, "P11a", "Cs^2", "(7)"),
+    (12, "P2/m11", "C2h^1", "(10)"),
+    (13, "P2_1/m11", "C2h^2", "(11)"),
+    (14, "P12/m1", "C2h^1", "(10)"),
+    (15, "P12/a1", "C2h^4", "(13)"),
+    (16, "P112/m", "C2h^1", "(10)"),
+    (17, "P112/a", "C2h^4", "(13)"),
+    (18, "P222", "D2^1", "16"),
+    (19, "P2_122", "D2^2", "17"),
+    (20, "P2mm", "C2v^1", "25"),
+    (21, "P2_1am", "C2v^2", "26"),
+    (22, "P2_1ma", "C2v^2", "(26)"),
+    (23, "P2aa", "C2v^3", "27"),
+    (24, "Pm2m", "C2v^1", "(25)"),
+    (25, "Pm2a", "C2v^4", "(28)"),
+    (26, "Pmm2", "C2v^1", "(25)"),
+    (27, "Pma2", "C2v^4", "(28)"),
+    (28, "Pmmm", "D2h^1", "47"),
+    (29, "P2/m2/a2/a", "D2h^3", "49"),
+    (30, "P2_1/m2/m2/a", "D2h^5", "(51)"),
+    (31, "P2_1/m2/a2/m", "D2h^5", "(51)"),
+    (32, "P4", "C4^1", "75"),
+    (33, "P4_1", "C4^2", "76"),
+    (34, "P4_2", "C4^3", "77"),
+    (35, "P4_3", "C4^4", "78"),
+    (36, "P-4", "S4^1", "81"),
+    (37, "P4/m", "C4h^1", "83"),
+    (38, "P4_2/m", "C4h^2", "84"),
+    (39, "P422", "D4^1", "89"),
+    (40, "P4_122", "D4^3", "91"),
+    (41, "P4_222", "D4^5", "93"),
+    (42, "P4_322", "D4^7", "95"),
+    (43, "P4mm", "C4v^1", "99"),
+    (44, "P4_2am", "C4v^3", "101"),
+    (45, "P4aa", "C4v^5", "103"),
+    (46, "P4_2ma", "C4v^7", "105"),
+    (47, "P-42m", "D2d^1", "111"),
+    (48, "P-42a", "D2d^2", "112"),
+    (49, "P-4m2", "D2d^5", "115"),
+    (50, "P-4a2", "D2d^6", "116"),
+    (51, "P4/mmm", "D4h^1", "123"),
+    (52, "P4/m2/a2/a", "D4h^2", "124"),
+    (53, "P4_2/m2/m2/a", "D4h^9", "131"),
+    (54, "P4_2/m2/a2/m", "D4h^10", "132"),
+    (55, "P3", "C3^1", "143"),
+    (56, "P3_1", "C3^2", "144"),
+    (57, "P3_2", "C3^3", "145"),
+    (58, "P-3", "C3i^1", "147"),
+    (59, "P312", "D3^1", "149"),
+    (60, "P3_112", "D3^3", "151"),
+    (61, "P3_212", "D3^5", "153"),
+    (62, "P321", "D3^2", "150"),
+    (63, "P3_121", "D3^4", "152"),
+    (64, "P3_221", "D3^6", "154"),
+    (65, "P3m1", "C3v^1", "156"),
+    (66, "P3a1", "C3v^3", "158"),
+    (67, "P31m", "C3v^2", "157"),
+    (68, "P31a", "C3v^4", "159"),
+    (69, "P-31m", "D3d^1", "162"),
+    (70, "P-31a", "D3d^2", "163"),
+    (71, "P-3m1", "D3d^3", "164"),
+    (72, "P-3a1", "D3d^4", "165"),
+    (73, "P6", "C6^1", "168"),
+    (74, "P6_1", "C6^2", "169"),
+    (75, "P6_5", "C6^3", "170"),
+    (76, "P6_2", "C6^4", "171"),
+    (77, "P6_4", "C6^5", "172"),
+    (78, "P6_3", "C6^6", "173"),
+    (79, "P-6", "C3h^1", "174"),
+    (80, "P6/m", "C6h^1", "175"),
+    (81, "P6_3/m", "C6h^2", "176"),
+    (82, "P622", "D6^1", "177"),
+    (83, "P6_122", "D6^2", "178"),
+    (84, "P6_522", "D6^3", "179"),
+    (85, "P6_222", "D6^4", "180"),
+    (86, "P6_422", "D6^5", "181"),
+    (87, "P6_322", "D6^6", "182"),
+    (88, "P6mm", "C6v^1", "183"),
+    (89, "P6aa", "C6v^2", "184"),
+    (90, "P6_3am", "C6v^3", "185"),
+    (91, "P6_3ma", "C6v^4", "186"),
+    (92, "P-6m2", "D3h^1", "187"),
+    (93, "P-6a2", "D3h^2", "188"),
+    (94, "P-62m", "D3h^3", "189"),
+    (95, "P-62a", "D3h^4", "190"),
+    (96, "P6/mmm", "D6h^1", "191"),
+    (97, "P6/m2/a2/a", "D6h^2", "192"),
+    (98, "P6_3/m2/a2/m", "D6h^3", "193"),
+    (99, "P6_3/m2/m2/a", "D6h^4", "194"),
+)
+
+
+def _appendix_a_maps(rows):
+    """Split an appendix A.2/A.3 transcription into the two lookups needed.
+
+    Returns (igr_by_spacegroup, igrs_by_spacegroup).
+
+    The second is every row the appendix prints for a space group, in IGR
+    order; the first keeps only the space groups with exactly ONE such row
+    whose number the manual prints WITHOUT parentheses. Both conditions are
+    needed. Parentheses mean "the orientation of the symmetry operators does
+    not correspond to the first setting in the I. T." (A.2/A.3 header), so a
+    parenthesised row cannot be inverted; and a space group with several rows
+    has several orientations of the same group type, which its number cannot
+    distinguish (A.2 N = 25 is C2v^1 as both Pmm2 and P2mm).
+    """
+    candidates = {}
+    first_setting = set()
+    for igr, _symbol, _schoenflies, number in rows:
+        spacegroup = int(number.strip("()"))
+        candidates.setdefault(spacegroup, []).append(igr)
+        if not number.startswith("("):
+            first_setting.add(igr)
+    by_spacegroup = {
+        spacegroup: igrs[0]
+        for spacegroup, igrs in candidates.items()
+        if len(igrs) == 1 and igrs[0] in first_setting
+    }
+    return by_spacegroup, {
+        spacegroup: tuple(igrs) for spacegroup, igrs in sorted(candidates.items())
+    }
+
+
+# 3D space group -> layer group (45 of the 230) / rod group (75 of the 230),
+# plus every candidate row the appendix prints, used to explain a refusal.
+LAYER_GROUP_FROM_SPACEGROUP, LAYER_GROUP_CANDIDATES = _appendix_a_maps(
+    LAYER_GROUP_ROWS
+)
+ROD_GROUP_FROM_SPACEGROUP, ROD_GROUP_CANDIDATES = _appendix_a_maps(ROD_GROUP_ROWS)
+
+# Layer groups in which every symmetry operation preserves the SIGN of z.
+#
+# A SLAB atom record gives "z in Angstrom, x, y in fractional units" (manual
+# L1021-1022, and again at L29023-29024) - z is a Cartesian, NON-periodic
+# coordinate measured from the layer group's own origin, unlike the fractional
+# z of a 3D deck which is only defined modulo the c translation. Every layer
+# group containing an operation that maps z to -z (an inversion centre, a
+# mirror or glide perpendicular to z, a 2-fold axis lying in the plane, S4,
+# sigma_h) pins that origin at z = 0 and CRYSTAL builds the other half of the
+# slab from it: the manual's own diamond (100) deck (L29193-29207) lists five
+# atoms at z = 0.44625 .. 4.01625 under layer group 39 for a slab its title
+# calls "ten layers slab".
+#
+# The groups below are the ones with no such operation - C1; the Cn with the
+# axis along z (P112, P4, P3, P6); the Cnv with the axis along z (Pmm2, Pma2,
+# Pba2, Cmm2, P4mm, P4bm, P3m1, P31m, P6mm); and the Cs whose mirror/glide is
+# perpendicular to x and therefore contains z (Pm11, Pb11, Cm11). For these the
+# z origin is free and any offset may be written.
+#
+# For the rest, the offset cannot be recovered from the coordinates either: the
+# atoms handed to a converter are an ASYMMETRIC UNIT, which sits on one side of
+# the mirror rather than straddling it (diamond's five atoms are all at z > 0,
+# and so are corundum's six under layer group 7). A "is it centred on zero"
+# test would therefore reject correct input as often as wrong input. The only
+# safe automatic answer is to map a 3D space group to a layer group in this set
+# and refuse otherwise, leaving the two-sided groups to an explicit request in
+# which the caller also asserts where the z origin is.
+LAYER_GROUPS_POLAR_IN_Z = frozenset(
+    {1, 3, 11, 12, 13, 23, 24, 25, 26, 49, 55, 56, 65, 69, 70, 73, 77}
+)
+
+# Rod groups that leave y and z unconstrained.
+#
+# A POLYMER atom record gives "y,z in Angstrom, x in fractional units" (manual
+# L1019-1020): y and z are Cartesian distances from the ROD AXIS. Every rod
+# group this converter can auto-map - i.e. every unparenthesised A.3 row other
+# than P1, starting with the inversion centre at IGR 2 - has at least one
+# operation that fixes the axis at y = z = 0, so the manual's polymer decks
+# carry signed coordinates about it - (SN)x "16 0.0 -0.844969 0.0" (L29220),
+# the water polymer "1 0.032558 0.836088 -0.400375" and "8 0.5 -1.370589 0."
+# (L29234-29239), formamide "8 -7.548E-2 5.302E-3 0.7665" (L29255-29260).
+# The claim is deliberately scoped to the auto-mappable rows: it is NOT true of
+# A.3 as a whole. IGR 7 (Pm11) is a mirror perpendicular to x and leaves both y
+# and z free, and 8-11 each pin only one of the two. All of those are printed
+# in parentheses, so they can never be auto-mapped and never reach this set.
+# Those same decks show why the offset cannot be checked for either: (SN)x's
+# two asymmetric-unit atoms sit at y = -0.844969 and y = 0.667077, nowhere near
+# symmetric about the axis, because the screw axis generates the partners.
+ROD_GROUPS_FREE_OF_AXIS_OPERATIONS = frozenset({1})
+
+# Tolerances for the 2D lattice-class cross-check (check_layer_group_cell).
+#
+# Angles: real optimized slabs in this project's corpus land a few thousandths
+# of a degree off the ideal value - test/SP/4LG_FSI_2x2_AA_opt_sp.d12 carries
+# gamma = 120.003561 - so the check must be looser than that while still
+# refusing a genuinely different lattice.
+LAYER_GROUP_ANGLE_TOL_DEG = 0.05
+# Lengths: the same deck has |a - b| / a = 2.1e-5. NOTE this tolerance is NOT
+# tied to the spglib symprec that produced the space group in the first place
+# (NewCifToD12 default 1e-5, overridable through options["symmetry_tolerance"]),
+# so raising symprec far enough to force, say, a hexagonal assignment on a cell
+# that is not hexagonal to 1e-3 will be refused here. That is deliberate: the
+# deck, not spglib, is what CRYSTAL reads.
+LAYER_GROUP_LENGTH_RTOL = 1e-3
+
+
+# ============================================================
 # Basis Set and Element Data
 # ============================================================
 
@@ -1743,6 +2093,88 @@ def _is_rhombohedral_axes(a: float, b: float, c: float,
         # alpha = beta = gamma != 90 indicates rhombohedral axes
         return True
     return False
+
+
+def layer_group_lattice(layer_group: int) -> str:
+    """2D lattice type of a layer group (manual Appendix A.2, page 421).
+
+    A.2 prints the 80 layer groups under four lattice headings, in contiguous
+    blocks: oblique (P) 1-7, rectangular (P or C) 8-48, square (P) 49-64,
+    hexagonal (P) 65-80. Those blocks are also what fixes how many values the
+    SLAB cell record carries, so this function and the SLAB branch of
+    generate_unit_cell_line below must not drift apart.
+    """
+    if 1 <= layer_group <= 7:
+        return "oblique"
+    if 8 <= layer_group <= 48:
+        return "rectangular"
+    if 49 <= layer_group <= 64:
+        return "square"
+    if 65 <= layer_group <= 80:
+        return "hexagonal"
+    raise ValueError(f"Invalid layer group: {layer_group}")
+
+
+def check_layer_group_cell(layer_group: int, a: float, b: float,
+                           gamma: float) -> Optional[str]:
+    """Refusal message when a SLAB cell contradicts its layer group's lattice.
+
+    The minimal set printed after the layer group is "a,[b],[gamma]", with b
+    "for rectangular lattices only" and the angle for "triclinic lattices only"
+    (manual L999-1002), so a square or hexagonal group prints a alone and
+    CRYSTAL derives b and gamma from the group itself. The manual's diamond
+    (100) deck (L29193-29196) prints "2.52437 2.52437" - two values with
+    a == b - which is the proof that the count follows the lattice class and
+    not the numbers.
+
+    This is not a defensive cross-check on an otherwise sound map: nothing
+    upstream puts the cell into the International Tables first setting (see the
+    note over LAYER_GROUP_FROM_SPACEGROUP), so for an automatically mapped
+    group this is the only place the chosen group is ever compared against the
+    actual cell, and callers must treat the message as a refusal there. When
+    the caller named the layer group itself the same message is worth emitting
+    as a warning rather than a refusal - a relaxed cell a tenth of a degree off
+    its ideal angle is still the group the caller says it is, and there would
+    otherwise be no way to convert it at all.
+
+    The check covers ONLY the in-plane lattice class. It does NOT catch a group
+    of the right lattice class in the wrong orientation - A.2's 25/(25),
+    28/(28) and 51/(51) sibling pairs are all rectangular - which is why the
+    space-group map must independently require that the appendix list exactly
+    one candidate. It also says nothing about c, alpha or beta - a cell whose c
+    axis is not perpendicular to the layer is flattened by the fractional-z to
+    Cartesian-z conversion in the callers, and that is a separate question this
+    does not settle - and nothing about the z origin, for which see
+    LAYER_GROUPS_POLAR_IN_Z.
+
+    Returns None when the deck may be written.
+    """
+    lattice = layer_group_lattice(layer_group)
+    mean_ab = 0.5 * (a + b)
+    lengths_equal = (
+        mean_ab > 0 and abs(a - b) / mean_ab <= LAYER_GROUP_LENGTH_RTOL
+    )
+
+    def angle_is(target):
+        return abs(gamma - target) <= LAYER_GROUP_ANGLE_TOL_DEG
+
+    required = None
+    if lattice == "rectangular" and not angle_is(90.0):
+        required = "gamma = 90 degrees"
+    elif lattice == "square" and not (angle_is(90.0) and lengths_equal):
+        required = "a = b and gamma = 90 degrees"
+    elif lattice == "hexagonal" and not (angle_is(120.0) and lengths_equal):
+        required = "a = b and gamma = 120 degrees"
+
+    if required is None:
+        return None
+    return (
+        f"Layer group {layer_group} sits on a {lattice} 2D lattice (manual "
+        f"Appendix A.2), which requires {required}, but the cell is "
+        f"a={a:.6f}, b={b:.6f}, gamma={gamma:.6f}. CRYSTAL reads only the "
+        f"minimal set of lattice vectors for that class, so it would build a "
+        f"different cell from the one given."
+    )
 
 
 def generate_unit_cell_line(spacegroup: int, cell_params: List[float],

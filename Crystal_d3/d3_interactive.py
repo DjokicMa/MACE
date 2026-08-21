@@ -1357,6 +1357,13 @@ def configure_charge_density_calculation() -> Dict[str, Any]:
             deriv = 0
         charge_config["derivative_order"] = deriv
         
+        # MAPNET's NPY, "number of points on the B-A segment" (manual 26772).
+        # Collected here rather than only in the writer so a saved ECHG config
+        # can be loaded again: validate_d3_config requires n_points for CHARGE,
+        # so a config without it was rejected on reload.
+        charge_config["n_points"] = _nav_int(
+            "\nNumber of points along the B-A segment [50]: ", default=50)
+
         # Map plane definition
         charge_config["need_map_points"] = yes_no_prompt("\nDefine charge density map plane?", "yes")
         if not charge_config["need_map_points"]:

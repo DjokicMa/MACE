@@ -712,6 +712,40 @@ the workflow interactive mode, with defaults optimized for each calculation type
 By default, existing .sh files are reused; use --overwrite-sh to regenerate them.
 For directories with mixed file types, you'll be prompted to choose.
 """,
+        'preflight': """
+Usage: mace preflight [files/directories] [options]
+
+Validate D12 decks by letting CRYSTAL read them, before you spend a job on it.
+
+A TESTPDIM record is inserted into a COPY of each deck (your file is never
+modified) and CRYSTAL is run on the copy. TESTPDIM stops the program after the
+whole input has been read and the symmetry analysis is done, so a run takes
+seconds - but it is late enough to catch a bad symmetry group, a bad lattice
+record or a basis set with no functions for one of your elements.
+
+Options:
+  -j, --jobs N          Check N decks concurrently (default: 1)
+  -t, --timeout SECS    Per-deck timeout (default: 120)
+  -k, --keep DIR        Copy each run directory into DIR so you can read out.txt
+  -r, --recursive       Recurse into subdirectories
+  --static-only         Never run CRYSTAL - structure check only
+  --crystal-bin PATH    Use this serial crystal binary
+
+Exit codes:
+  0  every deck CRYSTAL saw was accepted
+  1  at least one deck was REJECTED by CRYSTAL
+  2  at least one deck could not be checked (or no decks / no CRYSTAL found)
+
+Examples:
+  mace preflight mat.d12
+  mace preflight workflow_outputs/step_001_OPT/ -j 8
+  mace preflight decks/ -r --keep preflight_failures/
+
+Note: needs the serial `crystal` binary (not Pcrystal). It is found from
+--crystal-bin, $MACE_CRYSTAL_BIN, $EBROOTCRYSTAL/bin/crystal, PATH, or by
+loading the CRYSTAL/23-intel-2023a module. Run it on a compute node, or on a
+login node only for a handful of decks.
+""",
         'monitor': """
 Usage: mace monitor [options]
 
@@ -1259,7 +1293,7 @@ def main():
         sys.exit(0)
     
     # Check if asking for help on a specific command (for non-passthrough commands)
-    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version']:
+    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'preflight', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version']:
         # Show command-specific help
         show_command_help(sys.argv[1])
         sys.exit(0)
@@ -1271,6 +1305,7 @@ def main():
 Commands:
   workflow    Interactive workflow planner - design and execute complex calculation sequences
   submit      Submit calculations to queue - handles both D12 and D3 files automatically
+  preflight   Validate D12 decks by running CRYSTAL with TESTPDIM before you spend a job
   monitor     System monitoring - real-time dashboard or quick status (--status, --detailed, --summary)
   analyze     Extract properties from outputs - band gaps, energies, convergence data
   completion  Check calculation status - categorize completed/errored jobs, organize files
@@ -1301,7 +1336,7 @@ More Help:
     )
     
     parser.add_argument('command', nargs='?',
-                       choices=['workflow', 'submit', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif',
+                       choices=['workflow', 'submit', 'preflight', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif',
                                'completion', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version'],
                        help='Command to run')
     parser.add_argument('args', nargs='*', help='Arguments for the command')
@@ -1729,6 +1764,16 @@ More Help:
         else:
             ui.err(f"Error: {target} is not a valid file or directory")
             sys.exit(1)
+
+    elif args.command == 'preflight':
+        # Validate decks with a TESTPDIM run before they cost a job.
+        # Rebuild argv from the original command line so flag/value pairing
+        # survives (`mace preflight -j 8 decks/` must not arrive scrambled).
+        try:
+            from mace.submission.preflight import main as preflight_main
+        except ImportError:
+            from submission.preflight import main as preflight_main
+        sys.exit(preflight_main(command_args('preflight')))
 
     elif args.command == 'monitor':
         # Launch monitoring dashboard or show status

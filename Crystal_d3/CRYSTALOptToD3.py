@@ -98,6 +98,25 @@ except Exception:
     ui = _UIShim()
 
 
+# MAPNET unit keywords (manual 26810-26813): ANGSTROM (the documented default,
+# so no keyword is written), BOHR and FRACTION. Only FRACTION and the Angstrom
+# default are offered here; anything else is refused rather than guessed at,
+# because the two differ by the lattice parameter and CRYSTAL cannot tell that
+# a plane was given in the wrong unit.
+_MAP_FRACTION_WORDS = {"F", "FRAC", "FRACTION", "FRACTIONAL"}
+_MAP_ANGSTROM_WORDS = {"C", "CART", "CARTESIAN", "ANGSTROM"}
+
+
+def _resolve_map_coord_type(value: Any) -> Optional[str]:
+    """Map an answer/config value onto "FRACTION" or "ANGSTROM", else None."""
+    word = str(value).strip().upper()
+    if word in _MAP_FRACTION_WORDS:
+        return "FRACTION"
+    if word in _MAP_ANGSTROM_WORDS:
+        return "ANGSTROM"
+    return None
+
+
 class D3Generator:
     """Handle D3 file generation from CRYSTAL output files."""
     
@@ -275,6 +294,13 @@ class D3Generator:
             print()
             ui.warn("Warning: No wavefunction file (fort.9/fort.98) found!")
             ui.warn("The D3 calculation will fail without the wavefunction file.")
+            # Non-interactive (batch/workflow callback): fail cleanly instead of
+            # raising EOFError at the prompt. Nothing is on disk yet - the deck
+            # is only written after this returns - so just signal failure and
+            # let the caller report it instead of claiming success.
+            if not sys.stdin.isatty():
+                ui.err("Aborting D3 file creation (no wavefunction, no terminal to confirm).")
+                return False
             cont = yes_no_prompt("Continue anyway?", "no")
             return cont
         
@@ -878,8 +904,56 @@ class D3Generator:
         lines.append("END")
         return '\n'.join(lines)
 
-    def _write_charge_d3(self, config: Dict[str, Any]) -> str:
-        """Write charge density calculation D3 file."""
+    def _range_records(self, config: Dict[str, Any]) -> Optional[List[str]]:
+        """The two RANGE records for the non-periodic directions (ECH3/POT3).
+
+        Manual 25494-25500 (ECH3, page 322) and 27341-27347 (POT3, page 351):
+        RANGE is followed by all the minima on one record and all the maxima on
+        the next - ZMIN/ZMAX for a slab, YMIN,ZMIN / YMAX,ZMAX for a polymer,
+        XMIN,YMIN,ZMIN / XMAX,YMAX,ZMAX for a molecule - as a "boundary for
+        non-periodic dimensions (au)" (manual 25490), i.e. in bohr.
+
+        The values come from the configuration ("range_min"/"range_max") when it
+        carries them, otherwise they are prompted for, which needs a terminal.
+        Returns None (after reporting) when neither is possible, so the caller
+        can abandon the deck instead of writing a truncated one.
+        """
+        dimensionality = self.structure_info['dimensionality']
+        axes = {2: ["Z"], 1: ["Y", "Z"], 0: ["X", "Y", "Z"]}[dimensionality]
+
+        range_min = config.get("range_min")
+        range_max = config.get("range_max")
+        if range_min is not None or range_max is not None:
+            if range_min is None or range_max is None:
+                ui.err("RANGE needs both range_min and range_max in the configuration.")
+                return None
+            if len(range_min) != len(axes) or len(range_max) != len(axes):
+                ui.err(f"RANGE for a {dimensionality}D system takes {len(axes)} value(s) "
+                       f"({','.join(axes)}) per record, got {len(range_min)} and {len(range_max)}.")
+                return None
+            return [" ".join(str(v) for v in range_min),
+                    " ".join(str(v) for v in range_max)]
+
+        if not sys.stdin.isatty():
+            # Non-interactive (batch/workflow callback): fail cleanly instead of
+            # raising EOFError at the prompt.
+            ui.err("RANGE boundaries requested but there is no terminal to ask for them.")
+            ui.err('Supply "range_min" and "range_max" (bohr) in the configuration, or use SCALE.')
+            return None
+
+        print()
+        ui.info("Define explicit ranges for non-periodic directions:")
+        mins = [float(input(f"{axis} min (bohr): ")) for axis in axes]
+        maxs = [float(input(f"{axis} max (bohr): ")) for axis in axes]
+        return [" ".join(str(v) for v in mins), " ".join(str(v) for v in maxs)]
+
+    def _write_charge_d3(self, config: Dict[str, Any]) -> Optional[str]:
+        """Write charge density calculation D3 file.
+
+        Returns None (after reporting) when a required piece of input can be
+        neither read from the configuration nor prompted for; the caller must
+        then write no deck at all.
+        """
         lines = []
         
         if config.get("type") == "ECH3":
@@ -890,30 +964,10 @@ class D3Generator:
             if self.structure_info['dimensionality'] < 3:
                 if config.get("use_range", False):
                     lines.append("RANGE")
-                    # Would need to get ranges interactively
-                    print()
-                    ui.info("Define explicit ranges for non-periodic directions:")
-                    if self.structure_info['dimensionality'] == 2:
-                        z_min = float(input("Z min (bohr): "))
-                        z_max = float(input("Z max (bohr): "))
-                        lines.append(f"{z_min}")
-                        lines.append(f"{z_max}")
-                    elif self.structure_info['dimensionality'] == 1:
-                        y_min = float(input("Y min (bohr): "))
-                        z_min = float(input("Z min (bohr): "))
-                        y_max = float(input("Y max (bohr): "))
-                        z_max = float(input("Z max (bohr): "))
-                        lines.append(f"{y_min} {z_min}")
-                        lines.append(f"{y_max} {z_max}")
-                    else:  # Molecule
-                        x_min = float(input("X min (bohr): "))
-                        y_min = float(input("Y min (bohr): "))
-                        z_min = float(input("Z min (bohr): "))
-                        x_max = float(input("X max (bohr): "))
-                        y_max = float(input("Y max (bohr): "))
-                        z_max = float(input("Z max (bohr): "))
-                        lines.append(f"{x_min} {y_min} {z_min}")
-                        lines.append(f"{x_max} {y_max} {z_max}")
+                    records = self._range_records(config)
+                    if records is None:
+                        return None
+                    lines.extend(records)
                 else:
                     lines.append("SCALE")
                     scale = config.get("scale", 3)
@@ -931,42 +985,83 @@ class D3Generator:
             lines.append("ECHG")
             lines.append(str(config.get("derivative_order", 0)))
             
-            # Need MAPNET input
-            if config.get("need_map_points", False):
-                print()
-                ui.info("Define map plane by three points A, B, C")
-                ui.info("Enter coordinates in fractional (crystal) or Cartesian (Angstrom) units")
-                
-                coord_type = input("Coordinate type (F)ractional or (C)artesian [F]: ").upper() or "F"
-                
-                points = []
-                for point in ["A", "B", "C"]:
-                    coords = input(f"Point {point} (x y z): ").strip().split()
-                    points.append([float(x) for x in coords])
-                
+            # Need MAPNET input. The records are unconditional for ECHG (manual
+            # 25573 lists "insert MAPNET input records" with no if-clause), so a
+            # configuration that carries the plane implies them even when it was
+            # saved without need_map_points.
+            if config.get("need_map_points", False) or config.get("map_points"):
+                points = config.get("map_points")
+                npy = config.get("n_points")
+
+                if points is not None:
+                    coord_type = _resolve_map_coord_type(config.get("map_coord_type", ""))
+                    if coord_type is None:
+                        ui.err('map_points needs an explicit map_coord_type: "F" (FRACTION)')
+                        ui.err('or "C" (ANGSTROM, the MAPNET default).')
+                        ui.err("The two differ by the lattice parameter and CRYSTAL cannot")
+                        ui.err("detect a plane given in the wrong unit.")
+                        return None
+                    if len(points) != 3 or any(len(p) != 3 for p in points):
+                        ui.err(f"MAPNET takes exactly three points A, B, C of three "
+                               f"coordinates each; got {len(points)}.")
+                        return None
+                    if npy is None:
+                        npy = 50
+                        ui.warn(f"No n_points (MAPNET NPY) in the configuration, using {npy}.")
+                else:
+                    if not sys.stdin.isatty():
+                        # Non-interactive (batch/workflow callback): fail cleanly
+                        # instead of raising EOFError at the prompt.
+                        ui.err("ECHG needs the MAPNET map plane and there is no terminal to ask.")
+                        ui.err('Supply "map_points" (A, B, C) and "map_coord_type" in the configuration.')
+                        return None
+                    print()
+                    ui.info("Define map plane by three points A, B, C")
+                    ui.info("Enter coordinates in fractional (crystal) or Cartesian (Angstrom) units")
+
+                    answer = input("Coordinate type (F)ractional or (C)artesian [F]: ").strip() or "F"
+                    coord_type = _resolve_map_coord_type(answer)
+                    if coord_type is None:
+                        ui.err(f"'{answer}' is neither FRACTION nor ANGSTROM; not guessing "
+                               "the unit of the map plane.")
+                        return None
+
+                    points = []
+                    for point in ["A", "B", "C"]:
+                        coords = input(f"Point {point} (x y z): ").strip().split()
+                        points.append([float(x) for x in coords])
+
+                    if npy is None:
+                        npy = int(input("Number of points along the B-A segment [50]: ") or 50)
+
                 # MAPNET records: NPY first, then the unit of measure (it
                 # applies to subsequent input), then the keyword declaring how
                 # the three points are given. "MAPNET" itself is a dummy
                 # keyword and is never written into the deck. nBC is chosen by
                 # CRYSTAL so the net is as equally spaced as possible.
-                npy = int(input("Number of points along the B-A segment [50]: ") or 50)
+                # ANGSTROM is the documented default, so it needs no keyword.
                 lines.append(str(npy))
-                if coord_type == "F":
+                if coord_type == "FRACTION":
                     lines.append("FRACTION")
                 lines.append("COORDINA")
-                
+
                 # Points
                 for i, point in enumerate(points):
                     lines.append(f"{point[0]} {point[1]} {point[2]}")
-                
+
                 # End of the MAPNET input block; the deck's own END follows
                 lines.append("END")
         
         lines.append("END")
         return '\n'.join(lines)
     
-    def _write_potential_d3(self, config: Dict[str, Any]) -> str:
-        """Write electrostatic potential calculation D3 file."""
+    def _write_potential_d3(self, config: Dict[str, Any]) -> Optional[str]:
+        """Write electrostatic potential calculation D3 file.
+
+        Returns None (after reporting) when a required piece of input can be
+        neither read from the configuration nor prompted for; the caller must
+        then write no deck at all.
+        """
         lines = []
         
         if config.get("type") == "POT3":
@@ -978,30 +1073,10 @@ class D3Generator:
             if self.structure_info['dimensionality'] < 3:
                 if config.get("use_range", False):
                     lines.append("RANGE")
-                    # Would need to get ranges interactively (same as charge)
-                    print()
-                    ui.info("Define explicit ranges for non-periodic directions:")
-                    if self.structure_info['dimensionality'] == 2:
-                        z_min = float(input("Z min (bohr): "))
-                        z_max = float(input("Z max (bohr): "))
-                        lines.append(f"{z_min}")
-                        lines.append(f"{z_max}")
-                    elif self.structure_info['dimensionality'] == 1:
-                        y_min = float(input("Y min (bohr): "))
-                        z_min = float(input("Z min (bohr): "))
-                        y_max = float(input("Y max (bohr): "))
-                        z_max = float(input("Z max (bohr): "))
-                        lines.append(f"{y_min} {z_min}")
-                        lines.append(f"{y_max} {z_max}")
-                    else:  # 0D
-                        x_min = float(input("X min (bohr): "))
-                        y_min = float(input("Y min (bohr): "))
-                        z_min = float(input("Z min (bohr): "))
-                        x_max = float(input("X max (bohr): "))
-                        y_max = float(input("Y max (bohr): "))
-                        z_max = float(input("Z max (bohr): "))
-                        lines.append(f"{x_min} {y_min} {z_min}")
-                        lines.append(f"{x_max} {y_max} {z_max}")
+                    records = self._range_records(config)
+                    if records is None:
+                        return None
+                    lines.extend(records)
                 else:
                     lines.append("SCALE")
                     scale = config.get("scale", 3)
@@ -1033,13 +1108,34 @@ class D3Generator:
                 
                 lines.append(f"{ica} {npu} {ipa}")
                 
-                # Add custom points if needed
-                if config.get("custom_points", False) and npu > 0:
-                    print()
-                    ui.info("Enter point coordinates (Cartesian, bohr):")
-                    for i in range(npu):
-                        coords = input(f"Point {i+1} (x y z): ").strip()
-                        lines.append(coords)
+                # Add custom points if needed. A configuration that carries the
+                # coordinates implies custom points: the header has already
+                # promised NPU records (manual 27382, "if NPU > 0 insert NPU
+                # records"), so if none follow CRYSTAL reads the deck's END as
+                # an X,Y,Z triple.
+                supplied = config.get("points")
+                if (config.get("custom_points", False) or supplied) and npu > 0:
+                    if supplied is not None:
+                        if len(supplied) != npu:
+                            ui.err(f"POTC declares NPU={npu} but {len(supplied)} point(s) "
+                                   "were supplied.")
+                            ui.err("CRYSTAL reads exactly NPU coordinate records, so the "
+                                   "deck would be misread.")
+                            return None
+                        for point in supplied:
+                            lines.append(" ".join(str(v) for v in point))
+                    else:
+                        if not sys.stdin.isatty():
+                            # Non-interactive (batch/workflow callback): fail
+                            # cleanly instead of raising EOFError at the prompt.
+                            ui.err(f"POTC needs {npu} point(s) and there is no terminal to ask.")
+                            ui.err('Supply "points" (Cartesian, bohr) in the configuration.')
+                            return None
+                        print()
+                        ui.info("Enter point coordinates (Cartesian, bohr):")
+                        for i in range(npu):
+                            coords = input(f"Point {i+1} (x y z): ").strip()
+                            lines.append(coords)
             
             else:  # Plane/volume averaged
                 z_min, z_max = config.get("z_range", (0, 10))
@@ -1289,15 +1385,28 @@ class D3Generator:
             # strip: rstrip('\nEND') strips the character SET {\n,E,N,D} and
             # would eat into a data line ending in any of those characters.
             charge_block = self._write_charge_d3(charge_config)
+            if charge_block is None:
+                return None
+            potential_block = self._write_potential_d3(potential_config)
+            if potential_block is None:
+                return None
             if charge_block.endswith("\nEND"):
                 charge_block = charge_block[:-len("\nEND")]
             d3_content = charge_block
-            d3_content += "\n" + self._write_potential_d3(potential_config)
-            
+            d3_content += "\n" + potential_block
+
         else:
             ui.err(f"Error: Unknown calculation type {self.calc_type}")
             return False
-        
+
+        # A writer returns None when it could not obtain a required record
+        # (map plane, POTC points, RANGE boundaries). Write nothing at all: a
+        # truncated deck is worse than a missing one, because the caller checks
+        # for the file.
+        if d3_content is None:
+            ui.err("No D3 file written (incomplete configuration).")
+            return None
+
         # Write D3 file
         d3_filename = f"{self.base_name}_{self.calc_type.lower()}.d3"
         d3_path = self.output_dir / d3_filename
@@ -1511,13 +1620,27 @@ def main():
                 else:
                     save_d3_options_prompt(shared_config, skip_prompt=True)
         
-        # Process each file
+        # Process each file. generate_d3 returns None when no deck was written
+        # (missing wavefunction, incomplete configuration); the loop must not
+        # report success for those files.
+        failed = []
         for out_file in out_files:
             print()
             ui.rule(f"Processing: {out_file}")
             generator = D3Generator(str(out_file), calc_type, args.output_dir)
-            generator.generate_d3(shared_config)
-    
+            if generator.generate_d3(shared_config) is None:
+                failed.append(out_file)
+
+        if failed:
+            print()
+            ui.err(f"No D3 file generated for {len(failed)} of {len(out_files)} file(s):")
+            for failed_file in failed:
+                ui.err(f"  - {failed_file}")
+            if len(failed) == len(out_files):
+                # Nothing at all was produced: exit non-zero so callers that
+                # gate on the return code see the failure.
+                sys.exit(1)
+
     else:
         # Interactive mode
         if args.input:
@@ -1591,28 +1714,42 @@ def main():
                         if shared_config:
                             print()
                             ui.ok("Shared settings configured")
-                            
+
                             # Option to save configuration
                             if yes_no_prompt("\nSave this configuration for future use?", "no"):
                                 save_d3_options_prompt(shared_config, skip_prompt=True)
-                
+                        else:
+                            # No config came back (no wavefunction for the
+                            # reference file, or the settings were abandoned).
+                            # Say so instead of silently dropping into per-file
+                            # configuration for every file.
+                            print()
+                            ui.warn("Shared settings were not configured; "
+                                    "configuring each file individually.")
+
                 # Process all files
                 print()
                 ui.info(f"Processing {len(out_files)} files...")
+                failed = []
                 for out_file in sorted(out_files):
                     print()
                     ui.rule(f"Processing: {out_file.name}")
                     generator = D3Generator(str(out_file), calc_type, args.output_dir)
-                    
+
                     if shared_config:
-                        generator.generate_d3(shared_config)
+                        config = generator.generate_d3(shared_config)
                     else:
                         # Interactive configuration for each file
                         config = generator.generate_d3()
+                    if config is None:
+                        failed.append(out_file.name)
 
                 print()
                 ui.rule()
-                ui.ok(f"Completed processing {len(out_files)} files")
+                if failed:
+                    ui.err(f"No D3 file generated for: {', '.join(failed)}")
+                ui.ok(f"Completed processing {len(out_files) - len(failed)} of "
+                      f"{len(out_files)} files")
                 return
         elif not input_path.is_file():
             ui.err(f"Error: {input_path} is not a valid file.")
@@ -1682,11 +1819,12 @@ def main():
             
             # Generate D3 file with config if available
             if config:
-                generator.generate_d3(config)
+                result = generator.generate_d3(config)
             else:
                 # Interactive configuration
                 config = generator.generate_d3()
-                
+                result = config
+
                 # Option to save configuration
                 if args.save_config and config:
                     if args.options_file:
@@ -1695,6 +1833,13 @@ def main():
                         ui.ok(f"Configuration saved to {args.options_file}")
                     else:
                         save_d3_options_prompt(config, skip_prompt=True)
+
+            if result is None:
+                # No D3 file was written. The workflow executor gates on the
+                # exit code alone, so returning 0 here reports a success that
+                # never happened.
+                ui.err("No D3 file was generated.")
+                sys.exit(1)
 
 
 if __name__ == "__main__":
