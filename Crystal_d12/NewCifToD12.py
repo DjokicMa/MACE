@@ -1668,6 +1668,10 @@ def create_d12_file(cif_data, output_file, options):
             # Preserve the configured SCF-cycle count for the lock (else the writer
             # falls back to DEFAULT_SPINLOCK_CYCLES and a non-default count is lost).
             spinlock_cycles=options.get("spinlock_cycles", DEFAULT_SPINLOCK_CYCLES),
+            # Restart from a predecessor's density matrix. Opt-in: it is only
+            # correct when the staged fort.20 really belongs to THIS geometry
+            # and basis set, which the caller knows and this writer does not.
+            guessp=bool(options.get("guessp", False)),
         )
 
         # Note: The single END at the very end is written by write_scf_section

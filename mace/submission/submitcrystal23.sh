@@ -31,6 +31,15 @@ module load Python-bundle-PyPI/2023.06-GCCcore-12.3.0
 
 mkdir  -p $scratch/$JOB
 cp $DIR/$JOB.d12  $scratch/$JOB/INPUT
+# Restart from a previous density matrix when one has been staged for this job.
+# CRYSTAL reads the GUESSP guess from fort.20 ("copy file fort.9 to fort.20",
+# manual page 141); every run already saves its own as $JOB.f9 below, so a
+# follow-up step only has to drop the predecessors f9 in as $JOB.f20. Absent
+# fort.20 CRYSTAL just uses the atomic guess, so this stays a no-op otherwise.
+if [ -f "$DIR/$JOB.f20" ]; then
+  cp "$DIR/$JOB.f20" "$scratch/$JOB/fort.20"
+  echo "GUESSP: restored $JOB.f20 as fort.20"
+fi
 cd $scratch/$JOB
 
 I_MPI_HYDRA_BOOTSTRAP="ssh" mpirun -n $SLURM_NTASKS $EBROOTCRYSTAL/bin/Pcrystal 2>&1 >& $DIR/${JOB}.out

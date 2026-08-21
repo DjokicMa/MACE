@@ -526,7 +526,8 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
                      spinlock_cycles: int = DEFAULT_SPINLOCK_CYCLES,
                      broyden_w0: float = DEFAULT_BROYDEN_W0,
                      broyden_imix: int = DEFAULT_BROYDEN_IMIX,
-                     broyden_istart: int = DEFAULT_BROYDEN_ISTART) -> None:
+                     broyden_istart: int = DEFAULT_BROYDEN_ISTART,
+                     guessp: bool = False) -> None:
     """Write the SCF parameters section of the D12 file
 
     Args:
@@ -636,6 +637,14 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
         print(f"{smearing_width:.6f}", file=f)
 
     # SCF settings
+    if guessp:
+        # Start the SCF from a previous run's density matrix instead of a
+        # superposition of atomic densities. CRYSTAL reads it from fort.20 -
+        # "copy file fort.9 to fort.20" (manual L8792) - which the job script
+        # stages from the predecessor's saved .f9. If fort.20 is absent CRYSTAL
+        # falls back to the atomic guess, so this is safe to request.
+        print("GUESSP", file=f)
+
     print("SCFDIR", file=f)
 
     # Add BIPOSIZE and EXCHSIZE for large systems
