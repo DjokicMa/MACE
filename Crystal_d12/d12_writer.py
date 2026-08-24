@@ -640,9 +640,15 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
     if guessp:
         # Start the SCF from a previous run's density matrix instead of a
         # superposition of atomic densities. CRYSTAL reads it from fort.20 -
-        # "copy file fort.9 to fort.20" (manual L8792) - which the job script
-        # stages from the predecessor's saved .f9. If fort.20 is absent CRYSTAL
-        # falls back to the atomic guess, so this is safe to request.
+        # "copy file fort.9 to fort.20" - which the job script stages from a
+        # saved .f9.
+        #
+        # This record is NOT free to add speculatively. With no fort.20 CRYSTAL
+        # stops - "ERROR **** GUESSP **** COPY OF WAVEFUNCTION FILE fort.20 CAN
+        # NOT BE FOUND" - rather than falling back to the atomic guess, so a
+        # deck that asks for a restart before anything has run would abort.
+        # submitcrystal23.sh removes the record from its scratch copy when it
+        # has no matrix to stage, which is what makes requesting it safe.
         print("GUESSP", file=f)
 
     print("SCFDIR", file=f)

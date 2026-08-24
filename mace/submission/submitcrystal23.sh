@@ -31,14 +31,43 @@ module load Python-bundle-PyPI/2023.06-GCCcore-12.3.0
 
 mkdir  -p $scratch/$JOB
 cp $DIR/$JOB.d12  $scratch/$JOB/INPUT
-# Restart from a previous density matrix when one has been staged for this job.
-# CRYSTAL reads the GUESSP guess from fort.20 ("copy file fort.9 to fort.20",
-# manual page 141); every run already saves its own as $JOB.f9 below, so a
-# follow-up step only has to drop the predecessors f9 in as $JOB.f20. Absent
-# fort.20 CRYSTAL just uses the atomic guess, so this stays a no-op otherwise.
-if [ -f "$DIR/$JOB.f20" ]; then
-  cp "$DIR/$JOB.f20" "$scratch/$JOB/fort.20"
-  echo "GUESSP: restored $JOB.f20 as fort.20"
+# GUESSP restart. CRYSTAL reads the starting density matrix from fort.20 -
+# "copy file fort.9 to fort.20" - and every run saves its own converged matrix
+# as $JOB.f9 further down, so the material already has one on disk after any
+# earlier run.
+#
+# Only staged when the deck actually asks for it. A .f9 can be large and
+# CRYSTAL ignores fort.20 without GUESSP, so copying it unconditionally would
+# be pure I/O; gating on the keyword also keeps the script honest about what
+# the deck is doing.
+#
+# Two sources, in order of specificity:
+#   $JOB.f20  a matrix deliberately staged for this job, e.g. a chained step
+#             restarting from a DIFFERENT predecessor (OPT -> SP), where the
+#             predecessor is named after its own job and not this one.
+#   $JOB.f9   this material own matrix from an earlier run of this same job -
+#             the walltime-killed restart, where the right guess is the one it
+#             already produced.
+# With NEITHER, the GUESSP record has to come back out of the deck. CRYSTAL
+# does not quietly fall back to the atomic guess - it stops:
+#   ERROR **** GUESSP **** COPY OF WAVEFUNCTION FILE fort.20 CAN NOT BE FOUND
+# (measured, not assumed). So a deck carrying GUESSP before it has ever run
+# would burn the job it is meant to speed up, and the very first step of any
+# chain is exactly that case. Stripping the record from the scratch copy makes
+# the deck mean "restart if there is something to restart from"; $DIR/$JOB.d12
+# itself is never modified, so the next attempt still asks.
+if grep -qiE "^[[:space:]]*GUESSP" "$scratch/$JOB/INPUT" 2>/dev/null; then
+  if [ -f "$DIR/$JOB.f20" ]; then
+    cp "$DIR/$JOB.f20" "$scratch/$JOB/fort.20"
+    echo "GUESSP: staged $JOB.f20 as fort.20"
+  elif [ -f "$DIR/$JOB.f9" ]; then
+    cp "$DIR/$JOB.f9" "$scratch/$JOB/fort.20"
+    echo "GUESSP: restarting from this job own $JOB.f9 as fort.20"
+  else
+    sed -i "/^[[:space:]]*[Gg][Uu][Ee][Ss][Ss][Pp][[:space:]]*$/d" "$scratch/$JOB/INPUT"
+    echo "GUESSP requested but no $JOB.f20 or $JOB.f9 on disk - dropped it from"
+    echo "  this run and cold starting (CRYSTAL aborts on GUESSP with no fort.20)"
+  fi
 fi
 cd $scratch/$JOB
 
