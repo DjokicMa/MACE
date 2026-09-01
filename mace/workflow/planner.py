@@ -4162,6 +4162,9 @@ class WorkflowPlanner:
                 self.node_manager.MENDOZA_NODES
             )
             ui.info(f"        Excluding Mendoza nodes: {exclude_str}")
+            notice = self.node_manager.stale_exclusion_notice()
+            if notice:
+                ui.warn(f"        {notice}")
             return exclude_str
 
         elif choice == "4":

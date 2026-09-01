@@ -160,6 +160,88 @@ class NodeExclusionManager:
             print(f"Error querying nodes: {e}")
             return []
 
+    def query_partition_nodes(self, partition: str = "mendoza_q") -> List[str]:
+        """Every node SLURM currently lists in a partition.
+
+        The buy-in partition is not static - nodes get added, retired or
+        renamed - so the exclusion list has to be checkable against it rather
+        than trusted. Uses sinfo because scontrol has no partition filter;
+        -h drops the header and -N lists one node per line, so the output needs
+        no range expansion.
+
+        Returns an empty list when SLURM is not reachable (a laptop), which the
+        caller must treat as "unknown", never as "the partition is empty".
+
+        The timeout is short because this runs inside the exclusion menu, where
+        an unresponsive slurmctld must cost the user a pause and not a stall; a
+        partition listing that has not answered in ten seconds is not coming.
+        """
+        try:
+            result = subprocess.run(
+                ["sinfo", "-h", "-p", partition, "-N", "-o", "%N"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode != 0:
+                return []
+            return sorted({ln.strip() for ln in result.stdout.split("\n") if ln.strip()})
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return []
+
+    def check_exclusion_drift(self, partition: str = "mendoza_q",
+                              exclude: Optional[List[str]] = None) -> dict:
+        """Compare the hardcoded exclusion against what the partition holds now.
+
+        Answers the question the hardcoded list cannot: are these nodes still
+        there? A stale entry is harmless to SLURM but hides the fact that the
+        node it was protecting against is gone, and a node that has been
+        renamed silently stops being excluded at all.
+
+        Returns {'available': bool, 'partition': [...], 'excluded': [...],
+                 'still_present': [...], 'stale': [...]}. 'available' is False
+        when SLURM could not be reached, and the other lists are then empty -
+        callers must not read "no drift" from that.
+        """
+        excluded = sorted(exclude if exclude is not None else self.MENDOZA_NODES)
+        present = self.query_partition_nodes(partition)
+        if not present:
+            return {"available": False, "partition": [], "excluded": excluded,
+                    "still_present": [], "stale": []}
+        present_set = set(present)
+        return {
+            "available": True,
+            "partition": present,
+            "excluded": excluded,
+            "still_present": [n for n in excluded if n in present_set],
+            "stale": [n for n in excluded if n not in present_set],
+        }
+
+    def stale_exclusion_notice(self, exclude: Optional[List[str]] = None,
+                               partition: str = "mendoza_q") -> Optional[str]:
+        """One line to show a user who has just chosen the hardcoded exclusion.
+
+        That menu choice is the only moment anyone looks at this list, and it
+        only happens on the cluster, which is the only place the check means
+        anything - so the drift check belongs here and nowhere near an
+        unattended submission.
+
+        Returns None whenever there is nothing certain to say: off-cluster, no
+        SLURM, or no drift. Anything the check raises is swallowed for the same
+        reason - a failed check must never turn into a warning about the nodes,
+        which would be a lie, nor into an interruption.
+        """
+        try:
+            drift = self.check_exclusion_drift(partition, exclude)
+        except Exception:
+            return None
+
+        if not drift["available"] or not drift["stale"]:
+            return None
+
+        return (f"Note: {', '.join(drift['stale'])} no longer in {partition}. "
+                f"The remaining nodes are still excluded, but a node that was "
+                f"renamed rather than retired is no longer being avoided - "
+                f"check MENDOZA_NODES in mace/utils/node_exclusion.py.")
+
     def _extract_node_number(self, node_name: str) -> int:
         """
         Extract the numeric part from a node name.
@@ -369,6 +451,9 @@ class NodeExclusionManager:
         elif choice == "5":
             exclude_str = self.create_exclude_string(self.MENDOZA_NODES)
             print(f"\nExcluding Mendoza nodes: {exclude_str}")
+            notice = self.stale_exclusion_notice()
+            if notice:
+                print(notice)
             return exclude_str
 
         elif choice == "6":
