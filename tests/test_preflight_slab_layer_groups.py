@@ -852,7 +852,7 @@ def test_lattice_tolerances_are_pinned_by_a_nonoblique_group():
 def _refusal_text(dimensionality, spacegroup, capsys):
     """Drive create_d12_file to an origin-freedom refusal and return what the
     user actually sees."""
-    import NewCifToD12 as M
+    M = _writer()
 
     cif = {
         "a": 2.47, "b": 2.47, "c": 20.0,
