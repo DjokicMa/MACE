@@ -261,7 +261,30 @@ class WorkflowExecutor:
                         modified_lines.append(line)
             
             content = '\n'.join(modified_lines)
-        
+
+        # The planner collects a node exclusion into the plan (planner.py
+        # writes it into the scripts it generates), but Phase 0 regenerates
+        # every script from that plan at execution time and used to drop it:
+        # the template ships the directive commented out, and nothing in the
+        # resource mapping above matches --exclude. Workflow jobs therefore
+        # ran with no exclusion at all while `mace submit`, which honours the
+        # same setting, kept it - so the choice silently applied to one path
+        # and not the other.
+        #
+        # Only an explicitly configured exclusion is written. With none, the
+        # script keeps whatever the template says, unchanged.
+        node_exclusion = script_config.get('node_exclusion')
+        if node_exclusion:
+            lines = content.split('\n')
+            insert_pos = -1
+            for i, line in enumerate(lines):
+                if line.startswith("echo '#SBATCH"):
+                    insert_pos = i
+            if insert_pos >= 0:
+                lines.insert(insert_pos + 1,
+                             f"echo '#SBATCH --exclude={node_exclusion}' >> $1.sh")
+                content = '\n'.join(lines)
+
         # Apply any additional customizations
         if 'customizations' in script_config:
             for customization in script_config['customizations']:

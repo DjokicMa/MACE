@@ -1083,11 +1083,20 @@ class CrystalInputParser:
 
     def _extract_basis_set(self, lines: List[str]) -> None:
         """Extract basis set information"""
-        # First, scan the entire file for "99 0" which definitively indicates external basis
-        # This marker appears at the end of external basis set definitions
+        # An EXTERNAL basis block is terminated by its own record, "99 0" -
+        # the conventional atomic number 99 with zero shells.
+        #
+        # This must match the WHOLE record, not a substring. Basis and ECP data
+        # are columns of numbers, and "99 0" occurs inside them constantly: the
+        # Pb ECP line "12.296303 281.285499 0" contains it, and taking that as
+        # the terminator truncated the basis in the middle of lead's ECP,
+        # dropping Pb and every element after it. CRYSTAL then refuses the deck
+        # it gets back with "ERROR **** INPBAS **** FORMAT ERROR IN INPUT DECK".
+        # Measured on the corpus: 13 of 106 EXTERNAL decks truncated this way,
+        # every one of them Pb-bearing.
         external_basis_end = None
         for i, line in enumerate(lines):
-            if "99 0" in line.strip():
+            if re.match(r"^\s*99\s+0\s*$", line):
                 external_basis_end = i
                 break
 
