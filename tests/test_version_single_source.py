@@ -55,3 +55,19 @@ def test_only_init_holds_a_version_literal():
         if re.search(r'(?:__version__|mace_version)\s*=\s*["\']\d+\.\d+', text):
             offenders.append(rel.as_posix())
     assert offenders == [], f"unexpected hardcoded version literal(s): {offenders}"
+
+
+def test_readme_banner_matches_package_version():
+    """The README banner drifted to 1.1.0 while the package said 1.1.1.
+
+    The checks above only ever looked at .py files and mace_cli, so a version
+    written in prose had nothing holding it to the package. Only the banner is
+    pinned here: "NEW in v1.1.0" is a historical statement that must NOT track
+    the current version, and the citation block deliberately keeps the v1.0.0
+    Zenodo DOI until a later deposit exists.
+    """
+    readme = (REPO_ROOT / "README.md").read_text()
+    banners = re.findall(r"<strong>Version (\d+\.\d+\.\d+)</strong>", readme)
+    assert banners, "README no longer has a <strong>Version x.y.z</strong> banner"
+    assert banners == [mace.__version__], (
+        f"README banner says {banners}, package says {mace.__version__}")

@@ -1922,7 +1922,7 @@ def main():
         # Get options interactively
         ui.print("CIF to D12 Converter for CRYSTAL23")
         print("=" * 60)
-        ui.print("Enhanced by Marcus Djokic with AI assistance")
+        ui.print("Enhanced by Marcus Djokic")
         print("")
         options = get_calculation_options_new()
         print_summary(options)
