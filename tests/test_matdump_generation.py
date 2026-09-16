@@ -118,6 +118,52 @@ def test_explicit_n_above_the_vector_pool_is_refused_and_writes_nothing(tmp_path
     assert "pool" in (result.stdout + result.stderr)
 
 
+def test_generation_credits_the_author_without_the_corpus(tmp_path):
+    """Attribution is a build requirement, so it is asserted in CI too, not
+    only on a developer machine that happens to have the 12 GB corpus."""
+    staged = _distilled(tmp_path, stem="mat_sp")
+    result = _run_opt2d3("--input", str(staged), "--calc-type", "MATDUMP")
+    combined = result.stdout + result.stderr
+    assert "William Comaskey" in combined
+    assert "CITATION: TODO" in combined
+    assert "N = 1247" in combined
+    assert (tmp_path / "mat_matdump.d3").read_text() == (
+        "BASISSET\n2\n60 1247\n64 1247\nEND")
+
+
+def test_explicit_n_override_without_the_corpus(tmp_path):
+    staged = _distilled(tmp_path, stem="mat_sp")
+    result = _run_opt2d3("--input", str(staged), "--calc-type", "MATDUMP",
+                         "--n-rvectors", "321")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "mat_matdump.d3").read_text() == (
+        "BASISSET\n2\n60 321\n64 321\nEND")
+
+
+def test_explicit_n_above_the_pool_writes_nothing_without_the_corpus(tmp_path):
+    staged = _distilled(tmp_path, stem="mat_sp")
+    result = _run_opt2d3("--input", str(staged), "--calc-type", "MATDUMP",
+                         "--n-rvectors", "20000")
+    assert list(tmp_path.glob("*_matdump.d3")) == []
+    assert "pool" in (result.stdout + result.stderr)
+
+
+def test_a_dump_at_or_above_cell_1000_still_generates_a_deck(tmp_path):
+    """Layer 1 is stock CRYSTAL and ships unconditionally.
+
+    lcao2wannier may not be installed at all, so a defect in that optional
+    package must not stop MACE writing a valid CRYSTAL deck - it only warns.
+    The corpus version of this check lives in test_wannier_driver.py; this one
+    runs in the corpus-less CI.
+    """
+    staged = _distilled(tmp_path, maxg=1247, stem="mat_sp")
+    result = _run_opt2d3("--input", str(staged), "--calc-type", "MATDUMP")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "mat_matdump.d3").read_text() == (
+        "BASISSET\n2\n60 1247\n64 1247\nEND")
+    assert "1000" in (result.stdout + result.stderr)
+
+
 # --------------------------------------------------------------------------
 # The 0-D refusal
 # --------------------------------------------------------------------------
@@ -343,6 +389,26 @@ def test_the_queue_manager_classifies_a_matdump_deck(tmp_path):
     deck.write_text("BASISSET\n2\n60 1247\n64 1247\nEND\n")
     manager = EnhancedCrystalQueueManager.__new__(EnhancedCrystalQueueManager)
     assert manager.determine_calc_type_from_file(deck) == "MATDUMP"
+
+
+def test_the_d3_sniffer_does_not_fire_on_a_crystal_basis_record(tmp_path):
+    """The BASISSET collision, covered WITHOUT the corpus so CI runs it.
+
+    A crystal deck's BASISSET record names the internal basis set on the next
+    line (POB-TZVP-REV2, SOLDEF2MSVP, ...). A properties matrix-dump record
+    instead carries the NPR count and the 60/64 prtrec pairs. Only the second
+    shape may match.
+    """
+    from mace.completion_checker import _detect_calc_type_from_d3
+
+    for basis in ("POB-TZVP", "POB-TZVP-REV2", "SOLDEF2MSVP"):
+        deck = tmp_path / "crystal_deck.d3"
+        deck.write_text(
+            "title\nCRYSTAL\n0 0 0\n227\n3.54\n1\n"
+            "6 0.125 0.125 0.125\n"
+            f"BASISSET\n{basis}\n"
+            "DFT\nEXCHANGE\nPBE\nEND\nSHRINK\n8 8\nEND\n")
+        assert _detect_calc_type_from_d3(deck) != "MATDUMP", basis
 
 
 def test_the_d3_sniffer_does_not_fire_on_a_real_d12(tmp_path):
