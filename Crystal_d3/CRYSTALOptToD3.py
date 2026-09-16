@@ -12,6 +12,8 @@ CRYSTAL calculations (optimization or single point). It handles:
 - TRANSPORT: Boltzmann transport properties  
 - CHARGE: Charge density (ECH3/ECHG)
 - POTENTIAL: Electrostatic potential (POT3/POTC)
+- MATDUMP: Direct-lattice H(R)/S(R) matrix dump, the input to the
+  LCAO->Wannier90 bridge (method and lcao2wannier package: William Comaskey)
 
 The script automatically:
 - Extracts necessary information from output files
@@ -57,6 +59,23 @@ except ImportError:
 from d3_config import (save_d3_config, load_d3_config, validate_d3_config,
                       print_d3_config_summary, save_d3_options_prompt,
                       list_available_d3_configs, select_d3_config_file)
+from d3_matdump import (MatdumpRefusal, MATDUMP_CREDIT_BLOCK, capability_refusal,
+                        derive_n_rvectors, detect_spin_treatment, format_bytes,
+                        parse_deck_dimensionality, parse_dimensionality,
+                        parse_number_of_ao, predict_dump_bytes,
+                        validate_n_rvectors, write_matdump_deck)
+
+# Report (never prompt) above this predicted dump size.
+_MATDUMP_SIZE_WARN_BYTES = 200 * 1024 * 1024
+
+# CRYSTAL writes the cell index in an I4 field, so from 1000 on the header runs
+# together as "CELL N.1000(". lcao2wannier v1.0's header regexes require
+# whitespace there and silently drop every such cell. MEASURED on the corpus
+# diamond at N=1247: 999 of 1247 overlap cells parsed, 248 dropped without a
+# word. Layer 1 still generates the deck - the dump itself is correct, and the
+# defect is in an optional third-party package - but it warns, and the Layer 2
+# driver refuses the conversion.
+_LCAO2WANNIER_CELL_INDEX_LIMIT = 1000
 import sys
 from pathlib import Path
 # Add Crystal_d12 to path for imports
@@ -120,9 +139,13 @@ def _resolve_map_coord_type(value: Any) -> Optional[str]:
 class D3Generator:
     """Handle D3 file generation from CRYSTAL output files."""
     
-    def __init__(self, input_file: str, calc_type: str, output_dir: Optional[str] = None):
+    def __init__(self, input_file: str, calc_type: str, output_dir: Optional[str] = None,
+                 n_rvectors: Optional[int] = None):
         self.input_file = Path(input_file).resolve()
         self.calc_type = calc_type.upper()
+        # MATDUMP only: an explicit R-vector count supplied on the command line.
+        # None means "derive it", which is the default and the safe path.
+        self.n_rvectors = n_rvectors
         self.base_name = self.input_file.stem
         
         # Remove common suffixes to get clean base name
@@ -133,6 +156,8 @@ class D3Generator:
         
         self.input_dir = self.input_file.parent
         self.output_dir = Path(output_dir).resolve() if output_dir else self.input_dir
+        # Set by _copy_wavefunction; MATDUMP checks it for provenance.
+        self.wavefunction_source = None
         
         # Parse output file for structure info
         self.structure_info = self._parse_output_file()
@@ -289,6 +314,14 @@ class D3Generator:
             if wf_path.exists():
                 source_wf = wf_path
                 break
+
+        # Remember the choice. The search above accepts ANY wavefunction that
+        # matches one of the naming patterns and never checks that it came from
+        # the calculation whose .out we were handed - the GUESSP work's hard
+        # constraint (a staged wavefunction is only valid for the same geometry
+        # AND basis set) has no enforcement point otherwise. MATDUMP uses this
+        # to refuse a mismatched pair; no other calc type's behavior changes.
+        self.wavefunction_source = source_wf
         
         if not source_wf:
             print()
@@ -1151,6 +1184,158 @@ class D3Generator:
         lines.append("END")
         return '\n'.join(lines)
     
+    def _matdump_parent_text(self) -> str:
+        """Text of the parent SCF output (the run that wrote fort.9)."""
+        try:
+            return self.input_file.read_text(errors="ignore")
+        except OSError as exc:
+            raise MatdumpRefusal(
+                f"Cannot read the parent output {self.input_file}: {exc}"
+            )
+
+    def _matdump_parent_deck_text(self) -> str:
+        """Text of the parent's own .d12 deck, when it sits beside the .out."""
+        deck = self.input_file.with_suffix(".d12")
+        if deck.exists():
+            try:
+                return deck.read_text(errors="ignore")
+            except OSError:
+                return ""
+        return ""
+
+    def _matdump_check_wavefunction_provenance(self) -> None:
+        """Refuse a dump whose staged wavefunction is not this .out's own.
+
+        The §6.7 hard constraint inherited from GUESSP: a wavefunction is only
+        valid for the same geometry AND basis set. _copy_wavefunction searches a
+        broad list of naming patterns and checks only that SOME match exists, so
+        a `X_sp.out` can silently be paired with the `X.f9` left by the earlier
+        OPT. For MATDUMP that is not a degraded result, it is a wrong model at a
+        wrong N - N is read from this .out while the matrices come from that
+        fort.9. So MATDUMP accepts only an unambiguous pairing.
+        """
+        source = self.wavefunction_source
+        if source is None:
+            return  # _copy_wavefunction already refused; nothing staged.
+
+        stem = source.name
+        accepted = {
+            "fort.9", "fort.98",                       # unambiguous: this dir
+            f"{self.input_file.stem}.f9",              # this exact calculation
+            f"{self.input_file.stem}.f98",
+        }
+        if stem in accepted:
+            return
+
+        raise MatdumpRefusal(
+            f"Refusing to pair this matrix dump with {source.name}.\n"
+            f"\n"
+            f"  parent output : {self.input_file.name}\n"
+            f"  wavefunction  : {source.name}\n"
+            f"\n"
+            f"MATDUMP reads the direct-lattice vector count N from the parent .out\n"
+            f"while the matrices themselves come from the wavefunction. If those two\n"
+            f"are from different calculations the dump is silently wrong: a plausible\n"
+            f"looking deck, at an N derived from one run, dumping another run's\n"
+            f"matrices. A wavefunction is only valid for the same geometry AND basis\n"
+            f"set as the output it is paired with.\n"
+            f"\n"
+            f"Put {self.input_file.stem}.f9 (or a bare fort.9 from this same run)\n"
+            f"next to {self.input_file.name}, or point --input at the output that\n"
+            f"actually produced {source.name}."
+        )
+
+    def _write_matdump_d3(self, config: Dict[str, Any]) -> Optional[str]:
+        """Write the direct-lattice H(R)/S(R) matrix-dump deck (MATDUMP).
+
+        This is the CRYSTAL half of the LCAO->Wannier90 chain. The method and
+        the lcao2wannier package that consume this dump are William Comaskey's
+        work; MACE generates the deck and orchestrates, nothing more.
+
+        Every branch that cannot be resolved refuses with a stated reason and
+        returns None, so no deck is written. A matrix dump that runs to
+        completion at the wrong N is the failure mode this calc type exists to
+        prevent - it produces a wrong model, not an error.
+        """
+        try:
+            out_text = self._matdump_parent_text()
+            deck_text = self._matdump_parent_deck_text()
+
+            self._matdump_check_wavefunction_provenance()
+
+            # --- 0-D guard ------------------------------------------------
+            # Prefer the deck's own structural keyword; fall back to the output
+            # banner. MEASURED: CRYSTAL does NOT error on a MOLECULE matrix
+            # dump. A real 10-atom EC MOLECULE deck exited 0 with ENDPROP, no
+            # ERROR and no WARNING, and emitted 11.5 MB in which only cell 1 is
+            # real; cells 2..N are all-zero blocks carrying uninitialised
+            # lattice indices such as (100150200) and (*********). MACE is the
+            # only guard there is.
+            dim = parse_deck_dimensionality(deck_text) if deck_text else None
+            if dim is None:
+                dim = parse_dimensionality(out_text)
+            if dim == 0:
+                ui.err("MATDUMP refused: the parent calculation is a MOLECULE (0-D).")
+                ui.err("H(R)/S(R) over direct-lattice vectors is meaningless with no")
+                ui.err("periodicity. CRYSTAL does not error on this - measured, it exits")
+                ui.err("0 with ENDPROP and emits all-zero blocks at uninitialised lattice")
+                ui.err("indices - so MACE refuses here instead.")
+                return None
+
+            # --- capability gate (before any submission) -------------------
+            spin = detect_spin_treatment(out_text, deck_text)
+            binary = config.get("properties_binary")
+            refusal = capability_refusal(spin, Path(binary) if binary else None)
+            if refusal:
+                for line in refusal.splitlines():
+                    ui.err(line) if line.strip() else print()
+                return None
+
+            # --- N ---------------------------------------------------------
+            requested = config.get("n_rvectors")
+            if requested in (None, "", "auto"):
+                n = derive_n_rvectors(out_text, source=self.input_file.name)
+                origin = "derived from the parent SCF"
+            else:
+                n = validate_n_rvectors(int(requested), out_text, explicit=True)
+                origin = "supplied explicitly"
+
+            # --- report, never prompt --------------------------------------
+            # The generation path is reached non-interactively by the workflow
+            # engine (and by the SLURM completion callback through it), so this
+            # reports and proceeds; it never asks a question that would hang a
+            # queued job with no TTY.
+            n_ao = parse_number_of_ao(out_text)
+            predicted = predict_dump_bytes(n, n_ao, spin)
+            print()
+            ui.info(f"MATDUMP: N = {n} direct-lattice R-vectors ({origin})")
+            ui.info(f"  spin treatment: {spin}")
+            if n_ao:
+                ui.info(f"  atomic orbitals: {n_ao}")
+            if predicted is not None:
+                ui.info(f"  predicted output size: ~{format_bytes(predicted)}"
+                        " (linear in N, quadratic in the AO count)")
+                if predicted > _MATDUMP_SIZE_WARN_BYTES:
+                    ui.warn(f"  This dump is large. The parent .out must be RETAINED:")
+                    ui.warn(f"  lcao2wannier needs it for every stage but localize.")
+            if n >= _LCAO2WANNIER_CELL_INDEX_LIMIT:
+                ui.warn(f"  N >= {_LCAO2WANNIER_CELL_INDEX_LIMIT}: CRYSTAL writes the cell")
+                ui.warn( "  index in I4, so headers from that index on carry no space")
+                ui.warn( "  ('CELL N.1000('). lcao2wannier v1.0 cannot match those and")
+                ui.warn( "  drops them silently. The deck is correct and the dump will be")
+                ui.warn( "  complete; `mace wannier` will refuse to convert it until the")
+                ui.warn( "  package is fixed upstream.")
+            print()
+            ui.info(MATDUMP_CREDIT_BLOCK)
+
+            return write_matdump_deck(n)
+
+        except MatdumpRefusal as refusal:
+            ui.err("MATDUMP refused to generate a deck.")
+            for line in str(refusal).splitlines():
+                ui.err(line) if line.strip() else print()
+            return None
+
     def generate_d3(self, shared_config: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """Generate the D3 file based on calculation type.
         
@@ -1357,6 +1542,12 @@ class D3Generator:
         else:
             config = configure_d3_calculation(self.calc_type, str(self.input_file))
         
+        # An explicit --n-rvectors overrides whatever the configuration carries.
+        # Handled here rather than in the writer so it applies equally to the
+        # interactive, shared-config and --config-file paths.
+        if self.calc_type == "MATDUMP" and self.n_rvectors is not None:
+            config["n_rvectors"] = self.n_rvectors
+
         # Generate D3 content
         if self.calc_type == "BAND":
             d3_content = self._write_band_d3(config)
@@ -1368,6 +1559,8 @@ class D3Generator:
             d3_content = self._write_charge_d3(config)
         elif self.calc_type in ["POTENTIAL", "POT3", "POTC"]:
             d3_content = self._write_potential_d3(config)
+        elif self.calc_type == "MATDUMP":
+            d3_content = self._write_matdump_d3(config)
         elif self.calc_type == "CHARGE+POTENTIAL":
             # Combined ECH3+POT3 calculation
             # The config already contains charge_config and potential_config from configure_d3_calculation
@@ -1441,6 +1634,15 @@ class D3Generator:
             ui.info("  - SIGMAS.DAT: σS product")
             ui.info("  - KAPPA.DAT: Thermal conductivity")
             ui.info("  - TDF.DAT: Transport distribution function")
+        elif self.calc_type == "MATDUMP":
+            print()
+            ui.info("Output files:")
+            ui.info(f"  - {self.base_name}_matdump.out: H(R) and S(R) in the direct")
+            ui.info("    lattice representation. RETAIN this file - it is the input to")
+            ui.info("    lcao2wannier, which needs it for every stage but localize.")
+            print()
+            ui.info("Next step (optional, needs the lcao2wannier package):")
+            ui.info(f"  mace wannier --input {self.base_name}_matdump.out")
         
         # Return the configuration for potential saving
         return config
@@ -1449,7 +1651,22 @@ class D3Generator:
 def main():
     """Main entry point for the script."""
     parser = argparse.ArgumentParser(
-        description="Generate CRYSTAL D3 property calculation input files"
+        description="Generate CRYSTAL D3 property calculation input files",
+        epilog=(
+            "MATDUMP - direct-lattice H(R)/S(R) matrix dump for Wannier90:\n"
+            "  Prints the Fock/KS and overlap matrices in the direct-lattice\n"
+            "  representation, the input to the LCAO->Wannier90 conversion.\n"
+            "  That method, and the lcao2wannier package implementing it, are the\n"
+            "  work of William Comaskey. MACE only generates the CRYSTAL deck and\n"
+            "  orchestrates the run; it reimplements no part of the conversion.\n"
+            "  N (the R-vector count) is derived from the parent SCF output by\n"
+            "  default; MACE refuses rather than guessing it, because a too-small\n"
+            "  N is not an error, it is a wrong model.\n"
+            "  Convert the dump with:  mace wannier --input <dump>.out\n"
+            "  CITATION: TODO - ask William Comaskey which citation he wants (the\n"
+            "  package, a paper, or both). Do not invent one.\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     
     parser.add_argument(
@@ -1459,8 +1676,18 @@ def main():
     parser.add_argument(
         "--calc-type", "-t", "--calc_type",
         dest="calc_type",
-        choices=["BAND", "DOSS", "TRANSPORT", "CHARGE", "POTENTIAL", "CHARGE+POTENTIAL"],
+        choices=["BAND", "DOSS", "TRANSPORT", "CHARGE", "POTENTIAL", "CHARGE+POTENTIAL",
+                 "MATDUMP"],
         help="Type of property calculation"
+    )
+    parser.add_argument(
+        "--n-rvectors", "--n_rvectors",
+        dest="n_rvectors",
+        type=int,
+        help="MATDUMP only: number of direct-lattice R-vectors to print. "
+             "Omit it and MACE derives the value CRYSTAL itself used at this "
+             "run's TOLINTEG. Supplying it overrides that derivation; it is "
+             "still bounded by CRYSTAL's vector pool."
     )
     parser.add_argument(
         "--batch", "-b",
@@ -1552,18 +1779,20 @@ def main():
             ui.info("4: CHARGE - Charge density")
             ui.info("5: POTENTIAL - Electrostatic potential")
             ui.info("6: CHARGE+POTENTIAL - Combined calculation")
+            ui.info("7: MATDUMP - H(R)/S(R) matrix dump for Wannier90")
 
-            choice = input("\nSelect type (1-6): ").strip()
+            choice = input("\nSelect type (1-7): ").strip()
             calc_types = {
                 "1": "BAND", "2": "DOSS", "3": "TRANSPORT",
-                "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL"
+                "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL",
+                "7": "MATDUMP"
             }
             while choice not in calc_types:
                 # Re-prompt instead of silently defaulting a typo to BAND, which
                 # would generate the wrong property calculation with no warning
                 # (same contract as the single-file path).
-                ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-6.")
-                choice = input("Select type (1-6): ").strip()
+                ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-7.")
+                choice = input("Select type (1-7): ").strip()
             calc_type = calc_types[choice]
         else:
             calc_type = args.calc_type
@@ -1627,7 +1856,8 @@ def main():
         for out_file in out_files:
             print()
             ui.rule(f"Processing: {out_file}")
-            generator = D3Generator(str(out_file), calc_type, args.output_dir)
+            generator = D3Generator(str(out_file), calc_type, args.output_dir,
+                                    n_rvectors=getattr(args, 'n_rvectors', None))
             if generator.generate_d3(shared_config) is None:
                 failed.append(out_file)
 
@@ -1682,17 +1912,19 @@ def main():
                     ui.info("4: CHARGE - Charge density")
                     ui.info("5: POTENTIAL - Electrostatic potential")
                     ui.info("6: CHARGE+POTENTIAL - Combined calculation")
+                    ui.info("7: MATDUMP - H(R)/S(R) matrix dump for Wannier90")
 
-                    choice = input("\nSelect type (1-6): ").strip()
+                    choice = input("\nSelect type (1-7): ").strip()
                     calc_types = {
                         "1": "BAND", "2": "DOSS", "3": "TRANSPORT",
-                        "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL"
+                        "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL",
+                        "7": "MATDUMP"
                     }
                     while choice not in calc_types:
                         # Re-prompt instead of silently defaulting a typo to BAND
                         # (same contract as the single-file path).
-                        ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-6.")
-                        choice = input("Select type (1-6): ").strip()
+                        ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-7.")
+                        choice = input("Select type (1-7): ").strip()
                     calc_type = calc_types[choice]
                 else:
                     calc_type = args.calc_type
@@ -1709,7 +1941,8 @@ def main():
                         ui.rule("Configuring shared settings for all files")
                         # Use first file as reference for getting structure info
                         first_file = str(out_files[0])
-                        temp_generator = D3Generator(first_file, calc_type, args.output_dir)
+                        temp_generator = D3Generator(first_file, calc_type, args.output_dir,
+                                                     n_rvectors=getattr(args, 'n_rvectors', None))
                         shared_config = temp_generator.generate_d3()
                         if shared_config:
                             print()
@@ -1734,7 +1967,8 @@ def main():
                 for out_file in sorted(out_files):
                     print()
                     ui.rule(f"Processing: {out_file.name}")
-                    generator = D3Generator(str(out_file), calc_type, args.output_dir)
+                    generator = D3Generator(str(out_file), calc_type, args.output_dir,
+                                    n_rvectors=getattr(args, 'n_rvectors', None))
 
                     if shared_config:
                         config = generator.generate_d3(shared_config)
@@ -1785,17 +2019,19 @@ def main():
                 ui.info("4: CHARGE - Charge density (3D or 2D)")
                 ui.info("5: POTENTIAL - Electrostatic potential")
                 ui.info("6: CHARGE+POTENTIAL - Combined calculation")
+                ui.info("7: MATDUMP - H(R)/S(R) matrix dump for Wannier90")
 
                 calc_types = {
                     "1": "BAND", "2": "DOSS", "3": "TRANSPORT",
-                    "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL"
+                    "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL",
+                    "7": "MATDUMP"
                 }
-                choice = input("\nSelect type (1-6): ").strip()
+                choice = input("\nSelect type (1-7): ").strip()
                 while choice not in calc_types:
                     # Re-prompt instead of silently defaulting a typo to BAND, which
                     # would generate the wrong property calculation with no warning.
-                    ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-6.")
-                    choice = input("Select type (1-6): ").strip()
+                    ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-7.")
+                    choice = input("Select type (1-7): ").strip()
                 calc_type = calc_types[choice]
             else:
                 calc_type = args.calc_type
@@ -1815,7 +2051,8 @@ def main():
                 if "calculation_type" in config:
                     calc_type = config["calculation_type"]
             
-            generator = D3Generator(input_file, calc_type, args.output_dir)
+            generator = D3Generator(input_file, calc_type, args.output_dir,
+                                    n_rvectors=getattr(args, 'n_rvectors', None))
             
             # Generate D3 file with config if available
             if config:

@@ -864,7 +864,12 @@ The output file is given via --input/-i (there is NO positional argument).
 Options:
   --input, -i FILE      CRYSTAL output (.out/.log)
   --calc-type, -t TYPE  One of: BAND, DOSS, TRANSPORT, CHARGE, POTENTIAL,
-                        CHARGE+POTENTIAL
+                        CHARGE+POTENTIAL, MATDUMP
+  --n-rvectors N        MATDUMP only: number of direct-lattice R-vectors.
+                        Omit it - MACE derives the count CRYSTAL itself used
+                        at this run's TOLINTEG, and refuses rather than
+                        guessing when it cannot. A too-small N is not an
+                        error, it is a wrong model.
   --batch, -b           Process all .out files in the current directory
   --config-file, -c FILE   Load D3 configuration from JSON
   --save-config         Save configuration after interactive setup
@@ -875,6 +880,52 @@ Examples:
   mace opt2d3 --input optimized.out --calc-type BAND
   mace opt2d3 -i optimized.out -t DOSS
   mace opt2d3 --batch --calc-type BAND
+  mace opt2d3 -i material_sp.out -t MATDUMP     # H(R)/S(R) for Wannier90
+
+MATDUMP - matrix dump for Wannier90:
+  Prints the Fock/KS and overlap matrices in the direct-lattice
+  representation, which is the input to the LCAO->Wannier90 conversion.
+  That method, and the lcao2wannier package implementing it, are the work of
+  William Comaskey. MACE only generates the CRYSTAL deck and orchestrates the
+  run; it reimplements no part of the conversion.
+  Convert the resulting dump with:  mace wannier --input <dump>.out
+  CITATION: TODO - ask William Comaskey which citation he wants (the package,
+  a paper, or both). None is published here until he says; do not invent one.
+""",
+        'wannier': """
+Usage: mace wannier --input DUMP.out [options]
+
+Convert a MATDUMP matrix dump into Wannier90 hand-off files
+(.win .nnkp .eig .amn .mmn), then optionally localize.
+
+Wannier90 hand-off via lcao2wannier (William Comaskey). The LCAO->Wannier90
+method and the lcao2wannier package are his work; MACE generates the CRYSTAL
+input and orchestrates the run, and implements none of the conversion.
+CITATION: TODO - ask William Comaskey which citation he wants before
+publishing a Wannier model produced this way. Do not invent one.
+
+Options:
+  --input, -i FILE      MATDUMP properties output containing H(R) and S(R)
+  --seed NAME           Output basename (default: the dump's stem)
+  --output-dir DIR      Output directory (default: <seed>.wannier beside it)
+  --stage STAGE         all (default), prepare, overlaps, hybrid, localize
+  --threads N           CPU budget; omit inside SLURM, where lcao2wannier
+                        reads the allocation itself
+  --wannier90 PATH      wannier90.x, to localize after the hand-off
+  --l2w-arg ARG         Pass one raw argument through to lcao2wannier
+                        (repeatable, unvalidated)
+
+MACE passes through his validated defaults rather than restating them, and
+never chooses --k-grid (he derives it from the parent's own SHRINK factors)
+or --quiet (which would filter his self-audit's reasons out of the output).
+
+lcao2wannier is an optional dependency: pip install lcao2wannier
+wannier90.x is user-supplied upstream software. MACE bundles neither.
+
+Examples:
+  mace wannier --input material_matdump.out
+  mace wannier --input material_matdump.out --threads 8
+  mace wannier --input material_matdump.out --wannier90 /path/to/wannier90.x
 """,
         'opt2cif': """
 Usage: mace opt2cif [files/directory] [options]
@@ -1303,7 +1354,7 @@ def main():
         sys.exit(0)
     
     # Check if asking for help on a specific command (for non-passthrough commands)
-    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'preflight', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version']:
+    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'preflight', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'wannier', 'credits', 'version']:
         # Show command-specific help
         show_command_help(sys.argv[1])
         sys.exit(0)
@@ -1321,7 +1372,8 @@ Commands:
   completion  Check calculation status - categorize completed/errored jobs, organize files
   convert     CIF to D12 conversion - supports all CRYSTAL basis sets and functionals
   opt2d12     Generate D12 from optimized output - create SP/FREQ inputs from OPT results
-  opt2d3      Generate D3 property inputs - BAND, DOSS, TRANSPORT, CHARGE calculations
+  opt2d3      Generate D3 property inputs - BAND, DOSS, TRANSPORT, CHARGE, MATDUMP
+  wannier     Wannier90 hand-off from a MATDUMP dump, via lcao2wannier (W. Comaskey)
   opt2cif     Convert CRYSTAL outputs to CIF - supports all dimensionalities and calc types
   manager     Enhanced Queue Manager - material tracking, workflow automation, SLURM integration
   recover     Error recovery - automated fixes for SHRINK, memory, and convergence issues
@@ -1347,6 +1399,7 @@ More Help:
     
     parser.add_argument('command', nargs='?',
                        choices=['workflow', 'submit', 'preflight', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif',
+                               'wannier',
                                'completion', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version'],
                        help='Command to run')
     parser.add_argument('args', nargs='*', help='Arguments for the command')
@@ -1781,6 +1834,12 @@ More Help:
         except ImportError:
             from submission.preflight import main as preflight_main
         sys.exit(preflight_main(command_args('preflight')))
+
+    elif args.command == 'wannier':
+        # Layer 2: drive lcao2wannier (William Comaskey) over a MATDUMP dump.
+        # Rebuilt from the original command line so flag/value pairing survives.
+        from mace.wannier.cli import main as wannier_main
+        sys.exit(wannier_main(command_args('wannier')))
 
     elif args.command == 'monitor':
         # Launch monitoring dashboard or show status

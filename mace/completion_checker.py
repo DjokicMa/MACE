@@ -24,12 +24,14 @@ try:
     from mace.utils.calc_detection import (
         PROPERTY_CALC_TYPES, calc_type_from_filename, d3_calc_type, deck_records,
         is_band_output, is_charge_potential_output, is_doss_output,
-        is_frequency_output, is_optimization_output, is_transport_output)
+        is_frequency_output, is_matdump_output, is_optimization_output,
+        is_transport_output)
 except ImportError:  # pragma: no cover - run as a script from mace/
     from utils.calc_detection import (
         PROPERTY_CALC_TYPES, calc_type_from_filename, d3_calc_type, deck_records,
         is_band_output, is_charge_potential_output, is_doss_output,
-        is_frequency_output, is_optimization_output, is_transport_output)
+        is_frequency_output, is_matdump_output, is_optimization_output,
+        is_transport_output)
 
 # === Define known error and completion message patterns === #
 ERROR_PATTERNS = {
@@ -76,6 +78,7 @@ CALC_TYPE_TO_BUCKET = {
     'DOSS': 'completedoss',
     'TRANSPORT': 'completetransport',
     'CHARGE+POTENTIAL': 'completecharge_potential',
+    'MATDUMP': 'completematdump',
 }
 
 COMPLETED_BUCKETS = list(CALC_TYPE_TO_BUCKET.values())
@@ -88,6 +91,7 @@ COMPLETED_BUCKET_DESCRIPTIONS = {
     'completedoss': "Density of states (D3 DOSS)",
     'completetransport': "Transport properties (D3 TRANSPORT)",
     'completecharge_potential': "Charge density + potential (D3)",
+    'completematdump': "H(R)/S(R) matrix dump for Wannier90 (D3)",
 }
 
 # === Default extensions for organizing files === #
@@ -130,17 +134,19 @@ def determine_completed_subtype(file_path: Path, lines, has_opt_end: bool = Fals
     Decide which calc type a successfully-completed .out file came from.
 
     Resolution order (first match wins):
-      1. Sibling .d3 file's records (BAND/DOSS/BOLTZTRA/ECH3/POT3/ECHG/POTC)
+      1. Sibling .d3 file's records (BASISSET 60/64, BAND/DOSS/BOLTZTRA/
+         ECH3/POT3/ECHG/POTC)
       2. Lines CRYSTAL prints: TRANSPORT, FREQ, OPT (has_opt_end or the
          optimization lines), then the CHARGE+POTENTIAL, DOSS and BAND
          properties lines. Content goes before the file name because MACE
          chains the type into every follow-up name: an SP of an OPT is
          "X_opt_..._optimized_sp_..._optimized", and user names such as
          "X_SLAB_OPT_FSI" or "X_opt_tier7.freq" name the parent, not the run.
-      3. The last properties type token of the file name (_band, _doss, ...),
+      3. A properties run with no SCF that printed the MATDUMP matrix header
+      4. The last properties type token of the file name (_band, _doss, ...),
          for a properties output with no .d3 beside it and no tell (a run
          that stopped early)
-      4. Otherwise SP
+      5. Otherwise SP
     """
     parent = file_path.parent
     base_name = file_path.stem
@@ -174,6 +180,10 @@ def determine_completed_subtype(file_path: Path, lines, has_opt_end: bool = Fals
     # decides for a properties run that stopped before printing its tell.
     if '== SCF ENDED' in content:
         return 'SP'
+    # A matrix dump prints no SCF, and its header is checked only after the SCF
+    # test so an SCF run that printed its overlap matrix stays an SP.
+    if is_matdump_output(content):
+        return 'MATDUMP'
     name_type = calc_type_from_filename(file_path.name)
     if name_type in PROPERTY_CALC_TYPES:
         return name_type

@@ -553,8 +553,9 @@ class EnhancedCrystalQueueManager:
         """Determine calculation type from the deck's records, else its name.
 
         The records decide: a .d12 is OPT (OPTGEOM), FREQ (FREQCALC) or SP, a
-        .d3 is TRANSPORT (BOLTZTRA), CHARGE+POTENTIAL (ECH3/POT3/ECHG/POTC),
-        DOSS or BAND. The file name only breaks a tie. MACE chains the type
+        .d3 is MATDUMP (BASISSET with 60/64 prtrec records), TRANSPORT
+        (BOLTZTRA), CHARGE+POTENTIAL (ECH3/POT3/ECHG/POTC), DOSS or BAND. The
+        file name only breaks a tie. MACE chains the type
         into every follow-up name ("X_opt_..._optimized_sp_..._optimized",
         "..._optimized_charge+potential.d3"), so name substrings such as
         "_opt" read nearly every chained SP, FREQ and properties deck as OPT,

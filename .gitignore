@@ -62,3 +62,12 @@ docs/superpowers/
 # QA/deploy artifacts (never commit)
 mace-update.bundle
 testMACE1.1/
+
+# Wannier90 hand-off artifacts. The whole <seed>.wannier/ subtree is
+# regenerable from the retained parent matrix dump, and lcao2wannier's parse
+# cache is ~0.95x the parent it was built from. Ignore the containing directory
+# rather than each hand-off extension, so a small file deliberately kept as a
+# fixture is an explicit `git add -f` and not an invisible miss.
+*.wannier/
+*.parsecache.pkl
+*.lcao2wannier.incomplete

@@ -1473,6 +1473,59 @@ def configure_potential_calculation() -> Dict[str, Any]:
     return potential_config
 
 
+def configure_matdump_calculation(out_file: Optional[str] = None) -> Dict[str, Any]:
+    """Configure the direct-lattice H(R)/S(R) matrix dump (MATDUMP).
+
+    The dump feeds the LCAO->Wannier90 bridge, whose method and implementation
+    (the lcao2wannier package) are William Comaskey's work.
+
+    There is exactly one parameter, N, and the default is to DERIVE it from the
+    parent SCF output rather than ask. A too-small N is the one genuinely
+    dangerous setting in this calculation: it does not error, it yields a wrong
+    model. So the prompt offers the derived value and requires a deliberate
+    override, and the derivation itself happens in the writer, where the refusal
+    cases live.
+    """
+    print("\n=== MATRIX DUMP (MATDUMP) CONFIGURATION ===")
+    print("Prints the Fock/KS and overlap matrices in the direct-lattice")
+    print("representation - the input to the LCAO->Wannier90 conversion.")
+    print("Method and lcao2wannier package: William Comaskey.")
+
+    config: Dict[str, Any] = {"calculation_type": "MATDUMP", "n_rvectors": "auto"}
+
+    derived = None
+    if out_file:
+        try:
+            from d3_matdump import parse_max_gvector_index
+            derived = parse_max_gvector_index(
+                Path(out_file).read_text(errors="ignore"))
+        except Exception:
+            derived = None
+
+    print("\nNumber of direct-lattice R-vectors (N):")
+    if derived is not None:
+        print(f"  MACE will use N = {derived}, the count CRYSTAL itself used at")
+        print("  this run's TOLINTEG settings.")
+    else:
+        print("  MACE will read the count CRYSTAL used from the parent output.")
+    print("  Do not guess N: too few is not an error, it is a wrong model.")
+
+    # Non-interactive (workflow engine, SLURM completion callback): take the
+    # derived value silently. That is the safe default, so there is nothing to
+    # ask; prompting here would hang a queued job with no terminal.
+    if not sys.stdin.isatty():
+        print("\n  (no terminal: using the derived count)")
+        return config
+
+    override = yes_no_prompt("\nOverride N manually?", "no")
+    if override:
+        value = _nav_int("Number of R-vectors (N): ", default=derived or 0)
+        if value and value > 0:
+            config["n_rvectors"] = value
+
+    return config
+
+
 def configure_d3_calculation(calc_type: str, out_file: Optional[str] = None, 
                            save_prompt: bool = False) -> Dict[str, Any]:
     """Main function to configure any D3 calculation type.
@@ -1498,6 +1551,8 @@ def configure_d3_calculation(calc_type: str, out_file: Optional[str] = None,
         config = configure_charge_density_calculation()
     elif calc_type in ["POTENTIAL", "POT3", "POTC"]:
         config = configure_potential_calculation()
+    elif calc_type == "MATDUMP":
+        config = configure_matdump_calculation(out_file)
     elif calc_type == "CHARGE+POTENTIAL":
         # Configure both charge and potential settings
         print("\n--- Charge Density Settings ---")

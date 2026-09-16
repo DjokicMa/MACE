@@ -1383,7 +1383,7 @@ def create_material_id_from_file(file_path: str) -> str:
         # transport/charge/potential/charge+potential are calc types too — without them,
         # simple-named TRANSPORT / CHARGE+POTENTIAL outputs registered as brand-new
         # (duplicate) materials, the exact bug the canonical-ID routing exists to fix.
-        if re.match(r'^(opt|sp|band|doss|freq|transport|charge\+potential|charge|potential)\d*$', part.lower()):
+        if re.match(r'^(opt|sp|band|doss|freq|transport|charge\+potential|charge|potential|matdump)\d*$', part.lower()):
             # This looks like opt, opt2, sp10, band3, transport2, etc. - stop here
             break
         # Check if this part is a technical suffix (removed OPT from this list since we handle it specially)

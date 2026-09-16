@@ -72,6 +72,15 @@ class MissingDataAnalyzer:
                          'transport_zt_max', 'transport_carrier_type',
                          'band_gap', 'electronic_classification', 'conductivity_type']
         },
+        # MATDUMP deliberately extracts NOTHING. The dump is tens to hundreds
+        # of MB of matrix text; ingesting any of it would be costly and useless,
+        # so the extractor has no MATDUMP branch and this table records an empty
+        # requirement rather than leaving the type unknown (which would make it
+        # permanently "incomplete" and endlessly re-suggested).
+        'MATDUMP': {
+            'required': [],
+            'optional': []
+        },
         'CHARGE+POTENTIAL': {
             'required': ['chargepot_has_ech3', 'chargepot_has_pot3'],
             'optional': ['chargepot_grid_dims', 'chargepot_grid_points',

@@ -68,6 +68,7 @@ def _manager(tmp_path):
     ("C1-RCSR-ana_optimized_TRANSPORT.d3", "TRANSPORT"),
     ("mat_opt2.out", "OPT"),
     ("mat_doss3.d3", "DOSS"),
+    (f"{CHAIN}_sp_HSESOL3C_optimized_matdump.d3", "MATDUMP"),
     ("x_optimized.d12", None),          # "_optimized" is not "_opt"
     ("C1-RCSR-sph_optimized.d12", None),  # "_sph" is not "_sp"
 ])
@@ -86,8 +87,12 @@ def test_last_type_token_of_a_name(name, expected):
     (f"{CHAIN}_sp_HSESOL3C_optimized_doss.d3", DOSS_DECK, "DOSS"),
     (f"{CHAIN}_sp_HSESOL3C_optimized_band.d3", BAND_DECK, "BAND"),
     # a .d3 with no known record is still a properties deck, never SP/OPT
-    (f"{CHAIN}_sp_HSESOL3C_optimized.d3", "BASISSET\n2\n60 60\nEND\n", "BAND"),
-    ("mystery_doss.d3", "BASISSET\n2\n60 60\nEND\n", "DOSS"),
+    (f"{CHAIN}_sp_HSESOL3C_optimized.d3", "NEWK\n12 12\n1 0\nEND\n", "BAND"),
+    ("mystery_doss.d3", "NEWK\n12 12\n1 0\nEND\n", "DOSS"),
+    # BASISSET with 60/64 prtrec records is a matrix dump, whatever the name
+    (f"{CHAIN}_sp_HSESOL3C_optimized.d3", "BASISSET\n2\n60 60\n64 60\nEND\n",
+     "MATDUMP"),
+    ("mystery_matdump.d3", "NEWK\n12 12\n1 0\nEND\n", "MATDUMP"),
 ])
 def test_queue_manager_reads_the_deck_not_the_name(tmp_path, name, deck, expected):
     path = tmp_path / name

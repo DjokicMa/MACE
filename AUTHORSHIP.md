@@ -65,6 +65,26 @@ This document provides authorship attribution for the MACE (Mendoza Automated CR
 - `alldos_old.py` (archived)
 - `d3_config_old.py` (archived)
 
+#### William Comaskey
+- `d3_matdump.py` - MATDUMP: the CRYSTAL `properties` matrix-dump calculation
+  type, which prints H(R) and S(R) in the direct-lattice representation
+
+**The LCAO->Wannier90 method, and the `lcao2wannier` package that implements
+it, are William Comaskey's work.** MACE generates the CRYSTAL input and
+orchestrates the run. It implements no part of the conversion - not the Fourier
+transform to H(k)/S(k), not the generalized eigenproblem in the non-orthogonal
+AO basis, not the SCDM projections for `.amn`, and not the analytic
+momentum-shifted GTO overlaps for `.mmn`. That is the entire scientific content
+of the feature, and it is his.
+
+`lcao2wannier` is consumed as an optional external dependency and is never
+vendored into this repository, so its LICENSE and copyright stay with the
+author.
+
+**CITATION: TODO** - ask William Comaskey which citation he wants (the package,
+a paper, or both) before any citation string is published in MACE. Do not
+invent one.
+
 #### Mixed Attribution
 - `alldos.py` (archived) - Density of states generation (Prior contributions from Wangwei Lan, Kevin Lucht, Danny Maldonado, Marcus Djokic)
 - `create_band_d3.py` (archived) - Band structure generation (Prior contributions from Wangwei Lan, Kevin Lucht, Danny Maldonado, Marcus Djokic)
@@ -85,6 +105,11 @@ This document provides authorship attribution for the MACE (Mendoza Automated CR
 **Queue Module:**
 - `manager.py` - Enhanced tracking queue manager (EnhancedCrystalQueueManager)
 
+**Wannier Module (orchestration only - see William Comaskey below):**
+- `wannier/driver.py` - Invokes the `lcao2wannier` package and surfaces its
+  diagnostics
+- `wannier/cli.py` - `mace wannier` front-end
+
 **Recovery Module:**
 - `pandas_utils.py` - Pandas utility functions
 
@@ -94,6 +119,15 @@ This document provides authorship attribution for the MACE (Mendoza Automated CR
 - `submit_d12.py` - D12 job submission
 - `submit_d3.py` - D3 job submission
 - `submit_frequency.py` - Frequency calculation submission
+
+#### William Comaskey
+- The LCAO->Wannier90 method and the `lcao2wannier` package driven by
+  `mace/wannier/`. MACE's modules there only build an argument list, run his
+  package, and report what it says; every scientific step of the conversion is
+  his. `lcao2wannier` is an optional external dependency and is never vendored.
+  **CITATION: TODO** - ask him which citation he wants; do not invent one.
+
+#### Marcus Djokic (continued)
 
 **Utils Module:**
 - `animation.py` - Loading animation utilities

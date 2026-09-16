@@ -42,6 +42,11 @@ CALC_TYPES = {
         "depends_on": ["SP", "OPT"],
         "generates": ["charge_density", "electrostatic_potential"],
     },
+    "MATDUMP": {
+        "name": "Matrix Dump for Wannier90",
+        "depends_on": ["SP", "OPT"],
+        "generates": ["direct_lattice_matrices"],
+    },
 }
 
 # Predefined workflow templates
@@ -108,6 +113,18 @@ SLURM_RESOURCE_DEFAULTS = {
         "memory": "80G",  # Total memory, not per CPU
         "account": "mendoza_q",
     },
+    # Same as every other D3 property calculation. MEASURED: the matrix dump is
+    # I/O bound and fast - the corpus diamond at N=1247 took 0.97 s of CPU and
+    # wrote 34 MB - and Pproperties at 28 ranks emits the matrices exactly once,
+    # byte-identical to serial, so the shipped submit_prop.sh path needs no
+    # change and no special-casing.
+    "MATDUMP": {
+        "ntasks": 28,
+        "nodes": 1,
+        "walltime": "2:00:00",
+        "memory": "80G",  # Total memory, not per CPU
+        "account": "mendoza_q",
+    },
 }
 
 # Module and scratch directory settings
@@ -125,11 +142,13 @@ SCRATCH_DIR_DEFAULTS = {
     "DOSS": "$SCRATCH/crys23/prop",
     "TRANSPORT": "$SCRATCH/crys23/prop",
     "CHARGE+POTENTIAL": "$SCRATCH/crys23/prop",
+    "MATDUMP": "$SCRATCH/crys23/prop",
 }
 
 # Calculation type categories
 D12_CALC_TYPES = ["OPT", "SP", "FREQ"]  # Use .d12 input files
-D3_CALC_TYPES = ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]  # Use .d3 input files
+D3_CALC_TYPES = ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL",
+                 "MATDUMP"]  # Use .d3 input files
 
 # Optional calculation types (workflow continues if these fail)
 OPTIONAL_CALC_TYPES = ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "FREQ"]

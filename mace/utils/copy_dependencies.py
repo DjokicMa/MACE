@@ -122,6 +122,7 @@ def copy_dependencies(target_dir: str = "."):
                 "d3_interactive.py",
                 "d3_config.py",
                 "d3_kpoints.py",
+                "d3_matdump.py",
                 "seekpath_interface.py"
             ]
         }

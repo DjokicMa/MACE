@@ -502,7 +502,7 @@ All workflow configurations are saved as JSON files for:
 #### **Tool Integration**
 - **NewCifToD12.py**: CIF → D12 conversion with full configuration
 - **CRYSTALOptToD12.py**: OPT → SP/FREQ generation
-- **CRYSTALOptToD3.py**: Band structure / DOS / transport input generation (`--calc-type BAND|DOSS|TRANSPORT|CHARGE|POTENTIAL|CHARGE+POTENTIAL`)
+- **CRYSTALOptToD3.py**: Band structure / DOS / transport / matrix-dump input generation (`--calc-type BAND|DOSS|TRANSPORT|CHARGE|POTENTIAL|CHARGE+POTENTIAL|MATDUMP`)
 - **Enhanced Queue Manager**: Job submission and monitoring
 - **Material Database**: Calculation tracking and provenance
 
@@ -511,6 +511,100 @@ The workflow manager automatically handles file dependencies:
 ```
 CIF → OPT.d12 → OPT.out/.gui → SP.d12 → SP.out/.f9 → BAND.d3/DOSS.d3
 ```
+
+### Wannier90 hand-off (MATDUMP → lcao2wannier → wannier90.x)
+
+**Attribution.** The LCAO→Wannier90 method, and the `lcao2wannier` package that
+implements it, are **William Comaskey's** work. MACE generates the CRYSTAL deck
+and orchestrates the run; it implements none of the conversion. See
+`AUTHORSHIP.md`.
+
+**CITATION: TODO** — ask William Comaskey which citation he wants (the package,
+a paper, or both) before publishing a Wannier model produced this way. MACE
+deliberately ships no citation string rather than inventing one.
+
+The chain is three separate programs, and MACE owns only the first:
+
+```
+CRYSTAL scf → fort.9 → CRYSTAL properties (MATDUMP: MACE generates this deck)
+            → lcao2wannier (optional dependency)  → .win .nnkp .eig .amn .mmn
+            → wannier90.x (user-supplied)         → maximally localised Wanniers
+```
+
+```bash
+mace opt2d3 --input material_sp.out --calc-type MATDUMP   # generate the deck
+mace submit material_sp_matdump.d3                        # run it
+mace wannier --input material_sp_matdump.out              # convert
+```
+
+#### The `N` parameter — derived, never guessed
+
+`MATDUMP` prints H(R) and S(R) for `N` direct-lattice R-vectors. A too-small `N`
+is **not an error** — it produces a wrong model. MACE therefore derives `N` from
+the parent SCF output's `MAX G-VECTOR INDEX FOR 1- AND 2-ELECTRON INTEGRALS`
+line, the count CRYSTAL itself used at that run's TOLINTEG, and **refuses**
+rather than defaulting when the value is not trustworthy: line absent, `****`
+(I4 overflow at ≥10000), `1` (a MOLECULE parent), an even value (the R set is
+closed under negation, so an even count means a misparse), or a value above
+CRYSTAL's own vector pool.
+
+Measured on the corpus material `1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized`: the
+derived `N` is 1247, and at the hand-written `N = 60` that this feature started
+from, `lcao2wannier` aborts with `cond(S) = inf` at 80 of 100 k-points. There is
+no safe constant — measured values for one element on one lattice span 87…2731
+depending on basis and TOLINTEG. `--n-rvectors` overrides the derivation for a
+user who knows better, and is still bounded by the vector pool.
+
+**Over-large `N` is corrupting, not merely wasteful.** Past CRYSTAL's
+`NO.OF VECTORS CREATED` pool, `properties` does not error — it emits headers
+with indices read from uninitialised memory (`N.7003(***  0  0)`), several of
+which parse as `R = (0,0,0)` and overwrite the genuine on-site overlap block
+downstream. MACE refuses any `N` above the pool.
+
+#### Which CRYSTAL build is needed
+
+Closed-shell **and collinear spin-polarized** systems work on a **stock**
+CRYSTAL23. This is measured, not assumed: the corpus diamond SP deck is a
+`SPIN` / `UNRESTRICTED OPEN SHELL` run, and the stock HPCC module dumped 1247
+overlap and 2494 Fock blocks under `ALPHA`/`BETA` headers, which `lcao2wannier`
+parses natively.
+
+Only **2-component spin-orbit (SOC)** needs the development
+`properties`/`Pproperties`, which print complex matrices and the
+`ALPHA_ALPHA`/`ALPHA_BETA`/`BETA_ALPHA`/`BETA_BETA` spinor labels. MACE detects
+that case and refuses before submitting, naming what is missing. Request those
+binaries from the CRYSTAL23 developers directly; MACE never bundles, downloads
+or redistributes them.
+
+#### Reading the conversion's own verdict
+
+`lcao2wannier` runs a self-audit and **its disentanglement verdict is
+non-fatal** — a refused model still exits 0 with all five files written. `mace
+wannier` therefore requires a positive `STATUS: ✓ PASS` and reports the
+calculation as FAILED on a `FAIL`, reproducing the violations verbatim.
+
+Do **not** read its `validate_overlap_conditioning` report as proof the model is
+right: measured, it rated an fcc Cu model 'good' whose bands were wrong by
+1.2 eV, and an Fe model 'good' whose bands were wrong by 9.9 eV.
+
+#### Known upstream defect (lcao2wannier 1.0.0)
+
+CRYSTAL writes the cell index in an I4 field, so from index 1000 on the header
+has no separating space (`OVERLAP MATRIX - CELL N.1000(`). `lcao2wannier`
+1.0.0's header patterns require whitespace there and drop every such cell
+**silently** — measured, 999 of 1247 cells parsed on the corpus diamond, with
+the run then reporting a plausible R-vector count. `mace wannier` refuses to
+convert such a dump and names the cause. The deck and the dump are correct; only
+the reader is affected. The upstream fix is one character (`\s+` → `\s*`) and
+belongs in the package.
+
+#### Output handling
+
+The parent dump is large — cost is linear in `N` and quadratic in the AO count,
+measured at 34 MB for a 2-atom cell (36 AOs) at `N = 1247`. **Retain it:** every
+`lcao2wannier` stage but `localize` needs it, and its parse cache is keyed on
+the file's mtime and size. MACE ingests the dump's path and provenance only,
+never the matrices.
 
 ### Usage Examples
 
@@ -631,6 +725,7 @@ The enhanced system provides material lifecycle tracking:
 - **`mace/queue/manager.py`**: Enhanced queue manager with material tracking and callback system
 - **`mace/recovery/`**: Automated error detection and recovery with YAML configuration
 - **`mace/workflow/engine.py`**: Orchestrates OPT → SP → BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL workflow progression
+- **`mace/wannier/`**: Drives `lcao2wannier` (William Comaskey) over a MATDUMP dump — orchestration only, optional dependency
 - **`mace/utils/file_manager.py`**: Organized file management by material ID and calculation type
 - **`mace/material_monitor.py`**: Real-time monitoring dashboard and health checks
 - **`mace/utils/property_extractor.py`**: Complete property extraction from CRYSTAL output files

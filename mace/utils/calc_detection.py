@@ -112,8 +112,8 @@ def is_transport_output(content: str) -> bool:
 
 # --- Calculation type of a deck ----------------------------------------------
 
-# The four properties types MACE runs from a .d3 deck.
-PROPERTY_CALC_TYPES = ('BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL')
+# The properties types MACE runs from a .d3 deck (all on submit_prop.sh).
+PROPERTY_CALC_TYPES = ('BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'MATDUMP')
 
 # Charge-density and electrostatic-potential records. Crystal_d3 writes ECH3 and
 # POT3 for the CHARGE+POTENTIAL step (3D cube grids) and ECHG / POTC for the
@@ -121,8 +121,19 @@ PROPERTY_CALC_TYPES = ('BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL')
 CHARGE_POTENTIAL_RECORDS = frozenset({'ECH3', 'ECHG', 'POT3', 'POTC'})
 
 
+# A MATDUMP deck is `BASISSET / 2 / 60 N / 64 N / END`: BASISSET, the NPR
+# count, then prtrec pairs (60 = overlap matrix, 64 = Fock/KS matrix).
+_MATDUMP_PRTREC_RECORD = re.compile(r'6[04]\s+\d+')
+
+
 def d3_calc_type(records: Set[str]) -> Union[str, None]:
     """The properties type a .d3 deck's records drive, or None if none is known."""
+    # BASISSET is also CRYSTAL's block-2 internal-basis keyword (every .d12 MACE
+    # writes has it), so the bare word is not enough: a matrix dump also has a
+    # 60/64 prtrec record. No other .d3 MACE writes contains BASISSET.
+    if 'BASISSET' in records and any(
+            _MATDUMP_PRTREC_RECORD.fullmatch(record) for record in records):
+        return 'MATDUMP'
     if 'BOLTZTRA' in records:
         return 'TRANSPORT'
     if records & CHARGE_POTENTIAL_RECORDS:
@@ -152,14 +163,14 @@ def d12_calc_type(records: Set[str]) -> str:
 # "_opt").
 _FILENAME_TYPE_TOKEN = re.compile(
     r'_(charge[_+]potential|chargepot|charge|potential|cp|transport|transp'
-    r'|band|doss|dos|freq|sp|opt)\d*(?=_|$)')
+    r'|matdump|band|doss|dos|freq|sp|opt)\d*(?=_|$)')
 
 _FILENAME_TOKEN_TYPE = {
     'charge_potential': 'CHARGE+POTENTIAL', 'charge+potential': 'CHARGE+POTENTIAL',
     'chargepot': 'CHARGE+POTENTIAL', 'charge': 'CHARGE+POTENTIAL',
     'potential': 'CHARGE+POTENTIAL', 'cp': 'CHARGE+POTENTIAL',
     'transport': 'TRANSPORT', 'transp': 'TRANSPORT',
-    'band': 'BAND', 'doss': 'DOSS', 'dos': 'DOSS',
+    'matdump': 'MATDUMP', 'band': 'BAND', 'doss': 'DOSS', 'dos': 'DOSS',
     'freq': 'FREQ', 'sp': 'SP', 'opt': 'OPT',
 }
 
@@ -214,3 +225,17 @@ def is_doss_output(content: str) -> bool:
 def is_charge_potential_output(content: str) -> bool:
     """True when a properties .out is from an ECH3/POT3 (or ECHG/POTC) run."""
     return _CHARGE_POTENTIAL_OUTPUT_LINE.search(content) is not None
+
+
+# The matrix-dump header the properties program prints for each prtrec 60
+# (overlap) cell: " OVERLAP MATRIX - CELL N.   1(  0  0  0)". The index is an
+# I4 field, so from cell 1000 on there is no space after "N.".
+_MATDUMP_OUTPUT_LINE = re.compile(
+    r'^[ \t]*OVERLAP MATRIX - CELL N\.[ \t]*\d+\(',
+    re.MULTILINE,
+)
+
+
+def is_matdump_output(content: str) -> bool:
+    """True when a properties .out holds a BASISSET 60/64 matrix dump (MATDUMP)."""
+    return _MATDUMP_OUTPUT_LINE.search(content) is not None

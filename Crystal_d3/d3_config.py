@@ -259,6 +259,22 @@ def validate_d3_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
                 if key not in config:
                     errors.append(f"Missing required field for {calc_type}: {key}")
     
+    elif calc_type == "MATDUMP":
+        # The only field is the R-vector count, and "auto" (derive it from the
+        # parent SCF) is the correct default - so a config without it is valid,
+        # while a config WITH a nonsensical one is not. An explicit N is bounded
+        # against CRYSTAL's vector pool later, at generation, where the parent
+        # output is available to read the pool size from.
+        n = config.get("n_rvectors", "auto")
+        if n not in (None, "", "auto"):
+            try:
+                if int(n) < 1:
+                    errors.append(
+                        f"MATDUMP n_rvectors must be a positive count; got {n}")
+            except (TypeError, ValueError):
+                errors.append(
+                    f"MATDUMP n_rvectors must be an integer or 'auto'; got {n!r}")
+
     elif calc_type == "WANNIER":
         required = ["wannier_functions", "plot_bands"]
         for key in required:
@@ -351,6 +367,13 @@ def get_default_d3_config(calc_type: str) -> Dict[str, Any]:
                 "scale": 3,
                 "use_range": False
             }
+        },
+        "MATDUMP": {
+            # "auto" means: derive N from the parent SCF output. Never a number
+            # here - the measured range for one element on one lattice spans
+            # 87..2731 depending on basis and TOLINTEG, so no constant is safe.
+            "calculation_type": "MATDUMP",
+            "n_rvectors": "auto"
         },
         "WANNIER": {
             "calculation_type": "WANNIER",
@@ -469,6 +492,14 @@ def print_d3_config_summary(config: Dict[str, Any]) -> None:
             print(f"  Type: {config['potential_config'].get('type', 'N/A')}")
             print(f"  Points: {config['potential_config'].get('n_points', 'N/A')}")
     
+    elif calc_type == "MATDUMP":
+        n = config.get("n_rvectors", "auto")
+        if n in (None, "", "auto"):
+            print("R-vectors (N): derived from the parent SCF output")
+        else:
+            print(f"R-vectors (N): {n} (explicit override)")
+        print("Wannier90 hand-off via lcao2wannier (William Comaskey)")
+
     elif calc_type == "WANNIER":
         print(f"Functions: {config.get('wannier_functions', 'N/A')}")
         print(f"Plot bands: {config.get('plot_bands', 'N/A')}")
