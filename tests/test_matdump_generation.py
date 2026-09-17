@@ -11,6 +11,7 @@ the one that was actually run on CRYSTAL23 (1247 overlap cells, 2494 Fock
 blocks, ENDPROP, no errors). The refusal paths use kilobyte-sized distilled
 output so they still run in the corpus-less CI.
 """
+import os
 import shutil
 import subprocess
 import sys
@@ -456,3 +457,218 @@ def test_the_opt2d3_help_names_the_calc_type_and_its_author():
     assert "MATDUMP" in combined
     assert "William Comaskey" in combined
     assert "CITATION: TODO" in combined
+
+
+# --- Submission dispatch ----------------------------------------------------
+#
+# These exist because classification was right and dispatch was wrong. A deck
+# MACE had just generated could not be submitted by MACE: the calc type was
+# recognized, a 'pending' row was created, and then the dispatch table returned
+# None and submit_to_slurm printed "Unknown calculation type: MATDUMP" - a line
+# the progress bar swallowed, so `mace submit --track` reported
+# "Submitted 0/1" and nothing else, leaving an orphaned row with no SLURM id
+# behind on every attempt.
+
+
+def _bare_manager(is_workflow_context, tmp_path):
+    """A manager with only the two fields dispatch reads, no DB, no locks."""
+    from mace.queue.manager import EnhancedCrystalQueueManager
+
+    manager = EnhancedCrystalQueueManager.__new__(EnhancedCrystalQueueManager)
+    manager.is_workflow_context = is_workflow_context
+    scripts = REPO_ROOT / "mace" / "submission"
+    manager.script_paths = {
+        'submitcrystal23': scripts / "submitcrystal23.sh",
+        'submit_prop': scripts / "submit_prop.sh",
+    }
+    return manager
+
+
+@pytest.mark.parametrize("is_workflow_context", [False, True])
+def test_a_matdump_deck_can_actually_be_submitted(is_workflow_context, tmp_path):
+    """Reintroducing the bug - dropping MATDUMP from either dispatch branch -
+    returns None here, which is the silent no-submit.
+
+    submit_prop.sh itself needs no change: it already does
+    ``cp $DIR/$JOB.d3 INPUT`` and ``cp $DIR/$JOB.f9 fort.9``, which is exactly
+    the matrix dump's staging requirement. Only the dispatch table was missing.
+    """
+    manager = _bare_manager(is_workflow_context, tmp_path)
+    script = manager._get_submit_script_for_calc_type("MATDUMP")
+    assert script is not None, "MATDUMP has no submit script in this context"
+    assert script.endswith("submit_prop.sh")
+    # The rest of the D3 family must be unchanged by the fix.
+    for other in ("BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"):
+        assert manager._get_submit_script_for_calc_type(other).endswith(
+            "submit_prop.sh"), other
+
+
+def test_a_matdump_deck_keeps_its_d3_extension_when_organized(tmp_path):
+    """In organized mode the copy is named ``<id>_<calc>.<ext>``, and the
+    extension comes from the D3 family test. Excluding MATDUMP wrote a CRYSTAL
+    ``properties`` deck out as ``.d12``, which every consumer keying on the
+    extension - mace submit's d12/d3 split, mace/submission/properties.py -
+    then treats as a crystal deck.
+    """
+    from mace.workflow.common.constants import D3_CALC_TYPES
+
+    for calc_type in ("MATDUMP", "BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"):
+        assert calc_type.rstrip('0123456789') in D3_CALC_TYPES, calc_type
+    for calc_type in ("OPT", "SP", "FREQ"):
+        assert calc_type not in D3_CALC_TYPES, calc_type
+
+
+def test_the_live_dispatch_sites_read_the_shared_constant():
+    """The constant the tests assert must be the one production reads.
+
+    MATDUMP was added to ``D3_CALC_TYPES`` and to nothing else, and because no
+    production module imported the constant, all three live dispatch sites
+    still carried their own literal list that excluded it - so the test passed
+    while every site disagreed with it. Reintroducing that (re-spelling the
+    literal at a call site) makes this fail.
+    """
+    import mace.queue.manager as manager_mod
+    import mace.workflow.executor as executor_mod
+
+    assert manager_mod.D3_CALC_TYPES is not None
+    assert executor_mod.D3_CALC_TYPES is not None
+
+    for path in (REPO_ROOT / "mace" / "queue" / "manager.py",
+                 REPO_ROOT / "mace" / "workflow" / "executor.py"):
+        text = path.read_text()
+        assert "['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']" not in text, (
+            f"{path.name} still carries a hand-spelled D3 family list; it will "
+            "drift from D3_CALC_TYPES the next time a type is added")
+
+
+def test_the_generator_s_own_filename_classifies_as_matdump(tmp_path):
+    """The name MACE's generator actually produces, not a tidy short one.
+
+    ``base_name`` strips only a TRAILING _opt/_sp, so a real corpus parent
+    ``1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized.out`` yields
+    ``..._optimized_matdump.d3`` with ``_opt`` still in the middle. With the
+    ``_matdump`` branch placed after the ``_opt`` check, that classified as OPT
+    and dispatched submitcrystal23.sh - the CRYSTAL binary - for a
+    ``properties`` deck. Reintroducing the ordering makes this fail.
+    """
+    from mace.queue.manager import EnhancedCrystalQueueManager
+
+    manager = EnhancedCrystalQueueManager.__new__(EnhancedCrystalQueueManager)
+    deck = tmp_path / "1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized_matdump.d3"
+    deck.write_text("BASISSET\n2\n60 1247\n64 1247\nEND\n")
+    assert manager.determine_calc_type_from_file(deck) == "MATDUMP"
+    # The name alone must say MATDUMP too (the shared classifier the queue
+    # manager, completion checker and scans all use), so a deck whose records
+    # cannot be read still stays on the properties script.
+    from mace.utils.calc_detection import calc_type_from_filename
+
+    assert calc_type_from_filename(deck.name) == "MATDUMP"
+    deck.write_text("NEWK\n12 12\n1 0\nEND\n")
+    assert manager.determine_calc_type_from_file(deck) == "MATDUMP"
+
+
+# --- The capability gate, on the paths a user actually takes -----------------
+#
+# Spec acceptance criterion 4: "Capability detection refuses a spin/SOC dump on
+# a scalar-only build, with the full message, BEFORE submitting." The refusal
+# text was correct from the start, but it could only ever be reached from a
+# hand-authored JSON config: it read `config["properties_binary"]`, a key that
+# nothing in MACE wrote - no flag, no prompt, no default - so every real
+# invocation handed it None and it returned None by design. These run the real
+# CLI with no --config-file at all.
+
+
+def _scalar_only_binary(path):
+    """A stand-in for a stock properties build: no SOC markers."""
+    path.write_bytes(b"CRYSTAL PROPERTIES\x00OVERLAP MATRIX - CELL\x00"
+                     b"FOCK MATRIX - CELL\x00")
+    return path
+
+
+def _soc_parent(tmp_path, stem="dsoc_sp"):
+    """A 2-component parent: a TWOCOMPON block and no literal SOC keyword."""
+    staged = _distilled(tmp_path, stem=stem)
+    deck = tmp_path / f"{stem}.d12"
+    deck.write_text(deck.read_text().rstrip("\n") + "\nTWOCOMPON\nEND\n")
+    return staged
+
+
+def test_a_two_component_dump_is_refused_on_a_scalar_only_build(tmp_path):
+    """No --config-file anywhere. Reintroducing the bug - reading the binary
+    from the config dict instead of resolving it - writes the deck and exits 0.
+    """
+    staged = _soc_parent(tmp_path)
+    binary = _scalar_only_binary(tmp_path / "properties")
+    result = _run_opt2d3("--input", str(staged), "--calc-type", "MATDUMP",
+                         "--properties-binary", str(binary))
+    combined = result.stdout + result.stderr
+    assert list(tmp_path.glob("*_matdump.d3")) == [], "a deck was written anyway"
+    assert "2-component spin-orbit (SOC)" in combined
+    assert "ALPHA_ALPHA ELECTRONS" in combined
+    assert "CRYSTAL23 developers" in combined
+    assert "never bundles" in combined
+
+
+def test_the_gate_resolves_the_binary_from_the_crystal_module(tmp_path,
+                                                              monkeypatch):
+    """No flag either - just the module the submission template would load."""
+    staged = _soc_parent(tmp_path)
+    ebroot = tmp_path / "crystal"
+    (ebroot / "bin").mkdir(parents=True)
+    _scalar_only_binary(ebroot / "bin" / "Pproperties")
+    env = dict(os.environ, EBROOTCRYSTAL=str(ebroot))
+    env.pop("MACE_PROPERTIES_BINARY", None)
+    result = subprocess.run(
+        [sys.executable, str(MACE_CLI), "--no-banner", "opt2d3",
+         "--input", str(staged), "--calc-type", "MATDUMP"],
+        capture_output=True, text=True, cwd=str(REPO_ROOT), env=env)
+    assert list(tmp_path.glob("*_matdump.d3")) == []
+    assert "2-component spin-orbit (SOC)" in result.stdout + result.stderr
+
+
+def test_a_two_component_dump_proceeds_on_a_capable_build(tmp_path):
+    """The gate adds a refusal; it must never invent one.
+
+    It also fixes the size prediction: a 2-component dump prints 8 Fock blocks
+    per cell, not 2, so a run classified as collinear under-predicted by ~3x.
+    """
+    staged = _soc_parent(tmp_path)
+    dev = tmp_path / "properties"
+    dev.write_bytes(b"FOCK MATRIX (REAL PART)\x00   ALPHA_ALPHA ELECTRONS\x00")
+    result = _run_opt2d3("--input", str(staged), "--calc-type", "MATDUMP",
+                         "--properties-binary", str(dev))
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "spin treatment: soc" in combined
+    assert (tmp_path / "dsoc_matdump.d3").read_text() == (
+        "BASISSET\n2\n60 1247\n64 1247\nEND")
+
+
+def test_an_unfindable_binary_never_blocks_a_dump(tmp_path, monkeypatch):
+    """"Unknown" must stay distinct from "incapable": `mace opt2d3` routinely
+    runs on a login node with no CRYSTAL module loaded."""
+    staged = _soc_parent(tmp_path)
+    env = dict(os.environ, EBROOTCRYSTAL=str(tmp_path / "nowhere"),
+               PATH=str(tmp_path / "empty"))
+    env.pop("MACE_PROPERTIES_BINARY", None)
+    result = subprocess.run(
+        [sys.executable, str(MACE_CLI), "--no-banner", "opt2d3",
+         "--input", str(staged), "--calc-type", "MATDUMP"],
+        capture_output=True, text=True, cwd=str(REPO_ROOT), env=env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "dsoc_matdump.d3").exists()
+
+
+def test_a_too_small_explicit_n_warns_on_the_real_cli(tmp_path):
+    """N=321 against a derived 1247 does NOT abort downstream - it runs clean
+    and yields a truncated model. Silence there is the failure mode."""
+    staged = _distilled(tmp_path, stem="mat_sp")
+    result = _run_opt2d3("--input", str(staged), "--calc-type", "MATDUMP",
+                         "--n-rvectors", "321")
+    combined = result.stdout + result.stderr
+    assert result.returncode == 0, combined
+    assert "TRUNCATED" in combined
+    assert "1247" in combined
+    # Still written: the override is allowed, just never silent.
+    assert (tmp_path / "mat_matdump.d3").read_text() == (
+        "BASISSET\n2\n60 321\n64 321\nEND")

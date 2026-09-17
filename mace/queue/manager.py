@@ -41,6 +41,13 @@ from mace.recovery import opt_restart
 from mace.utils.calc_detection import (
     PROPERTY_CALC_TYPES, calc_type_from_filename, d12_calc_type, d3_calc_type,
     deck_records)
+# The single list of calc types whose input is a .d3 properties deck.
+# Imported rather than re-spelled: MATDUMP was added to this constant and
+# to nothing else, and because no production module read the constant, the
+# three literal copies below it all still excluded the type - the test
+# asserting MATDUMP was in D3_CALC_TYPES passed while every live dispatch
+# site disagreed with it.
+from mace.workflow.common.constants import D3_CALC_TYPES
 
 # Import lock manager for race condition prevention
 try:
@@ -289,13 +296,21 @@ class EnhancedCrystalQueueManager:
             elif calc_type == 'DOSS':
                 return str(self.script_paths.get('submit_prop_doss',
                           self.script_paths.get('submit_prop')))
-            elif calc_type in ['TRANSPORT', 'CHARGE+POTENTIAL']:
+            elif calc_type in ['TRANSPORT', 'CHARGE+POTENTIAL', 'MATDUMP']:
+                # MATDUMP is a properties deck like the rest of the D3 family and
+                # needs no template of its own - submit_prop.sh already stages
+                # $JOB.d3 as INPUT and $JOB.f9 as fort.9, which is exactly the
+                # matrix dump's requirement. It was missing only from dispatch, so
+                # a deck MACE had just generated could not be submitted by MACE:
+                # submit_to_slurm printed "Unknown calculation type: MATDUMP" (and
+                # the progress bar swallowed even that), leaving an orphaned
+                # 'pending' row with no SLURM id behind on every attempt.
                 return str(self.script_paths.get('submit_prop'))
         else:
             # In repository context, use general scripts
             if calc_type in ['OPT', 'SP', 'FREQ']:
                 return str(self.script_paths.get('submitcrystal23'))
-            elif calc_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']:
+            elif calc_type in D3_CALC_TYPES:
                 return str(self.script_paths.get('submit_prop'))
         
         return None
@@ -628,7 +643,7 @@ class EnhancedCrystalQueueManager:
         calc_dir = self.create_calculation_folder(material_id, calc_type, source_file=d12_file)
 
         # Determine file extension based on calculation type
-        is_d3_calc = calc_type.rstrip('0123456789') in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']
+        is_d3_calc = calc_type.rstrip('0123456789') in D3_CALC_TYPES
         file_extension = '.d3' if is_d3_calc else '.d12'
 
         in_place = (not self.organize_outputs) and (not self.is_workflow_context)

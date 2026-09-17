@@ -48,9 +48,12 @@ SCF reports ``MAX G-VECTOR INDEX ... 1247``:
 That is the whole case for deriving ``N`` rather than defaulting it.
 """
 
+import os
 import re
+import shutil
+import warnings
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 # --- Attribution strings, surfaced in help text and driver messages ---------
 
@@ -190,21 +193,82 @@ SPIN_COLLINEAR = "collinear"
 SPIN_SOC = "soc"
 
 
+# Deck-side marker. MEASURED against the CRYSTAL23 manual section 6.2: "To
+# activate a 2c-SCF, rather than 1c-SCF calculation, all that is necessary is to
+# open a TWOCOMPON block in the SCF part of the input file." SOC is only one of
+# the OPTIONAL keywords that may appear INSIDE that block (manual p. 170,
+# alongside 2NDVARIAT, GUESSPSO, SPINORLOCK) - it adds the spin-orbit operator
+# to a run that is already 2-component. Keying on SOC therefore missed every
+# TWOCOMPON run that did not also ask for the operator, and those are exactly as
+# 2-component: 8 Fock blocks per cell, spinor matrix labels, dev binary needed.
+_TWOCOMPON_DECK_KEYWORDS = {"TWOCOMPON", "SOC", "GUESSPSO", "GUESSPATNC",
+                            "GUESSROTM", "GCOREROT", "SPINORLOCK", "PRTENESOC"}
+
+# Output-side markers a genuine 2-component run carries. MEASURED on the only
+# real 2c-SOC CRYSTAL artifact available here, lcao2wannier's own
+# tests/Bismuth_basis_40.out: it contains ZERO occurrences of SOC, SPIN-ORBIT,
+# SPINOR, 2-COMPONENT or TWOCOMPON and reports "TYPE OF CALCULATION :
+# UNRESTRICTED OPEN SHELL" like any collinear run - but it carries
+# "ALPHA_ALPHA ELECTRONS" and 160 "FOCK MATRIX (REAL PART)" headers. Those are
+# the spinor block labels and the complex-matrix printing that only the
+# 2-component path emits, which is why section 4's binary capability test uses
+# the same two strings.
+#
+# MEASURED false-positive rate on the MACE corpus: 0 of 707 outputs contain any
+# of these, so they cannot reclassify an existing scalar or collinear run.
+_SOC_OUTPUT_MARKERS = (
+    "FOCK MATRIX (REAL PART)",
+    "FOCK MATRIX (IMAG PART)",
+    "ALPHA_ALPHA ELECTRONS",
+    "ALPHA_BETA ELECTRONS",
+    "BETA_BETA ELECTRONS",
+    "SPIN-ORBIT",
+    "SPINOR",
+    "2-COMPONENT",
+)
+
+
+def deck_requests_two_component(deck_text: str) -> bool:
+    """Whether a CRYSTAL deck opens a 2c-SCF (TWOCOMPON) block.
+
+    Matched on whole keyword lines, not substrings: TWOCOMPON's own keywords sit
+    one per line in the SCF block, and a substring test would fire on a comment
+    or a basis label.
+    """
+    for line in deck_text.splitlines():
+        if line.strip().upper() in _TWOCOMPON_DECK_KEYWORDS:
+            return True
+    return False
+
+
+def output_is_two_component(out_text: str) -> bool:
+    """Whether an output carries the markers only a 2-component run emits."""
+    return any(marker in out_text for marker in _SOC_OUTPUT_MARKERS)
+
+
 def detect_spin_treatment(out_text: str, deck_text: str = "") -> str:
     """Classify the parent run as closed-shell, collinear spin, or 2c SOC.
 
     MEASURED: CRYSTAL prints ``TYPE OF CALCULATION : RESTRICTED CLOSED SHELL``
     or ``... UNRESTRICTED OPEN SHELL`` in 706 of the 707 outputs in ``test/``.
+    That banner does NOT distinguish 2-component from collinear - the real 2c
+    bismuth parent reports ``UNRESTRICTED OPEN SHELL`` - so it is only ever
+    consulted after the 2-component markers have been ruled out.
 
-    SOC has no example in the MACE corpus (zero occurrences of ``SPIN-ORBIT``
-    or ``SPINOR`` in 707 outputs), so it is detected from the deck's own ``SOC``
-    keyword. That path is therefore untested against a corpus artifact and says
-    so rather than pretending otherwise.
+    Two independent detectors, because either input may be absent:
+
+    * the parent deck, when it sits beside the .out, opening a ``TWOCOMPON``
+      block (the manual's own activation condition, section 6.2);
+    * the parent output itself carrying the spinor/complex-matrix markers.
+
+    The output-side test is what makes this work on a bare ``.out``. Before it,
+    a real 2c parent whose ``.d12`` was not staged classified as ``collinear``,
+    which under-predicted the dump size by ~3x (2 Fock blocks per cell instead
+    of 8) and made the capability gate unreachable for the case it exists for.
     """
-    for line in deck_text.splitlines():
-        if line.strip().upper() == "SOC":
-            return SPIN_SOC
-    if "SPIN-ORBIT" in out_text or "SPINOR" in out_text:
+    if deck_text and deck_requests_two_component(deck_text):
+        return SPIN_SOC
+    if output_is_two_component(out_text):
         return SPIN_SOC
     if _UNRESTRICTED_RE.search(out_text):
         return SPIN_COLLINEAR
@@ -294,8 +358,41 @@ def derive_n_rvectors(out_text: str, source: str = "the parent SCF output") -> i
     return maxg
 
 
-def validate_n_rvectors(n: int, out_text: str, explicit: bool = False) -> int:
-    """Check a user-supplied N against the invariants N must satisfy."""
+def describe_n_below_derived(n: int, derived: int) -> str:
+    """The warning text for an explicit N below the count CRYSTAL itself used.
+
+    This is the one silent-too-small-N path the whole calc type exists to
+    prevent, so it gets its own named string and both the writer and the
+    interactive configurator emit it rather than each wording it differently.
+
+    MEASURED, and this is why the warning is not merely tidy: on the corpus
+    diamond (derived N = 1247) a dump at N = 60 makes lcao2wannier abort with
+    ``cond(S) = inf`` at 80 of 100 k-points. An intermediate value such as
+    N = 321 does NOT abort - it runs clean and yields a truncated model with
+    nothing saying so. Refusing is wrong (a user may know the true support is
+    tighter than CRYSTAL's integral bound); silence is worse.
+    """
+    return (
+        f"N={n} is below the {derived} direct-lattice vectors CRYSTAL itself used\n"
+        f"at this run's TOLINTEG settings. The model will be TRUNCATED to the\n"
+        f"R-vectors you asked for, and a truncated dump does not error: it either\n"
+        f"aborts downstream with cond(S)=inf (measured at N=60 against a derived\n"
+        f"1247) or, at an intermediate N, runs clean and produces a wrong model.\n"
+        f"Keeping N={n} is allowed - you may know the true support is tighter -\n"
+        f"but it is a deliberate truncation, not a default."
+    )
+
+
+def validate_n_rvectors(n: int, out_text: str, explicit: bool = False,
+                        warn: Optional[Callable[[str], None]] = None) -> int:
+    """Check a user-supplied N against the invariants N must satisfy.
+
+    ``warn`` receives one message per non-fatal problem. It is optional so the
+    invariant checks stay usable from a test or a config validator, but every
+    production caller passes one: an explicit N below the derived count used to
+    return silently, which is precisely the failure this calc type exists to
+    stop.
+    """
     if n < 1:
         raise MatdumpRefusal(
             f"N must be a positive number of direct-lattice vectors; got {n}."
@@ -325,7 +422,13 @@ def validate_n_rvectors(n: int, out_text: str, explicit: bool = False) -> int:
         if derived is not None and n < derived:
             # Allowed - the user may know the true support is tighter than the
             # bound - but never silent.
-            pass
+            message = describe_n_below_derived(n, derived)
+            if warn is not None:
+                warn(message)
+            else:
+                # No emitter supplied (a validator, a test). Still not silent:
+                # the stdlib warning channel is the last resort, never nothing.
+                warnings.warn(message, RuntimeWarning, stacklevel=2)
     return n
 
 
@@ -387,6 +490,55 @@ def properties_binary_supports_soc(binary_path: Path) -> Optional[bool]:
     except OSError:
         return None
     return any(marker in blob for marker in _SOC_MARKERS)
+
+
+# Where the properties binary is looked for, in the order that matters.
+#
+# The submission template is the authority on what will actually run: MEASURED,
+# mace/submission/submit_prop.sh loads ``CRYSTAL/23-intel-2023a`` and executes
+# ``$EBROOTCRYSTAL/bin/Pproperties`` under mpirun. So the cluster's Pproperties
+# is checked first, then the serial properties beside it (what an interactive
+# ``properties < INPUT`` run uses), and only then PATH.
+#
+# This exists because the capability gate was previously unreachable: it read a
+# ``properties_binary`` config key that nothing in MACE ever wrote, so it was
+# always called with None and always returned None. A gate that can only be
+# reached from a hand-authored JSON file is not a gate.
+PROPERTIES_BINARY_ENV = "MACE_PROPERTIES_BINARY"
+
+
+def resolve_properties_binary(explicit: Optional[Any] = None) -> Optional[Path]:
+    """Locate the CRYSTAL ``properties`` binary that would run this dump.
+
+    Returns None when none can be found. That is deliberate and must stay
+    distinct from "found one and it cannot do SOC": an unknown binary never
+    blocks a dump, it only means the capability gate has nothing to check.
+    """
+    candidates = []
+    if explicit:
+        candidates.append(Path(str(explicit)).expanduser())
+
+    env = os.environ.get(PROPERTIES_BINARY_ENV)
+    if env:
+        candidates.append(Path(env).expanduser())
+
+    ebroot = os.environ.get("EBROOTCRYSTAL")
+    if ebroot:
+        candidates.append(Path(ebroot) / "bin" / "Pproperties")
+        candidates.append(Path(ebroot) / "bin" / "properties")
+
+    for name in ("Pproperties", "properties"):
+        found = shutil.which(name)
+        if found:
+            candidates.append(Path(found))
+
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                return candidate
+        except OSError:
+            continue
+    return None
 
 
 def capability_refusal(spin: str, binary_path: Optional[Path]) -> Optional[str]:

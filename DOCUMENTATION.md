@@ -555,6 +555,14 @@ no safe constant — measured values for one element on one lattice span 87…27
 depending on basis and TOLINTEG. `--n-rvectors` overrides the derivation for a
 user who knows better, and is still bounded by the vector pool.
 
+**An `N` below the derived count is allowed but never silent.** You may know the
+true support is tighter than CRYSTAL's integral bound, so MACE does not refuse —
+it warns, naming both numbers, and writes the deck. The warning exists because
+only the *extreme* truncations announce themselves: `N = 60` against a derived
+1247 makes `lcao2wannier` abort with `cond(S) = inf`, but an intermediate value
+such as `N = 321` runs clean to completion and yields a truncated model with
+nothing saying so.
+
 **Over-large `N` is corrupting, not merely wasteful.** Past CRYSTAL's
 `NO.OF VECTORS CREATED` pool, `properties` does not error — it emits headers
 with indices read from uninitialised memory (`N.7003(***  0  0)`), several of
@@ -571,21 +579,61 @@ parses natively.
 
 Only **2-component spin-orbit (SOC)** needs the development
 `properties`/`Pproperties`, which print complex matrices and the
-`ALPHA_ALPHA`/`ALPHA_BETA`/`BETA_ALPHA`/`BETA_BETA` spinor labels. MACE detects
-that case and refuses before submitting, naming what is missing. Request those
+`ALPHA_ALPHA`/`ALPHA_BETA`/`BETA_ALPHA`/`BETA_BETA` spinor labels. Request those
 binaries from the CRYSTAL23 developers directly; MACE never bundles, downloads
 or redistributes them.
 
+MACE gates that case before submitting, and here is exactly what it checks — it
+is a heuristic on someone else's binary, so it is worth knowing its edges:
+
+* **Is this a 2-component run?** Yes if the parent `.d12` opens a `TWOCOMPON`
+  block (manual §6.2: opening the block is all that activates a 2c-SCF — `SOC`
+  is only an optional keyword *inside* it), **or** if the parent `.out` itself
+  carries markers only a 2c run emits (`FOCK MATRIX (REAL PART)`,
+  `ALPHA_ALPHA`/`ALPHA_BETA`/`BETA_BETA ELECTRONS`, `SPINOR`, `SPIN-ORBIT`).
+  The output-side test matters because CRYSTAL's `TYPE OF CALCULATION` banner
+  does *not* distinguish 2c from collinear — a real 2c bismuth parent reports
+  `UNRESTRICTED OPEN SHELL` like any spin-polarized run. Measured: 0 of the 707
+  outputs in the MACE corpus carry any of these markers, so nothing existing is
+  reclassified.
+* **Can the available binary do it?** MACE resolves
+  `$EBROOTCRYSTAL/bin/Pproperties` (what `submit_prop.sh` actually runs), then
+  the serial `properties` beside it, then `PATH`; `--properties-binary` or
+  `$MACE_PROPERTIES_BINARY` override the search. It then looks for
+  `FOCK MATRIX (REAL PART)` / `ALPHA_ALPHA ELECTRONS` in the binary itself.
+* **The refusal fires** only when both are settled: a 2-component parent *and* a
+  binary that was found and lacks the markers. If no binary can be found at all,
+  MACE says nothing and writes the deck — "unknown" is deliberately not treated
+  as "incapable", so a missing module never blocks a legitimate dump. Run
+  `mace opt2d3 ... --properties-binary /path/to/properties` if you want the
+  check made against a specific build.
+
 #### Reading the conversion's own verdict
 
-`lcao2wannier` runs a self-audit and **its disentanglement verdict is
-non-fatal** — a refused model still exits 0 with all five files written. `mace
-wannier` therefore requires a positive `STATUS: ✓ PASS` and reports the
-calculation as FAILED on a `FAIL`, reproducing the violations verbatim.
+`lcao2wannier` runs two self-checks and **both verdicts are non-fatal** — a
+model it has refused still exits 0 with all five files written. `mace wannier`
+reads both:
 
-Do **not** read its `validate_overlap_conditioning` report as proof the model is
-right: measured, it rated an fcc Cu model 'good' whose bands were wrong by
-1.2 eV, and an Fe model 'good' whose bands were wrong by 9.9 eV.
+| his `STATUS:` line | source | `mace wannier` |
+|---|---|---|
+| `✓ PASS` (disentanglement) / `✓ GOOD` (conditioning) | `wannier_checks.py` / `conditioning.py` | success |
+| `⚠ MARGINAL` (conditioning) | `conditioning.py` | success **with his report reproduced whole and the caveat repeated** |
+| `✗ FAIL` / `✗ BAD` | either | reported FAILED, violations reproduced verbatim, exit 1 |
+| no `STATUS:` line at all | — | reported NOT VERIFIED, never as a pass |
+
+`MARGINAL` is worth reading rather than skimming past: an ill-conditioned S(k)
+is the downstream symptom of too few surviving R-vectors, which is the exact
+failure this calc type exists to prevent. Success is defined positively — a
+`PASS` must be *found*, never merely a `FAIL` not found — so a reworded banner
+downgrades to "not verified" instead of silently passing.
+
+Do **not** read his `validate_overlap_conditioning` report as proof the model is
+right. It classifies the condition number of S(k) and nothing else
+(`METHODOLOGY.md` §3.4: good `cond < 1e4`, marginal `1e4 ≤ cond < 1e8`, bad
+`cond ≥ 1e8`). A `good` rating means the generalized eigenproblem is
+numerically well posed at the sampled k-points; it is not a statement about
+whether the interpolated bands match the DFT bands. Check the Wannier spreads
+and a band comparison before publishing.
 
 #### Known upstream defect (lcao2wannier 1.0.0)
 

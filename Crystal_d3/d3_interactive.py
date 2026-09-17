@@ -1521,6 +1521,20 @@ def configure_matdump_calculation(out_file: Optional[str] = None) -> Dict[str, A
     if override:
         value = _nav_int("Number of R-vectors (N): ", default=derived or 0)
         if value and value > 0:
+            # Never accept a silent truncation. An N below the count CRYSTAL
+            # itself used does not error and does not always abort downstream:
+            # measured, N=60 against a derived 1247 makes lcao2wannier abort
+            # with cond(S)=inf, while N=321 runs clean and yields a truncated
+            # model with nothing saying so.
+            if derived is not None and value < derived:
+                try:
+                    from d3_matdump import describe_n_below_derived
+                    print()
+                    for line in describe_n_below_derived(value, derived).splitlines():
+                        print(f"  WARNING: {line}" if line.strip() else "")
+                except Exception:
+                    print(f"\n  WARNING: N={value} is below the derived {derived}; "
+                          "the model will be truncated.")
             config["n_rvectors"] = value
 
     return config

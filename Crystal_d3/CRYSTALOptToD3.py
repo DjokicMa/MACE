@@ -63,10 +63,25 @@ from d3_matdump import (MatdumpRefusal, MATDUMP_CREDIT_BLOCK, capability_refusal
                         derive_n_rvectors, detect_spin_treatment, format_bytes,
                         parse_deck_dimensionality, parse_dimensionality,
                         parse_number_of_ao, predict_dump_bytes,
-                        validate_n_rvectors, write_matdump_deck)
+                        resolve_properties_binary, validate_n_rvectors,
+                        write_matdump_deck)
 
 # Report (never prompt) above this predicted dump size.
 _MATDUMP_SIZE_WARN_BYTES = 200 * 1024 * 1024
+
+
+def _emit_warning(text: str) -> None:
+    """Emit a multi-line warning one line at a time.
+
+    ui.warn takes a single line; a multi-line refusal or caveat handed to it
+    whole loses its prefix on every line but the first, which is how a wall of
+    text stops reading as a warning.
+    """
+    for line in str(text).splitlines():
+        if line.strip():
+            ui.warn(line)
+        else:
+            print()
 
 # CRYSTAL writes the cell index in an I4 field, so from 1000 on the header runs
 # together as "CELL N.1000(". lcao2wannier v1.0's header regexes require
@@ -140,12 +155,16 @@ class D3Generator:
     """Handle D3 file generation from CRYSTAL output files."""
     
     def __init__(self, input_file: str, calc_type: str, output_dir: Optional[str] = None,
-                 n_rvectors: Optional[int] = None):
+                 n_rvectors: Optional[int] = None,
+                 properties_binary: Optional[str] = None):
         self.input_file = Path(input_file).resolve()
         self.calc_type = calc_type.upper()
         # MATDUMP only: an explicit R-vector count supplied on the command line.
         # None means "derive it", which is the default and the safe path.
         self.n_rvectors = n_rvectors
+        # MATDUMP only: an explicit properties binary for the capability gate.
+        # None means "resolve it" (module path, then PATH), not "skip the check".
+        self.properties_binary = properties_binary
         self.base_name = self.input_file.stem
         
         # Remove common suffixes to get clean base name
@@ -1284,8 +1303,13 @@ class D3Generator:
 
             # --- capability gate (before any submission) -------------------
             spin = detect_spin_treatment(out_text, deck_text)
-            binary = config.get("properties_binary")
-            refusal = capability_refusal(spin, Path(binary) if binary else None)
+            # Resolve the binary that will actually run this deck rather than
+            # waiting for a config key to carry one. The gate used to read
+            # config["properties_binary"], which nothing in MACE ever wrote, so
+            # it was always handed None and always returned None - reachable
+            # only from a hand-authored JSON file.
+            binary = resolve_properties_binary(config.get("properties_binary"))
+            refusal = capability_refusal(spin, binary)
             if refusal:
                 for line in refusal.splitlines():
                     ui.err(line) if line.strip() else print()
@@ -1297,7 +1321,8 @@ class D3Generator:
                 n = derive_n_rvectors(out_text, source=self.input_file.name)
                 origin = "derived from the parent SCF"
             else:
-                n = validate_n_rvectors(int(requested), out_text, explicit=True)
+                n = validate_n_rvectors(int(requested), out_text, explicit=True,
+                                        warn=lambda msg: _emit_warning(msg))
                 origin = "supplied explicitly"
 
             # --- report, never prompt --------------------------------------
@@ -1545,8 +1570,11 @@ class D3Generator:
         # An explicit --n-rvectors overrides whatever the configuration carries.
         # Handled here rather than in the writer so it applies equally to the
         # interactive, shared-config and --config-file paths.
-        if self.calc_type == "MATDUMP" and self.n_rvectors is not None:
-            config["n_rvectors"] = self.n_rvectors
+        if self.calc_type == "MATDUMP":
+            if self.n_rvectors is not None:
+                config["n_rvectors"] = self.n_rvectors
+            if self.properties_binary is not None:
+                config["properties_binary"] = self.properties_binary
 
         # Generate D3 content
         if self.calc_type == "BAND":
@@ -1688,6 +1716,14 @@ def main():
              "Omit it and MACE derives the value CRYSTAL itself used at this "
              "run's TOLINTEG. Supplying it overrides that derivation; it is "
              "still bounded by CRYSTAL's vector pool."
+    )
+    parser.add_argument(
+        "--properties-binary", "--properties_binary",
+        dest="properties_binary",
+        help="MATDUMP only: path to the CRYSTAL properties/Pproperties binary "
+             "whose SOC capability is checked before a 2-component dump is "
+             "written. Omit it and MACE resolves $EBROOTCRYSTAL/bin/Pproperties, "
+             "then the serial properties beside it, then PATH."
     )
     parser.add_argument(
         "--batch", "-b",
@@ -1857,7 +1893,8 @@ def main():
             print()
             ui.rule(f"Processing: {out_file}")
             generator = D3Generator(str(out_file), calc_type, args.output_dir,
-                                    n_rvectors=getattr(args, 'n_rvectors', None))
+                                    n_rvectors=getattr(args, 'n_rvectors', None),
+                                    properties_binary=getattr(args, 'properties_binary', None))
             if generator.generate_d3(shared_config) is None:
                 failed.append(out_file)
 
@@ -1942,7 +1979,8 @@ def main():
                         # Use first file as reference for getting structure info
                         first_file = str(out_files[0])
                         temp_generator = D3Generator(first_file, calc_type, args.output_dir,
-                                                     n_rvectors=getattr(args, 'n_rvectors', None))
+                                                     n_rvectors=getattr(args, 'n_rvectors', None),
+                                    properties_binary=getattr(args, 'properties_binary', None))
                         shared_config = temp_generator.generate_d3()
                         if shared_config:
                             print()
@@ -1968,7 +2006,8 @@ def main():
                     print()
                     ui.rule(f"Processing: {out_file.name}")
                     generator = D3Generator(str(out_file), calc_type, args.output_dir,
-                                    n_rvectors=getattr(args, 'n_rvectors', None))
+                                    n_rvectors=getattr(args, 'n_rvectors', None),
+                                    properties_binary=getattr(args, 'properties_binary', None))
 
                     if shared_config:
                         config = generator.generate_d3(shared_config)
@@ -2052,7 +2091,8 @@ def main():
                     calc_type = config["calculation_type"]
             
             generator = D3Generator(input_file, calc_type, args.output_dir,
-                                    n_rvectors=getattr(args, 'n_rvectors', None))
+                                    n_rvectors=getattr(args, 'n_rvectors', None),
+                                    properties_binary=getattr(args, 'properties_binary', None))
             
             # Generate D3 file with config if available
             if config:

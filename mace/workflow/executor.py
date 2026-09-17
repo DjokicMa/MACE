@@ -33,6 +33,11 @@ try:
     from mace.database.materials import MaterialDatabase
     from mace.queue.manager import EnhancedCrystalQueueManager
     from mace.workflow.context import WorkflowContext, workflow_context, get_current_context
+    # The one list of calc types whose input is a .d3 properties deck. Imported
+    # rather than re-spelled at each dispatch site: MATDUMP was added to this
+    # constant and to no literal copy, and since nothing read the constant, every
+    # live site still excluded the type.
+    from mace.workflow.common.constants import D3_CALC_TYPES
     # Crystal_d12 modules no longer needed here - handled by subprocess calls
 except ImportError as e:
     print(f"Error importing required modules: {e}")
@@ -498,7 +503,7 @@ class WorkflowExecutor:
         if not workflow_sequence:
             validation_errors.append("Empty workflow sequence")
         else:
-            valid_calc_types = ['OPT', 'SP', 'FREQ', 'BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']
+            valid_calc_types = ['OPT', 'SP', 'FREQ'] + list(D3_CALC_TYPES)
             for calc_type in workflow_sequence:
                 # Planner legitimately emits numbered types (OPT2, SP2, BAND3...)
                 base_type = calc_type.rstrip('0123456789')
@@ -846,7 +851,7 @@ class WorkflowExecutor:
         elif base_type in ['SP', 'FREQ']:
             specific_template = f"submitcrystal23_{base_type.lower()}_{step_num}.sh"
             generic_template = "submitcrystal23.sh"
-        elif base_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']:
+        elif base_type in D3_CALC_TYPES:
             # All D3 property calculations use the same template
             specific_template = f"submit_prop_{calc_type.lower()}_{step_num}.sh"
             generic_template = "submit_prop.sh"
@@ -1039,7 +1044,7 @@ class WorkflowExecutor:
         elif base_type in ['SP', 'FREQ']:
             specific_template = f"submitcrystal23_{base_type.lower()}_{step_num}.sh"
             generic_template = "submitcrystal23.sh"
-        elif base_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']:
+        elif base_type in D3_CALC_TYPES:
             # All D3 property calculations use the same template
             specific_template = f"submit_prop_{calc_type.lower()}_{step_num}.sh"
             generic_template = "submit_prop.sh"
@@ -1587,7 +1592,7 @@ fi'''
             ui.info(f"  Created material_id: {material_id} from {input_file.name}")
             
             # Check if this is a D3 calculation
-            is_d3_calc = calc_type.rstrip('0123456789') in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']
+            is_d3_calc = calc_type.rstrip('0123456789') in D3_CALC_TYPES
             
             if is_d3_calc:
                 # For D3 calculations, we need to handle submission differently
@@ -2375,7 +2380,7 @@ fi'''
             
         # Find input files for this step
         # D3 calculations (BAND, DOSS, TRANSPORT, CHARGE+POTENTIAL) use .d3 files
-        if calc_type.rstrip('0123456789') in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']:
+        if calc_type.rstrip('0123456789') in D3_CALC_TYPES:
             input_files = list(step_dir.glob("*.d3"))
             file_type = "D3"
         else:

@@ -23,6 +23,7 @@ from mace.wannier.driver import (
     LCAO2WANNIER_CITATION,
     Lcao2WannierUnavailable,
     _classify_audit,
+    _conditioning_report,
     build_command,
     check_parent_dump,
     convert,
@@ -140,6 +141,91 @@ def test_a_bad_conditioning_verdict_is_a_failure():
     assert _classify_audit("  STATUS: ✗ BAD\n")[0] == "fail"
 
 
+# His conditioning check prints its own STATUS line, from a different module
+# (conditioning.py:138) than the disentanglement audit (wannier_checks.py:179),
+# with a THREE-valued verdict: GOOD / MARGINAL / BAD. The first version of this
+# classifier matched PASS and FAIL|BAD and nothing else, so MARGINAL and GOOD
+# both fell through it entirely - and MARGINAL is the one negative signal MACE
+# was discarding. Both end-to-end validation runs hit it (worst cond(S) =
+# 2.530e+04, "could benefit from more R-vectors") and were reported as
+# unqualified successes.
+
+REAL_MARGINAL_REPORT = """\
+
+======================================================================
+Overlap Matrix Conditioning Check
+======================================================================
+  R-vectors in Fourier sum:     999
+  Orbital space dimension:      36 x 36
+  K-points sampled:             100
+
+  Worst condition number:       2.530e+04  at k = (0.000, 0.000, 0.000)
+  Median condition number:      1.204e+03
+  Min eigenvalue of S(k):       3.101e-04  at k = (0.500, 0.500, 0.500)
+
+  K-points not positive def.:   0 / 100 (0.0%)
+  K-points needing regulariz.:  0 / 100 (0.0%)
+
+  STATUS: \u26a0 MARGINAL
+
+  The overlap matrices show moderate ill-conditioning.
+  Results may be acceptable but could benefit from more R-vectors.
+======================================================================
+  STATUS: \u2713 PASS \u2014 satisfies Wannier90 disentanglement rules
+"""
+
+
+def test_a_marginal_conditioning_verdict_is_not_swallowed():
+    """Reintroducing the bug - matching only PASS and FAIL|BAD - classifies
+    this stdout as a clean 'pass' and drops the MARGINAL line from audit_text
+    entirely, which is exactly what shipped."""
+    verdict, text = _classify_audit(REAL_MARGINAL_REPORT)
+    assert verdict == "marginal"
+    assert "MARGINAL" in text
+    # Severity wins over count: the PASS on the same stdout must not mask it.
+    assert "PASS" in text
+
+
+def test_a_good_conditioning_verdict_is_a_pass():
+    """GOOD was unmatched too - harmless, but the marker set must cover all
+    three conditioning verdicts explicitly rather than by accident."""
+    assert _classify_audit("  STATUS: \u2713 GOOD\n")[0] == "pass"
+
+
+def test_a_bad_verdict_still_outranks_a_marginal_one():
+    assert _classify_audit(
+        "  STATUS: \u26a0 MARGINAL\n  STATUS: \u2717 BAD\n")[0] == "fail"
+
+
+def test_a_marginal_run_is_usable_but_qualified(tmp_path):
+    """His own text says "results may be acceptable", so MARGINAL must not be
+    reported as a failure - and must not be reported as a clean success either.
+    """
+    complete = {"seed": list(HANDOFF_SUFFIXES)}
+    base = dict(returncode=0, stdout="", stderr="", command=[],
+                output_dir=tmp_path, seed="seed")
+    marginal = ConversionResult(produced=complete, audit="marginal", **base)
+    assert marginal.ok
+    assert marginal.qualified
+    clean = ConversionResult(produced=complete, audit="pass", **base)
+    assert clean.ok and not clean.qualified
+
+
+def test_the_conditioning_report_is_reproduced_whole():
+    """The numbers and his remedy are what tell a user whether to re-run at a
+    larger R-vector count; a bare word 'MARGINAL' tells them nothing."""
+    block = _conditioning_report(REAL_MARGINAL_REPORT)
+    assert "Overlap Matrix Conditioning Check" in block
+    assert "2.530e+04" in block
+    assert "could benefit from more R-vectors" in block
+    # and it stops at his closing rule rather than swallowing the rest
+    assert "disentanglement" not in block
+
+
+def test_no_conditioning_report_yields_an_empty_block():
+    assert _conditioning_report("STATUS: \u2713 PASS\n") == ""
+
+
 def test_an_absent_verdict_is_unknown_and_never_a_pass():
     """Success requires FINDING a PASS, never merely failing to find a FAIL.
 
@@ -162,6 +248,7 @@ def test_success_requires_all_three_conditions(tmp_path):
                 output_dir=tmp_path, seed="seed")
 
     assert ConversionResult(produced=complete, audit="pass", **base).ok
+    assert ConversionResult(produced=complete, audit="marginal", **base).ok
     assert not ConversionResult(produced=complete, audit="fail", **base).ok
     assert not ConversionResult(produced=complete, audit="unknown", **base).ok
     assert not ConversionResult(produced={"seed": [".win"]}, audit="pass", **base).ok
@@ -326,3 +413,73 @@ def test_a_bad_wannier90_path_is_refused_by_his_own_preflight(tmp_path):
         convert(dump, seed="m", output_dir=tmp_path / "out",
                 wannier90=Path("/nonexistent/wannier90.x"))
     assert "Traceback" not in str(exc.value)
+
+
+# --------------------------------------------------------------------------
+# What `mace wannier` REPORTS for each verdict
+# --------------------------------------------------------------------------
+#
+# The classifier and the report are separate failures. Before this, a MARGINAL
+# run reached cli.py as audit == "pass" and printed an unqualified
+# "Hand-off complete." with exit 0 - VERIFIED end to end against the real 2c-SOC
+# bismuth parent: his conditioning block was in stdout and MACE said nothing
+# about it.
+
+
+def _result(tmp_path, **kwargs):
+    from mace.wannier.driver import ConversionResult
+
+    base = dict(returncode=0, stdout="", stderr="", command=[],
+                output_dir=tmp_path, seed="seed",
+                produced={"seed": list(HANDOFF_SUFFIXES)})
+    base.update(kwargs)
+    return ConversionResult(**base)
+
+
+def _run_cli(monkeypatch, capsys, result):
+    import mace.wannier.cli as cli
+
+    monkeypatch.setattr(cli, "convert", lambda **kwargs: result)
+    code = cli.main(["--input", "dump_matdump.out"])
+    captured = capsys.readouterr()
+    return code, captured.out + captured.err
+
+
+def test_the_cli_never_reports_a_marginal_model_as_an_unqualified_success(
+        tmp_path, monkeypatch, capsys):
+    """VERIFIED end to end: driving the real lcao2wannier 1.0.0 on the real
+    2c-SOC bismuth parent at a lowered marginal threshold reproduced his
+    "STATUS: MARGINAL" banner, and MACE now prints his report whole with the
+    remedy and a qualified closing line.
+
+    Reintroducing the bug - letting MARGINAL classify as "pass" - prints
+    "Hand-off complete." and this fails.
+    """
+    result = _result(
+        tmp_path, audit="marginal",
+        audit_text="  STATUS: ⚠ MARGINAL",
+        conditioning_text=REAL_MARGINAL_REPORT.strip())
+    code, text = _run_cli(monkeypatch, capsys, result)
+    assert code == 0                       # his verdict is a caveat, not a refusal
+    assert "Hand-off complete." not in text
+    assert "QUALIFIED" in text
+    assert "could benefit from more R-vectors" in text   # his own remedy
+    assert "2.530e+04" in text                            # his own numbers
+    assert "TOLINTEG" in text                             # what to do about it
+
+
+def test_the_cli_still_reports_a_clean_pass_plainly(tmp_path, monkeypatch,
+                                                    capsys):
+    code, text = _run_cli(monkeypatch, capsys, _result(tmp_path, audit="pass"))
+    assert code == 0
+    assert "Hand-off complete." in text
+    assert "QUALIFIED" not in text
+
+
+def test_the_cli_still_fails_a_refused_model(tmp_path, monkeypatch, capsys):
+    result = _result(tmp_path, audit="fail",
+                     audit_text="  STATUS: ✗ FAIL — wannier90 will reject this setup:")
+    code, text = _run_cli(monkeypatch, capsys, result)
+    assert code == 1
+    assert "REFUSED" in text
+    assert "Hand-off complete." not in text

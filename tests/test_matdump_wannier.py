@@ -37,12 +37,16 @@ from d3_matdump import (  # noqa: E402
     SPIN_SOC,
     MatdumpRefusal,
     capability_refusal,
+    deck_requests_two_component,
     derive_n_rvectors,
+    describe_n_below_derived,
     detect_spin_treatment,
+    output_is_two_component,
     parse_deck_dimensionality,
     parse_max_gvector_index,
     parse_vector_pool_size,
     predict_dump_bytes,
+    resolve_properties_binary,
     validate_n_rvectors,
     write_matdump_deck,
 )
@@ -217,9 +221,46 @@ def test_explicit_n_is_refused_when_the_pool_cannot_be_read():
         validate_n_rvectors(500, text, explicit=True)
 
 
-def test_an_explicit_n_below_the_derived_value_is_allowed():
-    """The override exists for a user who knows the true support is tighter."""
-    assert validate_n_rvectors(321, scf_out(1247), explicit=True) == 321
+def test_an_explicit_n_below_the_derived_value_is_allowed_but_never_silent():
+    """Allowed, and warned about. Both halves matter.
+
+    Allowed: the override exists for a user who knows the true support is
+    tighter than CRYSTAL's integral bound.
+
+    Never silent: this is the one silent-too-small-N path the whole calc type
+    exists to prevent. MEASURED - at N=60 against a derived 1247, lcao2wannier
+    aborts with cond(S)=inf at 80 of 100 k-points, so the user finds out. At an
+    INTERMEDIATE N such as 321 nothing aborts: the deck runs clean and yields a
+    truncated model with nothing saying so.
+
+    Reintroducing the bug - the `pass` that used to sit where the comparison is
+    now - collects no warning here and this fails.
+    """
+    warnings_seen = []
+    assert validate_n_rvectors(321, scf_out(1247), explicit=True,
+                               warn=warnings_seen.append) == 321
+    assert len(warnings_seen) == 1
+    message = warnings_seen[0]
+    assert "321" in message and "1247" in message
+    assert "TRUNCATED" in message
+
+    # At or above the derived count there is nothing to warn about.
+    quiet = []
+    validate_n_rvectors(1247, scf_out(1247), explicit=True, warn=quiet.append)
+    validate_n_rvectors(2000, scf_out(1247), explicit=True, warn=quiet.append)
+    assert quiet == []
+
+
+def test_a_too_small_n_warns_even_with_no_emitter_supplied():
+    """No caller may opt into silence by forgetting to pass an emitter."""
+    with pytest.warns(RuntimeWarning, match="below the 1247"):
+        validate_n_rvectors(60, scf_out(1247), explicit=True)
+
+
+def test_the_truncation_warning_names_both_numbers():
+    text = describe_n_below_derived(60, 1247)
+    assert "N=60" in text and "1247" in text
+    assert "TRUNCATED" in text
 
 
 # --------------------------------------------------------------------------
@@ -245,6 +286,57 @@ def test_spin_treatment_closed_shell():
 def test_soc_is_detected_from_the_parent_deck():
     """SOC has zero examples in the corpus, so it is read from the deck."""
     assert detect_spin_treatment(SCF_HEADER, "CRYSTAL\n0 0 0\n227\nSOC\nEND\n") == SPIN_SOC
+
+
+def test_two_component_is_detected_from_TWOCOMPON_without_the_SOC_keyword():
+    """The block is what makes a run 2-component; SOC is optional INSIDE it.
+
+    CRYSTAL23 manual section 6.2: "To activate a 2c-SCF, rather than 1c-SCF
+    calculation, all that is necessary is to open a TWOCOMPON block in the SCF
+    part of the input file." SOC is listed among the block's OPTIONAL keywords
+    (p. 170, beside 2NDVARIAT / GUESSPSO / SPINORLOCK) and only adds the
+    spin-orbit operator to a run that is already in a spinor basis.
+
+    Reintroducing the bug - keying detection on the literal `SOC` line - calls
+    this deck collinear. That is not a cosmetic mislabel: it predicts 2 Fock
+    blocks per cell where the dump emits 8 (a ~3x size under-estimate) and it
+    makes the capability gate unreachable for the exact case it exists for.
+    """
+    deck = "title\nCRYSTAL\n0 0 0\n227\n3.54\n1\n6 0.125 0.125 0.125\n" \
+           "BASISSET\nPOB-TZVP-REV2\nTWOCOMPON\nEND\nSHRINK\n8 8\nEND\n"
+    assert deck_requests_two_component(deck)
+    assert detect_spin_treatment(SCF_HEADER, deck) == SPIN_SOC
+
+
+def test_two_component_is_detected_from_the_output_when_no_deck_is_present():
+    """The .d12 is not always staged beside the .out, and the banner lies.
+
+    MEASURED on the only genuine 2c-SOC CRYSTAL artifact available here,
+    lcao2wannier's own tests/Bismuth_basis_40.out: it reports "TYPE OF
+    CALCULATION : UNRESTRICTED OPEN SHELL" exactly like a collinear run and
+    contains ZERO occurrences of SOC, SPIN-ORBIT, SPINOR, 2-COMPONENT or
+    TWOCOMPON - but it carries ALPHA_ALPHA ELECTRONS and 160 "FOCK MATRIX
+    (REAL PART)" headers. Without the output-side markers a real 2c parent
+    handed to MACE as a bare .out classified as collinear.
+    """
+    two_component = SCF_HEADER.replace(
+        "RESTRICTED CLOSED SHELL", "UNRESTRICTED OPEN SHELL") + (
+        "\n   ALPHA_ALPHA ELECTRONS\n"
+        " FOCK MATRIX (REAL PART) - CELL N.   1(  0  0  0)\n")
+    assert output_is_two_component(two_component)
+    assert detect_spin_treatment(two_component) == SPIN_SOC
+
+
+def test_the_two_component_markers_do_not_fire_on_the_corpus():
+    """MEASURED: 0 of the 707 outputs in test/ carry any 2c marker.
+
+    A detector that reclassified existing scalar or collinear runs would refuse
+    dumps that demonstrably work, so the markers were chosen against the whole
+    corpus rather than against one file.
+    """
+    out = find_data("SP/1_dia*sp*.out", must_contain="TYPE OF CALCULATION")
+    assert not output_is_two_component(out.read_text(errors="ignore"))
+    assert detect_spin_treatment(out.read_text(errors="ignore")) == SPIN_COLLINEAR
 
 
 def test_capability_gate_does_not_refuse_collinear_spin_on_a_stock_build(tmp_path):
@@ -291,6 +383,54 @@ def test_capability_gate_does_not_refuse_when_no_binary_can_be_checked(tmp_path)
     """
     assert capability_refusal(SPIN_SOC, None) is None
     assert capability_refusal(SPIN_SOC, tmp_path / "does-not-exist") is None
+
+
+# --------------------------------------------------------------------------
+# Resolving the binary the gate checks
+# --------------------------------------------------------------------------
+#
+# The gate used to read a `properties_binary` config key that NOTHING in MACE
+# ever wrote: no CLI flag, no interactive prompt, no default config. It was
+# therefore always called with None and always returned None, and was reachable
+# only from a hand-authored JSON file. These prove it is reachable on the paths
+# a user actually takes.
+
+
+def test_the_properties_binary_is_resolved_from_the_crystal_module(tmp_path,
+                                                                  monkeypatch):
+    """The submission template is the authority on what will run.
+
+    MEASURED: mace/submission/submit_prop.sh loads CRYSTAL/23-intel-2023a and
+    executes $EBROOTCRYSTAL/bin/Pproperties, so that is what the gate checks.
+    """
+    ebroot = tmp_path / "crystal"
+    (ebroot / "bin").mkdir(parents=True)
+    (ebroot / "bin" / "Pproperties").write_bytes(b"FOCK MATRIX - CELL\x00")
+    monkeypatch.setenv("EBROOTCRYSTAL", str(ebroot))
+    monkeypatch.delenv("MACE_PROPERTIES_BINARY", raising=False)
+    assert resolve_properties_binary() == ebroot / "bin" / "Pproperties"
+
+
+def test_an_explicit_binary_and_the_environment_override_the_search(tmp_path,
+                                                                    monkeypatch):
+    explicit = tmp_path / "willsbuild"
+    explicit.write_bytes(b"FOCK MATRIX (REAL PART)\x00")
+    from_env = tmp_path / "fromenv"
+    from_env.write_bytes(b"FOCK MATRIX - CELL\x00")
+    monkeypatch.setenv("MACE_PROPERTIES_BINARY", str(from_env))
+    assert resolve_properties_binary(str(explicit)) == explicit
+    assert resolve_properties_binary() == from_env
+
+
+def test_resolution_returns_none_rather_than_a_path_that_is_not_there(tmp_path,
+                                                                     monkeypatch):
+    """None keeps "unknown" distinct from "incapable", so a machine with no
+    CRYSTAL module never blocks a legitimate dump."""
+    monkeypatch.delenv("MACE_PROPERTIES_BINARY", raising=False)
+    monkeypatch.setenv("EBROOTCRYSTAL", str(tmp_path / "nowhere"))
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    assert resolve_properties_binary() is None
+    assert capability_refusal(SPIN_SOC, resolve_properties_binary()) is None
 
 
 # --------------------------------------------------------------------------

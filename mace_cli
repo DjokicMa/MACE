@@ -870,6 +870,11 @@ Options:
                         at this run's TOLINTEG, and refuses rather than
                         guessing when it cannot. A too-small N is not an
                         error, it is a wrong model.
+  --properties-binary PATH  MATDUMP only: the properties/Pproperties binary
+                        whose 2-component (SOC) capability is checked before a
+                        deck is written. Omit it and MACE resolves
+                        $EBROOTCRYSTAL/bin/Pproperties, then the serial
+                        properties beside it, then PATH.
   --batch, -b           Process all .out files in the current directory
   --config-file, -c FILE   Load D3 configuration from JSON
   --save-config         Save configuration after interactive setup

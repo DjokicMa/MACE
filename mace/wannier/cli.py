@@ -160,6 +160,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         ui.err("FAILED and fix what the audit names before using the result.")
         return 1
 
+    if result.audit == "marginal":
+        ui.warn("")
+        ui.warn("lcao2wannier QUALIFIED this model: its overlap-conditioning check")
+        ui.warn("rated the matrices moderately ill-conditioned. His verdict is not")
+        ui.warn("a refusal - but it is the downstream symptom of too few surviving")
+        ui.warn("R-vectors, which is the one failure this calc type exists to catch.")
+        ui.warn("His report, whole:")
+        ui.warn("")
+        _emit(result.conditioning_text or result.audit_text, ui.warn)
+        ui.warn("")
+        ui.warn("If you want a cleaner model, re-run the parent SCF at a tighter")
+        ui.warn("TOLINTEG (which raises the R-vector count CRYSTAL keeps) and dump")
+        ui.warn("again. MATDUMP already uses the largest N that run supports.")
+
     if result.audit == "unknown":
         ui.warn("")
         ui.warn("No self-audit verdict was found in the conversion output, so the")
@@ -171,8 +185,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         return result.returncode or 1
 
     ui.ok("")
-    ui.ok("Hand-off complete. Next: run wannier90.x on the .win, or re-run with")
-    ui.ok("--wannier90 PATH to have lcao2wannier localize for you.")
+    if result.qualified:
+        # Never an unqualified "complete" over a caveat he raised.
+        ui.ok("Hand-off written, WITH the conditioning caveat above. Next: run")
+        ui.ok("wannier90.x on the .win, or re-run with --wannier90 PATH to have")
+        ui.ok("lcao2wannier localize for you - and check the spreads against the")
+        ui.ok("caveat before trusting the interpolated bands.")
+    else:
+        ui.ok("Hand-off complete. Next: run wannier90.x on the .win, or re-run with")
+        ui.ok("--wannier90 PATH to have lcao2wannier localize for you.")
     return 0
 
 

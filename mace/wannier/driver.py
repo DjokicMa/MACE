@@ -71,8 +71,30 @@ _OVERLAP_HEADER = b"OVERLAP MATRIX - CELL"
 # His self-audit's POSITIVE verdict. Success requires FINDING this, never merely
 # failing to find a failure marker: if the banner is reworded, absence-of-FAIL
 # would silently start reporting refused models as successes.
-_AUDIT_PASS_RE = re.compile(r"STATUS:\s*[^\n]*PASS")
+# He prints a STATUS line from TWO independent self-checks, and MACE must read
+# both. MEASURED in lcao2wannier 1.0.0:
+#
+#   wannier_checks.py:179/181  ->  "STATUS: PASS - satisfies Wannier90
+#                                   disentanglement rules" | "STATUS: FAIL - ..."
+#   conditioning.py:138        ->  "STATUS: GOOD" | "MARGINAL" | "BAD"
+#
+# The first version of this matched PASS and FAIL|BAD, and nothing else. GOOD and
+# MARGINAL fell through the classifier entirely, so a run whose overlap matrices
+# he had just rated MARGINAL ("could benefit from more R-vectors") was reported
+# by MACE as an unqualified success - discarding the one negative signal that
+# points straight back at a too-small R-vector count, the failure mode this
+# whole feature exists to eliminate. Both end-to-end validation runs hit exactly
+# that (worst cond(S) = 2.530e+04, STATUS: MARGINAL, ConversionResult.ok True).
+#
+# All four verdicts are now matched explicitly. An unmatched STATUS line means
+# he reworded the banner, and that must surface as "unknown" - never as a pass.
+_AUDIT_PASS_RE = re.compile(r"STATUS:\s*[^\n]*(PASS|GOOD)")
+_AUDIT_MARGINAL_RE = re.compile(r"STATUS:\s*[^\n]*MARGINAL")
 _AUDIT_FAIL_RE = re.compile(r"STATUS:\s*[^\n]*(FAIL|BAD)")
+
+# His conditioning report frames the STATUS line. Captured whole so the caveat
+# reaches the user with his own remedy attached rather than as a bare word.
+_CONDITIONING_BANNER = "Overlap Matrix Conditioning Check"
 
 
 class Lcao2WannierUnavailable(Exception):
@@ -90,8 +112,9 @@ class ConversionResult:
     output_dir: Path
     seed: str
     produced: Dict[str, List[str]] = field(default_factory=dict)
-    audit: str = "unknown"          # "pass" | "fail" | "unknown"
+    audit: str = "unknown"   # "pass" | "marginal" | "fail" | "unknown"
     audit_text: str = ""
+    conditioning_text: str = ""
 
     @property
     def ok(self) -> bool:
@@ -106,8 +129,19 @@ class ConversionResult:
             self.returncode == 0
             and bool(self.produced)
             and all(len(v) == len(HANDOFF_SUFFIXES) for v in self.produced.values())
-            and self.audit == "pass"
+            and self.audit in ("pass", "marginal")
         )
+
+    @property
+    def qualified(self) -> bool:
+        """Usable, but he attached a caveat to it.
+
+        A MARGINAL conditioning verdict is not a refusal - his own text says
+        "results may be acceptable" - so it must not be reported as a failure.
+        It is also not a clean pass, and reporting it as one throws away the
+        only warning a user gets that the R-vector count was too tight.
+        """
+        return self.ok and self.audit == "marginal"
 
 
 # --- Locating the dependency ------------------------------------------------
@@ -300,21 +334,56 @@ def sanitize_seed(name: str) -> str:
 
 
 def _classify_audit(stdout: str) -> Tuple[str, str]:
-    """Read his self-audit verdict out of captured stdout.
+    """Read his self-audit verdicts out of captured stdout.
 
-    Positive-marker logic: a PASS must be found. Anything else is 'fail' if a
-    failure banner is present, and otherwise 'unknown' - reported as
+    Positive-marker logic: a PASS/GOOD must be found. Anything else is 'fail' if
+    a failure banner is present, 'marginal' if he flagged the overlap matrices
+    as moderately ill-conditioned, and otherwise 'unknown' - reported as
     not-verified, never as a pass.
+
+    Severity wins over count: a run that prints both "PASS" (disentanglement)
+    and "MARGINAL" (conditioning) is marginal, not a pass. Conflating them is
+    what let a model he had qualified be reported as an unqualified success.
     """
     lines = stdout.splitlines()
     verdict_lines = [ln for ln in lines
-                     if _AUDIT_PASS_RE.search(ln) or _AUDIT_FAIL_RE.search(ln)]
+                     if _AUDIT_PASS_RE.search(ln)
+                     or _AUDIT_MARGINAL_RE.search(ln)
+                     or _AUDIT_FAIL_RE.search(ln)]
     text = "\n".join(verdict_lines)
     if any(_AUDIT_FAIL_RE.search(ln) for ln in verdict_lines):
         return "fail", text
+    if any(_AUDIT_MARGINAL_RE.search(ln) for ln in verdict_lines):
+        return "marginal", text
     if verdict_lines:
         return "pass", text
     return "unknown", text
+
+
+def _conditioning_report(stdout: str) -> str:
+    """His overlap-conditioning block, verbatim, or "" if he did not print one.
+
+    Reproduced whole rather than summarized: the numbers (worst/median condition
+    number, how many k-points were not positive definite) and his own remedy are
+    what tell a user whether to re-run at a larger R-vector count, and he is the
+    one who knows what they mean.
+    """
+    lines = stdout.splitlines()
+    start = None
+    for index, line in enumerate(lines):
+        if _CONDITIONING_BANNER in line:
+            start = index
+            break
+    if start is None:
+        return ""
+    block = [lines[start]]
+    for line in lines[start + 1:]:
+        block.append(line)
+        # His block is fenced by a rule of '=' on both sides; the closing one
+        # comes after the STATUS line and any remedy text.
+        if set(line.strip()) == {"="} and len(block) > 2:
+            break
+    return "\n".join(block)
 
 
 def _collect_outputs(output_dir: Path, seed: str) -> Dict[str, List[str]]:
@@ -399,6 +468,7 @@ def convert(
     completed = subprocess.run(command, capture_output=True, text=True)
 
     audit, audit_text = _classify_audit(completed.stdout)
+    conditioning_text = _conditioning_report(completed.stdout)
     result = ConversionResult(
         returncode=completed.returncode,
         stdout=completed.stdout,
@@ -409,6 +479,7 @@ def convert(
         produced=_collect_outputs(output_dir, seed),
         audit=audit,
         audit_text=audit_text,
+        conditioning_text=conditioning_text,
     )
 
     # Persist his full diagnostics beside the outputs. Everything except his
