@@ -61,13 +61,15 @@ This document provides authorship attribution for the MACE (Mendoza Automated CR
 - `d3_config.py` - Configuration management for D3
 - `d3_interactive.py` - Interactive configuration for D3
 - `d3_kpoints.py` - K-point path generation
+- `d3_matdump.py` - MATDUMP: the CRYSTAL `properties` matrix-dump calculation
+  type, which prints H(R) and S(R) in the direct-lattice representation. This
+  file generates the *input* for William Comaskey's method; see his section below
+  for the method itself.
 - `create_Transportd3.py` (archived) - Transport property calculations
 - `alldos_old.py` (archived)
 - `d3_config_old.py` (archived)
 
-#### William Comaskey
-- `d3_matdump.py` - MATDUMP: the CRYSTAL `properties` matrix-dump calculation
-  type, which prints H(R) and S(R) in the direct-lattice representation
+#### William Comaskey — method attribution (not a file list)
 
 **The LCAO->Wannier90 method, and the `lcao2wannier` package that implements
 it, are William Comaskey's work.** MACE generates the CRYSTAL input and
