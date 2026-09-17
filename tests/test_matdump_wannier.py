@@ -23,7 +23,6 @@ The refusal tests below use kilobyte-sized distilled output text rather than the
 multi-MB artifacts, so they run in the corpus-less CI where ``test/`` is absent;
 the tests that need the real corpus use ``find_data`` and skip cleanly.
 """
-import subprocess
 import sys
 
 import pytest

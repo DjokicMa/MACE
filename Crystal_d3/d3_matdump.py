@@ -50,7 +50,7 @@ That is the whole case for deriving ``N`` rather than defaulting it.
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 # --- Attribution strings, surfaced in help text and driver messages ---------
 
