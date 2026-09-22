@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **MATDUMP: a hand-off to Wannier90.** The LCAO->Wannier90 method, and the
+  `lcao2wannier` package that implements it, are William Comaskey's work; MACE
+  generates the CRYSTAL input and orchestrates the run, and implements none of
+  the conversion. CRYSTAL has no Wannier90 interface of its own, and its
+  `LOCALWF` is restricted by the manual to non-conductors.
+  - `mace opt2d3 --calc-type MATDUMP` writes a `properties` deck that prints the
+    direct-space Fock/KS and overlap matrices (print options 64 and 60 under
+    `BASISSET`, per the manual). It is stock CRYSTAL23: closed-shell and
+    collinear spin-polarized runs need nothing beyond the standard build. Only
+    2-component SOC needs the CRYSTAL23 development `properties`, which MACE
+    detects and does not redistribute.
+  - **The one dangerous parameter is derived, not guessed.** N, the number of
+    direct-lattice vectors to print, is read from the parent SCF output. Too
+    small an N does not fail - it produces a wrong model, and the conversion's
+    own conditioning check still reports it as good. Too large is worse than
+    wasteful: past CRYSTAL's vector pool, `properties` prints fabricated cell
+    headers that overwrite the on-site block. N is therefore bounded on both
+    sides, an explicit value below the derived one is never accepted silently,
+    and a MOLECULE parent is refused.
+  - `mace wannier --input DUMP.out` runs the conversion to `.win .nnkp .eig
+    .amn .mmn` when `lcao2wannier` is installed (an optional dependency), and
+    reports its self-audit verdict - including a MARGINAL conditioning result -
+    rather than a bare success. It refuses dumps of 1000 or more cells, which
+    `lcao2wannier` 1.0.0 cannot read past without silently dropping cells.
+  - The whole chain was run on real CRYSTAL23: a diamond SCF, the generated
+    deck, a dump of exactly the derived 627 cells, and a converted model for
+    both spin channels that passed the package's audit.
+
 ### Fixed
 
 - **An `opt2d12` phonon deck with a SeeK-path band path is written.** The
@@ -136,6 +166,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mace/workflow/check_workflows.py` (superseded by `mace status` and the
   queue manager's completion callback), `mace/utils/scf_settings_extractor.py`
   and `mace/utils/analyze_script_dependencies.py`.
+
+### Testing
+
+Tests needing `lcao2wannier` skip when it is absent, so the corpus-less CI
+environment stays green without it.
 
 ## [1.1.2] - 2026-09-29
 
