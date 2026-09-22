@@ -158,7 +158,7 @@ symmetry-unique is written whole.
 ### Tolerances
 - **TOLINTEG**: Integration grid accuracy (higher = more accurate)
   - Standard: "7 7 7 7 14"
-  - Tight: "8 8 8 9 30"
+  - Tight: "8 8 8 9 24"
   - Very tight: "9 9 9 11 38"
 - **TOLDEE**: SCF energy convergence (higher = tighter)
   - Loose: 6
