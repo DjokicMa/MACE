@@ -699,6 +699,55 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
     return True
 
 
+def _keep_extracted_settings(settings, calc_type, opt_type, origin_setting):
+    """Options for the truly non-interactive path.
+
+    Keeps every setting extracted from the source calculation and changes only
+    the calculation type. Shared by --non-interactive on its own and by
+    --non-interactive --calc-type when no answers are available on stdin.
+    """
+    # True non-interactive mode (no config file, no calc type specified)
+    options = settings.copy()
+    # Default to SP if not specified
+    options["calculation_type"] = calc_type
+
+    # Set optimization type if it's an OPT calculation
+    if options["calculation_type"] == "OPT":
+        if opt_type:
+            options["optimization_type"] = opt_type
+        else:
+            # Default to FULLOPTG
+            options["optimization_type"] = "FULLOPTG"
+
+    # Handle origin setting: "auto" preserves the origin extracted from
+    # the source calculation. The old behavior guessed a directive from
+    # a space-group table ("0 1 0" rhombohedral flag for sg 143-194,
+    # "0 0 1" shifted origin for everything else), which rewrote correct
+    # origins — e.g. Fd-3m "0 0 0" re-emitted as the origin-2 "0 0 1"
+    # form while keeping origin-1 coordinates (wrong structure).
+    if origin_setting == "auto":
+        options["origin_setting"] = settings.get("origin_setting", "0 0 0")
+    else:
+        options["origin_setting"] = origin_setting
+
+    # Keep all other settings from the extracted data
+    if "write_only_unique" not in options:
+        # Check if original input had space group > 1 (not P1)
+        if settings.get("spacegroup", 1) > 1:
+            # For symmetric structures, default to writing only unique atoms
+            options["write_only_unique"] = True
+        else:
+            # For P1 structures, write all atoms
+            options["write_only_unique"] = False
+
+    ui.info("\nRunning in non-interactive mode with settings:")
+    ui.info(f"  Calculation type: {options['calculation_type']}")
+    if options['calculation_type'] == 'OPT':
+        ui.info(f"  Optimization type: {options['optimization_type']}")
+    ui.info(f"  Origin setting: {options['origin_setting']}")
+    return options
+
+
 def process_files(output_file, input_file=None, shared_settings=None, config_file=None, non_interactive=False, calc_type=None, opt_type=None, origin_setting="auto"):
     """Process CRYSTAL output and input files
 
@@ -970,50 +1019,24 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             options = get_calculation_options_from_current(settings)
     elif non_interactive and not calc_type:
         # True non-interactive mode (no config file, no calc type specified)
-        options = settings.copy()
-        # Default to SP if not specified
-        options["calculation_type"] = "SP"
-        
-        # Set optimization type if it's an OPT calculation
-        if options["calculation_type"] == "OPT":
-            if opt_type:
-                options["optimization_type"] = opt_type
-            else:
-                # Default to FULLOPTG
-                options["optimization_type"] = "FULLOPTG"
-        
-        # Handle origin setting: "auto" preserves the origin extracted from
-        # the source calculation. The old behavior guessed a directive from
-        # a space-group table ("0 1 0" rhombohedral flag for sg 143-194,
-        # "0 0 1" shifted origin for everything else), which rewrote correct
-        # origins — e.g. Fd-3m "0 0 0" re-emitted as the origin-2 "0 0 1"
-        # form while keeping origin-1 coordinates (wrong structure).
-        if origin_setting == "auto":
-            options["origin_setting"] = settings.get("origin_setting", "0 0 0")
-        else:
-            options["origin_setting"] = origin_setting
-        
-        # Keep all other settings from the extracted data
-        if "write_only_unique" not in options:
-            # Check if original input had space group > 1 (not P1)
-            if settings.get("spacegroup", 1) > 1:
-                # For symmetric structures, default to writing only unique atoms
-                options["write_only_unique"] = True
-            else:
-                # For P1 structures, write all atoms
-                options["write_only_unique"] = False
-            
-        ui.info("\nRunning in non-interactive mode with settings:")
-        ui.info(f"  Calculation type: {options['calculation_type']}")
-        if options['calculation_type'] == 'OPT':
-            ui.info(f"  Optimization type: {options['optimization_type']}")
-        ui.info(f"  Origin setting: {options['origin_setting']}")
+        options = _keep_extracted_settings(settings, "SP", opt_type, origin_setting)
     elif non_interactive and calc_type:
-        # When calc_type is provided but --non-interactive is set,
-        # we still want interactive mode like the D3 scripts
-        # This is used by the workflow manager for expert mode
-        options = get_calculation_options_from_current(settings, calc_type=calc_type)
-        
+        # --non-interactive with --calc-type still walks the interactive settings
+        # flow: the workflow engine drives it by piping scripted answers to stdin,
+        # and its output depends on those answers.
+        #
+        # Run from a shell with nothing on stdin - the documented form,
+        # `mace opt2d12 --out-file X --calc-type SP --non-interactive` - the first
+        # prompt hit end-of-file and the run died with EOFError. When the answers
+        # run out, keep the extracted settings instead, exactly as --non-interactive
+        # does without --calc-type. The engine always supplies enough answers, so
+        # its output is unchanged.
+        try:
+            options = get_calculation_options_from_current(settings, calc_type=calc_type)
+        except EOFError:
+            ui.warn("\nNo answers on stdin for the interactive settings prompts; "
+                    "keeping the settings extracted from the source calculation.")
+            options = _keep_extracted_settings(settings, calc_type, opt_type, origin_setting)
     elif shared_settings:
         # Preserve external basis settings before shared_settings override
         had_external_basis = settings.get("use_original_external_basis", False)
