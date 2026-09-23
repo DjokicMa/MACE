@@ -216,18 +216,9 @@ OPT → SP → BAND + DOSS to completion inside its own plan directory.
 
 ## [1.1.0] - 2026-07-12
 
-### Added
+Changes since 1.0.5.
 
-#### Plotting subsystem (`mace plotting`)
-One command for publication-ready plots from CRYSTAL outputs, with content-based
-file detection, per-kind flags (`--band --dos --structure --cube --freq --ir
---raman --all`), an interactive menu, and `-o` output routing:
-- **Band / DOS / structures** — the validated legacy plotters (ipBANDS/ipDOS/CIF
-  renderers) wired through a registry + classifier
-- **Cube volumetrics** — plotly isosurface / slice / slice-stack rendering of
-  ECH3/POT3 `.CUBE` grids, incl. non-orthogonal cells and cube-difference plots
-- **FREQ normal modes** — interactive HTML vibrational-mode viewers
-- **IR / Raman spectra** — per-file and conformer-averaged spectra
+### Added
 
 #### Themed terminal UI (visual layer)
 - `mace/utils/ui.py` rich-based facade: status lines, tables, progress bars,
@@ -236,15 +227,33 @@ file detection, per-kind flags (`--band --dos --structure --cube --freq --ir
 - Fully optional: degrades to plain text without `rich`; honors `NO_COLOR` and
   `TERM=dumb`; user text is never interpreted as markup (injection-safe)
 
+### Fixed
+- **d12/d3 generation** — an aborted D12 creation no longer leaves a truncated deck reported as success; TOLINTEG extraction preserves custom tolerances on pure-DFT outputs; batch mode re-prompts on invalid input.
+- **Database** — TRANSPORT and CHARGE+POTENTIAL outputs use the canonical material ID (no duplicate rows), and transport statistics count Seebeck entries only.
+- **Plotting/UX polish** — missing/unreadable spectra files give clean errors instead of tracebacks; `mace plotting` propagates its exit status; malformed `--iso` is a usage error; plain-mode (no-rich) output preserves bracketed text verbatim.
+- **HPC QA campaign (release wave)** — ~18 workflow/queue/recovery fixes from an end-to-end SLURM test campaign. Highlights: one workflow mints ONE workflow id (fixes the nested-DB split-brain between engine and queue manager); job-state checks confirm via `sacct` before failing jobs missing from `squeue`; recovery attempt caps count the whole lineage, so resubmission chains stay bounded; TRANSPORT d3 decks emit `NEWK` before `BOLTZTRA` and get their properties terminator `END`; CIF conversion without spglib writes the CIF's asymmetric unit instead of the expanded cell; plotting pins a headless matplotlib backend (`Agg`) for compute nodes.
+
+### Changed
+- **Repo hygiene** — internal planning/audit docs untracked (kept on disk), generated artifacts gitignored, unused legacy modules removed (legacy queue manager, portable SLURM generator, contextual executor/planner variants, installer/env-helper utilities); PyPDF2 dropped as a dependency (nothing imports it).
+- **Formula ordering** for newly extracted formulas follows a revised element convention (e.g. `TiPbO3` vs the older `PbO3Ti`); previously stored rows are unaffected. `fermi_energy` rows written by v1.1.0 carry the correct `Hartree` unit label (older rows said `eV` while storing Hartree values).
+
+## [1.0.5] - 2026-06-14
+
+Changes since 1.0.0. Tagged retroactively: 1.0.5 was the version `mace --version`
+reported at this point, but it was never separately announced, so its changes
+were first described in the 1.1.0 notes. 1.0.1 through 1.0.4 were never released.
+
+### Added
+
+#### Plotting subsystem (`mace plotting`)
+One command for publication-ready plots from CRYSTAL outputs, with content-based
+file detection, per-kind flags (`--band --dos --structure --cube --freq --ir
+--raman --all`), an interactive menu, and `-o` output routing:
+
 #### Deep property extraction
 The materials database now stores the full scientific results of each calculation
 type, not just scalar summaries — as compact JSON plus flat, queryable scalar rows
 in the existing `properties` table (no schema change):
-- **FREQ** — vibrational frequencies, IR intensities, Raman activities, imaginary-mode count
-- **BAND** — band-structure summary: k-path with high-symmetry labels, direct/indirect/fundamental gap, VBM/CBM k-locations
-- **DOSS** — density-of-states curve (downsampled), per-spin DOS@Fermi, gap, projected-DOS weights, integrated states
-- **TRANSPORT** — BoltzTraP Seebeck / power-factor / electronic-ZT peaks vs (T, µ), carrier type
-- **CHARGE+POTENTIAL** — ECH3/POT3 grid metadata, coordinate box, and references to the generated `.CUBE` grid files
 
 #### Queue / submission
 - In-place submission for manual `mace submit` (no forced reorganization);
@@ -255,18 +264,15 @@ in the existing `properties` table (no schema change):
 ### Fixed
 - **FREQ extractor** previously parsed vibrational data into a discarded local variable; frequencies/IR/Raman now actually persist (fixed the units-anchor `(CM**-1)` and mode-range parse bugs).
 - **Error-recovery chain** — previously-dead paths called nonexistent DB/manager APIs (errors swallowed): max-recovery-attempts, recovered-job resubmission, and workflow-engine step submission now work end-to-end; the timeout handler parses the `-t 7-00:00:00` day form and never shrinks walltime; the memory handler preserves `--mem-per-cpu` vs `--mem`; recovered resubmissions record the bumped script so repeated failures escalate cumulatively.
-- **d12/d3 generation correctness** — SPINLOCK parse + round-trip (a configured spin lock survives OPT continuation and JSON-config reuse); origin-setting preservation; k-point table fixes (C-/I-centered orthorhombic assignments, duplicate table key); DOSS Fermi-window unit consistency; aborted D12 creation no longer leaves a truncated deck reported as success; TOLINTEG extraction preserves custom tolerances on pure-DFT outputs.
+- **d12/d3 generation correctness** — SPINLOCK parse + round-trip (a configured spin lock survives OPT continuation and JSON-config reuse); origin-setting preservation; k-point table fixes (C-/I-centered orthorhombic assignments, duplicate table key); DOSS Fermi-window unit consistency.
 - **JSON config save/apply round-trips** for `opt2d12` / `opt2d3` (settings no longer drift through a save→load cycle); invalid interactive calc-type choices re-prompt instead of silently defaulting to BAND.
-- **Database correctness** — canonical material-ID derivation everywhere (incl. TRANSPORT / CHARGE+POTENTIAL outputs), NULL-safe dedup on re-extraction, pressure unit-conversion table (kbar/Mbar swap, atm factor), enthalpy H = G + TS, full-precision Hartree↔eV constants (single source: `mace/constants.py`), pyarrow import-order crash guard.
-- **Plotting/UX polish** — missing/unreadable spectra files give clean errors instead of tracebacks; `mace plotting` propagates its exit status; malformed `--iso` is a usage error; plain-mode (no-rich) output preserves bracketed text verbatim.
-- **HPC QA campaign (release wave)** — ~18 workflow/queue/recovery fixes from an end-to-end SLURM test campaign. Highlights: one workflow mints ONE workflow id (fixes the nested-DB split-brain between engine and queue manager); job-state checks confirm via `sacct` before failing jobs missing from `squeue`; recovery attempt caps count the whole lineage, so resubmission chains stay bounded; TRANSPORT d3 decks emit `NEWK` before `BOLTZTRA` and get their properties terminator `END`; CIF conversion without spglib writes the CIF's asymmetric unit instead of the expanded cell; plotting pins a headless matplotlib backend (`Agg`) for compute nodes.
+- **Database correctness** — canonical material-ID derivation, NULL-safe dedup on re-extraction, pressure unit-conversion table (kbar/Mbar swap, atm factor), enthalpy H = G + TS, full-precision Hartree↔eV constants (single source: `mace/constants.py`), pyarrow import-order crash guard.
 
 ### Changed
-- **Repo hygiene** — internal planning/audit docs untracked (kept on disk), ad-hoc validation scripts centralized under `tests/`, generated artifacts gitignored, unused legacy modules removed (legacy queue manager, portable SLURM generator, contextual executor/planner variants, installer/env-helper utilities); PyPDF2 dropped as a dependency (nothing imports it).
-- **Formula ordering** for newly extracted formulas follows a revised element convention (e.g. `TiPbO3` vs the older `PbO3Ti`); previously stored rows are unaffected. `fermi_energy` rows written by v1.1.0 carry the correct `Hartree` unit label (older rows said `eV` while storing Hartree values).
+- **Repo hygiene** — development and internal artifacts kept out of the repository; ad-hoc validation scripts centralized under `tests/`.
 - **CI** — GitHub Actions runs the self-contained test suite on a fresh clone (data-dependent tests skip without the local `test/` corpus).
 
-## [1.0.0] - 2025-02-12
+## [1.0.0] - 2026-02-12
 
 ### Added
 
@@ -322,7 +328,7 @@ in the existing `properties` table (no schema change):
 
 ---
 
-## [Unreleased]
+## Roadmap (not yet scheduled)
 
 ### Planned
 - PyPI package distribution
