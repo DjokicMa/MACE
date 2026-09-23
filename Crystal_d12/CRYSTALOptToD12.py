@@ -215,7 +215,9 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
 
     with open(output_file, "w") as f:
         # Title
-        title = output_file.replace(".d12", "")
+        # Title from the file NAME only: with --output-dir the path carries a
+        # directory, which must not leak into the CRYSTAL title line.
+        title = os.path.basename(output_file).replace(".d12", "")
         
         # Add phonon band path information if this is a FREQ calculation with bands
         calc_type = settings.get("calculation_type", settings.get("calc_type", "OPT"))
@@ -748,7 +750,8 @@ def _keep_extracted_settings(settings, calc_type, opt_type, origin_setting):
     return options
 
 
-def process_files(output_file, input_file=None, shared_settings=None, config_file=None, non_interactive=False, calc_type=None, opt_type=None, origin_setting="auto"):
+def process_files(output_file, input_file=None, shared_settings=None, config_file=None, non_interactive=False, calc_type=None, opt_type=None, origin_setting="auto",
+                  output_dir=None):
     """Process CRYSTAL output and input files
 
     Args:
@@ -1128,6 +1131,10 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     functional = dedupe_dispersion_suffix(functional)
 
     new_filename = f"{base_name}_{calc_type.lower()}_{functional}_optimized.d12"
+    # --output-dir was parsed, and the directory created, but never reached this
+    # point, so every deck landed in the current directory regardless.
+    if output_dir:
+        new_filename = os.path.join(output_dir, new_filename)
 
     # Write new D12 file
     ui.info(f"\nWriting new D12 file: {new_filename}")
@@ -1370,7 +1377,8 @@ def main():
             non_interactive=args.non_interactive,
             calc_type=args.calc_type,
             opt_type=args.opt_type,
-            origin_setting=args.origin_setting
+            origin_setting=args.origin_setting,
+            output_dir=args.output_dir
         )
 
         if success and args.save_options:
@@ -1523,7 +1531,8 @@ def main():
                     non_interactive=args.non_interactive,
                     calc_type=args.calc_type,
                     opt_type=args.opt_type,
-                    origin_setting=args.origin_setting
+                    origin_setting=args.origin_setting,
+                    output_dir=args.output_dir
                 )
             except Exception as e:
                 # Per-file isolation (same contract as NewCifToD12): one bad
