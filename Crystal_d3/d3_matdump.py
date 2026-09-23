@@ -65,9 +65,9 @@ MATDUMP_CREDIT_BLOCK = (
     "  The matrix dump feeds the LCAO->Wannier90 bridge. That method and its\n"
     "  implementation (the lcao2wannier package) are William Comaskey's work.\n"
     "  MACE only generates the CRYSTAL deck and orchestrates the run.\n"
-    "  CITATION: TODO - ask William Comaskey which citation he wants (the\n"
-    "  package, a paper, or both) before a citation string is published here.\n"
-    "  Do not invent one."
+    "  Citing: if you publish results produced this way, please cite the\n"
+    "  lcao2wannier package (William Comaskey). No formal citation has been\n"
+    "  designated yet - see the lcao2wannier project or contact the author."
 )
 
 # --- Refusals ---------------------------------------------------------------

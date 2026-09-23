@@ -385,7 +385,10 @@ def test_the_wannier_help_credits_the_author():
         capture_output=True, text=True, cwd=str(REPO_ROOT))
     combined = result.stdout + result.stderr
     assert "William Comaskey" in combined
-    assert "CITATION: TODO" in combined
+    assert "lcao2wannier" in combined and "cite" in combined.lower()
+    # user-facing text must not carry developer instructions
+    assert "do not invent" not in combined.lower()
+    assert "CITATION: TODO" not in combined
     assert "optional dependency" in combined
 
 

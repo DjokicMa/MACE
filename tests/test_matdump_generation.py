@@ -99,7 +99,10 @@ def test_generation_reports_the_derived_n_and_credits_the_author(tmp_path):
     combined = result.stdout + result.stderr
     assert "N = 1247" in combined
     assert "William Comaskey" in combined
-    assert "CITATION: TODO" in combined
+    assert "lcao2wannier" in combined and "cite" in combined.lower()
+    # user-facing text must not carry developer instructions
+    assert "do not invent" not in combined.lower()
+    assert "CITATION: TODO" not in combined
 
 
 def test_explicit_n_overrides_the_derivation(tmp_path):
@@ -126,7 +129,10 @@ def test_generation_credits_the_author_without_the_corpus(tmp_path):
     result = _run_opt2d3("--input", str(staged), "--calc-type", "MATDUMP")
     combined = result.stdout + result.stderr
     assert "William Comaskey" in combined
-    assert "CITATION: TODO" in combined
+    assert "lcao2wannier" in combined and "cite" in combined.lower()
+    # user-facing text must not carry developer instructions
+    assert "do not invent" not in combined.lower()
+    assert "CITATION: TODO" not in combined
     assert "N = 1247" in combined
     assert (tmp_path / "mat_matdump.d3").read_text() == (
         "BASISSET\n2\n60 1247\n64 1247\nEND")
@@ -456,7 +462,10 @@ def test_the_opt2d3_help_names_the_calc_type_and_its_author():
     combined = result.stdout + result.stderr
     assert "MATDUMP" in combined
     assert "William Comaskey" in combined
-    assert "CITATION: TODO" in combined
+    assert "lcao2wannier" in combined and "cite" in combined.lower()
+    # user-facing text must not carry developer instructions
+    assert "do not invent" not in combined.lower()
+    assert "CITATION: TODO" not in combined
 
 
 # --- Submission dispatch ----------------------------------------------------
@@ -672,3 +681,17 @@ def test_a_too_small_explicit_n_warns_on_the_real_cli(tmp_path):
     # Still written: the override is allowed, just never silent.
     assert (tmp_path / "mat_matdump.d3").read_text() == (
         "BASISSET\n2\n60 321\n64 321\nEND")
+
+
+def test_the_citation_reminder_survives_where_developers_will_see_it():
+    """The user-facing text no longer carries 'CITATION: TODO'.
+
+    That marker was doing two jobs: telling a developer to ask William
+    Comaskey which citation he wants, and telling a user how to cite. The
+    second is the user's business and now reads as citing guidance; the first
+    is not, and would be a loose end if it simply vanished. It lives in
+    AUTHORSHIP.md, and this keeps it there until he answers.
+    """
+    authorship = (REPO_ROOT / "AUTHORSHIP.md").read_text()
+    assert "CITATION: TODO" in authorship
+    assert "William Comaskey" in authorship

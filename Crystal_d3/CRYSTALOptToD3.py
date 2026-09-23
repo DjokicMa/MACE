@@ -1691,8 +1691,9 @@ def main():
             "  default; MACE refuses rather than guessing it, because a too-small\n"
             "  N is not an error, it is a wrong model.\n"
             "  Convert the dump with:  mace wannier --input <dump>.out\n"
-            "  CITATION: TODO - ask William Comaskey which citation he wants (the\n"
-            "  package, a paper, or both). Do not invent one.\n"
+            "  Citing: if you publish results produced this way, please cite the\n"
+            "  lcao2wannier package (William Comaskey). No formal citation has\n"
+            "  been designated yet - see the project or contact the author.\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

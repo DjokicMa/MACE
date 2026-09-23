@@ -894,8 +894,9 @@ MATDUMP - matrix dump for Wannier90:
   William Comaskey. MACE only generates the CRYSTAL deck and orchestrates the
   run; it reimplements no part of the conversion.
   Convert the resulting dump with:  mace wannier --input <dump>.out
-  CITATION: TODO - ask William Comaskey which citation he wants (the package,
-  a paper, or both). None is published here until he says; do not invent one.
+  Citing: if you publish results produced this way, please cite the
+  lcao2wannier package (William Comaskey). No formal citation has been
+  designated yet - see the lcao2wannier project or contact the author.
 """,
         'wannier': """
 Usage: mace wannier --input DUMP.out [options]
@@ -906,8 +907,9 @@ Convert a MATDUMP matrix dump into Wannier90 hand-off files
 Wannier90 hand-off via lcao2wannier (William Comaskey). The LCAO->Wannier90
 method and the lcao2wannier package are his work; MACE generates the CRYSTAL
 input and orchestrates the run, and implements none of the conversion.
-CITATION: TODO - ask William Comaskey which citation he wants before
-publishing a Wannier model produced this way. Do not invent one.
+Citing: if you publish a Wannier model produced this way, please cite the
+lcao2wannier package (William Comaskey). No formal citation has been
+designated yet - see the lcao2wannier project or contact the author.
 
 Options:
   --input, -i FILE      MATDUMP properties output containing H(R) and S(R)
