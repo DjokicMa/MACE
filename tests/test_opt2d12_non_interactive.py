@@ -65,3 +65,19 @@ def test_supplied_answers_are_still_honoured(parent):
     combined = result.stdout + result.stderr
     assert result.returncode == 0, combined[-1500:]
     assert "No answers on stdin" not in combined
+
+
+def test_output_dir_is_honoured_and_stays_out_of_the_title(parent):
+    """--output-dir was parsed and the directory created, but the path never
+    reached the writer, so the deck landed in the current directory. The
+    directory must also not leak into the CRYSTAL title line."""
+    dest = parent / "dest"
+    result = subprocess.run(
+        [sys.executable, str(MACE_CLI), "opt2d12", "--out-file", f"{PARENT}.out",
+         "--calc-type", "SP", "--non-interactive", "--output-dir", "dest"],
+        cwd=parent, input="", capture_output=True, text=True, timeout=300)
+    assert result.returncode == 0, (result.stdout + result.stderr)[-1500:]
+    name = f"{PARENT}_sp_B3LYP-D3_optimized.d12"
+    assert (dest / name).exists(), sorted(p.name for p in parent.rglob("*.d12"))
+    assert not (parent / name).exists(), "deck also written to the current directory"
+    assert (dest / name).read_text().splitlines()[0] == name[:-len(".d12")]
