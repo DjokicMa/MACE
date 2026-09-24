@@ -72,7 +72,6 @@ except ImportError:
 
 # Default frequency settings
 DEFAULT_FREQ_SETTINGS = {
-    "NUMDERIV": 2,
     "TOLINTEG": "9 9 9 11 38",
     "TOLDEE": 11,
 }
@@ -80,13 +79,11 @@ DEFAULT_FREQ_SETTINGS = {
 # Frequency calculation templates
 FREQ_TEMPLATES = {
     "basic": {
-        "numderiv": 2,
         "mode": "GAMMA",
         "intensities": False,
         "raman": False,
     },
     "ir_spectrum": {
-        "numderiv": 2,
         "mode": "GAMMA",
         "intensities": True,
         "ir_method": "CPHF",
@@ -96,7 +93,6 @@ FREQ_TEMPLATES = {
         "lorentz_width": 8,
     },
     "raman_spectrum": {
-        "numderiv": 2,
         "mode": "GAMMA",
         "intensities": True,
         "ir_method": "CPHF",
@@ -111,7 +107,6 @@ FREQ_TEMPLATES = {
         "temperature": 298.15,
     },
     "ir_raman": {
-        "numderiv": 2,
         "mode": "GAMMA",
         "intensities": True,
         "ir_method": "CPHF",
@@ -127,14 +122,12 @@ FREQ_TEMPLATES = {
         "temperature": 298.15,
     },
     "thermodynamics": {
-        "numderiv": 2,
         "mode": "GAMMA",
         "intensities": False,
         "thermo": True,
         "temprange": (20, 0, 400),
     },
     "phonon_bands": {
-        "numderiv": 2,
         "mode": "DISPERSION",
         "dispersion": True,
         "scelphono": [2, 2, 2],
@@ -148,7 +141,6 @@ FREQ_TEMPLATES = {
         },
     },
     "phonon_dos": {
-        "numderiv": 2,
         "mode": "DISPERSION",
         "dispersion": True,
         "scelphono": [2, 2, 2],

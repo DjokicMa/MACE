@@ -394,7 +394,6 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
                 "inherit_base_settings": True,
                 "frequency_settings": {
                     "mode": "GAMMA",
-                    "numderiv": 2,
                     "intensities": False,
                     "temperatures": [298.15],
                     "custom_tolerances": scf_tolerances(FREQ_SCF_LEVEL)

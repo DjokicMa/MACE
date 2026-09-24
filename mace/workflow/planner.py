@@ -1951,7 +1951,7 @@ class WorkflowPlanner:
             ui.info("    - Time: ~1-3x optimization time")
             ui.info("    - Memory: Similar to optimization")
             ui.info("    - Quality: Good for thermodynamics, no spectroscopy")
-            ui.info("    - Numerical derivatives: 2-point (two displacements per atom)")
+            ui.info("    - Numerical derivatives: CRYSTAL's default (no NUMDERIV keyword)")
             ui.info("    - Method/basis: inherited from optimized geometry")
 
             config = {
@@ -1960,7 +1960,6 @@ class WorkflowPlanner:
                 "inherit_base_settings": True,
                 "frequency_settings": {
                     "mode": "GAMMA",
-                    "numderiv": 2,
                     "intensities": False,
                     "temperatures": [298.15],
                     "custom_tolerances": scf_tolerances(FREQ_SCF_LEVEL),
@@ -2112,18 +2111,21 @@ class WorkflowPlanner:
 
             # Numerical derivative method
             ui.info("\n  Numerical derivative method:")
+            ui.info("    0: No NUMDERIV keyword (CRYSTAL's default)")
             ui.info("    1: One displacement per atom (faster, less accurate)")
             ui.info("       - Forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
             ui.info("       - Time: N atoms × 1 SCF per atom")
             ui.info("       - Error: O(t), suitable for quick estimates")
             ui.info("       - Quality: May miss soft modes, less accurate frequencies")
-            ui.info("    2: Two displacements per atom (recommended)")
+            ui.info("    2: Two displacements per atom")
             ui.info("       - Central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
             ui.info("       - Time: N atoms × 2 SCF per atom (2x slower)")
             ui.info("       - Error: O(t²), much more accurate")
             ui.info("       - Quality: Reliable frequencies, better for publication")
-            numderiv = input("  Select method (1 or 2) [2]: ").strip() or "2"
-            config["frequency_settings"]["numderiv"] = int(numderiv)
+            # NUMDERIV is written only when asked for (0/blank: none)
+            numderiv = input("  Select method (0-2) [0]: ").strip() or "0"
+            if numderiv in ("1", "2"):
+                config["frequency_settings"]["numderiv"] = int(numderiv)
 
             # Gamma point spectroscopy options
             if config["frequency_settings"]["mode"] == "GAMMA":
@@ -2474,7 +2476,6 @@ class WorkflowPlanner:
                     "inherit_base_settings": True,
                     "frequency_settings": {
                         "mode": "GAMMA",
-                        "numderiv": 2,
                         "intensities": True,
                         "ir_method": "CPHF",
                         "raman": True,
