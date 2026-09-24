@@ -1230,9 +1230,10 @@ class CrystalInputParser:
                         self.data["external_basis_data"].append(line_content)
             return
 
-        # If no "99 0" found, look for BASISSET keyword (internal basis)
+        # If no "99 0" found, look for BASISSET keyword (internal basis).
+        # Line 1 is the free-text title, never the keyword.
         for i, line in enumerate(lines):
-            if line.strip() == "BASISSET":
+            if i > 0 and line.strip() == "BASISSET":
                 self.data["basis_set_type"] = "INTERNAL"
                 if i + 1 < len(lines):
                     self.data["basis_set"] = lines[i + 1].strip()
@@ -1308,7 +1309,7 @@ class CrystalInputParser:
         # Also check for frequency calculations
         for i, line in enumerate(lines):
             stripped = line.strip()
-            if stripped == "FREQCALC":
+            if i > 0 and stripped == "FREQCALC":
                 self.data["calculation_type"] = "FREQ"
                 in_freq = True
                 freq_settings = {}
@@ -1632,6 +1633,8 @@ class CrystalInputParser:
         non-zero lock silently reverted to automatic spin optimization.
         """
         for i, line in enumerate(lines):
+            if i == 0:
+                continue  # the title, never a keyword
             if line.strip() == "SPINLOCK" and i + 1 < len(lines):
                 parts = lines[i + 1].split()
                 try:
@@ -1659,6 +1662,8 @@ class CrystalInputParser:
     def _extract_smearing_settings(self, lines: List[str]) -> None:
         """Extract Fermi smearing settings"""
         for i, line in enumerate(lines):
+            if i == 0:
+                continue  # the title, never a keyword
             stripped = line.strip()
             if stripped == "SMEAR":
                 self.data["use_smearing"] = True
@@ -1673,6 +1678,8 @@ class CrystalInputParser:
         """Extract computational tolerance settings"""
         tolerances = {}
         for i, line in enumerate(lines):
+            if i == 0:
+                continue  # the title, never a keyword
             stripped = line.strip()
             if stripped == "TOLINTEG":
                 # Next line contains tolerance values
@@ -1692,6 +1699,8 @@ class CrystalInputParser:
     def _extract_kpoint_settings(self, lines: List[str]) -> None:
         """Extract k-point grid settings"""
         for i, line in enumerate(lines):
+            if i == 0:
+                continue  # the title, never a keyword
             stripped = line.strip()
             if stripped == "SHRINK":
                 # Next lines contain k-point specification
@@ -1714,6 +1723,8 @@ class CrystalInputParser:
     def _extract_scf_settings(self, lines: List[str]) -> None:
         """Extract SCF convergence settings"""
         for i, line in enumerate(lines):
+            if i == 0:
+                continue  # the title, never a keyword
             stripped = line.strip()
             
             # SCF method
