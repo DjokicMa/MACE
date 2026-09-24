@@ -205,8 +205,15 @@ def _get_phonon_band_path_title(band_settings, geometry_data):
     return " - Phonon Band Structure" + source_info + " - " + "-".join(path_str)
 
 
-def write_d12_file(output_file, geometry_data, settings, external_basis_data=None):
+def write_d12_file(output_file, geometry_data, settings, external_basis_data=None,
+                   parent_k_points=None):
     """Write new D12 file with optimized geometry and settings.
+
+    parent_k_points is the raw k-point value parsed from the parent .d12 this
+    deck is generated from. When settings still carry exactly that value, the
+    parent's mesh is written back as-is (including an anisotropic
+    ``0 ISP / ka kb kc`` mesh). It is deliberately a call argument, not a
+    settings key, so it never reaches --save-options JSON.
 
     Returns True on success. Returns False when creation is aborted (basis-set
     incompatibility declined interactively, or hit non-interactively); the
@@ -634,6 +641,13 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
 
         # Prepare k-points with same logic as d12creation.py
         k_points_info = None
+        shrink_isp = None
+        # The mesh came from the parent deck itself (not a config file from
+        # another material, not regenerated from the cell).
+        k_from_parent = (
+            parent_k_points is not None
+            and settings.get("k_points") == parent_k_points
+        )
         if settings.get("k_points"):
             k_points_raw = settings["k_points"]
             
@@ -647,6 +661,16 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                     parts = k_points_raw.split()
                     if len(parts) == 3:
                         k_points_info = (int(parts[0]), int(parts[1]), int(parts[2]))
+                    elif len(parts) == 2 and int(parts[0]) > 0:
+                        # One-line 'SHRINK IS ISP' form (the most common one):
+                        # IS subdivisions along every reciprocal vector. Without
+                        # this branch the mesh was regenerated from the cell
+                        # (e.g. a parent's 5 10 became 7 14).
+                        is_ = int(parts[0])
+                        k_points_info = (is_, is_, is_)
+                        isp = int(parts[1])
+                        if isp != 2 * is_:
+                            shrink_isp = isp
                     elif len(parts) == 1:
                         # Single value - apply to all directions
                         k = int(parts[0])
@@ -669,7 +693,8 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             
             # For symmetrized structures (non-P1), prefer uniform k-points
             # This ensures compatibility with simplified SHRINK format
-            if spacegroup != 1 and (ka != kb or kb != kc or ka != kc):
+            # A mesh taken from the parent deck is kept as the parent wrote it.
+            if not k_from_parent and spacegroup != 1 and (ka != kb or kb != kc or ka != kc):
                 # Use maximum k-point for uniform sampling in symmetrized structures
                 k_max = max(ka, kb, kc)
                 enhanced_k_points = (k_max, k_max, k_max)
@@ -694,6 +719,8 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             # this the writer falls back to DEFAULT_SPINLOCK_CYCLES (50) and a deck
             # with e.g. 'SPINLOCK 2 30' is silently regenerated as '2 50'.
             spinlock_cycles=settings.get("spinlock_cycles", DEFAULT_SPINLOCK_CYCLES),
+            preserve_directional=k_from_parent,
+            shrink_isp=shrink_isp if k_from_parent else None,
         )
 
         # Note: The single END at the very end is written by write_scf_section
@@ -780,12 +807,14 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     # Parse input file if provided
     settings = out_data.copy()
     external_basis_data = []
+    parent_k_points = None
 
     if input_file and os.path.exists(input_file):
         ui.info(f"Parsing input file: {input_file}")
         in_parser = CrystalInputParser(input_file)
         try:
             in_data = in_parser.parse()
+            parent_k_points = in_data.get("k_points")
 
             # Merge data, with special handling for DFT settings
             for key, value in in_data.items():
@@ -1253,7 +1282,8 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     # Use optimized geometry from output but with preserved settings
     # The geometry_data (out_data) contains the optimized coordinates with is_unique flags
     # The settings (options) contains the preserved symmetry and other settings from D12
-    if not write_d12_file(new_filename, out_data, converted_options, external_basis_data):
+    if not write_d12_file(new_filename, out_data, converted_options, external_basis_data,
+                          parent_k_points=parent_k_points):
         ui.err(f"\nFailed to create {new_filename}: D12 creation aborted.")
         return False, options
 

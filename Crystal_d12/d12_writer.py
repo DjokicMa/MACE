@@ -527,7 +527,9 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
                      broyden_w0: float = DEFAULT_BROYDEN_W0,
                      broyden_imix: int = DEFAULT_BROYDEN_IMIX,
                      broyden_istart: int = DEFAULT_BROYDEN_ISTART,
-                     guessp: bool = False) -> None:
+                     guessp: bool = False,
+                     preserve_directional: bool = False,
+                     shrink_isp: Optional[int] = None) -> None:
     """Write the SCF parameters section of the D12 file
 
     Args:
@@ -554,6 +556,11 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
             overrides the FMIXING value written above (see DEFAULT_BROYDEN_IMIX).
         broyden_istart: SCF iteration after which Broyden is active, minimum 2
             (see DEFAULT_BROYDEN_ISTART). Only used when scf_method is BROYDEN.
+        preserve_directional: Keep a non-uniform 3D mesh as the directional
+            ``0 ISP / ka kb kc`` form instead of making it uniform. Set by the
+            caller only when the mesh was read from the parent deck.
+        shrink_isp: Gilat net (ISP) for the one-line ``IS ISP`` form, when it
+            is not 2*IS. None keeps the usual 2*IS.
     """
     # Fixed spin state. CRYSTAL expects SPINLOCK at the top of the SCF block,
     # ahead of TOLINTEG, exactly as it appears in the project's reference inputs.
@@ -607,9 +614,15 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
                 # Non-P1: Check if we can use simplified format
                 if dimensionality == "CRYSTAL" and ka == kb == kc:
                     # Use simplified format for uniform k-points
-                    n_shrink = ka * 2
+                    n_shrink = shrink_isp if shrink_isp else ka * 2
                     print("SHRINK", file=f)
                     print(f"{ka} {n_shrink}", file=f)
+                elif dimensionality == "CRYSTAL" and preserve_directional:
+                    # The parent's own anisotropic mesh: keep it.
+                    n_shrink = max(ka, kb, kc) * 2
+                    print("SHRINK", file=f)
+                    print(f"0 {n_shrink}", file=f)
+                    print(f"{ka} {kb} {kc}", file=f)
                 else:
                     # Non-uniform k-points or lower dimensionality
                     # For non-P1 with non-uniform k-points, make them uniform
