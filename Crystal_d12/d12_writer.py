@@ -393,9 +393,12 @@ def write_dft_section(f: TextIO, functional: str, use_dispersion: bool,
         is_spin_polarized: Whether calculation is spin polarized
         custom_functional: for functional == CUSTOM_FUNCTIONAL, the parent's
             EXCHANGE/CORRELAT/HYBRID/NONLOCAL records, written verbatim
-        custom_dftd3: the parent's DFTD3 block for a custom functional,
-            written verbatim where the parent had it (inside the DFT block
-            when custom_dftd3_in_dft, else right after it)
+        custom_dftd3: the parent's DFTD3 block (or GRIMME records), written
+            verbatim where the parent had it (inside the DFT block when
+            custom_dftd3_in_dft, else right after it). With a functional
+            keyword it replaces the "-D3" form: the keyword is written
+            plain, as the parent wrote it. The caller passes it only for the
+            parent's own functional.
     """
     from d12_constants import D3_FUNCTIONALS, CUSTOM_FUNCTIONAL
     
@@ -423,6 +426,16 @@ def write_dft_section(f: TextIO, functional: str, use_dispersion: bool,
                 print(record, file=f)
         return
     
+    # A "<name>-D3" menu name is the functional plus the D3 flag, so it is
+    # written the way the flag is: mPW1PW91-D3 as the keyword PW1PW-D3 (the
+    # name itself is not a CRYSTAL23 keyword). Other -D3 names are written as
+    # given.
+    if functional.upper().endswith("-D3") and functional[:-3] in D3_FUNCTIONALS:
+        functional, use_dispersion = functional[:-3], True
+    if custom_dftd3:
+        # The parent's own D3 input carries the correction.
+        use_dispersion = False
+
     # Map functionals to their correct CRYSTAL keywords
     functional_keyword_map = {
         "PBESOL": "PBESOLXC",
@@ -494,8 +507,14 @@ def write_dft_section(f: TextIO, functional: str, use_dispersion: bool,
         # Add DFT grid size only if not default and not None
         if dft_grid and dft_grid != "DEFAULT":
             print(dft_grid, file=f)
-    
+
+    if custom_dftd3 and custom_dftd3_in_dft:
+        for record in custom_dftd3:
+            print(record, file=f)
     print("ENDDFT", file=f)
+    if custom_dftd3 and not custom_dftd3_in_dft:
+        for record in custom_dftd3:
+            print(record, file=f)
 
 
 def write_basis_set_section(f: TextIO, basis_type: str, dimensionality: str, 

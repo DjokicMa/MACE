@@ -12,6 +12,7 @@
 * The replacement prompt accepts only what the writer turns into valid
   CRYSTAL23 input: bare PBE and B97 (written as typed) and -D3 forms the
   manual has no D3 parameters for (SCAN-D3, PBESOL0-D3) are asked again.
+  mPW1PW91-D3 is written as the keyword PW1PW-D3.
 * A .d12 functional line nothing could map is asked about, not replaced by
   the output parser's guess.
 """
@@ -172,8 +173,7 @@ def _unknown():
             "unrecognised_functional_source": "input", "dispersion": False}
 
 
-@pytest.mark.parametrize("typed", ["PBESOL0-D3", "SCAN-D3", "PBE", "B97", "PBESOL-D3",
-                                   "mPW1PW91-D3"])
+@pytest.mark.parametrize("typed", ["PBESOL0-D3", "SCAN-D3", "PBE", "B97", "PBESOL-D3"])
 def test_replacement_prompt_rejects_what_would_be_written_invalidly(monkeypatch, capsys, typed):
     seen = _answer(monkeypatch, [("Enter another functional", [typed, "PBE0"]),
                                  ("Add D3", "n")])
@@ -185,6 +185,7 @@ def test_replacement_prompt_rejects_what_would_be_written_invalidly(monkeypatch,
 
 @pytest.mark.parametrize("typed, functional, written", [
     ("PBEXC", "PBEXC", ["PBEXC"]),
+    ("mPW1PW91-D3", "mPW1PW91-D3", ["PW1PW-D3"]),
     ("pbe-d3", "PBE-D3", ["PBE-D3"]),
     ("B97-D3", "B97-D3", ["B97-D3"]),
     ("PBESOL", "PBESOL", ["PBESOLXC"]),

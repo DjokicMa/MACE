@@ -1186,8 +1186,9 @@ def describe_custom_functional(records) -> str:
     parts, i = [], 0
     records = list(records or [])
     while i < len(records):
-        if records[i].upper() in ("EXCHANGE", "CORRELAT", "HYBRID", "NONLOCAL") \
-                and i + 1 < len(records):
+        if records[i].upper().split()[:1] and records[i].upper().split()[0] in (
+                "EXCHANGE", "CORRELAT", "HYBRID", "NONLOCAL", "SR-OMEGA", "MR-OMEGA",
+                "LR-OMEGA", "SR-HYB", "LSRSH-PBE") and i + 1 < len(records):
             parts.append(f"{records[i]} {records[i + 1]}")
             i += 2
         else:

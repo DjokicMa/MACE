@@ -1337,16 +1337,32 @@ class CrystalInputParser:
         """Extract DFT functional and settings from input file"""
         in_dft_block = False
         pending_xc = {}
+        skip_to = 0
         for i, line in enumerate(lines):
             stripped = line.strip()
-            
+            # Line 1 is the free-text title: a title "DFT" or "UHF" is not
+            # the keyword.
+            if i == 0 or i < skip_to:
+                continue
+
             # Check for DFT block
-            if stripped == "DFT":
+            if stripped == "DFT" and not in_dft_block:
                 in_dft_block = True
                 self.data["method"] = "DFT"
                 continue
-            elif stripped == "ENDDFT":
+            elif in_dft_block and stripped in ("ENDDFT", "END"):
+                # The DFT block closes with ENDDFT or END (manual chapter 4).
                 in_dft_block = False
+                continue
+            elif in_dft_block and stripped == "DFTD3":
+                # A D3 input block inside the DFT block, closed by its own END:
+                # its records are not DFT keywords (kept whole by
+                # _extract_dispersion_input).
+                self.data["dispersion"] = True
+                skip_to = i + 1
+                while skip_to < len(lines) and lines[skip_to].strip().upper() != "END":
+                    skip_to += 1
+                skip_to += 1
                 continue
             elif stripped in ["UHF", "RHF"] and not in_dft_block:
                 # Hartree-Fock methods outside DFT block
@@ -1445,13 +1461,12 @@ class CrystalInputParser:
                 elif stripped == "SPIN":
                     self.data["spin_polarized"] = True
                     
-                # Check for GRIMME D3 dispersion correction
-                elif stripped in ["GRIMME", "DFTD3"]:
+                # A GRIMME record here is dispersion input, kept whole by
+                # _extract_dispersion_input. It used to rename the functional
+                # "<name>-D3", which is a different correction.
+                elif stripped == "GRIMME":
                     self.data["dispersion"] = True
-                    # If we have a functional already and it doesn't have -D3, add it
-                    if self.data.get("functional") and not self.data["functional"].endswith("-D3"):
-                        self.data["functional"] = self.data["functional"] + "-D3"
-                    
+
         # A functional the deck defines with EXCHANGE/CORRELAT/HYBRID/NONLOCAL
         if self.data.get("method") == "DFT":
             self._extract_custom_functional(lines)
@@ -1459,6 +1474,10 @@ class CrystalInputParser:
         # A DFT block whose functional line matched none of the names above
         if self.data.get("method") == "DFT" and not self.data.get("functional"):
             self._extract_unlisted_functional(lines)
+
+        # The parent's DFTD3 / GRIMME input, for any functional
+        if self.data.get("method") == "DFT":
+            self._extract_dispersion_input(lines)
 
         # No grid keyword is a setting too: CRYSTAL's default grid. Recorded
         # so the child writes none either (the output only names the grid
@@ -1494,7 +1513,21 @@ class CrystalInputParser:
         "PRINTEXC", "GRIMME", "DFTD3",
     }
 
-    _XC_RECORD_KEYWORDS = ("EXCHANGE", "CORRELAT", "HYBRID", "NONLOCAL")
+    # Records that define or modify a functional, each followed by one value
+    # record (manual sec. 4.1): EXCHANGE/CORRELAT/HYBRID/NONLOCAL, the range-
+    # separation settings SR-OMEGA/MR-OMEGA/LR-OMEGA and SR-HYB, and
+    # LSRSH-PBE, whose omega/cSR/cLR record is required.
+    _XC_RECORD_KEYWORDS = ("EXCHANGE", "CORRELAT", "HYBRID", "NONLOCAL",
+                           "SR-OMEGA", "MR-OMEGA", "LR-OMEGA", "SR-HYB",
+                           "LSRSH-PBE")
+
+    @staticmethod
+    def _dftd3_block_end(lines: List[str], i: int) -> int:
+        """Index of the END closing the DFTD3 block opened at line i."""
+        j = i + 1
+        while j < len(lines) and lines[j].strip().upper() != "END":
+            j += 1
+        return j
 
     def _extract_custom_functional(self, lines: List[str]) -> None:
         """Keep a functional the DFT block defines record by record.
@@ -1503,33 +1536,25 @@ class CrystalInputParser:
         define a functional of the user's own (manual sec. 4.1), e.g. PBE0
         written as EXCHANGE PBE / CORRELAT PBE / HYBRID 25. Reading only the
         exchange name turned that hybrid into the GGA "PBE". The records, and
-        any functional keyword they modify (HYBRID on B3LYP), are stored in
-        "custom_functional" in deck order, to be written back verbatim, and
-        the functional becomes CUSTOM_FUNCTIONAL. The parent's DFTD3 input
-        block, if any, is kept with them.
+        any functional keyword they modify (HYBRID on B3LYP, SR-OMEGA on
+        HSE06, SR-HYB on WB97X), are stored in "custom_functional" in deck
+        order, to be written back verbatim, and the functional becomes
+        CUSTOM_FUNCTIONAL. So is LSRSH-PBE with its required value record.
 
         A bare EXCHANGE/CORRELAT pair MACE's writer emits for one of its menu
         names (PWGGA, VBH, WCGGA) still reads back as that name.
         """
         records: List[str] = []
-        dftd3: List[str] = []
-        dftd3_in_dft = False
         has_xc = False
         in_block = False
         done = False
-        i = 0
+        i = 1  # line 1 is the free-text title, never a keyword
         while i < len(lines):
             stripped = lines[i].strip()
             upper = stripped.upper()
             if upper == "DFTD3":
-                # The D3 input block, closed by its own END (manual sec. 5.1)
-                j = i + 1
-                while j < len(lines) and lines[j].strip().upper() != "END":
-                    j += 1
-                if not dftd3:
-                    dftd3 = [line.strip() for line in lines[i:j + 1]]
-                    dftd3_in_dft = in_block
-                i = j + 1
+                # The D3 input block (kept by _extract_dispersion_input)
+                i = self._dftd3_block_end(lines, i) + 1
                 continue
             if not in_block:
                 if not done and upper == "DFT":
@@ -1540,7 +1565,7 @@ class CrystalInputParser:
                 in_block, done = False, True
                 i += 1
                 continue
-            if upper in self._XC_RECORD_KEYWORDS:
+            if upper.split() and upper.split()[0] in self._XC_RECORD_KEYWORDS:
                 value = lines[i + 1].strip() if i + 1 < len(lines) else ""
                 records += [stripped, value]
                 has_xc = True
@@ -1566,10 +1591,56 @@ class CrystalInputParser:
         self.data["custom_functional"] = records
         self.data.pop("unrecognised_functional", None)
         self.data.pop("unrecognised_functional_source", None)
-        if dftd3:
-            self.data["custom_dftd3"] = dftd3
-            self.data["custom_dftd3_in_dft"] = dftd3_in_dft
-            self.data["dispersion"] = True
+
+    def _extract_dispersion_input(self, lines: List[str]) -> None:
+        """Keep the parent's DFTD3 block and GRIMME records, whatever the functional.
+
+        DFTD3 opens a D3 input block closed by its own END (manual sec. 5.1);
+        GRIMME takes a parameter record, NATS, and NATS atom records (manual
+        sec. 3.3). Either one switches dispersion on for the functional
+        keyword as written - "PBE0 / END / DFTD3 ... END" is the manual's own
+        example - so they are stored in "custom_dftd3" to be written back
+        verbatim with the parent's functional ("custom_dftd3_functional"),
+        not turned into a "<name>-D3" keyword. "custom_dftd3_in_dft" says a
+        DFTD3 block sat inside the DFT block.
+        """
+        found: List[str] = []
+        in_dft_first = False
+        in_block = False
+        done = False
+        i = 1  # line 1 is the free-text title, never a keyword
+        while i < len(lines):
+            upper = lines[i].strip().upper()
+            if upper == "DFTD3":
+                j = self._dftd3_block_end(lines, i)
+                if not found:
+                    in_dft_first = in_block
+                found += [line.strip() for line in lines[i:j + 1]]
+                i = j + 1
+                continue
+            if upper == "GRIMME" and (done or in_block):
+                # GRIMME / s6 d Rcut / NATS / NATS x (NAT C6 Rvdw)
+                try:
+                    nats = int(lines[i + 2].split()[0])
+                except (IndexError, ValueError):
+                    nats = 0
+                j = min(i + 2 + nats, len(lines) - 1)
+                if not found:
+                    in_dft_first = in_block
+                found += [line.strip() for line in lines[i:j + 1]]
+                i = j + 1
+                continue
+            if not in_block and not done and upper == "DFT":
+                in_block = True
+            elif in_block and upper in ("END", "ENDDFT"):
+                in_block, done = False, True
+            i += 1
+        if not found:
+            return
+        self.data["custom_dftd3"] = found
+        self.data["custom_dftd3_in_dft"] = in_dft_first
+        self.data["custom_dftd3_functional"] = self.data.get("functional")
+        self.data["dispersion"] = True
 
     def _extract_unlisted_functional(self, lines: List[str]) -> None:
         """Identify a functional line none of the known names matched.
@@ -1586,13 +1657,19 @@ class CrystalInputParser:
             be told what the parent asked for and choose a replacement.
         """
         in_block = False
+        skip_to = 0
         for i, line in enumerate(lines):
+            if i == 0 or i < skip_to:
+                continue  # the title; a DFTD3 block's records
             stripped = line.strip()
             if not in_block:
                 in_block = stripped == "DFT"
                 continue
             if stripped in ("END", "ENDDFT"):
                 return
+            if stripped.upper() == "DFTD3":
+                skip_to = self._dftd3_block_end(lines, i) + 1
+                continue
             tokens = stripped.split()
             if len(tokens) != 1 or not tokens[0][0].isalpha():
                 continue  # value records, blank lines

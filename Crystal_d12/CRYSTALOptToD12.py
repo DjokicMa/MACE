@@ -139,6 +139,34 @@ def prefer_deck_unrecognised_functional(settings: dict, in_data: dict) -> None:
         settings["functional"] = None
 
 
+def parent_dispersion_input(settings: dict):
+    """The parent's DFTD3/GRIMME records to write, or None.
+
+    They go with the functional they were parsed with: always for the
+    parent's own EXCHANGE/CORRELAT definition, and for a functional keyword
+    while dispersion is still on (the D3 question's answer) and the
+    functional is still the parent's. Any other functional takes the D3
+    question's usual "<name>-D3" form.
+    """
+    records = settings.get("custom_dftd3")
+    if not records:
+        return None
+    functional = settings.get("functional") or ""
+    parent = settings.get("custom_dftd3_functional", CUSTOM_FUNCTIONAL)
+    if functional == CUSTOM_FUNCTIONAL:
+        # Only the parent's own definition: not a replacement typed at the
+        # unknown-functional prompt (LSRSH-PBE with its record).
+        return records if parent == CUSTOM_FUNCTIONAL else None
+
+    def base(name):
+        name = str(name or "")
+        return name[:-3] if name.upper().endswith("-D3") else name
+
+    if settings.get("dispersion") and parent and base(functional).upper() == base(parent).upper():
+        return records
+    return None
+
+
 def _with_opt_type_default(settings: dict, opt_type) -> dict:
     """Settings whose optimization type is --opt-type, so the prompts show it."""
     if not opt_type:
@@ -667,7 +695,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                     settings.get("dft_grid", "XLGRID"),
                     settings.get("spin_polarized"),
                     custom_functional=settings.get("custom_functional"),
-                    custom_dftd3=settings.get("custom_dftd3"),
+                    custom_dftd3=parent_dispersion_input(settings),
                     custom_dftd3_in_dft=bool(settings.get("custom_dftd3_in_dft")),
                 )
 
