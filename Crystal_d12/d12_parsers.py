@@ -1436,8 +1436,11 @@ class CrystalInputParser:
                     continue
                 # The deck wrote SPINLOCK itself. 'SPINLOCK / 0 N' is a real
                 # setting (hold nalpha-nbeta = 0 for N cycles), not "off", so
-                # the writer must emit it even though the value is 0.
-                self.data["spinlock_explicit"] = True
+                # the writer must emit it even though the value is 0. Only a
+                # zero lock is flagged: a user who types 0 over a parent's
+                # non-zero lock means "automatic", which writes no record.
+                if self.data["spinlock"] == 0:
+                    self.data["spinlock_explicit"] = True
                 if len(parts) > 1:
                     try:
                         self.data["spinlock_cycles"] = int(parts[1])

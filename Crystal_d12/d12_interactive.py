@@ -890,7 +890,8 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
     
     # Determine default based on current settings
     current_method = options.get("method_type", options.get("method", "DFT"))
-    current_functional = options.get("functional", "")
+    # The key can be present as None when the parent's functional was not recognised.
+    current_functional = options.get("functional") or ""
     
     # Set default based on current method
     if current_method == "HF" or current_functional in ["RHF", "UHF", "HF3C", "HFSOL3C"]:

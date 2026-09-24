@@ -74,6 +74,16 @@ def test_parser_reads_scf_block_into_scf_settings(tmp_path):
     assert d["spinlock"] == 0 and d["spinlock_explicit"] is True
 
 
+
+def test_nonzero_parent_spinlock_is_not_flagged_as_an_explicit_zero(tmp_path):
+    """Only 'SPINLOCK / 0 N' needs the explicit flag. Flagging a '2 30' parent
+    made a user's answer of 0 ("automatic") write 'SPINLOCK / 0 30' instead of
+    dropping the record."""
+    d = _deck(tmp_path, "DFT\nSPIN\nPBE0\nENDDFT\nSPINLOCK\n2 30\nTOLINTEG\n7 7 7 7 14\n"
+              "TOLDEE\n7\nSHRINK\n8 16\nPPAN\nEND\n")
+    assert d["spinlock"] == 2 and d["spinlock_cycles"] == 30
+    assert not d.get("spinlock_explicit")
+
 def test_optgeom_maxcycle_is_not_the_scf_maxcycle(tmp_path):
     """OPTGEOM's MAXCYCLE sits more than 5 lines after OPTGEOM here, which the
     old look-back missed. With no SCF MAXCYCLE, none must be recorded."""
