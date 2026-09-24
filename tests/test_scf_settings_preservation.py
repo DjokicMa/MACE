@@ -70,6 +70,7 @@ def test_parser_reads_scf_block_into_scf_settings(tmp_path):
     assert d["scf_settings"] == {
         "method": "BROYDEN", "broyden": ("1.0E-4", 40, 3), "maxcycle": 1600,
         "fmixing": 50, "levshift": (5, 1), "biposize": 4000000, "exchsize": 5000000,
+        "histdiis": None,   # the deck has no HISTDIIS record, and that is kept
     }
     assert d["spinlock"] == 0 and d["spinlock_explicit"] is True
 
@@ -89,20 +90,22 @@ def test_optgeom_maxcycle_is_not_the_scf_maxcycle(tmp_path):
     old look-back missed. With no SCF MAXCYCLE, none must be recorded."""
     d = _deck(tmp_path, "DFT\nPBE0\nENDDFT\nTOLINTEG\n7 7 7 7 14\nTOLDEE\n7\n"
               "SHRINK\n8 16\nFMIXING\n40\nDIIS\nPPAN\nEND\n")
-    assert d["scf_settings"] == {"fmixing": 40, "method": "DIIS"}
+    assert d["scf_settings"] == {"fmixing": 40, "method": "DIIS", "histdiis": None}
 
 
 def test_hf_deck_scf_block_starts_after_basis(tmp_path):
     d = _deck(tmp_path, "UHF\nSPINLOCK\n0 50\nTOLINTEG\n7 7 7 7 14\nTOLDEE\n7\n"
               "SHRINK\n8 16\nMAXCYCLE\n900\nFMIXING\n60\nDIIS\nPPAN\nEND\n")
-    assert d["scf_settings"] == {"maxcycle": 900, "fmixing": 60, "method": "DIIS"}
+    assert d["scf_settings"] == {"maxcycle": 900, "fmixing": 60, "method": "DIIS",
+                                 "histdiis": None}
     assert d["spinlock_explicit"] is True
 
 
 def test_dft_block_closed_by_plain_end(tmp_path):
     d = _deck(tmp_path, "DFT\nSPIN\nPBE-D3\nXLGRID\nEND\nTOLINTEG\n7 7 7 7 14\n"
               "TOLDEE\n7\nSHRINK\n8 16\nMAXCYCLE\n1600\nFMIXING\n80\nDIIS\nPPAN\nEND\n")
-    assert d["scf_settings"] == {"maxcycle": 1600, "fmixing": 80, "method": "DIIS"}
+    assert d["scf_settings"] == {"maxcycle": 1600, "fmixing": 80, "method": "DIIS",
+                                 "histdiis": None}
 
 
 # ----------------------------------------------------------------- writer

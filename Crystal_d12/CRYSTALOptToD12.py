@@ -741,6 +741,14 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         for size_key in ("biposize", "exchsize"):
             if scf.get(size_key) is not None:
                 scf_extra[size_key] = int(scf[size_key])
+        # HISTDIIS as the parent deck (or the answer) has it; None = no record.
+        # Settings that never saw a deck keep the writer's default.
+        if "histdiis" in scf:
+            scf_extra["histdiis"] = int(scf["histdiis"]) if scf["histdiis"] else None
+        # The parent's GUESSP restart request. submitcrystal23.sh drops the
+        # record when it has no density matrix to stage, so carrying it is safe.
+        if scf.get("guessp"):
+            scf_extra["guessp"] = True
         # SPINLOCK needs SPIN (DFT) or UHF in this deck; in a closed-shell run
         # CRYSTAL aborts on it. A UHF deck carries no SPIN keyword.
         spin_active = bool(settings.get("spin_polarized")) or settings.get("functional") == "UHF"
@@ -1197,12 +1205,12 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 options["write_only_unique"] = False
 
     # Keep the parent deck's SCF records that no prompt or config sets: the
-    # BROYDEN parameters, LEVSHIFT and BIPOSIZE/EXCHSIZE. The interactive flow
+    # BROYDEN parameters, LEVSHIFT, BIPOSIZE/EXCHSIZE, HISTDIIS and GUESSP. The interactive flow
     # replaces scf_settings with only maxcycle/fmixing/method, which dropped them.
     parent_scf = settings.get("scf_settings") or {}
     if isinstance(options.get("scf_settings"), dict) or "scf_settings" not in options:
         merged_scf = dict(options.get("scf_settings") or {})
-        for scf_key in ("broyden", "levshift", "biposize", "exchsize"):
+        for scf_key in ("broyden", "levshift", "biposize", "exchsize", "histdiis", "guessp"):
             if scf_key in parent_scf:
                 merged_scf.setdefault(scf_key, parent_scf[scf_key])
         options["scf_settings"] = merged_scf

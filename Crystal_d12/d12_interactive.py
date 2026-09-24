@@ -509,9 +509,10 @@ def configure_dft_grid_with_defaults(functional: str, current_grid: str = "XLGRI
     """
     import d12_constants
     
-    # 3C methods have their own optimized grids
+    # 3C methods set their own grid, so there is nothing to ask; keep any
+    # grid the parent deck wrote (it used to be dropped here).
     if "-3C" in functional or functional.endswith("3C"):
-        return None
+        return current_grid if current_grid and current_grid != "DEFAULT" else None
     
     # Store the original get_user_input function
     original_get_user_input = d12_constants.get_user_input
@@ -2062,7 +2063,12 @@ def configure_advanced_electronic_settings(options: Dict[str, Any], show_current
         scf_config = configure_scf_settings_with_defaults(options.get("scf_settings", {}))
         # Advanced SCF options if using DIIS
         if scf_config.get("method") == "DIIS":
-            current_histdiis = options.get("scf_settings", {}).get("histdiis")
+            # The parent deck's HISTDIIS is the default. The answer is final:
+            # "no" writes no HISTDIIS (the deck writer used to add HISTDIIS 100
+            # whatever the answer). A parent parsed without a HISTDIIS record
+            # carries histdiis=None; one we know nothing about falls back to 100.
+            parent_scf = options.get("scf_settings") or {}
+            current_histdiis = parent_scf.get("histdiis", 100)
             if current_histdiis:
                 default_hist = "yes"
                 print(f"\nCurrent HISTDIIS: {current_histdiis}")
@@ -2076,6 +2082,8 @@ def configure_advanced_electronic_settings(options: Dict[str, Any], show_current
                     hist_default
                 )
                 scf_config["histdiis"] = hist_size
+            else:
+                scf_config["histdiis"] = None
         
         # Additional SCF options - already handled by configure_scf_settings_with_defaults
         # The wrapper function already asked about PPAN and BIPOSIZE/EXCHSIZE

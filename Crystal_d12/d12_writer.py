@@ -426,6 +426,10 @@ def write_dft_section(f: TextIO, functional: str, use_dispersion: bool,
         if functional == "HSESOL3C":
             # Always use XLGRID for HSESOL3C
             print("XLGRID", file=f)
+        elif dft_grid and dft_grid != "DEFAULT":
+            # The other 3c methods take a grid keyword like any functional;
+            # a grid the parent deck wrote used to be dropped here.
+            print(dft_grid, file=f)
     elif functional == "mPW1PW91" and use_dispersion:
         print("PW1PW-D3", file=f)
         # Add DFT grid size only if not default and not None
@@ -533,7 +537,8 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
                      levshift: Optional[Sequence[int]] = None,
                      biposize: Optional[int] = None,
                      exchsize: Optional[int] = None,
-                     write_zero_spinlock: bool = False) -> None:
+                     write_zero_spinlock: bool = False,
+                     histdiis: Optional[int] = 100) -> None:
     """Write the SCF parameters section of the D12 file
 
     Args:
@@ -574,6 +579,9 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
         write_zero_spinlock: Write ``SPINLOCK / 0 spinlock_cycles`` when
             spinlock is 0. Set by the caller when the parent deck had that
             record itself; NSPIN = 0 is a real lock, not "off".
+        histdiis: HISTDIIS history length written after DIIS. None writes no
+            HISTDIIS record (CRYSTAL's default), as for a parent deck without
+            one. The default, 100, is the long-standing value for new decks.
     """
     # Fixed spin state. CRYSTAL expects SPINLOCK at the top of the SCF block,
     # ahead of TOLINTEG, exactly as it appears in the project's reference inputs.
@@ -711,9 +719,9 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
     if scf_method == "BROYDEN":
         print(f"{broyden_w0} {broyden_imix} {broyden_istart}", file=f)
 
-    if scf_method == "DIIS":
+    if scf_method == "DIIS" and histdiis:
         print("HISTDIIS", file=f)
-        print("100", file=f)
+        print(histdiis, file=f)
 
     # Level shifter: ISHIFT (in 0.1 Hartree) and ILOCK.
     if levshift:

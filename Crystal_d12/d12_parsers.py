@@ -1161,8 +1161,15 @@ class CrystalInputParser:
                     scf["biposize"] = int(_next_tokens(i)[0])
                 elif stripped == "EXCHSIZE":
                     scf["exchsize"] = int(_next_tokens(i)[0])
+                elif stripped == "HISTDIIS":
+                    scf["histdiis"] = int(_next_tokens(i)[0])
+                elif stripped == "GUESSP":
+                    scf["guessp"] = True
             except (ValueError, IndexError):
                 continue
+        # No HISTDIIS record is a setting too (CRYSTAL's own history length):
+        # None tells the deck writer not to add one.
+        scf.setdefault("histdiis", None)
         return scf
 
     def _extract_basis_set(self, lines: List[str]) -> None:
