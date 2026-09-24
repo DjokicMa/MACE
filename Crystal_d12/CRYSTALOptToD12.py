@@ -1056,6 +1056,17 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                         options["spin_polarized"] = False
                     if "keep_grid" in method_mods and not method_mods["keep_grid"]:
                         options["dft_grid"] = None
+
+                # A functional named by the config (a plan step, a saved
+                # config) is used exactly as written: it says itself whether it
+                # carries -D3. Without this the parent's dispersion flag stayed
+                # on, and a plan's PBE0 on a B3LYP-D3 parent was written PBE0-D3.
+                # An explicit "dispersion" in the config still wins.
+                explicit_functional = ((config_data.get("method_modifications") or {}).get("new_functional")
+                                       or (config_data.get("method_modifications") or {}).get("functional")
+                                       or config_data.get("functional"))
+                if explicit_functional and "dispersion" not in config_data:
+                    options["dispersion"] = str(explicit_functional).upper().endswith("-D3")
                 
                 # Handle tolerance_modifications if present. The planner's
                 # FREQ steps nest their tolerances in the frequency settings

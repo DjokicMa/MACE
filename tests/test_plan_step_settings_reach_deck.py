@@ -145,3 +145,22 @@ def test_real_sp_plan_custom_3c_functional_gets_its_basis(tmp_path):
     assert "HSESOL3C" in body and "B3LYP-D3" not in body
     assert _after(body, "BASISSET") == "SOLDEF2MSVP"
     assert "_sp_HSESOL3C_" in name
+
+
+@pytest.mark.parametrize("mods,written", [
+    ({"custom_functional": "PBE0"}, "PBE0"),
+    ({"custom_functional": "PBE0-D3"}, "PBE0-D3"),
+    ({"new_functional": "PBE0"}, "PBE0"),
+    ({"new_functional": "PBE0", "use_dispersion": True}, "PBE0-D3"),
+])
+def test_real_sp_plan_functional_is_written_exactly_as_planned(tmp_path, mods, written):
+    """The planner appends -D3 only when the user asked for it. The B3LYP-D3
+    parent's dispersion flag used to survive the switch, so a planned PBE0
+    came out as PBE0-D3."""
+    step = {"calculation_type": "SP", "inherit_settings": False,
+            "method_modifications": mods,
+            "basis_modifications": {"inherit_basis": True}}
+    name, body = _real(tmp_path, {"SP_2": step}, "SP")
+    dft = body[body.index("DFT") + 1:body.index("ENDDFT")]
+    assert dft == ["SPIN", written, "XLGRID"], dft
+    assert f"_sp_{written}_optimized" in name, name
