@@ -445,6 +445,15 @@ def select_basis_set_with_defaults(elements: List[int], method: str = "DFT",
                 return original_get_user_input(prompt, options, default)
 
         # For internal basis selection - use current setting as default but still prompt
+        # The internal menu is filtered and numbered per element set, so pick
+        # the entry whose name is the parent's basis rather than a fixed number.
+        elif "select internal basis set" in prompt.lower() and current_basis_type == "INTERNAL":
+            if isinstance(options, dict):
+                for num, name in options.items():
+                    if str(name).upper() == current_basis.upper():
+                        return original_get_user_input(prompt, options, num)
+            return original_get_user_input(prompt, options, default)
+
         elif "Enter your choice" in prompt and current_basis_type == "INTERNAL":
             # Map current basis to selection number
             basis_map = {
@@ -527,6 +536,41 @@ def configure_dft_grid_with_defaults(functional: str, current_grid: str = "XLGRI
         d12_constants.get_user_input = original_get_user_input
     
     return result
+
+
+_TOLERANCE_PRESETS = {
+    "1": ("7 7 7 7 14", 7),
+    "2": ("8 8 8 9 24", 9),
+    "3": ("9 9 9 11 38", 11),
+}
+
+
+def _tolerance_preset_for(tolerances: Optional[Dict[str, Any]]) -> str:
+    """Return the SP/OPT tolerance-menu choice that matches ``tolerances``.
+
+    "1"/"2"/"3" for a preset, "keep" when the parent's values match no preset
+    (a blank answer then leaves them untouched), and "1" when there is nothing
+    to go by. TOLINTEG is compared token by token because the parser keeps the
+    raw line's spacing.
+    """
+    if not tolerances:
+        return "1"
+    tolinteg = tolerances.get("TOLINTEG", tolerances.get("tolinteg"))
+    toldee = tolerances.get("TOLDEE", tolerances.get("toldee"))
+    if tolinteg is None and toldee is None:
+        return "1"
+    if isinstance(tolinteg, (list, tuple)):
+        tolinteg = " ".join(map(str, tolinteg))
+    try:
+        tolinteg_key = tuple(int(float(x)) for x in str(tolinteg).split())
+        toldee_key = int(float(toldee)) if toldee is not None else None
+    except (TypeError, ValueError):
+        return "keep"
+    for choice, (preset_tolinteg, preset_toldee) in _TOLERANCE_PRESETS.items():
+        if (tolinteg_key == tuple(int(x) for x in preset_tolinteg.split())
+                and toldee_key == preset_toldee):
+            return choice
+    return "keep"
 
 
 def configure_tolerances_with_defaults(current_tolerances: Dict[str, Any], 
@@ -1219,11 +1263,17 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
                 
                 print("\n4. Custom - Set your own tolerances")
                 
-                default_choice = "1"  # Standard for SP/OPT
-            
-            convergence_choice = input(f"\nSelect SCF convergence level [1-4, default={default_choice}]: ").strip() or default_choice
-            
-            if convergence_choice == "1":
+                # Default to the parent's own level, so pressing Enter keeps it.
+                default_choice = _tolerance_preset_for(options.get("tolerances"))
+
+            shown_default = "keep current" if default_choice == "keep" else default_choice
+            convergence_choice = input(f"\nSelect SCF convergence level [1-4, default={shown_default}]: ").strip() or default_choice
+
+            if convergence_choice == "keep":
+                # Blank answer on a parent whose tolerances match no preset:
+                # leave options["tolerances"] as parsed from the parent.
+                print("Keeping the current SCF convergence settings")
+            elif convergence_choice == "1":
                 options["tolerances"] = {"TOLINTEG": "7 7 7 7 14", "TOLDEE": 7}
                 print("Using standard SCF convergence")
             elif convergence_choice == "2":
