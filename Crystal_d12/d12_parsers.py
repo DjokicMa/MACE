@@ -22,7 +22,9 @@ from d12_constants import (
     SPACEGROUP_SYMBOL_TO_NUMBER,
     SPACEGROUP_ALTERNATIVES,
     MULTI_ORIGIN_SPACEGROUPS,
-    RHOMBOHEDRAL_SPACEGROUPS
+    RHOMBOHEDRAL_SPACEGROUPS,
+    crystal23_functional_keyword,
+    mace_functional_name,
 )
 
 
@@ -610,6 +612,7 @@ class CrystalOutputParser:
         
         # Look for DFT functional information
         functional_found = False
+        printed_xc = None
         
         for i, line in enumerate(lines):
             # Check for CRYSTAL23 format: (EXCHANGE)[CORRELATION] FUNCTIONAL:
@@ -620,6 +623,7 @@ class CrystalOutputParser:
                 if func_match:
                     exchange_part = func_match.group(1).strip()
                     correlation_part = func_match.group(2).strip()
+                    printed_xc = f"({exchange_part})[{correlation_part}]"
                     
                     # Map common functional names based on exchange/correlation parts
                     if "PBEsol" in exchange_part or "PBEsol" in correlation_part:
@@ -756,6 +760,12 @@ class CrystalOutputParser:
                 self.data["is_3c_method"] = True
                 return
         
+        # A functional line none of the mappings above knows: keep what CRYSTAL
+        # printed, so the user can be told what the parent ran.
+        if is_dft and not self.data.get("functional") and printed_xc:
+            self.data["unrecognised_functional"] = printed_xc
+            self.data["unrecognised_functional_source"] = "output"
+
         # Upgrade GGA names to their hybrid counterparts when the output
         # declares Fock exchange: CRYSTAL prints the same
         # (EXCHANGE)[CORRELATION] line for B3LYP and BLYP (PBE0 and PBE...),
@@ -1382,8 +1392,15 @@ class CrystalInputParser:
                 elif stripped.endswith("-D3") or "-D3" in stripped:
                     # Handle functionals with -D3 suffix
                     base_functional = stripped.replace("-D3", "")
-                    self.data["functional"] = stripped  # Keep the full name with -D3
                     self.data["dispersion"] = True
+                    if (mace_functional_name(base_functional)
+                            or crystal23_functional_keyword(stripped)):
+                        self.data["functional"] = stripped  # Keep the full name with -D3
+                    else:
+                        # e.g. B2PLYP-D3: not a CRYSTAL23 keyword. Record it
+                        # so the user can be told what the parent asked for.
+                        self.data["unrecognised_functional"] = stripped
+                        self.data["unrecognised_functional_source"] = "input"
                     
                 # Special cases like PW1PW-D3
                 elif stripped == "PW1PW-D3":
@@ -1405,6 +1422,10 @@ class CrystalInputParser:
                     if self.data.get("functional") and not self.data["functional"].endswith("-D3"):
                         self.data["functional"] = self.data["functional"] + "-D3"
                     
+        # A DFT block whose functional line matched none of the names above
+        if self.data.get("method") == "DFT" and not self.data.get("functional"):
+            self._extract_unlisted_functional(lines)
+
         # Extract smearing settings
         self._extract_smearing_settings(lines)
         
@@ -1420,6 +1441,66 @@ class CrystalInputParser:
         # Extract a fixed-spin SPINLOCK so it survives a parse->regenerate
         # round-trip (e.g. OPT continuation)
         self._extract_spinlock_settings(lines)
+
+    # DFT-block keywords that are not a functional (CRYSTAL23 manual,
+    # chapter 4 keyword summary). Their value records are numbers, which the
+    # scan below skips anyway.
+    _DFT_NON_FUNCTIONAL_KEYWORDS = {
+        "SPIN", "EXCHANGE", "CORRELAT", "HYBRID", "NONLOCAL", "SR-OMEGA",
+        "MR-OMEGA", "LR-OMEGA", "SR-HYB", "ANGULAR", "RADIAL", "BECKE",
+        "SAVIN", "OLDGRID", "DEFAULT", "LGRID", "XLGRID", "XXLGRID",
+        "XXXLGRID", "HUGEGRID", "RADSAFE", "TOLLDENS", "TOLLGRID",
+        "BATCHPNT", "CHUNKS", "DISTGRID", "LIMBEK", "RADIUS", "FCHARGE",
+        "PRINTEXC", "GRIMME", "DFTD3",
+    }
+
+    def _extract_unlisted_functional(self, lines: List[str]) -> None:
+        """Identify a functional line none of the known names matched.
+
+        Only the DFT block itself is read (DFT up to its END/ENDDFT). The
+        first line that is a single word and not another DFT keyword is the
+        functional:
+          - a different spelling of a functional MACE lists (CRYSTAL input is
+            not case sensitive, e.g. "HSESOL") -> MACE's name;
+          - any other CRYSTAL23 functional keyword (e.g. SOGGA11) -> kept
+            exactly as written, so the child deck repeats it;
+          - anything else (e.g. B2PLYP, not a CRYSTAL23 keyword) -> left
+            unset and recorded as "unrecognised_functional", so the user can
+            be told what the parent asked for and choose a replacement.
+        """
+        in_block = False
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if not in_block:
+                in_block = stripped == "DFT"
+                continue
+            if stripped in ("END", "ENDDFT"):
+                return
+            tokens = stripped.split()
+            if len(tokens) != 1 or not tokens[0][0].isalpha():
+                continue  # value records, blank lines
+            word = tokens[0]
+            if word.upper() in self._DFT_NON_FUNCTIONAL_KEYWORDS:
+                continue
+            if i > 0 and lines[i - 1].strip().upper() in ("EXCHANGE", "CORRELAT"):
+                continue
+            mace_name = mace_functional_name(word)
+            if mace_name:
+                self.data["functional"] = mace_name
+                if mace_name.endswith("-D3"):
+                    self.data["dispersion"] = True
+                if mace_name.upper().endswith("3C"):
+                    self.data["is_3c_method"] = True
+            elif crystal23_functional_keyword(word):
+                self.data["functional"] = word
+                if word.upper().endswith("-D3"):
+                    self.data["dispersion"] = True
+                if word.upper().endswith("3C"):
+                    self.data["is_3c_method"] = True
+            else:
+                self.data["unrecognised_functional"] = word
+                self.data["unrecognised_functional_source"] = "input"
+            return
 
     def _extract_spinlock_settings(self, lines: List[str]) -> None:
         """Extract a fixed-spin SPINLOCK so it is preserved across a

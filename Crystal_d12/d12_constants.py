@@ -1132,6 +1132,93 @@ D3_FUNCTIONALS = [
     "M06"
 ]
 
+# Every keyword CRYSTAL23 accepts on its own line in the DFT block to choose
+# the exchange-correlation functional, transcribed from the CRYSTAL23 User's
+# Manual (October 31, 2023): section 4.1 (pp. 133-139, standalone GGA, global
+# hybrid, range-separated hybrid and meta-GGA keywords), section 5.1 (p. 150,
+# the functionals with built-in D3 parameters, used as "<name>-D3") and
+# sections 5.3-5.4 (the DFT 3c/sol-3c keywords). The manual typesets r2SCAN as
+# "r²SCAN"; the keyword is r2SCAN. EXCHANGE/CORRELAT pairs and HYBRID/NONLOCAL
+# records are not standalone keywords and are read separately.
+# CRYSTAL input is not case sensitive (manual Appendix B), so match on
+# upper case. Used to tell a valid keyword MACE's menus do not list (kept as
+# written) from a name CRYSTAL23 does not know (e.g. B2PLYP: the user is asked).
+CRYSTAL23_STANDALONE_FUNCTIONALS = [
+    # Standalone exchange+correlation (GGA/LDA)
+    "SVWN", "BLYP", "PBEXC", "PBESOLXC", "SOGGAXC", "SOGGA11",
+    # Global hybrids
+    "B3PW", "B3LYP", "PBE0", "PBESOL0", "B1WC", "WC1LYP", "B97H", "PBE0-13",
+    "SOGGA11X", "mPW1PW91", "mPW1K",
+    # Range-separated hybrids
+    "HSE06", "HSEsol", "SC-BLYP", "HISS", "RSHXLDA", "wB97", "wB97X",
+    "LC-wPBE", "LC-wPBEsol", "LC-wBLYP", "LC-BLYP", "CAM-B3LYP", "LC-PBE",
+    "LSRSH-PBE",
+    # meta-GGA, pure and global hybrid
+    "M06L", "revM06L", "MN15L", "SCAN", "r2SCAN",
+    "B1B95", "mPW1B95", "mPW1B1K", "PW6B95", "PWB6K", "M05", "M052X", "M06",
+    "M062X", "M06HF", "MN15", "revM06", "SCAN0", "r2SCANh", "r2SCAN0",
+    "r2SCAN50",
+    # 3c / sol-3c composite DFT methods
+    "PBEH3C", "HSE3C", "B973C", "PBESOL03C", "HSESOL3C",
+]
+
+# Manual section 5.1: "A list of available D3 dispersion corrected DFT
+# methods follows: BLYP, PBE, B97, B3LYP, PBE0, PW1PW, M06, HSE06, HSEsol,
+# LC-wPBE." Each is written as "<name>-D3".
+CRYSTAL23_D3_KEYWORD_BASES = [
+    "BLYP", "PBE", "B97", "B3LYP", "PBE0", "PW1PW", "M06", "HSE06", "HSEsol",
+    "LC-wPBE",
+]
+
+# Hartree-Fock choices a user may type in place of a functional.
+CRYSTAL23_HF_METHODS = ["RHF", "UHF", "HF3C", "HFSOL3C"]
+
+# The functional every MACE path falls back to when a parent's functional is
+# not a CRYSTAL23 keyword and the user names no other.
+UNRECOGNISED_FUNCTIONAL_FALLBACK = "HSE06"
+
+
+def crystal23_functional_keyword(name: str, allow_hf: bool = False):
+    """Return the CRYSTAL23 spelling of a functional keyword, or None.
+
+    Matching ignores case, as CRYSTAL does. A "-D3" suffix is valid only on
+    the manual's D3-parametrised functionals. With ``allow_hf`` the HF
+    methods (RHF, UHF, HF3C, HFSOL3C) are accepted too.
+    """
+    if not name:
+        return None
+    key = str(name).strip().upper()
+    if not key:
+        return None
+    pool = list(CRYSTAL23_STANDALONE_FUNCTIONALS)
+    pool += [f"{base}-D3" for base in CRYSTAL23_D3_KEYWORD_BASES]
+    if allow_hf:
+        pool += CRYSTAL23_HF_METHODS
+    for keyword in pool:
+        if keyword.upper() == key:
+            return keyword
+    return None
+
+
+def mace_functional_name(name: str):
+    """Return the name MACE's menus use for a functional, ignoring case.
+
+    Covers every functional in FUNCTIONAL_CATEGORIES (DFT and HF), so e.g.
+    "hsesol" -> "HSEsol". A "-D3" suffix is kept. None when MACE does not
+    list the functional.
+    """
+    if not name:
+        return None
+    raw = str(name).strip()
+    suffix = ""
+    if raw.upper().endswith("-D3"):
+        raw, suffix = raw[:-3], "-D3"
+    for category in FUNCTIONAL_CATEGORIES.values():
+        for func in category["functionals"]:
+            if func.upper() == raw.upper():
+                return func + suffix
+    return None
+
 # Functional keyword mapping for CRYSTAL
 
 # ============================================================

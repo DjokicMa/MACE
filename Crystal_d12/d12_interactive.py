@@ -20,7 +20,9 @@ from d12_constants import (
     SPACEGROUP_SYMBOLS, PRINT_OPTIONS, D3_FUNCTIONALS, yes_no_prompt, get_valid_input,
     configure_tolerances, configure_scf_settings, select_basis_set,
     configure_dft_grid, configure_dispersion, configure_spin_polarization,
-    configure_smearing, safe_float, safe_int
+    configure_smearing, safe_float, safe_int,
+    crystal23_functional_keyword, mace_functional_name,
+    UNRECOGNISED_FUNCTIONAL_FALLBACK,
 )
 
 # Import calculation-specific modules
@@ -159,7 +161,10 @@ def display_current_settings(settings: Dict[str, Any], extracted: bool = False, 
     
     # Method settings
     print(f"\n### METHOD AND BASIS SET ###")
-    if settings.get("functional"):
+    if not settings.get("functional") and settings.get("unrecognised_functional"):
+        print(f"Method: DFT")
+        print(f"Functional: {settings['unrecognised_functional']} (not recognised)")
+    elif settings.get("functional"):
         func = settings["functional"]
         # Determine if this is a Hartree-Fock method or DFT
         if func in ["RHF", "UHF", "HF3C", "HFSOL3C"]:
@@ -882,8 +887,121 @@ def configure_smearing_with_defaults(current_settings: Dict[str, Any],
     return smearing_config
 
 
+def _functional_unknown(options: Dict[str, Any]) -> bool:
+    """True when the parent is a DFT run whose functional was not identified."""
+    if options.get("functional"):
+        return False
+    method = options.get("method_type") or options.get("method") or "DFT"
+    return method != "HF"
+
+
+def unrecognised_functional_message(options: Dict[str, Any]) -> str:
+    """Say what the parent's functional was, for the prompt and the warning."""
+    raw = options.get("unrecognised_functional")
+    if raw and options.get("unrecognised_functional_source") == "output":
+        return (f"The parent's functional {raw} (as printed in its output) does "
+                f"not match a CRYSTAL23 functional keyword.")
+    if raw:
+        return f"The parent's functional '{raw}' is not a CRYSTAL23 functional keyword."
+    return "The parent's functional could not be identified."
+
+
+def _forget_unrecognised_functional(options: Dict[str, Any]) -> None:
+    options.pop("unrecognised_functional", None)
+    options.pop("unrecognised_functional_source", None)
+
+
+def _set_fallback_functional(options: Dict[str, Any], use_d3: bool) -> None:
+    fallback = UNRECOGNISED_FUNCTIONAL_FALLBACK
+    options["method"] = "DFT"
+    options["method_type"] = "DFT"
+    options["functional"] = fallback + ("-D3" if use_d3 else "")
+    options["dft_functional"] = options["functional"]
+    options["dispersion"] = use_d3
+    options["use_dispersion"] = use_d3
+
+
+def ensure_known_functional(options: Dict[str, Any]) -> Dict[str, Any]:
+    """Non-interactive resolution of a parent functional MACE could not use.
+
+    For the paths that must not ask (--non-interactive, "use these exact
+    settings", a config file that names no functional): print a warning and
+    use HSE06, with D3 when the parent had dispersion. Does nothing when the
+    functional is known.
+    """
+    if _functional_unknown(options):
+        use_d3 = bool(options.get("dispersion"))
+        _set_fallback_functional(options, use_d3)
+        print(f"\nWARNING: {unrecognised_functional_message(options)} "
+              f"Using {options['functional']} instead.")
+    _forget_unrecognised_functional(options)
+    return options
+
+
+def _ask_for_replacement_functional(options: Dict[str, Any]) -> Optional[str]:
+    """Ask for a functional to replace one the parent had that is unusable.
+
+    Returns the functional typed (validated), "" for the HSE06 default, or
+    None when the user asks for the menus instead.
+    """
+    fallback = UNRECOGNISED_FUNCTIONAL_FALLBACK
+    print(f"\n{unrecognised_functional_message(options)}")
+    while True:
+        answer = input(
+            f"Enter another functional, 'm' to choose from the menu, "
+            f"or press Enter to use {fallback}: "
+        ).strip()
+        if not answer:
+            return ""
+        if answer.lower() in ("m", "menu"):
+            return None
+        keyword = crystal23_functional_keyword(answer, allow_hf=True)
+        name = mace_functional_name(keyword or answer)
+        if keyword or name:
+            return name or keyword
+        print(f"'{answer}' is not a CRYSTAL23 functional keyword. Enter one "
+              f"such as HSE06, PBE0, B3LYP or HSEsol, 'm' for the menu, or "
+              f"press Enter to use {fallback}.")
+
+
+def _apply_replacement_functional(options: Dict[str, Any], chosen: str) -> None:
+    """Set the functional typed at the unrecognised-functional prompt."""
+    parent_d3 = bool(options.get("dispersion"))
+    base = chosen[:-3] if chosen.upper().endswith("-D3") else chosen
+    if chosen in FUNCTIONAL_CATEGORIES["HF"]["functionals"]:
+        options["method"] = "HF"
+        options["method_type"] = "HF"
+        options["functional"] = chosen
+        options["hf_method"] = chosen
+        options["dispersion"] = False
+        options["use_dispersion"] = False
+        return
+    options["method"] = "DFT"
+    options["method_type"] = "DFT"
+    options["functional"] = chosen
+    if chosen != base:
+        # Typed with its -D3 suffix: that is the answer to the D3 question.
+        options["dispersion"] = True
+        options["use_dispersion"] = True
+    elif chosen in D3_FUNCTIONALS:
+        use_d3 = yes_no_prompt(f"\nAdd D3 dispersion correction to {chosen}?",
+                               "yes" if parent_d3 else "no")
+        options["dispersion"] = bool(use_d3)
+        options["use_dispersion"] = bool(use_d3)
+        if use_d3:
+            options["functional"] += "-D3"
+    else:
+        options["dispersion"] = False
+        options["use_dispersion"] = False
+    if chosen.upper().endswith("3C"):
+        options["is_3c_method"] = True
+    options["dft_functional"] = options["functional"]
+
+
 def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
     """Configure method type and functional"""
+    parent_functional_unknown = _functional_unknown(options)
+
     method_options = [
         ("1", "Hartree-Fock (HF)"),
         ("2", "Density Functional Theory (DFT)")
@@ -931,18 +1049,42 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
         options["method"] = "DFT"  # Added for compatibility
         options["method_type"] = "DFT"
         
+        # The parent ran a functional MACE could not identify (e.g. B2PLYP,
+        # which is not a CRYSTAL23 keyword). Say so, and let the user name
+        # another one instead of silently taking the menu default.
+        if parent_functional_unknown:
+            replacement = _ask_for_replacement_functional(options)
+            if replacement == "":
+                parent_d3 = bool(options.get("dispersion"))
+                use_d3 = yes_no_prompt(
+                    f"\nAdd D3 dispersion correction to {UNRECOGNISED_FUNCTIONAL_FALLBACK}?",
+                    "yes" if parent_d3 else "no")
+                _set_fallback_functional(options, bool(use_d3))
+                print(f"\nWARNING: {unrecognised_functional_message(options)} "
+                      f"Using {options['functional']} instead.")
+                _forget_unrecognised_functional(options)
+                return options
+            if replacement:
+                _apply_replacement_functional(options, replacement)
+                _forget_unrecognised_functional(options)
+                return options
+            # None: the user asked for the menus.
+            _forget_unrecognised_functional(options)
+
         # Select functional category (excluding HF) - ordered to match NewCifToD12.py
         ordered_categories = ["LDA", "GGA", "HYBRID", "MGGA", "3C"]
         cat_options = []
         
         # Determine current functional's category
         cat_default = "3"  # Default to HYBRID
+        listed = False
         if current_functional:
             # Strip dispersion suffix if present
             base_functional = current_functional.replace("-D3", "").replace("-D4", "")
             for i, cat in enumerate(ordered_categories, 1):
                 if base_functional in FUNCTIONAL_CATEGORIES[cat]["functionals"]:
                     cat_default = str(i)
+                    listed = True
                     break
         
         print("\nAvailable functional categories:")
@@ -958,8 +1100,21 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
             else:
                 print(f"   Examples: {', '.join(cat_info['functionals'][:4])}")
             cat_options.append((str(i), cat))
-        
+
+        # A CRYSTAL23 functional keyword the menus do not list (e.g. SOGGA11):
+        # keeping it is the default, so a blank answer does not swap it for
+        # the hybrid menu's HSE06.
+        keep_key = None
+        if current_functional and not listed and method_default == "2":
+            keep_key = str(len(ordered_categories) + 1)
+            print(f"{keep_key}. Keep the parent's functional ({current_functional})")
+            cat_options.append((keep_key, "KEEP"))
+            cat_default = keep_key
+
         cat_choice = get_user_choice("Select functional category", cat_options, cat_default)
+        if keep_key and cat_choice == keep_key:
+            options["dft_functional"] = options["functional"]
+            return options
         
         category = ordered_categories[int(cat_choice) - 1]
         functionals = FUNCTIONAL_CATEGORIES[category]["functionals"]
@@ -1212,10 +1367,12 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
             else:
                 options["method_type"] = "DFT"
         
-        # Method configuration
+        # Method configuration. A parent functional MACE could not identify
+        # is always asked about, shared mode included.
         current_functional = options.get("functional", "Not set")
         current_method = options.get("method_type", "DFT")
-        if not shared_mode or yes_no_prompt(f"\nChange method/functional? (Current: {current_method}/{current_functional})", "no"):
+        if (not shared_mode or _functional_unknown(options)
+                or yes_no_prompt(f"\nChange method/functional? (Current: {current_method}/{current_functional})", "no")):
             options = configure_method(options)
         
         # Basis set - use 'or' to handle both missing key and None value
@@ -1415,7 +1572,10 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
         else:
             # Keep existing settings if not changing
             pass
-    
+
+    # "Use these exact settings" never reached the method questions: an
+    # unidentified parent functional falls back to HSE06, with a warning.
+    ensure_known_functional(options)
     return options
 
 

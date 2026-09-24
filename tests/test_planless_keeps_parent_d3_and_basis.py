@@ -56,10 +56,13 @@ def test_non_d3_parent_stays_without_d3(monkeypatch, fx):
 
 def test_unrecognised_parent_functional_does_not_crash(monkeypatch):
     """The parsers leave functional=None for a functional they don't know
-    (e.g. B2PLYP); the D3 default must not call .upper() on it."""
+    (e.g. B2PLYP). A blank answer to the replacement prompt gives HSE06, and
+    the D3 default is the parent's (no D3) - no .upper() on None."""
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")
     opts, default = _configure_blank(monkeypatch, {"functional": None, "dispersion": False})
     assert default == "no"
     assert not opts["dispersion"]
+    assert opts["functional"] == "HSE06"
 
 @pytest.mark.parametrize("fx", ["PBE0-D3", "HSE06-D3", "B3LYP-D3", "PBE-D3"])
 def test_d3_parent_keeps_d3(monkeypatch, fx):

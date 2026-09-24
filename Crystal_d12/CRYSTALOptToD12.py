@@ -73,7 +73,7 @@ from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES
 from d12_interactive import (
     display_current_settings, interactive_d12_configuration,
     get_calculation_options_from_current, get_calculation_options,
-    save_options_to_file, load_options_from_file
+    save_options_to_file, load_options_from_file, ensure_known_functional
 )
 
 # Shared UI layer. This file runs both via `mace opt2d12` (mace on sys.path)
@@ -826,6 +826,9 @@ def _keep_extracted_settings(settings, calc_type, opt_type, origin_setting):
             # For P1 structures, write all atoms
             options["write_only_unique"] = False
 
+    # A parent functional MACE could not identify: warn and use HSE06.
+    ensure_known_functional(options)
+
     ui.info("\nRunning in non-interactive mode with settings:")
     ui.info(f"  Calculation type: {options['calculation_type']}")
     if options['calculation_type'] == 'OPT':
@@ -883,7 +886,8 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                            "mulliken_analysis", "diis_history", "calculation_type",
                            "optimization_settings", "freq_settings", "origin_setting",
                            "spacegroup", "dimensionality", "tolerances",
-                           "basis_set", "basis_set_type", "basis_set_path"]:
+                           "basis_set", "basis_set_type", "basis_set_path",
+                           "unrecognised_functional", "unrecognised_functional_source"]:
                     # For all calculation settings, prefer input file (.d12) over output file (.out)
                     # because .d12 contains the original user-specified settings
                     # INCLUDING tolerances and basis set - the output parser has issues extracting these correctly
@@ -1126,6 +1130,10 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                     options["tolerances"] = {**(settings.get("tolerances") or {}), **custom_tol}
                     ui.info(f"  Tolerances updated: {custom_tol}")
 
+                # The config named no functional and the parent's was not
+                # identified: warn and use HSE06 rather than ask.
+                ensure_known_functional(options)
+
                 ui.ok("Config file settings applied.")
             else:
                 # Fall back to interactive mode
@@ -1193,6 +1201,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             options["dispersion"] = False
             options["is_3c_method"] = True
             options["dft_grid"] = None
+        ensure_known_functional(options)
     else:
         # Interactive mode (possibly with pre-selected calc_type)
         options = get_calculation_options_from_current(settings, calc_type=calc_type)
@@ -1610,7 +1619,8 @@ def main():
                                        "mulliken_analysis", "diis_history", "calculation_type",
                                        "optimization_settings", "freq_settings", "origin_setting",
                                        "spacegroup", "dimensionality", "tolerances",
-                                       "basis_set", "basis_set_type", "basis_set_path"]:
+                                       "basis_set", "basis_set_type", "basis_set_path",
+                                       "unrecognised_functional", "unrecognised_functional_source"]:
                                 # For all calculation settings, prefer input file (.d12) over output file (.out)
                                 # INCLUDING tolerances and basis set - the output parser has issues extracting these correctly
                                 if value is not None:
