@@ -60,7 +60,7 @@ def test_documented_command_succeeds_with_nothing_on_stdin(parent, calc_type, bl
 def test_supplied_answers_are_still_honoured(parent):
     """The fallback fires only at end-of-file, so scripted answers - the
     workflow engine's mechanism - are consumed exactly as before."""
-    engine_answers = "n\n2\n" + "\n" * 18            # mace/workflow/engine.py
+    engine_answers = "n\n" + "\n" * 19               # mace/workflow/engine.py
     result = _run(parent, "SP", engine_answers)
     combined = result.stdout + result.stderr
     assert result.returncode == 0, combined[-1500:]

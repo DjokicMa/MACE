@@ -1339,8 +1339,11 @@ fi'''
                 args.extend(["--d12-file", d12_file.name])
             
             # Still need input responses even in non-interactive mode
-            # The script asks for confirmation and some settings
-            input_responses = "n\n2\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+            # The script asks for confirmation and some settings. Every answer
+            # after "n" is blank so each prompt takes its parent-based default;
+            # a scripted "2" at "Select method type" turned HF parents into
+            # HSE06-D3.
+            input_responses = "n\n" + "\n" * 19
             
             success, stdout, stderr = self.run_script_in_isolated_directory(
                 crystal_to_d12_script, work_dir, args, input_data=input_responses
@@ -3239,84 +3242,13 @@ fi'''
             if d12_file:
                 args.extend(["--d12-file", str(d12_file)])
             
-            # For SP/FREQ/OPT generation without expert config, extract functional info
-            if target_base_type in ["SP", "FREQ", "OPT"] and not expert_config_file and d12_file:
-                print(f"  Extracting functional info from source d12 for {target_base_type} generation")
-                try:
-                    # Extract settings from the OPT d12 file
-                    settings = extract_input_settings(Path(d12_file))
-                    functional_info = settings.get('functional_info', {})
-                    
-                    # Determine the functional from the extracted info
-                    functional = None
-                    if functional_info.get('method') == 'DFT':
-                        # Check for common functionals
-                        exchange = functional_info.get('exchange', '').upper()
-                        correlation = functional_info.get('correlation', '').upper()
-                        dispersion = functional_info.get('dispersion', '')
-                        
-                        # Import the comprehensive functional list from d12_constants
-                        try:
-                            from Crystal_d12.d12_constants import FUNCTIONAL_CATEGORIES
-                            
-                            # Get all functionals from all categories
-                            all_functionals = []
-                            for category_data in FUNCTIONAL_CATEGORIES.values():
-                                all_functionals.extend(category_data.get('functionals', []))
-                            
-                            # Check if the exchange matches any known functional
-                            for func in all_functionals:
-                                if func.upper() in exchange.upper():
-                                    functional = func
-                                    break
-                                    
-                            # If not found in exchange, check the full content
-                            if not functional:
-                                for func in all_functionals:
-                                    if func.upper() in settings.get('basis_set', '').upper():
-                                        # Sometimes functional is in basis set name
-                                        functional = func
-                                        break
-                                        
-                        except ImportError:
-                            # Fallback to hardcoded list if import fails
-                            print("    Warning: Could not import d12_constants, using fallback functional list")
-                            if 'B3LYP' in exchange or ('B3' in exchange and 'LYP' in correlation):
-                                functional = 'B3LYP'
-                            elif 'PBESOL' in exchange or 'PBSOL' in exchange:
-                                functional = 'PBESOL'
-                            elif 'PBE0' in exchange:
-                                functional = 'PBE0'
-                            elif 'PBE' in exchange:
-                                functional = 'PBE'
-                            elif 'HSE06' in exchange:
-                                functional = 'HSE06'
-                            elif 'BLYP' in exchange or ('B' in exchange and 'LYP' in correlation):
-                                functional = 'BLYP'
-                        
-                        # Add dispersion correction
-                        if dispersion == 'D3' and functional:
-                            functional += '-D3'
-                    elif functional_info.get('method') == 'HF':
-                        functional = 'RHF'
-                    
-                    config_data = self._build_numbered_calc_config(
-                        workflow_id, target_calc_type, target_base_type, functional)
+            # No functional is re-derived from the parent here. CRYSTALOptToD12
+            # already reads the functional, dispersion, UHF and 3c method from
+            # the parent .d12, and a config "functional" key overrides that.
+            # The old substring match on the extracted exchange turned PBE0,
+            # PBESOL, PBESOL0, LC-wPBE and PBEH3C into PBE and every UHF parent
+            # into RHF. Only the plan may change the method (see below).
 
-                    if config_data:
-                        # Create a temporary config file for SP/FREQ/OPT generation
-                        temp_config = work_dir / f"{target_base_type.lower()}_config.json"
-                        with open(temp_config, 'w') as f:
-                            json.dump(config_data, f, indent=2)
-
-                        args.extend(["--config-file", str(temp_config)])
-                        print(f"    Created config: {config_data}")
-                        expert_config_file = temp_config  # Mark that we have a config
-                    else:
-                        print(f"    Could not determine functional from d12 settings: {functional_info}")
-                except Exception as e:
-                    print(f"    Error extracting functional info: {e}")
-            
             # If we have an expert config file for OPT2/OPT3, use it
             if expert_config_file and expert_config_file.exists():
                 args.extend(["--config-file", str(expert_config_file)])
@@ -3344,6 +3276,11 @@ fi'''
             elif not expert_config_file:
                 # Check if workflow configuration has settings for this calculation type
                 workflow_config = self.get_workflow_step_config(workflow_id, target_calc_type)
+                # Plan method_modifications / optimization_settings. No functional
+                # is passed in: without a plan override the parent's own method
+                # must survive.
+                plan_overrides = self._build_numbered_calc_config(
+                    workflow_id, target_calc_type, target_base_type, None)
                 if workflow_config:
                     # Create temporary expert config based on calculation type
                     temp_config = {
@@ -3401,24 +3338,36 @@ fi'''
                             temp_config['tolinteg'] = custom_tol['TOLINTEG']
                         if 'TOLDEE' in custom_tol:
                             temp_config['scf_toldee'] = custom_tol['TOLDEE']
-                    # Write to temporary file in work directory
-                    temp_config_file = work_dir / f"{target_calc_type}_temp_config.json"
-                    with open(temp_config_file, 'w') as f:
-                        json.dump(temp_config, f, indent=2)
-                    args.extend(["--config-file", str(temp_config_file)])
-                    print(f"  Created temporary config file for {target_calc_type}")
-                    print(f"  Config contents:")
-                    for key, value in temp_config.items():
-                        if key == 'optimization_settings':
-                            print(f"    {key}:")
-                            for k, v in value.items():
-                                print(f"      {k}: {v}")
-                        elif key in ['freq_settings', 'frequency_settings'] and isinstance(value, dict):
-                            print(f"    {key}:")
-                            for k, v in value.items():
-                                print(f"      {k}: {v}")
-                        else:
-                            print(f"    {key}: {value}")
+                    # The plan's method_modifications / optimization_settings
+                    # override on top of the translated step settings, so a
+                    # plan that changes the functional keeps its FREQ settings.
+                    if plan_overrides:
+                        temp_config.update(plan_overrides)
+                elif plan_overrides:
+                    temp_config = plan_overrides
+                else:
+                    # No plan step: still name the target type. Without a
+                    # config, "Use these exact settings? y" keeps the parent's
+                    # OPT type and the SP/FREQ step finds no deck.
+                    temp_config = {"calculation_type": target_base_type}
+                # Write to temporary file in work directory
+                temp_config_file = work_dir / f"{target_calc_type}_temp_config.json"
+                with open(temp_config_file, 'w') as f:
+                    json.dump(temp_config, f, indent=2)
+                args.extend(["--config-file", str(temp_config_file)])
+                print(f"  Created temporary config file for {target_calc_type}")
+                print(f"  Config contents:")
+                for key, value in temp_config.items():
+                    if key == 'optimization_settings':
+                        print(f"    {key}:")
+                        for k, v in value.items():
+                            print(f"      {k}: {v}")
+                    elif key in ['freq_settings', 'frequency_settings'] and isinstance(value, dict):
+                        print(f"    {key}:")
+                        for k, v in value.items():
+                            print(f"      {k}: {v}")
+                    else:
+                        print(f"    {key}: {value}")
                 # With config file, we need different responses based on calc type
                 if target_base_type == "FREQ":
                     # For FREQ with config file:
