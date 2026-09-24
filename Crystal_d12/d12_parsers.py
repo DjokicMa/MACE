@@ -1079,7 +1079,84 @@ class CrystalInputParser:
                         self.data["k_points"] = shrink_line
                 break
 
+        # The SCF controls in the form the writer reads (settings["scf_settings"]).
+        # The top-level keys above were never read back by the writer, so every
+        # regenerated deck reverted to DIIS / MAXCYCLE 800 / FMIXING 30.
+        scf_settings = self._extract_scf_block_settings(lines)
+        if scf_settings:
+            self.data["scf_settings"] = scf_settings
+
         return self.data
+
+    @staticmethod
+    def _scf_block_start(lines: List[str]) -> Optional[int]:
+        """Index of the first line after the Hamiltonian input, or None.
+
+        That is the line after the DFT block closes (ENDDFT, or a plain END as
+        some decks write it) or, for an HF deck, after the basis-set input.
+        Everything before it is geometry input, where OPTGEOM and FREQCALC
+        carry MAXCYCLE and similar records of their own.
+        """
+        stripped = [line.strip() for line in lines]
+        # Line 0 is the title; skip it.
+        for i in range(1, len(stripped)):
+            if stripped[i] == "DFT":
+                for j in range(i + 1, len(stripped)):
+                    if stripped[j] in ("ENDDFT", "END"):
+                        return j + 1
+                return None
+        for i in range(1, len(stripped)):
+            if re.match(r"^99\s+0$", stripped[i]):
+                for j in range(i + 1, len(stripped)):
+                    if stripped[j] == "END":
+                        return j + 1
+                    if stripped[j]:
+                        return j
+                return None
+            if stripped[i] == "BASISSET":
+                return i + 2
+        return None
+
+    def _extract_scf_block_settings(self, lines: List[str]) -> Dict[str, Any]:
+        """Read the SCF controls the deck actually sets, from the SCF block only.
+
+        Only keywords present in the deck are returned, so an absent one keeps
+        the writer's default. BROYDEN's W0 is kept as the deck's own token, so
+        e.g. ``1.0E-4`` is written back as it was.
+        """
+        start = self._scf_block_start(lines)
+        if start is None:
+            return {}
+        scf: Dict[str, Any] = {}
+        block = lines[start:]
+
+        def _next_tokens(i: int) -> List[str]:
+            return block[i + 1].split() if i + 1 < len(block) else []
+
+        for i, line in enumerate(block):
+            stripped = line.strip()
+            try:
+                if stripped in ("DIIS", "ANDERSON", "BROYDEN"):
+                    scf["method"] = stripped
+                    if stripped == "BROYDEN":
+                        parts = _next_tokens(i)
+                        if len(parts) >= 3:
+                            float(parts[0])  # validate W0, keep the raw token
+                            scf["broyden"] = (parts[0], int(parts[1]), int(parts[2]))
+                elif stripped == "MAXCYCLE":
+                    scf["maxcycle"] = int(_next_tokens(i)[0])
+                elif stripped == "FMIXING":
+                    scf["fmixing"] = int(_next_tokens(i)[0])
+                elif stripped == "LEVSHIFT":
+                    parts = _next_tokens(i)
+                    scf["levshift"] = (int(parts[0]), int(parts[1]))
+                elif stripped == "BIPOSIZE":
+                    scf["biposize"] = int(_next_tokens(i)[0])
+                elif stripped == "EXCHSIZE":
+                    scf["exchsize"] = int(_next_tokens(i)[0])
+            except (ValueError, IndexError):
+                continue
+        return scf
 
     def _extract_basis_set(self, lines: List[str]) -> None:
         """Extract basis set information"""
@@ -1350,6 +1427,10 @@ class CrystalInputParser:
                     self.data["spinlock"] = int(parts[0])
                 except (ValueError, IndexError):
                     continue
+                # The deck wrote SPINLOCK itself. 'SPINLOCK / 0 N' is a real
+                # setting (hold nalpha-nbeta = 0 for N cycles), not "off", so
+                # the writer must emit it even though the value is 0.
+                self.data["spinlock_explicit"] = True
                 if len(parts) > 1:
                     try:
                         self.data["spinlock_cycles"] = int(parts[1])

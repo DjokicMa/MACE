@@ -700,6 +700,26 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 enhanced_k_points = (k_max, k_max, k_max)
                 ui.info(f"Note: Using uniform k-points ({k_max},{k_max},{k_max}) for symmetrized structure (space group {spacegroup})")
 
+        scf = settings.get("scf_settings") or {}
+        scf_method = scf.get("method", "DIIS")
+        # Parent-deck SCF records the writer cannot infer: BROYDEN's parameter
+        # line, LEVSHIFT, and BIPOSIZE/EXCHSIZE. Sequences may be lists after
+        # a JSON round-trip of saved options.
+        scf_extra = {}
+        broyden = scf.get("broyden")
+        if scf_method == "BROYDEN" and broyden and len(broyden) >= 3:
+            scf_extra.update(broyden_w0=broyden[0], broyden_imix=int(broyden[1]),
+                             broyden_istart=int(broyden[2]))
+        levshift = scf.get("levshift")
+        if levshift and len(levshift) >= 2:
+            scf_extra["levshift"] = (int(levshift[0]), int(levshift[1]))
+        for size_key in ("biposize", "exchsize"):
+            if scf.get(size_key) is not None:
+                scf_extra[size_key] = int(scf[size_key])
+        # SPINLOCK needs SPIN (DFT) or UHF in this deck; in a closed-shell run
+        # CRYSTAL aborts on it. A UHF deck carries no SPIN keyword.
+        spin_active = bool(settings.get("spin_polarized")) or settings.get("functional") == "UHF"
+
         write_scf_section(
             f,
             settings.get("tolerances", DEFAULT_TOLERANCES),
@@ -707,20 +727,24 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             dimensionality,
             settings.get("smearing"),
             settings.get("smearing_width", 0.01),
-            settings.get("scf_settings", {}).get("method", "DIIS"),
-            settings.get("scf_settings", {}).get("maxcycle", 800),
-            settings.get("scf_settings", {}).get("fmixing", 30),
+            scf_method,
+            scf.get("maxcycle", 800),
+            scf.get("fmixing", 30),
             len(atomic_numbers),
             settings.get("spacegroup", 1),
             # Carry a configured fixed spin state through on the OPT-continuation
             # path too, gated on spin polarization (0/None => unchanged output).
-            spinlock=(settings.get("spinlock", 0) if settings.get("spin_polarized") else 0),
+            spinlock=(settings.get("spinlock", 0) if spin_active else 0),
+            # The parent's own 'SPINLOCK / 0 N' is kept as written.
+            write_zero_spinlock=bool(spin_active and settings.get("spinlock_explicit")
+                                     and not settings.get("spinlock")),
             # Preserve the parsed/configured SCF-cycle count for the lock; without
             # this the writer falls back to DEFAULT_SPINLOCK_CYCLES (50) and a deck
             # with e.g. 'SPINLOCK 2 30' is silently regenerated as '2 50'.
             spinlock_cycles=settings.get("spinlock_cycles", DEFAULT_SPINLOCK_CYCLES),
             preserve_directional=k_from_parent,
             shrink_isp=shrink_isp if k_from_parent else None,
+            **scf_extra,
         )
 
         # Note: The single END at the very end is written by write_scf_section
@@ -1117,6 +1141,17 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 options["write_only_unique"] = True
             else:
                 options["write_only_unique"] = False
+
+    # Keep the parent deck's SCF records that no prompt or config sets: the
+    # BROYDEN parameters, LEVSHIFT and BIPOSIZE/EXCHSIZE. The interactive flow
+    # replaces scf_settings with only maxcycle/fmixing/method, which dropped them.
+    parent_scf = settings.get("scf_settings") or {}
+    if isinstance(options.get("scf_settings"), dict) or "scf_settings" not in options:
+        merged_scf = dict(options.get("scf_settings") or {})
+        for scf_key in ("broyden", "levshift", "biposize", "exchsize"):
+            if scf_key in parent_scf:
+                merged_scf.setdefault(scf_key, parent_scf[scf_key])
+        options["scf_settings"] = merged_scf
 
     # Ensure symmetry settings are preserved from original input
     if "spacegroup" not in options and "spacegroup" in settings:

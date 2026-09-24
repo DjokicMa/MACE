@@ -11,7 +11,7 @@ Author: Marcus Djokic
 Institution: Michigan State University, Mendoza Group
 """
 
-from typing import Dict, Any, List, Optional, TextIO
+from typing import Dict, Any, List, Optional, Sequence, TextIO
 
 
 def write_method_block(f: TextIO, method: str, options: Dict[str, Any]) -> None:
@@ -529,7 +529,11 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
                      broyden_istart: int = DEFAULT_BROYDEN_ISTART,
                      guessp: bool = False,
                      preserve_directional: bool = False,
-                     shrink_isp: Optional[int] = None) -> None:
+                     shrink_isp: Optional[int] = None,
+                     levshift: Optional[Sequence[int]] = None,
+                     biposize: Optional[int] = None,
+                     exchsize: Optional[int] = None,
+                     write_zero_spinlock: bool = False) -> None:
     """Write the SCF parameters section of the D12 file
 
     Args:
@@ -561,6 +565,15 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
             caller only when the mesh was read from the parent deck.
         shrink_isp: Gilat net (ISP) for the one-line ``IS ISP`` form, when it
             is not 2*IS. None keeps the usual 2*IS.
+        levshift: ``(ISHIFT, ILOCK)`` for a LEVSHIFT record, written just before
+            PPAN. None writes no LEVSHIFT. Any 2-item sequence is accepted
+            (a JSON round-trip turns the tuple into a list).
+        biposize, exchsize: Buffer sizes taken from the parent deck. When
+            either is given, exactly the given ones are written; when neither
+            is, the usual rule applies (both, at 110000000, above 5 atoms).
+        write_zero_spinlock: Write ``SPINLOCK / 0 spinlock_cycles`` when
+            spinlock is 0. Set by the caller when the parent deck had that
+            record itself; NSPIN = 0 is a real lock, not "off".
     """
     # Fixed spin state. CRYSTAL expects SPINLOCK at the top of the SCF block,
     # ahead of TOLINTEG, exactly as it appears in the project's reference inputs.
@@ -569,6 +582,9 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
     if spinlock:
         print("SPINLOCK", file=f)
         print(f"{spinlock} {spinlock_cycles}", file=f)
+    elif write_zero_spinlock:
+        print("SPINLOCK", file=f)
+        print(f"0 {spinlock_cycles}", file=f)
 
     # Tolerance settings with proper fallback handling
     print("TOLINTEG", file=f)
@@ -666,8 +682,16 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
 
     print("SCFDIR", file=f)
 
-    # Add BIPOSIZE and EXCHSIZE for large systems
-    if num_atoms > 5:
+    # BIPOSIZE and EXCHSIZE: the parent's own values when it had them,
+    # otherwise the usual default for larger systems.
+    if biposize is not None or exchsize is not None:
+        if biposize is not None:
+            print("BIPOSIZE", file=f)
+            print(biposize, file=f)
+        if exchsize is not None:
+            print("EXCHSIZE", file=f)
+            print(exchsize, file=f)
+    elif num_atoms > 5:
         print("BIPOSIZE", file=f)
         print("110000000", file=f)
         print("EXCHSIZE", file=f)
@@ -690,6 +714,12 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
     if scf_method == "DIIS":
         print("HISTDIIS", file=f)
         print("100", file=f)
+
+    # Level shifter: ISHIFT (in 0.1 Hartree) and ILOCK.
+    if levshift:
+        ishift, ilock = list(levshift)[:2]
+        print("LEVSHIFT", file=f)
+        print(f"{ishift} {ilock}", file=f)
 
     # Print options
     print("PPAN", file=f)  # Print Mulliken population analysis

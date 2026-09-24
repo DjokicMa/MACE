@@ -281,12 +281,14 @@ def _extract_functional_info(content: str) -> Dict[str, Any]:
                 functional_info['correlation'] = match.group(1)
                 break
         
-        # Check for dispersion corrections
-        if 'NONLOCAL' in content.upper():
+        # Check for dispersion corrections. Line 1 of a deck is its free-text
+        # title (often a file name such as "..._PBE0-D3_..."), so leave it out.
+        body = content.upper().split('\n', 1)[1] if '\n' in content else content.upper()
+        if 'NONLOCAL' in body:
             functional_info['dispersion'] = 'nonlocal'
-        elif 'D3' in content.upper():
+        elif 'D3' in body:
             functional_info['dispersion'] = 'D3'
-        elif 'D2' in content.upper():
+        elif 'D2' in body:
             functional_info['dispersion'] = 'D2'
             
     elif 'HYBRID' in content.upper():
