@@ -188,6 +188,17 @@ OPT → SP → BAND + DOSS to completion inside its own plan directory.
 
 ### Fixed
 
+- **`mace opt2d12 --calc-type X --non-interactive` no longer dies with EOFError**
+  when nothing is on stdin - the form MACE's own help documents. It walked the
+  interactive settings flow (the workflow engine drives that flow with scripted
+  answers) and crashed at the first prompt. When no answers are available it
+  now keeps the settings extracted from the source calculation. The engine's
+  generated decks are byte-identical before and after.
+- **`mace opt2d12 --output-dir` is honoured.** It was parsed and the directory
+  created, but the path never reached the writer, so decks always landed in the
+  current directory. The deck's CRYSTAL title line still carries only the file
+  name.
+
 - **Follow-up steps could be orphaned from their workflow.** In an isolated
   context the completion callback re-registers a finished job from its output
   file, and that scan recorded no workflow metadata. Progression still found
