@@ -1216,14 +1216,18 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                     custom_tol = (config_data["tolerance_modifications"] or {}).get("custom_tolerances")
                 elif isinstance(options.get("freq_settings"), dict):
                     custom_tol = options["freq_settings"].get("custom_tolerances")
+                # A FREQ deck starts from the FREQ default (Very tight), not
+                # the optimization's tolerances, so a config naming only
+                # TOLDEE still gets the Very tight TOLINTEG.
+                is_freq = options.get("calculation_type") == "FREQ"
+                base_tol = (freq_default_tolerances(settings.get("calculation_type"),
+                                                    settings.get("tolerances"))
+                            if is_freq else (settings.get("tolerances") or {}))
                 if isinstance(custom_tol, dict) and custom_tol:
-                    options["tolerances"] = {**(settings.get("tolerances") or {}), **custom_tol}
+                    options["tolerances"] = {**base_tol, **custom_tol}
                     ui.info(f"  Tolerances updated: {custom_tol}")
-                elif options.get("calculation_type") == "FREQ" and not config_data.get("tolerances"):
-                    # A FREQ config that names no tolerances gets the FREQ
-                    # default (Very tight), not the optimization's.
-                    options["tolerances"] = freq_default_tolerances(
-                        settings.get("calculation_type"), settings.get("tolerances"))
+                elif is_freq:
+                    options["tolerances"] = {**base_tol, **(config_data.get("tolerances") or {})}
                     ui.info(f"  FREQ SCF tolerances: {options['tolerances']}")
 
                 # The config named no functional and the parent's was not

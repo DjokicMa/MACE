@@ -64,6 +64,20 @@ def test_config_tolerances_win(tmp_path):
     assert _scf(child) == ("8 8 8 9 24".split(), "9")
 
 
+
+@pytest.mark.parametrize("cfg", [
+    {"calculation_type": "FREQ", "tolerances": {"TOLDEE": 12}},
+    {"calculation_type": "FREQ", "tolerance_modifications": {"custom_tolerances": {"TOLDEE": 12}}},
+    {"calculation_type": "FREQ", "frequency_settings": {"mode": "GAMMA",
+                                                        "custom_tolerances": {"TOLDEE": 12}}},
+])
+def test_config_naming_only_toldee_keeps_very_tight_tolinteg(tmp_path, cfg):
+    """A partial FREQ override is laid over the FREQ default, not over the
+    optimization's tolerances (which gave TOLINTEG 7 7 7 7 14 / TOLDEE 12)."""
+    name = prompts._copy_parent(OPT_PARENT, tmp_path)
+    child = prompts._opt2d12(tmp_path, name, stdin="y\n" + "\n" * 17, extra=_config(tmp_path, cfg))
+    assert _scf(child) == (VERY_TIGHT, "12")
+
 def test_non_interactive_with_nothing_on_stdin(tmp_path):
     name = prompts._copy_parent(OPT_PARENT, tmp_path)
     child = prompts._opt2d12(tmp_path, name, stdin="",
