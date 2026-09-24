@@ -27,6 +27,20 @@ except ImportError as e:
     sys.exit(1)
 
 
+def _deck_body(content: str) -> str:
+    """A .d12 deck without line 1, its free-text title.
+
+    Titles are usually file names ("..._BULK_OPTGEOM_TZ_opt_PBE0-D3_..."), so
+    any keyword test run over the whole text matches them.
+    """
+    return content.split('\n', 1)[1] if '\n' in content else ''
+
+
+def _deck_records(content: str) -> set:
+    """The deck's keyword records (whole lines, upper case), title excluded."""
+    return {line.strip().upper() for line in _deck_body(content).splitlines()}
+
+
 def extract_input_settings(input_file: Path) -> Dict[str, Any]:
     """
     Extract comprehensive settings from a CRYSTAL D12/D3 input file.
@@ -71,10 +85,12 @@ def extract_input_settings(input_file: Path) -> Dict[str, Any]:
         'MADELIMIT', 'BIPOLARIZ', 'EXCHPERM', 'POLEORDR'
     ]
     
-    found_keywords = []
-    for keyword in crystal_keywords:
-        if keyword in content.upper():
-            found_keywords.append(keyword)
+    # A keyword is a whole record. A .d3 file has no title line.
+    if '.d3' in input_file.suffix.lower():
+        records = {line.strip().upper() for line in content.splitlines()}
+    else:
+        records = _deck_records(content)
+    found_keywords = [keyword for keyword in crystal_keywords if keyword in records]
     
     settings['crystal_keywords'] = found_keywords
     
@@ -95,7 +111,7 @@ def extract_input_settings(input_file: Path) -> Dict[str, Any]:
     
     # Extract geometry and optimization info
     settings['geometry_info'] = _extract_geometry_info(content)
-    if 'OPTGEOM' in content.upper():
+    if 'OPTGEOM' in records:
         settings['optimization_parameters'] = _extract_optimization_parameters(content)
     
     # Extract functional information
@@ -186,14 +202,15 @@ def _extract_geometry_info(content: str) -> Dict[str, Any]:
     """Extract geometry information."""
     geom_info = {}
     
-    # Determine dimensionality
-    if 'CRYSTAL' in content.upper():
+    # Determine dimensionality from the geometry keyword record (not the title)
+    records = _deck_records(content)
+    if 'CRYSTAL' in records:
         geom_info['dimensionality'] = '3D'
-    elif 'SLAB' in content.upper():
+    elif 'SLAB' in records:
         geom_info['dimensionality'] = '2D'
-    elif 'POLYMER' in content.upper():
+    elif 'POLYMER' in records:
         geom_info['dimensionality'] = '1D'
-    elif 'MOLECULE' in content.upper():
+    elif 'MOLECULE' in records:
         geom_info['dimensionality'] = '0D'
     
     # Count atoms in geometry section
@@ -244,15 +261,18 @@ def _extract_optimization_parameters(content: str) -> Dict[str, Any]:
 def _extract_functional_info(content: str) -> Dict[str, Any]:
     """Extract exchange-correlation functional information."""
     functional_info = {}
-    
+    # Line 1 of a deck is its free-text title (often a file name such as
+    # "..._opt_HSE06_..."), so none of the tests below look at it.
+    body = _deck_body(content).upper()
+
     # Check for DFT
-    if 'DFT' in content.upper():
+    if 'DFT' in _deck_records(content):
         functional_info['method'] = 'DFT'
         
         # Check for complete functional specifications first
         complete_functionals = ['PBESOL', 'B3LYP', 'HSE06', 'PBE0', 'BLYP', 'PBE', 'LDA', 'SVWN', 'PWGGA']
         for func in complete_functionals:
-            if func in content.upper():
+            if func in body:
                 functional_info['exchange'] = func
                 break
         
@@ -264,7 +284,7 @@ def _extract_functional_info(content: str) -> Dict[str, Any]:
             ]
             
             for pattern in exchange_patterns:
-                match = re.search(pattern, content.upper())
+                match = re.search(pattern, body)
                 if match:
                     functional_info['exchange'] = match.group(1)
                     break
@@ -276,14 +296,12 @@ def _extract_functional_info(content: str) -> Dict[str, Any]:
         ]
         
         for pattern in corr_patterns:
-            match = re.search(pattern, content.upper())
+            match = re.search(pattern, body)
             if match:
                 functional_info['correlation'] = match.group(1)
                 break
         
-        # Check for dispersion corrections. Line 1 of a deck is its free-text
-        # title (often a file name such as "..._PBE0-D3_..."), so leave it out.
-        body = content.upper().split('\n', 1)[1] if '\n' in content else content.upper()
+        # Check for dispersion corrections (title excluded, see above)
         if 'NONLOCAL' in body:
             functional_info['dispersion'] = 'nonlocal'
         elif 'D3' in body:

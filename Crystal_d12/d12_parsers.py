@@ -563,9 +563,12 @@ class CrystalOutputParser:
         # Extract k-points
         self._extract_kpoints(lines)
 
-        # Check for spin polarization
+        # Check for spin polarization: CRYSTAL's own report of it. Any line
+        # containing "SPIN" also matched the echoed title (a file name) and
+        # records such as "SUMMED SPIN DENSITY".
         self.data["spin_polarized"] = any(
-            "SPIN POLARIZED" in line or "UNRESTRICTED" in line or "SPIN" in line
+            "SPIN POLARIZED" in line
+            or ("TYPE OF CALCULATION" in line and "UNRESTRICTED" in line)
             for line in lines
         )
 
@@ -1036,8 +1039,10 @@ class CrystalInputParser:
             lines = f.readlines()
 
         # Extract dimensionality and space group
+        # Line 1 is the free-text title, never a keyword (see
+        # _extract_optimization_settings).
         for i, line in enumerate(lines):
-            if line.strip() in ["CRYSTAL", "SLAB", "POLYMER", "MOLECULE"]:
+            if i > 0 and line.strip() in ["CRYSTAL", "SLAB", "POLYMER", "MOLECULE"]:
                 self.data["dimensionality"] = line.strip()
                 # Next lines should have origin and space group for CRYSTAL
                 if self.data["dimensionality"] == "CRYSTAL" and i + 2 < len(lines):
@@ -1066,13 +1071,15 @@ class CrystalInputParser:
 
         # Extract SCF settings
         for i, line in enumerate(lines):
-            if "MAXCYCLE" in line and "OPTGEOM" not in lines[max(0, i - 5) : i]:
+            if i == 0:
+                continue  # the title
+            if line.strip() == "MAXCYCLE" and "OPTGEOM" not in lines[max(0, i - 5) : i]:
                 if i + 1 < len(lines):
                     try:
                         self.data["scf_maxcycle"] = int(lines[i + 1].strip())
                     except:
                         pass
-            elif "FMIXING" in line:
+            elif line.strip() == "FMIXING":
                 if i + 1 < len(lines):
                     try:
                         self.data["fmixing"] = int(lines[i + 1].strip())
@@ -1083,7 +1090,7 @@ class CrystalInputParser:
 
         # Extract k-points
         for i, line in enumerate(lines):
-            if "SHRINK" in line:
+            if i > 0 and line.strip() == "SHRINK":
                 if i + 1 < len(lines):
                     # The k-point values are on the line immediately after SHRINK
                     # Format can be either "k n_shrink" or "0 n_shrink" (followed by ka kb kc on next line)
@@ -1238,11 +1245,17 @@ class CrystalInputParser:
         
         for i, line in enumerate(lines):
             stripped = line.strip()
-            
-            if "OPTGEOM" in line:
+            # Keywords are whole records. Line 1 is the free-text title, which
+            # is often a file name ("..._BULK_OPTGEOM_TZ_..."): a substring
+            # match there made single-point parents OPT decks and read their
+            # SCF MAXCYCLE/TOLDEE as OPTGEOM values.
+            if i == 0:
+                continue
+
+            if stripped == "OPTGEOM":
                 in_optgeom = True
                 self.data["calculation_type"] = "OPT"
-            elif "ENDOPT" in line:
+            elif stripped == "ENDOPT":
                 in_optgeom = False
             elif in_optgeom:
                 # Extract all optimization types from d12creation.py
