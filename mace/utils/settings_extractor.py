@@ -237,7 +237,7 @@ def _extract_optimization_parameters(content: str) -> Dict[str, Any]:
         opt_patterns = {
             'fulloptg': r'FULLOPTG',
             'cellonly': r'CELLONLY',
-            'atomsonly': r'ATOMSONLY',
+            'atomonly': r'ATOMONLY',
             'maxcycle': r'MAXCYCLE\s+(\d+)',
             'toldeg': r'TOLDEG\s+([\d.E+-]+)',
             'toldex': r'TOLDEX\s+([\d.E+-]+)',
@@ -248,7 +248,7 @@ def _extract_optimization_parameters(content: str) -> Dict[str, Any]:
         for param, pattern in opt_patterns.items():
             match = re.search(pattern, optgeom_content.upper())
             if match:
-                if param in ['fulloptg', 'cellonly', 'atomsonly']:
+                if param in ['fulloptg', 'cellonly', 'atomonly']:
                     opt_params[param] = True
                 elif param in ['maxcycle', 'finalrun']:
                     opt_params[param] = int(match.group(1))

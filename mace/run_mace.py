@@ -332,6 +332,7 @@ def _get_basic_d3_config_for_quick_start(calc_type: str) -> Dict[str, Any]:
 def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, args):
     """Create a quick workflow plan with default settings"""
     from datetime import datetime
+    from d12_constants import opt_convergence, scf_tolerances, FREQ_SCF_LEVEL
     
     # Default CIF conversion config (adapt to first calculation type)
     first_calc_type = sequence[0] if sequence else "OPT"
@@ -341,12 +342,8 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
         "dimensionality": "CRYSTAL",
         "calculation_type": "SP" if first_calc_type == "SP" else "OPT",
         "optimization_type": "FULLOPTG" if first_calc_type != "SP" else None,
-        "optimization_settings": {
-            "TOLDEG": 0.00003,
-            "TOLDEX": 0.00012,
-            "TOLDEE": 7,
-            "MAXCYCLE": 800
-        },
+        # opt2d12's Standard convergence (the one presets table)
+        "optimization_settings": opt_convergence("1", upper=True),
         "method": "DFT",
         "dft_functional": "B3LYP",
         "use_dispersion": True,
@@ -355,7 +352,7 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
         "dft_grid": "XLGRID",
         "is_spin_polarized": True,
         "use_smearing": False,
-        "tolerances": {"TOLINTEG": "7 7 7 7 14", "TOLDEE": 7},
+        "tolerances": scf_tolerances("1"),
         "scf_method": "DIIS",
         "scf_maxcycle": 800,
         "fmixing": 30
@@ -400,10 +397,7 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
                     "numderiv": 2,
                     "intensities": False,
                     "temperatures": [298.15],
-                    "custom_tolerances": {
-                        "TOLINTEG": "9 9 9 11 38",
-                        "TOLDEE": 11
-                    }
+                    "custom_tolerances": scf_tolerances(FREQ_SCF_LEVEL)
                 }
             }
         

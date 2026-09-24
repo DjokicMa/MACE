@@ -182,8 +182,11 @@ class WorkflowEngine:
             # apply_config_to_options maps these onto optimization_type +
             # opt_* keys for the d12 writer
             config_data["optimization_settings"] = dict(opt_settings)
-            config_data["optimization_type"] = plan_cfg.get(
-                'optimization_type', 'FULLOPTG')
+            # A step that names no type keeps the parent's (a planner
+            # "keep the previous OPT's type" answer); FULLOPTG here
+            # replaced an ATOMONLY/CELLONLY parent's type.
+            if plan_cfg.get('optimization_type'):
+                config_data["optimization_type"] = plan_cfg['optimization_type']
             print(f"    Plan optimization settings applied: {sorted(opt_settings)}")
         return config_data
     

@@ -47,6 +47,11 @@ try:
     sys.path.insert(0, str(parent_dir / "Crystal_d12"))
     # Import from the new modular structure
     from d12_constants import FREQ_TEMPLATES, ATOMIC_NUMBER_TO_SYMBOL, SPACEGROUP_SYMBOLS, D3_FUNCTIONALS
+    # The convergence presets (opt2d12's levels): every planner default below
+    # comes from this one table.
+    from d12_constants import (OPT_CONVERGENCE_PRESETS, SCF_TOLERANCE_PRESETS, FREQ_SCF_LEVEL,
+                               opt_convergence, scf_tolerances,
+                               describe_opt_preset, describe_scf_preset)
     # Import succeeded, we should have access to these constants
     D12_CONSTANTS_AVAILABLE = True
     
@@ -343,7 +348,7 @@ class WorkflowPlanner:
                 "dft_grid": "XLGRID",
                 "is_spin_polarized": True,
                 "use_smearing": False,
-                "tolerances": {"TOLINTEG": "7 7 7 7 14", "TOLDEE": 7},
+                "tolerances": scf_tolerances("1"),
                 "scf_method": "DIIS",
                 "scf_maxcycle": 800,
                 "fmixing": 30,
@@ -401,12 +406,7 @@ class WorkflowPlanner:
             "dimensionality": "CRYSTAL",
             "calculation_type": "SP" if calc_type == "SP" else "OPT",
             "optimization_type": "FULLOPTG" if calc_type != "SP" else None,
-            "optimization_settings": {
-                "TOLDEG": 0.00003,
-                "TOLDEX": 0.00012,
-                "TOLDEE": 7,
-                "MAXCYCLE": 800,
-            },
+            "optimization_settings": opt_convergence("1", upper=True),
             "method": "DFT",
             "dft_functional": "HSE06",
             "use_dispersion": True,
@@ -415,7 +415,7 @@ class WorkflowPlanner:
             "dft_grid": "XLGRID",
             "is_spin_polarized": True,
             "use_smearing": False,
-            "tolerances": {"TOLINTEG": "7 7 7 7 14", "TOLDEE": 7},
+            "tolerances": scf_tolerances("1"),
             "scf_method": "DIIS",
             "scf_maxcycle": 800,
             "fmixing": 30,
@@ -1240,12 +1240,12 @@ class WorkflowPlanner:
         ui.info(f"  Configuring {calc_type} step {step_num}")
 
         ui.info(f"    Choose {calc_type} customization level:")
-        ui.info(f"      0: Use sensible defaults")
-        ui.info(f"         - Type: FULLOPTG (optimize both atoms and cell)")
-        ui.info(f"         - TOLDEG: 3.0E-5, TOLDEX: 1.2E-4, TOLDEE: 7")
-        ui.info(f"         - MAXCYCLE: 800, Method/basis: inherited from previous step")
+        ui.info(f"      0: Inherit everything from the previous step")
+        ui.info(f"         - Optimization type and OPTGEOM convergence of the previous OPT")
+        ui.info(f"           (Standard, {describe_opt_preset('1')}, when it has none)")
+        ui.info(f"         - Method/basis/SCF settings: inherited from previous step")
         ui.info(f"      1: Basic (optimization type + tolerances)")
-        ui.info(f"         - Configure: FULLOPTG vs ATOMSONLY, convergence criteria")
+        ui.info(f"         - Configure: FULLOPTG vs ATOMONLY, convergence level")
         ui.info(f"         - Time impact: Can reduce optimization time by 30-50%")
         ui.info(f"      2: Advanced (method + basis set modifications)")
         ui.info(f"         - Configure: Change functional/basis from initial calculation")
@@ -1264,16 +1264,10 @@ class WorkflowPlanner:
                 ui.info("    Please enter a valid number")
 
         if level == 0:
-            # Use sensible defaults
+            # Inherit the previous step's settings, OPTGEOM included: no
+            # optimization type or settings, so the parent's are kept.
             config = {
                 "calculation_type": "OPT",
-                "optimization_type": "FULLOPTG",
-                "optimization_settings": {
-                    "TOLDEG": 0.00003,
-                    "TOLDEX": 0.00012,
-                    "TOLDEE": 7,
-                    "MAXCYCLE": 800,
-                },
                 "source": "CRYSTALOptToD12.py",
                 "inherit_settings": True,
                 "customization_level": 0,
@@ -1300,12 +1294,15 @@ class WorkflowPlanner:
             # Show summary of selected configuration
             if config.get("customization_level") == 1:
                 ui.info(f"\n    {calc_type} configuration summary:")
-                ui.info(f"      - Type: {config.get('optimization_type', 'FULLOPTG')}")
-                opt_settings = config.get("optimization_settings", {})
-                ui.info(f"      - TOLDEG: {opt_settings.get('TOLDEG', 3e-5):.1E}")
-                ui.info(f"      - TOLDEX: {opt_settings.get('TOLDEX', 1.2e-4):.1E}")
-                ui.info(f"      - TOLDEE: {opt_settings.get('TOLDEE', 7)}")
-                ui.info(f"      - MAXCYCLE: {opt_settings.get('MAXCYCLE', 800)}")
+                ui.info(f"      - Type: {config.get('optimization_type', 'inherited from the previous OPT')}")
+                opt_settings = config.get("optimization_settings")
+                if opt_settings:
+                    ui.info(f"      - TOLDEG: {opt_settings['TOLDEG']:.1E}")
+                    ui.info(f"      - TOLDEX: {opt_settings['TOLDEX']:.1E}")
+                    ui.info(f"      - TOLDEE: {opt_settings['TOLDEE']}")
+                    ui.info(f"      - MAXCYCLE: {opt_settings['MAXCYCLE']}")
+                else:
+                    ui.info("      - Convergence: inherited from the previous OPT")
                 if config.get("custom_tolerances"):
                     tol = config["custom_tolerances"]
                     if tol.get("TOLINTEG"):
@@ -1384,14 +1381,15 @@ class WorkflowPlanner:
         ui.info("        - Memory: No significant change")
         ui.info("        - Use for: Benchmark calculations, basis set comparisons")
 
-        use_tight = yes_no_prompt("    Use tight convergence?", "no")
-        if use_tight:
-            ui.info("      Applying tight convergence tolerances:")
-            ui.info("        - TOLINTEG: 9 9 9 11 38 (high accuracy integrals)")
-            ui.info("        - TOLDEE: 11 (SCF convergence to 10^-11 Ha)")
-            config["tolerance_modifications"] = {
-                "custom_tolerances": {"TOLINTEG": "9 9 9 11 38", "TOLDEE": 11}
-            }
+        ui.info("      SCF convergence level:")
+        ui.info("        0: Keep the previous step's tolerances (default)")
+        for level, preset in SCF_TOLERANCE_PRESETS.items():
+            ui.info(f"        {level}: {preset['name']} - {describe_scf_preset(level)}")
+        choice = input("      Choose convergence level (0-3) [0]: ").strip() or "0"
+        if choice in SCF_TOLERANCE_PRESETS:
+            ui.info(f"      Using {SCF_TOLERANCE_PRESETS[choice]['name']} convergence: "
+                    f"{describe_scf_preset(choice)}")
+            config["tolerance_modifications"] = {"custom_tolerances": scf_tolerances(choice)}
 
         return config
 
@@ -1965,7 +1963,7 @@ class WorkflowPlanner:
                     "numderiv": 2,
                     "intensities": False,
                     "temperatures": [298.15],
-                    "custom_tolerances": {"TOLINTEG": "9 9 9 11 38", "TOLDEE": 11},
+                    "custom_tolerances": scf_tolerances(FREQ_SCF_LEVEL),
                 },
             }
 
@@ -2412,10 +2410,7 @@ class WorkflowPlanner:
             ui.info("\n  Using high accuracy tolerances for frequency calculations:")
             ui.info("    TOLINTEG: 9 9 9 11 38")
             ui.info("    TOLDEE: 11")
-            config["frequency_settings"]["custom_tolerances"] = {
-                "TOLINTEG": "9 9 9 11 38",
-                "TOLDEE": 11,
-            }
+            config["frequency_settings"]["custom_tolerances"] = scf_tolerances(FREQ_SCF_LEVEL)
 
         else:
             # Expert - run CRYSTALOptToD12.py interactively
@@ -2502,56 +2497,33 @@ class WorkflowPlanner:
     def _get_basic_opt_config(self) -> Dict[str, Any]:
         """Get basic optimization configuration"""
         ui.info("\n    Basic Optimization Setup:")
-
-        # Optimization type
+        # Optimization type: CRYSTAL's keyword is ATOMONLY (the plural form the
+        # planner used to write is not one). A blank answer keeps the
+        # previous OPT's type.
         ui.info("    Optimization type:")
+        ui.info("      0: Keep the previous OPT's type (default)")
         ui.info("      1: FULLOPTG (optimize atoms and cell)")
-        ui.info("      2: ATOMSONLY (optimize atoms only)")
+        ui.info("      2: ATOMONLY (optimize atoms only)")
         ui.info("      3: CELLONLY (optimize cell only)")
 
         opt_choice = (
-            input("    Choose optimization type (1-3, default 1): ").strip() or "1"
+            input("    Choose optimization type (0-3, default 0): ").strip() or "0"
         )
-        opt_types = {"1": "FULLOPTG", "2": "ATOMSONLY", "3": "CELLONLY"}
-        opt_type = opt_types.get(opt_choice, "FULLOPTG")
+        opt_types = {"1": "FULLOPTG", "2": "ATOMONLY", "3": "CELLONLY"}
 
-        # Enhanced tolerances for subsequent optimizations
-        ui.info("\n    Convergence settings:")
-        ui.info("    Standard convergence:")
-        ui.info("      - TOLDEG: 3.0E-5 (RMS gradient threshold)")
-        ui.info("      - TOLDEX: 1.2E-4 (RMS displacement threshold)")
-        ui.info("      - TOLDEE: 7 (energy convergence 10^-7 Ha)")
-        ui.info("      - MAXCYCLE: 800 (maximum optimization steps)")
-        ui.info("    Tighter convergence (recommended for refined optimization):")
-        ui.info("      - TOLDEG: 1.5E-5 (2x tighter gradient)")
-        ui.info("      - TOLDEX: 6.0E-5 (2x tighter displacement)")
-        ui.info("      - TOLDEE: 8 (10x tighter energy, 10^-8 Ha)")
-        ui.info("      - MAXCYCLE: 1000 (25% more steps allowed)")
+        # Convergence: opt2d12's three levels, or the previous OPT's values
+        ui.info("\n    Convergence level:")
+        ui.info("      0: Keep the previous OPT's convergence (default)")
+        for level, preset in OPT_CONVERGENCE_PRESETS.items():
+            ui.info(f"      {level}: {preset['name']} - {describe_opt_preset(level)}")
+        conv_choice = input("    Choose convergence level (0-3, default 0): ").strip() or "0"
 
-        use_tight = yes_no_prompt(
-            "    Use tighter convergence for refined optimization?", "yes"
-        )
-
-        if use_tight:
-            opt_settings = {
-                "TOLDEG": 1.5e-5,  # Tighter than default 3e-5
-                "TOLDEX": 6e-5,  # Tighter than default 1.2e-4
-                "TOLDEE": 8,  # Tighter than default 7
-                "MAXCYCLE": 1000,  # More cycles for convergence
-            }
-        else:
-            opt_settings = {
-                "TOLDEG": 3e-5,
-                "TOLDEX": 1.2e-4,
-                "TOLDEE": 7,
-                "MAXCYCLE": 800,
-            }
-
-        return {
-            "optimization_type": opt_type,
-            "optimization_settings": opt_settings,
-            "inherit_base_settings": True,
-        }
+        config = {"inherit_base_settings": True}
+        if opt_choice in opt_types:
+            config["optimization_type"] = opt_types[opt_choice]
+        if conv_choice in OPT_CONVERGENCE_PRESETS:
+            config["optimization_settings"] = opt_convergence(conv_choice, upper=True)
+        return config
 
     def _get_advanced_opt_config(self) -> Dict[str, Any]:
         """Get advanced optimization configuration"""
@@ -2802,16 +2774,17 @@ class WorkflowPlanner:
 
         # TOLINTEG
         ui.info("      TOLINTEG (Coulomb/exchange integral tolerances):")
-        ui.info("        Current/default: 7 7 7 7 14")
-        ui.info("        Tighter: 8 8 8 8 16 or 9 9 9 9 18")
+        ui.info("        Blank keeps the previous step's value. Presets:")
+        for level, preset in SCF_TOLERANCE_PRESETS.items():
+            ui.info(f"        {preset['name']}: {preset['TOLINTEG']}")
         custom_tolinteg = input("      New TOLINTEG [keep current]: ").strip()
         if custom_tolinteg:
             tolerances["TOLINTEG"] = custom_tolinteg
 
         # TOLDEE
         ui.info("\n      TOLDEE (SCF energy convergence):")
-        ui.info("        Current/default: 7")
-        ui.info("        Tighter: 8, 9, or 10")
+        ui.info("        Blank keeps the previous step's value. Presets: "
+                + ", ".join(f"{p['name']} {p['TOLDEE']}" for p in SCF_TOLERANCE_PRESETS.values()))
         custom_toldee = input("      New TOLDEE [keep current]: ").strip()
         if custom_toldee:
             try:
@@ -2836,12 +2809,7 @@ class WorkflowPlanner:
             "inherit_basis_set": True,
             "inherit_method": True,
             # Customizable parameters
-            "optimization_settings": {
-                "TOLDEG": 1.5e-5,
-                "TOLDEX": 6e-5,
-                "TOLDEE": 8,
-                "MAXCYCLE": 1000,
-            },
+            "optimization_settings": opt_convergence("1", upper=True),
             # Advanced options (to be filled interactively)
             "method_modifications": {
                 "change_functional": False,
