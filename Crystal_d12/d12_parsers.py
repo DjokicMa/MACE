@@ -1244,6 +1244,7 @@ class CrystalInputParser:
         """Extract optimization settings if present"""
         in_optgeom = False
         opt_settings = {}
+        cvolopt = False
         
         for i, line in enumerate(lines):
             stripped = line.strip()
@@ -1260,9 +1261,13 @@ class CrystalInputParser:
             elif stripped == "ENDOPT":
                 in_optgeom = False
             elif in_optgeom:
-                # The optimization type (CRYSTAL23 manual sec. 7.3.1), plus
-                # CVOLOPT, which MACE offers as a type of its own.
-                if stripped in OPTGEOM_TYPE_KEYWORDS:
+                # The optimization type (CRYSTAL23 manual sec. 7.3.1). CVOLOPT
+                # is not a type but a modifier of one (manual sec. 7.3, "Only
+                # active with CELLONLY, FULLOPTG or INTREDUN"); on its own it is
+                # MACE's "CVOLOPT" type, as the menu offers it.
+                if stripped == "CVOLOPT":
+                    cvolopt = True
+                elif stripped in OPTGEOM_TYPE_KEYWORDS:
                     opt_settings["type"] = stripped
                     
                 # Optimization tolerances
@@ -1292,6 +1297,14 @@ class CrystalInputParser:
                     except (ValueError, IndexError):
                         pass
                         
+        if cvolopt:
+            if opt_settings.get("type"):
+                # Written back after the type it modifies, while the type is
+                # still the parent's (d12_calc_basic.write_optimization_section).
+                opt_settings["cvolopt_type"] = opt_settings["type"]
+            else:
+                opt_settings["type"] = "CVOLOPT"
+
         # Also check for frequency calculations
         for i, line in enumerate(lines):
             stripped = line.strip()

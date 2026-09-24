@@ -240,8 +240,16 @@ def _configure_optimization_impl(current_settings: Optional[Dict[str, Any]] = No
 
     parent_type = parent.get("type") or parent.get("optimization_type")
     type_default = next((k for k, v in OPT_TYPES.items() if v == parent_type), "1")
+    if parent.get("cvolopt_type"):
+        print(f"(The current settings add CVOLOPT, constant volume, to "
+              f"{parent['cvolopt_type']}; it is kept while the type stays "
+              f"{parent['cvolopt_type']}.)")
     opt_choice = get_user_input("Select optimization type", OPT_TYPES, type_default)
     opt_config["type"] = OPT_TYPES[opt_choice]
+    # The parent's CVOLOPT modifier stays with its type (written only while
+    # the type is unchanged).
+    if parent.get("cvolopt_type"):
+        opt_config["cvolopt_type"] = parent["cvolopt_type"]
     
     # Optimization convergence settings
     print("\n" + "="*60)
@@ -398,7 +406,11 @@ def write_optimization_section(f, optimization_type, optimization_settings,
         opt_type = optimization_settings["type"]
     
     print(opt_type, file=f)
-    
+    # The parent's CVOLOPT modifier (constant volume, manual sec. 7.3), kept
+    # with the type it modified. A different type is a different request.
+    if optimization_settings.get("cvolopt_type") == opt_type and opt_type != "CVOLOPT":
+        print("CVOLOPT", file=f)
+
     # Note: TIGHTOPT is not a valid CRYSTAL keyword
     # We achieve tight optimization by using tight tolerance values
     
