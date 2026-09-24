@@ -661,11 +661,14 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                     parts = k_points_raw.split()
                     if len(parts) == 3:
                         k_points_info = (int(parts[0]), int(parts[1]), int(parts[2]))
-                    elif len(parts) == 2 and int(parts[0]) > 0:
+                    elif len(parts) == 2 and k_from_parent and int(parts[0]) > 0:
                         # One-line 'SHRINK IS ISP' form (the most common one):
                         # IS subdivisions along every reciprocal vector. Without
                         # this branch the mesh was regenerated from the cell
-                        # (e.g. a parent's 5 10 became 7 14).
+                        # (e.g. a parent's 5 10 became 7 14). Only the parent's
+                        # own mesh is kept this way: a two-number mesh from a
+                        # saved config or --shared-settings belongs to another
+                        # material, so it is still regenerated from this cell.
                         is_ = int(parts[0])
                         k_points_info = (is_, is_, is_)
                         isp = int(parts[1])

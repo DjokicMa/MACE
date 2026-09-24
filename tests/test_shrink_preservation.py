@@ -14,6 +14,7 @@ absent. The writer tests pin the forms no corpus parent reaches.
 """
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -194,3 +195,48 @@ def test_mesh_not_from_this_parent_is_still_made_uniform(monkeypatch, tmp_path):
     assert got["preserve_directional"] is False
     got = _k_passed(monkeypatch, tmp_path, {"k_points": "30 30 10", "spacegroup": 115}, None)
     assert got["preserve_directional"] is False
+
+
+def test_two_number_mesh_not_from_this_parent_is_regenerated(monkeypatch, tmp_path):
+    """A two-number 'IS ISP' mesh from a saved config or --shared-settings was
+    written onto whatever material it was applied to; it is regenerated from
+    this material's cell, as for any mesh that is not the parent's own."""
+    import CRYSTALOptToD12 as M
+    from d12_parsers import CrystalOutputParser
+    from conftest import find_data
+
+    geo = CrystalOutputParser(str(find_data("OPT/1_dia_opt_rev1.out"))).parse()
+    a, b, c = [float(x) for x in geo["conventional_cell"][:3]]
+    from_cell = M.generate_k_points(a, b, c, "CRYSTAL", 227)
+    assert from_cell != (5, 5, 5)
+    for parent in ("12 24", None):
+        got = _k_passed(monkeypatch, tmp_path, {"k_points": "5 10", "spacegroup": 227}, parent)
+        assert got["k"] == from_cell and got["shrink_isp"] is None
+
+
+def test_config_from_another_material_does_not_impose_its_mesh(tmp_path):
+    """--save-options on Ag1Br1 (SHRINK 5 10), then --config-file on Ti9Se2
+    (SHRINK 15 30): Ti9Se2 used to get 5 10."""
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    name_a = _copy_parent(AG1BR1, a)
+    name_b = _copy_parent(TI9SE2, b)
+    env = dict(os.environ, NO_COLOR="1")
+    save = subprocess.run(
+        [sys.executable, str(MACE_CLI), "opt2d12", "--out-file", f"{name_a}.out",
+         "--d12-file", f"{name_a}.d12", "--non-interactive", "--calc-type", "SP",
+         "--save-options", "--options-file", str(tmp_path / "optsA.json")],
+        cwd=a, input="", capture_output=True, text=True, timeout=300, env=env)
+    saved = json.loads((tmp_path / "optsA.json").read_text())
+    assert saved.get("k_points") == "5 10", (save.stdout + save.stderr)[-1500:]
+    result = subprocess.run(
+        [sys.executable, str(MACE_CLI), "opt2d12", "--out-file", f"{name_b}.out",
+         "--d12-file", f"{name_b}.d12", "--config-file", str(tmp_path / "optsA.json"),
+         "--non-interactive"],
+        cwd=b, input="", capture_output=True, text=True, timeout=300, env=env)
+    assert result.returncode == 0, (result.stdout + result.stderr)[-1500:]
+    decks = [p for p in b.glob("*.d12") if p.name != f"{name_b}.d12"]
+    assert len(decks) == 1
+    assert _shrink(decks[0].read_text().splitlines()) == [["15", "30"]]
