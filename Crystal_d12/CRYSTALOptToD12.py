@@ -45,6 +45,7 @@ from d12_constants import (
     # Constants
     ELEMENT_SYMBOLS, SPACEGROUP_SYMBOLS, DEFAULT_SETTINGS,
     DEFAULT_OPT_SETTINGS, DEFAULT_TOLERANCES, DEFAULT_FREQ_SETTINGS,
+    freq_default_tolerances,
     FUNCTIONAL_CATEGORIES, COMMON_FUNCTIONALS, D3_FUNCTIONALS,
     DFT_GRID_OPTIONS, DISPERSION_OPTIONS, SMEARING_OPTIONS,
     PRINT_OPTIONS, MULTI_ORIGIN_SPACEGROUPS, ATOMIC_NUMBER_TO_SYMBOL,
@@ -873,6 +874,10 @@ def _keep_extracted_settings(settings, calc_type, opt_type, origin_setting):
     options = settings.copy()
     # Default to SP if not specified
     options["calculation_type"] = calc_type
+    if calc_type == "FREQ":
+        # FREQ gets its own default SCF tolerances (Very tight)
+        options["tolerances"] = freq_default_tolerances(
+            settings.get("calculation_type"), settings.get("tolerances"))
 
     # Set optimization type if it's an OPT calculation
     if options["calculation_type"] == "OPT":
@@ -1214,6 +1219,12 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 if isinstance(custom_tol, dict) and custom_tol:
                     options["tolerances"] = {**(settings.get("tolerances") or {}), **custom_tol}
                     ui.info(f"  Tolerances updated: {custom_tol}")
+                elif options.get("calculation_type") == "FREQ" and not config_data.get("tolerances"):
+                    # A FREQ config that names no tolerances gets the FREQ
+                    # default (Very tight), not the optimization's.
+                    options["tolerances"] = freq_default_tolerances(
+                        settings.get("calculation_type"), settings.get("tolerances"))
+                    ui.info(f"  FREQ SCF tolerances: {options['tolerances']}")
 
                 # The config named no functional and the parent's was not
                 # identified: warn and use HSE06 rather than ask.

@@ -1334,6 +1334,19 @@ def describe_scf_preset(level: str) -> str:
     return f"TOLINTEG: {p['TOLINTEG']}, TOLDEE: {p['TOLDEE']}"
 
 
+def freq_default_tolerances(parent_calc_type: Optional[str] = None,
+                            parent_tolerances: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """SCF tolerances for a FREQ deck when nothing (user, plan, config) names any.
+
+    Very tight, whatever the parent used: frequencies need tighter SCF
+    tolerances than the optimization they follow. A parent that is itself a
+    FREQ calculation chose its tolerances for FREQ, so those are kept.
+    """
+    if parent_calc_type == "FREQ" and parent_tolerances:
+        return dict(parent_tolerances)
+    return scf_tolerances(FREQ_SCF_LEVEL)
+
+
 # Default SCF tolerances
 DEFAULT_TOLERANCES = scf_tolerances("1")
 

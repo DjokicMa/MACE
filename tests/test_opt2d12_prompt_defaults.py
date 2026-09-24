@@ -8,7 +8,6 @@ the prompts that did not:
   (TOLDEG 0.0001 / TOLDEX 0.0004 / TOLDEE 8) was loosened, and values that
   match no preset were lost; the optimization type reset to FULLOPTG;
 * "Set MAXTRADIUS?": defaulted to no and dropped the parent's MAXTRADIUS;
-* FREQ SCF tolerance menu: defaulted to Very tight whatever the parent had;
 * "Use level shifting?" answered yes on a parent without LEVSHIFT: stored in a
   key the deck writer never reads, so no LEVSHIFT was written.
 
@@ -217,13 +216,14 @@ def test_opt_child_keeps_maxtradius_on_blank_answers(tmp_path):
     assert float(_after(child, "MAXTRADIUS")) == 0.25
 
 
-def test_freq_child_keeps_parent_scf_tolerances_on_blank_answers(tmp_path):
+def test_freq_child_of_an_opt_gets_very_tight_scf_on_blank_answers(tmp_path):
+    """The one deliberate exception to "default = parent": FREQ SCF tolerances
+    default to Very tight (9 9 9 11 38 / 11), whatever the optimization used."""
     name = _copy_parent(TIGHT_OPT_PARENT, tmp_path)
-    parent = (tmp_path / f"{name}.d12").read_text().splitlines()
     child = _opt2d12(tmp_path, name, {"exact settings": "n", "calculation type": "3"})
     assert "FREQCALC" in child
-    assert _scf_after(child, "TOLINTEG").split() == _scf_after(parent, "TOLINTEG").split()
-    assert _scf_after(child, "TOLDEE") == _scf_after(parent, "TOLDEE")
+    assert _scf_after(child, "TOLINTEG").split() == "9 9 9 11 38".split()
+    assert _scf_after(child, "TOLDEE") == "11"
 
 
 def test_level_shift_answer_is_written(tmp_path):

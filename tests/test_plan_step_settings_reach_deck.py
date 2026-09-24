@@ -106,11 +106,11 @@ def test_real_freq_plan_functional_switch_keeps_freq_settings_and_tolerances(tmp
     assert _after(body, "TOLDEE") == "12"
 
 
-def test_real_freq_without_plan_keeps_the_parent_tolerances(tmp_path):
+def test_real_freq_without_plan_gets_the_freq_default_tolerances(tmp_path):
+    # FREQ's SCF default is Very tight, not the parent optimization's 7 7 7 7 14
     name, body = _real(tmp_path, None, "FREQ")
-    parent = base.DIA.with_suffix(".d12").read_text().splitlines()
-    assert _after(body, "TOLINTEG") == _after(parent, "TOLINTEG")
-    assert _after(body, "TOLDEE") == _after(parent, "TOLDEE")
+    assert _after(body, "TOLINTEG") == "9 9 9 11 38"
+    assert _after(body, "TOLDEE") == "11"
 
 
 def test_real_opt2_partial_tolerance_override_keeps_parent_tolinteg(tmp_path):

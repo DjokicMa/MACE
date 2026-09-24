@@ -25,6 +25,7 @@ from d12_constants import (
     UNRECOGNISED_FUNCTIONAL_FALLBACK,
     CUSTOM_FUNCTIONAL, describe_custom_functional,
     SCF_TOLERANCE_PRESETS, scf_tolerances, describe_scf_preset,
+    FREQ_SCF_LEVEL, freq_default_tolerances,
 )
 
 # Import calculation-specific modules
@@ -1350,6 +1351,9 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
         dict: Options for the calculation
     """
     options = current_settings.copy()
+    # The source calculation's own type (the deck parser's reading), before
+    # the new calculation's type replaces it below.
+    parent_calc_type = current_settings.get("calculation_type")
     
     # Determine if we're in expert mode (when calc_type is pre-selected)
     expert_mode = calc_type is not None
@@ -1562,9 +1566,13 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
                 
                 print("\n4. Custom - Set your own tolerances")
                 
-                # The parent's own level is the default here too, so pressing
-                # Enter keeps its tolerances; choose 2 or 3 to tighten them.
-                default_choice = _tolerance_preset_for(options.get("tolerances"))
+                # Very tight by default, whatever the parent optimization
+                # used. A FREQ parent chose its tolerances for FREQ: its own
+                # level is the default then.
+                if parent_calc_type == "FREQ":
+                    default_choice = _tolerance_preset_for(options.get("tolerances"))
+                else:
+                    default_choice = FREQ_SCF_LEVEL
             else:
                 # SP and OPT calculations
                 print(f"1. Standard - {describe_scf_preset('1')}")
@@ -1675,6 +1683,15 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
         else:
             # Keep existing settings if not changing
             pass
+
+    if keep_settings and not shared_mode and calc_type:
+        # "Use these exact settings" keeps the parent's settings, but not its
+        # calculation type when --calc-type asks for another: an OPT parent
+        # with --calc-type FREQ was written as an OPT deck.
+        options["calculation_type"] = calc_type
+        if calc_type == "FREQ":
+            options["tolerances"] = freq_default_tolerances(
+                parent_calc_type, current_settings.get("tolerances"))
 
     # "Use these exact settings" never reached the method questions: an
     # unidentified parent functional falls back to HSE06, with a warning.

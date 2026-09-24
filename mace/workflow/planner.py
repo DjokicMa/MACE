@@ -2481,10 +2481,7 @@ class WorkflowPlanner:
                         "cphf_max_iter": 30,
                         "cphf_tolerance": 6,
                         "temperatures": [298.15],
-                        "custom_tolerances": {
-                            "TOLINTEG": "12 12 12 12 24",
-                            "TOLDEE": 12,
-                        },
+                        "custom_tolerances": scf_tolerances(FREQ_SCF_LEVEL),
                     },
                 }
                 return config
