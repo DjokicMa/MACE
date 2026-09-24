@@ -967,6 +967,13 @@ class CrystalOutputParser:
 
     def _extract_dispersion(self, lines: List[str]) -> None:
         """Check for dispersion correction"""
+        # 3c composite methods (HSEsol-3c, PBEh-3c, ...) carry their own D3 and
+        # gCP terms, so their output always prints the "DFT-D3-GCP DISPERSION"
+        # block. That is part of the method, not an added dispersion keyword:
+        # appending "-D3" turned HSESOL3C into "HSESOL3C-D3" in every child deck.
+        functional = (self.data.get("functional") or "").upper()
+        if self.data.get("is_3c_method") or functional.endswith("3C"):
+            return
         for line in lines:
             if "GRIMME D3" in line or "DFT-D3" in line or "DISPERSION CORRECTION DFT-D3" in line:
                 self.data["dispersion"] = True
