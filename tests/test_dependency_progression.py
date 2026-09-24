@@ -50,7 +50,6 @@ def engine():
     eng.generate_d3_calculation_new = lambda src, t: eng.triggered.append((t, src)) or f"id_{t}"
     eng.generate_property_calculation = lambda src, t: eng.triggered.append(("LEGACY_" + t, src)) or f"id_{t}"
     eng.generate_numbered_calculation = lambda src, t: eng.triggered.append((t, src)) or f"id_{t}"
-    eng.generate_calculation_from_cif = lambda mid, t: eng.triggered.append((t, "CIF")) or f"id_{t}"
     return eng
 
 
@@ -99,6 +98,30 @@ def test_sweep_without_skip_still_triggers_opt_chain(engine):
     engine._check_and_trigger_pending_calculations("mat", SEQ)
 
     assert [t for t, _ in engine.triggered] == ["OPT2"]
+
+
+def test_opt_after_sp_is_generated_from_that_sp(engine):
+    """An OPT planned after an SP, with no OPT completed, optimizes the
+    completed SP's geometry. It used to re-convert the original CIF, which
+    dropped the SP's settings and minted a new workflow id."""
+    engine.db = _FakeDB([_calc("SP")])
+    engine._calculation_already_exists = lambda mid, t: t == "SP"
+
+    engine._check_and_trigger_pending_calculations("mat", ["SP", "BAND", "OPT"])
+
+    assert ("OPT", "sp_1") in engine.triggered
+    assert not hasattr(WorkflowEngine, "generate_calculation_from_cif")
+    assert not hasattr(WorkflowEngine, "find_original_cif_source")
+
+
+def test_first_planned_sp_is_not_regenerated_by_the_sweep(engine):
+    """The first step is created when the workflow starts; the sweep has no
+    source for it and must not try to make one."""
+    engine.db = _FakeDB([])
+    engine._calculation_already_exists = lambda mid, t: False
+
+    assert engine._check_and_trigger_pending_calculations("mat", ["SP", "OPT"]) == []
+    assert engine.triggered == []
 
 
 def test_execute_workflow_step_runs_dependency_sweep(engine):

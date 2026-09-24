@@ -1967,10 +1967,6 @@ fi'''
                 if prev_step and prev_step in completed_by_type:
                     can_start = True
                     source_calc_id = completed_by_type[prev_step][-1]['calc_id']
-                elif not prev_step:
-                    # SP is the first calculation - needs CIF source
-                    can_start = True
-                    source_calc_id = 'CIF'  # Special marker for CIF generation
                     
             elif base_type == "FREQ":
                 # FREQ calculations need an optimized geometry from an OPT calculation
@@ -2008,36 +2004,20 @@ fi'''
                         # Previous step can't provide geometry (e.g., FREQ, BAND, DOSS)
                         # Find the highest numbered OPT completed so far
                         opt_source = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
+                        if not opt_source:
+                            # No OPT has completed yet: optimize the latest
+                            # completed SP's geometry, keeping its settings.
+                            opt_source = self._find_highest_numbered_calc_of_type(completed_by_type, 'SP')
                         if opt_source:
                             can_start = True
-                            source_calc_id = opt_source  # Use highest completed OPT
-                        elif type_num == 1:
-                            # First OPT with no prior OPT - need CIF source
-                            can_start = True
-                            source_calc_id = 'CIF'  # Special marker for CIF generation
+                            source_calc_id = opt_source
             
             # Trigger the calculation if dependencies are met
             if can_start and source_calc_id:
                 print(f"Triggering pending {planned_type} calculation...")
                 
                 if base_type == "SP":
-                    if source_calc_id == 'CIF':
-                        # Generate from CIF
-                        # Find material_id from context or use planned_type to derive it
-                        material_id = None
-                        for calcs in completed_by_type.values():
-                            if calcs:
-                                material_id = calcs[0]['material_id']
-                                break
-                        # If no completed calcs, we need to get material_id from somewhere else
-                        # This would typically come from the workflow context
-                        if material_id:
-                            calc_id = self.generate_calculation_from_cif(material_id, planned_type)
-                        else:
-                            print(f"Cannot determine material_id for CIF generation")
-                            calc_id = None
-                    else:
-                        calc_id = self.generate_numbered_calculation(source_calc_id, planned_type)
+                    calc_id = self.generate_numbered_calculation(source_calc_id, planned_type)
                 elif base_type == "FREQ":
                     # FREQ always uses generate_freq_from_opt with an OPT calculation
                     # source_calc_id should already be from an OPT due to fixed dependency logic
@@ -2049,21 +2029,7 @@ fi'''
                     else:
                         calc_id = self.generate_property_calculation(source_calc_id, planned_type)
                 elif base_type == "OPT":
-                    if source_calc_id == 'CIF':
-                        # Generate from CIF
-                        # Find material_id from any completed calculation
-                        material_id = None
-                        for calcs in completed_by_type.values():
-                            if calcs:
-                                material_id = calcs[0]['material_id']
-                                break
-                        if material_id:
-                            calc_id = self.generate_calculation_from_cif(material_id, planned_type)
-                        else:
-                            print(f"Cannot determine material_id for CIF generation")
-                            calc_id = None
-                    else:
-                        calc_id = self.generate_numbered_calculation(source_calc_id, planned_type)
+                    calc_id = self.generate_numbered_calculation(source_calc_id, planned_type)
                 else:
                     calc_id = None
                     
@@ -2326,9 +2292,10 @@ fi'''
                                 print(f"Generating {next_calc_type} from previous OPT...")
                                 opt_calc_id = self.generate_numbered_calculation(opt_source, next_calc_type)
                             else:
-                                # No OPT exists, generate from CIF
-                                print(f"No previous OPT found. Generating {next_calc_type} from CIF...")
-                                opt_calc_id = self.generate_calculation_from_cif(material_id, next_calc_type)
+                                # No OPT has completed: optimize the geometry of
+                                # the SP that just completed, in this workflow.
+                                print(f"No previous OPT found. Generating {next_calc_type} from SP...")
+                                opt_calc_id = self.generate_numbered_calculation(completed_calc_id, next_calc_type)
                             
                             if opt_calc_id:
                                 new_calc_ids.append(opt_calc_id)
@@ -2760,7 +2727,7 @@ fi'''
             # OPT can depend on:
             # - Previous OPT (for multi-stage optimization)
             # - Previous calculation that can provide geometry
-            # - Nothing (if starting from CIF)
+            # - Nothing (it is the first step of the plan)
             
             # For OPT2, OPT3, etc., look for the previous OPT
             if type_num > 1:
@@ -2782,7 +2749,7 @@ fi'''
                     # These don't provide geometry, keep looking
                     continue
                     
-            # No dependency found - this OPT starts from CIF
+            # No dependency found - this OPT is the first step of the plan
             return None
             
         else:
@@ -2922,195 +2889,6 @@ fi'''
             New OPT2 calculation ID if successful, None otherwise
         """
         return self.generate_numbered_calculation(opt_calc_id, "OPT2")
-    
-    def find_original_cif_source(self, material_id: str) -> Optional[Path]:
-        """
-        Find the original CIF file that was used to create this material.
-        
-        Args:
-            material_id: Material identifier
-            
-        Returns:
-            Path to CIF file if found, None otherwise
-        """
-        # Look for CIF in workflow_inputs or workflow configuration
-        workflow_base = self.base_work_dir
-        
-        # Check workflow_inputs directory
-        workflow_inputs = workflow_base / "workflow_inputs"
-        if workflow_inputs.exists():
-            # Look for CIF files that match the material name
-            core_name = self.extract_core_material_name(material_id)
-            cif_patterns = [f"{core_name}.cif", f"*{core_name}*.cif"]
-            
-            for pattern in cif_patterns:
-                cif_files = list(workflow_inputs.glob(pattern))
-                if cif_files:
-                    return cif_files[0]
-        
-        # Check workflow config for CIF directory
-        config_dir = workflow_base / "workflow_configs"
-        if config_dir.exists():
-            # Look for workflow plan files
-            for plan_file in config_dir.glob("workflow_plan_*.json"):
-                try:
-                    with open(plan_file, 'r') as f:
-                        plan = json.load(f)
-                        
-                    if plan.get('input_type') == 'cif' and plan.get('input_directory'):
-                        cif_dir = Path(plan['input_directory'])
-                        if cif_dir.exists():
-                            # Look for matching CIF file
-                            core_name = self.extract_core_material_name(material_id)
-                            for cif_file in cif_dir.glob("*.cif"):
-                                if core_name in cif_file.stem:
-                                    return cif_file
-                except Exception as e:
-                    print(f"Error reading workflow plan {plan_file}: {e}")
-        
-        return None
-    
-    def generate_calculation_from_cif(self, material_id: str, calc_type: str) -> Optional[str]:
-        """
-        Generate a calculation (OPT or SP) from the original CIF file.
-        
-        Args:
-            material_id: Material identifier
-            calc_type: Calculation type to generate (e.g., 'OPT', 'SP')
-            
-        Returns:
-            New calculation ID if successful, None otherwise
-        """
-        print(f"Generating {calc_type} from CIF for {material_id}")
-        
-        # Find the original CIF file
-        cif_file = self.find_original_cif_source(material_id)
-        if not cif_file:
-            print(f"Could not find original CIF file for {material_id}")
-            return None
-        
-        print(f"  Found CIF file: {cif_file}")
-        
-        # Create working directory for CIF conversion
-        work_dir = self.create_isolated_calculation_directory(
-            material_id, f"{calc_type}_from_cif_generation", [cif_file]
-        )
-        
-        try:
-            # Get NewCifToD12.py script
-            newcif_script = self.script_paths.get('newcif_to_d12')
-            if not newcif_script:
-                print("NewCifToD12.py script not found")
-                return None
-            
-            # Prepare arguments for NewCifToD12.py
-            args = [
-                "--cif-file", str(work_dir / cif_file.name),
-                "--output-dir", str(work_dir)
-            ]
-            
-            # Check for CIF conversion config
-            config_file = self.base_work_dir / "workflow_configs" / "cif_conversion_config.json"
-            if config_file.exists():
-                args.extend(["--config-file", str(config_file)])
-                print(f"  Using CIF conversion config: {config_file}")
-            
-            # Determine calculation type for NewCifToD12.py
-            # 1 = OPT, 2 = SP
-            calc_type_num = "1" if calc_type.startswith("OPT") else "2"
-            
-            # Prepare input responses for non-interactive mode
-            # This assumes using config file or defaults
-            input_responses = f"{calc_type_num}\n\n\n\n\n\n\n\n\n\n"
-            
-            success, stdout, stderr = self.run_script_in_isolated_directory(
-                newcif_script, work_dir, args, input_data=input_responses
-            )
-            
-            if not success:
-                print(f"NewCifToD12.py failed: {stderr}")
-                return None
-            
-            # Find generated D12 file
-            d12_files = list(work_dir.glob("*.d12"))
-            if not d12_files:
-                print("No D12 file generated by NewCifToD12.py")
-                return None
-            
-            generated_d12 = d12_files[0]
-            
-            # Get workflow output directory
-            workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            workflow_base = self.base_work_dir / "workflow_outputs" / workflow_id
-            
-            # Determine step number and create directory
-            step_num = self._get_next_step_number(workflow_base, calc_type)
-            core_name = self.extract_core_material_name(material_id)
-            
-            # Parse calc type for numbered calculations
-            base_type, type_num = self._parse_calc_type(calc_type)
-            if type_num > 1:
-                dir_suffix = f"_{base_type.lower()}{type_num}"
-            else:
-                dir_suffix = f"_{base_type.lower()}"
-            
-            dir_name = f"{core_name}{dir_suffix}"
-            calc_dir = workflow_base / f"step_{step_num:03d}_{calc_type}" / dir_name
-            calc_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Move D12 file to calculation directory
-            final_d12_name = f"{core_name}{dir_suffix}.d12"
-            final_d12_path = calc_dir / final_d12_name
-            shutil.move(generated_d12, final_d12_path)
-            
-            # Create workflow metadata file for this calculation
-            metadata = {
-                'workflow_id': workflow_id,
-                'step_num': step_num,
-                'calc_type': calc_type,
-                'material_id': material_id
-            }
-            metadata_file = calc_dir / '.workflow_metadata.json'
-            with open(metadata_file, 'w') as f:
-                json.dump(metadata, f, indent=2)
-            
-            # Create SLURM script
-            job_name = f"{core_name}{dir_suffix}"
-            slurm_script_path = self._create_slurm_script_for_calculation(
-                calc_dir, job_name, base_type, step_num, workflow_id
-            )
-            
-            # Create calculation record
-            calc_id = self.db.create_calculation(
-                material_id=material_id,
-                calc_type=calc_type,
-                input_file=str(final_d12_path),
-                work_dir=str(calc_dir),
-                settings={
-                    'generated_from': 'CIF',
-                    'generation_method': 'NewCifToD12.py',
-                    'cif_source': str(cif_file),
-                    'workflow_id': workflow_id,
-                    'step_number': step_num
-                }
-            )
-            
-            # Submit if auto-submit is enabled
-            if hasattr(self, 'auto_submit') and self.auto_submit:
-                job_id = self._submit_calculation_to_slurm(slurm_script_path, calc_dir)
-                if job_id:
-                    self.db.update_calculation_status(calc_id, 'submitted', slurm_job_id=job_id)
-                    print(f"Submitted {calc_type} calculation as job {job_id}: {final_d12_path}")
-                else:
-                    print(f"Generated {calc_type} calculation but submission failed: {final_d12_path}")
-            else:
-                print(f"Generated {calc_type} calculation (pending submission): {final_d12_path}")
-            
-            return calc_id
-            
-        finally:
-            # Clean up working directory
-            shutil.rmtree(work_dir, ignore_errors=True)
     
     def generate_numbered_calculation(self, source_calc_id: str, target_calc_type: str) -> Optional[str]:
         """
