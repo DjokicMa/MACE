@@ -150,6 +150,46 @@ DEFAULT_OPT_SETTINGS = {
 }
 
 
+# CRYSTAL's own OPTGEOM defaults, used to place a parent that leaves a
+# tolerance out on the convergence menu (it runs with these values).
+_CRYSTAL_OPT_DEFAULTS = {"toldeg": 0.0003, "toldex": 0.0012, "toldee": 7}
+
+_OPT_PRESETS = {
+    "1": {"toldeg": 0.0003, "toldex": 0.0012, "toldee": 7},
+    "2": {"toldeg": 0.0001, "toldex": 0.0004, "toldee": 8},
+    "3": {"toldeg": 0.00003, "toldex": 0.00012, "toldee": 9},
+}
+
+
+def _opt_value(opt_settings, key):
+    """An OPTGEOM value under either key spelling ("toldeg" or "TOLDEG"), or None."""
+    if not isinstance(opt_settings, dict):
+        return None
+    value = opt_settings.get(key)
+    if value is None:
+        value = opt_settings.get(key.upper())
+    return value
+
+
+def _opt_preset_for(opt_settings):
+    """The convergence-menu choice matching a parent's OPTGEOM tolerances.
+
+    "1"/"2"/"3" for a preset, "keep" when they match none. A tolerance the
+    parent leaves out counts as CRYSTAL's default, which is what it ran with.
+    """
+    effective = {}
+    for key, crystal_default in _CRYSTAL_OPT_DEFAULTS.items():
+        value = _opt_value(opt_settings, key)
+        try:
+            effective[key] = float(value) if value is not None else float(crystal_default)
+        except (TypeError, ValueError):
+            return "keep"
+    for choice, preset in _OPT_PRESETS.items():
+        if all(abs(effective[k] - v) <= 1e-12 + 1e-9 * abs(v) for k, v in preset.items()):
+            return choice
+    return "keep"
+
+
 def configure_optimization(*args, **kwargs):
     """Optimization configuration with 'press b to go back' navigation (opt-in).
 
@@ -184,6 +224,10 @@ def _configure_optimization_impl(current_settings: Optional[Dict[str, Any]] = No
             opt_config["calculation_type"] = "SP"
             return opt_config
     
+    # The parent's OPTGEOM (as parsed from its deck) supplies every default
+    # below, so a blank answer keeps what the parent had.
+    parent = current_settings if isinstance(current_settings, dict) else {}
+
     # Get optimization type
     print("\nOptimization types:")
     print("1. FULLOPTG - Full optimization (cell + coordinates)")
@@ -191,8 +235,10 @@ def _configure_optimization_impl(current_settings: Optional[Dict[str, Any]] = No
     print("3. ATOMONLY - Optimize only atomic coordinates (fixed cell)")
     print("4. ITATOCEL - Iterative optimization (atoms-cell-atoms-cell)")
     print("5. CVOLOPT - Constant volume optimization")
-    
-    opt_choice = get_user_input("Select optimization type", OPT_TYPES, "1")
+
+    parent_type = parent.get("type") or parent.get("optimization_type")
+    type_default = next((k for k, v in OPT_TYPES.items() if v == parent_type), "1")
+    opt_choice = get_user_input("Select optimization type", OPT_TYPES, type_default)
     opt_config["type"] = OPT_TYPES[opt_choice]
     
     # Optimization convergence settings
@@ -214,10 +260,29 @@ def _configure_optimization_impl(current_settings: Optional[Dict[str, Any]] = No
     print("\n3. Very Tight - TOLDEG=0.00003, TOLDEX=0.00012, TOLDEE=9, MAXCYCLE=800")
     print("   10x tighter criteria for publication-quality structures")
     print("\n4. Custom - Set your own criteria")
-    
-    conv_choice = _nav_read("\nSelect convergence level [1-4, default=1]: ", valid_set={"1", "2", "3", "4"}).strip() or "1"
-    
-    if conv_choice == "1":
+
+    # Default to the parent's own level. A blank answer keeps the parent's
+    # OPTGEOM values exactly (a MAXCYCLE of its own, and a tolerance it never
+    # wrote stays unwritten); it used to reset every parent to Standard.
+    parent_level = _opt_preset_for(parent) if parent else None
+    if parent_level is None:
+        shown_default = "1"
+    elif parent_level == "keep":
+        shown_default = "keep current"
+    else:
+        shown_default = f"{parent_level} (current)"
+    conv_choice = _nav_read(f"\nSelect convergence level [1-4, default={shown_default}]: ",
+                            valid_set={"1", "2", "3", "4"}).strip()
+    if not conv_choice:
+        conv_choice = "keep" if parent_level is not None else "1"
+
+    if conv_choice == "keep":
+        for key in ("maxcycle", "toldeg", "toldex", "toldee"):
+            value = _opt_value(parent, key)
+            if value is not None:
+                opt_config[key] = value
+        print("Keeping the current optimization convergence settings")
+    elif conv_choice == "1":
         opt_config["convergence"] = "Standard"
         opt_config["toldeg"] = 0.0003
         opt_config["toldex"] = 0.0012
@@ -241,24 +306,34 @@ def _configure_optimization_impl(current_settings: Optional[Dict[str, Any]] = No
     else:
         opt_config["convergence"] = "Custom"
         print("\nCustom convergence criteria:")
-        
-        # Get custom tolerances (back-aware, crash-safe readers)
-        opt_config["toldeg"] = _nav_float("Enter TOLDEG (RMS of gradient) [0.00003]: ", default=0.00003)
-        opt_config["toldex"] = _nav_float("Enter TOLDEX (RMS of displacement) [0.00012]: ", default=0.00012)
-        opt_config["toldee"] = _nav_int("Enter TOLDEE (energy difference exponent) [7]: ", default=7)
-        opt_config["maxcycle"] = _nav_int("Enter MAXCYCLE (max optimization steps) [800]: ", default=800)
+
+        # Get custom tolerances (back-aware, crash-safe readers). The parent's
+        # values are the defaults where it has them.
+        d_toldeg = _opt_value(parent, "toldeg") or 0.00003
+        d_toldex = _opt_value(parent, "toldex") or 0.00012
+        d_toldee = _opt_value(parent, "toldee") or 7
+        d_maxcycle = _opt_value(parent, "maxcycle") or 800
+        opt_config["toldeg"] = _nav_float(f"Enter TOLDEG (RMS of gradient) [{d_toldeg}]: ", default=d_toldeg)
+        opt_config["toldex"] = _nav_float(f"Enter TOLDEX (RMS of displacement) [{d_toldex}]: ", default=d_toldex)
+        opt_config["toldee"] = _nav_int(f"Enter TOLDEE (energy difference exponent) [{d_toldee}]: ", default=d_toldee)
+        opt_config["maxcycle"] = _nav_int(f"Enter MAXCYCLE (max optimization steps) [{d_maxcycle}]: ", default=d_maxcycle)
         
         print(f"Using custom convergence: TOLDEG={opt_config['toldeg']}, TOLDEX={opt_config['toldex']}, TOLDEE={opt_config['toldee']}, MAXCYCLE={opt_config['maxcycle']}")
     
     # PREOPT is not a valid CRYSTAL keyword - removed
     
-    # Ask about MAXTRADIUS
+    # Ask about MAXTRADIUS. The parent's value is the default: answering
+    # blank used to drop a MAXTRADIUS the parent had.
+    parent_maxtradius = _opt_value(parent, "maxtradius")
     use_maxtradius = yes_no_prompt(
-        "\nSet maximum step size (MAXTRADIUS) for geometry optimization?", "no"
+        "\nSet maximum step size (MAXTRADIUS) for geometry optimization?",
+        "yes" if parent_maxtradius else "no"
     )
     
     if use_maxtradius:
-        opt_config["maxtradius"] = _nav_float("Enter MAXTRADIUS (max displacement, default 0.25): ", default=0.25)
+        d_maxtradius = parent_maxtradius or 0.25
+        opt_config["maxtradius"] = _nav_float(
+            f"Enter MAXTRADIUS (max displacement, default {d_maxtradius}): ", default=d_maxtradius)
     
     return opt_config
 

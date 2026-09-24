@@ -1166,7 +1166,9 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
             # The user already selected SP, no need to ask if they want to configure it
             pass  # SP configuration happens with tolerances below
         elif options["calculation_type"] == "OPT":
-            current_opt_type = options.get("optimization_type", "FULLOPTG")
+            parent_opt = dict(options.get("optimization_settings") or {})
+            current_opt_type = (options.get("optimization_type")
+                                or parent_opt.get("type") or "FULLOPTG")
             opt_desc = {
                 "FULLOPTG": "Full geometry optimization (atoms + cell)",
                 "ATOMONLY": "Atom positions only (fixed cell)",
@@ -1174,7 +1176,11 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
             }
             current_opt_desc = opt_desc.get(current_opt_type, current_opt_type)
             if not shared_mode or yes_no_prompt(f"\nChange optimization settings? (Current: {current_opt_desc})", "no"):
-                opt_settings = configure_optimization()
+                # The parent's OPTGEOM supplies the defaults, so blank answers
+                # keep its type, tolerances, MAXCYCLE and MAXTRADIUS.
+                if parent_opt:
+                    parent_opt.setdefault("type", current_opt_type)
+                opt_settings = configure_optimization(parent_opt)
                 options["optimization_type"] = opt_settings.get("type", "FULLOPTG")
                 options["optimization_settings"] = opt_settings
         elif options["calculation_type"] == "FREQ":
@@ -1288,7 +1294,9 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
                 
                 print("\n4. Custom - Set your own tolerances")
                 
-                default_choice = "3"  # Very tight for FREQ
+                # The parent's own level is the default here too, so pressing
+                # Enter keeps its tolerances; choose 2 or 3 to tighten them.
+                default_choice = _tolerance_preset_for(options.get("tolerances"))
             else:
                 # SP and OPT calculations
                 print("1. Standard - TOLINTEG: 7 7 7 7 14, TOLDEE: 7")
@@ -1865,6 +1873,10 @@ def configure_external_pressure() -> Dict[str, float]:
 
 _NO_ANSWER = object()
 
+# LEVSHIFT ISHIFT ILOCK offered when the parent deck had no LEVSHIFT of its own:
+# a 0.5 Hartree shift, locked.
+_NEW_LEVSHIFT_DEFAULT = (5, 1)
+
 
 def _parent_levshift(options: Dict[str, Any]) -> Optional[Tuple[int, int]]:
     """The parent deck's LEVSHIFT (ISHIFT, ILOCK) from scf_settings, or None."""
@@ -2029,21 +2041,22 @@ def configure_advanced_electronic_settings(options: Dict[str, Any], show_current
             else:
                 levshift_answer = None
         elif yes_no_prompt("Use level shifting (for difficult SCF convergence)?", default_levshift):
-            current_shift = current_levshift.get("shift", 5.0) if has_levshift else 5.0
-            current_ncycles = current_levshift.get("ncycles", 30) if has_levshift else 30
-            
-            levshift_value = safe_float(
-                input(f"LEVSHIFT value (Hartree) [{current_shift}]: ").strip(),
-                current_shift
-            )
-            ncycles = safe_int(
-                input(f"Number of cycles to apply LEVSHIFT [{current_ncycles}]: ").strip(),
-                current_ncycles
-            )
-            advanced_config["levshift"] = {
-                "shift": levshift_value,
-                "ncycles": ncycles
-            }
+            # A "yes" here used to be stored as options["levshift"], a dict the
+            # deck writer never reads, so the answer was silently lost. The
+            # answer is now the LEVSHIFT record itself: ISHIFT (in 0.1 Hartree)
+            # and ILOCK (1 keeps the shift on, 0 releases it).
+            print("LEVSHIFT takes ISHIFT (the shift in units of 0.1 Hartree) and ILOCK (1 = lock, 0 = no lock)")
+            default_ls = _NEW_LEVSHIFT_DEFAULT
+            answer = input(f"LEVSHIFT ISHIFT ILOCK [{default_ls[0]} {default_ls[1]}]: ").strip()
+            levshift_answer = default_ls
+            try:
+                parts = [int(x) for x in answer.split()]
+                if len(parts) == 2:
+                    levshift_answer = tuple(parts)
+                elif answer:
+                    print(f"Invalid input, using LEVSHIFT {default_ls[0]} {default_ls[1]}")
+            except ValueError:
+                print(f"Invalid input, using LEVSHIFT {default_ls[0]} {default_ls[1]}")
         
         # SCF settings - use wrapper to show current settings
         scf_config = configure_scf_settings_with_defaults(options.get("scf_settings", {}))
