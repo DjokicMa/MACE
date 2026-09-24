@@ -1173,6 +1173,29 @@ CRYSTAL23_D3_KEYWORD_BASES = [
 # Hartree-Fock choices a user may type in place of a functional.
 CRYSTAL23_HF_METHODS = ["RHF", "UHF", "HF3C", "HFSOL3C"]
 
+# The functional name MACE uses for a parent whose DFT block defines its own
+# functional with EXCHANGE/CORRELAT/HYBRID/NONLOCAL records (manual sec. 4.1,
+# "User-defined global hybrid functionals"). The records themselves are kept
+# in "custom_functional" and written back verbatim; this name is only a label
+# (menus, file names) and is never written to a deck.
+CUSTOM_FUNCTIONAL = "CUSTOM-XC"
+
+
+def describe_custom_functional(records) -> str:
+    """'custom: EXCHANGE PBE / CORRELAT PBE / HYBRID 25' for the given records."""
+    parts, i = [], 0
+    records = list(records or [])
+    while i < len(records):
+        if records[i].upper() in ("EXCHANGE", "CORRELAT", "HYBRID", "NONLOCAL") \
+                and i + 1 < len(records):
+            parts.append(f"{records[i]} {records[i + 1]}")
+            i += 2
+        else:
+            parts.append(records[i])
+            i += 1
+    return "custom: " + " / ".join(parts)
+
+
 # The functional every MACE path falls back to when a parent's functional is
 # not a CRYSTAL23 keyword and the user names no other.
 UNRECOGNISED_FUNCTIONAL_FALLBACK = "HSE06"

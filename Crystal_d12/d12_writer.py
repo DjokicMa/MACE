@@ -379,7 +379,10 @@ def write_minimal_raman_section(f: TextIO) -> None:
 
 
 def write_dft_section(f: TextIO, functional: str, use_dispersion: bool, 
-                     dft_grid: str, is_spin_polarized: bool) -> None:
+                     dft_grid: str, is_spin_polarized: bool,
+                     custom_functional: Optional[List[str]] = None,
+                     custom_dftd3: Optional[List[str]] = None,
+                     custom_dftd3_in_dft: bool = False) -> None:
     """Write the DFT section of the D12 file
     
     Args:
@@ -388,13 +391,37 @@ def write_dft_section(f: TextIO, functional: str, use_dispersion: bool,
         use_dispersion: Whether to use dispersion correction
         dft_grid: DFT grid size
         is_spin_polarized: Whether calculation is spin polarized
+        custom_functional: for functional == CUSTOM_FUNCTIONAL, the parent's
+            EXCHANGE/CORRELAT/HYBRID/NONLOCAL records, written verbatim
+        custom_dftd3: the parent's DFTD3 block for a custom functional,
+            written verbatim where the parent had it (inside the DFT block
+            when custom_dftd3_in_dft, else right after it)
     """
-    from d12_constants import D3_FUNCTIONALS
+    from d12_constants import D3_FUNCTIONALS, CUSTOM_FUNCTIONAL
     
     print("DFT", file=f)
     
     if is_spin_polarized:
         print("SPIN", file=f)
+
+    if functional == CUSTOM_FUNCTIONAL:
+        # The parent's own functional definition: repeat it exactly. The
+        # dispersion flag only records that the parent had D3; its D3 input
+        # (a -D3 keyword in the records, or a DFTD3 block) is repeated too.
+        if not custom_functional:
+            raise ValueError("custom functional without its EXCHANGE/CORRELAT records")
+        for record in custom_functional:
+            print(record, file=f)
+        if dft_grid and dft_grid != "DEFAULT":
+            print(dft_grid, file=f)
+        if custom_dftd3 and custom_dftd3_in_dft:
+            for record in custom_dftd3:
+                print(record, file=f)
+        print("ENDDFT", file=f)
+        if custom_dftd3 and not custom_dftd3_in_dft:
+            for record in custom_dftd3:
+                print(record, file=f)
+        return
     
     # Map functionals to their correct CRYSTAL keywords
     functional_keyword_map = {

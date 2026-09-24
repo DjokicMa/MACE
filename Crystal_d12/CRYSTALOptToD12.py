@@ -122,6 +122,23 @@ def merge_optimization_settings(parent, override, replace_type=False):
     return merged
 
 
+def prefer_deck_unrecognised_functional(settings: dict, in_data: dict) -> None:
+    """Ask about a deck functional line nothing could map, over the output's guess.
+
+    When the .d12 names a functional that is not a CRYSTAL23 keyword, the
+    functional the output parser read from CRYSTAL's printed exchange and
+    correlation names (a substring guess: the same line is printed for BLYP
+    and B3LYP, PBE and PBE0-13, ...) used to be taken silently. Drop it, so
+    the unrecognised-functional prompt (or its warning) handles the parent.
+    """
+    if (in_data.get("unrecognised_functional") and not in_data.get("functional")
+            and settings.get("functional")):
+        ui.warn(f"  The D12's functional '{in_data['unrecognised_functional']}' is not a "
+                f"CRYSTAL23 keyword; not using the output's reading of it "
+                f"({settings['functional']}).")
+        settings["functional"] = None
+
+
 def dedupe_dispersion_suffix(functional: str) -> str:
     """Collapse any accidental repeated '-D3' in a functional name to one.
 
@@ -620,6 +637,9 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                     settings.get("dispersion"),
                     settings.get("dft_grid", "XLGRID"),
                     settings.get("spin_polarized"),
+                    custom_functional=settings.get("custom_functional"),
+                    custom_dftd3=settings.get("custom_dftd3"),
+                    custom_dftd3_in_dft=bool(settings.get("custom_dftd3_in_dft")),
                 )
 
         # SCF parameters section
@@ -909,6 +929,8 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                     if "scf_settings" not in settings:
                         settings["scf_settings"] = {}
                     settings["scf_settings"].update(value)
+
+            prefer_deck_unrecognised_functional(settings, in_data)
 
             # Store external basis data from D12 file
             external_basis_data = in_data.get("external_basis_data", [])
@@ -1636,6 +1658,8 @@ def main():
                                 if "scf_settings" not in settings:
                                     settings["scf_settings"] = {}
                                 settings["scf_settings"].update(value)
+
+                        prefer_deck_unrecognised_functional(settings, in_data)
 
                         # Check for external basis data from D12
                         template_external_basis = in_data.get("external_basis_data", [])

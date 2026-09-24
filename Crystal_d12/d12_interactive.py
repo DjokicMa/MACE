@@ -23,6 +23,7 @@ from d12_constants import (
     configure_smearing, safe_float, safe_int,
     crystal23_functional_keyword, mace_functional_name,
     UNRECOGNISED_FUNCTIONAL_FALLBACK,
+    CUSTOM_FUNCTIONAL, describe_custom_functional,
 )
 
 # Import calculation-specific modules
@@ -888,6 +889,12 @@ def configure_smearing_with_defaults(current_settings: Dict[str, Any],
     return smearing_config
 
 
+def _menu_lists_functional(functional: str) -> bool:
+    """True when the functional (without a -D3 suffix) is on MACE's menus."""
+    base = functional.replace("-D3", "").replace("-D4", "")
+    return any(base in cat["functionals"] for cat in FUNCTIONAL_CATEGORIES.values())
+
+
 def _functional_unknown(options: Dict[str, Any]) -> bool:
     """True when the parent is a DFT run whose functional was not identified."""
     if options.get("functional"):
@@ -939,6 +946,41 @@ def ensure_known_functional(options: Dict[str, Any]) -> Dict[str, Any]:
     return options
 
 
+def _written_functional_is_valid(functional: str, use_dispersion: bool) -> bool:
+    """True when the writer turns this functional into valid CRYSTAL23 input.
+
+    The DFT block is rendered as the deck writer would write it, and its
+    functional record must be a CRYSTAL23 functional keyword (manual sec. 4.1,
+    5.1, 5.3-5.4) or an EXCHANGE/CORRELAT pair. The writer writes some MACE
+    names as another keyword (PBESOL -> PBESOLXC, mPW1PW91 with D3 ->
+    PW1PW-D3) or as a pair (PWGGA, VBH, WCGGA), and others as typed: "PBE"
+    and "B97" come out bare, which are not keywords (PBE-D3 and B97-D3 are).
+    """
+    import io
+    from d12_writer import write_dft_section
+    buf = io.StringIO()
+    write_dft_section(buf, functional, use_dispersion, "DEFAULT", False)
+    body = buf.getvalue().split()[1:-1]  # between DFT and ENDDFT
+    if not body:
+        return False
+    return body[0] == "EXCHANGE" or crystal23_functional_keyword(body[0]) is not None
+
+
+def _replacement_functional_name(answer: str) -> Optional[str]:
+    """The functional to use for an answer typed at the replacement prompt.
+
+    Accepted: a CRYSTAL23 functional keyword or HF method, or a MACE menu name
+    the writer turns into valid CRYSTAL23 input. None otherwise.
+    """
+    keyword = crystal23_functional_keyword(answer, allow_hf=True)
+    if keyword:
+        return mace_functional_name(keyword) or keyword
+    name = mace_functional_name(answer)
+    if name and _written_functional_is_valid(name, name.upper().endswith("-D3")):
+        return name
+    return None
+
+
 def _ask_for_replacement_functional(options: Dict[str, Any]) -> Optional[str]:
     """Ask for a functional to replace one the parent had that is unusable.
 
@@ -956,11 +998,14 @@ def _ask_for_replacement_functional(options: Dict[str, Any]) -> Optional[str]:
             return ""
         if answer.lower() in ("m", "menu"):
             return None
-        keyword = crystal23_functional_keyword(answer, allow_hf=True)
-        name = mace_functional_name(keyword or answer)
-        if keyword or name:
-            return name or keyword
-        print(f"'{answer}' is not a CRYSTAL23 functional keyword. Enter one "
+        chosen = _replacement_functional_name(answer)
+        if chosen:
+            return chosen
+        hint = ""
+        d3_form = crystal23_functional_keyword(answer + "-D3")
+        if d3_form:
+            hint = f" {d3_form} is."
+        print(f"'{answer}' is not a CRYSTAL23 functional keyword.{hint} Enter one "
               f"such as HSE06, PBE0, B3LYP or HSEsol, 'm' for the menu, or "
               f"press Enter to use {fallback}.")
 
@@ -989,7 +1034,9 @@ def _apply_replacement_functional(options: Dict[str, Any], chosen: str) -> None:
                                "yes" if parent_d3 else "no")
         options["dispersion"] = bool(use_d3)
         options["use_dispersion"] = bool(use_d3)
-        if use_d3:
+        # mPW1PW91 with D3 is written as the keyword PW1PW-D3; the name
+        # "mPW1PW91-D3" would be written as typed, which is not a keyword.
+        if use_d3 and _written_functional_is_valid(chosen + "-D3", True):
             options["functional"] += "-D3"
     else:
         options["dispersion"] = False
@@ -1050,6 +1097,20 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
         options["method"] = "DFT"  # Added for compatibility
         options["method_type"] = "DFT"
         
+        # A name the parser kept that the menus do not list and CRYSTAL23
+        # does not know (e.g. LDA, which is only an EXCHANGE record): it
+        # cannot be kept, so it is treated like any unknown functional.
+        custom_records = (options.get("custom_functional")
+                          if current_functional == CUSTOM_FUNCTIONAL else None)
+        if (current_functional and not custom_records
+                and not _menu_lists_functional(current_functional)
+                and not crystal23_functional_keyword(current_functional)):
+            options["unrecognised_functional"] = current_functional
+            options["unrecognised_functional_source"] = "input"
+            options["functional"] = None
+            current_functional = ""
+            parent_functional_unknown = True
+
         # The parent ran a functional MACE could not identify (e.g. B2PLYP,
         # which is not a CRYSTAL23 keyword). Say so, and let the user name
         # another one instead of silently taking the menu default.
@@ -1102,13 +1163,19 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
                 print(f"   Examples: {', '.join(cat_info['functionals'][:4])}")
             cat_options.append((str(i), cat))
 
-        # A CRYSTAL23 functional keyword the menus do not list (e.g. SOGGA11):
-        # keeping it is the default, so a blank answer does not swap it for
-        # the hybrid menu's HSE06.
+        # A CRYSTAL23 functional keyword the menus do not list (e.g. SOGGA11),
+        # or the parent's own EXCHANGE/CORRELAT/HYBRID definition: keeping it
+        # is the default, so a blank answer does not swap it for the hybrid
+        # menu's HSE06 (or a user-defined hybrid for the GGA its EXCHANGE
+        # record names).
         keep_key = None
         if current_functional and not listed and method_default == "2":
             keep_key = str(len(ordered_categories) + 1)
-            print(f"{keep_key}. Keep the parent's functional ({current_functional})")
+            shown = (describe_custom_functional(custom_records)
+                     if custom_records else current_functional)
+            if custom_records and options.get("custom_dftd3"):
+                shown += " / DFTD3 block"
+            print(f"{keep_key}. Keep the parent's functional ({shown})")
             cat_options.append((keep_key, "KEEP"))
             cat_default = keep_key
 

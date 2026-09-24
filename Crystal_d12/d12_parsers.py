@@ -26,6 +26,7 @@ from d12_constants import (
     RHOMBOHEDRAL_SPACEGROUPS,
     crystal23_functional_keyword,
     mace_functional_name,
+    CUSTOM_FUNCTIONAL,
 )
 
 
@@ -1437,6 +1438,10 @@ class CrystalInputParser:
                     if self.data.get("functional") and not self.data["functional"].endswith("-D3"):
                         self.data["functional"] = self.data["functional"] + "-D3"
                     
+        # A functional the deck defines with EXCHANGE/CORRELAT/HYBRID/NONLOCAL
+        if self.data.get("method") == "DFT":
+            self._extract_custom_functional(lines)
+
         # A DFT block whose functional line matched none of the names above
         if self.data.get("method") == "DFT" and not self.data.get("functional"):
             self._extract_unlisted_functional(lines)
@@ -1468,6 +1473,83 @@ class CrystalInputParser:
         "BATCHPNT", "CHUNKS", "DISTGRID", "LIMBEK", "RADIUS", "FCHARGE",
         "PRINTEXC", "GRIMME", "DFTD3",
     }
+
+    _XC_RECORD_KEYWORDS = ("EXCHANGE", "CORRELAT", "HYBRID", "NONLOCAL")
+
+    def _extract_custom_functional(self, lines: List[str]) -> None:
+        """Keep a functional the DFT block defines record by record.
+
+        EXCHANGE/CORRELAT (each with its value record), HYBRID and NONLOCAL
+        define a functional of the user's own (manual sec. 4.1), e.g. PBE0
+        written as EXCHANGE PBE / CORRELAT PBE / HYBRID 25. Reading only the
+        exchange name turned that hybrid into the GGA "PBE". The records, and
+        any functional keyword they modify (HYBRID on B3LYP), are stored in
+        "custom_functional" in deck order, to be written back verbatim, and
+        the functional becomes CUSTOM_FUNCTIONAL. The parent's DFTD3 input
+        block, if any, is kept with them.
+
+        A bare EXCHANGE/CORRELAT pair MACE's writer emits for one of its menu
+        names (PWGGA, VBH, WCGGA) still reads back as that name.
+        """
+        records: List[str] = []
+        dftd3: List[str] = []
+        dftd3_in_dft = False
+        has_xc = False
+        in_block = False
+        done = False
+        i = 0
+        while i < len(lines):
+            stripped = lines[i].strip()
+            upper = stripped.upper()
+            if upper == "DFTD3":
+                # The D3 input block, closed by its own END (manual sec. 5.1)
+                j = i + 1
+                while j < len(lines) and lines[j].strip().upper() != "END":
+                    j += 1
+                if not dftd3:
+                    dftd3 = [line.strip() for line in lines[i:j + 1]]
+                    dftd3_in_dft = in_block
+                i = j + 1
+                continue
+            if not in_block:
+                if not done and upper == "DFT":
+                    in_block = True
+                i += 1
+                continue
+            if upper in ("END", "ENDDFT"):
+                in_block, done = False, True
+                i += 1
+                continue
+            if upper in self._XC_RECORD_KEYWORDS:
+                value = lines[i + 1].strip() if i + 1 < len(lines) else ""
+                records += [stripped, value]
+                has_xc = True
+                i += 2
+                continue
+            tokens = stripped.split()
+            if (len(tokens) == 1 and tokens[0][0].isalpha()
+                    and upper not in self._DFT_NON_FUNCTIONAL_KEYWORDS):
+                if not (mace_functional_name(stripped)
+                        or crystal23_functional_keyword(stripped)
+                        or upper in STANDALONE_XC_TO_FUNCTIONAL):
+                    return  # an unknown functional line: asked about elsewhere
+                records.append(stripped)
+            i += 1
+        if not has_xc:
+            return
+        xc = {records[k].upper(): records[k + 1] for k in range(0, len(records) - 1)
+              if records[k].upper() in self._XC_RECORD_KEYWORDS}
+        if (len(records) == 4 and set(xc) == {"EXCHANGE", "CORRELAT"}
+                and (xc["EXCHANGE"], xc["CORRELAT"]) in XC_PAIR_TO_FUNCTIONAL):
+            return  # the writer's own expansion of a menu name
+        self.data["functional"] = CUSTOM_FUNCTIONAL
+        self.data["custom_functional"] = records
+        self.data.pop("unrecognised_functional", None)
+        self.data.pop("unrecognised_functional_source", None)
+        if dftd3:
+            self.data["custom_dftd3"] = dftd3
+            self.data["custom_dftd3_in_dft"] = dftd3_in_dft
+            self.data["dispersion"] = True
 
     def _extract_unlisted_functional(self, lines: List[str]) -> None:
         """Identify a functional line none of the known names matched.
