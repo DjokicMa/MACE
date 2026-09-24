@@ -2373,8 +2373,10 @@ fi'''
                     if band_calc_id:
                         new_calc_ids.append(band_calc_id)
                 
-        elif base_type in ["FREQ", "BAND", "DOSS"]:
-            # These calculations are often terminal, but sometimes workflow continues
+        elif base_type in ["FREQ", "BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+            # These calculations are often terminal, but sometimes workflow continues.
+            # None of them changes the geometry, so a later OPT is built from
+            # the highest completed OPT (or SP), never from the step itself.
             if planned_sequence:
                 current_index = self._find_calc_position_in_sequence(calc_type, completed_calc, planned_sequence)
                 # Use the new function that skips already-existing calculations

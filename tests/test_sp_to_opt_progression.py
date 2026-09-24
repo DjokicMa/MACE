@@ -89,9 +89,9 @@ def test_sp_then_opt_stays_in_the_workflow(tmp_path):
     assert "FULLOPTG" in block
 
 
-@pytest.mark.parametrize("between", ["BAND", "DOSS"])
+@pytest.mark.parametrize("between", ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"])
 def test_opt_after_band_or_doss_comes_from_the_sp(tmp_path, between):
-    """SP -> BAND/DOSS -> OPT: when the BAND/DOSS step completes and no OPT
+    """SP -> BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL -> OPT: when that step completes and no OPT
     has run yet, the planned OPT is built from the SP. It used to print
     "No completed OPT found" and stall the workflow."""
     src_d12 = find_data("SP/1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized.d12")
