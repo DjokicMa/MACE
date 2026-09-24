@@ -67,8 +67,9 @@ def test_writer_leaves_unset_tolerances_to_crystal_when_asked():
 
 
 def test_writer_still_fills_tolerances_by_default():
+    # with the Standard preset (it used to be the Very Tight 0.00003/0.00012)
     assert _written({"MAXCYCLE": 1600})[4:10] == [
-        "TOLDEG", "0.00003", "TOLDEX", "0.00012", "TOLDEE", "7"]
+        "TOLDEG", "0.0003", "TOLDEX", "0.0012", "TOLDEE", "7"]
 
 
 # ------------------------------------------------- real decks (corpus-gated)

@@ -15,6 +15,9 @@ Institution: Michigan State University, Mendoza Group
 import functools
 from typing import Dict, Any, Optional
 
+from d12_constants import (OPT_CONVERGENCE_PRESETS, opt_convergence, scf_tolerances,
+                           describe_opt_preset, describe_scf_preset)
+
 # Opt-in "press b to go back" navigation + crash-safe back-aware readers. Falls back to
 # plain input() behaviour if menu_nav is unavailable.
 try:
@@ -79,9 +82,9 @@ def _configure_single_point_impl(current_settings: Optional[Dict[str, Any]] = No
     
     # For SP, ask if user wants tight convergence with detailed information
     print("\nConvergence tolerance options for SP calculation:")
-    print("  Standard: TOLINTEG: 7 7 7 7 14, TOLDEE: 7")
-    print("  Tight (recommended for accurate energies): TOLINTEG: 8 8 8 9 24, TOLDEE: 9")
-    print("  Very tight (high precision): TOLINTEG: 9 9 9 11 38, TOLDEE: 11")
+    print(f"  Standard: {describe_scf_preset('1')}")
+    print(f"  Tight (recommended for accurate energies): {describe_scf_preset('2')}")
+    print(f"  Very tight (high precision): {describe_scf_preset('3')}")
     
     use_tight = yes_no_prompt(
         "\nUse tight convergence for SP calculation?",
@@ -89,12 +92,9 @@ def _configure_single_point_impl(current_settings: Optional[Dict[str, Any]] = No
     )
     
     if use_tight:
-        sp_config["tolerances"] = {
-            "TOLINTEG": "8 8 8 9 24",
-            "TOLDEE": 9
-        }
+        sp_config["tolerances"] = scf_tolerances("2")
         sp_config["use_tight_sp"] = True
-        print("Using tight convergence tolerances: TOLINTEG: 8 8 8 9 24, TOLDEE: 9")
+        print(f"Using tight convergence tolerances: {describe_scf_preset('2')}")
     else:
         # Use default tolerances
         sp_config["use_tight_sp"] = False
@@ -140,14 +140,11 @@ OPT_TYPES = {
     "6": "INTREDUN",
 }
 
-# Default optimization settings
+# Default optimization settings: the Standard convergence preset
 DEFAULT_OPT_SETTINGS = {
     "type": "FULLOPTG",
-    "maxcycle": 800,
     "convergence": "Standard",
-    "toldeg": 0.0003,
-    "toldex": 0.0012,
-    "toldee": 7,
+    **opt_convergence("1"),
 }
 
 
@@ -156,9 +153,8 @@ DEFAULT_OPT_SETTINGS = {
 _CRYSTAL_OPT_DEFAULTS = {"toldeg": 0.0003, "toldex": 0.0012, "toldee": 7}
 
 _OPT_PRESETS = {
-    "1": {"toldeg": 0.0003, "toldex": 0.0012, "toldee": 7},
-    "2": {"toldeg": 0.0001, "toldex": 0.0004, "toldee": 8},
-    "3": {"toldeg": 0.00003, "toldex": 0.00012, "toldee": 9},
+    level: {k: preset[k] for k in ("toldeg", "toldex", "toldee")}
+    for level, preset in OPT_CONVERGENCE_PRESETS.items()
 }
 
 
@@ -263,11 +259,11 @@ def _configure_optimization_impl(current_settings: Optional[Dict[str, Any]] = No
     print("  MAXCYCLE: Maximum optimization steps")
     
     print("\nChoose convergence level:")
-    print("1. Standard - TOLDEG=0.0003, TOLDEX=0.0012, TOLDEE=7, MAXCYCLE=800")
+    print(f"1. Standard - {describe_opt_preset('1')}")
     print("   Suitable for most calculations, good balance of accuracy and speed")
-    print("\n2. Tight - TOLDEG=0.0001, TOLDEX=0.0004, TOLDEE=8, MAXCYCLE=800")
+    print(f"\n2. Tight - {describe_opt_preset('2')}")
     print("   3x tighter gradient/displacement, tighter energy convergence")
-    print("\n3. Very Tight - TOLDEG=0.00003, TOLDEX=0.00012, TOLDEE=9, MAXCYCLE=800")
+    print(f"\n3. Very Tight - {describe_opt_preset('3')}")
     print("   10x tighter criteria for publication-quality structures")
     print("\n4. Custom - Set your own criteria")
 
@@ -292,37 +288,22 @@ def _configure_optimization_impl(current_settings: Optional[Dict[str, Any]] = No
             if value is not None:
                 opt_config[key] = value
         print("Keeping the current optimization convergence settings")
-    elif conv_choice == "1":
-        opt_config["convergence"] = "Standard"
-        opt_config["toldeg"] = 0.0003
-        opt_config["toldex"] = 0.0012
-        opt_config["toldee"] = 7
-        opt_config["maxcycle"] = 800
-        print("Using standard convergence")
-    elif conv_choice == "2":
-        opt_config["convergence"] = "Tight"
-        opt_config["toldeg"] = 0.0001
-        opt_config["toldex"] = 0.0004
-        opt_config["toldee"] = 8
-        opt_config["maxcycle"] = 800
-        print("Using tight convergence")
-    elif conv_choice == "3":
-        opt_config["convergence"] = "Very Tight"
-        opt_config["toldeg"] = 0.00003
-        opt_config["toldex"] = 0.00012
-        opt_config["toldee"] = 9
-        opt_config["maxcycle"] = 800
-        print("Using very tight convergence")
+    elif conv_choice in OPT_CONVERGENCE_PRESETS:
+        name = OPT_CONVERGENCE_PRESETS[conv_choice]["name"]
+        opt_config["convergence"] = name
+        opt_config.update(opt_convergence(conv_choice))
+        print(f"Using {name.lower()} convergence")
     else:
         opt_config["convergence"] = "Custom"
         print("\nCustom convergence criteria:")
 
         # Get custom tolerances (back-aware, crash-safe readers). The parent's
-        # values are the defaults where it has them.
-        d_toldeg = _opt_value(parent, "toldeg") or 0.00003
-        d_toldex = _opt_value(parent, "toldex") or 0.00012
-        d_toldee = _opt_value(parent, "toldee") or 7
-        d_maxcycle = _opt_value(parent, "maxcycle") or 800
+        # values are the defaults where it has them, Standard elsewhere.
+        standard = opt_convergence("1")
+        d_toldeg = _opt_value(parent, "toldeg") or standard["toldeg"]
+        d_toldex = _opt_value(parent, "toldex") or standard["toldex"]
+        d_toldee = _opt_value(parent, "toldee") or standard["toldee"]
+        d_maxcycle = _opt_value(parent, "maxcycle") or standard["maxcycle"]
         opt_config["toldeg"] = _nav_float(f"Enter TOLDEG (RMS of gradient) [{d_toldeg}]: ", default=d_toldeg)
         opt_config["toldex"] = _nav_float(f"Enter TOLDEX (RMS of displacement) [{d_toldex}]: ", default=d_toldex)
         opt_config["toldee"] = _nav_int(f"Enter TOLDEE (energy difference exponent) [{d_toldee}]: ", default=d_toldee)
@@ -387,9 +368,10 @@ def write_optimization_section(f, optimization_type, optimization_settings,
     With ``fill_missing_tolerances=False`` a TOLDEG/TOLDEX/TOLDEE absent from
     ``optimization_settings`` is left out, so CRYSTAL applies its own default,
     as it did for the parent deck the settings were read from. The default
-    (True) writes the tight 0.00003/0.00012/7 fallbacks, as before.
+    (True) writes the Standard preset's values for the ones missing.
     """
     from d12_constants import format_crystal_float, DEFAULT_OPT_SETTINGS
+    standard = opt_convergence("1")
     
     print("OPTGEOM", file=f)
     
@@ -415,12 +397,12 @@ def write_optimization_section(f, optimization_type, optimization_settings,
     # We achieve tight optimization by using tight tolerance values
     
     # Always write MAXCYCLE
-    maxcycle = optimization_settings.get("maxcycle") or optimization_settings.get("MAXCYCLE", 800)
+    maxcycle = optimization_settings.get("maxcycle") or optimization_settings.get("MAXCYCLE", standard["maxcycle"])
     print("MAXCYCLE", file=f)
     print(maxcycle, file=f)
     
     # Write tolerances
-    toldeg = optimization_settings.get("toldeg") or optimization_settings.get("TOLDEG", 0.00003)
+    toldeg = optimization_settings.get("toldeg") or optimization_settings.get("TOLDEG", standard["toldeg"])
     if fill_missing_tolerances or _has_opt_key(optimization_settings, "TOLDEG"):
         print("TOLDEG", file=f)
         # TOLDEG should not use scientific notation
@@ -429,7 +411,7 @@ def write_optimization_section(f, optimization_type, optimization_settings,
         else:
             print(format_crystal_float(toldeg), file=f)
     
-    toldex = optimization_settings.get("toldex") or optimization_settings.get("TOLDEX", 0.00012)
+    toldex = optimization_settings.get("toldex") or optimization_settings.get("TOLDEX", standard["toldex"])
     if fill_missing_tolerances or _has_opt_key(optimization_settings, "TOLDEX"):
         print("TOLDEX", file=f)
         # TOLDEX should not use scientific notation
@@ -438,7 +420,7 @@ def write_optimization_section(f, optimization_type, optimization_settings,
         else:
             print(format_crystal_float(toldex), file=f)
     
-    toldee = optimization_settings.get("toldee") or optimization_settings.get("TOLDEE", 7)
+    toldee = optimization_settings.get("toldee") or optimization_settings.get("TOLDEE", standard["toldee"])
     if fill_missing_tolerances or _has_opt_key(optimization_settings, "TOLDEE"):
         print("TOLDEE", file=f)
         print(toldee, file=f)

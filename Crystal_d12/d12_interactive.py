@@ -24,6 +24,7 @@ from d12_constants import (
     crystal23_functional_keyword, mace_functional_name,
     UNRECOGNISED_FUNCTIONAL_FALLBACK,
     CUSTOM_FUNCTIONAL, describe_custom_functional,
+    SCF_TOLERANCE_PRESETS, scf_tolerances, describe_scf_preset,
 )
 
 # Import calculation-specific modules
@@ -558,9 +559,8 @@ def configure_dft_grid_with_defaults(functional: str, current_grid: str = "XLGRI
 
 
 _TOLERANCE_PRESETS = {
-    "1": ("7 7 7 7 14", 7),
-    "2": ("8 8 8 9 24", 9),
-    "3": ("9 9 9 11 38", 11),
+    level: (preset["TOLINTEG"], preset["TOLDEE"])
+    for level, preset in SCF_TOLERANCE_PRESETS.items()
 }
 
 
@@ -604,15 +604,9 @@ def configure_tolerances_with_defaults(current_tolerances: Dict[str, Any],
     if isinstance(current_tolinteg, list):
         current_tolinteg = ' '.join(map(str, current_tolinteg))
     
-    # Determine which preset matches current settings
-    if current_tolinteg == "7 7 7 7 14" and current_toldee == 7:
-        default_choice = "1"
-    elif current_tolinteg == "8 8 8 9 24" and current_toldee == 9:
-        default_choice = "2"
-    elif current_tolinteg == "9 9 9 11 38" and current_toldee == 11:
-        default_choice = "3"
-    else:
-        default_choice = "4"  # Custom
+    # Determine which preset matches current settings (else Custom)
+    default_choice = next((level for level, (tolinteg, toldee) in _TOLERANCE_PRESETS.items()
+                           if current_tolinteg == tolinteg and current_toldee == toldee), "4")
     
     # Print current settings
     print("\n=== SCF CONVERGENCE SETTINGS ===")
@@ -621,9 +615,9 @@ def configure_tolerances_with_defaults(current_tolerances: Dict[str, Any],
     # Menu-based selection
     if calculation_type == "FREQ":
         print("\nSelect SCF convergence level (FREQ calculations require tighter tolerances):")
-        print("1: Standard - TOLINTEG: 7 7 7 7 14, TOLDEE: 7")
-        print("2: Tight - TOLINTEG: 8 8 8 9 24, TOLDEE: 9 (recommended for FREQ)")
-        print("3: Very tight - TOLINTEG: 9 9 9 11 38, TOLDEE: 11 (default for FREQ)")
+        print(f"1: Standard - {describe_scf_preset('1')}")
+        print(f"2: Tight - {describe_scf_preset('2')}")
+        print(f"3: Very tight - {describe_scf_preset('3')} (default for FREQ)")
         print("4: Custom (keep current or enter new values)")
         
         choice = input(f"Select tolerance level (1-4) [{default_choice}]: ").strip()
@@ -632,9 +626,9 @@ def configure_tolerances_with_defaults(current_tolerances: Dict[str, Any],
     else:
         # SP/OPT calculations
         print("\nSelect SCF convergence level:")
-        print("1: Standard - TOLINTEG: 7 7 7 7 14, TOLDEE: 7 (default for OPT/SP)")
-        print("2: Tight - TOLINTEG: 8 8 8 9 24, TOLDEE: 9 (higher precision)")
-        print("3: Very tight - TOLINTEG: 9 9 9 11 38, TOLDEE: 11 (ultra-high precision)")
+        print(f"1: Standard - {describe_scf_preset('1')} (default for OPT/SP)")
+        print(f"2: Tight - {describe_scf_preset('2')} (higher precision)")
+        print(f"3: Very tight - {describe_scf_preset('3')} (ultra-high precision)")
         print("4: Custom (keep current or enter new values)")
         
         choice = input(f"Select tolerance level (1-4) [{default_choice}]: ").strip()
@@ -643,15 +637,8 @@ def configure_tolerances_with_defaults(current_tolerances: Dict[str, Any],
     
     # Process the choice
     tolerances = {}
-    if choice == "1":
-        tolerances["TOLINTEG"] = "7 7 7 7 14"
-        tolerances["TOLDEE"] = 7
-    elif choice == "2":
-        tolerances["TOLINTEG"] = "8 8 8 9 24"
-        tolerances["TOLDEE"] = 9
-    elif choice == "3":
-        tolerances["TOLINTEG"] = "9 9 9 11 38"
-        tolerances["TOLDEE"] = 11
+    if choice in SCF_TOLERANCE_PRESETS:
+        tolerances.update(scf_tolerances(choice))
     elif choice == "4":
         # Custom - show current values as defaults
         print("\nEnter custom tolerance values (press Enter to keep current):")
@@ -1404,7 +1391,7 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
                     "dft_grid": "XLGRID",
                     "spin_polarized": True,
                     "is_spin_polarized": True,
-                    "tolerances": {"TOLINTEG": "7 7 7 7 14", "TOLDEE": 7},
+                    "tolerances": scf_tolerances("1"),
                     "scf_settings": {
                         "method": "DIIS",
                         "maxcycle": 800,
@@ -1564,13 +1551,13 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
             
             if options["calculation_type"] == "FREQ":
                 # For FREQ, default should be Very Tight (9s)
-                print("1. Standard - TOLINTEG: 7 7 7 7 14, TOLDEE: 7")
+                print(f"1. Standard - {describe_scf_preset('1')}")
                 print("   Basic convergence (not recommended for frequencies)")
                 
-                print("\n2. Tight - TOLINTEG: 8 8 8 9 24, TOLDEE: 9")
+                print(f"\n2. Tight - {describe_scf_preset('2')}")
                 print("   Good convergence for preliminary frequency calculations")
                 
-                print("\n3. Very tight - TOLINTEG: 9 9 9 11 38, TOLDEE: 11")
+                print(f"\n3. Very tight - {describe_scf_preset('3')}")
                 print("   Recommended for accurate frequencies and force constants")
                 
                 print("\n4. Custom - Set your own tolerances")
@@ -1580,19 +1567,19 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
                 default_choice = _tolerance_preset_for(options.get("tolerances"))
             else:
                 # SP and OPT calculations
-                print("1. Standard - TOLINTEG: 7 7 7 7 14, TOLDEE: 7")
+                print(f"1. Standard - {describe_scf_preset('1')}")
                 if options["calculation_type"] == "SP":
                     print("   Good for most single point calculations")
                 else:
                     print("   Good for most geometry optimizations")
                 
-                print("\n2. Tight - TOLINTEG: 8 8 8 9 24, TOLDEE: 9")
+                print(f"\n2. Tight - {describe_scf_preset('2')}")
                 if options["calculation_type"] == "SP":
                     print("   Recommended for accurate energies and properties")
                 else:
                     print("   Recommended for accurate forces and final optimizations")
                 
-                print("\n3. Very tight - TOLINTEG: 9 9 9 11 38, TOLDEE: 11")
+                print(f"\n3. Very tight - {describe_scf_preset('3')}")
                 print("   High precision for benchmarking or difficult cases")
                 
                 print("\n4. Custom - Set your own tolerances")
@@ -1607,19 +1594,12 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
                 # Blank answer on a parent whose tolerances match no preset:
                 # leave options["tolerances"] as parsed from the parent.
                 print("Keeping the current SCF convergence settings")
-            elif convergence_choice == "1":
-                options["tolerances"] = {"TOLINTEG": "7 7 7 7 14", "TOLDEE": 7}
-                print("Using standard SCF convergence")
-            elif convergence_choice == "2":
-                options["tolerances"] = {"TOLINTEG": "8 8 8 9 24", "TOLDEE": 9}
-                if options["calculation_type"] == "SP":
+            elif convergence_choice in SCF_TOLERANCE_PRESETS:
+                options["tolerances"] = scf_tolerances(convergence_choice)
+                if options["calculation_type"] == "SP" and convergence_choice != "1":
                     options["use_tight_sp"] = True
-                print("Using tight SCF convergence")
-            elif convergence_choice == "3":
-                options["tolerances"] = {"TOLINTEG": "9 9 9 11 38", "TOLDEE": 11}
-                if options["calculation_type"] == "SP":
-                    options["use_tight_sp"] = True
-                print("Using very tight SCF convergence")
+                name = SCF_TOLERANCE_PRESETS[convergence_choice]["name"].lower()
+                print(f"Using {name} SCF convergence")
             else:
                 # Custom tolerances
                 options["tolerances"] = configure_tolerances(calculation_type=options["calculation_type"])

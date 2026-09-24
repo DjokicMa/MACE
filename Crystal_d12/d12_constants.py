@@ -1279,27 +1279,75 @@ DFT_GRIDS = {
 # Default Tolerances and Settings
 # ============================================================
 
-# Default SCF tolerances
-DEFAULT_TOLERANCES = {
-    "TOLINTEG": "7 7 7 7 14",
-    "TOLDEE": 7,
+# Convergence presets: the levels the opt2d12 menus offer. Every tool, the
+# workflow planner and the quick-start plans take their values from here, so a
+# level means the same thing wherever it is chosen. Keys are the menu numbers.
+OPT_CONVERGENCE_PRESETS = {
+    "1": {"name": "Standard", "toldeg": 0.0003, "toldex": 0.0012, "toldee": 7, "maxcycle": 800},
+    "2": {"name": "Tight", "toldeg": 0.0001, "toldex": 0.0004, "toldee": 8, "maxcycle": 800},
+    "3": {"name": "Very Tight", "toldeg": 0.00003, "toldex": 0.00012, "toldee": 9, "maxcycle": 800},
 }
+
+SCF_TOLERANCE_PRESETS = {
+    "1": {"name": "Standard", "TOLINTEG": "7 7 7 7 14", "TOLDEE": 7},
+    "2": {"name": "Tight", "TOLINTEG": "8 8 8 9 24", "TOLDEE": 9},
+    "3": {"name": "Very tight", "TOLINTEG": "9 9 9 11 38", "TOLDEE": 11},
+}
+
+# The SCF level a FREQ calculation gets when nothing asks for another one.
+FREQ_SCF_LEVEL = "3"
+
+
+def opt_convergence(level: str = "1", upper: bool = False) -> Dict[str, Any]:
+    """OPTGEOM values of convergence preset ``level`` ("1"-"3").
+
+    Keys are toldeg/toldex/toldee/maxcycle, or TOLDEG/... with ``upper`` (the
+    spelling workflow plans use).
+    """
+    preset = OPT_CONVERGENCE_PRESETS[level]
+    values = {k: preset[k] for k in ("toldeg", "toldex", "toldee", "maxcycle")}
+    return {k.upper(): v for k, v in values.items()} if upper else values
+
+
+def scf_tolerances(level: str = "1") -> Dict[str, Any]:
+    """TOLINTEG/TOLDEE of SCF preset ``level`` ("1"-"3")."""
+    preset = SCF_TOLERANCE_PRESETS[level]
+    return {"TOLINTEG": preset["TOLINTEG"], "TOLDEE": preset["TOLDEE"]}
+
+
+def format_opt_tolerance(value: float) -> str:
+    """A TOLDEG/TOLDEX value in plain decimal form, as the menus print it."""
+    return f"{value:.6f}".rstrip("0").rstrip(".")
+
+
+def describe_opt_preset(level: str) -> str:
+    """'TOLDEG=0.0003, TOLDEX=0.0012, TOLDEE=7, MAXCYCLE=800' for ``level``."""
+    p = OPT_CONVERGENCE_PRESETS[level]
+    return (f"TOLDEG={format_opt_tolerance(p['toldeg'])}, "
+            f"TOLDEX={format_opt_tolerance(p['toldex'])}, "
+            f"TOLDEE={p['toldee']}, MAXCYCLE={p['maxcycle']}")
+
+
+def describe_scf_preset(level: str) -> str:
+    """'TOLINTEG: 7 7 7 7 14, TOLDEE: 7' for ``level``."""
+    p = SCF_TOLERANCE_PRESETS[level]
+    return f"TOLINTEG: {p['TOLINTEG']}, TOLDEE: {p['TOLDEE']}"
+
+
+# Default SCF tolerances
+DEFAULT_TOLERANCES = scf_tolerances("1")
 
 # Default optimization settings
 DEFAULT_OPT_SETTINGS = {
     "type": "FULLOPTG",
-    "maxcycle": 800,  # Updated to match what's shown in prompts
     "convergence": "Standard",
-    "toldeg": 0.0003,
-    "toldex": 0.0012,
-    "toldee": 7,
+    **opt_convergence("1"),
 }
 
 # Default frequency settings
 DEFAULT_FREQ_SETTINGS = {
     "NUMDERIV": 2,
-    "TOLINTEG": "9 9 9 11 38",
-    "TOLDEE": 11,
+    **scf_tolerances(FREQ_SCF_LEVEL),
 }
 
 # Default general settings
@@ -1504,20 +1552,20 @@ def configure_tolerances(shared_mode: bool = False, calculation_type: str = None
     # Menu-based selection matching CRYSTALOptToD12's approach
     if calculation_type == "FREQ":
         print("\nSelect SCF convergence level (FREQ calculations require tighter tolerances):")
-        print("1: Standard - TOLINTEG: 7 7 7 7 14, TOLDEE: 7")
-        print("2: Tight - TOLINTEG: 8 8 8 9 24, TOLDEE: 9 (recommended for FREQ)")
-        print("3: Very tight - TOLINTEG: 9 9 9 11 38, TOLDEE: 11 (default for FREQ)")
+        print(f"1: Standard - {describe_scf_preset('1')}")
+        print(f"2: Tight - {describe_scf_preset('2')}")
+        print(f"3: Very tight - {describe_scf_preset('3')} (default for FREQ)")
         print("4: Custom")
         
-        choice = input("Select tolerance level (1-4) [3]: ").strip()
+        choice = input(f"Select tolerance level (1-4) [{FREQ_SCF_LEVEL}]: ").strip()
         if not choice:
-            choice = "3"  # Default to very tight for FREQ
+            choice = FREQ_SCF_LEVEL  # Default to very tight for FREQ
     else:
         # SP/OPT calculations
         print("\nSelect SCF convergence level:")
-        print("1: Standard - TOLINTEG: 7 7 7 7 14, TOLDEE: 7 (default for OPT/SP)")
-        print("2: Tight - TOLINTEG: 8 8 8 9 24, TOLDEE: 9 (higher precision)")
-        print("3: Very tight - TOLINTEG: 9 9 9 11 38, TOLDEE: 11 (ultra-high precision)")
+        print(f"1: Standard - {describe_scf_preset('1')} (default for OPT/SP)")
+        print(f"2: Tight - {describe_scf_preset('2')} (higher precision)")
+        print(f"3: Very tight - {describe_scf_preset('3')} (ultra-high precision)")
         print("4: Custom")
         
         choice = input("Select tolerance level (1-4) [1]: ").strip()
@@ -1525,15 +1573,8 @@ def configure_tolerances(shared_mode: bool = False, calculation_type: str = None
             choice = "1"  # Default to standard for SP/OPT
     
     # Process the choice
-    if choice == "1":
-        tolerances["TOLINTEG"] = "7 7 7 7 14"
-        tolerances["TOLDEE"] = 7
-    elif choice == "2":
-        tolerances["TOLINTEG"] = "8 8 8 9 24"
-        tolerances["TOLDEE"] = 9
-    elif choice == "3":
-        tolerances["TOLINTEG"] = "9 9 9 11 38"
-        tolerances["TOLDEE"] = 11
+    if choice in SCF_TOLERANCE_PRESETS:
+        tolerances.update(scf_tolerances(choice))
     elif choice == "4":
         # Custom tolerances
         print("\nTOLINTEG controls integral accuracy (5 integers):")
@@ -1567,12 +1608,7 @@ def configure_tolerances(shared_mode: bool = False, calculation_type: str = None
     else:
         # Invalid choice, use defaults
         print("Invalid choice, using default tolerances.")
-        if calculation_type == "FREQ":
-            tolerances["TOLINTEG"] = "9 9 9 11 38"
-            tolerances["TOLDEE"] = 11
-        else:
-            tolerances["TOLINTEG"] = "7 7 7 7 14"
-            tolerances["TOLDEE"] = 7
+        tolerances.update(scf_tolerances(FREQ_SCF_LEVEL if calculation_type == "FREQ" else "1"))
     
     return tolerances
 
