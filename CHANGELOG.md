@@ -39,6 +39,26 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   A saved `--config-file` applied to a different material still gets a
   k-mesh from its own cell.
 
+- **`opt2d12` prompts default to the parent's settings.** Pressing Enter now
+  keeps what the parent had: OPT type and convergence (including tolerances
+  that match no preset), MAXTRADIUS, level shifting, HISTDIIS, GUESSP, the
+  DFT grid (now actually asked), CVOLOPT, and ITATOCEL/INTREDUN types.
+  Answering "yes" to level shifting on a parent without it now takes effect,
+  and a "no" to MAXTRADIUS survives `--save-options`/`--config-file`.
+- **Parent functionals are kept exactly or flagged.** Functionals written as
+  EXCHANGE/CORRELAT/HYBRID records were reduced to the exchange name, so a
+  PBE0 written that way became PBE. Those records, range-separation records
+  (SR-OMEGA, SR-HYB, ...), LSRSH-PBE's value line and a separate DFTD3 or
+  GRIMME block are now carried over verbatim. A parent functional CRYSTAL23
+  does not accept (e.g. B2PLYP, SCAN-D3) now prompts for a replacement, with
+  HSE06 as the default; paths that cannot ask print a warning.
+- **Deck titles are no longer read as keywords.** A title such as
+  `..._BULK_OPTGEOM_...` made an SP parent look like an OPT and moved its SCF
+  settings into the child's OPTGEOM block.
+- **An OPT in an SP-first plan is built from the SP.** The engine's CIF
+  re-conversion for this case passed flags NewCifToD12 has never accepted
+  and always failed; it has been removed.
+
 - **Basis-set coverage is measured, not assumed.** CRYSTAL counts neutrality as
   basis-set shell charges against nuclear charge, and its internal def2-mSVP
   library is broken for Pb. MACE emitted those decks silently because the
@@ -148,6 +168,15 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
 
 ### Changed
 
+- **One set of convergence presets.** The planner, `opt2d12`, `cif2d12` and
+  the quick-start plan share `opt2d12`'s Standard / Tight / Very tight tiers
+  for OPT convergence and SCF tolerances. The planner's default OPT is now
+  Standard (TOLDEG 0.0003, TOLDEX 0.0012), which it previously set 10 times
+  tighter; planner steps with no settings of their own inherit the parent's.
+  The planner's ATOMSONLY is corrected to ATOMONLY.
+- **FREQ decks default to Very tight SCF tolerances** (TOLINTEG 9 9 9 11 38,
+  TOLDEE 11) on every path unless a value is given.
+- **NUMDERIV is written only when asked for.**
 - **The basis-set menu asks the measured tables.** For any structure with max
   Z > 36 it previously offered only POB-DZVP and POB-TZVP, neither of which
   carries Pb, while filtering out POB-TZVP-REV2, which does - the menu was itself
