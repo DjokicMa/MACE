@@ -1459,6 +1459,12 @@ class CrystalInputParser:
         if self.data.get("method") == "DFT" and not self.data.get("functional"):
             self._extract_unlisted_functional(lines)
 
+        # No grid keyword is a setting too: CRYSTAL's default grid. Recorded
+        # so the child writes none either (the output only names the grid
+        # CRYSTAL chose, which a child would then write explicitly).
+        if self.data.get("method") == "DFT" and not self.data.get("dft_grid"):
+            self.data["dft_grid"] = "DEFAULT"
+
         # Extract smearing settings
         self._extract_smearing_settings(lines)
         
