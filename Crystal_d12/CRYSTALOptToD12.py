@@ -139,6 +139,35 @@ def prefer_deck_unrecognised_functional(settings: dict, in_data: dict) -> None:
         settings["functional"] = None
 
 
+def _with_opt_type_default(settings: dict, opt_type) -> dict:
+    """Settings whose optimization type is --opt-type, so the prompts show it."""
+    if not opt_type:
+        return settings
+    settings = dict(settings)
+    settings["optimization_type"] = opt_type
+    if settings.get("optimization_settings"):
+        settings["optimization_settings"] = {**settings["optimization_settings"],
+                                             "type": opt_type}
+    return settings
+
+
+def apply_opt_type_flag(options: dict, opt_type) -> None:
+    """Make an explicit --opt-type the optimization type of an OPT deck.
+
+    The writer takes the type inside optimization_settings over
+    optimization_type, so both are set. Used after the settings prompts,
+    which used to leave the parent's type (or the answer) in place of the
+    flag whenever answers came from stdin.
+    """
+    if not opt_type or options.get("calculation_type") != "OPT":
+        return
+    opt_settings = options.get("optimization_settings")
+    opt_settings = dict(opt_settings) if isinstance(opt_settings, dict) else {}
+    opt_settings["type"] = opt_type
+    options["optimization_settings"] = opt_settings
+    options["optimization_type"] = opt_type
+
+
 def dedupe_dispersion_suffix(functional: str) -> str:
     """Collapse any accidental repeated '-D3' in a functional name to one.
 
@@ -1186,7 +1215,9 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         # does without --calc-type. The engine always supplies enough answers, so
         # its output is unchanged.
         try:
-            options = get_calculation_options_from_current(settings, calc_type=calc_type)
+            options = get_calculation_options_from_current(
+                _with_opt_type_default(settings, opt_type), calc_type=calc_type)
+            apply_opt_type_flag(options, opt_type)
         except EOFError:
             ui.warn("\nNo answers on stdin for the interactive settings prompts; "
                     "keeping the settings extracted from the source calculation.")
@@ -1232,7 +1263,10 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         ensure_known_functional(options)
     else:
         # Interactive mode (possibly with pre-selected calc_type)
-        options = get_calculation_options_from_current(settings, calc_type=calc_type)
+        options = get_calculation_options_from_current(
+            _with_opt_type_default(settings, opt_type), calc_type=calc_type)
+        # An explicit --opt-type wins over the parent's type and the answers.
+        apply_opt_type_flag(options, opt_type)
         
         # Ensure write_only_unique is set based on space group
         if "write_only_unique" not in options:
