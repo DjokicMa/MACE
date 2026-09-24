@@ -1160,6 +1160,17 @@ CRYSTAL23_STANDALONE_FUNCTIONALS = [
     "r2SCAN50",
     # 3c / sol-3c composite DFT methods
     "PBEH3C", "HSE3C", "B973C", "PBESOL03C", "HSESOL3C",
+    # Not in the manual's lists, but accepted by CRYSTAL23 as the full PBE
+    # XC functional, the same as PBEXC (TESTPDIM run, CRYSTAL/23-intel-2023a:
+    # "(EXCHANGE)[CORRELATION] FUNCTIONAL:(PERDEW-BURKE-ERNZERHOF)
+    # [PERDEW-BURKE-ERNZERHOF]" for both). The same check rejects bare B97,
+    # PBESOL, and SCAN-D3 / PBESOL-D3 / PBESOL0-D3 / PBEXC-D3 / mPW1PW91-D3
+    # with "KEYWORD ... NOT RECOGNIZED".
+    "PBE",
+    # Also outside the manual's D3 list (sec. 5.1) but accepted by the same
+    # check; B3PW-D3, CAM-B3LYP-D3, r2SCAN-D3, wB97-D3, PBE0-13-D3 and
+    # B1WC-D3 are rejected.
+    "wB97X-D3",
 ]
 
 # Manual section 5.1: "A list of available D3 dispersion corrected DFT

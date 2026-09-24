@@ -127,10 +127,12 @@ def rotation_matrix_to_xyz(rotation: List[List[float]], translation: List[float]
 # emits an EXCHANGE/CORRELAT pair for the functionals CRYSTAL has no standalone
 # keyword for. Keep in step with d12_writer.functional_keyword_map and
 # d12_writer.EXCHANGE_CORRELATION_PAIRS.
+# PBEXC is not here: the writer writes MACE's "PBE" as the bare keyword PBE
+# (which CRYSTAL23 accepts as the same functional), so a parent's PBEXC is
+# kept as PBEXC, the keyword it wrote.
 STANDALONE_XC_TO_FUNCTIONAL = {
     "PBESOLXC": "PBESOL",
     "SOGGAXC": "SOGGA",
-    "PBEXC": "PBE",
 }
 
 XC_PAIR_TO_FUNCTIONAL = {
@@ -1436,22 +1438,18 @@ class CrystalInputParser:
                     
                 # Check for D3 dispersion (both explicit and in functional name)
                 elif stripped.endswith("-D3") or "-D3" in stripped:
-                    # Handle functionals with -D3 suffix
-                    base_functional = stripped.replace("-D3", "")
                     self.data["dispersion"] = True
-                    if (mace_functional_name(base_functional)
-                            or crystal23_functional_keyword(stripped)):
+                    if crystal23_functional_keyword(stripped):
                         self.data["functional"] = stripped  # Keep the full name with -D3
                     else:
-                        # e.g. B2PLYP-D3: not a CRYSTAL23 keyword. Record it
-                        # so the user can be told what the parent asked for.
+                        # Not a CRYSTAL23 keyword: B2PLYP-D3, and also a -D3
+                        # form of a functional the manual has no D3
+                        # parameters for (SCAN-D3, PBESOL-D3, PBESOL0-D3;
+                        # CRYSTAL23 stops with "KEYWORD ... NOT RECOGNIZED").
+                        # Record it so the user can be told what the parent
+                        # asked for and choose.
                         self.data["unrecognised_functional"] = stripped
                         self.data["unrecognised_functional_source"] = "input"
-                    
-                # Special cases like PW1PW-D3
-                elif stripped == "PW1PW-D3":
-                    self.data["functional"] = "mPW1PW91"
-                    self.data["dispersion"] = True
                     
                 # Grid settings
                 elif stripped in ["OLDGRID", "DEFAULT", "LGRID", "XLGRID", "XXLGRID", "XXXLGRID", "HUGEGRID"]:
@@ -1679,6 +1677,10 @@ class CrystalInputParser:
             if i > 0 and lines[i - 1].strip().upper() in ("EXCHANGE", "CORRELAT"):
                 continue
             mace_name = mace_functional_name(word)
+            if word.upper().endswith("-D3") and not crystal23_functional_keyword(word):
+                # SCAN-D3, PBESOL-D3, ...: no D3 parameters in CRYSTAL23,
+                # which does not accept the name (see _extract_dft_settings)
+                mace_name = None
             if mace_name:
                 self.data["functional"] = mace_name
                 if mace_name.endswith("-D3"):

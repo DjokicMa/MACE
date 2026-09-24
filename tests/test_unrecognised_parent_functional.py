@@ -102,8 +102,7 @@ def test_input_parser_skips_grid_and_weight_keywords(tmp_path):
 
 
 @pytest.mark.parametrize("line, functional", [
-    ("B3LYP-D3", "B3LYP-D3"), ("PBESOL-D3", "PBESOL-D3"), ("PBE0", "PBE0"),
-    ("PBESOLXC", "PBESOL"),
+    ("B3LYP-D3", "B3LYP-D3"), ("PBE0", "PBE0"), ("PBESOLXC", "PBESOL"),
 ])
 def test_input_parser_known_functionals_unchanged(tmp_path, line, functional):
     data = _dft_block(tmp_path, line)

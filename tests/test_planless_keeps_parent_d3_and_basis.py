@@ -44,8 +44,10 @@ def _configure_blank(monkeypatch, parent):
     return opts, seen.get("d3_default")
 
 
+# B97 is not here: CRYSTAL23 has no bare B97 (only B97-D3), so such a parent
+# goes to the replacement prompt.
 @pytest.mark.parametrize("fx", ["PBE0", "HSE06", "HSEsol", "LC-wPBE", "B3LYP",
-                                "PBE", "BLYP", "B97", "M06", "mPW1PW91"])
+                                "PBE", "BLYP", "M06", "mPW1PW91"])
 def test_non_d3_parent_stays_without_d3(monkeypatch, fx):
     opts, default = _configure_blank(monkeypatch, {"functional": fx, "dispersion": False})
     assert default == "no"
@@ -72,8 +74,10 @@ def test_d3_parent_keeps_d3(monkeypatch, fx):
     assert opts["dispersion"]
 
 
-@pytest.mark.parametrize("fx", ["PBESOL-D3", "PBESOL0-D3", "SCAN-D3", "r2SCAN-D3",
-                                "wB97X-D3", "CAM-B3LYP-D3", "B3PW-D3"])
+# Only -D3 keywords CRYSTAL23 accepts (TESTPDIM): PBESOL-D3, PBESOL0-D3,
+# SCAN-D3, r2SCAN-D3, CAM-B3LYP-D3 and B3PW-D3 are rejected by it and go to
+# the replacement prompt (test_parent_functional_records_and_titles.py).
+@pytest.mark.parametrize("fx", ["wB97X-D3"])
 def test_d3_keyword_outside_the_prompt_list_is_kept(monkeypatch, fx):
     opts, default = _configure_blank(monkeypatch, {"functional": fx, "dispersion": True})
     assert default is None            # never asked
@@ -150,7 +154,7 @@ def _basis(lines):
     return [ln.split() for ln in lines[start + 1:end + 1]]
 
 
-@pytest.mark.parametrize("fx", ["PBE0", "HSEsol", "PBE0-D3", "PBESOL-D3"])
+@pytest.mark.parametrize("fx", ["PBE0", "HSEsol", "PBE0-D3", "wB97X-D3"])
 def test_planless_sp_keeps_the_parents_dispersion(tmp_path, fx):
     _need()
     _parent(tmp_path, fx)

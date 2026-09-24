@@ -953,8 +953,9 @@ def _written_functional_is_valid(functional: str, use_dispersion: bool) -> bool:
     functional record must be a CRYSTAL23 functional keyword (manual sec. 4.1,
     5.1, 5.3-5.4) or an EXCHANGE/CORRELAT pair. The writer writes some MACE
     names as another keyword (PBESOL -> PBESOLXC, mPW1PW91 with D3 ->
-    PW1PW-D3) or as a pair (PWGGA, VBH, WCGGA), and others as typed: "PBE"
-    and "B97" come out bare, which are not keywords (PBE-D3 and B97-D3 are).
+    PW1PW-D3) or as a pair (PWGGA, VBH, WCGGA), and others as typed: "B97"
+    comes out bare, which CRYSTAL23 rejects (B97-D3 is a keyword; B97 is
+    not an EXCHANGE choice either). Bare "PBE" is accepted by CRYSTAL23.
     """
     import io
     from d12_writer import write_dft_section
@@ -981,6 +982,28 @@ def _replacement_functional_name(answer: str) -> Optional[str]:
     return None
 
 
+# Functional keywords that must be followed by a value record (manual sec.
+# 4.1): written alone they stop CRYSTAL23 with "DFTINP FORMAT ERROR".
+_FUNCTIONALS_WITH_A_RECORD = {
+    "LSRSH-PBE": ("omega cSR cLR", 3, "0.11 0.25 0.00001 is HSE06; cSR and "
+                  "cLR may be small but not zero"),
+}
+
+
+def _ask_functional_record(keyword: str) -> Optional[str]:
+    """Ask for the value record a functional keyword needs; None if not given."""
+    fields, count, example = _FUNCTIONALS_WITH_A_RECORD[keyword.upper()]
+    answer = input(f"{keyword} needs one record: {fields} ({example}): ").strip()
+    try:
+        values = [float(x) for x in answer.split()]
+    except ValueError:
+        values = []
+    if len(values) != count:
+        print(f"{keyword} needs {count} numbers ({fields}); choose again.")
+        return None
+    return answer
+
+
 def _ask_for_replacement_functional(options: Dict[str, Any]) -> Optional[str]:
     """Ask for a functional to replace one the parent had that is unusable.
 
@@ -999,6 +1022,12 @@ def _ask_for_replacement_functional(options: Dict[str, Any]) -> Optional[str]:
         if answer.lower() in ("m", "menu"):
             return None
         chosen = _replacement_functional_name(answer)
+        if chosen and chosen.upper() in _FUNCTIONALS_WITH_A_RECORD:
+            record = _ask_functional_record(chosen)
+            if record:
+                options["custom_functional"] = [chosen, record]
+                return CUSTOM_FUNCTIONAL
+            continue
         if chosen:
             return chosen
         hint = ""
@@ -1025,6 +1054,12 @@ def _apply_replacement_functional(options: Dict[str, Any], chosen: str) -> None:
     options["method"] = "DFT"
     options["method_type"] = "DFT"
     options["functional"] = chosen
+    if chosen == CUSTOM_FUNCTIONAL:
+        # A keyword with its value record (LSRSH-PBE), written as records
+        options["dispersion"] = False
+        options["use_dispersion"] = False
+        options["dft_functional"] = chosen
+        return
     if chosen != base:
         # Typed with its -D3 suffix: that is the answer to the D3 question.
         options["dispersion"] = True
@@ -1102,8 +1137,15 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
         # cannot be kept, so it is treated like any unknown functional.
         custom_records = (options.get("custom_functional")
                           if current_functional == CUSTOM_FUNCTIONAL else None)
+        # Likewise a menu name the writer cannot turn into valid input:
+        # a -D3 form of a functional the manual has no D3 parameters for
+        # (SCAN-D3, PBESOL-D3, PBESOL0-D3), which CRYSTAL23 does not accept.
+        listed_and_writable = (
+            _menu_lists_functional(current_functional)
+            and _written_functional_is_valid(
+                current_functional, current_functional.upper().endswith("-D3")))
         if (current_functional and not custom_records
-                and not _menu_lists_functional(current_functional)
+                and not listed_and_writable
                 and not crystal23_functional_keyword(current_functional)):
             options["unrecognised_functional"] = current_functional
             options["unrecognised_functional_source"] = "input"
@@ -1213,21 +1255,30 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
         if not default_func:
             default_func = "1"
             
-        func_choice = get_user_choice(f"Select {FUNCTIONAL_CATEGORIES[category]['name'].split()[0]} functional", func_options, default_func)
-        
-        options["functional"] = functionals[int(func_choice) - 1]
-        options["dft_functional"] = options["functional"]  # Added for compatibility
-        
         # The parent's dispersion state is the default: a blank answer keeps
         # it. Defaulting to "yes" turned PBE0/HSE06/HSEsol/... parents into
         # their -D3 versions on every planless or blank-answer run.
         parent_d3 = bool(options.get("dispersion")) or current_functional.upper().endswith("-D3")
-        chosen = options["functional"]
 
-        # Ask about D3 dispersion if functional supports it
-        if chosen in D3_FUNCTIONALS:
-            use_d3 = yes_no_prompt(f"\nAdd D3 dispersion correction to {chosen}?",
-                                   "yes" if parent_d3 else "no")
+        while True:
+            func_choice = get_user_choice(f"Select {FUNCTIONAL_CATEGORIES[category]['name'].split()[0]} functional", func_options, default_func)
+            chosen = functionals[int(func_choice) - 1]
+            use_d3 = None
+            # Ask about D3 dispersion if functional supports it
+            if chosen in D3_FUNCTIONALS:
+                use_d3 = yes_no_prompt(f"\nAdd D3 dispersion correction to {chosen}?",
+                                       "yes" if parent_d3 else "no")
+            if use_d3 or _written_functional_is_valid(chosen, False):
+                break
+            # B97: CRYSTAL23 has it only as B97-D3 (and B97H, B973C); it
+            # rejects a bare B97 and B97 is not an EXCHANGE choice.
+            print(f"{chosen} is available in CRYSTAL23 only with D3 ({chosen}-D3); "
+                  f"choose it with D3, or another functional.")
+
+        options["functional"] = chosen
+        options["dft_functional"] = options["functional"]  # Added for compatibility
+
+        if use_d3 is not None:
             if use_d3:
                 options["dispersion"] = True
                 options["use_dispersion"] = True  # Added for compatibility
@@ -1237,8 +1288,9 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
                 options["use_dispersion"] = False
         elif chosen == base_functional and current_functional.upper().endswith("-D3"):
             # The parent's own "<name>-D3" keyword for a functional outside
-            # D3_FUNCTIONALS (e.g. PBESOL-D3, SCAN-D3): nothing to ask, keep
-            # the parent's method exactly instead of silently dropping -D3.
+            # D3_FUNCTIONALS that CRYSTAL23 accepts (wB97X-D3): nothing to
+            # ask, keep it. The ones it rejects were sent to the replacement
+            # prompt above.
             options["functional"] = current_functional
             options["dispersion"] = True
             options["use_dispersion"] = True
