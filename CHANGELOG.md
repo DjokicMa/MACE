@@ -15,6 +15,30 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
 
 ### Fixed
 
+- **Generated SP, FREQ and OPT2 decks keep the parent's settings.** Decks the
+  workflow engine derives from a finished calculation were quietly changing
+  the method. Found by regenerating decks from real parents through every
+  engine path and comparing them keyword by keyword with the parent:
+  - the functional was guessed by substring, so PBE0, PBEsol, PBESOL0, PBEh-3c
+    and LC-wPBE parents became PBE, UHF became RHF, and the no-plan SP path
+    turned HF parents into HSE06-D3;
+  - an HSEsol-3c SP parent produced FREQ/SP/OPT2 decks labelled `HSESOL3C-D3`
+    (3c methods already contain D3 and gCP), or crashed before writing one;
+  - the two-number `SHRINK IS ISP` form, the most common in practice, was
+    regenerated from the cell (`5 10` became `7 14`, some meshes coarser), and
+    anisotropic meshes such as `30 30 10` were flattened;
+  - FMIXING, MAXCYCLE, BROYDEN, LEVSHIFT, SPINLOCK and BIPOSIZE/EXCHSIZE were
+    reset to defaults, and OPT2 decks lost MAXTRADIUS or gained tolerances the
+    parent never set;
+  - a plan's FREQ tolerances and SP overrides were never applied;
+  - with no plan, SP decks reset tolerances to Standard, added or dropped D3,
+    and replaced the parent's own EXTERNAL basis with the library copy.
+
+  The tolerance, basis, D3, SCF and SPINLOCK prompts now default to the
+  parent's value; an explicit answer or plan setting still wins.
+  A saved `--config-file` applied to a different material still gets a
+  k-mesh from its own cell.
+
 - **Basis-set coverage is measured, not assumed.** CRYSTAL counts neutrality as
   basis-set shell charges against nuclear charge, and its internal def2-mSVP
   library is broken for Pb. MACE emitted those decks silently because the
