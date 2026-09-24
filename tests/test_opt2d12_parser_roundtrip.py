@@ -7,6 +7,8 @@
   geometry keyword misread the k-mesh or the dimensionality the same way.
 * ITATOCEL and INTREDUN were not read as optimization types, so a parent's
   ITATOCEL became FULLOPTG, and --opt-type was ignored for OPT parents.
+* "No" to MAXTRADIUS was lost when the saved options were reused with
+  --config-file: the parent's MAXTRADIUS came back.
 
 The corpus tests run the real ``mace_cli opt2d12`` and skip when ``test/`` is
 absent. The other tests run everywhere.
@@ -191,6 +193,23 @@ def test_non_interactive_keeps_the_parent_type_and_honours_opt_type():
     assert parent["optimization_settings"]["type"] == "ITATOCEL"   # not mutated
 
 
+# --------------------------------------------------------------- MAXTRADIUS
+
+def test_no_to_maxtradius_is_recorded(monkeypatch):
+    _blank_input(monkeypatch, {"MAXTRADIUS) for geometry": "n"})
+    cfg = d12_calc_basic._configure_optimization_impl(
+        {"type": "FULLOPTG", "MAXCYCLE": 800, "MAXTRADIUS": 0.25})
+    assert "maxtradius" in cfg and cfg["maxtradius"] is None
+
+
+def test_recorded_no_overrides_the_parent_maxtradius():
+    from CRYSTALOptToD12 import merge_optimization_settings
+
+    merged = merge_optimization_settings({"type": "FULLOPTG", "MAXTRADIUS": 0.25},
+                                         {"maxtradius": None})
+    assert merged.get("maxtradius") is None and "MAXTRADIUS" not in merged
+
+
 # ------------------------------------------------- real opt2d12 on the corpus
 
 SP_TITLED_OPTGEOM = "SP/3,4^2T7_CA_BULK_OPTGEOM_TZ_opt_B3LYP-D3-D3_optimized_rev1_sp_B3LYP-D3-D3_optimized"
@@ -251,3 +270,17 @@ def test_itatocel_parent_gives_an_itatocel_child(tmp_path):
     deck.write_text(deck.read_text().replace("\nFULLOPTG\n", "\nITATOCEL\n"))
     child = _opt2d12(tmp_path, name, {"exact settings": "n", "calculation type": "2"})
     assert _optgeom(child)[1] == "ITATOCEL"
+
+
+def test_no_to_maxtradius_survives_save_options_and_config_file(tmp_path):
+    first, second = tmp_path / "first", tmp_path / "second"
+    name = _copy_parent(MAXTRADIUS_PARENT, first)
+    _copy_parent(MAXTRADIUS_PARENT, second)
+    child = _opt2d12(first, name, {"exact settings": "n", "calculation type": "2",
+                                   "MAXTRADIUS) for geometry": "n"},
+                     extra=["--save-options", "--options-file", "opts.json"])
+    assert "MAXTRADIUS" not in child
+    shutil.copy(first / "opts.json", second / "opts.json")
+    reused = _opt2d12(second, name, {}, extra=["--config-file", "opts.json"])
+    assert "MAXTRADIUS" not in reused
+    assert _optgeom(reused) == _optgeom(child)

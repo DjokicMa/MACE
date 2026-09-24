@@ -336,6 +336,11 @@ def _configure_optimization_impl(current_settings: Optional[Dict[str, Any]] = No
         d_maxtradius = parent_maxtradius or 0.25
         opt_config["maxtradius"] = _nav_float(
             f"Enter MAXTRADIUS (max displacement, default {d_maxtradius}): ", default=d_maxtradius)
+    else:
+        # "No" is recorded, not just left out: saved options are laid over the
+        # parent's OPTGEOM when reused (--config-file), and a missing key
+        # brought the parent's MAXTRADIUS back.
+        opt_config["maxtradius"] = None
     
     return opt_config
 

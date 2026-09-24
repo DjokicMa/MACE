@@ -105,7 +105,7 @@ def test_blank_maxtradius_answer_keeps_the_parents(monkeypatch):
 def test_maxtradius_can_still_be_turned_off(monkeypatch):
     _blank_input(monkeypatch, {"MAXTRADIUS) for geometry": "n"})
     cfg = d12_calc_basic._configure_optimization_impl({**TIGHT, "MAXTRADIUS": 0.25})
-    assert "maxtradius" not in cfg
+    assert cfg["maxtradius"] is None      # recorded as off, not just left out
 
 
 @pytest.mark.parametrize("opt,expected", [
