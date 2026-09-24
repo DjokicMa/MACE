@@ -284,8 +284,21 @@ def write_optimization_calculation(f, calc_settings: Dict[str, Any]):
     write_optimization_section(f, opt_type, opt_settings)
 
 
-def write_optimization_section(f, optimization_type, optimization_settings):
-    """Write the optimization section of the D12 file"""
+def _has_opt_key(optimization_settings, keyword):
+    """True when OPTGEOM ``keyword`` is set, under either key spelling."""
+    return any(optimization_settings.get(k) is not None
+               for k in (keyword, keyword.lower()))
+
+
+def write_optimization_section(f, optimization_type, optimization_settings,
+                               fill_missing_tolerances=True):
+    """Write the optimization section of the D12 file
+
+    With ``fill_missing_tolerances=False`` a TOLDEG/TOLDEX/TOLDEE absent from
+    ``optimization_settings`` is left out, so CRYSTAL applies its own default,
+    as it did for the parent deck the settings were read from. The default
+    (True) writes the tight 0.00003/0.00012/7 fallbacks, as before.
+    """
     from d12_constants import format_crystal_float, DEFAULT_OPT_SETTINGS
     
     print("OPTGEOM", file=f)
@@ -314,24 +327,27 @@ def write_optimization_section(f, optimization_type, optimization_settings):
     
     # Write tolerances
     toldeg = optimization_settings.get("toldeg") or optimization_settings.get("TOLDEG", 0.00003)
-    print("TOLDEG", file=f)
-    # TOLDEG should not use scientific notation
-    if toldeg < 0.0001:
-        print(f"{toldeg:.6f}".rstrip('0').rstrip('.'), file=f)
-    else:
-        print(format_crystal_float(toldeg), file=f)
+    if fill_missing_tolerances or _has_opt_key(optimization_settings, "TOLDEG"):
+        print("TOLDEG", file=f)
+        # TOLDEG should not use scientific notation
+        if toldeg < 0.0001:
+            print(f"{toldeg:.6f}".rstrip('0').rstrip('.'), file=f)
+        else:
+            print(format_crystal_float(toldeg), file=f)
     
     toldex = optimization_settings.get("toldex") or optimization_settings.get("TOLDEX", 0.00012)
-    print("TOLDEX", file=f)
-    # TOLDEX should not use scientific notation
-    if toldex < 0.0001:
-        print(f"{toldex:.6f}".rstrip('0').rstrip('.'), file=f)
-    else:
-        print(format_crystal_float(toldex), file=f)
+    if fill_missing_tolerances or _has_opt_key(optimization_settings, "TOLDEX"):
+        print("TOLDEX", file=f)
+        # TOLDEX should not use scientific notation
+        if toldex < 0.0001:
+            print(f"{toldex:.6f}".rstrip('0').rstrip('.'), file=f)
+        else:
+            print(format_crystal_float(toldex), file=f)
     
     toldee = optimization_settings.get("toldee") or optimization_settings.get("TOLDEE", 7)
-    print("TOLDEE", file=f)
-    print(toldee, file=f)
+    if fill_missing_tolerances or _has_opt_key(optimization_settings, "TOLDEE"):
+        print("TOLDEE", file=f)
+        print(toldee, file=f)
     
     # Add MAXTRADIUS if specified
     maxtradius = optimization_settings.get("maxtradius") or optimization_settings.get("MAXTRADIUS")

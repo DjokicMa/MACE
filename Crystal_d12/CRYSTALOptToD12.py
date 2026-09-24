@@ -103,6 +103,25 @@ except Exception:
     ui = _UIShim()
 
 
+def merge_optimization_settings(parent, override, replace_type=False):
+    """The parent's OPTGEOM settings with ``override``'s values on top.
+
+    Keys match case-insensitively (the d12 parser writes TOLDEG, the
+    interactive flow toldeg), so an override always replaces the parent's
+    value however either spells it. ``replace_type`` drops the parent's
+    optimization type when the caller sets ``optimization_type`` separately:
+    the writer prefers a ``type`` inside the settings over that argument.
+    """
+    merged = dict(parent) if isinstance(parent, dict) else {}
+    if replace_type:
+        merged.pop("type", None)
+    for key, value in (override or {}).items():
+        for existing in [k for k in merged if k.lower() == str(key).lower()]:
+            del merged[existing]
+        merged[key] = value
+    return merged
+
+
 def dedupe_dispersion_suffix(functional: str) -> str:
     """Collapse any accidental repeated '-D3' in a functional name to one.
 
@@ -358,6 +377,9 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 f,
                 settings.get("optimization_type", "FULLOPTG"),
                 settings.get("optimization_settings", DEFAULT_OPT_SETTINGS),
+                # A tolerance the parent's OPTGEOM never set stays unset, so
+                # CRYSTAL's default applies to the child as it did to the parent.
+                fill_missing_tolerances=False,
             )
         elif settings["calculation_type"] == "FREQ":
             # Check if this is ANHARM or FREQCALC
@@ -979,6 +1001,17 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 for key, value in config_data.items():
                     if key not in geometry_identity_keys:
                         options[key] = value
+
+                # A plan step's optimization_settings override only the OPTGEOM
+                # values it names: the parent's others (MAXTRADIUS, a TOLDEE
+                # the step leaves out) stay, instead of the step replacing the
+                # parent's OPTGEOM wholesale.
+                if isinstance(config_data.get("optimization_settings"), dict):
+                    options["optimization_settings"] = merge_optimization_settings(
+                        settings.get("optimization_settings"),
+                        config_data["optimization_settings"],
+                        replace_type="optimization_type" in config_data,
+                    )
 
                 # Restore external basis settings if they were set and config didn't override them
                 # This ensures workflow-generated configs (which only set functional/calc_type)
