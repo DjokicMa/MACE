@@ -57,7 +57,11 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   settings into the child's OPTGEOM block.
 - **An OPT in an SP-first plan is built from the SP.** The engine's CIF
   re-conversion for this case passed flags NewCifToD12 has never accepted
-  and always failed; it has been removed.
+  and always failed; it has been removed. An OPT planned after BAND, DOSS, TRANSPORT or
+  CHARGE+POTENTIAL is built from the last OPT or SP; after TRANSPORT and
+  CHARGE+POTENTIAL the workflow used to stop.
+- **A FREQ parent's NUMDERIV is kept** in a follow-up FREQ deck, and is the
+  default at the NUMDERIV prompt.
 
 - **Basis-set coverage is measured, not assumed.** CRYSTAL counts neutrality as
   basis-set shell charges against nuclear charge, and its internal def2-mSVP
