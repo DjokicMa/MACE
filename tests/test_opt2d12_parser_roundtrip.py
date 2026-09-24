@@ -9,6 +9,7 @@
   ITATOCEL became FULLOPTG, and --opt-type was ignored for OPT parents.
 * "No" to MAXTRADIUS was lost when the saved options were reused with
   --config-file: the parent's MAXTRADIUS came back.
+* The DFT grid question returned the parent's grid without asking.
 
 The corpus tests run the real ``mace_cli opt2d12`` and skip when ``test/`` is
 absent. The other tests run everywhere.
@@ -208,6 +209,19 @@ def test_recorded_no_overrides_the_parent_maxtradius():
     merged = merge_optimization_settings({"type": "FULLOPTG", "MAXTRADIUS": 0.25},
                                          {"maxtradius": None})
     assert merged.get("maxtradius") is None and "MAXTRADIUS" not in merged
+
+
+# ----------------------------------------------------------------- DFT grid
+
+def test_grid_question_is_asked_with_the_parent_grid_as_default(monkeypatch):
+    seen = _blank_input(monkeypatch)
+    assert d12_interactive.configure_dft_grid_with_defaults("B3LYP", "LGRID") == "LGRID"
+    assert any("Enter your choice" in p for p in seen), seen
+
+
+def test_grid_answer_is_used(monkeypatch):
+    _blank_input(monkeypatch, {"Enter your choice": "5"})
+    assert d12_interactive.configure_dft_grid_with_defaults("B3LYP", "LGRID") == "XXLGRID"
 
 
 # ------------------------------------------------- real opt2d12 on the corpus

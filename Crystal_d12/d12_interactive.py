@@ -536,10 +536,11 @@ def configure_dft_grid_with_defaults(functional: str, current_grid: str = "XLGRI
     # Get the default choice based on current grid
     default_choice = grid_map.get(current_grid, "4")
     
-    # Create a patched version that uses our default
+    # Ask, with the parent's grid as the default. This used to return the
+    # default without asking, so the grid could not be changed here.
     def patched_get_user_input(prompt, options, default):
         if "Select integration grid" in prompt:
-            return default_choice
+            return original_get_user_input(prompt, options, default_choice)
         return original_get_user_input(prompt, options, default)
     
     # Temporarily replace the function
