@@ -2396,14 +2396,16 @@ fi'''
                                         completed_by_type[ct] = []
                                     completed_by_type[ct].append(calc)
                             
-                            # Find highest completed OPT
-                            opt_source = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
+                            # Find highest completed OPT; with none yet (an SP-first
+                            # plan), the SP carries the starting geometry.
+                            opt_source = (self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
+                                          or self._find_highest_numbered_calc_of_type(completed_by_type, 'SP'))
                             if opt_source:
                                 opt_calc_id = self.generate_numbered_calculation(opt_source, next_calc_type)
                                 if opt_calc_id:
                                     new_calc_ids.append(opt_calc_id)
                             else:
-                                print(f"No completed OPT found to use as source for {next_calc_type}")
+                                print(f"No completed OPT or SP found to use as source for {next_calc_type}")
                         elif next_base_type == "FREQ":
                             # Another FREQ calculation - also needs OPT geometry
                             all_calcs = self.db.get_calculations_by_status(material_id=material_id)
