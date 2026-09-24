@@ -1057,12 +1057,19 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                     if "keep_grid" in method_mods and not method_mods["keep_grid"]:
                         options["dft_grid"] = None
                 
-                # Handle tolerance_modifications if present
+                # Handle tolerance_modifications if present. The planner's
+                # FREQ steps nest their tolerances in the frequency settings
+                # instead; honour those when no explicit override is given.
+                # Either way the override is laid over the parent's values,
+                # so a plan that sets only TOLDEE keeps the parent's TOLINTEG.
+                custom_tol = None
                 if "tolerance_modifications" in config_data:
-                    tol_mods = config_data["tolerance_modifications"]
-                    if "custom_tolerances" in tol_mods:
-                        options["tolerances"] = tol_mods["custom_tolerances"]
-                        ui.info(f"  Tolerances updated: {tol_mods['custom_tolerances']}")
+                    custom_tol = (config_data["tolerance_modifications"] or {}).get("custom_tolerances")
+                elif isinstance(options.get("freq_settings"), dict):
+                    custom_tol = options["freq_settings"].get("custom_tolerances")
+                if isinstance(custom_tol, dict) and custom_tol:
+                    options["tolerances"] = {**(settings.get("tolerances") or {}), **custom_tol}
+                    ui.info(f"  Tolerances updated: {custom_tol}")
 
                 ui.ok("Config file settings applied.")
             else:

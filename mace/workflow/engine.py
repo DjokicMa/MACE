@@ -3323,21 +3323,31 @@ fi'''
                             temp_config['functional'] = method_settings['new_functional']
                             if method_settings.get('use_dispersion'):
                                 temp_config['dispersion'] = True
-                    
+                    # SP plans name their custom functional under
+                    # method_modifications. Hand it to CRYSTALOptToD12 as a
+                    # method modification so a 3c choice also gets its basis.
+                    # (new_functional arrives through plan_overrides below.)
+                    mm = workflow_config.get('method_modifications') or {}
+                    if mm.get('custom_functional') and not mm.get('new_functional'):
+                        temp_config['method_modifications'] = {
+                            'functional': mm['custom_functional'],
+                            **{k: mm[k] for k in ('keep_spin', 'keep_grid') if k in mm},
+                        }
+
                     # Add basis settings if present
-                    if 'basis_settings' in workflow_config:
-                        basis_settings = workflow_config['basis_settings']
-                        if 'new_basis' in basis_settings:
-                            temp_config['basis_set'] = basis_settings['new_basis']
-                            temp_config['basis_set_type'] = 'INTERNAL'
-                    
-                    # Add custom tolerances if present
-                    if 'custom_tolerances' in workflow_config:
-                        custom_tol = workflow_config['custom_tolerances']
-                        if 'TOLINTEG' in custom_tol:
-                            temp_config['tolinteg'] = custom_tol['TOLINTEG']
-                        if 'TOLDEE' in custom_tol:
-                            temp_config['scf_toldee'] = custom_tol['TOLDEE']
+                    basis_settings = (workflow_config.get('basis_settings')
+                                      or workflow_config.get('basis_modifications') or {})
+                    if 'new_basis' in basis_settings:
+                        temp_config['basis_set'] = basis_settings['new_basis']
+                        temp_config['basis_set_type'] = 'INTERNAL'
+
+                    # Plan tolerances, in the form CRYSTALOptToD12 reads.
+                    # (FREQ steps carry theirs inside frequency_settings.)
+                    custom_tol = dict(workflow_config.get('custom_tolerances') or {})
+                    custom_tol.update((workflow_config.get('tolerance_modifications') or {})
+                                      .get('custom_tolerances') or {})
+                    if custom_tol:
+                        temp_config['tolerance_modifications'] = {'custom_tolerances': custom_tol}
                     # The plan's method_modifications / optimization_settings
                     # override on top of the translated step settings, so a
                     # plan that changes the functional keeps its FREQ settings.
