@@ -56,7 +56,7 @@ from d12_constants import (
     # Configuration functions (from merged d12_config_common)
     configure_tolerances, configure_scf_settings, select_basis_set,
     configure_dft_grid, configure_dispersion, configure_spin_polarization,
-    configure_smearing
+    configure_smearing, CUSTOM_FUNCTIONAL,
 )
 from d12_parsers import CrystalOutputParser, CrystalInputParser
 from d12_calc_freq import get_advanced_frequency_settings, write_frequency_section
@@ -1328,6 +1328,16 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     functional = dedupe_dispersion_suffix(functional)
 
     new_filename = f"{base_name}_{calc_type.lower()}_{functional}_optimized.d12"
+
+    # CUSTOM-XC names the parent's own EXCHANGE/CORRELAT/HYBRID records; a
+    # parent without them has nothing to write, and the writer would stop
+    # half way through the deck. Refuse before any file is opened.
+    if options.get("functional") == CUSTOM_FUNCTIONAL and not options.get("custom_functional"):
+        ui.err(f"\nNot writing {os.path.basename(new_filename)}: the functional "
+               f"'{CUSTOM_FUNCTIONAL}' means the parent's own EXCHANGE/CORRELAT/HYBRID "
+               f"definition, and this parent's DFT block has none. Name a CRYSTAL23 "
+               f"functional (e.g. PBE0, HSE06) instead.")
+        return False, options
     # --output-dir was parsed, and the directory created, but never reached this
     # point, so every deck landed in the current directory regardless.
     if output_dir:
@@ -1588,6 +1598,11 @@ def main():
                         save_options[k] = v
                 json.dump(save_options, f, indent=2)
             ui.ok(f"Settings saved to {args.options_file}")
+
+        if not success:
+            # No deck was written: say so to the caller (the workflow engine
+            # checks the exit status), not only on the terminal.
+            sys.exit(1)
 
     else:
         # Directory processing
