@@ -1316,15 +1316,17 @@ class CrystalInputParser:
                 in_freq = True
                 freq_settings = {}
                 
-                # Look for NUMDERIV setting
-                for j in range(i + 1, min(i + 10, len(lines))):
-                    if lines[j].strip() == "NUMDERIV" and j + 1 < len(lines):
+                # NUMDERIV anywhere in the FREQCALC block (closed by END or
+                # ENDFREQ). Stored under the key the FREQ writer reads.
+                for j in range(i + 1, len(lines)):
+                    rec = lines[j].strip()
+                    if rec == "NUMDERIV" and j + 1 < len(lines):
                         try:
-                            freq_settings["NUMDERIV"] = int(lines[j + 1].strip())
+                            freq_settings["numderiv"] = int(lines[j + 1].split()[0])
                         except (ValueError, IndexError):
-                            freq_settings["NUMDERIV"] = 2  # Default
+                            pass
                         break
-                    elif lines[j].strip() == "END":
+                    elif rec in ("END", "ENDFREQ"):
                         break
                         
                 if freq_settings:

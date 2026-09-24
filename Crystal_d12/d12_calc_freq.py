@@ -153,8 +153,13 @@ FREQ_TEMPLATES = {
 }
 
 
-def get_advanced_frequency_settings():
-    """Get advanced frequency calculation settings from user"""
+def get_advanced_frequency_settings(parent_numderiv=None):
+    """Get advanced frequency calculation settings from user.
+
+    parent_numderiv: NUMDERIV of a parent FREQ deck, the default answer at
+    the NUMDERIV prompt (None: no keyword).
+    """
+    numderiv_default = str(parent_numderiv) if parent_numderiv in (1, 2) else "0"
     from d12_constants import yes_no_prompt, get_user_input
     
     freq_settings = {}
@@ -221,7 +226,7 @@ def get_advanced_frequency_settings():
         print("     Forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
         print("  2: Two displacements per atom (more accurate)")
         print("     Central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
-        numderiv_choice = _nav_read("\nSelect method (0-2) [0]: ", valid_set={"_choice_"}).strip() or "0"
+        numderiv_choice = _nav_read(f"\nSelect method (0-2) [{numderiv_default}]: ", valid_set={"_choice_"}).strip() or numderiv_default
         if numderiv_choice == "0":
             freq_settings["numderiv"] = None  # Signal to skip NUMDERIV keyword
         else:
@@ -958,7 +963,7 @@ def get_advanced_frequency_settings():
         print("2: Two displacements per atom (default, recommended)")
         print("   Uses central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
 
-        numderiv = _nav_read("Select method (0-2) [0]: ", valid_set={"_choice_"}).strip() or "0"
+        numderiv = _nav_read(f"Select method (0-2) [{numderiv_default}]: ", valid_set={"_choice_"}).strip() or numderiv_default
         if numderiv == "0":
             freq_settings["numderiv"] = None  # Signal to skip NUMDERIV keyword
         else:
@@ -1320,17 +1325,18 @@ def _get_frequency_configuration_impl(current_settings: Optional[Dict[str, Any]]
     else:
         # FREQCALC calculation (default)
         freq_config["freq_mode"] = "FREQCALC"
-        freq_config.update(_get_freqcalc_configuration())
+        parent_freq = (current_settings or {}).get("freq_settings") or {}
+        freq_config.update(_get_freqcalc_configuration(parent_freq.get("numderiv")))
     
     return freq_config
 
 
-def _get_freqcalc_configuration() -> Dict[str, Any]:
+def _get_freqcalc_configuration(parent_numderiv=None) -> Dict[str, Any]:
     """Get FREQCALC (harmonic frequency) configuration"""
     from d12_constants import yes_no_prompt
     
     # Get the advanced frequency settings directly
-    freq_settings = get_advanced_frequency_settings()
+    freq_settings = get_advanced_frequency_settings(parent_numderiv)
     
     # Build the configuration with settings at the top level
     freq_config = {

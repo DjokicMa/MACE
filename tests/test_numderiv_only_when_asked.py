@@ -64,3 +64,47 @@ def test_real_freq_deck_without_a_request_has_no_numderiv(tmp_path):
     child = prompts._opt2d12(tmp_path, name, stdin="y\n" + "\n" * 17,
                              extra=["--config-file", "cfg.json"])
     assert "FREQCALC" in child and "NUMDERIV" not in child
+
+
+# ------------------------------------------------ a FREQ parent's NUMDERIV
+
+FREQ_PARENT = "FREQ/1_dia_opt_rev1_freq_B3LYP-D3-D3_optimized_supercel222"
+
+
+def _freq_parent_with_numderiv(tmp_path, value=1):
+    """The corpus FREQ deck with 'NUMDERIV / <value>' added to its FREQCALC block."""
+    name = prompts._copy_parent(FREQ_PARENT, tmp_path)
+    deck = tmp_path / f"{name}.d12"
+    text = deck.read_text()
+    assert "FREQCALC\n" in text
+    deck.write_text(text.replace("FREQCALC\n", f"FREQCALC\nNUMDERIV\n{value}\n", 1))
+    return name
+
+
+def test_parser_reads_numderiv_under_the_writers_key(tmp_path):
+    from d12_parsers import CrystalInputParser
+    name = _freq_parent_with_numderiv(tmp_path, 1)
+    freq = CrystalInputParser(str(tmp_path / f"{name}.d12")).parse()["freq_settings"]
+    assert freq == {"numderiv": 1}
+
+
+def test_freq_parent_numderiv_kept_non_interactive(tmp_path):
+    name = _freq_parent_with_numderiv(tmp_path, 1)
+    child = prompts._opt2d12(tmp_path, name, stdin="",
+                             extra=["--non-interactive", "--calc-type", "FREQ"])
+    assert prompts._after(child, "NUMDERIV") == "1"
+
+
+def test_freq_parent_numderiv_is_the_prompt_default(tmp_path):
+    name = _freq_parent_with_numderiv(tmp_path, 1)
+    child = prompts._opt2d12(tmp_path, name, answers={"exact settings": "n",
+                                                      "calculation type": "3"})
+    assert prompts._after(child, "NUMDERIV") == "1"
+
+
+def test_answer_still_overrides_the_parents_numderiv(tmp_path):
+    name = _freq_parent_with_numderiv(tmp_path, 1)
+    child = prompts._opt2d12(tmp_path, name, answers={"exact settings": "n",
+                                                      "calculation type": "3",
+                                                      "Select method (0-2)": "0"})
+    assert "NUMDERIV" not in child
