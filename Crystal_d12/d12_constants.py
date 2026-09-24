@@ -1305,8 +1305,15 @@ OPT_TYPES = {
     "2": "CELLONLY", 
     "3": "ATOMONLY",  # INTONLY is not a CRYSTAL keyword (manual sec. 7.3.1)
     "4": "ITATOCEL",
-    "5": "CVOLOPT"
+    "5": "CVOLOPT",
+    "6": "INTREDUN",
 }
+
+# Records inside OPTGEOM that choose the optimization type (manual sec.
+# 7.3.1), plus CVOLOPT. A parent deck's type is read from these, so every one
+# the menu offers must be here: an unread type became FULLOPTG in the child.
+OPTGEOM_TYPE_KEYWORDS = ("FULLOPTG", "CELLONLY", "ATOMONLY", "ITATOCEL",
+                         "INTREDUN", "CVOLOPT")
 
 
 # ============================================================

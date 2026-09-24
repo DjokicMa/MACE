@@ -136,7 +136,8 @@ OPT_TYPES = {
     "2": "CELLONLY", 
     "3": "ATOMONLY",  # ITATOCELL is not a CRYSTAL keyword (manual sec. 7.3.1)
     "4": "ITATOCEL",
-    "5": "CVOLOPT"
+    "5": "CVOLOPT",
+    "6": "INTREDUN",
 }
 
 # Default optimization settings
@@ -235,6 +236,7 @@ def _configure_optimization_impl(current_settings: Optional[Dict[str, Any]] = No
     print("3. ATOMONLY - Optimize only atomic coordinates (fixed cell)")
     print("4. ITATOCEL - Iterative optimization (atoms-cell-atoms-cell)")
     print("5. CVOLOPT - Constant volume optimization")
+    print("6. INTREDUN - Full optimization in redundant internal coordinates")
 
     parent_type = parent.get("type") or parent.get("optimization_type")
     type_default = next((k for k, v in OPT_TYPES.items() if v == parent_type), "1")

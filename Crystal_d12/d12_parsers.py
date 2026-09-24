@@ -22,6 +22,7 @@ from d12_constants import (
     SPACEGROUP_SYMBOL_TO_NUMBER,
     SPACEGROUP_ALTERNATIVES,
     MULTI_ORIGIN_SPACEGROUPS,
+    OPTGEOM_TYPE_KEYWORDS,
     RHOMBOHEDRAL_SPACEGROUPS,
     crystal23_functional_keyword,
     mace_functional_name,
@@ -1258,8 +1259,9 @@ class CrystalInputParser:
             elif stripped == "ENDOPT":
                 in_optgeom = False
             elif in_optgeom:
-                # Extract all optimization types from d12creation.py
-                if stripped in ["FULLOPTG", "CVOLOPT", "CELLONLY", "ATOMONLY"]:
+                # The optimization type (CRYSTAL23 manual sec. 7.3.1), plus
+                # CVOLOPT, which MACE offers as a type of its own.
+                if stripped in OPTGEOM_TYPE_KEYWORDS:
                     opt_settings["type"] = stripped
                     
                 # Optimization tolerances

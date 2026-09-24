@@ -5,6 +5,8 @@
   and its SCF MAXCYCLE 1600 / TOLDEE 9 as OPTGEOM values, which then became
   the defaults of a child optimization. A title containing SHRINK or a
   geometry keyword misread the k-mesh or the dimensionality the same way.
+* ITATOCEL and INTREDUN were not read as optimization types, so a parent's
+  ITATOCEL became FULLOPTG, and --opt-type was ignored for OPT parents.
 
 The corpus tests run the real ``mace_cli opt2d12`` and skip when ``test/`` is
 absent. The other tests run everywhere.
@@ -157,9 +159,42 @@ def test_settings_extractor_ignores_the_title(tmp_path):
     assert settings["functional_info"]["exchange"] == "PBE0"
 
 
+# ------------------------------------------------------- optimization type
+
+@pytest.mark.parametrize("opt_type", ["ITATOCEL", "INTREDUN", "CELLONLY", "CVOLOPT"])
+def test_parent_optimization_type_is_read(tmp_path, opt_type):
+    data = _parse(tmp_path, _opt_deck(opt_type))
+    assert data["optimization_settings"]["type"] == opt_type
+
+
+@pytest.mark.parametrize("opt_type", ["ITATOCEL", "INTREDUN"])
+def test_parent_optimization_type_is_the_menu_default(monkeypatch, opt_type):
+    _blank_input(monkeypatch)
+    cfg = d12_calc_basic._configure_optimization_impl({"type": opt_type, "MAXCYCLE": 800})
+    assert cfg["type"] == opt_type
+
+
+def test_every_menu_type_is_read_back():
+    from d12_constants import OPTGEOM_TYPE_KEYWORDS
+    assert set(d12_calc_basic.OPT_TYPES.values()) <= set(OPTGEOM_TYPE_KEYWORDS)
+
+
+def test_non_interactive_keeps_the_parent_type_and_honours_opt_type():
+    from CRYSTALOptToD12 import _keep_extracted_settings
+
+    parent = {"optimization_settings": {"type": "ITATOCEL", "MAXCYCLE": 800},
+              "spacegroup": 227, "functional": "B3LYP"}
+    kept = _keep_extracted_settings(dict(parent), "OPT", None, "auto")
+    assert kept["optimization_type"] == "ITATOCEL"
+    changed = _keep_extracted_settings(dict(parent), "OPT", "ATOMONLY", "auto")
+    assert changed["optimization_settings"]["type"] == "ATOMONLY"
+    assert parent["optimization_settings"]["type"] == "ITATOCEL"   # not mutated
+
+
 # ------------------------------------------------- real opt2d12 on the corpus
 
 SP_TITLED_OPTGEOM = "SP/3,4^2T7_CA_BULK_OPTGEOM_TZ_opt_B3LYP-D3-D3_optimized_rev1_sp_B3LYP-D3-D3_optimized"
+MAXTRADIUS_PARENT = "OPT/1_dia_opt_rev1"                      # FULLOPTG, MAXTRADIUS 0.25
 
 
 def _copy_parent(stem, tmp_path):
@@ -208,3 +243,11 @@ def test_opt_child_of_an_sp_parent_titled_optgeom_gets_standard_optgeom(tmp_path
     assert opt[opt.index("MAXCYCLE") + 1] == "800"         # not the SCF's 1600
     assert float(opt[opt.index("TOLDEG") + 1]) == 0.0003
     assert opt[opt.index("TOLDEE") + 1] == "7"             # not the SCF's 9
+
+
+def test_itatocel_parent_gives_an_itatocel_child(tmp_path):
+    name = _copy_parent(MAXTRADIUS_PARENT, tmp_path)
+    deck = tmp_path / f"{name}.d12"
+    deck.write_text(deck.read_text().replace("\nFULLOPTG\n", "\nITATOCEL\n"))
+    child = _opt2d12(tmp_path, name, {"exact settings": "n", "calculation type": "2"})
+    assert _optgeom(child)[1] == "ITATOCEL"

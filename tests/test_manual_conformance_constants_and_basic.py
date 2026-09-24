@@ -65,6 +65,7 @@ EXPECTED_OPT_TYPES = {
     "3": "ATOMONLY",
     "4": "ITATOCEL",
     "5": "CVOLOPT",
+    "6": "INTREDUN",
 }
 
 

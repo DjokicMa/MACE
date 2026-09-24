@@ -799,11 +799,17 @@ def _keep_extracted_settings(settings, calc_type, opt_type, origin_setting):
 
     # Set optimization type if it's an OPT calculation
     if options["calculation_type"] == "OPT":
+        parent_opt = dict(options.get("optimization_settings") or {})
         if opt_type:
+            # The writer takes the type inside optimization_settings over
+            # optimization_type, so the parent's own type has to go too, or
+            # --opt-type was ignored for every OPT parent.
+            parent_opt["type"] = opt_type
+            options["optimization_settings"] = parent_opt
             options["optimization_type"] = opt_type
         else:
-            # Default to FULLOPTG
-            options["optimization_type"] = "FULLOPTG"
+            # The parent's own optimization type, else FULLOPTG
+            options["optimization_type"] = parent_opt.get("type") or "FULLOPTG"
 
     # Handle origin setting: "auto" preserves the origin extracted from
     # the source calculation. The old behavior guessed a directive from
@@ -1477,7 +1483,7 @@ def main():
     )
     parser.add_argument(
         "--opt-type",
-        choices=["FULLOPTG", "ATOMONLY", "CELLONLY"],
+        choices=["FULLOPTG", "ATOMONLY", "CELLONLY", "ITATOCEL", "CVOLOPT", "INTREDUN"],
         help="Optimization type for OPT calculations in non-interactive mode",
     )
     parser.add_argument(

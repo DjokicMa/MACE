@@ -1328,7 +1328,10 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
             opt_desc = {
                 "FULLOPTG": "Full geometry optimization (atoms + cell)",
                 "ATOMONLY": "Atom positions only (fixed cell)",
-                "CELLONLY": "Cell parameters only (fixed atoms)"
+                "CELLONLY": "Cell parameters only (fixed atoms)",
+                "ITATOCEL": "Iterative optimization (atoms-cell-atoms-cell)",
+                "CVOLOPT": "Constant volume optimization",
+                "INTREDUN": "Full optimization in redundant internal coordinates",
             }
             current_opt_desc = opt_desc.get(current_opt_type, current_opt_type)
             if not shared_mode or yes_no_prompt(f"\nChange optimization settings? (Current: {current_opt_desc})", "no"):

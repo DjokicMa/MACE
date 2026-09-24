@@ -835,7 +835,7 @@ Options:
   --directory DIR       Process all files in DIR (default: current directory)
   --output-dir DIR      Output directory (default: same as input)
   --calc-type {SP,OPT,FREQ}        Calculation type (for --non-interactive)
-  --opt-type {FULLOPTG,ATOMONLY,CELLONLY}
+  --opt-type {FULLOPTG,ATOMONLY,CELLONLY,ITATOCEL,CVOLOPT,INTREDUN}
   --config-file FILE    JSON config (skips interactive prompts)
   --non-interactive     Skip all prompts (use defaults / provided options)
   --shared-settings     Apply the same settings to all files
