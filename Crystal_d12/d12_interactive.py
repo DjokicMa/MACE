@@ -1332,6 +1332,9 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
         levshift_info = "None"
         if has_levshift and options["levshift"]:
             levshift_info = f"{options['levshift']['shift']} Hartree for {options['levshift']['ncycles']} cycles"
+        elif _parent_levshift(options):
+            has_levshift = True
+            levshift_info = "{} {} (ISHIFT ILOCK)".format(*_parent_levshift(options))
         
         # Display with (Default) markers
         print(f"Spin polarization: {current_spin}{'' if has_spin_setting else ' (Default)'}")
@@ -1815,6 +1818,20 @@ def configure_external_pressure() -> Dict[str, float]:
     return {"pressure": pressure}
 
 
+_NO_ANSWER = object()
+
+
+def _parent_levshift(options: Dict[str, Any]) -> Optional[Tuple[int, int]]:
+    """The parent deck's LEVSHIFT (ISHIFT, ILOCK) from scf_settings, or None."""
+    levshift = (options.get("scf_settings") or {}).get("levshift")
+    try:
+        if levshift and len(levshift) >= 2:
+            return int(levshift[0]), int(levshift[1])
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
 def configure_advanced_electronic_settings(options: Dict[str, Any], show_current: bool = False,
                                           force_configure: bool = False) -> Dict[str, Any]:
     """Configure advanced electronic and convergence settings
@@ -1945,9 +1962,28 @@ def configure_advanced_electronic_settings(options: Dict[str, Any], show_current
         current_levshift = options.get("levshift", {})
         has_levshift = bool(current_levshift)
         default_levshift = "yes" if has_levshift else "no"
-        
-        use_levshift = yes_no_prompt("Use level shifting (for difficult SCF convergence)?", default_levshift)
-        if use_levshift:
+
+        # The parent deck's LEVSHIFT record (ISHIFT ILOCK, as parsed into
+        # scf_settings) is the default of this prompt, and the answer is final:
+        # the caller used to re-add the parent's record after an explicit "no".
+        parent_levshift = _parent_levshift(options)
+        levshift_answer = _NO_ANSWER
+        if parent_levshift:
+            print(f"Current: LEVSHIFT {parent_levshift[0]} {parent_levshift[1]}")
+            if yes_no_prompt("Use level shifting (for difficult SCF convergence)?", "yes"):
+                answer = input(f"LEVSHIFT ISHIFT ILOCK [{parent_levshift[0]} {parent_levshift[1]}]: ").strip()
+                levshift_answer = parent_levshift
+                try:
+                    parts = [int(x) for x in answer.split()]
+                    if len(parts) == 2:
+                        levshift_answer = tuple(parts)
+                    elif answer:
+                        print(f"Invalid input, keeping LEVSHIFT {parent_levshift[0]} {parent_levshift[1]}")
+                except ValueError:
+                    print(f"Invalid input, keeping LEVSHIFT {parent_levshift[0]} {parent_levshift[1]}")
+            else:
+                levshift_answer = None
+        elif yes_no_prompt("Use level shifting (for difficult SCF convergence)?", default_levshift):
             current_shift = current_levshift.get("shift", 5.0) if has_levshift else 5.0
             current_ncycles = current_levshift.get("ncycles", 30) if has_levshift else 30
             
@@ -1986,6 +2022,8 @@ def configure_advanced_electronic_settings(options: Dict[str, Any], show_current
         # Additional SCF options - already handled by configure_scf_settings_with_defaults
         # The wrapper function already asked about PPAN and BIPOSIZE/EXCHSIZE
         
+        if levshift_answer is not _NO_ANSWER:
+            scf_config["levshift"] = levshift_answer  # None = explicitly off
         advanced_config["scf_settings"] = scf_config
         # Add compatibility keys
         advanced_config["scf_method"] = scf_config.get("method", "DIIS")

@@ -258,3 +258,56 @@ def test_saved_options_round_trip_through_json(tmp_path):
     out = tmp_path / "roundtrip.d12"
     assert M.write_d12_file(str(out), geo, settings) is not False
     assert _scf_tail(out.read_text().splitlines()) == parent_tail
+
+
+def _planless_answers(tmp_path, monkeypatch, name, levshift_answers):
+    """The planless interactive flow in-process, blank (default) answers
+    everywhere except the level-shifting prompts."""
+    import builtins
+    import CRYSTALOptToD12 as M
+    import menu_nav
+
+    prompts = []
+    queue = list(levshift_answers)
+
+    def fake_input(prompt=""):
+        prompts.append(prompt)
+        if len(prompts) == 1:
+            return "n"            # "Use these settings?" -> walk the prompts
+        if len(prompts) > 300:
+            raise EOFError
+        if ("level shifting" in prompt or "LEVSHIFT" in prompt) and queue:
+            return queue.pop(0)
+        return ""
+
+    monkeypatch.setattr(builtins, "input", fake_input)
+    monkeypatch.setattr(menu_nav, "_REAL_INPUT", fake_input)   # yes/no prompts
+    monkeypatch.chdir(tmp_path)
+    M.process_files(f"{name}.out", f"{name}.d12", non_interactive=True, calc_type="SP",
+                    output_dir=".")
+    decks = [p for p in tmp_path.glob("*.d12") if p.name != f"{name}.d12"]
+    assert len(decks) == 1, sorted(p.name for p in tmp_path.iterdir())
+    return prompts, decks[0].read_text().splitlines()
+
+
+def test_planless_levshift_prompt_defaults_to_the_parent(tmp_path, monkeypatch):
+    name, parent_tail = _edited_rev1(tmp_path)
+    prompts, child = _planless_answers(tmp_path, monkeypatch, name, [])
+    asked = [p for p in prompts if "level shifting" in p]
+    assert asked and asked[0].rstrip().endswith("[Y/n]"), asked
+    assert any("[5 1]" in p for p in prompts), prompts
+    assert _scf_tail(child) == parent_tail
+
+
+def test_planless_levshift_can_be_turned_off(tmp_path, monkeypatch):
+    """Answering N used to be undone: the parent's LEVSHIFT was merged back."""
+    name, parent_tail = _edited_rev1(tmp_path)
+    prompts, child = _planless_answers(tmp_path, monkeypatch, name, ["n"])
+    assert "LEVSHIFT" not in child
+    assert _scf_tail(child) == [l for l in parent_tail if l not in ("LEVSHIFT", "5 1")]
+
+
+def test_planless_levshift_can_be_changed(tmp_path, monkeypatch):
+    name, parent_tail = _edited_rev1(tmp_path)
+    prompts, child = _planless_answers(tmp_path, monkeypatch, name, ["y", "3 0"])
+    assert _after(child, "LEVSHIFT") == "3 0"
