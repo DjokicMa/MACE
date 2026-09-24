@@ -1343,7 +1343,10 @@ fi'''
             # after "n" is blank so each prompt takes its parent-based default;
             # a scripted "2" at "Select method type" turned HF parents into
             # HSE06-D3.
-            input_responses = "n\n" + "\n" * 19
+            # The flow asks up to 19 questions on the corpus (a parent with
+            # LEVSHIFT or a spin lock); 39 blank lines leave room for more.
+            # Unused lines are never read.
+            input_responses = "n\n" + "\n" * 39
             
             success, stdout, stderr = self.run_script_in_isolated_directory(
                 crystal_to_d12_script, work_dir, args, input_data=input_responses

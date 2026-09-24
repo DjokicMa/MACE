@@ -161,7 +161,10 @@ def test_planless_sp_leaves_the_method_type_at_its_default(tmp_path, monkeypatch
     seen = _capture(eng)
     with pytest.raises(_Stop):
         eng.generate_sp_from_opt("c1")
-    assert seen["stdin"] == "n\n" + "\n" * 19
+    # "n" (modify settings), then only blank answers: every prompt takes
+    # its parent-based default. Enough of them that no parent runs out.
+    assert seen["stdin"].startswith("n\n")
+    assert set(seen["stdin"][2:]) == {"\n"} and len(seen["stdin"]) - 2 >= 30
 
 
 # ---------------------------------------------------------------------------
