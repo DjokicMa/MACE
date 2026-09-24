@@ -406,6 +406,17 @@ def get_calculation_type() -> str:
     return calc_types[choice]
 
 
+def _required_basis_for(functional: Optional[str]) -> Optional[str]:
+    """The basis a functional mandates (the 3c methods), else None."""
+    if not functional:
+        return None
+    for info in FUNCTIONAL_CATEGORIES.values():
+        reqs = info.get("basis_requirements") or {}
+        if functional in info.get("functionals", []) and functional in reqs:
+            return reqs[functional]
+    return None
+
+
 def select_basis_set_with_defaults(elements: List[int], method: str = "DFT",
                                  functional: Optional[str] = None,
                                  shared_mode: bool = False,
@@ -982,9 +993,16 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
         options["functional"] = functionals[int(func_choice) - 1]
         options["dft_functional"] = options["functional"]  # Added for compatibility
         
+        # The parent's dispersion state is the default: a blank answer keeps
+        # it. Defaulting to "yes" turned PBE0/HSE06/HSEsol/... parents into
+        # their -D3 versions on every planless or blank-answer run.
+        parent_d3 = bool(options.get("dispersion")) or current_functional.upper().endswith("-D3")
+        chosen = options["functional"]
+
         # Ask about D3 dispersion if functional supports it
-        if options["functional"] in D3_FUNCTIONALS:
-            use_d3 = yes_no_prompt(f"\nAdd D3 dispersion correction to {options['functional']}?", "yes")
+        if chosen in D3_FUNCTIONALS:
+            use_d3 = yes_no_prompt(f"\nAdd D3 dispersion correction to {chosen}?",
+                                   "yes" if parent_d3 else "no")
             if use_d3:
                 options["dispersion"] = True
                 options["use_dispersion"] = True  # Added for compatibility
@@ -992,6 +1010,17 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
             else:
                 options["dispersion"] = False
                 options["use_dispersion"] = False
+        elif chosen == base_functional and current_functional.upper().endswith("-D3"):
+            # The parent's own "<name>-D3" keyword for a functional outside
+            # D3_FUNCTIONALS (e.g. PBESOL-D3, SCAN-D3): nothing to ask, keep
+            # the parent's method exactly instead of silently dropping -D3.
+            options["functional"] = current_functional
+            options["dispersion"] = True
+            options["use_dispersion"] = True
+        elif chosen != base_functional:
+            # A different functional with no D3 option: nothing to carry over.
+            options["dispersion"] = False
+            options["use_dispersion"] = False
     
     return options
 
@@ -1191,7 +1220,22 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
             print(f"\nNote: Original external basis set data is available from the D12 file.")
             print(f"      Keeping the current basis will reuse this data.")
 
-        if not shared_mode or yes_no_prompt(f"\nChange basis set? (Current: {current_basis} [{current_basis_type}])", "no"):
+        # The parent's own EXTERNAL basis records are the default. Going
+        # straight to the library menu replaced them with the library file's
+        # basis (different exponents) on every blank-answer or planless run.
+        # A functional that dictates its basis (the 3c methods) still goes
+        # through the selection, which assigns the required basis.
+        keep_original_external = False
+        if (not shared_mode and has_original_external
+                and options.get("use_original_external_basis")
+                and current_basis_type == "EXTERNAL"
+                and not _required_basis_for(options.get("functional"))):
+            keep_original_external = yes_no_prompt(
+                "\nKeep the basis set from the original D12?", "yes")
+
+        if keep_original_external:
+            pass
+        elif not shared_mode or yes_no_prompt(f"\nChange basis set? (Current: {current_basis} [{current_basis_type}])", "no"):
             basis_config = select_basis_set_with_defaults(
                 [],
                 options.get("method_type", "DFT"),
