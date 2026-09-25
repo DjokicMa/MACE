@@ -31,6 +31,37 @@ module load Python-bundle-PyPI/2023.06-GCCcore-12.3.0
 
 mkdir  -p $scratch/$JOB
 cp $DIR/$JOB.d12  $scratch/$JOB/INPUT
+# OPTGEOM RESTART - a walltime-killed optimization continuing from its last
+# completed step. The recovery adds RESTART to the OPTGEOM block of the same
+# deck, so this job has the same $JOB name and therefore the same scratch
+# directory as the killed one. CRYSTAL reads the earlier steps from
+# OPTINFO.DAT there, and the SCF guess from fort.20 - the density matrix of
+# the last completed SCF. During an optimization CRYSTAL keeps that matrix in
+# fort.20 itself, while fort.9 stays EMPTY until the run ends (measured on a
+# killed OPT: fort.9 0 bytes, fort.20 rewritten each step), so the killed run own
+# own fort.20 is the one to use and nothing may overwrite it - which is why
+# this runs before the GUESSP staging and tells it to stand aside. Without
+# OPTINFO.DAT there is nothing to continue, so RESTART comes back out of the
+# scratch copy and the job starts over; $DIR/$JOB.d12 itself is not modified.
+RESTART_KEEPS_FORT20=""
+if [ -f "$scratch/$JOB/INPUT" ] && sed -n "/^[[:space:]]*OPTGEOM[[:space:]]*$/I,/^[[:space:]]*END/Ip" "$scratch/$JOB/INPUT" | grep -qiE "^[[:space:]]*RESTART[[:space:]]*$"; then
+  if [ -f "$scratch/$JOB/OPTINFO.DAT" ]; then
+    if [ -s "$scratch/$JOB/fort.20" ]; then
+      RESTART_KEEPS_FORT20=1
+      echo "RESTART: continuing the optimization from OPTINFO.DAT, SCF guess from its own fort.20"
+    elif [ -s "$scratch/$JOB/fort.9" ]; then
+      cp "$scratch/$JOB/fort.9" "$scratch/$JOB/fort.20"
+      RESTART_KEEPS_FORT20=1
+      echo "RESTART: continuing the optimization from OPTINFO.DAT, SCF guess from fort.9"
+    else
+      echo "RESTART: continuing the optimization from OPTINFO.DAT (no density matrix left in scratch)"
+    fi
+  else
+    sed -i "/^[[:space:]]*OPTGEOM[[:space:]]*$/I,/^[[:space:]]*END/I{/^[[:space:]]*RESTART[[:space:]]*$/Id}" "$scratch/$JOB/INPUT"
+    echo "RESTART requested but no OPTINFO.DAT in $scratch/$JOB - dropped it from"
+    echo "  this run and starting the optimization over"
+  fi
+fi
 # GUESSP restart. CRYSTAL reads the starting density matrix from fort.20 -
 # "copy file fort.9 to fort.20" - and every run saves its own converged matrix
 # as $JOB.f9 further down, so the material already has one on disk after any
@@ -56,7 +87,7 @@ cp $DIR/$JOB.d12  $scratch/$JOB/INPUT
 # chain is exactly that case. Stripping the record from the scratch copy makes
 # the deck mean "restart if there is something to restart from"; $DIR/$JOB.d12
 # itself is never modified, so the next attempt still asks.
-if grep -qiE "^[[:space:]]*GUESSP" "$scratch/$JOB/INPUT" 2>/dev/null; then
+if [ -z "$RESTART_KEEPS_FORT20" ] && grep -qiE "^[[:space:]]*GUESSP" "$scratch/$JOB/INPUT" 2>/dev/null; then
   if [ -f "$DIR/$JOB.f20" ]; then
     cp "$DIR/$JOB.f20" "$scratch/$JOB/fort.20"
     echo "GUESSP: staged $JOB.f20 as fort.20"

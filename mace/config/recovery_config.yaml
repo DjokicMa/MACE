@@ -40,10 +40,12 @@ error_recovery:
   timeout_error:
     handler: "timeout_handler"
     walltime_factor: 2.0                 # Multiply current walltime by this factor
-    max_walltime: "7-00:00:00"            # Maximum 7 days (HPCC limit)
+    max_walltime: "7-00:00:00"            # Used only when SLURM can't be asked: the cap is
+                                         # otherwise read live from the job's own queue
+                                         # (7 days on HPCC; 14 on mendoza_q_long)
     max_retries: 2                       # Allow retries with restart capability
     resubmit_delay: 900                  # Longer delay for walltime adjustments
-    enable_restart: true                 # Use RESTART for geometry optimization 
+    enable_restart: true                 # OPT killed mid-optimization: OPTGEOM RESTART
     enable_guessp: true                  # Use GUESSP for SP calculations (fort.20 from fort.9)
     preserve_wavefunction: true          # Copy fort.9 to fort.20 for SCF restart
     description: "Increases walltime up to 7-day HPCC limit and enables calculation restart from last known good state"

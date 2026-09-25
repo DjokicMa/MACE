@@ -35,6 +35,7 @@ try:
     from mace.database.materials_contextual import ContextualMaterialDatabase
     from mace.workflow.context import get_current_context
     from mace.recovery.detector import CrystalErrorDetector
+    from mace.recovery import opt_restart, slurm_limits
 except ImportError as e:
     print(f"Error importing required modules: {e}")
     print(f"Make sure all required Python files are in the same directory as {__file__}")
@@ -104,6 +105,9 @@ class ErrorRecoveryEngine:
         
         # Track recovery attempts to prevent infinite loops
         self.recovery_attempts = {}
+
+        # How SLURM client commands are run (tests substitute a fake).
+        self.slurm_runner = slurm_limits.run_slurm
         
     def load_recovery_config(self) -> Dict:
         """Load recovery configuration from YAML file."""
@@ -651,18 +655,20 @@ class ErrorRecoveryEngine:
                     print("Could not parse walltime in job script")
                     return None
 
-                # Apply time factor
+                # Apply time factor, then cap at what the job's OWN queue
+                # allows, asked of SLURM live (7 days on the general
+                # partitions and mendoza_q, 14 on mendoza_q_long). The
+                # configured max_walltime only applies when SLURM can't be
+                # asked. Never below the original walltime -- it already ran
+                # with it -- and never onto another partition or account.
                 time_factor = config.get('walltime_factor', 2.0)
-                new_total_seconds = int(total_seconds * time_factor)
-
-                # Cap at the configured maximum (days-aware), but never below the
-                # original walltime -- a low/legacy default must not SHRINK a
-                # multi-day job (the old '48:00:00' default + colon-split parse
-                # both broke on the '7-00:00:00' the templates actually use).
+                target_seconds = int(total_seconds * time_factor)
                 max_total = self._parse_walltime_seconds(config.get('max_walltime', '7-00:00:00'))
-                if max_total:
-                    new_total_seconds = min(new_total_seconds, max_total)
+                new_total_seconds, why = slurm_limits.capped_walltime(
+                    job_script, script_content, total_seconds, target_seconds,
+                    max_total, runner=self.slurm_runner)
                 new_total_seconds = max(new_total_seconds, total_seconds)
+                print(f"Walltime limit: {why}")
 
                 new_walltime = self._format_walltime(new_total_seconds)
 
@@ -685,10 +691,21 @@ class ErrorRecoveryEngine:
                 with open(new_script_path, 'w') as f:
                     f.write(updated_script)
                     
-                print(f"Walltime increased from {self._format_walltime(total_seconds)} to {new_walltime}")
+                if new_total_seconds > total_seconds:
+                    print(f"Walltime increased from {self._format_walltime(total_seconds)} to {new_walltime}")
+                else:
+                    print(f"Walltime stays at {new_walltime}; resubmitting anyway")
 
-                # Input is unchanged; the fix lives in the bumped job script.
-                # Return both so the resubmitter submits the bumped script.
+                # An OPT killed mid-optimization continues from its last
+                # completed step (OPTGEOM RESTART) instead of starting over.
+                # (recovery_config.yaml's enable_restart: false turns it off.)
+                if config.get('enable_restart', True):
+                    self._prepare_opt_restart(calc, script_content)
+
+                # The bumped job script carries the walltime; the input is the
+                # same file (possibly with RESTART added in place - the job
+                # script reads $JOB.d12, and the same $JOB means the same
+                # scratch directory, which holds OPTINFO.DAT).
                 return (Path(calc['input_file']), new_script_path)
                 
             else:
@@ -699,6 +716,59 @@ class ErrorRecoveryEngine:
             print(f"Error applying timeout fix: {e}")
             return None
             
+    def _prepare_opt_restart(self, calc: Dict, job_script_text: str) -> Optional[str]:
+        """Add OPTGEOM RESTART to a timed-out OPT's deck when it can work.
+
+        RESTART needs the killed run's OPTINFO.DAT, which exists only once an
+        optimization cycle has completed. So it is added when the output shows
+        a completed cycle (or the run was already a restart) and the job's
+        scratch directory does not show OPTINFO.DAT missing. When the scratch
+        directory can't be seen from here ($SCRATCH empty on this node), the
+        output decides: the job script re-checks for OPTINFO.DAT on the compute
+        node and drops RESTART from its scratch copy if it is not there.
+
+        The killed run's .out is kept as <JOB>.out.timeout<N> either way.
+        Returns 'restart', 'cold' or None (not an OPT deck / nothing to do).
+        """
+        try:
+            input_file = Path(calc.get('input_file') or '')
+            if not input_file.is_file():
+                return None
+            d12_text = input_file.read_text(errors='ignore')
+            if not opt_restart.has_optgeom(d12_text):
+                return None  # not a geometry optimization
+
+            work_dir = Path(calc.get('work_dir') or input_file.parent)
+            out_path = Path(calc['output_file']) if calc.get('output_file') \
+                else work_dir / f"{input_file.stem}.out"
+            out_text = out_path.read_text(errors='ignore') if out_path.is_file() else ''
+            kept = opt_restart.keep_timed_out_output(out_path)
+            if kept:
+                print(f"Kept the timed-out output as {kept.name}")
+
+            progressed = opt_restart.optimization_has_progress(out_text)
+            job_name = opt_restart.job_name(job_script_text) or input_file.stem
+            scratch = opt_restart.job_scratch_dir(job_script_text, job_name)
+            state = opt_restart.optinfo_state(scratch)
+            if progressed and state != 'absent':
+                new_text, changed = opt_restart.add_optgeom_restart(d12_text)
+                if changed:
+                    input_file.write_text(new_text)
+                    print(f"Added RESTART to OPTGEOM in {input_file.name}: the optimization "
+                          f"continues from its last completed step (OPTINFO.DAT {state})")
+                else:
+                    print(f"{input_file.name} already restarts the optimization (RESTART kept)")
+                return 'restart'
+            if not progressed:
+                print("Timed out before the first optimization step completed (no OPTINFO.DAT "
+                      "yet): resubmitting from the start")
+            else:
+                print(f"No OPTINFO.DAT in {scratch}: resubmitting from the start")
+            return 'cold'
+        except Exception as e:
+            print(f"Could not prepare an optimization restart: {e}")
+            return None
+
     def cleanup_handler(self, calc: Dict, config: Dict) -> Optional[Path]:
         """Handler for disk space errors - cleans up scratch space."""
         print(f"Applying cleanup fix for {calc['calc_id']}")

@@ -15,6 +15,27 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
 
 ### Fixed
 
+- **A walltime-killed geometry optimization continues where it stopped.**
+  When an OPT runs out of time after at least one optimization step, the
+  recovery adds `RESTART` to the OPTGEOM block of the same deck, so the new job
+  picks up the earlier steps from OPTINFO.DAT in the same scratch directory
+  (CRYSTAL23 manual 7.4.3) and uses the killed run's last density matrix as
+  the SCF guess. A job killed in its first SCF has no OPTINFO.DAT and starts
+  over as before. The job script checks for OPTINFO.DAT again on the compute
+  node and falls back to a fresh start if it is missing. The killed run's
+  output is kept as `<job>.out.timeout1`, `.timeout2`, ...
+- **The doubled walltime stays within the queue's limit.** It is checked with
+  SLURM when the job is resubmitted (`sbatch --test-only`, plus the MaxTime of
+  the partition the job runs in): 7 days on the general partitions and
+  mendoza_q, 14 days for jobs submitted with `-A mendoza_q_long`. A job is
+  never moved to another partition or account. A job already at the limit is
+  resubmitted at the same walltime. `max_walltime` is used only when SLURM
+  cannot be reached.
+- **Timeouts are recognised at all.** SLURM writes the time-limit notice to
+  the job's `-o` log and leaves the `.out` cut off mid-line, so a timed-out job
+  was classified as an unknown error and never recovered. SLURM's TIMEOUT
+  state, or that notice in the job's log, now marks it as a timeout.
+
 - **Generated SP, FREQ and OPT2 decks keep the parent's settings.** Decks the
   workflow engine derives from a finished calculation were quietly changing
   the method. Found by regenerating decks from real parents through every
