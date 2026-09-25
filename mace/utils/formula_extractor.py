@@ -21,6 +21,11 @@ from typing import Optional, Tuple, Dict
 from collections import Counter
 from datetime import datetime
 
+try:
+    from mace.utils.calc_detection import deck_records_for
+except ImportError:  # pragma: no cover - loaded as a bare module next to it
+    from calc_detection import deck_records_for
+
 
 # Atomic number -> element symbol (Z = 1..86 covers everything in these basis sets).
 _ELEMENT_SYMBOLS = {
@@ -336,6 +341,19 @@ def atomic_number_to_symbol(atomic_num: int) -> Optional[str]:
     return _ELEMENT_SYMBOLS.get(atomic_num)
 
 
+def _updates_formula_as_opt_deck(d12_file: Path, content: str) -> bool:
+    """True for an OPT .d12 deck (an OPTGEOM record) that is not a property deck.
+
+    Keywords are whole-line records with the title left out: MACE titles decks
+    after the file name, so an SP named "..._BULK_OPTGEOM_..." would otherwise
+    count as an OPT, and a title holding "BAND" or "DOSS" as a property deck.
+    """
+    records = deck_records_for(d12_file, content)
+    is_opt_calc = 'OPTGEOM' in records and d12_file.suffix == '.d12'
+    is_property_calc = d12_file.suffix == '.d3' or 'BAND' in records or 'DOSS' in records
+    return is_opt_calc and not is_property_calc
+
+
 def update_materials_table_info(db, material_id: str, d12_file: Path = None, 
                                cif_file: Path = None, output_file: Path = None):
     """
@@ -374,10 +392,8 @@ def update_materials_table_info(db, material_id: str, d12_file: Path = None,
             try:
                 with open(d12_file, 'r') as f:
                     content = f.read()
-                is_opt_calc = 'OPTGEOM' in content.upper() and d12_file.suffix == '.d12'
-                is_property_calc = d12_file.suffix == '.d3' or 'BAND' in content.upper() or 'DOSS' in content.upper()
-                
-                if is_opt_calc and not is_property_calc:
+
+                if _updates_formula_as_opt_deck(d12_file, content):
                     should_update_formula = True
                 elif existing_material.get('formula') and len(existing_material['formula']) <= 2:
                     # Current formula is suspiciously short - likely wrong

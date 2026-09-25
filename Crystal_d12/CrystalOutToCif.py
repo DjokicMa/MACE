@@ -45,6 +45,21 @@ from datetime import datetime
 from d12_parsers import CrystalOutputParser
 from d12_constants import ATOMIC_NUMBER_TO_SYMBOL
 
+# Calculation-type markers shared with the rest of MACE. When this script runs
+# standalone (mace not importable) the module is loaded from the repo by path;
+# it is standard library only.
+try:
+    from mace.utils.calc_detection import is_optimization_output, is_frequency_output
+except ImportError:
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location(
+        "_mace_calc_detection",
+        Path(__file__).resolve().parent.parent / "mace" / "utils" / "calc_detection.py")
+    _calc_detection = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_calc_detection)
+    is_optimization_output = _calc_detection.is_optimization_output
+    is_frequency_output = _calc_detection.is_frequency_output
+
 # Optional imports for symmetry verification
 try:
     import numpy as np
@@ -182,16 +197,16 @@ class CrystalOutToCifConverter:
         Returns:
             str: Calculation type ('OPT', 'SP', 'FREQ', 'UNKNOWN')
         """
-        # Look for optimization patterns
-        if "OPTGEOM" in content or "FINAL OPTIMIZED GEOMETRY" in content:
+        # Judged from lines CRYSTAL prints, never a bare keyword search: the
+        # echoed title of an SP named "..._BULK_OPTGEOM_..." holds "OPTGEOM".
+        if is_optimization_output(content):
             return "OPT"
 
-        # Look for frequency patterns
-        if "FREQCALC" in content or "FREQUENCY CALCULATION" in content:
+        if is_frequency_output(content):
             return "FREQ"
 
         # Look for single point indicators
-        if "SINGLE POINT CALCULATION" in content or ("SCF" in content and "OPTGEOM" not in content):
+        if "SINGLE POINT CALCULATION" in content or "SCF" in content:
             return "SP"
 
         return "UNKNOWN"

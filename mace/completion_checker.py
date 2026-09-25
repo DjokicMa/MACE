@@ -20,6 +20,13 @@ from pathlib import Path
 from collections import defaultdict
 from typing import Dict, List, Set, Optional, Tuple
 
+try:
+    from mace.utils.calc_detection import (
+        deck_records, is_frequency_output, is_transport_output)
+except ImportError:  # pragma: no cover - run as a script from mace/
+    from utils.calc_detection import (
+        deck_records, is_frequency_output, is_transport_output)
+
 # === Define known error and completion message patterns === #
 ERROR_PATTERNS = {
     'too_many_scf': ["TOO MANY CYCLES"],
@@ -120,17 +127,19 @@ def _detect_calc_type_from_d3(d3_file: Path) -> Optional[str]:
     """Inspect a .d3 input file to decide which property calc it drives."""
     try:
         with open(d3_file, 'r', errors='ignore') as f:
-            content = f.read().upper()
+            records = deck_records(f.read(), is_d3=True)
     except Exception:
         return None
 
-    if 'BOLTZTRA' in content:
+    # Whole-line records, and never the free-text title that follows BAND:
+    # MACE writes the material name there, which can hold any of these words.
+    if 'BOLTZTRA' in records:
         return 'TRANSPORT'
-    if 'ECHG' in content or 'POTC' in content:
+    if 'ECHG' in records or 'POTC' in records:
         return 'CHARGE+POTENTIAL'
-    if 'DOSS' in content:
+    if 'DOSS' in records:
         return 'DOSS'
-    if 'BAND' in content:
+    if 'BAND' in records:
         return 'BAND'
     return None
 
@@ -161,10 +170,11 @@ def determine_completed_subtype(file_path: Path, lines, has_opt_end: bool = Fals
             # .d3 exists but unrecognized — still definitely a properties calc
             return 'BAND'
 
+    # From lines CRYSTAL prints, so an echoed title cannot supply the keyword
     content = ''.join(lines)
-    if re.search(r'SEEBECK COEFFICIENT|BOLTZTRA', content, re.IGNORECASE):
+    if is_transport_output(content):
         return 'TRANSPORT'
-    if re.search(r'VIBRATIONAL FREQUENCIES|FREQUENCY CALCULATION|MODES\s+EIGV', content, re.IGNORECASE):
+    if is_frequency_output(content):
         return 'FREQ'
 
     return 'OPT' if has_opt_end else 'SP'

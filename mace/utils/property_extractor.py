@@ -27,6 +27,7 @@ from typing import Dict, List, Tuple, Optional, Any
 from datetime import datetime
 
 from mace.constants import HARTREE_TO_EV
+from mace.utils.calc_detection import is_optimization_output, is_transport_output
 
 # Import MACE components
 try:
@@ -562,8 +563,10 @@ class CrystalPropertyExtractor:
         """Extract geometry optimization information."""
         props = {}
         
-        # Check if this was an optimization
-        if 'OPTGEOM' in content or 'OPT END - CONVERGED' in content:
+        # Check if this was an optimization. From lines CRYSTAL prints, not a
+        # bare 'OPTGEOM' search: the echoed title of an SP/FREQ/BAND/DOSS run
+        # named "..._BULK_OPTGEOM_..." holds that word too.
+        if is_optimization_output(content):
             props['calculation_type'] = 'geometry_optimization'
             
             # Convergence information. Runs that converge at the first point
@@ -2481,10 +2484,9 @@ class CrystalPropertyExtractor:
         """
         props: Dict[str, Any] = {}
 
-        # Only act on a real transport (BOLTZTRA) run.
-        up = content.upper()
-        if ('THERMOELECTRIC AND ELECTRONIC TRANSPORT' not in up
-                and 'BOLTZTRA' not in up):
+        # Only act on a real transport (BOLTZTRA) run -- judged from lines the
+        # properties program prints, not from the echoed title.
+        if not is_transport_output(content):
             return props
 
         try:

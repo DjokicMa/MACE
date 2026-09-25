@@ -37,6 +37,7 @@ import threading
 from mace.database.materials import MaterialDatabase, create_material_id_from_file, extract_formula_from_d12, find_material_by_similarity
 from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.workflow.context import get_current_context
+from mace.utils.calc_detection import deck_records_for
 
 # Import lock manager for race condition prevention
 try:
@@ -571,24 +572,26 @@ class EnhancedCrystalQueueManager:
         elif '_freq' in filename or 'frequency' in filename:
             return 'FREQ'
 
-        # Check file content for type keywords
+        # Check the deck's keyword records. Whole lines only, and never the
+        # .d12 title (line 1) or a BAND title: MACE titles decks after the
+        # file name, so "..._BULK_OPTGEOM_..._sp" would otherwise read as OPT.
         try:
             with open(d12_file, 'r') as f:
-                content = f.read().upper()
-                if 'OPTGEOM' in content:
-                    return 'OPT'
-                elif 'FREQCALC' in content:
-                    return 'FREQ'
-                elif 'BOLTZTRA' in content:
-                    return 'TRANSPORT'
-                elif 'ECH3' in content or 'POT3' in content:
-                    return 'CHARGE+POTENTIAL'
-                elif 'DOSS' in content:
-                    return 'DOSS'
-                elif content.lstrip().startswith('BAND'):
-                    return 'BAND'
-                else:
-                    return 'SP'  # Default assumption
+                records = deck_records_for(d12_file, f.read())
+            if 'OPTGEOM' in records:
+                return 'OPT'
+            elif 'FREQCALC' in records:
+                return 'FREQ'
+            elif 'BOLTZTRA' in records:
+                return 'TRANSPORT'
+            elif 'ECH3' in records or 'POT3' in records:
+                return 'CHARGE+POTENTIAL'
+            elif 'DOSS' in records:
+                return 'DOSS'
+            elif 'BAND' in records:
+                return 'BAND'
+            else:
+                return 'SP'  # Default assumption
         except:
             return 'SP'  # Default fallback
             
