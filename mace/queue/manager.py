@@ -1007,7 +1007,7 @@ class EnhancedCrystalQueueManager:
                         continue
                     # terminal, unknown to sacct, or sacct unavailable:
                     # classify from the output file as before
-                    self.check_completed_or_failed_job(calc)
+                    self.check_completed_or_failed_job(calc, slurm_state=state)
 
     def _sacct_job_state(self, job_id):
         """Job state per sacct, '' if sacct has no record, None if unavailable."""
@@ -1178,6 +1178,16 @@ class EnhancedCrystalQueueManager:
         
         # Analyze error type from output file
         error_type, error_message = self.analyze_calculation_error(calc)
+
+        # A walltime kill leaves nothing in CRYSTAL's .out - SLURM cuts it
+        # off mid-line and writes "CANCELLED ... DUE TO TIME LIMIT" to the
+        # job's own -o log instead (measured on HPCC) - so the .out alone
+        # classified every timeout as unknown_error and the timeout recovery
+        # never ran. SLURM's verdict wins over whatever the truncated .out
+        # happens to contain.
+        timed_out = self._walltime_kill_evidence(calc, slurm_state)
+        if timed_out:
+            error_type, error_message = 'timeout_error', timed_out
         
         # Update database with error information
         self.db.update_calculation_status(
@@ -1196,6 +1206,23 @@ class EnhancedCrystalQueueManager:
         else:
             print(f"Error analysis: {error_type} - {error_message}")
         
+    def _walltime_kill_evidence(self, calc: Dict, slurm_state: str) -> Optional[str]:
+        """Why this job counts as killed by its walltime, or None."""
+        if str(slurm_state or '').upper().startswith('TIMEOUT'):
+            return "SLURM state TIMEOUT (walltime reached)"
+        job_id = calc.get('slurm_job_id')
+        work_dir = calc.get('work_dir')
+        if not job_id or not work_dir:
+            return None
+        try:
+            for log in Path(work_dir).glob(f"*-{job_id}.o"):
+                with open(log, 'r', errors='ignore') as f:
+                    if 'DUE TO TIME LIMIT' in f.read():
+                        return f"{log.name}: CANCELLED DUE TO TIME LIMIT"
+        except OSError:
+            pass
+        return None
+
     def analyze_calculation_error(self, calc: Dict) -> Tuple[str, str]:
         """
         Analyze the error in a failed calculation.
@@ -1734,7 +1761,7 @@ class EnhancedCrystalQueueManager:
         print(f"TODO: Generate {next_calc_type} input from {completed_calc['calc_id']}")
         return None
         
-    def check_completed_or_failed_job(self, calc: Dict):
+    def check_completed_or_failed_job(self, calc: Dict, slurm_state: Optional[str] = None):
         """Check if a job that's not in queue has completed or failed."""
         # Check for output files to determine completion status
         work_dir = Path(calc['work_dir'])
@@ -1776,7 +1803,7 @@ class EnhancedCrystalQueueManager:
                         calc['calc_id'], 'failed',
                         output_file=str(output_file)
                     )
-                    self.handle_failed_calculation(calc['calc_id'], 'NOT_IN_QUEUE')
+                    self.handle_failed_calculation(calc['calc_id'], slurm_state or 'NOT_IN_QUEUE')
 
             except Exception as e:
                 print(f"Error checking output file {output_file}: {e}")

@@ -258,7 +258,7 @@ def test_empty_squeue_blip_does_not_fail_running_jobs(monkeypatch, tmp_path):
 
     monkeypatch.setattr(qm.subprocess, "run", fake_run)
     classified = []
-    mgr.check_completed_or_failed_job = classified.append
+    mgr.check_completed_or_failed_job = lambda calc, **kw: classified.append(calc)
 
     mgr.check_queue_status()
 
@@ -284,11 +284,15 @@ def test_sacct_terminal_state_still_classified_by_output(monkeypatch, tmp_path):
 
     monkeypatch.setattr(qm.subprocess, "run", fake_run)
     classified = []
-    mgr.check_completed_or_failed_job = classified.append
+    states = []
+    mgr.check_completed_or_failed_job = (
+        lambda calc, slurm_state=None: (classified.append(calc), states.append(slurm_state)))
 
     mgr.check_queue_status()
 
     assert len(classified) == 1 and classified[0]["calc_id"] == calc_id
+    # sacct's verdict travels with it (a TIMEOUT must reach error analysis).
+    assert states == ["CANCELLED"]
 
 
 def test_manual_d3_submissions_get_correct_calc_type(tmp_path):
