@@ -30,6 +30,17 @@ from mace.database.materials import MaterialDatabase
 from mace.utils.property_extractor import CrystalPropertyExtractor
 from mace.utils.settings_extractor import extract_and_store_input_settings
 from mace.utils.formula_extractor import extract_formula_from_d12, extract_space_group_from_output
+from mace.utils.calc_detection import d3_calc_type, deck_records
+
+
+def _deck_has_optgeom(content: str) -> bool:
+    """True when a .d12 deck holds an OPTGEOM record.
+
+    Not a substring test: MACE titles decks after the file name, so an SP or
+    FREQ deck of a material named "..._BULK_OPTGEOM_..." carries the word in
+    its title (line 1).
+    """
+    return 'OPTGEOM' in deck_records(content)
 
 
 class WorkflowDatabaseCreator:
@@ -591,10 +602,11 @@ class WorkflowDatabaseCreator:
                 settings['calculation_type'] = 'properties'
                 # Don't assume DFT settings for D3 files - they inherit from previous SP
                 lines = content.strip().split('\n')
-                if len(lines) > 0:
-                    first_line = lines[0].strip()
-                    if first_line in ['BAND', 'DOSS', 'NEWK']:
-                        settings['property_type'] = first_line
+                # From the records, not line 1: DOSS and BOLTZTRA decks open
+                # with NEWK and ECH3/POT3 decks were not recognised at all.
+                property_type = d3_calc_type(deck_records(content, is_d3=True))
+                if property_type:
+                    settings['property_type'] = property_type
                 
                 # Extract k-path labels from BAND d3 files
                 if 'BAND' in content and len(lines) > 3:
@@ -656,7 +668,9 @@ class WorkflowDatabaseCreator:
                 
             else:
                 # For D12 files, extract CRYSTAL keywords
-                keywords = ['OPTGEOM', 'DFT', 'EXCHANGE', 'CORRELAT', 'SHRINK', 'TOLINTEG']
+                keywords = ['DFT', 'EXCHANGE', 'CORRELAT', 'SHRINK', 'TOLINTEG']
+                if _deck_has_optgeom(content):
+                    settings['optgeom'] = True
                 for keyword in keywords:
                     if keyword in content:
                         settings[keyword.lower()] = True

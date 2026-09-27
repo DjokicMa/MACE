@@ -20,6 +20,17 @@ from pathlib import Path
 from collections import defaultdict
 from typing import Dict, List, Set, Optional, Tuple
 
+try:
+    from mace.utils.calc_detection import (
+        PROPERTY_CALC_TYPES, calc_type_from_filename, d3_calc_type, deck_records,
+        is_band_output, is_charge_potential_output, is_doss_output,
+        is_frequency_output, is_optimization_output, is_transport_output)
+except ImportError:  # pragma: no cover - run as a script from mace/
+    from utils.calc_detection import (
+        PROPERTY_CALC_TYPES, calc_type_from_filename, d3_calc_type, deck_records,
+        is_band_output, is_charge_potential_output, is_doss_output,
+        is_frequency_output, is_optimization_output, is_transport_output)
+
 # === Define known error and completion message patterns === #
 ERROR_PATTERNS = {
     'too_many_scf': ["TOO MANY CYCLES"],
@@ -76,25 +87,6 @@ COMPLETED_BUCKET_DESCRIPTIONS = {
     'completecharge_potential': "Charge density + potential (D3)",
 }
 
-# Filename suffix → calc type. Numbered variants like _opt2, _band3 also match.
-# Patterns are evaluated in order; the first match wins so list more specific
-# tokens (charge_potential) before generic ones (charge, potential).
-_FILENAME_CALC_TYPE_PATTERNS = [
-    (re.compile(r'_band\d*(?:_|$)'), 'BAND'),
-    (re.compile(r'_doss\d*(?:_|$)'), 'DOSS'),
-    (re.compile(r'_dos\d*(?:_|$)'), 'DOSS'),
-    (re.compile(r'_transport\d*(?:_|$)'), 'TRANSPORT'),
-    (re.compile(r'_transp\d*(?:_|$)'), 'TRANSPORT'),
-    (re.compile(r'_charge[_+]potential\d*(?:_|$)'), 'CHARGE+POTENTIAL'),
-    (re.compile(r'_chargepot\d*(?:_|$)'), 'CHARGE+POTENTIAL'),
-    (re.compile(r'_cp\d*(?:_|$)'), 'CHARGE+POTENTIAL'),
-    (re.compile(r'_charge\d*(?:_|$)'), 'CHARGE+POTENTIAL'),
-    (re.compile(r'_potential\d*(?:_|$)'), 'CHARGE+POTENTIAL'),
-    (re.compile(r'_freq\d*(?:_|$)'), 'FREQ'),
-    (re.compile(r'_sp\d*(?:_|$)'), 'SP'),
-    (re.compile(r'_opt\d*(?:_|$)'), 'OPT'),
-]
-
 # === Default extensions for organizing files === #
 # Includes all files produced/copied back by submit_prop.sh for d3 calcs
 # (BAND.DAT, DOSS.DAT, fort.25 → .f25, transport .DAT files, cube files)
@@ -120,19 +112,14 @@ def _detect_calc_type_from_d3(d3_file: Path) -> Optional[str]:
     """Inspect a .d3 input file to decide which property calc it drives."""
     try:
         with open(d3_file, 'r', errors='ignore') as f:
-            content = f.read().upper()
+            records = deck_records(f.read(), is_d3=True)
     except Exception:
         return None
 
-    if 'BOLTZTRA' in content:
-        return 'TRANSPORT'
-    if 'ECHG' in content or 'POTC' in content:
-        return 'CHARGE+POTENTIAL'
-    if 'DOSS' in content:
-        return 'DOSS'
-    if 'BAND' in content:
-        return 'BAND'
-    return None
+    # Whole-line records, and never the free-text title that follows BAND:
+    # MACE writes the material name there, which can hold any of these words.
+    # CHARGE+POTENTIAL is ECH3/POT3 in MACE's own decks (ECHG/POTC for maps).
+    return d3_calc_type(records)
 
 
 def determine_completed_subtype(file_path: Path, lines, has_opt_end: bool = False) -> str:
@@ -140,16 +127,18 @@ def determine_completed_subtype(file_path: Path, lines, has_opt_end: bool = Fals
     Decide which calc type a successfully-completed .out file came from.
 
     Resolution order (first match wins):
-      1. Filename suffix (_opt, _sp, _freq, _band, _doss, _transport, _charge*, etc.)
-      2. Sibling .d3 file's keywords (BAND/DOSS/BOLTZTRA/ECHG/POTC)
-      3. Content tells (TRANSPORT, FREQ markers)
-      4. has_opt_end fallback → OPT, otherwise SP
+      1. Sibling .d3 file's records (BAND/DOSS/BOLTZTRA/ECH3/POT3/ECHG/POTC)
+      2. Lines CRYSTAL prints: TRANSPORT, FREQ, OPT (has_opt_end or the
+         optimization lines), then the CHARGE+POTENTIAL, DOSS and BAND
+         properties lines. Content goes before the file name because MACE
+         chains the type into every follow-up name: an SP of an OPT is
+         "X_opt_..._optimized_sp_..._optimized", and user names such as
+         "X_SLAB_OPT_FSI" or "X_opt_tier7.freq" name the parent, not the run.
+      3. The last properties type token of the file name (_band, _doss, ...),
+         for a properties output with no .d3 beside it and no tell (a run
+         that stopped early)
+      4. Otherwise SP
     """
-    base_lower = file_path.stem.lower()
-    for pattern, calc_type in _FILENAME_CALC_TYPE_PATTERNS:
-        if pattern.search(base_lower):
-            return calc_type
-
     parent = file_path.parent
     base_name = file_path.stem
     for ext in ('.d3', '.D3'):
@@ -159,15 +148,33 @@ def determine_completed_subtype(file_path: Path, lines, has_opt_end: bool = Fals
             if d3_type:
                 return d3_type
             # .d3 exists but unrecognized — still definitely a properties calc
-            return 'BAND'
+            name_type = calc_type_from_filename(file_path.name)
+            return name_type if name_type in PROPERTY_CALC_TYPES else 'BAND'
 
+    # From lines CRYSTAL prints, so an echoed title cannot supply the keyword
     content = ''.join(lines)
-    if re.search(r'SEEBECK COEFFICIENT|BOLTZTRA', content, re.IGNORECASE):
+    if is_transport_output(content):
         return 'TRANSPORT'
-    if re.search(r'VIBRATIONAL FREQUENCIES|FREQUENCY CALCULATION|MODES\s+EIGV', content, re.IGNORECASE):
+    if is_frequency_output(content):
         return 'FREQ'
+    if has_opt_end or is_optimization_output(content):
+        return 'OPT'
+    if is_charge_potential_output(content):
+        return 'CHARGE+POTENTIAL'
+    if is_doss_output(content):
+        return 'DOSS'
+    if is_band_output(content):
+        return 'BAND'
 
-    return 'OPT' if has_opt_end else 'SP'
+    # A finished SCF with none of the tells above is an SP, whatever its name
+    # says ("MoS2_band.out", "Fe_cp.out" are material names). The name only
+    # decides for a properties run that stopped before printing its tell.
+    if '== SCF ENDED' in content:
+        return 'SP'
+    name_type = calc_type_from_filename(file_path.name)
+    if name_type in PROPERTY_CALC_TYPES:
+        return name_type
+    return 'SP'
 
 
 # === Initialize result buckets === #

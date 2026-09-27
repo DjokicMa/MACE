@@ -20,6 +20,8 @@ from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 
 # Import MACE components
+from mace.utils.calc_detection import deck_records
+
 try:
     from mace.database.materials import MaterialDatabase
 except ImportError as e:
@@ -324,16 +326,19 @@ def _extract_property_parameters(content: str) -> Dict[str, Any]:
     """Extract parameters for properties calculations (D3 files)."""
     prop_params = {}
     
-    # Common property calculation keywords
+    # Common property calculation keywords. ECH3/POT3 are what MACE writes for
+    # CHARGE+POTENTIAL and BOLTZTRA for TRANSPORT; without them those decks
+    # were recorded with no property type at all (or only NEWK).
     property_keywords = [
         'BAND', 'DOSS', 'NEWK', 'COND', 'ECHG', 'POTM',
-        'PPAN', 'RDFMWF', 'RHOLINE', 'MOLDRAW'
+        'PPAN', 'RDFMWF', 'RHOLINE', 'MOLDRAW',
+        'ECH3', 'POT3', 'POTC', 'BOLTZTRA',
     ]
     
-    found_properties = []
-    for keyword in property_keywords:
-        if keyword in content.upper():
-            found_properties.append(keyword)
+    # Whole records, never the free-text title after BAND (the material name)
+    records = deck_records(content, is_d3=True)
+    found_properties = [keyword for keyword in property_keywords
+                        if keyword in records]
     
     prop_params['property_types'] = found_properties
     

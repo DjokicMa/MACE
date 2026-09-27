@@ -38,6 +38,9 @@ from mace.database.materials import MaterialDatabase, create_material_id_from_fi
 from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.workflow.context import get_current_context
 from mace.recovery import opt_restart
+from mace.utils.calc_detection import (
+    PROPERTY_CALC_TYPES, calc_type_from_filename, d12_calc_type, d3_calc_type,
+    deck_records)
 
 # Import lock manager for race condition prevention
 try:
@@ -547,52 +550,37 @@ class EnhancedCrystalQueueManager:
         return material_id, formula, metadata
         
     def determine_calc_type_from_file(self, d12_file: Path) -> str:
-        """Determine calculation type from filename or file content."""
-        filename = d12_file.name.lower()
-        
-        # Check filename for type indicators. TRANSPORT and
-        # CHARGE+POTENTIAL must come before the generic checks: a manual
-        # `mace submit 1_dia_transport.d3` was recorded as SP (no filename
-        # token matched and the content check fell through to the SP
-        # default), so its completion callback would have fanned out
-        # BAND/DOSS from a BOLTZTRA run.
-        if '_opt' in filename or 'optim' in filename:
-            return 'OPT'
-        elif '_transport' in filename:
-            return 'TRANSPORT'
-        elif ('_charge+potential' in filename or '_charge_potential' in filename
-              or '_potential' in filename or '_charge' in filename):
-            return 'CHARGE+POTENTIAL'
-        elif '_sp' in filename or 'single' in filename:
-            return 'SP'
-        elif '_band' in filename or 'band' in filename:
-            return 'BAND'
-        elif '_dos' in filename or 'doss' in filename:
-            return 'DOSS'
-        elif '_freq' in filename or 'frequency' in filename:
-            return 'FREQ'
+        """Determine calculation type from the deck's records, else its name.
 
-        # Check file content for type keywords
+        The records decide: a .d12 is OPT (OPTGEOM), FREQ (FREQCALC) or SP, a
+        .d3 is TRANSPORT (BOLTZTRA), CHARGE+POTENTIAL (ECH3/POT3/ECHG/POTC),
+        DOSS or BAND. The file name only breaks a tie. MACE chains the type
+        into every follow-up name ("X_opt_..._optimized_sp_..._optimized",
+        "..._optimized_charge+potential.d3"), so name substrings such as
+        "_opt" read nearly every chained SP, FREQ and properties deck as OPT,
+        and `mace submit` then sent .d3 decks to the CRYSTAL SCF script.
+        """
+        is_d3 = d12_file.suffix.lower() == '.d3'
         try:
-            with open(d12_file, 'r') as f:
-                content = f.read().upper()
-                if 'OPTGEOM' in content:
-                    return 'OPT'
-                elif 'FREQCALC' in content:
-                    return 'FREQ'
-                elif 'BOLTZTRA' in content:
-                    return 'TRANSPORT'
-                elif 'ECH3' in content or 'POT3' in content:
-                    return 'CHARGE+POTENTIAL'
-                elif 'DOSS' in content:
-                    return 'DOSS'
-                elif content.lstrip().startswith('BAND'):
-                    return 'BAND'
-                else:
-                    return 'SP'  # Default assumption
-        except:
-            return 'SP'  # Default fallback
-            
+            with open(d12_file, 'r', errors='ignore') as f:
+                # Whole lines only, never the .d12 title (line 1) or a BAND
+                # title: MACE titles decks after the file name.
+                records = deck_records(f.read(), is_d3=is_d3)
+        except OSError:
+            records = None
+        name_type = calc_type_from_filename(d12_file.name)
+
+        if is_d3:
+            calc_type = d3_calc_type(records) if records is not None else None
+            if calc_type:
+                return calc_type
+            # Still a properties deck: keep it on the properties script
+            return name_type if name_type in PROPERTY_CALC_TYPES else 'BAND'
+
+        if records is not None:
+            return d12_calc_type(records)
+        return name_type if name_type in ('OPT', 'SP', 'FREQ') else 'SP'
+
     def submit_calculation(self, d12_file: Path, calc_type: str = None,
                           material_id: str = None, prerequisite_calc_id: str = None,
                           job_script_override: Path = None) -> Optional[str]:
