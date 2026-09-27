@@ -37,6 +37,7 @@ import threading
 from mace.database.materials import MaterialDatabase, create_material_id_from_file, extract_formula_from_d12, find_material_by_similarity
 from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.workflow.context import get_current_context
+from mace.recovery import opt_restart
 
 # Import lock manager for race condition prevention
 try:
@@ -1238,7 +1239,21 @@ class EnhancedCrystalQueueManager:
         try:
             with open(output_file, 'r') as f:
                 content = f.read()
-                
+
+            # A run that did not reach CRYSTAL's normal end may have left its
+            # real error in the scratch fort.87 only (the .out just shows the
+            # MPI_Abort - measured on HPCC), so read that too.
+            fort87 = None
+            if not opt_restart.ended_normally(content):
+                fort87 = self._scratch_error_text(calc)
+
+            # An optimization whose step size collapsed (a RESTART rerun that
+            # re-evaluated its best point): recovered by a fresh optimization
+            # from the best geometry, not by the generic patterns below.
+            collapsed = opt_restart.trust_radius_abort(content, fort87)
+            if collapsed:
+                return "opt_trust_radius_error", collapsed
+
             # Common CRYSTAL error patterns (from updatelists2.py logic)
             error_patterns = {
                 'shrink_error': [
@@ -1291,11 +1306,20 @@ class EnhancedCrystalQueueManager:
             }
             
             content_upper = content.upper()
+            if fort87:
+                content_upper += "\n" + fort87.upper()
             
             for error_type, patterns in error_patterns.items():
                 for pattern in patterns:
                     if pattern in content_upper:
                         return error_type, f"Detected: {pattern}"
+
+            # CRYSTAL said what stopped it, just not in a form handled above:
+            # report its own words rather than "unknown".
+            if fort87:
+                line = next((l.strip() for l in fort87.splitlines() if 'ERROR' in l.upper()),
+                            fort87.splitlines()[0].strip())
+                return "crystal_error", f"fort.87: {line}"
                         
             # If no specific error found, return generic
             return "unknown_error", "Calculation failed with unknown error"
@@ -1303,6 +1327,36 @@ class EnhancedCrystalQueueManager:
         except Exception as e:
             return "file_error", f"Error reading output file: {e}"
             
+    def _scratch_error_text(self, calc: Dict) -> Optional[str]:
+        """fort.87 of this job's scratch directory, when it is from the run
+        that just ended (see opt_restart.scratch_error_text)."""
+        try:
+            script = calc.get('job_script')
+            if not script and calc.get('input_file'):
+                script = str(Path(calc['input_file']).with_suffix('.sh'))
+            if not script or not Path(script).is_file():
+                return None
+            text = Path(script).read_text(errors='ignore')
+            name = opt_restart.job_name(text) or Path(calc.get('input_file') or script).stem
+            return opt_restart.scratch_error_text(opt_restart.job_scratch_dir(text, name))
+        except OSError:
+            return None
+
+    def _error_retry_count(self, calc_id: str, error_type: str) -> int:
+        """Recoveries of this error type already spent on the lineage: the
+        superseded ('resubmitted') links keep the error type they failed with."""
+        try:
+            with self.db._get_connection() as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM calculations c2 JOIN calculations c1"
+                    "  ON c2.material_id = c1.material_id AND c2.calc_type = c1.calc_type"
+                    " WHERE c1.calc_id = ? AND c2.calc_id != c1.calc_id"
+                    "   AND c2.status = 'resubmitted' AND c2.error_type = ?",
+                    (calc_id, error_type)).fetchone()
+                return (row[0] or 0) if row else 0
+        except Exception:
+            return 0
+
     def attempt_error_recovery(self, calc: Dict, error_type: str, error_message: str) -> bool:
         """
         Attempt automatic error recovery for a failed calculation.
@@ -1322,7 +1376,8 @@ class EnhancedCrystalQueueManager:
         # files) -- previously 'DISK FULL' was lumped into io_error and excluded
         # here, so the advertised disk-space recovery was unreachable.
         recoverable_errors = ['shrink_error', 'memory_error', 'convergence_error',
-                              'timeout_error', 'scf_error', 'disk_space_error']
+                              'timeout_error', 'scf_error', 'disk_space_error',
+                              'opt_trust_radius_error']
         if error_type not in recoverable_errors:
             print(f"⚠️  Error type '{error_type}' is not recoverable for {calc_id}")
             return False
@@ -1332,6 +1387,21 @@ class EnhancedCrystalQueueManager:
         if recovery_count >= self.max_recovery_attempts:
             print(f"⚠️  Max recovery attempts ({self.max_recovery_attempts}) reached for {calc_id}")
             return False
+
+        # ... and the per-error cap of the recovery configuration
+        # (recovery_config.yaml max_retries), counted over the lineage too.
+        try:
+            from mace.recovery.recovery import canonical_error_type
+            per_error = self.error_recovery_engine.config.get("error_recovery", {}) \
+                .get(canonical_error_type(error_type), {}).get("max_retries")
+        except Exception:
+            per_error = None
+        if per_error is not None:
+            spent = self._error_retry_count(calc_id, error_type)
+            if spent >= int(per_error):
+                print(f"⚠️  {error_type} already recovered {spent} time(s) in this job's lineage "
+                      f"(max_retries {per_error}) - not retrying {calc_id}")
+                return False
         
         print(f"🔧 Attempting error recovery for {calc_id} (attempt {recovery_count + 1}/{self.max_recovery_attempts})")
         print(f"   Error: {error_type} - {error_message}")

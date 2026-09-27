@@ -35,7 +35,7 @@ try:
     from mace.database.materials_contextual import ContextualMaterialDatabase
     from mace.workflow.context import get_current_context
     from mace.recovery.detector import CrystalErrorDetector
-    from mace.recovery import opt_restart, slurm_limits
+    from mace.recovery import opt_geometry, opt_restart, slurm_limits
 except ImportError as e:
     print(f"Error importing required modules: {e}")
     print(f"Make sure all required Python files are in the same directory as {__file__}")
@@ -56,6 +56,22 @@ ERROR_TYPE_ALIASES = {
 def canonical_error_type(error_type: str) -> str:
     """Normalize an error type to the recovery-config key naming."""
     return ERROR_TYPE_ALIASES.get(error_type, error_type)
+
+
+def _same_numbers(a: str, b: str, tol: float = 1e-6) -> bool:
+    """Two decks equal up to how their numbers are written."""
+    la, lb = a.split(), b.split()
+    if len(la) != len(lb):
+        return False
+    for x, y in zip(la, lb):
+        if x == y:
+            continue
+        try:
+            if abs(float(x) - float(y)) > tol:
+                return False
+        except ValueError:
+            return False
+    return True
 
 
 def _resolve_job_script(calc: Dict) -> Optional[Path]:
@@ -140,8 +156,16 @@ class ErrorRecoveryEngine:
                     # the old "48:00:00" both contradicted the YAML and would cap a
                     # multi-day OPT below its original walltime.
                     "max_walltime": "7-00:00:00",
-                    "max_retries": 1,
+                    # As in recovery_config.yaml: the queue manager now enforces
+                    # this cap, and these defaults are what it runs with when no
+                    # recovery_config.yaml is in the job directory.
+                    "max_retries": 2,
                     "resubmit_delay": 900
+                },
+                "opt_trust_radius_error": {
+                    "handler": "opt_fresh_start_handler",
+                    "max_retries": 2,
+                    "resubmit_delay": 300
                 },
                 "disk_space_error": {
                     "handler": "cleanup_handler",
@@ -672,6 +696,28 @@ class ErrorRecoveryEngine:
 
                 new_walltime = self._format_walltime(new_total_seconds)
 
+                # An OPT killed mid-optimization continues from its last
+                # completed step (OPTGEOM RESTART) or, when that can't work,
+                # starts a fresh optimization from the best geometry it
+                # reached. (recovery_config.yaml's enable_restart: false turns
+                # both off.)
+                mode = None
+                if config.get('enable_restart', True):
+                    mode = self._prepare_opt_restart(calc, script_content)
+
+                # At the queue's limit the same walltime is all there is, so
+                # a rerun helps only if it does not repeat the work: RESTART
+                # continues the optimization, the fallback starts it from the
+                # best point. An SP/FREQ, an OPT killed in its first SCF, or
+                # one that has to start over would just time out again.
+                if new_total_seconds <= total_seconds and mode not in ('restart', 'fallback'):
+                    what = {None: 'the calculation cannot continue from where it was killed',
+                            'cold': 'the optimization would have to start over'}.get(mode, mode)
+                    print(f"Not resubmitting {calc['calc_id']}: already at the queue walltime "
+                          f"limit {new_walltime} and {what} - it would time out again. "
+                          f"Needs a manual decision (a faster setup or a longer queue).")
+                    return None
+
                 # Update job script, preserving the original directive form.
                 if directive == '-t':
                     new_time_line = f"#SBATCH -t {new_walltime}"
@@ -682,6 +728,14 @@ class ErrorRecoveryEngine:
                     new_time_line,
                     script_content
                 )
+
+                # A job script generated before the RESTART staging existed
+                # (a workflow copies the generator into workflow_scripts/ when
+                # it is planned) gets it in this copy, so the compute node still checks for
+                # OPTINFO.DAT and keeps the killed run's fort.20.
+                if mode == 'restart':
+                    updated_script, what = opt_restart.refresh_restart_staging(updated_script)
+                    print(f"Job script RESTART staging: {what}")
                 
                 # Create new job script
                 recovery_suffix = f"_recovery_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -694,18 +748,13 @@ class ErrorRecoveryEngine:
                 if new_total_seconds > total_seconds:
                     print(f"Walltime increased from {self._format_walltime(total_seconds)} to {new_walltime}")
                 else:
-                    print(f"Walltime stays at {new_walltime}; resubmitting anyway")
-
-                # An OPT killed mid-optimization continues from its last
-                # completed step (OPTGEOM RESTART) instead of starting over.
-                # (recovery_config.yaml's enable_restart: false turns it off.)
-                if config.get('enable_restart', True):
-                    self._prepare_opt_restart(calc, script_content)
+                    print(f"Walltime stays at {new_walltime}; resubmitting because the "
+                          f"optimization continues ({mode})")
 
                 # The bumped job script carries the walltime; the input is the
-                # same file (possibly with RESTART added in place - the job
-                # script reads $JOB.d12, and the same $JOB means the same
-                # scratch directory, which holds OPTINFO.DAT).
+                # same file (possibly with RESTART added, or a new geometry, in
+                # place - the job script reads $JOB.d12, and the same $JOB
+                # means the same scratch directory, which holds OPTINFO.DAT).
                 return (Path(calc['input_file']), new_script_path)
                 
             else:
@@ -716,8 +765,14 @@ class ErrorRecoveryEngine:
             print(f"Error applying timeout fix: {e}")
             return None
             
+    @staticmethod
+    def _output_path(calc: Dict, input_file: Path) -> Path:
+        work_dir = Path(calc.get('work_dir') or input_file.parent)
+        return Path(calc['output_file']) if calc.get('output_file') \
+            else work_dir / f"{input_file.stem}.out"
+
     def _prepare_opt_restart(self, calc: Dict, job_script_text: str) -> Optional[str]:
-        """Add OPTGEOM RESTART to a timed-out OPT's deck when it can work.
+        """Let a timed-out OPT continue instead of starting over.
 
         RESTART needs the killed run's OPTINFO.DAT, which exists only once an
         optimization cycle has completed. So it is added when the output shows
@@ -727,8 +782,14 @@ class ErrorRecoveryEngine:
         output decides: the job script re-checks for OPTINFO.DAT on the compute
         node and drops RESTART from its scratch copy if it is not there.
 
+        When the scratch directory is visibly without OPTINFO.DAT, the
+        optimization starts afresh - from the best geometry the killed runs
+        reached when that can be carried into the deck (see
+        _fresh_opt_from_best), otherwise from the deck's geometry.
+
         The killed run's .out is kept as <JOB>.out.timeout<N> either way.
-        Returns 'restart', 'cold' or None (not an OPT deck / nothing to do).
+        Returns 'restart', 'fallback', 'cold' or None (not an OPT deck /
+        nothing to do).
         """
         try:
             input_file = Path(calc.get('input_file') or '')
@@ -738,9 +799,7 @@ class ErrorRecoveryEngine:
             if not opt_restart.has_optgeom(d12_text):
                 return None  # not a geometry optimization
 
-            work_dir = Path(calc.get('work_dir') or input_file.parent)
-            out_path = Path(calc['output_file']) if calc.get('output_file') \
-                else work_dir / f"{input_file.stem}.out"
+            out_path = self._output_path(calc, input_file)
             out_text = out_path.read_text(errors='ignore') if out_path.is_file() else ''
             kept = opt_restart.keep_timed_out_output(out_path)
             if kept:
@@ -762,12 +821,126 @@ class ErrorRecoveryEngine:
             if not progressed:
                 print("Timed out before the first optimization step completed (no OPTINFO.DAT "
                       "yet): resubmitting from the start")
-            else:
-                print(f"No OPTINFO.DAT in {scratch}: resubmitting from the start")
+                return 'cold'
+            print(f"No OPTINFO.DAT in {scratch}: RESTART is not possible")
+            if self._fresh_opt_from_best(input_file, d12_text, out_path) == 'fresh':
+                return 'fallback'
+            print("Resubmitting the optimization from the start")
             return 'cold'
         except Exception as e:
             print(f"Could not prepare an optimization restart: {e}")
             return None
+
+    def _fresh_opt_from_best(self, input_file: Path, d12_text: str, out_path: Path) -> Optional[str]:
+        """Rewrite the deck as a fresh optimization from the best point reached.
+
+        The candidates are every optimization point with an energy in this
+        job's runs: the last .out and the earlier ones kept as
+        <JOB>.out.timeout<N> / <JOB>.out.optabort<N>. The lowest energy wins
+        (point 1 of a run is the deck geometry itself). Only the cell
+        parameters and atom coordinates change, RESTART is removed, nothing
+        else is touched, and the deck as it was is kept first as
+        <JOB>.d12.orig (then .orig2, ...; never overwritten).
+
+        Returns 'fresh' when the deck now starts a fresh optimization that
+        differs from the one that ran, 'unchanged' when there is nothing to
+        change, None when the geometry could not be carried over safely.
+        """
+        try:
+            opt_geometry.parse_deck_geometry(d12_text.splitlines())
+        except opt_geometry.GeometryTransferError as e:
+            print(f"Best geometry not carried over: {e}")
+            return None
+        candidates = [p for p in [out_path, *opt_restart.kept_outputs(out_path)] if p.is_file()]
+        title = d12_text.splitlines()[0].strip()[:60] if d12_text.strip() else ''
+        header = None
+        points = []
+        for p in candidates:
+            text = p.read_text(errors='ignore')
+            # Only runs of this deck (CRYSTAL echoes the deck's title line).
+            if title and title not in text[:20000]:
+                continue
+            # Did this run start from the deck as it is now? Its header
+            # geometry then fixes how output and deck frames correspond, and
+            # its point 1 is the deck's own geometry. (After an earlier
+            # fallback, older runs started from an older geometry: their
+            # points count, their point 1 does not.)
+            h = opt_geometry.header_geometry(text)
+            same_deck = False
+            if h is not None:
+                try:
+                    same_deck = _same_numbers(opt_geometry.rewrite_geometry(d12_text, h, h),
+                                              d12_text)
+                except opt_geometry.GeometryTransferError:
+                    same_deck = False
+            if same_deck and header is None:
+                header = h
+            points.extend(pt for pt in opt_geometry.optimization_points(text, source=p.name)
+                          if pt.geometry is not None or same_deck)
+        best = opt_geometry.best_point(points)
+        if best is None:
+            print("No completed optimization point in the earlier runs")
+            return None
+
+        new_text = d12_text
+        if best.geometry is not None:
+            if header is None:
+                print("Best geometry not carried over: no run of this deck shows its input "
+                      "geometry in the same frame as the deck")
+                return None
+            try:
+                new_text = opt_geometry.rewrite_geometry(d12_text, header, best.geometry)
+            except opt_geometry.GeometryTransferError as e:
+                print(f"Best geometry not carried over: {e}")
+                return None
+        new_text, _ = opt_restart.remove_optgeom_restart(new_text)
+        if _same_numbers(new_text, d12_text):
+            print(f"Nothing to change in {input_file.name}: its own geometry is the best "
+                  f"point reached and it does not RESTART")
+            return 'unchanged'
+
+        geometry_changed = not _same_numbers(opt_restart.remove_optgeom_restart(d12_text)[0],
+                                             new_text)
+        if geometry_changed:
+            backup = opt_restart.backup_deck(input_file)
+            print(f"Kept the deck as it was in {backup.name}")
+        input_file.write_text(new_text)
+        where = (f"point {best.number} of {best.source}, E = {best.energy:.10f} Ha"
+                 if best.geometry is not None else "its own geometry (the best point reached)")
+        print(f"{input_file.name}: fresh optimization (no RESTART) from {where}")
+        return 'fresh'
+
+    def opt_fresh_start_handler(self, calc: Dict, config: Dict):
+        """Handler for an optimization whose step size collapsed.
+
+        Measured on HPCC: a RESTART rerun re-evaluates the lowest-energy
+        point, sees (almost) no energy change, drops the trust radius to zero
+        and aborts ("PXK TOO SMALL" in fort.87). Keeping RESTART would repeat
+        that forever, so the optimization starts afresh - new trust radius,
+        new model Hessian - from the best geometry reached, in the same deck
+        and under the same job name. HESSOPT is deliberately not used: the
+        stored Hessian belongs to the run that collapsed.
+
+        The failed .out is kept as <JOB>.out.optabort<N>; the job script that
+        ran is resubmitted as it is (same walltime).
+        """
+        print(f"Starting a fresh optimization from the best point for {calc['calc_id']}")
+        input_file = Path(calc.get('input_file') or '')
+        if not input_file.is_file():
+            print(f"Input file not found: {input_file}")
+            return None
+        d12_text = input_file.read_text(errors='ignore')
+        if not opt_restart.has_optgeom(d12_text):
+            print(f"{input_file.name} is not a geometry optimization")
+            return None
+        out_path = self._output_path(calc, input_file)
+        kept = opt_restart.keep_output(out_path, opt_restart.ABORT_TAG)
+        if kept:
+            print(f"Kept the aborted output as {kept.name}")
+        if self._fresh_opt_from_best(input_file, d12_text, out_path) != 'fresh':
+            print("Not resubmitting: the same deck would stop the same way")
+            return None
+        return (input_file, _resolve_job_script(calc))
 
     def cleanup_handler(self, calc: Dict, config: Dict) -> Optional[Path]:
         """Handler for disk space errors - cleans up scratch space."""

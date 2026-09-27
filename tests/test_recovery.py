@@ -157,16 +157,19 @@ def test_timeout_handler_matches_short_t_form(engine, original_d12, tmp_path):
 def test_timeout_handler_handles_days_field_and_cap(engine, original_d12, tmp_path):
     """The production OPT default is '-t 7-00:00:00' (7 days). The old colon-split
     cap parse crashed on the configured max_walltime '7-00:00:00'. The handler must
-    parse the days field, cap at the 7-day limit, and never SHRINK the job."""
+    parse the days field, cap at the 7-day limit, and never SHRINK the job.
+    (A job already AT the limit that cannot continue where it stopped is not
+    resubmitted at all - tests/test_opt_restart_abort.py.)"""
     script = tmp_path / "job.sh"
-    script.write_text("#!/bin/bash\n#SBATCH -t 7-00:00:00\n")
+    script.write_text("#!/bin/bash\n#SBATCH -t 5-00:00:00\n")
+    engine.slurm_runner = lambda cmd, cwd=None: None       # SLURM unreachable: configured cap
     calc = {"calc_id": "T2", "material_id": "M1", "calc_type": "OPT",
             "input_file": str(original_d12), "work_dir": str(tmp_path),
             "job_script": str(script), "error_type": "timeout_error"}
     res = engine.attempt_recovery(calc, create_record=False)
     bumped = res["fixed_job_script"]
     assert bumped is not None and bumped.exists()
-    # 7d * 2 = 14d, capped to the 7-day max, never below original -> stays 7 days.
+    # 5d * 2 = 10d, capped to the configured 7-day max.
     assert "-t 7-00:00:00" in bumped.read_text()
 
 

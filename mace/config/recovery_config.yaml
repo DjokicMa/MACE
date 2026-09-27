@@ -45,10 +45,21 @@ error_recovery:
                                          # (7 days on HPCC; 14 on mendoza_q_long)
     max_retries: 2                       # Allow retries with restart capability
     resubmit_delay: 900                  # Longer delay for walltime adjustments
-    enable_restart: true                 # OPT killed mid-optimization: OPTGEOM RESTART
+    enable_restart: true                 # OPT killed mid-optimization: OPTGEOM RESTART, or a
+                                         # fresh OPT from the best point when OPTINFO.DAT is gone
+                                         # (at the queue limit only these are resubmitted)
     enable_guessp: true                  # Use GUESSP for SP calculations (fort.20 from fort.9)
     preserve_wavefunction: true          # Copy fort.9 to fort.20 for SCF restart
     description: "Increases walltime up to 7-day HPCC limit and enables calculation restart from last known good state"
+
+  # Geometry optimization aborted because its step size (trust radius) collapsed to
+  # zero - seen when a RESTART rerun re-evaluates its best point and finds no energy
+  # change ("PXK TOO SMALL" in scratch fort.87, MPI_Abort, SLURM says COMPLETED).
+  opt_trust_radius_error:
+    handler: "opt_fresh_start_handler"
+    max_retries: 2                       # Fresh optimization from the best point reached
+    resubmit_delay: 300
+    description: "Removes RESTART and starts a fresh optimization from the lowest-energy geometry reached so far; the original deck is kept as <JOB>.d12.orig"
 
   # Disk space errors - scratch space or output directory full (MANUAL INTERVENTION REQUIRED)
   disk_space_error:

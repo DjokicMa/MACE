@@ -229,7 +229,11 @@ def new_time(res):
     return re.search(r"#SBATCH -t (\S+)", res["fixed_job_script"].read_text()).group(1)
 
 
-def test_seven_day_job_on_mendoza_q_stays_at_seven_days(engine, tmp_path, capsys):
+def test_seven_day_job_on_mendoza_q_stays_at_seven_days(engine, tmp_path, capsys, monkeypatch):
+    # An OPT that can continue (a non-OPT at the limit is not resubmitted at
+    # all - see test_opt_restart_abort.py).
+    killed = cut_before(corpus(DIA_OUT).read_text(errors="ignore"), "OPTIMIZATION - POINT    3")
+    _killed_opt(tmp_path, killed, monkeypatch=monkeypatch)
     res = recover_timeout(engine, tmp_path, job_script(tmp_path, "7-00:00:00"))
     assert new_time(res) == "7-00:00:00"
     assert "already at the queue limit 7-00:00:00" in capsys.readouterr().out

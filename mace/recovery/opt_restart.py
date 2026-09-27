@@ -139,15 +139,25 @@ def job_scratch_dir(job_script_text: str, job_name: str) -> Optional[Path]:
 
 
 def optinfo_state(scratch_dir: Optional[Path]) -> str:
-    """'present', 'absent' (the job's scratch dir is there without OPTINFO.DAT)
-    or 'unknown' (the scratch dir can't be seen from here)."""
-    if scratch_dir is None or not scratch_dir.is_dir():
+    """'present', 'absent' or 'unknown' (the scratch area can't be seen from
+    here).
+
+    A missing job directory is 'absent' when the scratch area it would live in
+    is visible ($SCRATCH/crys23 or $SCRATCH itself exists): the directory is
+    made by every run, so a killed run whose directory is gone - purged, or
+    never created - has no OPTINFO.DAT to restart from.
+    """
+    if scratch_dir is None:
         return 'unknown'
-    return 'present' if (scratch_dir / 'OPTINFO.DAT').is_file() else 'absent'
+    if scratch_dir.is_dir():
+        return 'present' if (scratch_dir / 'OPTINFO.DAT').is_file() else 'absent'
+    if scratch_dir.parent.is_dir() or scratch_dir.parent.parent.is_dir():
+        return 'absent'
+    return 'unknown'
 
 
-def keep_timed_out_output(out_path: Path) -> Optional[Path]:
-    """Copy the killed run's .out to <JOB>.out.timeout<N> (next free N).
+def keep_output(out_path: Path, reason: str) -> Optional[Path]:
+    """Copy a failed run's .out to <JOB>.out.<reason><N> (next free N).
 
     A copy, not a move: the resubmitted job overwrites <JOB>.out anyway, and
     until it starts the failed record still points at that file - moving it
@@ -158,9 +168,191 @@ def keep_timed_out_output(out_path: Path) -> Optional[Path]:
         return None
     n = 1
     while True:
-        dest = out_path.with_name(f"{out_path.name}.timeout{n}")
+        dest = out_path.with_name(f"{out_path.name}.{reason}{n}")
         if not dest.exists():
             break
         n += 1
     shutil.copy2(out_path, dest)
     return dest
+
+
+def keep_timed_out_output(out_path: Path) -> Optional[Path]:
+    """Copy the killed run's .out to <JOB>.out.timeout<N> (next free N)."""
+    return keep_output(out_path, 'timeout')
+
+
+def kept_outputs(out_path: Path) -> list:
+    """Earlier runs of this job kept by keep_output, oldest name first."""
+    out_path = Path(out_path)
+    found = []
+    for reason in (TIMEOUT_TAG, ABORT_TAG):
+        found.extend(sorted(out_path.parent.glob(f"{out_path.name}.{reason}[0-9]*"),
+                            key=lambda p: int(re.sub(r'\D', '', p.name[len(out_path.name):]) or 0)))
+    return found
+
+
+def remove_optgeom_restart(d12_text: str) -> Tuple[str, bool]:
+    """Take RESTART out of the OPTGEOM block (only there - FREQCALC has a
+    RESTART of its own). Returns (text, changed)."""
+    lines = d12_text.splitlines(keepends=True)
+    span = _optgeom_span([l.rstrip('\r\n') for l in lines])
+    if span is None:
+        return d12_text, False
+    start, end = span
+    kept = [l for k, l in enumerate(lines)
+            if not (start < k < end and l.strip().upper() == 'RESTART')]
+    if len(kept) == len(lines):
+        return d12_text, False
+    return ''.join(kept), True
+
+
+def backup_deck(input_file: Path) -> Path:
+    """Keep the deck as it is now before its geometry is rewritten:
+    <JOB>.d12.orig the first time, then <JOB>.d12.orig2, .orig3 ... An
+    existing backup is never overwritten, so <JOB>.d12.orig always holds the
+    geometry the job started from. (None of these end in .d12, so nothing
+    picks them up as a new job.)"""
+    input_file = Path(input_file)
+    n = 1
+    while True:
+        dest = input_file.with_name(input_file.name + ('.orig' if n == 1 else f'.orig{n}'))
+        try:
+            with open(dest, 'x') as f:
+                f.write(input_file.read_text())
+            shutil.copystat(input_file, dest)
+            return dest
+        except FileExistsError:
+            n += 1
+
+
+# ------------------------------------------------ how the run ended
+
+TIMEOUT_TAG = 'timeout'
+ABORT_TAG = 'optabort'
+
+# A run CRYSTAL completes prints this line (702 of the 707 corpus outputs; the
+# other five were MPI_Abort'ed on an error, SIGKILLed, or still running).
+_NORMAL_END = 'EEEEEEEEEE TERMINATION'
+_TRUST_ZERO_RE = re.compile(r'UPDATED TRUST RADIUS\s+0\.0+E\+00')
+_TOO_SMALL_TRUST = 'TOO SMALL TRUST RADIUS'
+_PXK_TOO_SMALL = 'PXK TOO SMALL'
+
+
+def ended_normally(out_text: str) -> bool:
+    return _NORMAL_END in (out_text or '')
+
+
+def scratch_error_text(scratch_dir: Optional[Path]) -> Optional[str]:
+    """CRYSTAL's error message from fort.87 in the job's scratch directory,
+    when it belongs to the run that just ended.
+
+    A process that stops on an error writes it to fort.87 in its working
+    directory; when that process is not the one printing the .out, the .out
+    only shows the MPI_Abort (measured on HPCC: "ERROR **** BFGS_ **** PXK
+    TOO SMALL" only in fort.87). The scratch directory is reused by the next
+    run of the same job, so fort.87 counts only when it is not older than
+    INPUT, which the job script copies in at the start of every run.
+    """
+    if scratch_dir is None:
+        return None
+    f87, inp = Path(scratch_dir) / 'fort.87', Path(scratch_dir) / 'INPUT'
+    try:
+        if not f87.is_file() or not inp.is_file():
+            return None
+        if f87.stat().st_mtime < inp.stat().st_mtime:
+            return None
+        text = f87.read_text(errors='ignore').strip()
+    except OSError:
+        return None
+    return text or None
+
+
+def trust_radius_abort(out_text: str, fort87_text: Optional[str] = None) -> Optional[str]:
+    """Why this run counts as an optimization that aborted because its step
+    size (trust radius) collapsed, or None.
+
+    Measured on HPCC: a RESTART rerun re-evaluates the lowest-energy point,
+    finds (almost) no energy change, and the trust radius drops to zero:
+        UPDATED TRUST RADIUS     0.000E+00
+        INFORMATION **** OPTGEN **** TOO SMALL TRUST RADIUS - ...
+        Abort(1) on node 1 ... MPI_Abort(MPI_COMM_WORLD, 1)
+    with "ERROR **** BFGS_ **** PXK TOO SMALL" only in scratch fort.87 and
+    SLURM reporting COMPLETED. The INFORMATION line alone is harmless - it is
+    printed in converged corpus runs too - so it counts only when the run
+    then died without CRYSTAL's normal end and without an error of its own
+    in the .out.
+    """
+    if not out_text or ended_normally(out_text):
+        return None
+    restarted = _RESTARTED_RUN in out_text
+    after = ' in a RESTART run' if restarted else ''
+    if fort87_text and _PXK_TOO_SMALL in fort87_text.upper():
+        line = next((l.strip() for l in fort87_text.splitlines() if _PXK_TOO_SMALL in l.upper()),
+                    _PXK_TOO_SMALL)
+        return f"optimization step collapsed{after} (fort.87: {line})"
+    tail = out_text[max(m.start() for m in _POINT_RE.finditer(out_text)):] \
+        if _POINT_RE.search(out_text) else ''
+    if 'ERROR ****' in tail or 'Abort(' not in tail:
+        return None
+    if _TRUST_ZERO_RE.search(tail) or _TOO_SMALL_TRUST in tail:
+        return f"optimization step collapsed{after} (trust radius 0, then MPI_Abort)"
+    return None
+
+
+# ------------------------------------ the job script's RESTART staging
+
+_TEMPLATE = Path(__file__).resolve().parent.parent / 'submission' / 'submitcrystal23.sh'
+_STAGING_START = '# OPTGEOM RESTART'
+_GUESSP_START = '# GUESSP restart'
+_INPUT_COPY_RE = re.compile(r'^cp \$DIR/\$JOB\.d12\s+\$scratch/\$JOB/INPUT[ \t]*$', re.M)
+_OLD_GUESSP_IF = 'if grep -qiE "^[[:space:]]*GUESSP" "$scratch/$JOB/INPUT" 2>/dev/null; then'
+_NEW_GUESSP_IF = 'if [ -z "$RESTART_KEEPS_FORT20" ] && ' + _OLD_GUESSP_IF[3:]
+
+
+def restart_staging_block(template_text: Optional[str] = None) -> Optional[str]:
+    """The RESTART staging block as the current template writes it into every
+    job script (it sits inside the template's single-quoted echo, so the
+    generated script carries it byte for byte)."""
+    try:
+        text = template_text if template_text is not None else _TEMPLATE.read_text()
+    except OSError:
+        return None
+    start = text.find(_STAGING_START)
+    end = text.find(_GUESSP_START, start)
+    if start < 0 or end < 0:
+        return None
+    return text[start:end]
+
+
+def refresh_restart_staging(script_text: str, template_text: Optional[str] = None) -> Tuple[str, str]:
+    """Give a job script written before the RESTART staging existed that
+    staging. Returns (text, what happened).
+
+    Such a script (a workflow copies the generator into workflow_scripts/
+    when it is planned, so a workflow planned earlier keeps writing them)
+    would run a RESTART deck without checking for OPTINFO.DAT,
+    and its GUESSP staging could overwrite the killed run's fort.20. The block
+    is inserted right after the line that copies the deck to INPUT - the
+    point where the current template has it - and an existing GUESSP staging
+    of the current form is told to stand aside. Only when that is all the
+    script does with fort.20: any other fort.20 handling is left alone and the
+    script is not changed.
+    """
+    if _STAGING_START in script_text:
+        return script_text, 'already has the RESTART staging'
+    block = restart_staging_block(template_text)
+    if block is None:
+        return script_text, 'template staging block not found; script unchanged'
+    copies = list(_INPUT_COPY_RE.finditer(script_text))
+    if len(copies) != 1:
+        return script_text, 'no single "cp $DIR/$JOB.d12 $scratch/$JOB/INPUT" line; script unchanged'
+    code = [l for l in script_text.splitlines() if l.strip() and not l.lstrip().startswith('#')]
+    guessp_ifs = sum(l.strip() == _OLD_GUESSP_IF for l in code)
+    fort20 = [l for l in code if 'fort.20' in l]
+    if fort20 and guessp_ifs != 1:
+        return script_text, 'unrecognised fort.20 handling in the script; script unchanged'
+    at = copies[0].end()                  # end of the copy line, before its newline
+    text = script_text[:at] + '\n' + block.rstrip('\n') + script_text[at:]
+    if guessp_ifs == 1:
+        text = text.replace(_OLD_GUESSP_IF, _NEW_GUESSP_IF, 1)
+    return text, 'added the RESTART staging of the current template'
