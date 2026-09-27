@@ -33,6 +33,11 @@ What an output shows (checked on the real OPT corpus and the HPCC runs):
   * point 1 prints no geometry (it is the deck's) and no DE, so its energy is
     E(point 2) - DE(point 2).
 
+Energies are compared only between runs that started from the same deck:
+CRYSTAL fixes the integral screening at the optimization's reference
+geometry, so the same geometry has a different energy in a run that started
+elsewhere (measured on HPCC: 1.6E-04 Ha for the same PbTiO3 cell).
+
 Safety: the deck and the output are tied together before anything is written.
 The output's own header geometry must reproduce the deck's cell parameters and
 atoms (same atomic numbers, same order, coordinates equal up to one common

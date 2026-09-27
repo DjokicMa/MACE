@@ -299,6 +299,26 @@ def test_backups_are_never_overwritten(engine, tmp_path):
     assert (tmp_path / "tqb_pto.out.optabort2").is_file()
 
 
+def test_runs_from_an_older_geometry_are_not_compared(engine, tmp_path):
+    """CRYSTAL fixes integral screening at the reference geometry, so energies
+    of runs that started from another geometry are on another scale (HPCC:
+    the same cell was -1268.3449049 Ha in the first run and -1268.3450671 Ha
+    in the fresh run started from it). After a fallback only the new deck's
+    runs count, even if an older run printed a lower number."""
+    d12, script = _aborted_job(tmp_path, "tqb_pto", ["tqb_pto.out.timeout1"])
+    deck = data("tqb_pto.d12").replace("\n3.94649838\n", "\n3.92491474\n")
+    d12.write_text(deck)                                  # as after a first fallback
+    newer = data("tqb_pto.out").replace(                  # its point 4 moves elsewhere,
+        "3.92491474     3.92491474     3.92491474", "3.92470000     3.92470000     3.92470000"
+    ).replace(                                            # it started from the new deck,
+        "3.94649838     3.94649838     3.94649838", "3.92491474     3.92491474     3.92491474"
+    ).replace("-1.2683449049414E+03", "-1.2683440000000E+03")   # higher than timeout1's
+    assert "3.92470000" in newer
+    (tmp_path / "tqb_pto.out").write_text(newer)
+    assert _recover_abort(engine, d12, script)
+    assert "\n3.92470000\n" in d12.read_text()
+
+
 def test_nothing_to_carry_over_means_no_resubmission(engine, tmp_path, capsys):
     """Only the aborted RESTART run with no point of its own completed and no
     earlier output: nothing better than repeating the abort."""

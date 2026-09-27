@@ -834,10 +834,17 @@ class ErrorRecoveryEngine:
     def _fresh_opt_from_best(self, input_file: Path, d12_text: str, out_path: Path) -> Optional[str]:
         """Rewrite the deck as a fresh optimization from the best point reached.
 
-        The candidates are every optimization point with an energy in this
-        job's runs: the last .out and the earlier ones kept as
-        <JOB>.out.timeout<N> / <JOB>.out.optabort<N>. The lowest energy wins
-        (point 1 of a run is the deck geometry itself). Only the cell
+        The candidates are the optimization points with an energy in this
+        job's runs that started from the deck as it is now: the last .out and
+        the earlier ones kept as <JOB>.out.timeout<N> / <JOB>.out.optabort<N>
+        whose input geometry is the deck's (RESTART reruns included). The
+        lowest energy wins (point 1 of a run is the deck geometry itself).
+        Runs from an older geometry - before an earlier fallback - are left
+        out: CRYSTAL fixes the integral screening at the optimization's
+        reference geometry, so their energies are on another scale (measured
+        on HPCC: the same PbTiO3 cell, a = 3.92491474, is -1268.3449049 Ha in
+        the run that started from a = 3.94649838 and -1268.3450671 Ha in the
+        run that started from it). Only the cell
         parameters and atom coordinates change, RESTART is removed, nothing
         else is touched, and the deck as it was is kept first as
         <JOB>.d12.orig (then .orig2, ...; never overwritten).
@@ -861,10 +868,9 @@ class ErrorRecoveryEngine:
             if title and title not in text[:20000]:
                 continue
             # Did this run start from the deck as it is now? Its header
-            # geometry then fixes how output and deck frames correspond, and
-            # its point 1 is the deck's own geometry. (After an earlier
-            # fallback, older runs started from an older geometry: their
-            # points count, their point 1 does not.)
+            # geometry then fixes how output and deck frames correspond, its
+            # point 1 is the deck's own geometry, and its energies are
+            # comparable with the other runs of this deck.
             h = opt_geometry.header_geometry(text)
             same_deck = False
             if h is not None:
@@ -873,21 +879,19 @@ class ErrorRecoveryEngine:
                                               d12_text)
                 except opt_geometry.GeometryTransferError:
                     same_deck = False
-            if same_deck and header is None:
+            if not same_deck:
+                continue
+            if header is None:
                 header = h
-            points.extend(pt for pt in opt_geometry.optimization_points(text, source=p.name)
-                          if pt.geometry is not None or same_deck)
+            points.extend(opt_geometry.optimization_points(text, source=p.name))
         best = opt_geometry.best_point(points)
         if best is None:
-            print("No completed optimization point in the earlier runs")
+            print("No completed optimization point in the runs of this deck (none shows "
+                  "the deck's geometry as its input, or none got past its first point)")
             return None
 
         new_text = d12_text
         if best.geometry is not None:
-            if header is None:
-                print("Best geometry not carried over: no run of this deck shows its input "
-                      "geometry in the same frame as the deck")
-                return None
             try:
                 new_text = opt_geometry.rewrite_geometry(d12_text, header, best.geometry)
             except opt_geometry.GeometryTransferError as e:
