@@ -204,6 +204,15 @@ def capped_walltime(script_path: Path, script_text: str, current: int, target: i
     limit, how = queue_walltime_limit(script_path, script_text,
                                       format_walltime(current), runner)
     if limit is None:
+        # The refusal need not be about time at all (a QOS submit limit, say,
+        # refuses every probe), so an unreadable limit means "cannot tell",
+        # not "at the limit": use the configured maximum, as when SLURM is
+        # unreachable, and let the real submission report any other refusal.
+        if fallback_max:
+            new = max(min(target, fallback_max), current)
+            return new, (f'SLURM refused {format_walltime(target)} and its limit could '
+                         f'not be read ({how}); capped at the configured maximum '
+                         f'{format_walltime(fallback_max)}')
         return current, (f'SLURM refused {format_walltime(target)} and its limit could '
                          f'not be read ({how}); keeping {format_walltime(current)}')
     new = min(target, limit)
@@ -213,5 +222,7 @@ def capped_walltime(script_path: Path, script_text: str, current: int, target: i
     ok, _, _ = sbatch_test_only(script_path, format_walltime(new), runner)
     if ok:
         return new, f'capped at the queue limit {format_walltime(limit)} ({how})'
-    return current, (f'SLURM refused {format_walltime(new)} too; keeping '
-                     f'{format_walltime(current)}')
+    # The queue's own limit allows `new`, so this refusal is about something
+    # other than time; resubmit within the limit and let sbatch report it.
+    return new, (f'capped at the queue limit {format_walltime(limit)} ({how}); '
+                 f'SLURM refused the probe for another reason')

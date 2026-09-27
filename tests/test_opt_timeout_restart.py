@@ -249,6 +249,24 @@ def test_doubling_past_the_limit_is_cut_to_the_limit(engine, tmp_path):
     assert new_time(res) == "7-00:00:00"
 
 
+
+def qos_refuses_everything(cmd, cwd=None):
+    """A refusal that is not about time: every probe is refused and the
+    routed partition is never reported (e.g. a QOS submit-count limit)."""
+    if cmd[0] == "sbatch":
+        return subprocess.CompletedProcess(
+            cmd, 1, "", "sbatch: error: QOSMaxSubmitJobPerUserLimit\nsbatch: error: Batch job "
+                        "submission failed: Job violates accounting/QOS policy\n")
+    return subprocess.CompletedProcess(cmd, 1, "", "error\n")
+
+
+def test_refusal_not_about_time_is_not_read_as_the_limit(engine, tmp_path):
+    """An SP that timed out at 12 h is still resubmitted with more time when
+    SLURM refuses the probes for another reason; it is not "at the limit"."""
+    res = recover_timeout(engine, tmp_path, job_script(tmp_path, "12:00:00"),
+                          runner=qos_refuses_everything)
+    assert new_time(res) == "1-00:00:00"
+
 def test_mendoza_q_long_may_go_to_fourteen_days(engine, tmp_path):
     fake = FakeSlurm()
     res = recover_timeout(engine, tmp_path, job_script(tmp_path, "7-00:00:00", "mendoza_q_long"),
