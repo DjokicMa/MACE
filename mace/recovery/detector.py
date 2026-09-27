@@ -36,6 +36,7 @@ pd = get_pandas() if PANDAS_AVAILABLE else None
 # Import MACE components
 from mace.database.materials import MaterialDatabase
 from mace.utils.file_manager import CrystalFileManager
+from mace.completion_checker import determine_completed_subtype
 
 
 class CrystalErrorDetector:
@@ -299,7 +300,7 @@ class CrystalErrorDetector:
         
         if not error_found:
             # Check for completion patterns
-            self._check_for_completion(lines, result)
+            self._check_for_completion(lines, result, output_file)
             
         # Additional analysis
         self._analyze_performance_issues(lines, result)
@@ -342,14 +343,31 @@ class CrystalErrorDetector:
                 
         return False
         
-    def _check_for_completion(self, lines: List[str], result: Dict):
-        """Check for completion patterns in output file lines."""
+    def _check_for_completion(self, lines: List[str], result: Dict,
+                              output_file: Optional[Path] = None):
+        """Check for completion patterns in output file lines.
+
+        The patterns only decide *whether* the run finished. Which calculation
+        it was comes from the completion checker, the same resolution
+        ``mace check`` sorts by: the SP group's "TOTAL CPU TIME" / "CRYSTAL
+        ENDS" lines close every CRYSTAL and properties run, so taking the type
+        from the first group that matched read every FREQ, BAND, DOSS,
+        TRANSPORT and CHARGE+POTENTIAL output as SP.
+        """
         for completion_type, completion_info in self.completion_patterns.items():
             for pattern in completion_info['patterns']:
                 if any(pattern in line for line in lines):
                     result['status'] = 'completed'
-                    result['completion_type'] = completion_type
-                    result['calc_type'] = completion_info['calc_type']
+                    calc_type = completion_info['calc_type']
+                    if output_file is not None:
+                        has_opt_end = any("OPT END" in line for line in lines)
+                        calc_type = determine_completed_subtype(
+                            Path(output_file), [line + '\n' for line in lines],
+                            has_opt_end=has_opt_end)
+                    result['calc_type'] = calc_type
+                    result['completion_type'] = next(
+                        (name for name, info in self.completion_patterns.items()
+                         if info['calc_type'] == calc_type), completion_type)
                     return
                     
         # If no completion found, check if calculation is still running

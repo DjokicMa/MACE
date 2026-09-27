@@ -108,3 +108,109 @@ def is_frequency_output(content: str) -> bool:
 def is_transport_output(content: str) -> bool:
     """True when a properties .out is from a BOLTZTRA (transport) run."""
     return _TRANSPORT_OUTPUT_LINE.search(content) is not None
+
+
+# --- Calculation type of a deck ----------------------------------------------
+
+# The four properties types MACE runs from a .d3 deck.
+PROPERTY_CALC_TYPES = ('BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL')
+
+# Charge-density and electrostatic-potential records. Crystal_d3 writes ECH3 and
+# POT3 for the CHARGE+POTENTIAL step (3D cube grids) and ECHG / POTC for the
+# 2D-map and point-potential variants.
+CHARGE_POTENTIAL_RECORDS = frozenset({'ECH3', 'ECHG', 'POT3', 'POTC'})
+
+
+def d3_calc_type(records: Set[str]) -> Union[str, None]:
+    """The properties type a .d3 deck's records drive, or None if none is known."""
+    if 'BOLTZTRA' in records:
+        return 'TRANSPORT'
+    if records & CHARGE_POTENTIAL_RECORDS:
+        return 'CHARGE+POTENTIAL'
+    if 'DOSS' in records:
+        return 'DOSS'
+    if 'BAND' in records:
+        return 'BAND'
+    return None
+
+
+def d12_calc_type(records: Set[str]) -> str:
+    """OPT, FREQ or SP from a .d12 deck's records."""
+    if 'OPTGEOM' in records:
+        return 'OPT'
+    if 'FREQCALC' in records:
+        return 'FREQ'
+    return 'SP'
+
+
+# --- Calculation type named in a file name ------------------------------------
+
+# MACE chains the type into every follow-up name, so a single file name can hold
+# several type tokens: "X_opt_HSESOL3C_optimized_sp_HSESOL3C_optimized_band".
+# The last one names the file's own step. A token is "_<type>" with an optional
+# step number, followed by "_" or the end of the name ("_optimized" is not
+# "_opt").
+_FILENAME_TYPE_TOKEN = re.compile(
+    r'_(charge[_+]potential|chargepot|charge|potential|cp|transport|transp'
+    r'|band|doss|dos|freq|sp|opt)\d*(?=_|$)')
+
+_FILENAME_TOKEN_TYPE = {
+    'charge_potential': 'CHARGE+POTENTIAL', 'charge+potential': 'CHARGE+POTENTIAL',
+    'chargepot': 'CHARGE+POTENTIAL', 'charge': 'CHARGE+POTENTIAL',
+    'potential': 'CHARGE+POTENTIAL', 'cp': 'CHARGE+POTENTIAL',
+    'transport': 'TRANSPORT', 'transp': 'TRANSPORT',
+    'band': 'BAND', 'doss': 'DOSS', 'dos': 'DOSS',
+    'freq': 'FREQ', 'sp': 'SP', 'opt': 'OPT',
+}
+
+_KNOWN_SUFFIXES = ('.d12', '.d3', '.out', '.f9', '.f25', '.sh', '.log')
+
+
+def calc_type_from_filename(name: Union[str, Path]) -> Union[str, None]:
+    """The calculation type the last type token of a file name names, or None."""
+    stem = Path(name).name.lower()
+    for suffix in _KNOWN_SUFFIXES:
+        if stem.endswith(suffix):
+            stem = stem[:-len(suffix)]
+            break
+    last = None
+    for match in _FILENAME_TYPE_TOKEN.finditer(stem):
+        last = match.group(1)
+    return _FILENAME_TOKEN_TYPE[last] if last else None
+
+
+# What the properties program prints for each properties run. After every
+# record it prints a timing line, "TTTT...TTTT <RECORD>  TELAPSE ...", and
+# BAND and DOSS also print a section banner. A DOSS run prints
+# "FROM BAND n TO BAND m" too (its projected band range), so that line is not a
+# BAND tell. Over every .out in test/ and the HPCC trees each tell is found only
+# in outputs of its own type.
+_BAND_OUTPUT_LINE = re.compile(
+    r'^[ \t]*\*[ \t]*BAND STRUCTURE[ \t]*\*'
+    r'|^[ \t]*T{10,}[ \t]+BAND\b',
+    re.MULTILINE,
+)
+_DOSS_OUTPUT_LINE = re.compile(
+    r'^[ \t]*TOTAL AND PROJECTED DENSITY OF STATES'
+    r'|^[ \t]*T{10,}[ \t]+DOSS\b',
+    re.MULTILINE,
+)
+_CHARGE_POTENTIAL_OUTPUT_LINE = re.compile(
+    r'^[ \t]*T{10,}[ \t]+(?:ECH3|ECHG|POT3|POTC)\b',
+    re.MULTILINE,
+)
+
+
+def is_band_output(content: str) -> bool:
+    """True when a properties .out is from a BAND (band structure) run."""
+    return _BAND_OUTPUT_LINE.search(content) is not None
+
+
+def is_doss_output(content: str) -> bool:
+    """True when a properties .out is from a DOSS (density of states) run."""
+    return _DOSS_OUTPUT_LINE.search(content) is not None
+
+
+def is_charge_potential_output(content: str) -> bool:
+    """True when a properties .out is from an ECH3/POT3 (or ECHG/POTC) run."""
+    return _CHARGE_POTENTIAL_OUTPUT_LINE.search(content) is not None

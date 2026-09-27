@@ -24,7 +24,10 @@ def test_scan_material_id_matches_canonical(tmp_path, fname, expected_calc):
     from mace.database.populate_completed_jobs import scan_for_completed_calculations
     from mace.database.materials import create_material_id_from_file
     out = tmp_path / fname
-    out.write_text("CRYSTAL run\n * OPT END - CONVERGED * E(AU): -1.0 POINTS 1 *\n    TOTAL CPU TIME =        1.0\n TTTTTT TERMINATION TTTTTT\n")
+    # The calc type comes from what the run printed, as in `mace check`: only
+    # the OPT outputs carry the OPT END line.
+    opt_end = " * OPT END - CONVERGED * E(AU): -1.0 POINTS 1 *\n" if expected_calc == "OPT" else ""
+    out.write_text("CRYSTAL run\n" + opt_end + "    TOTAL CPU TIME =        1.0\n TTTTTT TERMINATION TTTTTT\n")
     calcs = scan_for_completed_calculations(tmp_path)
     assert len(calcs) == 1
     c = calcs[0]

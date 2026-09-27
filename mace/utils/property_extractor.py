@@ -27,7 +27,8 @@ from typing import Dict, List, Tuple, Optional, Any
 from datetime import datetime
 
 from mace.constants import HARTREE_TO_EV
-from mace.utils.calc_detection import is_optimization_output, is_transport_output
+from mace.utils.calc_detection import (
+    is_band_output, is_optimization_output, is_transport_output)
 
 # Import MACE components
 try:
@@ -1538,8 +1539,11 @@ class CrystalPropertyExtractor:
         """Extract band structure specific properties from BAND calculations."""
         props = {}
         
-        # Check if this is a BAND calculation
-        if 'BAND STRUCTURE' not in content.upper() and 'FROM BAND' not in content:
+        # Check if this is a BAND calculation. Not "FROM BAND": a DOSS run
+        # prints "FROM BAND n TO BAND m" for its projected band range, which
+        # tagged every DOSS output has_band_structure with the band index as
+        # vbm_energy.
+        if not is_band_output(content):
             return props
             
         # Extract k-point information
@@ -3330,6 +3334,32 @@ class CrystalPropertyExtractor:
         return advanced_props
 
 
+def _output_calc_type(output_file: Path) -> str:
+    """The calculation type of a finished .out, as ``mace check`` sorts it."""
+    from mace.completion_checker import determine_completed_subtype
+    with open(output_file, 'r', errors='ignore') as f:
+        lines = f.readlines()
+    has_opt_end = any("OPT END" in line for line in lines)
+    return determine_completed_subtype(Path(output_file), lines, has_opt_end=has_opt_end)
+
+
+def _output_matches_calc_type(output_file: Path, wanted: str) -> bool:
+    """True when ``output_file`` is a ``wanted`` (OPT, SP2, DOSS, ...) run.
+
+    Replaces a file-name substring test ("opt" is in every chained MACE name,
+    so --filter-type OPT kept SP, FREQ and properties outputs) followed by a
+    phrase test on the first 5 KB ("SINGLE POINT", "OPTGEOM", ... which CRYSTAL
+    does not print there), which together dropped every output.
+    """
+    base = re.sub(r'\d+$', '', wanted.strip().upper())
+    if base == 'DOS':
+        base = 'DOSS'
+    try:
+        return _output_calc_type(Path(output_file)) == base
+    except OSError:
+        return False
+
+
 def main():
     """Main function."""
     parser = argparse.ArgumentParser(description="Extract properties from CRYSTAL output files")
@@ -3367,22 +3397,8 @@ def main():
                         continue
                 
                 # Check calculation type filter
-                if args.filter_type:
-                    # Simple heuristic: check if the calc type is in the filename
-                    file_str = str(f).lower()
-                    filter_type = args.filter_type.lower()
-                    
-                    # Common patterns for different calc types
-                    if filter_type == 'opt' and ('opt' not in file_str and 'optimization' not in file_str):
-                        continue
-                    elif filter_type == 'sp' and 'sp' not in file_str and 'opt' in file_str:
-                        continue
-                    elif filter_type == 'freq' and 'freq' not in file_str:
-                        continue
-                    elif filter_type == 'band' and 'band' not in file_str:
-                        continue
-                    elif filter_type == 'doss' and ('doss' not in file_str and 'dos' not in file_str):
-                        continue
+                if args.filter_type and not _output_matches_calc_type(f, args.filter_type):
+                    continue
                 
                 filtered_files.append(f)
             
@@ -3400,35 +3416,12 @@ def main():
     for output_file in output_files:
         print(f"\n📊 Processing: {output_file}")
         
-        # For better filtering, we can also check content if needed
-        if args.calc_type or args.filter_type:
-            # Read first few lines to determine calc type
-            try:
-                with open(output_file, 'r', encoding='utf-8', errors='ignore') as f:
-                    content_preview = f.read(5000)  # Read first 5KB
-                    
-                # Check if this matches the requested calc type
-                calc_type_filter = args.calc_type or args.filter_type
-                if calc_type_filter:
-                    calc_type_filter = calc_type_filter.upper()
-                    
-                    # Define patterns for each calculation type
-                    type_patterns = {
-                        'OPT': ['OPTGEOM', 'OPTIMIZATION', 'GEOMETRY OPTIMIZATION'],
-                        'SP': ['SINGLE POINT', 'SINGLE-POINT', 'SP CALCULATION'],
-                        'FREQ': ['FREQUENCY', 'FREQUENCIES', 'VIBRATIONAL', 'FREQCALC'],
-                        'BAND': ['BAND STRUCTURE', 'BANDSTRUCTURE', 'NEWK'],
-                        'DOSS': ['DENSITY OF STATES', 'DOS CALCULATION', 'DOSS']
-                    }
-                    
-                    # Check if content matches the requested type
-                    if calc_type_filter in type_patterns:
-                        patterns = type_patterns[calc_type_filter]
-                        if not any(pattern in content_preview.upper() for pattern in patterns):
-                            print(f"   ⏭️  Skipping - not a {calc_type_filter} calculation")
-                            continue
-            except Exception as e:
-                print(f"   ⚠️  Could not read file for filtering: {e}")
+        # --calc-type filters like --filter-type (a scanned directory was
+        # already filtered by --filter-type above)
+        wanted = args.calc_type or (args.filter_type if args.output_file else None)
+        if wanted and not _output_matches_calc_type(output_file, wanted):
+            print(f"   ⏭️  Skipping - not a {wanted.upper()} calculation")
+            continue
         
         properties = extractor.extract_all_properties(
             output_file, 

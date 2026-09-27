@@ -10,8 +10,17 @@ from typing import Dict, List, Optional
 import json
 from datetime import datetime
 
-from mace.completion_checker import categorize_output_file
+from mace.completion_checker import CALC_TYPE_TO_BUCKET, categorize_output_file
 from mace.database.materials import create_material_id_from_file
+
+
+_BUCKET_TO_CALC_TYPE = {bucket: calc_type
+                        for calc_type, bucket in CALC_TYPE_TO_BUCKET.items()}
+
+
+def _completed_calc_type(category: str) -> str:
+    """The calculation type behind a completion checker 'complete*' bucket."""
+    return _BUCKET_TO_CALC_TYPE.get(category, 'OPT')
 
 
 def scan_for_completed_calculations(base_dir: Path) -> List[Dict]:
@@ -51,26 +60,14 @@ def scan_for_completed_calculations(base_dir: Path) -> List[Dict]:
             # materials, silently duplicating material rows on every workflow scan.
             material_name = create_material_id_from_file(out_file.name)
 
-            # Determine calculation type (D3 property types before SP/FREQ so
-            # their records dedup against engine-created ones instead of
-            # being re-registered as OPT)
-            calc_type = 'OPT'  # Default
-            stem_lower = out_file.stem.lower()
-            if '_doss' in stem_lower:
-                calc_type = 'DOSS'
-            elif '_band' in stem_lower:
-                calc_type = 'BAND'
-            elif '_transport' in stem_lower:
-                calc_type = 'TRANSPORT'
-            elif '_charge+potential' in stem_lower or '_charge_potential' in stem_lower:
-                calc_type = 'CHARGE+POTENTIAL'
-            elif '_sp' in stem_lower:
-                calc_type = 'SP'
-            elif '_freq' in stem_lower:
-                calc_type = 'FREQ'
-            elif out_file.parent.name.startswith('step_') and '_OPT' in out_file.parent.name:
-                calc_type = 'OPT'
-                
+            # The calculation type is the completion checker's own verdict
+            # (the bucket it just sorted the file into), so this scan and
+            # `mace check` agree. The old file-name substring test recorded a
+            # name without a type token ("X.freq.out", "X_SLAB_OPT_FSI.out") as
+            # OPT, and "X_opt_..._sp_..._optimized_freq_guessp" as SP because
+            # "_sp" came before "_freq" in its test order.
+            calc_type = _completed_calc_type(category)
+
             # Look for corresponding input file. Use the actual output stem (NOT
             # the canonical material id, which strips calc/functional tokens) so the
             # sibling .d12 is still found for continuation filenames.

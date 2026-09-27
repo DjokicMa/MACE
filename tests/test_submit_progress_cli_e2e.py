@@ -44,6 +44,12 @@ SHRINK
 END
 """
 
+# The calculation type is read from the deck's records, not its name, so the
+# OPT deck needs its OPTGEOM block.
+OPT_D12 = D12.replace("6 0.125 0.125 0.125\nEND\n",
+                      "6 0.125 0.125 0.125\nOPTGEOM\nFULLOPTG\nENDOPT\nEND\n", 1)
+assert "OPTGEOM" in OPT_D12
+
 
 @pytest.fixture
 def fake_slurm(tmp_path):
@@ -82,7 +88,7 @@ def test_bare_track_submit_creates_no_workflow(tmp_path, fake_slurm):
     """The reported bug, from the outside: a hand-run submission must leave a
     single calculation and no workflow directory behind."""
     deck = tmp_path / "mat_opt.d12"
-    deck.write_text(D12)
+    deck.write_text(OPT_D12)
 
     proc = _run_submit(tmp_path, fake_slurm, "--track", str(deck))
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -98,7 +104,7 @@ def test_bare_track_submit_creates_no_workflow(tmp_path, fake_slurm):
 
 def test_progress_writes_plan_and_stamps_submission(tmp_path, fake_slurm):
     deck = tmp_path / "mat_opt.d12"
-    deck.write_text(D12)
+    deck.write_text(OPT_D12)
 
     proc = _run_submit(tmp_path, fake_slurm, "--progress", "full_electronic", str(deck))
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -135,7 +141,7 @@ def test_progress_records_mid_sequence_step_number(tmp_path, fake_slurm):
 
 def test_unknown_template_fails_before_submitting(tmp_path, fake_slurm):
     deck = tmp_path / "mat_opt.d12"
-    deck.write_text(D12)
+    deck.write_text(OPT_D12)
 
     proc = _run_submit(tmp_path, fake_slurm, "--progress", "not_a_template", str(deck))
     assert proc.returncode != 0
