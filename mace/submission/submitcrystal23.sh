@@ -38,8 +38,8 @@ cp $DIR/$JOB.d12  $scratch/$JOB/INPUT
 # OPTINFO.DAT there, and the SCF guess from fort.20 - the density matrix of
 # the last completed SCF. During an optimization CRYSTAL keeps that matrix in
 # fort.20 itself, while fort.9 stays EMPTY until the run ends (measured on a
-# killed OPT: fort.9 0 bytes, fort.20 rewritten each step), so the killed run own
-# own fort.20 is the one to use and nothing may overwrite it - which is why
+# killed OPT: fort.9 0 bytes, fort.20 rewritten each step), so the fort.20 the
+# killed run left behind is the one to use and nothing may overwrite it - which is why
 # this runs before the GUESSP staging and tells it to stand aside. Without
 # OPTINFO.DAT there is nothing to continue, so RESTART comes back out of the
 # scratch copy and the job starts over; $DIR/$JOB.d12 itself is not modified.
@@ -78,7 +78,9 @@ fi
 #             predecessor is named after its own job and not this one.
 #   $JOB.f9   this material own matrix from an earlier run of this same job -
 #             the walltime-killed restart, where the right guess is the one it
-#             already produced.
+#             already produced. Only a NON-EMPTY one: a run CRYSTAL aborted
+#             in the middle of an optimization still copies its fort.9 back,
+#             and that is empty (measured on HPCC: a 0-byte $JOB.f9).
 # With NEITHER, the GUESSP record has to come back out of the deck. CRYSTAL
 # does not quietly fall back to the atomic guess - it stops:
 #   ERROR **** GUESSP **** COPY OF WAVEFUNCTION FILE fort.20 CAN NOT BE FOUND
@@ -91,7 +93,7 @@ if [ -z "$RESTART_KEEPS_FORT20" ] && grep -qiE "^[[:space:]]*GUESSP" "$scratch/$
   if [ -f "$DIR/$JOB.f20" ]; then
     cp "$DIR/$JOB.f20" "$scratch/$JOB/fort.20"
     echo "GUESSP: staged $JOB.f20 as fort.20"
-  elif [ -f "$DIR/$JOB.f9" ]; then
+  elif [ -s "$DIR/$JOB.f9" ]; then
     cp "$DIR/$JOB.f9" "$scratch/$JOB/fort.20"
     echo "GUESSP: restarting from this job own $JOB.f9 as fort.20"
   else
