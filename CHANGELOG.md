@@ -24,13 +24,49 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   over as before. The job script checks for OPTINFO.DAT again on the compute
   node and falls back to a fresh start if it is missing. The killed run's
   output is kept as `<job>.out.timeout1`, `.timeout2`, ...
+- **A RESTART rerun that aborts continues as a fresh optimization from the
+  best geometry reached.** Measured on HPCC: the rerun re-evaluates the
+  lowest-energy point, sees almost no energy change, shrinks the trust radius
+  to zero and dies in `MPI_Abort` (`ERROR **** BFGS_ **** PXK TOO SMALL` only
+  in the scratch `fort.87`; SLURM says COMPLETED). This is now recognised
+  (error type `opt_trust_radius_error`, up to `max_retries` 2) and the same
+  deck is resubmitted without `RESTART`, starting from the lowest-energy
+  point reached by the runs of that deck (energies from runs that started
+  from another geometry are not comparable: CRYSTAL fixes its integral
+  screening at the starting geometry). Only the cell parameters and atom coordinates
+  change - read from the geometry CRYSTAL prints at every optimization point,
+  in the deck's own frame - and the deck as it was is kept first as
+  `<job>.d12.orig` (then `.orig2`, ...; a backup is never overwritten). The
+  aborted output is kept as `<job>.out.optabort1`, ... A timed-out OPT whose
+  scratch directory has lost OPTINFO.DAT starts from its best point the same
+  way instead of from the beginning. Only 3D decks given by space group are
+  rewritten; for anything else the job is not resubmitted.
+- **CRYSTAL's own error is read from the scratch `fort.87`** when the `.out`
+  ends without CRYSTAL's normal end, so such aborts get a real error type (or
+  `crystal_error` with CRYSTAL's message) instead of `unknown_error`.
+- **Per-error `max_retries` is enforced** across the job's recovery lineage,
+  on top of the overall limit of recovery attempts (the built-in default for
+  timeouts is now 2, as in `recovery_config.yaml`).
+- **Job scripts written before the RESTART staging existed get it on
+  recovery.** A workflow copies the job-script generator into
+  `workflow_scripts/` when it is planned, so the job scripts of a workflow
+  planned before this release run a RESTART deck without checking for
+  OPTINFO.DAT. The timeout recovery adds the current staging to the copy of
+  the script it resubmits (the original is left alone), unless the script
+  handles `fort.20` in some other way. Such a workflow's later steps are still
+  first submitted with the old scripts; re-plan it to update them.
+- **An empty `<job>.f9` is no longer staged as the GUESSP guess.** A run
+  CRYSTAL aborts during an optimization still copies its (empty) fort.9 back.
 - **The doubled walltime stays within the queue's limit.** It is checked with
   SLURM when the job is resubmitted (`sbatch --test-only`, plus the MaxTime of
   the partition the job runs in): 7 days on the general partitions and
   mendoza_q, 14 days for jobs submitted with `-A mendoza_q_long`. A job is
   never moved to another partition or account. A job already at the limit is
-  resubmitted at the same walltime. `max_walltime` is used only when SLURM
-  cannot be reached.
+  resubmitted at the same walltime only when it can get further than last
+  time - an OPT continuing with RESTART or from its best point. Anything else
+  (an SP or FREQ, an OPT killed in its first SCF) would time out again, so it
+  is not resubmitted and the log says so. `max_walltime` is used only when
+  SLURM cannot be reached.
 - **Timeouts are recognised at all.** SLURM writes the time-limit notice to
   the job's `-o` log and leaves the `.out` cut off mid-line, so a timed-out job
   was classified as an unknown error and never recovered. SLURM's TIMEOUT
