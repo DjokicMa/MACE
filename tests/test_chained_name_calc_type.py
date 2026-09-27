@@ -361,3 +361,19 @@ def test_fresh_database_fallback_records_the_d3_type(tmp_path, deck, expected):
                if c.__module__ == cfd.__name__ and hasattr(c, "_extract_basic_settings"))
     settings = cls._extract_basic_settings(object.__new__(cls), d3)
     assert settings["property_type"] == expected
+
+
+@pytest.mark.parametrize("name", ["MoS2_band.out", "X_dos.out", "Fe_cp.out",
+                                  "Cu_charge_2.out", "Ag_transport_film.out"])
+def test_finished_scf_named_like_a_properties_run_is_sp(tmp_path, name):
+    """A material name ending in a properties token does not make a finished
+    SCF a BAND/DOSS/... run; the name only decides for a properties run that
+    stopped before printing what it was."""
+    from mace.completion_checker import determine_completed_subtype
+    src = TEST_DATA / "SP" / "1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized.out"
+    if not src.exists():
+        pytest.skip("test/ corpus not present")
+    out = tmp_path / name
+    shutil.copy(src, out)
+    lines = out.read_text(errors="ignore").splitlines(keepends=True)
+    assert determine_completed_subtype(out, lines) == "SP"

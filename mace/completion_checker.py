@@ -166,6 +166,11 @@ def determine_completed_subtype(file_path: Path, lines, has_opt_end: bool = Fals
     if is_band_output(content):
         return 'BAND'
 
+    # A finished SCF with none of the tells above is an SP, whatever its name
+    # says ("MoS2_band.out", "Fe_cp.out" are material names). The name only
+    # decides for a properties run that stopped before printing its tell.
+    if '== SCF ENDED' in content:
+        return 'SP'
     name_type = calc_type_from_filename(file_path.name)
     if name_type in PROPERTY_CALC_TYPES:
         return name_type
