@@ -72,6 +72,17 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   was classified as an unknown error and never recovered. SLURM's TIMEOUT
   state, or that notice in the job's log, now marks it as a timeout.
 
+- **The calculation type is read from a file's records, not its name or
+  title.** `_opt` matched `_optimized`, so the queue manager typed every
+  chained deck (`X_opt_..._optimized_sp_..._optimized`) submitted without an
+  explicit type as an OPT; on the corpus that was every SP and FREQ deck and
+  most BAND, DOSS, CHARGE+POTENTIAL and TRANSPORT decks. Keywords in a deck or
+  output title (`..._BULK_OPTGEOM_...`) no longer make a run look like an OPT,
+  CHARGE+POTENTIAL decks (ECH3/POT3) are no longer typed BAND, the recovery
+  detector no longer reports FREQ and properties outputs as SP, DOSS outputs
+  are no longer stored with band-structure fields, and `mace analyze
+  --filter-type` matches outputs again. A deck's own records decide (OPTGEOM,
+  FREQCALC, the properties keywords); a name is only a tie-break.
 - **Generated SP, FREQ and OPT2 decks keep the parent's settings.** Decks the
   workflow engine derives from a finished calculation were quietly changing
   the method. Found by regenerating decks from real parents through every
