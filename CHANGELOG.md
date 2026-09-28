@@ -15,6 +15,9 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
 
 ### Fixed
 
+- **The built-in `3c_composite` template uses def2-mSVP**, the basis PBEh-3c
+  is defined on, instead of MINIX (HF-3c's). The basis now comes from the
+  `basis_requirements` table rather than a second copy.
 - **A walltime-killed geometry optimization continues where it stopped.**
   When an OPT runs out of time after at least one optimization step, the
   recovery adds `RESTART` to the OPTGEOM block of the same deck, so the new job

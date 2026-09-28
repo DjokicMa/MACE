@@ -47,10 +47,11 @@ python NewCifToD12.py --batch --options_file my_custom_config.json --cif_dir ./c
 
 ### 3. `3c_composite.json`
 - **Purpose**: Fast screening with composite methods
-- **Method**: PBEH3C/MINIX
+- **Method**: PBEH3C/def2-mSVP
 - **Features**:
   - 3-component composite method
-  - Minimal basis set (built into method)
+  - The basis PBEh-3c is defined on (def2-mSVP, from the `basis_requirements`
+    table in d12_constants.py)
   - Good accuracy at low cost
   - Excellent for initial screening
 

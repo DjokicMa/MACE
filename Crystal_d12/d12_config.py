@@ -29,8 +29,15 @@ Usage:
 
 import json
 import os
+import sys
 from typing import Dict, Any, Optional, List, Union, Tuple
 from pathlib import Path
+
+try:
+    from d12_constants import required_basis_for
+except ImportError:  # imported from outside Crystal_d12
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from d12_constants import required_basis_for
 
 
 def get_default_d12_configs() -> Dict[str, Dict[str, Any]]:
@@ -99,7 +106,9 @@ def get_default_d12_configs() -> Dict[str, Dict[str, Any]]:
             "functional": "PBEH3C",
             "is_3c_method": True,
             "dispersion": False,
-            "basis_set": "MINIX",
+            # The basis a 3c method is defined on comes from the one table
+            # that pairs them (d12_constants basis_requirements)
+            "basis_set": required_basis_for("PBEH3C"),
             "basis_set_type": "INTERNAL",
             "dft_grid": None,
             "tolerances": {
