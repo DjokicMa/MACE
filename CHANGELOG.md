@@ -15,6 +15,31 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
 
 ### Fixed
 
+- **A POLYMER or SLAB deck made from a `.out` alone keeps the parent's rod or
+  layer group.** `opt2d12` wrote whatever space group it had as the group
+  record. With the parent `.d12` present that was the parent's own record, so
+  every existing child was right (checked: all 162 SP/OPT/FREQ children of the
+  27 slab decks in `test/`). From the `.out` alone it was not: a POLYMER
+  output's "CORRESPONDING SPACE GROUP : P 65" line was read as 3D space group
+  170 and written as the rod group, which CRYSTAL refuses (rod groups run
+  1-99, layer groups 1-80), and one inside the range names a different group.
+  A SLAB fell back to P1 instead of its layer group. The child now takes the
+  group from the parent deck or the `.out`'s own "TWO-SIDED PLANE GROUP N." /
+  "POLYMER GROUP N." line, never from a 3D analysis, and a group outside the
+  range is refused before any deck is written.
+- **A SLAB deck's k-point mesh keeps its layer group's symmetry.** A mesh
+  `opt2d12` generates (a child made from the `.out` alone) or `cif2d12` writes
+  comes from the conventional a and b, and was only equalised for 3D decks. In
+  a centred-rectangular layer group the two primitive directions are
+  equivalent, so graphene in layer group 47 got `SHRINK 0 36 / 18 10 1` and
+  CRYSTAL stopped with "SHRINK BREAKS SYMMETRY". Square, hexagonal and
+  centred-rectangular layer groups (CRYSTAL numbers the last 10, 13, 16, 22,
+  26, 35, 36, 47, 48) now get one factor for both in-plane directions; oblique
+  and primitive rectangular groups and POLYMER meshes are unchanged, and a
+  child made with the parent `.d12` still takes the parent's own SHRINK.
+  Checked with real SCF runs of CRYSTAL/23 on HPCC: layer group 47 from
+  `opt2d12` and from `cif2d12` (refused before, converged now), 37 (18 10 1
+  kept) and 80, and rod groups 28 and 51.
 - **A walltime-killed geometry optimization continues where it stopped.**
   When an OPT runs out of time after at least one optimization step, the
   recovery adds `RESTART` to the OPTGEOM block of the same deck, so the new job
@@ -248,6 +273,18 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
 
 ### Added
 
+- **The `.d12` parser reads the whole geometry input**: the space, layer, rod
+  or point group record, CRYSTAL's IFHR (rhombohedral axes) flag, the cell
+  record expanded to a, b, c, alpha, beta, gamma, and every atom (atomic
+  number and coordinates). It used to stop at the space group. Every CRYSTAL
+  and SLAB deck in `test/` (137) is rebuilt from the parse, record for record,
+  by MACE's own deck writer. `opt2d12` still takes a child's geometry from the
+  `.out`: its decks are byte-identical to before for all 1458 SP/OPT/FREQ
+  children of the `test/OPT` and `test/SP` parents. A deck that names its
+  space group by symbol (IFLAG = 1) is read too, in the spaced form CRYSTAL
+  takes ("F M 3 M", "P 21/C", "P -4 21 M", "R -3 C"); a spelling CRYSTAL23
+  refuses or misreads ("FM3M", "F M -3 M", "P -4 2 1 M") is reported in the
+  parse as `geometry_unparsed` instead of silently leaving the geometry out.
 - **`mace preflight`** - runs CRYSTAL over a copy of a deck with a TESTPDIM
   record inserted. TESTPDIM stops after the whole input is read and symmetry
   analysed, which is late enough to catch a bad group, a bad lattice record, or a
