@@ -123,7 +123,8 @@ When seekpath is installed and you select "SeeK-path full paths" (option 4) duri
 - K-point coordinates are calculated from actual lattice parameters (not static tables)
 - Parametric k-points (monoclinic, orthorhombic, rhombohedral, etc.) are handled correctly
 - SHRINK factor is automatically adjusted for exact integer representation
-- Discontinuities in the path are properly detected and marked
+- Discontinuities in the path are detected and marked with "|" (`seekpath_interface.convert_to_mace_format` inserts one wherever a segment does not start at the previous segment's end)
+- Inversion symmetry comes from seekpath's own symmetry analysis of the structure (`has_inversion_symmetry`). The path is requested with time-reversal symmetry (`seekpath_interface.get_accurate_bandpath`, `with_time_reversal=True`), so it has no primed k-points even for a non-centrosymmetric structure
 
 Without seekpath, the code falls back to static dictionaries which are only accurate for cubic systems.
 
@@ -229,7 +230,7 @@ The band structure titles now include information about the source of the k-path
 
 **Source Types**:
 - **SeeKPath (w.I)**: SeeK-path with inversion symmetry (centrosymmetric structures)
-- **SeeKPath (no.I)**: SeeK-path without inversion symmetry (includes primed k-points)
+- **SeeKPath (no.I)**: SeeK-path without inversion symmetry (includes primed k-points only when the static fallback data is used; see Inversion Symmetry below)
 - **Literature**: From Setyawan & Curtarolo (2010) standard paths
 - **Manual**: Custom labels entered by user
 - **Template**: Pre-defined template paths
@@ -242,18 +243,18 @@ When using custom paths, the system displays CRYSTAL-supported k-point labels sp
 ## Known Limitations
 
 ### Discontinuous Paths in CRYSTAL
-CRYSTAL's band structure input format has a limitation when using label mode (SHRINK = 0):
-- Each segment must be defined as a pair of points: `START END`
-- There's no built-in way to specify discontinuous paths
-- The `|` symbol is accepted for documentation but creates continuous segments
+CRYSTAL's BAND input has no discontinuity marker: in both label mode (SHRINK = 0) and coordinate mode, each line is one segment (`START END`). MACE expresses a break by leaving out the segment across it:
+- **Label mode**: `CRYSTALOptToD3._write_band_d3` splits the path at each `|` and writes segments only between consecutive labels inside each part, so no segment joins the labels on either side of a `|`, and the segment count on the header line matches. If any label is not valid for CRYSTAL23 (`d3_kpoints.validate_kpoint_labels_for_crystal23`), the whole path is converted to coordinates and split the same way. The automatic label paths (`d3_kpoints.get_band_path_from_symmetry`) contain no `|`; one only appears in custom labels (path method 3) or a JSON config `path`.
+- **Coordinate mode** (vectors, literature, SeeK-path): each segment is written as its own start/end pair, so a break is a segment that does not start where the previous one ended. The `|` markers in the SeeK-path labels are used only for the title.
+- **Plot**: CRYSTAL still places the segments one after another along the band plot, so the two points on either side of a break share one position on the k-axis.
 
-**Workarounds**:
-1. Use coordinate mode with fractional coordinates for true discontinuous paths
-2. Post-process the output to remove unwanted connections
-3. Keep continuous paths but document discontinuities visually
+### Inversion Symmetry
+Inversion is used only by the SeeK-path format (automatic path, format 4); the label, vector and literature formats ignore it.
+- With the `seekpath` library: seekpath's own symmetry analysis, with time-reversal symmetry, so no primed k-points (see SeeKPath Library Integration).
+- Without it (static `seekpath_data` fallback in `d3_kpoints.get_seekpath_full_kpath`): `d3_kpoints.detect_inversion_from_crystal_output` reads the output (the `SPACE GROUP (CENTROSYMMETRIC)` line, an inversion operator, or the space-group number), falling back to `d3_kpoints.has_inversion_symmetry`. A non-centrosymmetric structure gets the `<variant>_noinv` path with primed k-points; if no `_noinv` entry exists, the centrosymmetric path is used with a warning.
 
 ### Current Technical Limitations
 1. **2D Materials**: Band structure generation currently uses 3D k-paths even for SLAB calculations
 2. **Extended Bravais Variants**: Some variants (oS2, oI2-3) need full implementation
 3. **Layer Groups**: No support for 2D layer group k-paths (groups 1-80)
-4. **Inversion Symmetry**: Not yet detected for non-centrosymmetric k-path selection
+4. **Inversion Symmetry**: Used only by the SeeK-path format (see Inversion Symmetry above)
