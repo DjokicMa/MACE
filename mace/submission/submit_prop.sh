@@ -29,6 +29,63 @@ module purge
 module load CRYSTAL/23-intel-2023a
 module load Python/3.11.3-GCCcore-12.3.0
 module load Python-bundle-PyPI/2023.06-GCCcore-12.3.0
+# SCRATCH GUARD. $SCRATCH can be EMPTY inside a job, even under bash --login
+# (seen on agx-000). scratch then became /crys23, mkdir was refused, INPUT was
+# never written and CRYSTAL stopped with END OF DATA IN INPUT DECK. So the
+# directory is checked before anything is staged in it, and when it cannot be
+# used the first writable one of these is used instead, keeping the part of
+# the path after $SCRATCH:
+#   1. /mnt/scratch/$USER resolved - what /etc/profile.d/hpcc.sh sets $SCRATCH
+#      to on MSU HPCC, so the same directory a healthy node uses (and the one
+#      a recovery looks in for OPTINFO.DAT);
+#   2. .mace_scratch under the submit directory (shared, kept after the job);
+#   3. $TMPDIR (node-local and removed with the job - last resort).
+# With none writable the job stops here rather than run CRYSTAL on an empty
+# INPUT. The directory used is written to $DIR/.$JOB.scratch, where the
+# recovery reads it back.
+MACE_SCRATCH_WANTED=$scratch
+if [ -n "$SCRATCH" ]; then MACE_SCRATCH_SUFFIX=${scratch#"$SCRATCH"}; else MACE_SCRATCH_SUFFIX=$scratch; fi
+case "$MACE_SCRATCH_SUFFIX" in /*) ;; *) MACE_SCRATCH_SUFFIX=/$MACE_SCRATCH_SUFFIX ;; esac
+MACE_USER=${USER:-$(id -un 2>/dev/null)}
+MACE_SCRATCH_TRY=()
+[ -n "$SCRATCH" ] && MACE_SCRATCH_TRY+=("$scratch")
+if [ -n "$MACE_USER" ] && [ -d "/mnt/scratch/$MACE_USER" ]; then
+  MACE_SCRATCH_TRY+=("$(readlink -f "/mnt/scratch/$MACE_USER")$MACE_SCRATCH_SUFFIX")
+fi
+[ -n "$DIR" ] && MACE_SCRATCH_TRY+=("$DIR/.mace_scratch$MACE_SCRATCH_SUFFIX")
+[ -n "$TMPDIR" ] && MACE_SCRATCH_TRY+=("$TMPDIR$MACE_SCRATCH_SUFFIX")
+[ -z "$SCRATCH" ] && echo "scratch: \$SCRATCH is empty on $(hostname)"
+scratch=""
+for MACE_D in "${MACE_SCRATCH_TRY[@]}"; do
+  if mkdir -p "$MACE_D/$JOB" 2>/dev/null && touch "$MACE_D/$JOB/.mace_write_test" 2>/dev/null; then
+    rm -f "$MACE_D/$JOB/.mace_write_test"
+    scratch=$MACE_D
+    break
+  fi
+  echo "scratch: cannot write to $MACE_D/$JOB"
+done
+if [ -z "$scratch" ]; then
+  echo "ERROR: no writable scratch directory on $(hostname) (\$SCRATCH=\"$SCRATCH\"); tried: ${MACE_SCRATCH_TRY[*]}" | tee -a "$DIR/$JOB.out"
+  echo "  Not running CRYSTAL: it would read an empty INPUT." | tee -a "$DIR/$JOB.out"
+  exit 1
+fi
+if [ "$scratch" != "$MACE_SCRATCH_WANTED" ]; then
+  echo "scratch: using $scratch/$JOB instead of $MACE_SCRATCH_WANTED/$JOB"
+fi
+echo "scratch directory: $scratch/$JOB"
+# The last run of this job may have used another directory (a node where the
+# fallback was needed, or the other way round): an OPTGEOM RESTART reads
+# OPTINFO.DAT and fort.20 from here, so bring them over when only that one has
+# them.
+MACE_SCRATCH_PREV=$(cat "$DIR/.$JOB.scratch" 2>/dev/null)
+if [ -n "$MACE_SCRATCH_PREV" ] && [ "$MACE_SCRATCH_PREV" != "$scratch/$JOB" ] \
+   && [ -f "$MACE_SCRATCH_PREV/OPTINFO.DAT" ] && [ ! -f "$scratch/$JOB/OPTINFO.DAT" ]; then
+  for MACE_F in OPTINFO.DAT fort.20 fort.9; do
+    [ -f "$MACE_SCRATCH_PREV/$MACE_F" ] && cp -p "$MACE_SCRATCH_PREV/$MACE_F" "$scratch/$JOB/$MACE_F"
+  done
+  echo "scratch: brought OPTINFO.DAT over from the previous run in $MACE_SCRATCH_PREV"
+fi
+echo "$scratch/$JOB" > "$DIR/.$JOB.scratch" 2>/dev/null
 mkdir  -p $scratch/$JOB
 
 cp $DIR/$JOB.d3  $scratch/$JOB/INPUT

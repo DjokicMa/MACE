@@ -206,6 +206,20 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   version written in prose had nothing holding it to the package; it is now
   pinned. Historical "NEW in v1.1.0" notes and the v1.0.0 Zenodo citation are
   deliberately left alone.
+- **A job no longer runs CRYSTAL on an empty INPUT when `$SCRATCH` is empty.**
+  On some nodes (agx-000) `$SCRATCH` is empty inside the job even under
+  `bash --login`, so the scratch directory became `/crys23`, nothing could be
+  staged there and CRYSTAL stopped with `END OF DATA IN INPUT DECK` (reproduced
+  on HPCC with the old script). The OPT/SP/FREQ and properties job scripts now
+  check the scratch directory before staging into it and otherwise use, in
+  order, `/mnt/scratch/$USER` (what HPCC sets `$SCRATCH` to, so the same
+  directory), `.mace_scratch/` in the submit directory, then `$TMPDIR`, saying
+  which in the job log. With none writable the job stops with a clear message
+  instead. The directory used is recorded as `.<job>.scratch` in the submit
+  directory; the recovery reads it to find OPTINFO.DAT and fort.87, and a
+  RESTART rerun that lands in a different directory brings OPTINFO.DAT with it.
+  When `$SCRATCH` is empty where the recovery runs, it now rebuilds it the same
+  way instead of treating the scratch directory as unknown.
 
 ### Added
 

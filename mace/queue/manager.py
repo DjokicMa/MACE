@@ -1326,7 +1326,9 @@ class EnhancedCrystalQueueManager:
                 return None
             text = Path(script).read_text(errors='ignore')
             name = opt_restart.job_name(text) or Path(calc.get('input_file') or script).stem
-            return opt_restart.scratch_error_text(opt_restart.job_scratch_dir(text, name))
+            submit_dir = Path(calc.get('work_dir') or Path(calc.get('input_file') or script).parent)
+            return opt_restart.scratch_error_text(
+                opt_restart.job_scratch_dir(text, name, submit_dir=submit_dir))
         except OSError:
             return None
 

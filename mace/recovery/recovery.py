@@ -807,7 +807,9 @@ class ErrorRecoveryEngine:
 
             progressed = opt_restart.optimization_has_progress(out_text)
             job_name = opt_restart.job_name(job_script_text) or input_file.stem
-            scratch = opt_restart.job_scratch_dir(job_script_text, job_name)
+            scratch = opt_restart.job_scratch_dir(
+                job_script_text, job_name,
+                submit_dir=Path(calc.get('work_dir') or input_file.parent))
             state = opt_restart.optinfo_state(scratch)
             if progressed and state != 'absent':
                 new_text, changed = opt_restart.add_optgeom_restart(d12_text)
