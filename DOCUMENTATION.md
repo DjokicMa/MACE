@@ -89,7 +89,7 @@ mace submit --progress interactive my_calculation.d12
 
 # Monitor calculations
 mace monitor
-mace queue --status
+mace manager --status
 
 # Analyze results
 mace analyze --extract-properties .
@@ -115,7 +115,7 @@ mace completion --organize                # Sort files by status into folders
 ### Job Management (Direct Script Access)
 ```bash
 # Enhanced queue management with material tracking
-python mace/enhanced_queue_manager.py --base-dir /path/to/materials --max-jobs 200
+python mace/enhanced_queue_manager.py --d12-dir /path/to/materials --max-jobs 200
 
 # Submit all .d12 files in directory
 ./mace/submission/submitcrystal23.sh
@@ -327,7 +327,7 @@ The workflow manager (`mace/run_workflow.py`) provides a unified interface for p
 
 ### Core Components
 
-#### **1. Interactive Workflow Planner (`workflow_planner.py`)**
+#### **1. Interactive Workflow Planner (`mace/workflow/planner.py`)**
 - **Purpose**: Plan complete calculation sequences with full configuration
 - **Features**:
   - Input type detection (CIF files, existing D12s, or mixed)
@@ -336,7 +336,7 @@ The workflow manager (`mace/run_workflow.py`) provides a unified interface for p
   - SLURM resource planning with intelligent defaults
   - JSON configuration persistence
 
-#### **2. Workflow Executor (`workflow_executor.py`)**
+#### **2. Workflow Executor (`mace/workflow/executor.py`)**
 - **Purpose**: Execute planned workflows with error handling and progress tracking
 - **Features**:
   - Batch CIF conversion with timeout protection

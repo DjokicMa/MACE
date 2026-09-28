@@ -227,8 +227,8 @@ mace plotting --band -d ./band_calcs -o ./plots
 
 #### Direct Script Usage
 ```bash
-# Convert CIF to D12
-python Crystal_d12/NewCifToD12.py --cif_file structure.cif
+# Convert the CIF files in a directory to D12
+python Crystal_d12/NewCifToD12.py --cif_dir ./cifs
 
 # Generate property calculation
 python Crystal_d3/CRYSTALOptToD3.py --input optimized.out --calc-type BAND
