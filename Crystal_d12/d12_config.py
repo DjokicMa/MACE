@@ -29,6 +29,7 @@ Usage:
 
 import json
 import os
+import re
 import sys
 from typing import Dict, Any, Optional, List, Union, Tuple
 from pathlib import Path
@@ -338,6 +339,12 @@ _DIMENSIONALITIES = ("CRYSTAL", "SLAB", "POLYMER", "MOLECULE")
 _SYMMETRY_HANDLING = ("CIF", "SPGLIB", "P1")
 
 
+def _basis_key(name: Any) -> str:
+    """A basis-set name for comparison only: DEF2-MSVP, def2-mSVP and
+    def2msvp are one basis. The name written to a deck is never this."""
+    return re.sub(r"[^0-9A-Z]", "", str(name).upper())
+
+
 def config_to_cif_options(data: Any) -> Dict[str, Any]:
     """Options for ``NewCifToD12.py --batch`` from a loaded options file.
 
@@ -350,12 +357,16 @@ def config_to_cif_options(data: Any) -> Dict[str, Any]:
       ``dispersion``, ``spin_polarized``, ``scf_settings``) mapped onto
       cif2d12's.
 
-    A key the file already has in cif2d12's spelling always wins. Settings a
+    A key the file already has in cif2d12's spelling always wins, and a
+    basis set the file names is written exactly as spelled. Settings a
     configuration file leaves out get the interactive defaults: 3D
     ``CRYSTAL``, CIF symmetry written as the asymmetric unit, INTERNAL basis.
-    A 3c method gets the basis it is defined on (``basis_requirements``);
-    naming a different one is refused rather than silently running a
-    different method.
+    A 3c method with no basis set gets the one it is defined on
+    (``basis_requirements``); one paired with a different basis is written
+    as asked, with a warning (CRYSTAL23 runs it - the lead perovskites need
+    HSE-3c on POB-TZVP-REV2 because its internal def2-mSVP has no Pb - but
+    the 3c corrections were fitted to the defining basis).
+    ``calculation_type`` is read case-insensitively ("opt" is OPT).
 
     Raises:
         ValueError: the file cannot describe a deck (missing or unknown
@@ -422,14 +433,14 @@ def config_to_cif_options(data: Any) -> Dict[str, Any]:
     required = required_basis_for(method_name)
     if required:
         given = opts.get("basis_set")
-        if given and str(given).upper() != required.upper():
-            raise ValueError(
-                f"{method_name} is defined on the {required} basis set, but "
-                f"the options file names {given!r}; drop basis_set or set it "
-                f"to {required}")
-        opts["basis_set"] = required
-        opts["basis_set_type"] = "INTERNAL"
-        opts["is_3c_method"] = True
+        if not given:
+            opts["basis_set"] = required
+            opts["basis_set_type"] = "INTERNAL"
+        elif _basis_key(given) != _basis_key(required):
+            print(f"Warning: {method_name} is defined on the {required} basis "
+                  f"set; the options file names {given!r}, which is used as "
+                  f"written (the 3c corrections were fitted to {required}).",
+                  file=sys.stderr)
     if not opts.get("basis_set"):
         raise ValueError("the options file names no basis_set")
     opts.setdefault("basis_set_type", "INTERNAL")

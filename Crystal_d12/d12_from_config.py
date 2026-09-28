@@ -140,20 +140,41 @@ def process_file_with_config(
         if os.path.exists(d12):
             cmd += ['--d12-file', d12]
 
-    # Execute
+    # Execute. Success is a deck on disk, not only a zero exit status: a
+    # converter that refuses every input must not read as "Successfully".
+    out_dir = os.path.dirname(input_file)
+    before = _decks_in(out_dir)
     try:
         result = subprocess.run(cmd, capture_output=True, text=True,
                                 stdin=subprocess.DEVNULL,
-                                cwd=os.path.dirname(input_file))
+                                cwd=out_dir)
+        written = sorted(name for name, stamp in _decks_in(out_dir).items()
+                         if before.get(name) != stamp)
+        if result.returncode == 0 and written:
+            return True, (f"Successfully processed {input_file} -> "
+                          f"{', '.join(written)}")
+        detail = (result.stderr.strip() or result.stdout.strip())[-2000:]
         if result.returncode == 0:
-            return True, f"Successfully processed {input_file}"
-        else:
-            return False, f"Error processing {input_file}:\n{result.stderr}"
+            return False, (f"No D12 file was written for {input_file}:\n"
+                           f"{detail}")
+        return False, f"Error processing {input_file}:\n{detail}"
     except Exception as e:
         return False, f"Failed to run {script}: {e}"
     finally:
         if stage:
             shutil.rmtree(stage, ignore_errors=True)
+
+
+def _decks_in(directory: str) -> dict:
+    """{name: (mtime_ns, size)} of the .d12 files in directory."""
+    decks = {}
+    for path in Path(directory).glob("*.d12"):
+        try:
+            st = path.stat()
+        except OSError:
+            continue
+        decks[path.name] = (st.st_mtime_ns, st.st_size)
+    return decks
 
 
 def resolve_config_path(config_file: str) -> str:
@@ -278,7 +299,7 @@ def main():
         print()
     except Exception as e:
         print(f"Error loading configuration file: {e}")
-        return
+        sys.exit(1)
     
     # Collect input files
     input_files = []
@@ -289,7 +310,7 @@ def main():
         input_files = glob(args.pattern)
         if not input_files:
             print(f"No files found matching pattern: {args.pattern}")
-            return
+            sys.exit(1)
         print(f"Found {len(input_files)} files to process")
     else:
         # Use provided files

@@ -54,7 +54,8 @@ python NewCifToD12.py --batch --options_file my_custom_config.json --cif_dir ./c
 - **Features**:
   - 3-component composite method
   - The basis PBEh-3c is defined on (def2-mSVP, from the `basis_requirements`
-    table in d12_constants.py; a 3c method with another basis is refused)
+    table in d12_constants.py; a 3c method with another basis is written as
+    asked, with a warning)
   - Good accuracy at low cost
   - Excellent for initial screening
 
@@ -103,6 +104,8 @@ python NewCifToD12.py --batch --options_file my_custom_config.json --cif_dir ./c
     accept the label form inside FREQCALC)
   - Phonon DOS with projections
   - Thermodynamic properties
+  - 3D crystals only: a MOLECULE, SLAB or POLYMER is refused with the
+    reason (use `freq_analysis.json` for their frequencies)
 
 ## Configuration Structure
 

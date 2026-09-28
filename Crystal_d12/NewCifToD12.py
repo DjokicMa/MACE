@@ -117,7 +117,12 @@ from d12_constants import (
     configure_spin_polarization,
     configure_smearing,
 )
-from d12_calc_freq import get_advanced_frequency_settings, write_frequency_section
+from d12_calc_freq import (
+    get_advanced_frequency_settings,
+    write_frequency_section,
+    phonon_dispersion_refusal,
+    crystal_system_with_lattice,
+)
 from d12_calc_basic import write_optimization_section, configure_single_point
 from d12_writer import (
     write_basis_block,
@@ -131,6 +136,7 @@ from d12_writer import (
     write_minimal_raman_section,
     write_dft_section,
     write_basis_set_section,
+    atomic_deck,
 )
 from d12_config import config_to_cif_options
 from d12_interactive import (
@@ -1045,6 +1051,12 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
                 nested_settings[key] = freq_settings[key]
         freq_settings = nested_settings
 
+    if calculation_type == "FREQ":
+        refusal = phonon_dispersion_refusal(dimensionality, freq_settings)
+        if refusal:
+            ui.err(f"Not writing {os.path.basename(output_file)}: {refusal}")
+            return False
+
     basis_set_type = options["basis_set_type"]
     basis_set = options["basis_set"]
     method = options["method"]
@@ -1453,8 +1465,8 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
                 f"2D cell CRYSTAL prints."
             )
 
-    # Open output file
-    with open(output_file, "w") as f:
+    # Open output file (renamed into place only once the deck is complete)
+    with atomic_deck(output_file) as f:
         # Write title
         print(os.path.basename(output_file).replace(".d12", ""), file=f)
 
@@ -1577,23 +1589,11 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
             write_optimization_section(f, optimization_type, optimization_settings)
         elif calculation_type == "FREQ":
             # For frequency calculation - FREQCALC block comes directly after coordinates
-            # Determine crystal system from space group number
-            crystal_system = None
-            if spacegroup:
-                if 1 <= spacegroup <= 2:
-                    crystal_system = "triclinic"
-                elif 3 <= spacegroup <= 15:
-                    crystal_system = "monoclinic"
-                elif 16 <= spacegroup <= 74:
-                    crystal_system = "orthorhombic"
-                elif 75 <= spacegroup <= 142:
-                    crystal_system = "tetragonal"
-                elif 143 <= spacegroup <= 167:
-                    crystal_system = "trigonal"
-                elif 168 <= spacegroup <= 194:
-                    crystal_system = "hexagonal"
-                elif 195 <= spacegroup <= 230:
-                    crystal_system = "cubic"
+            # Crystal system with the lattice centring ("cubic-F"): there is no
+            # CRYSTAL output here to read the centring from, and without it
+            # the automatic phonon path was the primitive one for every group
+            # (Fd-3m got simple-cubic M-G-R-X-G; opt2d12 gives X-G-L-W-G)
+            crystal_system = crystal_system_with_lattice(spacegroup)
             write_frequency_section(f, freq_settings, crystal_system, spacegroup)
         # For single point calculations, no additional sections needed
 
@@ -1739,7 +1739,7 @@ def process_cifs(cif_directory, options, output_directory=None, interactive=None
             (default: only when stdin is a terminal); batch mode passes False
 
     Returns:
-        None
+        tuple: (decks written, CIF files found)
     """
     if output_directory is None:
         output_directory = cif_directory
@@ -1752,11 +1752,12 @@ def process_cifs(cif_directory, options, output_directory=None, interactive=None
 
     if not cif_files:
         ui.print(f"No CIF files found in {cif_directory}")
-        return
+        return 0, 0
 
     ui.print(f"Found {len(cif_files)} CIF files to process")
 
     # Process each CIF file
+    written = 0
     for cif_file in cif_files:
         base_name = os.path.basename(cif_file).replace(".cif", "")
 
@@ -1861,10 +1862,13 @@ def process_cifs(cif_directory, options, output_directory=None, interactive=None
                 continue
 
             ui.ok(f"Created {output_file}")
+            written += 1
 
         except Exception as e:
             ui.err(f"Error processing {cif_file}: {e}")
             continue
+
+    return written, len(cif_files)
 
 
 def print_summary(options):
@@ -1972,7 +1976,9 @@ def main():
         except Exception as e:
             ui.err(f"Error loading options from {args.options_file}: {e}")
             ui.print("Please run the script without --batch to create options file first")
-            return
+            # A non-zero status: the workflow executor and d12_from_config
+            # only see the exit code, and carried on with no decks
+            sys.exit(1)
     else:
         # Get options interactively
         ui.print("CIF to D12 Converter for CRYSTAL23")
@@ -2003,8 +2009,12 @@ def main():
             "each deck is written from the CIF's own atom records "
             "(pip install spglib)."
         )
-    process_cifs(args.cif_dir, options, args.output_dir,
-                 interactive=False if args.batch else None)
+    written, found = process_cifs(args.cif_dir, options, args.output_dir,
+                                  interactive=False if args.batch else None)
+    if found and not written:
+        ui.err(f"No D12 file was written for the {found} CIF file(s) in "
+               f"{args.cif_dir}.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

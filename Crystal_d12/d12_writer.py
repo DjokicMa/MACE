@@ -11,7 +11,38 @@ Author: Marcus Djokic
 Institution: Michigan State University, Mendoza Group
 """
 
+import contextlib
+import os
 from typing import Dict, Any, List, Optional, Sequence, TextIO
+
+
+@contextlib.contextmanager
+def atomic_deck(path: str):
+    """Open ``path`` for writing a deck that appears only once it is whole.
+
+    The deck is written to a hidden ``.<name>.part`` file beside it and
+    renamed onto ``path`` when the block finishes. If the block raises, or
+    calls ``f.discard()`` (a deck refused half way), the part file is
+    removed and ``path`` is left as it was - never a 0-byte or truncated
+    deck for a job to pick up.
+    """
+    directory, name = os.path.split(os.path.abspath(path))
+    part = os.path.join(directory, f".{name}.part")
+    keep = [True]
+    f = open(part, "w")
+    f.discard = lambda: keep.__setitem__(0, False)
+    try:
+        yield f
+    except BaseException:
+        f.close()
+        with contextlib.suppress(OSError):
+            os.remove(part)
+        raise
+    f.close()
+    if keep[0]:
+        os.replace(part, path)
+    else:
+        os.remove(part)
 
 
 def write_basis_block(f: TextIO, basis_config: Dict[str, Any], 

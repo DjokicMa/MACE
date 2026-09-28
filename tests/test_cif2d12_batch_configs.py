@@ -119,10 +119,42 @@ def test_a_flat_cif2d12_options_file_is_kept_as_written():
         assert opts[key] == value, key
 
 
-def test_a_3c_method_with_another_basis_is_refused():
-    with pytest.raises(ValueError, match="def2-mSVP"):
-        config_to_cif_options({"calculation_type": "SP", "method": "DFT",
-                               "functional": "PBEH3C", "basis_set": "MINIX"})
+def test_a_3c_method_with_another_basis_is_written_as_asked(capsys):
+    """CRYSTAL23 runs a 3c method on another basis (the lead perovskites need
+    HSE-3c on POB-TZVP-REV2: its def2-mSVP has no Pb), and main wrote those
+    decks from a flat options file, so the pairing is warned about, not
+    refused."""
+    for shape in ({"dft_functional": "HSE3C"}, {"functional": "HSE3C"}):
+        opts = config_to_cif_options(dict(shape, calculation_type="SP",
+                                          method="DFT",
+                                          basis_set="POB-TZVP-REV2"))
+        assert opts["basis_set"] == "POB-TZVP-REV2"
+        assert opts["dft_functional"] == "HSE3C"
+        assert "defined on the def2-mSVP basis" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("functional,basis", [("PBEH3C", "DEF2-MSVP"),
+                                              ("hsesol3c", "soldef2msvp")])
+def test_a_flat_file_basis_is_written_as_spelled(capsys, functional, basis):
+    """The spelling is the deck's BASISSET line and part of the file name;
+    it is only normalised to compare it with the table."""
+    opts = config_to_cif_options({"calculation_type": "OPT", "method": "DFT",
+                                  "dimensionality": "CRYSTAL",
+                                  "dft_functional": functional,
+                                  "basis_set": basis})
+    assert opts["basis_set"] == basis
+    assert opts["dft_functional"] == functional
+    assert capsys.readouterr().err == ""  # the same basis, no warning
+
+
+def test_calculation_type_is_read_case_insensitively():
+    """main compared "opt" with "OPT" and silently wrote a single point."""
+    opts = config_to_cif_options({"calculation_type": "opt", "method": "DFT",
+                                  "dft_functional": "PBE",
+                                  "basis_set": "POB-TZVP-REV2",
+                                  "optimization_type": "ATOMONLY"})
+    assert opts["calculation_type"] == "OPT"
+    assert opts["optimization_type"] == "ATOMONLY"
 
 
 def test_a_3c_method_without_a_basis_gets_the_one_it_is_defined_on():
@@ -297,3 +329,176 @@ def test_phonon_dispersion_examples_name_a_supercell():
             # ERROR IN FREQCALC INPUT DECK; the coordinate path is accepted
             if "bands" in freq:
                 assert freq["bands"].get("path_method") == "coordinates", path.name
+
+
+# --- failures are reported, not swallowed -----------------------------------
+
+PB_CUBIC = "TiPbO3_mp-19845_sg221_sym_CRYSTAL_OPT_symm_PBE-D3_full.basis.triplezeta_opt_B3LYP-D3-D3_optimized.cif"
+DIAMOND = "1_dia_opt_rev1.cif"
+
+
+def _run_convert(tmp_path, options, cifs=()):
+    cif_dir = tmp_path / "cifs"
+    cif_dir.mkdir()
+    for name in cifs:
+        (cif_dir / name).write_bytes((CIFS / name).read_bytes())
+    opts = tmp_path / "opts.json"
+    opts.write_text(json.dumps(options))
+    cmd = [sys.executable, str(MACE_CLI), "convert", "--no-banner", "--batch",
+           "--options_file", str(opts), "--cif_dir", str(cif_dir),
+           "--output_dir", str(tmp_path / "out")]
+    result = subprocess.run(cmd, cwd=tmp_path, stdin=subprocess.DEVNULL,
+                            capture_output=True, text=True, timeout=300)
+    decks = sorted((tmp_path / "out").glob("*.d12")) if (tmp_path / "out").exists() else []
+    return result.returncode, result.stdout + result.stderr, decks
+
+
+def test_a_refused_options_file_exits_non_zero(tmp_path):
+    """The workflow executor only fails a CIF conversion on a non-zero exit;
+    a refused file used to print the reason and exit 0 with no decks."""
+    pytest.importorskip("ase")  # NewCifToD12 imports ase.io at load
+    rc, log, decks = _run_convert(tmp_path, {"calculation_type": "SP",
+                                             "method": "DFT",
+                                             "basis_set": "POB-TZVP-REV2"})
+    assert rc != 0, log[-2000:]
+    assert "must name its functional" in log
+    assert decks == []
+
+
+def test_a_batch_that_writes_no_deck_exits_non_zero(tmp_path):
+    """HF-3c's MINIX has no Pb: the one deck is refused, so the run failed."""
+    pytest.importorskip("ase")
+    _need_corpus(PB_CUBIC)
+    rc, log, decks = _run_convert(
+        tmp_path, {"calculation_type": "SP", "method": "HF",
+                   "functional": "HF3C"}, [PB_CUBIC])
+    assert rc != 0, log[-2000:]
+    assert decks == []
+    assert "No D12 file was written for the 1 CIF file(s)" in log
+
+
+def test_d12_from_config_reports_a_run_that_wrote_no_deck(tmp_path):
+    pytest.importorskip("ase")
+    _need_corpus(PB_CUBIC)
+    (tmp_path / "pb.cif").write_bytes((CIFS / PB_CUBIC).read_bytes())
+    cmd = [sys.executable, str(REPO_ROOT / "Crystal_d12" / "d12_from_config.py"),
+           "--config", "3c_composite.json", "pb.cif"]
+    result = subprocess.run(cmd, cwd=tmp_path, stdin=subprocess.DEVNULL,
+                            capture_output=True, text=True, timeout=300)
+    log = result.stdout + result.stderr
+    assert result.returncode != 0, log[-2000:]
+    assert "Successfully" not in log
+    assert "Processed 0/1 files successfully" in log
+    assert list(tmp_path.glob("*.d12")) == []
+
+
+# --- phonon dispersion --------------------------------------------------------
+
+
+def test_phonon_dispersion_is_refused_where_it_cannot_be_written():
+    from d12_calc_freq import phonon_dispersion_refusal
+    disp = {"dispersion": True, "scelphono": [2, 2, 2]}
+    assert phonon_dispersion_refusal("CRYSTAL", disp) is None
+    assert phonon_dispersion_refusal("MOLECULE", {"dispersion": False}) is None
+    assert "NOT ALLOWED FOR MOLECULES" in phonon_dispersion_refusal("MOLECULE", disp)
+    for dim in ("SLAB", "POLYMER"):
+        assert "only written for a 3D CRYSTAL" in phonon_dispersion_refusal(dim, disp)
+
+
+def test_crystal_system_carries_the_lattice_centring():
+    from d12_calc_freq import crystal_system_with_lattice
+    assert crystal_system_with_lattice(227) == "cubic-F"
+    assert crystal_system_with_lattice(229) == "cubic-I"
+    assert crystal_system_with_lattice(221) == "cubic-P"
+    assert crystal_system_with_lattice(166) == "trigonal-R"
+    assert crystal_system_with_lattice(12) == "monoclinic-C"
+    assert crystal_system_with_lattice(None) is None
+
+
+def test_atomic_deck_never_leaves_a_partial_file(tmp_path):
+    from d12_writer import atomic_deck
+    deck = tmp_path / "x.d12"
+    with pytest.raises(TypeError):
+        with atomic_deck(str(deck)) as f:
+            f.write("TITLE\n")
+            raise TypeError("writer crashed half way")
+    with atomic_deck(str(deck)) as f:
+        f.write("TITLE\n")
+        f.discard()
+    assert list(tmp_path.iterdir()) == []
+    with atomic_deck(str(deck)) as f:
+        f.write("TITLE\n")
+    assert deck.read_text() == "TITLE\n"
+    assert [p.name for p in tmp_path.iterdir()] == ["x.d12"]
+
+
+def _opt2d12(tmp_path, parent, config, out_dir):
+    """opt2d12 on a copy of a corpus parent, given by ABSOLUTE path."""
+    src = TEST_DATA / "OPT" / f"{parent}.out"
+    if not src.exists():
+        pytest.skip("test/ corpus not present (gitignored)")
+    par = tmp_path / "parent"
+    par.mkdir(exist_ok=True)
+    (par / src.name).write_text(src.read_text(errors="replace"))
+    (par / f"{parent}.d12").write_text(src.with_suffix(".d12").read_text())
+    cmd = [sys.executable, str(MACE_CLI), "opt2d12", "--no-banner",
+           "--out-file", str(par / src.name), "--d12-file", str(par / f"{parent}.d12"),
+           "--config-file", str(config), "--non-interactive",
+           "--output-dir", str(out_dir)]
+    result = subprocess.run(cmd, cwd=tmp_path, stdin=subprocess.DEVNULL,
+                            capture_output=True, text=True, timeout=300)
+    return result.returncode, result.stdout + result.stderr, par
+
+
+PHONON_BANDS = REPO_ROOT / "Crystal_d12" / "example_configs" / "phonon_bands.json"
+
+
+@pytest.mark.parametrize("parent,expect", [
+    ("1LiFSI-1DEC-conf1_MOLECULE_OPT_symm_HSESOL3C_SOLDEF2MSVP_opt_HSESOL3C_optimized",
+     "NOT ALLOWED FOR MOLECULES"),
+    ("4LG_FSI_2x2_ABAB_opt_HSESOL3C_Attempt2_SLAB_OPT_symm_HSESOL3C_SOLDEF2MSVP_opt_HSESOL3C_optimized",
+     "only written for a 3D CRYSTAL"),
+], ids=["molecule", "slab"])
+def test_opt2d12_refuses_phonon_dispersion_off_a_3d_crystal(tmp_path, parent, expect):
+    """The SLAB crashed in the title (no space group) and left a 0-byte deck;
+    the MOLECULE deck was written and CRYSTAL23 stopped at SCELPHONO."""
+    out = tmp_path / "out"
+    rc, log, par = _opt2d12(tmp_path, parent, PHONON_BANDS, out)
+    assert rc != 0, log[-2000:]
+    assert expect in log
+    assert "Traceback" not in log
+    assert list(out.iterdir()) == []
+    assert sorted(p.suffix for p in par.iterdir()) == [".d12", ".out"]
+
+
+def test_cif2d12_phonon_path_follows_the_lattice_centring(tmp_path):
+    """Fd-3m from a CIF got the simple-cubic path (M-G-R-X-G); it now gets
+    the face-centred one opt2d12 writes for the same structure."""
+    pytest.importorskip("ase")
+    _need_corpus(DIAMOND)
+    decks, log = _convert(tmp_path, PHONON_BANDS, DIAMOND)
+    (cif_deck,) = decks.values()
+    rc, olog, _ = _opt2d12(tmp_path, "1_dia_opt_rev1", PHONON_BANDS,
+                           tmp_path / "o2")
+    assert rc == 0, olog[-2000:]
+    (opt_deck,) = (tmp_path / "o2").glob("*.d12")
+
+    def bands(text):
+        lines = text.splitlines()
+        i = lines.index("BANDS")
+        return lines[i:i + 3 + int(lines[i + 2])]
+
+    assert bands(cif_deck) == bands(opt_deck.read_text())
+    assert "X-GAMMA-L-W-GAMMA" in opt_deck.read_text().splitlines()[0]
+
+
+def test_opt2d12_output_dir_holds_the_deck_for_an_absolute_out_file(tmp_path):
+    """An absolute --out-file path made os.path.join drop --output-dir, and
+    the deck landed beside the parent (in the corpus, for one reviewer)."""
+    out = tmp_path / "decks"
+    cfg = REPO_ROOT / "Crystal_d12" / "example_configs" / "3c_composite.json"
+    rc, log, par = _opt2d12(tmp_path, "1_dia_opt_rev1", cfg, out)
+    assert rc == 0, log[-2000:]
+    assert [p.name for p in out.iterdir()] == ["1_dia_opt_rev1_opt_PBEH3C_optimized.d12"]
+    assert sorted(p.name for p in par.iterdir()) == ["1_dia_opt_rev1.d12",
+                                                     "1_dia_opt_rev1.out"]

@@ -1638,6 +1638,60 @@ def get_auto_phonon_path(crystal_system: str = None, space_group: int = None,
         ]
 
 
+def phonon_dispersion_refusal(dimensionality, freq_settings) -> Optional[str]:
+    """Why a phonon-dispersion FREQCALC cannot be written, or None if it can.
+
+    Dispersion is written as a SCELPHONO supercell (a 3x3 expansion matrix)
+    plus a k-path taken from a 3D space group, so it is only written for a
+    3D CRYSTAL. For a MOLECULE CRYSTAL23 stops at SCELPHONO with "SUPERCELL
+    OPTION NOT ALLOWED FOR MOLECULES"; for a SLAB it stops at the 3x3 matrix
+    with "THE SUPERCELL IS OF ZERO VOLUME" (a slab takes 2x2), and a SLAB or
+    POLYMER has no space group to take the path from.
+    """
+    if not isinstance(freq_settings, dict) or not freq_settings.get("dispersion"):
+        return None
+    dim = str(dimensionality or "CRYSTAL").upper()
+    if dim == "CRYSTAL":
+        return None
+    if dim == "MOLECULE":
+        return ("phonon dispersion needs a periodic supercell, and CRYSTAL23 "
+                "stops a MOLECULE at SCELPHONO (SUPERCELL OPTION NOT ALLOWED "
+                "FOR MOLECULES). Use a FREQ setup without dispersion (e.g. "
+                "example_configs/freq_analysis.json) for a molecule.")
+    return (f"phonon dispersion is only written for a 3D CRYSTAL: the "
+            f"SCELPHONO matrix and the automatic phonon k-path are 3D (CRYSTAL23 "
+            f"rejects the 3x3 matrix for a slab), and a {dim} has no space "
+            f"group to take the path from. Use a FREQ setup without "
+            f"dispersion (e.g. example_configs/freq_analysis.json).")
+
+
+def crystal_system_with_lattice(space_group) -> Optional[str]:
+    """``"cubic-F"`` style crystal system for a 3D space group number.
+
+    write_frequency_section reads the lattice centring from the part after
+    the dash when there is no CRYSTAL output to read it from (a deck made
+    from a CIF); without it every group got the primitive (P) phonon path.
+    The letter is the first one of the group's standard Hermann-Mauguin
+    symbol, the same letter opt2d12 reads from CRYSTAL's "SPACE GROUP" line.
+    """
+    try:
+        sg = int(space_group)
+    except (TypeError, ValueError):
+        return None
+    systems = ((2, "triclinic"), (15, "monoclinic"), (74, "orthorhombic"),
+               (142, "tetragonal"), (167, "trigonal"), (194, "hexagonal"),
+               (230, "cubic"))
+    system = next((name for top, name in systems if 1 <= sg <= top), None)
+    if system is None:
+        return None
+    try:
+        from d12_constants import SPACEGROUP_SYMBOLS
+    except ImportError:
+        return system
+    symbol = str(SPACEGROUP_SYMBOLS.get(sg, "")).strip()
+    return f"{system}-{symbol[0]}" if symbol[:1].isalpha() else system
+
+
 def write_frequency_section(f, freq_settings, crystal_system: str = None, 
                           space_group: int = None, optimization_section: str = None):
     """
