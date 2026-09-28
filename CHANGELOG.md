@@ -40,6 +40,79 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   Checked with real SCF runs of CRYSTAL/23 on HPCC: layer group 47 from
   `opt2d12` and from `cif2d12` (refused before, converged now), 37 (18 10 1
   kept) and 80, and rod groups 28 and 51.
+- **The example configs load in `mace convert --batch --options_file`.** None
+  of the eight `Crystal_d12/example_configs/*.json` did: they wrap their
+  settings in `{"version", "type", "configuration"}` and spell them the
+  opt2d12 way (`functional`, `dispersion`, `scf_settings`), and every run
+  stopped with `KeyError: 'dimensionality'`. The loader now unwraps the file
+  and maps those names onto cif2d12's. What a config leaves out gets the
+  interactive defaults (3D `CRYSTAL`, the CIF's space group written as its
+  asymmetric unit, INTERNAL basis), and a file that cannot describe a deck
+  (no functional, an unknown method, calculation type or symmetry setting)
+  is refused with the reason and a non-zero exit. Each config was converted
+  from real CIFs and checked by CRYSTAL23 (`mace preflight`).
+  A flat options file saved by `--save_options` or the workflow planner
+  writes the same decks as before - checked byte for byte on all 168 corpus
+  CIFs with 18 such files - with one deliberate exception: a lowercase
+  `"calculation_type": "opt"` used to fail the comparison with `"OPT"` and
+  silently write a single point with `_opt_` in its name; it is now read as
+  OPT, so the deck gets its OPTGEOM block and the name reads `_OPT_`. The
+  basis set is written exactly as the file spells it (`DEF2-MSVP` stays
+  `DEF2-MSVP`), and a 3c method paired with another basis is written as
+  asked with a warning: CRYSTAL23 runs HSE-3c on POB-TZVP-REV2, which the
+  lead perovskites need because its internal def2-mSVP has no Pb.
+  `phonon_bands.json` now names the 2x2x2 `SCELPHONO` supercell that
+  `FREQCALC DISPERSION` needs (without it CRYSTAL23 stops with
+  `MAKE SUPERCELL WITH SCELPHONO`) and writes its phonon band path as
+  k-point coordinates, since CRYSTAL23 rejects the label form there
+  (`FORMAT ERROR IN FREQCALC INPUT DECK`).
+- **`mace opt2d12 --config-file` reads the example configs too.** It also
+  took the wrapper for the settings and crashed. `quick_screen.json` now names
+  its HF flavour (`"functional": "RHF"`) so both converters read it the same
+  way.
+- **`d12_from_config.py` runs.** It passed the input file as an argument
+  neither converter accepts, and did not recognise a CRYSTAL output that
+  starts with MPI start-up lines. It also reports a file for which no deck
+  was written as a failure (and exits non-zero) instead of "Successfully".
+- **`mace convert --batch` exits non-zero when it writes nothing.** A refused
+  options file, or a batch in which every CIF is refused (e.g. HF-3c's MINIX
+  on a Pb structure), printed the reason and exited 0, so the workflow
+  executor - which only checks the exit status - carried on with no decks.
+- **The built-in `3c_composite` template uses def2-mSVP**, the basis PBEh-3c
+  is defined on, instead of MINIX (HF-3c's). The basis now comes from the
+  `basis_requirements` table rather than a second copy; a configuration that
+  names a 3c method and no basis gets that basis.
+- **cif2d12 FREQ decks follow the lattice centring for the phonon path.** The
+  automatic phonon-dispersion path read the centring only from a CRYSTAL
+  output, so every deck made from a CIF got the primitive path: Fd-3m
+  diamond got the simple-cubic M-G-R-X-G where opt2d12 writes X-G-L-W-G for
+  the same structure. cif2d12 now takes the letter from the space group
+  symbol and writes the same path as opt2d12.
+- **Phonon dispersion is refused off a 3D crystal, and no partial deck is
+  left.** `opt2d12 --config-file phonon_bands.json` on a SLAB parent crashed
+  in the title (no space group to take the path from) and left a 0-byte
+  deck; on a MOLECULE it wrote `SCELPHONO` + `DISPERSION`, which CRYSTAL23
+  stops with `SUPERCELL OPTION NOT ALLOWED FOR MOLECULES`. The 3x3
+  `SCELPHONO` matrix both converters write is also rejected for a SLAB
+  (`THE SUPERCELL IS OF ZERO VOLUME`; a slab takes 2x2), and the automatic
+  path needs a 3D space group. Both converters now refuse dispersion for a
+  MOLECULE, SLAB or POLYMER with the reason, and
+  write every deck to a hidden part file that is renamed into place only when
+  complete, so an abort or a crash never leaves a 0-byte or truncated deck.
+- **`opt2d12 --output-dir` holds the deck when `--out-file` is an absolute
+  path.** The new name was built from the parent's full path, and joining an
+  absolute path onto the output directory discards the directory, so the
+  deck was written next to the parent (into the test corpus, for one run).
+- **`mace convert --batch` never reads the terminal.** On a structure whose
+  atoms are all symmetry-unique (every P1 CIF), the symmetry step asked "Use
+  the 'reduced' structure anyway?", hit end of input and reported "Error
+  during symmetry analysis" before carrying on - 85 of the 168 corpus CIFs.
+  Batch mode now takes symmetry from the options file (`symmetry_handling`,
+  `write_only_unique`, `symmetry_tolerance`, now documented) and gives every
+  question an interactive run would ask the prompt's own default, so the
+  decks are byte-for-byte the ones written before, without the error. A CIF
+  with no space group is skipped with a message instead of prompting, and a
+  batch run without spglib says so once at the start.
 - **A walltime-killed geometry optimization continues where it stopped.**
   When an OPT runs out of time after at least one optimization step, the
   recovery adds `RESTART` to the OPTGEOM block of the same deck, so the new job

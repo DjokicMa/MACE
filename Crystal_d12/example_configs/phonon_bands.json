@@ -25,11 +25,14 @@
       "intensities": false,
       "raman": false,
       "dispersion": true,
+      "scelphono": [2, 2, 2],
       "template": "phonon_band_dos",
       "bands": {
         "shrink": 16,
         "npoints": 100,
-        "path": "AUTO"
+        "path": "AUTO",
+        "path_method": "coordinates",
+        "format": "vectors"
       },
       "pdos": {
         "type": "PDOS",

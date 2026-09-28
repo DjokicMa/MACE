@@ -62,7 +62,11 @@ from d12_constants import (
 from d12_parsers import (
     CrystalOutputParser, CrystalInputParser, DECK_GEOMETRY_KEYS, LOW_DIM_GROUPS,
 )
-from d12_calc_freq import get_advanced_frequency_settings, write_frequency_section
+from d12_config import unwrap_d12_config
+from d12_calc_freq import (
+    get_advanced_frequency_settings, write_frequency_section,
+    phonon_dispersion_refusal,
+)
 from d12_calc_basic import write_optimization_section, configure_single_point
 from d12_writer import (
     write_basis_block,
@@ -72,7 +76,7 @@ from d12_writer import (
     write_dft_section, write_basis_set_section
 )
 # Import write_scf_section from d12_writer
-from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES
+from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES, atomic_deck
 from d12_interactive import (
     display_current_settings, interactive_d12_configuration,
     get_calculation_options_from_current, get_calculation_options,
@@ -353,17 +357,27 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
     settings key, so it never reaches --save-options JSON.
 
     Returns True on success. Returns False when creation is aborted (basis-set
-    incompatibility declined interactively, or hit non-interactively); the
-    partially written file is removed so no truncated deck reaches submission.
-    A SLAB/POLYMER whose group record is not a layer/rod group is refused the
-    same way, before anything is written.
+    incompatibility declined interactively, or hit non-interactively, or a
+    phonon dispersion asked of a system it cannot be written for). A
+    SLAB/POLYMER whose group record is not a layer/rod group is refused the
+    same way, before anything is written. The deck is written beside
+    output_file and renamed onto it only when complete, so an abort or an
+    exception never leaves a 0-byte or truncated deck.
     """
     group_problem = low_dim_group_error(settings)
     if group_problem:
         ui.err(group_problem)
         return False
 
-    with open(output_file, "w") as f:
+    calc_type = settings.get("calculation_type", settings.get("calc_type", "OPT"))
+    if calc_type == "FREQ":
+        refusal = phonon_dispersion_refusal(
+            settings.get("dimensionality", "CRYSTAL"), settings.get("freq_settings"))
+        if refusal:
+            ui.err(f"\nNot writing {os.path.basename(output_file)}: {refusal}")
+            return False
+
+    with atomic_deck(output_file) as f:
         # Title
         # Title from the file NAME only: with --output-dir the path carries a
         # directory, which must not leak into the CRYSTAL title line.
@@ -776,16 +790,14 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             if not sys.stdin.isatty():
                 # Non-interactive (workflow callback): fail cleanly instead of
                 # crashing with EOFError at the prompt. The deck is partially
-                # written at this point — remove it so the caller can't submit
+                # written at this point — discard it so the caller can't submit
                 # a truncated d12, and signal failure.
                 ui.err("Non-interactive mode: aborting D12 file creation.")
-                f.close()
-                os.remove(output_file)
+                f.discard()
                 return False
             if not yes_no_prompt("\nDo you want to continue anyway?"):
                 ui.err("Aborting D12 file creation.")
-                f.close()
-                os.remove(output_file)
+                f.discard()
                 return False
 
         # Prepare k-points with same logic as d12creation.py
@@ -1109,7 +1121,9 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         ui.info(f"\nLoading settings from config file: {config_file}")
         try:
             with open(config_file, 'r') as f:
-                config_data = json.load(f)
+                # example_configs/*.json and save_d12_config wrap the
+                # settings in {"version", "type", "configuration"}
+                config_data = unwrap_d12_config(json.load(f))
 
             # Show config summary
             print()
@@ -1453,8 +1467,11 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         return False, options
     # --output-dir was parsed, and the directory created, but never reached this
     # point, so every deck landed in the current directory regardless.
+    # The name is joined on by its base name: base_name above carries the
+    # --out-file's directory, and joining an absolute one onto output_dir
+    # yields that absolute path, so the deck landed next to the parent.
     if output_dir:
-        new_filename = os.path.join(output_dir, new_filename)
+        new_filename = os.path.join(output_dir, os.path.basename(new_filename))
 
     # Write new D12 file
     ui.info(f"\nWriting new D12 file: {new_filename}")

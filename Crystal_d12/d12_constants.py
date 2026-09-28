@@ -1158,6 +1158,23 @@ FUNCTIONAL_CATEGORIES = {
     }
 }
 
+
+def required_basis_for(functional: Optional[str]) -> Optional[str]:
+    """The internal basis set a 3c method is defined on, else None.
+
+    Read from the ``basis_requirements`` tables above - the one place the
+    pairing lives (PBEH3C -> def2-mSVP, HF3C -> MINIX, ...).
+    """
+    if not functional:
+        return None
+    name = str(functional).upper()
+    for info in FUNCTIONAL_CATEGORIES.values():
+        reqs = info.get("basis_requirements") or {}
+        if name in reqs:
+            return reqs[name]
+    return None
+
+
 # Functionals supporting D3 dispersion correction
 D3_FUNCTIONALS = [
     # GGA

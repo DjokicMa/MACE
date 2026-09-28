@@ -27,7 +27,9 @@ Usage:
 import os
 import sys
 import argparse
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -66,7 +68,9 @@ def detect_file_type(filename: str) -> str:
         try:
             with open(filename, 'r') as f:
                 content = f.read(5000)  # Read first 5KB
-                if 'CRYSTAL' in content and ('EEEEEEEEEE' in content or 'ETOT' in content):
+                # The banner names CRYSTAL; MPI start-up lines can push
+                # everything else (EEEE..., ETOT) past the first 5 KB
+                if 'CRYSTAL' in content:
                     return 'crystal_output'
         except:
             pass
@@ -116,19 +120,75 @@ def process_file_with_config(
         script = 'CRYSTALOptToD12.py'
         config_arg = '--config-file'
     
-    # Build command
-    script_path = os.path.join(os.path.dirname(__file__), script)
-    cmd = [sys.executable, script_path, config_arg, config_file, input_file]
-    
-    # Execute
+    # Build command. NewCifToD12.py converts a directory, so the CIF is
+    # staged alone in a temporary one and the deck is written next to it;
+    # neither tool takes the input as a positional argument, and neither may
+    # stop at a prompt here.
+    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), script)
+    config_file = resolve_config_path(config_file)
+    input_file = os.path.abspath(input_file)
+    stage = None
+    if file_type == 'cif':
+        stage = tempfile.mkdtemp(prefix="d12_from_config_")
+        shutil.copy(input_file, stage)
+        cmd = [sys.executable, script_path, '--batch', config_arg, config_file,
+               '--cif_dir', stage, '--output_dir', os.path.dirname(input_file)]
+    else:
+        cmd = [sys.executable, script_path, config_arg, config_file,
+               '--out-file', input_file, '--non-interactive']
+        d12 = os.path.splitext(input_file)[0] + '.d12'
+        if os.path.exists(d12):
+            cmd += ['--d12-file', d12]
+
+    # Execute. Success is a deck on disk, not only a zero exit status: a
+    # converter that refuses every input must not read as "Successfully".
+    out_dir = os.path.dirname(input_file)
+    before = _decks_in(out_dir)
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                stdin=subprocess.DEVNULL,
+                                cwd=out_dir)
+        written = sorted(name for name, stamp in _decks_in(out_dir).items()
+                         if before.get(name) != stamp)
+        if result.returncode == 0 and written:
+            return True, (f"Successfully processed {input_file} -> "
+                          f"{', '.join(written)}")
+        detail = (result.stderr.strip() or result.stdout.strip())[-2000:]
         if result.returncode == 0:
-            return True, f"Successfully processed {input_file}"
-        else:
-            return False, f"Error processing {input_file}:\n{result.stderr}"
+            return False, (f"No D12 file was written for {input_file}:\n"
+                           f"{detail}")
+        return False, f"Error processing {input_file}:\n{detail}"
     except Exception as e:
         return False, f"Failed to run {script}: {e}"
+    finally:
+        if stage:
+            shutil.rmtree(stage, ignore_errors=True)
+
+
+def _decks_in(directory: str) -> dict:
+    """{name: (mtime_ns, size)} of the .d12 files in directory."""
+    decks = {}
+    for path in Path(directory).glob("*.d12"):
+        try:
+            st = path.stat()
+        except OSError:
+            continue
+        decks[path.name] = (st.st_mtime_ns, st.st_size)
+    return decks
+
+
+def resolve_config_path(config_file: str) -> str:
+    """The configuration file's path, looked up where load_d12_config looks."""
+    candidates = [config_file]
+    if not os.path.isabs(config_file):
+        here = os.path.dirname(os.path.abspath(__file__))
+        candidates += [os.path.join(os.getcwd(), 'd12_configs', config_file),
+                       os.path.join(here, 'example_configs', config_file),
+                       os.path.join(here, 'd12_configs', config_file)]
+    for path in candidates:
+        if os.path.exists(path):
+            return os.path.abspath(path)
+    return config_file
 
 
 def main():
@@ -239,7 +299,7 @@ def main():
         print()
     except Exception as e:
         print(f"Error loading configuration file: {e}")
-        return
+        sys.exit(1)
     
     # Collect input files
     input_files = []
@@ -250,7 +310,7 @@ def main():
         input_files = glob(args.pattern)
         if not input_files:
             print(f"No files found matching pattern: {args.pattern}")
-            return
+            sys.exit(1)
         print(f"Found {len(input_files)} files to process")
     else:
         # Use provided files
