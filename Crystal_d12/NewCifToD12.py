@@ -202,6 +202,7 @@ except Exception:
 # Try to import spglib for symmetry operations
 try:
     import spglib
+    from spglib_compat import attribute_dataset
 
     SPGLIB_AVAILABLE = True
 except ImportError:
@@ -702,14 +703,14 @@ def verify_and_reduce_to_asymmetric_unit(
 
         # Get spacegroup data with the specified tolerance
         spacegroup_info = spglib.get_spacegroup(cell, symprec=tolerance)
-        dataset = spglib.get_symmetry_dataset(cell, symprec=tolerance)
+        dataset = attribute_dataset(spglib.get_symmetry_dataset(cell, symprec=tolerance))
 
         if dataset is None:
             ui.warn("Warning: spglib could not analyze the structure symmetry.")
             ui.print("Using all atoms from the CIF file.")
             return cif_data
 
-        detected_spacegroup_num = dataset["number"]
+        detected_spacegroup_num = dataset.number
         original_spacegroup_num = cif_data["spacegroup"]
 
         # Stash spglib's shift from THIS cell's origin to the ITA standard one,
@@ -719,7 +720,7 @@ def verify_and_reduce_to_asymmetric_unit(
         # A SLAB deck needs it: the layer group's rotation axis has to sit on
         # the in-plane origin CRYSTAL assumes. Recorded on cif_data itself so
         # every return path below carries it, including the early ones.
-        cif_data["spglib_origin_shift"] = [float(v) for v in dataset["origin_shift"]]
+        cif_data["spglib_origin_shift"] = [float(v) for v in dataset.origin_shift]
 
         ui.print(f"\nSymmetry Analysis Results:")
         ui.print(f"  CIF space group: {original_spacegroup_num}")
@@ -769,12 +770,12 @@ def verify_and_reduce_to_asymmetric_unit(
                 for test_tolerance in [1e-3, 1e-4, 1e-6, 1e-7]:
                     if test_tolerance != tolerance:
                         ui.print(f"\nTrying tolerance {test_tolerance}...")
-                        test_dataset = spglib.get_symmetry_dataset(
+                        test_dataset = attribute_dataset(spglib.get_symmetry_dataset(
                             cell, symprec=test_tolerance
-                        )
+                        ))
                         if (
                             test_dataset
-                            and test_dataset["number"] == original_spacegroup_num
+                            and test_dataset.number == original_spacegroup_num
                         ):
                             ui.ok(f"Match found with tolerance {test_tolerance}!")
                             use_tolerance = yes_no_prompt(
@@ -808,7 +809,7 @@ def verify_and_reduce_to_asymmetric_unit(
             ui.ok(f"Space group verification successful!")
 
         # Get unique atoms (asymmetric unit)
-        equivalent_atoms = dataset["equivalent_atoms"]
+        equivalent_atoms = dataset.equivalent_atoms
         unique_indices = []
         seen_representatives = set()
 
@@ -820,7 +821,7 @@ def verify_and_reduce_to_asymmetric_unit(
         # Verify atom count makes sense
         original_atom_count = len(numbers)
         unique_atom_count = len(unique_indices)
-        symmetry_operations = len(dataset["rotations"])
+        symmetry_operations = len(dataset.rotations)
 
         ui.print(f"\nAsymmetric Unit Analysis:")
         ui.print(f"  Original atoms: {original_atom_count}")
@@ -879,8 +880,8 @@ def verify_and_reduce_to_asymmetric_unit(
             ui.print("\nPerforming symmetry validation...")
             try:
                 # Apply symmetry operations to asymmetric unit
-                rotations = dataset["rotations"]
-                translations = dataset["translations"]
+                rotations = dataset.rotations
+                translations = dataset.translations
 
                 reconstructed_positions = []
                 reconstructed_numbers = []
