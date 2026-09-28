@@ -59,7 +59,9 @@ from d12_constants import (
     configure_dft_grid, configure_dispersion, configure_spin_polarization,
     configure_smearing, CUSTOM_FUNCTIONAL,
 )
-from d12_parsers import CrystalOutputParser, CrystalInputParser
+from d12_parsers import (
+    CrystalOutputParser, CrystalInputParser, DECK_GEOMETRY_KEYS,
+)
 from d12_calc_freq import get_advanced_frequency_settings, write_frequency_section
 from d12_calc_basic import write_optimization_section, configure_single_point
 from d12_writer import (
@@ -966,6 +968,9 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
 
             # Merge data, with special handling for DFT settings
             for key, value in in_data.items():
+                if key in DECK_GEOMETRY_KEYS:
+                    # The parent's geometry input; the child's geometry is the .out's.
+                    continue
                 if key not in settings or settings[key] is None:
                     settings[key] = value
                 elif key in ["functional", "dispersion", "spin_polarized", "dft_grid", "method",
@@ -1731,6 +1736,8 @@ def main():
                         in_data = in_parser.parse()
                         # Use the same merge logic as in process_files
                         for key, value in in_data.items():
+                            if key in DECK_GEOMETRY_KEYS:
+                                continue
                             if key not in settings or settings[key] is None:
                                 settings[key] = value
                             elif key in ["functional", "dispersion", "spin_polarized", "dft_grid", "method",

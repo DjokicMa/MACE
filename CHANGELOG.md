@@ -209,6 +209,14 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
 
 ### Added
 
+- **The `.d12` parser reads the whole geometry input**: the space, layer, rod
+  or point group record, CRYSTAL's IFHR (rhombohedral axes) flag, the cell
+  record expanded to a, b, c, alpha, beta, gamma, and every atom (atomic
+  number and coordinates). It used to stop at the space group. Every CRYSTAL
+  and SLAB deck in `test/` (137) is rebuilt from the parse, record for record,
+  by MACE's own deck writer. `opt2d12` still takes a child's geometry from the
+  `.out`: its decks are byte-identical to before for all 1458 SP/OPT/FREQ
+  children of the `test/OPT` and `test/SP` parents.
 - **`mace preflight`** - runs CRYSTAL over a copy of a deck with a TESTPDIM
   record inserted. TESTPDIM stops after the whole input is read and symmetry
   analysed, which is late enough to catch a bad group, a bad lattice record, or a

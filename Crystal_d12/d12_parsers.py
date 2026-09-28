@@ -29,6 +29,20 @@ from d12_constants import (
     CUSTOM_FUNCTIONAL,
 )
 
+# The group record a SLAB / POLYMER deck carries, and its range (CRYSTAL23
+# manual Appendix A.2: 80 layer groups; A.3: 99 rod groups). The record is
+# never a 3D space group number: CRYSTAL stops with "SLAB GROUP NUMBER OUT OF
+# RANGE" on one above the range, and reads one inside it as a different group.
+LOW_DIM_GROUPS = {"SLAB": ("layer_group", 80), "POLYMER": ("rod_group", 99)}
+
+# CrystalInputParser keys describing the parent deck's own geometry input. A
+# derived deck takes its geometry from the .out (the optimized structure), so
+# opt2d12 never merges these into its settings.
+DECK_GEOMETRY_KEYS = (
+    "cell_record", "cell_parameters", "n_atoms", "atoms",
+    "point_group", "rhombohedral_axes", "origin_shift",
+)
+
 
 def rotation_matrix_to_xyz(rotation: List[List[float]], translation: List[float]) -> str:
     """
@@ -1062,6 +1076,13 @@ class CrystalInputParser:
                         self.data["spacegroup"] = int(lines[i + 1].strip())
                     except:
                         pass
+                # The rest of the geometry input: group records, the cell
+                # record and the atoms. New keys only; the ones above keep
+                # their long-standing values.
+                try:
+                    self._extract_geometry(lines, i)
+                except (ValueError, IndexError):
+                    pass
                 break
 
         # Extract basis set
@@ -1115,6 +1136,146 @@ class CrystalInputParser:
             self.data["scf_settings"] = scf_settings
 
         return self.data
+
+    def _extract_geometry(self, lines: List[str], dim_idx: int) -> None:
+        """Read the geometry records that follow the dimensionality keyword.
+
+        Adds (never replaces) these keys, each only when its record parses:
+
+        - ``layer_group`` (SLAB), ``rod_group`` (POLYMER), ``point_group``
+          (MOLECULE): the deck's own group record. For SLAB and POLYMER this is
+          the number CRYSTAL reads there (1-80 / 1-99), never a 3D space group.
+        - ``rhombohedral_axes``: CRYSTAL's IFHR flag (CRYSTAL decks), and
+          ``origin_shift`` when IFSO > 1 makes the deck carry one.
+        - ``cell_record``: the cell record's values as floats, i.e. only the
+          free parameters the group leaves (cubic ``a``; SLAB ``a[,b][,gamma]``
+          by the layer group's 2D lattice; POLYMER ``a``).
+        - ``cell_parameters``: those values expanded to the full cell,
+          ``{a, b, c, alpha, beta, gamma}``. SLAB has no c (None) and POLYMER
+          only a (b, c, gamma None); the angles a SLAB/POLYMER record fixes are 90.
+        - ``n_atoms`` and ``atoms``: one dict per atom record with the
+          conventional ``atom_number`` as written (e.g. 206 for an ECP C), the
+          ``atomic_number`` (that modulo 100) and ``x``, ``y``, ``z`` as floats
+          in the deck's own units.
+
+        Raises ValueError/IndexError on a record it cannot read; the caller
+        leaves the keys it has not set yet absent.
+        """
+        from d12_constants import SPACEGROUP_SYMBOL_TO_NUMBER as _SYM2NUM
+
+        dim = self.data["dimensionality"]
+        records = [line.split("#", 1)[0].split() for line in lines]
+        j = dim_idx + 1
+
+        def _floats(n: int) -> List[float]:
+            values = [float(v) for v in records[j][:n]]
+            if len(values) != n:
+                raise ValueError("short record")
+            return values
+
+        rhombohedral = False
+        if dim == "CRYSTAL":
+            iflag, ifhr, ifso = (int(v) for v in records[j][:3])
+            rhombohedral = ifhr == 1
+            self.data["rhombohedral_axes"] = rhombohedral
+            j += 1
+            if iflag == 1:
+                # Hermann-Mauguin symbol instead of the number.
+                symbol = lines[j].strip()
+                group = _SYM2NUM.get(symbol, _SYM2NUM.get(symbol.replace(" ", "")))
+                if group is None:
+                    raise ValueError(f"unknown space group symbol {symbol!r}")
+            else:
+                group = int(records[j][0])
+            j += 1
+            if ifso > 1:
+                self.data["origin_shift"] = [float(v) for v in records[j][:3]]
+                j += 1
+            if 1 <= group <= 2:
+                a, b, c, alpha, beta, gamma = values = _floats(6)
+            elif group <= 15:
+                values = _floats(4)
+                a, b, c, beta = values
+                alpha = gamma = 90.0
+            elif group <= 74:
+                values = _floats(3)
+                a, b, c = values
+                alpha = beta = gamma = 90.0
+            elif group <= 142:
+                values = _floats(2)
+                a, c = values
+                b, alpha, beta, gamma = a, 90.0, 90.0, 90.0
+            elif group <= 194:
+                if rhombohedral and group in RHOMBOHEDRAL_SPACEGROUPS:
+                    values = _floats(2)
+                    a, alpha = values
+                    b = c = a
+                    beta = gamma = alpha
+                else:
+                    values = _floats(2)
+                    a, c = values
+                    b, alpha, beta, gamma = a, 90.0, 90.0, 120.0
+            elif group <= 230:
+                values = _floats(1)
+                a = b = c = values[0]
+                alpha = beta = gamma = 90.0
+            else:
+                raise ValueError(f"space group {group} out of range")
+        elif dim == "SLAB":
+            group = int(records[j][0])
+            if not 1 <= group <= LOW_DIM_GROUPS["SLAB"][1]:
+                raise ValueError(f"layer group {group} out of range 1-80")
+            self.data["layer_group"] = group
+            j += 1
+            c = None
+            alpha = beta = 90.0
+            if group <= 7:        # oblique: a, b, gamma
+                values = _floats(3)
+                a, b, gamma = values
+            elif group <= 48:     # rectangular: a, b
+                values = _floats(2)
+                a, b = values
+                gamma = 90.0
+            else:                 # square 49-64, hexagonal 65-80: a
+                values = _floats(1)
+                a = b = values[0]
+                gamma = 90.0 if group <= 64 else 120.0
+        elif dim == "POLYMER":
+            group = int(records[j][0])
+            if not 1 <= group <= LOW_DIM_GROUPS["POLYMER"][1]:
+                raise ValueError(f"rod group {group} out of range 1-99")
+            self.data["rod_group"] = group
+            j += 1
+            values = _floats(1)
+            a = values[0]
+            b = c = gamma = None
+            alpha = beta = 90.0
+        elif dim == "MOLECULE":
+            self.data["point_group"] = int(records[j][0])
+            j += 1
+            values = None
+        else:
+            return
+
+        if values is not None:
+            self.data["cell_record"] = values
+            self.data["cell_parameters"] = {
+                "a": a, "b": b, "c": c, "alpha": alpha, "beta": beta, "gamma": gamma,
+            }
+            j += 1
+
+        n_atoms = int(records[j][0])
+        atoms = []
+        for k in range(n_atoms):
+            rec = records[j + 1 + k]
+            number = int(rec[0])
+            atoms.append({
+                "atom_number": number,
+                "atomic_number": number % 100,
+                "x": float(rec[1]), "y": float(rec[2]), "z": float(rec[3]),
+            })
+        self.data["n_atoms"] = n_atoms
+        self.data["atoms"] = atoms
 
     @staticmethod
     def _scf_block_start(lines: List[str]) -> Optional[int]:
