@@ -14,6 +14,7 @@ Author: Marcus Djokic
 Institution: Michigan State University, Mendoza Group
 """
 
+import math
 from dataclasses import dataclass
 from typing import Dict, List, Any, Optional, Tuple
 
@@ -2647,6 +2648,58 @@ def generate_k_points(a: float, b: float, c: float, dimensionality: str, spacegr
                 kc = min([k for k in ks if k >= kc] or [kc])
 
     return ka, kb, kc
+
+
+# Centred-rectangular layer groups: the "C" rows of manual Appendix A.2,
+# 10, 13, 16, 22, 26, 35, 36, 47, 48. CRYSTAL23 numbers them so (its output
+# names group 16 "C 2/M 1 1" and 18 "P 21/B 1 1", measured by running all 80
+# layer groups on HPCC), which is not the International Tables order (there
+# c2/m11 is 18).
+CENTRED_RECTANGULAR_LAYER_GROUPS = frozenset(
+    row[0] for row in LAYER_GROUP_ROWS if row[1].startswith("C")
+)
+
+
+def slab_k_points(k_points: Tuple[int, int, int], layer_group: Any,
+                  cell: Optional[List[Any]] = None) -> Tuple[int, int, int]:
+    """Make a SLAB shrinking-factor mesh respect the layer group's lattice.
+
+    CRYSTAL applies the SHRINK factors along the PRIMITIVE reciprocal vectors
+    and stops with "ERROR **** CAPPA **** SHRINK BREAKS SYMMETRY" when two
+    directions the layer group makes equivalent get different factors. That
+    happens in the square and hexagonal groups (a = b) and in the centred
+    rectangular ones, whose primitive vectors (a/2, -b/2) and (a/2, b/2) are
+    mirror images of each other - a mesh generated from the conventional a and
+    b (graphene in layer group 47: 18 10) is refused there. Those groups get
+    one factor for both in-plane directions: the larger of the two, or, for a
+    centred cell whose primitive vector is the shortest, the factor
+    generate_k_points gives that primitive length. Oblique and primitive
+    rectangular groups relate no two directions and are returned unchanged,
+    as is anything that is not a layer group number.
+
+    A POLYMER mesh has a single periodic direction and needs no such rule.
+    """
+    ka, kb, kc = k_points
+    try:
+        group = int(layer_group)
+    except (TypeError, ValueError):
+        return k_points
+    if isinstance(layer_group, bool) or not 1 <= group <= 80 or ka == kb:
+        return k_points
+    lattice = layer_group_lattice(group)
+    centred = group in CENTRED_RECTANGULAR_LAYER_GROUPS
+    if lattice not in ("square", "hexagonal") and not centred:
+        return k_points
+    k = max(ka, kb)
+    if centred and cell:
+        try:
+            a, b = float(cell[0]), float(cell[1])
+        except (TypeError, ValueError, IndexError):
+            a = b = 0.0
+        if a > 0 and b > 0:
+            primitive = math.hypot(a, b) / 2.0
+            k = max(k, generate_k_points(primitive, primitive, 1.0, "SLAB", 1)[0])
+    return k, k, kc
 
 
 # Element coverage of CRYSTAL23's INTERNAL basis sets, measured rather than

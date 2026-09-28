@@ -83,6 +83,7 @@ from d12_constants import (
     LAYER_GROUPS_POLAR_IN_Z,
     LAYER_GROUP_ORIGIN_TOL_FRAC,
     ROD_GROUPS_FREE_OF_AXIS_OPERATIONS,
+    slab_k_points,
     # Utility functions
     yes_no_prompt,
     get_valid_input,
@@ -1635,6 +1636,8 @@ def create_d12_file(cif_data, output_file, options):
         # Write SCF parameters
         # Prepare k-points
         ka, kb, kc = generate_k_points(a, b, c, dimensionality, spacegroup)
+        if dimensionality == "SLAB":
+            ka, kb, kc = slab_k_points((ka, kb, kc), layer_group, [a, b])
 
         # SPINLOCK needs an open-shell Hamiltonian to act on (UHF or DFT/SPIN).
         # Every DFT arm writes SPIN when spin-polarized, but on the HF path only

@@ -52,7 +52,7 @@ from d12_constants import (
     ECP_ELEMENTS_EXTERNAL,
     # Utility functions
     yes_no_prompt, get_valid_input, safe_float, safe_int,
-    generate_unit_cell_line, read_basis_file, generate_k_points,
+    generate_unit_cell_line, read_basis_file, generate_k_points, slab_k_points,
     check_basis_set_compatibility,
     # Configuration functions (from merged d12_config_common)
     configure_tolerances, configure_scf_settings, select_basis_set,
@@ -851,6 +851,18 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 k_max = max(ka, kb, kc)
                 enhanced_k_points = (k_max, k_max, k_max)
                 ui.info(f"Note: Using uniform k-points ({k_max},{k_max},{k_max}) for symmetrized structure (space group {spacegroup})")
+        elif k_points_info and dimensionality == "SLAB" and not k_from_parent:
+            # A generated (or config) mesh must give the directions the layer
+            # group makes equivalent the same factor, or CRYSTAL stops with
+            # SHRINK BREAKS SYMMETRY. The parent's own mesh is kept as written.
+            enhanced_k_points = slab_k_points(
+                tuple(k_points_info), settings.get("spacegroup", 1),
+                geometry_data.get("conventional_cell"),
+            )
+            if enhanced_k_points != tuple(k_points_info):
+                ui.info(f"Note: Using k-points {enhanced_k_points[0]} {enhanced_k_points[1]} "
+                        f"(was {k_points_info[0]} {k_points_info[1]}) so the mesh keeps "
+                        f"layer group {settings.get('spacegroup')}'s symmetry")
 
         scf = settings.get("scf_settings") or {}
         scf_method = scf.get("method", "DIIS")

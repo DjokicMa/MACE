@@ -27,6 +27,19 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   group from the parent deck or the `.out`'s own "TWO-SIDED PLANE GROUP N." /
   "POLYMER GROUP N." line, never from a 3D analysis, and a group outside the
   range is refused before any deck is written.
+- **A SLAB deck's k-point mesh keeps its layer group's symmetry.** A mesh
+  `opt2d12` generates (a child made from the `.out` alone) or `cif2d12` writes
+  comes from the conventional a and b, and was only equalised for 3D decks. In
+  a centred-rectangular layer group the two primitive directions are
+  equivalent, so graphene in layer group 47 got `SHRINK 0 36 / 18 10 1` and
+  CRYSTAL stopped with "SHRINK BREAKS SYMMETRY". Square, hexagonal and
+  centred-rectangular layer groups (CRYSTAL numbers the last 10, 13, 16, 22,
+  26, 35, 36, 47, 48) now get one factor for both in-plane directions; oblique
+  and primitive rectangular groups and POLYMER meshes are unchanged, and a
+  child made with the parent `.d12` still takes the parent's own SHRINK.
+  Checked with real SCF runs of CRYSTAL/23 on HPCC: layer group 47 from
+  `opt2d12` and from `cif2d12` (refused before, converged now), 37 (18 10 1
+  kept) and 80, and rod groups 28 and 51.
 - **A walltime-killed geometry optimization continues where it stopped.**
   When an OPT runs out of time after at least one optimization step, the
   recovery adds `RESTART` to the OPTGEOM block of the same deck, so the new job
