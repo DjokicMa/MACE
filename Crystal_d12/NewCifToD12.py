@@ -106,9 +106,7 @@ from d12_constants import (
 from d12_calc_freq import get_advanced_frequency_settings, write_frequency_section
 from d12_calc_basic import write_optimization_section, configure_single_point
 from d12_writer import (
-    write_method_block,
     write_basis_block,
-    write_scf_block,
     write_optimization_block,
     write_frequency_block,
     write_properties_block,
