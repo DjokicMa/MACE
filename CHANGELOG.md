@@ -220,6 +220,17 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   RESTART rerun that lands in a different directory brings OPTINFO.DAT with it.
   When `$SCRATCH` is empty where the recovery runs, it now rebuilds it the same
   way instead of treating the scratch directory as unknown.
+- **`recovery_config.yaml` is read.** The recovery engine only looked for the
+  file in the directory it ran in, so the one shipped in `mace/config` never
+  applied. It now uses an explicit `--config` file, else `recovery_config.yaml`
+  in the current directory, else the shipped one. A file is merged into the
+  built-in defaults key by key, where it used to replace the whole
+  `error_recovery` section (so a partial file silently dropped every recovery it
+  did not mention). An entry naming a handler that does not exist is reported
+  and ignored. The shipped file named five such handlers and would have turned
+  disk-space recovery off; it now lists exactly the recoveries MACE performs,
+  with the values in force before, so behaviour is unchanged for every error
+  type.
 
 ### Added
 

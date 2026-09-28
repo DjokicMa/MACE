@@ -1,56 +1,66 @@
 # CRYSTAL Error Recovery Configuration
 # ====================================
-# This file defines automated recovery strategies for common CRYSTAL calculation errors.
-# Each error type can have customized recovery parameters and retry limits.
+# How MACE recovers a failed CRYSTAL job, per error type.
+#
+# Which file is used (the first that exists):
+#   1. a path given explicitly (mace recover --config <file>)
+#   2. recovery_config.yaml in the directory the recovery runs in - the job
+#      directory when the queue manager runs as a job's completion callback
+#   3. this file, shipped in mace/config
+#
+# The file is laid over MACE's built-in defaults key by key: a copy that sets
+# only `timeout_error: {max_retries: 1}` changes that one value and keeps
+# every other default. An entry whose `handler` does not exist is reported and
+# ignored (the built-in entry for that error type, if any, stays in force).
+#
+# The values below ARE the built-in defaults; only the keys listed are read.
+# Handlers that exist: fixk_handler, memory_handler, convergence_handler,
+# timeout_handler, opt_fresh_start_handler, cleanup_handler.
+# Setting max_retries: 0 switches automatic recovery off for that error type.
+#
+# Not recovered automatically - these need a person, and have no entry here:
+# linearly dependent basis sets, geometry/NEIGHB problems and symmetry errors.
 
 error_recovery:
-  # SHRINK parameter errors - commonly caused by inadequate k-point sampling
+  # SHRINK parameter errors - k-point mesh inconsistent with the cell
   shrink_error:
-    handler: "fixk_handler"              # Uses existing fixk.py script
+    handler: "fixk_handler"              # Uses the fixk.py script
     max_retries: 3                       # Maximum recovery attempts
     resubmit_delay: 300                  # Delay before resubmission (seconds)
-    escalate_on_failure: true            # Escalate to manual review if all retries fail
+    escalate_on_failure: true
     description: "Fixes k-point mesh issues using fixk.py script"
 
-  # Memory allocation errors - job killed due to insufficient memory
+  # Memory allocation errors - job killed for exceeding its memory
   memory_error:
     handler: "memory_handler"
-    memory_factor: 1.5                   # Multiply current memory by this factor
-    max_memory: "200GB"                  # Maximum memory to allocate
-    max_retries: 2                       # Conservative retries due to resource limits
-    resubmit_delay: 600                  # Longer delay for memory adjustments
-    handle_mem_per_cpu: true             # Handle both --mem and --mem-per-cpu formats
-    mem_per_cpu_factor: 1.5              # Factor for --mem-per-cpu adjustments
-    description: "Increases memory allocation for both --mem and --mem-per-cpu SLURM formats"
+    memory_factor: 1.5                   # Multiply the job's memory (--mem or --mem-per-cpu) by this
+    max_memory: "200GB"                  # Never ask for more than this
+    max_retries: 2
+    resubmit_delay: 600
+    description: "Increases the job's memory request, keeping its --mem / --mem-per-cpu form"
 
-  # SCF convergence failures - electronic structure not converging
+  # SCF convergence failures
   convergence_error:
     handler: "convergence_handler"
-    max_cycles_increase: 1000            # Additional SCF cycles to add (first attempt)
-    fmixing_adjustment: 10               # Amount to INCREASE FMIXING (higher = more stability)
-    fmixing_min: 10                      # Minimum FMIXING value (10%)
-    fmixing_max: 80                      # Maximum FMIXING value (80%)
-    max_retries: 2                       # First: increase cycles, Second: adjust FMIXING
-    resubmit_delay: 300                  # Standard delay
-    enable_diis: true                    # Enable DIIS mixing if not already used
-    two_stage_recovery: true             # Stage 1: increase cycles, Stage 2: adjust FMIXING
-    description: "Stage 1: Increase MAXCYCLE cycles. Stage 2: Increase FMIXING for more stability (higher values = more stable)"
+    max_cycles_increase: 1000            # Added to the SCF MAXCYCLE (never the OPTGEOM one)
+    fmixing_adjustment: 10               # Subtracted from FMIXING when the deck sets it (floor 10)
+    max_retries: 2
+    resubmit_delay: 300
+    description: "Raises the SCF MAXCYCLE and adjusts FMIXING"
 
-  # Job timeout errors - calculation exceeded walltime limit
+  # Job timeout errors - calculation exceeded its walltime
   timeout_error:
     handler: "timeout_handler"
-    walltime_factor: 2.0                 # Multiply current walltime by this factor
-    max_walltime: "7-00:00:00"            # Used only when SLURM can't be asked: the cap is
+    walltime_factor: 2.0                 # Multiply the job's walltime by this
+    max_walltime: "7-00:00:00"           # Used only when SLURM can't be asked: the cap is
                                          # otherwise read live from the job's own queue
                                          # (7 days on HPCC; 14 on mendoza_q_long)
-    max_retries: 2                       # Allow retries with restart capability
-    resubmit_delay: 900                  # Longer delay for walltime adjustments
+    max_retries: 2
+    resubmit_delay: 900
     enable_restart: true                 # OPT killed mid-optimization: OPTGEOM RESTART, or a
                                          # fresh OPT from the best point when OPTINFO.DAT is gone
                                          # (at the queue limit only these are resubmitted)
-    enable_guessp: true                  # Use GUESSP for SP calculations (fort.20 from fort.9)
-    preserve_wavefunction: true          # Copy fort.9 to fort.20 for SCF restart
-    description: "Increases walltime up to 7-day HPCC limit and enables calculation restart from last known good state"
+    description: "Increases walltime up to the queue limit; an optimization continues from its last completed step"
 
   # Geometry optimization aborted because its step size (trust radius) collapsed to
   # zero - seen when a RESTART rerun re-evaluates its best point and finds no energy
@@ -61,143 +71,18 @@ error_recovery:
     resubmit_delay: 300
     description: "Removes RESTART and starts a fresh optimization from the lowest-energy geometry reached so far; the original deck is kept as <JOB>.d12.orig"
 
-  # Disk space errors - scratch space or output directory full (MANUAL INTERVENTION REQUIRED)
+  # Disk space errors - quota or scratch full
   disk_space_error:
-    handler: "manual_escalation"         # Quota issues require manual cleanup
-    max_retries: 0                       # No automatic retries - needs user action
-    escalate_immediately: true           # Escalate to manual review immediately
-    description: "Disk quota exceeded - requires manual cleanup of user storage"
-    manual_instructions: [
-      "Disk quota or space exceeded detected",
-      "Check scratch space usage: du -sh $SCRATCH/*",
-      "Clean up old scratch files: rm -rf $SCRATCH/old_job_dirs",
-      "Check home directory quota: quota -u $USER",
-      "Remove unnecessary files from home directory",
-      "Check work directory quota if applicable",
-      "Consider archiving completed calculations"
-    ]
-    cleanup_suggestions: [
-      "rm -rf $SCRATCH/*/fort.* # Remove CRYSTAL temporary files",
-      "find $SCRATCH -name '*.tmp' -delete # Remove temporary files", 
-      "find . -name '*.out' -size +100M -ls # Find large output files",
-      "tar -czf old_calculations.tar.gz completed_jobs/ # Archive old jobs"
-    ]
-
-  # Basis set errors - problems with basis set specification (MANUAL INTERVENTION REQUIRED)
-  basis_set_error:
-    handler: "manual_escalation"         # Linear dependence requires manual review
-    max_retries: 0                       # No automatic retries - needs expert analysis
-    escalate_immediately: true           # Escalate to manual review immediately
-    description: "BASIS SET LINEARLY DEPENDENT - requires switching between internal/external basis sets or manual basis set selection"
-    manual_instructions: [
-      "Linear basis set dependence detected",
-      "Consider switching from INTERNAL to EXTERNAL basis sets or vice versa",
-      "Check for redundant basis functions or inappropriate basis set choice",
-      "May require expert selection of appropriate basis set for this material"
-    ]
-
-  # Geometry optimization failures - structure optimization problems  
-  geometry_error:
-    handler: "geometry_handler"
-    reduce_trust_radius: true            # Reduce optimization trust radius (MAXTRADIUS)
-    trust_radius_factor: 0.5             # Multiply current trust radius by this factor
-    increase_cycles: 500                 # Additional optimization cycles
-    enable_restart: true                 # Add RESTART keyword if optimization was interrupted
-    fallback_to_steepest_descent: true   # Use more stable optimization algorithm
-    max_retries: 2                       # Geometry issues can sometimes be recovered
-    resubmit_delay: 300                  # Standard delay
-    description: "Adjusts geometry optimization trust radius (step size) and adds RESTART for interrupted optimizations"
-
-  # Basis set linear dependence from small atomic distances (updatelists2: geometry_small_dist)
-  basis_linear_dependence:
-    handler: "linear_dependence_handler"
-    max_retries: 2                       # Only cell scaling and EIGS check before manual escalation
-    resubmit_delay: 300                  # Standard delay
-    description: "Handles BASIS SET LINEARLY DEPENDENT and **** NEIGHB **** errors through multiple strategies"
-    recovery_strategies:
-      stage_1:
-        method: "eigs_check"             # Run EIGS keyword to diagnose overlap matrix
-        description: "Check overlap matrix eigenvalues to confirm linear dependence"
-      stage_2: 
-        method: "cell_scaling"           # Scale unit cell proportionally
-        scaling_factor: 1.02             # Increase cell by 2% to separate close atoms
-        description: "Slightly expand unit cell to separate atoms causing overlap"
-      stage_3:
-        method: "manual_escalation"      # Basis set changes require expert review
-        description: "Escalate to manual review - basis set modification requires expert analysis"
-        manual_instructions: [
-          "Cell scaling failed to resolve linear dependence",
-          "Consider basis set modifications:",
-          "- Remove most diffuse functions",
-          "- Increase basis set contraction", 
-          "- Switch between internal/external basis sets",
-          "- Expert basis set selection may be required"
-        ]
-
-  # Symmetry-related errors - space group or symmetry issues
-  symmetry_error:
-    handler: "symmetry_handler"
-    fallback_to_p1: true                 # Fall back to P1 symmetry
-    symmetry_tolerance: 1e-3             # Relaxed symmetry tolerance
-    max_retries: 1                       # Symmetry issues usually need manual review
-    resubmit_delay: 300                  # Standard delay
-    description: "Handles symmetry-related calculation failures"
+    handler: "cleanup_handler"
+    cleanup_scratch: true                # Delete temporary files over 100 MB in the job
+                                         # directory (never fort.9/.f9/fort.20/fort.98/fort.34)
+    max_retries: 1
+    resubmit_delay: 1800
+    description: "Frees large temporary files and resubmits; if the quota is still exceeded, clean up by hand (du -sh $SCRATCH/*, quota -u $USER)"
 
 # Global settings for the recovery system
 global_settings:
-  # Resource management
-  max_concurrent_recoveries: 10          # Maximum recovery jobs running simultaneously
-  enable_priority_boost: true           # Give recovery jobs higher SLURM priority
-  
-  # Logging and monitoring
-  recovery_log_retention_days: 30        # Keep recovery logs for 30 days
-  enable_detailed_logging: true          # Log detailed recovery attempts
-  log_directory: "recovery_logs"         # Directory for recovery log files
-  
-  # Escalation and notification
-  enable_auto_escalation: true           # Escalate to manual review after max retries
-  notification_enabled: false           # Email notifications (requires setup)
-  notification_email: ""                # Email address for notifications
-  
-  # Safety and limits
-  max_total_recovery_attempts: 100       # Global limit on recovery attempts per day
-  enable_recovery_blacklist: true       # Temporarily blacklist repeatedly failing materials
-  blacklist_duration_hours: 24          # How long to blacklist materials
-  
-  # Advanced options
-  enable_learning_mode: false           # Learn from successful recoveries (experimental)
-  backup_failed_inputs: true            # Keep copies of failed input files
-  backup_directory: "failed_inputs"     # Directory for failed input backups
-
-# Queue-specific settings (can be customized per cluster)
-queue_settings:
-  # Default SLURM settings for recovery jobs
-  default_partition: "compute"           # Default partition for recovery jobs
-  recovery_qos: "normal"                 # Quality of service for recovery jobs
-  
-  # Resource scaling rules
-  memory_scaling:
-    small_jobs: 1.2                      # Memory factor for jobs < 10GB
-    medium_jobs: 1.5                     # Memory factor for jobs 10-50GB  
-    large_jobs: 1.3                      # Memory factor for jobs > 50GB
-    
-  walltime_scaling:
-    short_jobs: 1.5                      # Time factor for jobs < 2 hours
-    medium_jobs: 2.0                     # Time factor for jobs 2-12 hours
-    long_jobs: 1.5                       # Time factor for jobs > 12 hours
-
-# Material-specific recovery rules (override global settings)
-material_overrides:
-  # Example: More aggressive recovery for critical materials
-  high_priority_materials:
-    patterns: ["*_critical_*", "*_benchmark_*"]
-    max_retries: 5                       # More retries for important materials
-    memory_factor: 2.0                   # More aggressive memory scaling
-    priority_boost: 10                   # Higher job priority
-    
-  # Example: Conservative recovery for problematic material classes
-  problematic_materials:
-    patterns: ["*_organic_*", "*_polymer_*"]
-    max_retries: 1                       # Conservative retries
-    enable_auto_escalation: false        # Require manual review
-    resubmit_delay: 1800                 # Longer delays
+  max_concurrent_recoveries: 10          # Recoveries attempted per `mace recover` run
+  recovery_log_retention_days: 30
+  enable_auto_escalation: true
+  notification_enabled: false

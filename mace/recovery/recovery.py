@@ -95,6 +95,84 @@ def _resolve_job_script(calc: Dict) -> Optional[Path]:
     return p if p.exists() else None
 
 
+RECOVERY_CONFIG_NAME = "recovery_config.yaml"
+#: The configuration shipped with MACE (mace/config/recovery_config.yaml).
+PACKAGED_RECOVERY_CONFIG = Path(__file__).resolve().parent.parent / "config" / RECOVERY_CONFIG_NAME
+
+
+def resolve_recovery_config_path(explicit: Optional[str] = None) -> Optional[Path]:
+    """The recovery configuration file to load, or None for the built-in
+    defaults alone.
+
+    In order: a path given explicitly (--config, or the config_path argument),
+    recovery_config.yaml in the current directory (the job directory when the
+    queue manager runs as a job's completion callback), then the one shipped
+    in mace/config. An explicit path that does not exist is reported and the
+    search goes on.
+    """
+    if explicit:
+        path = Path(explicit).expanduser()
+        if path.is_file():
+            return path
+        # The old default spelled out; saying it is missing would be noise.
+        if str(explicit) != RECOVERY_CONFIG_NAME:
+            print(f"Recovery config {explicit} not found - looking for "
+                  f"{RECOVERY_CONFIG_NAME} here, then the one shipped with MACE")
+    local = Path.cwd() / RECOVERY_CONFIG_NAME
+    if local.is_file():
+        return local
+    if PACKAGED_RECOVERY_CONFIG.is_file():
+        return PACKAGED_RECOVERY_CONFIG
+    return None
+
+
+def _deep_merge(base: Dict, override: Dict) -> Dict:
+    """base with override laid over it, mappings merged key by key (lists and
+    scalars are replaced). Neither argument is modified."""
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def merge_recovery_config(defaults: Dict, user: Dict, known_handlers: set,
+                          source=None) -> Dict:
+    """A recovery configuration file laid over the built-in defaults.
+
+    Merged key by key, so a file that sets one value of one error type keeps
+    every other default - a whole section is never replaced by a partial one.
+    An error_recovery entry whose handler does not exist (or that is not a
+    mapping) is reported and ignored: the built-in entry for that error type,
+    if there is one, stays in force, so a bad entry never switches off a
+    recovery that works without the file.
+    """
+    where = f" in {source}" if source else ""
+    user = dict(user)
+    entries = user.pop("error_recovery", None) or {}
+    merged = _deep_merge(defaults, user)
+    recovery = dict(defaults.get("error_recovery", {}))
+    if not isinstance(entries, dict):
+        print(f"Recovery config{where}: error_recovery is not a mapping - ignored")
+        entries = {}
+    for error_type, entry in entries.items():
+        if not isinstance(entry, dict):
+            print(f"Recovery config{where}: {error_type} is not a mapping - ignored")
+            continue
+        combined = _deep_merge(recovery.get(error_type, {}), entry)
+        handler = combined.get("handler")
+        if handler not in known_handlers:
+            kept = " (the built-in recovery for it is kept)" if error_type in recovery else ""
+            print(f"Recovery config{where}: {error_type} names handler {handler!r}, "
+                  f"which does not exist - entry ignored{kept}")
+            continue
+        recovery[error_type] = combined
+    merged["error_recovery"] = recovery
+    return merged
+
+
 class ErrorRecoveryEngine:
     """
     Automated error recovery system for CRYSTAL calculations.
@@ -103,7 +181,7 @@ class ErrorRecoveryEngine:
     and integrates with existing error detection and fixing scripts.
     """
     
-    def __init__(self, db_path: str = "materials.db", config_path: str = "recovery_config.yaml"):
+    def __init__(self, db_path: str = "materials.db", config_path: Optional[str] = None):
         # Check for active workflow context
         ctx = get_current_context()
         if ctx:
@@ -114,7 +192,8 @@ class ErrorRecoveryEngine:
             # Initialize traditional database connection
             self.db = MaterialDatabase(db_path)
             
-        self.config_path = Path(config_path)
+        self.explicit_config_path = Path(config_path) if config_path else None
+        self.config_path = resolve_recovery_config_path(config_path)
         self.config = self.load_recovery_config()
         self.error_detector = CrystalErrorDetector(db_path=db_path)
         self.lock = threading.RLock()
@@ -160,7 +239,10 @@ class ErrorRecoveryEngine:
                     # this cap, and these defaults are what it runs with when no
                     # recovery_config.yaml is in the job directory.
                     "max_retries": 2,
-                    "resubmit_delay": 900
+                    "resubmit_delay": 900,
+                    # OPT killed mid-optimization: OPTGEOM RESTART, or a fresh
+                    # OPT from the best point (see timeout_handler).
+                    "enable_restart": True
                 },
                 "opt_trust_radius_error": {
                     "handler": "opt_fresh_start_handler",
@@ -182,24 +264,34 @@ class ErrorRecoveryEngine:
             }
         }
         
-        if self.config_path.exists():
-            try:
-                with open(self.config_path, 'r') as f:
-                    user_config = yaml.safe_load(f)
-                    # Merge with defaults
-                    default_config.update(user_config)
-                    return default_config
-            except Exception as e:
-                print(f"Error loading recovery config {self.config_path}: {e}")
-                print("Using default configuration")
-                
-        return default_config
-        
+        if self.config_path is None:
+            return default_config
+        try:
+            with open(self.config_path, 'r') as f:
+                user_config = yaml.safe_load(f) or {}
+            if not isinstance(user_config, dict):
+                raise ValueError("expected a mapping at the top level")
+        except Exception as e:
+            print(f"Error loading recovery config {self.config_path}: {e}")
+            print("Using default configuration")
+            return default_config
+        return merge_recovery_config(default_config, user_config,
+                                     known_handlers=self.known_handlers(),
+                                     source=self.config_path)
+
+    @classmethod
+    def known_handlers(cls) -> set:
+        """Names a recovery configuration may give as `handler`."""
+        return {name for name in dir(cls)
+                if name.endswith('_handler') and callable(getattr(cls, name))}
+
     def save_default_config(self):
-        """Save default configuration to file for user customization."""
-        with open(self.config_path, 'w') as f:
-            yaml.dump(self.load_recovery_config(), f, default_flow_style=False, indent=2)
-        print(f"Saved default recovery configuration to {self.config_path}")
+        """Save the effective configuration to a file for user customization:
+        the path given explicitly, else recovery_config.yaml here."""
+        target = self.explicit_config_path or Path(RECOVERY_CONFIG_NAME)
+        with open(target, 'w') as f:
+            yaml.dump(self.config, f, default_flow_style=False, indent=2)
+        print(f"Saved the recovery configuration to {target}")
         
     def detect_and_recover_errors(self, max_recoveries: int = None) -> int:
         """
@@ -1089,8 +1181,9 @@ def main():
     parser = argparse.ArgumentParser(description="CRYSTAL Error Recovery Engine")
     parser.add_argument("--action", choices=['recover', 'stats', 'config'], 
                        default='recover', help="Action to perform")
-    parser.add_argument("--config", default="recovery_config.yaml",
-                       help="Path to recovery configuration file")
+    parser.add_argument("--config", default=None,
+                       help="Path to recovery configuration file (default: recovery_config.yaml "
+                            "here, else the one shipped in mace/config)")
     parser.add_argument("--db", default="materials.db",
                        help="Path to materials database")
     parser.add_argument("--max-recoveries", type=int, default=10,
@@ -1105,7 +1198,6 @@ def main():
     
     if args.create_config or args.action == 'config':
         recovery_engine.save_default_config()
-        print(f"Configuration saved to {args.config}")
         return
         
     elif args.action == 'stats':
