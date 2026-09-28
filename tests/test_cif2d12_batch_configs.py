@@ -119,6 +119,18 @@ def test_a_flat_cif2d12_options_file_is_kept_as_written():
         assert opts[key] == value, key
 
 
+
+def test_a_3c_method_from_method_modifications_is_warned_about_too(capsys):
+    """A workflow step can swap the functional through method_modifications;
+    a 3c method on another basis gets the same warning, and the options
+    (so the deck) are left as asked."""
+    opts = config_to_cif_options({"calculation_type": "SP", "method": "DFT",
+                                  "dft_functional": "HSE06",
+                                  "method_modifications": {"functional": "PBEH3C"},
+                                  "basis_set": "POB-TZVP-REV2"})
+    assert opts["basis_set"] == "POB-TZVP-REV2"
+    assert "PBEH3C is defined on the" in capsys.readouterr().err
+
 def test_a_3c_method_with_another_basis_is_written_as_asked(capsys):
     """CRYSTAL23 runs a 3c method on another basis (the lead perovskites need
     HSE-3c on POB-TZVP-REV2: its def2-mSVP has no Pb), and main wrote those

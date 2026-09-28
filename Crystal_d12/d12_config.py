@@ -441,6 +441,18 @@ def config_to_cif_options(data: Any) -> Dict[str, Any]:
                   f"set; the options file names {given!r}, which is used as "
                   f"written (the 3c corrections were fitted to {required}).",
                   file=sys.stderr)
+    # A workflow step can swap the functional through method_modifications,
+    # which cif2d12 applies after this point; warn about its basis too, but
+    # leave the deck as asked.
+    override = (opts.get("method_modifications") or {}).get("functional")
+    override_required = required_basis_for(override) if override else None
+    given = opts.get("basis_set")
+    if (override_required and given
+            and _basis_key(given) != _basis_key(override_required)):
+        print(f"Warning: {override} is defined on the {override_required} basis "
+              f"set; the options file names {given!r}, which is used as "
+              f"written (the 3c corrections were fitted to {override_required}).",
+              file=sys.stderr)
     if not opts.get("basis_set"):
         raise ValueError("the options file names no basis_set")
     opts.setdefault("basis_set_type", "INTERNAL")
