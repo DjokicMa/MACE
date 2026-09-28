@@ -223,7 +223,8 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   unwritable, so a resubmission would stop the same way. The directory used is
   recorded as `.<job>.scratch` in the submit directory; the recovery reads it
   to find OPTINFO.DAT and fort.87, and a RESTART rerun that lands in a
-  different directory brings OPTINFO.DAT with it.
+  different directory takes OPTINFO.DAT, fort.20 and fort.9 together from
+  whichever directory has the newer OPTINFO.DAT.
   When `$SCRATCH` is empty where the recovery runs, it now rebuilds it the same
   way instead of treating the scratch directory as unknown.
 - **`recovery_config.yaml` is read.** The recovery engine only looked for the

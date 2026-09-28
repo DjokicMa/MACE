@@ -88,15 +88,23 @@ fi
 echo "scratch directory: $scratch/$JOB"
 # The last run of this job may have used another directory (a node where the
 # fallback was needed, or the other way round): an OPTGEOM RESTART reads
-# OPTINFO.DAT and fort.20 from here, so bring them over when only that one has
-# them.
+# OPTINFO.DAT and fort.20 from here. When that directory has the newer
+# OPTINFO.DAT (or this one has none), OPTINFO.DAT, fort.20 and fort.9 are
+# taken from it together, so the history and the density matrix always come
+# from the same run - one it lacks is removed here rather than left over from
+# an older run.
 MACE_SCRATCH_PREV=$(cat "$DIR/.$JOB.scratch" 2>/dev/null)
 if [ -n "$MACE_SCRATCH_PREV" ] && [ "$MACE_SCRATCH_PREV" != "$scratch/$JOB" ] \
-   && [ -f "$MACE_SCRATCH_PREV/OPTINFO.DAT" ] && [ ! -f "$scratch/$JOB/OPTINFO.DAT" ]; then
+   && [ -f "$MACE_SCRATCH_PREV/OPTINFO.DAT" ] \
+   && [ "$MACE_SCRATCH_PREV/OPTINFO.DAT" -nt "$scratch/$JOB/OPTINFO.DAT" ]; then
   for MACE_F in OPTINFO.DAT fort.20 fort.9; do
-    [ -f "$MACE_SCRATCH_PREV/$MACE_F" ] && cp -p "$MACE_SCRATCH_PREV/$MACE_F" "$scratch/$JOB/$MACE_F"
+    if [ -f "$MACE_SCRATCH_PREV/$MACE_F" ]; then
+      cp -p "$MACE_SCRATCH_PREV/$MACE_F" "$scratch/$JOB/$MACE_F"
+    else
+      rm -f "$scratch/$JOB/$MACE_F"
+    fi
   done
-  echo "scratch: brought OPTINFO.DAT over from the previous run in $MACE_SCRATCH_PREV"
+  echo "scratch: brought OPTINFO.DAT, fort.20 and fort.9 over from the previous run in $MACE_SCRATCH_PREV"
 fi
 echo "$scratch/$JOB" > "$DIR/.$JOB.scratch" 2>/dev/null
 mkdir  -p $scratch/$JOB

@@ -398,3 +398,68 @@ def test_detector_reports_the_stop_as_not_recoverable(tmp_path):
     det = CrystalErrorDetector(base_dir=str(tmp_path), enable_tracking=False)
     res = det.analyze_output_file(out)
     assert (res["error_type"], res["recoverable"]) == ("scratch_error", False)
+
+
+# ---------------------------------------------------------------------------
+# RESTART carry-over: OPTINFO.DAT, fort.20 and fort.9 come as one set from
+# whichever directory has the newer OPTINFO.DAT.
+
+def _restart_setup(tmp_path, submit):
+    prev = submit / ".mace_scratch" / "crys23" / "diamond"
+    prev.mkdir(parents=True)
+    scratch = tmp_path / "scr"
+    new = scratch / "crys23" / "diamond"
+    new.mkdir(parents=True)
+    (submit / ".diamond.scratch").write_text(f"{prev}\n")
+    deck = DECK.replace("END\nDFT", "OPTGEOM\nRESTART\nENDOPT\nEND\nDFT", 1)
+    (submit / "diamond.d12").write_text(deck)
+    return prev, new, scratch
+
+
+def _age(path: Path, seconds_ago: int):
+    import time
+    t = time.time() - seconds_ago
+    os.utime(path, (t, t))
+
+
+def test_restart_takes_the_newer_optinfo_from_the_previous_directory(tmp_path, submit):
+    prev, new, scratch = _restart_setup(tmp_path, submit)
+    for f, text in (("OPTINFO.DAT", "old optinfo"), ("fort.20", "old density")):
+        (new / f).write_text(text)
+        _age(new / f, 7200)
+    (prev / "OPTINFO.DAT").write_text("new optinfo")
+    (prev / "fort.20").write_text("new density")
+    script = _generate(submit, "crystal", "diamond")
+    r = _run(tmp_path, script, {"SCRATCH": str(scratch), "USER": NO_HPCC_USER})
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (new / "OPTINFO.DAT").read_text() == "new optinfo"
+    assert (new / "fort.20").read_text() == "new density"
+    assert "from its own fort.20" in r.stdout
+
+
+def test_restart_drops_a_stale_density_the_newer_run_does_not_have(tmp_path, submit):
+    prev, new, scratch = _restart_setup(tmp_path, submit)
+    for f in ("OPTINFO.DAT", "fort.20"):
+        (new / f).write_text("old " + f)
+        _age(new / f, 7200)
+    (prev / "OPTINFO.DAT").write_text("new optinfo")      # no fort.20 / fort.9 there
+    script = _generate(submit, "crystal", "diamond")
+    r = _run(tmp_path, script, {"SCRATCH": str(scratch), "USER": NO_HPCC_USER})
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (new / "OPTINFO.DAT").read_text() == "new optinfo"
+    assert not (new / "fort.20").exists()
+    assert "no density matrix left in scratch" in r.stdout
+
+
+def test_restart_keeps_this_directorys_newer_optinfo(tmp_path, submit):
+    prev, new, scratch = _restart_setup(tmp_path, submit)
+    for f in ("OPTINFO.DAT", "fort.20"):
+        (prev / f).write_text("old " + f)
+        _age(prev / f, 7200)
+        (new / f).write_text("new " + f)
+    script = _generate(submit, "crystal", "diamond")
+    r = _run(tmp_path, script, {"SCRATCH": str(scratch), "USER": NO_HPCC_USER})
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (new / "OPTINFO.DAT").read_text() == "new OPTINFO.DAT"
+    assert (new / "fort.20").read_text() == "new fort.20"
+    assert "brought OPTINFO.DAT" not in r.stdout
