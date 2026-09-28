@@ -33,6 +33,11 @@ USAGE:
     3. Run in batch mode with saved options:
        python NewCifToD12.py --batch --options_file my_settings.json --cif_dir /path/to/cif/files
 
+       The options file is either the one step 2 saves or a configuration
+       file such as example_configs/standard_dft_opt.json (the
+       {"version", "type", "configuration"} wrapper is unwrapped and its
+       opt2d12-style keys are mapped; see d12_config.config_to_cif_options).
+
     4. Specify output directory:
        python NewCifToD12.py --cif_dir /path/to/cif/files --output_dir /path/to/output
 
@@ -118,6 +123,7 @@ from d12_writer import (
     write_dft_section,
     write_basis_set_section,
 )
+from d12_config import config_to_cif_options
 from d12_interactive import (
     display_default_settings,
     get_calculation_options_new,
@@ -1910,7 +1916,7 @@ def main():
         # Load options from file
         try:
             with open(args.options_file, "r") as f:
-                options = json.load(f)
+                options = config_to_cif_options(json.load(f))
             ui.print(f"Loaded options from {args.options_file}")
             print_summary(options)
         except Exception as e:

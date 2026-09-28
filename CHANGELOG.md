@@ -15,9 +15,33 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
 
 ### Fixed
 
+- **The example configs load in `mace convert --batch --options_file`.** None
+  of the eight `Crystal_d12/example_configs/*.json` did: they wrap their
+  settings in `{"version", "type", "configuration"}` and spell them the
+  opt2d12 way (`functional`, `dispersion`, `scf_settings`), and every run
+  stopped with `KeyError: 'dimensionality'`. The loader now unwraps the file
+  and maps those names onto cif2d12's; a flat options file saved by
+  `--save_options` or the workflow planner loads exactly as before. What a
+  config leaves out gets the interactive defaults (3D `CRYSTAL`, the CIF's
+  space group written as its asymmetric unit, INTERNAL basis), and a file
+  that cannot describe a deck is refused with the reason. Each config was
+  converted from real CIFs and checked by CRYSTAL23 (`mace preflight`).
+  `phonon_bands.json` now names the 2x2x2 `SCELPHONO` supercell that
+  `FREQCALC DISPERSION` needs (without it CRYSTAL23 stops with
+  `MAKE SUPERCELL WITH SCELPHONO`) and writes its phonon band path as
+  k-point coordinates, since CRYSTAL23 rejects the label form there
+  (`FORMAT ERROR IN FREQCALC INPUT DECK`).
+- **`mace opt2d12 --config-file` reads the example configs too.** It also
+  took the wrapper for the settings and crashed. `quick_screen.json` now names
+  its HF flavour (`"functional": "RHF"`) so both converters read it the same
+  way.
+- **`d12_from_config.py` runs.** It passed the input file as an argument
+  neither converter accepts, and did not recognise a CRYSTAL output that
+  starts with MPI start-up lines.
 - **The built-in `3c_composite` template uses def2-mSVP**, the basis PBEh-3c
   is defined on, instead of MINIX (HF-3c's). The basis now comes from the
-  `basis_requirements` table rather than a second copy.
+  `basis_requirements` table rather than a second copy, and a batch options
+  file that pairs a 3c method with a different basis is refused.
 - **A walltime-killed geometry optimization continues where it stopped.**
   When an OPT runs out of time after at least one optimization step, the
   recovery adds `RESTART` to the OPTGEOM block of the same deck, so the new job

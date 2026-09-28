@@ -34,10 +34,10 @@ from typing import Dict, Any, Optional, List, Union, Tuple
 from pathlib import Path
 
 try:
-    from d12_constants import required_basis_for
+    from d12_constants import required_basis_for, scf_tolerances
 except ImportError:  # imported from outside Crystal_d12
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from d12_constants import required_basis_for
+    from d12_constants import required_basis_for, scf_tolerances
 
 
 def get_default_d12_configs() -> Dict[str, Dict[str, Any]]:
@@ -183,7 +183,8 @@ def get_default_d12_configs() -> Dict[str, Dict[str, Any]]:
             "description": "Fast screening calculations with minimal basis",
             "calculation_type": "SP",
             "method": "HF",
-            "functional": None,
+            # opt2d12 names the HF flavour here (RHF/UHF/HF3C/HFSOL3C)
+            "functional": "RHF",
             "dispersion": False,
             "basis_set": "STO-3G",
             "basis_set_type": "INTERNAL",
@@ -301,15 +302,144 @@ def load_d12_config(filename: str, config_dir: Optional[str] = None) -> Dict[str
     if version not in ["1.0"]:
         print(f"Warning: Configuration version {version} may not be fully compatible")
     
-    # Extract configuration
-    if "configuration" in config_data:
-        config = config_data["configuration"]
-    else:
-        # Assume entire file is configuration (backward compatibility)
-        config = config_data
+    # Extract configuration (a bare file is the configuration itself)
+    config = unwrap_d12_config(config_data)
     
     print(f"Loaded configuration from: {loaded_from}")
     return config
+
+
+def unwrap_d12_config(data: Any) -> Any:
+    """The settings inside a saved configuration file.
+
+    ``save_d12_config`` and the files in ``example_configs/`` wrap the
+    settings in ``{"version", "type": "d12_configuration", "configuration"}``.
+    Every reader goes through here, so a wrapped file and a bare settings
+    dict (what cif2d12 --save_options and the workflow planner write) load
+    the same way. Anything that is not such an envelope is returned as is.
+    """
+    if (isinstance(data, dict) and isinstance(data.get("configuration"), dict)
+            and (data.get("type") == "d12_configuration"
+                 or set(data) <= {"version", "type", "configuration"})):
+        return data["configuration"]
+    return data
+
+
+# cif2d12 option name for each configuration-file field that is spelled
+# differently (the configuration files use opt2d12's names)
+_CONFIG_TO_CIF_KEYS = {
+    "dispersion": "use_dispersion",
+    "spin_polarized": "is_spin_polarized",
+}
+_SCF_TO_CIF_KEYS = {"method": "scf_method", "maxcycle": "scf_maxcycle",
+                    "fmixing": "fmixing"}
+_HF_METHODS = ("RHF", "UHF", "HF3C", "HFSOL3C")
+_DIMENSIONALITIES = ("CRYSTAL", "SLAB", "POLYMER", "MOLECULE")
+_SYMMETRY_HANDLING = ("CIF", "SPGLIB", "P1")
+
+
+def config_to_cif_options(data: Any) -> Dict[str, Any]:
+    """Options for ``NewCifToD12.py --batch`` from a loaded options file.
+
+    Accepts both shapes an options file comes in:
+
+    * the flat options dict cif2d12 itself saves (``dft_functional``,
+      ``use_dispersion``, ``scf_method``, ...) - kept exactly as written;
+    * a configuration file (``example_configs/*.json``, ``save_d12_config``)
+      - unwrapped, and its opt2d12-style names (``functional``,
+      ``dispersion``, ``spin_polarized``, ``scf_settings``) mapped onto
+      cif2d12's.
+
+    A key the file already has in cif2d12's spelling always wins. Settings a
+    configuration file leaves out get the interactive defaults: 3D
+    ``CRYSTAL``, CIF symmetry written as the asymmetric unit, INTERNAL basis.
+    A 3c method gets the basis it is defined on (``basis_requirements``);
+    naming a different one is refused rather than silently running a
+    different method.
+
+    Raises:
+        ValueError: the file cannot describe a deck (missing or unknown
+        method/calculation type/functional/basis, bad dimensionality or
+        symmetry setting).
+    """
+    config = unwrap_d12_config(data)
+    if not isinstance(config, dict):
+        raise ValueError("options file does not contain a settings object")
+    opts = dict(config)
+
+    for src, dst in _CONFIG_TO_CIF_KEYS.items():
+        if dst not in opts and src in config:
+            opts[dst] = config[src]
+    scf = config.get("scf_settings")
+    if isinstance(scf, dict):
+        for src, dst in _SCF_TO_CIF_KEYS.items():
+            if dst not in opts and src in scf:
+                opts[dst] = scf[src]
+
+    calc_type = str(opts.get("calculation_type") or "").upper()
+    if calc_type not in ("SP", "OPT", "FREQ"):
+        raise ValueError(
+            f"calculation_type must be SP, OPT or FREQ "
+            f"(got {opts.get('calculation_type')!r})")
+    opts["calculation_type"] = calc_type
+    if calc_type == "OPT" and not opts.get("optimization_type"):
+        opts["optimization_type"] = "FULLOPTG"
+
+    method = str(opts.get("method") or "").upper()
+    if method not in ("DFT", "HF"):
+        raise ValueError(f"method must be DFT or HF (got {opts.get('method')!r})")
+    opts["method"] = method
+
+    if method == "DFT":
+        if not opts.get("dft_functional"):
+            opts["dft_functional"] = config.get("functional")
+        if not opts.get("dft_functional"):
+            raise ValueError("a DFT options file must name its functional "
+                             "('functional' or 'dft_functional')")
+        method_name = opts["dft_functional"]
+    else:
+        if not opts.get("hf_method"):
+            opts["hf_method"] = str(config.get("functional") or "RHF").upper()
+        if opts["hf_method"] not in _HF_METHODS:
+            raise ValueError(f"HF method must be one of {', '.join(_HF_METHODS)} "
+                             f"(got {opts['hf_method']!r})")
+        method_name = opts["hf_method"]
+
+    opts.setdefault("dimensionality", "CRYSTAL")
+    if opts["dimensionality"] not in _DIMENSIONALITIES:
+        raise ValueError(f"dimensionality must be one of "
+                         f"{', '.join(_DIMENSIONALITIES)} "
+                         f"(got {opts['dimensionality']!r})")
+    # The interactive defaults (configure_symmetry_handling): the CIF's own
+    # space group, written as its asymmetric unit
+    opts.setdefault("symmetry_handling", "CIF")
+    opts.setdefault("write_only_unique", True)
+    if opts["symmetry_handling"] not in _SYMMETRY_HANDLING:
+        raise ValueError(f"symmetry_handling must be one of "
+                         f"{', '.join(_SYMMETRY_HANDLING)} "
+                         f"(got {opts['symmetry_handling']!r})")
+
+    required = required_basis_for(method_name)
+    if required:
+        given = opts.get("basis_set")
+        if given and str(given).upper() != required.upper():
+            raise ValueError(
+                f"{method_name} is defined on the {required} basis set, but "
+                f"the options file names {given!r}; drop basis_set or set it "
+                f"to {required}")
+        opts["basis_set"] = required
+        opts["basis_set_type"] = "INTERNAL"
+        opts["is_3c_method"] = True
+    if not opts.get("basis_set"):
+        raise ValueError("the options file names no basis_set")
+    opts.setdefault("basis_set_type", "INTERNAL")
+
+    opts.setdefault("is_spin_polarized", False)
+    opts.setdefault("use_dispersion", False)
+    if not isinstance(opts.get("tolerances"), dict):
+        opts["tolerances"] = scf_tolerances("1")
+    opts.setdefault("scf_method", "DIIS")
+    return opts
 
 
 def validate_d12_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:

@@ -60,6 +60,7 @@ from d12_constants import (
     configure_smearing, CUSTOM_FUNCTIONAL,
 )
 from d12_parsers import CrystalOutputParser, CrystalInputParser
+from d12_config import unwrap_d12_config
 from d12_calc_freq import get_advanced_frequency_settings, write_frequency_section
 from d12_calc_basic import write_optimization_section, configure_single_point
 from d12_writer import (
@@ -1042,7 +1043,9 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         ui.info(f"\nLoading settings from config file: {config_file}")
         try:
             with open(config_file, 'r') as f:
-                config_data = json.load(f)
+                # example_configs/*.json and save_d12_config wrap the
+                # settings in {"version", "type", "configuration"}
+                config_data = unwrap_d12_config(json.load(f))
 
             # Show config summary
             print()

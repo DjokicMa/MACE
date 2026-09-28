@@ -6,7 +6,7 @@
     "description": "Fast screening calculations with minimal basis",
     "calculation_type": "SP",
     "method": "HF",
-    "functional": null,
+    "functional": "RHF",
     "dispersion": false,
     "basis_set": "STO-3G",
     "basis_set_type": "INTERNAL",

@@ -1,16 +1,19 @@
 # D12 Configuration Examples
 
-This directory contains example JSON configuration files for different D12 calculation types in CRYSTAL. These configurations can be used with NewCifToD12.py and CRYSTALOptToD12.py to quickly set up calculations with tested parameters.
+This directory contains example JSON configuration files for different D12 calculation types in CRYSTAL. The same files are read by NewCifToD12.py (`mace convert`), CRYSTALOptToD12.py (`mace opt2d12`) and d12_from_config.py.
 
 ## Usage
 
 ### Loading a configuration file:
 ```bash
 # With NewCifToD12.py (batch mode loads the options file)
-python NewCifToD12.py --batch --options_file standard_dft_opt.json --cif_dir ./cifs
+python NewCifToD12.py --batch --options_file example_configs/standard_dft_opt.json --cif_dir ./cifs
 
 # With CRYSTALOptToD12.py
-python CRYSTALOptToD12.py --config-file high_accuracy_sp.json --out-file optimized.out
+python CRYSTALOptToD12.py --config-file example_configs/high_accuracy_sp.json --out-file optimized.out --non-interactive
+
+# Either, picked from the input's type (a config name is looked up here too)
+python d12_from_config.py --config standard_dft_opt.json structure.cif optimized.out
 
 # List available configurations
 python d12_from_config.py --list-configs
@@ -51,7 +54,7 @@ python NewCifToD12.py --batch --options_file my_custom_config.json --cif_dir ./c
 - **Features**:
   - 3-component composite method
   - The basis PBEh-3c is defined on (def2-mSVP, from the `basis_requirements`
-    table in d12_constants.py)
+    table in d12_constants.py; a 3c method with another basis is refused)
   - Good accuracy at low cost
   - Excellent for initial screening
 
@@ -95,8 +98,9 @@ python NewCifToD12.py --batch --options_file my_custom_config.json --cif_dir ./c
 - **Purpose**: Phonon band structure and DOS
 - **Method**: B3LYP-D3/POB-TZVP-REV2
 - **Features**:
-  - Phonon dispersion calculation
-  - Automatic k-path detection
+  - Phonon dispersion calculation on a 2x2x2 SCELPHONO supercell
+  - Automatic k-path, written as k-point coordinates (CRYSTAL23 does not
+    accept the label form inside FREQCALC)
   - Phonon DOS with projections
   - Thermodynamic properties
 
@@ -121,6 +125,24 @@ Each JSON file contains:
   }
 }
 ```
+
+The settings use opt2d12's names. For `NewCifToD12.py --batch` they are
+mapped onto cif2d12's (`functional` -> `dft_functional`, or `hf_method` for
+`"method": "HF"`; `dispersion` -> `use_dispersion`; `spin_polarized` ->
+`is_spin_polarized`; `scf_settings` -> `scf_method`/`scf_maxcycle`/`fmixing`),
+and a flat options file saved by `NewCifToD12.py --save_options` works too.
+
+### CIF-only settings
+
+A configuration can also carry these; without them batch mode uses the
+interactive defaults:
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `dimensionality` | `"CRYSTAL"` | `CRYSTAL`, `SLAB`, `POLYMER` or `MOLECULE` |
+| `symmetry_handling` | `"CIF"` | `CIF` (the CIF's space group), `SPGLIB` (re-detect) or `P1` |
+| `write_only_unique` | `true` | write the asymmetric unit (spglib-verified) instead of every atom |
+| `symmetry_tolerance` | `1e-5` | spglib `symprec` |
 
 ## Key Settings Explained
 
