@@ -1228,6 +1228,18 @@ class EnhancedCrystalQueueManager:
             with open(output_file, 'r') as f:
                 content = f.read()
 
+            # The job script stopped before CRYSTAL ran: no writable scratch
+            # directory. Decided here, before fort.87 is read - the scratch
+            # directory on record is the last run's, so its fort.87 would be
+            # that run's error. Not recovered automatically: the guard has
+            # already tried /mnt/scratch/$USER, the submit directory and
+            # $TMPDIR, and the submit directory is on the shared file system,
+            # so a resubmission fails the same way until a person fixes the
+            # permissions or quota.
+            stopped = opt_restart.scratch_guard_stop(content)
+            if stopped:
+                return "scratch_error", stopped
+
             # A run that did not reach CRYSTAL's normal end may have left its
             # real error in the scratch fort.87 only (the .out just shows the
             # MPI_Abort - measured on HPCC), so read that too.
@@ -1326,7 +1338,9 @@ class EnhancedCrystalQueueManager:
                 return None
             text = Path(script).read_text(errors='ignore')
             name = opt_restart.job_name(text) or Path(calc.get('input_file') or script).stem
-            return opt_restart.scratch_error_text(opt_restart.job_scratch_dir(text, name))
+            submit_dir = Path(calc.get('work_dir') or Path(calc.get('input_file') or script).parent)
+            return opt_restart.scratch_error_text(
+                opt_restart.job_scratch_dir(text, name, submit_dir=submit_dir))
         except OSError:
             return None
 

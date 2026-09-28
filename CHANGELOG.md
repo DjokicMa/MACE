@@ -206,6 +206,45 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   version written in prose had nothing holding it to the package; it is now
   pinned. Historical "NEW in v1.1.0" notes and the v1.0.0 Zenodo citation are
   deliberately left alone.
+- **A job no longer runs CRYSTAL on an empty INPUT when `$SCRATCH` is empty.**
+  On some nodes (agx-000) `$SCRATCH` is empty inside the job even under
+  `bash --login`, so the scratch directory became `/crys23`, nothing could be
+  staged there and CRYSTAL stopped with `END OF DATA IN INPUT DECK` (reproduced
+  on HPCC with the old script). The OPT/SP/FREQ and properties job scripts now
+  check the scratch directory before staging into it and otherwise use, in
+  order, `/mnt/scratch/$USER` (what HPCC sets `$SCRATCH` to, so the same
+  directory), `.mace_scratch/` in the submit directory, then `$TMPDIR`, saying
+  which in the job log. With none writable the job stops before CRYSTAL runs,
+  and `<job>.out` then holds only that error (the previous output is kept as
+  `<job>.out.prev<N>`, or overwritten where it cannot be moved), so an earlier
+  run's results or error are never read as this one's. The stop is classified
+  as `scratch_error` (`scratch` in `mace check`) and is not recovered
+  automatically: every fallback, the shared submit directory included, was
+  unwritable, so a resubmission would stop the same way. The directory used is
+  recorded as `.<job>.scratch` in the submit directory; the recovery reads it
+  to find OPTINFO.DAT and fort.87, and a RESTART rerun that lands in a
+  different directory takes OPTINFO.DAT, fort.20 and fort.9 together from
+  whichever directory has the newer OPTINFO.DAT.
+  When `$SCRATCH` is empty where the recovery runs, it now rebuilds it the same
+  way instead of treating the scratch directory as unknown.
+- **`recovery_config.yaml` is read.** The recovery engine only looked for the
+  file in the directory it ran in, so the one shipped in `mace/config` never
+  applied. It now uses an explicit `--config` file, else `recovery_config.yaml`
+  in the current directory, else the shipped one. A file is merged into the
+  built-in defaults key by key, where it used to replace the whole
+  `error_recovery` section (so a partial file silently dropped every recovery it
+  did not mention). An entry naming a handler that does not exist is reported;
+  for an error type MACE recovers, the built-in handler is used with the
+  entry's other settings, so its `max_retries` still counts and
+  `manual_escalation` means `max_retries: 0` - a file can never switch on a
+  recovery it switched off. The shipped file named five handlers that do not
+  exist; it now lists exactly the recoveries MACE performs, with the built-in
+  values. With no `recovery_config.yaml` in the job directory (the usual case)
+  every recovery runs as before. An older copy of the shipped file in a job
+  directory (the legacy `copy_dependencies` put one there) still keeps
+  disk-space clean-up off (`max_retries: 0`), but is now merged instead of
+  replacing the section, so the recoveries it does not mention - the newer
+  optimization fresh start for a collapsed step size - are no longer dropped.
 
 ### Added
 

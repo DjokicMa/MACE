@@ -920,7 +920,8 @@ Automated error recovery for failed CRYSTAL calculations.
 Options:
   --action ACTION       Action to perform: recover, stats, config (default: recover)
   --max-recoveries N    Maximum number of recoveries to attempt (default: 10)
-  --config FILE         Path to recovery configuration file
+  --config FILE         Path to recovery configuration file (default:
+                        recovery_config.yaml here, else mace/config/recovery_config.yaml)
   --db PATH             Path to materials database
   --create-config       Create default recovery configuration
 

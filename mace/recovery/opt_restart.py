@@ -115,24 +115,64 @@ def job_name(job_script_text: str) -> Optional[str]:
     return m.group(1).strip('\'"') if m else None
 
 
-def job_scratch_dir(job_script_text: str, job_name: str) -> Optional[Path]:
+#: MSU HPCC sets $SCRATCH to this directory, resolved, in /etc/profile.d/hpcc.sh
+#: (`export SCRATCH=$(readlink -f /mnt/scratch/$USER)`). The job script's
+#: scratch guard falls back to it when $SCRATCH is empty, and so does this.
+HPCC_SCRATCH_ROOT = Path('/mnt/scratch')
+
+
+def default_scratch() -> Optional[str]:
+    """$SCRATCH as MSU HPCC would set it, for a process where it is empty:
+    /mnt/scratch/$USER resolved, when that exists here. None otherwise."""
+    user = os.environ.get('USER')
+    if not user:
+        try:
+            import getpass
+            user = getpass.getuser()
+        except Exception:
+            return None
+    root = HPCC_SCRATCH_ROOT / user
+    return str(root.resolve()) if root.is_dir() else None
+
+
+def scratch_record(submit_dir, job_name: str) -> Path:
+    """Where the job script records the scratch directory it ran in."""
+    return Path(submit_dir) / f".{job_name}.scratch"
+
+
+def job_scratch_dir(job_script_text: str, job_name: str,
+                    submit_dir=None) -> Optional[Path]:
     """The scratch directory the job script ran CRYSTAL in, or None if it can't
     be resolved here.
 
-    Read from the script's own `export scratch=...` line (the template uses
-    $SCRATCH/crys23) rather than assumed, and expanded with this process's
-    environment. $SCRATCH is shared between login and compute nodes, but it
-    can be EMPTY on some nodes; an unset or empty variable means "unknown",
-    never a guessed path.
+    The job script's scratch guard writes the directory it actually used to
+    <submit dir>/.<JOB>.scratch, which covers its fallbacks (a directory under
+    the submit directory, $TMPDIR) - so that record comes first when the
+    submit directory is known. Otherwise it is read from the script's own
+    `export scratch=...` line (the template uses $SCRATCH/crys23) and expanded
+    with this process's environment. $SCRATCH can be EMPTY on some nodes; it
+    is then rebuilt the way the job script's guard does it (/mnt/scratch/$USER
+    resolved, when it exists here). Any other unset or empty variable means
+    "unknown", never a guessed path.
     """
+    if submit_dir is not None:
+        try:
+            recorded = scratch_record(submit_dir, job_name).read_text().strip()
+        except OSError:
+            recorded = ''
+        if recorded:
+            return Path(recorded)
     m = re.search(r'^\s*(?:export\s+)?scratch=(\S+)', job_script_text or '', re.M)
     if not m:
         return None
     raw = m.group(1).strip('\'"')
+    values = {}
     for var in re.findall(r'\$\{?(\w+)\}?', raw):
-        if not os.environ.get(var):
+        value = os.environ.get(var) or (default_scratch() if var == 'SCRATCH' else None)
+        if not value:
             return None
-    base = os.path.expandvars(raw)
+        values[var] = value
+    base = re.sub(r'\$\{?(\w+)\}?', lambda v: values[v.group(1)], raw)
     if '$' in base or not base:
         return None
     return Path(base) / job_name
@@ -236,6 +276,20 @@ _NORMAL_END = 'EEEEEEEEEE TERMINATION'
 _TRUST_ZERO_RE = re.compile(r'UPDATED TRUST RADIUS\s+0\.0+E\+00')
 _TOO_SMALL_TRUST = 'TOO SMALL TRUST RADIUS'
 _PXK_TOO_SMALL = 'PXK TOO SMALL'
+
+
+#: What the job script's scratch guard writes to <JOB>.out when it finds no
+#: writable scratch directory and stops before CRYSTAL runs.
+SCRATCH_GUARD_ERROR = 'ERROR: no writable scratch directory'
+
+
+def scratch_guard_stop(out_text: str) -> Optional[str]:
+    """The guard's error line when this output is a job the scratch guard
+    stopped before CRYSTAL ran, else None."""
+    for line in (out_text or '').splitlines():
+        if SCRATCH_GUARD_ERROR in line:
+            return line.strip()
+    return None
 
 
 def ended_normally(out_text: str) -> bool:
