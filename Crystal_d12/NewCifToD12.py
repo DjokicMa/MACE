@@ -37,6 +37,15 @@ USAGE:
        file such as example_configs/standard_dft_opt.json (the
        {"version", "type", "configuration"} wrapper is unwrapped and its
        opt2d12-style keys are mapped; see d12_config.config_to_cif_options).
+       Batch mode never reads the terminal. Symmetry comes from the file:
+         symmetry_handling    "CIF" (default) | "SPGLIB" | "P1"
+         write_only_unique    true (default): write the asymmetric unit
+         symmetry_tolerance   1e-5 (default): spglib symprec
+       These defaults are the interactive prompts' defaults. Where the
+       interactive run would ask, batch mode takes the prompt's default: a
+       structure whose spglib space group differs from the CIF's keeps the
+       CIF's group with every atom written (CRYSTAL folds the equivalent
+       ones), and one whose atoms are all symmetry-unique is written whole.
 
     4. Specify output directory:
        python NewCifToD12.py --cif_dir /path/to/cif/files --output_dir /path/to/output
@@ -217,16 +226,24 @@ except ImportError:
     ui.print("Install spglib for full symmetry functionality: pip install spglib")
 
 
-def parse_cif(cif_file):
+class _MissingSpaceGroup(ValueError):
+    """A CIF names no space group and there is no one to ask."""
+
+
+def parse_cif(cif_file, interactive=None):
     """
     Parse a CIF file to extract crystallographic data
 
     Args:
         cif_file (str): Path to the CIF file
+        interactive (bool, optional): may the user be asked for a missing
+            space group (default: only when stdin is a terminal)
 
     Returns:
         dict: Extracted crystallographic data
     """
+    if interactive is None:
+        interactive = sys.stdin.isatty()
     try:
         # Try reading with ASE first
         atoms = read(cif_file, format="cif")
@@ -272,6 +289,11 @@ def parse_cif(cif_file):
             ui.warn(f"Warning: Space group not found in {cif_file}")
             if cif_symmetry_name:
                 ui.print(f"Found Hermann-Mauguin symbol: {cif_symmetry_name}")
+            if not interactive:
+                raise _MissingSpaceGroup(
+                    f"{cif_file} names no space group and batch mode cannot "
+                    f"ask for one - add _symmetry_Int_Tables_number to the CIF"
+                )
             spacegroup = int(input("Please enter the space group number: "))
 
         # Convert symbols to atomic numbers
@@ -305,6 +327,8 @@ def parse_cif(cif_file):
             "name": os.path.basename(cif_file).replace(".cif", ""),
         }
 
+    except _MissingSpaceGroup:
+        raise
     except Exception as e:
         # If ASE fails, use manual parsing
         ui.warn(f"ASE parsing failed: {e}")
@@ -639,7 +663,7 @@ def _parse_cif_atom_site_records(cif_file):
 
 
 def verify_and_reduce_to_asymmetric_unit(
-    cif_data, tolerance=1e-5, validate_symmetry=False
+    cif_data, tolerance=1e-5, validate_symmetry=False, interactive=None,
 ):
     """
     Verify spglib symmetry analysis matches CIF data and reduce to asymmetric unit
@@ -648,10 +672,15 @@ def verify_and_reduce_to_asymmetric_unit(
         cif_data (dict): Parsed CIF data
         tolerance (float): Symmetry tolerance for spglib
         validate_symmetry (bool): Whether to validate that symmetry operations can reconstruct the original structure
+        interactive (bool, optional): may the user be asked (default: only
+            when stdin is a terminal). When not, every question takes the
+            prompt's own default.
 
     Returns:
         dict: Modified CIF data with only asymmetric unit atoms, or original if verification fails
     """
+    if interactive is None:
+        interactive = sys.stdin.isatty()
     if not SPGLIB_AVAILABLE:
         raw_syms = cif_data.get("cif_atom_symbols")
         raw_pos = cif_data.get("cif_atom_positions")
@@ -759,11 +788,15 @@ def verify_and_reduce_to_asymmetric_unit(
             # "Error during symmetry analysis" from the outer handler. The
             # outcome is the same; the difference is that a batch of hundreds
             # now leaves an auditable record of which structures disagreed.
-            if not sys.stdin.isatty():
+            # Not offered as an options-file answer: spglib's group is taken
+            # in spglib's standard setting but the cell and atoms stay in the
+            # CIF's, so e.g. a hexagonal cell written as Cmcm loses its
+            # 120-degree angle (CRYSTAL23 reports a different density).
+            if not interactive:
                 ui.warn(
                     f"Space group mismatch (CIF {original_spacegroup_num} vs "
-                    f"spglib {detected_spacegroup_num}) and no terminal to ask - "
-                    f"keeping the CIF space group, no symmetry reduction."
+                    f"spglib {detected_spacegroup_num}) - keeping the CIF "
+                    f"space group and writing every atom (no reduction)."
                 )
                 return cif_data
 
@@ -789,7 +822,8 @@ def verify_and_reduce_to_asymmetric_unit(
                             )
                             if use_tolerance:
                                 return verify_and_reduce_to_asymmetric_unit(
-                                    cif_data, test_tolerance
+                                    cif_data, test_tolerance,
+                                    interactive=interactive,
                                 )
 
                 ui.print("\nNo tolerance found that matches CIF space group.")
@@ -843,7 +877,12 @@ def verify_and_reduce_to_asymmetric_unit(
             )
             ui.print("     or there's an issue with symmetry detection.")
 
-            use_reduction = yes_no_prompt("Use the 'reduced' structure anyway?", "yes")
+            # Unattended: the prompt's default (yes). Every atom is its own
+            # orbit here, so the "reduced" set is the full set either way.
+            use_reduction = (
+                yes_no_prompt("Use the 'reduced' structure anyway?", "yes")
+                if interactive else True
+            )
             if not use_reduction:
                 ui.print("Using all atoms from the CIF file.")
                 return cif_data
@@ -933,7 +972,7 @@ def reduce_to_asymmetric_unit(cif_data, validate_symmetry=False):
     return verify_and_reduce_to_asymmetric_unit(cif_data, 1e-5, validate_symmetry)
 
 
-def create_d12_file(cif_data, output_file, options):
+def create_d12_file(cif_data, output_file, options, interactive=None):
     """
     Create a D12 input file for CRYSTAL23 from CIF data
 
@@ -941,6 +980,8 @@ def create_d12_file(cif_data, output_file, options):
         cif_data (dict): Parsed CIF data
         output_file (str): Output file path
         options (dict): Calculation options
+        interactive (bool, optional): may the user be asked (default: only
+            when stdin is a terminal)
 
     Returns:
         bool: True if the D12 file was written, False if creation was refused
@@ -973,7 +1014,9 @@ def create_d12_file(cif_data, output_file, options):
         # raising EOFError at the prompt. Nothing is on disk yet - the deck is
         # only opened further down - so there is no partial file to remove;
         # just signal failure so the caller does not report success.
-        if not sys.stdin.isatty():
+        if interactive is None:
+            interactive = sys.stdin.isatty()
+        if not interactive:
             ui.err(
                 "Aborting D12 file creation (unsupported elements, no terminal to confirm)."
             )
@@ -1684,7 +1727,7 @@ def create_d12_file(cif_data, output_file, options):
     return True
 
 
-def process_cifs(cif_directory, options, output_directory=None):
+def process_cifs(cif_directory, options, output_directory=None, interactive=None):
     """
     Process all CIF files in a directory
 
@@ -1692,6 +1735,8 @@ def process_cifs(cif_directory, options, output_directory=None):
         cif_directory (str): Directory containing CIF files
         options (dict): Calculation options
         output_directory (str, optional): Output directory for D12 files
+        interactive (bool, optional): may the user be asked anything
+            (default: only when stdin is a terminal); batch mode passes False
 
     Returns:
         None
@@ -1761,7 +1806,7 @@ def process_cifs(cif_directory, options, output_directory=None):
             ui.print(f"Processing {cif_file}...")
 
             # Parse CIF file
-            cif_data = parse_cif(cif_file)
+            cif_data = parse_cif(cif_file, interactive=interactive)
 
             # Apply symmetry handling
             if options["symmetry_handling"] == "P1":
@@ -1778,7 +1823,8 @@ def process_cifs(cif_directory, options, output_directory=None):
                     tolerance = options.get("symmetry_tolerance", 1e-5)
                     validate_symmetry = options.get("validate_symmetry", False)
                     cif_data = verify_and_reduce_to_asymmetric_unit(
-                        cif_data, tolerance, validate_symmetry
+                        cif_data, tolerance, validate_symmetry,
+                        interactive=interactive,
                     )
             elif options["symmetry_handling"] == "CIF":
                 # For CIF symmetry, optionally reduce to unique atoms based on user preference
@@ -1790,7 +1836,8 @@ def process_cifs(cif_directory, options, output_directory=None):
                         tolerance = options.get("symmetry_tolerance", 1e-5)
                         validate_symmetry = options.get("validate_symmetry", False)
                         cif_data = verify_and_reduce_to_asymmetric_unit(
-                            cif_data, tolerance, validate_symmetry
+                            cif_data, tolerance, validate_symmetry,
+                            interactive=interactive,
                         )
                     else:
                         ui.warn(
@@ -1801,13 +1848,16 @@ def process_cifs(cif_directory, options, output_directory=None):
                         )
                         # no-spglib path inside falls back to the CIF's raw
                         # _atom_site_ records (the asymmetric unit per spec)
-                        cif_data = verify_and_reduce_to_asymmetric_unit(cif_data)
+                        cif_data = verify_and_reduce_to_asymmetric_unit(
+                            cif_data, interactive=interactive
+                        )
                 else:
                     ui.print("Using CIF symmetry but writing all atoms explicitly")
 
             # Create D12 file - a refused deck was never written, so do not
             # report it as created
-            if not create_d12_file(cif_data, output_file, options):
+            if not create_d12_file(cif_data, output_file, options,
+                                   interactive=interactive):
                 continue
 
             ui.ok(f"Created {output_file}")
@@ -1945,8 +1995,16 @@ def main():
             except Exception as e:
                 ui.err(f"Error saving options to {args.options_file}: {e}")
 
-    # Process CIF files
-    process_cifs(args.cif_dir, options, args.output_dir)
+    # Batch mode never reads the terminal: symmetry is set by the options
+    # file, and a question an interactive run would ask gets its default
+    if args.batch and not SPGLIB_AVAILABLE and options.get("symmetry_handling") != "P1":
+        ui.warn(
+            "spglib is not installed: no spglib symmetry check or reduction - "
+            "each deck is written from the CIF's own atom records "
+            "(pip install spglib)."
+        )
+    process_cifs(args.cif_dir, options, args.output_dir,
+                 interactive=False if args.batch else None)
 
 
 if __name__ == "__main__":

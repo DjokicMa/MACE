@@ -42,6 +42,16 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   is defined on, instead of MINIX (HF-3c's). The basis now comes from the
   `basis_requirements` table rather than a second copy, and a batch options
   file that pairs a 3c method with a different basis is refused.
+- **`mace convert --batch` never reads the terminal.** On a structure whose
+  atoms are all symmetry-unique (every P1 CIF), the symmetry step asked "Use
+  the 'reduced' structure anyway?", hit end of input and reported "Error
+  during symmetry analysis" before carrying on - 85 of the 168 corpus CIFs.
+  Batch mode now takes symmetry from the options file (`symmetry_handling`,
+  `write_only_unique`, `symmetry_tolerance`, now documented) and gives every
+  question an interactive run would ask the prompt's own default, so the
+  decks are byte-for-byte the ones written before, without the error. A CIF
+  with no space group is skipped with a message instead of prompting, and a
+  batch run without spglib says so once at the start.
 - **A walltime-killed geometry optimization continues where it stopped.**
   When an OPT runs out of time after at least one optimization step, the
   recovery adds `RESTART` to the OPTGEOM block of the same deck, so the new job

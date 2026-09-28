@@ -1,6 +1,6 @@
-"""cif2d12 --batch and opt2d12 --config-file with the shipped example configs.
+"""cif2d12 --batch with the shipped example configs, and without a terminal.
 
-Two defects, each reproduced on the real invocation path first:
+Three defects, each reproduced on the real invocation path first:
 
 1. None of Crystal_d12/example_configs/*.json loaded with
    ``cif2d12 --batch --options_file``: they wrap their settings in
@@ -12,6 +12,10 @@ Two defects, each reproduced on the real invocation path first:
    the settings too and crashed on the missing calculation type.
 2. The 3c_composite template paired PBEH3C with MINIX (HF-3c's basis); the
    pairing now comes from d12_constants' basis_requirements.
+3. In batch mode the "Use the 'reduced' structure anyway?" prompt read stdin,
+   hit EOF, and the run reported "Error during symmetry analysis" before
+   falling back. Batch mode now never asks; the answer comes from the options
+   file or is the prompt's own default.
 
 The corpus-backed tests skip cleanly when test/ is absent (CI).
 """
@@ -171,10 +175,62 @@ def test_every_example_config_converts_a_corpus_cif_in_batch_mode(tmp_path, path
     assert len(decks) == 1, log[-2000:]
     deck = next(iter(decks.values()))
     assert f"\n{conf['basis_set']}\n" in deck
-    assert "KeyError" not in log
+    assert "KeyError" not in log and "EOF when reading" not in log
     if cif == ROCKSALT:
         # Fm-3m written as its asymmetric unit: Ag and Cl, one each
         assert [line.split()[0] for line in _atom_lines(deck)] == ["47", "17"]
+
+
+def test_batch_never_reads_stdin_for_a_structure_with_no_reduction(tmp_path):
+    """The P1 box used to hit the 'reduced structure anyway?' prompt."""
+    pytest.importorskip("ase")
+    pytest.importorskip("spglib")
+    _need_corpus(P1_BOX)
+    cfg = REPO_ROOT / "Crystal_d12" / "example_configs" / "standard_dft_opt.json"
+    decks, log = _convert(tmp_path, cfg, P1_BOX)
+    assert "EOF when reading" not in log
+    assert "Error during symmetry analysis" not in log
+    assert "Asymmetric unit contains all" in log  # the case really occurred
+    deck = next(iter(decks.values()))
+    from ase.io import read
+    cif_atoms = len(read(str(CIFS / P1_BOX), format="cif"))
+    assert len(_atom_lines(deck)) == cif_atoms
+
+
+def test_batch_mismatch_keeps_the_cif_space_group(tmp_path):
+    """The interactive prompt's default. CRYSTAL23 (mace preflight) folds the
+    equivalent atoms and reports the P1 deck's density; taking spglib's group
+    instead (the interactive option 2) is not offered in batch mode."""
+    pytest.importorskip("ase")
+    pytest.importorskip("spglib")
+    _need_corpus(MISMATCH)
+    base = unwrap_d12_config(json.loads(
+        (REPO_ROOT / "Crystal_d12" / "example_configs" / "standard_dft_opt.json").read_text()))
+
+    (tmp_path / "o.json").write_text(json.dumps(base))
+    decks, log = _convert(tmp_path, tmp_path / "o.json", MISMATCH)
+    assert "keeping the CIF space group" in log
+    assert "EOF when reading" not in log
+    deck = next(iter(decks.values())).splitlines()
+    assert deck[3] == "167"
+    assert int(deck[5]) == 30  # every atom of the hexagonal cell
+
+
+def test_verify_does_not_prompt_when_not_interactive(monkeypatch):
+    pytest.importorskip("ase")
+    pytest.importorskip("spglib")
+    _need_corpus(P1_BOX)
+    import NewCifToD12
+
+    def no_stdin(*a, **k):
+        raise AssertionError("batch mode read stdin")
+
+    monkeypatch.setattr("builtins.input", no_stdin)
+    monkeypatch.setattr(NewCifToD12, "yes_no_prompt", no_stdin)
+    monkeypatch.setattr(NewCifToD12, "get_user_input", no_stdin)
+    data = NewCifToD12.parse_cif(str(CIFS / P1_BOX), interactive=False)
+    out = NewCifToD12.verify_and_reduce_to_asymmetric_unit(data, interactive=False)
+    assert len(out["symbols"]) == len(data["symbols"])
 
 
 def test_opt2d12_reads_a_wrapped_example_config(tmp_path):

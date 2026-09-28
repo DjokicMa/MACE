@@ -6,7 +6,7 @@ This directory contains example JSON configuration files for different D12 calcu
 
 ### Loading a configuration file:
 ```bash
-# With NewCifToD12.py (batch mode loads the options file)
+# With NewCifToD12.py (batch mode loads the options file; it never prompts)
 python NewCifToD12.py --batch --options_file example_configs/standard_dft_opt.json --cif_dir ./cifs
 
 # With CRYSTALOptToD12.py
@@ -143,6 +143,12 @@ interactive defaults:
 | `symmetry_handling` | `"CIF"` | `CIF` (the CIF's space group), `SPGLIB` (re-detect) or `P1` |
 | `write_only_unique` | `true` | write the asymmetric unit (spglib-verified) instead of every atom |
 | `symmetry_tolerance` | `1e-5` | spglib `symprec` |
+
+Batch mode never prompts. Where an interactive run would ask, it takes the
+prompt's default: when spglib finds a different space group than the CIF
+states, the CIF's group is kept and every atom is written (CRYSTAL folds the
+symmetry-equivalent ones), and a structure whose atoms are all
+symmetry-unique is written whole.
 
 ## Key Settings Explained
 
