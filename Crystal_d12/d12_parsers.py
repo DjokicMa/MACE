@@ -197,6 +197,9 @@ class CrystalOutputParser:
         # Extract dimensionality first
         self._extract_dimensionality(lines)
 
+        # The layer/rod group the run used (SLAB/POLYMER only)
+        self._extract_low_dim_group(lines)
+
         # Extract optimized geometry
         self._extract_geometry(content)
 
@@ -255,6 +258,36 @@ class CrystalOutputParser:
         # Default to CRYSTAL if nothing found
         if self.data["dimensionality"] is None:
             self.data["dimensionality"] = "CRYSTAL"
+
+    # CRYSTAL's header line naming the group of a SLAB / POLYMER run, e.g.
+    # " TWO-SIDED PLANE GROUP N. 80          :  P 6/M M M" (SLAB) or
+    # " POLYMER GROUP N. 75                  :  P 65" (POLYMER). The line after
+    # it, "CORRESPONDING SPACE GROUP ...", is the 3D group: never the deck's.
+    # For a POLYMER it reads "CORRESPONDING SPACE GROUP : P 65", which
+    # _extract_spacegroup maps to a 3D number (170 here).
+    _LOW_DIM_GROUP_LINES = {
+        "SLAB": re.compile(r"TWO-SIDED PLANE GROUP N\.\s*(\d+)"),
+        "POLYMER": re.compile(r"(?:POLYMER|ROD) GROUP N\.\s*(\d+)"),
+    }
+
+    def _extract_low_dim_group(self, lines: List[str]) -> None:
+        """Record the layer group (SLAB) or rod group (POLYMER) of the run.
+
+        Sets ``layer_group`` / ``rod_group`` only when CRYSTAL printed it and
+        it is in range; ``spacegroup`` is left as it was.
+        """
+        dim = self.data.get("dimensionality")
+        if dim not in LOW_DIM_GROUPS:
+            return
+        key, top = LOW_DIM_GROUPS[dim]
+        pattern = self._LOW_DIM_GROUP_LINES[dim]
+        for line in lines:
+            match = pattern.search(line)
+            if match:
+                group = int(match.group(1))
+                if 1 <= group <= top:
+                    self.data[key] = group
+                return
 
     def _extract_geometry(self, content: str) -> None:
         """Extract optimized geometry from output"""

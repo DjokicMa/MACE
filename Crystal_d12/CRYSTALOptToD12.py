@@ -60,7 +60,7 @@ from d12_constants import (
     configure_smearing, CUSTOM_FUNCTIONAL,
 )
 from d12_parsers import (
-    CrystalOutputParser, CrystalInputParser, DECK_GEOMETRY_KEYS,
+    CrystalOutputParser, CrystalInputParser, DECK_GEOMETRY_KEYS, LOW_DIM_GROUPS,
 )
 from d12_calc_freq import get_advanced_frequency_settings, write_frequency_section
 from d12_calc_basic import write_optimization_section, configure_single_point
@@ -301,6 +301,47 @@ def _get_phonon_band_path_title(band_settings, geometry_data):
     return " - Phonon Band Structure" + source_info + " - " + "-".join(path_str)
 
 
+def use_low_dim_group(settings):
+    """Make a SLAB/POLYMER deck's group record the parent's layer/rod group.
+
+    Every consumer of settings["spacegroup"] (the group record, the cell
+    record, write-only-unique-atoms) reads it as the deck's group. For a SLAB
+    or POLYMER that is the layer group (1-80) or rod group (1-99) - taken from
+    the parent deck, or from the .out's "TWO-SIDED PLANE GROUP N." / "POLYMER
+    GROUP N." line - never a 3D space group number from the .out's symmetry
+    analysis (its "CORRESPONDING SPACE GROUP"). With neither known,
+    a 3D number is dropped and the deck falls back to group 1 (P1, all atoms).
+    """
+    dim = settings.get("dimensionality")
+    if dim not in LOW_DIM_GROUPS:
+        return
+    key, _top = LOW_DIM_GROUPS[dim]
+    label = key.replace("_", " ")
+    group = settings.get(key)
+    current = settings.get("spacegroup")
+    if group is not None:
+        if current is not None and current != group:
+            ui.info(f"  Using the parent's {label} {group}, not space group {current}")
+        settings["spacegroup"] = group
+    elif current is not None:
+        ui.warn(f"Warning: no {label} found for this {dim}; space group {current} "
+                f"is a 3D group, not a {label}. Writing the structure in group 1 (P1).")
+        settings["spacegroup"] = None
+
+
+def low_dim_group_error(settings):
+    """Why the SLAB/POLYMER group record would be invalid, or None if it is fine."""
+    dim = settings.get("dimensionality")
+    if dim not in LOW_DIM_GROUPS:
+        return None
+    key, top = LOW_DIM_GROUPS[dim]
+    group = settings.get("spacegroup", 1)
+    if isinstance(group, int) and not isinstance(group, bool) and 1 <= group <= top:
+        return None
+    return (f"{dim} group record {group!r} is not a {key.replace('_', ' ')} "
+            f"(1-{top}); CRYSTAL would refuse or misread the deck.")
+
+
 def write_d12_file(output_file, geometry_data, settings, external_basis_data=None,
                    parent_k_points=None):
     """Write new D12 file with optimized geometry and settings.
@@ -314,7 +355,13 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
     Returns True on success. Returns False when creation is aborted (basis-set
     incompatibility declined interactively, or hit non-interactively); the
     partially written file is removed so no truncated deck reaches submission.
+    A SLAB/POLYMER whose group record is not a layer/rod group is refused the
+    same way, before anything is written.
     """
+    group_problem = low_dim_group_error(settings)
+    if group_problem:
+        ui.err(group_problem)
+        return False
 
     with open(output_file, "w") as f:
         # Title
@@ -980,7 +1027,8 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                            "optimization_settings", "freq_settings", "origin_setting",
                            "spacegroup", "dimensionality", "tolerances",
                            "basis_set", "basis_set_type", "basis_set_path",
-                           "unrecognised_functional", "unrecognised_functional_source"]:
+                           "unrecognised_functional", "unrecognised_functional_source",
+                           "layer_group", "rod_group"]:
                     # For all calculation settings, prefer input file (.d12) over output file (.out)
                     # because .d12 contains the original user-specified settings
                     # INCLUDING tolerances and basis set - the output parser has issues extracting these correctly
@@ -1009,6 +1057,8 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         except Exception as e:
             ui.warn(f"Warning: Error parsing input file: {e}")
             ui.warn("Continuing with output file data only")
+
+    use_low_dim_group(settings)
 
     # Set defaults if not found
     if not settings.get("spacegroup"):
@@ -1104,6 +1154,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                     "coordinates", "primitive_cell", "conventional_cell",
                     "spacegroup", "space_group", "dimensionality",
                     "origin_setting", "cell_parameters", "lattice_parameters",
+                    "layer_group", "rod_group",
                 ]
                 for key, value in config_data.items():
                     if key not in geometry_identity_keys:
@@ -1286,6 +1337,8 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 "spacegroup",
                 "dimensionality",
                 "origin_setting",
+                "layer_group",
+                "rod_group",
             ]:
                 options[key] = value
 
@@ -1747,7 +1800,8 @@ def main():
                                        "optimization_settings", "freq_settings", "origin_setting",
                                        "spacegroup", "dimensionality", "tolerances",
                                        "basis_set", "basis_set_type", "basis_set_path",
-                                       "unrecognised_functional", "unrecognised_functional_source"]:
+                                       "unrecognised_functional", "unrecognised_functional_source",
+                                       "layer_group", "rod_group"]:
                                 # For all calculation settings, prefer input file (.d12) over output file (.out)
                                 # INCLUDING tolerances and basis set - the output parser has issues extracting these correctly
                                 if value is not None:

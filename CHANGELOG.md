@@ -15,6 +15,18 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
 
 ### Fixed
 
+- **A POLYMER or SLAB deck made from a `.out` alone keeps the parent's rod or
+  layer group.** `opt2d12` wrote whatever space group it had as the group
+  record. With the parent `.d12` present that was the parent's own record, so
+  every existing child was right (checked: all 162 SP/OPT/FREQ children of the
+  27 slab decks in `test/`). From the `.out` alone it was not: a POLYMER
+  output's "CORRESPONDING SPACE GROUP : P 65" line was read as 3D space group
+  170 and written as the rod group, which CRYSTAL refuses (rod groups run
+  1-99, layer groups 1-80), and one inside the range names a different group.
+  A SLAB fell back to P1 instead of its layer group. The child now takes the
+  group from the parent deck or the `.out`'s own "TWO-SIDED PLANE GROUP N." /
+  "POLYMER GROUP N." line, never from a 3D analysis, and a group outside the
+  range is refused before any deck is written.
 - **A walltime-killed geometry optimization continues where it stopped.**
   When an OPT runs out of time after at least one optimization step, the
   recovery adds `RESTART` to the OPTGEOM block of the same deck, so the new job

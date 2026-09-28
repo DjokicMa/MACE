@@ -1,11 +1,18 @@
-"""CrystalInputParser reads a deck's whole geometry input.
+"""CrystalInputParser reads a deck's whole geometry input, and SLAB/POLYMER
+children keep the parent's layer/rod group.
 
-The deck parser stopped at the space group: no cell record, no atoms, and no
-way to tell a SLAB's layer group from a 3D space group. It now reads the group
-records, the cell record (only the free parameters the group leaves, expanded
-to the full cell) and the atoms, so the geometry input can be rebuilt from the
-parse. The acceptance test rebuilds every geometry deck of the corpus with
-MACE's own writer and compares the records.
+* The deck parser stopped at the space group: no cell record, no atoms, and no
+  way to tell a SLAB's layer group from a 3D space group. It now reads the
+  group records, the cell record (only the free parameters the group leaves,
+  expanded to the full cell) and the atoms, so the geometry input can be
+  rebuilt from the parse. The acceptance test rebuilds every geometry deck of
+  the corpus with MACE's own writer and compares the records.
+* opt2d12 wrote settings["spacegroup"] as the group record of a SLAB/POLYMER
+  child. That is right only while the value is the parent's layer/rod group;
+  a 3D number (the .out's "CORRESPONDING SPACE GROUP", a CIF's space group) is
+  refused by CRYSTAL above 80/99 and misread below. The child now takes the
+  layer/rod group from the parent deck or the .out's "TWO-SIDED PLANE GROUP"
+  line and a group outside the range is refused before anything is written.
 
 The new keys never reach opt2d12's settings: a before/after comparison of
 every OPT/SP corpus parent's SP/OPT/FREQ children (1458 decks, CLI and config
@@ -15,14 +22,20 @@ Corpus tests run the real files and skip when ``test/`` is absent.
 """
 import io
 import contextlib
+import json
 import math
+import shutil
+import subprocess
+import sys
 import textwrap
 
 import pytest
 
 import CRYSTALOptToD12 as opt2d12
-from conftest import TEST_DATA
-from d12_parsers import CrystalInputParser
+from conftest import REPO_ROOT, TEST_DATA
+from d12_parsers import CrystalInputParser, CrystalOutputParser
+
+MACE_CLI = REPO_ROOT / "mace_cli"
 
 
 def _parse_text(tmp_path, text):
@@ -252,3 +265,125 @@ def test_every_corpus_slab_deck_carries_its_layer_group():
         if parsed["dimensionality"] == "SLAB":
             assert parsed["layer_group"] == parsed["spacegroup"], deck.name
             assert 1 <= parsed["layer_group"] <= 80
+
+
+# ------------------------------------------------ SLAB/POLYMER group record
+
+# Verbatim from a CRYSTAL23 SLAB run (graphene, layer group 80).
+GRAPHENE_HEADER = [
+    " SLAB CALCULATION",
+    " TWO-SIDED PLANE GROUP N. 80          :  P 6/M M M       ",
+    " CORRESPONDING SPACE GROUP N. 191",
+]
+
+
+def test_out_parser_reads_the_plane_group_not_the_3d_group():
+    parser = CrystalOutputParser("unused.out")
+    parser.data["dimensionality"] = "SLAB"
+    parser._extract_low_dim_group(GRAPHENE_HEADER)
+    assert parser.data["layer_group"] == 80
+
+
+def test_low_dim_group_replaces_a_3d_space_group():
+    settings = {"dimensionality": "SLAB", "spacegroup": 191, "layer_group": 80}
+    opt2d12.use_low_dim_group(settings)
+    assert settings["spacegroup"] == 80
+    # no layer group anywhere: a 3D number is dropped (P1 default follows)
+    settings = {"dimensionality": "SLAB", "spacegroup": 191}
+    opt2d12.use_low_dim_group(settings)
+    assert settings["spacegroup"] is None
+    # CRYSTAL decks are untouched
+    settings = {"dimensionality": "CRYSTAL", "spacegroup": 191, "layer_group": 80}
+    opt2d12.use_low_dim_group(settings)
+    assert settings["spacegroup"] == 191
+
+
+@pytest.mark.parametrize("dim,group,ok", [
+    ("SLAB", 1, True), ("SLAB", 80, True), ("SLAB", 81, False), ("SLAB", 191, False),
+    ("POLYMER", 99, True), ("POLYMER", 100, False), ("POLYMER", 170, False), ("SLAB", None, False),
+    ("CRYSTAL", 191, True),
+])
+def test_writer_refuses_a_group_outside_the_layer_or_rod_range(tmp_path, dim, group, ok):
+    settings = {"dimensionality": dim, "spacegroup": group, "calculation_type": "SP"}
+    assert (opt2d12.low_dim_group_error(settings) is None) is ok
+    if not ok:
+        out = tmp_path / "child.d12"
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert opt2d12.write_d12_file(str(out), {}, settings) is False
+        assert not out.exists()
+
+
+SLAB_PARENT = "SP/4LG_FSI_TopBottom_2x2_ABAB_SLAB_OPT_graphene"
+
+
+def _group_record(lines):
+    i = lines.index("SLAB")
+    return lines[i + 1].strip(), len(lines[i + 2].split())
+
+
+@pytest.mark.parametrize("calc_type", ["SP", "OPT", "FREQ"])
+@pytest.mark.parametrize("mode", ["cli", "config", "out-only"])
+def test_slab_children_keep_the_parents_layer_group(tmp_path, calc_type, mode):
+    src = TEST_DATA / f"{SLAB_PARENT}.out"
+    if not src.exists():
+        pytest.skip("test/ corpus not present (gitignored, ~12GB)")
+    name = src.stem
+    shutil.copy(src, tmp_path)
+    parent = src.with_suffix(".d12").read_text().splitlines()
+    args = [sys.executable, str(MACE_CLI), "opt2d12", "--out-file", f"{name}.out"]
+    if mode != "out-only":
+        shutil.copy(src.with_suffix(".d12"), tmp_path)
+        args += ["--d12-file", f"{name}.d12"]
+    if mode == "config":
+        (tmp_path / "c.json").write_text(json.dumps({"calculation_type": calc_type}))
+        args += ["--config-file", "c.json", "--non-interactive"]
+    else:
+        args += ["--non-interactive", "--calc-type", calc_type]
+    result = subprocess.run(args, cwd=tmp_path, input="", capture_output=True,
+                            text=True, timeout=300)
+    assert result.returncode == 0, (result.stdout + result.stderr)[-1500:]
+    kids = [p for p in tmp_path.glob("*.d12") if p.name != f"{name}.d12"]
+    assert len(kids) == 1, sorted(p.name for p in tmp_path.iterdir())
+    assert _group_record(kids[0].read_text().splitlines()) == _group_record(parent)
+
+
+# Real CRYSTAL23 runs (HPCC, CRYSTAL/23-intel-2023a, HSEsol-3c) of a graphene
+# slab in layer group 80 and a carbon chain in rod groups 28 and 51. From the
+# .out alone, v1.1.1 wrote rod group 47 (the 3D number of "P M M M", which
+# CRYSTAL reads as P -4 2 M) and 123 (refused: "POLYMER GROUP NUMBER OUT OF
+# RANGE 123"), and wrote the slab in P1.
+LOW_DIM_DATA = REPO_ROOT / "tests" / "data" / "low_dim_groups"
+
+
+@pytest.mark.parametrize("name,dim,group", [
+    ("graphene_lg80", "SLAB", "80"),
+    ("polyyne_rg28", "POLYMER", "28"),
+    ("polyyne_rg51", "POLYMER", "51"),
+])
+@pytest.mark.parametrize("with_deck", [False, True])
+def test_children_of_a_real_run_keep_its_layer_or_rod_group(tmp_path, name, dim, group,
+                                                             with_deck):
+    shutil.copy(LOW_DIM_DATA / f"{name}.out", tmp_path)
+    args = [sys.executable, str(MACE_CLI), "opt2d12", "--out-file", f"{name}.out",
+            "--non-interactive", "--calc-type", "SP"]
+    if with_deck:
+        shutil.copy(LOW_DIM_DATA / f"{name}.d12", tmp_path)
+        args += ["--d12-file", f"{name}.d12"]
+    result = subprocess.run(args, cwd=tmp_path, input="", capture_output=True,
+                            text=True, timeout=300)
+    assert result.returncode == 0, (result.stdout + result.stderr)[-1500:]
+    kids = [p for p in tmp_path.glob("*.d12") if p.name != f"{name}.d12"]
+    assert len(kids) == 1, sorted(p.name for p in tmp_path.iterdir())
+    lines = kids[0].read_text().splitlines()
+    assert lines[1] == dim and lines[2] == group
+    parent = (LOW_DIM_DATA / f"{name}.d12").read_text().splitlines()
+    assert lines[3:5] == parent[3:5]          # cell record and atom count
+
+
+def test_out_parser_on_real_runs():
+    for name, key, group in [("graphene_lg80", "layer_group", 80),
+                             ("polyyne_rg28", "rod_group", 28),
+                             ("polyyne_rg51", "rod_group", 51)]:
+        with contextlib.redirect_stdout(io.StringIO()):
+            data = CrystalOutputParser(str(LOW_DIM_DATA / f"{name}.out")).parse()
+        assert data[key] == group
