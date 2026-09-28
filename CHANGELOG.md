@@ -226,11 +226,18 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   in the current directory, else the shipped one. A file is merged into the
   built-in defaults key by key, where it used to replace the whole
   `error_recovery` section (so a partial file silently dropped every recovery it
-  did not mention). An entry naming a handler that does not exist is reported
-  and ignored. The shipped file named five such handlers and would have turned
-  disk-space recovery off; it now lists exactly the recoveries MACE performs,
-  with the values in force before, so behaviour is unchanged for every error
-  type.
+  did not mention). An entry naming a handler that does not exist is reported;
+  for an error type MACE recovers, the built-in handler is used with the
+  entry's other settings, so its `max_retries` still counts and
+  `manual_escalation` means `max_retries: 0` - a file can never switch on a
+  recovery it switched off. The shipped file named five handlers that do not
+  exist; it now lists exactly the recoveries MACE performs, with the built-in
+  values. With no `recovery_config.yaml` in the job directory (the usual case)
+  every recovery runs as before. An older copy of the shipped file in a job
+  directory (the legacy `copy_dependencies` put one there) still keeps
+  disk-space clean-up off (`max_retries: 0`), but is now merged instead of
+  replacing the section, so the recoveries it does not mention - the newer
+  optimization fresh start for a collapsed step size - are no longer dropped.
 
 ### Added
 

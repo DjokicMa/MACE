@@ -10,8 +10,10 @@
 #
 # The file is laid over MACE's built-in defaults key by key: a copy that sets
 # only `timeout_error: {max_retries: 1}` changes that one value and keeps
-# every other default. An entry whose `handler` does not exist is reported and
-# ignored (the built-in entry for that error type, if any, stays in force).
+# every other default. An entry whose `handler` does not exist is reported;
+# for an error type listed below the listed handler is used with the entry's
+# other settings (so its max_retries still counts), and `manual_escalation`
+# means max_retries: 0. Any other unknown entry is ignored.
 #
 # The values below ARE the built-in defaults; only the keys listed are read.
 # Handlers that exist: fixk_handler, memory_handler, convergence_handler,

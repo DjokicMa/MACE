@@ -3,8 +3,11 @@
 Before: ErrorRecoveryEngine looked only for a RELATIVE recovery_config.yaml
 (the job directory), so the shipped mace/config/recovery_config.yaml was never
 read; and a file that was read REPLACED the whole error_recovery section
-(shallow dict.update), so the shipped one - which named handlers that do not
-exist - would have switched disk-space recovery off.
+(shallow dict.update), so a partial file dropped every recovery it did not
+mention. Merging must still honour what a file says: an older copy of the
+shipped file (legacy copy_dependencies put one in work directories) sends
+disk_space_error to a handler that does not exist with max_retries 0, and that
+must keep the recovery - which deletes large files - off.
 """
 import os
 import subprocess
@@ -25,8 +28,9 @@ READ_KEYS = {"handler", "max_retries", "resubmit_delay", "memory_factor", "max_m
              "max_cycles_increase", "fmixing_adjustment", "walltime_factor",
              "max_walltime", "enable_restart", "cleanup_scratch", "escalate_on_failure"}
 
-#: The effective configuration before this change (the built-in defaults - the
-#: only thing that was ever in force), for every error type recovered today.
+#: The effective configuration before this change with no recovery_config.yaml
+#: in the job directory (the built-in defaults), for every error type
+#: recovered today.
 BEFORE = {
     "shrink_error": {"handler": "fixk_handler", "max_retries": 3, "resubmit_delay": 300,
                      "escalate_on_failure": True},
@@ -140,17 +144,54 @@ def test_missing_explicit_path_falls_back(tmp_path, in_tmp, capsys):
     assert "not found" in capsys.readouterr().out
 
 
-def test_unknown_handlers_are_ignored_and_disk_space_recovery_survives(tmp_path, in_tmp, capsys):
+def test_an_old_shipped_copy_keeps_disk_space_recovery_off(tmp_path, in_tmp, capsys):
+    """The old shipped file turned disk-space recovery off (unknown handler,
+    max_retries 0); merging must not turn cleanup_handler back on."""
     (in_tmp / "recovery_config.yaml").write_text(OLD_SHIPPED)
     eng = _engine(tmp_path)
     out = capsys.readouterr().out
     for bad in ("manual_escalation", "geometry_handler", "linear_dependence_handler",
                 "symmetry_handler"):
         assert bad in out
-    assert _read(eng.config) == BEFORE           # the good timeout entry merges in unchanged
+    disk = eng.config["error_recovery"]["disk_space_error"]
+    assert disk["max_retries"] == 0
+    assert disk["handler"] == "cleanup_handler"   # a real handler, never run at 0 retries
+    assert "stays off" in out
+    # Every other type recovered today: as before (the good timeout entry merges in).
+    expected = dict(BEFORE, disk_space_error=dict(BEFORE["disk_space_error"], max_retries=0))
+    assert _read(eng.config) == expected
     for dropped in ("basis_set_error", "geometry_error", "basis_linear_dependence",
                     "symmetry_error"):
         assert dropped not in eng.config["error_recovery"]
+
+
+def test_old_shipped_copy_does_not_let_the_queue_manager_clean_up(tmp_path, in_tmp):
+    """Through the queue manager's own per-error cap: no disk-space retry."""
+    (in_tmp / "recovery_config.yaml").write_text(OLD_SHIPPED)
+    from mace.queue.manager import EnhancedCrystalQueueManager
+    qm = EnhancedCrystalQueueManager(d12_dir=str(in_tmp), db_path=str(tmp_path / "q.db"))
+    called = []
+    qm.error_recovery_engine.attempt_recovery = lambda *a, **k: called.append(a) or None
+    qm.get_recovery_attempt_count = lambda calc_id: 0
+    ok = qm.attempt_error_recovery({"calc_id": "c1", "material_id": "m"},
+                                   "disk_space_error", "Detected: DISK QUOTA EXCEEDED")
+    assert ok is False and called == []
+
+
+def test_manual_escalation_alone_means_off(tmp_path, in_tmp, capsys):
+    (in_tmp / "recovery_config.yaml").write_text(
+        "error_recovery:\n  timeout_error:\n    handler: manual_escalation\n")
+    eng = _engine(tmp_path)
+    assert eng.config["error_recovery"]["timeout_error"]["max_retries"] == 0
+
+
+def test_a_misspelt_handler_keeps_the_built_in_recovery_and_other_settings(tmp_path, in_tmp, capsys):
+    (in_tmp / "recovery_config.yaml").write_text(
+        "error_recovery:\n  memory_error:\n    handler: memory_handlr\n    max_retries: 1\n")
+    eng = _engine(tmp_path)
+    m = eng.config["error_recovery"]["memory_error"]
+    assert (m["handler"], m["max_retries"], m["memory_factor"]) == ("memory_handler", 1, 1.5)
+    assert "memory_handlr" in capsys.readouterr().out
 
 
 def test_malformed_entries_do_not_crash(tmp_path, in_tmp, capsys):

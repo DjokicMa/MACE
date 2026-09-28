@@ -138,16 +138,29 @@ def _deep_merge(base: Dict, override: Dict) -> Dict:
     return merged
 
 
+#: The handler name older recovery_config.yaml files gave an error type a
+#: person has to deal with (the shipped file used it for disk-space errors).
+MANUAL_HANDLER = "manual_escalation"
+
+
 def merge_recovery_config(defaults: Dict, user: Dict, known_handlers: set,
                           source=None) -> Dict:
     """A recovery configuration file laid over the built-in defaults.
 
     Merged key by key, so a file that sets one value of one error type keeps
     every other default - a whole section is never replaced by a partial one.
-    An error_recovery entry whose handler does not exist (or that is not a
-    mapping) is reported and ignored: the built-in entry for that error type,
-    if there is one, stays in force, so a bad entry never switches off a
-    recovery that works without the file.
+
+    An error_recovery entry whose handler does not exist can never run as
+    written. When MACE has a built-in recovery for that error type, the
+    built-in handler is used with the entry's OTHER settings laid over it, so
+    what the file says about the error type still applies - above all
+    `max_retries: 0`, which keeps the recovery off. `manual_escalation` (what
+    older copies of the shipped file named for errors a person has to handle)
+    means the same as `max_retries: 0`. A file can therefore never switch ON a
+    recovery it switched off; a handler name that is merely misspelt keeps the
+    built-in recovery rather than losing it. An unknown handler for an error
+    type MACE does not recover is reported and ignored, as is an entry that is
+    not a mapping.
     """
     where = f" in {source}" if source else ""
     user = dict(user)
@@ -164,10 +177,26 @@ def merge_recovery_config(defaults: Dict, user: Dict, known_handlers: set,
         combined = _deep_merge(recovery.get(error_type, {}), entry)
         handler = combined.get("handler")
         if handler not in known_handlers:
-            kept = " (the built-in recovery for it is kept)" if error_type in recovery else ""
+            if error_type not in recovery:
+                print(f"Recovery config{where}: {error_type} names handler {handler!r}, "
+                      f"which does not exist - entry ignored")
+                continue
+            builtin = recovery[error_type]
+            settings = {k: v for k, v in entry.items() if k != "handler"}
+            if handler == MANUAL_HANDLER:
+                settings["max_retries"] = 0
+            combined = _deep_merge(builtin, settings)
+            try:
+                off = int(combined.get("max_retries", 1)) <= 0
+            except (TypeError, ValueError):
+                off = False
+            if off:
+                what = "automatic recovery stays off (max_retries 0)"
+            else:
+                what = (f"using {builtin.get('handler')} with the entry's other settings "
+                        f"(max_retries {combined.get('max_retries')})")
             print(f"Recovery config{where}: {error_type} names handler {handler!r}, "
-                  f"which does not exist - entry ignored{kept}")
-            continue
+                  f"which does not exist - {what}")
         recovery[error_type] = combined
     merged["error_recovery"] = recovery
     return merged
