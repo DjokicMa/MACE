@@ -33,7 +33,9 @@ try:
     from mace.database.materials import create_material_id_from_file
     from mace.queue.manager import EnhancedCrystalQueueManager
     from mace.workflow.engine import WorkflowEngine
-    from mace.utils.node_exclusion import NodeExclusionManager
+    from mace.utils.node_exclusion import (
+        NodeExclusionManager, PLANNER_MENU, menu_choice, menu_default_answer,
+    )
 except ImportError:
     try:
         from .engine import WorkflowEngine
@@ -4094,19 +4096,18 @@ class WorkflowPlanner:
         ui.info("        " + "="*60)
 
         ui.info("\n        Select node exclusion option:")
-        ui.info("        1) No exclusions (use all available nodes)")
-        ui.info("        2) Exclude all AMD20 nodes (amr + nvf types) [RECOMMENDED]")
-        ui.info("        3) Exclude Mendoza group nodes (agg-[011-012], amr-[163,178-179])")
-        ui.info("        4) Exclude all nodes of a specific type (amr, nvf, agg, etc.)")
-        ui.info("        5) Custom node exclusion list")
+        for line in self.node_manager.menu_lines(PLANNER_MENU):
+            ui.info(f"        {line}")
 
-        choice = input("\n        Enter choice [1-5] (default: 2): ").strip() or "2"
+        choice = menu_choice(PLANNER_MENU, input(
+            f"\n        Enter choice [1-{len(PLANNER_MENU)}] "
+            f"(default: {menu_default_answer(PLANNER_MENU)}): "))
 
-        if choice == "1":
+        if choice == "none":
             ui.info("        No node exclusions will be applied.")
             return None
 
-        elif choice == "2":
+        elif choice == "amd20":
             # Exclude AMD20 nodes
             ui.info("        Querying SLURM for all AMD20 nodes (amr + nvf)...")
             amd20_nodes = self.node_manager.get_amd20_nodes()
@@ -4123,20 +4124,18 @@ class WorkflowPlanner:
                 ui.warn("        Warning: No AMD20 nodes found")
                 return None
 
-        elif choice == "3":
-            exclude_str = self.node_manager.create_exclude_string(
-                self.node_manager.MENDOZA_NODES
-            )
+        elif choice == "mendoza":
+            exclude_str = self.node_manager.mendoza_exclude_string()
             ui.info(f"        Excluding Mendoza nodes: {exclude_str}")
             notice = self.node_manager.stale_exclusion_notice()
             if notice:
                 ui.warn(f"        {notice}")
             return exclude_str
 
-        elif choice == "4":
+        elif choice == "by_type":
             return self._exclude_by_type_prompt()
 
-        elif choice == "5":
+        elif choice == "manual":
             return self._custom_exclusion_prompt()
 
         else:
@@ -4206,27 +4205,9 @@ class WorkflowPlanner:
             ui.info(f"        Using provided exclude string: {custom_input}")
             return custom_input
 
-        # Parse comma-separated node names
-        nodes = [n.strip() for n in custom_input.split(',')]
-
-        # Group by prefix
-        node_groups = {}
-        for node in nodes:
-            match = re.match(r'^([a-z]+)-(\d+)$', node)
-            if match:
-                prefix = match.group(1)
-                if prefix not in node_groups:
-                    node_groups[prefix] = []
-                node_groups[prefix].append(node)
-            else:
-                ui.warn(f"        Warning: Invalid node format '{node}', skipping")
-
-        # Create exclude strings for each type
-        exclude_dict = {}
-        for prefix, prefix_nodes in node_groups.items():
-            exclude_dict[prefix] = prefix_nodes
-
-        exclude_str = self.node_manager.create_multi_type_exclude_string(exclude_dict)
+        exclude_str = self.node_manager.exclude_string_from_node_list(
+            custom_input, warn=lambda m: ui.warn(f"        {m}")
+        )
         ui.info(f"        Compact exclude string: {exclude_str}")
 
         return exclude_str
