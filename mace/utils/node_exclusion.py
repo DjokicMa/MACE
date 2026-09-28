@@ -10,8 +10,51 @@ Author: Marcus Djokic
 
 import subprocess
 import re
-from typing import List, Tuple, Optional, Set
+from typing import Callable, List, Tuple, Optional, Sequence, Set
 import sys
+
+
+# Every choice an exclusion menu offers, by a stable key, with the one label
+# every menu shows for it. "{mendoza}" is filled from MENDOZA_NODES.
+EXCLUSION_CHOICES = {
+    'none': "No exclusions (use all available nodes)",
+    'amd20': "Exclude AMD20 only (amr + nvf) [RECOMMENDED for CRYSTAL23]",
+    'all_amd': "Exclude ALL AMD nodes (amd24 + amd22 + amd21 + amd20)",
+    'all_intel': "Exclude ALL Intel nodes (intel21 + intel18)",
+    'mendoza': "Exclude Mendoza group nodes ({mendoza}) (save CPU hours)",
+    'custom': "Custom selection (choose specific types or clusters)",
+    'by_type': "Exclude all nodes of a specific type (amr, nvf, agg, etc.)",
+    'manual': "Custom node exclusion list",
+}
+
+# Which choices each menu offers, in order: position + 1 is the option number.
+# Users and piped scripts answer by number, so never reorder these.
+MANAGER_MENU = ('none', 'amd20', 'all_amd', 'all_intel', 'mendoza', 'custom')
+PLANNER_MENU = ('none', 'amd20', 'mendoza', 'by_type', 'manual')
+
+# The choice an empty answer selects, in every menu.
+DEFAULT_EXCLUSION_CHOICE = 'amd20'
+
+# Notes shown next to a cluster generation wherever the clusters are listed.
+CLUSTER_NOTES = {
+    'amd24': 'newest',
+    'amd20': 'memory issues with CRYSTAL23',
+    'amd20-v100': 'memory issues with CRYSTAL23',
+}
+
+
+def menu_default_answer(menu: Sequence[str]) -> str:
+    """The option number that selects DEFAULT_EXCLUSION_CHOICE in ``menu``."""
+    return str(menu.index(DEFAULT_EXCLUSION_CHOICE) + 1)
+
+
+def menu_choice(menu: Sequence[str], answer: str) -> Optional[str]:
+    """The choice key an answer selects in ``menu``; None if it selects nothing.
+
+    An empty answer selects the default choice."""
+    answer = answer.strip() or menu_default_answer(menu)
+    numbered = {str(i): key for i, key in enumerate(menu, 1)}
+    return numbered.get(answer)
 
 
 class NodeExclusionManager:
@@ -398,6 +441,37 @@ class NodeExclusionManager:
 
         return ','.join(exclude_parts)
 
+    def mendoza_exclude_string(self) -> str:
+        """The --exclude value for the Mendoza group nodes."""
+        return self.create_exclude_string(self.MENDOZA_NODES)
+
+    def menu_lines(self, menu: Sequence[str]) -> List[str]:
+        """The numbered option lines of ``menu``, e.g. '1) No exclusions ...'."""
+        mendoza = self.mendoza_exclude_string().replace('],', '], ')
+        return [f"{i}) {EXCLUSION_CHOICES[key].format(mendoza=mendoza)}"
+                for i, key in enumerate(menu, 1)]
+
+    def exclude_string_from_node_list(self, custom_input: str,
+                                      warn: Callable[[str], None] = print) -> str:
+        """Turn a typed node list into an --exclude value.
+
+        A value already in SLURM bracket form is used as given; otherwise it
+        is read as comma-separated node names, and ``warn`` is told about each
+        name that is not of the form 'abc-123' before it is skipped.
+        """
+        if '[' in custom_input and ']' in custom_input:
+            return custom_input
+
+        node_groups = {}
+        for node in (n.strip() for n in custom_input.split(',')):
+            match = re.match(r'^([a-z]+)-(\d+)$', node)
+            if match:
+                node_groups.setdefault(match.group(1), []).append(node)
+            else:
+                warn(f"Warning: Invalid node format '{node}', skipping")
+
+        return self.create_multi_type_exclude_string(node_groups)
+
     def interactive_node_exclusion(self) -> Optional[str]:
         """
         Interactive prompt for node exclusion configuration.
@@ -411,52 +485,48 @@ class NodeExclusionManager:
 
         # Show cluster information first
         print("\n📊 Cluster Overview:")
-        print("  AMD Clusters:")
-        print("    • amd24: agg, agx, nfh, neh, nel (newest generation)")
-        print("    • amd22: acm")
-        print("    • amd21: nal")
-        print("    • amd20: amr (⚠️ memory issues with CRYSTAL23)")
-        print("    • amd20-v100: nvf (⚠️ memory issues with CRYSTAL23)")
-        print("")
-        print("  Intel Clusters:")
-        print("    • intel21: nif")
-        print("    • intel18: skl")
-        print("    • intel18-v100: nvl")
+        for family in ('AMD', 'Intel'):
+            if family == 'Intel':
+                print("")
+            print(f"  {family} Clusters:")
+            for cluster, types in self.CLUSTER_TYPES.items():
+                if cluster.startswith(family.lower()):
+                    note = CLUSTER_NOTES.get(cluster)
+                    note = f" ({note})" if note else ""
+                    print(f"    • {cluster}: {', '.join(types)}{note}")
 
         print("\n" + "="*70)
         print("Select exclusion option:")
         print("="*70)
-        print("1) No exclusions (use all available nodes)")
-        print("2) Exclude AMD20 only (amr + nvf) [RECOMMENDED for CRYSTAL23]")
-        print("3) Exclude ALL AMD nodes (amd24 + amd22 + amd21 + amd20)")
-        print("4) Exclude ALL Intel nodes (intel21 + intel18)")
-        print("5) Exclude Mendoza group nodes (save CPU hours)")
-        print("6) Custom selection (choose specific types or clusters)")
+        for line in self.menu_lines(MANAGER_MENU):
+            print(line)
 
-        choice = input("\nEnter choice [1-6] (default: 2): ").strip() or "2"
+        choice = menu_choice(MANAGER_MENU, input(
+            f"\nEnter choice [1-{len(MANAGER_MENU)}] "
+            f"(default: {menu_default_answer(MANAGER_MENU)}): "))
 
-        if choice == "1":
+        if choice == "none":
             print("\nNo node exclusions will be applied.")
             return None
 
-        elif choice == "2":
+        elif choice == "amd20":
             return self._exclude_amd20_nodes()
 
-        elif choice == "3":
+        elif choice == "all_amd":
             return self._exclude_all_amd_nodes()
 
-        elif choice == "4":
+        elif choice == "all_intel":
             return self._exclude_all_intel_nodes()
 
-        elif choice == "5":
-            exclude_str = self.create_exclude_string(self.MENDOZA_NODES)
+        elif choice == "mendoza":
+            exclude_str = self.mendoza_exclude_string()
             print(f"\nExcluding Mendoza nodes: {exclude_str}")
             notice = self.stale_exclusion_notice()
             if notice:
                 print(notice)
             return exclude_str
 
-        elif choice == "6":
+        elif choice == "custom":
             return self._custom_selection()
 
         else:
@@ -564,34 +634,25 @@ class NodeExclusionManager:
 
     def _exclude_by_cluster(self) -> Optional[str]:
         """Handle exclusion by cluster generation."""
+        # Numbered in CLUSTER_TYPES order; the last number picks several.
+        cluster_map = {str(i): cluster
+                       for i, cluster in enumerate(self.CLUSTER_TYPES, 1)}
+        multiple = str(len(cluster_map) + 1)
+
         print("\nAvailable cluster generations:")
-        print("  1) amd24      - agg, agx, nfh, neh, nel (newest)")
-        print("  2) amd22      - acm")
-        print("  3) amd21      - nal")
-        print("  4) amd20      - amr (memory issues with CRYSTAL23)")
-        print("  5) amd20-v100 - nvf (memory issues with CRYSTAL23)")
-        print("  6) intel21    - nif")
-        print("  7) intel18    - skl")
-        print("  8) intel18-v100 - nvl")
-        print("  9) Multiple clusters (comma/space separated)")
+        for number, cluster in cluster_map.items():
+            note = CLUSTER_NOTES.get(cluster)
+            note = f" ({note})" if note else ""
+            types = ', '.join(self.CLUSTER_TYPES[cluster])
+            print(f"  {number}) {cluster:<10} - {types}{note}")
+        print(f"  {multiple}) Multiple clusters (comma/space separated)")
 
-        choice = input("\nSelect cluster generation [1-9]: ").strip()
-
-        cluster_map = {
-            '1': 'amd24',
-            '2': 'amd22',
-            '3': 'amd21',
-            '4': 'amd20',
-            '5': 'amd20-v100',
-            '6': 'intel21',
-            '7': 'intel18',
-            '8': 'intel18-v100'
-        }
+        choice = input(f"\nSelect cluster generation [1-{multiple}]: ").strip()
 
         clusters = []
         if choice in cluster_map:
             clusters = [cluster_map[choice]]
-        elif choice == '9':
+        elif choice == multiple:
             cluster_input = input("\nEnter cluster types (comma or space separated): ").strip()
             if ',' in cluster_input:
                 clusters = [c.strip() for c in cluster_input.split(',') if c.strip()]
@@ -732,27 +793,7 @@ class NodeExclusionManager:
             print(f"\nUsing provided exclude string: {custom_input}")
             return custom_input
 
-        # Parse comma-separated node names
-        nodes = [n.strip() for n in custom_input.split(',')]
-
-        # Group by prefix
-        node_groups = {}
-        for node in nodes:
-            match = re.match(r'^([a-z]+)-(\d+)$', node)
-            if match:
-                prefix = match.group(1)
-                if prefix not in node_groups:
-                    node_groups[prefix] = []
-                node_groups[prefix].append(node)
-            else:
-                print(f"Warning: Invalid node format '{node}', skipping")
-
-        # Create exclude strings for each type
-        exclude_dict = {}
-        for prefix, prefix_nodes in node_groups.items():
-            exclude_dict[prefix] = prefix_nodes
-
-        exclude_str = self.create_multi_type_exclude_string(exclude_dict)
+        exclude_str = self.exclude_string_from_node_list(custom_input)
         print(f"\nCompact exclude string: {exclude_str}")
 
         return exclude_str
