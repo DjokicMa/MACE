@@ -64,6 +64,19 @@ class CrystalErrorDetector:
         
         # Enhanced error patterns based on updatelists2.py with additional context
         self.error_patterns = {
+            # Written by the job script's scratch guard, which stops the job
+            # before CRYSTAL runs when no scratch directory is writable.
+            'scratch_error': {
+                'patterns': ["no writable scratch directory"],
+                'severity': 'high',
+                'recoverable': False,
+                'description': 'No writable scratch directory - CRYSTAL was not run',
+                'recovery_hints': [
+                    'Check that $SCRATCH (/mnt/scratch/$USER) exists and is writable',
+                    'Check write permission and quota of the submit directory',
+                    'Resubmit once one of them is writable'
+                ]
+            },
             'scf_convergence': {
                 'patterns': ["TOO MANY CYCLES", "SCF NOT CONVERGED", "CONVERGENCE NOT ACHIEVED",
                              "FERMI ENERGY NOT IN INTERVAL"],

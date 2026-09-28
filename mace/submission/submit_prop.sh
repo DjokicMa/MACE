@@ -65,7 +65,20 @@ for MACE_D in "${MACE_SCRATCH_TRY[@]}"; do
   echo "scratch: cannot write to $MACE_D/$JOB"
 done
 if [ -z "$scratch" ]; then
-  echo "ERROR: no writable scratch directory on $(hostname) (\$SCRATCH=\"$SCRATCH\"); tried: ${MACE_SCRATCH_TRY[*]}" | tee -a "$DIR/$JOB.out"
+  # $DIR/$JOB.out must hold only this error. Appended to the output of the
+  # last run of this job, that run (finished, or failed on something else)
+  # would be read as the result of this one. The old output is kept as
+  # $JOB.out.prev<N>; where it cannot be moved it is overwritten.
+  if [ -f "$DIR/$JOB.out" ]; then
+    MACE_N=1
+    while [ -e "$DIR/$JOB.out.prev$MACE_N" ]; do MACE_N=$((MACE_N+1)); done
+    if mv "$DIR/$JOB.out" "$DIR/$JOB.out.prev$MACE_N" 2>/dev/null; then
+      echo "scratch: kept the previous output as $JOB.out.prev$MACE_N"
+    else
+      echo "scratch: cannot move the previous $JOB.out aside - overwriting it"
+    fi
+  fi
+  echo "ERROR: no writable scratch directory on $(hostname) (\$SCRATCH=\"$SCRATCH\"); tried: ${MACE_SCRATCH_TRY[*]}" | tee "$DIR/$JOB.out"
   echo "  Not running CRYSTAL: it would read an empty INPUT." | tee -a "$DIR/$JOB.out"
   exit 1
 fi

@@ -21,7 +21,8 @@
 # Setting max_retries: 0 switches automatic recovery off for that error type.
 #
 # Not recovered automatically - these need a person, and have no entry here:
-# linearly dependent basis sets, geometry/NEIGHB problems and symmetry errors.
+# linearly dependent basis sets, geometry/NEIGHB problems, symmetry errors, and
+# a job stopped because no scratch directory was writable (scratch_error).
 
 error_recovery:
   # SHRINK parameter errors - k-point mesh inconsistent with the cell

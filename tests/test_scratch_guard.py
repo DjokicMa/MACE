@@ -262,3 +262,139 @@ def test_workflow_copies_carry_the_guard(tmp_path):
     (tmp_path / "run").mkdir()
     subprocess.run(["bash", str(gen)], cwd=tmp_path / "run", check=True, capture_output=True)
     assert subprocess.run(["bash", "-n", str(tmp_path / "run" / "diamond.sh")]).returncode == 0
+
+
+# ---------------------------------------------------------------------------
+# When the guard stops a job, <JOB>.out must say so - and only that. It used
+# to append its error to the last run's .out, so a finished old run was read
+# as this job COMPLETED and an old SCF/OOM failure sent it to the wrong
+# recovery.
+
+CORPUS = REPO / "test"
+OLD_OUTPUTS = {
+    "completed_opt": CORPUS / "OPT" / "1_dia_opt_BULK_OPTGEOM.out",
+    "scf_diverged": CORPUS / "FAILED_QA" / "1_dia_b3lyp_fermi_not_in_interval.out",
+    "oom_killed": CORPUS / "FAILED_QA" / "3_dia3_opt_killed_signal9_oom.out",
+}
+#: Corpus-free stand-ins, so CI exercises the same paths.
+SYNTHETIC_OUTPUTS = {
+    "synthetic_completed": " OPT END - CONVERGED * E(AU): -7.6e+01\n    TOTAL CPU TIME =    12.3\n",
+    "synthetic_scf": " == SCF ENDED - TOO MANY CYCLES      E(AU) -7.6e+01\n",
+}
+
+
+def _manager():
+    from mace.queue.manager import EnhancedCrystalQueueManager
+    return EnhancedCrystalQueueManager.__new__(EnhancedCrystalQueueManager)
+
+
+def _calc(submit: Path, job: str) -> dict:
+    return {"calc_id": "c1", "output_file": str(submit / f"{job}.out"),
+            "input_file": str(submit / f"{job}.d12"), "job_script": str(submit / f"{job}.sh"),
+            "work_dir": str(submit)}
+
+
+def _block_every_scratch(submit: Path):
+    """Nothing writable while the submit directory itself stays writable:
+    .mace_scratch is a plain file, so mkdir -p under it fails."""
+    (submit / ".mace_scratch").write_text("not a directory\n")
+
+
+def _old_output(name: str) -> str:
+    if name in SYNTHETIC_OUTPUTS:
+        return SYNTHETIC_OUTPUTS[name]
+    path = OLD_OUTPUTS[name]
+    if not path.is_file():
+        pytest.skip(f"corpus file {path} not available")
+    return path.read_text(errors="ignore")
+
+
+@pytest.mark.parametrize("old", list(OLD_OUTPUTS) + list(SYNTHETIC_OUTPUTS))
+def test_stopped_job_gets_a_fresh_out_and_keeps_the_old_one(tmp_path, submit, old):
+    from mace.completion_checker import categorize_output_file
+    old_text = _old_output(old)
+    (submit / "diamond.out").write_text(old_text)
+    _block_every_scratch(submit)
+    script = _generate(submit, "crystal", "diamond")
+    r = _run(tmp_path, script, {"SCRATCH": "", "USER": NO_HPCC_USER})
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert not (submit / "diamond.stub").exists()            # CRYSTAL never ran
+    out = (submit / "diamond.out").read_text()
+    assert out.startswith("ERROR: no writable scratch directory")
+    assert len(out.splitlines()) == 2                         # the guard's error only
+    assert (submit / "diamond.out.prev1").read_text() == old_text
+    assert "kept the previous output as diamond.out.prev1" in r.stdout
+    # Classified as what happened, not as the old run.
+    category, _ = categorize_output_file(submit / "diamond.out")
+    assert category == "scratch"
+    error_type, message = _manager().analyze_calculation_error(_calc(submit, "diamond"))
+    assert error_type == "scratch_error"
+    assert "no writable scratch directory" in message
+
+
+def test_kept_outputs_are_numbered_and_never_overwritten(tmp_path, submit):
+    _block_every_scratch(submit)
+    script = _generate(submit, "crystal", "diamond")
+    (submit / "diamond.out.prev1").write_text("older\n")
+    (submit / "diamond.out").write_text("old run\n")
+    r = _run(tmp_path, script, {"SCRATCH": "", "USER": NO_HPCC_USER})
+    assert r.returncode == 1
+    assert (submit / "diamond.out.prev1").read_text() == "older\n"
+    assert (submit / "diamond.out.prev2").read_text() == "old run\n"
+    # A second stop in a row keeps the first stop's output too.
+    _run(tmp_path, script, {"SCRATCH": "", "USER": NO_HPCC_USER})
+    assert (submit / "diamond.out.prev3").read_text().startswith("ERROR: no writable")
+
+
+@pytest.mark.skipif(ROOT_USER, reason="root can write anywhere")
+def test_unmovable_old_out_is_overwritten_not_appended(tmp_path, submit):
+    """The usual way nothing is writable: the submit directory itself is not.
+    The old .out cannot be moved then, but it can still be rewritten."""
+    (submit / "diamond.out").write_text(SYNTHETIC_OUTPUTS["synthetic_completed"])
+    script = _generate(submit, "crystal", "diamond")
+    submit.chmod(0o555)
+    try:
+        r = _run(tmp_path, script, {"SCRATCH": "", "USER": NO_HPCC_USER})
+    finally:
+        submit.chmod(0o755)
+    assert r.returncode == 1
+    assert "cannot move the previous diamond.out aside" in r.stdout
+    out = (submit / "diamond.out").read_text()
+    assert out.startswith("ERROR: no writable scratch directory")
+    assert "OPT END" not in out
+
+
+def test_stale_fort87_of_the_last_run_does_not_classify_the_stop(tmp_path, submit):
+    """The scratch directory on record is the LAST run's (the guard stops
+    before recording a new one); its fort.87 must not be read as this run's
+    error (it would make an old PXK TOO SMALL an opt_trust_radius_error)."""
+    prev = tmp_path / "prevscr" / "diamond"
+    prev.mkdir(parents=True)
+    (prev / "INPUT").write_text(DECK)
+    (prev / "fort.87").write_text(" ERROR **** BFGS_ **** PXK TOO SMALL\n")
+    (submit / ".diamond.scratch").write_text(f"{prev}\n")
+    (submit / "diamond.out").write_text(" UPDATED TRUST RADIUS     0.000E+00\n")
+    _block_every_scratch(submit)
+    script = _generate(submit, "crystal", "diamond")
+    assert _run(tmp_path, script, {"SCRATCH": "", "USER": NO_HPCC_USER}).returncode == 1
+    error_type, _ = _manager().analyze_calculation_error(_calc(submit, "diamond"))
+    assert error_type == "scratch_error"
+
+
+def test_scratch_error_is_not_recovered_automatically(tmp_path):
+    qm = _manager()
+    qm.max_recovery_attempts = 3
+    called = []
+    qm.get_recovery_attempt_count = lambda calc_id: called.append(calc_id) or 0
+    assert qm.attempt_error_recovery({"calc_id": "c1"}, "scratch_error", "stopped") is False
+    assert called == []                                    # refused before any retry logic
+
+
+def test_detector_reports_the_stop_as_not_recoverable(tmp_path):
+    from mace.recovery.detector import CrystalErrorDetector
+    out = tmp_path / "diamond.out"
+    out.write_text("ERROR: no writable scratch directory on agx-000 ($SCRATCH=\"\"); tried: x\n"
+                   "  Not running CRYSTAL: it would read an empty INPUT.\n")
+    det = CrystalErrorDetector(base_dir=str(tmp_path), enable_tracking=False)
+    res = det.analyze_output_file(out)
+    assert (res["error_type"], res["recoverable"]) == ("scratch_error", False)

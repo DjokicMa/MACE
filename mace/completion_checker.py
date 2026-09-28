@@ -40,6 +40,8 @@ ERROR_PATTERNS = {
     'geometry_small_dist': ["**** NEIGHB ****"],
     'shrink_error': ["ANISOTROPIC SHRINKING FACTOR"],
     'linear_basis': ["BASIS SET LINEARLY DEPENDENT"],
+    # The job script's scratch guard stopped the job before CRYSTAL ran
+    'scratch': ["no writable scratch directory"],
     'potential': [
         "segmentation fault",
         "=   bad termination of",
@@ -61,6 +63,7 @@ ERROR_DESCRIPTIONS = {
     'shrink_error': "SHRINK parameter error",
     'linear_basis': "Linear dependency in basis set",
     'potential': "Segmentation fault/runtime error",
+    'scratch': "No writable scratch directory (CRYSTAL not run)",
 }
 
 # === Completed-calc subtype handling === #

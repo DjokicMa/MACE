@@ -278,6 +278,20 @@ _TOO_SMALL_TRUST = 'TOO SMALL TRUST RADIUS'
 _PXK_TOO_SMALL = 'PXK TOO SMALL'
 
 
+#: What the job script's scratch guard writes to <JOB>.out when it finds no
+#: writable scratch directory and stops before CRYSTAL runs.
+SCRATCH_GUARD_ERROR = 'ERROR: no writable scratch directory'
+
+
+def scratch_guard_stop(out_text: str) -> Optional[str]:
+    """The guard's error line when this output is a job the scratch guard
+    stopped before CRYSTAL ran, else None."""
+    for line in (out_text or '').splitlines():
+        if SCRATCH_GUARD_ERROR in line:
+            return line.strip()
+    return None
+
+
 def ended_normally(out_text: str) -> bool:
     return _NORMAL_END in (out_text or '')
 
