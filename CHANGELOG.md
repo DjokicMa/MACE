@@ -241,7 +241,11 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   and SLAB deck in `test/` (137) is rebuilt from the parse, record for record,
   by MACE's own deck writer. `opt2d12` still takes a child's geometry from the
   `.out`: its decks are byte-identical to before for all 1458 SP/OPT/FREQ
-  children of the `test/OPT` and `test/SP` parents.
+  children of the `test/OPT` and `test/SP` parents. A deck that names its
+  space group by symbol (IFLAG = 1) is read too, in the spaced form CRYSTAL
+  takes ("F M 3 M", "P 21/C", "P -4 21 M", "R -3 C"); a spelling CRYSTAL23
+  refuses or misreads ("FM3M", "F M -3 M", "P -4 2 1 M") is reported in the
+  parse as `geometry_unparsed` instead of silently leaving the geometry out.
 - **`mace preflight`** - runs CRYSTAL over a copy of a deck with a TESTPDIM
   record inserted. TESTPDIM stops after the whole input is read and symmetry
   analysed, which is late enough to catch a bad group, a bad lattice record, or a

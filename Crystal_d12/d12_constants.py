@@ -457,6 +457,41 @@ SPACEGROUP_ALTERNATIVES = {
     "F D 3 M": 227, "F D 3 C": 228, "I M 3 M": 229, "I A 3 D": 230,
 }
 
+
+# The space group symbols CRYSTAL23 accepts in a deck's IFLAG = 1 record: the
+# spaced upper-case form above, minus the spellings CRYSTAL refuses. Measured
+# with CRYSTAL/23-intel-2023a on HPCC by running every spaced symbol above
+# through TESTGEOM: 230 were accepted, each echoed back verbatim with the
+# point-group order and centrosymmetry of the number it maps to here; the
+# "E" glide spellings stop with "INVALID CHARACTER IN ELEMENT OF SPACE GROUP
+# SYMBOL" (CRYSTAL wants the older A B M 2, A B A 2, C M C A, C M M A,
+# C C C A), and "P 42 1 2" with "POINT-GROUP CODE NUMBER CANNOT BE
+# IDENTIFIED" (group 90 is "P 4 21 2"). CRYSTAL also refused the unspaced
+# "FM3M", and read "F M -3 M" as a different, non-centrosymmetric group, so
+# neither is accepted here; lower case is accepted, as CRYSTAL does.
+_CRYSTAL_REFUSED_SYMBOLS = frozenset(
+    {"A E M 2", "A E A 2", "C M C E", "C M M E", "C C C E", "P 42 1 2"}
+)
+CRYSTAL_INPUT_SPACEGROUP_SYMBOLS = {
+    symbol: number
+    for symbol, number in SPACEGROUP_ALTERNATIVES.items()
+    if " " in symbol and symbol not in _CRYSTAL_REFUSED_SYMBOLS
+}
+CRYSTAL_INPUT_SPACEGROUP_SYMBOLS["P 4 21 2"] = 90
+
+
+def spacegroup_number_from_symbol(symbol: str) -> Optional[int]:
+    """Space group number of a deck's IFLAG = 1 symbol, or None.
+
+    The symbol is matched as CRYSTAL reads it: the spaced Hermann-Mauguin
+    form ("F M 3 M", "F D 3 M", "P 21/C", "P -4 21 M", "R -3 C"), any case,
+    any run of blanks between elements. A spelling CRYSTAL23 refuses or
+    misreads returns None rather than a guess.
+    """
+    if not symbol:
+        return None
+    return CRYSTAL_INPUT_SPACEGROUP_SYMBOLS.get(" ".join(symbol.upper().split()))
+
 # Space groups with multiple origin choices
 MULTI_ORIGIN_SPACEGROUPS = {
     48: {"name": "Pnnn", "default": "Origin 2", "crystal_code": "0 0 0", "alt": "Origin 1", "alt_crystal_code": "0 0 1"},

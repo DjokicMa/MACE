@@ -40,7 +40,7 @@ LOW_DIM_GROUPS = {"SLAB": ("layer_group", 80), "POLYMER": ("rod_group", 99)}
 # opt2d12 never merges these into its settings.
 DECK_GEOMETRY_KEYS = (
     "cell_record", "cell_parameters", "n_atoms", "atoms",
-    "point_group", "rhombohedral_axes", "origin_shift",
+    "point_group", "rhombohedral_axes", "origin_shift", "geometry_unparsed",
 )
 
 
@@ -1114,8 +1114,10 @@ class CrystalInputParser:
                 # their long-standing values.
                 try:
                     self._extract_geometry(lines, i)
-                except (ValueError, IndexError):
-                    pass
+                except (ValueError, IndexError) as exc:
+                    # Say so, rather than leave the geometry keys silently
+                    # absent: the deck's geometry input was not understood.
+                    self.data["geometry_unparsed"] = str(exc) or type(exc).__name__
                 break
 
         # Extract basis set
@@ -1191,10 +1193,11 @@ class CrystalInputParser:
           ``atomic_number`` (that modulo 100) and ``x``, ``y``, ``z`` as floats
           in the deck's own units.
 
-        Raises ValueError/IndexError on a record it cannot read; the caller
-        leaves the keys it has not set yet absent.
+        Raises ValueError/IndexError on a record it cannot read (including a
+        space group symbol it cannot map); the caller leaves the keys it has
+        not set yet absent and records why in ``geometry_unparsed``.
         """
-        from d12_constants import SPACEGROUP_SYMBOL_TO_NUMBER as _SYM2NUM
+        from d12_constants import spacegroup_number_from_symbol
 
         dim = self.data["dimensionality"]
         records = [line.split("#", 1)[0].split() for line in lines]
@@ -1214,8 +1217,8 @@ class CrystalInputParser:
             j += 1
             if iflag == 1:
                 # Hermann-Mauguin symbol instead of the number.
-                symbol = lines[j].strip()
-                group = _SYM2NUM.get(symbol, _SYM2NUM.get(symbol.replace(" ", "")))
+                symbol = lines[j].split("#", 1)[0].strip()
+                group = spacegroup_number_from_symbol(symbol)
                 if group is None:
                     raise ValueError(f"unknown space group symbol {symbol!r}")
             else:
