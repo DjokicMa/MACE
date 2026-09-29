@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `process_material_population_analysis` (`mace/utils`) imported
   `MaterialDatabase` from `material_database`, a module that no longer exists,
   and stopped with ModuleNotFoundError; they now use `mace.database.materials`.
+- **Space-group tables match the International Tables and CRYSTAL.** Pbcn
+  (60) was listed with two origin choices, and its "alternate origin" code
+  `0 1 0` is CRYSTAL's rhombohedral-axes flag: a cif2d12 deck asked for that
+  origin carried it. It now writes `0 0 0` for Pbcn with any origin option;
+  every other group's origin handling is unchanged, and the list is now
+  exactly the ITA two-origin groups. The spelling table maps group 90 as
+  CRYSTAL prints it ("P 4 21 2", not "P 42 1 2"), maps P-42c to 112 (not
+  114), and has no duplicate key; every lookup already reached the right
+  number through another table, so no other deck changes.
+- **The phonon fallback k-path table names only points it has.** Most F- and
+  I-centred cubic groups (196, 197, 199, 202-204, 206, 209-211, 214, 217, 219,
+  220, 226) got the simple-cubic path, and the monoclinic and triclinic paths
+  named points (M1, X, V, W, ...) with no coordinates, so their segments were
+  dropped. F and I cubic now get the fcc and bcc paths, and monoclinic and
+  triclinic use the points MACE's band-path code uses (CRYSTAL23 manual Table
+  14.1 for P monoclinic). The table is read only by `get_auto_phonon_path`,
+  which nothing calls today, so no deck changes.
 
 ## [1.1.2] - 2026-09-29
 

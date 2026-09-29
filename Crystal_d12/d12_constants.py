@@ -220,53 +220,58 @@ HIGH_SYMMETRY_PATHS = {
             "R": [0.5, 0.5, 0.5]
         }
     },
-    "monoclinic": {  # Monoclinic
-        "labels": ["G", "Y", "H", "C", "E", "M1", "A", "X", "G"],
+    # Monoclinic and triclinic follow the points MACE's band-path code uses
+    # (Crystal_d3/d3_kpoints.py BAND_PATHS / KPOINT_COORDINATES): for P
+    # monoclinic the special points of CRYSTAL23 manual Table 14.1 (p. 311);
+    # the manual has no triclinic entry. Setyawan-Curtarolo's monoclinic
+    # points depend on the cell, so no fixed table can hold them.
+    "monoclinic": {  # P monoclinic
+        "labels": ["A", "G", "B", "C", "G", "D", "E", "G", "Y", "Z", "G"],
         "label_path": [
+            "A G",
+            "G B",
+            "B C",
+            "C G",
+            "G D",
+            "D E",
+            "E G",
             "G Y",
-            "Y H",
-            "H C",
-            "C E",
-            "E M1",
-            "M1 A",
-            "A X",
-            "X G"
+            "Y Z",
+            "Z G"
         ],
         "coordinates": {
             "G": [0.0, 0.0, 0.0],
-            "Y": [0.0, 0.5, 0.0],
-            "H": [0.0, 0.5, 0.5],
-            "Z": [0.0, 0.0, 0.5],
-            "A": [0.5, 0.0, 0.0],
-            "C": [0.5, 0.5, 0.0],
+            "A": [0.5, -0.5, 0.0],
+            "B": [0.5, 0.0, 0.0],
+            "C": [0.0, 0.5, 0.5],
             "D": [0.5, 0.0, 0.5],
-            "E": [0.5, 0.5, 0.5]
+            "E": [0.5, -0.5, 0.5],
+            "Y": [0.0, 0.5, 0.0],
+            "Z": [0.0, 0.0, 0.5]
         }
     },
     "triclinic": {  # Triclinic
-        "labels": ["G", "X", "Y", "Z", "G", "R", "S", "T", "U", "V", "W", "G"],
+        "labels": ["V", "Y", "G", "Z", "T", "R", "G", "X", "U", "G"],
         "label_path": [
+            "V Y",
+            "Y G",
+            "G Z",
+            "Z T",
+            "T R",
+            "R G",
             "G X",
-            "X Y",
-            "Y Z",
-            "Z G",
-            "G R",
-            "R S", 
-            "S T",
-            "T U",
-            "U V",
-            "V W",
-            "W G"
+            "X U",
+            "U G"
         ],
         "coordinates": {
             "G": [0.0, 0.0, 0.0],
-            "X": [0.5, 0.0, 0.0],
+            "V": [0.5, 0.5, 0.0],
             "Y": [0.0, 0.5, 0.0],
             "Z": [0.0, 0.0, 0.5],
-            "R": [0.5, 0.5, 0.0],
-            "S": [0.5, 0.0, 0.5],
             "T": [0.0, 0.5, 0.5],
-            "U": [0.5, 0.5, 0.5]
+            "R": [0.5, 0.5, 0.5],
+            "X": [0.5, 0.0, 0.0],
+            "U": [0.5, 0.0, 0.5]
         }
     }
 }
@@ -285,9 +290,9 @@ SPACEGROUP_TO_PATH = {
     **{i: "hexagonal" for i in range(143, 168)},  # Using hexagonal path for trigonal
     # Hexagonal (168-194)
     **{i: "hexagonal" for i in range(168, 195)},
-    # Cubic (195-230)
-    **{i: "cubic_fc" if i in [225, 216, 227, 228] else 
-       "cubic_bc" if i in [229, 230] else "cubic_simple" 
+    # Cubic (195-230), by lattice centring: F -> fcc path, I -> bcc path
+    **{i: "cubic_fc" if i in (196, 202, 203, 209, 210, 216, 219, 225, 226, 227, 228) else
+       "cubic_bc" if i in (197, 199, 204, 206, 211, 214, 217, 220, 229, 230) else "cubic_simple"
        for i in range(195, 231)}
 }
 
@@ -347,8 +352,8 @@ SPACEGROUP_SYMBOL_TO_NUMBER = {symbol: number for number, symbol in SPACEGROUP_S
 # Alternative space group notations (including CRYSTAL output format with spaces)
 SPACEGROUP_ALTERNATIVES = {
     # Monoclinic unique axis b settings
-    "P121": 3, "P1211": 3,
-    "P1211": 4, "P1211": 4,
+    "P121": 3,
+    "P1211": 4,
     "C121": 5, "C1211": 5,
     "P1m1": 6, "P11m": 6,
     "P1c1": 7, "P11a": 7, "P11n": 7, "P11b": 7,
@@ -369,7 +374,7 @@ SPACEGROUP_ALTERNATIVES = {
     "Cmce": 64, "Cmca": 64,
     "Ccce": 68, "Ccca": 68,
     # Tetragonal
-    "P-421c": 114, "P-42c": 114,
+    "P-421c": 114, "P-42c": 112,
     # Hexagonal/Trigonal
     "H3": 146, "H-3": 148, "H32": 155, "H3m": 160, "H3c": 161, "H-3m": 166, "H-3c": 167,
     # Origin choice 2
@@ -419,7 +424,7 @@ SPACEGROUP_ALTERNATIVES = {
     # Tetragonal
     "P 4": 75, "P 41": 76, "P 42": 77, "P 43": 78, "I 4": 79, "I 41": 80,
     "P -4": 81, "I -4": 82, "P 4/M": 83, "P 42/M": 84, "P 4/N": 85, "P 42/N": 86,
-    "I 4/M": 87, "I 41/A": 88, "P 4 2 2": 89, "P 42 1 2": 90, "P 41 2 2": 91,
+    "I 4/M": 87, "I 41/A": 88, "P 4 2 2": 89, "P 4 21 2": 90, "P 41 2 2": 91,
     "P 41 21 2": 92, "P 42 2 2": 93, "P 42 21 2": 94, "P 43 2 2": 95, "P 43 21 2": 96,
     "I 4 2 2": 97, "I 41 2 2": 98, "P 4 M M": 99, "P 4 B M": 100, "P 42 C M": 101,
     "P 42 N M": 102, "P 4 C C": 103, "P 4 N C": 104, "P 42 M C": 105, "P 42 B C": 106,
@@ -497,7 +502,6 @@ MULTI_ORIGIN_SPACEGROUPS = {
     48: {"name": "Pnnn", "default": "Origin 2", "crystal_code": "0 0 0", "alt": "Origin 1", "alt_crystal_code": "0 0 1"},
     50: {"name": "Pban", "default": "Origin 2", "crystal_code": "0 0 0", "alt": "Origin 1", "alt_crystal_code": "0 0 1"},
     59: {"name": "Pmmn", "default": "Origin 2", "crystal_code": "0 0 0", "alt": "Origin 1", "alt_crystal_code": "0 0 1"},
-    60: {"name": "Pbcn", "default": "Origin 2", "crystal_code": "0 0 0", "alt": "Origin 1", "alt_crystal_code": "0 1 0"},
     68: {"name": "Ccce", "default": "Origin 2", "crystal_code": "0 0 0", "alt": "Origin 1", "alt_crystal_code": "0 0 1"},
     70: {"name": "Fddd", "default": "Origin 2", "crystal_code": "0 0 0", "alt": "Origin 1", "alt_crystal_code": "0 0 1"},
     85: {"name": "P4/n", "default": "Origin 2", "crystal_code": "0 0 0", "alt": "Origin 1", "alt_crystal_code": "0 0 1"},

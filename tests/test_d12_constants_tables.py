@@ -305,10 +305,6 @@ def test_alternatives_point_at_valid_space_groups():
     assert all(1 <= n <= 230 for n in C.SPACEGROUP_ALTERNATIVES.values())
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "SPACEGROUP_ALTERNATIVES maps 'P-42c' to 114, but P-42c is space group 112 "
-    "(114 is P-421c); lookups are masked because SPACEGROUP_SYMBOL_TO_NUMBER is "
-    "consulted first"))
 def test_alternatives_never_contradict_the_canonical_symbol():
     clashes = {s: (n, C.SPACEGROUP_SYMBOL_TO_NUMBER[s])
                for s, n in C.SPACEGROUP_ALTERNATIVES.items()
@@ -337,10 +333,6 @@ def test_spacegroup_to_path_covers_every_group_with_a_known_path():
     assert C.SPACEGROUP_TO_PATH[221] == "cubic_simple"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "SPACEGROUP_TO_PATH sends only 216/225/227/228 to cubic_fc and 229/230 to "
-    "cubic_bc; the other F- and I-centred cubic groups (e.g. 196 F23, 202 Fm-3, "
-    "197 I23, 217 I-43m) fall back to the simple-cubic path"))
 def test_cubic_path_follows_the_lattice_centring():
     for n in range(195, 231):
         letter = C.SPACEGROUP_SYMBOLS[n][0]
@@ -384,13 +376,7 @@ def test_simple_cubic_label_path_adds_the_m_r_branch():
     assert p["label_path"] == chain + ["M R"]
 
 
-@pytest.mark.parametrize("key", [
-    pytest.param(k, marks=pytest.mark.xfail(strict=True, reason=(
-        f"HIGH_SYMMETRY_PATHS[{k!r}] labels points with no coordinates "
-        "(monoclinic: M1, X; triclinic: V, W), so the fallback coordinate path "
-        "in d12_calc_freq silently drops those segments")))
-    if k in ("monoclinic", "triclinic") else k
-    for k in C.HIGH_SYMMETRY_PATHS])
+@pytest.mark.parametrize("key", list(C.HIGH_SYMMETRY_PATHS))
 def test_every_path_label_has_coordinates(key):
     p = C.HIGH_SYMMETRY_PATHS[key]
     missing = {lab for seg in p["label_path"] for lab in seg.split()} - set(p["coordinates"])
