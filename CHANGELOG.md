@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An `opt2d12` phonon deck with a SeeK-path band path is written.** The
+  SeeK-path helpers read a `.out` file, but `opt2d12` passed them the parent's
+  output text, so every such deck stopped with `OSError: File name too long`.
+  They now read the same text from a temporary file, and the path matches what
+  the `.out` itself gives.
+- **The DAT-file and population-analysis processors open the materials
+  database.** `process_calculation_dat_files` and
+  `process_material_population_analysis` (`mace/utils`) imported
+  `MaterialDatabase` from `material_database`, a module that no longer exists,
+  and stopped with ModuleNotFoundError; they now use `mace.database.materials`.
+
 ## [1.1.2] - 2026-09-29
 
 Everything since 1.1.1. Decks MACE derives from a finished calculation now keep
