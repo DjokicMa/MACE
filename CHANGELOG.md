@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-09-29
+
+Everything since 1.1.1. Decks MACE derives from a finished calculation now keep
+the parent's method and settings; `opt2d12` prompts default to the parent's
+values and a saved template can be applied to many structures at once; OPT jobs
+that run out of walltime continue from their last step (`OPTGEOM RESTART`, with
+a fallback when the restart itself aborts); calculation types are read from a
+file's records rather than its name; and a series of CRYSTAL23-conformance,
+job-script and recovery fixes. Several of these change the content of generated
+decks - see Fixed and Changed below.
+
 Conformance work traced from a user report: every hybrid lead perovskite died
 with `ERROR **** LoadBa **** UNIT CELL NOT NEUTRAL` under HSE-3c, on cells that
 are neutral. Auditing that one bug against the CRYSTAL23 manual turned up a
