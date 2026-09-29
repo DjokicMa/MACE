@@ -382,6 +382,14 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   now fails with the reason, the same with a terminal as without. With stdin
   closed (`<&-`) opt2d12 crashed with AttributeError where it checked for a
   terminal; it is treated as nobody to ask.
+- **`copy_dependencies.py` copies the files it lists.** Its list still used
+  the names from before the scripts moved into the `mace` package, and it
+  looked for `Crystal_d12/` and `Crystal_d3/` inside `mace/`, so it reported
+  most files missing and copied none of the converters. It now copies each
+  file from where it lives, under its current name, together with the
+  modules the copied converters import (`d12_config.py`, `menu_nav.py`,
+  `spglib_compat.py`, `seekpath_interface.py`). It no longer tries to copy
+  `recovery_config.yaml`, which the recovery engine reads from `mace/config/`.
 
 ### Added
 
