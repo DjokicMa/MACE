@@ -382,6 +382,11 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   now fails with the reason, the same with a terminal as without. With stdin
   closed (`<&-`) opt2d12 crashed with AttributeError where it checked for a
   terminal; it is treated as nobody to ask.
+- **An `opt2d12` phonon deck with a SeeK-path band path is written.** The
+  SeeK-path helpers read a `.out` file, but `opt2d12` passed them the parent's
+  output text, so every such deck stopped with `OSError: File name too long`.
+  They now read the same text from a temporary file, and the path matches what
+  the `.out` itself gives.
 
 ### Added
 

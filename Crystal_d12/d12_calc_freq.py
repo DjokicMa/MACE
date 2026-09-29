@@ -17,8 +17,11 @@ logic is separated into dedicated modules for better maintainability.
 """
 
 from typing import Dict, Any, Tuple, Optional, List
+import contextlib
 import functools
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 # Opt-in "press b to go back" navigation + crash-safe back-aware readers
@@ -69,6 +72,25 @@ except ImportError:
     get_seekpath_full_kpath = None
     get_literature_kpath_vectors = None
     validate_kpoint_labels_for_crystal23 = None
+
+
+@contextlib.contextmanager
+def _output_as_file(optimization_section: Optional[str]):
+    """Yield a path for the SeeK-path helpers, which read a .out file.
+
+    optimization_section is the parent's CRYSTAL output text (the parser's
+    optimization_content), not a file name; it is written to a temporary
+    file for the duration of the call.
+    """
+    if not optimization_section:
+        yield None
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "parent.out")
+        with open(path, "w") as f:
+            f.write(optimization_section)
+        yield path
+
 
 # Default frequency settings
 DEFAULT_FREQ_SETTINGS = {
@@ -1499,7 +1521,8 @@ def get_auto_phonon_path(crystal_system: str = None, space_group: int = None,
     
     # For format_type == "seekpath", get SeeK-path full path
     if format_type == "seekpath" and get_seekpath_full_kpath:
-        result = get_seekpath_full_kpath(space_group, lattice_type, optimization_section)
+        with _output_as_file(optimization_section) as out_file:
+            result = get_seekpath_full_kpath(space_group, lattice_type, out_file)
         if result:
             coord_segments, kpath_info = result
             # Store k-path source info if band_settings provided
@@ -2071,7 +2094,11 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
                     # Get the fractional k-point segments
                     if band_settings.get("seekpath_full", False) and get_seekpath_full_kpath:
                         # SeeK-path full path
-                        result = get_seekpath_full_kpath(space_group, lattice_type, optimization_section)
+                        with _output_as_file(optimization_section) as out_file:
+                            result = get_seekpath_full_kpath(space_group, lattice_type, out_file)
+                            # Get seekpath labels if available
+                            path_labels = (get_seekpath_labels(space_group, lattice_type, out_file)
+                                           if get_seekpath_labels else None)
                         if result:
                             frac_segments, kpath_info = result
                             # Store k-path source info
@@ -2083,9 +2110,7 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
                                 band_settings["kpath_source"] = "seekpath_inv"
                             else:
                                 band_settings["kpath_source"] = "seekpath_noinv"
-                        # Get seekpath labels if available
                         if get_seekpath_labels:
-                            path_labels = get_seekpath_labels(space_group, lattice_type, optimization_section)
                             band_settings["path_labels"] = path_labels
                     elif band_settings.get("literature_path", False) and get_literature_kpath_vectors:
                         # Literature path vectors
