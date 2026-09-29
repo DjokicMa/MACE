@@ -27,7 +27,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
 import threading
-import queue
 
 # Import MACE components
 try:
