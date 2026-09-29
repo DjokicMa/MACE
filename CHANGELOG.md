@@ -36,6 +36,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   triclinic use the points MACE's band-path code uses (CRYSTAL23 manual Table
   14.1 for P monoclinic). The table is read only by `get_auto_phonon_path`,
   which nothing calls today, so no deck changes.
+- **`copy_dependencies.py` copies the files it lists.** Its list still used
+  the names from before the scripts moved into the `mace` package, and it
+  looked for `Crystal_d12/` and `Crystal_d3/` inside `mace/`, so it reported
+  most files missing and copied none of the converters. It now copies each
+  file from where it lives, under its current name, together with the
+  modules the copied converters import (`d12_config.py`, `menu_nav.py`,
+  `spglib_compat.py`, `seekpath_interface.py`). It no longer tries to copy
+  `recovery_config.yaml`, which the recovery engine reads from `mace/config/`.
+
+### Removed
+
+- Five standalone scripts that nothing runs, imports or documents:
+  `mace/workflow/status.py`, `mace/workflow/callback.py` and
+  `mace/workflow/check_workflows.py` (superseded by `mace status` and the
+  queue manager's completion callback), `mace/utils/scf_settings_extractor.py`
+  and `mace/utils/analyze_script_dependencies.py`.
 
 ## [1.1.2] - 2026-09-29
 

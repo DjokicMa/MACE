@@ -25,69 +25,108 @@ def copy_dependencies(target_dir: str = "."):
     script_dir = Path(__file__).parent
     base_dir = script_dir.parent
     
-    # Define file groups and their source directories
+    # Define file groups and their source directories. Each name is the file's
+    # current name (several were renamed when the scripts moved into the mace
+    # package). recovery_config.yaml is not copied: the recovery engine reads
+    # the shipped mace/config copy itself, and a copy in the job directory
+    # would take precedence over it.
+    repo_dir = base_dir.parent
     file_groups = {
         "Job Scripts": {
-            "source_dir": script_dir,
+            "source_dir": base_dir,
             "files": [
                 "enhanced_queue_manager.py",
-                "material_database.py", 
-                "queue_lock_manager.py",
-                "workflow_engine.py",
-                "workflow_planner.py",
-                "workflow_executor.py",
                 "run_workflow.py",
-                "create_fresh_database.py",
-                "error_recovery.py",
-                "error_detector.py",
+                "run_mace.py",  # run_workflow.py imports it by bare name
                 "material_monitor.py",
-                "crystal_file_manager.py",
+            ]
+        },
+        "Database": {
+            "source_dir": base_dir / "database",
+            "files": [
+                "materials.py",  # was material_database.py
                 "populate_completed_jobs.py",
-                "crystal_queue_manager.py",
-                "input_settings_extractor.py",
-                "query_input_settings.py", 
+            ]
+        },
+        "Database utilities": {
+            "source_dir": base_dir / "database" / "utils",
+            "files": [
+                "create_fresh_database.py",
+                "database_status_report.py",
+            ]
+        },
+        "Database queries": {
+            "source_dir": base_dir / "database" / "query",
+            "files": [
+                "queries.py",  # was query_input_settings.py
+            ]
+        },
+        "Queue": {
+            "source_dir": base_dir / "queue",
+            "files": [
+                "queue_lock_manager.py",
+            ]
+        },
+        "Workflow": {
+            "source_dir": base_dir / "workflow",
+            "files": [
+                "engine.py",  # was workflow_engine.py
+                "planner.py",  # was workflow_planner.py
+                "executor.py",  # was workflow_executor.py
+            ]
+        },
+        "Recovery": {
+            "source_dir": base_dir / "recovery",
+            "files": [
+                "recovery.py",  # was error_recovery.py
+                "detector.py",  # was error_detector.py
+            ]
+        },
+        "Utilities": {
+            "source_dir": script_dir,
+            "files": [
+                "file_manager.py",  # was crystal_file_manager.py
+                "settings_extractor.py",  # was input_settings_extractor.py
                 "formula_extractor.py",
-                "crystal_property_extractor.py",
-                # "file_storage_manager.py",  # Currently in Archived folder, not critical
+                "property_extractor.py",  # was crystal_property_extractor.py
                 "advanced_electronic_analyzer.py",
-                "recovery_config.yaml",
                 "dat_file_processor.py",
                 "population_analysis_processor.py",
-                "database_status_report.py",
                 "show_properties.py",
-                "workflow_status.py",
-                "workflow_callback.py",
-                "check_workflows.py",
                 "copy_dependencies.py"
             ]
         },
         "Crystal_d12": {
-            "source_dir": base_dir / "Crystal_d12",
+            "source_dir": repo_dir / "Crystal_d12",
             "files": [
                 "NewCifToD12.py",
-                "CRYSTALOptToD12.py", 
+                "CRYSTALOptToD12.py",
                 "d12_calc_basic.py",
                 "d12_calc_freq.py",
+                "d12_config.py",
                 "d12_constants.py",
                 "d12_interactive.py",
                 "d12_parsers.py",
-                "d12_writer.py"
+                "d12_writer.py",
+                "menu_nav.py",
+                "spglib_compat.py"
             ]
         },
         "Crystal_d3": {
-            "source_dir": base_dir / "Crystal_d3",
+            "source_dir": repo_dir / "Crystal_d3",
             "files": [
                 # Legacy scripts removed - use CRYSTALOptToD3.py instead
                 # "alldos.py",  # Deprecated
                 # "create_band_d3.py",  # Deprecated
                 "CRYSTALOptToD3.py",
-                "d3_interactive.py", 
+                "d3_interactive.py",
                 "d3_config.py",
-                "d3_kpoints.py"
+                "d3_kpoints.py",
+                "seekpath_interface.py"
             ]
         }
     }
-    
+
     copied_count = 0
     missing_count = 0
     
