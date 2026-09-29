@@ -498,6 +498,14 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
 - The interactive CIF-converter banner credits its author only; the trailing
   tool-attribution clause is gone, and a test keeps it that way.
 
+### Removed
+
+- Five standalone scripts that nothing runs, imports or documents:
+  `mace/workflow/status.py`, `mace/workflow/callback.py` and
+  `mace/workflow/check_workflows.py` (superseded by `mace status` and the
+  queue manager's completion callback), `mace/utils/scf_settings_extractor.py`
+  and `mace/utils/analyze_script_dependencies.py`.
+
 ### Testing
 
 771 tests at the start of this work, 1074 now, with the regression tests
