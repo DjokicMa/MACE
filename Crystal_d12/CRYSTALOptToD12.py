@@ -110,6 +110,59 @@ except Exception:
     ui = _UIShim()
 
 
+# The marker a template saved from a parent with an EXTERNAL basis carries in
+# place of a basis name: "the basis written in the parent deck".
+PARENT_BASIS_MARKER = "EXTERNAL (from original D12)"
+
+# The keys a config's basis choice is made of.
+TEMPLATE_BASIS_KEYS = (
+    "basis_set", "basis_set_type", "basis_set_path",
+    "use_original_external_basis", "has_original_external_basis",
+    "external_basis_data", "external_basis_info",
+)
+
+# Keys --save-options wrote that hold one structure's data, not a setting:
+# its atoms, its optimisation log, its basis records. They are never applied
+# to another structure, so a template no longer stores them (the Ag1Br1
+# template was 90 KB, almost all of it these).
+TEMPLATE_STRUCTURE_DATA_KEYS = (
+    "coordinates", "primitive_cell", "conventional_cell",
+    "primitive_coordinates", "crystallographic_coordinates",
+    "optimization_content", "symmetry_operations",
+    "external_basis_data", "external_basis_info",
+)
+
+
+def template_uses_parent_basis(config_data) -> bool:
+    """True when a config's basis means "each parent's own basis".
+
+    --save-options run on a parent with an EXTERNAL basis stores the marker
+    PARENT_BASIS_MARKER (and, before this release, that parent's basis
+    records). That is not a basis another structure can use: each structure
+    keeps the basis its own parent deck was written with, external or internal.
+    A named internal basis or an external basis directory is a real choice and
+    applies to every structure.
+    """
+    basis = str(config_data.get("basis_set") or "")
+    if basis.startswith("EXTERNAL (from original"):
+        return True
+    return (config_data.get("basis_set_type") == "EXTERNAL"
+            and bool(config_data.get("use_original_external_basis"))
+            and not config_data.get("basis_set_path"))
+
+
+def options_for_template(options) -> dict:
+    """The settings --save-options writes: all but one structure's data.
+
+    The k-point mesh is left out too. No opt2d12 question sets it, so the one
+    in the options is always the parent's own, and in a template it made every
+    other structure's mesh be regenerated from its cell instead of kept from
+    its parent. A mesh a hand-written config names is still applied.
+    """
+    return {k: v for k, v in options.items()
+            if k not in TEMPLATE_STRUCTURE_DATA_KEYS and k != "k_points"}
+
+
 def merge_optimization_settings(parent, override, replace_type=False):
     """The parent's OPTGEOM settings with ``override``'s values on top.
 
@@ -346,6 +399,28 @@ def low_dim_group_error(settings):
             f"(1-{top}); CRYSTAL would refuse or misread the deck.")
 
 
+def conventional_atom_number(atom_number, settings) -> int:
+    """The atomic number to write for an atom of the parent's geometry.
+
+    A parent with an EXTERNAL basis numbers its atoms by that basis (Ag with
+    an ECP is 247: CRYSTAL reads Z = NAT mod 100, NAT > 200 meaning an
+    effective core potential). Those numbers name records of the parent's own
+    basis. A deck that uses an internal basis (BASISSET) instead needs the
+    plain atomic number, 47, or CRYSTAL looks for a basis for atom 247. An
+    external-basis deck keeps the parent's numbers as they are.
+    """
+    number = int(atom_number)
+    # The 3c methods always write BASISSET, whatever the basis type says.
+    internal = (settings.get("basis_set_type") != "EXTERNAL"
+                or settings.get("functional") in THREE_C_FUNCTIONALS)
+    if internal and number > 100:
+        return number % 100
+    return number
+
+
+THREE_C_FUNCTIONALS = ("HF3C", "HFSOL3C", "PBEH3C", "HSE3C", "B973C", "PBESOL03C", "HSESOL3C")
+
+
 def write_d12_file(output_file, geometry_data, settings, external_basis_data=None,
                    parent_k_points=None):
     """Write new D12 file with optimized geometry and settings.
@@ -462,7 +537,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         f.write(f"{len(coords_to_write)}\n")
 
         for atom in coords_to_write:
-            atom_num = int(atom["atom_number"])
+            atom_num = conventional_atom_number(atom["atom_number"], settings)
             # Store original atomic number for symbol lookup
             original_atom_num = atom_num
             
@@ -764,14 +839,17 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 )
 
         # SCF parameters section
-        atomic_numbers = [int(atom["atom_number"]) for atom in coords_to_write]
+        atomic_numbers = [conventional_atom_number(atom["atom_number"], settings)
+                          for atom in coords_to_write]
 
         # Check basis set compatibility — only meaningful for internal basis
         # sets; external basis records are carried verbatim from the source
         # d12, so checking the (default) internal basis against them raised
         # false alarms for elements like Pb/Ag and killed workflow SP/FREQ
-        # generation with an EOFError at the prompt below
-        if external_basis_data or settings.get("basis_set_type") == "EXTERNAL":
+        # generation with an EOFError at the prompt below. A deck that
+        # switches an external-basis parent to an internal basis is checked
+        # like any other internal-basis deck (by its plain atomic numbers).
+        if settings.get("basis_set_type") == "EXTERNAL":
             is_compatible, missing_elements = True, []
         else:
             is_compatible, missing_elements = check_basis_set_compatibility(
@@ -1182,9 +1260,31 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                     "origin_setting", "cell_parameters", "lattice_parameters",
                     "layer_group", "rod_group",
                 ]
+                # A template that stores its own parent's EXTERNAL basis (the
+                # marker, plus that parent's basis records in templates saved
+                # before this release) means "each parent's own basis": this
+                # structure keeps the basis its parent deck was written with.
+                # Applied as a basis it failed on every internal-basis parent
+                # ("External basis set path not configured properly").
+                keep_parent_basis = template_uses_parent_basis(config_data)
+                if keep_parent_basis:
+                    ui.info("  Basis: keeping this structure's own parent basis "
+                            "(the config stores its parent's external basis)")
                 for key, value in config_data.items():
-                    if key not in geometry_identity_keys:
-                        options[key] = value
+                    if key in geometry_identity_keys:
+                        continue
+                    if key in TEMPLATE_STRUCTURE_DATA_KEYS:
+                        # Another structure's atoms or basis records.
+                        continue
+                    if keep_parent_basis and key in TEMPLATE_BASIS_KEYS:
+                        continue
+                    options[key] = value
+                # An external basis directory named by the config is used for
+                # this structure too, not the parent deck's own records.
+                if (not keep_parent_basis and config_data.get("basis_set_type") == "EXTERNAL"
+                        and config_data.get("basis_set_path")
+                        and "use_original_external_basis" not in config_data):
+                    options["use_original_external_basis"] = False
 
                 # A plan step's optimization_settings override only the OPTGEOM
                 # values it names: the parent's others (MAXTRADIUS, a TOLDEE
@@ -1234,6 +1334,17 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                             pressrange_dict.get("p_max", 10)
                         )
                 
+                # A structure with symmetry is written as its asymmetric unit,
+                # whatever the config says: "write all atoms" in a template
+                # saved from a P1 structure (a molecule) listed every atom of
+                # another structure's cell under its space group record, so
+                # CRYSTAL would generate each symmetry copy again.
+                if (options.get("write_only_unique") is False
+                        and (settings.get("spacegroup") or 1) > 1):
+                    options["write_only_unique"] = True
+                    ui.info("  Writing the asymmetric unit (this structure has "
+                            f"space group {settings.get('spacegroup')})")
+
                 # Set write_only_unique if not specified in config
                 if "write_only_unique" not in options:
                     # Check if original input had space group > 1 (not P1)
@@ -1354,8 +1465,16 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
 
         # Merge shared settings with current settings
         options = settings.copy()
+        # Settings chosen on a first file whose parent had an EXTERNAL basis
+        # carry that parent's basis: every other file keeps its own, as with
+        # a --config-file template.
+        keep_parent_basis = template_uses_parent_basis(shared_settings)
         # Override with shared settings (except geometry-specific data)
         for key, value in shared_settings.items():
+            if keep_parent_basis and key in TEMPLATE_BASIS_KEYS:
+                continue
+            if key in TEMPLATE_STRUCTURE_DATA_KEYS:
+                continue
             if key not in [
                 "coordinates",
                 "primitive_cell",
@@ -1721,12 +1840,8 @@ def main():
 
         if success and args.save_options:
             with open(args.options_file, "w") as f:
-                # Convert non-serializable items
-                save_options = {}
-                for k, v in options.items():
-                    if k not in ["coordinates", "primitive_cell", "conventional_cell"]:
-                        save_options[k] = v
-                json.dump(save_options, f, indent=2)
+                # The settings only: no structure's atoms or basis records.
+                json.dump(options_for_template(options), f, indent=2)
             ui.ok(f"Settings saved to {args.options_file}")
 
         if not success:
@@ -1901,11 +2016,7 @@ def main():
         # Save options if requested
         if args.save_options and shared_settings:
             with open(args.options_file, "w") as f:
-                save_options = {}
-                for k, v in shared_settings.items():
-                    if k not in ["coordinates", "primitive_cell", "conventional_cell"]:
-                        save_options[k] = v
-                json.dump(save_options, f, indent=2)
+                json.dump(options_for_template(shared_settings), f, indent=2)
             ui.ok(f"\nShared settings saved to {args.options_file}")
 
 

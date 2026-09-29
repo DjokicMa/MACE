@@ -216,7 +216,9 @@ def test_two_number_mesh_not_from_this_parent_is_regenerated(monkeypatch, tmp_pa
 
 def test_config_from_another_material_does_not_impose_its_mesh(tmp_path):
     """--save-options on Ag1Br1 (SHRINK 5 10), then --config-file on Ti9Se2
-    (SHRINK 15 30): Ti9Se2 used to get 5 10."""
+    (SHRINK 15 30): Ti9Se2 used to get 5 10. A template no longer stores the
+    parent's mesh; one saved before that (with "k_points": "5 10") still does
+    not impose it."""
     a = tmp_path / "a"
     b = tmp_path / "b"
     a.mkdir()
@@ -230,13 +232,18 @@ def test_config_from_another_material_does_not_impose_its_mesh(tmp_path):
          "--save-options", "--options-file", str(tmp_path / "optsA.json")],
         cwd=a, input="", capture_output=True, text=True, timeout=300, env=env)
     saved = json.loads((tmp_path / "optsA.json").read_text())
-    assert saved.get("k_points") == "5 10", (save.stdout + save.stderr)[-1500:]
-    result = subprocess.run(
-        [sys.executable, str(MACE_CLI), "opt2d12", "--out-file", f"{name_b}.out",
-         "--d12-file", f"{name_b}.d12", "--config-file", str(tmp_path / "optsA.json"),
-         "--non-interactive"],
-        cwd=b, input="", capture_output=True, text=True, timeout=300, env=env)
-    assert result.returncode == 0, (result.stdout + result.stderr)[-1500:]
-    decks = [p for p in b.glob("*.d12") if p.name != f"{name_b}.d12"]
-    assert len(decks) == 1
-    assert _shrink(decks[0].read_text().splitlines()) == [["15", "30"]]
+    assert "k_points" not in saved, (save.stdout + save.stderr)[-1500:]
+    saved["k_points"] = "5 10"
+    (tmp_path / "optsA_old.json").write_text(json.dumps(saved))
+    for template in ("optsA.json", "optsA_old.json"):
+        for p in b.glob("*_optimized_sp_*.d12"):
+            p.unlink()
+        result = subprocess.run(
+            [sys.executable, str(MACE_CLI), "opt2d12", "--out-file", f"{name_b}.out",
+             "--d12-file", f"{name_b}.d12", "--config-file", str(tmp_path / template),
+             "--non-interactive"],
+            cwd=b, input="", capture_output=True, text=True, timeout=300, env=env)
+        assert result.returncode == 0, (result.stdout + result.stderr)[-1500:]
+        decks = [p for p in b.glob("*.d12") if p.name != f"{name_b}.d12"]
+        assert len(decks) == 1
+        assert _shrink(decks[0].read_text().splitlines()) == [["15", "30"]], template

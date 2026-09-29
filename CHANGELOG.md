@@ -343,6 +343,26 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   disk-space clean-up off (`max_retries: 0`), but is now merged instead of
   replacing the section, so the recoveries it does not mention - the newer
   optimization fresh start for a collapsed step size - are no longer dropped.
+- **A saved `opt2d12` template applies to other structures.** Settings saved
+  with `--save-options` from a parent with an EXTERNAL basis stored the marker
+  "EXTERNAL (from original D12)" as the basis; applied with `--config-file` to
+  any internal-basis parent the deck failed with "External basis set path not
+  configured properly" (78 of the 118 `test/OPT` parents with the report's
+  Ag1Br1 template). That marker now means "each structure's own parent basis":
+  an external-basis parent keeps its own basis records, an internal one its
+  named basis. A template that names an internal basis (POB-TZVP-REV2) or an
+  external basis directory still applies it to every file. Templates saved by
+  earlier versions load and follow the same rule.
+- **A deck that moves an external-basis parent to an internal basis writes
+  plain atomic numbers.** The parent numbers ECP atoms by its basis (silver
+  247); under BASISSET the deck now writes 47, and the basis-coverage check,
+  which skipped every such deck, runs on it (an HSESOL3C template on the five
+  lead parents in `test/OPT` is now refused: SOLDEF2MSVP has no Pb).
+- **A template from a P1 structure no longer writes every atom of a symmetric
+  one.** Its "write all atoms" was applied as is, so an HSESOL3C template saved
+  from a molecule wrote diamond's two carbons under space group 227 (31 of 118
+  `test/OPT` decks). A structure with symmetry is written as its asymmetric
+  unit.
 
 ### Added
 
@@ -415,6 +435,13 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   in one place and never read there, and half its entries were wrong in ways that
   would have been silent - LC-wPBE and LC-BLYP, both range-separated hybrids,
   were mapped onto Wu-Cohen exchange records.
+- **`opt2d12 --save-options` stores settings, not a structure.** The template
+  no longer holds the parent's atoms, optimisation log, external basis records
+  or k-point mesh (the report's template drops from 90 KB to about 1 KB). No
+  opt2d12 question sets the mesh, so the stored one was always the parent's,
+  and it made every other structure's mesh be regenerated from its cell. With
+  a new template each structure keeps its own parent's SHRINK; a template
+  saved earlier behaves as before.
 - The interactive CIF-converter banner credits its author only; the trailing
   tool-attribution clause is gone, and a test keeps it that way.
 
