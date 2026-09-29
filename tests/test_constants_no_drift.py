@@ -41,3 +41,29 @@ def test_units_derived_keys_unchanged():
     from mace.database.utils.units import UnitConverter
     assert UnitConverter.ENERGY_CONVERSIONS["mev"] == 27211.386245988
     assert UnitConverter.LENGTH_CONVERSIONS["nm"] == 0.052917721067
+
+
+def test_standalone_fallback_values_match_canonical():
+    """Scripts that also run without the mace package keep a literal fallback
+    for the constants they import from mace.constants. Each fallback must be
+    the canonical value exactly, so a standalone run computes the same numbers."""
+    import ast
+    import mace.constants as canonical
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parent.parent
+    files = ["Crystal_d3/CRYSTALOptToD3.py", "Crystal_d3/d3_interactive.py",
+             "mace/utils/advanced_electronic_analyzer.py"]
+    for rel in files:
+        tree = ast.parse((repo / rel).read_text())
+        guards = [n for n in tree.body if isinstance(n, ast.Try)
+                  and isinstance(n.body[0], ast.ImportFrom)
+                  and n.body[0].module == "mace.constants"]
+        assert len(guards) == 1, rel
+        imported = [a.name for a in guards[0].body[0].names]
+        ns = {}
+        exec(compile(ast.Module(body=guards[0].handlers[0].body, type_ignores=[]),
+                     rel, "exec"), ns)
+        assert sorted(k for k in ns if not k.startswith("__")) == sorted(imported), rel
+        for name in imported:
+            assert ns[name] == getattr(canonical, name), (rel, name)
