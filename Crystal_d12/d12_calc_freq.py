@@ -1539,8 +1539,8 @@ def get_auto_phonon_path(crystal_system: str = None, space_group: int = None,
             int_segments = []
             for seg in coord_segments:
                 int_seg = [
-                    int(seg[0] * shrink), int(seg[1] * shrink), int(seg[2] * shrink),
-                    int(seg[3] * shrink), int(seg[4] * shrink), int(seg[5] * shrink)
+                    int(round(seg[0] * shrink)), int(round(seg[1] * shrink)), int(round(seg[2] * shrink)),
+                    int(round(seg[3] * shrink)), int(round(seg[4] * shrink)), int(round(seg[5] * shrink))
                 ]
                 int_segments.append(int_seg)
             return int_segments
@@ -1556,8 +1556,8 @@ def get_auto_phonon_path(crystal_system: str = None, space_group: int = None,
             int_segments = []
             for seg in coord_segments:
                 int_seg = [
-                    int(seg[0] * shrink), int(seg[1] * shrink), int(seg[2] * shrink),
-                    int(seg[3] * shrink), int(seg[4] * shrink), int(seg[5] * shrink)
+                    int(round(seg[0] * shrink)), int(round(seg[1] * shrink)), int(round(seg[2] * shrink)),
+                    int(round(seg[3] * shrink)), int(round(seg[4] * shrink)), int(round(seg[5] * shrink))
                 ]
                 int_segments.append(int_seg)
             return int_segments
@@ -1587,8 +1587,8 @@ def get_auto_phonon_path(crystal_system: str = None, space_group: int = None,
                 int_segments = []
                 for seg in coord_segments:
                     int_seg = [
-                        int(seg[0] * shrink), int(seg[1] * shrink), int(seg[2] * shrink),
-                        int(seg[3] * shrink), int(seg[4] * shrink), int(seg[5] * shrink)
+                        int(round(seg[0] * shrink)), int(round(seg[1] * shrink)), int(round(seg[2] * shrink)),
+                        int(round(seg[3] * shrink)), int(round(seg[4] * shrink)), int(round(seg[5] * shrink))
                     ]
                     int_segments.append(int_seg)
                 return int_segments
@@ -1627,8 +1627,8 @@ def get_auto_phonon_path(crystal_system: str = None, space_group: int = None,
                             end = coords[end_label]
                             # Convert to shrink-scaled integer coordinates
                             segment = [
-                                int(start[0] * shrink), int(start[1] * shrink), int(start[2] * shrink),
-                                int(end[0] * shrink), int(end[1] * shrink), int(end[2] * shrink)
+                                int(round(start[0] * shrink)), int(round(start[1] * shrink)), int(round(start[2] * shrink)),
+                                int(round(end[0] * shrink)), int(round(end[1] * shrink)), int(round(end[2] * shrink))
                             ]
                             segments.append(segment)
                 elif labels and len(labels) > 1:
@@ -1641,8 +1641,8 @@ def get_auto_phonon_path(crystal_system: str = None, space_group: int = None,
                             end = coords[end_label]
                             # Convert to shrink-scaled integer coordinates
                             segment = [
-                                int(start[0] * shrink), int(start[1] * shrink), int(start[2] * shrink),
-                                int(end[0] * shrink), int(end[1] * shrink), int(end[2] * shrink)
+                                int(round(start[0] * shrink)), int(round(start[1] * shrink)), int(round(start[2] * shrink)),
+                                int(round(end[0] * shrink)), int(round(end[1] * shrink)), int(round(end[2] * shrink))
                             ]
                             segments.append(segment)
                             
