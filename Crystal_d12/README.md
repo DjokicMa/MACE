@@ -166,7 +166,20 @@ python CRYSTALOptToD12.py --config-file example_configs/high_accuracy_sp.json --
 
 # Save current settings
 python CRYSTALOptToD12.py --out-file optimized.out --save-options --options-file sp_settings.json
+
+# Apply them to every optimized structure: one question for all files at a
+# terminal (none with --yes, or when nothing is on stdin)
+python CRYSTALOptToD12.py --directory ./opts --config-file sp_settings.json --output-dir ./sp
+python CRYSTALOptToD12.py --out-file opts/*.out --config-file sp_settings.json --yes
 ```
+
+A saved template holds calculation settings only. Each structure keeps its own
+optimized geometry, symmetry and k-point mesh; a template saved from a parent
+with an EXTERNAL basis means "each structure's own parent basis", so the other
+structures keep theirs (external or internal). A template that names an
+internal basis (e.g. POB-TZVP-REV2) or an external basis directory applies it
+to every file. The run ends with "N written, M failed" and each failure's
+reason, and exits non-zero if any file failed or none was written.
 
 **Unified Interface:**
 ```bash
@@ -288,6 +301,10 @@ python CRYSTALOptToD12.py --directory ./optimized --calc-type FREQ --non-interac
 
 # Shared settings for batch
 python CRYSTALOptToD12.py --directory ./optimized --shared-settings
+
+# One saved template for every structure (--out-file takes several paths or a glob)
+python CRYSTALOptToD12.py --directory ./optimized --config-file sp_settings.json --yes
+python CRYSTALOptToD12.py --out-file optimized/*.out --config-file sp_settings.json
 ```
 
 **Advanced Features:**

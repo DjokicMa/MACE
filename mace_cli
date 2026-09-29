@@ -830,13 +830,19 @@ CRYSTALOptToD12.py). The output file is given via --out-file (there is NO
 positional argument); calculation type via --calc-type {SP,OPT,FREQ}.
 
 Options:
-  --out-file FILE       CRYSTAL output (.out) to convert
-  --d12-file FILE       Original .d12 (for settings reference)
+  --out-file FILE...    CRYSTAL output(s) (.out) to convert; several (or a
+                        glob such as opts/*.out) run as one batch, each .out
+                        with the .d12 of the same name beside it
+  --d12-file FILE       Original .d12 (for settings reference; one --out-file)
   --directory DIR       Process all files in DIR (default: current directory)
   --output-dir DIR      Output directory (default: same as input)
   --calc-type {SP,OPT,FREQ}        Calculation type (for --non-interactive)
   --opt-type {FULLOPTG,ATOMONLY,CELLONLY,ITATOCEL,CVOLOPT,INTREDUN}
-  --config-file FILE    JSON config (skips interactive prompts)
+  --config-file FILE    JSON config, e.g. saved with --save-options, applied to
+                        every file (each keeps its own geometry, symmetry and,
+                        for a template from an external-basis parent, its basis)
+  -y, --yes             Apply --config-file without asking (a batch otherwise
+                        asks once, and only at a terminal)
   --non-interactive     Skip all prompts (use defaults / provided options)
   --shared-settings     Apply the same settings to all files
   --save-options / --options-file FILE    Save/load options
@@ -845,6 +851,8 @@ Examples:
   mace opt2d12 --out-file optimized.out
   mace opt2d12 --out-file optimized.out --calc-type SP --non-interactive
   mace opt2d12 --directory . --calc-type FREQ --non-interactive
+  mace opt2d12 --directory opts --config-file sp_template.json --yes
+  mace opt2d12 --out-file opts/*.out --config-file sp_template.json --output-dir sp
 """,
         'opt2d3': """
 Usage: mace opt2d3 --input FILE --calc-type TYPE [options]

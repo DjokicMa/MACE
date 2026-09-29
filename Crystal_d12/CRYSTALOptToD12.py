@@ -28,6 +28,11 @@ USAGE:
     5. Save/load settings:
        python CRYSTALOptToD12.py --save-options --options-file settings.json
 
+    6. Apply saved settings to many files (asks once at a terminal; --yes
+       or no terminal: no question):
+       python CRYSTALOptToD12.py --directory /path/to/files --config-file settings.json
+       python CRYSTALOptToD12.py --out-file opts/*.out --config-file settings.json --yes
+
 AUTHOR:
     New entirely reworked script by Marcus Djokic
     Based on prior versions written by Wangwei Lan, Kevin Lucht, Danny Maldonado, Marcus Djokic
@@ -108,6 +113,17 @@ except Exception:
         def progress(self, it, **k): return it
         def badge(self, s): return str(s).upper()
     ui = _UIShim()
+
+
+# What the last process_files() call wrote, or why it wrote nothing. A batch
+# reads it after each file for its status line and the closing summary.
+LAST_RESULT = {"deck": None, "reason": None}
+
+
+def _fail(reason, message=None):
+    """Print an error and record it as the reason this file wrote nothing."""
+    ui.err(message if message is not None else reason)
+    LAST_RESULT["reason"] = reason
 
 
 # The marker a template saved from a parent with an EXTERNAL basis carries in
@@ -441,7 +457,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
     """
     group_problem = low_dim_group_error(settings)
     if group_problem:
-        ui.err(group_problem)
+        _fail(group_problem)
         return False
 
     calc_type = settings.get("calculation_type", settings.get("calc_type", "OPT"))
@@ -449,7 +465,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         refusal = phonon_dispersion_refusal(
             settings.get("dimensionality", "CRYSTAL"), settings.get("freq_settings"))
         if refusal:
-            ui.err(f"\nNot writing {os.path.basename(output_file)}: {refusal}")
+            _fail(refusal, f"\nNot writing {os.path.basename(output_file)}: {refusal}")
             return False
 
     with atomic_deck(output_file) as f:
@@ -859,6 +875,8 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             )
 
         if not is_compatible:
+            no_basis = (f"basis set '{settings.get('basis_set')}' has no basis for "
+                        + ", ".join(ATOMIC_NUMBER_TO_SYMBOL.get(z, str(z)) for z in missing_elements))
             ui.warn(
                 f"\nWARNING: The selected basis set '{settings.get('basis_set')}' does not support all elements in your structure!"
             )
@@ -870,11 +888,11 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 # crashing with EOFError at the prompt. The deck is partially
                 # written at this point — discard it so the caller can't submit
                 # a truncated d12, and signal failure.
-                ui.err("Non-interactive mode: aborting D12 file creation.")
+                _fail(no_basis, "Non-interactive mode: aborting D12 file creation.")
                 f.discard()
                 return False
             if not yes_no_prompt("\nDo you want to continue anyway?"):
-                ui.err("Aborting D12 file creation.")
+                _fail(no_basis, "Aborting D12 file creation.")
                 f.discard()
                 return False
 
@@ -1077,7 +1095,7 @@ def _keep_extracted_settings(settings, calc_type, opt_type, origin_setting):
 
 
 def process_files(output_file, input_file=None, shared_settings=None, config_file=None, non_interactive=False, calc_type=None, opt_type=None, origin_setting="auto",
-                  output_dir=None):
+                  output_dir=None, confirm_config=None):
     """Process CRYSTAL output and input files
 
     Args:
@@ -1089,10 +1107,17 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         calc_type: Calculation type for non-interactive mode (optional)
         opt_type: Optimization type for non-interactive mode (optional)
         origin_setting: Origin setting for non-interactive mode (optional)
+        confirm_config: ask "Apply these settings from config file?" (True),
+            apply without asking (False), or ask only when stdin is a terminal
+            (None, the default). With nothing on stdin the question ended the
+            run with "EOF when reading a line".
 
     Returns:
-        tuple: (success, settings_used)
+        tuple: (success, settings_used). LAST_RESULT then holds the deck
+        written, or the reason nothing was.
     """
+    LAST_RESULT["deck"] = None
+    LAST_RESULT["reason"] = None
 
     # Parse output file
     ui.info(f"\nParsing output file: {output_file}")
@@ -1100,7 +1125,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     try:
         out_data = out_parser.parse()
     except Exception as e:
-        ui.err(f"Error parsing output file: {e}")
+        _fail(f"could not parse the output file: {e}", f"Error parsing output file: {e}")
         return False, None
 
     # Parse input file if provided
@@ -1235,9 +1260,18 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             ui.rule()
 
             # Ask user if they want to apply these settings (skip in non-interactive mode)
+            if confirm_config is None:
+                confirm_config = sys.stdin is not None and sys.stdin.isatty()
             if non_interactive:
                 apply_config = True
                 ui.info("\nApplying config file settings (non-interactive mode).")
+            elif not confirm_config:
+                # Passing --config-file asks for its settings. A batch confirms
+                # once for all files, --yes skips the question, and with no
+                # terminal there is nobody to ask: a piped "y" applied the
+                # settings, and the same settings are applied without reading it.
+                apply_config = True
+                ui.info("\nApplying config file settings.")
             else:
                 apply_config = yes_no_prompt("\nApply these settings from config file?", default="yes")
             
@@ -1435,7 +1469,15 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         except Exception as e:
             ui.err(f"Error loading config file: {e}")
             ui.warn("Falling back to interactive mode.")
-            options = get_calculation_options_from_current(settings)
+            try:
+                options = get_calculation_options_from_current(settings)
+            except EOFError:
+                # Nobody to answer the interactive questions (answers piped
+                # after the config, as the workflow engine does, are still
+                # read above).
+                _fail(f"the config file could not be applied ({e})",
+                      "No answers on stdin for the interactive settings; nothing written.")
+                return False, None
     elif non_interactive and not calc_type:
         # True non-interactive mode (no config file, no calc type specified)
         options = _keep_extracted_settings(settings, "SP", opt_type, origin_setting)
@@ -1579,10 +1621,11 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     # parent without them has nothing to write, and the writer would stop
     # half way through the deck. Refuse before any file is opened.
     if options.get("functional") == CUSTOM_FUNCTIONAL and not options.get("custom_functional"):
-        ui.err(f"\nNot writing {os.path.basename(new_filename)}: the functional "
-               f"'{CUSTOM_FUNCTIONAL}' means the parent's own EXCHANGE/CORRELAT/HYBRID "
-               f"definition, and this parent's DFT block has none. Name a CRYSTAL23 "
-               f"functional (e.g. PBE0, HSE06) instead.")
+        _fail(f"functional '{CUSTOM_FUNCTIONAL}' but the parent has no EXCHANGE/CORRELAT/HYBRID records",
+              f"\nNot writing {os.path.basename(new_filename)}: the functional "
+              f"'{CUSTOM_FUNCTIONAL}' means the parent's own EXCHANGE/CORRELAT/HYBRID "
+              f"definition, and this parent's DFT block has none. Name a CRYSTAL23 "
+              f"functional (e.g. PBE0, HSE06) instead.")
         return False, options
     # --output-dir was parsed, and the directory created, but never reached this
     # point, so every deck landed in the current directory regardless.
@@ -1712,9 +1755,12 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     if not write_d12_file(new_filename, out_data, converted_options, external_basis_data,
                           parent_k_points=parent_k_points):
         ui.err(f"\nFailed to create {new_filename}: D12 creation aborted.")
+        if not LAST_RESULT["reason"]:
+            LAST_RESULT["reason"] = "D12 creation aborted"
         return False, options
 
     ui.ok(f"\nSuccessfully created {new_filename}")
+    LAST_RESULT["deck"] = new_filename
 
     return True, options
 
@@ -1728,8 +1774,8 @@ def find_file_pairs(directory):
     pairs = []
 
     # Find all .out files, excluding SLURM output files
-    out_files = [f for f in os.listdir(directory) 
-                 if f.endswith(".out") and not f.startswith("slurm-")]
+    out_files = sorted(f for f in os.listdir(directory)
+                       if f.endswith(".out") and not f.startswith("slurm-"))
 
     for out_file in out_files:
         base_name = out_file[:-4]  # Remove .out extension
@@ -1747,14 +1793,78 @@ def find_file_pairs(directory):
     return pairs
 
 
+def pair_out_files(out_files):
+    """(out, d12 or None) for each --out-file path, in the order given.
+
+    Each .out is paired with the .d12 of the same name beside it; without
+    one it is converted from the .out alone, as a single --out-file is.
+    """
+    pairs = []
+    for out_file in out_files:
+        d12_file = os.path.splitext(out_file)[0] + ".d12"
+        pairs.append((out_file, d12_file if os.path.exists(d12_file) else None))
+    return pairs
+
+
+def _template_basis_text(config_data):
+    if template_uses_parent_basis(config_data):
+        return "each structure keeps its own parent's basis"
+    if config_data.get("basis_set_type") == "EXTERNAL" and config_data.get("basis_set_path"):
+        return f"external basis files in {config_data['basis_set_path']}"
+    return config_data.get("basis_set") or "each parent's own (the config names none)"
+
+
+def print_template_plan(config_file, config_data, file_pairs, output_dir):
+    """What a batch run of a --config-file will do, shown before any file."""
+    mods = config_data.get("method_modifications") or {}
+    functional = (mods.get("new_functional") or mods.get("functional")
+                  or config_data.get("functional") or "each parent's own")
+    tol_mods = (config_data.get("tolerance_modifications") or {}).get("custom_tolerances")
+    tolerances = tol_mods or config_data.get("tolerances")
+    k_points = config_data.get("k_points")
+    if not k_points:
+        k_text = "each parent's own mesh"
+    elif len(str(k_points).split()) == 2:
+        k_text = (f"regenerated from each cell (the config's {k_points} is the mesh of "
+                  f"the structure it was saved from)")
+    else:
+        k_text = f"{k_points} for every file (set in the config)"
+    with_d12 = sum(1 for _, d12 in file_pairs if d12)
+
+    print()
+    ui.rule("APPLY CONFIG TO ALL FILES")
+    ui.info(f"Config file:  {config_file}")
+    ui.info(f"Files:        {len(file_pairs)} ({with_d12} with their .d12, "
+            f"{len(file_pairs) - with_d12} from the .out alone)")
+    ui.info(f"Decks go to:  {output_dir if output_dir else 'next to each .out file'}")
+    ui.info(f"Calculation:  {config_data.get('calculation_type') or 'as each parent'}")
+    ui.info(f"Functional:   {functional}")
+    ui.info(f"Basis set:    {_template_basis_text(config_data)}")
+    if config_data.get("dft_grid"):
+        ui.info(f"DFT grid:     {config_data['dft_grid']}")
+    if tolerances:
+        ui.info(f"Tolerances:   {', '.join(f'{k} {v}' for k, v in tolerances.items())}")
+    if "spin_polarized" in config_data:
+        ui.info(f"Spin:         {'spin-polarized' if config_data['spin_polarized'] else 'closed shell'}")
+    ui.info(f"k-points:     {k_text}")
+    ui.info("Kept from each structure: its optimized geometry, atoms and symmetry.")
+    ui.rule()
+
+
 def main():
     """Main function"""
     parser = argparse.ArgumentParser(
         description="Convert CRYSTAL17/23 optimization output to new D12 input files"
     )
-    parser.add_argument("--out-file", type=str, help="CRYSTAL output file (.out)")
     parser.add_argument(
-        "--d12-file", type=str, help="Original CRYSTAL input file (.d12)"
+        "--out-file", nargs="+", metavar="OUT",
+        help="CRYSTAL output file(s) (.out). Several, or a shell glob such as "
+             "'opts/*.out', are processed as one batch, each with the .d12 of "
+             "the same name beside it when there is one",
+    )
+    parser.add_argument(
+        "--d12-file", type=str,
+        help="Original CRYSTAL input file (.d12) for a single --out-file",
     )
     parser.add_argument(
         "--directory",
@@ -1784,7 +1894,16 @@ def main():
     parser.add_argument(
         "--config-file",
         type=str,
-        help="JSON config file to load calculation settings from (skips interactive prompts)",
+        help="JSON config file (e.g. one saved with --save-options) whose settings are "
+             "applied to every file; each structure keeps its own geometry, symmetry "
+             "and, for a config saved from an external-basis parent, its own basis",
+    )
+    parser.add_argument(
+        "-y", "--yes",
+        action="store_true",
+        help="Apply --config-file without asking. Otherwise one file asks "
+             "'Apply these settings?' and a batch asks once for all files, "
+             "both only when run at a terminal",
     )
     parser.add_argument(
         "--non-interactive",
@@ -1808,6 +1927,9 @@ def main():
     )
 
     args = parser.parse_args()
+    if args.out_file and len(args.out_file) > 1 and args.d12_file:
+        parser.error("--d12-file goes with a single --out-file; with several, each "
+                     ".out uses the .d12 of the same name beside it")
 
     ui.rule("CRYSTAL17/23 Optimization Output to D12 Converter")
     ui.info("Enhanced version matching NewCifToD12.py configurations")
@@ -1822,20 +1944,22 @@ def main():
         os.makedirs(args.output_dir)
 
     # Single file processing
-    if args.out_file:
-        if not os.path.exists(args.out_file):
-            ui.err(f"Error: Output file {args.out_file} not found")
-            return
+    if args.out_file and len(args.out_file) == 1:
+        out_file = args.out_file[0]
+        if not os.path.exists(out_file):
+            ui.err(f"Error: Output file {out_file} not found")
+            sys.exit(1)
 
         success, options = process_files(
-            args.out_file, 
+            out_file,
             args.d12_file, 
             config_file=args.config_file,
             non_interactive=args.non_interactive,
             calc_type=args.calc_type,
             opt_type=args.opt_type,
             origin_setting=args.origin_setting,
-            output_dir=args.output_dir
+            output_dir=args.output_dir,
+            confirm_config=False if args.yes else None,
         )
 
         if success and args.save_options:
@@ -1850,8 +1974,17 @@ def main():
             sys.exit(1)
 
     else:
-        # Directory processing
-        file_pairs = find_file_pairs(args.directory)
+        # Several --out-file paths, or every .out in --directory
+        if args.out_file:
+            file_pairs = pair_out_files(args.out_file)
+        else:
+            file_pairs = find_file_pairs(args.directory)
+
+        if not file_pairs and (args.config_file or not sys.stdin.isatty()):
+            # Nobody to ask for a path (or the run was meant to apply a
+            # template): say so and fail rather than wait at a prompt.
+            ui.err(f"No CRYSTAL output files (.out) found in {args.directory}")
+            sys.exit(1)
 
         if not file_pairs:
             ui.warn(f"No .out files found in {args.directory}")
@@ -1894,8 +2027,28 @@ def main():
 
         ui.info(f"Found {len(file_pairs)} output file(s) to process")
 
-        # Ask about shared settings mode if multiple files and not specified
-        use_shared_settings = args.shared_settings
+        config_data = None
+        if args.config_file:
+            # Read the template once, before any file, so a bad one stops the
+            # batch instead of failing (or dropping to questions) per file.
+            try:
+                with open(args.config_file) as f:
+                    config_data = unwrap_d12_config(json.load(f))
+                if not isinstance(config_data, dict):
+                    raise ValueError("not a JSON object of settings")
+            except Exception as e:
+                ui.err(f"Cannot use config file {args.config_file}: {e}")
+                sys.exit(1)
+            if len(file_pairs) > 1:
+                print_template_plan(args.config_file, config_data, file_pairs, args.output_dir)
+                ask = not (args.yes or args.non_interactive) and sys.stdin.isatty()
+                if ask and not yes_no_prompt(f"\nApply to all {len(file_pairs)} files?", default="yes"):
+                    ui.warn("Cancelled: nothing written.")
+                    sys.exit(1)
+
+        # Ask about shared settings mode if multiple files and not specified.
+        # A --config-file is the shared settings: nothing to ask.
+        use_shared_settings = args.shared_settings and not args.config_file
         if not args.non_interactive and len(file_pairs) > 1 and not args.config_file:
             print()
             ui.rule("MULTIPLE FILE PROCESSING OPTIONS")
@@ -1976,17 +2129,29 @@ def main():
                 ui.err(f"Error getting shared settings: {e}")
                 return
 
+        # One file asks as a single --out-file does; a batch was confirmed
+        # (or needs no confirming) above.
+        if len(file_pairs) > 1 or args.yes:
+            confirm_config = False
+        else:
+            confirm_config = None
+
         # Process all file pairs
-        success_count = 0
-        for out_file, d12_file in file_pairs:
+        written, failed = [], []
+        total = len(file_pairs)
+        for index, (out_file, d12_file) in enumerate(file_pairs, 1):
+            name = os.path.basename(out_file)
             print()
-            ui.rule(f"Processing: {os.path.basename(out_file)}")
+            ui.rule(f"Processing: {name}")
             if d12_file:
                 ui.info(f"With input: {os.path.basename(d12_file)}")
             else:
                 ui.info("No corresponding .d12 file found")
 
+            LAST_RESULT["deck"] = LAST_RESULT["reason"] = None
             try:
+                if not os.path.exists(out_file):
+                    raise FileNotFoundError("file not found")
                 success, options = process_files(
                     out_file,
                     d12_file,
@@ -1996,28 +2161,45 @@ def main():
                     calc_type=args.calc_type,
                     opt_type=args.opt_type,
                     origin_setting=args.origin_setting,
-                    output_dir=args.output_dir
+                    output_dir=args.output_dir,
+                    confirm_config=confirm_config,
                 )
+                reason = LAST_RESULT["reason"]
             except Exception as e:
                 # Per-file isolation (same contract as NewCifToD12): one bad
                 # structure — e.g. the deliberate monoclinic unique-axis
                 # ValueError — must not abort the rest of the batch.
-                ui.err(f"Error processing {os.path.basename(out_file)}: {e}")
-                success = False
+                ui.err(f"Error processing {name}: {e}")
+                success, reason = False, str(e) or type(e).__name__
             if success:
-                success_count += 1
+                deck = LAST_RESULT["deck"]
+                written.append((name, deck))
+                ui.ok(f"({index}/{total}) {name}: wrote {deck}")
+            else:
+                reason = reason or "no deck written (see the messages above)"
+                failed.append((name, reason))
+                ui.err(f"({index}/{total}) {name}: FAILED: {reason}")
 
         print()
         ui.rule()
-        ui.ok(
-            f"Processing complete: {success_count}/{len(file_pairs)} files processed successfully"
-        )
+        summary = f"{len(written)} written, {len(failed)} failed (of {total} files)"
+        if failed:
+            ui.err(summary)
+            for name, reason in failed:
+                ui.err(f"  {name}: {reason}")
+        else:
+            ui.ok(summary)
 
         # Save options if requested
         if args.save_options and shared_settings:
             with open(args.options_file, "w") as f:
                 json.dump(options_for_template(shared_settings), f, indent=2)
             ui.ok(f"\nShared settings saved to {args.options_file}")
+
+        # Exit status for scripts: a batch that failed on any file, or wrote
+        # nothing, is not a success.
+        if failed or not written:
+            sys.exit(1)
 
 
 if __name__ == "__main__":

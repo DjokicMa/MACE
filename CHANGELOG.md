@@ -343,6 +343,11 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   disk-space clean-up off (`max_retries: 0`), but is now merged instead of
   replacing the section, so the recoveries it does not mention - the newer
   optimization fresh start for a collapsed step size - are no longer dropped.
+- **`opt2d12 --directory DIR --config-file T` no longer asks, or stops, per
+  file.** It asked "Apply these settings from config file? [Y/n]" for every
+  file; with nothing on stdin each file logged "EOF when reading a line", no
+  deck was written, and the run exited 0. A single `--out-file` with nothing on
+  stdin (or a closed one) failed the same way. See Added for the batch run.
 - **A saved `opt2d12` template applies to other structures.** Settings saved
   with `--save-options` from a parent with an EXTERNAL basis stored the marker
   "EXTERNAL (from original D12)" as the basis; applied with `--config-file` to
@@ -385,6 +390,20 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   per deck, against a queue wait to learn the same thing. A run that produced no
   `fort.87` *and* no success marker counts as a failure, because that is exactly
   how the hexagonal slab died.
+- **One `opt2d12` template for many structures.** `--config-file` applies to
+  every file of `--directory DIR` or of several `--out-file` paths (a shell
+  glob such as `opts/*.out`; each `.out` is paired with the `.d12` of the same
+  name beside it). Before any file it prints the plan (config, file count,
+  output directory, the settings it applies) and, at a terminal only, asks
+  once "Apply to all N files? [Y/n]"; `-y`/`--yes` skips that, and with no
+  terminal nothing is asked. A single file still asks at a terminal, and a
+  piped "y" works as before. Each file gets a status line and the run ends
+  with "N written, M failed" and each failure's reason; it exits non-zero if
+  any file failed or none was written (as does any `--directory` run now,
+  with or without a config; files are taken in name order). On the 118 `test/OPT` parents the batch
+  decks are byte-identical to the single-file config path run once per file,
+  for templates saved from an internal-basis, an external-basis and an
+  HSESOL3C parent.
 - **SLABCUT**, opt-in via `options['slabcut']`. The manual builds a slab from the
   3D structure and derives the layer group itself, sidestepping the orientation
   ambiguity that forces a refusal above. It needs two runs - a SLABINFO probe to
