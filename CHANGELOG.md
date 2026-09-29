@@ -44,6 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   modules the copied converters import (`d12_config.py`, `menu_nav.py`,
   `spglib_compat.py`, `seekpath_interface.py`). It no longer tries to copy
   `recovery_config.yaml`, which the recovery engine reads from `mace/config/`.
+- **Documentation examples and paths that did not work.** The D3 batch
+  example passed `--config-file doss_orbital_projections.json`, which is
+  opened as given and not looked up in `example_configs/`; it now gives the
+  full `$MACE_HOME/Crystal_d3/example_configs/` path. DOCUMENTATION.md listed
+  three of the six `--calc-type` values of `opt2d3`, pointed at
+  `Band_Alignment/` and `Post_Processing_Scripts/` without their `code/`
+  prefix, and referred to a `d12creation.py` that no longer exists. It now
+  also documents applying one `opt2d12` template to many structures.
 
 ### Removed
 

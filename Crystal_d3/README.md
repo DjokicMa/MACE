@@ -45,8 +45,9 @@ python CRYSTALOptToD3.py --input material.out --config-file my_doss_config.json
 # Save configuration during interactive setup
 python CRYSTALOptToD3.py --input material.out --calc-type DOSS --save-config
 
-# Batch processing with configuration
-python CRYSTALOptToD3.py --batch --config-file doss_orbital_projections.json
+# Batch processing with configuration (run in the directory holding the .out
+# files; --config-file is a path, not looked up in example_configs/)
+python CRYSTALOptToD3.py --batch --config-file $MACE_HOME/Crystal_d3/example_configs/doss_orbital_projections.json
 
 # List available configurations
 python CRYSTALOptToD3.py --list-configs

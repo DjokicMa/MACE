@@ -4,14 +4,18 @@ This directory contains example JSON configuration files for different D3 calcul
 
 ## Usage
 
+`--config-file` takes a path (relative to the directory you run in); it is not
+looked up in this directory, so give the full path to use one of these examples.
+
 ### Loading a configuration file:
 ```bash
-python CRYSTALOptToD3.py --input material.out --config-file band_high_symmetry.json
+python CRYSTALOptToD3.py --input material.out --config-file $MACE_HOME/Crystal_d3/example_configs/band_high_symmetry.json
 ```
 
 ### Batch processing with configuration:
 ```bash
-python CRYSTALOptToD3.py --batch --config-file doss_orbital_projections.json
+# Processes every .out file in the current directory
+python CRYSTALOptToD3.py --batch --config-file $MACE_HOME/Crystal_d3/example_configs/doss_orbital_projections.json
 ```
 
 ### Saving your own configuration:
