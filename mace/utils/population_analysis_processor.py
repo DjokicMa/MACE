@@ -397,7 +397,7 @@ def process_material_population_analysis(material_id: str, db_path: str = "mater
     Returns:
         Processed population analysis results
     """
-    from material_database import MaterialDatabase
+    from mace.database.materials import MaterialDatabase
     
     db = MaterialDatabase(db_path)
     processor = PopulationAnalysisProcessor()

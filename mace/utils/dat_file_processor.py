@@ -445,7 +445,7 @@ def process_calculation_dat_files(calc_id: str, work_dir: str, db_path: str = "m
     Returns:
         Dictionary with processed DAT file data
     """
-    from material_database import MaterialDatabase
+    from mace.database.materials import MaterialDatabase
     
     processor = DatFileProcessor()
     results = {}

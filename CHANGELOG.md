@@ -387,6 +387,11 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   output text, so every such deck stopped with `OSError: File name too long`.
   They now read the same text from a temporary file, and the path matches what
   the `.out` itself gives.
+- **The DAT-file and population-analysis processors open the materials
+  database.** `process_calculation_dat_files` and
+  `process_material_population_analysis` (`mace/utils`) imported
+  `MaterialDatabase` from `material_database`, a module that no longer exists,
+  and stopped with ModuleNotFoundError; they now use `mace.database.materials`.
 
 ### Added
 
