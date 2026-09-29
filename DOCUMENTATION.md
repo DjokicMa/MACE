@@ -112,6 +112,20 @@ mace completion --recursive --remove-zombie-jobs  # Full workflow zombie detecti
 mace completion --organize                # Sort files by status into folders
 ```
 
+### One D12 Template for Many Structures (`mace opt2d12`)
+```bash
+# Save the settings chosen for one structure as a template
+mace opt2d12 --out-file optimized.out --save-options --options-file sp_template.json
+
+# Apply the template to every .out in a directory, or to the files a glob names
+mace opt2d12 --directory opts --config-file sp_template.json --output-dir sp
+mace opt2d12 --out-file opts/*.out --config-file sp_template.json --output-dir sp --yes
+```
+- `--out-file` takes one or more paths; with `--out-file`, `--directory` is ignored. Without either, the current directory is used. Each `.out` is read with the `.d12` of the same name beside it, if there is one
+- `--config-file` is a settings JSON: one saved with `--save-options`, or a file from `Crystal_d12/example_configs/`. Each structure keeps its own geometry and symmetry. It is read once before any file, and an unreadable one stops the run
+- With several files, the plan is printed and asked about once (`Apply to all N files?`), only when run at a terminal; `--yes` (`-y`) skips that question. No per-file questions are asked: a file that would need an answer fails with the reason and the others carry on
+- `--output-dir` is created if missing (default: beside each `.out`). The run exits non-zero if any file failed or nothing was written
+
 ### Job Management (Direct Script Access)
 ```bash
 # Enhanced queue management with material tracking
@@ -248,7 +262,7 @@ The codebase is organized into distinct workflow stages:
    - Band plotting templates for different crystal systems
    - CRYSTALOptToD3.py: Unified D3 generation with basic/advanced/expert configuration modes
 
-5. **Analysis & Visualization** (`mace plotting` / `Plotting/`, `Band_Alignment/`, `Post_Processing_Scripts/`)
+5. **Analysis & Visualization** (`mace plotting` / `Plotting/`, `code/Band_Alignment/`, `code/Post_Processing_Scripts/`)
    - Extract electronic properties (band gaps, work functions)
    - Generate publication-quality plots and multi-page PDFs
    - Material property analysis and comparison
@@ -412,7 +426,6 @@ The workflow manager (`mace/run_workflow.py`) provides a unified interface for p
 #### **Level 3: Expert**
 - Full NewCifToD12.py integration
 - Complete interactive configuration
-- Access to all d12creation.py features
 - Custom tolerances and convergence criteria
 - Advanced symmetry handling options
 
@@ -489,7 +502,7 @@ All workflow configurations are saved as JSON files for:
 #### **Tool Integration**
 - **NewCifToD12.py**: CIF → D12 conversion with full configuration
 - **CRYSTALOptToD12.py**: OPT → SP/FREQ generation
-- **CRYSTALOptToD3.py**: Band structure / DOS / transport input generation (`--calc-type BAND|DOSS|TRANSPORT`)
+- **CRYSTALOptToD3.py**: Band structure / DOS / transport input generation (`--calc-type BAND|DOSS|TRANSPORT|CHARGE|POTENTIAL|CHARGE+POTENTIAL`)
 - **Enhanced Queue Manager**: Job submission and monitoring
 - **Material Database**: Calculation tracking and provenance
 

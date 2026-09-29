@@ -382,6 +382,14 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   now fails with the reason, the same with a terminal as without. With stdin
   closed (`<&-`) opt2d12 crashed with AttributeError where it checked for a
   terminal; it is treated as nobody to ask.
+- **Documentation examples and paths that did not work.** The D3 batch
+  example passed `--config-file doss_orbital_projections.json`, which is
+  opened as given and not looked up in `example_configs/`; it now gives the
+  full `$MACE_HOME/Crystal_d3/example_configs/` path. DOCUMENTATION.md listed
+  three of the six `--calc-type` values of `opt2d3`, pointed at
+  `Band_Alignment/` and `Post_Processing_Scripts/` without their `code/`
+  prefix, and referred to a `d12creation.py` that no longer exists. It now
+  also documents applying one `opt2d12` template to many structures.
 
 ### Added
 
