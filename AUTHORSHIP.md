@@ -110,7 +110,6 @@ This document provides authorship attribution for the MACE (Mendoza Automated CR
 - `symmetry_utils.py` - Symmetry utilities
 
 **Workflow Module:**
-- `callback.py` - Callback utilities
 - `interactive_monitor.py` - Interactive monitoring
 - `monitor.py` - Workflow monitoring
 - `progress_tracker.py` - Progress tracking
