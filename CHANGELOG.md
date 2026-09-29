@@ -5,7 +5,42 @@ All notable changes to MACE (Mendoza Automated CRYSTAL Engine) will be documente
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2025-02-12
+## [1.0.5] - 2026-06-14
+
+Changes since 1.0.0. Tagged retroactively: 1.0.5 was the version `mace --version`
+reported at this point, but it was never separately announced, so its changes
+were first described in the 1.1.0 notes. 1.0.1 through 1.0.4 were never released.
+
+### Added
+
+#### Plotting subsystem (`mace plotting`)
+One command for publication-ready plots from CRYSTAL outputs, with content-based
+file detection, per-kind flags (`--band --dos --structure --cube --freq --ir
+--raman --all`), an interactive menu, and `-o` output routing:
+
+#### Deep property extraction
+The materials database now stores the full scientific results of each calculation
+type, not just scalar summaries — as compact JSON plus flat, queryable scalar rows
+in the existing `properties` table (no schema change):
+
+#### Queue / submission
+- In-place submission for manual `mace submit` (no forced reorganization);
+  `--organize` restores the copy-into-folders layout
+- `completion` command surfaced in `mace --help`; all command help audited
+  against the real parsers (fabricated flags removed)
+
+### Fixed
+- **FREQ extractor** previously parsed vibrational data into a discarded local variable; frequencies/IR/Raman now actually persist (fixed the units-anchor `(CM**-1)` and mode-range parse bugs).
+- **Error-recovery chain** — previously-dead paths called nonexistent DB/manager APIs (errors swallowed): max-recovery-attempts, recovered-job resubmission, and workflow-engine step submission now work end-to-end; the timeout handler parses the `-t 7-00:00:00` day form and never shrinks walltime; the memory handler preserves `--mem-per-cpu` vs `--mem`; recovered resubmissions record the bumped script so repeated failures escalate cumulatively.
+- **d12/d3 generation correctness** — SPINLOCK parse + round-trip (a configured spin lock survives OPT continuation and JSON-config reuse); origin-setting preservation; k-point table fixes (C-/I-centered orthorhombic assignments, duplicate table key); DOSS Fermi-window unit consistency.
+- **JSON config save/apply round-trips** for `opt2d12` / `opt2d3` (settings no longer drift through a save→load cycle); invalid interactive calc-type choices re-prompt instead of silently defaulting to BAND.
+- **Database correctness** — canonical material-ID derivation, NULL-safe dedup on re-extraction, pressure unit-conversion table (kbar/Mbar swap, atm factor), enthalpy H = G + TS, full-precision Hartree↔eV constants (single source: `mace/constants.py`), pyarrow import-order crash guard.
+
+### Changed
+- **Repo hygiene** — development and internal artifacts kept out of the repository; ad-hoc validation scripts centralized under `tests/`.
+- **CI** — GitHub Actions runs the self-contained test suite on a fresh clone (data-dependent tests skip without the local `test/` corpus).
+
+## [1.0.0] - 2026-02-12
 
 ### Added
 
@@ -61,7 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## Roadmap (not yet scheduled)
 
 ### Planned
 - PyPI package distribution

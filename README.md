@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <strong>Version 1.0.0</strong>
+  <strong>Version 1.0.5</strong>
 </p>
 
 ---
@@ -285,12 +285,13 @@ Copyright (c) 2021-2026 Marcus Djokic, Mendoza Group, Michigan State University
 
 ## 📖 Citation
 
-If you use MACE in your research, please cite:
+If you use MACE in your research, please cite it. GitHub's **"Cite this
+repository"** button (from `CITATION.cff`) gives the same reference.
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18635426.svg)](https://doi.org/10.5281/zenodo.18635426)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18635425.svg)](https://doi.org/10.5281/zenodo.18635425)
 
 **APA Format:**
-> Djokic, M., Maldonado-Lopez, D., Lewis, B., Comaskey, W., & Mendoza-Cortes, J. (2026). Mendoza Automated CRYSTAL Engine (MACE) (v1.0.0). Zenodo. https://doi.org/10.5281/zenodo.18635426
+> Djokic, M., Maldonado-Lopez, D., Lewis, B., Comaskey, W. P., & Mendoza-Cortes, J. L. (2026). Mendoza Automated CRYSTAL Engine (MACE). Zenodo. https://doi.org/10.5281/zenodo.18635425
 
 **BibTeX:**
 ```bibtex
@@ -298,16 +299,23 @@ If you use MACE in your research, please cite:
   author       = {Djokic, Marcus and
                   Maldonado-Lopez, Daniel and
                   Lewis, Brandon and
-                  Comaskey, William and
-                  Mendoza-Cortes, Jose Luis},
+                  Comaskey, William P. and
+                  Mendoza-Cortes, Jose L.},
   title        = {Mendoza Automated CRYSTAL Engine (MACE)},
-  version      = {v1.0.0},
   year         = 2026,
   publisher    = {Zenodo},
-  doi          = {10.5281/zenodo.18635426},
-  url          = {https://doi.org/10.5281/zenodo.18635426}
+  doi          = {10.5281/zenodo.18635425},
+  url          = {https://doi.org/10.5281/zenodo.18635425}
 }
 ```
+
+That DOI covers every version and always resolves to the latest archived
+release. To cite the exact version you used, use its own DOI instead:
+
+| Version | DOI |
+|---|---|
+| 1.0.0 | [10.5281/zenodo.18635426](https://doi.org/10.5281/zenodo.18635426) |
+| 1.0.5 | [10.5281/zenodo.23045474](https://doi.org/10.5281/zenodo.23045474) |
 
 ## 💬 Support
 
