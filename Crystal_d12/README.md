@@ -442,6 +442,23 @@ All scripts generate CRYSTAL23-compatible `.d12` files:
 - Validate settings before writing
 - Support all CRYSTAL input sections
 
+### `soc_ecp.py`
+
+**Purpose:** Two-component spin-orbit (SOC) single-point decks, only when asked
+for with `"soc": true` in a cif2d12 options file or an opt2d12 template.
+
+- Reads the Stuttgart spin-orbit ECPs in `Crystal_d3/Archived/basis/sopseud/2NN.mol`
+  (MOLPRO format) and writes them as CRYSTAL23 `INPSOC` records, INTERNAL
+  convention (manual pp. 84-87; the manual's Eu example is reproduced exactly).
+- An atom's ECP is replaced only if it is exactly the scalar part of the
+  spin-orbit ECP, so its valence basis stays the one published with that
+  potential. The `full.basis.doublezeta`/`triplezeta` ECPs of Rb-Bi (not Yb)
+  qualify; all-electron atoms are left as they are.
+- Adds `TWOCOMPON` / `SOC` / `END` before `SCFDIR` (manual sec. 6.2).
+- Refuses, writing no deck: OPT/FREQ and other non-single-point runs, dispersion,
+  functionals and keywords manual chapter 6 does not list, `BASISSET`, and ECPs
+  that are not a spin-orbit ECP's scalar part.
+
 ### `d12_interactive.py`
 
 **Purpose:** Interactive prompts and user interface utilities.

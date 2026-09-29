@@ -172,6 +172,7 @@ except ImportError:
 
 # Import write_scf_section from d12_writer
 from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES
+from soc_ecp import SocDeckBuffer
 
 # MACE visual layer (ui facade). This script also runs standalone via
 # `python NewCifToD12.py`, where `mace` may NOT be importable, so the import is
@@ -1468,6 +1469,11 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
 
     # Open output file (renamed into place only once the deck is complete)
     with atomic_deck(output_file) as f:
+        if options.get("soc"):
+            # Two-component SOC deck: written as usual, then rewritten by
+            # soc_ecp.soc_deck before it reaches the file.
+            f = SocDeckBuffer(f)
+
         # Write title
         print(os.path.basename(output_file).replace(".d12", ""), file=f)
 
@@ -1726,6 +1732,12 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
         )
 
         # Note: The single END at the very end is written by write_scf_section
+
+        if options.get("soc"):
+            refusal = f.finish()
+            if refusal:
+                ui.err(f"Not writing {os.path.basename(output_file)}: {refusal}")
+                return False
 
     return True
 

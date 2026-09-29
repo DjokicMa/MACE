@@ -109,7 +109,8 @@ def copy_dependencies(target_dir: str = "."):
                 "d12_parsers.py",
                 "d12_writer.py",
                 "menu_nav.py",
-                "spglib_compat.py"
+                "spglib_compat.py",
+                "soc_ecp.py"
             ]
         },
         "Crystal_d3": {

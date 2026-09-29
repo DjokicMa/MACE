@@ -82,6 +82,7 @@ from d12_writer import (
 )
 # Import write_scf_section from d12_writer
 from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES, atomic_deck
+from soc_ecp import SocDeckBuffer
 from d12_interactive import (
     display_current_settings, interactive_d12_configuration,
     get_calculation_options_from_current, get_calculation_options,
@@ -549,6 +550,11 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             return False
 
     with atomic_deck(output_file) as f:
+        if settings.get("soc"):
+            # Two-component SOC deck: written as usual, then rewritten by
+            # soc_ecp.soc_deck before it reaches the file.
+            f = SocDeckBuffer(f)
+
         # Title
         # Title from the file NAME only: with --output-dir the path carries a
         # directory, which must not leak into the CRYSTAL title line.
@@ -1111,6 +1117,12 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         )
 
         # Note: The single END at the very end is written by write_scf_section
+
+        if settings.get("soc"):
+            refusal = f.finish()
+            if refusal:
+                _fail(refusal, f"Not writing {os.path.basename(output_file)}: {refusal}")
+                return False
 
     return True
 

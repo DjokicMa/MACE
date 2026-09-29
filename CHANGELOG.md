@@ -62,6 +62,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mace/` hidden from `sys.path`, before anything else can, and `mace_cli`
   imports the job-queue package as `mace.queue` rather than `queue`.
 
+### Added
+
+- **Two-component spin-orbit (SOC) decks, on request only.** A `"soc": true`
+  key in a cif2d12 options file or an opt2d12 template turns the single-point
+  deck MACE writes into a CRYSTAL23 2c-SCF with SOC: every atom whose basis
+  carries an ECP that is, number for number, the scalar part of one of the 81
+  Stuttgart spin-orbit ECPs in `Crystal_d3/Archived/basis/sopseud/` gets that
+  ECP as `INPSOC` (manual pp. 84-87, INTERNAL convention, as the manual's own
+  Eu example) with its valence shells unchanged, and a `TWOCOMPON` / `SOC` /
+  `END` block goes before `SCFDIR` (manual sec. 6.2). This holds for the
+  `full.basis.doublezeta` and `triplezeta` ECPs of Rb-Bi except Yb. The deck is
+  refused, and nothing written, for what manual chapter 6 does not support
+  (optimisations, frequencies, dispersion, meta-GGA or range-separated
+  functionals, BROYDEN, GUESSP, keywords the chapter does not list), for an
+  internal basis-set library, and for an ECP that is not a spin-orbit ECP's
+  scalar part. Without the key every deck is byte-identical to before. The
+  decks have not yet been run through CRYSTAL. `Crystal_d12/soc_ecp.py`.
+
 ### Removed
 
 - Five standalone scripts that nothing runs, imports or documents:
