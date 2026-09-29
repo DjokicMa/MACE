@@ -190,9 +190,10 @@ Nothing is asked per file: a file that would need an answer (a basis set that
 lacks one of its elements) fails with the reason instead, at a terminal or
 not. The run ends with "N written, M failed" and each failure's reason, and
 exits non-zero if any file failed or none was written. A parent optimisation
-without CRYSTAL's OPT END (killed, out of time) is still converted, from its
-starting geometry, and counted in the summary as "K from unfinished
-optimisations". Two `.out` files of the same name sent to one `--output-dir`
+without CRYSTAL's OPT END (killed, out of time), or one that ended "OPT END -
+FAILED" at the cycle limit (CRYSTAL then prints no final geometry), is still
+converted, from its starting geometry, and counted in the summary as "K from
+unfinished or failed optimisations". Two `.out` files of the same name sent to one `--output-dir`
 would write the same deck; neither is written.
 
 **Unified Interface:**

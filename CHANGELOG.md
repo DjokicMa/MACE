@@ -420,9 +420,10 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   and two inputs whose decks would have the same name in the same directory
   (`dupA/X.out` and `dupB/X.out` with one `--output-dir`) both fail rather
   than one overwriting the other. A parent optimisation CRYSTAL never finished
-  (no OPT END: killed, out of time) is still converted, from its starting
-  geometry, and flagged on its line and in the summary: "N written (K from
-  unfinished optimisations), M failed". On the 118 `test/OPT` parents the batch
+  (no OPT END: killed, out of time) or stopped unconverged at the cycle limit
+  ("OPT END - FAILED", which prints no final geometry) is still converted, from
+  its starting geometry, and flagged on its line and in the summary: "N
+  written (K from unfinished or failed optimisations), M failed". On the 118 `test/OPT` parents the batch
   decks are byte-identical to the single-file config path run once per file,
   for templates saved from an internal-basis, an external-basis and an
   HSESOL3C parent.

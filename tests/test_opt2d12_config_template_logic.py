@@ -410,6 +410,23 @@ def test_an_unfinished_optimisation_is_written_and_flagged(batch, tmp_path, caps
     status, _ = batch("--directory", ".", "--config-file", "t.json", "--output-dir", "sp")
     out = capsys.readouterr()
     assert status == 0
-    assert "2 written (1 from unfinished optimisations), 0 failed (of 2 files)" in out.err
+    assert "2 written (1 from unfinished or failed optimisations), 0 failed (of 2 files)" in out.err
     assert "nacl.out: wrote sp/nacl_sp_PBE0_optimized.d12 - WARNING: unfinished optimisation" in out.err
     assert "agbr.out: wrote sp/agbr_sp_PBE0_optimized.d12\n" in out.out
+
+
+def test_a_failed_optimisation_is_written_and_flagged(batch, tmp_path, capsys):
+    """OPT END - FAILED (the cycle limit): CRYSTAL prints no final geometry, so
+    the deck has the starting one, and the file line and the summary say so."""
+    (tmp_path / "nacl.out").write_text(
+        " COORDINATE AND CELL OPTIMIZATION - POINT  800\n"
+        " * OPT END - FAILED    * E(AU):  -5.1E+04  POINTS  800 *\n")
+    (tmp_path / "agbr.out").write_text(" COORDINATE AND CELL OPTIMIZATION - POINT    1\n")
+    status, _ = batch("--directory", ".", "--config-file", "t.json", "--output-dir", "sp")
+    err = capsys.readouterr().err
+    assert status == 0
+    assert "2 written (2 from unfinished or failed optimisations), 0 failed (of 2 files)" in err
+    assert ("nacl.out: wrote sp/nacl_sp_PBE0_optimized.d12 - WARNING: optimisation did not "
+            "converge (OPT END - FAILED), so the deck has its starting geometry, not the "
+            "last point's") in err
+    assert "agbr.out: wrote sp/agbr_sp_PBE0_optimized.d12 - WARNING: unfinished optimisation" in err

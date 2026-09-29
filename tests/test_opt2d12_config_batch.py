@@ -349,6 +349,36 @@ def test_an_unfinished_optimisation_is_flagged(tmp_path, ext_template):
                    "--output-dir", "sp"], parents)
     out = result.stdout + result.stderr
     assert result.returncode == 0, out[-3000:]
-    assert "2 written (1 from unfinished optimisations), 0 failed (of 2 files)" in out
+    assert "2 written (1 from unfinished or failed optimisations), 0 failed (of 2 files)" in out
     assert f"{KILLED.name}: wrote " in out and "WARNING: unfinished optimisation" in out
     assert f"{DIA}.out: wrote sp/{DIA}_sp_B3LYP-D3_optimized.d12\n" in result.stdout
+
+
+def test_a_failed_optimisation_is_flagged_and_gets_its_starting_geometry(tmp_path, ext_template):
+    """A real OPT .out cut at its OPT END with CONVERGED changed to FAILED, as a
+    run stopped at the cycle limit ends (MSUCOF-4-FeCp_H2 on HPCC: OPT END -
+    FAILED after 800 points, no final geometry printed). The deck is written,
+    from the .out's starting geometry, and flagged."""
+    work = _copy([DIA], tmp_path / "src")
+    lines = (work / f"{DIA}.out").read_text().splitlines(keepends=True)
+    end = next(i for i, line in enumerate(lines) if "OPT END - CONVERGED" in line)
+    parents = tmp_path / "opts"
+    parents.mkdir()
+    failed = "1_dia_failed"
+    (parents / f"{failed}.out").write_text(
+        "".join(lines[:end]) + lines[end].replace("CONVERGED", "FAILED   ") + "\n")
+    shutil.copy(work / f"{DIA}.d12", parents / f"{failed}.d12")
+    _copy([INT], parents)
+    result = _cli(["--directory", ".", "--config-file", str(ext_template),
+                   "--output-dir", "sp"], parents)
+    out = result.stdout + result.stderr
+    assert result.returncode == 0, out[-3000:]
+    assert "2 written (1 from unfinished or failed optimisations), 0 failed (of 2 files)" in out
+    assert (f"{failed}.out: wrote sp/{failed}_sp_B3LYP-D3_optimized.d12 - WARNING: "
+            "optimisation did not converge (OPT END - FAILED)") in out
+    # The starting cell, not the last point's: the deck's cell line is the
+    # first one the .out prints.
+    deck = _deck(parents / "sp", failed).read_text().splitlines()
+    first_cell = next(lines[i + 2].split()[0] for i, line in enumerate(lines)
+                      if "LATTICE PARAMETERS" in line and "CONVENTIONAL CELL" in line)
+    assert abs(float(deck[4].split()[0]) - float(first_cell)) < 1e-6

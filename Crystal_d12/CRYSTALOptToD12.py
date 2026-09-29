@@ -144,6 +144,11 @@ def stdin_is_terminal() -> bool:
 # is there to convert.
 UNFINISHED_OPT_NOTE = ("unfinished optimisation (no OPT END in the .out), so the deck "
                        "has its starting geometry")
+# One stopped at the cycle limit ends "OPT END - FAILED" and prints no final
+# geometry (MSUCOF-4-FeCp_H2 on HPCC, 800 points), so the parser falls back to
+# the first geometry too: the input cell, not the last point's.
+FAILED_OPT_NOTE = ("optimisation did not converge (OPT END - FAILED), so the deck has "
+                   "its starting geometry, not the last point's")
 
 try:
     from mace.utils.calc_detection import is_optimization_output
@@ -154,14 +159,20 @@ except Exception:  # standalone run without mace importable
                               content, re.MULTILINE))
 
 
-def is_unfinished_optimisation(out_file) -> bool:
-    """True for the .out of a geometry optimisation without CRYSTAL's OPT END."""
+def optimisation_problem(out_file):
+    """What to tell the user about the optimisation an .out holds: the note
+    for one without CRYSTAL's OPT END (unfinished), for one that ended
+    "OPT END - FAILED" (not converged), or None."""
     try:
         with open(out_file, errors="replace") as f:
             content = f.read()
     except OSError:
-        return False
-    return "OPT END" not in content and is_optimization_output(content)
+        return None
+    if "OPT END - FAILED" in content:
+        return FAILED_OPT_NOTE
+    if "OPT END" not in content and is_optimization_output(content):
+        return UNFINISHED_OPT_NOTE
+    return None
 
 
 # The marker a template saved from a parent with an EXTERNAL basis carries in
@@ -1210,9 +1221,9 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         _fail(f"could not parse the output file: {e}", f"Error parsing output file: {e}")
         return False, None
 
-    unfinished = is_unfinished_optimisation(output_file)
-    if unfinished:
-        ui.warn(f"Warning: {os.path.basename(output_file)}: {UNFINISHED_OPT_NOTE}")
+    opt_problem = optimisation_problem(output_file)
+    if opt_problem:
+        ui.warn(f"Warning: {os.path.basename(output_file)}: {opt_problem}")
     has_parent_deck = bool(input_file and os.path.exists(input_file))
 
     # Parse input file if provided
@@ -1887,8 +1898,8 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     LAST_RESULT["deck"] = new_filename
     if reserved_decks is not None:
         reserved_decks[os.path.realpath(new_filename)] = output_file
-    if unfinished:
-        LAST_RESULT["notes"].append(UNFINISHED_OPT_NOTE)
+    if opt_problem:
+        LAST_RESULT["notes"].append(opt_problem)
 
     return True, options
 
@@ -2389,9 +2400,11 @@ def main():
 
         print()
         ui.rule()
-        unfinished = [name for name, _, notes in written if UNFINISHED_OPT_NOTE in notes]
+        unfinished = [(name, note) for name, _, notes in written for note in notes
+                      if note in (UNFINISHED_OPT_NOTE, FAILED_OPT_NOTE)]
         summary = (f"{len(written)} written"
-                   + (f" ({len(unfinished)} from unfinished optimisations)" if unfinished else "")
+                   + (f" ({len(unfinished)} from unfinished or failed optimisations)"
+                      if unfinished else "")
                    + f", {len(failed)} failed (of {total} files)")
         if failed:
             ui.err(summary)
@@ -2402,10 +2415,10 @@ def main():
         else:
             ui.ok(summary)
         if unfinished:
-            ui.warn("Written from an unfinished optimisation (no OPT END; the deck has "
-                    "the starting geometry):")
-            for name in unfinished:
-                ui.warn(f"  {name}")
+            ui.warn("Written from the starting geometry of an optimisation that did not "
+                    "finish or did not converge:")
+            for name, note in unfinished:
+                ui.warn(f"  {name}: {'no OPT END' if note == UNFINISHED_OPT_NOTE else 'OPT END - FAILED'}")
 
         # Save options if requested
         if args.save_options and shared_settings:
