@@ -368,6 +368,20 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   from a molecule wrote diamond's two carbons under space group 227 (31 of 118
   `test/OPT` decks). A structure with symmetry is written as its asymmetric
   unit.
+- **A lone `opt2d12 --out-file X.out` uses the `X.d12` beside it.** Without
+  `--d12-file` it ran from the `.out` alone, with or without `--config-file`
+  (a shell glob that matched one file did the same), so the parent deck's
+  settings were silently replaced by what the `.out` shows: Ag1Br1's external
+  ECP basis became POB-TZVP-REV2, while the log said the parent's basis was
+  kept. It is now paired like each file of a batch; a file with no `.d12`
+  beside it says it is converted from the `.out` alone.
+- **`opt2d12` never answers the basis-coverage question for you.** With
+  `--yes`, `--non-interactive` or a `--config-file` batch, a basis that lacks
+  an element (SOLDEF2MSVP and Pb) still asked "Do you want to continue
+  anyway?" at a terminal, and Enter wrote a deck CRYSTAL rejects. That file
+  now fails with the reason, the same with a terminal as without. With stdin
+  closed (`<&-`) opt2d12 crashed with AttributeError where it checked for a
+  terminal; it is treated as nobody to ask.
 
 ### Added
 
@@ -400,7 +414,15 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   piped "y" works as before. Each file gets a status line and the run ends
   with "N written, M failed" and each failure's reason; it exits non-zero if
   any file failed or none was written (as does any `--directory` run now,
-  with or without a config; files are taken in name order). On the 118 `test/OPT` parents the batch
+  with or without a config; files are taken in name order). Nothing is asked
+  per file: a question a file would need (a basis without one of its
+  elements) fails that file instead. A path given twice is converted once,
+  and two inputs whose decks would have the same name in the same directory
+  (`dupA/X.out` and `dupB/X.out` with one `--output-dir`) both fail rather
+  than one overwriting the other. A parent optimisation CRYSTAL never finished
+  (no OPT END: killed, out of time) is still converted, from its starting
+  geometry, and flagged on its line and in the summary: "N written (K from
+  unfinished optimisations), M failed". On the 118 `test/OPT` parents the batch
   decks are byte-identical to the single-file config path run once per file,
   for templates saved from an internal-basis, an external-basis and an
   HSESOL3C parent.
@@ -458,9 +480,12 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   no longer holds the parent's atoms, optimisation log, external basis records
   or k-point mesh (the report's template drops from 90 KB to about 1 KB). No
   opt2d12 question sets the mesh, so the stored one was always the parent's,
-  and it made every other structure's mesh be regenerated from its cell. With
-  a new template each structure keeps its own parent's SHRINK; a template
-  saved earlier behaves as before.
+  and it made every other structure's mesh be regenerated from its cell
+  (Ag1Cl3's SHRINK 8 16 became 9 18). Each structure now keeps its own
+  parent's SHRINK, also with a template saved earlier: a config's `k_points`
+  is not applied. To give every file one mesh on purpose, write
+  `"k_points_for_all_files": "8 16"` (or `"8 8 8"`, or one number) into the
+  config by hand; it is written exactly as given.
 - The interactive CIF-converter banner credits its author only; the trailing
   tool-attribution clause is gone, and a test keeps it that way.
 

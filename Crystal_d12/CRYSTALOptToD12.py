@@ -115,15 +115,53 @@ except Exception:
     ui = _UIShim()
 
 
-# What the last process_files() call wrote, or why it wrote nothing. A batch
-# reads it after each file for its status line and the closing summary.
-LAST_RESULT = {"deck": None, "reason": None}
+# What the last process_files() call wrote, or why it wrote nothing, and what
+# the user should know about the deck it wrote. A batch reads it after each
+# file for its status line and the closing summary.
+LAST_RESULT = {"deck": None, "reason": None, "notes": []}
 
 
 def _fail(reason, message=None):
     """Print an error and record it as the reason this file wrote nothing."""
     ui.err(message if message is not None else reason)
     LAST_RESULT["reason"] = reason
+
+
+def stdin_is_terminal() -> bool:
+    """True when someone at a terminal can answer a question.
+
+    With stdin closed (``<&-``) sys.stdin is None, and a closed file object
+    raises on isatty(); neither is someone to ask.
+    """
+    try:
+        return sys.stdin is not None and sys.stdin.isatty()
+    except (ValueError, OSError):
+        return False
+
+
+# An optimisation CRYSTAL never finished (killed, out of time, out of memory)
+# has no "OPT END" line; its .out still parses, but only the starting geometry
+# is there to convert.
+UNFINISHED_OPT_NOTE = ("unfinished optimisation (no OPT END in the .out), so the deck "
+                       "has its starting geometry")
+
+try:
+    from mace.utils.calc_detection import is_optimization_output
+except Exception:  # standalone run without mace importable
+    def is_optimization_output(content: str) -> bool:
+        return bool(re.search(r"^[ \t]*(?:\*[ \t]+OPTIMIZATION STARTS"
+                              r"|[A-Z]+(?: [A-Z]+)* OPTIMIZATION - POINT[ \t]+\d)",
+                              content, re.MULTILINE))
+
+
+def is_unfinished_optimisation(out_file) -> bool:
+    """True for the .out of a geometry optimisation without CRYSTAL's OPT END."""
+    try:
+        with open(out_file, errors="replace") as f:
+            content = f.read()
+    except OSError:
+        return False
+    return "OPT END" not in content and is_optimization_output(content)
 
 
 # The marker a template saved from a parent with an EXTERNAL basis carries in
@@ -173,10 +211,37 @@ def options_for_template(options) -> dict:
     The k-point mesh is left out too. No opt2d12 question sets it, so the one
     in the options is always the parent's own, and in a template it made every
     other structure's mesh be regenerated from its cell instead of kept from
-    its parent. A mesh a hand-written config names is still applied.
+    its parent. A config's "k_points" is ignored when applied for the same
+    reason; one mesh for every file is set by writing
+    "k_points_for_all_files" into the config by hand.
     """
     return {k: v for k, v in options.items()
             if k not in TEMPLATE_STRUCTURE_DATA_KEYS and k != "k_points"}
+
+
+# The config key that sets one k-point mesh for every file. A config's plain
+# "k_points" is ignored: --save-options before this release stored the saving
+# structure's own mesh there, and each derived deck keeps its own parent's.
+ALL_FILES_K_POINTS_KEY = "k_points_for_all_files"
+
+
+def all_files_k_points(value):
+    """The mesh of a config's k_points_for_all_files as the deck writes it
+    ("IS ISP" or "ka kb kc", as in a parent deck), or None if it is not 1 to 3
+    whole numbers. One number n means n n n."""
+    if isinstance(value, bool):
+        return None
+    parts = [value] if isinstance(value, int) else (
+        list(value) if isinstance(value, (list, tuple)) else str(value).split())
+    try:
+        numbers = [int(str(p)) for p in parts]
+    except ValueError:
+        return None
+    if not 1 <= len(numbers) <= 3 or any(n <= 0 for n in numbers):
+        return None
+    if len(numbers) == 1:
+        numbers *= 3
+    return " ".join(str(n) for n in numbers)
 
 
 def merge_optimization_settings(parent, override, replace_type=False):
@@ -438,7 +503,7 @@ THREE_C_FUNCTIONALS = ("HF3C", "HFSOL3C", "PBEH3C", "HSE3C", "B973C", "PBESOL03C
 
 
 def write_d12_file(output_file, geometry_data, settings, external_basis_data=None,
-                   parent_k_points=None):
+                   parent_k_points=None, ask=None):
     """Write new D12 file with optimized geometry and settings.
 
     parent_k_points is the raw k-point value parsed from the parent .d12 this
@@ -447,8 +512,12 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
     ``0 ISP / ka kb kc`` mesh). It is deliberately a call argument, not a
     settings key, so it never reaches --save-options JSON.
 
+    ask: whether a basis set that lacks an element may be accepted by asking
+    "continue anyway?" — None asks only at a terminal, False never asks (a
+    batch, --yes, --non-interactive) and fails the deck instead.
+
     Returns True on success. Returns False when creation is aborted (basis-set
-    incompatibility declined interactively, or hit non-interactively, or a
+    incompatibility declined interactively, or hit without asking, or a
     phonon dispersion asked of a system it cannot be written for). A
     SLAB/POLYMER whose group record is not a layer/rod group is refused the
     same way, before anything is written. The deck is written beside
@@ -883,12 +952,15 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             ui.warn(
                 f"Missing elements: {', '.join([f'{ATOMIC_NUMBER_TO_SYMBOL.get(z, z)} (Z={z})' for z in missing_elements])}"
             )
-            if not sys.stdin.isatty():
-                # Non-interactive (workflow callback): fail cleanly instead of
-                # crashing with EOFError at the prompt. The deck is partially
-                # written at this point — discard it so the caller can't submit
-                # a truncated d12, and signal failure.
-                _fail(no_basis, "Non-interactive mode: aborting D12 file creation.")
+            if ask is None:
+                ask = stdin_is_terminal()
+            if not ask:
+                # Nobody to ask (a workflow callback, a batch, --yes): fail
+                # cleanly instead of crashing with EOFError at the prompt, or
+                # taking a default answer that writes a deck CRYSTAL rejects.
+                # The deck is partially written at this point — discard it so
+                # the caller can't submit a truncated d12, and signal failure.
+                _fail(no_basis, f"Not writing {os.path.basename(output_file)}: {no_basis}.")
                 f.discard()
                 return False
             if not yes_no_prompt("\nDo you want to continue anyway?"):
@@ -1095,7 +1167,8 @@ def _keep_extracted_settings(settings, calc_type, opt_type, origin_setting):
 
 
 def process_files(output_file, input_file=None, shared_settings=None, config_file=None, non_interactive=False, calc_type=None, opt_type=None, origin_setting="auto",
-                  output_dir=None, confirm_config=None):
+                  output_dir=None, confirm_config=None, unattended=False,
+                  reserved_decks=None):
     """Process CRYSTAL output and input files
 
     Args:
@@ -1111,6 +1184,12 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             apply without asking (False), or ask only when stdin is a terminal
             (None, the default). With nothing on stdin the question ended the
             run with "EOF when reading a line".
+        unattended: nobody is there to answer (a batch, --yes,
+            --non-interactive). Nothing is asked, whether or not stdin is a
+            terminal: a question that would have been asked fails the file
+            with its reason instead, so the result is the same either way.
+        reserved_decks: {deck path: .out} of the decks this run has written;
+            a deck that would overwrite one of them fails instead.
 
     Returns:
         tuple: (success, settings_used). LAST_RESULT then holds the deck
@@ -1118,6 +1197,9 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     """
     LAST_RESULT["deck"] = None
     LAST_RESULT["reason"] = None
+    LAST_RESULT["notes"] = []
+    if unattended:
+        confirm_config = False
 
     # Parse output file
     ui.info(f"\nParsing output file: {output_file}")
@@ -1127,6 +1209,11 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     except Exception as e:
         _fail(f"could not parse the output file: {e}", f"Error parsing output file: {e}")
         return False, None
+
+    unfinished = is_unfinished_optimisation(output_file)
+    if unfinished:
+        ui.warn(f"Warning: {os.path.basename(output_file)}: {UNFINISHED_OPT_NOTE}")
+    has_parent_deck = bool(input_file and os.path.exists(input_file))
 
     # Parse input file if provided
     settings = out_data.copy()
@@ -1184,6 +1271,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         except Exception as e:
             ui.warn(f"Warning: Error parsing input file: {e}")
             ui.warn("Continuing with output file data only")
+            has_parent_deck = False
 
     use_low_dim_group(settings)
 
@@ -1261,7 +1349,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
 
             # Ask user if they want to apply these settings (skip in non-interactive mode)
             if confirm_config is None:
-                confirm_config = sys.stdin is not None and sys.stdin.isatty()
+                confirm_config = stdin_is_terminal()
             if non_interactive:
                 apply_config = True
                 ui.info("\nApplying config file settings (non-interactive mode).")
@@ -1301,9 +1389,12 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 # Applied as a basis it failed on every internal-basis parent
                 # ("External basis set path not configured properly").
                 keep_parent_basis = template_uses_parent_basis(config_data)
-                if keep_parent_basis:
+                if keep_parent_basis and has_parent_deck:
                     ui.info("  Basis: keeping this structure's own parent basis "
                             "(the config stores its parent's external basis)")
+                elif keep_parent_basis:
+                    ui.warn(f"  Basis: {settings.get('basis_set')} - converted from the .out "
+                            "alone (no parent .d12, so no parent basis to keep)")
                 for key, value in config_data.items():
                     if key in geometry_identity_keys:
                         continue
@@ -1312,7 +1403,26 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                         continue
                     if keep_parent_basis and key in TEMPLATE_BASIS_KEYS:
                         continue
+                    if key in ("k_points", ALL_FILES_K_POINTS_KEY):
+                        # Handled below: a derived deck keeps its parent's mesh.
+                        continue
                     options[key] = value
+                if "k_points" in config_data:
+                    # --save-options before this release stored the saving
+                    # structure's own mesh; applied here it made every mesh be
+                    # regenerated from the cell (Ag1Cl3's 8 16 became 9 18).
+                    ui.info(f"  k-points: this structure's own (the config's k_points "
+                            f"{config_data['k_points']} is the mesh of the structure it was "
+                            f"saved from; {ALL_FILES_K_POINTS_KEY} sets one for every file)")
+                if ALL_FILES_K_POINTS_KEY in config_data:
+                    mesh = all_files_k_points(config_data[ALL_FILES_K_POINTS_KEY])
+                    if mesh is None:
+                        _fail(f"{ALL_FILES_K_POINTS_KEY} in the config must be 1 to 3 "
+                              f"whole numbers, not {config_data[ALL_FILES_K_POINTS_KEY]!r}")
+                        return False, None
+                    # Written exactly as given, as a parent's own mesh is.
+                    options["k_points"] = parent_k_points = mesh
+                    ui.info(f"  k-points: {mesh} (the config's {ALL_FILES_K_POINTS_KEY})")
                 # An external basis directory named by the config is used for
                 # this structure too, not the parent deck's own records.
                 if (not keep_parent_basis and config_data.get("basis_set_type") == "EXTERNAL"
@@ -1468,6 +1578,10 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
 
         except Exception as e:
             ui.err(f"Error loading config file: {e}")
+            if unattended:
+                # A batch or --yes asks nothing, per file least of all.
+                _fail(f"the config file could not be applied ({e})")
+                return False, None
             ui.warn("Falling back to interactive mode.")
             try:
                 options = get_calculation_options_from_current(settings)
@@ -1635,6 +1749,15 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     if output_dir:
         new_filename = os.path.join(output_dir, os.path.basename(new_filename))
 
+    # Two inputs of one run whose decks have the same name: the second would
+    # overwrite the first, and both would be reported as written.
+    if reserved_decks is not None:
+        earlier = reserved_decks.get(os.path.realpath(new_filename))
+        if earlier:
+            _fail(f"its deck {os.path.basename(new_filename)} was already written from "
+                  f"{earlier} in this run; not overwriting it")
+            return False, options
+
     # Write new D12 file
     ui.info(f"\nWriting new D12 file: {new_filename}")
 
@@ -1753,7 +1876,8 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     # The geometry_data (out_data) contains the optimized coordinates with is_unique flags
     # The settings (options) contains the preserved symmetry and other settings from D12
     if not write_d12_file(new_filename, out_data, converted_options, external_basis_data,
-                          parent_k_points=parent_k_points):
+                          parent_k_points=parent_k_points,
+                          ask=False if unattended else None):
         ui.err(f"\nFailed to create {new_filename}: D12 creation aborted.")
         if not LAST_RESULT["reason"]:
             LAST_RESULT["reason"] = "D12 creation aborted"
@@ -1761,6 +1885,10 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
 
     ui.ok(f"\nSuccessfully created {new_filename}")
     LAST_RESULT["deck"] = new_filename
+    if reserved_decks is not None:
+        reserved_decks[os.path.realpath(new_filename)] = output_file
+    if unfinished:
+        LAST_RESULT["notes"].append(UNFINISHED_OPT_NOTE)
 
     return True, options
 
@@ -1806,6 +1934,24 @@ def pair_out_files(out_files):
     return pairs
 
 
+def same_deck_name_inputs(file_pairs, output_dir):
+    """{.out: [the other .out files]} for inputs whose decks would be written
+    under the same name in the same directory.
+
+    A deck is named <.out name>_<calc>_<functional>_optimized.d12 and written
+    in --output-dir or beside its .out, so two .out files of the same name
+    (dupA/X.out, dupB/X.out) with one --output-dir collide. Neither is written:
+    which structure the deck held would depend on the order of the files.
+    """
+    groups = {}
+    for out_file, _ in file_pairs:
+        target = output_dir or os.path.dirname(out_file) or "."
+        stem = os.path.splitext(os.path.basename(out_file))[0]
+        groups.setdefault((os.path.realpath(target), stem), []).append(out_file)
+    return {out_file: [other for other in group if other != out_file]
+            for group in groups.values() if len(group) > 1 for out_file in group}
+
+
 def _template_basis_text(config_data):
     if template_uses_parent_basis(config_data):
         return "each structure keeps its own parent's basis"
@@ -1821,14 +1967,15 @@ def print_template_plan(config_file, config_data, file_pairs, output_dir):
                   or config_data.get("functional") or "each parent's own")
     tol_mods = (config_data.get("tolerance_modifications") or {}).get("custom_tolerances")
     tolerances = tol_mods or config_data.get("tolerances")
-    k_points = config_data.get("k_points")
-    if not k_points:
-        k_text = "each parent's own mesh"
-    elif len(str(k_points).split()) == 2:
-        k_text = (f"regenerated from each cell (the config's {k_points} is the mesh of "
-                  f"the structure it was saved from)")
+    if ALL_FILES_K_POINTS_KEY in config_data:
+        mesh = all_files_k_points(config_data[ALL_FILES_K_POINTS_KEY])
+        k_text = (f"{mesh} for every file (the config's {ALL_FILES_K_POINTS_KEY})" if mesh
+                  else f"invalid {ALL_FILES_K_POINTS_KEY} {config_data[ALL_FILES_K_POINTS_KEY]!r}")
+    elif config_data.get("k_points"):
+        k_text = (f"each parent's own mesh (the config's k_points {config_data['k_points']} "
+                  f"is the mesh of the structure it was saved from, and is not used)")
     else:
-        k_text = f"{k_points} for every file (set in the config)"
+        k_text = "each parent's own mesh"
     with_d12 = sum(1 for _, d12 in file_pairs if d12)
 
     print()
@@ -1864,7 +2011,8 @@ def main():
     )
     parser.add_argument(
         "--d12-file", type=str,
-        help="Original CRYSTAL input file (.d12) for a single --out-file",
+        help="Original CRYSTAL input file (.d12) for a single --out-file "
+             "(default: the .d12 of the same name beside it, if there is one)",
     )
     parser.add_argument(
         "--directory",
@@ -1927,6 +2075,19 @@ def main():
     )
 
     args = parser.parse_args()
+    repeated = []
+    if args.out_file:
+        # A path given twice (or as a.out and ./a.out) is converted once: a
+        # second run over it wrote the same deck again and counted it twice.
+        unique, seen = [], set()
+        for path in args.out_file:
+            key = os.path.realpath(path)
+            if key in seen:
+                repeated.append(path)
+                continue
+            seen.add(key)
+            unique.append(path)
+        args.out_file = unique
     if args.out_file and len(args.out_file) > 1 and args.d12_file:
         parser.error("--d12-file goes with a single --out-file; with several, each "
                      ".out uses the .d12 of the same name beside it")
@@ -1938,6 +2099,8 @@ def main():
         "Based on old versions by Wangwei Lan, Kevin Lucht, Danny Maldonado, Marcus Djokic"
     )
     print("")
+    for path in repeated:
+        ui.warn(f"{path} is listed more than once; converting it once")
 
     # Create output directory if specified
     if args.output_dir and not os.path.exists(args.output_dir):
@@ -1950,9 +2113,23 @@ def main():
             ui.err(f"Error: Output file {out_file} not found")
             sys.exit(1)
 
+        d12_file = args.d12_file
+        if d12_file is None:
+            # A lone --out-file (e.g. a glob that matched one file) is paired
+            # with the .d12 of the same name beside it, as each file of a batch
+            # is. Without it the parent deck's settings were silently replaced
+            # by what the .out shows: an external ECP basis became
+            # POB-TZVP-REV2, with or without a --config-file. Every workflow
+            # caller passes --d12-file whenever there is a deck.
+            d12_file = pair_out_files([out_file])[0][1]
+            if d12_file:
+                ui.info(f"With input: {d12_file} (the .d12 beside {os.path.basename(out_file)})")
+            else:
+                ui.info(f"No .d12 beside {os.path.basename(out_file)}: converting from the .out alone")
+
         success, options = process_files(
             out_file,
-            args.d12_file, 
+            d12_file,
             config_file=args.config_file,
             non_interactive=args.non_interactive,
             calc_type=args.calc_type,
@@ -1960,6 +2137,7 @@ def main():
             origin_setting=args.origin_setting,
             output_dir=args.output_dir,
             confirm_config=False if args.yes else None,
+            unattended=bool(args.yes or args.non_interactive),
         )
 
         if success and args.save_options:
@@ -1980,7 +2158,7 @@ def main():
         else:
             file_pairs = find_file_pairs(args.directory)
 
-        if not file_pairs and (args.config_file or not sys.stdin.isatty()):
+        if not file_pairs and (args.config_file or not stdin_is_terminal()):
             # Nobody to ask for a path (or the run was meant to apply a
             # template): say so and fail rather than wait at a prompt.
             ui.err(f"No CRYSTAL output files (.out) found in {args.directory}")
@@ -2041,7 +2219,7 @@ def main():
                 sys.exit(1)
             if len(file_pairs) > 1:
                 print_template_plan(args.config_file, config_data, file_pairs, args.output_dir)
-                ask = not (args.yes or args.non_interactive) and sys.stdin.isatty()
+                ask = not (args.yes or args.non_interactive) and stdin_is_terminal()
                 if ask and not yes_no_prompt(f"\nApply to all {len(file_pairs)} files?", default="yes"):
                     ui.warn("Cancelled: nothing written.")
                     sys.exit(1)
@@ -2135,20 +2313,41 @@ def main():
             confirm_config = False
         else:
             confirm_config = None
+        # Nobody answers per-file questions in a template batch, with --yes or
+        # --non-interactive: a question fails that file instead, at a terminal
+        # or not.
+        unattended = bool(args.yes or args.non_interactive
+                          or (args.config_file and len(file_pairs) > 1))
+
+        # Inputs whose decks would have the same name in the same directory:
+        # the later one overwrote the earlier and both counted as written.
+        collisions = same_deck_name_inputs(file_pairs, args.output_dir)
+        reserved_decks = {}
 
         # Process all file pairs
         written, failed = [], []
         total = len(file_pairs)
         for index, (out_file, d12_file) in enumerate(file_pairs, 1):
-            name = os.path.basename(out_file)
+            # --out-file paths as given (dupA/X.out and dupB/X.out stay apart);
+            # a --directory's files by name.
+            name = out_file if args.out_file else os.path.basename(out_file)
             print()
             ui.rule(f"Processing: {name}")
             if d12_file:
                 ui.info(f"With input: {os.path.basename(d12_file)}")
             else:
-                ui.info("No corresponding .d12 file found")
+                ui.info(f"No {os.path.splitext(os.path.basename(out_file))[0]}.d12 beside it: "
+                        "converting from the .out alone")
 
             LAST_RESULT["deck"] = LAST_RESULT["reason"] = None
+            LAST_RESULT["notes"] = []
+            if out_file in collisions:
+                reason = (f"its deck would have the same name as the one from "
+                          f"{', '.join(collisions[out_file])} (same file name, same output "
+                          f"directory); neither is written")
+                failed.append((name, reason))
+                ui.err(f"({index}/{total}) {name}: FAILED: {reason}")
+                continue
             try:
                 if not os.path.exists(out_file):
                     raise FileNotFoundError("file not found")
@@ -2163,6 +2362,8 @@ def main():
                     origin_setting=args.origin_setting,
                     output_dir=args.output_dir,
                     confirm_config=confirm_config,
+                    unattended=unattended,
+                    reserved_decks=reserved_decks,
                 )
                 reason = LAST_RESULT["reason"]
             except Exception as e:
@@ -2173,8 +2374,14 @@ def main():
                 success, reason = False, str(e) or type(e).__name__
             if success:
                 deck = LAST_RESULT["deck"]
-                written.append((name, deck))
-                ui.ok(f"({index}/{total}) {name}: wrote {deck}")
+                notes = list(LAST_RESULT["notes"])
+                written.append((name, deck, notes))
+                source = "" if d12_file else " (from the .out alone)"
+                if notes:
+                    ui.warn(f"({index}/{total}) {name}: wrote {deck}{source} - WARNING: "
+                            + "; ".join(notes))
+                else:
+                    ui.ok(f"({index}/{total}) {name}: wrote {deck}{source}")
             else:
                 reason = reason or "no deck written (see the messages above)"
                 failed.append((name, reason))
@@ -2182,13 +2389,23 @@ def main():
 
         print()
         ui.rule()
-        summary = f"{len(written)} written, {len(failed)} failed (of {total} files)"
+        unfinished = [name for name, _, notes in written if UNFINISHED_OPT_NOTE in notes]
+        summary = (f"{len(written)} written"
+                   + (f" ({len(unfinished)} from unfinished optimisations)" if unfinished else "")
+                   + f", {len(failed)} failed (of {total} files)")
         if failed:
             ui.err(summary)
             for name, reason in failed:
                 ui.err(f"  {name}: {reason}")
+        elif unfinished:
+            ui.warn(summary)
         else:
             ui.ok(summary)
+        if unfinished:
+            ui.warn("Written from an unfinished optimisation (no OPT END; the deck has "
+                    "the starting geometry):")
+            for name in unfinished:
+                ui.warn(f"  {name}")
 
         # Save options if requested
         if args.save_options and shared_settings:

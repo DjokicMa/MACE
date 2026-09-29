@@ -178,8 +178,22 @@ optimized geometry, symmetry and k-point mesh; a template saved from a parent
 with an EXTERNAL basis means "each structure's own parent basis", so the other
 structures keep theirs (external or internal). A template that names an
 internal basis (e.g. POB-TZVP-REV2) or an external basis directory applies it
-to every file. The run ends with "N written, M failed" and each failure's
-reason, and exits non-zero if any file failed or none was written.
+to every file. Each `.out` is read with the `.d12` of the same name beside it
+(a single `--out-file` too, unless `--d12-file` names another).
+
+A `k_points` entry in a config is not applied (templates saved by earlier
+versions stored the saving structure's own mesh there). To give every file the
+same mesh on purpose, add it by hand: `"k_points_for_all_files": "8 16"` (or
+`"8 8 8"`, or one number); it is written exactly as given.
+
+Nothing is asked per file: a file that would need an answer (a basis set that
+lacks one of its elements) fails with the reason instead, at a terminal or
+not. The run ends with "N written, M failed" and each failure's reason, and
+exits non-zero if any file failed or none was written. A parent optimisation
+without CRYSTAL's OPT END (killed, out of time) is still converted, from its
+starting geometry, and counted in the summary as "K from unfinished
+optimisations". Two `.out` files of the same name sent to one `--output-dir`
+would write the same deck; neither is written.
 
 **Unified Interface:**
 ```bash

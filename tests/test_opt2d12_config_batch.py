@@ -9,6 +9,7 @@ from config file?" for every file, and with nothing on stdin logged
 saved from a parent with an EXTERNAL basis also failed on every other
 structure ("External basis set path not configured properly").
 """
+import json
 import os
 import select
 import shutil
@@ -226,3 +227,128 @@ def test_at_a_terminal_one_file_still_asks(tmp_path, ext_template):
     assert status == 0, out[-3000:]
     assert out.count("Apply these settings from config file? [Y/n]") == 1
     assert answered == 1
+
+
+# --- review fixes -----------------------------------------------------------
+
+LEAD = "TiPbO3_mp-19845_sg221_sym_CRYSTAL_OPT_symm_PBE-D3_full.basis.triplezeta_opt_B3LYP-D3-D3_optimized"
+KILLED = TEST_DATA / "FAILED_QA" / "3_dia3_opt_killed_signal9_oom.out"
+
+
+def _closed_stdin_cli(args, cwd):
+    """Run with stdin closed, as `<&-` does: sys.stdin is then None."""
+    return subprocess.run([sys.executable, str(MACE_CLI), "opt2d12", *args], cwd=cwd,
+                          capture_output=True, text=True, timeout=300,
+                          preexec_fn=lambda: os.close(0))
+
+
+def _summary(out):
+    return [line for line in out.splitlines() if " written" in line and "failed" in line]
+
+
+def test_at_a_terminal_yes_never_accepts_a_basis_without_an_element(tmp_path):
+    """--yes at a terminal still asked "Do you want to continue anyway?" for the
+    Pb structure with a 3c template (SOLDEF2MSVP has no Pb); Enter wrote a deck
+    CRYSTAL rejects and the summary said 2 written. Now that file fails, and
+    the run ends as it does without a terminal."""
+    template = _save_template(tmp_path, MOL3C)
+    parents = _copy([DIA, LEAD], tmp_path / "opts")
+    status, out, answered = _run_at_a_terminal(
+        [sys.executable, str(MACE_CLI), "opt2d12", "--directory", ".", "--yes",
+         "--config-file", str(template), "--output-dir", "tty"], parents)
+    assert answered == 0, out[-3000:]
+    assert status == 1
+    assert "1 written, 1 failed" in out
+    assert "basis set 'SOLDEF2MSVP' has no basis for Pb" in out
+    assert not _deck(parents / "tty", LEAD, "HSESOL3C").exists()
+    piped = _cli(["--directory", ".", "--yes", "--config-file", str(template),
+                  "--output-dir", "pipe"], parents)
+    assert piped.returncode == status
+    assert _summary(piped.stdout + piped.stderr) == _summary(out.replace("\r", ""))
+    assert (sorted(p.name for p in (parents / "tty").iterdir())
+            == sorted(p.name for p in (parents / "pipe").iterdir()))
+
+
+def test_closed_stdin_does_not_crash(tmp_path, ext_template):
+    template3c = _save_template(tmp_path, MOL3C)
+    parents = _copy([LEAD] + list(PARENTS), tmp_path / "opts")
+    one = _closed_stdin_cli(["--out-file", f"{LEAD}.out", "--config-file", str(template3c),
+                             "--output-dir", "one"], parents)
+    out = one.stdout + one.stderr
+    assert "Traceback" not in out, out[-3000:]
+    assert one.returncode == 1
+    assert "basis set 'SOLDEF2MSVP' has no basis for Pb" in out
+    batch = _closed_stdin_cli(["--out-file", *(f"{s}.out" for s in PARENTS),
+                               "--config-file", str(ext_template), "--output-dir", "b"], parents)
+    assert batch.returncode == 0, (batch.stdout + batch.stderr)[-3000:]
+    assert "3 written, 0 failed" in batch.stdout
+    (tmp_path / "empty").mkdir()
+    empty = _closed_stdin_cli(["--directory", str(tmp_path / "empty")], parents)
+    assert "Traceback" not in empty.stdout + empty.stderr
+    assert empty.returncode == 1
+
+
+def test_a_glob_matching_one_file_uses_the_d12_beside_it(tmp_path, ext_template):
+    """`--out-file opts/*.out` matching one file ran from the .out alone: the
+    Ag1Br1 ECP basis was dropped for POB-TZVP-REV2 while the log said the
+    parent's basis was kept. It now writes what --d12-file writes."""
+    parents = _copy([EXT], tmp_path / "opts")
+    lone = _cli(["--out-file", f"{EXT}.out", "--config-file", str(ext_template), "--yes",
+                 "--output-dir", "lone"], parents)
+    named = _cli(["--out-file", f"{EXT}.out", "--d12-file", f"{EXT}.d12", "--yes",
+                  "--config-file", str(ext_template), "--output-dir", "named"], parents)
+    assert lone.returncode == 0 and named.returncode == 0, lone.stderr[-2000:]
+    deck = _deck(parents / "lone", EXT).read_text()
+    assert "BASISSET" not in deck and "99 0" in deck
+    assert deck == _deck(parents / "named", EXT).read_text()
+    # Without a --config-file too: the same silent basis change.
+    plain = _cli(["--out-file", f"{EXT}.out", "--calc-type", "SP", "--non-interactive",
+                  "--output-dir", "plain"], parents)
+    assert plain.returncode == 0
+    assert "BASISSET" not in _deck(parents / "plain", EXT).read_text()
+
+
+def test_decks_with_the_same_name_are_not_overwritten(tmp_path, ext_template):
+    """dupA/X.out and dupB/X.out into one --output-dir: one deck overwrote the
+    other and the summary said 2 written."""
+    for d in ("dupA", "dupB"):
+        _copy([INT], tmp_path / d)
+    result = _cli(["--out-file", f"dupA/{INT}.out", f"dupB/{INT}.out", f"dupA/{INT}.out",
+                   "--config-file", str(ext_template), "--output-dir", "sp"], tmp_path)
+    out = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert "0 written, 2 failed (of 2 files)" in out
+    assert "listed more than once" in out
+    assert not (tmp_path / "sp").exists() or not list((tmp_path / "sp").glob("*.d12"))
+
+
+def test_an_old_template_keeps_each_parents_mesh(tmp_path):
+    """A template saved before k_points were left out carries its structure's
+    mesh (Ag1Br1's 5 10); applied to Ag1Cl3 (SHRINK 8 16) it was regenerated
+    from the cell as 9 18. Each deck now keeps its own parent's mesh."""
+    template = _save_template(tmp_path, EXT)
+    old = json.loads(template.read_text())
+    old["k_points"] = "5 10"
+    template.write_text(json.dumps(old))
+    parents = _copy([INT], tmp_path / "opts")
+    result = _cli(["--out-file", f"{INT}.out", "--d12-file", f"{INT}.d12", "--yes",
+                   "--config-file", str(template), "--output-dir", "sp"], parents)
+    assert result.returncode == 0, result.stderr[-2000:]
+    lines = _deck(parents / "sp", INT).read_text().splitlines()
+    assert lines[lines.index("SHRINK") + 1] == "8 16"
+
+
+def test_an_unfinished_optimisation_is_flagged(tmp_path, ext_template):
+    """A killed optimisation (no OPT END) still converts, from its starting
+    geometry, and the file line and the summary say so."""
+    parents = _copy([DIA], tmp_path / "opts")
+    if not KILLED.exists():
+        pytest.skip("test/ corpus not present (gitignored, ~12GB)")
+    shutil.copy(KILLED, parents)
+    result = _cli(["--directory", ".", "--config-file", str(ext_template),
+                   "--output-dir", "sp"], parents)
+    out = result.stdout + result.stderr
+    assert result.returncode == 0, out[-3000:]
+    assert "2 written (1 from unfinished optimisations), 0 failed (of 2 files)" in out
+    assert f"{KILLED.name}: wrote " in out and "WARNING: unfinished optimisation" in out
+    assert f"{DIA}.out: wrote sp/{DIA}_sp_B3LYP-D3_optimized.d12\n" in result.stdout

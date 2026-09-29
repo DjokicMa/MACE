@@ -86,13 +86,15 @@ def batch(tmp_path, monkeypatch):
     (tmp_path / "t.json").write_text(json.dumps(template))
 
     def run(*args, tty=False, answers=()):
-        monkeypatch.setattr(sys, "stdin", _Stdin(tty))
+        # tty=None: stdin closed (`<&-`), when sys.stdin is None.
+        monkeypatch.setattr(sys, "stdin", None if tty is None else _Stdin(tty))
         asked = []
         replies = list(answers)
 
         def prompt(text, default="yes"):
+            # A question nobody scripted gets its default, as Enter would.
             asked.append(text.strip())
-            return replies.pop(0)
+            return replies.pop(0) if replies else default == "yes"
         monkeypatch.setattr(M, "yes_no_prompt", prompt)
         monkeypatch.setattr(sys, "argv", ["CRYSTALOptToD12.py", *args])
         try:
@@ -224,3 +226,190 @@ def test_a_p1_template_still_writes_the_asymmetric_unit(batch, tmp_path):
         del PARENTS["cc"]
 
 
+
+
+# --- review fixes -----------------------------------------------------------
+
+LEAD = (_out([82, 8], spacegroup=221), _deck_data())
+THREE_C = {"calculation_type": "SP", "functional": "HSESOL3C", "is_3c_method": True,
+           "basis_set": "SOLDEF2MSVP", "basis_set_type": "INTERNAL", "dispersion": False}
+
+
+@pytest.fixture
+def lead(tmp_path):
+    PARENTS["pbo"] = copy.deepcopy(LEAD)
+    for ext in ("out", "d12"):
+        (tmp_path / f"pbo.{ext}").write_text("")
+    (tmp_path / "t3c.json").write_text(json.dumps(THREE_C))
+    yield
+    del PARENTS["pbo"]
+
+
+@pytest.mark.parametrize("tty", [True, False])
+@pytest.mark.parametrize("how", [["--yes"], []])
+def test_a_basis_without_an_element_fails_the_file_without_asking(
+        batch, lead, tmp_path, capsys, tty, how):
+    """SOLDEF2MSVP has no Pb. At a terminal the batch asked "continue anyway?"
+    per file, Enter took the default yes, and a deck CRYSTAL rejects was
+    counted as written. Now the file fails with the reason, terminal or not."""
+    answers = [] if how else [True]
+    status, asked = batch("--out-file", "nacl.out", "pbo.out", "--config-file", "t3c.json",
+                          "--output-dir", "sp", *how, tty=tty, answers=answers)
+    err = capsys.readouterr().err
+    assert [q for q in asked if "Apply to all" not in q] == []
+    assert status == 1
+    assert "1 written, 1 failed" in err
+    assert "pbo.out: basis set 'SOLDEF2MSVP' has no basis for Pb" in err
+    assert not _deck(tmp_path, "pbo", "HSESOL3C").exists()
+    assert _deck(tmp_path, "nacl", "HSESOL3C").exists()
+
+
+@pytest.mark.parametrize("tty", [True, False, None])
+def test_one_file_with_yes_fails_on_the_basis_without_asking(batch, lead, tmp_path, tty):
+    status, asked = batch("--out-file", "pbo.out", "--config-file", "t3c.json",
+                          "--output-dir", "sp", "--yes", tty=tty)
+    assert asked == []
+    assert status == 1
+    assert not _deck(tmp_path, "pbo", "HSESOL3C").exists()
+
+
+def test_closed_stdin_is_nobody_to_ask(batch, lead, tmp_path, capsys):
+    """`<&-` leaves sys.stdin None: sys.stdin.isatty() crashed with
+    AttributeError in main(), write_d12_file and the empty-directory check."""
+    status, asked = batch("--directory", ".", "--config-file", "t.json", "--output-dir",
+                          "sp", tty=None)
+    assert status == 0 and asked == []
+    status, asked = batch("--out-file", "pbo.out", "--config-file", "t3c.json",
+                          "--output-dir", "sp3c", tty=None)
+    assert status == 1 and asked == []
+    assert "basis set 'SOLDEF2MSVP' has no basis for Pb" in capsys.readouterr().err
+    (tmp_path / "empty").mkdir()
+    status, asked = batch("--directory", "empty", "--output-dir", "sp4", tty=None)
+    assert status == 1 and asked == []
+
+
+def test_a_lone_out_file_uses_the_d12_beside_it(batch, tmp_path, capsys):
+    """A glob that matched one file ran from the .out alone: the external
+    basis was replaced, while the log said the parent's basis was kept."""
+    status, _ = batch("--out-file", "agbr.out", "--config-file", "t.json",
+                      "--output-dir", "sp", "--yes")
+    assert status == 0
+    agbr = _deck(tmp_path, "agbr").read_text()
+    assert "\n".join(AG_BASIS + BR_BASIS) + "\n99 0\nEND\n" in agbr
+    assert "BASISSET" not in agbr
+    assert "keeping this structure's own parent basis" in capsys.readouterr().out
+
+
+def test_an_out_file_without_a_d12_says_so(batch, tmp_path, capsys):
+    PARENTS["solo"] = (_out([11, 17]), _deck_data())
+    try:
+        (tmp_path / "solo.out").write_text("")
+        status, _ = batch("--out-file", "solo.out", "--config-file", "t.json",
+                          "--output-dir", "sp", "--yes")
+        out = capsys.readouterr()
+        assert status == 0
+        assert "keeping this structure's own parent basis" not in out.out
+        assert "converted from the .out alone" in out.err
+        status, _ = batch("--out-file", "solo.out", "nacl.out", "--config-file", "t.json",
+                          "--output-dir", "sp2", "--yes")
+        out = capsys.readouterr()
+        assert status == 0
+        assert "solo.out: wrote sp2/solo_sp_PBE0_optimized.d12 (from the .out alone)" in out.out
+    finally:
+        del PARENTS["solo"]
+
+
+def test_a_file_listed_twice_is_converted_once(batch, tmp_path, capsys):
+    status, _ = batch("--out-file", "nacl.out", "./nacl.out", "agbr.out", "--config-file",
+                      "t.json", "--output-dir", "sp", "--yes")
+    out = capsys.readouterr()
+    assert status == 0
+    assert "2 written, 0 failed (of 2 files)" in out.out
+    assert "./nacl.out is listed more than once" in out.err
+
+
+def test_inputs_whose_decks_share_a_name_are_not_written(batch, tmp_path, capsys):
+    """dupA/nacl.out and dupB/nacl.out with one --output-dir: the second deck
+    overwrote the first and both were counted as written."""
+    for d in ("dupA", "dupB"):
+        (tmp_path / d).mkdir()
+        (tmp_path / d / "nacl.out").write_text("")
+        (tmp_path / d / "nacl.d12").write_text("")
+    status, _ = batch("--out-file", "dupA/nacl.out", "dupB/nacl.out", "agbr.out",
+                      "--config-file", "t.json", "--output-dir", "sp", "--yes")
+    err = capsys.readouterr().err
+    assert status == 1
+    assert "1 written, 2 failed" in err
+    assert "dupA/nacl.out: FAILED: its deck would have the same name as the one from dupB/nacl.out" in err
+    assert "dupB/nacl.out: FAILED: its deck would have the same name as the one from dupA/nacl.out" in err
+    assert not _deck(tmp_path, "nacl").exists()
+    # Beside their own .out files they do not collide.
+    status, _ = batch("--out-file", "dupA/nacl.out", "dupB/nacl.out",
+                      "--config-file", "t.json", "--yes")
+    assert status == 0
+    assert (tmp_path / "dupA" / "nacl_sp_PBE0_optimized.d12").exists()
+    assert (tmp_path / "dupB" / "nacl_sp_PBE0_optimized.d12").exists()
+
+
+def test_a_deck_is_never_overwritten_within_a_run(batch, tmp_path):
+    """The last guard: a deck name already written in this run fails the file."""
+    import CRYSTALOptToD12 as M
+    reserved = {}
+    (tmp_path / "sp").mkdir()
+    assert M.process_files("nacl.out", "nacl.d12", config_file="t.json", output_dir="sp",
+                           unattended=True, reserved_decks=reserved)[0]
+    assert not M.process_files("nacl.out", "nacl.d12", config_file="t.json",
+                               output_dir="sp", unattended=True, reserved_decks=reserved)[0]
+    assert "already written from nacl.out in this run" in M.LAST_RESULT["reason"]
+
+
+def _shrink(deck):
+    lines = deck.splitlines()
+    return lines[lines.index("SHRINK") + 1]
+
+
+def test_a_template_mesh_is_not_used_but_each_parents_is(batch, tmp_path, capsys):
+    """Templates saved by earlier versions carry their structure's mesh; applied
+    to others it made every mesh be regenerated from the cell (8 16 -> 9 18)."""
+    template = json.loads((tmp_path / "t.json").read_text())
+    (tmp_path / "t.json").write_text(json.dumps({**template, "k_points": "3 6"}))
+    status, _ = batch("--directory", ".", "--config-file", "t.json", "--output-dir", "sp")
+    assert status == 0
+    assert _shrink(_deck(tmp_path, "nacl").read_text()) == "8 16"
+    assert _shrink(_deck(tmp_path, "agbr").read_text()) == "5 10"
+    assert "each parent's own mesh (the config's k_points 3 6" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("value,shrink", [("4 8", "4 8"), (6, "6 12"), ([4, 4, 4], "4 8")])
+def test_k_points_for_all_files_sets_one_mesh(batch, tmp_path, value, shrink):
+    """The explicit way to give every file one mesh, written as given."""
+    template = json.loads((tmp_path / "t.json").read_text())
+    (tmp_path / "t.json").write_text(json.dumps({**template, "k_points_for_all_files": value}))
+    status, _ = batch("--directory", ".", "--config-file", "t.json", "--output-dir", "sp")
+    assert status == 0
+    for stem in ("nacl", "agbr"):
+        assert _shrink(_deck(tmp_path, stem).read_text()) == shrink, stem
+
+
+def test_a_bad_k_points_for_all_files_fails_the_files(batch, tmp_path, capsys):
+    template = json.loads((tmp_path / "t.json").read_text())
+    (tmp_path / "t.json").write_text(json.dumps({**template, "k_points_for_all_files": "8 x"}))
+    status, _ = batch("--directory", ".", "--config-file", "t.json", "--output-dir", "sp")
+    assert status == 1
+    assert "0 written, 2 failed" in capsys.readouterr().err
+
+
+def test_an_unfinished_optimisation_is_written_and_flagged(batch, tmp_path, capsys):
+    """A killed OPT (no OPT END) still converts, from its starting geometry;
+    the file line and the summary say so."""
+    (tmp_path / "nacl.out").write_text(
+        " COORDINATE AND CELL OPTIMIZATION - POINT    1\n")
+    (tmp_path / "agbr.out").write_text(
+        " COORDINATE AND CELL OPTIMIZATION - POINT    1\n"
+        " * OPT END - CONVERGED * E(AU):  -1.0  POINTS    9 *\n")
+    status, _ = batch("--directory", ".", "--config-file", "t.json", "--output-dir", "sp")
+    out = capsys.readouterr()
+    assert status == 0
+    assert "2 written (1 from unfinished optimisations), 0 failed (of 2 files)" in out.err
+    assert "nacl.out: wrote sp/nacl_sp_PBE0_optimized.d12 - WARNING: unfinished optimisation" in out.err
+    assert "agbr.out: wrote sp/agbr_sp_PBE0_optimized.d12\n" in out.out
