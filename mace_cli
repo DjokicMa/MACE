@@ -21,8 +21,9 @@ from pathlib import Path
 
 # Version information — single source of truth in mace/__init__.py.
 # (mace_cli runs from the repo root, which Python auto-adds to sys.path[0], so the
-# package imports before the line-27 sys.path tweak; mace/__init__.py has no
-# imports, so this is side-effect free.)
+# package imports before the sys.path tweak below. Importing it also pins the
+# stdlib `queue` in sys.modules before mace/ -- whose mace/queue package would
+# shadow it -- goes onto sys.path; use `mace.queue`, never bare `queue`.)
 from mace import __version__
 
 # Add MACE package to Python path
@@ -1534,10 +1535,7 @@ More Help:
             if exclude_string:
                 ui.warn("Warning: node-exclusion flags are not applied to --track submissions "
                       "(the tracking manager uses the submission templates directly); ignoring them.")
-            try:
-                from queue.manager import EnhancedCrystalQueueManager
-            except ImportError:
-                from mace.queue.manager import EnhancedCrystalQueueManager
+            from mace.queue.manager import EnhancedCrystalQueueManager
 
             # Resolve the files to submit and the directory used for context/templates.
             if os.path.isfile(target):
@@ -1935,7 +1933,7 @@ More Help:
         return
     elif args.command == 'manager':
         # Enhanced Queue Manager command
-        from queue.manager import EnhancedCrystalQueueManager
+        from mace.queue.manager import EnhancedCrystalQueueManager
 
         # Combine all arguments
         all_args = command_args('manager')
@@ -2006,7 +2004,7 @@ More Help:
             ui.info(f"Running queue manager (max_jobs={max_jobs}, reserve={reserve})...")
             
             # The manager needs to be called with proper arguments
-            from queue.manager import main as queue_main
+            from mace.queue.manager import main as queue_main
             
             # Build argument list
             sys.argv = ['queue_manager.py', '--d12-dir', base_dir,

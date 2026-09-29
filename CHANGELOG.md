@@ -52,6 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Band_Alignment/` and `Post_Processing_Scripts/` without their `code/`
   prefix, and referred to a `d12creation.py` that no longer exists. It now
   also documents applying one `opt2d12` template to many structures.
+- **The standard-library `queue` module is no longer replaced by
+  `mace/queue`.** `mace_cli` puts `mace/` itself on `sys.path`, where the
+  `mace/queue` package shadows the standard module, so the first bare
+  `import queue` in the process registered `mace/queue` under that name.
+  Removing an unused `import queue` from `mace/workflow/executor.py` did not
+  stop this, because `pyarrow`, which `mace.database` imports, runs its own
+  `import queue`. Importing `mace` now loads the standard `queue` with
+  `mace/` hidden from `sys.path`, before anything else can, and `mace_cli`
+  imports the job-queue package as `mace.queue` rather than `queue`.
 
 ### Removed
 
