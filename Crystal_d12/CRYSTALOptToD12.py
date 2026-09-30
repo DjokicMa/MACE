@@ -1571,6 +1571,25 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 explicit_functional = ((config_data.get("method_modifications") or {}).get("new_functional")
                                        or (config_data.get("method_modifications") or {}).get("functional")
                                        or config_data.get("functional"))
+
+                # "method": "HF" asks for a Hartree-Fock deck. Its flavour is
+                # "hf_method" or "functional", RHF when neither names one - the
+                # way cif2d12 reads the same file (d12_config.config_to_cif_options).
+                # A null functional reached the filename code and stopped the
+                # file with "argument of type 'NoneType' is not iterable", and a
+                # config naming only the method kept the parent's DFT functional.
+                if (str(config_data.get("method") or "").upper() == "HF"
+                        and not (config_data.get("method_modifications") or {}).get("new_functional")
+                        and not (config_data.get("method_modifications") or {}).get("functional")):
+                    hf_method = str(config_data.get("hf_method") or config_data.get("functional")
+                                    or "RHF").upper()
+                    if hf_method not in ("RHF", "UHF", "HF3C", "HFSOL3C"):
+                        _fail(f"the config's method is HF but its functional is {hf_method}",
+                              f"The config's method is HF but its functional is {hf_method}; "
+                              f"an HF config names RHF, UHF, HF3C or HFSOL3C.")
+                        return False, None
+                    options["functional"] = explicit_functional = hf_method
+                    options["method"] = "HF"
                 if explicit_functional and "dispersion" not in config_data:
                     options["dispersion"] = str(explicit_functional).upper().endswith("-D3")
                 

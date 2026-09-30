@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`opt2d12 --config-file` writes Hartree-Fock decks from an HF config.** A
+  config with `"method": "HF"` and a null functional (the form
+  `quick_screen.json` had) stopped every file with `argument of type
+  'NoneType' is not iterable`, and one naming only the method, or its flavour
+  as `hf_method`, kept the parent's DFT functional. opt2d12 now reads the
+  flavour from `hf_method` or `functional`, RHF when neither names one, as
+  cif2d12 does, and refuses an HF config that names a DFT functional.
 - **"Proceed with spglib space group" writes spglib's cell with spglib's
   group.** When a CIF's group and spglib's disagree, option 2 declared
   spglib's group number but kept the CIF's cell and atoms, so CRYSTAL applied
