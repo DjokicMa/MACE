@@ -390,7 +390,7 @@ def determine_monoclinic_variant(sg: int, a: float, b: float, c: float,
         Monoclinic variant symbol
     """
     # For primitive monoclinic
-    if sg <= 11:  # P lattice
+    if sg not in (5, 8, 9, 12, 15):  # P lattice (C: 5, 8, 9, 12, 15)
         if unique_axis == 'b':
             # Check angle to determine mP1 vs alternatives
             if beta > 90:
