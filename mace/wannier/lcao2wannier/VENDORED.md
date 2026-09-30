@@ -40,11 +40,12 @@ Both are kept as shipped.
 Every change to his files is listed here. Nothing was reformatted or refactored.
 
 1. **Copyright header** (all 30 `.py` files and both `.f90` files). None of the
-   files carried one. Two comment lines were added at the top (after the
+   files carried one. Three comment lines were added at the top (after the
    `#!` line in `workflow.py`):
 
    ```
-   # Copyright (c) 2025 William Comaskey. MIT License, see LICENSE in this directory.
+   # Copyright (c) 2025 Computational Materials Science Team (lcao2wannier, author William Comaskey).
+   # MIT License, see LICENSE in this directory.
    # Vendored into MACE from lcao2wannier 1.0.0; local changes are listed in VENDORED.md.
    ```
 
