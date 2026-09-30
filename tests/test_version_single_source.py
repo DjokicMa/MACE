@@ -47,6 +47,10 @@ def test_only_init_holds_a_version_literal():
             continue
         if rel.as_posix() == "mace/__init__.py":
             continue
+        # Vendored third-party package: its __version__ is lcao2wannier's own,
+        # not MACE's, and its files are not edited for MACE's conventions.
+        if rel.as_posix().startswith("mace/wannier/lcao2wannier/"):
+            continue
         try:
             text = py.read_text(errors="ignore")
         except OSError:
