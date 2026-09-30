@@ -1,9 +1,13 @@
 """``mace wannier`` - drive the LCAO->Wannier90 conversion of a matrix dump.
 
 Deliberately a user-invoked step rather than an automatic workflow progression.
-Layers 2 and 3 (lcao2wannier, wannier90.x) may simply be absent on the cluster
-that ran the dump, so the MACE-managed chain ends at MATDUMP and conversion is
-asked for explicitly.
+The conversion (the bundled lcao2wannier) is a separate, memory-hungry step and
+Layer 3 (wannier90.x) may simply be absent on the cluster that ran the dump, so
+the MACE-managed chain ends at MATDUMP and conversion is asked for explicitly.
+
+This is also the bundled package's command-line entry: MACE runs it as
+``python -m mace.wannier.lcao2wannier`` and ``--l2w-arg`` passes any of its own
+options through. There is no second console script.
 """
 
 from __future__ import annotations
@@ -15,10 +19,10 @@ from typing import List, Optional
 
 from mace.wannier.driver import (
     LCAO2WANNIER_CREDIT,
+    LCAO2WANNIER_VERSION,
     Lcao2WannierUnavailable,
     convert,
     describe_missing_wannier90,
-    find_lcao2wannier,
 )
 
 try:
@@ -58,8 +62,9 @@ generates the CRYSTAL deck and orchestrates the run; it implements none of the
 conversion. CITATION: ask William Comaskey which citation he wants before
 publishing a Wannier model produced this way.
 
-lcao2wannier is an optional dependency (pip install lcao2wannier); wannier90.x
-is user-supplied upstream software. MACE bundles neither.
+lcao2wannier is bundled with MACE (MIT; its local fixes are listed in
+mace/wannier/lcao2wannier/VENDORED.md). wannier90.x is user-supplied upstream
+software; MACE never bundles it.
 
 Examples:
   mace wannier --input material_matdump.out
@@ -105,10 +110,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
 
-    available, version = find_lcao2wannier()
-    if available:
-        ui.info(f"lcao2wannier {version or 'unknown version'} "
-                f"({LCAO2WANNIER_CREDIT})")
+    ui.info(f"lcao2wannier {LCAO2WANNIER_VERSION}, bundled "
+            f"({LCAO2WANNIER_CREDIT})")
 
     if args.stage == "localize" and not args.wannier90:
         _emit(describe_missing_wannier90(), ui.err)

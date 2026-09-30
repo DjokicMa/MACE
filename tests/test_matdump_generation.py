@@ -158,8 +158,9 @@ def test_explicit_n_above_the_pool_writes_nothing_without_the_corpus(tmp_path):
 def test_a_dump_at_or_above_cell_1000_still_generates_a_deck(tmp_path):
     """Layer 1 is stock CRYSTAL and ships unconditionally.
 
-    lcao2wannier may not be installed at all, so a defect in that optional
-    package must not stop MACE writing a valid CRYSTAL deck - it only warns.
+    A reader's defect (stock lcao2wannier 1.0.0 drops cells >= 1000; the
+    bundled copy does not) must never stop MACE writing a valid CRYSTAL deck -
+    it only notes it.
     The corpus version of this check lives in test_wannier_driver.py; this one
     runs in the corpus-less CI.
     """

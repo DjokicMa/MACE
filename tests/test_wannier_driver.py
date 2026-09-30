@@ -1,13 +1,14 @@
 """The lcao2wannier driver (Layer 2).
 
-``lcao2wannier`` is William Comaskey's package and an OPTIONAL dependency. The
-tests that need it use ``pytest.importorskip`` so the corpus-less CI stays
-green without it; everything that can be asserted without it - the argument
-list, the audit polarity, the refusals - runs everywhere.
+``lcao2wannier`` is William Comaskey's package, bundled with MACE as
+``mace.wannier.lcao2wannier`` (MIT). Everything here runs everywhere, including
+the corpus-less CI; the one test that needs a real 2c-SOC dump lives in
+test_wannier_vendored.py and is gated on MACE_W90_REFDATA.
 
 MACE's job here is narrow: build an argument list, run it, and report what he
 says. So most of these tests assert what MACE does NOT do.
 """
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -16,21 +17,18 @@ import pytest
 
 from conftest import REPO_ROOT, find_data
 
+import mace.wannier.driver as driver
 from mace.wannier.driver import (
-    CELL_INDEX_PARSE_LIMIT,
     ConversionResult,
     HANDOFF_SUFFIXES,
     LCAO2WANNIER_CITATION,
+    LCAO2WANNIER_MODULE,
     Lcao2WannierUnavailable,
     _classify_audit,
     _conditioning_report,
     build_command,
-    check_parent_dump,
     convert,
-    count_overlap_cells,
-    describe_missing_dependency,
     describe_missing_wannier90,
-    find_lcao2wannier,
     sanitize_seed,
 )
 
@@ -40,7 +38,7 @@ MACE_CLI = REPO_ROOT / "mace_cli"
 def _dump(tmp_path, cells, name="material_matdump.out"):
     """A matrix dump with a given number of cell headers.
 
-    Only the headers matter to the guard under test, and CRYSTAL's I4 field is
+    Only the headers matter to the tests using it, and CRYSTAL's I4 field is
     reproduced exactly - that is the whole point at index >= 1000.
     """
     lines = [" CRYSTAL"]
@@ -58,7 +56,9 @@ def _dump(tmp_path, cells, name="material_matdump.out"):
 
 def test_command_passes_only_what_mace_derives(tmp_path):
     command = build_command(tmp_path / "d.out", "seed", tmp_path / "out")
-    assert command[:3] == [sys.executable, "-m", "lcao2wannier"]
+    # The bundled copy, never whatever "lcao2wannier" happens to be installed.
+    assert command[:3] == [sys.executable, "-m", "mace.wannier.lcao2wannier"]
+    assert LCAO2WANNIER_MODULE == "mace.wannier.lcao2wannier"
     for flag in ("--input", "--seed", "--output-dir", "--stage"):
         assert flag in command
 
@@ -142,7 +142,7 @@ def test_a_bad_conditioning_verdict_is_a_failure():
 
 
 # His conditioning check prints its own STATUS line, from a different module
-# (conditioning.py:138) than the disentanglement audit (wannier_checks.py:179),
+# (conditioning.py:140) than the disentanglement audit (wannier_checks.py:181),
 # with a THREE-valued verdict: GOOD / MARGINAL / BAD. The first version of this
 # classifier matched PASS and FAIL|BAD and nothing else, so MARGINAL and GOOD
 # both fell through it entirely - and MARGINAL is the one negative signal MACE
@@ -259,47 +259,52 @@ def test_success_requires_all_three_conditions(tmp_path):
 
 
 # --------------------------------------------------------------------------
-# The >= 1000 cell-index guard
+# The >= 1000 cell-index guard is gone
 # --------------------------------------------------------------------------
 
 
-def test_cells_are_counted_from_the_real_measured_dump_shape(tmp_path):
-    assert count_overlap_cells(_dump(tmp_path, 1247)) == 1247
+class _Completed:
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode, self.stdout, self.stderr = returncode, stdout, stderr
 
 
-def test_a_dump_past_cell_999_is_refused_on_the_affected_version(tmp_path):
-    """MEASURED on the real corpus material at its derived N = 1247: the file
-    holds 1247 overlap headers, lcao2wannier 1.0.0's regex matches 999, and 248
-    are dropped silently while the run reports a plausible R-vector count.
-
-    Reintroducing the bug - converting anyway - makes this assertion fail.
-    """
-    message = check_parent_dump(_dump(tmp_path, 1247), "1.0.0")
-    assert message is not None
-    assert "1247" in message and "248" in message
-    assert "CELL N.1000(" in message
-    # It must name the cause and the upstream fix, not just refuse.
-    assert "William Comaskey" in message
-
-
-def test_a_dump_below_the_limit_converts_on_the_affected_version(tmp_path):
-    assert check_parent_dump(_dump(tmp_path, CELL_INDEX_PARSE_LIMIT - 1), "1.0.0") is None
+def test_a_dump_past_cell_999_is_no_longer_refused(tmp_path, monkeypatch):
+    """MACE used to refuse dumps with >= 1000 cells because stock lcao2wannier
+    1.0.0 dropped every cell from N.1000 on (MEASURED on the corpus diamond at
+    N = 1247: 999 read, 248 dropped). That refusal existed only because of the
+    reader; the bundled copy reads the I4 index (test_wannier_vendored.py), so
+    the dump must now reach the package."""
+    calls = []
+    monkeypatch.setattr(driver.subprocess, "run",
+                        lambda cmd, **kw: calls.append(cmd) or _Completed())
+    convert(_dump(tmp_path, 1247), seed="m", output_dir=tmp_path / "out")
+    assert len(calls) == 2                      # preflight, then the run
+    assert "--dry-run" in calls[0] and "--dry-run" not in calls[1]
 
 
-def test_the_guard_retires_itself_on_a_fixed_version(tmp_path):
-    """Version-checked, not blind: MACE does not pin lcao2wannier, so a
-    version-blind refusal would keep firing after he ships the one-character
-    fix, with nothing in the design describing how it would ever be retired."""
-    assert check_parent_dump(_dump(tmp_path, 1247), "1.1.0") is None
+def test_the_child_can_import_the_bundled_copy_from_any_cwd(tmp_path, monkeypatch):
+    """mace_cli finds the package because it runs from the repository root. The
+    conversion child does not, so the driver puts that root on its PYTHONPATH -
+    otherwise it would die with "No module named mace"."""
+    envs = []
+    monkeypatch.setattr(driver.subprocess, "run",
+                        lambda cmd, **kw: envs.append(kw.get("env")) or _Completed())
+    monkeypatch.setenv("PYTHONPATH", "/some/user/path")
+    convert(_dump(tmp_path, 60), seed="m", output_dir=tmp_path / "out")
+    for env in envs:
+        parts = env["PYTHONPATH"].split(os.pathsep)
+        assert parts[0] == str(REPO_ROOT)
+        assert "/some/user/path" in parts     # the user's own entries survive
 
 
 def test_layer_one_is_not_gated_on_this_layer_two_defect(tmp_path):
     """The deck generator must still produce a deck at N >= 1000.
 
-    Layer 1 is stock CRYSTAL and ships unconditionally; lcao2wannier may not be
-    installed at all. Refusing a valid CRYSTAL dump because of a bug in an
-    optional third-party package would break the one thing Phase 1 claims - that
-    it is useful on its own, for someone who runs the rest by hand.
+    Layer 1 is stock CRYSTAL and ships unconditionally. The dump may be
+    converted elsewhere, by hand, with any reader; refusing a valid CRYSTAL
+    dump because of a reader's bug would break the one thing Phase 1 claims -
+    that it is useful on its own, for someone who runs the rest by hand. It
+    still says so, because a stock lcao2wannier 1.0.0 drops cells >= 1000.
     """
     out = find_data("SP/1_dia*sp*.out", must_contain="MAX G-VECTOR INDEX")
     import shutil
@@ -323,13 +328,17 @@ def test_layer_one_is_not_gated_on_this_layer_two_defect(tmp_path):
 # --------------------------------------------------------------------------
 
 
-def test_the_missing_dependency_message_is_actionable():
-    message = describe_missing_dependency()
-    assert "pip install lcao2wannier" in message
-    assert "OPTIONAL" in message
-    assert "William Comaskey" in message
-    # It must say the deck is still usable: Layer 1 is unaffected.
-    assert "already valid" in message
+def test_a_broken_numerical_stack_is_reported_not_raised(tmp_path, monkeypatch):
+    """The package itself always ships; what can still be missing is numpy or
+    scipy. The --dry-run preflight is what exposes that, and it must reach the
+    user as a message naming them, not as the child's traceback alone."""
+    monkeypatch.setattr(
+        driver.subprocess, "run",
+        lambda cmd, **kw: _Completed(1, "", "ModuleNotFoundError: No module named 'scipy'"))
+    with pytest.raises(Lcao2WannierUnavailable) as exc:
+        convert(_dump(tmp_path, 60), seed="m", output_dir=tmp_path / "out")
+    assert "numpy/scipy" in str(exc.value)
+    assert "scipy" in str(exc.value).splitlines()[-1]
 
 
 def test_the_missing_wannier90_message_is_actionable():
@@ -352,19 +361,21 @@ def test_a_missing_dump_is_refused_without_a_traceback(tmp_path):
         convert(tmp_path / "nope.out")
 
 
-def test_the_cli_reports_a_missing_dependency_cleanly(tmp_path):
-    """The real invocation path, in an interpreter without the package."""
-    if find_lcao2wannier()[0]:
-        pytest.skip("lcao2wannier is installed in this interpreter")
-    dump = _dump(tmp_path, 60)
+def test_the_cli_runs_the_bundled_copy_from_outside_the_repository(tmp_path):
+    """The real invocation path, started from a directory that is not the repo
+    root: the bundled package must still be found and must be the one that
+    answers (its own clean refusal of a non-dump), never an import error."""
+    junk = tmp_path / "junk.out"
+    junk.write_text("hello\n")
     result = subprocess.run(
         [sys.executable, str(MACE_CLI), "--no-banner", "wannier",
-         "--input", str(dump)],
-        capture_output=True, text=True, cwd=str(REPO_ROOT))
+         "--input", str(junk), "--output-dir", str(tmp_path / "out")],
+        capture_output=True, text=True, cwd=str(tmp_path))
     combined = result.stdout + result.stderr
-    assert result.returncode == 2
+    assert result.returncode == 2, combined
     assert "Traceback" not in combined
-    assert "pip install lcao2wannier" in combined
+    assert "No module named" not in combined
+    assert "refused these arguments" in combined
 
 
 def test_localize_without_a_wannier90_path_is_refused_before_running(tmp_path):
@@ -389,18 +400,19 @@ def test_the_wannier_help_credits_the_author():
     # user-facing text must not carry developer instructions
     assert "do not invent" not in combined.lower()
     assert "CITATION: TODO" not in combined
-    assert "optional dependency" in combined
+    # bundled now, not something to install separately
+    assert "bundled" in combined
+    assert "pip install lcao2wannier" not in combined
 
 
 # --------------------------------------------------------------------------
-# With the optional dependency actually installed
+# Through the bundled package itself
 # --------------------------------------------------------------------------
 
 
 def test_a_structurally_invalid_parent_is_refused_with_one_clean_line(tmp_path):
     """His argparse refusals are a single line on stderr with exit code 2, and
     MACE surfaces that verbatim rather than turning it into a traceback."""
-    pytest.importorskip("lcao2wannier")
     junk = tmp_path / "junk.out"
     junk.write_text("hello\n")
     with pytest.raises(Lcao2WannierUnavailable) as exc:
@@ -410,7 +422,6 @@ def test_a_structurally_invalid_parent_is_refused_with_one_clean_line(tmp_path):
 
 
 def test_a_bad_wannier90_path_is_refused_by_his_own_preflight(tmp_path):
-    pytest.importorskip("lcao2wannier")
     dump = _dump(tmp_path, 60)
     with pytest.raises(Lcao2WannierUnavailable) as exc:
         convert(dump, seed="m", output_dir=tmp_path / "out",

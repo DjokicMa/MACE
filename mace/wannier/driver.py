@@ -1,6 +1,8 @@
 """Thin driver for William Comaskey's ``lcao2wannier`` package.
 
-Thin is the design, not a shortcut. Everything scientific in the LCAO->Wannier90
+The package is bundled with MACE as ``mace.wannier.lcao2wannier`` (MIT; see
+VENDORED.md there for the source version and every local change). Thin is
+still the design, not a shortcut. Everything scientific in the LCAO->Wannier90
 bridge - the Fourier transform to H(k)/S(k), the generalized eigenproblem in a
 non-orthogonal AO basis, SCDM projections for ``.amn``, and the analytic
 momentum-shifted GTO overlaps for ``.mmn`` - is his. MACE resolves the module,
@@ -26,7 +28,6 @@ What this module deliberately does NOT do:
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import re
 import subprocess
@@ -39,44 +40,41 @@ LCAO2WANNIER_CREDIT = (
     "Wannier90 hand-off via lcao2wannier (William Comaskey)"
 )
 
-# CITATION: TODO - ask William Comaskey which citation he wants (the package, a
-# paper, or both). Nothing is written here until he answers; a provisional
-# citation string would misattribute a publication on his behalf, which is worse
-# than having none.
+# No citation has been designated yet; the open question is tracked in
+# AUTHORSHIP.md. A provisional citation string would misattribute a publication
+# on his behalf, which is worse than having none.
 LCAO2WANNIER_CITATION = None
+
+# The bundled copy, run as ``python -m`` so its own CLI is what executes.
+LCAO2WANNIER_MODULE = "mace.wannier.lcao2wannier"
+
+# Read from the package, not restated: VENDORED.md records the same value.
+from mace.wannier.lcao2wannier import __version__ as LCAO2WANNIER_VERSION  # noqa: E402
+
+# The directory that holds the ``mace`` package, put on the child's PYTHONPATH
+# so ``-m mace.wannier.lcao2wannier`` resolves to this copy whatever the cwd.
+_MACE_ROOT = Path(__file__).resolve().parents[2]
 
 # The five files that constitute a completed hand-off.
 HANDOFF_SUFFIXES = (".win", ".nnkp", ".eig", ".amn", ".mmn")
 
 # CRYSTAL writes the direct-lattice cell index in an I4 field, so from index
 # 1000 on the header has no separating space: " OVERLAP MATRIX - CELL N.1000(".
-# lcao2wannier v1.0's header patterns are `CELL N\.\s+\d+\(` - the \s+ cannot
-# match - so every cell from 1000 on is dropped, silently, and the run reports
-# a plausible R-vector count.
-#
-# MEASURED on the real MACE corpus material
-# test/SP/1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized (derived N = 1247):
-# 1247 overlap headers in the file, 999 matched by the stock regex, 248 dropped
-# without a word. The run then reported "Unique R-vectors for H: 999" and
-# proceeded. The one-character upstream fix is `\s+` -> `\s*` in all three
-# header patterns; it belongs in his package, not in a MACE monkey-patch.
-CELL_INDEX_PARSE_LIMIT = 1000
-
-# Versions known to carry the >=1000 defect. Checked by version rather than
-# blindly, so the guard retires itself when he ships the fix.
-CELL_INDEX_BUG_VERSIONS = ("1.0.0",)
-
-_OVERLAP_HEADER = b"OVERLAP MATRIX - CELL"
+# Stock lcao2wannier 1.0.0 required whitespace there and silently dropped every
+# such cell (MEASURED on the corpus diamond, derived N = 1247: 999 read, 248
+# dropped, no warning), so MACE used to refuse those dumps. The bundled copy
+# carries the one-character fix (`\s+` -> `\s*`, see VENDORED.md), so there is
+# nothing left to refuse.
 
 # His self-audit's POSITIVE verdict. Success requires FINDING this, never merely
 # failing to find a failure marker: if the banner is reworded, absence-of-FAIL
 # would silently start reporting refused models as successes.
 # He prints a STATUS line from TWO independent self-checks, and MACE must read
-# both. MEASURED in lcao2wannier 1.0.0:
+# both. MEASURED in lcao2wannier 1.0.0 (line numbers are the bundled copy's):
 #
-#   wannier_checks.py:179/181  ->  "STATUS: PASS - satisfies Wannier90
+#   wannier_checks.py:181/183  ->  "STATUS: PASS - satisfies Wannier90
 #                                   disentanglement rules" | "STATUS: FAIL - ..."
-#   conditioning.py:138        ->  "STATUS: GOOD" | "MARGINAL" | "BAD"
+#   conditioning.py:140        ->  "STATUS: GOOD" | "MARGINAL" | "BAD"
 #
 # The first version of this matched PASS and FAIL|BAD, and nothing else. GOOD and
 # MARGINAL fell through the classifier entirely, so a run whose overlap matrices
@@ -98,7 +96,7 @@ _CONDITIONING_BANNER = "Overlap Matrix Conditioning Check"
 
 
 class Lcao2WannierUnavailable(Exception):
-    """The optional dependency is absent or unusable. Never a traceback."""
+    """The conversion cannot run (bad input, broken numpy/scipy). Never a traceback."""
 
 
 @dataclass
@@ -144,48 +142,22 @@ class ConversionResult:
         return self.ok and self.audit == "marginal"
 
 
-# --- Locating the dependency ------------------------------------------------
+# --- The bundled package ----------------------------------------------------
 
 
-def find_lcao2wannier() -> Tuple[bool, Optional[str]]:
-    """Is ``lcao2wannier`` importable, and at what version?
+def _subprocess_env() -> Dict[str, str]:
+    """The child's environment: this process's, with MACE importable.
 
-    Uses ``find_spec`` rather than an import: his ``__init__`` is lazy (it does
-    not pull numpy), so this stays sub-millisecond and cannot fail on a broken
-    numerical stack. That also means importability is NOT proof of usability -
-    only the ``--dry-run`` pre-flight settles that.
+    mace_cli finds the package because it runs from the repository root; a
+    child started from any other cwd would not, and would report the bundled
+    copy as missing.
     """
-    try:
-        spec = importlib.util.find_spec("lcao2wannier")
-    except (ImportError, ValueError):
-        return False, None
-    if spec is None:
-        return False, None
-    try:
-        import lcao2wannier  # noqa: F401
-
-        return True, getattr(lcao2wannier, "__version__", None)
-    except Exception:
-        return True, None
-
-
-def describe_missing_dependency() -> str:
-    """The message a user sees when the optional dependency is not installed."""
-    return (
-        "lcao2wannier is not installed, so MACE cannot run the Wannier90\n"
-        "conversion.\n"
-        "\n"
-        "  install with : pip install lcao2wannier\n"
-        "\n"
-        "This is an OPTIONAL dependency. Nothing else in MACE needs it: the\n"
-        "MATDUMP calculation itself is stock CRYSTAL23, the deck it generated is\n"
-        "already valid, and the matrix dump it produced can be converted by hand\n"
-        "or on another machine.\n"
-        "\n"
-        f"{LCAO2WANNIER_CREDIT}.\n"
-        "The LCAO->Wannier90 method and the package are his work; MACE only\n"
-        "generates the CRYSTAL input and orchestrates the run."
-    )
+    env = os.environ.copy()
+    parts = [str(_MACE_ROOT)]
+    if env.get("PYTHONPATH"):
+        parts.append(env["PYTHONPATH"])
+    env["PYTHONPATH"] = os.pathsep.join(parts)
+    return env
 
 
 def describe_missing_wannier90() -> str:
@@ -204,69 +176,6 @@ def describe_missing_wannier90() -> str:
     )
 
 
-# --- Guarding the parent dump ----------------------------------------------
-
-
-def count_overlap_cells(parent: Path) -> int:
-    """Number of ``OVERLAP MATRIX - CELL`` headers in a dump.
-
-    Streamed in binary: a production dump is tens to hundreds of MB, and CRYSTAL
-    outputs can contain NUL bytes.
-    """
-    count = 0
-    with open(parent, "rb") as handle:
-        for raw in handle:
-            if _OVERLAP_HEADER in raw:
-                count += 1
-    return count
-
-
-def check_parent_dump(parent: Path, version: Optional[str]) -> Optional[str]:
-    """Refuse a conversion the installed lcao2wannier would silently truncate.
-
-    The defect is in the optional dependency, so the guard lives here and not in
-    the Layer 1 deck generator: a user with no lcao2wannier, or with a patched
-    or newer one, must never be refused a perfectly valid CRYSTAL dump. The
-    check is by version, so it retires itself once the fix ships upstream.
-    """
-    if version is not None and version not in CELL_INDEX_BUG_VERSIONS:
-        return None
-
-    try:
-        cells = count_overlap_cells(parent)
-    except OSError as exc:
-        return f"Cannot read the matrix dump {parent}: {exc}"
-
-    if cells < CELL_INDEX_PARSE_LIMIT:
-        return None
-
-    version_text = version or "an unknown version"
-    return (
-        f"Refusing to convert {parent.name}: it contains {cells} direct-lattice\n"
-        f"cells, and lcao2wannier {version_text} cannot read past cell 999.\n"
-        "\n"
-        "CRYSTAL writes the cell index in an I4 field, so from 1000 on the header\n"
-        "runs together with no separating space:\n"
-        "\n"
-        "   OVERLAP MATRIX - CELL N. 999(  4  3 -6)\n"
-        "   OVERLAP MATRIX - CELL N.1000( -4  1 -3)     <- no space\n"
-        "\n"
-        "The package's header patterns require whitespace there, so every cell\n"
-        f"from 1000 on is dropped SILENTLY - {cells - CELL_INDEX_PARSE_LIMIT + 1} "
-        f"of {cells} here - and the run\n"
-        "then reports a plausible R-vector count and proceeds. The resulting\n"
-        "Wannier model is wrong, with nothing in the output saying so.\n"
-        "\n"
-        "The dump itself is correct and complete; only the reader is affected.\n"
-        "The upstream fix is one character, `\\s+` -> `\\s*` after `N\\.` in the\n"
-        "overlap and both Fock header patterns. Report it to William Comaskey\n"
-        "rather than patching around it here.\n"
-        "\n"
-        "To proceed anyway you would have to re-dump with fewer R-vectors, which\n"
-        "means knowingly truncating the model - MACE will not do that for you."
-    )
-
-
 # --- Building and running ---------------------------------------------------
 
 
@@ -282,10 +191,9 @@ def build_command(
 ) -> List[str]:
     """Assemble the lcao2wannier argument list.
 
-    Invoked as ``python -m lcao2wannier``, never the console script: the script
-    is absent from PATH whenever the package lives in a venv or conda env that
-    is not activated, while ``-m`` always resolves to the same interpreter the
-    guarded import used.
+    Invoked as ``python -m mace.wannier.lcao2wannier`` - the bundled copy's own
+    command-line entry, in the same interpreter that is running MACE. There is
+    no separate console script to find on PATH.
 
     Only ``--input``, ``--seed``, ``--output-dir`` and ``--stage`` are derived by
     MACE. ``--threads`` is passed only when a CPU budget is actually known; his
@@ -295,7 +203,7 @@ def build_command(
     command = [
         sys.executable,
         "-m",
-        "lcao2wannier",
+        LCAO2WANNIER_MODULE,
         "--input",
         str(Path(parent).resolve()),
         "--seed",
@@ -425,19 +333,14 @@ def convert(
     ``__init__`` is lazy. ``--dry-run`` forces the numerical import, validates
     that the input really is a CRYSTAL matrix dump, and writes nothing.
 
+    Dumps past cell 999 are no longer refused: the bundled parser reads
+    CRYSTAL's I4 cell index (see the I4 note near the top of this module).
+
     Phase 2 is the same list without it.
     """
     parent = Path(parent)
     if not parent.exists():
         raise Lcao2WannierUnavailable(f"Matrix dump not found: {parent}")
-
-    available, version = find_lcao2wannier()
-    if not available:
-        raise Lcao2WannierUnavailable(describe_missing_dependency())
-
-    refusal = check_parent_dump(parent, version)
-    if refusal:
-        raise Lcao2WannierUnavailable(refusal)
 
     seed = sanitize_seed(seed or parent.stem)
     output_dir = Path(output_dir) if output_dir else parent.parent / f"{seed}.wannier"
@@ -448,7 +351,8 @@ def convert(
 
     if not skip_preflight:
         probe = build_command(dry_run=True, **base)
-        completed = subprocess.run(probe, capture_output=True, text=True)
+        completed = subprocess.run(probe, capture_output=True, text=True,
+                                   env=_subprocess_env())
         if completed.returncode != 0:
             # His argparse refusals are a single clean line on stderr with exit
             # code 2. Surface it verbatim - do not reformat it, and never turn
@@ -459,13 +363,15 @@ def convert(
                     f"lcao2wannier refused these arguments:\n  {detail}"
                 )
             raise Lcao2WannierUnavailable(
-                "lcao2wannier is installed but could not run. Its numerical\n"
-                "stack (numpy/scipy) is most likely missing or broken.\n\n"
+                "The bundled lcao2wannier could not run. Its numerical stack\n"
+                "(numpy/scipy, both MACE requirements) is most likely missing\n"
+                "or broken.\n\n"
                 f"{detail}"
             )
 
     command = build_command(dry_run=False, **base)
-    completed = subprocess.run(command, capture_output=True, text=True)
+    completed = subprocess.run(command, capture_output=True, text=True,
+                               env=_subprocess_env())
 
     audit, audit_text = _classify_audit(completed.stdout)
     conditioning_text = _conditioning_report(completed.stdout)

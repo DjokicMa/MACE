@@ -5,10 +5,10 @@ pytest<9
 pyyaml
 numpy<3
 # Core runtime features under test: the terminal UI layer is rich-based and the
-# spectra/plot renderers are matplotlib-based. plotly/ase/spglib/scipy stay
-# optional — tests needing them skip via pytest.importorskip.
-# lcao2wannier (the Wannier90 hand-off, William Comaskey) is optional for the
-# same reason and is deliberately NOT listed here: the corpus-less CI must stay
-# green without it, and its tests skip via pytest.importorskip.
+# spectra/plot renderers are matplotlib-based. plotly/ase/spglib stay optional —
+# tests needing them skip via pytest.importorskip.
+# scipy is needed by lcao2wannier (the Wannier90 hand-off, William Comaskey),
+# which is bundled as mace.wannier.lcao2wannier, so its tests run in CI too.
 rich<15
 matplotlib<4
+scipy<2

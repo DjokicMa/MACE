@@ -926,8 +926,8 @@ MACE passes through his validated defaults rather than restating them, and
 never chooses --k-grid (he derives it from the parent's own SHRINK factors)
 or --quiet (which would filter his self-audit's reasons out of the output).
 
-lcao2wannier is an optional dependency: pip install lcao2wannier
-wannier90.x is user-supplied upstream software. MACE bundles neither.
+lcao2wannier is bundled with MACE (MIT; see mace/wannier/lcao2wannier/).
+wannier90.x is user-supplied upstream software; MACE never bundles it.
 
 Examples:
   mace wannier --input material_matdump.out

@@ -84,12 +84,12 @@ def _emit_warning(text: str) -> None:
             print()
 
 # CRYSTAL writes the cell index in an I4 field, so from 1000 on the header runs
-# together as "CELL N.1000(". lcao2wannier v1.0's header regexes require
+# together as "CELL N.1000(". Stock lcao2wannier 1.0.0's header regexes require
 # whitespace there and silently drop every such cell. MEASURED on the corpus
 # diamond at N=1247: 999 of 1247 overlap cells parsed, 248 dropped without a
-# word. Layer 1 still generates the deck - the dump itself is correct, and the
-# defect is in an optional third-party package - but it warns, and the Layer 2
-# driver refuses the conversion.
+# word. The copy bundled with MACE (mace/wannier/lcao2wannier) carries the fix,
+# so `mace wannier` converts these dumps; the note stays for anyone converting
+# the dump with a separately installed 1.0.0.
 _LCAO2WANNIER_CELL_INDEX_LIMIT = 1000
 import sys
 from pathlib import Path
@@ -1344,12 +1344,11 @@ class D3Generator:
                     ui.warn(f"  This dump is large. The parent .out must be RETAINED:")
                     ui.warn(f"  lcao2wannier needs it for every stage but localize.")
             if n >= _LCAO2WANNIER_CELL_INDEX_LIMIT:
-                ui.warn(f"  N >= {_LCAO2WANNIER_CELL_INDEX_LIMIT}: CRYSTAL writes the cell")
-                ui.warn( "  index in I4, so headers from that index on carry no space")
-                ui.warn( "  ('CELL N.1000('). lcao2wannier v1.0 cannot match those and")
-                ui.warn( "  drops them silently. The deck is correct and the dump will be")
-                ui.warn( "  complete; `mace wannier` will refuse to convert it until the")
-                ui.warn( "  package is fixed upstream.")
+                ui.info(f"  N >= {_LCAO2WANNIER_CELL_INDEX_LIMIT}: CRYSTAL writes the cell")
+                ui.info( "  index in I4, so headers from that index on carry no space")
+                ui.info( "  ('CELL N.1000('). `mace wannier` reads them; a separately")
+                ui.info( "  installed lcao2wannier 1.0.0 drops them silently, so convert")
+                ui.info( "  this dump with `mace wannier`, not with that.")
             print()
             ui.info(MATDUMP_CREDIT_BLOCK)
 
@@ -1669,7 +1668,7 @@ class D3Generator:
             ui.info("    lattice representation. RETAIN this file - it is the input to")
             ui.info("    lcao2wannier, which needs it for every stage but localize.")
             print()
-            ui.info("Next step (optional, needs the lcao2wannier package):")
+            ui.info("Next step (optional; lcao2wannier is bundled with MACE):")
             ui.info(f"  mace wannier --input {self.base_name}_matdump.out")
         
         # Return the configuration for potential saving

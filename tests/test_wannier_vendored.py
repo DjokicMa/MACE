@@ -23,6 +23,7 @@ import os
 import pickle
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -168,3 +169,57 @@ def test_the_vendored_copy_keeps_its_license_and_provenance():
         head = "".join(source.read_text().splitlines(keepends=True)[:3])
         assert "William Comaskey" in head and "MIT" in head, source.name
 
+
+# --------------------------------------------------------------------------
+# End to end on a real 2-component SOC dump, when one is supplied
+# --------------------------------------------------------------------------
+#
+# The smallest real dump the package ships, tests/Bismuth_basis_40.out from
+# LCAO-to-Wannier-release-v1.0.zip (a Bi bilayer, 2c-SOC), is 9.5 MB - too big
+# for this repository. Point MACE_W90_REFDATA at that file, or at a directory
+# holding it, to run this; it skips otherwise (as in CI). ~1 minute.
+
+_BI_REFERENCE = "Bismuth_basis_40.out"
+
+
+def _bismuth_reference():
+    value = os.environ.get("MACE_W90_REFDATA")
+    if not value:
+        pytest.skip("set MACE_W90_REFDATA to lcao2wannier's Bismuth_basis_40.out")
+    path = Path(value)
+    if path.is_dir():
+        path = path / _BI_REFERENCE
+    if not path.is_file():
+        pytest.skip(f"MACE_W90_REFDATA does not point at {_BI_REFERENCE}: {value}")
+    return path
+
+
+def _win_value(win_text, key):
+    for line in win_text.splitlines():
+        name, _, value = line.partition("=")
+        if name.strip().lower() == key:
+            return value.strip()
+    return None
+
+
+def test_the_driver_converts_the_bismuth_2c_soc_reference(tmp_path):
+    """Values measured by hand on this exact file with the stock package
+    (k-grid 3 3 1) before it was bundled; the bundled copy must reproduce
+    them through MACE's own driver."""
+    pytest.importorskip("scipy")
+    from mace.wannier.driver import HANDOFF_SUFFIXES, convert
+
+    reference = _bismuth_reference()
+    result = convert(reference, seed="bi", output_dir=tmp_path / "bi.wannier",
+                     extra_args=["--k-grid", "3", "3", "1"])
+
+    assert result.returncode == 0, result.stdout[-3000:] + result.stderr
+    assert "2-component SOC basis: 56 spatial AOs x 2 spinors" in result.stdout
+    assert result.produced == {"bi": list(HANDOFF_SUFFIXES)}
+    win = (tmp_path / "bi.wannier" / "bi.win").read_text()
+    assert _win_value(win, "num_wann") == "16"
+    assert _win_value(win, "num_bands") == "16"
+    assert _win_value(win, "spinors") == ".true."
+    assert _win_value(win, "mp_grid") == "3 3 1"
+    assert "PASS" in result.audit_text
+    assert result.audit == "pass" and result.ok
