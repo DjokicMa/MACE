@@ -61,6 +61,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `import queue`. Importing `mace` now loads the standard `queue` with
   `mace/` hidden from `sys.path`, before anything else can, and `mace_cli`
   imports the job-queue package as `mace.queue` rather than `queue`.
+- **The workflow planner loads without `d12_constants`.** When
+  `d12_constants` or `DummyFileCreator` could not be imported, the planner
+  reported it with `ui.warn` before `ui` was defined, so the import stopped
+  with NameError instead of using its built-in fallbacks. `ui` is now set up
+  first.
 
 ### Removed
 
