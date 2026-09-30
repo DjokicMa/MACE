@@ -61,6 +61,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `import queue`. Importing `mace` now loads the standard `queue` with
   `mace/` hidden from `sys.path`, before anything else can, and `mace_cli`
   imports the job-queue package as `mace.queue` rather than `queue`.
+- **A cif2d12 SLAB deck lists each atom once, at its own height.** A SLAB
+  record takes the symmetry-unique atoms, with z in Angstrom from the layer
+  group's origin (CRYSTAL23 manual p. 21). Handed a whole cell - which batch
+  mode keeps when spglib and the CIF disagree, or with `write_only_unique`
+  off - the converter wrote every atom with z = c times fractional z: a Bi2
+  bilayer (P-3m1, layer group 72) got its inversion image as a second Bi at
+  z = 19.10 A instead of -0.90 A, and CRYSTAL built a four-atom slab 38 A
+  thick. Atoms the layer group generates from an earlier one are now left
+  out, using the CIF's own operators when they are as many as the named
+  group has (otherwise the atoms are written as given, with a warning), and
+  for a layer group with an operation that reverses z a fractional z above
+  1/2 is written below the layer. P1 slabs, polar layer groups, and atoms
+  already within c/2 of the layer's origin are written as before.
+- **Non-centrosymmetric structures with a 2-fold axis get the
+  non-centrosymmetric SeeK-path path.** Without the seekpath library, the
+  band and phonon paths read inversion from the CRYSTAL output, and the
+  SYMMOPS check matched a run of six matrix elements that a 2-fold axis
+  along z (and, in the hexagonal frame, an in-plane 2-fold or -6) shares
+  with the inversion. Every such group - in the
+  primitive lattices 16-19, 25-34, 75-78, 81, 89-96, 99-106, 111-118,
+  149-154, 168-174, 177-190, 195, 198, 207, 208, 212, 213, 215 and 218 - was
+  called centrosymmetric and got the path without primed points. An operator
+  now counts as an inversion only when its whole rotation part is -I, and a
+  SYMMOPS table without one means no inversion. The space-group-number check
+  no longer reads a digit out of a symbol ("P N N 2" as group 2).
+- **The static SeeK-path band paths go through the zone-boundary points.**
+  Without the seekpath library, band and phonon paths come from a table in
+  `d3_kpoints` that defines several lattices twice; the definitions that
+  win had every coordinate doubled (body-centred cubic x4, hexagonal x6), so
+  simple cubic X was (0, 1, 0) - a reciprocal lattice vector, the same point
+  as Gamma - where SeeK-path and CRYSTAL23 (manual Tables 14.1-14.2,
+  pp. 311-312) have (0, 1/2, 0). The paths for aP, cP, cI, hP, mP, oP, tP,
+  tI and mC2 (and the aP and mC2 non-centrosymmetric ones) now use SeeK-path's
+  coordinates: e.g. every centrosymmetric primitive cubic, tetragonal,
+  orthorhombic, monoclinic and hexagonal group, Im-3m, Ia-3d and I4/mmm.
+- **`get_auto_phonon_path` returns a path in the labels and vectors
+  formats.** Both stopped with NameError, because `d12_calc_freq` checked
+  `get_crystal_system_from_space_group` without importing it from
+  `d3_kpoints`. Nothing calls the function today, so no deck changes.
+- **An `opt2d12` SeeK-path phonon deck's title names the path it writes.**
+  The title took its labels from the space-group number alone, while the
+  BANDS path is chosen from the parent's output, whose lattice parameters
+  and symmetry operators pick the SeeK-path variant. For AgBr in R-3c the
+  title listed an 11-segment path over the 10-segment one written, and
+  every such title called its path "default". The title now reads the same
+  output, so it lists the written path's labels and says "SeeKPath (w.I)",
+  "SeeKPath (no.I)" or "Literature" as the path was chosen.
 
 ### Removed
 

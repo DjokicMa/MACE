@@ -61,7 +61,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "Crystal_d3"))
 try:
     from d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
-                           get_seekpath_full_kpath, get_literature_kpath_vectors, validate_kpoint_labels_for_crystal23)
+                           get_seekpath_full_kpath, get_literature_kpath_vectors, validate_kpoint_labels_for_crystal23,
+                           get_crystal_system_from_space_group)
 except ImportError:
     print("Warning: Could not import d3_kpoints module - some k-path features may be unavailable")
     get_band_path_from_symmetry = None
@@ -72,6 +73,7 @@ except ImportError:
     get_seekpath_full_kpath = None
     get_literature_kpath_vectors = None
     validate_kpoint_labels_for_crystal23 = None
+    get_crystal_system_from_space_group = None
 
 
 @contextlib.contextmanager

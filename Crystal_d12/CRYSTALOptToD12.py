@@ -365,7 +365,8 @@ def dedupe_dispersion_suffix(functional: str) -> str:
 def _get_phonon_band_path_title(band_settings, geometry_data):
     """Generate path information string for phonon band calculations."""
     from d3_kpoints import get_band_path_from_symmetry, unicode_to_ascii_kpoint
-    
+
+    seekpath_source = None
     # For automatic paths, we need to determine the path based on space group
     if band_settings.get("auto_path", False) or band_settings.get("path") == "AUTO" or band_settings.get("path") == "auto":
         # Try to get path from space group
@@ -388,10 +389,29 @@ def _get_phonon_band_path_title(band_settings, geometry_data):
         
         # For all formats, we get the appropriate labels
         if format_type == "seekpath" and band_settings.get("seekpath_full", False):
-            # Try to get SeeK-path labels
+            # Try to get SeeK-path labels. write_frequency_section picks the
+            # SeeK-path variant from the parent's output (lattice parameters,
+            # inversion), so the labels have to be read from the same output
+            # to name the path it writes.
             try:
-                from d3_kpoints import get_seekpath_labels
-                path_labels = get_seekpath_labels(space_group, lattice_type)
+                from d3_kpoints import get_seekpath_labels, get_seekpath_full_kpath
+                from d12_calc_freq import _output_as_file
+                with _output_as_file(opt_content or None) as out_file:
+                    path_labels = get_seekpath_labels(space_group, lattice_type, out_file)
+                    result = get_seekpath_full_kpath(space_group, lattice_type, out_file)
+                if result:
+                    kpath_info = result[1]
+                    if kpath_info.get("source") in ("literature", "default"):
+                        seekpath_source = kpath_info["source"]
+                        if seekpath_source == "default":
+                            # No SeeK-path or literature path: the segments
+                            # are the standard path's.
+                            path_labels = get_band_path_from_symmetry(
+                                space_group, lattice_type)
+                    elif kpath_info.get("has_inversion"):
+                        seekpath_source = "seekpath_inv"
+                    else:
+                        seekpath_source = "seekpath_noinv"
             except:
                 # Fallback to standard labels
                 path_labels = get_band_path_from_symmetry(space_group, lattice_type)
@@ -428,7 +448,7 @@ def _get_phonon_band_path_title(band_settings, geometry_data):
             path_str.append(unicode_to_ascii_kpoint(label))
     
     # Determine the k-path source for the title
-    kpath_source = band_settings.get("kpath_source", "default")
+    kpath_source = seekpath_source or band_settings.get("kpath_source", "default")
     if kpath_source == "seekpath_inv":
         source_info = " - SeeKPath (w.I)"
     elif kpath_source == "seekpath_noinv":
