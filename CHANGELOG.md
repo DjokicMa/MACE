@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **"Proceed with spglib space group" writes spglib's cell with spglib's
+  group.** When a CIF's group and spglib's disagree, option 2 declared
+  spglib's group number but kept the CIF's cell and atoms, so CRYSTAL applied
+  the group's standard operators to a cell in another setting: rock salt given
+  as its 60-degree primitive cell became an Fm-3m cube with a = 3.99 A instead
+  of 5.64 A. The deck now carries spglib's standardised conventional cell and
+  its asymmetric unit, in the origin the deck declares for two-origin groups.
 - **A P1 deck from an Fd-3m CIF holds the structure the CIF describes.** A
   CIF with no symmetry-operator loop is expanded by ASE in origin choice 1, but
   the converter reads Fd-3m atoms at (1/8, 1/8, 1/8) as origin choice 2 - as

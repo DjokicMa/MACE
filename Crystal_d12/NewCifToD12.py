@@ -766,6 +766,79 @@ def expand_to_p1(cif_data, options):
     return expanded
 
 
+def _hall_numbers(number):
+    """spglib's Hall numbers for one space-group type, first (default) first."""
+    halls = []
+    for hall in range(1, 531):
+        sgtype = attribute_dataset(spglib.get_spacegroup_type(hall))
+        if sgtype.number == number:
+            halls.append((hall, str(sgtype.choice)))
+    return halls
+
+
+def reduce_in_spglib_setting(cif_data, cell, tolerance, number):
+    """cif_data as spglib's space group NUMBER in spglib's standard setting.
+
+    Declaring spglib's group while keeping the CIF's cell and atoms makes
+    CRYSTAL apply that group's standard operators to a cell in another
+    setting (a primitive rhombohedral cell of rock salt written as Fm-3m
+    becomes a quarter-volume cube). The standardised conventional cell,
+    its asymmetric unit and its lattice parameters are taken instead.
+
+    For a group with two origins the origin is the one the deck will
+    declare (deck_origin_choice): choice 2, or for Fd-3m whichever
+    choice its atoms are then read as.
+    """
+    halls = _hall_numbers(number)
+    candidates = [halls[0][0]]
+    if number in MULTI_ORIGIN_SPACEGROUPS:
+        by_choice = {choice: hall for hall, choice in halls}
+        candidates = [by_choice["2"], by_choice["1"]]
+
+    chosen = None
+    for origin, hall in zip((2, 1), candidates):
+        dataset = attribute_dataset(
+            spglib.get_symmetry_dataset(cell, symprec=tolerance, hall_number=hall)
+        )
+        std = (dataset.std_lattice, dataset.std_positions, dataset.std_types)
+        std_dataset = attribute_dataset(
+            spglib.get_symmetry_dataset(std, symprec=tolerance, hall_number=hall)
+        )
+        unique = sorted(set(int(i) for i in std_dataset.equivalent_atoms))
+        positions = [[float(v) % 1.0 for v in std[1][i]] for i in unique]
+        numbers = [int(std[2][i]) for i in unique]
+        if chosen is None:
+            chosen = (std[0], positions, numbers)
+        if len(candidates) == 1 or deck_origin_choice(number, positions) == origin:
+            chosen = (std[0], positions, numbers)
+            break
+
+    lattice, positions, numbers = chosen
+    lattice = np.asarray(lattice)
+    lengths = np.linalg.norm(lattice, axis=1)
+
+    def angle(u, v):
+        cos = np.dot(lattice[u], lattice[v]) / (lengths[u] * lengths[v])
+        return float(np.degrees(np.arccos(np.clip(cos, -1.0, 1.0))))
+
+    reduced = dict(cif_data)
+    reduced.update(
+        a=float(lengths[0]), b=float(lengths[1]), c=float(lengths[2]),
+        alpha=angle(1, 2), beta=angle(0, 2), gamma=angle(0, 1),
+        spacegroup=number,
+        atomic_numbers=numbers,
+        symbols=[ATOMIC_NUMBER_TO_SYMBOL[z] for z in numbers],
+        positions=positions,
+    )
+    ui.print(
+        f"Writing spglib's standard cell for space group {number}: "
+        f"a={reduced['a']:.6f} b={reduced['b']:.6f} c={reduced['c']:.6f} "
+        f"alpha={reduced['alpha']:.4f} beta={reduced['beta']:.4f} "
+        f"gamma={reduced['gamma']:.4f}, {len(numbers)} unique atoms"
+    )
+    return reduced
+
+
 def verify_and_reduce_to_asymmetric_unit(
     cif_data, tolerance=1e-5, validate_symmetry=False, interactive=None,
 ):
@@ -892,10 +965,10 @@ def verify_and_reduce_to_asymmetric_unit(
             # "Error during symmetry analysis" from the outer handler. The
             # outcome is the same; the difference is that a batch of hundreds
             # now leaves an auditable record of which structures disagreed.
-            # Not offered as an options-file answer: spglib's group is taken
-            # in spglib's standard setting but the cell and atoms stay in the
-            # CIF's, so e.g. a hexagonal cell written as Cmcm loses its
-            # 120-degree angle (CRYSTAL23 reports a different density).
+            # Not offered as an options-file answer: taking spglib's group
+            # rewrites the cell in spglib's standard setting
+            # (reduce_in_spglib_setting), which a batch should not do
+            # unasked.
             if not interactive:
                 ui.warn(
                     f"Space group mismatch (CIF {original_spacegroup_num} vs "
@@ -941,11 +1014,15 @@ def verify_and_reduce_to_asymmetric_unit(
                     ui.print(
                         f"Proceeding with spglib space group {detected_spacegroup_num}"
                     )
-                    cif_data["spacegroup"] = detected_spacegroup_num
+                    return reduce_in_spglib_setting(
+                        cif_data, cell, tolerance, detected_spacegroup_num
+                    )
 
             elif choice == "2":
                 ui.print(f"Proceeding with spglib space group {detected_spacegroup_num}")
-                cif_data["spacegroup"] = detected_spacegroup_num
+                return reduce_in_spglib_setting(
+                    cif_data, cell, tolerance, detected_spacegroup_num
+                )
             else:
                 ui.print("Using all atoms from the CIF file without reduction.")
                 return cif_data
