@@ -108,6 +108,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every such title called its path "default". The title now reads the same
   output, so it lists the written path's labels and says "SeeKPath (w.I)",
   "SeeKPath (no.I)" or "Literature" as the path was chosen.
+- **The workflow planner loads without `d12_constants`.** When
+  `d12_constants` or `DummyFileCreator` could not be imported, the planner
+  reported it with `ui.warn` before `ui` was defined, so the import stopped
+  with NameError instead of using its built-in fallbacks. `ui` is now set up
+  first.
+- **A mistyped answer to a D3 yes/no question is asked again.** In the
+  interactive `opt2d3` setup, an answer other than y/yes/n/no (or Enter)
+  counted as "no", even where the default was "yes", and the question moved
+  on. It now prints "Please respond with 'yes' or 'no' (or 'y' or 'n')." and
+  asks again, as the D12 tools do. Every recognised answer, and end of input,
+  behave as before.
 
 ### Removed
 
