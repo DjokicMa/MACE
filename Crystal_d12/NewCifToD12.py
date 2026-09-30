@@ -91,6 +91,7 @@ from d12_constants import (
     ATOMIC_NUMBER_TO_SYMBOL,
     ECP_ELEMENTS_EXTERNAL,
     LAYER_GROUP_FROM_SPACEGROUP,
+    LAYER_GROUP_ROWS,
     ROD_GROUP_FROM_SPACEGROUP,
     LAYER_GROUP_CANDIDATES,
     ROD_GROUP_CANDIDATES,
@@ -317,6 +318,18 @@ def parse_cif(cif_file, interactive=None):
         # is unavailable.
         raw_records = _parse_cif_atom_site_records(cif_file)
 
+        # The CIF's own operators, in the CIF's own setting. A SLAB deck uses
+        # them to tell which of these atoms its layer group relates.
+        cif_symops = None
+        if hasattr(atoms, "info") and "spacegroup" in atoms.info:
+            try:
+                cif_symops = [
+                    (np.array(rot).tolist(), np.array(trans).tolist())
+                    for rot, trans in atoms.info["spacegroup"].get_symop()
+                ]
+            except Exception:
+                cif_symops = None
+
         return {
             "a": a,
             "b": b,
@@ -331,6 +344,7 @@ def parse_cif(cif_file, interactive=None):
             "positions": positions,
             "cif_atom_symbols": raw_records[0] if raw_records else None,
             "cif_atom_positions": raw_records[1] if raw_records else None,
+            "cif_symops": cif_symops,
             "name": os.path.basename(cif_file).replace(".cif", ""),
         }
 
@@ -979,6 +993,129 @@ def reduce_to_asymmetric_unit(cif_data, validate_symmetry=False):
     return verify_and_reduce_to_asymmetric_unit(cif_data, 1e-5, validate_symmetry)
 
 
+# Two atoms of one element closer than this (Angstrom) are the same atom.
+SLAB_SAME_ATOM_TOL_ANG = 1e-2
+
+
+def _distinct_symops(ops):
+    """(rotation, translation) pairs, one per operation modulo the lattice."""
+    seen = {}
+    for rot, trans in ops:
+        rot = np.rint(np.asarray(rot, dtype=float)).astype(int)
+        trans = np.asarray(trans, dtype=float) % 1.0
+        trans[np.isclose(trans, 1.0, atol=1e-6)] = 0.0
+        key = (tuple(rot.ravel()), tuple(np.round(trans, 6)))
+        seen.setdefault(key, (rot, trans))
+    return list(seen.values())
+
+
+def _layer_group_order(layer_group):
+    """Number of operations of a layer group (conventional cell).
+
+    Appendix A.2 pairs every layer group with the space group whose operators,
+    in some orientation, are the layer group's; the orientation does not
+    change how many there are.
+    """
+    from ase.spacegroup import Spacegroup
+
+    number = int(LAYER_GROUP_ROWS[layer_group - 1][3].strip("()"))
+    return len(_distinct_symops(Spacegroup(number).get_symop()))
+
+
+def slab_symmetry_unique_atoms(cif_data, layer_group):
+    """Drop the atoms that the slab's layer group generates from earlier ones.
+
+    A SLAB record lists "NATR number of non-equivalent atoms in the asymmetric
+    unit" (CRYSTAL23 manual page 21), and CRYSTAL generates the rest. The
+    atoms handed over are normally already the asymmetric unit of the 3D
+    space group, but not always: the batch path keeps the whole cell when
+    spglib and the CIF disagree, or when write_only_unique is off.
+
+    The operators are the CIF's own (cif_data["cif_symops"], or the space
+    group's standard ones for data built without a CIF) that leave the plane
+    in place: no mixing of z with x and y, and no translation along z. They
+    are used only when they are as many as the named layer group has - then
+    they are that group, as the caller asserted by naming it. Otherwise
+    nothing is dropped on their say-so and a warning says so.
+
+    Returns (atomic_numbers, symbols, positions), in the input order, keeping
+    the first atom of every orbit.
+    """
+    numbers = list(cif_data["atomic_numbers"])
+    symbols = list(cif_data["symbols"])
+    positions = [list(map(float, p)) for p in cif_data["positions"]]
+    if layer_group == 1 or len(numbers) < 2:
+        return numbers, symbols, positions
+
+    ops = cif_data.get("cif_symops")
+    try:
+        if not ops:
+            from ase.spacegroup import Spacegroup
+
+            ops = Spacegroup(int(cif_data["spacegroup"])).get_symop()
+        layer_ops = [
+            (rot, trans)
+            for rot, trans in _distinct_symops(ops)
+            if rot[0, 2] == 0 and rot[1, 2] == 0
+            and rot[2, 0] == 0 and rot[2, 1] == 0
+            and abs(trans[2]) < 1e-6
+        ]
+        expected = _layer_group_order(layer_group)
+    except Exception as e:
+        ui.warn(
+            f"Warning: could not read the symmetry operators to check the "
+            f"atoms against layer group {layer_group} ({e}); writing the "
+            f"atoms as given."
+        )
+        return numbers, symbols, positions
+
+    if len(layer_ops) != expected:
+        ui.warn(
+            f"Warning: the structure's in-plane operators ({len(layer_ops)}) "
+            f"are not those of layer group {layer_group} ({expected}), so "
+            f"they cannot tell which atoms it generates; writing the "
+            f"{len(numbers)} atoms as given. CRYSTAL generates more from any "
+            f"of them that are equivalent in layer group {layer_group}."
+        )
+        return numbers, symbols, positions
+
+    from ase.geometry import cellpar_to_cell
+
+    lattice = cellpar_to_cell([
+        cif_data["a"], cif_data["b"], cif_data["c"],
+        cif_data["alpha"], cif_data["beta"], cif_data["gamma"],
+    ])
+    frac = np.asarray(positions, dtype=float)
+    kept = []
+    for i in range(len(numbers)):
+        duplicate = False
+        for k in kept:
+            if numbers[k] != numbers[i]:
+                continue
+            for rot, trans in layer_ops:
+                d = rot @ frac[k] + trans - frac[i]
+                d -= np.rint(d)
+                if np.linalg.norm(d @ lattice) < SLAB_SAME_ATOM_TOL_ANG:
+                    duplicate = True
+                    break
+            if duplicate:
+                break
+        if not duplicate:
+            kept.append(i)
+
+    if len(kept) < len(numbers):
+        ui.print(
+            f"Layer group {layer_group}: {len(numbers) - len(kept)} of "
+            f"{len(numbers)} atoms are generated by its operators; writing "
+            f"the {len(kept)} symmetry-unique ones."
+        )
+    return (
+        [numbers[i] for i in kept],
+        [symbols[i] for i in kept],
+        [positions[i] for i in kept],
+    )
+
+
 def create_d12_file(cif_data, output_file, options, interactive=None):
     """
     Create a D12 input file for CRYSTAL23 from CIF data
@@ -1370,6 +1507,9 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
                     ui.err(f"Aborting D12 file creation: {problem}")
                     return False
             layer_group = group
+            atomic_numbers, symbols, positions = slab_symmetry_unique_atoms(
+                cif_data, layer_group
+            )
         else:
             rod_group = group
 
@@ -1528,7 +1668,14 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
             # Write with different format depending on dimensionality (increased precision)
             if dimensionality == "SLAB":
                 # For SLAB: fractional a,b coordinates and Cartesian z coordinate
-                z_cart = positions[i][2] * c  # Convert fractional z to Cartesian
+                z_frac = positions[i][2]
+                if layer_group not in LAYER_GROUPS_POLAR_IN_Z:
+                    # z is measured from the layer group's own origin, where
+                    # its z-reversing elements sit (manual page 21): the
+                    # layer is centred on z = 0, and a fractional z past 1/2
+                    # is below it, not c above it.
+                    z_frac -= round(z_frac)
+                z_cart = z_frac * c  # Convert fractional z to Cartesian
                 print(
                     f"{atomic_number} {positions[i][0]:.10f} {positions[i][1]:.10f} {z_cart:.6f} Biso 1.000000 {symbols[i]}",
                     file=f,

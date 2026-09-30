@@ -61,6 +61,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `import queue`. Importing `mace` now loads the standard `queue` with
   `mace/` hidden from `sys.path`, before anything else can, and `mace_cli`
   imports the job-queue package as `mace.queue` rather than `queue`.
+- **A cif2d12 SLAB deck lists each atom once, at its own height.** A SLAB
+  record takes the symmetry-unique atoms, with z in Angstrom from the layer
+  group's origin (CRYSTAL23 manual p. 21). Handed a whole cell - which batch
+  mode keeps when spglib and the CIF disagree, or with `write_only_unique`
+  off - the converter wrote every atom with z = c times fractional z: a Bi2
+  bilayer (P-3m1, layer group 72) got its inversion image as a second Bi at
+  z = 19.10 A instead of -0.90 A, and CRYSTAL built a four-atom slab 38 A
+  thick. Atoms the layer group generates from an earlier one are now left
+  out, using the CIF's own operators when they are as many as the named
+  group has (otherwise the atoms are written as given, with a warning), and
+  for a layer group with an operation that reverses z a fractional z above
+  1/2 is written below the layer. P1 slabs, polar layer groups, and atoms
+  already within c/2 of the layer's origin are written as before.
 
 ### Removed
 
