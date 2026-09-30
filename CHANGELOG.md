@@ -72,13 +72,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ECP as `INPSOC` (manual pp. 84-87, INTERNAL convention, as the manual's own
   Eu example) with its valence shells unchanged, and a `TWOCOMPON` / `SOC` /
   `END` block goes before `SCFDIR` (manual sec. 6.2). This holds for the
-  `full.basis.doublezeta` and `triplezeta` ECPs of Rb-Bi except Yb. The deck is
-  refused, and nothing written, for what manual chapter 6 does not support
-  (optimisations, frequencies, dispersion, meta-GGA or range-separated
-  functionals, BROYDEN, GUESSP, keywords the chapter does not list), for an
+  `full.basis.doublezeta` and `triplezeta` ECPs of Rb-Bi except Yb. Run on
+  the stock CRYSTAL/23 build on HPCC: CRYSTAL echoes "AREP + INTERNAL SOREP
+  PSEUDOPOTENTIAL" with these numbers for Au, Pb, Te, Bi and Hg, and PbTe,
+  a Bi2 bilayer and fcc Au converge (PbTe -461.17741702 Ha with SOC against
+  -461.00763647 Ha scalar). Because of those runs a SOC deck also leaves out
+  DIIS and HISTDIIS (a DIIS record stops a 2c run: "DIIS NOT COMPATIBLE WITH
+  2-COMP SCF"), writes SHRINK with the Gilat net equal to the Monkhorst net
+  (fcc Au at 12 24 never converged, at 12 12 it did), and uses FMIXING 85
+  with at least 200 cycles (at FMIXING 30 Bi2 diverged; at 85 it converged in
+  34 cycles) - a FMIXING or MAXCYCLE the parent or template set to another
+  value than MACE's default is kept, with a warning. SPIN and the -D3 forms
+  of BLYP, PBE, B3LYP, PBE0 and PW1PW are accepted. The deck is refused, and
+  nothing written, for what manual chapter 6 does not support
+  (optimisations, frequencies, meta-GGA or range-separated functionals, a
+  DFTD3 block, BROYDEN, GUESSP, keywords the chapter does not list), for an
   internal basis-set library, and for an ECP that is not a spin-orbit ECP's
-  scalar part. Without the key every deck is byte-identical to before. The
-  decks have not yet been run through CRYSTAL. `Crystal_d12/soc_ecp.py`.
+  scalar part. Without the key every deck is byte-identical to before.
+  `Crystal_d12/soc_ecp.py`.
 
 ### Removed
 

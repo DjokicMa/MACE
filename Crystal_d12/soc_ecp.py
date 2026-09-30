@@ -353,9 +353,11 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print) -> str:
     Z - only if its scalar part is that very potential - and keeps its valence
     shells. All-electron atoms keep their block, since the SOC operator lives in
     the ECP (p. 175).
-    A TWOCOMPON block holding SOC goes into the SCF input, before SCFDIR, where
-    the stock 2c test deck has it. Raises SocError, and returns no deck, for
-    anything the manual says the 2c-SCF does not support."""
+    A TWOCOMPON block holding SOC goes into the SCF input, before SCFDIR (a
+    placement the stock build accepts, HPCC); DIIS is left out, SHRINK gets
+    IS = ISP, and FMIXING/MAXCYCLE are set for a 2c-SCF (see the helpers
+    below). Notes and warnings go to ``log``. Raises SocError, and returns no
+    deck, for anything the manual says the 2c-SCF does not support."""
     lines = deck.rstrip("\n").split("\n")
     upper = [ln.strip().upper() for ln in lines]
 

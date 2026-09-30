@@ -455,9 +455,16 @@ for with `"soc": true` in a cif2d12 options file or an opt2d12 template.
   potential. The `full.basis.doublezeta`/`triplezeta` ECPs of Rb-Bi (not Yb)
   qualify; all-electron atoms are left as they are.
 - Adds `TWOCOMPON` / `SOC` / `END` before `SCFDIR` (manual sec. 6.2).
-- Refuses, writing no deck: OPT/FREQ and other non-single-point runs, dispersion,
-  functionals and keywords manual chapter 6 does not list, `BASISSET`, and ECPs
-  that are not a spin-orbit ECP's scalar part.
+- Settings measured on the stock CRYSTAL/23 build: DIIS and HISTDIIS are left
+  out (a DIIS record stops a 2c run), SHRINK gets its Gilat net equal to the
+  Monkhorst net (`IS IS`, or `0 max(IS1,IS2,IS3)` in the directional form), and
+  FMIXING 85 with at least 200 cycles replaces MACE's default FMIXING 30. A
+  FMIXING or MAXCYCLE set to another value by the parent or template is kept,
+  with a warning.
+- Accepts SPIN and the `-D3` forms of BLYP, PBE, B3LYP, PBE0 and PW1PW.
+- Refuses, writing no deck: OPT/FREQ and other non-single-point runs,
+  functionals and keywords manual chapter 6 does not list (including a DFTD3
+  block), `BASISSET`, and ECPs that are not a spin-orbit ECP's scalar part.
 
 ### `d12_interactive.py`
 

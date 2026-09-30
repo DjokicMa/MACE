@@ -362,6 +362,8 @@ def test_cif2d12_soc_true_writes_the_2c_deck(cif2d12):
     text = out.read_text()
     assert ok is True and "INPSOC\nINTERNAL 1.0\n19. 0 2 4 4 2 2\n" in text
     assert "TWOCOMPON\nSOC\nEND\nSCFDIR\n" in text
+    assert "SHRINK\n10 10\n" in text and "FMIXING\n85\n" in text
+    assert "DIIS" not in text
 
 
 def test_cif2d12_soc_with_an_internal_basis_writes_nothing(cif2d12):
