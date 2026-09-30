@@ -65,7 +65,8 @@ from d12_constants import (
     configure_smearing, CUSTOM_FUNCTIONAL,
 )
 from d12_parsers import (
-    CrystalOutputParser, CrystalInputParser, DECK_GEOMETRY_KEYS, LOW_DIM_GROUPS,
+    CrystalOutputParser, CrystalInputParser, DECK_GEOMETRY_KEYS, DECK_TEXT_KEYS,
+    LOW_DIM_GROUPS,
 )
 from d12_config import unwrap_d12_config
 from d12_calc_freq import (
@@ -272,6 +273,16 @@ def merge_optimization_settings(parent, override, replace_type=False):
             del merged[existing]
         merged[key] = value
     return merged
+
+
+def child_freq_settings(parent_freq: dict) -> dict:
+    """The parent deck's FREQCALC settings a derived deck carries.
+
+    Everything the parent asked for, except RESTART: that restarts the
+    parent's own frequency run from the FREQINFO.DAT it wrote (manual sec.
+    8.2, p. 219), which a new deck does not have.
+    """
+    return {k: v for k, v in (parent_freq or {}).items() if k != "restart"}
 
 
 def prefer_deck_unrecognised_functional(settings: dict, in_data: dict) -> None:
@@ -1260,9 +1271,11 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
 
             # Merge data, with special handling for DFT settings
             for key, value in in_data.items():
-                if key in DECK_GEOMETRY_KEYS:
+                if key in DECK_GEOMETRY_KEYS or key in DECK_TEXT_KEYS:
                     # The parent's geometry input; the child's geometry is the .out's.
                     continue
+                if key == "freq_settings":
+                    value = child_freq_settings(value)
                 if key not in settings or settings[key] is None:
                     settings[key] = value
                 elif key in ["functional", "dispersion", "spin_polarized", "dft_grid", "method",
@@ -2295,8 +2308,10 @@ def main():
                         in_data = in_parser.parse()
                         # Use the same merge logic as in process_files
                         for key, value in in_data.items():
-                            if key in DECK_GEOMETRY_KEYS:
+                            if key in DECK_GEOMETRY_KEYS or key in DECK_TEXT_KEYS:
                                 continue
+                            if key == "freq_settings":
+                                value = child_freq_settings(value)
                             if key not in settings or settings[key] is None:
                                 settings[key] = value
                             elif key in ["functional", "dispersion", "spin_polarized", "dft_grid", "method",

@@ -43,6 +43,10 @@ DECK_GEOMETRY_KEYS = (
     "point_group", "rhombohedral_axes", "origin_shift", "geometry_unparsed",
 )
 
+# CrystalInputParser keys about the deck's own records rather than settings:
+# the FREQCALC records it could not read. opt2d12 never merges these either.
+DECK_TEXT_KEYS = ("freq_unparsed",)
+
 
 def rotation_matrix_to_xyz(rotation: List[List[float]], translation: List[float]) -> str:
     """
@@ -1510,22 +1514,7 @@ class CrystalInputParser:
             stripped = line.strip()
             if i > 0 and stripped == "FREQCALC":
                 self.data["calculation_type"] = "FREQ"
-                in_freq = True
-                freq_settings = {}
-                
-                # NUMDERIV anywhere in the FREQCALC block (closed by END or
-                # ENDFREQ). Stored under the key the FREQ writer reads.
-                for j in range(i + 1, len(lines)):
-                    rec = lines[j].strip()
-                    if rec == "NUMDERIV" and j + 1 < len(lines):
-                        try:
-                            freq_settings["numderiv"] = int(lines[j + 1].split()[0])
-                        except (ValueError, IndexError):
-                            pass
-                        break
-                    elif rec in ("END", "ENDFREQ"):
-                        break
-                        
+                freq_settings = self._extract_freqcalc_block(lines, i)
                 if freq_settings:
                     self.data["freq_settings"] = freq_settings
                 break
@@ -1533,6 +1522,241 @@ class CrystalInputParser:
         # Store optimization settings if any were found
         if opt_settings:
             self.data["optimization_settings"] = opt_settings
+
+    # FREQCALC sub-blocks closed by their own END (manual ch. 8): the END that
+    # closes one of these is not the END of FREQCALC.
+    _FREQ_SUBBLOCKS = ("PREOPTGEOM", "IRSPEC", "RAMSPEC", "DIPOMOME", "COMBMODE", "THERMO",
+                       "VSCF")
+
+    @staticmethod
+    def _number(token: str):
+        """A record value as the writer printed it: int when written as one."""
+        try:
+            return int(token)
+        except ValueError:
+            return float(token)
+
+    def _extract_freqcalc_block(self, lines: List[str], start: int) -> Dict[str, Any]:
+        """Read a FREQCALC block into the settings the FREQ writer takes.
+
+        FREQCALC is the last keyword of the geometry input and is closed by
+        END or ENDFREQ (manual sec. 8.1, pp. 212-214). The block is read into
+        the keys ``d12_calc_freq.write_frequency_section`` writes from, so a
+        deck written by MACE is written back the same. Only settings that
+        differ from the writer's defaults are returned (a plain
+        ``FREQCALC / NOINTENS / ENDFREQ`` gives ``{}``), and a record this
+        reader does not know is listed in ``freq_unparsed`` instead of being
+        dropped silently. ``numderiv`` keeps its long-standing meaning.
+
+        RESTART is read as ``restart``: it restarts THIS deck's frequency run
+        from its own FREQINFO.DAT (manual sec. 8.2, p. 219).
+        """
+        records = []
+        for line in lines[start + 1:]:
+            rec = line.split("#", 1)[0].strip()
+            if rec:
+                records.append(rec)
+        fs: Dict[str, Any] = {}
+        unparsed: List[str] = []
+        cphf: Dict[str, Any] = {}
+        num = self._number
+
+        def values(k: int, n: int):
+            """n numbers following record k, which may span records."""
+            out: List[Any] = []
+            j = k
+            while len(out) < n:
+                j += 1
+                out += [num(t) for t in records[j].split()]
+            return out[:n], j
+
+        # SCELPHONO sits in the geometry block before FREQCALC (manual sec.
+        # 4.21); its expansion matrix is read by rows.
+        for j in range(1, start):
+            if lines[j].strip() == "SCELPHONO":
+                rows = [lines[j + 1 + r].split() for r in range(3)]
+                fs["scelphono"] = [num(t) for row in rows for t in row[:3]]
+                break
+
+        in_raman = False
+        k = 0
+        try:
+            while k < len(records):
+                rec = records[k]
+                word = rec.upper()
+                if word in ("END", "ENDFREQ"):
+                    break
+                if word == "RESTART":
+                    fs["restart"] = True
+                elif word == "PREOPTGEOM":
+                    fs["preoptgeom"] = True
+                    opt: Dict[str, Any] = {}
+                    k += 1
+                    while records[k].upper() != "END":
+                        sub = records[k].upper()
+                        if sub == "FULLOPTG":
+                            opt["fulloptg"] = True
+                        elif sub in ("TOLDEG", "TOLDEX"):
+                            k += 1
+                            opt[sub.lower()] = float(records[k].split()[0])
+                        elif sub == "FINALRUN":
+                            k += 1
+                            opt["finalrun"] = num(records[k].split()[0])
+                        else:
+                            unparsed.append(records[k])
+                        k += 1
+                    fs["optgeom_settings"] = opt
+                elif word == "ANALYSIS":
+                    fs["analysis"] = True
+                elif word == "NOANALYSIS":
+                    fs["noanalysis"] = True
+                elif word == "NOECKART":
+                    fs["eckart"] = False
+                elif word in ("IR", "RAMAN", "ALL"):
+                    fs["mode_selection"] = word
+                elif word == "FRAGMENT":
+                    (n,), k = values(k, 1)
+                    fs["fragment"], k = values(k, n)
+                elif word == "ISOTOPES":
+                    (n,), k = values(k, 1)
+                    iso = {}
+                    for _ in range(n):
+                        k += 1
+                        label, mass = records[k].split()[:2]
+                        iso[num(label)] = num(mass)
+                    fs["isotopes"] = iso
+                elif word == "NUMDERIV":
+                    (fs["numderiv"],), k = values(k, 1)
+                elif word in ("STEPSIZE", "FREQSCAL", "DIELISO"):
+                    (value,), k = values(k, 1)
+                    key = {"STEPSIZE": "stepsize", "FREQSCAL": "freqscale",
+                           "DIELISO": "dielectric_constant"}[word]
+                    fs[key] = float(value)
+                elif word in ("TEMPERAT", "PRESSURE"):
+                    trio, k = values(k, 3)
+                    fs["temprange" if word == "TEMPERAT" else "pressrange"] = tuple(trio)
+                elif word == "NEGLEFRE":
+                    (fs["neglectfreq"],), k = values(k, 1)
+                elif word == "MULTITASK":
+                    (fs["multitask"],), k = values(k, 1)
+                elif word == "NOMODES":
+                    fs["print_modes"] = False
+                elif word == "CHI2TENS":
+                    tensor, k = values(k, 27)
+                    fs["chi2tensor"] = [float(v) for v in tensor]
+                elif word == "INTENS":
+                    fs["intensities"] = True
+                elif word == "NOINTENS":
+                    pass  # the writer's default
+                elif word == "INTLOC":
+                    fs["ir_method"] = "WANNIER"
+                elif word == "DIPOMOME":
+                    k += 1
+                    while records[k].upper() != "END":
+                        if records[k].upper() == "RELOCAL":
+                            fs["relocalize_wannier"] = True
+                        else:
+                            unparsed.append(records[k])
+                        k += 1
+                elif word == "INTCPHF":
+                    if not in_raman:
+                        fs["ir_method"] = "CPHF"
+                    k += 1
+                    while records[k].upper() != "ENDCPHF":
+                        sub = records[k].upper()
+                        if sub in ("FMIXING", "FMIXING2", "TOLALPHA", "TOLGAMMA",
+                                   "MAXCYCLE", "MAXCYCLE2"):
+                            (cphf[sub.lower()],), k = values(k, 1)
+                        else:
+                            unparsed.append(records[k])
+                        k += 1
+                elif word == "NORMBORN":
+                    fs["born_tensor_norm"] = True
+                elif word == "DIELTENS":
+                    tensor, k = values(k, 9)
+                    fs["dielectric_tensor"] = [float(v) for v in tensor]
+                elif word == "INTRAMAN":
+                    fs["raman"] = True
+                    in_raman = True
+                elif word == "RAMANEXP":
+                    pair, k = values(k, 2)
+                    fs["ramanexp"] = tuple(pair)
+                elif word == "NORENORM":
+                    fs["norenorm"] = True
+                elif word == "TENSONLY":
+                    fs["tensonly"] = True
+                elif word == "DISPERSION":
+                    fs["dispersion"] = True
+                elif word == "INTERPHESS":
+                    expand, k = values(k, 3)
+                    (prt,), k = values(k, 1)
+                    fs["interphess"] = {"expand": expand, "print": prt}
+                elif word == "WANG":
+                    tensor, k = values(k, 9)
+                    fs["wang"] = [float(v) for v in tensor]
+                elif word == "BANDS":
+                    (shrink, npoints), k = values(k, 2)
+                    (nline,), k = values(k, 1)
+                    path = []
+                    for _ in range(nline):
+                        k += 1
+                        if shrink == 0:
+                            path.append(records[k])
+                        else:
+                            path.append([num(t) for t in records[k].split()[:6]])
+                    fs["bands"] = {"shrink": shrink, "npoints": npoints, "path": path}
+                elif word in ("PDOS", "INS"):
+                    (top, nbins), k = values(k, 2)
+                    (flag,), k = values(k, 1)
+                    if word == "PDOS":
+                        fs["pdos"] = {"max_freq": top, "nbins": nbins, "projected": flag != 0}
+                    else:
+                        fs["ins"] = {"max_freq": top, "nbins": nbins, "neutron_type": flag}
+                elif word in ("IRSPEC", "RAMSPEC"):
+                    fs[word.lower()] = True
+                    k += 1
+                    while records[k].upper() != "END":
+                        sub = records[k].upper()
+                        if sub == "RANGE":
+                            fs["spec_range"], k = values(k, 2)
+                        elif sub == "LENSTEP":
+                            (fs["spec_step"],), k = values(k, 1)
+                            fs["spec_step"] = float(fs["spec_step"])
+                        elif sub == "DAMPFAC":
+                            # RAMSPEC repeats IRSPEC's value unless it has its own
+                            (value,), k = values(k, 1)
+                            if word == "IRSPEC":
+                                fs["spec_dampfac"] = float(value)
+                            elif float(value) != fs.get("spec_dampfac"):
+                                fs["raman_dampfac"] = float(value)
+                        elif sub == "VOIGT" and word == "RAMSPEC":
+                            (value,), k = values(k, 1)
+                            fs["raman_voigt"] = float(value)
+                        elif sub == "ANGLE" and word == "IRSPEC":
+                            (value,), k = values(k, 1)
+                            fs["spec_angle"] = float(value)
+                        elif sub in ("GAUSS", "REFRIND", "DIELFUN") and word == "IRSPEC":
+                            fs[{"GAUSS": "spec_gaussian", "REFRIND": "spec_refrind",
+                                "DIELFUN": "spec_dielfun"}[sub]] = True
+                        else:
+                            unparsed.append(records[k])
+                        k += 1
+                else:
+                    # A record the writer never emits (e.g. NOUSESYMM), or a
+                    # block this reader does not take apart (ANHAPES, VSCF,
+                    # VCI, COMBMODE, SCANMODE, ADP, THERMO).
+                    unparsed.append(rec)
+                    if word in self._FREQ_SUBBLOCKS:
+                        while records[k].upper() != "END":
+                            k += 1
+                k += 1
+        except (IndexError, ValueError):
+            unparsed.append("<incomplete record>")
+        if cphf:
+            fs["cphf_settings"] = cphf
+        if unparsed:
+            self.data["freq_unparsed"] = unparsed
+        return fs
 
     def _extract_dft_settings(self, lines: List[str]) -> None:
         """Extract DFT functional and settings from input file"""

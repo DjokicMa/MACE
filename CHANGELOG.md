@@ -128,6 +128,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on. It now prints "Please respond with 'yes' or 'no' (or 'y' or 'n')." and
   asks again, as the D12 tools do. Every recognised answer, and end of input,
   behave as before.
+- **An `opt2d12` FREQ deck repeats its FREQ parent's FREQCALC settings.** Only
+  NUMDERIV was read from the parent's FREQCALC block, so the child of a parent
+  that asked for IR intensities (`INTENS / INTCPHF / ENDCPHF`), Raman
+  intensities or IR/Raman spectra was written with `NOINTENS`. The whole block
+  is read now, and a FREQ child written without questions (`--non-interactive`,
+  or a `--config-file` without FREQ settings of its own) repeats it; RESTART
+  is not repeated, as it restarts the parent's own run from the FREQINFO.DAT
+  that run wrote (manual sec. 8.2, p. 219). A record the writer never writes
+  (e.g. NOUSESYMM) is reported in the parse as `freq_unparsed`. The
+  interactive questions still default only NUMDERIV to the parent's.
 
 ### Removed
 
