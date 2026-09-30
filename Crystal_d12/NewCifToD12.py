@@ -1009,17 +1009,28 @@ def _distinct_symops(ops):
     return list(seen.values())
 
 
-def _layer_group_order(layer_group):
-    """Number of operations of a layer group (conventional cell).
+def _rotation_types(ops):
+    """Sorted (determinant, trace) of every operation's rotation.
+
+    Both are unchanged by a change of axes, so two sets of operators that are
+    the same group in different orientations give the same list.
+    """
+    return sorted(
+        (int(round(np.linalg.det(rot))), int(np.trace(rot))) for rot, _ in ops
+    )
+
+
+def _layer_group_rotation_types(layer_group):
+    """(determinant, trace) of the layer group's operations (conventional cell).
 
     Appendix A.2 pairs every layer group with the space group whose operators,
-    in some orientation, are the layer group's; the orientation does not
-    change how many there are.
+    in some orientation, are the layer group's; the orientation changes
+    neither how many there are nor what kind each one is.
     """
     from ase.spacegroup import Spacegroup
 
     number = int(LAYER_GROUP_ROWS[layer_group - 1][3].strip("()"))
-    return len(_distinct_symops(Spacegroup(number).get_symop()))
+    return _rotation_types(_distinct_symops(Spacegroup(number).get_symop()))
 
 
 def slab_symmetry_unique_atoms(cif_data, layer_group):
@@ -1034,8 +1045,10 @@ def slab_symmetry_unique_atoms(cif_data, layer_group):
     The operators are the CIF's own (cif_data["cif_symops"], or the space
     group's standard ones for data built without a CIF) that leave the plane
     in place: no mixing of z with x and y, and no translation along z. They
-    are used only when they are as many as the named layer group has - then
-    they are that group, as the caller asserted by naming it. Otherwise
+    are used only when they match the named layer group's in number and kind
+    (the determinant and trace of each rotation, which no choice of axes
+    changes) - then they are that group, as the caller asserted by naming
+    it. Otherwise
     nothing is dropped on their say-so and a warning says so.
 
     Returns (atomic_numbers, symbols, positions), in the input order, keeping
@@ -1060,7 +1073,7 @@ def slab_symmetry_unique_atoms(cif_data, layer_group):
             and rot[2, 0] == 0 and rot[2, 1] == 0
             and abs(trans[2]) < 1e-6
         ]
-        expected = _layer_group_order(layer_group)
+        expected = _layer_group_rotation_types(layer_group)
     except Exception as e:
         ui.warn(
             f"Warning: could not read the symmetry operators to check the "
@@ -1069,10 +1082,10 @@ def slab_symmetry_unique_atoms(cif_data, layer_group):
         )
         return numbers, symbols, positions
 
-    if len(layer_ops) != expected:
+    if _rotation_types(layer_ops) != expected:
         ui.warn(
             f"Warning: the structure's in-plane operators ({len(layer_ops)}) "
-            f"are not those of layer group {layer_group} ({expected}), so "
+            f"are not those of layer group {layer_group} ({len(expected)}), so "
             f"they cannot tell which atoms it generates; writing the "
             f"{len(numbers)} atoms as given. CRYSTAL generates more from any "
             f"of them that are equivalent in layer group {layer_group}."
@@ -1114,6 +1127,43 @@ def slab_symmetry_unique_atoms(cif_data, layer_group):
         [symbols[i] for i in kept],
         [positions[i] for i in kept],
     )
+
+
+def slab_cartesian_z(z_fractions, c, z_reversing):
+    """SLAB z records (Angstrom) for fractional z in a cell of height c.
+
+    The layer is kept in one piece: the largest empty stretch of the periodic
+    z axis is the vacuum, and every atom is placed on the layer's side of it,
+    so a layer straddling z = 0/1 is not cut in two. The whole layer is then
+    moved by one common offset, never atom by atom, so every z distance within
+    it is the cell's own (minimum-image) distance.
+
+    Under a layer group with a z-reversing operation, z is measured from that
+    operation's plane (manual page 21), which in the cell sits at fractional
+    z = 0 or 1/2 - whichever the layer is centred on. The atoms given may be
+    only the asymmetric unit, so their mirror images -z are included when
+    locating the layer. Without such an operation the origin is free and the
+    layer keeps its c * z height, shifted only by a whole cell when it
+    straddles the boundary; z values outside [0, 1) are then not treated as
+    fractions of a periodic cell and are written as c * z unchanged.
+    """
+    raw = np.asarray(z_fractions, dtype=float)
+    if len(raw) == 0:
+        return []
+    if not z_reversing and not np.all((raw >= 0.0) & (raw < 1.0)):
+        return [float(v) for v in raw * c]
+    z = np.mod(raw, 1.0)
+    points = np.sort(np.concatenate([z, np.mod(-z, 1.0)]) if z_reversing else z)
+    gaps = np.diff(np.append(points, points[0] + 1.0))
+    k = int(np.argmax(gaps))
+    if k == len(points) - 1:
+        start, end = points[0], points[-1]
+    else:
+        start, end = points[k + 1], points[k] + 1.0
+    unwrapped = z + (z < start - 1e-6)
+    middle = 0.5 * (start + end)
+    origin = np.round(2.0 * middle) / 2.0 if z_reversing else np.floor(middle)
+    return [float(v) for v in (unwrapped - origin) * c]
 
 
 def create_d12_file(cif_data, output_file, options, interactive=None):
@@ -1655,6 +1705,12 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
             print("1", file=f)  # C1 symmetry for molecules
 
         # Write atomic positions
+        if dimensionality == "SLAB":
+            slab_z = slab_cartesian_z(
+                [p[2] for p in positions],
+                c,
+                z_reversing=layer_group not in LAYER_GROUPS_POLAR_IN_Z,
+            )
         print(str(len(atomic_numbers)), file=f)
 
         for i in range(len(atomic_numbers)):
@@ -1668,14 +1724,7 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
             # Write with different format depending on dimensionality (increased precision)
             if dimensionality == "SLAB":
                 # For SLAB: fractional a,b coordinates and Cartesian z coordinate
-                z_frac = positions[i][2]
-                if layer_group not in LAYER_GROUPS_POLAR_IN_Z:
-                    # z is measured from the layer group's own origin, where
-                    # its z-reversing elements sit (manual page 21): the
-                    # layer is centred on z = 0, and a fractional z past 1/2
-                    # is below it, not c above it.
-                    z_frac -= round(z_frac)
-                z_cart = z_frac * c  # Convert fractional z to Cartesian
+                z_cart = slab_z[i]
                 print(
                     f"{atomic_number} {positions[i][0]:.10f} {positions[i][1]:.10f} {z_cart:.6f} Biso 1.000000 {symbols[i]}",
                     file=f,

@@ -203,3 +203,96 @@ def test_named_group_of_a_different_order_is_not_reduced(writer, tmp_path, capsy
     out = capsys.readouterr()
     assert "layer group 66" in (out.out + out.err)
     assert len(rows) == 2
+
+
+# The layer's z records move by ONE offset for the whole layer. Rounding each
+# fractional z to its own nearest integer cut a layer centred on z = 1/2 in
+# two - atoms at 0.45 and 0.55 went to -0.05 c and +0.45 c... and to +0.45 c
+# and -0.45 c when the plane was taken at 0 - putting half the layer on the far
+# side of the vacuum.
+
+
+def min_image_dz(z1, z2, c):
+    d = (z2 - z1) % 1.0
+    return (d - round(d)) * c
+
+
+@pytest.mark.parametrize(
+    "zs, expected",
+    [
+        ([0.45, 0.55], [-0.05, 0.05]),        # centred on 1/2
+        ([0.55, 0.45], [0.05, -0.05]),
+        ([0.97, 0.03], [-0.03, 0.03]),        # straddling 0/1
+        ([0.03, 0.97, 0.0], [0.03, -0.03, 0.0]),
+        ([0.044917764], [0.044917764]),       # Bi2 asymmetric unit
+        ([1 - 0.044917764], [-0.044917764]),  # its inversion image
+        ([0.40], [-0.10]),                    # half a layer centred on 1/2
+        ([0.10, 0.12], [0.10, 0.12]),         # half a layer centred on 0
+    ],
+)
+def test_z_reversing_layer_is_measured_from_its_symmetry_plane(writer, zs, expected):
+    got = writer.slab_cartesian_z(zs, 20.0, z_reversing=True)
+    assert got == pytest.approx([20.0 * e for e in expected], abs=1e-9)
+    for i in range(len(zs)):
+        for j in range(len(zs)):
+            assert got[j] - got[i] == pytest.approx(
+                min_image_dz(zs[i], zs[j], 20.0), abs=1e-9
+            )
+
+
+@pytest.mark.parametrize(
+    "zs, expected",
+    [
+        ([0.0, 0.01], [0.0, 0.01]),           # in the cell: c * z, as before
+        ([0.45, 0.55], [0.45, 0.55]),
+        ([0.97, 0.03], [-0.03, 0.03]),        # straddling: kept in one piece
+    ],
+)
+def test_polar_layer_keeps_its_height_and_stays_in_one_piece(writer, zs, expected):
+    got = writer.slab_cartesian_z(zs, 20.0, z_reversing=False)
+    assert got == pytest.approx([20.0 * e for e in expected], abs=1e-9)
+
+
+def two_element_layer(data, z_bi, z_sb):
+    return dict(
+        data,
+        symbols=["Bi", "Sb"],
+        atomic_numbers=[83, 51],
+        positions=[[1 / 3, 2 / 3, z_bi], [0.0, 0.0, z_sb]],
+    )
+
+
+@pytest.mark.parametrize(
+    "z_bi, z_sb, want_bi, want_sb",
+    [
+        (0.45, 0.50, -0.05, 0.0),    # layer centred on z = 1/2
+        (0.55, 0.47, 0.05, -0.03),
+        (0.97, 0.02, -0.03, 0.02),   # layer straddling z = 0/1
+    ],
+)
+def test_slab_deck_keeps_the_layer_in_one_piece(
+    writer, tmp_path, z_bi, z_sb, want_bi, want_sb
+):
+    data, _ = write(writer, tmp_path, BI2_CIF, "bi2base", layer_group=72)
+    out = tmp_path / "layer.d12"
+    assert writer.create_d12_file(
+        two_element_layer(data, z_bi, z_sb), str(out),
+        slab_options(layer_group=72), interactive=False,
+    )
+    rows = atom_records(out.read_text())
+    assert [r[-1] for r in rows] == ["Bi", "Sb"]
+    z = [float(r[3]) for r in rows]
+    assert z == pytest.approx([20.0 * want_bi, 20.0 * want_sb], abs=1e-6)
+    assert z[1] - z[0] == pytest.approx(min_image_dz(z_bi, z_sb, 20.0), abs=1e-6)
+
+
+def test_named_group_of_the_same_order_but_other_operations_is_not_reduced(
+    writer, tmp_path, capsys
+):
+    """Layer group 75 (p6/m) has twelve operations, as P -3 m 1 does, but
+    not the same ones: the CIF's operators are not that group's, so none of
+    them is used to drop an atom."""
+    _, rows = write(writer, tmp_path, BI2_CIF, "bi2p6m", layer_group=75)
+    out = capsys.readouterr()
+    assert "layer group 75" in (out.out + out.err)
+    assert len(rows) == 2

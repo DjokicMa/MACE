@@ -69,11 +69,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bilayer (P-3m1, layer group 72) got its inversion image as a second Bi at
   z = 19.10 A instead of -0.90 A, and CRYSTAL built a four-atom slab 38 A
   thick. Atoms the layer group generates from an earlier one are now left
-  out, using the CIF's own operators when they are as many as the named
-  group has (otherwise the atoms are written as given, with a warning), and
-  for a layer group with an operation that reverses z a fractional z above
-  1/2 is written below the layer. P1 slabs, polar layer groups, and atoms
-  already within c/2 of the layer's origin are written as before.
+  out, using the CIF's own operators when they match the named group's in
+  number and kind (otherwise the atoms are written as given, with a
+  warning). For a layer group with an operation that reverses z, the whole
+  layer is moved by one offset so that the operation's plane - at
+  fractional z = 0 or 1/2 in the cell - is at z = 0; the layer stays in one
+  piece, even when it is centred on z = 1/2 or straddles z = 0/1, and every
+  z distance in it is the cell's own. A polar-layer-group slab keeps its
+  c times z heights; when it straddles z = 0/1, the atoms just below z = 1
+  are written one cell lower, next to the rest of the layer.
 - **Non-centrosymmetric structures with a 2-fold axis get the
   non-centrosymmetric SeeK-path path.** Without the seekpath library, the
   band and phonon paths read inversion from the CRYSTAL output, and the
