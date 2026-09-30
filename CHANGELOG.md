@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Static SeeK-path titles name the segments the deck writes.** Without the
+  seekpath library, the title labels of the P-1 (aP3), C-centred monoclinic
+  (mS1: C2, Cm, C2/m, ...), F-orthorhombic (oF1-oF3: Fmmm, Fddd), I-tetragonal
+  (tI1/tI2: I4/m, I4/mmm, ...) and non-centrosymmetric F-cubic (F-43m, F23, ...)
+  paths ran on where SeeK-path's path jumps, so the title had more edges than
+  the deck had segments and band-plot nodes were misnamed. They now follow
+  SeeK-path's path, with a "|" at each jump. The P-1 aP2 path also called
+  (1/2, 1/2, 0) and (1/2, 0, 1/2) N and M; SeeK-path names them V and U. The
+  coordinates are unchanged.
 - **Hexagonal K and H points are written exactly in BAND and phonon paths.**
   Coordinate paths are written in units of 1/shrink, and K = (1/3, 1/3, 0) is
   only a whole number of steps when the shrink is a multiple of 3; at the usual

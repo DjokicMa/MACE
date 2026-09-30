@@ -1279,7 +1279,7 @@ seekpath_data = {
             [0.5, 0.0, 0.0, 0.5, 0.0, 0.5],    # X → M
             [0.5, 0.5, 0.5, 0.5, 0.5, 0.0]     # R → N
         ],
-        "labels": ["GAMMA", "X", "|", "Y", "GAMMA", "Z", "|", "N", "Y", "|", "M", "Z", "|", "X", "M", "|", "R", "N"]
+        "labels": ["GAMMA", "X", "|", "Y", "GAMMA", "Z", "|", "V", "Y", "|", "U", "Z", "|", "X", "U", "|", "R", "V"]
     },
     "cF1": {
         "segments": [
@@ -1612,7 +1612,7 @@ seekpath_data = {
             [-0.5, 0.0, 0.5, 0.0, 0.0, 0.0],     # U₂ → Γ
             [0.0, 0.0, 0.0, 0.5, -0.5, 0.0]      # Γ → V₂
         ],
-        "labels": ["GAMMA", "X", "Y", "GAMMA", "GAMMA", "Z", "R_2", "GAMMA", "GAMMA", "T_2", "U_2", "GAMMA", "GAMMA", "V_2"]
+        "labels": ["GAMMA", "X", "|", "Y", "GAMMA", "Z", "|", "R_2", "GAMMA", "T_2", "|", "U_2", "GAMMA", "V_2"]
     },
     
     # Cubic lattices
@@ -1753,7 +1753,7 @@ seekpath_data = {
             [0.25, 0.25, 0.25, 0.0, 0.5, 0.0],       # P → N
             [0.0, 0.5, 0.0, 0.0, 0.0, 0.0]           # N → Γ
         ],
-        "labels": ["GAMMA", "X", "M", "GAMMA", "Z", "Z_0", "M", "|", "X", "P", "N", "GAMMA"]
+        "labels": ["GAMMA", "X", "M", "GAMMA", "Z", "|", "Z_0", "M", "|", "X", "P", "N", "GAMMA"]
     },
     "tI2": {
         # Tetragonal body-centered with inversion (I4/mmm)
@@ -1768,7 +1768,7 @@ seekpath_data = {
             [0.0, 0.0, 0.5, -0.284637, 0.284637, 0.5], # X → R (scaled)
             [0.5, 0.5, -0.284637, 0.5, 0.5, -0.5]     # G → M
         ],
-        "labels": ["GAMMA", "X", "P", "N", "GAMMA", "M", "S", "S_0", "GAMMA", "|", "X", "R", "|", "GAMMA", "M"]
+        "labels": ["GAMMA", "X", "P", "N", "GAMMA", "M", "S", "|", "S_0", "GAMMA", "|", "X", "R", "|", "G", "M"]
     },
     
     # Monoclinic C-centered lattices
@@ -1899,7 +1899,7 @@ seekpath_data = {
             [0.5, 0.771367, 0.271367, 0.5, 0.5, 0.0],    # A₀ → Z
             [0.0, 0.0, 0.0, 0.5, 0.5, 0.5]               # Γ → L
         ],
-        "labels": ["GAMMA", "Y", "T", "Z", "GAMMA", "SIGMA_0", "U_0", "T", "|", "Y", "C_0", "A_0", "Z", "|", "GAMMA", "L"]
+        "labels": ["GAMMA", "Y", "T", "Z", "GAMMA", "SIGMA_0", "|", "U_0", "T", "|", "Y", "C_0", "|", "A_0", "Z", "|", "GAMMA", "L"]
     },
     "oF3": {
         # Face-centered orthorhombic with inversion (Fmmm)
@@ -1915,7 +1915,7 @@ seekpath_data = {
             [0.0, 0.0, 0.0, 0.5, 0.5, 0.0],              # Γ → Z
             [0.0, 0.0, 0.0, 0.5, 0.5, 0.5]               # Γ → L
         ],
-        "labels": ["GAMMA", "Y", "C_0", "A_0", "Z", "B_0", "D_0", "T", "G_0", "H_0", "Y", "|", "T", "GAMMA", "|", "GAMMA", "Z", "|", "GAMMA", "L"]
+        "labels": ["GAMMA", "Y", "C_0", "|", "A_0", "Z", "B_0", "|", "D_0", "T", "G_0", "|", "H_0", "Y", "|", "T", "GAMMA", "Z", "|", "GAMMA", "L"]
     },
     
     # Without inversion symmetry entries (selected examples) - using shrink factor scaling
@@ -1941,7 +1941,7 @@ seekpath_data = {
             [0.0, -0.5, -0.5, 0.0, 0.0, 0.0],             # L₂' → Γ
             [0.0, 0.0, 0.0, 0.0, -0.5, 0.0]               # Γ → V₂'
         ],
-        "labels": ["GAMMA", "C", "C_2", "Y_2", "GAMMA", "M_2", "D", "D_2", "A", "GAMMA", "|", "L_2", "GAMMA", "|", "GAMMA", "V_2", "|", "GAMMA", "C'", "C_2'", "Y_2'", "GAMMA", "M_2'", "D'", "D_2'", "A'", "GAMMA", "|", "L_2'", "GAMMA", "|", "GAMMA", "V_2'"]
+        "labels": ["GAMMA", "C", "|", "C_2", "Y_2", "GAMMA", "M_2", "D", "|", "D_2", "A", "GAMMA", "|", "L_2", "GAMMA", "V_2", "|", "GAMMA", "C'", "|", "C_2'", "Y_2'", "GAMMA", "M_2'", "D'", "|", "D_2'", "A'", "GAMMA", "|", "L_2'", "GAMMA", "V_2'"]
     },
     "oS1": {
         # Orthorhombic base-centered without inversion (Cmc2_1)
@@ -2021,7 +2021,7 @@ seekpath_data = {
             [-0.804420, -0.304420, -0.5, -0.5, 0.0, -0.5], # H₀' → Y'
             [0.0, 0.0, 0.0, -0.5, -0.5, -0.5]            # Γ → L'
         ],
-        "labels": ["GAMMA", "T", "Z", "Y", "GAMMA", "LAMBDA_0", "Q_0", "Z", "|", "T", "G_0", "H_0", "Y", "|", "GAMMA", "L", "|", "GAMMA", "T'", "Z'", "Y'", "GAMMA", "LAMBDA_0'", "Q_0'", "Z'", "|", "T'", "G_0'", "H_0'", "Y'", "|", "GAMMA", "L'"]
+        "labels": ["GAMMA", "T", "Z", "Y", "GAMMA", "LAMBDA_0", "|", "Q_0", "Z", "|", "T", "G_0", "|", "H_0", "Y", "|", "GAMMA", "L", "|", "GAMMA", "T'", "Z'", "Y'", "GAMMA", "LAMBDA_0'", "|", "Q_0'", "Z'", "|", "T'", "G_0'", "|", "H_0'", "Y'", "|", "GAMMA", "L'"]
     },
     
     # Non-inversion versions for Bravais lattices
@@ -2101,7 +2101,7 @@ seekpath_data = {
             [-0.5, -0.5, -0.5, -0.5, -0.25, -0.75], # L' → W'
             [-0.5, -0.25, -0.75, -0.5, 0.0, -0.5] # W' → X'
         ],
-        "labels": ["GAMMA", "X", "U", "K", "GAMMA", "L", "W", "X", "|", "GAMMA", "X'", "U'", "K'", "GAMMA", "L'", "W'", "X'"]
+        "labels": ["GAMMA", "X", "U", "|", "K", "GAMMA", "L", "W", "X", "|", "GAMMA", "X'", "U'", "|", "K'", "GAMMA", "L'", "W'", "X'"]
     },
     "cI1_noinv": {
         # Cubic body-centered without inversion (I-43m)
