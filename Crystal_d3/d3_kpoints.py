@@ -1675,7 +1675,7 @@ seekpath_data = {
             [0.0, 0.0, 0.0, 0.0, 0.0, 0.5],              # Γ → T
             [0.0, 0.0, 0.5, 0.25, 0.25, 0.25]            # T → W
         ],
-        "labels": ["GAMMA", "X", "F_2", "SIGMA_0", "GAMMA", "Y_0", "U_0", "X", "|", "GAMMA", "R", "W", "S", "GAMMA", "T", "W"]
+        "labels": ["GAMMA", "X", "F_2", "|", "SIGMA_0", "GAMMA", "Y_0", "|", "U_0", "X", "|", "GAMMA", "R", "W", "S", "GAMMA", "T", "W"]
     },
     "oI3": {
         # Body-centered orthorhombic with inversion (Imma)
@@ -1779,7 +1779,7 @@ seekpath_data = {
             [0.0, -0.5, -0.5, 0.0, 0.0, -0.5],           # R' → Z'
             [0.0, 0.0, -0.5, 0.5, -0.5, -0.5]            # Z' → T'
         ],
-        "labels": ["GAMMA", "Y", "C_0", "SIGMA_0", "GAMMA", "Z", "A_0", "E_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "C_0'", "SIGMA_0'", "GAMMA", "Z'", "A_0'", "E_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
+        "labels": ["GAMMA", "Y", "C_0", "|", "SIGMA_0", "GAMMA", "Z", "A_0", "|", "E_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "C_0'", "|", "SIGMA_0'", "GAMMA", "Z'", "A_0'", "|", "E_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
     },
     "oI2": {
         # Body-centered orthorhombic without inversion (Ima2)
@@ -2069,7 +2069,7 @@ seekpath_data = {
             [-0.622283, 0.0, -0.377717, -0.5, 0.0, -0.5], # S₂' → F'
             [-0.5, 0.0, -0.5, 0.0, 0.0, 0.0]             # F' → Γ
         ],
-        "labels": ["GAMMA", "T", "H_2", "H_0", "L", "GAMMA", "S_0", "S_2", "F", "GAMMA", "|", "GAMMA", "T'", "H_2'", "H_0'", "L'", "GAMMA", "S_0'", "S_2'", "F'", "GAMMA"]
+        "labels": ["GAMMA", "T", "H_2", "|", "H_0", "L", "GAMMA", "S_0", "|", "S_2", "F", "GAMMA", "T'", "H_2'", "|", "H_0'", "L'", "GAMMA", "S_0'", "|", "S_2'", "F'", "GAMMA"]
     },
     "hR2_noinv": {
         # Rhombohedral without inversion (R3m variant 2)
@@ -2085,7 +2085,7 @@ seekpath_data = {
             [-0.302174, -0.302174, -0.302174, 0.0, 0.0, 0.0], # P₂' → Γ
             [0.0, 0.0, 0.0, -0.5, 0.5, 0.0]              # Γ → F'
         ],
-        "labels": ["GAMMA", "L", "T", "P_0", "P_2", "GAMMA", "F", "|", "GAMMA", "L'", "T'", "P_0'", "P_2'", "GAMMA", "F'"]
+        "labels": ["GAMMA", "L", "T", "P_0", "|", "P_2", "GAMMA", "F", "|", "GAMMA", "L'", "T'", "P_0'", "|", "P_2'", "GAMMA", "F'"]
     },
     "mC1_noinv": {
         # Monoclinic C-centered without inversion (Cc)
@@ -2309,7 +2309,7 @@ seekpath_data = {
             [-0.5, -0.771367, -0.271367, -0.5, -0.5, 0.0], # A₀' → Z'
             [0.0, 0.0, 0.0, -0.5, -0.5, -0.5]           # Γ → L'
         ],
-        "labels": ["GAMMA", "Y", "T", "Z", "GAMMA", "SIGMA_0", "U_0", "T", "|", "Y", "C_0", "A_0", "Z", "|", "GAMMA", "L", "|", "GAMMA", "Y'", "T'", "Z'", "GAMMA", "SIGMA_0'", "U_0'", "T'", "|", "Y'", "C_0'", "A_0'", "Z'", "|", "GAMMA", "L'"]
+        "labels": ["GAMMA", "Y", "T", "Z", "GAMMA", "SIGMA_0", "|", "U_0", "T", "|", "Y", "C_0", "|", "A_0", "Z", "|", "GAMMA", "L", "|", "GAMMA", "Y'", "T'", "Z'", "GAMMA", "SIGMA_0'", "|", "U_0'", "T'", "|", "Y'", "C_0'", "|", "A_0'", "Z'", "|", "GAMMA", "L'"]
     },
     "oF3_noinv": {
         # Orthorhombic face-centered without inversion (Fmm2 variant 3)
@@ -2335,7 +2335,7 @@ seekpath_data = {
             [0.0, 0.0, 0.0, -0.5, -0.5, 0.0],            # Γ → Z'
             [0.0, 0.0, 0.0, -0.5, -0.5, -0.5]           # Γ → L'
         ],
-        "labels": ["GAMMA", "Y", "C_0", "A_0", "Z", "B_0", "D_0", "T", "G_0", "H_0", "Y", "|", "T", "GAMMA", "|", "GAMMA", "Z", "|", "GAMMA", "L", "|", "GAMMA", "Y'", "C_0'", "A_0'", "Z'", "B_0'", "D_0'", "T'", "G_0'", "H_0'", "Y'", "|", "T'", "GAMMA", "|", "GAMMA", "Z'", "|", "GAMMA", "L'"]
+        "labels": ["GAMMA", "Y", "C_0", "|", "A_0", "Z", "B_0", "|", "D_0", "T", "G_0", "|", "H_0", "Y", "|", "T", "GAMMA", "Z", "|", "GAMMA", "L", "|", "GAMMA", "Y'", "C_0'", "|", "A_0'", "Z'", "B_0'", "|", "D_0'", "T'", "G_0'", "|", "H_0'", "Y'", "|", "T'", "GAMMA", "Z'", "|", "GAMMA", "L'"]
     },
     "oI1_noinv": {
         # Orthorhombic body-centered without inversion (Imm2)
@@ -2363,7 +2363,7 @@ seekpath_data = {
             [0.0, 0.0, 0.0, 0.0, 0.0, -0.5],             # Γ → T'
             [0.0, 0.0, -0.5, -0.25, -0.25, -0.25]        # T' → W'
         ],
-        "labels": ["GAMMA", "X", "F_2", "SIGMA_0", "GAMMA", "Y_0", "U_0", "X", "|", "GAMMA", "R", "W", "S", "GAMMA", "T", "W", "|", "GAMMA", "X'", "F_2'", "SIGMA_0'", "GAMMA", "Y_0'", "U_0'", "X'", "|", "GAMMA", "R'", "W'", "S'", "GAMMA", "T'", "W'"]
+        "labels": ["GAMMA", "X", "F_2", "|", "SIGMA_0", "GAMMA", "Y_0", "|", "U_0", "X", "|", "GAMMA", "R", "W", "S", "GAMMA", "T", "W", "|", "GAMMA", "X'", "F_2'", "|", "SIGMA_0'", "GAMMA", "Y_0'", "|", "U_0'", "X'", "|", "GAMMA", "R'", "W'", "S'", "GAMMA", "T'", "W'"]
     },
     "oI3_noinv": {
         # Orthorhombic body-centered without inversion (Imm2 variant 3)
@@ -2443,7 +2443,7 @@ seekpath_data = {
             [-0.25, -0.25, -0.25, 0.0, -0.5, 0.0],       # P' → N'
             [0.0, -0.5, 0.0, 0.0, 0.0, 0.0]              # N' → Γ
         ],
-        "labels": ["GAMMA", "X", "M", "GAMMA", "Z", "Z_0", "M", "|", "X", "P", "N", "GAMMA", "|", "GAMMA", "X'", "M'", "GAMMA", "Z'", "Z_0'", "M'", "|", "X'", "P'", "N'", "GAMMA"]
+        "labels": ["GAMMA", "X", "M", "GAMMA", "Z", "|", "Z_0", "M", "|", "X", "P", "N", "GAMMA", "X'", "M'", "GAMMA", "Z'", "|", "Z_0'", "M'", "|", "X'", "P'", "N'", "GAMMA"]
     },
     "tI2_noinv": {
         # Tetragonal body-centered without inversion (I4mm)
@@ -2467,7 +2467,7 @@ seekpath_data = {
             [0.0, 0.0, -0.5, 0.192640, -0.192640, -0.5], # X' → R'
             [-0.5, -0.5, 0.192640, -0.5, -0.5, 0.5]      # G' → M'
         ],
-        "labels": ["GAMMA", "X", "P", "N", "GAMMA", "M", "S", "S_0", "GAMMA", "|", "X", "R", "|", "GAMMA", "M", "|", "GAMMA", "X'", "P'", "N'", "GAMMA", "M'", "S'", "S_0'", "GAMMA", "|", "X'", "R'", "|", "G'", "M'"]
+        "labels": ["GAMMA", "X", "P", "N", "GAMMA", "M", "S", "|", "S_0", "GAMMA", "|", "X", "R", "|", "G", "M", "|", "GAMMA", "X'", "P'", "N'", "GAMMA", "M'", "S'", "|", "S_0'", "GAMMA", "|", "X'", "R'", "|", "G'", "M'"]
     },
     "tP1_noinv": {
         # Tetragonal primitive without inversion (P-4m2)

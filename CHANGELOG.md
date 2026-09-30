@@ -52,6 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SeeK-path's path, with a "|" at each jump. The P-1 aP2 path also called
   (1/2, 1/2, 0) and (1/2, 0, 1/2) N and M; SeeK-path names them V and U. The
   coordinates are unchanged.
+- **Static SeeK-path titles of the other centred lattices name their
+  segments too.** The same run-on labels were in the paths used for the
+  non-centrosymmetric rhombohedral groups (R3, R32, R3m, R3c: hR1/hR2),
+  body-centred tetragonal groups (I4, I-4, I422, I4mm, I-42d, ...: tI1/tI2)
+  and face-centred orthorhombic groups (F222, Fmm2, Fdd2: oF1/oF3), and for
+  every body-centred orthorhombic group (Immm, Imm2, I222, ...: oI1) and
+  every C-centred orthorhombic group (Cmcm, Cmc2_1, Cmmm, ...: oS1). They
+  now follow SeeK-path's path with a "|" at each jump; the tI2 path without
+  inversion also named its point G as Gamma. The coordinates are unchanged.
 - **Hexagonal K and H points are written exactly in BAND and phonon paths.**
   Coordinate paths are written in units of 1/shrink, and K = (1/3, 1/3, 0) is
   only a whole number of steps when the shrink is a multiple of 3; at the usual
