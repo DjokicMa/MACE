@@ -1,3 +1,5 @@
+# Copyright (c) 2025 William Comaskey. MIT License, see LICENSE in this directory.
+# Vendored into MACE from lcao2wannier 1.0.0; local changes are listed in VENDORED.md.
 """Canonical Python API for CRYSTAL/LCAO to Wannier90 conversion.
 
 Public objects are loaded on first access. This keeps ``lcao2wannier --help``

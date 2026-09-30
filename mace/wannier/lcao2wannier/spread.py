@@ -1,3 +1,5 @@
+# Copyright (c) 2025 William Comaskey. MIT License, see LICENSE in this directory.
+# Vendored into MACE from lcao2wannier 1.0.0; local changes are listed in VENDORED.md.
 """Gauge-invariant spread (Omega_I) and Omega_I-optimal disentanglement windows.
 
 Ported from wien2wannier's ``mod_omega.f`` / ``pdwf_optwin.f`` (Comaskey, 2026).

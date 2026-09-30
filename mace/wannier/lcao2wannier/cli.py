@@ -1,3 +1,5 @@
+# Copyright (c) 2025 William Comaskey. MIT License, see LICENSE in this directory.
+# Vendored into MACE from lcao2wannier 1.0.0; local changes are listed in VENDORED.md.
 """Canonical ``lcao2wannier`` command-line driver.
 
 The scientific workflow remains in :mod:`lcao2wannier.workflow`. This module

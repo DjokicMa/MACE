@@ -1,3 +1,5 @@
+! Copyright (c) 2025 William Comaskey. MIT License, see LICENSE in this directory.
+! Vendored into MACE from lcao2wannier 1.0.0; local changes are listed in VENDORED.md.
 module spread_kinds
   integer, parameter :: R8 = selected_real_kind(15, 307)
 end module spread_kinds

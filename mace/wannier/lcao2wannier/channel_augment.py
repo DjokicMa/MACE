@@ -1,3 +1,5 @@
+# Copyright (c) 2025 William Comaskey. MIT License, see LICENSE in this directory.
+# Vendored into MACE from lcao2wannier 1.0.0; local changes are listed in VENDORED.md.
 """Conduction-driven target-channel augmentation (v2, decoupled WF count).
 
 When the standard valence config cannot represent the low conduction

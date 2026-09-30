@@ -1,3 +1,5 @@
+# Copyright (c) 2025 William Comaskey. MIT License, see LICENSE in this directory.
+# Vendored into MACE from lcao2wannier 1.0.0; local changes are listed in VENDORED.md.
 """Stage-2 driver for the hybrid PDWF-subspace + SCDM-gauge method.
 
 Runs the in-pipeline per-state disentanglement (lcao2wannier.hybrid) on the

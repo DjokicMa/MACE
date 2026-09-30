@@ -1,3 +1,5 @@
+# Copyright (c) 2025 William Comaskey. MIT License, see LICENSE in this directory.
+# Vendored into MACE from lcao2wannier 1.0.0; local changes are listed in VENDORED.md.
 """Exact analytic GTO overlaps and MMN for CRYSTAL LCAO output.
 
 Computes the Wannier90 MMN overlaps M_mn(k,b) = <u_mk|u_n,k+b> exactly from the
