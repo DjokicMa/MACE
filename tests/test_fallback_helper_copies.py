@@ -219,6 +219,28 @@ def test_yes_no_prompt_d3_interactive(default, answers, expected, monkeypatch, c
     assert capsys.readouterr() == ("", "")
 
 
+# Every recognised answer, under both defaults: each is read once and decides
+# the result on its own, whatever the default.
+D3_VALID = [("", None), ("y", True), ("Y", True), ("yes", True), ("Yes", True),
+            (" yes ", True), ("n", False), ("N", False), ("no", False),
+            ("NO", False), (" n\t", False)]
+
+
+@pytest.mark.parametrize("default", ["yes", "no", "YES", "No"])
+@pytest.mark.parametrize("answer,expected", D3_VALID)
+def test_yes_no_prompt_d3_interactive_valid_answers(default, answer, expected,
+                                                    monkeypatch, capsys):
+    import d3_interactive
+    capsys.readouterr()  # drop anything printed on first import
+    calls = _nav_script(monkeypatch, d3_interactive, [answer])
+    if expected is None:
+        expected = default.lower() == "yes"
+    assert d3_interactive.yes_no_prompt("Go?", default) is expected
+    suffix = " [Y/n]: " if default.lower() == "yes" else " [y/N]: "
+    assert calls == [("Go?" + suffix, {"y", "yes", "n", "no"})]
+    assert capsys.readouterr() == ("", "")
+
+
 def test_yes_no_prompt_d3_interactive_eof(monkeypatch):
     import d3_interactive
     _nav_script(monkeypatch, d3_interactive, [EOFError()])
