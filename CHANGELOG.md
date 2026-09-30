@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Crystal_d12 README says where the phonon SeeK-path path gets its
+  inversion.** It still said the phonon path had only the space-group number,
+  and kept a known issue about the output text being taken for a file name.
+  Since that fix the parent output reaches the SeeK-path helpers as a file
+  (`d12_calc_freq._output_as_file`), and inversion and cell parameters come
+  from it (`d3_kpoints.detect_inversion_from_crystal_output`); the number is
+  the fallback when there is no output.
 - **`opt2d12 --config-file` writes Hartree-Fock decks from an HF config.** A
   config with `"method": "HF"` and a null functional (the form
   `quick_screen.json` had) stopped every file with `argument of type
