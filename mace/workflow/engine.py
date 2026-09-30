@@ -3305,6 +3305,12 @@ fi'''
                 'parent_calc_id': source_calc_id
             }
             
+            if self._guessp_restart_enabled(workflow_id):
+                if self._stage_guessp_restart(source_calc, source_input_file,
+                                              final_location, slurm_script_path,
+                                              job_name):
+                    settings['guessp_from'] = source_calc_id
+
             # Add workflow_step if it exists
             if workflow_step is not None:
                 settings['workflow_step'] = workflow_step + 1
@@ -3347,6 +3353,52 @@ fi'''
             # Clean up isolated directory
             shutil.rmtree(work_dir, ignore_errors=True)
             
+    def _guessp_restart_enabled(self, workflow_id: Optional[str]) -> bool:
+        """The plan's opt-in ``execution_settings.guessp_restart`` (default off)."""
+        plan = self._load_workflow_plan(workflow_id) if workflow_id else None
+        settings = (plan or {}).get('execution_settings') or {}
+        return settings.get('guessp_restart') is True
+
+    def _stage_guessp_restart(self, source_calc: Dict, source_input_file: Path,
+                              deck_path: Path, script_path: Path, job_name: str) -> bool:
+        """Start a chained SCF step from its predecessor's density matrix.
+
+        Copies the predecessor's non-empty .f9 to ``<job>.f20`` next to the
+        deck - the file submitcrystal23.sh stages as fort.20 - and adds GUESSP
+        to the deck. Only when the two decks have the same symmetry, atom list,
+        basis set and spin treatment (guessp_chain.refusal); otherwise nothing
+        is changed and the reason is printed.
+        """
+        from mace.workflow import guessp_chain
+
+        def skip(reason: str) -> bool:
+            print(f"  GUESSP restart not used for {job_name}: {reason}")
+            return False
+
+        source_base, _ = self._parse_calc_type(source_calc.get('calc_type') or '')
+        if source_base not in ('OPT', 'SP'):
+            return skip(f"the previous step is {source_calc.get('calc_type')}, not an OPT or SP")
+        f9 = guessp_chain.predecessor_f9(source_calc)
+        if f9 is None:
+            return skip("the previous step left no non-empty .f9")
+        try:
+            source_deck = Path(source_input_file).read_text()
+            with open(deck_path, newline='') as f:
+                deck = f.read()
+            script = Path(script_path).read_text()
+        except (OSError, UnicodeDecodeError) as e:
+            return skip(f"could not read the decks or the job script ({e})")
+        if not guessp_chain.script_stages_f20(script):
+            return skip("its job script does not stage a .f20 (re-plan the workflow to update the scripts)")
+        reason = guessp_chain.refusal(source_deck, deck)
+        if reason:
+            return skip(reason)
+        staged = guessp_chain.stage(f9, deck_path.parent, job_name)
+        with open(deck_path, 'w', newline='') as f:
+            f.write(guessp_chain.add_guessp(deck))
+        print(f"  GUESSP restart: {f9.name} staged as {staged.name}")
+        return True
+
     def _get_next_step_number(self, workflow_base: Path, calc_type: str) -> int:
         """Get the next available step number for a calculation type."""
         # First try to get from workflow plan

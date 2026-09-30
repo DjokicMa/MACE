@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Workflow steps can restart their SCF from the previous step's density
+  matrix (opt-in).** With `"guessp_restart": true` under `execution_settings`
+  in the workflow plan JSON, an SP, FREQ or OPTn step the engine builds from a
+  completed OPT or SP gets the predecessor's `.f9` copied to `<job>.f20` in its
+  directory (the job script stages that as fort.20) and a GUESSP record before
+  SCFDIR. The manual (GUESSP, pp. 114-115) requires the same symmetry and the
+  same atoms, basis functions and shells in the same order, and CRYSTAL does
+  not check this, so the engine only does it when both decks have the same
+  symmetry records, atom list, basis set and spin treatment (UHF/ROHF/SPIN);
+  the lattice, coordinates and functional may differ. It is not done when the
+  follow-up sets ATOMSPIN (p. 99: "does not work with GUESSP") or either deck
+  is two-component, when the predecessor left no non-empty `.f9`, or when the
+  step's job script predates the `.f20` staging; the engine prints why. The
+  setting is off by default, and without it the engine writes exactly what it
+  wrote before. Untested on CRYSTAL.
+
 ### Fixed
 
 - **An `opt2d12` phonon deck with a SeeK-path band path is written.** The
