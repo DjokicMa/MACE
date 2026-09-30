@@ -63,9 +63,19 @@ def test_ecps_become_inpsoc_and_twocompon_goes_before_scfdir():
     assert soc[j - 3:j] == ["TWOCOMPON", "SOC", "END"]
     assert soc[soc.index("END", soc.index("99 0")) + 1:j - 3] == \
         plain[plain.index("END", plain.index("99 0")) + 1:plain.index("SCFDIR")]
-    assert soc[j:] == plain[plain.index("SCFDIR"):]
+    assert soc[j:] == [ln for ln in plain[plain.index("SCFDIR"):]
+                       if ln not in ("DIIS", "HISTDIIS", "100")]
     # geometry untouched
     assert soc[:soc.index("END")] == plain[:plain.index("END")]
+
+
+def test_diis_and_histdiis_are_left_out():
+    """A DIIS record in a 2c deck stops the stock build with "ERROR **** DIIS
+    **** DIIS NOT COMPATIBLE WITH 2-COMP SCF" (HPCC), although the manual says
+    TWOCOMPON deactivates DIIS (p. 170)."""
+    soc = S.soc_deck(PBTE).split("\n")
+    assert "DIIS" not in soc and "HISTDIIS" not in soc
+    assert soc[soc.index("FMIXING") + 2:] == ["PPAN", "END", ""]
 
 
 def test_all_electron_atoms_keep_their_basis():

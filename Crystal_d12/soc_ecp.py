@@ -289,9 +289,12 @@ TWOC_SCF_KEYWORDS = {
     # SHRINK is not in the chapter 6 list, but a periodic SCF cannot run
     # without it (and the 2c reference outputs report their SHRINK mesh).
     "SHRINK",
-    # TWOCOMPON deactivates DIIS (p. 170), so a DIIS record is inert there.
-    "DIIS", "HISTDIIS",
 }
+# Records soc_deck leaves out, with how many argument lines follow each. The
+# manual says TWOCOMPON deactivates DIIS (p. 170), but a DIIS record left in
+# the deck stops the stock build: "ERROR **** DIIS **** DIIS NOT COMPATIBLE
+# WITH 2-COMP SCF" (measured on HPCC).
+_STRIPPED = {"DIIS": 0, "HISTDIIS": 1}
 # Keywords that open a block in block 3 closed by END (or END<name>).
 _BLOCK3_OPENERS = {"DFT", "SCDFT", "SDFT"}
 # Present anywhere, these ask for something 2c cannot do (p. 166).
@@ -422,6 +425,8 @@ def soc_deck(deck: str, soscale: float = 1.0) -> str:
             scfdir = j
         elif word == "END" and j == len(rest) - 1:
             pass
+        elif word in _STRIPPED:
+            pass
         elif word not in TWOC_SCF_KEYWORDS:
             problems.append(word)
     if problems:
@@ -431,8 +436,24 @@ def soc_deck(deck: str, soscale: float = 1.0) -> str:
     if scfdir is None:
         raise SocError("no SCFDIR record to place the TWOCOMPON block before")
 
-    out += rest[:scfdir] + ["TWOCOMPON", "SOC", "END"] + rest[scfdir:]
+    rest = rest[:scfdir] + ["TWOCOMPON", "SOC", "END"] + rest[scfdir:]
+    out += _strip_records(rest)
     return "\n".join(out) + "\n"
+
+
+def _strip_records(block3: List[str]) -> List[str]:
+    """block3 without the _STRIPPED records and their argument lines."""
+    kept, skip = [], 0
+    for ln in block3:
+        if skip:
+            skip -= 1
+            continue
+        key = ln.strip().upper()
+        if key in _STRIPPED:
+            skip = _STRIPPED[key]
+            continue
+        kept.append(ln)
+    return kept
 
 
 class SocDeckBuffer(io.StringIO):
