@@ -103,6 +103,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   internal basis-set library, and for an ECP that is not a spin-orbit ECP's
   scalar part. Without the key every deck is byte-identical to before.
   `Crystal_d12/soc_ecp.py`.
+- **A two-component run is recorded as one.** `mace/utils/calc_detection.py`
+  gains `is_two_component_output`, which recognises a 2c-SCF .out by lines
+  CRYSTAL prints for it ("TOTAL X-COMP MAGNETIZATION" / "TOTAL Y-COMP
+  MAGNETIZATION" each cycle, "- NUMBER OF FULLY OCCUPIED/TOTAL SPINORS -";
+  read from an fcc Au 2c-SCF on HPCC; never the title), and
+  `is_two_component_deck` / `is_spin_orbit_deck` for a deck's TWOCOMPON block
+  (manual p. 170) with SOC in it (p. 175). The calculation type stays SP; the
+  property extractor stores `scf_two_component` = True with the other `scf_*`
+  flags of such a run, and nothing for any other run.
 
 ### Removed
 

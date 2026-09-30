@@ -214,3 +214,66 @@ def is_doss_output(content: str) -> bool:
 def is_charge_potential_output(content: str) -> bool:
     """True when a properties .out is from an ECH3/POT3 (or ECHG/POTC) run."""
     return _CHARGE_POTENTIAL_OUTPUT_LINE.search(content) is not None
+
+
+# --- Two-component (spin-orbit) runs -------------------------------------------
+#
+# A two-component SCF is not a calculation type of its own: CRYSTAL23 runs it
+# as a single point (no optimisation or frequency run in 2c, manual p. 166),
+# so it is a flag beside the type.
+#
+# A deck asks for it with a TWOCOMPON block in its SCF input, closed by END
+# (manual sec. 6.2, p. 170; the p. 172 examples close it with ENDTWO), and for
+# spin-orbit coupling with SOC inside that block (p. 175).
+#
+# In the .out, a 2c-SCF prints its density per cycle as a particle-number
+# density and three magnetization components, and, when the Fermi level is
+# searched, the occupied spinors:
+#     TOTAL X-COMP MAGNETIZATION    0.00000001
+#     TOTAL Y-COMP MAGNETIZATION   -0.00000001
+#     TOTAL Z-COMP MAGNETIZATION    0.00000000
+#     - NUMBER OF FULLY OCCUPIED/TOTAL SPINORS -    12 /     70
+# (fcc Au 2c-SCF with SOC, stock CRYSTAL23 1.0.1 on HPCC). A 1c run prints
+# "TOTAL ATOMIC CHARGES" (and "TOTAL ATOMIC SPINS") there instead, and has
+# spin-orbitals, not spinors. Only lines CRYSTAL prints are matched, each at
+# the start of a line, never the echoed title. Whether a 2c run WITHOUT SOC
+# prints the same lines was not checked (only SOC runs were read).
+_TWO_COMPONENT_OUTPUT_LINE = re.compile(
+    r'^[ \t]*(?:'
+    r'TOTAL [XY]-COMP MAGNETIZATION[ \t]'
+    r'|- NUMBER OF FULLY OCCUPIED/TOTAL SPINORS[ \t]'
+    r')',
+    re.MULTILINE,
+)
+
+
+def is_two_component_output(content: str) -> bool:
+    """True when a CRYSTAL .out is from a two-component (TWOCOMPON) SCF."""
+    return _TWO_COMPONENT_OUTPUT_LINE.search(content) is not None
+
+
+def two_component_block(content: str) -> Union[Set[str], None]:
+    """The records inside a .d12 deck's TWOCOMPON block (upper case), or None
+    when the deck has no such block. Line 1, the title, is never a record."""
+    records = None
+    for line in content.splitlines()[1:]:
+        record = line.strip().upper()
+        if records is None:
+            if record == 'TWOCOMPON':
+                records = set()
+            continue
+        if record in ('END', 'ENDTWO'):
+            return records
+        records.add(record)
+    return records
+
+
+def is_two_component_deck(content: str) -> bool:
+    """True when a .d12 deck asks for a two-component SCF (TWOCOMPON)."""
+    return two_component_block(content) is not None
+
+
+def is_spin_orbit_deck(content: str) -> bool:
+    """True when a .d12 deck asks for a 2c-SCF with spin-orbit coupling (SOC
+    inside its TWOCOMPON block)."""
+    return 'SOC' in (two_component_block(content) or ())

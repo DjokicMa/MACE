@@ -28,7 +28,8 @@ from datetime import datetime
 
 from mace.constants import HARTREE_TO_EV
 from mace.utils.calc_detection import (
-    is_band_output, is_optimization_output, is_transport_output)
+    is_band_output, is_optimization_output, is_transport_output,
+    is_two_component_output)
 
 # Import MACE components
 try:
@@ -2702,6 +2703,12 @@ class CrystalPropertyExtractor:
                 else:
                     props[param] = True
         
+        # A two-component (TWOCOMPON) SCF, from the lines CRYSTAL prints for
+        # it (calc_detection). Stored only for such a run; the calculation
+        # type stays SP.
+        if is_two_component_output(content):
+            props['scf_two_component'] = True
+
         # Check for level shifter status
         if 'LEVEL SHIFTER DISABLED' in content:
             props['scf_levshift_enabled'] = False
