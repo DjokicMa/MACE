@@ -140,6 +140,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whether it had SOC cannot be read there. An OPT or FREQ child of a SOC
   parent is refused, with no deck written: CRYSTAL23 has no geometry
   optimisation or frequency calculation in 2c (manual p. 166).
+- **The workflow planner can plan a SOC single point.** The SP step menu has
+  a new level 4 (levels 0-3 keep their numbers and settings): everything
+  inherited, plus `"soc": true`, which the engine hands to `opt2d12` (a plan
+  step's `"soc": false` is handed on too, for a scalar step after a SOC
+  one). A plan that asks for SOC on any step other than an SP is refused
+  before it is saved or executed (CRYSTAL23 has no 2c optimisation or
+  frequency run, manual p. 166), and an OPT, FREQ, TRANSPORT or
+  CHARGE+POTENTIAL step right after a SOC SP is warned about. Plans without
+  SOC run as before.
 - **Properties decks from a SOC parent are limited to what CRYSTAL supports
   in 2c.** `opt2d3` (`Crystal_d3/CRYSTALOptToD3.py`) recognises a
   two-component parent by the lines its .out prints for a 2c-SCF, or by its

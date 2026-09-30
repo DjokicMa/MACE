@@ -169,11 +169,22 @@ class WorkflowEngine:
 
         opt_settings = (plan_cfg.get('optimization_settings')
                         if target_base_type == "OPT" else None)
+        # A planned two-component SOC single point ("soc": true), or a scalar
+        # step after a SOC parent ("soc": false; without it a deck derived
+        # from a SOC deck is one too). The deck writer refuses SOC for
+        # anything but a single point (CRYSTAL23 manual p. 166), so a plan
+        # asking for it on another step fails there, with its reason.
+        soc = plan_cfg.get('soc')
+        soc = soc if isinstance(soc, bool) else None
 
-        if not functional and not opt_settings:
+        if not functional and not opt_settings and soc is None:
             return None
 
         config_data: Dict[str, Any] = {"calculation_type": target_base_type}
+        if soc is not None:
+            config_data["soc"] = soc
+            print(f"    Plan: {'two-component spin-orbit (SOC)' if soc else 'scalar'} "
+                  f"deck for {target_calc_type}")
         if functional:
             config_data["functional"] = functional
         if mm.get('use_dispersion'):

@@ -120,6 +120,46 @@ except Exception:
     ui = _UIShim()
 
 
+# Steps that cannot start from a two-component (SOC) run. CRYSTAL23 has no
+# geometry optimisation or frequency calculation in 2c (manual p. 166), and
+# properties from a 2c wavefunction are only those of manual sec. 6.4
+# (p. 183), which has no BOLTZTRA (TRANSPORT) and no POT3/POTC (POTENTIAL).
+_NOT_FROM_A_SOC_RUN = ("OPT", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL")
+
+
+def soc_plan_problems(sequence: List[str],
+                      step_configs: Dict[str, Dict[str, Any]]) -> Tuple[List[str], List[str]]:
+    """(errors, warnings) about the SOC steps of a workflow plan.
+
+    An error: a step other than a single point asks for "soc": true - CRYSTAL
+    runs SOC as a 2c-SCF single point only (manual p. 166), and the deck
+    writer would refuse it. A warning: a step that cannot start from a SOC run
+    comes straight after a SOC SP, which the engine uses as its source when it
+    is the step before (OPT and SP steps provide the geometry); such a step
+    would inherit SOC and be refused, or be a properties run CRYSTAL does not
+    do in 2c.
+    """
+    errors, warnings = [], []
+    soc_steps = set()
+    for key, cfg in (step_configs or {}).items():
+        if not isinstance(cfg, dict) or cfg.get("soc") is not True:
+            continue
+        step = key.rsplit("_", 1)[0]
+        base = step.rstrip("0123456789") or step
+        if base != "SP":
+            errors.append(f"{key}: SOC is only for single-point (SP) steps; CRYSTAL23 has "
+                          f"no {base} calculation in a two-component SCF (manual p. 166)")
+        else:
+            soc_steps.add(step)
+    for before, after in zip(sequence, sequence[1:]):
+        base = after.rstrip("0123456789") or after
+        if before in soc_steps and base in _NOT_FROM_A_SOC_RUN:
+            warnings.append(f"{after} follows the SOC step {before}: CRYSTAL23 cannot run "
+                            f"{base} from a two-component SCF (manual pp. 166, 183), so "
+                            f"it will be refused if generated from {before}")
+    return errors, warnings
+
+
 class WorkflowPlanner:
     """
     Comprehensive workflow planning system for CRYSTAL calculations.
@@ -1330,13 +1370,15 @@ class WorkflowPlanner:
         ui.info("         - Best for: Difficult convergence, custom requirements")
         ui.info("      3: Expert (full CRYSTALOptToD12.py integration)")
         ui.info("         - Best for: Complete control over all parameters")
+        ui.info("      4: Spin-orbit coupling (two-component SOC single point)")
+        ui.info("         - Inherits all settings, adds SOC (needs an ECP basis set)")
 
         while True:
             try:
-                level = int(input("    Enter level (0-3): ").strip())
-                if level in [0, 1, 2, 3]:
+                level = int(input("    Enter level (0-4): ").strip())
+                if level in [0, 1, 2, 3, 4]:
                     break
-                ui.info("    Please enter 0, 1, 2, or 3")
+                ui.info("    Please enter 0, 1, 2, 3 or 4")
             except ValueError:
                 ui.info("    Please enter a valid number")
 
@@ -1346,7 +1388,16 @@ class WorkflowPlanner:
             "customization_level": level,
         }
 
-        if level == 0:
+        if level == 4:
+            # Everything inherited, as level 0, plus "soc": true for the deck
+            # writer (Crystal_d12/soc_ecp.py).
+            config["inherit_settings"] = True
+            config["soc"] = True
+            ui.info(f"    {calc_type}: two-component SCF with spin-orbit coupling. The deck is")
+            ui.info("    refused unless every ECP is a spin-orbit ECP's scalar part;")
+            ui.info("    later OPT, FREQ, TRANSPORT and CHARGE+POTENTIAL steps cannot")
+            ui.info("    start from a SOC run (manual pp. 166, 183).")
+        elif level == 0:
             # Default: inherit all settings
             config["inherit_settings"] = True
         elif level == 1:
@@ -4452,6 +4503,16 @@ class WorkflowPlanner:
         with open(plan_file, "r") as f:
             plan = json.load(f)
 
+        soc_errors, soc_warnings = soc_plan_problems(
+            plan.get("workflow_sequence") or [], plan.get("step_configurations") or {})
+        for message in soc_warnings:
+            ui.warn(f"Warning: {message}")
+        if soc_errors:
+            for message in soc_errors:
+                ui.err(message)
+            ui.err(f"Not executing {plan_file}")
+            return
+
         ui.info("Workflow execution summary:")
         ui.info(f"  Input files: {len(plan['input_files']['cif'])} CIFs, {len(plan['input_files']['d12'])} D12s")
         ui.info(f"  Workflow sequence: {' → '.join(plan['workflow_sequence'])}")
@@ -4712,6 +4773,13 @@ class WorkflowPlanner:
         step_configs = self.configure_workflow_steps(
             workflow_sequence, bool(input_files["cif"])
         )
+        soc_errors, soc_warnings = soc_plan_problems(workflow_sequence, step_configs)
+        for message in soc_warnings:
+            ui.warn(f"Warning: {message}")
+        if soc_errors:
+            for message in soc_errors:
+                ui.err(message)
+            return
         
         # Step 4.5: Choose workflow isolation mode
         ui.info("\nStep 4.5: Workflow Isolation Settings")

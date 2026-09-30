@@ -2030,6 +2030,9 @@ fi'''
             crystal_opt_config["method_modifications"] = config["method_modifications"]
         if "basis_modifications" in config:
             crystal_opt_config["basis_modifications"] = config["basis_modifications"]
+        if config.get("soc") is True:
+            # A planned two-component SOC single point
+            crystal_opt_config["soc"] = True
         
         with open(temp_config, 'w') as f:
             json.dump(crystal_opt_config, f)
