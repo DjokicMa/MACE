@@ -64,7 +64,8 @@ def test_ecps_become_inpsoc_and_twocompon_goes_before_scfdir():
     assert soc[soc.index("END", soc.index("99 0")) + 1:j - 3] == \
         ["8 8" if ln == "8 16" else ln   # the Gilat net follows the Monkhorst net
          for ln in plain[plain.index("END", plain.index("99 0")) + 1:plain.index("SCFDIR")]]
-    assert soc[j:] == [ln for ln in plain[plain.index("SCFDIR"):]
+    assert soc[j:] == ["85" if ln == "30" else ln   # FMIXING 30 -> 85
+                       for ln in plain[plain.index("SCFDIR"):]
                        if ln not in ("DIIS", "HISTDIIS", "100")]
     # geometry untouched
     assert soc[:soc.index("END")] == plain[:plain.index("END")]
@@ -93,7 +94,36 @@ def test_the_gilat_net_is_the_monkhorst_net(before, after):
     soc = S.soc_deck(deck, log=notes.append).split("\n")
     i = soc.index("SHRINK")
     assert soc[i:i + len(after)] == after
-    assert bool(notes) == (before != after)
+    assert any("SHRINK" in n for n in notes) == (before != after)
+
+
+def _scf(deck):
+    lines = deck.split("\n")
+    return {k: lines[lines.index(k) + 1] for k in ("FMIXING", "MAXCYCLE") if k in lines}
+
+
+@pytest.mark.parametrize("fmixing,maxcycle,expected,warned", [
+    ("30", "800", {"FMIXING": "85", "MAXCYCLE": "800"}, False),   # MACE's defaults
+    ("85", "800", {"FMIXING": "85", "MAXCYCLE": "800"}, False),
+    ("60", "800", {"FMIXING": "60", "MAXCYCLE": "800"}, True),    # set: kept, warned
+    ("30", "100", {"FMIXING": "85", "MAXCYCLE": "100"}, True),    # set: kept, warned
+    ("30", "300", {"FMIXING": "85", "MAXCYCLE": "300"}, False),
+])
+def test_fmixing_85_and_enough_cycles_unless_set(fmixing, maxcycle, expected, warned):
+    """On HPCC FMIXING 30 let Bi2 diverge and left Au unconverged after 60
+    cycles; FMIXING 85 converged Bi2 in 34 cycles."""
+    deck = PBTE.replace("MAXCYCLE\n800\nFMIXING\n30\n",
+                        f"MAXCYCLE\n{maxcycle}\nFMIXING\n{fmixing}\n")
+    notes = []
+    assert _scf(S.soc_deck(deck, log=notes.append)) == expected
+    assert any(n.startswith("Warning") for n in notes) == warned
+
+
+def test_missing_fmixing_and_maxcycle_are_added():
+    deck = PBTE.replace("MAXCYCLE\n800\nFMIXING\n30\n", "")
+    soc = S.soc_deck(deck, log=lambda m: None)
+    assert _scf(soc) == {"FMIXING": "85", "MAXCYCLE": "200"}
+    assert soc.endswith("PPAN\nFMIXING\n85\nMAXCYCLE\n200\nEND\n")
 
 
 def test_all_electron_atoms_keep_their_basis():

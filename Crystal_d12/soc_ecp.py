@@ -437,7 +437,7 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print) -> str:
         raise SocError("no SCFDIR record to place the TWOCOMPON block before")
 
     rest = rest[:scfdir] + ["TWOCOMPON", "SOC", "END"] + rest[scfdir:]
-    out += _monkhorst_equals_gilat(_strip_records(rest), log)
+    out += _scf_convergence(_monkhorst_equals_gilat(_strip_records(rest), log), log)
     return "\n".join(out) + "\n"
 
 
@@ -462,6 +462,50 @@ def _monkhorst_equals_gilat(block3: List[str], log) -> List[str]:
             log(f"SOC deck: SHRINK {out[i + 1].strip()} -> {new} "
                 f"(Gilat net equal to the Monkhorst net)")
             out[i + 1] = new
+    return out
+
+
+# FMIXING and MAXCYCLE for a 2c-SCF. On HPCC, FMIXING 30 let Bi2 diverge and
+# left Au unconverged after 60 cycles; FMIXING 85 converged Bi2 in 34 cycles.
+SOC_FMIXING = 85
+SOC_MIN_MAXCYCLE = 200
+# What MACE writes when nobody chose a value (write_scf_section's callers).
+# The deck cannot tell it from the same number chosen on purpose, so it is
+# read as "not set"; any other value was set by the parent or template.
+# (MACE's default MAXCYCLE, 800, is already above SOC_MIN_MAXCYCLE.)
+_DEFAULT_FMIXING = 30
+
+
+def _scf_convergence(block3: List[str], log) -> List[str]:
+    """block3 with FMIXING 85 and at least 200 cycles, unless set otherwise.
+
+    A value other than MACE's default was set by the parent or template: it
+    is kept, with a warning when it is not what 2c runs need."""
+    out = list(block3)
+    keys = [ln.strip().upper() for ln in out]
+    end = len(out) - 1 - keys[::-1].index("END")
+
+    if "FMIXING" in keys:
+        i = keys.index("FMIXING")
+        value = int(out[i + 1].split()[0])
+        if value == _DEFAULT_FMIXING:
+            out[i + 1] = str(SOC_FMIXING)
+            log(f"SOC deck: FMIXING {value} -> {SOC_FMIXING}")
+        elif value != SOC_FMIXING:
+            log(f"Warning: SOC deck keeps FMIXING {value} as set; 2c-SCF runs have "
+                f"diverged with FMIXING 30 and converged with {SOC_FMIXING}")
+    else:
+        out[end:end] = ["FMIXING", str(SOC_FMIXING)]
+        end += 2
+
+    if "MAXCYCLE" in keys:
+        i = keys.index("MAXCYCLE")
+        value = int(out[i + 1].split()[0])
+        if value < SOC_MIN_MAXCYCLE:
+            log(f"Warning: SOC deck keeps MAXCYCLE {value} as set; 2c-SCF runs "
+                f"can need {SOC_MIN_MAXCYCLE} or more cycles")
+    else:
+        out[end:end] = ["MAXCYCLE", str(SOC_MIN_MAXCYCLE)]
     return out
 
 
