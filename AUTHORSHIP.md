@@ -79,9 +79,12 @@ AO basis, not the SCDM projections for `.amn`, and not the analytic
 momentum-shifted GTO overlaps for `.mmn`. That is the entire scientific content
 of the feature, and it is his.
 
-`lcao2wannier` is consumed as an optional external dependency and is never
-vendored into this repository, so its LICENSE and copyright stay with the
-author.
+`lcao2wannier` is bundled (vendored) in `mace/wannier/lcao2wannier/` under its
+own MIT license. Its `LICENSE` file is kept there and every copied file carries
+his copyright header; those files are his work, not MACE's, whatever changes
+are made to them. The source release (1.0.0) and each local change (headers,
+package-relative imports, the cell-index >= 1000 parser fix) are listed in
+`mace/wannier/lcao2wannier/VENDORED.md`.
 
 **CITATION: TODO** - ask William Comaskey which citation he wants (the package,
 a paper, or both) before any citation string is published in MACE. Do not
@@ -108,9 +111,11 @@ invent one.
 - `manager.py` - Enhanced tracking queue manager (EnhancedCrystalQueueManager)
 
 **Wannier Module (orchestration only - see William Comaskey below):**
-- `wannier/driver.py` - Invokes the `lcao2wannier` package and surfaces its
-  diagnostics
+- `wannier/driver.py` - Invokes the bundled `lcao2wannier` package and surfaces
+  its diagnostics
 - `wannier/cli.py` - `mace wannier` front-end
+- `wannier/lcao2wannier/` is NOT Marcus Djokic's work: it is William Comaskey's
+  package, vendored (see below)
 
 **Recovery Module:**
 - `pandas_utils.py` - Pandas utility functions
@@ -126,7 +131,10 @@ invent one.
 - The LCAO->Wannier90 method and the `lcao2wannier` package driven by
   `mace/wannier/`. MACE's modules there only build an argument list, run his
   package, and report what it says; every scientific step of the conversion is
-  his. `lcao2wannier` is an optional external dependency and is never vendored.
+  his.
+- `wannier/lcao2wannier/` (all files) - his `lcao2wannier` 1.0.0, vendored
+  under the MIT license kept in that directory, with his copyright header on
+  each file. Local changes are listed in its `VENDORED.md`.
   **CITATION: TODO** - ask him which citation he wants; do not invent one.
 
 #### Marcus Djokic (continued)

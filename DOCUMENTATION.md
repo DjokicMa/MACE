@@ -519,17 +519,29 @@ implements it, are **William Comaskey's** work. MACE generates the CRYSTAL deck
 and orchestrates the run; it implements none of the conversion. See
 `AUTHORSHIP.md`.
 
-**CITATION: TODO** — ask William Comaskey which citation he wants (the package,
-a paper, or both) before publishing a Wannier model produced this way. MACE
-deliberately ships no citation string rather than inventing one.
+**Citing.** If you publish a Wannier model produced this way, please cite the
+`lcao2wannier` package (William Comaskey). No formal citation has been
+designated yet — contact the author. MACE deliberately ships no citation string
+rather than inventing one.
 
-The chain is three separate programs, and MACE owns only the first:
+The chain is three separate programs, and MACE authors only the first:
 
 ```
 CRYSTAL scf → fort.9 → CRYSTAL properties (MATDUMP: MACE generates this deck)
-            → lcao2wannier (optional dependency)  → .win .nnkp .eig .amn .mmn
-            → wannier90.x (user-supplied)         → maximally localised Wanniers
+            → lcao2wannier (bundled with MACE)  → .win .nnkp .eig .amn .mmn
+            → wannier90.x (user-supplied)       → maximally localised Wanniers
 ```
+
+**`lcao2wannier` ships with MACE** — there is nothing extra to install. It is
+bundled as `mace/wannier/lcao2wannier/` under its own MIT license, with William
+Comaskey's copyright on every file; `VENDORED.md` in that directory records the
+source release (1.0.0) and every local change. It needs numpy and scipy, both
+already in `requirements.txt`; matplotlib is only used by its optional band
+plots. Its two Fortran kernels are optional speed-ups and are not compiled by
+default (build instructions in `VENDORED.md`). `mace wannier` runs it as
+`python -m mace.wannier.lcao2wannier`, in the same interpreter as MACE, and
+`--l2w-arg` passes any of its own options through. `wannier90.x` is still yours
+to supply.
 
 ```bash
 mace opt2d3 --input material_sp.out --calc-type MATDUMP   # generate the deck
@@ -635,16 +647,18 @@ numerically well posed at the sampled k-points; it is not a statement about
 whether the interpolated bands match the DFT bands. Check the Wannier spreads
 and a band comparison before publishing.
 
-#### Known upstream defect (lcao2wannier 1.0.0)
+#### Dumps with 1000 or more cells
 
 CRYSTAL writes the cell index in an I4 field, so from index 1000 on the header
-has no separating space (`OVERLAP MATRIX - CELL N.1000(`). `lcao2wannier`
-1.0.0's header patterns require whitespace there and drop every such cell
-**silently** — measured, 999 of 1247 cells parsed on the corpus diamond, with
-the run then reporting a plausible R-vector count. `mace wannier` refuses to
-convert such a dump and names the cause. The deck and the dump are correct; only
-the reader is affected. The upstream fix is one character (`\s+` → `\s*`) and
-belongs in the package.
+has no separating space (`OVERLAP MATRIX - CELL N.1000(`). The released
+`lcao2wannier` 1.0.0's header patterns require whitespace there and drop every
+such cell **silently** — measured, 999 of 1247 cells parsed on the corpus
+diamond, with the run then reporting a plausible R-vector count. The copy
+bundled with MACE carries the one-character fix (`\s+` → `\s*`, listed in its
+`VENDORED.md`), so `mace wannier` converts these dumps in full. If you convert a
+MATDUMP output with a separately installed `lcao2wannier` 1.0.0 instead, it
+will still truncate them; `opt2d3` prints a note when `N ≥ 1000` for that
+reason.
 
 #### Output handling
 
@@ -773,7 +787,7 @@ The enhanced system provides material lifecycle tracking:
 - **`mace/queue/manager.py`**: Enhanced queue manager with material tracking and callback system
 - **`mace/recovery/`**: Automated error detection and recovery with YAML configuration
 - **`mace/workflow/engine.py`**: Orchestrates OPT → SP → BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL workflow progression
-- **`mace/wannier/`**: Drives `lcao2wannier` (William Comaskey) over a MATDUMP dump — orchestration only, optional dependency
+- **`mace/wannier/`**: Drives `lcao2wannier` (William Comaskey; bundled in `mace/wannier/lcao2wannier/`, MIT) over a MATDUMP dump — MACE's own code there is orchestration only
 - **`mace/utils/file_manager.py`**: Organized file management by material ID and calculation type
 - **`mace/material_monitor.py`**: Real-time monitoring dashboard and health checks
 - **`mace/utils/property_extractor.py`**: Complete property extraction from CRYSTAL output files

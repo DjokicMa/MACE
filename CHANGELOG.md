@@ -29,10 +29,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     sides, an explicit value below the derived one is never accepted silently,
     and a MOLECULE parent is refused.
   - `mace wannier --input DUMP.out` runs the conversion to `.win .nnkp .eig
-    .amn .mmn` when `lcao2wannier` is installed (an optional dependency), and
-    reports its self-audit verdict - including a MARGINAL conditioning result -
-    rather than a bare success. It refuses dumps of 1000 or more cells, which
-    `lcao2wannier` 1.0.0 cannot read past without silently dropping cells.
+    .amn .mmn` and reports its self-audit verdict - including a MARGINAL
+    conditioning result - rather than a bare success.
+  - **`lcao2wannier` is bundled with MACE**, as `mace/wannier/lcao2wannier/`,
+    under William Comaskey's MIT license (kept in that directory, with his
+    copyright on every file). Nothing extra to install: it needs numpy and
+    scipy, which MACE already requires. `VENDORED.md` there records the source
+    release (1.0.0) and every local change.
+  - **Dumps of 1000 or more cells convert in full.** CRYSTAL prints the cell
+    index as I4, so from 1000 on the header reads `CELL N.1000(` with no space,
+    and the released package's patterns skipped every such cell without a word
+    (measured: 999 of 1247 read on a diamond dump). The bundled copy reads
+    them, and ignores parse caches written by the old patterns.
   - The whole chain was run on real CRYSTAL23: a diamond SCF, the generated
     deck, a dump of exactly the derived 627 cells, and a converted model for
     both spin channels that passed the package's audit.
@@ -169,8 +177,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Testing
 
-Tests needing `lcao2wannier` skip when it is absent, so the corpus-less CI
-environment stays green without it.
+The Wannier90 hand-off tests run everywhere now that `lcao2wannier` is bundled;
+scipy joins `requirements-test.txt` for them. The end-to-end check on the
+package's 2-component SOC bismuth dump (9.5 MB, kept out of git) runs when
+`MACE_W90_REFDATA` points at it.
 
 ## [1.1.2] - 2026-09-29
 
