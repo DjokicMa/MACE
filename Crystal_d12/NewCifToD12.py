@@ -172,7 +172,7 @@ except ImportError:
 
 # Import write_scf_section from d12_writer
 from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES
-from soc_ecp import SocDeckBuffer
+from soc_ecp import SocDeckBuffer, cif_metal_warning_once, deck_has_smear
 
 # MACE visual layer (ui facade). This script also runs standalone via
 # `python NewCifToD12.py`, where `mace` may NOT be importable, so the import is
@@ -1738,6 +1738,10 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
             if refusal:
                 ui.err(f"Not writing {os.path.basename(output_file)}: {refusal}")
                 return False
+            # No parent to tell a metal by: one warning per run for SOC decks
+            # without SMEAR ("smear" in the options file adds it).
+            if not deck_has_smear(f.written):
+                cif_metal_warning_once(ui.warn)
 
     return True
 

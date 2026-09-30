@@ -346,7 +346,7 @@ def _basis_block_span(lines: List[str], i: int) -> Tuple[int, int, int]:
 
 
 def soc_deck(deck: str, soscale: float = 1.0, log=print,
-             fmixing: Optional[int] = None) -> str:
+             fmixing: Optional[int] = None, smear: Optional[float] = None) -> str:
     """Turn a finished single-point MACE deck into a 2c-SCF SOC deck.
 
     Every atom whose basis block carries an INPUT ECP (conventional atomic
@@ -358,10 +358,13 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print,
     placement the stock build accepts, HPCC); DIIS is left out, SHRINK gets
     IS = ISP, and FMIXING/MAXCYCLE are set for a 2c-SCF (see the helpers
     below). ``fmixing`` (the "soc_fmixing" setting) asks for that FMIXING
-    whatever the deck had. Notes and warnings go to ``log``. Raises SocError,
-    and returns no deck, for anything the manual says the 2c-SCF does not
-    support."""
+    whatever the deck had. ``smear`` (the "smear" setting, a width in
+    hartree) writes SMEAR with that width after the SHRINK records, or gives
+    the deck's own SMEAR that width; SMEAR is never added otherwise. Notes and
+    warnings go to ``log``. Raises SocError, and returns no deck, for anything
+    the manual says the 2c-SCF does not support."""
     fmixing = _checked_fmixing(fmixing)
+    smear = checked_smear(smear)
     lines = deck.rstrip("\n").split("\n")
     upper = [ln.strip().upper() for ln in lines]
 
@@ -451,7 +454,10 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print,
         raise SocError("no SCFDIR record to place the TWOCOMPON block before")
 
     rest = rest[:scfdir] + ["TWOCOMPON", "SOC", "END"] + rest[scfdir:]
-    out += _scf_convergence(_monkhorst_equals_gilat(_strip_records(rest), log), log, fmixing)
+    rest = _monkhorst_equals_gilat(_strip_records(rest), log)
+    if smear is not None:
+        rest = _with_smear(rest, smear, log)
+    out += _scf_convergence(rest, log, fmixing)
     return "\n".join(out) + "\n"
 
 
@@ -562,9 +568,133 @@ def _strip_records(block3: List[str]) -> List[str]:
     return kept
 
 
+# --- SMEAR for metals ---------------------------------------------------------
+#
+# fcc Au in a 2c-SCF aborted on MACE's default SHRINK 10 10, and on 11 11, in
+# its first cycles: "POSSIBLY CONDUCTING STATE - EFERMI(AU) ..." and then
+# "ERROR **** ZERO **** FERMI ENERGY NOT IN INTERVAL". 12 12 converged, and so
+# did 10 10 with SMEAR 0.005 (HPCC). FMIXING does not cure it (10 10 with
+# FMIXING 50 aborts as with 85), and for a metal the mixing value can change
+# which SCF solution the run settles in (Au at 12 12: FMIXING 50-85 all near
+# -135.86080 Ha, FMIXING 30 7 meV lower after 128 cycles). SMEAR, or a denser
+# mesh, is the fix. SMEAR takes one record, WIDTH = k_B T in hartree (manual
+# p. 126), and is among the SCF keywords the 2c-SCF accepts (p. 169).
+#
+# MACE cannot know beforehand that a system is a metal, but a parent's .out
+# can show it. After each Fermi-level search CRYSTAL prints either
+#     POSSIBLY CONDUCTING STATE - EFERMI(AU) -1.4886526E-01 (RES. CHARGE ...)
+# or the band edges and the gap
+#     TOP OF VALENCE BANDS -    BAND     12; K    5; EIG -1.4892012E-01 AU
+#     DIRECT ENERGY BAND GAP:   0.0024 eV      (INDIRECT ENERGY BAND GAP: ...)
+# (1c graphene and polyyne runs in tests/data/low_dim_groups; the Au 2c run
+# prints the first form). The report of the parent's last SCF cycle decides:
+# a conducting state, or a gap below NEAR_ZERO_GAP_EV, counts as metallic.
+# The threshold is MACE's choice, not a measured limit.
+NEAR_ZERO_GAP_EV = 0.1
+SOC_METAL_SMEAR_EXAMPLE = 0.005
+_ELECTRONIC_STATE_LINE = re.compile(
+    r"^[ \t]*(?:(POSSIBLY CONDUCTING STATE) - EFERMI\(AU\)"
+    r"|(?:IN)?DIRECT ENERGY BAND GAP:[ \t]*(-?\d+(?:\.\d*)?)[ \t]*EV)",
+    re.MULTILINE | re.IGNORECASE)
+_SCF_CYCLE_LINE = re.compile(r"^[ \t]*CYC[ \t]+\d+[ \t]+ETOT", re.MULTILINE)
+
+
+def parent_metal_evidence(content: str) -> Optional[str]:
+    """Why a CRYSTAL .out looks metallic, or None.
+
+    Reads the electronic-state report of the last SCF cycle (every report
+    after the last "CYC n ETOT" line before it, so both spins of an
+    unrestricted run): "POSSIBLY CONDUCTING STATE", or a direct/indirect band
+    gap below NEAR_ZERO_GAP_EV."""
+    reports = list(_ELECTRONIC_STATE_LINE.finditer(content))
+    if not reports:
+        return None
+    cycles = [m.start() for m in _SCF_CYCLE_LINE.finditer(content, 0, reports[-1].start())]
+    last = [m for m in reports if m.start() >= (cycles[-1] if cycles else 0)]
+    if any(m.group(1) for m in last):
+        return 'its last SCF cycle reports "POSSIBLY CONDUCTING STATE"'
+    gap = min(float(m.group(2)) for m in last)
+    if gap < NEAR_ZERO_GAP_EV:
+        return f"its last SCF cycle reports a band gap of {gap:g} eV"
+    return None
+
+
+def checked_smear(value) -> Optional[float]:
+    """A "smear" value (SMEAR's WIDTH, hartree, manual p. 126) as a float, or
+    None when none was given. It must be above 0 and show in the 6 decimals
+    MACE writes."""
+    if value is None:
+        return None
+    try:
+        if isinstance(value, bool):
+            raise ValueError
+        width = float(value)
+    except (TypeError, ValueError):
+        raise SocError(f"smear must be a width in hartree above 0 (SMEAR, manual "
+                       f"p. 126), not {value!r}")
+    if not width >= 0.0000005 or width != width or width == float("inf"):
+        raise SocError(f"smear must be a width in hartree above 0 (SMEAR, manual "
+                       f"p. 126), not {value!r}")
+    return width
+
+
+def deck_has_smear(deck: str) -> bool:
+    """Whether a deck has a SMEAR record (line 1, the title, is not a record)."""
+    return any(ln.strip().upper() == "SMEAR" for ln in deck.split("\n")[1:])
+
+
+def _with_smear(block3: List[str], width: float, log) -> List[str]:
+    """block3 with SMEAR ``width``: the deck's own SMEAR gets that width, or a
+    SMEAR record goes right after the SHRINK records (where MACE's writers put
+    it). Noted either way."""
+    out = list(block3)
+    keys = [ln.strip().upper() for ln in out]
+    text = f"{width:.6f}"
+    if "SMEAR" in keys:
+        j = keys.index("SMEAR")
+        if float(out[j + 1].split()[0]) != float(text):
+            log(f"SOC deck: SMEAR {out[j + 1].strip()} replaced by {text} (smear)")
+            out[j + 1] = text
+        return out
+    if "SHRINK" not in keys:
+        raise SocError("smear was asked for, but the deck has no SHRINK (no k-points), so "
+                       "there is no Fermi surface to smear")
+    i = keys.index("SHRINK")
+    at = i + (3 if out[i + 1].split()[0] == "0" else 2)
+    out[at:at] = ["SMEAR", text]
+    log(f"SOC deck: SMEAR {text} added (smear)")
+    return out
+
+
+def metal_parent_warning(evidence: str) -> str:
+    """The warning for a SOC deck without SMEAR whose parent looks metallic."""
+    return (f"Warning: the parent looks metallic ({evidence}) and this SOC deck has no "
+            f"SMEAR. A 2c-SCF of fcc Au aborted in its first cycles on SHRINK 10 10 and "
+            f"11 11 (\"FERMI ENERGY NOT IN INTERVAL\") and converged at 12 12, or at 10 10 "
+            f"with SMEAR {SOC_METAL_SMEAR_EXAMPLE} (HPCC); for a metal the FMIXING value can "
+            f"also change the SCF solution reached. SMEAR (\"smear\": <width in hartree> "
+            f"in the template) or a denser mesh is the fix.")
+
+
+CIF_METAL_WARNING = (
+    "Warning: SOC decks here have no SMEAR, and MACE cannot tell from a CIF whether a "
+    "system is a metal. A metal may need SMEAR (\"smear\": <width in hartree> in the "
+    "options file) or a denser mesh: fcc Au in a 2c-SCF aborted on SHRINK 10 10 and "
+    f"11 11 and converged at 12 12, or at 10 10 with SMEAR {SOC_METAL_SMEAR_EXAMPLE} (HPCC).")
+_cif_metal_warned = []
+
+
+def cif_metal_warning_once(log=print) -> None:
+    """Print CIF_METAL_WARNING, the first time only in this run: it holds for
+    every SOC deck written from a CIF without SMEAR alike."""
+    if not _cif_metal_warned:
+        _cif_metal_warned.append(True)
+        log(CIF_METAL_WARNING)
+
+
 # The keys of a cif2d12 options file or opt2d12 template that tune a SOC deck,
 # and the soc_deck argument each one sets.
-SOC_OPTION_KEYS = {"soc_fmixing": "fmixing"}
+SOC_OPTION_KEYS = {"soc_fmixing": "fmixing", "smear": "smear"}
 
 
 def soc_deck_options(options) -> Dict[str, object]:
@@ -584,15 +714,26 @@ class SocDeckBuffer(io.StringIO):
         self._deck = deck_file
         self._log = log
         self._kwargs = soc_deck_options(options)
+        self.written = None
 
     def discard(self):
         self._deck.discard()
 
+    def will_have_smear(self) -> bool:
+        """Whether the SOC deck will carry SMEAR: the deck written so far has
+        it, or a "smear" setting asks for it."""
+        return self._kwargs.get("smear") is not None or deck_has_smear(self.getvalue())
+
+    def set_smear(self, width) -> None:
+        """Ask for SMEAR ``width`` (hartree), as a "smear" setting does."""
+        self._kwargs["smear"] = width
+
     def finish(self, soscale: float = 1.0) -> Optional[str]:
-        """Write the SOC deck; on refusal discard it and return the reason."""
+        """Write the SOC deck; on refusal discard it and return the reason.
+        ``written`` then holds the deck written."""
         try:
-            self._deck.write(soc_deck(self.getvalue(), soscale, log=self._log,
-                                      **self._kwargs))
+            self.written = soc_deck(self.getvalue(), soscale, log=self._log, **self._kwargs)
+            self._deck.write(self.written)
             return None
         except SocError as exc:
             self._deck.discard()

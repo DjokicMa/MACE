@@ -277,7 +277,7 @@ def opt2d12(tmp_path, monkeypatch):
         (tmp_path / f"{stem}.out").write_text("")
         (tmp_path / f"{stem}.d12").write_text("")
 
-    def run(stems, **template):
+    def run(stems, _yes=True, **template):
         base = {"calculation_type": "SP", "functional": "PBE0", "dispersion": False,
                 "dft_grid": "XLGRID", "basis_set": M.PARENT_BASIS_MARKER,
                 "basis_set_type": "EXTERNAL", "use_original_external_basis": True,
@@ -286,7 +286,8 @@ def opt2d12(tmp_path, monkeypatch):
         (tmp_path / "t.json").write_text(json.dumps(base))
         monkeypatch.setattr(sys, "argv", ["CRYSTALOptToD12.py", "--out-file",
                                           *[f"{s}.out" for s in stems], "--config-file",
-                                          "t.json", "--output-dir", "sp", "--yes"])
+                                          "t.json", "--output-dir", "sp"]
+                            + (["--yes"] if _yes else []))
         try:
             M.main()
             status = 0
@@ -417,3 +418,196 @@ def test_cif2d12_soc_with_an_internal_basis_writes_nothing(cif2d12):
     ok, out = cif2d12("internal", soc=True, basis_set_type="INTERNAL",
                       basis_set="POB-TZVP-REV2")
     assert ok is False and not out.exists()
+
+
+# --- SMEAR for metals ------------------------------------------------------------
+#
+# fcc Au in a 2c-SCF aborted on SHRINK 10 10 and 11 11 and converged at 12 12,
+# or at 10 10 with SMEAR 0.005 (HPCC). SMEAR is written only when asked for:
+# a "smear" key, or an answer at the prompt opt2d12 shows when the parent's
+# .out looks metallic.
+
+DATA = REPO_ROOT / "tests" / "data" / "low_dim_groups"
+# The last SCF cycle of a 1c diamond run (spin-polarized) - an insulator.
+DIAMOND_LAST_CYCLE = """ CYC   5 ETOT(AU) -7.619411780627E+01 DETOT -7.64E-08 tst  3.28E-07 PX  6.85E-05
+ TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT FDIK        TELAPSE      142.86 TCPU      142.73
+
+    ALPHA      ELECTRONS
+ INSULATING STATE
+ TOP OF VALENCE BANDS -    BAND      6; K    1; EIG -7.7969146E-02 AU
+ BOTTOM OF VIRTUAL BANDS - BAND      7; K   35; EIG  1.4257519E-01 AU
+ INDIRECT ENERGY BAND GAP:   6.0013 eV
+ BOTTOM OF VIRTUAL BANDS - BAND      7; K    1; EIG  1.9340298E-01 AU
+
+    BETA       ELECTRONS
+ INSULATING STATE
+ TOP OF VALENCE BANDS -    BAND      6; K    1; EIG -7.7969146E-02 AU
+ BOTTOM OF VIRTUAL BANDS - BAND      7; K   35; EIG  1.4257519E-01 AU
+ INDIRECT ENERGY BAND GAP:   6.0013 eV
+ BOTTOM OF VIRTUAL BANDS - BAND      7; K    1; EIG  1.9340298E-01 AU
+ CYC   6 ETOT(AU) -7.619411779907E+01 DETOT  7.20E-09 tst  4.41E-10 PX  6.85E-05
+ == SCF ENDED - CONVERGENCE ON ENERGY      E(AU) -7.6194117799070E+01 CYCLES   6
+"""
+# A metallic last cycle: graphene (layer group 80), a real 1c run.
+METAL_OUT = (DATA / "graphene_lg80.out").read_text()
+
+
+@pytest.mark.parametrize("text,why", [
+    (METAL_OUT, '"POSSIBLY CONDUCTING STATE"'),
+    ((DATA / "polyyne_rg28.out").read_text(), '"POSSIBLY CONDUCTING STATE"'),
+    ((DATA / "graphene_lg37.out").read_text(), "a band gap of 0.0024 eV"),
+    (DIAMOND_LAST_CYCLE, None),
+    # the last cycle decides: conducting earlier, insulating at the end
+    (" CYC   1 ETOT(AU) -1.0\n POSSIBLY CONDUCTING STATE - EFERMI(AU) -1.9E-01 (RES.)\n"
+     + DIAMOND_LAST_CYCLE, None),
+    ("", None),
+], ids=["graphene-lg80", "polyyne", "graphene-lg37-gap", "diamond", "last-cycle", "empty"])
+def test_what_a_parent_output_says_about_a_metal(text, why):
+    evidence = S.parent_metal_evidence(text)
+    assert (evidence is None) if why is None else (why in evidence)
+
+
+def test_smear_writes_smear_after_shrink_with_a_note():
+    notes = []
+    soc = S.soc_deck(PBTE, log=notes.append, smear=0.005)
+    assert "SHRINK\n8 8\nSMEAR\n0.005000\nTWOCOMPON\nSOC\nEND\n" in soc
+    assert "SOC deck: SMEAR 0.005000 added (smear)" in notes
+    # the directional SHRINK form keeps its two records together
+    slab = PBTE.replace("SHRINK\n8 16\n", "SHRINK\n0 20\n10 10 1\n")
+    assert "SHRINK\n0 10\n10 10 1\nSMEAR\n0.005000\n" in S.soc_deck(slab, log=lambda m: None,
+                                                                    smear="0.005")
+    # a SMEAR the deck has gets the width asked for, noted; the same width: silent
+    has = PBTE.replace("SHRINK\n8 16\n", "SHRINK\n8 16\nSMEAR\n0.010000\n")
+    notes = []
+    soc = S.soc_deck(has, log=notes.append, smear=0.005)
+    assert soc.count("SMEAR") == 1 and "SMEAR\n0.005000\n" in soc
+    assert "SOC deck: SMEAR 0.010000 replaced by 0.005000 (smear)" in notes
+    notes = []
+    S.soc_deck(has, log=notes.append, smear=0.01)
+    assert not any("SMEAR" in n for n in notes)
+
+
+def test_no_smear_asked_for_means_none_written():
+    assert "SMEAR" not in S.soc_deck(PBTE, log=lambda m: None)
+
+
+@pytest.mark.parametrize("bad", [0, -0.01, "wide", True, 1e-9, float("nan")])
+def test_a_smear_that_is_not_a_width_is_refused(bad):
+    with pytest.raises(S.SocError, match="smear must be a width in hartree"):
+        S.soc_deck(PBTE, log=lambda m: None, smear=bad)
+
+
+def _metal_parent(tmp_path, stem="pbte"):
+    (tmp_path / f"{stem}.out").write_text(METAL_OUT)
+
+
+def test_batch_metal_parent_warns_in_the_summary_and_leaves_the_deck(opt2d12, tmp_path, capsys):
+    status, decks = opt2d12(["pbte"], soc=True)
+    plain = decks["pbte"].read_text()
+    capsys.readouterr()
+    _metal_parent(tmp_path)
+    status, decks = opt2d12(["pbte"], soc=True)
+    assert status == 0
+    assert decks["pbte"].read_text() == plain and "SMEAR" not in plain
+    err = capsys.readouterr().err
+    assert 'the parent looks metallic (its last SCF cycle reports "POSSIBLY CONDUCTING STATE")' in err
+    summary = err[err.rindex("SOC decks written without SMEAR from a parent that looks metallic"):]
+    assert "  pbte.out" in summary
+
+
+def test_batch_of_several_lists_the_metallic_parents_in_the_summary(opt2d12, tmp_path, capsys):
+    _metal_parent(tmp_path)
+    status, decks = opt2d12(["pbte", "pbi"], soc=True)
+    assert status == 0 and decks["pbte"].exists() and decks["pbi"].exists()
+    err = capsys.readouterr().err
+    assert "pbte.out: wrote" in err and "WARNING: SOC deck without SMEAR" in err
+    summary = err[err.rindex("SOC decks written without SMEAR from a parent that looks metallic"):]
+    assert "  pbte.out" in summary and "pbi.out" not in summary
+
+
+def test_an_insulating_parent_gets_no_smear_warning(opt2d12, tmp_path, capsys):
+    (tmp_path / "pbte.out").write_text(DIAMOND_LAST_CYCLE)
+    status, _ = opt2d12(["pbte"], soc=True)
+    assert status == 0 and "metallic" not in capsys.readouterr().err
+
+
+def test_a_scalar_deck_of_a_metal_parent_is_not_touched(opt2d12, tmp_path, capsys):
+    _metal_parent(tmp_path)
+    status, decks = opt2d12(["pbte", "pbi", "nacl"])
+    assert status == 0
+    assert {s: _sha(p) for s, p in decks.items()} == MAIN_SHA
+    assert "metallic" not in capsys.readouterr().err
+
+
+def test_template_smear_writes_smear_and_needs_no_warning(opt2d12, tmp_path, capsys):
+    _metal_parent(tmp_path)
+    status, decks = opt2d12(["pbte"], soc=True, smear=0.005)
+    assert status == 0
+    assert "SHRINK\n8 8\nSMEAR\n0.005000\nTWOCOMPON\n" in decks["pbte"].read_text()
+    out = capsys.readouterr()
+    assert "SOC deck: SMEAR 0.005000 added (smear)" in out.out
+    assert "metallic" not in out.err
+
+
+class _TTY:
+    def isatty(self):
+        return True
+
+
+@pytest.mark.parametrize("answers,smear", [
+    ([""], None),                          # Enter: no SMEAR
+    (["wide", "-1", "0.005"], "0.005000"),  # asked again until a width
+])
+def test_at_a_terminal_the_user_is_asked_for_smear(opt2d12, tmp_path, monkeypatch, capsys,
+                                                   answers, smear):
+    _metal_parent(tmp_path)
+    monkeypatch.setattr(sys, "stdin", _TTY())
+    asked = []
+    replies = iter(answers)
+
+    def fake_input(prompt=""):
+        asked.append(prompt)
+        if prompt.startswith("SMEAR width"):
+            return next(replies)
+        raise AssertionError(f"unexpected question {prompt!r}")
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    monkeypatch.setattr(M, "yes_no_prompt", lambda *a, **k: True)
+    # one file, no --yes: someone is at the terminal
+    monkeypatch.setattr(M, "stdin_is_terminal", lambda: True)
+    status, decks = opt2d12(["pbte"], soc=True, _yes=False)
+    assert status == 0
+    assert sum(p.startswith("SMEAR width") for p in asked) == len(answers)
+    text = decks["pbte"].read_text()
+    if smear:
+        assert f"SHRINK\n8 8\nSMEAR\n{smear}\nTWOCOMPON\n" in text
+    else:
+        assert "SMEAR" not in text
+    err = capsys.readouterr().err
+    assert "the parent looks metallic" in err
+    assert "SOC decks written without SMEAR" not in err   # answered, not noted
+
+
+@pytest.fixture
+def fresh_cif_warning(monkeypatch):
+    monkeypatch.setattr(S, "_cif_metal_warned", [])
+
+
+def test_cif2d12_soc_without_smear_warns_once(cif2d12, capsys, fresh_cif_warning):
+    for _ in range(2):
+        ok, out = cif2d12("external", soc=True)
+        assert ok is True and "SMEAR" not in out.read_text()
+    err = capsys.readouterr().err
+    assert err.count("MACE cannot tell from a CIF whether a system is a metal") == 1
+
+
+def test_cif2d12_smear_key_writes_smear_without_the_warning(cif2d12, capsys, fresh_cif_warning):
+    ok, out = cif2d12("external", soc=True, smear=0.005)
+    assert ok is True and "SHRINK\n10 10\nSMEAR\n0.005000\nTWOCOMPON\n" in out.read_text()
+    assert "cannot tell from a CIF" not in capsys.readouterr().err
+
+
+def test_cif2d12_scalar_decks_get_no_warning(cif2d12, capsys, fresh_cif_warning):
+    ok, out = cif2d12("external")
+    assert ok is True and _sha(out) == MAIN_SHA_CIF["external"]
+    assert "cannot tell from a CIF" not in capsys.readouterr().err

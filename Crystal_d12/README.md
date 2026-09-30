@@ -465,6 +465,12 @@ for with `"soc": true` in a cif2d12 options file or an opt2d12 template.
   parent's or template's) is replaced, and the log names the value replaced.
   `"soc_fmixing": N` (0-100) in the options file or template writes FMIXING N
   instead. A MAXCYCLE below 200 is kept, with a warning.
+- Never adds SMEAR by itself. `"smear": <width in hartree>` in the options
+  file or template writes SMEAR (manual p. 126) after SHRINK. opt2d12 warns
+  when the parent's .out looks metallic (its last SCF cycle reports "POSSIBLY
+  CONDUCTING STATE" or a band gap below 0.1 eV) and the SOC deck has no SMEAR,
+  and asks for a width at a terminal (Enter = none); in a batch it lists the
+  deck in the closing summary. cif2d12 prints one such warning per run.
 - Accepts SPIN and the `-D3` forms of BLYP, PBE, B3LYP, PBE0 and PW1PW. SPIN
   has no effect in a 2c deck: the same energy with and without it (HPCC).
 - Measured on the stock CRYSTAL/23 build (HPCC): PbTe (SHRINK 7 7) and a Bi2

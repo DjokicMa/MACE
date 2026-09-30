@@ -82,7 +82,8 @@ from d12_writer import (
 )
 # Import write_scf_section from d12_writer
 from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES, atomic_deck
-from soc_ecp import SocDeckBuffer
+from soc_ecp import (SocDeckBuffer, SocError, checked_smear, metal_parent_warning,
+                     parent_metal_evidence)
 from d12_interactive import (
     display_current_settings, interactive_d12_configuration,
     get_calculation_options_from_current, get_calculation_options,
@@ -158,6 +159,59 @@ except Exception:  # standalone run without mace importable
         return bool(re.search(r"^[ \t]*(?:\*[ \t]+OPTIMIZATION STARTS"
                               r"|[A-Z]+(?: [A-Z]+)* OPTIMIZATION - POINT[ \t]+\d)",
                               content, re.MULTILINE))
+
+
+# A SOC deck written without SMEAR from a parent whose .out looks metallic,
+# where nobody could be asked for a SMEAR width (soc_ecp, "SMEAR for metals").
+SOC_METAL_NOTE = ('SOC deck without SMEAR from a parent that looks metallic; it may '
+                  'abort as fcc Au did at SHRINK 10 10 ("smear": <hartree> in the '
+                  'template adds SMEAR)')
+
+
+def soc_parent_metal(out_file):
+    """Why the .out a SOC deck is made from looks metallic, or None
+    (soc_ecp.parent_metal_evidence)."""
+    try:
+        with open(out_file, errors="replace") as f:
+            return parent_metal_evidence(f.read())
+    except OSError:
+        return None
+
+
+def ask_for_soc_smear(deck, evidence, ask=None):
+    """Before a SOC deck without SMEAR from a metallic-looking parent is
+    written: warn, then ask for a SMEAR width (Enter keeps the deck without
+    SMEAR) when someone can answer, else note it for the run's summary. The
+    deck is never given SMEAR without an answer or a "smear" setting."""
+    ui.warn(metal_parent_warning(evidence))
+    if ask is None:
+        ask = stdin_is_terminal()
+    if ask:
+        while True:
+            try:
+                answer = input("SMEAR width in hartree for this SOC deck, e.g. 0.005 "
+                               "(Enter = no SMEAR): ").strip()
+            except EOFError:
+                break
+            if not answer:
+                ui.info("  No SMEAR: the deck is written without it.")
+                return
+            try:
+                deck.set_smear(checked_smear(answer))
+                return
+            except SocError as exc:
+                ui.warn(f"  {exc}")
+    LAST_RESULT["notes"].append(SOC_METAL_NOTE)
+
+
+def print_soc_metal_summary(names):
+    """The closing lines for SOC decks noted with SOC_METAL_NOTE, if any."""
+    if names:
+        ui.warn("SOC decks written without SMEAR from a parent that looks metallic - "
+                "they may abort as fcc Au did at SHRINK 10 10; set \"smear\": <width "
+                "in hartree> in the template, or use a denser mesh:")
+        for name in names:
+            ui.warn(f"  {name}")
 
 
 def optimisation_problem(out_file):
@@ -515,7 +569,7 @@ THREE_C_FUNCTIONALS = ("HF3C", "HFSOL3C", "PBEH3C", "HSE3C", "B973C", "PBESOL03C
 
 
 def write_d12_file(output_file, geometry_data, settings, external_basis_data=None,
-                   parent_k_points=None, ask=None):
+                   parent_k_points=None, ask=None, parent_metal=None):
     """Write new D12 file with optimized geometry and settings.
 
     parent_k_points is the raw k-point value parsed from the parent .d12 this
@@ -1119,6 +1173,10 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         # Note: The single END at the very end is written by write_scf_section
 
         if settings.get("soc"):
+            # A parent that looks metallic (parent_metal: why) and no SMEAR:
+            # warn, and ask for one or note it (ask_for_soc_smear).
+            if parent_metal and not f.will_have_smear():
+                ask_for_soc_smear(f, parent_metal, ask)
             refusal = f.finish()
             if refusal:
                 _fail(refusal, f"Not writing {os.path.basename(output_file)}: {refusal}")
@@ -1898,9 +1956,11 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     # Use optimized geometry from output but with preserved settings
     # The geometry_data (out_data) contains the optimized coordinates with is_unique flags
     # The settings (options) contains the preserved symmetry and other settings from D12
+    parent_metal = soc_parent_metal(output_file) if converted_options.get("soc") else None
     if not write_d12_file(new_filename, out_data, converted_options, external_basis_data,
                           parent_k_points=parent_k_points,
-                          ask=False if unattended else None):
+                          ask=False if unattended else None,
+                          parent_metal=parent_metal):
         ui.err(f"\nFailed to create {new_filename}: D12 creation aborted.")
         if not LAST_RESULT["reason"]:
             LAST_RESULT["reason"] = "D12 creation aborted"
@@ -2162,6 +2222,10 @@ def main():
             confirm_config=False if args.yes else None,
             unattended=bool(args.yes or args.non_interactive),
         )
+
+        if success and SOC_METAL_NOTE in LAST_RESULT["notes"]:
+            print()
+            print_soc_metal_summary([out_file])
 
         if success and args.save_options:
             with open(args.options_file, "w") as f:
@@ -2431,6 +2495,7 @@ def main():
                     "finish or did not converge:")
             for name, note in unfinished:
                 ui.warn(f"  {name}: {'no OPT END' if note == UNFINISHED_OPT_NOTE else 'OPT END - FAILED'}")
+        print_soc_metal_summary([name for name, _, notes in written if SOC_METAL_NOTE in notes])
 
         # Save options if requested
         if args.save_options and shared_settings:

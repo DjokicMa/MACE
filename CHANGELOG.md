@@ -103,6 +103,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   internal basis-set library, and for an ECP that is not a spin-orbit ECP's
   scalar part. Without the key every deck is byte-identical to before.
   `Crystal_d12/soc_ecp.py`.
+- **SOC decks and metals: a warning, and SMEAR on request.** fcc Au in 2c
+  aborted on MACE's default mesh and converged with SMEAR 0.005, but MACE
+  never adds SMEAR by itself. `opt2d12` reads the parent's .out: when its last
+  SCF cycle reports "POSSIBLY CONDUCTING STATE" or a band gap below 0.1 eV
+  ("DIRECT/INDIRECT ENERGY BAND GAP"), and the SOC deck has no SMEAR, it
+  warns and, at a terminal, asks for a SMEAR width (Enter keeps the deck
+  without SMEAR); in a batch, with `--yes` or `--non-interactive` the deck is
+  written unchanged and the run's closing summary lists it. A `"smear"` key
+  (width in hartree; SMEAR, manual p. 126, one of the SCF keywords a 2c-SCF
+  accepts, p. 169) in an opt2d12 template or cif2d12 options file writes
+  SMEAR after the SHRINK records of a SOC deck, with a note. cif2d12, which
+  has no parent to read, prints one warning per run for SOC decks without
+  SMEAR. Scalar decks are not affected.
 - **A two-component run is recorded as one.** `mace/utils/calc_detection.py`
   gains `is_two_component_output`, which recognises a 2c-SCF .out by lines
   CRYSTAL prints for it ("TOTAL X-COMP MAGNETIZATION" / "TOTAL Y-COMP
