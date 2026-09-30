@@ -96,6 +96,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tI and mC2 (and the aP and mC2 non-centrosymmetric ones) now use SeeK-path's
   coordinates: e.g. every centrosymmetric primitive cubic, tetragonal,
   orthorhombic, monoclinic and hexagonal group, Im-3m, Ia-3d and I4/mmm.
+- **`get_auto_phonon_path` returns a path in the labels and vectors
+  formats.** Both stopped with NameError, because `d12_calc_freq` checked
+  `get_crystal_system_from_space_group` without importing it from
+  `d3_kpoints`. Nothing calls the function today, so no deck changes.
 
 ### Removed
 
