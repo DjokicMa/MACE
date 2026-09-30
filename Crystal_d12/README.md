@@ -465,7 +465,13 @@ for with `"soc": true` in a cif2d12 options file or an opt2d12 template.
   parent's or template's) is replaced, and the log names the value replaced.
   `"soc_fmixing": N` (0-100) in the options file or template writes FMIXING N
   instead. A MAXCYCLE below 200 is kept, with a warning.
-- Accepts SPIN and the `-D3` forms of BLYP, PBE, B3LYP, PBE0 and PW1PW.
+- Accepts SPIN and the `-D3` forms of BLYP, PBE, B3LYP, PBE0 and PW1PW. SPIN
+  has no effect in a 2c deck: the same energy with and without it (HPCC).
+- Measured on the stock CRYSTAL/23 build (HPCC): PbTe (SHRINK 7 7) and a Bi2
+  bilayer (SHRINK 0 10 / 10 10 1) converge. fcc Au converges on a 12 12 mesh
+  but aborts in the first SCF cycles on MACE's default 10 10, and on 11 11
+  ("ERROR **** ZERO **** FERMI ENERGY NOT IN INTERVAL"); SMEAR 0.005 lets
+  10 10 converge.
 - Refuses, writing no deck: OPT/FREQ and other non-single-point runs,
   functionals and keywords manual chapter 6 does not list (including a DFTD3
   block), `BASISSET`, and ECPs that are not a spin-orbit ECP's scalar part.

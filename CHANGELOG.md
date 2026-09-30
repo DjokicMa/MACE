@@ -74,9 +74,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `END` block goes before `SCFDIR` (manual sec. 6.2). This holds for the
   `full.basis.doublezeta` and `triplezeta` ECPs of Rb-Bi except Yb. Run on
   the stock CRYSTAL/23 build on HPCC: CRYSTAL echoes "AREP + INTERNAL SOREP
-  PSEUDOPOTENTIAL" with these numbers for Au, Pb, Te, Bi and Hg, and PbTe,
-  a Bi2 bilayer and fcc Au converge (PbTe -461.17741702 Ha with SOC against
-  -461.00763647 Ha scalar). Because of those runs a SOC deck also leaves out
+  PSEUDOPOTENTIAL" with these numbers for Au, Pb, Te, Bi and Hg. At FMIXING
+  85 and TOLDEE 7, PbTe (SHRINK 7 7) converged to -461.17736594 Ha and a Bi2
+  bilayer (SHRINK 0 10 / 10 10 1) to -429.65783240 Ha; SOC lowers the energy
+  of the same 2c run without SOC by 2.31 (PbTe) and 4.80 (Bi2) eV/atom. fcc
+  Au converged only on a 12 12 mesh (-135.86079676 Ha, 0.22 eV/atom below
+  the 2c run without SOC, and -135.88783469 Ha with PBE0-D3): on MACE's
+  default SHRINK 10 10, and on 11 11, it aborted in the first SCF cycles
+  ("POSSIBLY CONDUCTING STATE" and then "ERROR **** ZERO **** FERMI ENERGY
+  NOT IN INTERVAL"), and 10 10 with SMEAR 0.005 converged. SPIN in a 2c deck
+  has no effect (the same energy with and without it). Because of those
+  runs a SOC deck also leaves out
   DIIS and HISTDIIS (a DIIS record stops a 2c run: "DIIS NOT COMPATIBLE WITH
   2-COMP SCF"), writes SHRINK with the Gilat net equal to the Monkhorst net
   (fcc Au at 12 24 never converged, at 12 12 it did), and uses FMIXING 50
