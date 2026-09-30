@@ -79,10 +79,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -461.00763647 Ha scalar). Because of those runs a SOC deck also leaves out
   DIIS and HISTDIIS (a DIIS record stops a 2c run: "DIIS NOT COMPATIBLE WITH
   2-COMP SCF"), writes SHRINK with the Gilat net equal to the Monkhorst net
-  (fcc Au at 12 24 never converged, at 12 12 it did), and uses FMIXING 85
-  with at least 200 cycles (at FMIXING 30 Bi2 diverged; at 85 it converged in
-  34 cycles) - a FMIXING or MAXCYCLE the parent or template set to another
-  value than MACE's default is kept, with a warning. SPIN and the -D3 forms
+  (fcc Au at 12 24 never converged, at 12 12 it did), and uses FMIXING 50
+  with at least 200 cycles. In a scan of FMIXING 30/50/60/70/85 (TOLDEE 7),
+  50 converged fastest everywhere - Bi2 bilayer 12 cycles, PbTe 9, fcc Au at
+  12 12 25 - with the energies 85 gave (Bi2, PbTe within 3e-7 Ha, Au within
+  5e-6 Ha); 30 aborted Bi2 in cycle 1. Any other FMIXING in the deck is
+  replaced, and the log names the value replaced; a `"soc_fmixing"` key
+  (0-100) in the options file or template asks for another FMIXING. A
+  MAXCYCLE below 200 set by the parent or template is kept, with a warning.
+  SPIN and the -D3 forms
   of BLYP, PBE, B3LYP, PBE0 and PW1PW are accepted. The deck is refused, and
   nothing written, for what manual chapter 6 does not support
   (optimisations, frequencies, meta-GGA or range-separated functionals, a

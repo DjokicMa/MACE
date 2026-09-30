@@ -345,7 +345,8 @@ def _basis_block_span(lines: List[str], i: int) -> Tuple[int, int, int]:
     return ecp_start, ecp_end, i
 
 
-def soc_deck(deck: str, soscale: float = 1.0, log=print) -> str:
+def soc_deck(deck: str, soscale: float = 1.0, log=print,
+             fmixing: Optional[int] = None) -> str:
     """Turn a finished single-point MACE deck into a 2c-SCF SOC deck.
 
     Every atom whose basis block carries an INPUT ECP (conventional atomic
@@ -356,8 +357,11 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print) -> str:
     A TWOCOMPON block holding SOC goes into the SCF input, before SCFDIR (a
     placement the stock build accepts, HPCC); DIIS is left out, SHRINK gets
     IS = ISP, and FMIXING/MAXCYCLE are set for a 2c-SCF (see the helpers
-    below). Notes and warnings go to ``log``. Raises SocError, and returns no
-    deck, for anything the manual says the 2c-SCF does not support."""
+    below). ``fmixing`` (the "soc_fmixing" setting) asks for that FMIXING
+    whatever the deck had. Notes and warnings go to ``log``. Raises SocError,
+    and returns no deck, for anything the manual says the 2c-SCF does not
+    support."""
+    fmixing = _checked_fmixing(fmixing)
     lines = deck.rstrip("\n").split("\n")
     upper = [ln.strip().upper() for ln in lines]
 
@@ -447,7 +451,7 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print) -> str:
         raise SocError("no SCFDIR record to place the TWOCOMPON block before")
 
     rest = rest[:scfdir] + ["TWOCOMPON", "SOC", "END"] + rest[scfdir:]
-    out += _scf_convergence(_monkhorst_equals_gilat(_strip_records(rest), log), log)
+    out += _scf_convergence(_monkhorst_equals_gilat(_strip_records(rest), log), log, fmixing)
     return "\n".join(out) + "\n"
 
 
@@ -475,38 +479,62 @@ def _monkhorst_equals_gilat(block3: List[str], log) -> List[str]:
     return out
 
 
-# FMIXING and MAXCYCLE for a 2c-SCF. On HPCC, FMIXING 30 let Bi2 diverge and
-# left Au unconverged after 60 cycles; FMIXING 85 converged Bi2 in 34 cycles.
-SOC_FMIXING = 85
+# FMIXING and MAXCYCLE for a 2c-SCF, measured on HPCC (TOLDEE 7, only FMIXING
+# changed): FMIXING 50 converged fastest in all three systems tried - Bi2
+# bilayer 12 cycles, PbTe 9, fcc Au (12 12) 25 - with the energies FMIXING 85
+# gave (Bi2, PbTe within 3e-7 Ha; Au within 5e-6 Ha), while FMIXING 30 aborted
+# Bi2 in cycle 1. The manual warns that above 50% mixing can "force the
+# stabilization of the total energy value, without a real self consistency"
+# (p. 110). SOC_FMIXING is written in every SOC deck, whatever FMIXING the deck
+# had, unless a "soc_fmixing" key in a cif2d12 options file or an opt2d12
+# template asks for another value (the soc_deck ``fmixing`` argument). A value
+# replaced is named in the log.
+SOC_FMIXING = 50
 SOC_MIN_MAXCYCLE = 200
-# What MACE writes when nobody chose a value (write_scf_section's callers).
-# The deck cannot tell it from the same number chosen on purpose, so it is
-# read as "not set"; any other value was set by the parent or template.
-# (MACE's default MAXCYCLE, 800, is already above SOC_MIN_MAXCYCLE.)
-_DEFAULT_FMIXING = 30
 
 
-def _scf_convergence(block3: List[str], log) -> List[str]:
-    """block3 with FMIXING 85 and at least 200 cycles, unless set otherwise.
+def _checked_fmixing(value) -> Optional[int]:
+    """A "soc_fmixing" value as an int, or None when none was given.
 
-    A value other than MACE's default was set by the parent or template: it
-    is kept, with a warning when it is not what 2c runs need."""
+    FMIXING's IPMIX is a percentage (manual p. 110), so 0 to 100."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        raise SocError(f"soc_fmixing must be a whole number from 0 to 100, not {value!r}")
+    try:
+        number = int(value)
+    except ValueError:
+        raise SocError(f"soc_fmixing must be a whole number from 0 to 100, not {value!r}")
+    if not 0 <= number <= 100:
+        raise SocError(f"soc_fmixing must be a whole number from 0 to 100 "
+                       f"(FMIXING is a percentage, manual p. 110), not {value!r}")
+    return number
+
+
+def _scf_convergence(block3: List[str], log, fmixing: Optional[int] = None) -> List[str]:
+    """block3 with FMIXING SOC_FMIXING (or ``fmixing``, the "soc_fmixing"
+    setting) and at least SOC_MIN_MAXCYCLE cycles.
+
+    The FMIXING is written whatever the deck had; a different value in the
+    deck (MACE's 30, or the parent's or template's own) is replaced, and the
+    log says which. A MAXCYCLE below the minimum is kept, with a warning."""
     out = list(block3)
     keys = [ln.strip().upper() for ln in out]
     end = len(out) - 1 - keys[::-1].index("END")
 
+    target = SOC_FMIXING if fmixing is None else fmixing
+    why = ("soc_fmixing" if fmixing is not None else
+           f"the SOC default; \"soc_fmixing\" in the options file or template sets another")
     if "FMIXING" in keys:
         i = keys.index("FMIXING")
-        value = int(out[i + 1].split()[0])
-        if value == _DEFAULT_FMIXING:
-            out[i + 1] = str(SOC_FMIXING)
-            log(f"SOC deck: FMIXING {value} -> {SOC_FMIXING}")
-        elif value != SOC_FMIXING:
-            log(f"Warning: SOC deck keeps FMIXING {value} as set; 2c-SCF runs have "
-                f"diverged with FMIXING 30 and converged with {SOC_FMIXING}")
+        value = out[i + 1].split()[0]
+        if int(value) != target:
+            out[i + 1] = str(target)
+            log(f"SOC deck: FMIXING {value} replaced by {target} ({why})")
     else:
-        out[end:end] = ["FMIXING", str(SOC_FMIXING)]
+        out[end:end] = ["FMIXING", str(target)]
         end += 2
+        log(f"SOC deck: FMIXING {target} added ({why})")
 
     if "MAXCYCLE" in keys:
         i = keys.index("MAXCYCLE")
@@ -534,14 +562,28 @@ def _strip_records(block3: List[str]) -> List[str]:
     return kept
 
 
+# The keys of a cif2d12 options file or opt2d12 template that tune a SOC deck,
+# and the soc_deck argument each one sets.
+SOC_OPTION_KEYS = {"soc_fmixing": "fmixing"}
+
+
+def soc_deck_options(options) -> Dict[str, object]:
+    """soc_deck keyword arguments from the SOC keys of ``options``."""
+    options = options or {}
+    return {arg: options[key] for key, arg in SOC_OPTION_KEYS.items()
+            if options.get(key) is not None}
+
+
 class SocDeckBuffer(io.StringIO):
     """Collects a deck being written so soc_deck can rewrite it before it
-    reaches the atomic_deck file; ``discard`` is passed through."""
+    reaches the atomic_deck file; ``discard`` is passed through. ``options``
+    are the writer's options or settings, read for the SOC_OPTION_KEYS."""
 
-    def __init__(self, deck_file, log=print):
+    def __init__(self, deck_file, log=print, options=None):
         super().__init__()
         self._deck = deck_file
         self._log = log
+        self._kwargs = soc_deck_options(options)
 
     def discard(self):
         self._deck.discard()
@@ -549,7 +591,8 @@ class SocDeckBuffer(io.StringIO):
     def finish(self, soscale: float = 1.0) -> Optional[str]:
         """Write the SOC deck; on refusal discard it and return the reason."""
         try:
-            self._deck.write(soc_deck(self.getvalue(), soscale, log=self._log))
+            self._deck.write(soc_deck(self.getvalue(), soscale, log=self._log,
+                                      **self._kwargs))
             return None
         except SocError as exc:
             self._deck.discard()

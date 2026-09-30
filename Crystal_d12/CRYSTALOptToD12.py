@@ -553,7 +553,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         if settings.get("soc"):
             # Two-component SOC deck: written as usual, then rewritten by
             # soc_ecp.soc_deck before it reaches the file.
-            f = SocDeckBuffer(f)
+            f = SocDeckBuffer(f, options=settings)
 
         # Title
         # Title from the file NAME only: with --output-dir the path carries a

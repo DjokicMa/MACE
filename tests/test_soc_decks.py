@@ -64,7 +64,7 @@ def test_ecps_become_inpsoc_and_twocompon_goes_before_scfdir():
     assert soc[soc.index("END", soc.index("99 0")) + 1:j - 3] == \
         ["8 8" if ln == "8 16" else ln   # the Gilat net follows the Monkhorst net
          for ln in plain[plain.index("END", plain.index("99 0")) + 1:plain.index("SCFDIR")]]
-    assert soc[j:] == ["85" if ln == "30" else ln   # FMIXING 30 -> 85
+    assert soc[j:] == ["50" if ln == "30" else ln   # FMIXING 30 -> 50
                        for ln in plain[plain.index("SCFDIR"):]
                        if ln not in ("DIIS", "HISTDIIS", "100")]
     # geometry untouched
@@ -103,27 +103,63 @@ def _scf(deck):
 
 
 @pytest.mark.parametrize("fmixing,maxcycle,expected,warned", [
-    ("30", "800", {"FMIXING": "85", "MAXCYCLE": "800"}, False),   # MACE's defaults
-    ("85", "800", {"FMIXING": "85", "MAXCYCLE": "800"}, False),
-    ("60", "800", {"FMIXING": "60", "MAXCYCLE": "800"}, True),    # set: kept, warned
-    ("30", "100", {"FMIXING": "85", "MAXCYCLE": "100"}, True),    # set: kept, warned
-    ("30", "300", {"FMIXING": "85", "MAXCYCLE": "300"}, False),
+    ("30", "800", {"FMIXING": "50", "MAXCYCLE": "800"}, False),   # MACE's defaults
+    ("50", "800", {"FMIXING": "50", "MAXCYCLE": "800"}, False),
+    ("85", "800", {"FMIXING": "50", "MAXCYCLE": "800"}, False),   # replaced, noted
+    ("60", "800", {"FMIXING": "50", "MAXCYCLE": "800"}, False),   # replaced, noted
+    ("30", "100", {"FMIXING": "50", "MAXCYCLE": "100"}, True),    # set: kept, warned
+    ("30", "300", {"FMIXING": "50", "MAXCYCLE": "300"}, False),
 ])
-def test_fmixing_85_and_enough_cycles_unless_set(fmixing, maxcycle, expected, warned):
-    """On HPCC FMIXING 30 let Bi2 diverge and left Au unconverged after 60
-    cycles; FMIXING 85 converged Bi2 in 34 cycles."""
+def test_fmixing_50_and_enough_cycles(fmixing, maxcycle, expected, warned):
+    """FMIXING scan on HPCC (TOLDEE 7): 50 converged fastest for the Bi2
+    bilayer (12 cycles), PbTe (9) and fcc Au at 12 12 (25), with the energies
+    85 gave; 30 aborted Bi2 in cycle 1. So every SOC deck gets FMIXING 50,
+    and a different FMIXING in the deck is named when it is replaced."""
     deck = PBTE.replace("MAXCYCLE\n800\nFMIXING\n30\n",
                         f"MAXCYCLE\n{maxcycle}\nFMIXING\n{fmixing}\n")
     notes = []
     assert _scf(S.soc_deck(deck, log=notes.append)) == expected
     assert any(n.startswith("Warning") for n in notes) == warned
+    replaced = [n for n in notes if "FMIXING" in n]
+    if fmixing == "50":
+        assert replaced == []
+    else:
+        assert replaced == [f"SOC deck: FMIXING {fmixing} replaced by 50 (the SOC default; "
+                            f"\"soc_fmixing\" in the options file or template sets another)"]
+
+
+@pytest.mark.parametrize("deck_fmixing,asked,written,noted", [
+    ("30", 70, "70", True),     # MACE's default replaced by the asked value
+    ("60", 70, "70", True),     # a parent/template value too: it was asked for
+    ("70", 70, "70", False),    # already there: nothing to say
+    (None, 85, "85", True),     # no FMIXING in the deck: added
+    ("30", 30, "30", False),    # 30 asked for on purpose: kept
+])
+def test_soc_fmixing_sets_the_fmixing(deck_fmixing, asked, written, noted):
+    deck = PBTE.replace("FMIXING\n30\n", f"FMIXING\n{deck_fmixing}\n" if deck_fmixing else "")
+    notes = []
+    soc = S.soc_deck(deck, log=notes.append, fmixing=asked)
+    assert _scf(soc)["FMIXING"] == written and soc.count("FMIXING") == 1
+    assert any("soc_fmixing" in n for n in notes) == noted
+    assert not any(n.startswith("Warning") and "FMIXING" in n for n in notes)
+
+
+def test_the_default_soc_fmixing_is_the_module_constant(monkeypatch):
+    monkeypatch.setattr(S, "SOC_FMIXING", 77)
+    assert _scf(S.soc_deck(PBTE, log=lambda m: None))["FMIXING"] == "77"
+
+
+@pytest.mark.parametrize("bad", [-1, 101, "high", 8.5, True])
+def test_a_soc_fmixing_that_is_not_a_percentage_is_refused(bad):
+    with pytest.raises(S.SocError, match="soc_fmixing"):
+        S.soc_deck(PBTE, log=lambda m: None, fmixing=bad)
 
 
 def test_missing_fmixing_and_maxcycle_are_added():
     deck = PBTE.replace("MAXCYCLE\n800\nFMIXING\n30\n", "")
     soc = S.soc_deck(deck, log=lambda m: None)
-    assert _scf(soc) == {"FMIXING": "85", "MAXCYCLE": "200"}
-    assert soc.endswith("PPAN\nFMIXING\n85\nMAXCYCLE\n200\nEND\n")
+    assert _scf(soc) == {"FMIXING": "50", "MAXCYCLE": "200"}
+    assert soc.endswith("PPAN\nFMIXING\n50\nMAXCYCLE\n200\nEND\n")
 
 
 def test_all_electron_atoms_keep_their_basis():
@@ -296,6 +332,12 @@ def test_soc_refusal_writes_no_deck_and_fails_the_file(opt2d12, capsys):
     assert not any(n.startswith(".") for n in os.listdir(decks["pbte"].parent))
 
 
+def test_opt2d12_template_soc_fmixing_reaches_the_deck(opt2d12):
+    status, decks = opt2d12(["pbte"], soc=True, soc_fmixing=60)
+    assert status == 0
+    assert "FMIXING\n60\n" in decks["pbte"].read_text()
+
+
 def test_soc_with_dispersion_writes_the_d3_functional(opt2d12):
     status, decks = opt2d12(["pbte"], soc=True, dispersion=True)
     assert status == 0
@@ -362,8 +404,13 @@ def test_cif2d12_soc_true_writes_the_2c_deck(cif2d12):
     text = out.read_text()
     assert ok is True and "INPSOC\nINTERNAL 1.0\n19. 0 2 4 4 2 2\n" in text
     assert "TWOCOMPON\nSOC\nEND\nSCFDIR\n" in text
-    assert "SHRINK\n10 10\n" in text and "FMIXING\n85\n" in text
+    assert "SHRINK\n10 10\n" in text and "FMIXING\n50\n" in text
     assert "DIIS" not in text
+
+
+def test_cif2d12_soc_fmixing_reaches_the_deck(cif2d12):
+    ok, out = cif2d12("external", soc=True, soc_fmixing=60)
+    assert ok is True and "FMIXING\n60\n" in out.read_text()
 
 
 def test_cif2d12_soc_with_an_internal_basis_writes_nothing(cif2d12):

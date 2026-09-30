@@ -1472,7 +1472,7 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
         if options.get("soc"):
             # Two-component SOC deck: written as usual, then rewritten by
             # soc_ecp.soc_deck before it reaches the file.
-            f = SocDeckBuffer(f)
+            f = SocDeckBuffer(f, options=options)
 
         # Write title
         print(os.path.basename(output_file).replace(".d12", ""), file=f)
