@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Hexagonal K and H points are written exactly in BAND and phonon paths.**
+  Coordinate paths are written in units of 1/shrink, and K = (1/3, 1/3, 0) is
+  only a whole number of steps when the shrink is a multiple of 3; at the usual
+  16 it was rounded to 5/16. Quarter points had the same problem at a shrink
+  such as 6 or 990. The shrink is now raised to the next common multiple of the
+  points' denominators (16 becomes 18 for hexagonal paths), the way a shrink
+  too small for the path was already raised.
 - **An `opt2d12` phonon deck with a SeeK-path band path is written.** The
   SeeK-path helpers read a `.out` file, but `opt2d12` passed them the parent's
   output text, so every such deck stopped with `OSError: File name too long`.

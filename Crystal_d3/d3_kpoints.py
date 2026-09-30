@@ -573,6 +573,39 @@ def get_minimum_shrink_for_segments(frac_segments: List[List[float]]) -> int:
     return max(4, min_shrink)
 
 
+def exact_shrink_step(coords, max_denominator: int = 12) -> int:
+    """Smallest step a shrink factor must be a multiple of for exact coordinates.
+
+    Crystallographic special points have small rational coordinates (1/2,
+    1/3, 1/4, 3/8, 2/3, ...). A shrink that is not a multiple of every such
+    denominator rounds them (1/3 * 16 = 5.33 -> 5, i.e. 0.3125 instead of
+    1/3). Returns the least common multiple of those denominators; parametric
+    coordinates with no small-denominator form do not contribute.
+    """
+    from fractions import Fraction
+    from math import gcd
+
+    step = 1
+    for coord in coords:
+        if abs(coord) < 1e-10:
+            continue
+        frac = Fraction(coord).limit_denominator(max_denominator)
+        if abs(float(frac) - coord) < 1e-6:
+            step = step * frac.denominator // gcd(step, frac.denominator)
+    return step
+
+
+def round_up_to_exact_shrink(shrink: int, step: int) -> int:
+    """Raise shrink to the next multiple of step (and of 2 when shrink is even)."""
+    from math import gcd
+
+    if shrink % 2 == 0:
+        step = step * 2 // gcd(step, 2)
+    if shrink % step:
+        shrink = (shrink // step + 1) * step
+    return shrink
+
+
 def scale_kpoint_segments(frac_segments: List[List[float]], shrink: int) -> tuple:
     """Scale fractional k-point coordinates to integers based on shrink factor.
 
@@ -597,6 +630,16 @@ def scale_kpoint_segments(frac_segments: List[List[float]], shrink: int) -> tupl
         print(f"         Minimum required: {min_shrink} (to represent fractional coordinates like 1/4)")
         print(f"         Adjusting shrink to {min_shrink}")
         shrink = min_shrink
+
+    # Every rational special point (1/3, 1/4, 3/8, ...) must land on an
+    # integer: raise the shrink to a common multiple of their denominators,
+    # the same way an insufficient shrink is raised above.
+    step = exact_shrink_step([c for seg in frac_segments for c in seg])
+    exact = round_up_to_exact_shrink(shrink, step)
+    if exact != shrink:
+        print(f"WARNING: Shrink factor {shrink} cannot represent the k-path points exactly")
+        print(f"         Adjusting shrink to {exact} (a multiple of {step})")
+        shrink = exact
 
     coord_segments = []
     for seg in frac_segments:
