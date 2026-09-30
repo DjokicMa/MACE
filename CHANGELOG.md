@@ -137,6 +137,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   queue manager's completion callback), `mace/utils/scf_settings_extractor.py`
   and `mace/utils/analyze_script_dependencies.py`.
 
+### Testing
+
+- Tests for paths that had none: the workflow plan JSON from planner to
+  executor to a job's callback (save, load, validation, queue settings),
+  `mace status` and `mace completion` on real outputs (categories, zombie
+  jobs, moving files, the workflow's isolated database), 'b' to go back
+  through the real OPT/SP/FREQ and opt2d3 questionnaires, and the timeout
+  RESTART recovery on the committed PbTiO3 and Ag2Br3 runs, end to end with
+  sbatch/squeue/sacct/scontrol stand-ins on PATH.
+- The corpus sweeps that skip without `test/` (deck geometry rebuild,
+  EXTERNAL basis blocks, TESTPDIM insertion, outputs typed by their deck,
+  settings extraction, aggregation keys, timeout RESTART) also run over the
+  real decks and outputs committed under `tests/data`, which now include the
+  two original ECP OPT decks (`tests/data/samples/ecp_decks`).
+- Three known bugs are pinned as expected failures: at the OPT
+  convergence-level menu an answer outside 1-4 is taken as Custom, and in
+  the FREQ menu an answer outside 1-3 for the IR method (KeyError) or a
+  non-number for NUMDERIV (ValueError) stops the questionnaire.
+- CI has a second job with ase, spglib and seekpath installed
+  (`requirements-optional.txt`), so the tests that need them run there.
+
 ## [1.1.2] - 2026-09-29
 
 Everything since 1.1.1. Decks MACE derives from a finished calculation now keep
