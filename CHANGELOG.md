@@ -74,6 +74,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for a layer group with an operation that reverses z a fractional z above
   1/2 is written below the layer. P1 slabs, polar layer groups, and atoms
   already within c/2 of the layer's origin are written as before.
+- **Non-centrosymmetric structures with a 2-fold axis get the
+  non-centrosymmetric SeeK-path path.** Without the seekpath library, the
+  band and phonon paths read inversion from the CRYSTAL output, and the
+  SYMMOPS check matched a run of six matrix elements that a 2-fold axis
+  along z (and, in the hexagonal frame, an in-plane 2-fold or -6) shares
+  with the inversion. Every such group - in the
+  primitive lattices 16-19, 25-34, 75-78, 81, 89-96, 99-106, 111-118,
+  149-154, 168-174, 177-190, 195, 198, 207, 208, 212, 213, 215 and 218 - was
+  called centrosymmetric and got the path without primed points. An operator
+  now counts as an inversion only when its whole rotation part is -I, and a
+  SYMMOPS table without one means no inversion. The space-group-number check
+  no longer reads a digit out of a symbol ("P N N 2" as group 2).
 
 ### Removed
 

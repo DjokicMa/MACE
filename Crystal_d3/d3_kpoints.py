@@ -2702,19 +2702,39 @@ def detect_inversion_from_crystal_output(output_file: str) -> Tuple[bool, str]:
         if 'SPACE GROUP (CENTROSYMMETRIC)' in content:
             return True, 'explicit_centrosymmetric'
         
-        # Method 2: Check symmetry operators for inversion
+        # Method 2: Check symmetry operators for inversion. Each row of the
+        # SYMMOPS table is "V INV", the nine rotation-matrix elements row by
+        # row, then three translators (CRYSTAL23 manual p. 387). An operator
+        # is an inversion - about the origin or, with a translator, about
+        # another point - exactly when its rotation part is -I. A 2-fold axis
+        # along z starts with the same two rows, so the rows must be read in
+        # full. The table lists the whole group, so no -I in it means none.
         symmop_section = re.search(
-            r'SYMMOPS.*?V\s+INV.*?\n(.*?)(?=\n\n|\Z)', 
+            r'SYMMOPS.*?V\s+INV.*?\n(.*?)(?=\n\s*\n|\Z)',
             content, re.DOTALL
         )
         if symmop_section:
-            operators = symmop_section.group(1).strip().split('\n')
-            for op in operators:
-                if '-1.00  0.00  0.00  0.00 -1.00  0.00' in op and '0.00 -1.00' in op:
+            n_ops = 0
+            for op in symmop_section.group(1).split('\n'):
+                fields = op.split()
+                if len(fields) != 14:
+                    continue
+                try:
+                    rotation = [float(v) for v in fields[2:11]]
+                except ValueError:
+                    continue
+                n_ops += 1
+                if all(abs(rotation[i] - (-1.0 if i in (0, 4, 8) else 0.0)) < 1e-3
+                       for i in range(9)):
                     return True, 'inversion_operator'
-        
-        # Method 3: Space group number lookup (if explicit statement not found)
-        sg_match = re.search(r'SPACE GROUP.*?N[o.]?\s*(\d+)', content)
+            if n_ops:
+                return False, 'no_inversion_operator'
+
+        # Method 3: Space group number, where the output prints one
+        # ("CORRESPONDING SPACE GROUP N.  47" for a slab). A 3D output names
+        # the group by symbol only, and a digit inside a symbol ("P N N 2")
+        # is not a space group number.
+        sg_match = re.search(r'SPACE GROUP\s+N[Oo]?\.\s*(\d+)', content)
         if sg_match:
             sg_num = int(sg_match.group(1))
             if sg_num in CENTROSYMMETRIC_SPACE_GROUPS:
