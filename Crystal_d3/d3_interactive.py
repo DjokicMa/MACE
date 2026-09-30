@@ -79,10 +79,15 @@ def yes_no_prompt(prompt: str, default: str = "yes") -> bool:
         prompt_str = f"{prompt} [y/N]: "
         default_val = False
 
-    response = _nav_read(prompt_str, valid_set={"y", "yes", "n", "no"}).strip().lower()
-    if not response:
-        return default_val
-    return response in ['y', 'yes']
+    while True:
+        response = _nav_read(prompt_str, valid_set={"y", "yes", "n", "no"}).strip().lower()
+        if not response:
+            return default_val
+        if response in ['y', 'yes']:
+            return True
+        if response in ['n', 'no']:
+            return False
+        print("Please respond with 'yes' or 'no' (or 'y' or 'n').")
 # Import generate_k_points function
 def generate_k_points(system: str, n_points: int = 30) -> List[Tuple[str, List[float]]]:
     """Generate high-symmetry k-points for band structure calculations."""

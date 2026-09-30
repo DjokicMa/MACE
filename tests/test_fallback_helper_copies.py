@@ -11,7 +11,7 @@ fix in place, so any later consolidation has to keep every one of them exactly:
   code a user gets when ``from mace.utils import ui`` fails.
 * ``yes_no_prompt``, which exists four times with four behaviours: the prompt
   suffix differs, which answers are accepted differs, and an unrecognised
-  answer re-asks in three of them but counts as "no" in d3_interactive.
+  answer re-asks in all of them (d3_interactive once counted it as "no").
 """
 import ast
 import builtins
@@ -197,14 +197,16 @@ def test_yes_no_prompt_d12_constants_default_and_eof(monkeypatch):
         d12_constants.yes_no_prompt("Go?")
 
 
-# d3_interactive: "<prompt> [Y/n]: ", stripped and lower-cased, asks ONCE: an
-# unrecognised answer is "no", whatever the default.
+# d3_interactive: "<prompt> [Y/n]: ", stripped and lower-cased, re-asks on an
+# unrecognised answer (it used to count one as "no", even with a "yes" default);
+# any default other than "yes" (case-insensitive) is "no".
 D3_CASES = [
     ("yes", [""], True), ("no", [""], False), ("Yes", [""], True),
     ("maybe", [""], False),
     ("yes", ["y"], True), ("yes", [" Y "], True), ("no", ["YES"], True),
     ("yes", ["n"], False), ("yes", ["no"], False),
-    ("yes", ["maybe"], False), ("yes", ["1"], False), ("yes", ["true"], False),
+    ("yes", ["maybe", ""], True), ("yes", ["1", "n"], False),
+    ("no", ["true", "y"], True), ("yes", ["ye", "yess", " yes "], True),
 ]
 
 
@@ -215,8 +217,10 @@ def test_yes_no_prompt_d3_interactive(default, answers, expected, monkeypatch, c
     calls = _nav_script(monkeypatch, d3_interactive, answers)
     assert d3_interactive.yes_no_prompt("Go?", default) is expected
     suffix = " [Y/n]: " if default.lower() == "yes" else " [y/N]: "
-    assert calls == [("Go?" + suffix, {"y", "yes", "n", "no"})]
-    assert capsys.readouterr() == ("", "")
+    assert calls == [("Go?" + suffix, {"y", "yes", "n", "no"})] * len(answers)
+    out = capsys.readouterr()
+    assert out == ("Please respond with 'yes' or 'no' (or 'y' or 'n').\n"
+                   * (len(answers) - 1), "")
 
 
 # Every recognised answer, under both defaults: each is read once and decides
@@ -244,6 +248,10 @@ def test_yes_no_prompt_d3_interactive_valid_answers(default, answer, expected,
 def test_yes_no_prompt_d3_interactive_eof(monkeypatch):
     import d3_interactive
     _nav_script(monkeypatch, d3_interactive, [EOFError()])
+    with pytest.raises(EOFError):
+        d3_interactive.yes_no_prompt("Go?")
+    # Re-asking after an unrecognised answer still stops at end of input.
+    _nav_script(monkeypatch, d3_interactive, ["maybe", EOFError()])
     with pytest.raises(EOFError):
         d3_interactive.yes_no_prompt("Go?")
 
