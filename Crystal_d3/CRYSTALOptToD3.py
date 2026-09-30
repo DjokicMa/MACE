@@ -107,6 +107,45 @@ _MAP_FRACTION_WORDS = {"F", "FRAC", "FRACTION", "FRACTIONAL"}
 _MAP_ANGSTROM_WORDS = {"C", "CART", "CARTESIAN", "ANGSTROM"}
 
 
+# Two-component (SOC) parents. The .out markers and the deck's TWOCOMPON block
+# are defined once, in mace/utils/calc_detection.py (standard library only);
+# run standalone, it is loaded by path, and a copy of this script with neither
+# beside it uses the same markers inline.
+try:
+    from mace.utils.calc_detection import is_two_component_deck, is_two_component_output
+except ImportError:
+    try:
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location(
+            "_mace_calc_detection",
+            Path(__file__).resolve().parent.parent / "mace" / "utils" / "calc_detection.py")
+        _calc_detection = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_calc_detection)
+        is_two_component_deck = _calc_detection.is_two_component_deck
+        is_two_component_output = _calc_detection.is_two_component_output
+    except Exception:  # pragma: no cover - flat copy without the mace package
+        def is_two_component_output(content: str) -> bool:
+            return re.search(r"^[ \t]*(?:TOTAL [XY]-COMP MAGNETIZATION[ \t]"
+                             r"|- NUMBER OF FULLY OCCUPIED/TOTAL SPINORS[ \t])",
+                             content, re.MULTILINE) is not None
+
+        def is_two_component_deck(content: str) -> bool:
+            return any(line.strip().upper() == "TWOCOMPON"
+                       for line in content.splitlines()[1:])
+
+# What properties can do with a two-component (2c-SCF) wavefunction. The
+# CRYSTAL23 manual, sec. 6.4 (p. 183), lists the properties keywords the 2c
+# implementation supports: NEWK, BAND, ECHG, ECH3, PPAN, PROPS2COMP, ANBD,
+# BWIDTH, DOSS and TOPO (and auxiliary ones), and p. 166 says "Any feature not
+# explicitly mentionned in this chapter is not supported" in 2c. BOLTZTRA
+# (TRANSPORT) and POT3/POTC (POTENTIAL) are not in the list.
+TWO_COMPONENT_D3_TYPES = {"BAND", "DOSS", "CHARGE", "ECH3", "ECHG"}
+_TWO_COMPONENT_REFUSED = {
+    "TRANSPORT": "BOLTZTRA", "POTENTIAL": "POT3/POTC", "POT3": "POT3", "POTC": "POTC",
+    "CHARGE+POTENTIAL": "POT3",
+}
+
+
 def _resolve_map_coord_type(value: Any) -> Optional[str]:
     """Map an answer/config value onto "FRACTION" or "ANGSTROM", else None."""
     word = str(value).strip().upper()
@@ -137,6 +176,21 @@ class D3Generator:
         # Parse output file for structure info
         self.structure_info = self._parse_output_file()
     
+    def parent_is_two_component(self) -> bool:
+        """Whether the parent run was a two-component (TWOCOMPON) SCF: its .out
+        has the lines CRYSTAL prints for a 2c-SCF, or its .d12 (same name,
+        same folder) has the TWOCOMPON block."""
+        try:
+            if is_two_component_output(self.input_file.read_text(errors="replace")):
+                return True
+        except OSError:
+            pass
+        deck = self.input_file.with_suffix(".d12")
+        try:
+            return deck.exists() and is_two_component_deck(deck.read_text(errors="replace"))
+        except OSError:
+            return False
+
     def _parse_output_file(self) -> Dict[str, Any]:
         """Extract structure information from output file."""
         info = {
@@ -1161,7 +1215,25 @@ class D3Generator:
         ui.rule(f"Generating {self.calc_type} D3 file")
         ui.info(f"Input file: {self.input_file}")
         ui.info(f"Base name: {self.base_name}")
-        
+
+        # A two-component (SOC) parent: only what manual sec. 6.4 supports.
+        if self.parent_is_two_component():
+            if self.calc_type not in TWO_COMPONENT_D3_TYPES:
+                record = _TWO_COMPONENT_REFUSED.get(self.calc_type, self.calc_type)
+                ui.err(f"Not writing a {self.calc_type} deck: {self.input_file.name} is a "
+                       f"two-component (SOC) run, and {record} is not among the properties "
+                       f"CRYSTAL23 supports from a 2c-SCF (manual sec. 6.4, p. 183: NEWK, "
+                       f"BAND, ECHG, ECH3, PPAN, PROPS2COMP, ANBD, BWIDTH, DOSS, TOPO).")
+                return None
+            ui.info(f"The parent is a two-component (SOC) run; {self.calc_type} is among "
+                    f"the properties the manual supports from it (sec. 6.4, p. 183).")
+            if self.calc_type in ("BAND", "DOSS"):
+                ui.warn("Warning: a 2c run has 2 x NAO spinor bands (manual p. 166), and "
+                        "its occupied bands number the electrons (p. 176). Band ranges "
+                        "MACE takes from NAO or the electron count assume a scalar run, "
+                        "and how properties numbers 2c bands is not in the manual: check "
+                        "the range in the deck (untested).")
+
         # Check if wavefunction exists and copy it
         # ALL calculation types need the wavefunction file
         if not self._copy_wavefunction():

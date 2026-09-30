@@ -137,6 +137,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whether it had SOC cannot be read there. An OPT or FREQ child of a SOC
   parent is refused, with no deck written: CRYSTAL23 has no geometry
   optimisation or frequency calculation in 2c (manual p. 166).
+- **Properties decks from a SOC parent are limited to what CRYSTAL supports
+  in 2c.** `opt2d3` (`Crystal_d3/CRYSTALOptToD3.py`) recognises a
+  two-component parent by the lines its .out prints for a 2c-SCF, or by its
+  .d12's TWOCOMPON block, and refuses TRANSPORT (BOLTZTRA) and POTENTIAL /
+  CHARGE+POTENTIAL (POT3, POTC), writing nothing: they are not among the
+  properties manual sec. 6.4 (p. 183) lists for a 2c-SCF solution, and "any
+  feature not explicitly mentionned in this chapter is not supported" in 2c
+  (p. 166). BAND, DOSS and CHARGE (ECH3) go ahead, with a warning for BAND
+  and DOSS that a 2c run has 2 x NAO spinor bands (p. 166), so a band range
+  taken from NAO or the electron count needs checking. Decks from scalar
+  parents are unchanged.
 
 ### Removed
 
