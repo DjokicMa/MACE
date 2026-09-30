@@ -93,14 +93,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CRYSTAL prints it ("P 4 21 2", not "P 42 1 2"), maps P-42c to 112 (not
   114), and has no duplicate key; every lookup already reached the right
   number through another table, so no other deck changes.
-- **The phonon fallback k-path table names only points it has.** Most F- and
-  I-centred cubic groups (196, 197, 199, 202-204, 206, 209-211, 214, 217, 219,
-  220, 226) got the simple-cubic path, and the monoclinic and triclinic paths
-  named points (M1, X, V, W, ...) with no coordinates, so their segments were
-  dropped. F and I cubic now get the fcc and bcc paths, and monoclinic and
-  triclinic use the points MACE's band-path code uses (CRYSTAL23 manual Table
-  14.1 for P monoclinic). The table is read only by `get_auto_phonon_path`,
-  which nothing calls today, so no deck changes.
 - **`copy_dependencies.py` copies the files it lists.** Its list still used
   the names from before the scripts moved into the `mace` package, and it
   looked for `Crystal_d12/` and `Crystal_d3/` inside `mace/`, so it reported
@@ -201,6 +193,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mace/workflow/check_workflows.py` (superseded by `mace status` and the
   queue manager's completion callback), `mace/utils/scf_settings_extractor.py`
   and `mace/utils/analyze_script_dependencies.py`.
+- The phonon fallback k-path tables `SPACEGROUP_TO_PATH` and
+  `HIGH_SYMMETRY_PATHS` (`Crystal_d12/d12_constants.py`). They gave one path
+  per crystal system whatever the lattice centring (C2/m the primitive
+  monoclinic path, Fmmm and Immm the primitive orthorhombic one, I4/mmm the
+  primitive tetragonal one, R-3m the hexagonal one), and their only reader was
+  a fallback in `d12_calc_freq.get_auto_phonon_path`, a function nothing in
+  MACE calls. Its coordinate paths now all come from the centring-aware
+  band-path code that its "vectors" format already used. No deck changes.
 
 ## [1.1.2] - 2026-09-29
 
