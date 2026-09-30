@@ -274,7 +274,15 @@ TWOC_FUNCTIONALS = {
 }
 TWOC_EXCHANGE = {"LDA", "VBH", "BECKE", "PBE", "PBESOL", "MPW91", "PWGGA", "SOGGA", "WCGGA"}
 TWOC_CORRELATION = {"PZ", "VBH", "VWN", "LYP", "P86", "PBE", "PBESOL", "PWGGA", "PWLSD", "WL"}
+# "<functional>-D3" keywords (manual sec. 5.1, p. 150) whose functional the
+# 2c-SCF accepts (ch. 6). On HPCC, PBE0-D3 and B3LYP-D3 2c runs printed
+# "DFT-D3(BJ) WITH AUTOMATIC PARAMETER SETUP" and a D3 energy. PW1PW is the
+# D3 keyword of mPW1PW91; PBE-D3 is PBE exchange and correlation.
+TWOC_D3_FUNCTIONALS = {"BLYP-D3", "PBE-D3", "B3LYP-D3", "PBE0-D3", "PW1PW-D3"}
 TWOC_DFT_KEYWORDS = {
+    # SPIN is not in ch. 6, but a 2c run accepts it (HPCC), and without
+    # effect: the 2c-SCF treats spin itself.
+    "SPIN",
     "HYBRID", "COLLINEAR", "NONCOLC", "NONCOLSF", "TOLM",
     "ANGULAR", "RADIAL", "BECKE", "SAVIN", "OLDGRID", "LGRID", "XLGRID", "XXLGRID",
     "RADSAFE", "TOLLDENS", "TOLLGRID", "BATCHPNT", "CHUNKS", "DISTGRID", "LIMBEK",
@@ -416,7 +424,7 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print) -> str:
                         problems.append(f"{word} {arg}")
                 elif word in TWOC_EXCHANGE | TWOC_CORRELATION and rest[j - 1].strip().upper() in ("EXCHANGE", "CORRELAT"):
                     pass
-                elif word not in TWOC_FUNCTIONALS and word not in TWOC_DFT_KEYWORDS:
+                elif word not in TWOC_FUNCTIONALS | TWOC_D3_FUNCTIONALS | TWOC_DFT_KEYWORDS:
                     problems.append(word)
             continue
         if word in _BLOCK3_OPENERS:

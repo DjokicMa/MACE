@@ -145,9 +145,10 @@ def test_the_soc_deck_reads_back_record_for_record():
 @pytest.mark.parametrize("change,why", [
     (lambda d: d.replace("PPAN\n", "OPTGEOM\nENDOPT\nPPAN\n"), "geometry optimization"),
     (lambda d: d.replace("PPAN\n", "FREQCALC\nEND\nPPAN\n"), "frequency calculation"),
-    (lambda d: d.replace("PBE0\n", "B3LYP-D3\n"), "B3LYP-D3"),
     (lambda d: d.replace("PBE0\n", "HSE06\n"), "HSE06"),
-    (lambda d: d.replace("PBE0\n", "SPIN\nPBE0\n"), "SPIN"),
+    (lambda d: d.replace("PBE0\n", "HSE06-D3\n"), "HSE06-D3"),
+    (lambda d: d.replace("PBE0\n", "M06-D3\n"), "M06-D3"),
+    (lambda d: d.replace("PPAN\n", "DFTD3\nEND\nPPAN\n"), "DFTD3"),
     (lambda d: d.replace("DIIS\n", "BROYDEN\n0.0001 50 2\n"), "BROYDEN"),
     (lambda d: d.replace("SCFDIR\n", "GUESSP\nSCFDIR\n"), "GUESSP"),
     (lambda d: d.replace("SCFDIR\n", "TWOCOMPON\nEND\nSCFDIR\n"), "already has a TWOCOMPON"),
@@ -168,6 +169,17 @@ def test_what_chapter_6_does_not_support_is_refused(change, why):
 def test_basis_input_soc_cannot_use_is_refused(deck, why):
     with pytest.raises(S.SocError, match=why):
         S.soc_deck(deck)
+
+
+@pytest.mark.parametrize("dft", ["SPIN\nPBE0", "PBE0-D3", "B3LYP-D3", "SPIN\nB3LYP-D3",
+                                 "PBE-D3", "BLYP-D3", "PW1PW-D3"])
+def test_spin_and_d3_are_accepted(dft):
+    """On HPCC a 2c run accepts SPIN (without effect), and PBE0-D3 and
+    B3LYP-D3 print "DFT-D3(BJ) WITH AUTOMATIC PARAMETER SETUP" and a D3
+    energy. The other -D3 keywords are the manual's (p. 150) whose
+    functional chapter 6 allows."""
+    soc = S.soc_deck(PBTE.replace("PBE0\n", dft + "\n"), log=lambda m: None)
+    assert f"DFT\n{dft}\nENDDFT\n" in soc and "TWOCOMPON\nSOC\nEND\n" in soc
 
 
 def test_exchange_and_correlation_keywords_from_the_list_are_accepted():
@@ -284,10 +296,11 @@ def test_soc_refusal_writes_no_deck_and_fails_the_file(opt2d12, capsys):
     assert not any(n.startswith(".") for n in os.listdir(decks["pbte"].parent))
 
 
-def test_soc_with_dispersion_is_refused(opt2d12, capsys):
+def test_soc_with_dispersion_writes_the_d3_functional(opt2d12):
     status, decks = opt2d12(["pbte"], soc=True, dispersion=True)
-    assert status == 1 and not decks["pbte"].exists()
-    assert "not supported in a two-component SCF" in capsys.readouterr().err
+    assert status == 0
+    deck = decks["pbte"].with_name("pbte_sp_PBE0-D3_optimized.d12").read_text()
+    assert "DFT\nPBE0-D3\n" in deck and "TWOCOMPON\nSOC\nEND\n" in deck
 
 
 # --- through cif2d12 -----------------------------------------------------------
