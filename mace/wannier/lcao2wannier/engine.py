@@ -541,7 +541,7 @@ class Wannier90Engine:
         print(f"{'=' * 70}")
 
         if method == 'scdm':
-            from lcao2wannier.band_selection import scdm_select_projections
+            from .band_selection import scdm_select_projections
             self.orbital_selection_result = scdm_select_projections(
                 self.eigenvectors_list,
                 self.S_k_list,

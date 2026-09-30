@@ -39,7 +39,7 @@ import copy
 import numpy as np
 from pathlib import Path
 
-from lcao2wannier import (
+from . import (
     parse_overlap_and_fock_matrices,
     parse_calculation_parameters,
     parse_atomic_basis_info,
@@ -52,16 +52,16 @@ from lcao2wannier import (
     parse_atoms_from_crystal_output,
     estimate_fermi_energy,
 )
-from lcao2wannier.parser import parse_overlap_and_fock_matrices_cached
-from lcao2wannier.projectability import select_bands_by_projectability, smart_select_bands
-from lcao2wannier.parser import parse_orbital_types
-from lcao2wannier.parser import parse_overlap_and_fock_matrices_streaming
-from lcao2wannier.utils import prune_zero_rvectors
-from lcao2wannier.basis_parser import parse_basis_shells, get_atom_list
-from lcao2wannier.valence_config import (
+from .parser import parse_overlap_and_fock_matrices_cached
+from .projectability import select_bands_by_projectability, smart_select_bands
+from .parser import parse_orbital_types
+from .parser import parse_overlap_and_fock_matrices_streaming
+from .utils import prune_zero_rvectors
+from .basis_parser import parse_basis_shells, get_atom_list
+from .valence_config import (
     build_target_mask, compute_num_wann, summarize_config,
 )
-from lcao2wannier.lcao_pdwf import (
+from .lcao_pdwf import (
     compute_lowdin_projectability, classify_bands, determine_windows,
     check_frozen_interlopers, check_band_count, print_pdwf_summary,
     ClassificationParams,
@@ -126,7 +126,7 @@ def _check_disentanglement(args, engine, stage):
     raises (a violation is reported, not fatal, so the user still gets files).
     """
     try:
-        from lcao2wannier.wannier_checks import check_seed_windows, format_report
+        from .wannier_checks import check_seed_windows, format_report
         win = f"{args.seedname}.win"
         eigs = getattr(engine, 'eigenvalues_list', None)
         if not os.path.exists(win) or not eigs:
@@ -437,7 +437,7 @@ def _apply_spread_window_assist(engine, args):
     if getattr(args, 'window_mode', 'manifold') == 'spread':
         return _apply_spread_window_assist_legacy(engine, args)
     try:
-        from lcao2wannier.window_assist import manifold_windows
+        from .window_assist import manifold_windows
     except Exception as exc:
         print(f"  ⚠ spread-window-assist unavailable: {exc}")
         return
@@ -481,8 +481,8 @@ def _apply_spread_window_assist_legacy(engine, args):
     if engine.selected_band_indices is None:
         return
     try:
-        from lcao2wannier.projectability import compute_band_projectability
-        from lcao2wannier.window_assist import spread_minimizing_windows
+        from .projectability import compute_band_projectability
+        from .window_assist import spread_minimizing_windows
     except Exception as exc:
         print(f"  ⚠ spread-window-assist unavailable: {exc}")
         return
@@ -794,7 +794,7 @@ def _apply_baseline_overrides(engine, args):
     run_baseline_dis_froz_proj) instead of the pre-disentangled hand-off.
     """
     import numpy as _np
-    from lcao2wannier.hybrid_pipeline import select_hybrid_parent_pool
+    from .hybrid_pipeline import select_hybrid_parent_pool
     num_wann = engine.num_wann
     n_target = int(_np.sum(engine.pdwf_target_mask))
     variant = getattr(args, 'baseline', 'dis-froz-proj')
@@ -846,7 +846,7 @@ def _apply_method_pdwf(engine, args, has_soc, lines):
     # Phase 1: Parse basis shells
     print("  Phase 1: Parsing basis set shells...")
     try:
-        from lcao2wannier.parser import parse_calculation_parameters
+        from .parser import parse_calculation_parameters
         params_calc = parse_calculation_parameters(lines)
         num_atoms_hint = params_calc.num_atoms
     except Exception:
@@ -953,7 +953,7 @@ def _apply_method_pdwf(engine, args, has_soc, lines):
         # the pre-check cannot drift from the mask rule it is predicting.
         _cap_deficit = False
         try:
-            from lcao2wannier.hybrid import (auto_trust_thresholds,
+            from .hybrid import (auto_trust_thresholds,
                                              select_pool_and_frozen)
             _pf = getattr(args, 'hybrid_p_froz', None)
             _pb = getattr(args, 'hybrid_p_froz_band', None)
@@ -987,7 +987,7 @@ def _apply_method_pdwf(engine, args, has_soc, lines):
                       f"< {_cov_min:.2f} with the standard valence config — "
                       f"the target "
                       f"is missing the conduction's orbital character.")
-            from lcao2wannier.channel_augment import augment_target_channels
+            from .channel_augment import augment_target_channels
             aug = augment_target_channels(
                 shells, target_mask, proj, eigenvalues, _ef,
                 engine.eigenvectors_list, engine.S_k_list, has_soc,
@@ -1035,7 +1035,7 @@ def _apply_method_pdwf(engine, args, has_soc, lines):
     print("\n  Phase 4: Classifying bands...")
     e_fermi = engine.e_fermi if engine.e_fermi is not None else 0.0
     if p_high == 'auto' or p_low == 'auto':
-        from lcao2wannier.lcao_pdwf import auto_classification_params
+        from .lcao_pdwf import auto_classification_params
         _params, _info = auto_classification_params(
             proj, eigenvalues, num_wann, e_fermi=e_fermi,
             fid_emax=getattr(args, 'hybrid_fid_emax', 8.0),
@@ -1071,7 +1071,7 @@ def _apply_method_pdwf(engine, args, has_soc, lines):
     if _os.environ.get('PDWF_DUMP'):
         _band_kw = {}
         try:
-            from lcao2wannier.band_plot import (detect_lattice_type,
+            from .band_plot import (detect_lattice_type,
                 get_kpath_for_lattice, generate_kpath, compute_band_structure,
                 compute_path_projectability)
             _lat = engine.lattice_vectors
@@ -1232,11 +1232,11 @@ def _apply_method_pdwf(engine, args, has_soc, lines):
     # classification hull.
     if (getattr(args, 'window_route', False) and windows.dis_froz_min is not None
             and str(getattr(args, 'hybrid_froz_emax', 'auto')).lower() != 'none'):
-        from lcao2wannier.hybrid import (auto_trust_thresholds,
+        from .hybrid import (auto_trust_thresholds,
                                          select_pool_and_frozen,
                                          degeneracy_regime,
                                          symmetrize_degenerate)
-        from lcao2wannier.hybrid_pipeline import resolve_frozen_ceiling
+        from .hybrid_pipeline import resolve_frozen_ceiling
         _fid = getattr(args, 'hybrid_fid_emax', 8.0)
         _pw = np.asarray(proj, float)
         _reg = degeneracy_regime(eigenvalues)
@@ -1459,7 +1459,7 @@ def _projections_from_selection(engine, lines, lattice_vectors, has_soc):
     if sel is None or len(sel) == 0:
         return None
     try:
-        from lcao2wannier.parser import parse_atomic_basis_info, parse_orbital_types
+        from .parser import parse_atomic_basis_info, parse_orbital_types
         info = parse_atomic_basis_info(lines)
         otypes = parse_orbital_types(lines, has_soc=False, num_atoms=info.num_atoms)
     except Exception:
@@ -1525,8 +1525,8 @@ def _projections_from_pdwf_config(engine, lines, lattice_vectors, args, has_soc)
     if getattr(engine, 'pdwf_target_mask', None) is None:
         return None
     try:
-        from lcao2wannier.parser import parse_atomic_basis_info
-        from lcao2wannier.valence_config import get_valence_l
+        from .parser import parse_atomic_basis_info
+        from .valence_config import get_valence_l
         info = parse_atomic_basis_info(lines)
         inv_T = np.linalg.inv(np.asarray(lattice_vectors, float).T)
     except Exception:
@@ -1919,7 +1919,7 @@ def stage1_create_win(args, _return_state=False):
     # Auto-detect kpoint path for band structure plots
     kpoint_path = None
     if args.bands_plot:
-        from lcao2wannier.win_file import (
+        from .win_file import (
             KPATH_HEXAGONAL_2D, KPATH_HEXAGONAL_3D, KPATH_SIMPLE_CUBIC,
             KPATH_FCC, KPATH_BCC
         )
@@ -2023,7 +2023,7 @@ def stage1_create_win(args, _return_state=False):
     _nnkp_ok = False
     if not getattr(args, 'no_internal_nnkp', False):
         try:
-            from lcao2wannier.kmesh import kmesh_get, write_nnkp
+            from .kmesh import kmesh_get, write_nnkp
             _kinfo = kmesh_get(np.asarray(engine.lattice_vectors, float),
                                np.asarray(engine.kpoints, float))
             write_nnkp(f"{args.seedname}.nnkp", engine.lattice_vectors,
@@ -2174,7 +2174,7 @@ def _apply_auto_window(seedname, froz_max_fixed=False):
     Port of wien2wannier's pdwf_optwin: Omega_I is gauge-invariant, so it is
     evaluated directly from the overlaps without a full Wannierisation.
     """
-    from lcao2wannier.spread import auto_window_from_seedname
+    from .spread import auto_window_from_seedname
     win_path = f"{seedname}.win"
     with open(win_path) as f:
         text = f.read()
@@ -2230,7 +2230,7 @@ def _attach_gto_basis(engine, args, lines):
     if getattr(args, 'mmn_method', 'analytic') == 'analytic' or args.method == 'hybrid':
         print("\nParsing GTO basis for analytic MMN...")
         try:
-            from lcao2wannier.gto_mmn import parse_gto_basis
+            from .gto_mmn import parse_gto_basis
             engine.gto_aos = parse_gto_basis(lines)
             _cut = getattr(args, 'gto_cutoff', None)
             if _cut is not None:
@@ -2360,14 +2360,14 @@ def _stage2_finalize(engine, args, lines):
             raise SystemExit(
                 "named --stage overlaps for --method hybrid requires "
                 "--mmn-method analytic, matching the hybrid parent metric")
-        from lcao2wannier.hybrid_pipeline import run_raw_hybrid_parent
+        from .hybrid_pipeline import run_raw_hybrid_parent
         run_raw_hybrid_parent(
             engine, args.seedname,
             pool_factor=getattr(args, 'hybrid_pool_cap', 1.5),
             verbose=True,
         )
     elif args.method == 'hybrid' and getattr(args, 'baseline', None):
-        from lcao2wannier.hybrid_pipeline import run_baseline_dis_froz_proj
+        from .hybrid_pipeline import run_baseline_dis_froz_proj
         for flag, name in ((getattr(args, 'dump_masks', None), '--dump-masks'),
                            (getattr(args, 'hybrid_report_json', None),
                             '--hybrid-report-json'),
@@ -2385,7 +2385,7 @@ def _stage2_finalize(engine, args, lines):
             verbose=True,
         )
     elif args.method == 'hybrid':
-        from lcao2wannier.hybrid_pipeline import run_hybrid
+        from .hybrid_pipeline import run_hybrid
         # The hybrid target is CHANNEL-derived: num_wann is however many AOs
         # the selected channel set contains, so an explicit --num-wann cannot
         # be honoured without inventing which AOs to add or drop. Silently
@@ -2869,7 +2869,7 @@ def stage3_symmetrize_hr(args):
       - CRYSTAL output file (to determine spin-orbit coupling)
       - wannier90_hr.dat (from Wannier90 run after Stage 2)
     """
-    from lcao2wannier.postprocess import (
+    from .postprocess import (
         enforce_hermiticity, enforce_time_reversal, read_hr_file, write_hr_file
     )
 
@@ -2957,19 +2957,19 @@ def stage4_plot_bands(args):
     Computes eigenvalues along a high-symmetry k-path and generates a
     two-panel plot with projectability coloring and projected DOS.
     """
-    from lcao2wannier.band_plot import (
+    from .band_plot import (
         run_band_structure, parse_custom_kpath, get_kpath_for_lattice,
         PlotConfig,
     )
-    from lcao2wannier.basis_parser import parse_basis_shells, get_atom_list
-    from lcao2wannier.valence_config import (
+    from .basis_parser import parse_basis_shells, get_atom_list
+    from .valence_config import (
         build_target_mask, compute_num_wann, summarize_config,
     )
-    from lcao2wannier.lcao_pdwf import (
+    from .lcao_pdwf import (
         compute_lowdin_projectability, classify_bands, determine_windows,
         ClassificationParams, print_pdwf_summary,
     )
-    from lcao2wannier.band_selection import estimate_fermi_energy
+    from .band_selection import estimate_fermi_energy
 
     print("=" * 80)
     print("STAGE 4: LCAO Band Structure Plot")

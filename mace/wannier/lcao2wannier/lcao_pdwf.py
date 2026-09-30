@@ -244,7 +244,7 @@ def auto_classification_params(
     trusted above the gate), in which case the caller falls back to the
     fixed defaults and says so.
     """
-    from lcao2wannier.hybrid import auto_trust_thresholds
+    from .hybrid import auto_trust_thresholds
     proj = np.asarray(proj, float)
     eigenvalues = np.asarray(eigenvalues, float)
     auto = auto_trust_thresholds(proj, eigenvalues, num_wann, e_fermi=e_fermi,
