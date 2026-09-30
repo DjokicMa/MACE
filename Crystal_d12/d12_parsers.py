@@ -40,12 +40,16 @@ LOW_DIM_GROUPS = {"SLAB": ("layer_group", 80), "POLYMER": ("rod_group", 99)}
 # opt2d12 never merges these into its settings.
 DECK_GEOMETRY_KEYS = (
     "cell_record", "cell_parameters", "n_atoms", "atoms",
+    "atom_coordinate_text", "atom_labels",
     "point_group", "rhombohedral_axes", "origin_shift", "geometry_unparsed",
 )
 
 # CrystalInputParser keys about the deck's own records rather than settings:
-# the FREQCALC records it could not read. opt2d12 never merges these either.
-DECK_TEXT_KEYS = ("freq_unparsed",)
+# records exactly as the deck spells them, for writing the same deck back, and
+# the FREQCALC records it could not read. opt2d12 never merges these either: a
+# derived deck carries the normalised forms ("external_basis_data"), as it
+# always has.
+DECK_TEXT_KEYS = ("title", "external_basis_text", "freq_unparsed")
 
 
 def rotation_matrix_to_xyz(rotation: List[List[float]], translation: List[float]) -> str:
@@ -1093,6 +1097,10 @@ class CrystalInputParser:
         with open(self.input_file, "r") as f:
             lines = f.readlines()
 
+        # The title record, as written (the deck writer names it after the file)
+        if lines:
+            self.data["title"] = lines[0].rstrip("\r\n")
+
         # Extract dimensionality and space group
         # Line 1 is the free-text title, never a keyword (see
         # _extract_optimization_settings).
@@ -1196,6 +1204,12 @@ class CrystalInputParser:
           conventional ``atom_number`` as written (e.g. 206 for an ECP C), the
           ``atomic_number`` (that modulo 100) and ``x``, ``y``, ``z`` as floats
           in the deck's own units.
+        - ``atom_coordinate_text``: each atom's ``[x, y, z]`` as the deck
+          spells them. The deck writer prints fractional coordinates as the
+          text it is given, so these are what reproduce the records exactly.
+        - ``atom_labels``: the last word of each atom record when it has more
+          than the four values CRYSTAL reads (MACE ends it with the element
+          symbol, or X when it was handed an ECP number such as 247), else None.
 
         Raises ValueError/IndexError on a record it cannot read (including a
         space group symbol it cannot map); the caller leaves the keys it has
@@ -1306,6 +1320,8 @@ class CrystalInputParser:
 
         n_atoms = int(records[j][0])
         atoms = []
+        text = []
+        labels = []
         for k in range(n_atoms):
             rec = records[j + 1 + k]
             number = int(rec[0])
@@ -1314,8 +1330,12 @@ class CrystalInputParser:
                 "atomic_number": number % 100,
                 "x": float(rec[1]), "y": float(rec[2]), "z": float(rec[3]),
             })
+            text.append(rec[1:4])
+            labels.append(rec[-1] if len(rec) > 4 else None)
         self.data["n_atoms"] = n_atoms
         self.data["atoms"] = atoms
+        self.data["atom_coordinate_text"] = text
+        self.data["atom_labels"] = labels
 
     @staticmethod
     def _scf_block_start(lines: List[str]) -> Optional[int]:
@@ -1431,6 +1451,11 @@ class CrystalInputParser:
                     line_content = lines[j].strip()
                     if line_content:
                         self.data["external_basis_data"].append(line_content)
+                # The same records as written (a basis file's own spacing),
+                # which is what writes the deck back byte for byte.
+                self.data["external_basis_text"] = [
+                    line.rstrip("\r\n") for line in lines[geometry_end + 1:external_basis_end]
+                ]
             return
 
         # If no "99 0" found, look for BASISSET keyword (internal basis).
