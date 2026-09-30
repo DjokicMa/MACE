@@ -62,7 +62,8 @@ def test_ecps_become_inpsoc_and_twocompon_goes_before_scfdir():
     j = soc.index("SCFDIR")
     assert soc[j - 3:j] == ["TWOCOMPON", "SOC", "END"]
     assert soc[soc.index("END", soc.index("99 0")) + 1:j - 3] == \
-        plain[plain.index("END", plain.index("99 0")) + 1:plain.index("SCFDIR")]
+        ["8 8" if ln == "8 16" else ln   # the Gilat net follows the Monkhorst net
+         for ln in plain[plain.index("END", plain.index("99 0")) + 1:plain.index("SCFDIR")]]
     assert soc[j:] == [ln for ln in plain[plain.index("SCFDIR"):]
                        if ln not in ("DIIS", "HISTDIIS", "100")]
     # geometry untouched
@@ -76,6 +77,23 @@ def test_diis_and_histdiis_are_left_out():
     soc = S.soc_deck(PBTE).split("\n")
     assert "DIIS" not in soc and "HISTDIIS" not in soc
     assert soc[soc.index("FMIXING") + 2:] == ["PPAN", "END", ""]
+
+
+@pytest.mark.parametrize("before,after", [
+    (["SHRINK", "8 16"], ["SHRINK", "8 8"]),
+    (["SHRINK", "12 12"], ["SHRINK", "12 12"]),
+    (["SHRINK", "0 20", "10 10 1"], ["SHRINK", "0 10", "10 10 1"]),   # SLAB
+    (["SHRINK", "0 24", "12 8 6"], ["SHRINK", "0 12", "12 8 6"]),     # P1
+])
+def test_the_gilat_net_is_the_monkhorst_net(before, after):
+    """fcc Au in 2c with SHRINK 12 24 never converged (charge normalization
+    factor 1.35-1.69); 12 12 converged (HPCC)."""
+    deck = PBTE.replace("SHRINK\n8 16\n", "\n".join(before) + "\n")
+    notes = []
+    soc = S.soc_deck(deck, log=notes.append).split("\n")
+    i = soc.index("SHRINK")
+    assert soc[i:i + len(after)] == after
+    assert bool(notes) == (before != after)
 
 
 def test_all_electron_atoms_keep_their_basis():

@@ -337,7 +337,7 @@ def _basis_block_span(lines: List[str], i: int) -> Tuple[int, int, int]:
     return ecp_start, ecp_end, i
 
 
-def soc_deck(deck: str, soscale: float = 1.0) -> str:
+def soc_deck(deck: str, soscale: float = 1.0, log=print) -> str:
     """Turn a finished single-point MACE deck into a 2c-SCF SOC deck.
 
     Every atom whose basis block carries an INPUT ECP (conventional atomic
@@ -437,8 +437,32 @@ def soc_deck(deck: str, soscale: float = 1.0) -> str:
         raise SocError("no SCFDIR record to place the TWOCOMPON block before")
 
     rest = rest[:scfdir] + ["TWOCOMPON", "SOC", "END"] + rest[scfdir:]
-    out += _strip_records(rest)
+    out += _monkhorst_equals_gilat(_strip_records(rest), log)
     return "\n".join(out) + "\n"
+
+
+def _monkhorst_equals_gilat(block3: List[str], log) -> List[str]:
+    """block3 with the SHRINK Gilat net (ISP) set equal to the Monkhorst net.
+
+    A 2c-SCF of fcc Au with SHRINK 12 24 never converged (charge
+    normalization factor 1.35-1.69) and converged with 12 12 (HPCC). The
+    directional form "0 ISP" / "IS1 IS2 IS3" (every SLAB, POLYMER and P1 deck)
+    keeps its own mesh and gets ISP = the largest ISi."""
+    out = list(block3)
+    for i, ln in enumerate(out):
+        if ln.strip().upper() != "SHRINK":
+            continue
+        record = out[i + 1].split()
+        if record[0] == "0":
+            isp = str(max(int(k) for k in out[i + 2].split()))
+            new = f"0 {isp}"
+        else:
+            new = f"{record[0]} {record[0]}"
+        if out[i + 1].strip() != new:
+            log(f"SOC deck: SHRINK {out[i + 1].strip()} -> {new} "
+                f"(Gilat net equal to the Monkhorst net)")
+            out[i + 1] = new
+    return out
 
 
 def _strip_records(block3: List[str]) -> List[str]:
@@ -460,9 +484,10 @@ class SocDeckBuffer(io.StringIO):
     """Collects a deck being written so soc_deck can rewrite it before it
     reaches the atomic_deck file; ``discard`` is passed through."""
 
-    def __init__(self, deck_file):
+    def __init__(self, deck_file, log=print):
         super().__init__()
         self._deck = deck_file
+        self._log = log
 
     def discard(self):
         self._deck.discard()
@@ -470,7 +495,7 @@ class SocDeckBuffer(io.StringIO):
     def finish(self, soscale: float = 1.0) -> Optional[str]:
         """Write the SOC deck; on refusal discard it and return the reason."""
         try:
-            self._deck.write(soc_deck(self.getvalue(), soscale))
+            self._deck.write(soc_deck(self.getvalue(), soscale, log=self._log))
             return None
         except SocError as exc:
             self._deck.discard()
