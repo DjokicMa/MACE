@@ -478,6 +478,11 @@ for with `"soc": true` in a cif2d12 options file or an opt2d12 template.
   but aborts in the first SCF cycles on MACE's default 10 10, and on 11 11
   ("ERROR **** ZERO **** FERMI ENERGY NOT IN INTERVAL"); SMEAR 0.005 lets
   10 10 converge.
+- A parent deck with a TWOCOMPON block holding SOC makes the `opt2d12` child a
+  SOC deck too (with a note) unless the template sets `"soc": false`; the
+  parent's INPSOC records are kept when they are exactly MACE's. A scalar child
+  of a SOC parent gets a warning; an OPT or FREQ child of a SOC parent is
+  refused (manual p. 166).
 - Refuses, writing no deck: OPT/FREQ and other non-single-point runs,
   functionals and keywords manual chapter 6 does not list (including a DFTD3
   block), `BASISSET`, and ECPs that are not a spin-orbit ECP's scalar part.

@@ -346,6 +346,142 @@ def test_soc_with_dispersion_writes_the_d3_functional(opt2d12):
     assert "DFT\nPBE0-D3\n" in deck and "TWOCOMPON\nSOC\nEND\n" in deck
 
 
+# --- a SOC parent deck, read by the real parser ----------------------------------
+
+# The parent: the SOC deck soc_deck writes for PbTe (INPSOC records, TWOCOMPON).
+SOC_PARENT = S.soc_deck(PBTE, log=lambda m: None)
+
+
+def _basis(deck):
+    lines = deck.split("\n")
+    end = lines.index("END")
+    return lines[end + 1:lines.index("99 0")]
+
+
+def test_the_parser_reads_a_soc_deck_and_keeps_its_inpsoc_basis(tmp_path):
+    from d12_parsers import CrystalInputParser
+    path = tmp_path / "pbte.d12"
+    path.write_text(SOC_PARENT)
+    data = CrystalInputParser(str(path)).parse()
+    assert data["soc"] is True and data["two_component"] is True
+    assert data["basis_set_type"] == "EXTERNAL"
+    assert data["external_basis_data"] == [ln.strip() for ln in _basis(SOC_PARENT) if ln.strip()]
+    assert data["external_basis_data"].count("INPSOC") == 2
+    assert data["k_points"] == "8 8" and data["scf_settings"]["fmixing"] == 50
+    # a scalar deck gets neither key
+    path.write_text(PBTE)
+    data = CrystalInputParser(str(path)).parse()
+    assert "soc" not in data and "two_component" not in data
+
+
+def test_the_output_parser_marks_a_two_component_run(tmp_path, monkeypatch):
+    from d12_parsers import CrystalOutputParser
+    monkeypatch.setattr(CrystalOutputParser, "_extract_geometry", lambda self, c: None)
+    out = tmp_path / "x.out"
+    # lines of a real fcc Au 2c-SCF (HPCC)
+    out.write_text(" CHARGE NORMALIZATION FACTOR   1.00000000\n"
+                   " TOTAL X-COMP MAGNETIZATION    0.00000001\n"
+                   " - NUMBER OF FULLY OCCUPIED/TOTAL SPINORS -    12 /     70\n")
+    assert CrystalOutputParser(str(out)).parse()["two_component"] is True
+    # a real 1c run
+    out.write_text(METAL_OUT)
+    assert "two_component" not in CrystalOutputParser(str(out)).parse()
+
+
+def test_soc_deck_keeps_inpsoc_records_it_wrote():
+    notes = []
+    again = S.soc_deck(SOC_PARENT.replace("TWOCOMPON\nSOC\nEND\n", ""), log=notes.append)
+    assert _basis(again) == _basis(SOC_PARENT)
+    assert sum("keeps the INPSOC" in n for n in notes) == 2
+
+
+@pytest.mark.parametrize("change", [
+    lambda d: d.replace("INTERNAL 1.0", "INTERNAL 2.0", 1),
+    lambda d: d.replace("INTERNAL 1.0", "COLUMBUS 1.0", 1),
+    lambda d: d.replace(S.inpsoc_records(S.load_so_ecp(82), 82)[3],
+                        S.inpsoc_records(S.load_so_ecp(82), 82)[3].replace("0.000000", "0.100000", 1), 1),
+], ids=["soscale", "convention", "numbers"])
+def test_an_inpsoc_mace_did_not_write_is_refused(change):
+    deck = change(SOC_PARENT.replace("TWOCOMPON\nSOC\nEND\n", ""))
+    with pytest.raises(S.SocError, match="INPSOC ECP is not the spin-orbit ECP"):
+        S.soc_deck(deck, log=lambda m: None)
+
+
+@pytest.fixture
+def opt2d12_soc_parent(tmp_path, monkeypatch):
+    """opt2d12 on a real SOC parent .d12 (the .out is stubbed)."""
+    monkeypatch.setattr(M, "CrystalOutputParser",
+                        lambda p: _Parser(str(p).replace("socpbte", "pbte"), "out"))
+    monkeypatch.setattr(sys, "stdin", _NoTTY())
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "socpbte.out").write_text("")
+    (tmp_path / "socpbte.d12").write_text(SOC_PARENT)
+
+    def run(**template):
+        base = {"calculation_type": "SP", "basis_set": M.PARENT_BASIS_MARKER,
+                "basis_set_type": "EXTERNAL", "use_original_external_basis": True,
+                "has_original_external_basis": True}
+        base.update(template)
+        (tmp_path / "t.json").write_text(json.dumps(base))
+        monkeypatch.setattr(sys, "argv", ["CRYSTALOptToD12.py", "--out-file", "socpbte.out",
+                                          "--config-file", "t.json", "--output-dir", "sp",
+                                          "--yes"])
+        try:
+            M.main()
+            status = 0
+        except SystemExit as e:
+            status = e.code
+        decks = list((tmp_path / "sp").glob("*.d12")) if (tmp_path / "sp").exists() else []
+        return status, decks
+    return run
+
+
+def test_a_child_of_a_soc_parent_is_a_soc_deck(opt2d12_soc_parent, capsys):
+    status, decks = opt2d12_soc_parent()
+    assert status == 0 and len(decks) == 1
+    text = decks[0].read_text()
+    assert "TWOCOMPON\nSOC\nEND\nSCFDIR\n" in text and "DIIS" not in text
+    # the INPSOC records round-trip (the parser strips each record, as for any
+    # external basis)
+    assert _basis(text) == [ln.strip() for ln in _basis(SOC_PARENT)]
+    out = capsys.readouterr().out
+    assert "the parent is a two-component SOC run, so this deck is one too" in out
+
+
+def test_soc_false_in_the_template_writes_a_scalar_child_with_a_warning(opt2d12_soc_parent, capsys):
+    status, decks = opt2d12_soc_parent(soc=False)
+    assert status == 0 and len(decks) == 1
+    text = decks[0].read_text()
+    assert "TWOCOMPON" not in text
+    err = capsys.readouterr().err
+    assert "the parent is a two-component run, but this deck is scalar" in err
+    assert "INPSOC" in err and "untested" in err
+
+
+def test_an_optimisation_of_a_soc_parent_is_refused(opt2d12_soc_parent, capsys):
+    status, decks = opt2d12_soc_parent(calculation_type="OPT")
+    assert status == 1 and decks == []
+    assert "geometry optimization (OPTGEOM) is not available" in capsys.readouterr().err
+
+
+def test_a_frequency_run_of_a_soc_parent_is_refused(opt2d12_soc_parent, capsys):
+    """No frequency calculation in the two-component spinor basis (p. 166)."""
+    status, decks = opt2d12_soc_parent(calculation_type="FREQ")
+    assert status == 1 and decks == []
+    assert "frequency calculation (FREQCALC) is not available" in capsys.readouterr().err
+
+
+def test_a_parent_known_as_2c_only_from_its_out_gives_a_scalar_deck_with_a_warning(
+        opt2d12, monkeypatch, capsys):
+    out, deck = PARENTS["pbte"]
+    monkeypatch.setitem(PARENTS, "pbte", (dict(out, two_component=True), deck))
+    status, decks = opt2d12(["pbte"])
+    assert status == 0 and "TWOCOMPON" not in decks["pbte"].read_text()
+    err = capsys.readouterr().err
+    assert "the parent is a two-component run, but this deck is scalar" in err
+    assert "no SOC could be read from a parent .d12" in err
+
+
 # --- through cif2d12 -----------------------------------------------------------
 
 AU_CIF = """data_Au

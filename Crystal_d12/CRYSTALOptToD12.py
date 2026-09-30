@@ -250,6 +250,9 @@ TEMPLATE_STRUCTURE_DATA_KEYS = (
     "primitive_coordinates", "crystallographic_coordinates",
     "optimization_content", "symmetry_operations",
     "external_basis_data", "external_basis_info",
+    # Whether this structure's parent was a two-component run (its "soc",
+    # the setting, is kept).
+    "two_component",
 )
 
 
@@ -602,6 +605,25 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         if refusal:
             _fail(refusal, f"\nNot writing {os.path.basename(output_file)}: {refusal}")
             return False
+
+    # A parent that was a two-component run (its deck's TWOCOMPON block or its
+    # .out's 2c headers, read by the parsers). Its "soc" carries over to this
+    # deck unless the template says "soc": false; either way the user is told.
+    if settings.get("two_component"):
+        if settings.get("soc"):
+            ui.info("  SOC: the parent is a two-component SOC run, so this deck is one too "
+                    "(\"soc\": false in the template writes a scalar deck)")
+        else:
+            reason = ("the template sets \"soc\": false" if "soc" in settings else
+                      "no SOC could be read from a parent .d12 - none, or no SOC in its "
+                      "TWOCOMPON block; \"soc\": true in the template writes a SOC deck")
+            ui.warn(f"  Warning: the parent is a two-component run, but this deck is "
+                    f"scalar ({reason})")
+            if settings.get("use_original_external_basis") and any(
+                    str(line).strip().upper() == "INPSOC" for line in external_basis_data or []):
+                ui.warn("  Warning: its basis keeps the parent's INPSOC spin-orbit ECPs; "
+                        "what a one-component SCF does with a SOREP is not in the "
+                        "CRYSTAL23 manual (untested)")
 
     with atomic_deck(output_file) as f:
         if settings.get("soc"):

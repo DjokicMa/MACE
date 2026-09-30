@@ -28,6 +28,7 @@ from d12_constants import (
     mace_functional_name,
     CUSTOM_FUNCTIONAL,
 )
+from soc_ecp import is_spin_orbit_deck, is_two_component_deck, is_two_component_output
 
 # The group record a SLAB / POLYMER deck carries, and its range (CRYSTAL23
 # manual Appendix A.2: 80 layer groups; A.3: 99 rod groups). The record is
@@ -205,6 +206,11 @@ class CrystalOutputParser:
 
         # Extract calculation settings
         self._extract_settings(lines)
+
+        # A two-component run (its .out headers). Whether it had SOC is in its
+        # deck, not here; the key is set only for such a run.
+        if is_two_component_output(content):
+            self.data["two_component"] = True
 
         return self.data
 
@@ -1169,6 +1175,15 @@ class CrystalInputParser:
         scf_settings = self._extract_scf_block_settings(lines)
         if scf_settings:
             self.data["scf_settings"] = scf_settings
+
+        # A two-component deck (TWOCOMPON block), with SOC in it: a deck
+        # derived from it is written as a SOC deck too, unless the template
+        # says "soc": false. Set only for such a deck.
+        content = "".join(lines)
+        if is_two_component_deck(content):
+            self.data["two_component"] = True
+            if is_spin_orbit_deck(content):
+                self.data["soc"] = True
 
         return self.data
 

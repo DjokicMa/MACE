@@ -43,6 +43,49 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+
+# Telling a two-component run from its deck or .out. Defined once in
+# mace/utils/calc_detection.py (standard library only); a standalone run loads
+# it by path, and a flat copy without the mace package uses the same tests
+# inline.
+try:
+    from mace.utils.calc_detection import (is_spin_orbit_deck, is_two_component_deck,
+                                           is_two_component_output)
+except ImportError:
+    try:
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location(
+            "_mace_calc_detection",
+            os.path.join(_HERE, "..", "mace", "utils", "calc_detection.py"))
+        _calc_detection = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_calc_detection)
+        is_spin_orbit_deck = _calc_detection.is_spin_orbit_deck
+        is_two_component_deck = _calc_detection.is_two_component_deck
+        is_two_component_output = _calc_detection.is_two_component_output
+    except Exception:  # pragma: no cover - flat copy without the mace package
+        def _twocompon_records(content):
+            records = None
+            for line in content.splitlines()[1:]:
+                record = line.strip().upper()
+                if records is None:
+                    records = set() if record == "TWOCOMPON" else None
+                elif record in ("END", "ENDTWO"):
+                    return records
+                else:
+                    records.add(record)
+            return records
+
+        def is_two_component_deck(content):
+            return _twocompon_records(content) is not None
+
+        def is_spin_orbit_deck(content):
+            return "SOC" in (_twocompon_records(content) or ())
+
+        def is_two_component_output(content):
+            return re.search(r"^[ \t]*(?:TOTAL [XY]-COMP MAGNETIZATION[ \t]"
+                             r"|- NUMBER OF FULLY OCCUPIED/TOTAL SPINORS[ \t])",
+                             content, re.MULTILINE) is not None
+
 SOPSEUD_DIR = os.path.join(_HERE, "..", "Crystal_d3", "Archived", "basis", "sopseud")
 STUTTGART_DIR = os.path.join(_HERE, "basis_sets", "stuttgart")
 
@@ -395,7 +438,14 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print,
             ecp_start, ecp_end, nxt = _basis_block_span(lines, i)
         except (ValueError, IndexError):
             raise SocError(f"could not read the basis-set input at line {i + 1}: {lines[i]!r}")
-        if ecp_end > ecp_start:
+        if ecp_end > ecp_start and lines[ecp_start].strip().upper() == "INPSOC" \
+                and 200 < number < 300:
+            # A deck derived from a SOC deck carries the INPSOC records already.
+            out += [lines[i]] + _kept_inpsoc(number - 200, lines[ecp_start:ecp_end],
+                                             soscale, log)
+            out += lines[ecp_end:nxt]
+            ecp_atoms += 1
+        elif ecp_end > ecp_start:
             if lines[ecp_start].strip().upper() != "INPUT" or not 200 < number < 300:
                 raise SocError(
                     f"atom {number}: only an ECP entered with INPUT can be given its "
@@ -459,6 +509,27 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print,
         rest = _with_smear(rest, smear, log)
     out += _scf_convergence(rest, log, fmixing)
     return "\n".join(out) + "\n"
+
+
+def _kept_inpsoc(z: int, records: List[str], soscale: float, log) -> List[str]:
+    """The INPSOC records of a deck derived from a SOC deck, kept as they are
+    when they are the ones soc_ecp_records writes for ``z`` - same numbers,
+    INTERNAL convention, same SOSCALE. Anything else is refused: MACE does not
+    take over an INPSOC potential it did not write."""
+    ecp = load_so_ecp(z)
+    try:
+        name, scale = records[1].split()[:2]
+        same = (name.upper() == "INTERNAL" and float(scale) == soscale
+                and parse_inpsoc(records) == parse_inpsoc(inpsoc_records(ecp, z, soscale)))
+    except (ValueError, IndexError, SocError):
+        same = False
+    if not same:
+        raise SocError(
+            f"{ecp.symbol} (Z={z}): the deck's INPSOC ECP is not the spin-orbit ECP "
+            f"{200 + z}.mol as MACE writes it (INTERNAL, SOSCALE {soscale}); MACE does "
+            f"not take over an INPSOC potential it did not write")
+    log(f"SOC deck: {ecp.symbol} keeps the INPSOC spin-orbit ECP it already has")
+    return list(records)
 
 
 def _monkhorst_equals_gilat(block3: List[str], log) -> List[str]:

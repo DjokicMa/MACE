@@ -125,6 +125,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (manual p. 170) with SOC in it (p. 175). The calculation type stays SP; the
   property extractor stores `scf_two_component` = True with the other `scf_*`
   flags of such a run, and nothing for any other run.
+- **A deck derived from a SOC deck is a SOC deck too, for what 2c allows.**
+  The .d12 parser recognises a parent deck's TWOCOMPON block with SOC in it,
+  and `opt2d12` then writes the child as a SOC deck (saying so) unless the
+  template sets `"soc": false`, which writes a scalar deck with a warning -
+  also that its basis keeps the parent's INPSOC records, whose use in a 1c
+  SCF the manual does not describe. The parent's INPSOC records are kept when
+  they are exactly the ones MACE writes (same numbers, INTERNAL, same
+  SOSCALE) and refused otherwise. A parent known only from a 2c .out (see
+  `is_two_component_output`) gives a scalar deck with a warning, since
+  whether it had SOC cannot be read there. An OPT or FREQ child of a SOC
+  parent is refused, with no deck written: CRYSTAL23 has no geometry
+  optimisation or frequency calculation in 2c (manual p. 166).
 
 ### Removed
 
