@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Simple cubic groups 207-230 get SeeK-path's cP2 path.** Without the
+  seekpath library every primitive cubic group took the cP1 path, whose last
+  segment M-X_1 belongs to groups 195-206 only. P432, P-43m, Pm-3m and the
+  other groups 207-230 now take cP2 (cP2_noinv when non-centrosymmetric), as
+  SeeK-path does.
 - **Static SeeK-path titles name the segments the deck writes.** Without the
   seekpath library, the title labels of the P-1 (aP3), C-centred monoclinic
   (mS1: C2, Cm, C2/m, ...), F-orthorhombic (oF1-oF3: Fmmm, Fddd), I-tetragonal

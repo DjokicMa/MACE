@@ -1251,8 +1251,10 @@ def get_extended_bravais(sg: int, lat: str,
         
     # Cubic
     elif 195 <= sg <= 230:
+        # SeeK-path (HPKOT): cP1 for groups 195-206, cP2 for 207-230
+        simple_cubic = "cP1" if sg <= 206 else "cP2"
         if lat == "P":
-            return "cP1"
+            return simple_cubic
         elif lat == "F":
             # Distinguish cF1 vs cF2 based on space group
             return determine_cubic_f_variant(sg)
@@ -1260,7 +1262,7 @@ def get_extended_bravais(sg: int, lat: str,
             # Distinguish cI1 vs cI2 based on space group
             return determine_cubic_i_variant(sg)
         else:
-            return "cP1"
+            return simple_cubic
             
     # Default
     return "aP1"
