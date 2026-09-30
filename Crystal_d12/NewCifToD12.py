@@ -345,6 +345,7 @@ def parse_cif(cif_file, interactive=None):
             "cif_atom_symbols": raw_records[0] if raw_records else None,
             "cif_atom_positions": raw_records[1] if raw_records else None,
             "cif_symops": cif_symops,
+            "cif_lists_symops": _cif_lists_symops(cif_file),
             "name": os.path.basename(cif_file).replace(".cif", ""),
         }
 
@@ -681,6 +682,88 @@ def _parse_cif_atom_site_records(cif_file):
         return None
     except Exception:
         return None
+
+
+def _cif_lists_symops(cif_file):
+    """True when the CIF spells out its symmetry operators.
+
+    Without such a loop ASE builds the operators from the space-group number
+    alone, in origin choice 1 for the groups that have two origins.
+    """
+    try:
+        with open(cif_file, "r", errors="ignore") as f:
+            text = f.read().lower()
+    except OSError:
+        return False
+    return ("_symmetry_equiv_pos_as_xyz" in text
+            or "_space_group_symop_operation_xyz" in text)
+
+
+def deck_origin_choice(spacegroup, positions, origin_setting="AUTO"):
+    """The ITA origin choice (1 or 2) a deck for these atoms declares.
+
+    Only the space groups with two origins have a choice; None otherwise.
+    CRYSTAL's IFSO = 0 ("0 0 0") takes origin choice 2 and IFSO = 1 ("0 0 1")
+    origin choice 1 (manual p. 20, and the two diamond decks on p. 373).
+    With origin_setting AUTO, Fd-3m atoms at (0, 0, 0) but none at
+    (1/8, 1/8, 1/8) are read as origin choice 1; everything else as 2.
+    """
+    if spacegroup not in MULTI_ORIGIN_SPACEGROUPS:
+        return None
+    spg_info = MULTI_ORIGIN_SPACEGROUPS[spacegroup]
+    if origin_setting == "ALTERNATE" and "alt_crystal_code" in spg_info:
+        return 1
+    if origin_setting == "AUTO" and spacegroup == 227:
+        std_pos = spg_info.get("default_pos", (0.125, 0.125, 0.125))
+        alt_pos = spg_info.get("alt_pos", (0.0, 0.0, 0.0))
+        std_detected = any(
+            all(abs(pos[k] - std_pos[k]) < 0.01 for k in range(3)) for pos in positions
+        )
+        alt_detected = any(
+            all(abs(pos[k] - alt_pos[k]) < 0.01 for k in range(3)) for pos in positions
+        )
+        if alt_detected and not std_detected:
+            return 1
+    return 2
+
+
+def expand_to_p1(cif_data, options):
+    """cif_data with every atom of the cell the symmetrised deck describes.
+
+    ASE expands the CIF's atom records with the CIF's own operators when it
+    lists them, and otherwise with origin choice 1 of the space group. For a
+    group with two origins whose deck is written in origin choice 2 (diamond
+    at (1/8, 1/8, 1/8) in Fd-3m, CRYSTAL's own example) that is a different
+    structure: 16 atoms at Fd-3m 16c instead of diamond's 8. Re-expand the
+    CIF's records in the origin the deck declares - where that origin is
+    known: origin_setting STANDARD, or Fd-3m, whose origin AUTO reads from
+    the atoms. For the other groups AUTO is a bare default, and ASE's
+    expansion is left as it was.
+    """
+    if cif_data.get("cif_lists_symops", True):
+        return cif_data
+    raw_syms = cif_data.get("cif_atom_symbols")
+    raw_pos = cif_data.get("cif_atom_positions")
+    spacegroup = cif_data.get("spacegroup")
+    if not raw_syms or not raw_pos:
+        return cif_data
+    origin_setting = options.get("origin_setting", "AUTO")
+    if not (origin_setting == "STANDARD"
+            or (origin_setting == "AUTO" and spacegroup == 227)):
+        return cif_data
+    if deck_origin_choice(spacegroup, raw_pos, origin_setting) != 2:
+        return cif_data
+    from ase.spacegroup import crystal
+
+    atoms = crystal(
+        raw_syms, raw_pos, spacegroup=spacegroup, setting=2,
+        cellpar=[cif_data[k] for k in ("a", "b", "c", "alpha", "beta", "gamma")],
+    )
+    expanded = dict(cif_data)
+    expanded["symbols"] = atoms.get_chemical_symbols()
+    expanded["atomic_numbers"] = [SYMBOL_TO_NUMBER[s] for s in expanded["symbols"]]
+    expanded["positions"] = atoms.get_scaled_positions()
+    return expanded
 
 
 def verify_and_reduce_to_asymmetric_unit(
@@ -1285,32 +1368,12 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
         elif (
             origin_setting == "AUTO" and spacegroup == 227
         ):  # Special handling for Fd-3m
-            # Try to detect based on atom positions
-            std_pos = spg_info.get("default_pos", (0.125, 0.125, 0.125))
+            # Try to detect based on atom positions (shared with the P1
+            # expansion, which must describe the same structure)
             alt_pos = spg_info.get("alt_pos", (0.0, 0.0, 0.0))
+            alt_origin = deck_origin_choice(spacegroup, positions, origin_setting) == 1
 
-            # Check if any atoms are near the standard position
-            std_detected = False
-            alt_detected = False
-
-            for pos in positions:
-                # Check for atoms near standard position (1/8, 1/8, 1/8)
-                if (
-                    abs(pos[0] - std_pos[0]) < 0.01
-                    and abs(pos[1] - std_pos[1]) < 0.01
-                    and abs(pos[2] - std_pos[2]) < 0.01
-                ):
-                    std_detected = True
-
-                # Check for atoms near alternate position (0, 0, 0)
-                if (
-                    abs(pos[0] - alt_pos[0]) < 0.01
-                    and abs(pos[1] - alt_pos[1]) < 0.01
-                    and abs(pos[2] - alt_pos[2]) < 0.01
-                ):
-                    alt_detected = True
-
-            if alt_detected and not std_detected:
+            if alt_origin:
                 # If only alternate position atoms found, use alternate origin
                 origin_directive = spg_info["alt_crystal_code"]
                 ui.print(
@@ -2010,7 +2073,9 @@ def process_cifs(cif_directory, options, output_directory=None, interactive=None
 
             # Apply symmetry handling
             if options["symmetry_handling"] == "P1":
-                # If P1 symmetry requested, override the spacegroup
+                # If P1 symmetry requested, write every atom of the cell the
+                # symmetrised deck would describe, then override the spacegroup
+                cif_data = expand_to_p1(cif_data, options)
                 cif_data["spacegroup"] = 1
                 ui.print("Using P1 symmetry (no symmetry operations, all atoms explicit)")
             elif options["symmetry_handling"] == "SPGLIB":

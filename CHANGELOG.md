@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A P1 deck from an Fd-3m CIF holds the structure the CIF describes.** A
+  CIF with no symmetry-operator loop is expanded by ASE in origin choice 1, but
+  the converter reads Fd-3m atoms at (1/8, 1/8, 1/8) as origin choice 2 - as
+  the symmetrised deck ("0 0 0") and CRYSTAL's own diamond example do. The
+  P1 deck of such a diamond CIF therefore held 16 atoms 1.26 A apart instead
+  of diamond's 8. The P1 expansion now uses the origin the symmetrised deck
+  declares for Fd-3m, and for any two-origin group when origin_setting is
+  STANDARD. CIFs that list their operators are expanded as before.
 - **Simple cubic groups 207-230 get SeeK-path's cP2 path.** Without the
   seekpath library every primitive cubic group took the cP1 path, whose last
   segment M-X_1 belongs to groups 195-206 only. P432, P-43m, Pm-3m and the
