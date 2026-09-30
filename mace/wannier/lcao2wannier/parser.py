@@ -18,14 +18,14 @@ from dataclasses import dataclass
 # ==============================
 
 overlap_header_pattern = re.compile(
-    r'^\s*OVERLAP MATRIX - CELL N\.\s+\d+\(\s*(-?\d+)\s+(-?\d+)\s+(-?\d+)\s*\)'
+    r'^\s*OVERLAP MATRIX - CELL N\.\s*\d+\(\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*\)'
 )
 fock_header_pattern = re.compile(
-    r'^\s*FOCK MATRIX \((REAL|IMAG) PART\) - CELL N\.\s+\d+\(\s*(-?\d+)\s+(-?\d+)\s+(-?\d+)\s*\)'
+    r'^\s*FOCK MATRIX \((REAL|IMAG) PART\) - CELL N\.\s*\d+\(\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*\)'
 )
 # Simple Fock matrix header (no REAL/IMAG split, used in some CRYSTAL formats)
 fock_simple_header_pattern = re.compile(
-    r'^\s*FOCK MATRIX - CELL N\.\s+\d+\(\s*(-?\d+)\s+(-?\d+)\s+(-?\d+)\s*\)'
+    r'^\s*FOCK MATRIX - CELL N\.\s*\d+\(\s*(-?\d+)\s*(-?\d+)\s*(-?\d+)\s*\)'
 )
 spin_channel_pattern = re.compile(
     r'^\s*(ALPHA_ALPHA|ALPHA_BETA|BETA_ALPHA|BETA_BETA) ELECTRONS', re.IGNORECASE
@@ -766,7 +766,9 @@ def parse_overlap_and_fock_matrices_cached(filepath, lines, *, cache_dir=None,
         cache_path = os.fspath(cache_path)
     try:
         st = os.stat(filepath)
-        key = (st.st_mtime_ns, st.st_size)
+        # MACE: the leading tag invalidates caches written by the stock 1.0.0
+        # header regexes, which dropped every cell from N.1000 on.
+        key = ('cell-index-i4', st.st_mtime_ns, st.st_size)
         if redirected_cache:
             key = (source_path,) + key
     except OSError:
