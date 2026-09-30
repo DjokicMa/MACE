@@ -99,7 +99,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of BLYP, PBE, B3LYP, PBE0 and PW1PW are accepted. The deck is refused, and
   nothing written, for what manual chapter 6 does not support
   (optimisations, frequencies, meta-GGA or range-separated functionals, a
-  DFTD3 block, BROYDEN, GUESSP, keywords the chapter does not list), for an
+  DFTD3 block, BROYDEN, GUESSP - whose refusal names the 2c restarts
+  GUESSPSO and GUESSPNOSO of manual p. 173, which MACE does not write since
+  the manual does not say which file they read - keywords the chapter does
+  not list), for an
   internal basis-set library, and for an ECP that is not a spin-orbit ECP's
   scalar part. Without the key every deck is byte-identical to before.
   `Crystal_d12/soc_ecp.py`.

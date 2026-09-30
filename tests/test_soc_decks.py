@@ -194,6 +194,15 @@ def test_what_chapter_6_does_not_support_is_refused(change, why):
         S.soc_deck(change(PBTE))
 
 
+def test_a_guessp_restart_is_refused_naming_the_2c_restart_keywords():
+    """The 2c restarts are GUESSPSO and GUESSP[NOSO] inside TWOCOMPON (manual
+    p. 173); which file they read is not in the manual, so none is written."""
+    with pytest.raises(S.SocError) as exc:
+        S.soc_deck(PBTE.replace("SCFDIR\n", "GUESSP\nSCFDIR\n"))
+    msg = str(exc.value)
+    assert "GUESSPSO" in msg and "GUESSPNOSO" in msg and "p. 173" in msg
+
+
 @pytest.mark.parametrize("deck,why", [
     (_deck(I_AE), "no atom in the deck carries an ECP"),
     (_deck(["282 1", "HAYWSC", "0 0 1 2.0 1.0", "1.0 1.0"]), "only an ECP entered with INPUT"),

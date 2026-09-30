@@ -496,6 +496,17 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print,
             pass
         elif word not in TWOC_SCF_KEYWORDS:
             problems.append(word)
+    if "GUESSP" in problems:
+        # The 2c restarts are GUESSPSO (from a 2c run) and GUESSP[NOSO] (from
+        # an unrestricted 1c run without symmetry, SYMMREMO), both inside the
+        # TWOCOMPON block (manual p. 173). Neither is written: the manual does
+        # not say which file they read, and submitcrystal23.sh stages fort.20
+        # for GUESSP and, when there is none, removes only a bare GUESSP line.
+        raise SocError(
+            "GUESSP (a restart) is not a 2c-SCF keyword. A 2c run restarts with GUESSPSO "
+            "(from an earlier 2c run) or GUESSPNOSO (from an unrestricted 1c run without "
+            "symmetry) inside TWOCOMPON (CRYSTAL23 manual p. 173); MACE does not write "
+            "those, since the manual does not say which file they read")
     if problems:
         raise SocError(
             "not supported in a two-component SCF (CRYSTAL23 manual ch. 6 lists every "
