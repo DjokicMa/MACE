@@ -78,6 +78,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   z distance in it is the cell's own. A polar-layer-group slab keeps its
   c times z heights; when it straddles z = 0/1, the atoms just below z = 1
   are written one cell lower, next to the rest of the layer.
+- **The static orthorhombic-P path without inversion names its segments
+  in order.** Without the seekpath library, `oP1_noinv` listed the labels
+  Y-T before X-U (and Y'-T' before X'-U') while its coordinates, like
+  SeeK-path's path, run X-U first, so those segments carried each other's
+  labels.
 - **Non-centrosymmetric structures with a 2-fold axis get the
   non-centrosymmetric SeeK-path path.** Without the seekpath library, the
   band and phonon paths read inversion from the CRYSTAL output, and the

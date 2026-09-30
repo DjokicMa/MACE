@@ -2568,7 +2568,7 @@ seekpath_data = {
             [0.0, -0.5, 0.0, 0.0, -0.5, -0.5],   # Y' → T'
             [-0.5, -0.5, 0.0, -0.5, -0.5, -0.5]  # S' → R'
         ],
-        "labels": ["GAMMA", "X", "S", "Y", "GAMMA", "Z", "U", "R", "T", "Z", "|", "Y", "T", "|", "X", "U", "|", "S", "R", "|", "GAMMA", "X'", "S'", "Y'", "GAMMA", "Z'", "U'", "R'", "T'", "Z'", "|", "Y'", "T'", "|", "X'", "U'", "|", "S'", "R'"]
+        "labels": ["GAMMA", "X", "S", "Y", "GAMMA", "Z", "U", "R", "T", "Z", "|", "X", "U", "|", "Y", "T", "|", "S", "R", "|", "GAMMA", "X'", "S'", "Y'", "GAMMA", "Z'", "U'", "R'", "T'", "Z'", "|", "X'", "U'", "|", "Y'", "T'", "|", "S'", "R'"]
     },
     "tI1_noinv": {
         # Tetragonal body-centered without inversion (I-4)

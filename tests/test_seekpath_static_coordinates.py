@@ -90,3 +90,29 @@ def test_manual_table_14_points(key, point, coords):
     agrees with for these lattices."""
     got = _points(seekpath_data[key])[point]
     assert any(all(abs(a - b) < 1e-9 for a, b in zip(c, coords)) for c in got), got
+
+
+def _label_edges(labels):
+    """[(start, end), ...] of a "|"-broken continuous label path."""
+    edges = []
+    for prev, cur in zip(labels, labels[1:]):
+        if "|" not in (prev, cur):
+            edges.append((prev, cur))
+    return edges
+
+
+def test_op1_noinv_labels_name_its_segments_in_order():
+    """oP1_noinv listed Y-T before X-U in its labels while its segments (and
+    SeeK-path's path) run X-U, then Y-T - for both the plain and the primed
+    half - so those two segments carried each other's labels."""
+    entry = seekpath_data["oP1_noinv"]
+    edges = _label_edges(entry["labels"])
+    assert len(edges) == len(entry["segments"])
+    assert edges[9:12] == [("X", "U"), ("Y", "T"), ("S", "R")]
+    assert edges[21:24] == [("X'", "U'"), ("Y'", "T'"), ("S'", "R'")]
+    # SeeK-path oP1: X = (1/2, 0, 0), U = (1/2, 0, 1/2), Y = (0, 1/2, 0),
+    # T = (0, 1/2, 1/2); the primed points are their negatives.
+    assert entry["segments"][9] == [0.5, 0.0, 0.0, 0.5, 0.0, 0.5]
+    assert entry["segments"][10] == [0.0, 0.5, 0.0, 0.0, 0.5, 0.5]
+    assert entry["segments"][21] == [-0.5, 0.0, 0.0, -0.5, 0.0, -0.5]
+    assert entry["segments"][22] == [0.0, -0.5, 0.0, 0.0, -0.5, -0.5]
