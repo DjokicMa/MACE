@@ -1794,6 +1794,14 @@ class CrystalInputParser:
                 self.data["functional"] = stripped
                 self.data["method"] = "HF"
                 continue
+            elif stripped in ("HF3C", "HFSOL3C") and not in_dft_block:
+                # The HF composite methods are Hamiltonian keywords of their
+                # own after the basis set, with no DFT block (manual sec.
+                # 5.3.1, p. 158: HF3C; p. 162: HFSOL3C).
+                self.data["functional"] = stripped
+                self.data["method"] = "HF"
+                self.data["is_3c_method"] = True
+                continue
                 
             if in_dft_block:
                 # Check for all functional categories from d12creation.py
@@ -1887,6 +1895,15 @@ class CrystalInputParser:
                 # "<name>-D3", which is a different correction.
                 elif stripped == "GRIMME":
                     self.data["dispersion"] = True
+
+        # No DFT block and no UHF / HF-3c keyword after the basis set: the
+        # Hamiltonian is CRYSTAL's default, closed-shell Hartree-Fock ("RHF
+        # [default]", manual p. 123). The deck writer spells that as the
+        # functional "RHF" (no keyword).
+        if not self.data.get("method") and (
+                self.data.get("basis_set") or self.data.get("external_basis_data")):
+            self.data["functional"] = "RHF"
+            self.data["method"] = "HF"
 
         # A functional the deck defines with EXCHANGE/CORRELAT/HYBRID/NONLOCAL
         if self.data.get("method") == "DFT":
@@ -2169,6 +2186,9 @@ class CrystalInputParser:
             stripped = line.strip()
             if stripped == "SMEAR":
                 self.data["use_smearing"] = True
+                # ...under the key the deck writer reads (as the .out parser
+                # sets it); "use_smearing" alone wrote the deck back without SMEAR.
+                self.data["smearing"] = True
                 # Check next line for smearing width
                 if i + 1 < len(lines):
                     try:

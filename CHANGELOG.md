@@ -138,6 +138,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that run wrote (manual sec. 8.2, p. 219). A record the writer never writes
   (e.g. NOUSESYMM) is reported in the parse as `freq_unparsed`. The
   interactive questions still default only NUMDERIV to the parent's.
+- **A Hartree-Fock parent deck reads back as Hartree-Fock.** `CrystalInputParser`
+  gave no functional for a deck with no Hamiltonian keyword (CRYSTAL's default
+  RHF, manual p. 123) or with `HF3C` / `HFSOL3C` (manual sec. 5.3.1, pp. 158,
+  162), so such a deck was written back with a DFT block. It now reads them as
+  the functionals `RHF`, `HF3C` and `HFSOL3C` (method HF), as the deck writer
+  takes them, and reads SMEAR under the writer's `smearing` key as well. For
+  `opt2d12`: an RHF parent's `.out` already names RHF, and SMEAR still comes
+  from the `.out`, so those children are unchanged; an HF-3c or HFsol-3c
+  parent's child now gets that functional, where the `.out` could give RHF and
+  drop the correction (untested: no HF-3c run to hand).
 
 ### Removed
 
