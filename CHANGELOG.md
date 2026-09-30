@@ -100,6 +100,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   formats.** Both stopped with NameError, because `d12_calc_freq` checked
   `get_crystal_system_from_space_group` without importing it from
   `d3_kpoints`. Nothing calls the function today, so no deck changes.
+- **An `opt2d12` SeeK-path phonon deck's title names the path it writes.**
+  The title took its labels from the space-group number alone, while the
+  BANDS path is chosen from the parent's output, whose lattice parameters
+  and symmetry operators pick the SeeK-path variant. For AgBr in R-3c the
+  title listed an 11-segment path over the 10-segment one written, and
+  every such title called its path "default". The title now reads the same
+  output, so it lists the written path's labels and says "SeeKPath (w.I)",
+  "SeeKPath (no.I)" or "Literature" as the path was chosen.
 
 ### Removed
 
