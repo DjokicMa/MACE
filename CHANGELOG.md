@@ -86,6 +86,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now counts as an inversion only when its whole rotation part is -I, and a
   SYMMOPS table without one means no inversion. The space-group-number check
   no longer reads a digit out of a symbol ("P N N 2" as group 2).
+- **The static SeeK-path band paths go through the zone-boundary points.**
+  Without the seekpath library, band and phonon paths come from a table in
+  `d3_kpoints` that defines several lattices twice; the definitions that
+  win had every coordinate doubled (body-centred cubic x4, hexagonal x6), so
+  simple cubic X was (0, 1, 0) - a reciprocal lattice vector, the same point
+  as Gamma - where SeeK-path and CRYSTAL23 (manual Tables 14.1-14.2,
+  pp. 311-312) have (0, 1/2, 0). The paths for aP, cP, cI, hP, mP, oP, tP,
+  tI and mC2 (and the aP and mC2 non-centrosymmetric ones) now use SeeK-path's
+  coordinates: e.g. every centrosymmetric primitive cubic, tetragonal,
+  orthorhombic, monoclinic and hexagonal group, Im-3m, Ia-3d and I4/mmm.
 
 ### Removed
 
