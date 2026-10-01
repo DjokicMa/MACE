@@ -9,7 +9,7 @@
     "band_range": [0, 999],
     "n_points": 1000,
     "print_integrated": true,
-    "output_format": 0,
+    "output_format": 2,
     "projections": []
   }
 }
