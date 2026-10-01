@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now hold SeeK-path's cF1 (Gamma-X-U|K-Gamma-L-W-X-W_2, 7 segments) and cF2
   (Gamma-X-U|K-Gamma-L-W-X, 6 segments), and the cF1_noinv title gets the
   "|" between U and K that its segments already had.
+- **Face-centred cubic groups get SeeK-path's cF1/cF2 split.** Without the
+  seekpath library the split was reversed for 202, 203 and 225-228: Fm-3m,
+  Fm-3c, Fd-3m (diamond, Si) and Fd-3c got cF1, and Fm-3 and Fd-3 got cF2.
+  SeeK-path uses cF1 below 207 (196, 202, 203) and cF2 from 207 (209, 210,
+  216, 219, 225-228), so Fm-3m and Fd-3m decks lose the X-W_2 segment and
+  F23 decks gain it.
 
 ## [1.1.3] - 2026-10-01
 

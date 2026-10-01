@@ -341,16 +341,9 @@ def determine_cubic_f_variant(sg: int) -> str:
     Returns:
         "cF1" or "cF2" based on space group
     """
-    # cF1: Standard FCC (e.g., Fm-3m)
-    # cF2: Alternative FCC groups
-    
-    # Space groups with cF2
-    cF2_groups = [196, 202, 203, 209, 210, 216, 219, 220]
-    
-    if sg in cF2_groups:
-        return "cF2"
-    else:
-        return "cF1"
+    # SeeK-path (HPKOT): cF1 for the face-centred groups below 207 (196, 202,
+    # 203), cF2 for 207-230 (209, 210, 216, 219, 225-228), as for cP1/cP2
+    return "cF1" if sg <= 206 else "cF2"
 
 
 def determine_cubic_i_variant(sg: int) -> str:
