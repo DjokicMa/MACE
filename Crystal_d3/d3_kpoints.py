@@ -1235,7 +1235,9 @@ def get_extended_bravais(sg: int, lat: str,
     # Trigonal/Rhombohedral
     elif 143 <= sg <= 167:
         if lat == "P":
-            return "hP1"
+            # SeeK-path (HPKOT): hP2 for 150, 152, 154, 156, 158, 164, 165
+            # (and all of 168-194), hP1 for the other primitive trigonal groups
+            return "hP2" if sg in (150, 152, 154, 156, 158, 164, 165) else "hP1"
         elif lat == "R":
             # Distinguish hR1 vs hR2 based on c/a ratio
             if a is not None and c is not None:
@@ -1247,7 +1249,7 @@ def get_extended_bravais(sg: int, lat: str,
             
     # Hexagonal
     elif 168 <= sg <= 194:
-        return "hP1"
+        return "hP2"
         
     # Cubic
     elif 195 <= sg <= 230:

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Primitive hexagonal groups get SeeK-path's hP1/hP2 split.** Without the
+  seekpath library every primitive trigonal and hexagonal group got the hP1
+  path, whose last segment K-H_2 only hP1 groups need. SeeK-path (2.2.2,
+  HPKOT) uses hP2 for 150, 152, 154, 156, 158, 164, 165 and 168-194; those
+  groups (P321, P-3m1, P6_3/mmc, P6/mmm, ...) now get the hP2 path, one
+  segment shorter. 143-145, 147, 149, 151, 153, 157, 159, 162 and 163 keep
+  hP1.
+
 ## [1.1.3] - 2026-10-01
 
 Everything since 1.1.2. Band paths are written with exact high-symmetry points
