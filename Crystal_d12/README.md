@@ -385,9 +385,9 @@ All scripts generate CRYSTAL23-compatible `.d12` files:
   - Pressure effects (quasi-harmonic approximation)
 
 - **Phonon Band Structure Enhancements**:
-  - **Extended Bravais Lattice Detection**: `d3_kpoints.get_extended_bravais` picks the lattice variant (e.g., aP2 vs aP3, oF1 vs oF2 vs oF3) from cell parameters when it gets them; without them it returns the first variant (aP2, oF1, tI1, ...). The phonon path never passes it cell parameters (see the known issue below), so phonon paths currently use the first variant
-  - **Inversion Symmetry Detection** (SeeK-path format only): `d3_kpoints.get_seekpath_full_kpath` uses the `<variant>_noinv` path with primed k-points for a non-centrosymmetric structure, falling back to the centrosymmetric path when no `_noinv` entry exists. It is meant to read inversion from the CRYSTAL output (`d3_kpoints.detect_inversion_from_crystal_output`), but in the phonon path it only has the space-group number (`d3_kpoints.has_inversion_symmetry`). The label, vector and literature formats do not use inversion
-  - **Known issue**: `d12_calc_freq.write_frequency_section` and `d12_calc_freq.get_auto_phonon_path` pass the text of the parsed output (`optimization_content`) to `get_seekpath_full_kpath` where a file path is expected. From `NewCifToD12.py` (no output) that text is absent and the space-group number is used; from `CRYSTALOptToD12.py` with the SeeK-path format, a real output makes it fail with `OSError: File name too long`
+  - **Extended Bravais Lattice Detection**: `d3_kpoints.get_extended_bravais` picks the lattice variant (e.g., aP2 vs aP3, oF1 vs oF2 vs oF3) from cell parameters when it gets them; without them it returns the first variant (aP2, oF1, tI1, ...). A phonon path from `CRYSTALOptToD12.py` gets them from the parent output (`d3_kpoints.extract_lattice_parameters_from_output`); one from `NewCifToD12.py` has no output and uses the first variant
+  - **Inversion Symmetry Detection** (SeeK-path format only): `d3_kpoints.get_seekpath_full_kpath` uses the `<variant>_noinv` path with primed k-points for a non-centrosymmetric structure, falling back to the centrosymmetric path when no `_noinv` entry exists. Inversion is read from the parent's CRYSTAL output: `d12_calc_freq._output_as_file` writes the output text that `CRYSTALOptToD12.py` passes (`optimization_content`) to a temporary file, and `d3_kpoints.detect_inversion_from_crystal_output` reads the centrosymmetric flag, the SYMMOPS table or the printed space-group number from it (with the seekpath library installed, SeeK-path decides from the structure it parses from the same file). The space-group number decides (`d3_kpoints.has_inversion_symmetry`) only when there is no output (`NewCifToD12.py`) or the output shows none of these. The label, vector and literature formats do not use inversion
+  - **Parent output**: `d12_calc_freq.write_frequency_section` and `d12_calc_freq.get_auto_phonon_path` receive the parsed output as text (`optimization_content`) and hand it to the SeeK-path helpers (`get_seekpath_full_kpath`, and `get_seekpath_labels` for the title) as a temporary `.out` file (`d12_calc_freq._output_as_file`), since those helpers read a file. From `NewCifToD12.py` there is no output, and the space-group number is used
   - **K-path Source Tracking**: Labels phonon band titles with path source:
     - `SeeKPath (w.I)` - SeeK-path with inversion symmetry
     - `SeeKPath (no.I)` - SeeK-path without inversion symmetry  
@@ -468,11 +468,11 @@ All scripts generate CRYSTAL23-compatible `.d12` files:
 - **Template System**: Pre-configured templates for common calculations
 - **Advanced Options**: Separated basic and advanced settings for clarity
 - **Tolerance Recommendations**: Automatic suggestions for frequency calculations
-- **Phonon Path Generation**: SeeK-path format via `d3_kpoints.get_seekpath_full_kpath` (inversion from the space-group number in the phonon path; see Known issue under `d12_calc_freq.py`)
+- **Phonon Path Generation**: SeeK-path format via `d3_kpoints.get_seekpath_full_kpath` (inversion and cell parameters from the parent output when there is one; see `d12_calc_freq.py` above)
 
 ### Phonon Band Structure Updates
-- **Extended Bravais Support**: `d3_kpoints.get_extended_bravais` uses cell parameters when given them (not yet the case for phonon paths)
-- **Inversion Symmetry**: SeeK-path format only; from the space-group number in the phonon path (output-based detection exists in `d3_kpoints.detect_inversion_from_crystal_output` but is not reached from here)
+- **Extended Bravais Support**: `d3_kpoints.get_extended_bravais` uses cell parameters when given them (read from the parent output for phonon paths from `CRYSTALOptToD12.py`)
+- **Inversion Symmetry**: SeeK-path format only; read from the parent output (`d3_kpoints.detect_inversion_from_crystal_output`, reached through `d12_calc_freq._output_as_file`), and from the space-group number (`d3_kpoints.has_inversion_symmetry`) when there is no output
 - **Source Labeling**: Clear indication of k-path source (SeeK-path w/wo inversion, literature, default) in titles
 - **Non-centrosymmetric Paths**: Support for primed k-points (X', Y', Z', etc.) when needed
 - **Discontinuous Paths**: "|" in custom label paths splits segments; coordinate paths list separate segments (details under `d12_calc_freq.py`)

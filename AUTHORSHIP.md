@@ -35,21 +35,21 @@ This document provides authorship attribution for the MACE (Mendoza Automated CR
 - `CRYSTALOptToD12.py` - Extract optimized geometry to new D12 (reworked version)
 
 **Archived Scripts:**
-- `CRYSTALtoCIF-V2.py` - Version 2 of CRYSTAL to CIF converter
+- `CRYSTALtoCIF-V2.py` (removed) - Version 2 of CRYSTAL to CIF converter
 
 #### Daniel Maldonado Lopez
 **Core Scripts:**
-- `create_d12_w-ghosts.py` - Automatic ghost atom insertion
-- `manual_create_d12_w-ghosts.py` - Manual ghost atom insertion
+- `Ghosts/create_d12_w-ghosts.py` - Automatic ghost atom insertion
+- `Ghosts/manual_create_d12_w-ghosts.py` - Manual ghost atom insertion
 
 **Archived Scripts:**
-- `CRYSTAL2cif.py` - CRYSTAL to CIF conversion
-- `CRYSTAL2cif_slab.py` - CRYSTAL to CIF conversion for slabs
-- `crystal_to_cif_python3.py` - Python 3 compatible CIF converter
+- `CRYSTAL2cif.py` (removed) - CRYSTAL to CIF conversion
+- `CRYSTAL2cif_slab.py` (removed) - CRYSTAL to CIF conversion for slabs
+- `crystal_to_cif_python3.py` (removed) - Python 3 compatible CIF converter
 
 #### William Comaskey
 **Archived Scripts:**
-- `crys22.py` - CRYSTAL22 related utilities
+- `crys22.py` (removed) - CRYSTAL22 related utilities
 
 #### Mixed Attribution
 - `CRYSTALOptToD12.py` (original) - Prior contributions from Wangwei Lan, Kevin Lucht, Danny Maldonado, Marcus Djokic
@@ -65,9 +65,9 @@ This document provides authorship attribution for the MACE (Mendoza Automated CR
   type, which prints H(R) and S(R) in the direct-lattice representation. This
   file generates the *input* for William Comaskey's method; see his section below
   for the method itself.
-- `create_Transportd3.py` (archived) - Transport property calculations
-- `alldos_old.py` (archived)
-- `d3_config_old.py` (archived)
+- `create_Transportd3.py` (removed) - Transport property calculations
+- `alldos_old.py` (removed)
+- `d3_config_old.py` (removed)
 
 #### William Comaskey — method attribution (not a file list)
 
@@ -91,8 +91,8 @@ a paper, or both) before any citation string is published in MACE. Do not
 invent one.
 
 #### Mixed Attribution
-- `alldos.py` (archived) - Density of states generation (Prior contributions from Wangwei Lan, Kevin Lucht, Danny Maldonado, Marcus Djokic)
-- `create_band_d3.py` (archived) - Band structure generation (Prior contributions from Wangwei Lan, Kevin Lucht, Danny Maldonado, Marcus Djokic)
+- `alldos.py` (removed) - Density of states generation (Prior contributions from Wangwei Lan, Kevin Lucht, Danny Maldonado, Marcus Djokic)
+- `create_band_d3.py` (removed) - Band structure generation (Prior contributions from Wangwei Lan, Kevin Lucht, Danny Maldonado, Marcus Djokic)
 
 ### mace/ Package
 
@@ -109,6 +109,7 @@ invent one.
 
 **Queue Module:**
 - `manager.py` - Enhanced tracking queue manager (EnhancedCrystalQueueManager)
+- `monitor.py` - Queue and workflow monitoring
 
 **Wannier Module (orchestration only - see William Comaskey below):**
 - `wannier/driver.py` - Invokes the bundled `lcao2wannier` package and surfaces
@@ -122,10 +123,6 @@ invent one.
 
 **Submission Module:**
 - `__init__.py`
-- `check_submitted.py` - Check submitted jobs
-- `submit_d12.py` - D12 job submission
-- `submit_d3.py` - D3 job submission
-- `submit_frequency.py` - Frequency calculation submission
 
 #### William Comaskey
 - The LCAO->Wannier90 method and the `lcao2wannier` package driven by
@@ -141,24 +138,6 @@ invent one.
 
 **Utils Module:**
 - `animation.py` - Loading animation utilities
-- `animation_simple.py` - Simple animation utilities
-- `basis_analysis.py` - Basis set analysis
-- `cif_parser.py` - CIF file parsing
-- `formula.py` - Chemical formula utilities
-- `lattice_utils.py` - Lattice parameter utilities
-- `plotting_utils.py` - Plotting utilities
-- `property_aggregator.py` - Property aggregation
-- `property_analysis.py` - Property analysis utilities
-- `slurm_utils.py` - SLURM job utilities
-- `structure_analyzer.py` - Structure analysis
-- `symmetry_utils.py` - Symmetry utilities
-
-**Workflow Module:**
-- `interactive_monitor.py` - Interactive monitoring
-- `monitor.py` - Workflow monitoring
-- `progress_tracker.py` - Progress tracking
-- `resource_optimizer.py` - Resource optimization
-- `status_analyzer.py` - Status analysis
 
 ### code/ Directory
 
@@ -170,7 +149,7 @@ invent one.
 - `fixk.py` - Fix k-point issues
 
 **Plotting_Scripts:**
-- `overview.py` (archived) - Legacy overview script
+- `overview.py` (removed) - Legacy overview script
 
 #### Daniel Maldonado Lopez
 **Band_Alignment:**
@@ -178,7 +157,7 @@ invent one.
 
 #### Kevin Lucht
 **Plotting_Scripts:**
-- `plotting.py` - General plotting utilities (edited by William Comaskey 03/23/2022)
+- `plotting.py` (removed) - General plotting utilities (edited by William Comaskey 03/23/2022)
 
 #### Mixed Attribution
 **SLURM Submission Scripts:**
@@ -192,8 +171,8 @@ invent one.
 
 #### Unknown/To Be Determined
 **code/NewPlotting_Scripts:**
-- `autoBands.py`
-- `autoPhononBands.py`
+- `AutoBands/autoBands.py`
+- `AutoPhononBands/autoPhononBands.py`
 
 (Other previously listed unattributed scripts — crystalOutputToJson.py,
 getOptimizationProgress.py, getPropertyData.py, getSpecialKPoints.py,
@@ -217,4 +196,4 @@ For scripts without clear attribution, it is recommended to:
 2. Include creation date and modification history
 3. Reference this document for attribution
 
-Last Updated: July 12, 2026
+Last Updated: September 30, 2026

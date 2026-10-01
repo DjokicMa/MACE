@@ -741,7 +741,21 @@ class D3Generator:
         ui.info(f"  project_orbital_types: {config.get('project_orbital_types', True)}")
         ui.info(f"  n_atoms: {self.structure_info.get('n_atoms', 0)}")
         ui.info(f"  n_ao: {self.structure_info.get('n_ao', 0)}")
-        
+
+        # A saved or example config may carry only "projection_type" (the
+        # menu number) without the explicit keys below. Without this, a
+        # "1: Total DOS only" config fell through to the per-orbital default.
+        # Explicit keys always win.
+        proj_type = config.get("projection_type")
+        if proj_type in (1, 2, 3, 4) and "project_orbital_types" not in config:
+            config = dict(config)
+            config["project_orbital_types"] = proj_type != 1
+            if proj_type == 2:
+                config.setdefault("element_only", True)
+            elif proj_type in (3, 4):
+                config.setdefault("element_only", False)
+                config.setdefault("include_element_totals", proj_type == 3)
+
         # Determine projection type
         if config.get("manual_projections"):
             # Manual projections (option 6) - handle first
@@ -857,8 +871,14 @@ class D3Generator:
                 except Exception as e:
                     ui.warn(f"  Warning: could not center energy window on Fermi level: {e}")
         elif config.get("band_range"):
-            # Specific band range
+            # Specific band range. CRYSTAL stops with "BAND RANGE NOT ALLOWED"
+            # for band 0 or a band past the last one (measured on HPCC with
+            # the example config's 0 999), so clamp to 1..n_ao when known.
             first_band, last_band = config["band_range"]
+            first_band = max(int(first_band), 1)
+            n_ao = self.structure_info.get('n_ao', 0)
+            if n_ao > 0 and int(last_band) > n_ao:
+                last_band = n_ao
             bmi, bma = None, None
         else:
             # All bands (default) - use actual band indices
@@ -891,7 +911,14 @@ class D3Generator:
         # Add projection specifications
         for proj in projections:
             lines.append(proj)
-        
+
+        # NPR is a count of printing options, and a nonzero NPR must be
+        # followed by that many prtrec pairs (manual, DOSS; App. C: 105 =
+        # density of states along energy points). Without the record
+        # CRYSTAL read END as it and stopped with "FORMAT ERROR".
+        if nprint:
+            lines.append("105 -1")
+
         lines.append("END")
         return '\n'.join(lines)
     
