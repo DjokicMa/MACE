@@ -42,6 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Gamma, 7 segments) and hR2 path (Gamma-L-T-P_0|P_2-Gamma-F, 5 segments),
   with the same representative values for the lattice-dependent points
   H, S and P as the non-centrosymmetric entries.
+- **Rhombohedral groups get SeeK-path's hR1/hR2 choice.** Without the
+  seekpath library the static lookup took hR1 for c/a < sqrt(6) (hexagonal
+  axes), so typical rhombohedral crystals (c/a 2.5-7; AgBr R-3c, Bi2Se3,
+  corundum) got the hR2 path and flat cells got hR1. SeeK-path (HPKOT) takes
+  hR1 for c/a > sqrt(3/2), i.e. a rhombohedral angle below 90 degrees, and
+  hR2 otherwise; a cell given in rhombohedral axes is now read by its angle.
+  Rhombohedral decks from outputs with c/a above sqrt(6) or below sqrt(3/2)
+  change path.
 
 ## [1.1.3] - 2026-10-01
 

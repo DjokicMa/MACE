@@ -310,22 +310,24 @@ def determine_tetragonal_i_variant(a: float, c: float) -> str:
         return "tI2"
 
 
-def determine_hexagonal_r_variant(a: float, c: float) -> str:
+def determine_hexagonal_r_variant(a: float, c: float, alpha: float = None) -> str:
     """
-    Determine hR variant based on c/a ratio in hexagonal setting.
-    
+    Determine hR variant as SeeK-path (HPKOT, Table 2) does.
+
     Args:
-        a: a=b lattice parameter in Angstroms  
-        c: c lattice parameter in Angstroms
-        
+        a: a=b lattice parameter in Angstroms (hexagonal axes), or the
+           rhombohedral cell edge when alpha is given
+        c: c lattice parameter in Angstroms (hexagonal axes)
+        alpha: rhombohedral angle in degrees, for parameters in
+           rhombohedral axes (a = b = c, alpha = beta = gamma)
+
     Returns:
-        "hR1" or "hR2" based on c/a ratio
+        "hR1" if sqrt(3) a < sqrt(2) c (hexagonal axes), i.e. c/a > sqrt(3/2),
+        which in rhombohedral axes is alpha < 90 degrees; "hR2" otherwise
     """
-    # hR1: Standard rhombohedral
-    # hR2: Alternative with different c/a ratio
-    
-    # Use c/a ratio as criterion
-    if c/a < np.sqrt(6):  # sqrt(6) ≈ 2.449
+    if alpha is not None:
+        return "hR1" if alpha < 90.0 else "hR2"
+    if np.sqrt(3) * a < np.sqrt(2) * c:
         return "hR1"
     else:
         return "hR2"
@@ -1224,7 +1226,12 @@ def get_extended_bravais(sg: int, lat: str,
             # (and all of 168-194), hP1 for the other primitive trigonal groups
             return "hP2" if sg in (150, 152, 154, 156, 158, 164, 165) else "hP1"
         elif lat == "R":
-            # Distinguish hR1 vs hR2 based on c/a ratio
+            # Distinguish hR1 vs hR2 from the cell, given in hexagonal axes
+            # (gamma = 120) or rhombohedral axes (alpha = beta = gamma)
+            if (alpha is not None and beta is not None and gamma is not None
+                    and abs(gamma - 120.0) > 1e-3
+                    and abs(alpha - beta) < 1e-3 and abs(beta - gamma) < 1e-3):
+                return determine_hexagonal_r_variant(a, c, alpha)
             if a is not None and c is not None:
                 return determine_hexagonal_r_variant(a, c)
             else:

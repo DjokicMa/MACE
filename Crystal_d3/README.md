@@ -154,7 +154,7 @@ All SHRINK values are rounded up to even numbers for cleaner k-paths.
   - Triclinic: aP2 vs aP3 based on angle relationships
   - Orthorhombic F: oF1/oF2/oF3 based on shortest axis
   - Tetragonal I: tI1 vs tI2 based on c/a ratio
-  - Hexagonal R: hR1 vs hR2 based on c/a ratio
+  - Hexagonal R: hR1 vs hR2 as SeeK-path (hR1 for c/a > sqrt(3/2), rhombohedral angle < 90)
   - Cubic: cF1 vs cF2 by space group (below 207 / from 207), as SeeK-path; one cI
 - Automatic lattice parameter extraction from CRYSTAL output files
 - Enhanced `get_extended_bravais()` function that uses cell parameters when available
