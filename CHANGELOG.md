@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An opt2d12 config with `"method": "HF"` and HF3C or HFSOL3C writes MINIX
+  or SOLMINIX.** It kept the parent's basis: an external-basis parent gave
+  `BASISSET / EXTERNAL (from original D12) / HF3C / END`, which is not input,
+  and an internal one `BASISSET / POB-TZVP-REV2 / HF3C`. The manual defines
+  HF-3c for a pure HF calculation in MINIX and HFSOL-3c in SOLMINIX (sec.
+  5.3.1 p. 158, 5.4.1 p. 162); such decks now read `BASISSET / MINIX / HF3C /
+  END` (layout p. 159, run on CRYSTAL23), with plain atomic numbers (47, not
+  the external basis's 247).
+- **HF-3c on a structure with metal atoms prints a caution** (opt2d12 and
+  cif2d12). The manual (p. 158) says HF-3c was designed for organic systems,
+  is carefully tested for molecular crystals, and that inorganic crystals and
+  metals are less well tested; an AgCl HF3C/MINIX run diverged on CRYSTAL23.
+  The deck is still written.
+- **opt2d12 refuses a FREQ deck from a phonon-dispersion (SCELPHONO) FREQ
+  run.** The child repeated the parent's SCELPHONO on the parent's geometry,
+  which is already the SCELPHONO supercell (manual pp. 73-74), so the
+  supercell would be expanded again.
+- **Out-of-range answers are asked again** at the OPT convergence-level menu
+  (it fell through to Custom), the FREQ IR-method menu (KeyError) and the FREQ
+  NUMDERIV menu (ValueError on a non-number; 3 was written although NUMDERIV
+  takes 1 or 2, manual p. 218).
+- **The planner's BAND prompt asks for the total number of k-points along
+  the path** (NSUB, manual p. 309), not "points per k-path segment". The
+  default (10000) is unchanged.
+- **The workflow state records the step that completed.** After an OPT whose
+  planned next step was FREQ it could record another calculation's type.
+- **The job script does not stage an empty `<job>.f20` for GUESSP;** it
+  falls back to the job's own non-empty `.f9`, or drops GUESSP as before.
+- **`guessp_restart` is documented as applied by the workflow engine only;**
+  the executor's older step generator, which normal workflows no longer
+  reach, now says it writes its decks without GUESSP.
+
 ## [1.1.3] - 2026-10-01
 
 Everything since 1.1.2. Band paths are written with exact high-symmetry points
