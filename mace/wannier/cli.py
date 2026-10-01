@@ -13,6 +13,7 @@ options through. There is no second console script.
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -104,6 +105,10 @@ def build_parser() -> argparse.ArgumentParser:
                              "lcao2wannier reads the allocation itself")
     parser.add_argument("--wannier90",
                         help="path to wannier90.x, to localize after the hand-off")
+    parser.add_argument("--run-w90", action="store_true",
+                        help="localize with the wannier90.x found on PATH after "
+                             "the hand-off (explains, and still hands off, when "
+                             "there is none)")
     parser.add_argument("--scf-output",
                         help="the parent SCF .out, when it is not beside the dump "
                              "(used to refuse an incomplete dump of a "
@@ -123,7 +128,23 @@ def main(argv: Optional[List[str]] = None) -> int:
     ui.info(f"lcao2wannier {LCAO2WANNIER_VERSION}, bundled "
             f"({LCAO2WANNIER_CREDIT})")
 
-    if args.stage == "localize" and not args.wannier90:
+    wannier90 = Path(args.wannier90) if args.wannier90 else None
+    w90_missing = None
+    if args.run_w90 and wannier90 is None:
+        found = shutil.which("wannier90.x")
+        if found:
+            wannier90 = Path(found)
+            ui.info(f"--run-w90: lcao2wannier will run {found} after the hand-off")
+        else:
+            w90_missing = (
+                "--run-w90: wannier90.x was not found on PATH, so the hand-off\n"
+                "is written but not localized. Load your Wannier90 module or put\n"
+                "wannier90.x on PATH, or name it with --wannier90 /path/to/wannier90.x.\n"
+                "No `wannier90.x -pp` step is needed: lcao2wannier writes the .nnkp\n"
+                "itself, and -pp would overwrite it.")
+            _emit(w90_missing, ui.warn)
+
+    if args.stage == "localize" and wannier90 is None:
         _emit(describe_missing_wannier90(), ui.err)
         return 2
 
@@ -134,7 +155,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             output_dir=Path(args.output_dir) if args.output_dir else None,
             stage=args.stage,
             threads=args.threads,
-            wannier90=Path(args.wannier90) if args.wannier90 else None,
+            wannier90=wannier90,
             extra_args=args.l2w_args,
             echo=lambda line, stream="stdout": _echo_child(line, stream),
             progress=ui.info,
@@ -200,6 +221,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         ui.err("")
         ui.err(f"lcao2wannier exited {result.returncode} without a complete hand-off.")
         return result.returncode or 1
+
+    if w90_missing:
+        print()
+        _emit(w90_missing, ui.warn)
 
     ui.ok("")
     if result.qualified:

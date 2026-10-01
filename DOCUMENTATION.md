@@ -547,7 +547,14 @@ to supply.
 mace opt2d3 --input material_sp.out --calc-type MATDUMP   # generate the deck
 mace submit material_sp_matdump.d3                        # run it
 mace wannier --input material_sp_matdump.out              # convert
+mace wannier --input material_sp_matdump.out --run-w90    # convert, then localize
 ```
+
+`--run-w90` uses the `wannier90.x` on `PATH` (as `--wannier90 PATH` does with an
+explicit one: `lcao2wannier` runs it on each seed after the hand-off). If there
+is none it says so and still writes the hand-off. There is no
+`wannier90.x -pp` step: `lcao2wannier` writes the `.nnkp` itself, and `-pp`
+would overwrite it.
 
 `mace preflight material_sp_matdump.d3` checks a MATDUMP deck before you submit
 it, without running CRYSTAL (`properties` has no TESTPDIM): the

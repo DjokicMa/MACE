@@ -586,3 +586,41 @@ def test_the_cli_streams_and_does_not_print_his_output_twice(
     assert "dry run" in combined
     assert "progress follows" in combined
     assert code == 1    # no hand-off files were written by the fake
+
+
+# --------------------------------------------------------------------------
+# --run-w90: use the wannier90.x on PATH, or say why localization is skipped
+# --------------------------------------------------------------------------
+
+
+def test_run_w90_hands_the_wannier90_on_path_to_his_package(tmp_path, monkeypatch,
+                                                             capsys):
+    import mace.wannier.cli as cli
+
+    w90 = tmp_path / "bin" / "wannier90.x"
+    w90.parent.mkdir()
+    w90.write_text("#!/bin/sh\n")
+    w90.chmod(0o755)
+    monkeypatch.setenv("PATH", str(w90.parent))
+    seen = {}
+    monkeypatch.setattr(cli, "convert",
+                        lambda **kw: seen.update(kw) or _result(tmp_path, audit="pass"))
+    assert cli.main(["--input", "d_matdump.out", "--run-w90"]) == 0
+    assert Path(seen["wannier90"]) == w90
+
+
+def test_run_w90_without_wannier90_explains_and_still_hands_off(
+        tmp_path, monkeypatch, capsys):
+    import mace.wannier.cli as cli
+
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    seen = {}
+    monkeypatch.setattr(cli, "convert",
+                        lambda **kw: seen.update(kw) or _result(tmp_path, audit="pass"))
+    code = cli.main(["--input", "d_matdump.out", "--run-w90"])
+    text = capsys.readouterr()
+    combined = text.out + text.err
+    assert code == 0
+    assert seen["wannier90"] is None
+    assert "wannier90.x was not found on PATH" in combined
+    assert "--wannier90" in combined

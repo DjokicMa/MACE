@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`mace wannier --run-w90`** localizes with the `wannier90.x` found on
+  `PATH` after the hand-off (through lcao2wannier, as `--wannier90 PATH` does),
+  or explains that none was found and still writes the hand-off.
 - **Incomplete 2-component dumps are refused.** The stock CRYSTAL23
   `properties` on a 2c (TWOCOMPON) `fort.9` prints only scalar `FOCK MATRIX -
   CELL` blocks, without an error (measured on a real Bi2 SOC run; the
