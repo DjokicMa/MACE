@@ -277,8 +277,13 @@ def _configure_optimization_impl(current_settings: Optional[Dict[str, Any]] = No
         shown_default = "keep current"
     else:
         shown_default = f"{parent_level} (current)"
-    conv_choice = _nav_read(f"\nSelect convergence level [1-4, default={shown_default}]: ",
-                            valid_set={"1", "2", "3", "4"}).strip()
+    while True:
+        conv_choice = _nav_read(f"\nSelect convergence level [1-4, default={shown_default}]: ",
+                                valid_set={"1", "2", "3", "4"}).strip()
+        if conv_choice in ("", "1", "2", "3", "4"):
+            break
+        # Anything else used to fall through to Custom.
+        print("Please enter 1, 2, 3 or 4.")
     if not conv_choice:
         conv_choice = "keep" if parent_level is not None else "1"
 

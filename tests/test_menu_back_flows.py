@@ -123,11 +123,10 @@ def test_b_at_the_first_question_is_just_an_invalid_answer(terminal):
     assert t.reads == 4
 
 
-@pytest.mark.xfail(strict=True, reason="an answer outside 1-4 at the OPT convergence-level "
-                   "menu is taken as 4 (Custom) instead of being asked again")
 def test_unknown_convergence_level_is_asked_again(terminal):
-    terminal(["1", "5", "1", "n"])
+    t = terminal(["1", "5", "1", "n"])
     assert opt()["convergence"] == "Standard"
+    assert t.reads == 4
 
 
 # ------------------------------------------------------------ single point
