@@ -497,6 +497,13 @@ All workflow configurations are saved as JSON files for:
 }
 ```
 
+`execution_settings.guessp_restart` (default `false`; only `true` turns it on):
+SP, FREQ and OPTn steps built from a completed OPT or SP start their SCF from
+that step's density matrix (GUESSP, with its `.f9` staged as `<job>.f20`), when
+both decks have the same symmetry, atom list, basis set and spin treatment.
+The engine reads the plan each time a step completes, so the setting can be
+added to `workflow_configs/workflow_plan_<id>.json` of a running workflow.
+
 ### Integration with Existing Tools
 
 #### **Tool Integration**
