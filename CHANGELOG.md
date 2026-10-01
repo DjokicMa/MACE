@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`mace preflight` checks a MATDUMP `.d3` without CRYSTAL.** Its records
+  (`BASISSET / NPR / 60 N / 64 N / END`, manual p.310), N against the bounds
+  derived from the parent SCF output beside it, and the `<deck>.f9` the job
+  script stages. A `.d3` used to be given TESTPDIM and run through `crystal`,
+  which says nothing about a `properties` deck; other `.d3` kinds are now
+  reported as not checked.
 - **MATDUMP: a hand-off to Wannier90.** The LCAO->Wannier90 method, and the
   `lcao2wannier` package that implements it, are William Comaskey's work; MACE
   generates the CRYSTAL input and orchestrates the run, and implements none of

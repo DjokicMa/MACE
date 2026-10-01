@@ -54,6 +54,10 @@ PASS = "pass"
 FAIL = "fail"
 ERROR = "error"
 SKIPPED = "skipped"
+#: A .d3 that MACE's own MATDUMP check rejects (mace/submission/preflight_d3.py).
+#: Kept apart from FAIL, whose report says CRYSTAL rejected the deck: here
+#: CRYSTAL never ran.
+REFUSED = "refused"
 
 #: Block-3 record that stops CRYSTAL after the symmetry analysis (manual p.129).
 TESTPDIM_RECORD = "TESTPDIM"
@@ -508,6 +512,13 @@ def preflight_deck(deck, *, runner, keep_dir=None) -> PreflightResult:
             "CR, LF and CRLF are mixed in this deck; refusing to normalise it, "
             "because the copy CRYSTAL saw would then differ from the file you submit")
 
+    # A .d3 is a properties deck: TESTPDIM and the crystal binary say nothing
+    # about it. MATDUMP decks are checked on disk; the rest are not checked.
+    if deck.suffix.lower() == ".d3":
+        from mace.submission.preflight_d3 import check_d3_deck
+        status, reason, detail = check_d3_deck(deck, text)
+        return PreflightResult(deck, status, reason, detail)
+
     # These are all "the harness cannot check this deck", never "this deck is
     # bad" - the explanation IS the reason, so it reaches the report table.
     blocked = uncheckable_reason(text)
@@ -664,6 +675,7 @@ _STATUS_LABEL = {
     PASS: "passed - CRYSTAL accepted the deck through symmetry analysis",
     FAIL: "FAILED - CRYSTAL rejected the deck",
     ERROR: "could not be checked",
+    REFUSED: "FAILED - MACE's MATDUMP check (CRYSTAL was not run)",
     SKIPPED: "structural check only - CRYSTAL was not run",
 }
 
@@ -672,9 +684,9 @@ def summarize(results: Sequence[PreflightResult]) -> None:
     """Print the grouped report."""
     ui = _ui()
     counts = {s: [r for r in results if r.status == s]
-              for s in (FAIL, ERROR, SKIPPED, PASS)}
+              for s in (FAIL, REFUSED, ERROR, SKIPPED, PASS)}
 
-    for status in (FAIL, ERROR, SKIPPED):
+    for status in (FAIL, REFUSED, ERROR, SKIPPED):
         group = counts[status]
         if not group:
             continue
@@ -698,8 +710,11 @@ def summarize(results: Sequence[PreflightResult]) -> None:
     n_err, n_skip = len(counts[ERROR]), len(counts[SKIPPED])
     parts = [f"{n_pass} passed", f"{n_fail} failed",
              f"{n_err} not checked", f"{n_skip} structure-only"]
+    n_refused = len(counts[REFUSED])
+    if n_refused:
+        parts.insert(2, f"{n_refused} refused by the MATDUMP check")
     line = f"{total} deck(s): " + ", ".join(parts)
-    if n_fail:
+    if n_fail or n_refused:
         _say("err", line)
     elif n_err:
         _say("warn", line)
@@ -714,7 +729,7 @@ def exit_code(results: Sequence[PreflightResult]) -> int:
     actionable finding, and it must not be masked by an unrelated deck the
     harness could not reach.
     """
-    if any(r.status == FAIL for r in results):
+    if any(r.status in (FAIL, REFUSED) for r in results):
         return 1
     if any(r.status == ERROR for r in results):
         return 2
@@ -755,7 +770,10 @@ def build_parser() -> argparse.ArgumentParser:
         description=("Validate .d12 decks by running CRYSTAL with TESTPDIM, which "
                      "stops after the full input is read and the symmetry analysis "
                      "is done (manual p.129). Catches decks that are structurally "
-                     "fine but that CRYSTAL rejects."),
+                     "fine but that CRYSTAL rejects. A MATDUMP .d3 named on the "
+                     "command line is checked without CRYSTAL (records, N "
+                     "against the parent's bounds, <deck>.f9 beside it); other "
+                     ".d3 kinds are not checked."),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Exit codes:
@@ -796,7 +814,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         _say("err", "No D12 files found to pre-flight")
         return 2
 
-    if args.static_only:
+    # .d3 decks never run CRYSTAL (preflight_d3.py), so they need no binary.
+    if args.static_only or all(d.suffix.lower() == ".d3" for d in decks):
         runner = None
     else:
         binary = find_crystal_binary(args.crystal_bin)

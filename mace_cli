@@ -742,6 +742,13 @@ Examples:
   mace preflight workflow_outputs/step_001_OPT/ -j 8
   mace preflight decks/ -r --keep preflight_failures/
 
+A MATDUMP .d3 named on the command line is checked WITHOUT CRYSTAL: its
+BASISSET / NPR / 60 N / 64 N / END records (manual p.310), N against the
+bounds derived from the parent SCF .out beside it (vector pool, MOLECULE
+parent, truncation below the derived count), and the <deck>.f9 the job script
+stages. Other .d3 kinds (BAND, DOSS, ...) are reported as NOT checked.
+Directories are searched for .d12 decks only.
+
 Note: needs the serial `crystal` binary (not Pcrystal). It is found from
 --crystal-bin, $MACE_CRYSTAL_BIN, $EBROOTCRYSTAL/bin/crystal, PATH, or by
 loading the CRYSTAL/23-intel-2023a module. Run it on a compute node, or on a

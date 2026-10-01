@@ -549,6 +549,14 @@ mace submit material_sp_matdump.d3                        # run it
 mace wannier --input material_sp_matdump.out              # convert
 ```
 
+`mace preflight material_sp_matdump.d3` checks a MATDUMP deck before you submit
+it, without running CRYSTAL (`properties` has no TESTPDIM): the
+`BASISSET / NPR / 60 N / 64 N / END` records (manual p.310 and p.71), `N`
+against the bounds below, read from the parent SCF `.out` beside the deck, and
+the `<deck>.f9` that `submit_prop.sh` copies to `fort.9`. A good deck is
+reported as structure-only, never as passed. Other `.d3` kinds are reported as
+not checked, and a directory argument still collects `.d12` decks only.
+
 #### The `N` parameter — derived, never guessed
 
 `MATDUMP` prints H(R) and S(R) for `N` direct-lattice R-vectors. A too-small `N`
