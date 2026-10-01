@@ -58,7 +58,7 @@ from d12_constants import (
     # Utility functions
     yes_no_prompt, get_valid_input, safe_float, safe_int,
     generate_unit_cell_line, read_basis_file, generate_k_points, slab_k_points,
-    check_basis_set_compatibility,
+    check_basis_set_compatibility, hf3c_metal_warning,
     # Configuration functions (from merged d12_config_common)
     configure_tolerances, configure_scf_settings, select_basis_set,
     configure_dft_grid, configure_dispersion, configure_spin_polarization,
@@ -790,6 +790,11 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
 
             # Add 3C corrections
             if functional == "HF3C":
+                caution = hf3c_metal_warning(
+                    conventional_atom_number(atom["atom_number"], settings)
+                    for atom in coords_to_write)
+                if caution:
+                    ui.warn(f"  Warning: {caution}")
                 f.write("HF3C\n")
                 f.write("END\n")
             elif functional == "HFSOL3C":

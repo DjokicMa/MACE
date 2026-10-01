@@ -109,6 +109,7 @@ from d12_constants import (
     read_basis_file,
     generate_k_points,
     check_basis_set_compatibility,
+    hf3c_metal_warning,
     get_user_input,
     # Configuration functions (from merged d12_config_common)
     configure_tolerances,
@@ -1946,6 +1947,9 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
 
                 # Add 3C corrections
                 if hf_method == "HF3C":
+                    caution = hf3c_metal_warning(atomic_numbers)
+                    if caution:
+                        ui.warn(f"Warning: {caution}")
                     print("HF3C", file=f)
                     print("END", file=f)
                 elif hf_method == "HFSOL3C":
