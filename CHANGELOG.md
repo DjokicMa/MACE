@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-10-01
+
+Everything since 1.1.2. Band paths are written with exact high-symmetry points
+and follow SeeK-path for more lattices (cubic, hexagonal, monoclinic, centred);
+`opt2d12` FREQ decks repeat their FREQ parent's FREQCALC settings and
+Hartree-Fock parents stay Hartree-Fock; the DOSS example configs now give decks
+CRYSTAL runs; a P1 deck from a CIF without symmetry operators holds the right
+atoms; and workflow steps can optionally restart their SCF from the previous
+step's density matrix (off by default). Several of these change the content of
+generated decks - see Fixed below.
+
 ### Added
 
 - **Workflow steps can restart their SCF from the previous step's density

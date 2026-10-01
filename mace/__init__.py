@@ -15,7 +15,7 @@ All modules will be re-exported here to ensure existing imports continue to work
 # Every display/export site (mace_cli, utils/animation.py, utils/banner.py,
 # database/export/formats.py) imports it from here, so a bump needs no other
 # edit. test_version_single_source.py enforces that; do not reintroduce copies.
-__version__ = "1.1.2"
+__version__ = "1.1.3"
 
 
 def _bind_stdlib_queue():

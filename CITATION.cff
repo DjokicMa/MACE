@@ -23,8 +23,8 @@ authors:
     given-names: "Jose L."
     affiliation: "Michigan State University"
     orcid: "https://orcid.org/0000-0001-5184-1406"
-version: "1.1.2"
-date-released: "2026-09-29"
+version: "1.1.3"
+date-released: "2026-10-01"
 doi: "10.5281/zenodo.18635425"
 license: MIT
 repository-code: "https://github.com/DjokicMa/MACE"
