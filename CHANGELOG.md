@@ -35,6 +35,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   terminal asked for a SMEAR width) and only then refused the deck the
   2c-SCF cannot run. It now refuses first and says nothing about SMEAR for a
   deck it does not write. No deck changes.
+- **The job script no longer takes GUESSPSO, GUESSPNOSO or GUESSPAT for
+  GUESSP.** `submitcrystal23.sh` (also reached as
+  `mace/workflow/submitcrystal23.sh`, a symlink) looked for a line starting
+  with `GUESSP`, so a 2c deck's GUESSPSO (manual p. 173) or an atomic guess
+  (GUESSPAT p. 115, GUESSPATNC p. 171) had a `.f9` staged as fort.20, and
+  without one the log said GUESSP had been dropped while the record stayed.
+  Job-script change: the GUESSP staging now matches the GUESSP record only,
+  and GUESSPSO / GUESSPNOSO get their own branch, which never takes the
+  record out of the deck. The manual does not say which file those two read
+  (pp. 170-175); fort.20 is where a density-matrix guess is read from
+  (pp. 114-115), so `$JOB.f20` is staged there if present, else, for
+  GUESSPSO only, the job's own non-empty `$JOB.f9` (a 2c matrix from an
+  earlier run of the same deck) - untested in 2c. The recovery's refresh of
+  pre-RESTART job scripts writes the new GUESSP line. Decks are unchanged.
 - **An `opt2d12` phonon deck with a SeeK-path band path is written.** The
   SeeK-path helpers read a `.out` file, but `opt2d12` passed them the parent's
   output text, so every such deck stopped with `OSError: File name too long`.

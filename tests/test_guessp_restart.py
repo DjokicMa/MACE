@@ -151,3 +151,72 @@ def test_nothing_is_staged_when_the_deck_does_not_ask_for_it(tmp_path):
     it for every job in a sweep would be pure I/O."""
     block = _staging_block(tmp_path)
     assert _stage(tmp_path, block, False, ["testmat.f9"], "noguessp") is None
+
+
+# ---------------------------------------------------------------------------
+# Keywords that only START with "GUESSP" are not GUESSP
+# ---------------------------------------------------------------------------
+# Manual pp. 170-173: inside TWOCOMPON, GUESSPSO is the guess from a previous
+# 2c-SCF density matrix, GUESSP[NOSO] the guess from a previous 1c-SCF one;
+# GUESSPAT (p. 115) and GUESSPATNC (p. 171) are atomic guesses that read no
+# matrix. The manual says GUESSP reads fort.20 (pp. 114-115) but does not say
+# which file GUESSPSO or GUESSPNOSO reads.
+
+def _stage_deck(tmp_path, block, records, files, tag):
+    import subprocess
+
+    d = tmp_path / tag
+    scratch = d / "scratch" / "testmat"
+    scratch.mkdir(parents=True)
+    deck = "title\nCRYSTAL\nEND\n" + "".join(r + "\n" for r in records) + "END\n"
+    (d / "testmat.d12").write_text(deck)
+    for name in files:
+        (d / name).write_text("MATRIX-" + name)
+    (scratch / "INPUT").write_text(deck)
+    prelude = f'DIR="{d}"\nJOB=testmat\nscratch="{d}/scratch"\n'
+    run = subprocess.run(["bash", "-c", prelude + block], capture_output=True, text=True)
+    staged = scratch / "fort.20"
+    return (staged.read_text() if staged.exists() else None,
+            run.stdout, (scratch / "INPUT").read_text(), deck)
+
+
+TWOC_SO = ["TWOCOMPON", "SOC", "GUESSPSO", "END"]
+TWOC_NOSO = ["TWOCOMPON", "SOC", "GUESSPNOSO", "END"]
+
+
+def test_guesspso_is_not_treated_as_guessp_and_never_stripped(tmp_path):
+    block = _staging_block(tmp_path)
+    staged, out, scratch_input, deck = _stage_deck(tmp_path, block, TWOC_SO, [], "so_none")
+    assert staged is None
+    assert scratch_input == deck                         # the record stays as written
+    assert "dropped" not in out and "GUESSP requested" not in out
+    assert "GUESSPSO" in out and "left in the deck" in out
+
+
+def test_guesspso_gets_a_staged_f20_or_the_jobs_own_2c_f9_as_fort20(tmp_path):
+    block = _staging_block(tmp_path)
+    staged, out, scratch_input, deck = _stage_deck(
+        tmp_path, block, TWOC_SO, ["testmat.f20", "testmat.f9"], "so_both")
+    assert staged == "MATRIX-testmat.f20" and scratch_input == deck
+    assert out.startswith("GUESSPSO: staged testmat.f20 as fort.20")
+    staged, out, scratch_input, deck = _stage_deck(tmp_path, block, TWOC_SO, ["testmat.f9"], "so_f9")
+    assert staged == "MATRIX-testmat.f9" and scratch_input == deck
+    assert out.startswith("GUESSPSO: staged this job own 2c testmat.f9 as fort.20")
+
+
+def test_guesspnoso_never_gets_the_jobs_own_2c_f9(tmp_path):
+    """GUESSPNOSO wants a 1c matrix; this 2c deck's own .f9 is a 2c one."""
+    block = _staging_block(tmp_path)
+    staged, out, scratch_input, deck = _stage_deck(tmp_path, block, TWOC_NOSO, ["testmat.f9"], "noso_f9")
+    assert staged is None and scratch_input == deck and "dropped" not in out
+    staged, out, scratch_input, deck = _stage_deck(tmp_path, block, TWOC_NOSO, ["testmat.f20"], "noso_f20")
+    assert staged == "MATRIX-testmat.f20" and scratch_input == deck
+
+
+def test_an_atomic_guess_stages_nothing(tmp_path):
+    block = _staging_block(tmp_path)
+    for i, records in enumerate((["GUESSPAT"], ["TWOCOMPON", "SOC", "GUESSPATNC", "1",
+                                                 "1 90.0 90.0 1.0", "ENDTWO"])):
+        staged, out, scratch_input, deck = _stage_deck(tmp_path, block, records,
+                                                       ["testmat.f9"], f"pat{i}")
+        assert staged is None and scratch_input == deck and out == ""

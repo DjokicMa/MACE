@@ -167,7 +167,20 @@ fi
 # chain is exactly that case. Stripping the record from the scratch copy makes
 # the deck mean "restart if there is something to restart from"; $DIR/$JOB.d12
 # itself is never modified, so the next attempt still asks.
-if [ -z "$RESTART_KEEPS_FORT20" ] && grep -qiE "^[[:space:]]*GUESSP" "$scratch/$JOB/INPUT" 2>/dev/null; then
+#
+# Only the GUESSP record itself: GUESSPAT and GUESSPATNC are atomic guesses
+# that read no matrix (manual pp. 115, 171), and GUESSPSO / GUESSPNOSO,
+# inside a TWOCOMPON block, are the two-component restarts (p. 173): the
+# guess from a previous 2c-SCF and from a previous 1c-SCF density matrix.
+# The manual does not say which file those two read. fort.20 is where every
+# other density-matrix guess is read from (p. 115), and CRYSTAL ignores a
+# fort.20 nothing asks for, so the matrix is staged there (untested in 2c),
+# but such a record is never taken out of the deck: what CRYSTAL does without
+# its matrix was not measured. The job own $JOB.f9, from an earlier run of
+# this same 2c deck, is a 2c matrix - right for GUESSPSO, wrong for
+# GUESSPNOSO, which gets only a deliberately staged $JOB.f20. A 2c deck has
+# no OPTGEOM (p. 166), so there is no RESTART fort.20 to stand aside for.
+if [ -z "$RESTART_KEEPS_FORT20" ] && grep -qiE "^[[:space:]]*GUESSP[[:space:]]*$" "$scratch/$JOB/INPUT" 2>/dev/null; then
   if [ -f "$DIR/$JOB.f20" ]; then
     cp "$DIR/$JOB.f20" "$scratch/$JOB/fort.20"
     echo "GUESSP: staged $JOB.f20 as fort.20"
@@ -178,6 +191,16 @@ if [ -z "$RESTART_KEEPS_FORT20" ] && grep -qiE "^[[:space:]]*GUESSP" "$scratch/$
     sed -i "/^[[:space:]]*[Gg][Uu][Ee][Ss][Ss][Pp][[:space:]]*$/d" "$scratch/$JOB/INPUT"
     echo "GUESSP requested but no $JOB.f20 or $JOB.f9 on disk - dropped it from"
     echo "  this run and cold starting (CRYSTAL aborts on GUESSP with no fort.20)"
+  fi
+elif MACE_GUESS2C=$(grep -oiE "^[[:space:]]*GUESSP(NO)?SO[[:space:]]*$" "$scratch/$JOB/INPUT" 2>/dev/null | head -n 1 | tr -d "[:space:]" | tr "[:lower:]" "[:upper:]") && [ -n "$MACE_GUESS2C" ]; then
+  if [ -f "$DIR/$JOB.f20" ]; then
+    cp "$DIR/$JOB.f20" "$scratch/$JOB/fort.20"
+    echo "$MACE_GUESS2C: staged $JOB.f20 as fort.20 (the manual does not name the file it reads)"
+  elif [ "$MACE_GUESS2C" = "GUESSPSO" ] && [ -s "$DIR/$JOB.f9" ]; then
+    cp "$DIR/$JOB.f9" "$scratch/$JOB/fort.20"
+    echo "GUESSPSO: staged this job own 2c $JOB.f9 as fort.20 (the manual does not name the file it reads)"
+  else
+    echo "$MACE_GUESS2C: no matrix to stage as fort.20; the record is left in the deck as written"
   fi
 fi
 cd $scratch/$JOB
