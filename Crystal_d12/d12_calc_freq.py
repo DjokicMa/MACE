@@ -1514,8 +1514,6 @@ def get_auto_phonon_path(crystal_system: str = None, space_group: int = None,
     Returns:
         List of path segments
     """
-    from d12_constants import HIGH_SYMMETRY_PATHS, SPACEGROUP_TO_PATH
-    
     # Import the d3_config functions for consistency
     if get_band_path_from_symmetry is None:
         # Fallback if imports at module level failed
@@ -1579,8 +1577,8 @@ def get_auto_phonon_path(crystal_system: str = None, space_group: int = None,
                 segments.append(f"{path_labels[i]} {path_labels[i+1]}")
             return segments
         
-        elif format_type == "vectors" and get_kpoint_coordinates_from_labels:
-            # Return coordinate-based path
+        elif get_kpoint_coordinates_from_labels:
+            # Return coordinate-based path ("vectors", and any other coordinate format)
             if band_settings:
                 band_settings["kpath_source"] = "default"
             coord_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
@@ -1594,61 +1592,6 @@ def get_auto_phonon_path(crystal_system: str = None, space_group: int = None,
                     ]
                     int_segments.append(int_seg)
                 return int_segments
-    
-    # Original fallback code for backward compatibility
-    if space_group and space_group in SPACEGROUP_TO_PATH:
-        path_key = SPACEGROUP_TO_PATH[space_group]
-        if path_key in HIGH_SYMMETRY_PATHS:
-            path_data = HIGH_SYMMETRY_PATHS[path_key]
-            if format_type == "labels" or shrink == 0:
-                # Return label-based path
-                labels = path_data.get("labels", ["G", "X", "M", "G"])
-                # Convert list of points to list of segments
-                if labels and isinstance(labels, list) and len(labels) > 1:
-                    if " " not in labels[0]:  # Individual points
-                        segments = []
-                        for i in range(len(labels) - 1):
-                            segments.append(f"{labels[i]} {labels[i+1]}")
-                        return segments
-                    else:  # Already in segment format
-                        return labels
-                return ["G X", "X M", "M G"]
-            else:
-                # Return coordinate-based path
-                coords = path_data.get("coordinates", {})
-                segments = []
-                labels = path_data.get("labels", [])
-                
-                # Handle two formats: list of label pairs ["G X", "X M"] or list of points ["G", "X", "M"]
-                if labels and isinstance(labels[0], str) and " " in labels[0]:
-                    # Format 1: List of label pairs
-                    for label_pair in labels:
-                        start_label, end_label = label_pair.split()
-                        if start_label in coords and end_label in coords:
-                            start = coords[start_label]
-                            end = coords[end_label]
-                            # Convert to shrink-scaled integer coordinates
-                            segment = [
-                                int(round(start[0] * shrink)), int(round(start[1] * shrink)), int(round(start[2] * shrink)),
-                                int(round(end[0] * shrink)), int(round(end[1] * shrink)), int(round(end[2] * shrink))
-                            ]
-                            segments.append(segment)
-                elif labels and len(labels) > 1:
-                    # Format 2: List of individual points - create segments
-                    for i in range(len(labels) - 1):
-                        start_label = labels[i]
-                        end_label = labels[i + 1]
-                        if start_label in coords and end_label in coords:
-                            start = coords[start_label]
-                            end = coords[end_label]
-                            # Convert to shrink-scaled integer coordinates
-                            segment = [
-                                int(round(start[0] * shrink)), int(round(start[1] * shrink)), int(round(start[2] * shrink)),
-                                int(round(end[0] * shrink)), int(round(end[1] * shrink)), int(round(end[2] * shrink))
-                            ]
-                            segments.append(segment)
-                            
-                return segments if segments else [[0, 0, 0, shrink//2, 0, 0]]
     
     # Fallback to simple cubic path if no specific path found
     if shrink == 0:

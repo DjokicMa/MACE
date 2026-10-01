@@ -9,6 +9,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Crystal_d12 README says where the phonon SeeK-path path gets its
+  inversion.** It still said the phonon path had only the space-group number,
+  and kept a known issue about the output text being taken for a file name.
+  Since that fix the parent output reaches the SeeK-path helpers as a file
+  (`d12_calc_freq._output_as_file`), and inversion and cell parameters come
+  from it (`d3_kpoints.detect_inversion_from_crystal_output`); the number is
+  the fallback when there is no output.
+- **`opt2d12 --config-file` writes Hartree-Fock decks from an HF config.** A
+  config with `"method": "HF"` and a null functional (the form
+  `quick_screen.json` had) stopped every file with `argument of type
+  'NoneType' is not iterable`, and one naming only the method, or its flavour
+  as `hf_method`, kept the parent's DFT functional. opt2d12 now reads the
+  flavour from `hf_method` or `functional`, RHF when neither names one, as
+  cif2d12 does, and refuses an HF config that names a DFT functional.
+- **"Proceed with spglib space group" writes spglib's cell with spglib's
+  group.** When a CIF's group and spglib's disagree, option 2 declared
+  spglib's group number but kept the CIF's cell and atoms, so CRYSTAL applied
+  the group's standard operators to a cell in another setting: rock salt given
+  as its 60-degree primitive cell became an Fm-3m cube with a = 3.99 A instead
+  of 5.64 A. The deck now carries spglib's standardised conventional cell and
+  its asymmetric unit, in the origin the deck declares for two-origin groups.
+- **A P1 deck from an Fd-3m CIF holds the structure the CIF describes.** A
+  CIF with no symmetry-operator loop is expanded by ASE in origin choice 1, but
+  the converter reads Fd-3m atoms at (1/8, 1/8, 1/8) as origin choice 2 - as
+  the symmetrised deck ("0 0 0") and CRYSTAL's own diamond example do. The
+  P1 deck of such a diamond CIF therefore held 16 atoms 1.26 A apart instead
+  of diamond's 8. The P1 expansion now uses the origin the symmetrised deck
+  declares for Fd-3m, and for any two-origin group when origin_setting is
+  STANDARD. CIFs that list their operators are expanded as before.
+- **P2/c and P2_1/c keep the primitive monoclinic SeeK-path.** Without the
+  seekpath library, a band or phonon path built from a CRYSTAL output reads
+  the cell parameters, and with them space groups 13 and 14 were sent to the
+  C-centred monoclinic path (mS1), whose points belong to another Brillouin
+  zone; the split between P and C was taken at group 11. They now get mP1,
+  as SeeK-path does and as they already did without cell parameters.
+- **Simple cubic groups 207-230 get SeeK-path's cP2 path.** Without the
+  seekpath library every primitive cubic group took the cP1 path, whose last
+  segment M-X_1 belongs to groups 195-206 only. P432, P-43m, Pm-3m and the
+  other groups 207-230 now take cP2 (cP2_noinv when non-centrosymmetric), as
+  SeeK-path does.
+- **Static SeeK-path titles name the segments the deck writes.** Without the
+  seekpath library, the title labels of the P-1 (aP3), C-centred monoclinic
+  (mS1: C2, Cm, C2/m, ...), F-orthorhombic (oF1-oF3: Fmmm, Fddd), I-tetragonal
+  (tI1/tI2: I4/m, I4/mmm, ...) and non-centrosymmetric F-cubic (F-43m, F23, ...)
+  paths ran on where SeeK-path's path jumps, so the title had more edges than
+  the deck had segments and band-plot nodes were misnamed. They now follow
+  SeeK-path's path, with a "|" at each jump. The P-1 aP2 path also called
+  (1/2, 1/2, 0) and (1/2, 0, 1/2) N and M; SeeK-path names them V and U. The
+  coordinates are unchanged.
+- **Static SeeK-path titles of the other centred lattices name their
+  segments too.** The same run-on labels were in the paths used for the
+  non-centrosymmetric rhombohedral groups (R3, R32, R3m, R3c: hR1/hR2),
+  body-centred tetragonal groups (I4, I-4, I422, I4mm, I-42d, ...: tI1/tI2)
+  and face-centred orthorhombic groups (F222, Fmm2, Fdd2: oF1/oF3), and for
+  every body-centred orthorhombic group (Immm, Imm2, I222, ...: oI1) and
+  every C-centred orthorhombic group (Cmcm, Cmc2_1, Cmmm, ...: oS1). They
+  now follow SeeK-path's path with a "|" at each jump; the tI2 path without
+  inversion also named its point G as Gamma. The coordinates are unchanged.
+- **Hexagonal K and H points are written exactly in BAND and phonon paths.**
+  Coordinate paths are written in units of 1/shrink, and K = (1/3, 1/3, 0) is
+  only a whole number of steps when the shrink is a multiple of 3; at the usual
+  16 it was rounded to 5/16. Quarter points had the same problem at a shrink
+  such as 6 or 990. The shrink is now raised to the next common multiple of the
+  points' denominators (16 becomes 18 for hexagonal paths), the way a shrink
+  too small for the path was already raised.
 - **An `opt2d12` phonon deck with a SeeK-path band path is written.** The
   SeeK-path helpers read a `.out` file, but `opt2d12` passed them the parent's
   output text, so every such deck stopped with `OSError: File name too long`.
@@ -28,14 +93,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CRYSTAL prints it ("P 4 21 2", not "P 42 1 2"), maps P-42c to 112 (not
   114), and has no duplicate key; every lookup already reached the right
   number through another table, so no other deck changes.
-- **The phonon fallback k-path table names only points it has.** Most F- and
-  I-centred cubic groups (196, 197, 199, 202-204, 206, 209-211, 214, 217, 219,
-  220, 226) got the simple-cubic path, and the monoclinic and triclinic paths
-  named points (M1, X, V, W, ...) with no coordinates, so their segments were
-  dropped. F and I cubic now get the fcc and bcc paths, and monoclinic and
-  triclinic use the points MACE's band-path code uses (CRYSTAL23 manual Table
-  14.1 for P monoclinic). The table is read only by `get_auto_phonon_path`,
-  which nothing calls today, so no deck changes.
 - **`copy_dependencies.py` copies the files it lists.** Its list still used
   the names from before the scripts moved into the `mace` package, and it
   looked for `Crystal_d12/` and `Crystal_d3/` inside `mace/`, so it reported
@@ -136,6 +193,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mace/workflow/check_workflows.py` (superseded by `mace status` and the
   queue manager's completion callback), `mace/utils/scf_settings_extractor.py`
   and `mace/utils/analyze_script_dependencies.py`.
+- The phonon fallback k-path tables `SPACEGROUP_TO_PATH` and
+  `HIGH_SYMMETRY_PATHS` (`Crystal_d12/d12_constants.py`). They gave one path
+  per crystal system whatever the lattice centring (C2/m the primitive
+  monoclinic path, Fmmm and Immm the primitive orthorhombic one, I4/mmm the
+  primitive tetragonal one, R-3m the hexagonal one), and their only reader was
+  a fallback in `d12_calc_freq.get_auto_phonon_path`, a function nothing in
+  MACE calls. Its coordinate paths now all come from the centring-aware
+  band-path code that its "vectors" format already used. No deck changes.
 
 ### Testing
 
