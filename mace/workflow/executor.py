@@ -1856,9 +1856,20 @@ fi'''
             
     def generate_inputs_with_crystal_opt(self, workflow_id: str, step_num: int, 
                                        calc_type: str, config: Dict[str, Any]):
-        """Generate inputs using CRYSTALOptToD12.py"""
+        """Generate inputs using CRYSTALOptToD12.py
+
+        Legacy path: reached only from the executor's own monitor loop
+        (active_workflows), which nothing in MACE starts; workflows progress
+        through WorkflowEngine.execute_workflow_step. The plan's
+        ``execution_settings.guessp_restart`` is applied by the engine only,
+        so here it is reported and the decks are written without GUESSP.
+        """
         ui.info(f"    Using CRYSTALOptToD12.py for {calc_type} inputs")
-        
+        plan = self.active_workflows[workflow_id]['plan']
+        if (plan.get('execution_settings') or {}).get('guessp_restart') is True:
+            ui.warn(f"    guessp_restart is applied only by the workflow engine; "
+                    f"the {calc_type} inputs made here start without GUESSP")
+
         # Get completed calculations from previous step
         prev_step_key = f"step_{step_num}_{self.active_workflows[workflow_id]['plan']['workflow_sequence'][step_num-1]}"
         prev_job_ids = self.active_workflows[workflow_id]["submitted_jobs"].get(prev_step_key, [])

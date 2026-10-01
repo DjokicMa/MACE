@@ -348,3 +348,28 @@ def test_add_guessp_keeps_crlf_line_endings():
     out = guessp_chain.add_guessp(deck)
     assert "\r\nGUESSP\r\nSCFDIR\r\n" in out
     assert out.replace("GUESSP\r\n", "", 1) == deck
+
+
+def test_the_legacy_executor_path_says_it_does_not_add_guessp(tmp_path, capsys):
+    """WorkflowExecutor.generate_inputs_with_crystal_opt (the executor's own
+    step generator, reached only from its monitor loop, which nothing starts)
+    does not apply guessp_restart. With the option on it must say so rather
+    than silently writing cold-start decks."""
+    from mace.workflow.executor import WorkflowExecutor
+
+    ex = WorkflowExecutor.__new__(WorkflowExecutor)
+    ex.outputs_dir = tmp_path
+    (tmp_path / WF_ID).mkdir()
+    ex.active_workflows = {WF_ID: {
+        "plan": {"workflow_sequence": ["OPT", "SP"],
+                 "execution_settings": {"guessp_restart": True}},
+        "submitted_jobs": {}}}
+    ex.generate_inputs_with_crystal_opt(WF_ID, 1, "SP", {})
+    out = capsys.readouterr()
+    assert "guessp_restart" in out.out + out.err
+    assert "engine" in out.out + out.err
+
+    ex.active_workflows[WF_ID]["plan"]["execution_settings"] = {}
+    ex.generate_inputs_with_crystal_opt(WF_ID, 1, "SP", {})
+    out = capsys.readouterr()
+    assert "guessp_restart" not in out.out + out.err

@@ -58,7 +58,7 @@ from d12_constants import (
     # Utility functions
     yes_no_prompt, get_valid_input, safe_float, safe_int,
     generate_unit_cell_line, read_basis_file, generate_k_points, slab_k_points,
-    check_basis_set_compatibility,
+    check_basis_set_compatibility, hf3c_metal_warning,
     # Configuration functions (from merged d12_config_common)
     configure_tolerances, configure_scf_settings, select_basis_set,
     configure_dft_grid, configure_dispersion, configure_spin_polarization,
@@ -790,6 +790,11 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
 
             # Add 3C corrections
             if functional == "HF3C":
+                caution = hf3c_metal_warning(
+                    conventional_atom_number(atom["atom_number"], settings)
+                    for atom in coords_to_write)
+                if caution:
+                    ui.warn(f"  Warning: {caution}")
                 f.write("HF3C\n")
                 f.write("END\n")
             elif functional == "HFSOL3C":
@@ -1261,6 +1266,8 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     settings = out_data.copy()
     external_basis_data = []
     parent_k_points = None
+    # The parent deck's SCELPHONO expansion, if it ran a phonon dispersion.
+    parent_scelphono = None
 
     if input_file and os.path.exists(input_file):
         ui.info(f"Parsing input file: {input_file}")
@@ -1268,6 +1275,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         try:
             in_data = in_parser.parse()
             parent_k_points = in_data.get("k_points")
+            parent_scelphono = (in_data.get("freq_settings") or {}).get("scelphono")
 
             # Merge data, with special handling for DFT settings
             for key, value in in_data.items():
@@ -1603,6 +1611,20 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                         return False, None
                     options["functional"] = explicit_functional = hf_method
                     options["method"] = "HF"
+                    # HF3C / HFSOL3C are defined for a pure HF calculation in
+                    # the MINIX / SOLMINIX basis (manual 5.3.1 p.158, 5.4.1
+                    # p.162), written BASISSET / MINIX / HF3C / END (p.159).
+                    # The parent's basis, external or internal, was kept and
+                    # an external one came out as "BASISSET / EXTERNAL ...".
+                    required_basis = {"HF3C": "MINIX", "HFSOL3C": "SOLMINIX"}.get(hf_method)
+                    if required_basis:
+                        if options.get("basis_set") != required_basis:
+                            ui.info(f"  Basis set: {required_basis} (required by {hf_method}; "
+                                    f"the parent's basis is not used)")
+                        options["basis_set"] = required_basis
+                        options["basis_set_type"] = "INTERNAL"
+                        options["use_original_external_basis"] = False
+                        options["is_3c_method"] = True
                 if explicit_functional and "dispersion" not in config_data:
                     options["dispersion"] = str(explicit_functional).upper().endswith("-D3")
                 
@@ -1793,6 +1815,18 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     functional = dedupe_dispersion_suffix(functional)
 
     new_filename = f"{base_name}_{calc_type.lower()}_{functional}_optimized.d12"
+
+    # SCELPHONO builds the phonon supercell in the geometry input (manual
+    # sec. 4.21 p.73; the geometry CRYSTAL prints after it is the supercell,
+    # primitive-cell atoms first, p.74), and DISPERSION runs on that cell
+    # (sec. 8.8 p.232). A FREQ deck from such a run starts from the supercell
+    # and, carrying the parent's SCELPHONO, would expand it again.
+    if calc_type == "FREQ" and parent_scelphono:
+        reason = ("the parent ran a phonon dispersion (SCELPHONO): its geometry is the "
+                  "SCELPHONO supercell, which a FREQ deck with SCELPHONO would expand again")
+        _fail(reason, f"\nNot writing {os.path.basename(new_filename)}: {reason}. Make the "
+                      f"FREQ deck from the OPT or SP output the dispersion run started from.")
+        return False, options
 
     # CUSTOM-XC names the parent's own EXCHANGE/CORRELAT/HYBRID records; a
     # parent without them has nothing to write, and the writer would stop

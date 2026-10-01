@@ -56,6 +56,17 @@ except Exception:  # pragma: no cover - defensive fallback
             except ValueError:
                 print("Please enter a number.")
 
+
+def _read_choice(prompt, choices, default):
+    """Read one of the numbered menu answers in ``choices``; ask again on
+    anything else. A blank answer gives ``default``."""
+    while True:
+        answer = _nav_read(prompt, valid_set={"_choice_"}).strip() or default
+        if answer in choices:
+            return answer
+        print(f"Please enter one of: {', '.join(choices)}.")
+
+
 # Add Crystal_d3 to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "Crystal_d3"))
 try:
@@ -250,7 +261,9 @@ def get_advanced_frequency_settings(parent_numderiv=None):
         print("     Forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
         print("  2: Two displacements per atom (more accurate)")
         print("     Central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
-        numderiv_choice = _nav_read(f"\nSelect method (0-2) [{numderiv_default}]: ", valid_set={"_choice_"}).strip() or numderiv_default
+        # NUMDERIV takes 1 or 2 (manual p.218); 0 writes no keyword.
+        numderiv_choice = _read_choice(f"\nSelect method (0-2) [{numderiv_default}]: ",
+                                       ("0", "1", "2"), numderiv_default)
         if numderiv_choice == "0":
             freq_settings["numderiv"] = None  # Signal to skip NUMDERIV keyword
         else:
@@ -284,7 +297,7 @@ def get_advanced_frequency_settings(parent_numderiv=None):
                 print("   - Memory: ~2x base requirement")
                 print("\nNote: CPHF (3) is the default due to its broad applicability")
                 print("      and highest accuracy for all material types")
-                ir_method_choice = _nav_read("\nSelect method (1-3) [3]: ", valid_set={"_choice_"}).strip() or "3"
+                ir_method_choice = _read_choice("\nSelect method (1-3) [3]: ", ("1", "2", "3"), "3")
                 ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
                 freq_settings["ir_method"] = ir_methods[ir_method_choice]
         elif template_choice in ["2", "3", "4"]:
@@ -321,7 +334,7 @@ def get_advanced_frequency_settings(parent_numderiv=None):
                     print("   - Memory: ~2x base requirement")
                     print("\nNote: CPHF (3) is the default due to its broad applicability")
                     print("      and highest accuracy for all material types")
-                    ir_method_choice = _nav_read("\nSelect method (1-3) [3]: ", valid_set={"_choice_"}).strip() or "3"
+                    ir_method_choice = _read_choice("\nSelect method (1-3) [3]: ", ("1", "2", "3"), "3")
                     ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
                     freq_settings["ir_method"] = ir_methods[ir_method_choice]
                 
@@ -987,7 +1000,8 @@ def get_advanced_frequency_settings(parent_numderiv=None):
         print("2: Two displacements per atom (default, recommended)")
         print("   Uses central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
 
-        numderiv = _nav_read(f"Select method (0-2) [{numderiv_default}]: ", valid_set={"_choice_"}).strip() or numderiv_default
+        numderiv = _read_choice(f"Select method (0-2) [{numderiv_default}]: ",
+                                ("0", "1", "2"), numderiv_default)
         if numderiv == "0":
             freq_settings["numderiv"] = None  # Signal to skip NUMDERIV keyword
         else:
@@ -1025,7 +1039,7 @@ def get_advanced_frequency_settings(parent_numderiv=None):
                 
                 print("\nNote: CPHF (3) is the default due to its broad applicability")
                 print("      and highest accuracy for all material types")
-                ir_method_choice = _nav_read("\nSelect method (1-3) [3]: ", valid_set={"_choice_"}).strip() or "3"
+                ir_method_choice = _read_choice("\nSelect method (1-3) [3]: ", ("1", "2", "3"), "3")
                 ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
                 freq_settings["ir_method"] = ir_methods[ir_method_choice]
                 

@@ -217,3 +217,28 @@ def test_wavefunction_selector_skips_empty_f9(engine, tmp_path):
 
     assert picked == "opt_1", (
         f"selector picked {picked}: an empty f9 must be skipped")
+
+
+def test_workflow_state_records_the_step_that_completed(engine):
+    """OPT completes and the plan's next step is FREQ. Looking for the highest
+    completed OPT used to rebind ``calc_type`` while walking every completed
+    calculation, so the workflow state recorded whichever type came last in
+    the database (SP here) as the completed step instead of OPT."""
+    completed = _calc("OPT", cid="opt_1")
+    engine.db = _FakeDB([completed, _calc("SP", cid="sp_1")])
+    engine.db.get_calculation = lambda cid: completed
+    recorded = []
+    engine.db.update_workflow_state = lambda wid, completed_step=None: recorded.append(
+        (wid, completed_step))
+    engine._cleanup_failed_workflow_dirs = lambda: None
+    engine.get_workflow_sequence = lambda wid: ["OPT", "FREQ", "SP"]
+    engine._find_calc_position_in_sequence = lambda *a: 0
+    engine._get_next_steps_from_sequence = lambda *a: ["FREQ"]
+    engine._calculation_already_exists = lambda mid, t: False
+    engine._check_dependencies_met = lambda *a: (True, None)
+    engine._check_and_trigger_pending_calculations = lambda *a, **k: []
+
+    engine.execute_workflow_step("mat", "opt_1")
+
+    assert ("FREQ", "opt_1") in engine.triggered
+    assert recorded == [("wf_test", "OPT")]

@@ -154,6 +154,7 @@ fi
 #   $JOB.f20  a matrix deliberately staged for this job, e.g. a chained step
 #             restarting from a DIFFERENT predecessor (OPT -> SP), where the
 #             predecessor is named after its own job and not this one.
+#             Only a NON-EMPTY one, like the .f9 below: an empty file is no guess.
 #   $JOB.f9   this material own matrix from an earlier run of this same job -
 #             the walltime-killed restart, where the right guess is the one it
 #             already produced. Only a NON-EMPTY one: a run CRYSTAL aborted
@@ -168,7 +169,7 @@ fi
 # the deck mean "restart if there is something to restart from"; $DIR/$JOB.d12
 # itself is never modified, so the next attempt still asks.
 if [ -z "$RESTART_KEEPS_FORT20" ] && grep -qiE "^[[:space:]]*GUESSP" "$scratch/$JOB/INPUT" 2>/dev/null; then
-  if [ -f "$DIR/$JOB.f20" ]; then
+  if [ -s "$DIR/$JOB.f20" ]; then
     cp "$DIR/$JOB.f20" "$scratch/$JOB/fort.20"
     echo "GUESSP: staged $JOB.f20 as fort.20"
   elif [ -s "$DIR/$JOB.f9" ]; then

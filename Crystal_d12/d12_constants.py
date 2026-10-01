@@ -943,6 +943,37 @@ def required_basis_for(functional: Optional[str]) -> Optional[str]:
     return None
 
 
+# Metallic elements: alkali and alkaline-earth metals, Al, the transition and
+# post-transition metals, lanthanides and actinides (metalloids such as B, Si,
+# Ge, As, Sb, Te are left out).
+METALLIC_ELEMENTS = frozenset(
+    [3, 4, 11, 12, 13] + list(range(19, 32)) + list(range(37, 51))
+    + list(range(55, 85)) + list(range(87, 119)))
+
+
+def hf3c_metal_warning(atomic_numbers) -> Optional[str]:
+    """A caution for HF-3c (HF3C, MINIX) on a structure with metal atoms.
+
+    The manual (sec. 5.3.1, p. 158) says HF-3c's "original design targeted
+    organic complexes", that it "has been carefully tested for molecular
+    crystals", and that "applications to inorganic crystals and metals are
+    less well tested and should be treated carefully". It lists no element
+    range for MINIX (CRYSTAL23 loads it for Z 1-80 and 86, see
+    VERIFIED_INTERNAL_BASIS_ELEMENTS), so loading is not the test: measured on
+    CRYSTAL23, AgCl in HF3C/MINIX diverged (~1e7 Ha) while diamond converged.
+    """
+    metals = sorted({int(z) % 100 for z in atomic_numbers} & METALLIC_ELEMENTS)
+    if not metals:
+        return None
+    names = ", ".join(ATOMIC_NUMBER_TO_SYMBOL.get(z, str(z)) for z in metals)
+    return (f"HF-3c with MINIX on a structure with metal atoms ({names}): the manual "
+            f"(sec. 5.3.1, p. 158) says HF-3c was designed for organic systems, is "
+            f"carefully tested only for molecular crystals, and that inorganic crystals "
+            f"and metals are less well tested. An AgCl HF3C/MINIX run diverged; check "
+            f"the SCF converges. HFSOL3C (SOLMINIX) is the variant revised for "
+            f"inorganic solids (sec. 5.4.1, p. 162).")
+
+
 # Functionals supporting D3 dispersion correction
 D3_FUNCTIONALS = [
     # GGA

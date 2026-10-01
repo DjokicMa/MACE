@@ -503,6 +503,9 @@ that step's density matrix (GUESSP, with its `.f9` staged as `<job>.f20`), when
 both decks have the same symmetry, atom list, basis set and spin treatment.
 The engine reads the plan each time a step completes, so the setting can be
 added to `workflow_configs/workflow_plan_<id>.json` of a running workflow.
+Only the engine applies it: the executor's older step generator
+(`WorkflowExecutor.generate_inputs_with_crystal_opt`, which normal workflows
+no longer reach) writes its decks without GUESSP and says so.
 
 ### Integration with Existing Tools
 
