@@ -70,6 +70,20 @@ def test_steps_that_cannot_follow_a_soc_sp_are_warned_about():
     assert warnings[1].startswith("FREQ follows the SOC step SP3")
 
 
+def test_a_properties_step_after_band_and_doss_of_a_soc_sp_is_warned_about():
+    """TRANSPORT and CHARGE+POTENTIAL read the wavefunction of the nearest SP
+    or OPT before them (WorkflowEngine._find_dependency_in_sequence), so in
+    OPT, SP, BAND, DOSS, TRANSPORT the TRANSPORT run comes from the SOC SP."""
+    seq = ["OPT", "SP", "BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]
+    cfgs = {"SP_2": {"calculation_type": "SP", "soc": True}}
+    errors, warnings = P.soc_plan_problems(seq, cfgs)
+    assert errors == []
+    assert [w.split(" follows")[0] for w in warnings] == ["TRANSPORT", "CHARGE+POTENTIAL"]
+    # A scalar SP in between is the source instead: no warning.
+    seq = ["OPT", "SP", "BAND", "SP2", "DOSS", "TRANSPORT"]
+    assert P.soc_plan_problems(seq, cfgs) == ([], [])
+
+
 def test_a_plan_with_soc_on_an_opt_step_is_not_executed(tmp_path, capsys):
     plan = {"workflow_sequence": ["OPT", "SP", "OPT2"],
             "step_configurations": {"OPT2_3": {"calculation_type": "OPT", "soc": True}},

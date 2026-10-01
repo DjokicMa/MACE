@@ -133,10 +133,11 @@ def soc_plan_problems(sequence: List[str],
     An error: a step other than a single point asks for "soc": true - CRYSTAL
     runs SOC as a 2c-SCF single point only (manual p. 166), and the deck
     writer would refuse it. A warning: a step that cannot start from a SOC run
-    comes straight after a SOC SP, which the engine uses as its source when it
-    is the step before (OPT and SP steps provide the geometry); such a step
-    would inherit SOC and be refused, or be a properties run CRYSTAL does not
-    do in 2c.
+    has a SOC SP as its source - for OPT and FREQ the step straight before it
+    (OPT and SP steps provide the geometry), for TRANSPORT and
+    CHARGE+POTENTIAL the nearest SP or OPT before it (whose wavefunction they
+    read); such a step would inherit SOC and be refused, or be a properties
+    run CRYSTAL does not do in 2c.
     """
     errors, warnings = [], []
     soc_steps = set()
@@ -150,8 +151,16 @@ def soc_plan_problems(sequence: List[str],
                           f"no {base} calculation in a two-component SCF (manual p. 166)")
         else:
             soc_steps.add(step)
-    for before, after in zip(sequence, sequence[1:]):
+    for i, after in enumerate(sequence[1:], start=1):
         base = after.rstrip("0123456789") or after
+        before = sequence[i - 1]
+        if base in _NOT_FROM_A_SOC_RUN and base not in ("OPT", "FREQ"):
+            # A properties step reads the wavefunction of the nearest SP or
+            # OPT before it, not of the step before it (the engine's
+            # _find_dependency_in_sequence): SP, BAND, DOSS, TRANSPORT takes
+            # TRANSPORT from the SP.
+            before = next((s for s in reversed(sequence[:i])
+                           if (s.rstrip("0123456789") or s) in ("SP", "OPT")), before)
         if before in soc_steps and base in _NOT_FROM_A_SOC_RUN:
             warnings.append(f"{after} follows the SOC step {before}: CRYSTAL23 cannot run "
                             f"{base} from a two-component SCF (manual pp. 166, 183), so "
