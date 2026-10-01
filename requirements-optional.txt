@@ -1,0 +1,7 @@
+# Optional scientific dependencies, on top of requirements-test.txt, for the CI
+# job that runs the tests which otherwise skip without them: CIF reading and
+# symmetry (ase, spglib) and SeeK-path k-paths (seekpath). Pinned below the next
+# major release, like requirements-test.txt.
+ase<4
+spglib<3
+seekpath<3
