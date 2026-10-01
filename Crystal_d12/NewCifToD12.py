@@ -346,6 +346,7 @@ def parse_cif(cif_file, interactive=None):
             "cif_atom_symbols": raw_records[0] if raw_records else None,
             "cif_atom_positions": raw_records[1] if raw_records else None,
             "cif_symops": cif_symops,
+            "cif_lists_symops": _cif_lists_symops(cif_file),
             "name": os.path.basename(cif_file).replace(".cif", ""),
         }
 
@@ -684,6 +685,161 @@ def _parse_cif_atom_site_records(cif_file):
         return None
 
 
+def _cif_lists_symops(cif_file):
+    """True when the CIF spells out its symmetry operators.
+
+    Without such a loop ASE builds the operators from the space-group number
+    alone, in origin choice 1 for the groups that have two origins.
+    """
+    try:
+        with open(cif_file, "r", errors="ignore") as f:
+            text = f.read().lower()
+    except OSError:
+        return False
+    return ("_symmetry_equiv_pos_as_xyz" in text
+            or "_space_group_symop_operation_xyz" in text)
+
+
+def deck_origin_choice(spacegroup, positions, origin_setting="AUTO"):
+    """The ITA origin choice (1 or 2) a deck for these atoms declares.
+
+    Only the space groups with two origins have a choice; None otherwise.
+    CRYSTAL's IFSO = 0 ("0 0 0") takes origin choice 2 and IFSO = 1 ("0 0 1")
+    origin choice 1 (manual p. 20, and the two diamond decks on p. 373).
+    With origin_setting AUTO, Fd-3m atoms at (0, 0, 0) but none at
+    (1/8, 1/8, 1/8) are read as origin choice 1; everything else as 2.
+    """
+    if spacegroup not in MULTI_ORIGIN_SPACEGROUPS:
+        return None
+    spg_info = MULTI_ORIGIN_SPACEGROUPS[spacegroup]
+    if origin_setting == "ALTERNATE" and "alt_crystal_code" in spg_info:
+        return 1
+    if origin_setting == "AUTO" and spacegroup == 227:
+        std_pos = spg_info.get("default_pos", (0.125, 0.125, 0.125))
+        alt_pos = spg_info.get("alt_pos", (0.0, 0.0, 0.0))
+        std_detected = any(
+            all(abs(pos[k] - std_pos[k]) < 0.01 for k in range(3)) for pos in positions
+        )
+        alt_detected = any(
+            all(abs(pos[k] - alt_pos[k]) < 0.01 for k in range(3)) for pos in positions
+        )
+        if alt_detected and not std_detected:
+            return 1
+    return 2
+
+
+def expand_to_p1(cif_data, options):
+    """cif_data with every atom of the cell the symmetrised deck describes.
+
+    ASE expands the CIF's atom records with the CIF's own operators when it
+    lists them, and otherwise with origin choice 1 of the space group. For a
+    group with two origins whose deck is written in origin choice 2 (diamond
+    at (1/8, 1/8, 1/8) in Fd-3m, CRYSTAL's own example) that is a different
+    structure: 16 atoms at Fd-3m 16c instead of diamond's 8. Re-expand the
+    CIF's records in the origin the deck declares - where that origin is
+    known: origin_setting STANDARD, or Fd-3m, whose origin AUTO reads from
+    the atoms. For the other groups AUTO is a bare default, and ASE's
+    expansion is left as it was.
+    """
+    if cif_data.get("cif_lists_symops", True):
+        return cif_data
+    raw_syms = cif_data.get("cif_atom_symbols")
+    raw_pos = cif_data.get("cif_atom_positions")
+    spacegroup = cif_data.get("spacegroup")
+    if not raw_syms or not raw_pos:
+        return cif_data
+    origin_setting = options.get("origin_setting", "AUTO")
+    if not (origin_setting == "STANDARD"
+            or (origin_setting == "AUTO" and spacegroup == 227)):
+        return cif_data
+    if deck_origin_choice(spacegroup, raw_pos, origin_setting) != 2:
+        return cif_data
+    from ase.spacegroup import crystal
+
+    atoms = crystal(
+        raw_syms, raw_pos, spacegroup=spacegroup, setting=2,
+        cellpar=[cif_data[k] for k in ("a", "b", "c", "alpha", "beta", "gamma")],
+    )
+    expanded = dict(cif_data)
+    expanded["symbols"] = atoms.get_chemical_symbols()
+    expanded["atomic_numbers"] = [SYMBOL_TO_NUMBER[s] for s in expanded["symbols"]]
+    expanded["positions"] = atoms.get_scaled_positions()
+    return expanded
+
+
+def _hall_numbers(number):
+    """spglib's Hall numbers for one space-group type, first (default) first."""
+    halls = []
+    for hall in range(1, 531):
+        sgtype = attribute_dataset(spglib.get_spacegroup_type(hall))
+        if sgtype.number == number:
+            halls.append((hall, str(sgtype.choice)))
+    return halls
+
+
+def reduce_in_spglib_setting(cif_data, cell, tolerance, number):
+    """cif_data as spglib's space group NUMBER in spglib's standard setting.
+
+    Declaring spglib's group while keeping the CIF's cell and atoms makes
+    CRYSTAL apply that group's standard operators to a cell in another
+    setting (a primitive rhombohedral cell of rock salt written as Fm-3m
+    becomes a quarter-volume cube). The standardised conventional cell,
+    its asymmetric unit and its lattice parameters are taken instead.
+
+    For a group with two origins the origin is the one the deck will
+    declare (deck_origin_choice): choice 2, or for Fd-3m whichever
+    choice its atoms are then read as.
+    """
+    halls = _hall_numbers(number)
+    candidates = [halls[0][0]]
+    if number in MULTI_ORIGIN_SPACEGROUPS:
+        by_choice = {choice: hall for hall, choice in halls}
+        candidates = [by_choice["2"], by_choice["1"]]
+
+    chosen = None
+    for origin, hall in zip((2, 1), candidates):
+        dataset = attribute_dataset(
+            spglib.get_symmetry_dataset(cell, symprec=tolerance, hall_number=hall)
+        )
+        std = (dataset.std_lattice, dataset.std_positions, dataset.std_types)
+        std_dataset = attribute_dataset(
+            spglib.get_symmetry_dataset(std, symprec=tolerance, hall_number=hall)
+        )
+        unique = sorted(set(int(i) for i in std_dataset.equivalent_atoms))
+        positions = [[float(v) % 1.0 for v in std[1][i]] for i in unique]
+        numbers = [int(std[2][i]) for i in unique]
+        if chosen is None:
+            chosen = (std[0], positions, numbers)
+        if len(candidates) == 1 or deck_origin_choice(number, positions) == origin:
+            chosen = (std[0], positions, numbers)
+            break
+
+    lattice, positions, numbers = chosen
+    lattice = np.asarray(lattice)
+    lengths = np.linalg.norm(lattice, axis=1)
+
+    def angle(u, v):
+        cos = np.dot(lattice[u], lattice[v]) / (lengths[u] * lengths[v])
+        return float(np.degrees(np.arccos(np.clip(cos, -1.0, 1.0))))
+
+    reduced = dict(cif_data)
+    reduced.update(
+        a=float(lengths[0]), b=float(lengths[1]), c=float(lengths[2]),
+        alpha=angle(1, 2), beta=angle(0, 2), gamma=angle(0, 1),
+        spacegroup=number,
+        atomic_numbers=numbers,
+        symbols=[ATOMIC_NUMBER_TO_SYMBOL[z] for z in numbers],
+        positions=positions,
+    )
+    ui.print(
+        f"Writing spglib's standard cell for space group {number}: "
+        f"a={reduced['a']:.6f} b={reduced['b']:.6f} c={reduced['c']:.6f} "
+        f"alpha={reduced['alpha']:.4f} beta={reduced['beta']:.4f} "
+        f"gamma={reduced['gamma']:.4f}, {len(numbers)} unique atoms"
+    )
+    return reduced
+
+
 def verify_and_reduce_to_asymmetric_unit(
     cif_data, tolerance=1e-5, validate_symmetry=False, interactive=None,
 ):
@@ -810,10 +966,10 @@ def verify_and_reduce_to_asymmetric_unit(
             # "Error during symmetry analysis" from the outer handler. The
             # outcome is the same; the difference is that a batch of hundreds
             # now leaves an auditable record of which structures disagreed.
-            # Not offered as an options-file answer: spglib's group is taken
-            # in spglib's standard setting but the cell and atoms stay in the
-            # CIF's, so e.g. a hexagonal cell written as Cmcm loses its
-            # 120-degree angle (CRYSTAL23 reports a different density).
+            # Not offered as an options-file answer: taking spglib's group
+            # rewrites the cell in spglib's standard setting
+            # (reduce_in_spglib_setting), which a batch should not do
+            # unasked.
             if not interactive:
                 ui.warn(
                     f"Space group mismatch (CIF {original_spacegroup_num} vs "
@@ -859,11 +1015,15 @@ def verify_and_reduce_to_asymmetric_unit(
                     ui.print(
                         f"Proceeding with spglib space group {detected_spacegroup_num}"
                     )
-                    cif_data["spacegroup"] = detected_spacegroup_num
+                    return reduce_in_spglib_setting(
+                        cif_data, cell, tolerance, detected_spacegroup_num
+                    )
 
             elif choice == "2":
                 ui.print(f"Proceeding with spglib space group {detected_spacegroup_num}")
-                cif_data["spacegroup"] = detected_spacegroup_num
+                return reduce_in_spglib_setting(
+                    cif_data, cell, tolerance, detected_spacegroup_num
+                )
             else:
                 ui.print("Using all atoms from the CIF file without reduction.")
                 return cif_data
@@ -1286,32 +1446,12 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
         elif (
             origin_setting == "AUTO" and spacegroup == 227
         ):  # Special handling for Fd-3m
-            # Try to detect based on atom positions
-            std_pos = spg_info.get("default_pos", (0.125, 0.125, 0.125))
+            # Try to detect based on atom positions (shared with the P1
+            # expansion, which must describe the same structure)
             alt_pos = spg_info.get("alt_pos", (0.0, 0.0, 0.0))
+            alt_origin = deck_origin_choice(spacegroup, positions, origin_setting) == 1
 
-            # Check if any atoms are near the standard position
-            std_detected = False
-            alt_detected = False
-
-            for pos in positions:
-                # Check for atoms near standard position (1/8, 1/8, 1/8)
-                if (
-                    abs(pos[0] - std_pos[0]) < 0.01
-                    and abs(pos[1] - std_pos[1]) < 0.01
-                    and abs(pos[2] - std_pos[2]) < 0.01
-                ):
-                    std_detected = True
-
-                # Check for atoms near alternate position (0, 0, 0)
-                if (
-                    abs(pos[0] - alt_pos[0]) < 0.01
-                    and abs(pos[1] - alt_pos[1]) < 0.01
-                    and abs(pos[2] - alt_pos[2]) < 0.01
-                ):
-                    alt_detected = True
-
-            if alt_detected and not std_detected:
+            if alt_origin:
                 # If only alternate position atoms found, use alternate origin
                 origin_directive = spg_info["alt_crystal_code"]
                 ui.print(
@@ -2026,7 +2166,9 @@ def process_cifs(cif_directory, options, output_directory=None, interactive=None
 
             # Apply symmetry handling
             if options["symmetry_handling"] == "P1":
-                # If P1 symmetry requested, override the spacegroup
+                # If P1 symmetry requested, write every atom of the cell the
+                # symmetrised deck would describe, then override the spacegroup
+                cif_data = expand_to_p1(cif_data, options)
                 cif_data["spacegroup"] = 1
                 ui.print("Using P1 symmetry (no symmetry operations, all atoms explicit)")
             elif options["symmetry_handling"] == "SPGLIB":

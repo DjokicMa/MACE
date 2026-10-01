@@ -358,6 +358,15 @@ def convert_to_mace_format(seekpath_result: Dict[str, Any],
         print(f"  Note: Adjusting shrink factor from {shrink_factor} to {min_shrink} for accuracy")
         shrink_factor = min_shrink
 
+    # Rational points such as K = (1/3, 1/3, 0) must scale to integers too:
+    # raise the shrink to a multiple of their denominators.
+    from d3_kpoints import exact_shrink_step, round_up_to_exact_shrink
+    step = exact_shrink_step([c for pair in path for lbl in pair for c in point_coords[lbl]])
+    exact = round_up_to_exact_shrink(shrink_factor, step)
+    if exact != shrink_factor:
+        print(f"  Note: Adjusting shrink factor from {shrink_factor} to {exact} so every point is exact")
+        shrink_factor = exact
+
     segments = []
     labels = []
     prev_end_label = None

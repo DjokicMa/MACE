@@ -1,17 +1,16 @@
-"""Drift guard for the duplicated space-group -> crystal-system logic.
+"""Drift guard for the space-group -> crystal-system logic of the k-paths.
 
-Two independent implementations exist (intentionally — they have different
-inputs and output vocabularies):
+Crystal_d3/d3_kpoints.py get_crystal_system_from_space_group(sg, lattice)
+maps a number and a lattice-centering letter to a centering-aware k-path
+table key. This pins the property that matters: it follows the immutable
+International Tables ranges, so a future edit can't silently send a space
+group to the wrong table.
 
-  * Crystal_d12/d12_constants.py  SPACEGROUP_TO_PATH  (number -> path key)
-  * Crystal_d3/d3_kpoints.py      get_crystal_system_from_space_group(sg, lattice)
-    (number + lattice-centering letter -> centering-aware k-path table key)
-
-They are NOT merged (consolidation is the item-6 shared-module work, and the
-k-path selection is validated logic we don't want to churn). Instead these
-tests pin the property that matters: both must agree on the *base* crystal
-system, and both must follow the immutable International Tables ranges — so a
-future edit to either can't silently send a space group to the wrong table.
+It used to be checked against a second, independent implementation,
+Crystal_d12/d12_constants.py SPACEGROUP_TO_PATH. That table ignored the
+lattice centring, its only reader was a fallback in
+d12_calc_freq.get_auto_phonon_path, and it has been removed
+(tests/test_auto_phonon_path_centring.py).
 """
 import sys
 from pathlib import Path
@@ -24,7 +23,6 @@ for sub in ("Crystal_d12", "Crystal_d3"):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from d12_constants import SPACEGROUP_TO_PATH
 from d3_kpoints import get_crystal_system_from_space_group
 
 
@@ -34,7 +32,7 @@ def _base(label: str) -> str:
 
 
 # Canonical International Tables for Crystallography space-group ranges.
-# (Trigonal 143-167 is folded into 'hexagonal' by BOTH implementations.)
+# (Trigonal 143-167 is folded into 'hexagonal' by the k-path tables.)
 def _canonical_base(sg: int) -> str:
     if sg <= 2:
         return "triclinic"
@@ -50,8 +48,7 @@ def _canonical_base(sg: int) -> str:
 
 
 @pytest.mark.parametrize("sg", range(1, 231))
-def test_two_implementations_agree_on_base_system(sg):
-    d12 = _base(SPACEGROUP_TO_PATH[sg])
+def test_base_system_follows_the_international_tables(sg):
     d3 = _base(get_crystal_system_from_space_group(sg, "P"))
-    assert d12 == d3 == _canonical_base(sg), (
-        f"space group {sg}: d12={d12!r} d3={d3!r} canonical={_canonical_base(sg)!r}")
+    assert d3 == _canonical_base(sg), (
+        f"space group {sg}: d3={d3!r} canonical={_canonical_base(sg)!r}")

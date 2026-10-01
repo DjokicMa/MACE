@@ -65,7 +65,8 @@ from d12_constants import (
     configure_smearing, CUSTOM_FUNCTIONAL,
 )
 from d12_parsers import (
-    CrystalOutputParser, CrystalInputParser, DECK_GEOMETRY_KEYS, LOW_DIM_GROUPS,
+    CrystalOutputParser, CrystalInputParser, DECK_GEOMETRY_KEYS, DECK_TEXT_KEYS,
+    LOW_DIM_GROUPS,
 )
 from d12_config import unwrap_d12_config
 from d12_calc_freq import (
@@ -330,6 +331,16 @@ def merge_optimization_settings(parent, override, replace_type=False):
             del merged[existing]
         merged[key] = value
     return merged
+
+
+def child_freq_settings(parent_freq: dict) -> dict:
+    """The parent deck's FREQCALC settings a derived deck carries.
+
+    Everything the parent asked for, except RESTART: that restarts the
+    parent's own frequency run from the FREQINFO.DAT it wrote (manual sec.
+    8.2, p. 219), which a new deck does not have.
+    """
+    return {k: v for k, v in (parent_freq or {}).items() if k != "restart"}
 
 
 def prefer_deck_unrecognised_functional(settings: dict, in_data: dict) -> None:
@@ -1358,9 +1369,11 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
 
             # Merge data, with special handling for DFT settings
             for key, value in in_data.items():
-                if key in DECK_GEOMETRY_KEYS:
+                if key in DECK_GEOMETRY_KEYS or key in DECK_TEXT_KEYS:
                     # The parent's geometry input; the child's geometry is the .out's.
                     continue
+                if key == "freq_settings":
+                    value = child_freq_settings(value)
                 if key not in settings or settings[key] is None:
                     settings[key] = value
                 elif key in ["functional", "dispersion", "spin_polarized", "dft_grid", "method",
@@ -1669,6 +1682,25 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 explicit_functional = ((config_data.get("method_modifications") or {}).get("new_functional")
                                        or (config_data.get("method_modifications") or {}).get("functional")
                                        or config_data.get("functional"))
+
+                # "method": "HF" asks for a Hartree-Fock deck. Its flavour is
+                # "hf_method" or "functional", RHF when neither names one - the
+                # way cif2d12 reads the same file (d12_config.config_to_cif_options).
+                # A null functional reached the filename code and stopped the
+                # file with "argument of type 'NoneType' is not iterable", and a
+                # config naming only the method kept the parent's DFT functional.
+                if (str(config_data.get("method") or "").upper() == "HF"
+                        and not (config_data.get("method_modifications") or {}).get("new_functional")
+                        and not (config_data.get("method_modifications") or {}).get("functional")):
+                    hf_method = str(config_data.get("hf_method") or config_data.get("functional")
+                                    or "RHF").upper()
+                    if hf_method not in ("RHF", "UHF", "HF3C", "HFSOL3C"):
+                        _fail(f"the config's method is HF but its functional is {hf_method}",
+                              f"The config's method is HF but its functional is {hf_method}; "
+                              f"an HF config names RHF, UHF, HF3C or HFSOL3C.")
+                        return False, None
+                    options["functional"] = explicit_functional = hf_method
+                    options["method"] = "HF"
                 if explicit_functional and "dispersion" not in config_data:
                     options["dispersion"] = str(explicit_functional).upper().endswith("-D3")
                 
@@ -2399,8 +2431,10 @@ def main():
                         in_data = in_parser.parse()
                         # Use the same merge logic as in process_files
                         for key, value in in_data.items():
-                            if key in DECK_GEOMETRY_KEYS:
+                            if key in DECK_GEOMETRY_KEYS or key in DECK_TEXT_KEYS:
                                 continue
+                            if key == "freq_settings":
+                                value = child_freq_settings(value)
                             if key not in settings or settings[key] is None:
                                 settings[key] = value
                             elif key in ["functional", "dispersion", "spin_polarized", "dft_grid", "method",

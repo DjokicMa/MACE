@@ -7,168 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **Stuttgart basis files CRYSTAL cannot read are refused by the SOC ECP
-  reader.** `stuttgart/219`, `220` and `227` (K, Ca, Co) have a placeholder
-  sentence where the shell count belongs and `X` for every shell charge;
-  `204` (Be) announces 2 shells and holds 1, and `294` (Pu) announces 11 and
-  holds 9 (manual pp. 25-27: NSHL shells, each with a numeric charge).
-  Which shells are missing, or how the electrons are shared among them, is
-  not in those files, so the data is left as it is and
-  `soc_ecp.read_stuttgart` now refuses them with the reason instead of
-  returning a block CRYSTAL would misread. No deck changes: no current
-  command calls `read_stuttgart`, and MACE's EXTERNAL basis readers use the
-  `200+Z` name only for Z >= 37, so they never open 204-227 (a basis path
-  pointed by hand at `stuttgart/` would still copy `294` as it is).
-- **An `opt2d12` child keeps its parent deck's SMEAR.** The .d12 parser
-  stored SMEAR as `use_smearing`, but the deck writer reads `smearing`, which
-  only the .out parser set (from a "FERMI SMEARING" line) and which `opt2d12`
-  took from the .out even when the parent deck had SMEAR. A parent whose .out
-  lacks that line gave a child without SMEAR - for a SOC parent, a deck that
-  can abort as fcc Au did at SHRINK 10 10. The parser now sets `smearing`
-  too, and `opt2d12` prefers the deck's value. Deck change: such a child,
-  SOC or not, now has the parent's `SMEAR` / width after its SHRINK records;
-  a child whose parent .out has the "FERMI SMEARING" line had it already.
-- **An OPT or FREQ deck of a metallic SOC parent is refused before any
-  SMEAR warning.** `opt2d12` warned that the parent looks metallic (and at a
-  terminal asked for a SMEAR width) and only then refused the deck the
-  2c-SCF cannot run. It now refuses first and says nothing about SMEAR for a
-  deck it does not write. No deck changes.
-- **The job script no longer takes GUESSPSO, GUESSPNOSO or GUESSPAT for
-  GUESSP.** `submitcrystal23.sh` (also reached as
-  `mace/workflow/submitcrystal23.sh`, a symlink) looked for a line starting
-  with `GUESSP`, so a 2c deck's GUESSPSO (manual p. 173) or an atomic guess
-  (GUESSPAT p. 115, GUESSPATNC p. 171) had a `.f9` staged as fort.20, and
-  without one the log said GUESSP had been dropped while the record stayed.
-  Job-script change: the GUESSP staging now matches the GUESSP record only,
-  and GUESSPSO / GUESSPNOSO get their own branch, which never takes the
-  record out of the deck. The manual does not say which file those two read
-  (pp. 170-175); fort.20 is where a density-matrix guess is read from
-  (pp. 114-115), so `$JOB.f20` is staged there if present, else, for
-  GUESSPSO only, the job's own non-empty `$JOB.f9` (a 2c matrix from an
-  earlier run of the same deck) - untested in 2c. The recovery's refresh of
-  pre-RESTART job scripts writes the new GUESSP line. Decks are unchanged.
-- **An `opt2d12` phonon deck with a SeeK-path band path is written.** The
-  SeeK-path helpers read a `.out` file, but `opt2d12` passed them the parent's
-  output text, so every such deck stopped with `OSError: File name too long`.
-  They now read the same text from a temporary file, and the path matches what
-  the `.out` itself gives.
-- **The DAT-file and population-analysis processors open the materials
-  database.** `process_calculation_dat_files` and
-  `process_material_population_analysis` (`mace/utils`) imported
-  `MaterialDatabase` from `material_database`, a module that no longer exists,
-  and stopped with ModuleNotFoundError; they now use `mace.database.materials`.
-- **Space-group tables match the International Tables and CRYSTAL.** Pbcn
-  (60) was listed with two origin choices, and its "alternate origin" code
-  `0 1 0` is CRYSTAL's rhombohedral-axes flag: a cif2d12 deck asked for that
-  origin carried it. It now writes `0 0 0` for Pbcn with any origin option;
-  every other group's origin handling is unchanged, and the list is now
-  exactly the ITA two-origin groups. The spelling table maps group 90 as
-  CRYSTAL prints it ("P 4 21 2", not "P 42 1 2"), maps P-42c to 112 (not
-  114), and has no duplicate key; every lookup already reached the right
-  number through another table, so no other deck changes.
-- **The phonon fallback k-path table names only points it has.** Most F- and
-  I-centred cubic groups (196, 197, 199, 202-204, 206, 209-211, 214, 217, 219,
-  220, 226) got the simple-cubic path, and the monoclinic and triclinic paths
-  named points (M1, X, V, W, ...) with no coordinates, so their segments were
-  dropped. F and I cubic now get the fcc and bcc paths, and monoclinic and
-  triclinic use the points MACE's band-path code uses (CRYSTAL23 manual Table
-  14.1 for P monoclinic). The table is read only by `get_auto_phonon_path`,
-  which nothing calls today, so no deck changes.
-- **`copy_dependencies.py` copies the files it lists.** Its list still used
-  the names from before the scripts moved into the `mace` package, and it
-  looked for `Crystal_d12/` and `Crystal_d3/` inside `mace/`, so it reported
-  most files missing and copied none of the converters. It now copies each
-  file from where it lives, under its current name, together with the
-  modules the copied converters import (`d12_config.py`, `menu_nav.py`,
-  `spglib_compat.py`, `seekpath_interface.py`). It no longer tries to copy
-  `recovery_config.yaml`, which the recovery engine reads from `mace/config/`.
-- **Documentation examples and paths that did not work.** The D3 batch
-  example passed `--config-file doss_orbital_projections.json`, which is
-  opened as given and not looked up in `example_configs/`; it now gives the
-  full `$MACE_HOME/Crystal_d3/example_configs/` path. DOCUMENTATION.md listed
-  three of the six `--calc-type` values of `opt2d3`, pointed at
-  `Band_Alignment/` and `Post_Processing_Scripts/` without their `code/`
-  prefix, and referred to a `d12creation.py` that no longer exists. It now
-  also documents applying one `opt2d12` template to many structures.
-- **The standard-library `queue` module is no longer replaced by
-  `mace/queue`.** `mace_cli` puts `mace/` itself on `sys.path`, where the
-  `mace/queue` package shadows the standard module, so the first bare
-  `import queue` in the process registered `mace/queue` under that name.
-  Removing an unused `import queue` from `mace/workflow/executor.py` did not
-  stop this, because `pyarrow`, which `mace.database` imports, runs its own
-  `import queue`. Importing `mace` now loads the standard `queue` with
-  `mace/` hidden from `sys.path`, before anything else can, and `mace_cli`
-  imports the job-queue package as `mace.queue` rather than `queue`.
-- **A cif2d12 SLAB deck lists each atom once, at its own height.** A SLAB
-  record takes the symmetry-unique atoms, with z in Angstrom from the layer
-  group's origin (CRYSTAL23 manual p. 21). Handed a whole cell - which batch
-  mode keeps when spglib and the CIF disagree, or with `write_only_unique`
-  off - the converter wrote every atom with z = c times fractional z: a Bi2
-  bilayer (P-3m1, layer group 72) got its inversion image as a second Bi at
-  z = 19.10 A instead of -0.90 A, and CRYSTAL built a four-atom slab 38 A
-  thick. Atoms the layer group generates from an earlier one are now left
-  out, using the CIF's own operators when they match the named group's in
-  number and kind (otherwise the atoms are written as given, with a
-  warning). For a layer group with an operation that reverses z, the whole
-  layer is moved by one offset so that the operation's plane - at
-  fractional z = 0 or 1/2 in the cell - is at z = 0; the layer stays in one
-  piece, even when it is centred on z = 1/2 or straddles z = 0/1, and every
-  z distance in it is the cell's own. A polar-layer-group slab keeps its
-  c times z heights; when it straddles z = 0/1, the atoms just below z = 1
-  are written one cell lower, next to the rest of the layer.
-- **The static orthorhombic-P path without inversion names its segments
-  in order.** Without the seekpath library, `oP1_noinv` listed the labels
-  Y-T before X-U (and Y'-T' before X'-U') while its coordinates, like
-  SeeK-path's path, run X-U first, so those segments carried each other's
-  labels.
-- **Non-centrosymmetric structures with a 2-fold axis get the
-  non-centrosymmetric SeeK-path path.** Without the seekpath library, the
-  band and phonon paths read inversion from the CRYSTAL output, and the
-  SYMMOPS check matched a run of six matrix elements that a 2-fold axis
-  along z (and, in the hexagonal frame, an in-plane 2-fold or -6) shares
-  with the inversion. Every such group - in the
-  primitive lattices 16-19, 25-34, 75-78, 81, 89-96, 99-106, 111-118,
-  149-154, 168-174, 177-190, 195, 198, 207, 208, 212, 213, 215 and 218 - was
-  called centrosymmetric and got the path without primed points. An operator
-  now counts as an inversion only when its whole rotation part is -I, and a
-  SYMMOPS table without one means no inversion. The space-group-number check
-  no longer reads a digit out of a symbol ("P N N 2" as group 2).
-- **The static SeeK-path band paths go through the zone-boundary points.**
-  Without the seekpath library, band and phonon paths come from a table in
-  `d3_kpoints` that defines several lattices twice; the definitions that
-  win had every coordinate doubled (body-centred cubic x4, hexagonal x6), so
-  simple cubic X was (0, 1, 0) - a reciprocal lattice vector, the same point
-  as Gamma - where SeeK-path and CRYSTAL23 (manual Tables 14.1-14.2,
-  pp. 311-312) have (0, 1/2, 0). The paths for aP, cP, cI, hP, mP, oP, tP,
-  tI and mC2 (and the aP and mC2 non-centrosymmetric ones) now use SeeK-path's
-  coordinates: e.g. every centrosymmetric primitive cubic, tetragonal,
-  orthorhombic, monoclinic and hexagonal group, Im-3m, Ia-3d and I4/mmm.
-- **`get_auto_phonon_path` returns a path in the labels and vectors
-  formats.** Both stopped with NameError, because `d12_calc_freq` checked
-  `get_crystal_system_from_space_group` without importing it from
-  `d3_kpoints`. Nothing calls the function today, so no deck changes.
-- **An `opt2d12` SeeK-path phonon deck's title names the path it writes.**
-  The title took its labels from the space-group number alone, while the
-  BANDS path is chosen from the parent's output, whose lattice parameters
-  and symmetry operators pick the SeeK-path variant. For AgBr in R-3c the
-  title listed an 11-segment path over the 10-segment one written, and
-  every such title called its path "default". The title now reads the same
-  output, so it lists the written path's labels and says "SeeKPath (w.I)",
-  "SeeKPath (no.I)" or "Literature" as the path was chosen.
-- **The workflow planner loads without `d12_constants`.** When
-  `d12_constants` or `DummyFileCreator` could not be imported, the planner
-  reported it with `ui.warn` before `ui` was defined, so the import stopped
-  with NameError instead of using its built-in fallbacks. `ui` is now set up
-  first.
-- **A mistyped answer to a D3 yes/no question is asked again.** In the
-  interactive `opt2d3` setup, an answer other than y/yes/n/no (or Enter)
-  counted as "no", even where the default was "yes", and the question moved
-  on. It now prints "Please respond with 'yes' or 'no' (or 'y' or 'n')." and
-  asks again, as the D12 tools do. Every recognised answer, and end of input,
-  behave as before.
-
 ### Added
 
 - **Two-component spin-orbit (SOC) decks, on request only.** A `"soc": true`
@@ -272,6 +110,303 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selects was not measured, DOSS keeps a warning to check that range.
   Decks from scalar parents are unchanged.
 
+### Fixed
+
+- **Stuttgart basis files CRYSTAL cannot read are refused by the SOC ECP
+  reader.** `stuttgart/219`, `220` and `227` (K, Ca, Co) have a placeholder
+  sentence where the shell count belongs and `X` for every shell charge;
+  `204` (Be) announces 2 shells and holds 1, and `294` (Pu) announces 11 and
+  holds 9 (manual pp. 25-27: NSHL shells, each with a numeric charge).
+  Which shells are missing, or how the electrons are shared among them, is
+  not in those files, so the data is left as it is and
+  `soc_ecp.read_stuttgart` now refuses them with the reason instead of
+  returning a block CRYSTAL would misread. No deck changes: no current
+  command calls `read_stuttgart`, and MACE's EXTERNAL basis readers use the
+  `200+Z` name only for Z >= 37, so they never open 204-227 (a basis path
+  pointed by hand at `stuttgart/` would still copy `294` as it is).
+- **An `opt2d12` child keeps its parent deck's SMEAR.** The .d12 parser
+  stored SMEAR as `use_smearing`, but the deck writer reads `smearing`, which
+  only the .out parser set (from a "FERMI SMEARING" line) and which `opt2d12`
+  took from the .out even when the parent deck had SMEAR. A parent whose .out
+  lacks that line gave a child without SMEAR - for a SOC parent, a deck that
+  can abort as fcc Au did at SHRINK 10 10. The parser now sets `smearing`
+  too, and `opt2d12` prefers the deck's value. Deck change: such a child,
+  SOC or not, now has the parent's `SMEAR` / width after its SHRINK records;
+  a child whose parent .out has the "FERMI SMEARING" line had it already.
+- **An OPT or FREQ deck of a metallic SOC parent is refused before any
+  SMEAR warning.** `opt2d12` warned that the parent looks metallic (and at a
+  terminal asked for a SMEAR width) and only then refused the deck the
+  2c-SCF cannot run. It now refuses first and says nothing about SMEAR for a
+  deck it does not write. No deck changes.
+- **The job script no longer takes GUESSPSO, GUESSPNOSO or GUESSPAT for
+  GUESSP.** `submitcrystal23.sh` (also reached as
+  `mace/workflow/submitcrystal23.sh`, a symlink) looked for a line starting
+  with `GUESSP`, so a 2c deck's GUESSPSO (manual p. 173) or an atomic guess
+  (GUESSPAT p. 115, GUESSPATNC p. 171) had a `.f9` staged as fort.20, and
+  without one the log said GUESSP had been dropped while the record stayed.
+  Job-script change: the GUESSP staging now matches the GUESSP record only,
+  and GUESSPSO / GUESSPNOSO get their own branch, which never takes the
+  record out of the deck. The manual does not say which file those two read
+  (pp. 170-175); fort.20 is where a density-matrix guess is read from
+  (pp. 114-115), so `$JOB.f20` is staged there if present, else, for
+  GUESSPSO only, the job's own non-empty `$JOB.f9` (a 2c matrix from an
+  earlier run of the same deck) - untested in 2c. The recovery's refresh of
+  pre-RESTART job scripts writes the new GUESSP line. Decks are unchanged.
+
+## [1.1.3] - 2026-10-01
+
+Everything since 1.1.2. Band paths are written with exact high-symmetry points
+and follow SeeK-path for more lattices (cubic, hexagonal, monoclinic, centred);
+`opt2d12` FREQ decks repeat their FREQ parent's FREQCALC settings and
+Hartree-Fock parents stay Hartree-Fock; the DOSS example configs now give decks
+CRYSTAL runs; a P1 deck from a CIF without symmetry operators holds the right
+atoms; and workflow steps can optionally restart their SCF from the previous
+step's density matrix (off by default). Several of these change the content of
+generated decks - see Fixed below.
+
+### Added
+
+- **Workflow steps can restart their SCF from the previous step's density
+  matrix (opt-in).** With `"guessp_restart": true` under `execution_settings`
+  in the workflow plan JSON, an SP, FREQ or OPTn step the engine builds from a
+  completed OPT or SP gets the predecessor's `.f9` copied to `<job>.f20` in its
+  directory (the job script stages that as fort.20) and a GUESSP record before
+  SCFDIR. The manual (GUESSP, pp. 114-115) requires the same symmetry and the
+  same atoms, basis functions and shells in the same order, and CRYSTAL does
+  not check this, so the engine only does it when both decks have the same
+  symmetry records, atom list, basis set and spin treatment (UHF/ROHF/SPIN);
+  the lattice, coordinates and functional may differ. It is not done when the
+  follow-up sets ATOMSPIN (p. 99: "does not work with GUESSP") or either deck
+  is two-component, when the predecessor left no non-empty `.f9`, or when the
+  step's job script predates the `.f20` staging; the engine prints why. The
+  setting is off by default, and without it the engine writes exactly what it
+  wrote before. Untested on CRYSTAL.
+
+### Fixed
+
+- **The Crystal_d12 README says where the phonon SeeK-path path gets its
+  inversion.** It still said the phonon path had only the space-group number,
+  and kept a known issue about the output text being taken for a file name.
+  Since that fix the parent output reaches the SeeK-path helpers as a file
+  (`d12_calc_freq._output_as_file`), and inversion and cell parameters come
+  from it (`d3_kpoints.detect_inversion_from_crystal_output`); the number is
+  the fallback when there is no output.
+- **`opt2d12 --config-file` writes Hartree-Fock decks from an HF config.** A
+  config with `"method": "HF"` and a null functional (the form
+  `quick_screen.json` had) stopped every file with `argument of type
+  'NoneType' is not iterable`, and one naming only the method, or its flavour
+  as `hf_method`, kept the parent's DFT functional. opt2d12 now reads the
+  flavour from `hf_method` or `functional`, RHF when neither names one, as
+  cif2d12 does, and refuses an HF config that names a DFT functional.
+- **"Proceed with spglib space group" writes spglib's cell with spglib's
+  group.** When a CIF's group and spglib's disagree, option 2 declared
+  spglib's group number but kept the CIF's cell and atoms, so CRYSTAL applied
+  the group's standard operators to a cell in another setting: rock salt given
+  as its 60-degree primitive cell became an Fm-3m cube with a = 3.99 A instead
+  of 5.64 A. The deck now carries spglib's standardised conventional cell and
+  its asymmetric unit, in the origin the deck declares for two-origin groups.
+- **A P1 deck from an Fd-3m CIF holds the structure the CIF describes.** A
+  CIF with no symmetry-operator loop is expanded by ASE in origin choice 1, but
+  the converter reads Fd-3m atoms at (1/8, 1/8, 1/8) as origin choice 2 - as
+  the symmetrised deck ("0 0 0") and CRYSTAL's own diamond example do. The
+  P1 deck of such a diamond CIF therefore held 16 atoms 1.26 A apart instead
+  of diamond's 8. The P1 expansion now uses the origin the symmetrised deck
+  declares for Fd-3m, and for any two-origin group when origin_setting is
+  STANDARD. CIFs that list their operators are expanded as before.
+- **P2/c and P2_1/c keep the primitive monoclinic SeeK-path.** Without the
+  seekpath library, a band or phonon path built from a CRYSTAL output reads
+  the cell parameters, and with them space groups 13 and 14 were sent to the
+  C-centred monoclinic path (mS1), whose points belong to another Brillouin
+  zone; the split between P and C was taken at group 11. They now get mP1,
+  as SeeK-path does and as they already did without cell parameters.
+- **Simple cubic groups 207-230 get SeeK-path's cP2 path.** Without the
+  seekpath library every primitive cubic group took the cP1 path, whose last
+  segment M-X_1 belongs to groups 195-206 only. P432, P-43m, Pm-3m and the
+  other groups 207-230 now take cP2 (cP2_noinv when non-centrosymmetric), as
+  SeeK-path does.
+- **Static SeeK-path titles name the segments the deck writes.** Without the
+  seekpath library, the title labels of the P-1 (aP3), C-centred monoclinic
+  (mS1: C2, Cm, C2/m, ...), F-orthorhombic (oF1-oF3: Fmmm, Fddd), I-tetragonal
+  (tI1/tI2: I4/m, I4/mmm, ...) and non-centrosymmetric F-cubic (F-43m, F23, ...)
+  paths ran on where SeeK-path's path jumps, so the title had more edges than
+  the deck had segments and band-plot nodes were misnamed. They now follow
+  SeeK-path's path, with a "|" at each jump. The P-1 aP2 path also called
+  (1/2, 1/2, 0) and (1/2, 0, 1/2) N and M; SeeK-path names them V and U. The
+  coordinates are unchanged.
+- **Static SeeK-path titles of the other centred lattices name their
+  segments too.** The same run-on labels were in the paths used for the
+  non-centrosymmetric rhombohedral groups (R3, R32, R3m, R3c: hR1/hR2),
+  body-centred tetragonal groups (I4, I-4, I422, I4mm, I-42d, ...: tI1/tI2)
+  and face-centred orthorhombic groups (F222, Fmm2, Fdd2: oF1/oF3), and for
+  every body-centred orthorhombic group (Immm, Imm2, I222, ...: oI1) and
+  every C-centred orthorhombic group (Cmcm, Cmc2_1, Cmmm, ...: oS1). They
+  now follow SeeK-path's path with a "|" at each jump; the tI2 path without
+  inversion also named its point G as Gamma. The coordinates are unchanged.
+- **Hexagonal K and H points are written exactly in BAND and phonon paths.**
+  Coordinate paths are written in units of 1/shrink, and K = (1/3, 1/3, 0) is
+  only a whole number of steps when the shrink is a multiple of 3; at the usual
+  16 it was rounded to 5/16. Quarter points had the same problem at a shrink
+  such as 6 or 990. The shrink is now raised to the next common multiple of the
+  points' denominators (16 becomes 18 for hexagonal paths), the way a shrink
+  too small for the path was already raised.
+- **The DOSS example configs give decks CRYSTAL runs.** Decks written from
+  `doss_total_only.json`, `doss_orbital_projections.json` and
+  `doss_element_orbital_auto.json` (and any DOSS deck with "print integrated
+  DOS" switched on) stopped in CRYSTAL with "DOSS FORMAT ERROR IN INPUT DECK":
+  the printing-option count was 1 but no printing-option record followed. That
+  record (`105 -1`) is now written. `doss_total_only.json` also asked for bands
+  0 to 999, which CRYSTAL refuses ("BAND RANGE NOT ALLOWED"); a band range is
+  now kept within 1 to the number of AOs. The examples now write `DOSS.DAT`
+  (they asked for no file at all), and "Total DOS only" gives a total DOS
+  instead of per-orbital projections. All three examples were run on HPCC.
+- **An `opt2d12` phonon deck with a SeeK-path band path is written.** The
+  SeeK-path helpers read a `.out` file, but `opt2d12` passed them the parent's
+  output text, so every such deck stopped with `OSError: File name too long`.
+  They now read the same text from a temporary file, and the path matches what
+  the `.out` itself gives.
+- **The DAT-file and population-analysis processors open the materials
+  database.** `process_calculation_dat_files` and
+  `process_material_population_analysis` (`mace/utils`) imported
+  `MaterialDatabase` from `material_database`, a module that no longer exists,
+  and stopped with ModuleNotFoundError; they now use `mace.database.materials`.
+- **Space-group tables match the International Tables and CRYSTAL.** Pbcn
+  (60) was listed with two origin choices, and its "alternate origin" code
+  `0 1 0` is CRYSTAL's rhombohedral-axes flag: a cif2d12 deck asked for that
+  origin carried it. It now writes `0 0 0` for Pbcn with any origin option;
+  every other group's origin handling is unchanged, and the list is now
+  exactly the ITA two-origin groups. The spelling table maps group 90 as
+  CRYSTAL prints it ("P 4 21 2", not "P 42 1 2"), maps P-42c to 112 (not
+  114), and has no duplicate key; every lookup already reached the right
+  number through another table, so no other deck changes.
+- **`copy_dependencies.py` copies the files it lists.** Its list still used
+  the names from before the scripts moved into the `mace` package, and it
+  looked for `Crystal_d12/` and `Crystal_d3/` inside `mace/`, so it reported
+  most files missing and copied none of the converters. It now copies each
+  file from where it lives, under its current name, together with the
+  modules the copied converters import (`d12_config.py`, `menu_nav.py`,
+  `spglib_compat.py`, `seekpath_interface.py`). It no longer tries to copy
+  `recovery_config.yaml`, which the recovery engine reads from `mace/config/`.
+- **Documentation examples and paths that did not work.** The D3 batch
+  example passed `--config-file doss_orbital_projections.json`, which is
+  opened as given and not looked up in `example_configs/`; it now gives the
+  full `$MACE_HOME/Crystal_d3/example_configs/` path. DOCUMENTATION.md listed
+  three of the six `--calc-type` values of `opt2d3`, pointed at
+  `Band_Alignment/` and `Post_Processing_Scripts/` without their `code/`
+  prefix, and referred to a `d12creation.py` that no longer exists. It now
+  also documents applying one `opt2d12` template to many structures.
+- **The standard-library `queue` module is no longer replaced by
+  `mace/queue`.** `mace_cli` puts `mace/` itself on `sys.path`, where the
+  `mace/queue` package shadows the standard module, so the first bare
+  `import queue` in the process registered `mace/queue` under that name.
+  Removing an unused `import queue` from `mace/workflow/executor.py` did not
+  stop this, because `pyarrow`, which `mace.database` imports, runs its own
+  `import queue`. Importing `mace` now loads the standard `queue` with
+  `mace/` hidden from `sys.path`, before anything else can, and `mace_cli`
+  imports the job-queue package as `mace.queue` rather than `queue`.
+- **A cif2d12 SLAB deck lists each atom once, at its own height.** A SLAB
+  record takes the symmetry-unique atoms, with z in Angstrom from the layer
+  group's origin (CRYSTAL23 manual p. 21). Handed a whole cell - which batch
+  mode keeps when spglib and the CIF disagree, or with `write_only_unique`
+  off - the converter wrote every atom with z = c times fractional z: a Bi2
+  bilayer (P-3m1, layer group 72) got its inversion image as a second Bi at
+  z = 19.10 A instead of -0.90 A, and CRYSTAL built a four-atom slab 38 A
+  thick. Atoms the layer group generates from an earlier one are now left
+  out, using the CIF's own operators when they match the named group's in
+  number and kind (otherwise the atoms are written as given, with a
+  warning). For a layer group with an operation that reverses z, the whole
+  layer is moved by one offset so that the operation's plane - at
+  fractional z = 0 or 1/2 in the cell - is at z = 0; the layer stays in one
+  piece, even when it is centred on z = 1/2 or straddles z = 0/1, and every
+  z distance in it is the cell's own. A polar-layer-group slab keeps its
+  c times z heights; when it straddles z = 0/1, the atoms just below z = 1
+  are written one cell lower, next to the rest of the layer.
+- **The static orthorhombic-P path without inversion names its segments
+  in order.** Without the seekpath library, `oP1_noinv` listed the labels
+  Y-T before X-U (and Y'-T' before X'-U') while its coordinates, like
+  SeeK-path's path, run X-U first, so those segments carried each other's
+  labels.
+- **Non-centrosymmetric structures with a 2-fold axis get the
+  non-centrosymmetric SeeK-path path.** Without the seekpath library, the
+  band and phonon paths read inversion from the CRYSTAL output, and the
+  SYMMOPS check matched a run of six matrix elements that a 2-fold axis
+  along z (and, in the hexagonal frame, an in-plane 2-fold or -6) shares
+  with the inversion. Every such group - in the
+  primitive lattices 16-19, 25-34, 75-78, 81, 89-96, 99-106, 111-118,
+  149-154, 168-174, 177-190, 195, 198, 207, 208, 212, 213, 215 and 218 - was
+  called centrosymmetric and got the path without primed points. An operator
+  now counts as an inversion only when its whole rotation part is -I, and a
+  SYMMOPS table without one means no inversion. The space-group-number check
+  no longer reads a digit out of a symbol ("P N N 2" as group 2).
+- **The static SeeK-path band paths go through the zone-boundary points.**
+  Without the seekpath library, band and phonon paths come from a table in
+  `d3_kpoints` that defines several lattices twice; the definitions that
+  win had every coordinate doubled (body-centred cubic x4, hexagonal x6), so
+  simple cubic X was (0, 1, 0) - a reciprocal lattice vector, the same point
+  as Gamma - where SeeK-path and CRYSTAL23 (manual Tables 14.1-14.2,
+  pp. 311-312) have (0, 1/2, 0). The paths for aP, cP, cI, hP, mP, oP, tP,
+  tI and mC2 (and the aP and mC2 non-centrosymmetric ones) now use SeeK-path's
+  coordinates: e.g. every centrosymmetric primitive cubic, tetragonal,
+  orthorhombic, monoclinic and hexagonal group, Im-3m, Ia-3d and I4/mmm.
+- **`get_auto_phonon_path` returns a path in the labels and vectors
+  formats.** Both stopped with NameError, because `d12_calc_freq` checked
+  `get_crystal_system_from_space_group` without importing it from
+  `d3_kpoints`. Nothing calls the function today, so no deck changes.
+- **An `opt2d12` SeeK-path phonon deck's title names the path it writes.**
+  The title took its labels from the space-group number alone, while the
+  BANDS path is chosen from the parent's output, whose lattice parameters
+  and symmetry operators pick the SeeK-path variant. For AgBr in R-3c the
+  title listed an 11-segment path over the 10-segment one written, and
+  every such title called its path "default". The title now reads the same
+  output, so it lists the written path's labels and says "SeeKPath (w.I)",
+  "SeeKPath (no.I)" or "Literature" as the path was chosen.
+- **The workflow planner loads without `d12_constants`.** When
+  `d12_constants` or `DummyFileCreator` could not be imported, the planner
+  reported it with `ui.warn` before `ui` was defined, so the import stopped
+  with NameError instead of using its built-in fallbacks. `ui` is now set up
+  first.
+- **A mistyped answer to a D3 yes/no question is asked again.** In the
+  interactive `opt2d3` setup, an answer other than y/yes/n/no (or Enter)
+  counted as "no", even where the default was "yes", and the question moved
+  on. It now prints "Please respond with 'yes' or 'no' (or 'y' or 'n')." and
+  asks again, as the D12 tools do. Every recognised answer, and end of input,
+  behave as before.
+- **An `opt2d12` FREQ deck repeats its FREQ parent's FREQCALC settings.** Only
+  NUMDERIV was read from the parent's FREQCALC block, so the child of a parent
+  that asked for IR intensities (`INTENS / INTCPHF / ENDCPHF`), Raman
+  intensities or IR/Raman spectra was written with `NOINTENS`. The whole block
+  is read now, and a FREQ child written without questions (`--non-interactive`,
+  or a `--config-file` without FREQ settings of its own) repeats it; RESTART
+  is not repeated, as it restarts the parent's own run from the FREQINFO.DAT
+  that run wrote (manual sec. 8.2, p. 219). A record the writer never writes
+  (e.g. NOUSESYMM) is reported in the parse as `freq_unparsed`. The
+  interactive questions still default only NUMDERIV to the parent's.
+- **A Hartree-Fock parent deck reads back as Hartree-Fock.** `CrystalInputParser`
+  gave no functional for a deck with no Hamiltonian keyword (CRYSTAL's default
+  RHF, manual p. 123) or with `HF3C` / `HFSOL3C` (manual sec. 5.3.1, pp. 158,
+  162), so such a deck was written back with a DFT block. It now reads them as
+  the functionals `RHF`, `HF3C` and `HFSOL3C` (method HF), as the deck writer
+  takes them, and reads SMEAR under the writer's `smearing` key as well. For
+  `opt2d12`: an RHF parent's `.out` already names RHF, and SMEAR still comes
+  from the `.out`, so those children are unchanged; an HF-3c or HFsol-3c
+  parent's child now gets that functional, where the `.out` could give RHF and
+  drop the correction (untested: no HF-3c run to hand).
+- **A deck MACE wrote reads back as the same deck.** `CrystalInputParser`,
+  which reads the parent deck for `opt2d12`, kept coordinates only as floats
+  (`1.250000000000E-01` came back as `0.125`) and stripped the spacing of an
+  EXTERNAL basis' records. It now also keeps the title, each atom record's
+  coordinates and last word, and the EXTERNAL basis records as written.
+  Parsing a deck and writing it back with `opt2d12`'s writer now gives the
+  same deck byte for byte for all 811 decks `cif2d12` writes in the new
+  round-trip test (CRYSTAL, SLAB, POLYMER and MOLECULE; internal and EXTERNAL
+  basis; SP, OPT and FREQ; 80 before), for `opt2d12`'s own children of the
+  real runs in `tests/data`, and for 324 of the 401 real decks of the test
+  corpus apart from their title, which is `./<name>` (an older MACE took it
+  from the path). The other 77 hold records the writer never writes, or in
+  another order: they were edited after MACE wrote them (SUPERCEL, a RESTART
+  that recovery adds to OPTGEOM, GUESSP below MAXCYCLE, RAMSPEC ahead of
+  IRSPEC) or written by hand. The new keys never reach `opt2d12`'s settings,
+  so its decks are unchanged.
+
 ### Removed
 
 - Five standalone scripts that nothing runs, imports or documents:
@@ -279,6 +414,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mace/workflow/check_workflows.py` (superseded by `mace status` and the
   queue manager's completion callback), `mace/utils/scf_settings_extractor.py`
   and `mace/utils/analyze_script_dependencies.py`.
+- The phonon fallback k-path tables `SPACEGROUP_TO_PATH` and
+  `HIGH_SYMMETRY_PATHS` (`Crystal_d12/d12_constants.py`). They gave one path
+  per crystal system whatever the lattice centring (C2/m the primitive
+  monoclinic path, Fmmm and Immm the primitive orthorhombic one, I4/mmm the
+  primitive tetragonal one, R-3m the hexagonal one), and their only reader was
+  a fallback in `d12_calc_freq.get_auto_phonon_path`, a function nothing in
+  MACE calls. Its coordinate paths now all come from the centring-aware
+  band-path code that its "vectors" format already used. No deck changes.
+
+### Testing
+
+- Tests for paths that had none: the workflow plan JSON from planner to
+  executor to a job's callback (save, load, validation, queue settings),
+  `mace status` and `mace completion` on real outputs (categories, zombie
+  jobs, moving files, the workflow's isolated database), 'b' to go back
+  through the real OPT/SP/FREQ and opt2d3 questionnaires, and the timeout
+  RESTART recovery on the committed PbTiO3 and Ag2Br3 runs, end to end with
+  sbatch/squeue/sacct/scontrol stand-ins on PATH.
+- The corpus sweeps that skip without `test/` (deck geometry rebuild,
+  EXTERNAL basis blocks, TESTPDIM insertion, outputs typed by their deck,
+  settings extraction, aggregation keys, timeout RESTART) also run over the
+  real decks and outputs committed under `tests/data`, which now include the
+  two original ECP OPT decks (`tests/data/samples/ecp_decks`).
+- Three known bugs are pinned as expected failures: at the OPT
+  convergence-level menu an answer outside 1-4 is taken as Custom, and in
+  the FREQ menu an answer outside 1-3 for the IR method (KeyError) or a
+  non-number for NUMDERIV (ValueError) stops the questionnaire.
+- CI has a second job with ase, spglib and seekpath installed
+  (`requirements-optional.txt`), so the tests that need them run there.
 
 ## [1.1.2] - 2026-09-29
 

@@ -84,7 +84,7 @@ python CRYSTALOptToD3.py --list-configs
     "energy_window": [-0.3677, 0.7354],
     "n_points": 2000,
     "print_integrated": true,
-    "output_format": 0,
+    "output_format": 2,
     "projections": []
   }
 }
