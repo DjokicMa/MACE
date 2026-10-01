@@ -78,9 +78,9 @@ This document provides authorship attribution for the MACE (Mendoza Automated CR
 - `run_workflow.py` - Main workflow runner
 
 **Database Module:**
-- `database_status_report.py` - Database status reporting
+- `utils/database_status_report.py` - Database status reporting
 - `populate_completed_jobs.py` - Populate completed jobs in database
-- `queries.py` - Database query utilities
+- `query/queries.py` - Database query utilities
 
 **Queue Module:**
 - `manager.py` - Enhanced tracking queue manager (EnhancedCrystalQueueManager)

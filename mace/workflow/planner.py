@@ -28,6 +28,29 @@ from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
 import yaml
 
+# Guarded UI facade import with a stdlib fallback shim so ``ui`` is always usable.
+try:
+    from mace.utils import ui
+except Exception:
+    import sys as _sys, re as _re
+    class _UIShim:
+        # Mirror ui.py _MARKUP_TOKEN: also strip the bare [/] close tag (the old
+        # r"\[/?[a-z#]..." required a char after /, so [/] leaked through).
+        _TAG = _re.compile(r"\[/[^\[\]]*\]|\[[a-z#][^\[\]]*\]")
+        def _p(self, m): return self._TAG.sub("", str(m))
+        def ok(self, m): print(self._p(m))
+        def info(self, m): print(self._p(m))
+        def print(self, m): print(self._p(m))
+        def warn(self, m): print(self._p(m), file=_sys.stderr)
+        def err(self, m): print(self._p(m), file=_sys.stderr)
+        def rule(self, t=""): print(self._p(t))
+        def table(self, cols, rows, title=None):
+            if title: print(self._p(title))
+            for r in rows: print("  ".join(str(c) for c in r))
+        def progress(self, it, **k): return it
+        def badge(self, s): return str(s).upper()
+    ui = _UIShim()
+
 # Import MACE components
 try:
     from mace.database.materials import create_material_id_from_file
@@ -94,30 +117,6 @@ except ImportError as e:
             except ImportError:
                 DummyFileCreator = None
                 ui.warn("Warning: DummyFileCreator not available - will use fallback dummy files")
-
-
-# Guarded UI facade import with a stdlib fallback shim so ``ui`` is always usable.
-try:
-    from mace.utils import ui
-except Exception:
-    import sys as _sys, re as _re
-    class _UIShim:
-        # Mirror ui.py _MARKUP_TOKEN: also strip the bare [/] close tag (the old
-        # r"\[/?[a-z#]..." required a char after /, so [/] leaked through).
-        _TAG = _re.compile(r"\[/[^\[\]]*\]|\[[a-z#][^\[\]]*\]")
-        def _p(self, m): return self._TAG.sub("", str(m))
-        def ok(self, m): print(self._p(m))
-        def info(self, m): print(self._p(m))
-        def print(self, m): print(self._p(m))
-        def warn(self, m): print(self._p(m), file=_sys.stderr)
-        def err(self, m): print(self._p(m), file=_sys.stderr)
-        def rule(self, t=""): print(self._p(t))
-        def table(self, cols, rows, title=None):
-            if title: print(self._p(title))
-            for r in rows: print("  ".join(str(c) for c in r))
-        def progress(self, it, **k): return it
-        def badge(self, s): return str(s).upper()
-    ui = _UIShim()
 
 
 # Steps that cannot start from a two-component (SOC) run. CRYSTAL23 has no
