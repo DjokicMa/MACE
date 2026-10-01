@@ -92,6 +92,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   such as 6 or 990. The shrink is now raised to the next common multiple of the
   points' denominators (16 becomes 18 for hexagonal paths), the way a shrink
   too small for the path was already raised.
+- **The DOSS example configs give decks CRYSTAL runs.** Decks written from
+  `doss_total_only.json`, `doss_orbital_projections.json` and
+  `doss_element_orbital_auto.json` (and any DOSS deck with "print integrated
+  DOS" switched on) stopped in CRYSTAL with "DOSS FORMAT ERROR IN INPUT DECK":
+  the printing-option count was 1 but no printing-option record followed. That
+  record (`105 -1`) is now written. `doss_total_only.json` also asked for bands
+  0 to 999, which CRYSTAL refuses ("BAND RANGE NOT ALLOWED"); a band range is
+  now kept within 1 to the number of AOs. The examples now write `DOSS.DAT`
+  (they asked for no file at all), and "Total DOS only" gives a total DOS
+  instead of per-orbital projections. All three examples were run on HPCC.
 - **An `opt2d12` phonon deck with a SeeK-path band path is written.** The
   SeeK-path helpers read a `.out` file, but `opt2d12` passed them the parent's
   output text, so every such deck stopped with `OSError: File name too long`.
