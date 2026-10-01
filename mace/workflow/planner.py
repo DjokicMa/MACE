@@ -194,6 +194,18 @@ class WorkflowPlanner:
                 "generates": ["charge_density", "electrostatic_potential"],
                 # Note: Runs sequentially after BAND/DOSS, not in parallel
             },
+            "MATDUMP": {
+                "name": "H(R)/S(R) Matrix Dump for Wannier90",
+                "depends_on": ["SP", "OPT"],  # Reads the SP/OPT wavefunction
+                "generates": ["direct_lattice_matrices"],
+            },
+            "WANNIER": {
+                # Not a SLURM job: the engine runs the bundled lcao2wannier
+                # (William Comaskey) on the finished dump as a local post-step.
+                "name": "Wannier90 Hand-off (lcao2wannier, local)",
+                "depends_on": ["MATDUMP"],
+                "generates": ["wannier90_inputs"],
+            },
         }
 
         # Numbered calculations (OPT2, SP2, etc.) are handled dynamically
@@ -210,6 +222,8 @@ class WorkflowPlanner:
             "charge_analysis": ["OPT", "SP", "CHARGE+POTENTIAL"],
             "combined_analysis": ["OPT", "SP", "BAND", "DOSS", "TRANSPORT"],
             "custom": "user_defined",
+            # After "custom" so the existing menu numbers stay where they were.
+            "wannier_handoff": ["OPT", "SP", "MATDUMP", "WANNIER"],
         }
 
     def display_welcome(self):
@@ -892,6 +906,8 @@ class WorkflowPlanner:
                         "FREQ": "Vibrational Frequencies",
                         "TRANSPORT": "Transport Properties",
                         "CHARGE+POTENTIAL": "Charge Density & Electrostatic Potential",
+                        "MATDUMP": "H(R)/S(R) Matrix Dump for Wannier90",
+                        "WANNIER": "Wannier90 Hand-off (local lcao2wannier run)",
                     }.get(base, base)
                     ui.info(f"  {i}. {calc_type} - {desc}")
                 ui.info("\nEnter number or type name directly")
@@ -917,7 +933,8 @@ class WorkflowPlanner:
                     else:
                         ui.err(f"Cannot add {calc} - check dependencies")
                 # Handle base calculations (OPT, SP, etc.) - auto-number them
-                elif calc in ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL"]:
+                elif calc in ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL",
+                             "MATDUMP", "WANNIER"]:
                     numbered_calc = self._get_next_numbered_calc(sequence, calc)
                     if self._validate_numbered_calc_addition(sequence, numbered_calc):
                         sequence.append(numbered_calc)
@@ -947,7 +964,8 @@ class WorkflowPlanner:
                 calc = input("\nInsert calculation type: ").strip().upper()
 
                 # Handle numbered calculations
-                if calc in ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL"]:
+                if calc in ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL",
+                             "MATDUMP", "WANNIER"]:
                     numbered_calc = self._get_next_numbered_calc(sequence, calc)
 
                     ui.info(f"\nCurrent sequence: {' → '.join(sequence)}")
@@ -988,7 +1006,8 @@ class WorkflowPlanner:
     def _get_available_calc_types(self, current_sequence: List[str]) -> List[str]:
         """Get list of available calculation types with proper numbering"""
         available = []
-        base_types = ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL"]
+        base_types = ["OPT", "SP", "BAND", "DOSS", "FREQ", "TRANSPORT", "CHARGE+POTENTIAL",
+                             "MATDUMP", "WANNIER"]
 
         for base_type in base_types:
             # Count how many of this type already exist
@@ -1106,6 +1125,14 @@ class WorkflowPlanner:
             return any(
                 calc.startswith("SP") or calc.startswith("OPT") for calc in sequence
             )
+        elif base_type == "MATDUMP":
+            # The matrix dump reads the SP/OPT wavefunction, like BAND/DOSS
+            return any(
+                calc.startswith("SP") or calc.startswith("OPT") for calc in sequence
+            )
+        elif base_type == "WANNIER":
+            # The conversion reads a finished MATDUMP dump
+            return any(calc.startswith("MATDUMP") for calc in sequence)
         elif base_type == "FREQ":
             # FREQ needs at least one OPT
             return any(calc.startswith("OPT") for calc in sequence)
@@ -1227,6 +1254,33 @@ class WorkflowPlanner:
                 # Charge+Potential calculations
                 config = self.configure_analysis_step("CHARGE+POTENTIAL", i + 1)
                 step_configs[f"{calc_type}_{i + 1}"] = config
+
+            elif calc_type.startswith("MATDUMP"):
+                # Nothing to choose: N is derived from the parent SCF output
+                # at generation time (Crystal_d3/d3_matdump.py).
+                ui.info("  MATDUMP: BASISSET / 2 / 60 N / 64 N / END, with N derived")
+                ui.info("  from the SP output when the step is generated.")
+                step_configs[f"{calc_type}_{i + 1}"] = {
+                    "calculation_type": "MATDUMP",
+                    "source": "CRYSTALOptToD3.py",
+                    "requires_wavefunction": True,
+                    "d3_calculation": True,
+                    "d3_config": {"calculation_type": "MATDUMP",
+                                  "n_rvectors": "auto"},
+                }
+
+            elif calc_type.startswith("WANNIER"):
+                # Runs locally after MATDUMP completes; no job script.
+                ui.info("  WANNIER: after MATDUMP completes, MACE runs the bundled")
+                ui.info("  lcao2wannier (William Comaskey) on the dump where the")
+                ui.info("  workflow engine runs. If it cannot run there it is skipped")
+                ui.info("  with the reason, and `mace wannier --input <dump>` does it")
+                ui.info("  by hand.")
+                step_configs[f"{calc_type}_{i + 1}"] = {
+                    "calculation_type": "WANNIER",
+                    "local_post_step": True,
+                }
+                continue
 
             # Configure SLURM scripts for this step
             slurm_config = self.configure_slurm_scripts(calc_type, i + 1)
@@ -3692,8 +3746,10 @@ class WorkflowPlanner:
 
         if base_type in ["OPT", "SP", "FREQ"]:
             return ["submitcrystal23.sh"]
-        elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+        elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "MATDUMP"]:
             return ["submit_prop.sh"]
+        elif base_type == "WANNIER":
+            return []  # local post-step, not a SLURM job
         else:
             return ["submitcrystal23.sh"]  # Default
 

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MATDUMP and the Wannier90 conversion as workflow steps.** The planner
+  offers `MATDUMP` and `WANNIER` (and a `wannier_handoff` template, `OPT -> SP
+  -> MATDUMP -> WANNIER`, listed after `custom` so the existing template
+  numbers are unchanged). The engine generates MATDUMP from the SP wavefunction
+  like BAND/DOSS; WANNIER runs the bundled lcao2wannier on the finished dump as
+  a local post-step and is skipped, with the reason, when it cannot run.
 - **`mace preflight` checks a MATDUMP `.d3` without CRYSTAL.** Its records
   (`BASISSET / NPR / 60 N / 64 N / END`, manual p.310), N against the bounds
   derived from the parent SCF output beside it, and the `<deck>.f9` the job

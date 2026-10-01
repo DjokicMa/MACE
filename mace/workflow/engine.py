@@ -1509,6 +1509,94 @@ fi'''
             print("CHARGE+POTENTIAL calculations require new CRYSTALOptToD3.py")
             return None
     
+    def run_wannier_post_step(self, matdump_calc_id: str,
+                              target_calc_type: str = "WANNIER") -> Optional[str]:
+        """Convert a completed MATDUMP dump with the bundled lcao2wannier.
+
+        A local post-step, not a SLURM job: it runs where the engine runs (the
+        completion callback of the MATDUMP job, or `mace monitor`). The
+        conversion and its method are William Comaskey's; this only calls
+        ``mace.wannier.driver.convert`` - the same path as ``mace wannier`` -
+        and records the outcome as a ``target_calc_type`` record so the plan
+        sees the step as done and it is not repeated.
+
+        When it cannot run (no dump, the package's numpy/scipy missing, a bad
+        dump) the step is SKIPPED: the reason and the by-hand command are
+        printed, the record is marked failed, and nothing else is blocked.
+        Returns the record's id only when the hand-off completed.
+        """
+        matdump = self.db.get_calculation(matdump_calc_id)
+        if not matdump:
+            print(f"{target_calc_type} skipped: MATDUMP calculation {matdump_calc_id} not found")
+            return None
+        material_id = matdump['material_id']
+        dump = Path(matdump.get('output_file') or '')
+        workflow_id = None
+        try:
+            workflow_id = json.loads(matdump.get('settings_json') or '{}').get('workflow_id')
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        calc_id = self.db.create_calculation(
+            material_id=material_id,
+            calc_type=target_calc_type,
+            input_file=str(dump),
+            work_dir=str(dump.parent),
+            prerequisite_calc_id=matdump_calc_id,
+            settings={'workflow_id': workflow_id, 'local_post_step': True},
+        )
+
+        def skip(reason: str) -> None:
+            print(f"{target_calc_type} post-step skipped for {material_id}: {reason}")
+            print(f"  Run it by hand where numpy/scipy are available:")
+            print(f"    mace wannier --input {dump}")
+            self.db.update_calculation_status(
+                calc_id, 'failed', error_type='wannier_post_step',
+                error_message=f"skipped: {reason}")
+            return None
+
+        if not matdump.get('output_file') or not dump.is_file():
+            return skip(f"the MATDUMP output {dump.name or '(none recorded)'} "
+                        "was not found")
+
+        try:
+            from mace.wannier import driver
+        except Exception as exc:  # broken install: report, never raise
+            return skip(f"the bundled lcao2wannier could not be imported ({exc})")
+
+        print(f"{target_calc_type}: {driver.LCAO2WANNIER_CREDIT}")
+        try:
+            result = driver.convert(
+                parent=dump,
+                echo=lambda line, stream="stdout": print(line, flush=True),
+                progress=lambda message: print(message, flush=True),
+            )
+        except driver.Lcao2WannierUnavailable as exc:
+            return skip(str(exc))
+        except Exception as exc:
+            return skip(f"the conversion raised {exc!r}")
+
+        log = result.output_dir / f"{result.seed}.lcao2wannier.log"
+        if result.ok:
+            note = " (with a MARGINAL conditioning caveat)" if result.qualified else ""
+            print(f"{target_calc_type}: hand-off written to {result.output_dir}{note}")
+            self.db.update_calculation_status(calc_id, 'completed',
+                                              output_file=str(log))
+            return calc_id
+
+        reason = {"fail": "the conversion's self-audit refused the model",
+                  "unknown": "no self-audit verdict was found"}.get(
+                      result.audit, f"lcao2wannier exited {result.returncode}")
+        if result.returncode == 0 and not result.produced:
+            reason = "no hand-off files were written"
+        print(f"{target_calc_type} FAILED for {material_id}: {reason}.")
+        print(f"  Full output: {log}")
+        print(f"  Re-run by hand to see the report: mace wannier --input {dump}")
+        self.db.update_calculation_status(
+            calc_id, 'failed', output_file=str(log),
+            error_type='wannier_post_step', error_message=reason)
+        return None
+
     def _use_new_d3_generation(self) -> bool:
         """Check if we should use new CRYSTALOptToD3.py for D3 generation"""
         # Check if CRYSTALOptToD3.py is available
@@ -1745,6 +1833,11 @@ fi'''
             }
         }
         
+        # MATDUMP has one setting, and "auto" (derive N from the parent SCF) is
+        # the only safe default. It must not be an empty block: load_d3_config
+        # treats an empty configuration as a failed load.
+        configs["MATDUMP"] = {"calculation_type": "MATDUMP", "n_rvectors": "auto"}
+
         # Extract base type for numbered calculations (BAND2, DOSS3, etc)
         base_type, _ = self._parse_calc_type(calc_type)
         return configs.get(base_type, {})
@@ -1757,7 +1850,8 @@ fi'''
         base_type, calc_num = self._parse_calc_type(calc_type)
         
         # Determine step number based on calculation type
-        default_steps = {"BAND": 3, "DOSS": 4, "TRANSPORT": 5, "CHARGE+POTENTIAL": 6}
+        default_steps = {"BAND": 3, "DOSS": 4, "TRANSPORT": 5, "CHARGE+POTENTIAL": 6,
+                         "MATDUMP": 7}
         step_num = default_steps.get(base_type, 3)
         if calc_num > 1:
             step_num += (calc_num - 1) * 10
@@ -1874,7 +1968,7 @@ fi'''
             return None
             
         # Determine which script to use based on target type
-        if base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+        if base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "MATDUMP"]:
             # Use new CRYSTALOptToD3.py for all D3 calculation types
             return self.generate_d3_calculation_new(wavefunction_calc_id, target_calc_type)
         else:
@@ -1982,9 +2076,16 @@ fi'''
                         can_start = True
                         source_calc_id = opt_source  # Use highest completed OPT for FREQ generation
                     
-            elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+            elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "MATDUMP"]:
                 # D3 property calculations need a wavefunction from SP or OPT
                 # (_find_dependency_in_sequence resolves to the real provider).
+                prev_step = self._find_dependency_in_sequence(planned_type, planned_sequence)
+                if prev_step and prev_step in completed_by_type:
+                    can_start = True
+                    source_calc_id = completed_by_type[prev_step][-1]['calc_id']
+
+            elif base_type == "WANNIER":
+                # The local conversion reads the finished MATDUMP dump.
                 prev_step = self._find_dependency_in_sequence(planned_type, planned_sequence)
                 if prev_step and prev_step in completed_by_type:
                     can_start = True
@@ -2022,7 +2123,9 @@ fi'''
                     # FREQ always uses generate_freq_from_opt with an OPT calculation
                     # source_calc_id should already be from an OPT due to fixed dependency logic
                     calc_id = self.generate_freq_from_opt(source_calc_id, planned_type)
-                elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+                elif base_type == "WANNIER":
+                    calc_id = self.run_wannier_post_step(source_calc_id, planned_type)
+                elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "MATDUMP"]:
                     # Same new-vs-legacy gate as generate_band_from_sp/doss_from_sp
                     if self._use_new_d3_generation():
                         calc_id = self.generate_d3_calculation_new(source_calc_id, planned_type)
@@ -2262,6 +2365,14 @@ fi'''
                                     print(f"Failed to generate optional {next_calc_type}, continuing...")
                                 else:
                                     print(f"CRITICAL: Failed to generate {next_calc_type}")
+                        elif next_base_type == "MATDUMP":
+                            print(f"Generating {next_calc_type} from planned sequence...")
+                            matdump_calc_id = self.generate_property_calculation(completed_calc_id, next_calc_type)
+                            if matdump_calc_id:
+                                new_calc_ids.append(matdump_calc_id)
+                            else:
+                                failed_generations.add(next_calc_type)
+                                print(f"CRITICAL: Failed to generate {next_calc_type}")
                         elif next_base_type == "CHARGE+POTENTIAL":
                             print(f"Generating {next_calc_type} from planned sequence...")
                             charge_potential_calc_id = self.generate_property_calculation(completed_calc_id, next_calc_type)
@@ -2373,7 +2484,7 @@ fi'''
                     if band_calc_id:
                         new_calc_ids.append(band_calc_id)
                 
-        elif base_type in ["FREQ", "BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+        elif base_type in ["FREQ", "BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "MATDUMP"]:
             # These calculations are often terminal, but sometimes workflow continues.
             # None of them changes the geometry, so a later OPT is built from
             # the highest completed OPT (or SP), never from the step itself.
@@ -2623,7 +2734,7 @@ fi'''
         """
         base_type, _ = self._parse_calc_type(calc_type)
         
-        if base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+        if base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "MATDUMP"]:
             # Check for CRYSTALOptToD3.py script
             if 'crystal_to_d3' not in self.script_paths:
                 print(f"CRYSTALOptToD3.py script not found")
@@ -2706,7 +2817,15 @@ fi'''
                     return planned_sequence[i]
             return None
             
-        elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL"]:
+        elif base_type == "WANNIER":
+            # The conversion reads the nearest MATDUMP dump before it.
+            for i in range(calc_index - 1, -1, -1):
+                prev_base, _ = self._parse_calc_type(planned_sequence[i])
+                if prev_base == "MATDUMP":
+                    return planned_sequence[i]
+            return None
+
+        elif base_type in ["BAND", "DOSS", "TRANSPORT", "CHARGE+POTENTIAL", "MATDUMP"]:
             # All D3 property calculations depend on SP or OPT (they consume the
             # fort.9 wavefunction) — NOT on whatever step happens to precede
             # them in the sequence. The old previous-step fallback made
@@ -2869,7 +2988,7 @@ fi'''
                 dep_base, _ = self._parse_calc_type(dependency)
                 
                 # Special case: D3 calculations really need wavefunction
-                if base_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL'] and dep_base == 'SP':
+                if base_type in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL', 'MATDUMP'] and dep_base == 'SP':
                     return False, dependency
                     
                 # For other cases, try to find alternative source

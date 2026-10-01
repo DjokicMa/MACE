@@ -503,7 +503,9 @@ class WorkflowExecutor:
         if not workflow_sequence:
             validation_errors.append("Empty workflow sequence")
         else:
-            valid_calc_types = ['OPT', 'SP', 'FREQ'] + list(D3_CALC_TYPES)
+            # WANNIER: the local lcao2wannier post-step after MATDUMP (run by
+            # the engine, not submitted).
+            valid_calc_types = ['OPT', 'SP', 'FREQ', 'WANNIER'] + list(D3_CALC_TYPES)
             for calc_type in workflow_sequence:
                 # Planner legitimately emits numbered types (OPT2, SP2, BAND3...)
                 base_type = calc_type.rstrip('0123456789')

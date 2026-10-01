@@ -557,6 +557,20 @@ the `<deck>.f9` that `submit_prop.sh` copies to `fort.9`. A good deck is
 reported as structure-only, never as passed. Other `.d3` kinds are reported as
 not checked, and a directory argument still collects `.d12` decks only.
 
+#### As a workflow step
+
+`mace workflow` can plan the whole chain: the `wannier_handoff` template (or a
+custom sequence) is `OPT → SP → MATDUMP → WANNIER`. `MATDUMP` is generated
+from the SP wavefunction and submitted with `submit_prop.sh`, like BAND/DOSS.
+`WANNIER` is not a job: when MATDUMP completes, the workflow engine runs the
+bundled `lcao2wannier` on the dump **where the engine runs** (the MATDUMP job's
+completion callback, inside that job's allocation), and records the outcome as a
+`WANNIER` calculation. If it cannot run there (dump missing, numpy/scipy
+missing, a refused model) it is skipped with the reason and the command to run
+by hand (`mace wannier --input <dump>`); nothing else in the workflow waits on
+it. A large conversion takes 10-15 minutes, so leave room for it in the
+MATDUMP job's walltime.
+
 #### The `N` parameter — derived, never guessed
 
 `MATDUMP` prints H(R) and S(R) for `N` direct-lattice R-vectors. A too-small `N`
