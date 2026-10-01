@@ -72,3 +72,9 @@ testMACE1.1/
 *.wannier/
 *.parsecache.pkl
 *.lcao2wannier.incomplete
+# lcao2wannier's optional Fortran kernels, built in place with f2py
+# (DOCUMENTATION.md, mace/wannier/lcao2wannier/VENDORED.md); never committed.
+mace/wannier/lcao2wannier/_spread_fortran*.so
+mace/wannier/lcao2wannier/_disentangle_fortran*.so
+mace/wannier/lcao2wannier/_spread_fortran*.pyd
+mace/wannier/lcao2wannier/_disentangle_fortran*.pyd

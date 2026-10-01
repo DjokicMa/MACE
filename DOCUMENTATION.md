@@ -538,7 +538,7 @@ Comaskey's copyright on every file; `VENDORED.md` in that directory records the
 source release (1.0.0) and every local change. It needs numpy and scipy, both
 already in `requirements.txt`; matplotlib is only used by its optional band
 plots. Its two Fortran kernels are optional speed-ups and are not compiled by
-default (build instructions in `VENDORED.md`). `mace wannier` runs it as
+default (see "Optional pieces" below). `mace wannier` runs it as
 `python -m mace.wannier.lcao2wannier`, in the same interpreter as MACE, and
 `--l2w-arg` passes any of its own options through. `wannier90.x` is still yours
 to supply.
@@ -556,6 +556,34 @@ against the bounds below, read from the parent SCF `.out` beside the deck, and
 the `<deck>.f9` that `submit_prop.sh` copies to `fort.9`. A good deck is
 reported as structure-only, never as passed. Other `.d3` kinds are reported as
 not checked, and a directory argument still collects `.d12` decks only.
+
+#### Optional pieces: the Fortran kernels and matplotlib
+
+Nothing below is needed for a conversion. Without the kernels `lcao2wannier`
+uses its pure-Python/NumPy path (`spread.have_fortran()` and
+`hybrid.have_disentangle_fortran()` report `False`); without matplotlib its band
+plot writes a text summary instead of a PNG. Both are checked by
+`tests/test_wannier_optional_pieces.py`.
+
+The kernels are built in place, in `mace/wannier/lcao2wannier/`, with NumPy's
+f2py. That needs a Fortran compiler (gfortran), meson, ninja and a BLAS
+(OpenBLAS here; on HPCC load the GCC toolchain and OpenBLAS modules first):
+
+```bash
+cd mace/wannier/lcao2wannier
+python -m numpy.f2py -c --backend meson -m _spread_fortran _spread_fortran.f90 -lopenblas
+python -m numpy.f2py -c --backend meson -m _disentangle_fortran _disentangle_fortran.f90 -lopenblas
+```
+
+Run them with the same Python that runs MACE (the extension is tied to that
+interpreter's version); `.f2py_f2cmap` in that directory supplies the type map.
+The resulting `_spread_fortran*.so` / `_disentangle_fortran*.so` are ignored by
+git and must not be committed. His messages that mention
+`scripts/build_spread_fortran.sh` / `scripts/build_disentangle_fortran.sh`
+refer to scripts that are not bundled; these two commands are the equivalent
+(`VENDORED.md`). The spread kernel is used automatically when present (about
+5x faster, per his notes); the disentanglement kernel is not the default path.
+These commands were not run here (no Fortran compiler in this environment).
 
 #### As a workflow step
 

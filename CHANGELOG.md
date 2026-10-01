@@ -68,6 +68,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **lcao2wannier's compiled kernels are kept out of git.** Its optional
+  Fortran kernels are built in place with f2py; the resulting `.so` files were
+  not ignored. DOCUMENTATION.md now gives the build commands, and tests check
+  that the package falls back cleanly without the kernels or matplotlib.
 - **`mace wannier` shows the conversion's progress while it runs.** The
   conversion takes 10-15 minutes on a large dump, and its output (parsing, the
   eigenproblems, each file written) was captured and printed only at the end.
