@@ -854,6 +854,15 @@ class SocDeckBuffer(io.StringIO):
         """Ask for SMEAR ``width`` (hartree), as a "smear" setting does."""
         self._kwargs["smear"] = width
 
+    def refusal(self, soscale: float = 1.0) -> Optional[str]:
+        """Why finish would refuse the deck written so far, or None; writes
+        and prints nothing, so a refusal can come before any warning."""
+        try:
+            soc_deck(self.getvalue(), soscale, log=lambda message: None, **self._kwargs)
+            return None
+        except SocError as exc:
+            return str(exc)
+
     def finish(self, soscale: float = 1.0) -> Optional[str]:
         """Write the SOC deck; on refusal discard it and return the reason.
         ``written`` then holds the deck written."""

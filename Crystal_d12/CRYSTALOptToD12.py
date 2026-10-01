@@ -1215,11 +1215,17 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         # Note: The single END at the very end is written by write_scf_section
 
         if settings.get("soc"):
-            # A parent that looks metallic (parent_metal: why) and no SMEAR:
-            # warn, and ask for one or note it (ask_for_soc_smear).
-            if parent_metal and not f.will_have_smear():
-                ask_for_soc_smear(f, parent_metal, ask)
-            refusal = f.finish()
+            # A deck the 2c-SCF cannot run (OPT, FREQ, ...) is refused first,
+            # with no SMEAR warning or question for a deck never written.
+            refusal = f.refusal()
+            if refusal:
+                f.discard()
+            else:
+                # A parent that looks metallic (parent_metal: why) and no SMEAR:
+                # warn, and ask for one or note it (ask_for_soc_smear).
+                if parent_metal and not f.will_have_smear():
+                    ask_for_soc_smear(f, parent_metal, ask)
+                refusal = f.finish()
             if refusal:
                 _fail(refusal, f"Not writing {os.path.basename(output_file)}: {refusal}")
                 return False

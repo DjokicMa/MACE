@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   too, and `opt2d12` prefers the deck's value. Deck change: such a child,
   SOC or not, now has the parent's `SMEAR` / width after its SHRINK records;
   a child whose parent .out has the "FERMI SMEARING" line had it already.
+- **An OPT or FREQ deck of a metallic SOC parent is refused before any
+  SMEAR warning.** `opt2d12` warned that the parent looks metallic (and at a
+  terminal asked for a SMEAR width) and only then refused the deck the
+  2c-SCF cannot run. It now refuses first and says nothing about SMEAR for a
+  deck it does not write. No deck changes.
 - **An `opt2d12` phonon deck with a SeeK-path band path is written.** The
   SeeK-path helpers read a `.out` file, but `opt2d12` passed them the parent's
   output text, so every such deck stopped with `OSError: File name too long`.

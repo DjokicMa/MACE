@@ -714,6 +714,26 @@ def test_a_scalar_deck_of_a_metal_parent_is_not_touched(opt2d12, tmp_path, capsy
     assert "metallic" not in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("calc,what", [("OPT", "geometry optimization (OPTGEOM)"),
+                                       ("FREQ", "frequency calculation (FREQCALC)")])
+def test_a_metallic_soc_parent_is_refused_without_the_metal_warning(
+        opt2d12_soc_parent, tmp_path, capsys, calc, what):
+    """Refused first: no SMEAR warning or question for a deck never written."""
+    (tmp_path / "socpbte.out").write_text(METAL_OUT)
+    status, decks = opt2d12_soc_parent(calculation_type=calc)
+    assert status == 1 and decks == []
+    err = capsys.readouterr().err
+    assert f"{what} is not available" in err
+    assert "metallic" not in err and "SMEAR" not in err
+
+
+def test_a_metallic_soc_parent_sp_still_gets_the_warning(opt2d12_soc_parent, tmp_path, capsys):
+    (tmp_path / "socpbte.out").write_text(METAL_OUT)
+    status, decks = opt2d12_soc_parent()
+    assert status == 0 and len(decks) == 1
+    assert "the parent looks metallic" in capsys.readouterr().err
+
+
 def test_template_smear_writes_smear_and_needs_no_warning(opt2d12, tmp_path, capsys):
     _metal_parent(tmp_path)
     status, decks = opt2d12(["pbte"], soc=True, smear=0.005)
