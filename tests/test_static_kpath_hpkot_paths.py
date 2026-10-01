@@ -62,6 +62,24 @@ L 1/2 0 0
 F 1/2 -1/2 0
 """)
 
+OA1_POINTS = _pts("""
+GAMMA 0 0 0
+Y -1/2 1/2 0
+T -1/2 1/2 1/2
+Z 0 0 1/2
+S 0 1/2 0
+R 0 1/2 1/2
+""")
+
+OA2_POINTS = _pts("""
+GAMMA 0 0 0
+Y 1/2 1/2 0
+T 1/2 1/2 1/2
+Z 0 0 1/2
+S 0 1/2 0
+R 0 1/2 1/2
+""")
+
 CF1 = _split("GAMMA-X X-U K-GAMMA GAMMA-L L-W W-X X-W_2")
 
 EXPECTED = {
@@ -72,6 +90,13 @@ EXPECTED = {
     # paths (B, B1, Q, P1, X, Z, ...), names SeeK-path does not use.
     "hR1": (_split("GAMMA-T T-H_2 H_0-L L-GAMMA GAMMA-S_0 S_2-F F-GAMMA"), HR1_POINTS),
     "hR2": (_split("GAMMA-L L-T T-P_0 P_2-GAMMA GAMMA-F"), HR2_POINTS),
+    # Amm2, Aem2, Ama2, Aea2: the segments were SeeK-path's, but the title
+    # ran on through the jumps C_0|SIGMA_0 (F_0|DELTA_0) and A_0|E_0
+    # (B_0|G_0), naming more edges than the deck has segments.
+    "oA1_noinv": (_primed(_split(
+        "GAMMA-Y Y-C_0 SIGMA_0-GAMMA GAMMA-Z Z-A_0 E_0-T T-Y GAMMA-S S-R R-Z Z-T")), OA1_POINTS),
+    "oA2_noinv": (_primed(_split(
+        "GAMMA-Y Y-F_0 DELTA_0-GAMMA GAMMA-Z Z-B_0 G_0-T T-Y GAMMA-S S-R R-Z Z-T")), OA2_POINTS),
 }
 
 

@@ -2154,7 +2154,7 @@ seekpath_data = {
             [0.0, -0.5, -0.5, 0.0, 0.0, -0.5],           # R' → Z'
             [0.0, 0.0, -0.5, 0.5, -0.5, -0.5]            # Z' → T'
         ],
-        "labels": ["GAMMA", "Y", "C_0", "SIGMA_0", "GAMMA", "Z", "A_0", "E_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "C_0'", "SIGMA_0'", "GAMMA", "Z'", "A_0'", "E_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
+        "labels": ["GAMMA", "Y", "C_0", "|", "SIGMA_0", "GAMMA", "Z", "A_0", "|", "E_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "C_0'", "|", "SIGMA_0'", "GAMMA", "Z'", "A_0'", "|", "E_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
     },
     "oA2_noinv": {
         # Orthorhombic A-centered without inversion (Amm2 variant 2)
@@ -2182,7 +2182,7 @@ seekpath_data = {
             [0.0, -0.5, -0.5, 0.0, 0.0, -0.5],           # R' → Z'
             [0.0, 0.0, -0.5, -0.5, -0.5, -0.5]           # Z' → T'
         ],
-        "labels": ["GAMMA", "Y", "F_0", "DELTA_0", "GAMMA", "Z", "B_0", "G_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "F_0'", "DELTA_0'", "GAMMA", "Z'", "B_0'", "G_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
+        "labels": ["GAMMA", "Y", "F_0", "|", "DELTA_0", "GAMMA", "Z", "B_0", "|", "G_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "F_0'", "|", "DELTA_0'", "GAMMA", "Z'", "B_0'", "|", "G_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
     },
     "oC1_noinv": {
         # Orthorhombic C-centered without inversion (Cmc2_1)
