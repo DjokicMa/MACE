@@ -2159,10 +2159,10 @@ fi'''
                         completed_by_type = {}
                         for calc in all_calcs:
                             if calc['status'] == 'completed':
-                                calc_type = calc['calc_type']
-                                if calc_type not in completed_by_type:
-                                    completed_by_type[calc_type] = []
-                                completed_by_type[calc_type].append(calc)
+                                # Not calc_type: that names the step that just
+                                # completed and is recorded in the workflow state.
+                                ct = calc['calc_type']
+                                completed_by_type.setdefault(ct, []).append(calc)
                         
                         # Find the highest numbered OPT
                         opt_calc_id = self._find_highest_numbered_calc_of_type(completed_by_type, 'OPT')
