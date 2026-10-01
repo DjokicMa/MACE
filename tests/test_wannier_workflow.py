@@ -237,6 +237,24 @@ def test_the_post_step_converts_the_dump_and_records_success(
     assert "William Comaskey" in capsys.readouterr().out
 
 
+def test_the_post_step_checks_the_dump_against_its_scf_parent(
+        real_post_step, monkeypatch, tmp_path):
+    """In a workflow the SP output sits in another step directory, so the
+    2-component check must be handed the MATDUMP's wavefunction parent."""
+    engine, dump = real_post_step
+    dump.write_text("x")
+    sp_out = tmp_path / "step_002_SP" / "mat_sp.out"
+    sp_out.parent.mkdir()
+    sp_out.write_text("x")
+    engine.db.calcs.append(_calc("SP", cid="sp_1", output_file=str(sp_out)))
+    engine.db.calcs[0]["prerequisite_calc_id"] = "sp_1"
+    seen = {}
+    monkeypatch.setattr(driver, "convert",
+                        lambda parent, **kw: seen.update(kw) or _result(dump))
+    engine.run_wannier_post_step("matdump_1", "WANNIER")
+    assert seen["scf_output"] == sp_out
+
+
 def test_a_refused_model_is_recorded_as_failed(real_post_step, monkeypatch, capsys):
     engine, dump = real_post_step
     dump.write_text("x")

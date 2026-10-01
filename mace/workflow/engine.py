@@ -1564,10 +1564,20 @@ fi'''
         except Exception as exc:  # broken install: report, never raise
             return skip(f"the bundled lcao2wannier could not be imported ({exc})")
 
+        # The SCF that wrote the fort.9 sits in another step directory, so hand
+        # it over for the 2-component check (a stock dump of a 2c run is
+        # incomplete and is refused there).
+        scf_output = None
+        prerequisite = matdump.get('prerequisite_calc_id')
+        scf_calc = self.db.get_calculation(prerequisite) if prerequisite else None
+        if scf_calc and scf_calc.get('output_file') and Path(scf_calc['output_file']).is_file():
+            scf_output = Path(scf_calc['output_file'])
+
         print(f"{target_calc_type}: {driver.LCAO2WANNIER_CREDIT}")
         try:
             result = driver.convert(
                 parent=dump,
+                scf_output=scf_output,
                 echo=lambda line, stream="stdout": print(line, flush=True),
                 progress=lambda message: print(message, flush=True),
             )
