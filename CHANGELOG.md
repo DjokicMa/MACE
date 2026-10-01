@@ -55,6 +55,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   primitive orthorhombic oP1 path. They now get SeeK-path's oA1 (b < c) or
   oA2 (b > c) path with its primed copy, and the title marks the jumps
   C_0|SIGMA_0 and A_0|E_0 (F_0|DELTA_0, B_0|G_0) that the segments make.
+- **`opt2d3` reads a slab's symmetry.** A SLAB output names its symmetry as
+  a plane group and the corresponding space group ("TWO-SIDED PLANE GROUP
+  N. 80 : P 6/M M M", "CORRESPONDING SPACE GROUP N. 191"; manual App. A.2,
+  p.421), not on the "SPACE GROUP ... :" line `opt2d3` reads, so every slab
+  was taken as space group 1 (P1) and, without the seekpath library, got the
+  triclinic band path. It now takes the corresponding space group and the
+  plane group's lattice letter.
 
 ## [1.1.3] - 2026-10-01
 

@@ -215,7 +215,20 @@ class D3Generator:
         sg_match = re.search(r'SPACE GROUP.*?NUMBER:\s*(\d+)', content)
         if sg_match:
             info['space_group'] = int(sg_match.group(1))
-        
+
+        # A slab names its layer group and the corresponding space group
+        # ("TWO-SIDED PLANE GROUP N. 80 : P 6/M M M", "CORRESPONDING SPACE
+        # GROUP N. 191"); layer groups are identified by that space group
+        # (manual App. A.2, p.421), and the plane-group symbol gives the
+        # lattice letter (P or C).
+        if info['dimensionality'] == 2:
+            sg_match = re.search(r'CORRESPONDING SPACE GROUP N\.\s*(\d+)', content)
+            if sg_match:
+                info['space_group'] = int(sg_match.group(1))
+            lattice_match = re.search(r'PLANE GROUP N\.\s*\d+\s*:\s*([A-Z])', content)
+            if lattice_match:
+                info['lattice_type'] = lattice_match.group(1)
+
         # Crystal family
         if 'CRYSTAL FAMILY' in content:
             family_match = re.search(r'CRYSTAL FAMILY\s+:\s+(\w+)', content)
