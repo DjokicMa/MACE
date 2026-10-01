@@ -79,8 +79,21 @@ def test_supported_properties_of_a_2c_parent_go_ahead(generator, capsys, calc_ty
     assert reached == [calc_type]
     out = capsys.readouterr()
     assert "sec. 6.4, p. 183" in out.out
-    # band ranges from NAO / electron count are flagged for BAND and DOSS
-    assert ("2 x NAO spinor bands" in out.err) == (calc_type in ("BAND", "DOSS"))
+    # what was measured on HPCC with the stock properties on a 2c fort.9
+    # replaces the round-4 "untested" note
+    assert "untested" not in out.out + out.err
+    assert ("2 x NAO spinor bands" in out.out + out.err) == (calc_type in ("BAND", "DOSS"))
+    measured = {
+        "BAND": ("all 2 x NAO spinor bands to BAND.DAT", "out"),
+        "DOSS": ("runs DOSS on a 2c fort.9 once the DOSS record is valid", "err"),
+        "CHARGE": ("runs ECH3 on a 2c fort.9", "out"),
+    }[calc_type]
+    assert measured[0] in getattr(out, measured[1])
+    if calc_type == "DOSS":
+        # not measured: which spinor bands a band range from NAO selects
+        assert "check the band range in the deck" in out.err
+    if calc_type == "CHARGE":
+        assert "ECHG was not run" in out.out
 
 
 def test_a_2c_parent_is_also_recognised_by_its_deck(generator, capsys):

@@ -250,10 +250,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CHARGE+POTENTIAL (POT3, POTC), writing nothing: they are not among the
   properties manual sec. 6.4 (p. 183) lists for a 2c-SCF solution, and "any
   feature not explicitly mentionned in this chapter is not supported" in 2c
-  (p. 166). BAND, DOSS and CHARGE (ECH3) go ahead, with a warning for BAND
-  and DOSS that a 2c run has 2 x NAO spinor bands (p. 166), so a band range
-  taken from NAO or the electron count needs checking. Decks from scalar
-  parents are unchanged.
+  (p. 166). BAND, DOSS and CHARGE (ECH3) go ahead, with a note of what was
+  measured on HPCC with the stock serial `properties` on a 2c fort.9: BAND
+  runs and BAND.DAT holds all 2 x NAO spinor bands (p. 166) even for a deck
+  asking for bands 1-NAO; ECH3 runs (ECHG was not run); DOSS runs once its
+  record is valid, and since which spinor bands a band range from NAO
+  selects was not measured, DOSS keeps a warning to check that range.
+  Decks from scalar parents are unchanged.
 
 ### Removed
 

@@ -1227,12 +1227,19 @@ class D3Generator:
                 return None
             ui.info(f"The parent is a two-component (SOC) run; {self.calc_type} is among "
                     f"the properties the manual supports from it (sec. 6.4, p. 183).")
-            if self.calc_type in ("BAND", "DOSS"):
-                ui.warn("Warning: a 2c run has 2 x NAO spinor bands (manual p. 166), and "
-                        "its occupied bands number the electrons (p. 176). Band ranges "
-                        "MACE takes from NAO or the electron count assume a scalar run, "
-                        "and how properties numbers 2c bands is not in the manual: check "
-                        "the range in the deck (untested).")
+            # Measured on HPCC with the stock serial properties on a 2c fort.9.
+            if self.calc_type == "BAND":
+                ui.info("Measured: the stock properties runs BAND on a 2c fort.9 and writes "
+                        "all 2 x NAO spinor bands to BAND.DAT (manual p. 166); a deck "
+                        "asking for bands 1-NAO gave all 2 x NAO.")
+            elif self.calc_type == "DOSS":
+                ui.warn("Note: the stock properties runs DOSS on a 2c fort.9 once the DOSS "
+                        "record is valid (measured). A 2c run has 2 x NAO spinor bands "
+                        "(manual p. 166); which of them a band range MACE takes from NAO "
+                        "selects was not measured, so check the band range in the deck.")
+            elif self.calc_type == "CHARGE":
+                ui.info("Measured: the stock properties runs ECH3 on a 2c fort.9 "
+                        "(DENS_CUBE.DAT written); ECHG was not run from one.")
 
         # Check if wavefunction exists and copy it
         # ALL calculation types need the wavefunction file
