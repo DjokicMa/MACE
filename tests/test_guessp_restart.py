@@ -58,7 +58,7 @@ def test_job_script_stages_f20_only_when_present():
     """The restore must be conditional. Every existing deck runs through this
     same script, and an unconditional cp would fail the job for all of them."""
     text = SUBMIT_SH.read_text()
-    assert 'if [ -f "$DIR/$JOB.f20" ]' in text, "restore must be guarded"
+    assert 'if [ -s "$DIR/$JOB.f20" ]' in text, "restore must be guarded"
     assert 'cp "$DIR/$JOB.f20" "$scratch/$JOB/fort.20"' in text
     # ...and the save side, which makes a predecessor's matrix available at all.
     assert "cp fort.9 ${DIR}/${JOB}.f9" in text
@@ -99,7 +99,7 @@ def _staging_block(tmp_path):
     return script[start:script.index("\nfi\n", start) + 4]
 
 
-def _stage(tmp_path, block, has_guessp, files, tag):
+def _stage(tmp_path, block, has_guessp, files, tag, empty=()):
     import subprocess
 
     d = tmp_path / tag
@@ -109,6 +109,8 @@ def _stage(tmp_path, block, has_guessp, files, tag):
         "title\nCRYSTAL\n" + ("GUESSP\n" if has_guessp else "") + "END\n")
     for name in files:
         (d / name).write_text("MATRIX-" + name)
+    for name in empty:
+        (d / name).write_text("")
     # The real script copies the deck to INPUT before the GUESSP block runs,
     # and the block edits that copy - mirror it or the block sees no deck.
     (scratch / "INPUT").write_text((d / "testmat.d12").read_text())
@@ -151,3 +153,16 @@ def test_nothing_is_staged_when_the_deck_does_not_ask_for_it(tmp_path):
     it for every job in a sweep would be pure I/O."""
     block = _staging_block(tmp_path)
     assert _stage(tmp_path, block, False, ["testmat.f9"], "noguessp") is None
+
+
+def test_an_empty_f20_is_not_staged(tmp_path):
+    """A 0-byte $JOB.f20 (hand-placed, or a copy of the empty fort.9 an
+    aborted run leaves) is no guess: CRYSTAL would read an empty fort.20.
+    Fall back to the job's own non-empty .f9, or cold start without one."""
+    block = _staging_block(tmp_path)
+    got = _stage(tmp_path, block, True, ["testmat.f9"], "emptyf20", empty=["testmat.f20"])
+    assert got == "MATRIX-testmat.f9"
+
+    d = tmp_path / "onlyempty"
+    assert _stage(tmp_path, block, True, [], "onlyempty", empty=["testmat.f20"]) is None
+    assert "GUESSP" not in (d / "scratch" / "testmat" / "INPUT").read_text()
