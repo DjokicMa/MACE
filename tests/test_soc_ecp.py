@@ -187,3 +187,39 @@ def test_an_ecp_without_spin_orbit_terms_is_refused():
 def test_no_file_no_spin_orbit_ecp():
     with pytest.raises(S.SocError, match="no spin-orbit ECP for Z=86"):
         S.load_so_ecp(86)
+
+
+# stuttgart/<200+Z> files whose valence basis CRYSTAL cannot read as it stands
+# (manual pp. 25-27: NSHL shells follow the ECP, each with a numeric formal
+# charge CHE). 219, 220 and 227 hold a placeholder sentence where NSHL belongs
+# and "X" for every CHE; 204 announces 2 shells and holds one; 294 announces
+# 11 and holds 9. Which shells are missing, or how the electrons are shared
+# among the shells, is not in those files, so they are refused, not repaired.
+STUTTGART_UNREADABLE = {4: "it announces 2 shells but holds 1",
+                        19: "no shell count in its first line",
+                        20: "no shell count in its first line",
+                        27: "no shell count in its first line",
+                        94: "it announces 11 shells but holds 9"}
+
+
+@pytest.mark.parametrize("z,why", sorted(STUTTGART_UNREADABLE.items()))
+def test_a_stuttgart_file_crystal_cannot_read_is_refused(z, why):
+    with pytest.raises(S.SocError, match=rf"stuttgart/{200 + z} \(Z={z}\) cannot be used: {why}"):
+        S.read_stuttgart(z)
+
+
+def test_placeholder_shell_charges_are_named():
+    with pytest.raises(S.SocError, match="shell charge 'X' is not a number"):
+        S.read_stuttgart(27)
+
+
+def test_every_other_stuttgart_file_still_reads():
+    read = []
+    for name in sorted(os.listdir(S.STUTTGART_DIR)):
+        if name.isdigit() and 200 < int(name) < 300 and int(name) - 200 not in STUTTGART_UNREADABLE:
+            got = S.read_stuttgart(int(name) - 200)
+            if got is not None:
+                read.append(int(name) - 200)
+                ecp, shells = got
+                assert ecp[0].strip() == "INPUT" and shells
+    assert len(read) > 50

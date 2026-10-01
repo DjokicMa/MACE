@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Stuttgart basis files CRYSTAL cannot read are refused by the SOC ECP
+  reader.** `stuttgart/219`, `220` and `227` (K, Ca, Co) have a placeholder
+  sentence where the shell count belongs and `X` for every shell charge;
+  `204` (Be) announces 2 shells and holds 1, and `294` (Pu) announces 11 and
+  holds 9 (manual pp. 25-27: NSHL shells, each with a numeric charge).
+  Which shells are missing, or how the electrons are shared among them, is
+  not in those files, so the data is left as it is and
+  `soc_ecp.read_stuttgart` now refuses them with the reason instead of
+  returning a block CRYSTAL would misread. No deck changes: no current
+  command calls `read_stuttgart`, and MACE's EXTERNAL basis readers use the
+  `200+Z` name only for Z >= 37, so they never open 204-227 (a basis path
+  pointed by hand at `stuttgart/` would still copy `294` as it is).
 - **An `opt2d12` phonon deck with a SeeK-path band path is written.** The
   SeeK-path helpers read a `.out` file, but `opt2d12` passed them the parent's
   output text, so every such deck stopped with `OSError: File name too long`.

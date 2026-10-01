@@ -271,7 +271,9 @@ def scalar_part(ecp: SoEcp, z: int) -> Tuple[float, List[tuple], List[List[tuple
 
 def read_stuttgart(z: int) -> Optional[Tuple[List[str], List[str]]]:
     """(ECP lines from INPUT on, valence shell lines) of stuttgart/<200+Z>,
-    or None if there is no such file or it holds no INPUT ECP."""
+    or None if there is no such file or it holds no INPUT ECP. Raises
+    SocError for a file whose valence basis CRYSTAL could not read as it
+    stands (see _stuttgart_shell_problem)."""
     path = os.path.join(STUTTGART_DIR, str(200 + z))
     if not os.path.exists(path):
         return None
@@ -281,7 +283,49 @@ def read_stuttgart(z: int) -> Optional[Tuple[List[str], List[str]]]:
         return None
     counts = [int(c) for c in lines[2].split()[1:]]
     end = 3 + sum(counts)
+    problem = _stuttgart_shell_problem(lines[0], lines[end:])
+    if problem:
+        raise SocError(f"stuttgart/{200 + z} (Z={z}) cannot be used: {problem}; "
+                       f"the file needs repairing from the published basis set")
     return lines[1:end], lines[end:]
+
+
+def _stuttgart_shell_problem(header: str, shells: List[str]) -> Optional[str]:
+    """What stops CRYSTAL reading these valence shells, or None. The first
+    line gives NAT and NSHL, and NSHL shell records follow the ECP, each
+    'ITYB LAT NG CHE SCAL' with a numeric formal charge CHE and, for ITYB 0,
+    NG primitive lines (manual pp. 25-27). Some library files hold a
+    placeholder where NSHL belongs, "X" for CHE, or fewer shells than NSHL;
+    which shells are missing or how the electrons are shared among them is
+    not in the file, so it is refused rather than guessed."""
+    problems = []
+    try:
+        nshl = int(header.split()[1])
+    except (IndexError, ValueError):
+        nshl = None
+        problems.append("no shell count in its first line")
+    found, i, ng = 0, 0, 0
+    while i < len(shells):
+        record = shells[i].split()
+        try:
+            ityb, ng = int(record[0]), int(record[2])
+        except (IndexError, ValueError):
+            problems.append(f"{shells[i].strip()!r} is not a shell record")
+            break
+        try:
+            float(record[3])
+        except (IndexError, ValueError):
+            charge = record[3] if len(record) > 3 else ""
+            problem = f"shell charge {charge!r} is not a number"
+            if problem not in problems:
+                problems.append(problem)
+        i += 1 + (ng if ityb == 0 else 0)
+        found += 1
+    if i > len(shells):
+        problems.append(f"its last shell announces {ng} primitives and has fewer")
+    if nshl is not None and found != nshl:
+        problems.append(f"it announces {nshl} shells but holds {found}")
+    return "; ".join(problems) or None
 
 
 def same_scalar_potential(ecp: SoEcp, z: int, input_lines: List[str]) -> bool:
