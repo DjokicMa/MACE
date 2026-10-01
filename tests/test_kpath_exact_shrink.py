@@ -50,8 +50,11 @@ def test_seekpath_library_conversion_keeps_thirds_exact():
         "has_inversion_symmetry": True,
     }
     segments, _, info = seekpath_interface.convert_to_mace_format(result, shrink_factor=16)
-    assert info["shrink_factor"] == 18
-    assert segments[1] == [9, 0, 0, 6, 6, 0]
+    # The library route no longer starts from shrink_factor (16, raised to
+    # 18): ISS is the lowest common denominator of the fixed points, 6 here
+    # (test_kpath_library_iss.py). The thirds are still exact.
+    assert info["shrink_factor"] == 6
+    assert segments[1] == [3, 0, 0, 2, 2, 0]
 
 
 def test_phonon_bands_header_matches_exact_hexagonal_points():

@@ -2060,6 +2060,13 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
                                            if get_seekpath_labels else None)
                         if result:
                             frac_segments, kpath_info = result
+                            # The seekpath library's points are exact at its
+                            # own ISS (chosen so lattice-dependent points
+                            # fit fort.25); start from that, as opt2d3 does,
+                            # not from the band shrink.
+                            if (kpath_info.get("source") == "seekpath_library"
+                                    and "shrink_factor" in kpath_info):
+                                shrink = kpath_info["shrink_factor"]
                             # Store k-path source info
                             if kpath_info.get("source") == "literature":
                                 band_settings["kpath_source"] = "literature"

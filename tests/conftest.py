@@ -77,3 +77,43 @@ def energy_props(extractor, path: Path) -> dict:
         **extractor._extract_energy_properties(content),
         **extractor._extract_frequency_properties(content),
     }
+
+
+@pytest.fixture(scope="session")
+def seekpath_path():
+    """seekpath.get_path for a structure of a given space group and cell.
+
+    Three general-position orbits of the group's first Hall setting (spglib
+    database) in a cell built from (a, b, c, alpha, beta, gamma), so the
+    structure has exactly that group. Skips without numpy/spglib/seekpath.
+    """
+    np = pytest.importorskip("numpy")
+    spglib = pytest.importorskip("spglib")
+    seekpath = pytest.importorskip("seekpath")
+    first_hall = {}
+    for hall in range(1, 531):
+        first_hall.setdefault(spglib.get_spacegroup_type(hall).number, hall)
+
+    def get_path(sg, cell_params):
+        a, b, c, al, be, ga = cell_params
+        al, be, ga = np.radians([al, be, ga])
+        cx = c * np.cos(be)
+        cy = c * (np.cos(al) - np.cos(be) * np.cos(ga)) / np.sin(ga)
+        lattice = np.array([[a, 0, 0], [b * np.cos(ga), b * np.sin(ga), 0],
+                            [cx, cy, np.sqrt(c * c - cx * cx - cy * cy)]])
+        sym = spglib.get_symmetry_from_database(first_hall[sg])
+        pos, types = [], []
+        for kind, x in enumerate(([0.1234, 0.2345, 0.3456], [0.4321, 0.0765, 0.2011],
+                                  [0.3012, 0.4187, 0.0623])):
+            orbit = []
+            for rot, tr in zip(sym["rotations"], sym["translations"]):
+                p = (rot @ np.array(x) + tr) % 1.0
+                if not any(np.allclose((p - q + 0.5) % 1 - 0.5, 0, atol=1e-6) for q in orbit):
+                    orbit.append(p)
+            pos += orbit
+            types += [kind + 1] * len(orbit)
+        result = seekpath.get_path((lattice, pos, types), symprec=1e-4)
+        assert result["spacegroup_number"] == sg, (sg, result["spacegroup_number"])
+        return result
+
+    return get_path

@@ -40,6 +40,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`guessp_restart` is documented as applied by the workflow engine only;**
   the executor's older step generator, which normal workflows no longer
   reach, now says it writes its decks without GUESSP.
+- **Primitive hexagonal groups get SeeK-path's hP1/hP2 split.** Without the
+  seekpath library every primitive trigonal and hexagonal group got the hP1
+  path, whose last segment K-H_2 only hP1 groups need. SeeK-path (2.2.2,
+  HPKOT) uses hP2 for 150, 152, 154, 156, 158, 164, 165 and 168-194; those
+  groups (P321, P-3m1, P6_3/mmc, P6/mmm, ...) now get the hP2 path, one
+  segment shorter. 143-145, 147, 149, 151, 153, 157, 159, 162 and 163 keep
+  hP1.
+- **The static face-centred cubic SeeK-path paths are SeeK-path's.** Without
+  the seekpath library, the cF1 entry held Setyawan-Curtarolo's 9-segment
+  path (Gamma-X-W-K-Gamma-L-U-W|L-K|U-X) and the cF2 entry a 9-segment path
+  with a primed K' in a centrosymmetric group, both titled "SeeKPath". They
+  now hold SeeK-path's cF1 (Gamma-X-U|K-Gamma-L-W-X-W_2, 7 segments) and cF2
+  (Gamma-X-U|K-Gamma-L-W-X, 6 segments), and the cF1_noinv title gets the
+  "|" between U and K that its segments already had.
+- **Face-centred cubic groups get SeeK-path's cF1/cF2 split.** Without the
+  seekpath library the split was reversed for 202, 203 and 225-228: Fm-3m,
+  Fm-3c, Fd-3m (diamond, Si) and Fd-3c got cF1, and Fm-3 and Fd-3 got cF2.
+  SeeK-path uses cF1 below 207 (196, 202, 203) and cF2 from 207 (209, 210,
+  216, 219, 225-228), so Fm-3m and Fd-3m decks lose the X-W_2 segment and
+  F23 decks gain it.
+- **Body-centred cubic groups are all cI1.** The static lookup called 199,
+  204, 206, 211, 214, 217 and 220 "cI2", a lattice SeeK-path (HPKOT) does not
+  have, backed by table entries copied from cI1's. Those entries are removed
+  and every body-centred cubic group is cI1. The decks are unchanged (the
+  paths were identical).
+- **The static rhombohedral SeeK-path paths are SeeK-path's.** Without the
+  seekpath library, R-3, R-3m and R-3c (148, 166, 167) got Setyawan-
+  Curtarolo's rhombohedral paths under a "SeeKPath" title, with points
+  (B, B1, Q, P1, X, Z) SeeK-path does not have: 11 segments for hR1, 10 for
+  hR2. They now get SeeK-path's hR1 path (Gamma-T-H_2|H_0-L-Gamma-S_0|S_2-F-
+  Gamma, 7 segments) and hR2 path (Gamma-L-T-P_0|P_2-Gamma-F, 5 segments),
+  with the same representative values for the lattice-dependent points
+  H, S and P as the non-centrosymmetric entries.
+- **Rhombohedral groups get SeeK-path's hR1/hR2 choice.** Without the
+  seekpath library the static lookup took hR1 for c/a < sqrt(6) (hexagonal
+  axes), so typical rhombohedral crystals (c/a 2.5-7; AgBr R-3c, Bi2Se3,
+  corundum) got the hR2 path and flat cells got hR1. SeeK-path (HPKOT) takes
+  hR1 for c/a > sqrt(3/2), i.e. a rhombohedral angle below 90 degrees, and
+  hR2 otherwise; a cell given in rhombohedral axes is now read by its angle.
+  Rhombohedral decks from outputs with c/a above sqrt(6) or below sqrt(3/2)
+  change path.
+- **A-centred orthorhombic groups get SeeK-path's oA paths.** Without the
+  seekpath library, Amm2, Aem2, Ama2 and Aea2 (38-41) fell through to the
+  primitive orthorhombic oP1 path. They now get SeeK-path's oA1 (b < c) or
+  oA2 (b > c) path with its primed copy, and the title marks the jumps
+  C_0|SIGMA_0 and A_0|E_0 (F_0|DELTA_0, B_0|G_0) that the segments make.
+- **`opt2d3` reads a slab's symmetry.** A SLAB output names its symmetry as
+  a plane group and the corresponding space group ("TWO-SIDED PLANE GROUP
+  N. 80 : P 6/M M M", "CORRESPONDING SPACE GROUP N. 191"; manual App. A.2,
+  p.421), not on the "SPACE GROUP ... :" line `opt2d3` reads, so every slab
+  was taken as space group 1 (P1) and, without the seekpath library, got the
+  triclinic band path. It now takes the corresponding space group and the
+  plane group's lattice letter.
+- **A slab's band path stays in the plane of the slab.** `opt2d3` BAND wrote
+  a 3D path for a SLAB parent: with the seekpath library, SeeK-path's path
+  for the slab's 500 A box, e.g. graphene's hP2 path with nine segments, six
+  of them at or towards kz = 1/2. A slab is periodic in a and b only, and
+  BAND takes I3 = J3 = 0 in 2D (manual p.310, note 3). The path of the
+  corresponding space group is now cut to its segments in the kz = 0 plane
+  (graphene: Gamma-M-K-Gamma), in coordinate and label mode, and the title
+  names the segments kept. For a slab the seekpath library is not used:
+  it standardises the 3D box and can turn the vacuum axis into a or b (an
+  oblique slab becomes mP with b along the normal), so its coordinates would
+  not be in CRYSTAL's slab cell; the static path is. If no segment of a path
+  lies in the plane (the literature path of a C-centred rectangular slab),
+  the in-plane SeeK-path path is written instead. The `opt2d12` SeeK-path
+  phonon band path of a slab is cut the same way. Polymers (1D) are not
+  changed. Untested on CRYSTAL.
+- **SeeK-path band paths keep ISS within three digits.** With the seekpath
+  library, ISS was the largest denominator of every SeeK-path point - also
+  points not on the path - after rounding lattice-dependent coordinates to a
+  denominator below 10**6, so decks carried ISS up to ~10**6 (median about
+  6*10**4 over representative cells of all 230 groups). CRYSTAL runs them
+  (the k-point density depends only on NSUB, manual p.309 note 4), but
+  fort.25 writes the segment ends with format 6I3 (App. D, p.447), so ends
+  of 1000 and more printed as asterisks. Now the points SeeK-path fixes by
+  fractions (its points.txt) set ISS to their lowest common denominator,
+  from 4 (cubic P 4, cI 4, cF 8, hexagonal 6, previously 16 or 18), and are
+  written exactly; lattice-dependent points are written as k/ISS with ISS at
+  most 999, a multiple of that denominator, choosing the ISS that moves them
+  least, provided no point moves by more than half the k-point spacing of
+  the path at 10000 points (the workflow's NSUB). Over all 230 groups and
+  about 4800 representative cells the largest move is 1.2e-4 of a reciprocal
+  lattice vector (3.7e-4 1/A with 2*pi, at most 0.42 of the k-point spacing
+  at 10000 points); MACE's old round trip of these decks already moved points
+  by up to 1.2e-4. Whether a point is lattice-dependent now comes from
+  SeeK-path's definitions, not from its value being within 1e-6 of a small
+  fraction. NSUB is unchanged. The `opt2d12` SeeK-path phonon path now
+  starts from the library's ISS, as `opt2d3` does, instead of rescaling the
+  library's points to the band shrink. Untested on CRYSTAL.
 
 ## [1.1.3] - 2026-10-01
 

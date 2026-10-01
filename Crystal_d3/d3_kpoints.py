@@ -310,22 +310,24 @@ def determine_tetragonal_i_variant(a: float, c: float) -> str:
         return "tI2"
 
 
-def determine_hexagonal_r_variant(a: float, c: float) -> str:
+def determine_hexagonal_r_variant(a: float, c: float, alpha: float = None) -> str:
     """
-    Determine hR variant based on c/a ratio in hexagonal setting.
-    
+    Determine hR variant as SeeK-path (HPKOT, Table 2) does.
+
     Args:
-        a: a=b lattice parameter in Angstroms  
-        c: c lattice parameter in Angstroms
-        
+        a: a=b lattice parameter in Angstroms (hexagonal axes), or the
+           rhombohedral cell edge when alpha is given
+        c: c lattice parameter in Angstroms (hexagonal axes)
+        alpha: rhombohedral angle in degrees, for parameters in
+           rhombohedral axes (a = b = c, alpha = beta = gamma)
+
     Returns:
-        "hR1" or "hR2" based on c/a ratio
+        "hR1" if sqrt(3) a < sqrt(2) c (hexagonal axes), i.e. c/a > sqrt(3/2),
+        which in rhombohedral axes is alpha < 90 degrees; "hR2" otherwise
     """
-    # hR1: Standard rhombohedral
-    # hR2: Alternative with different c/a ratio
-    
-    # Use c/a ratio as criterion
-    if c/a < np.sqrt(6):  # sqrt(6) ≈ 2.449
+    if alpha is not None:
+        return "hR1" if alpha < 90.0 else "hR2"
+    if np.sqrt(3) * a < np.sqrt(2) * c:
         return "hR1"
     else:
         return "hR2"
@@ -341,16 +343,9 @@ def determine_cubic_f_variant(sg: int) -> str:
     Returns:
         "cF1" or "cF2" based on space group
     """
-    # cF1: Standard FCC (e.g., Fm-3m)
-    # cF2: Alternative FCC groups
-    
-    # Space groups with cF2
-    cF2_groups = [196, 202, 203, 209, 210, 216, 219, 220]
-    
-    if sg in cF2_groups:
-        return "cF2"
-    else:
-        return "cF1"
+    # SeeK-path (HPKOT): cF1 for the face-centred groups below 207 (196, 202,
+    # 203), cF2 for 207-230 (209, 210, 216, 219, 225-228), as for cP1/cP2
+    return "cF1" if sg <= 206 else "cF2"
 
 
 def determine_cubic_i_variant(sg: int) -> str:
@@ -361,18 +356,10 @@ def determine_cubic_i_variant(sg: int) -> str:
         sg: Space group number
         
     Returns:
-        "cI1" or "cI2" based on space group
+        "cI1" (every body-centred cubic group)
     """
-    # cI1: Standard BCC
-    # cI2: Alternative BCC groups
-    
-    # Space groups with cI2
-    cI2_groups = [199, 204, 206, 211, 214, 217, 220]
-    
-    if sg in cI2_groups:
-        return "cI2"
-    else:
-        return "cI1"
+    # SeeK-path (HPKOT) has a single body-centred cubic variant
+    return "cI1"
 
 
 def determine_monoclinic_variant(sg: int, a: float, b: float, c: float,
@@ -622,6 +609,13 @@ def scale_kpoint_segments(frac_segments: List[List[float]], shrink: int) -> tupl
     if shrink <= 0:
         print(f"WARNING: Invalid shrink factor {shrink}, using default 16")
         shrink = 16
+
+    # A shrink (from 4) that already puts every point on an integer is kept
+    # as it is: the seekpath library route chooses its ISS that way, and it
+    # can be odd (785), which the rounding-up below would replace.
+    if shrink >= 4 and all(abs(coord * shrink - round(coord * shrink)) < 1e-6
+                           for seg in frac_segments for coord in seg):
+        return [[int(round(coord * shrink)) for coord in seg] for seg in frac_segments], shrink
 
     # Check if shrink is sufficient for the given coordinates
     min_shrink = get_minimum_shrink_for_segments(frac_segments)
@@ -1216,6 +1210,12 @@ def get_extended_bravais(sg: int, lat: str,
                 return determine_orthorhombic_i_variant(a, b, c)
             else:
                 return "oI1"
+        elif lat == "A":
+            # A-centred (Amm2, Aem2, Ama2, Aea2): SeeK-path (HPKOT) takes oA1
+            # for b < c and oA2 for b > c
+            if b is not None and c is not None:
+                return "oA1" if b < c else "oA2"
+            return "oA1"
         else:
             return "oP1"
             
@@ -1235,9 +1235,16 @@ def get_extended_bravais(sg: int, lat: str,
     # Trigonal/Rhombohedral
     elif 143 <= sg <= 167:
         if lat == "P":
-            return "hP1"
+            # SeeK-path (HPKOT): hP2 for 150, 152, 154, 156, 158, 164, 165
+            # (and all of 168-194), hP1 for the other primitive trigonal groups
+            return "hP2" if sg in (150, 152, 154, 156, 158, 164, 165) else "hP1"
         elif lat == "R":
-            # Distinguish hR1 vs hR2 based on c/a ratio
+            # Distinguish hR1 vs hR2 from the cell, given in hexagonal axes
+            # (gamma = 120) or rhombohedral axes (alpha = beta = gamma)
+            if (alpha is not None and beta is not None and gamma is not None
+                    and abs(gamma - 120.0) > 1e-3
+                    and abs(alpha - beta) < 1e-3 and abs(beta - gamma) < 1e-3):
+                return determine_hexagonal_r_variant(a, c, alpha)
             if a is not None and c is not None:
                 return determine_hexagonal_r_variant(a, c)
             else:
@@ -1247,7 +1254,7 @@ def get_extended_bravais(sg: int, lat: str,
             
     # Hexagonal
     elif 168 <= sg <= 194:
-        return "hP1"
+        return "hP2"
         
     # Cubic
     elif 195 <= sg <= 230:
@@ -1259,7 +1266,6 @@ def get_extended_bravais(sg: int, lat: str,
             # Distinguish cF1 vs cF2 based on space group
             return determine_cubic_f_variant(sg)
         elif lat == "I":
-            # Distinguish cI1 vs cI2 based on space group
             return determine_cubic_i_variant(sg)
         else:
             return simple_cubic
@@ -1284,63 +1290,55 @@ seekpath_data = {
         "labels": ["GAMMA", "X", "|", "Y", "GAMMA", "Z", "|", "V", "Y", "|", "U", "Z", "|", "X", "U", "|", "R", "V"]
     },
     "cF1": {
+        # SeeK-path cF1 (Fm-3, Fd-3): Γ-X-U|K-Γ-L-W-X-W_2
         "segments": [
-            [0.0, 0.0, 0.0, 0.5, 0.0, 0.5],    # Γ → X
-            [0.5, 0.0, 0.5, 0.5, 0.25, 0.75],  # X → W
-            [0.5, 0.25, 0.75, 0.375, 0.375, 0.75], # W → K
-            [0.375, 0.375, 0.75, 0.0, 0.0, 0.0],    # K → Γ
-            [0.0, 0.0, 0.0, 0.5, 0.5, 0.5],    # Γ → L
-            [0.5, 0.5, 0.5, 0.625, 0.25, 0.625], # L → U
-            [0.625, 0.25, 0.625, 0.5, 0.25, 0.75], # U → W
-            [0.5, 0.5, 0.5, 0.375, 0.375, 0.75], # L → K
-            [0.625, 0.25, 0.625, 0.5, 0.0, 0.5]  # U → X
+            [0.0, 0.0, 0.0, 0.5, 0.0, 0.5],      # Γ → X
+            [0.5, 0.0, 0.5, 0.625, 0.25, 0.625], # X → U
+            [0.375, 0.375, 0.75, 0.0, 0.0, 0.0], # K → Γ
+            [0.0, 0.0, 0.0, 0.5, 0.5, 0.5],      # Γ → L
+            [0.5, 0.5, 0.5, 0.5, 0.25, 0.75],    # L → W
+            [0.5, 0.25, 0.75, 0.5, 0.0, 0.5],    # W → X
+            [0.5, 0.0, 0.5, 0.75, 0.25, 0.5]     # X → W₂
         ],
-        "labels": ["GAMMA", "X", "W", "K", "GAMMA", "L", "U", "W", "|", "L", "K", "|", "U", "X"]
+        "labels": ["GAMMA", "X", "U", "|", "K", "GAMMA", "L", "W", "X", "W_2"]
     },
     "cF2": {
+        # SeeK-path cF2 (Fm-3m, Fm-3c, Fd-3m, Fd-3c): Γ-X-U|K-Γ-L-W-X
         "segments": [
-            [0.0, 0.0, 0.0, 0.5, 0.0, 0.5],    # Γ → X
+            [0.0, 0.0, 0.0, 0.5, 0.0, 0.5],      # Γ → X
             [0.5, 0.0, 0.5, 0.625, 0.25, 0.625], # X → U
-            [0.625, 0.25, 0.625, 0.375, 0.375, 0.75], # U → K'
-            [0.375, 0.375, 0.75, 0.0, 0.0, 0.0],    # K' → Γ
-            [0.0, 0.0, 0.0, 0.5, 0.5, 0.5],    # Γ → L
-            [0.5, 0.5, 0.5, 0.5, 0.25, 0.75],  # L → W
-            [0.5, 0.25, 0.75, 0.5, 0.0, 0.5],  # W → X
-            [0.375, 0.375, 0.75, 0.5, 0.25, 0.75], # K' → W
-            [0.625, 0.25, 0.625, 0.5, 0.5, 0.5]  # U → L
+            [0.375, 0.375, 0.75, 0.0, 0.0, 0.0], # K → Γ
+            [0.0, 0.0, 0.0, 0.5, 0.5, 0.5],      # Γ → L
+            [0.5, 0.5, 0.5, 0.5, 0.25, 0.75],    # L → W
+            [0.5, 0.25, 0.75, 0.5, 0.0, 0.5]     # W → X
         ],
-        "labels": ["GAMMA", "X", "U", "K'", "GAMMA", "L", "W", "X", "|", "K'", "W", "|", "U", "L"]
+        "labels": ["GAMMA", "X", "U", "|", "K", "GAMMA", "L", "W", "X"]
     },
     "hR1": {
+        # SeeK-path hR1 (R-3, R-3m, R-3c): Γ-T-H_2|H_0-L-Γ-S_0|S_2-F-Γ.
+        # H and S are parametric; the values are hR1_noinv's.
         "segments": [
-            [0.0, 0.0, 0.0, 0.5, 0.0, -0.5],   # Γ → L
-            [0.5, 0.0, -0.5, 0.5, 0.5, 0.0],   # L → B1
-            [0.5, 0.0, -0.5, 0.5, 0.5, -0.5],  # L → B
-            [0.5, 0.5, -0.5, 0.0, 0.0, -0.5],  # B → Z
-            [0.0, 0.0, -0.5, 0.0, 0.0, 0.0],   # Z → Γ
-            [0.0, 0.0, 0.0, 0.5, 0.5, 0.5],    # Γ → X
-            [0.5, 0.5, 0.5, 0.0, 0.5, 0.0],    # X → Q
-            [0.0, 0.5, 0.0, 0.5, 0.5, 0.0],    # Q → F
-            [0.5, 0.5, 0.0, 0.25, 0.25, -0.5], # F → P1
-            [0.25, 0.25, -0.5, 0.0, 0.0, -0.5], # P1 → Z
-            [0.5, 0.0, -0.5, 0.0, 0.0, -0.5]   # L → Z
+            [0.0, 0.0, 0.0, 0.5, 0.5, 0.5],              # Γ → T
+            [0.5, 0.5, 0.5, 0.744565, 0.255435, 0.5],    # T → H₂
+            [0.5, -0.255435, 0.255435, 0.5, 0.0, 0.0],   # H₀ → L
+            [0.5, 0.0, 0.0, 0.0, 0.0, 0.0],              # L → Γ
+            [0.0, 0.0, 0.0, 0.377717, -0.377717, 0.0],   # Γ → S₀
+            [0.622283, 0.0, 0.377717, 0.5, 0.0, 0.5],    # S₂ → F
+            [0.5, 0.0, 0.5, 0.0, 0.0, 0.0]               # F → Γ
         ],
-        "labels": ["GAMMA", "L", "B1", "|", "L", "B", "Z", "GAMMA", "X", "Q", "F", "P1", "Z", "|", "L", "Z"]
+        "labels": ["GAMMA", "T", "H_2", "|", "H_0", "L", "GAMMA", "S_0", "|", "S_2", "F", "GAMMA"]
     },
     "hR2": {
+        # SeeK-path hR2: Γ-L-T-P_0|P_2-Γ-F. P is parametric; the values are
+        # hR2_noinv's.
         "segments": [
-            [0.0, 0.0, 0.0, 0.25, 0.25, 0.25], # Γ → P
-            [0.25, 0.25, 0.25, 0.0, 0.0, -0.5], # P → Z
-            [0.0, 0.0, -0.5, 0.5, 0.5, 0.0],   # Z → Q
-            [0.5, 0.5, 0.0, 0.0, 0.0, 0.0],    # Q → Γ
-            [0.0, 0.0, 0.0, 0.5, 0.5, 0.5],    # Γ → F
-            [0.5, 0.5, 0.5, 0.25, 0.25, 0.25], # F → P
-            [0.25, 0.25, 0.25, 0.0, 0.5, 0.25], # P → Q1
-            [0.0, 0.5, 0.25, 0.5, 0.0, -0.5],  # Q1 → L
-            [0.5, 0.0, -0.5, 0.0, 0.0, -0.5],  # L → Z
-            [0.5, 0.5, 0.5, 0.5, 0.0, -0.5]    # F → L
+            [0.0, 0.0, 0.0, 0.5, 0.0, 0.0],              # Γ → L
+            [0.5, 0.0, 0.0, 0.5, -0.5, 0.5],             # L → T
+            [0.5, -0.5, 0.5, 0.302174, -0.697826, 0.302174], # T → P₀
+            [0.302174, 0.302174, 0.302174, 0.0, 0.0, 0.0], # P₂ → Γ
+            [0.0, 0.0, 0.0, 0.5, -0.5, 0.0]              # Γ → F
         ],
-        "labels": ["GAMMA", "P", "Z", "Q", "GAMMA", "F", "P", "Q1", "L", "Z", "|", "F", "L"]
+        "labels": ["GAMMA", "L", "T", "P_0", "|", "P_2", "GAMMA", "F"]
     },
     "aP1": {
         # Default fallback for triclinic without specific variant
@@ -1893,7 +1891,7 @@ seekpath_data = {
             [-0.5, -0.25, -0.75, -0.5, 0.0, -0.5], # W' → X'
             [-0.5, 0.0, -0.5, -0.75, -0.25, -0.5] # X' → W₂'
         ],
-        "labels": ["GAMMA", "X", "U", "K", "GAMMA", "L", "W", "X", "W_2", "|", "GAMMA", "X'", "U'", "K'", "GAMMA", "L'", "W'", "X'", "W_2'"]
+        "labels": ["GAMMA", "X", "U", "|", "K", "GAMMA", "L", "W", "X", "W_2", "|", "GAMMA", "X'", "U'", "|", "K'", "GAMMA", "L'", "W'", "X'", "W_2'"]
     },
     "cF2_noinv": {
         # Cubic face-centered without inversion (F-43m)
@@ -1915,38 +1913,6 @@ seekpath_data = {
     },
     "cI1_noinv": {
         # Cubic body-centered without inversion (I-43m)
-        "segments": [
-            [0.0, 0.0, 0.0, 0.5, -0.5, 0.5],     # Γ → H
-            [0.5, -0.5, 0.5, 0.0, 0.0, 0.5],     # H → N
-            [0.0, 0.0, 0.5, 0.0, 0.0, 0.0],      # N → Γ
-            [0.0, 0.0, 0.0, 0.25, 0.25, 0.25],   # Γ → P
-            [0.25, 0.25, 0.25, 0.5, -0.5, 0.5],  # P → H
-            [0.25, 0.25, 0.25, 0.0, 0.0, 0.5],   # P → N
-            [0.0, 0.0, 0.0, -0.5, 0.5, -0.5],    # Γ → H'
-            [-0.5, 0.5, -0.5, 0.0, 0.0, -0.5],   # H' → N'
-            [0.0, 0.0, -0.5, 0.0, 0.0, 0.0],     # N' → Γ
-            [0.0, 0.0, 0.0, -0.25, -0.25, -0.25], # Γ → P'
-            [-0.25, -0.25, -0.25, -0.5, 0.5, -0.5], # P' → H'
-            [-0.25, -0.25, -0.25, 0.0, 0.0, -0.5] # P' → N'
-        ],
-        "labels": ["GAMMA", "H", "N", "GAMMA", "P", "H", "|", "P", "N", "|", "GAMMA", "H'", "N'", "GAMMA", "P'", "H'", "|", "P'", "N'"]
-    },
-    # cI2 and cI2_noinv use the same paths as cI1/cI1_noinv
-    # Space groups 199, 204, 206, 211, 214, 217, 220 are classified as cI2 but use identical BCC paths
-    "cI2": {
-        # Alias for cI1 - same BCC k-path for space groups in cI2_groups
-        "segments": [
-            [0.0, 0.0, 0.0, 0.5, -0.5, 0.5],     # Γ → H
-            [0.5, -0.5, 0.5, 0.0, 0.0, 0.5],     # H → N
-            [0.0, 0.0, 0.5, 0.0, 0.0, 0.0],      # N → Γ
-            [0.0, 0.0, 0.0, 0.25, 0.25, 0.25],   # Γ → P
-            [0.25, 0.25, 0.25, 0.5, -0.5, 0.5],  # P → H
-            [0.25, 0.25, 0.25, 0.0, 0.0, 0.5],   # P → N
-        ],
-        "labels": ["GAMMA", "H", "N", "GAMMA", "P", "H", "|", "P", "N"]
-    },
-    "cI2_noinv": {
-        # Alias for cI1_noinv - same BCC k-path with primed points for non-centrosymmetric groups
         "segments": [
             [0.0, 0.0, 0.0, 0.5, -0.5, 0.5],     # Γ → H
             [0.5, -0.5, 0.5, 0.0, 0.0, 0.5],     # H → N
@@ -2201,7 +2167,7 @@ seekpath_data = {
             [0.0, -0.5, -0.5, 0.0, 0.0, -0.5],           # R' → Z'
             [0.0, 0.0, -0.5, 0.5, -0.5, -0.5]            # Z' → T'
         ],
-        "labels": ["GAMMA", "Y", "C_0", "SIGMA_0", "GAMMA", "Z", "A_0", "E_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "C_0'", "SIGMA_0'", "GAMMA", "Z'", "A_0'", "E_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
+        "labels": ["GAMMA", "Y", "C_0", "|", "SIGMA_0", "GAMMA", "Z", "A_0", "|", "E_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "C_0'", "|", "SIGMA_0'", "GAMMA", "Z'", "A_0'", "|", "E_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
     },
     "oA2_noinv": {
         # Orthorhombic A-centered without inversion (Amm2 variant 2)
@@ -2229,7 +2195,7 @@ seekpath_data = {
             [0.0, -0.5, -0.5, 0.0, 0.0, -0.5],           # R' → Z'
             [0.0, 0.0, -0.5, -0.5, -0.5, -0.5]           # Z' → T'
         ],
-        "labels": ["GAMMA", "Y", "F_0", "DELTA_0", "GAMMA", "Z", "B_0", "G_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "F_0'", "DELTA_0'", "GAMMA", "Z'", "B_0'", "G_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
+        "labels": ["GAMMA", "Y", "F_0", "|", "DELTA_0", "GAMMA", "Z", "B_0", "|", "G_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "F_0'", "|", "DELTA_0'", "GAMMA", "Z'", "B_0'", "|", "G_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
     },
     "oC1_noinv": {
         # Orthorhombic C-centered without inversion (Cmc2_1)
@@ -2496,6 +2462,73 @@ seekpath_data = {
 }
 
 
+def is_slab_output(out_file: Optional[str]) -> bool:
+    """True when a CRYSTAL output is a SLAB (2D) calculation."""
+    if not out_file:
+        return False
+    try:
+        content = Path(out_file).read_text(errors="ignore")
+    except (OSError, ValueError):
+        return False
+    return 'SLAB CALCULATION' in content or 'SLAB GROUP' in content
+
+
+def _edges_of(labels: Optional[List[str]]) -> Optional[List[Tuple[str, str]]]:
+    if not labels:
+        return None
+    return [(a, b) for a, b in zip(labels, labels[1:]) if '|' not in (a, b)]
+
+
+def in_plane_path(segments: List[List[float]],
+                  labels: Optional[List[str]] = None) -> Tuple[List[List[float]], Optional[List[str]]]:
+    """Keep the segments of a band path that lie in the plane of a slab.
+
+    A slab is periodic in a and b only; CRYSTAL23 BAND (manual p.310, note 3)
+    takes the third coordinates I3, J3 of every segment as zero in 2D. A 3D
+    path's segments with an end off the kz = 0 plane are dropped, and the
+    kept ones keep their order. ``labels`` (a path broken by "|", one edge
+    per segment) is cut the same way; None is returned for it when it does
+    not name the segments one to one.
+    """
+    keep = [abs(seg[2]) < 1e-9 and abs(seg[5]) < 1e-9 for seg in segments]
+    kept = [seg for seg, k in zip(segments, keep) if k]
+    edges = _edges_of(labels)
+    if edges is None or len(edges) != len(segments):
+        return kept, None
+    out: List[str] = []
+    prev = None
+    for (a, b), seg, k in zip(edges, segments, keep):
+        if not k:
+            continue
+        if prev is not None and prev[0] == a and list(prev[1]) == list(seg[:3]):
+            out.append(b)
+        else:
+            if out:
+                out.append('|')
+            out += [a, b]
+        prev = (b, seg[3:])
+    return kept, out
+
+
+def in_plane_labels(labels: List[str], space_group: int, lattice_type: str) -> List[str]:
+    """Label path (CRYSTAL Tables 14.1-14.2 names) cut to its kz = 0 edges.
+
+    Edges whose labels have no table coordinates are kept as they are.
+    """
+    out: List[str] = []
+    for a, b in _edges_of(labels) or []:
+        coords = get_kpoint_coordinates_from_labels([a, b], space_group, lattice_type)
+        if coords and (abs(coords[0][2]) > 1e-9 or abs(coords[0][5]) > 1e-9):
+            continue
+        if out and out[-1] == a:
+            out.append(b)
+        else:
+            if out:
+                out.append('|')
+            out += [a, b]
+    return out
+
+
 def extract_lattice_parameters_from_output(out_file: str) -> Optional[Dict[str, float]]:
     """Extract lattice parameters from CRYSTAL output file.
     
@@ -2624,8 +2657,16 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
             kpath_info: Dict with inversion symmetry and source information
     """
 
+    # A slab's path stays in its plane (manual p.310, BAND note 3: I3, J3 are
+    # zero in 2D). The seekpath library is not used for a slab: it
+    # standardises the slab's 3D box and can turn the vacuum axis into a or b
+    # (an oblique slab becomes mP with b along the normal), so its
+    # coordinates would not be in CRYSTAL's slab cell. The static path of the
+    # corresponding space group is, and is cut to its kz = 0 segments.
+    slab = is_slab_output(out_file)
+
     # Try to use the accurate seekpath library if available and output file provided
-    if SEEKPATH_LIBRARY_AVAILABLE and out_file and get_accurate_bandpath is not None:
+    if SEEKPATH_LIBRARY_AVAILABLE and out_file and get_accurate_bandpath is not None and not slab:
         try:
             segments, labels, kpath_info = get_accurate_bandpath(out_file)
 
@@ -2696,6 +2737,8 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
         "lookup_key": lookup_key,
         "source": "seekpath_data"
     }
+    if slab:
+        kpath_info["in_plane"] = True
 
     # Warn about static data limitations for non-cubic
     if not ext_bravais.startswith('c'):
@@ -2704,6 +2747,8 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
 
     # Get path data if available
     if lookup_key in seekpath_data:
+        if slab:
+            return in_plane_path(seekpath_data[lookup_key]["segments"])[0], kpath_info
         return seekpath_data[lookup_key]["segments"], kpath_info
     else:
         # Fallback to literature path first
@@ -2714,15 +2759,16 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
         if lit_segments:
             print("Using literature k-path (Setyawan & Curtarolo 2010) instead")
             kpath_info["source"] = "literature"
-            return lit_segments, kpath_info
+            return (in_plane_path(lit_segments)[0] if slab else lit_segments), kpath_info
 
         # If no literature path, fall back to standard path
         print("Using standard path instead")
         kpath_info["source"] = "default"
-        return get_kpoint_coordinates_from_labels(
+        segments = get_kpoint_coordinates_from_labels(
             get_band_path_from_symmetry(space_group, lattice_type),
             space_group, lattice_type
-        ), kpath_info
+        )
+        return (in_plane_path(segments)[0] if slab else segments), kpath_info
 
 def unicode_to_ascii_kpoint(label: str) -> str:
     """Convert Unicode k-point labels to ASCII equivalents for CRYSTAL compatibility.
@@ -2789,8 +2835,12 @@ def get_seekpath_labels(space_group: int, lattice_type: str, out_file: Optional[
         List of k-point labels with '|' markers for discontinuities
     """
 
+    # A slab gets the static path cut to its plane, as in
+    # get_seekpath_full_kpath, so the labels name the segments written.
+    slab = is_slab_output(out_file)
+
     # Try to use the accurate seekpath library if available and output file provided
-    if SEEKPATH_LIBRARY_AVAILABLE and out_file and get_accurate_bandpath is not None:
+    if SEEKPATH_LIBRARY_AVAILABLE and out_file and get_accurate_bandpath is not None and not slab:
         try:
             segments, labels, kpath_info = get_accurate_bandpath(out_file)
             n_labels = len([l for l in labels if l != '|'])
@@ -2835,6 +2885,8 @@ def get_seekpath_labels(space_group: int, lattice_type: str, out_file: Optional[
     # Get path labels if available
     if lookup_key in seekpath_data and "labels" in seekpath_data[lookup_key]:
         labels = seekpath_data[lookup_key]["labels"]
+        if slab:
+            labels = in_plane_path(seekpath_data[lookup_key]["segments"], labels)[1] or []
         n_labels = len([l for l in labels if l != '|'])
         n_discontinuities = labels.count('|')
         print(f"  Using SeeK-path labels for '{lookup_key}': {n_labels} labels with {n_discontinuities} discontinuities")

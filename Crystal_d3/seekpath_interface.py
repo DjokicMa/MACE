@@ -334,6 +334,124 @@ def convert_seekpath_label(label: str) -> str:
     return label
 
 
+# BAND gives each segment end as integers in units of 1/ISS (CRYSTAL23 manual
+# p.309), and fort.25 writes them again with format 6I3 (App. D, p.447): an
+# end coordinate of 1000 or more prints there as asterisks.
+FORT25_MAX_ISS = 999
+
+# A lattice-dependent point may be moved to the nearest k/ISS by at most half
+# the spacing of the k points CRYSTAL computes along the path (manual p.309,
+# note 4: the density depends only on NSUB, the total number of points) at
+# this NSUB - MACE's largest default (workflow BAND steps).
+REFERENCE_NSUB = 10000
+
+
+def parametric_point_names(ext_bravais: str) -> Optional[set]:
+    """Names of the lattice-dependent points of a SeeK-path lattice.
+
+    SeeK-path defines each point in hpkot/band_path_data/<lattice>/points.txt
+    either by fixed fractions ("1/2 0 1/2") or by k-vector parameters
+    ("X X 0"); the latter are parametric. None when the definitions cannot
+    be read.
+    """
+    try:
+        from seekpath.hpkot.tools import get_path_data
+        _, points_def, _ = get_path_data(ext_bravais[:3])
+    except Exception:
+        return None
+    return {name for name, xyz in points_def.items()
+            if any(ch.isalpha() for expr in xyz for ch in expr)}
+
+
+def _fixed_fraction(value: float) -> Optional[Fraction]:
+    frac = Fraction(value).limit_denominator(100)
+    return frac if abs(float(frac) - value) < 1e-9 else None
+
+
+def _path_points(seekpath_result: Dict[str, Any]) -> List[str]:
+    seen = []
+    for pair in seekpath_result['path']:
+        for label in pair:
+            if label not in seen:
+                seen.append(label)
+    return seen
+
+
+def _is_parametric(label: str, coords, parametric: Optional[set]) -> bool:
+    if parametric is not None and label.rstrip("'") not in parametric:
+        # SeeK-path fixes it; a coordinate that is not a small fraction
+        # would still have to be approximated
+        return any(_fixed_fraction(c) is None for c in coords)
+    if parametric is not None:
+        return True
+    # Without SeeK-path's definitions: fixed when every coordinate is a
+    # small fraction
+    return any(_fixed_fraction(c) is None for c in coords)
+
+
+def rational_iss_step(seekpath_result: Dict[str, Any]) -> int:
+    """Lowest common denominator of the fixed (rational) points on the path."""
+    from math import gcd
+    parametric = parametric_point_names(seekpath_result.get('bravais_lattice_extended', ''))
+    step = 1
+    for label in _path_points(seekpath_result):
+        coords = seekpath_result['point_coords'][label]
+        if _is_parametric(label, coords, parametric):
+            continue
+        for c in coords:
+            den = _fixed_fraction(c).denominator
+            step = step * den // gcd(step, den)
+    return step
+
+
+def choose_band_iss(seekpath_result: Dict[str, Any]) -> Tuple[int, float]:
+    """ISS for a SeeK-path band path, and how far it moves the points.
+
+    The fixed points of the path set ISS to the lowest common multiple of
+    their denominators (or its first multiple from 4) and are written exactly. Lattice-dependent points are
+    written as k/ISS with ISS a multiple of that, at most FORT25_MAX_ISS,
+    taking the ISS that moves them least, when every point then moves by at
+    most half the path's k-point spacing at REFERENCE_NSUB. Otherwise they are
+    held exactly as before (denominators up to 10**6). The displacement is
+    measured in Cartesian reciprocal space (1/Angstrom, 2*pi included) with
+    seekpath's reciprocal primitive lattice, or in fractional units without
+    one.
+    """
+    point_coords = seekpath_result['point_coords']
+    parametric = parametric_point_names(seekpath_result.get('bravais_lattice_extended', ''))
+    step = rational_iss_step(seekpath_result)
+    # d3_kpoints.scale_kpoint_segments, which every deck's path goes through,
+    # never writes an ISS below 4; start from the first multiple of the
+    # fixed points' denominators that it keeps.
+    smallest = -(-4 // step) * step
+    moving = [point_coords[label] for label in _path_points(seekpath_result)
+              if _is_parametric(label, point_coords[label], parametric)]
+    if not moving:
+        return smallest, 0.0
+
+    recip = np.array(seekpath_result.get('reciprocal_primitive_lattice', np.eye(3)), dtype=float)
+    points = np.array(moving, dtype=float)
+    length = sum(float(np.linalg.norm((np.array(point_coords[b]) - np.array(point_coords[a])) @ recip))
+                 for a, b in seekpath_result['path'])
+    tolerance = 0.5 * length / REFERENCE_NSUB
+
+    best_iss, best_shift = None, None
+    for iss in range(smallest, FORT25_MAX_ISS + 1, step):
+        shift = float(np.linalg.norm((np.round(points * iss) / iss - points) @ recip, axis=1).max())
+        if best_shift is None or shift < best_shift - 1e-15:
+            best_iss, best_shift = iss, shift
+    if best_iss is not None and best_shift <= tolerance:
+        return best_iss, best_shift
+
+    # Keep the exact representation: the largest denominator of the moving
+    # coordinates (below 10**6), raised to a multiple of the fixed points'.
+    largest = max(Fraction(float(c)).limit_denominator(1000000).denominator
+                  for xyz in moving for c in xyz)
+    iss = -(-max(largest, smallest) // step) * step
+    shift = float(np.linalg.norm((np.round(points * iss) / iss - points) @ recip, axis=1).max())
+    return iss, shift
+
+
 def convert_to_mace_format(seekpath_result: Dict[str, Any],
                            shrink_factor: int = 16) -> Tuple[List[List[int]], List[str], Dict[str, Any]]:
     """
@@ -341,7 +459,8 @@ def convert_to_mace_format(seekpath_result: Dict[str, Any],
 
     Args:
         seekpath_result: Result from get_seekpath_bandpath()
-        shrink_factor: SHRINK factor for scaling to integers
+        shrink_factor: no longer used; ISS is chosen from the path's points
+            (choose_band_iss). Kept for callers.
 
     Returns:
         Tuple of:
@@ -352,20 +471,13 @@ def convert_to_mace_format(seekpath_result: Dict[str, Any],
     point_coords = seekpath_result['point_coords']
     path = seekpath_result['path']
 
-    # Calculate minimum shrink if needed
-    min_shrink = calculate_minimum_shrink(point_coords)
-    if shrink_factor < min_shrink:
-        print(f"  Note: Adjusting shrink factor from {shrink_factor} to {min_shrink} for accuracy")
-        shrink_factor = min_shrink
-
-    # Rational points such as K = (1/3, 1/3, 0) must scale to integers too:
-    # raise the shrink to a multiple of their denominators.
-    from d3_kpoints import exact_shrink_step, round_up_to_exact_shrink
-    step = exact_shrink_step([c for pair in path for lbl in pair for c in point_coords[lbl]])
-    exact = round_up_to_exact_shrink(shrink_factor, step)
-    if exact != shrink_factor:
-        print(f"  Note: Adjusting shrink factor from {shrink_factor} to {exact} so every point is exact")
-        shrink_factor = exact
+    # ISS as small as the fixed points allow, and within fort.25's three
+    # digits when the lattice-dependent points can be moved by less than
+    # half a k-point spacing.
+    shrink_factor, point_shift = choose_band_iss(seekpath_result)
+    if point_shift > 0:
+        print(f"  Note: ISS {shrink_factor}; lattice-dependent points moved by at most "
+              f"{point_shift:.2e} to the nearest 1/{shrink_factor}")
 
     segments = []
     labels = []
@@ -407,6 +519,7 @@ def convert_to_mace_format(seekpath_result: Dict[str, Any],
         'bravais_lattice_extended': seekpath_result.get('bravais_lattice_extended', 'unknown'),
         'has_inversion': seekpath_result.get('has_inversion_symmetry', False),
         'shrink_factor': shrink_factor,
+        'max_point_shift': point_shift,
         'n_segments': len(segments),
         'n_discontinuities': labels.count('|')
     }

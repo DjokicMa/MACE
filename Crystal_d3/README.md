@@ -149,13 +149,13 @@ The system uses a hierarchical approach to obtain valid SHRINK values:
 All SHRINK values are rounded up to even numbers for cleaner k-paths.
 
 **Recent Enhancements**:
-- Added all major SeeK-path extended Bravais lattice entries (aP2, aP3, mP1, oF1-3, tI1-2, hR1-2, cF1-2, cI1-2, etc.)
+- Added all major SeeK-path extended Bravais lattice entries (aP2, aP3, mP1, oF1-3, tI1-2, hR1-2, cF1-2, cI1, etc.)
 - Implemented cell parameter analysis functions to distinguish between variants:
   - Triclinic: aP2 vs aP3 based on angle relationships
   - Orthorhombic F: oF1/oF2/oF3 based on shortest axis
   - Tetragonal I: tI1 vs tI2 based on c/a ratio
-  - Hexagonal R: hR1 vs hR2 based on c/a ratio
-  - Cubic: F and I variants based on space group
+  - Hexagonal R: hR1 vs hR2 as SeeK-path (hR1 for c/a > sqrt(3/2), rhombohedral angle < 90)
+  - Cubic: cF1 vs cF2 by space group (below 207 / from 207), as SeeK-path; one cI
 - Automatic lattice parameter extraction from CRYSTAL output files
 - Enhanced `get_extended_bravais()` function that uses cell parameters when available
 
@@ -255,7 +255,7 @@ Inversion is used only by the SeeK-path format (automatic path, format 4); the l
 - Without it (static `seekpath_data` fallback in `d3_kpoints.get_seekpath_full_kpath`): `d3_kpoints.detect_inversion_from_crystal_output` reads the output (the `SPACE GROUP (CENTROSYMMETRIC)` line, an inversion operator, or the space-group number), falling back to `d3_kpoints.has_inversion_symmetry`. A non-centrosymmetric structure gets the `<variant>_noinv` path with primed k-points; if no `_noinv` entry exists, the centrosymmetric path is used with a warning.
 
 ### Current Technical Limitations
-1. **2D Materials**: Band structure generation currently uses 3D k-paths even for SLAB calculations
+1. **2D Materials**: A SLAB output's BAND path is the path of its corresponding space group cut to the slab plane (segments with I3 = J3 = 0, manual p.310 note 3); the seekpath library is not used for slabs, so lattice-dependent points of centred-rectangular slabs take the static representative values. POLYMER (1D) outputs still get 3D paths.
 2. **Extended Bravais Variants**: Some variants (oS2, oI2-3) need full implementation
 3. **Layer Groups**: No support for 2D layer group k-paths (groups 1-80)
 4. **Inversion Symmetry**: Used only by the SeeK-path format (see Inversion Symmetry above)
