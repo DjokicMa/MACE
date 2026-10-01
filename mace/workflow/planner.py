@@ -1781,8 +1781,8 @@ class WorkflowPlanner:
             else:
                 config["bands"] = "auto"
             
-            # Points per segment
-            npoints = input("  Points per k-path segment [10000]: ").strip()
+            # NSUB: total k points along the whole path (manual p.309)
+            npoints = input("  Total k-points along the whole path (NSUB) [10000]: ").strip()
             config["n_points"] = int(npoints) if npoints else 10000
             
             # Set path_method based on path_format for proper D3 generation

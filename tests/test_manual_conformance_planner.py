@@ -278,3 +278,23 @@ def test_d3_gate_uses_the_shared_constant():
         "BLYP", "PBE", "B97", "B3LYP", "PBE0",
         "mPW1PW91", "M06", "HSE06", "HSEsol", "LC-wPBE",
     }
+
+
+# --- BAND NSUB prompt -----------------------------------------------------
+
+def test_band_nsub_prompt_says_total_points_along_the_path(planner, monkeypatch):
+    """BAND's NSUB is the total number of k points along the whole path
+    (manual p.309, and note 4 on p.310: the points per line are computed by
+    CRYSTAL). The prompt used to call it points per segment."""
+    prompts = []
+
+    def answer(prompt=""):
+        prompts.append(prompt)
+        return ""
+
+    monkeypatch.setattr(builtins, "input", answer)
+    config = planner._get_advanced_d3_config("BAND")
+    assert config["n_points"] == 10000                 # default unchanged
+    nsub_prompt = next(p for p in prompts if "10000" in p)
+    assert "segment" not in nsub_prompt
+    assert "total" in nsub_prompt.lower() and "path" in nsub_prompt
