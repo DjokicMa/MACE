@@ -1266,6 +1266,8 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     settings = out_data.copy()
     external_basis_data = []
     parent_k_points = None
+    # The parent deck's SCELPHONO expansion, if it ran a phonon dispersion.
+    parent_scelphono = None
 
     if input_file and os.path.exists(input_file):
         ui.info(f"Parsing input file: {input_file}")
@@ -1273,6 +1275,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         try:
             in_data = in_parser.parse()
             parent_k_points = in_data.get("k_points")
+            parent_scelphono = (in_data.get("freq_settings") or {}).get("scelphono")
 
             # Merge data, with special handling for DFT settings
             for key, value in in_data.items():
@@ -1812,6 +1815,18 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     functional = dedupe_dispersion_suffix(functional)
 
     new_filename = f"{base_name}_{calc_type.lower()}_{functional}_optimized.d12"
+
+    # SCELPHONO builds the phonon supercell in the geometry input (manual
+    # sec. 4.21 p.73; the geometry CRYSTAL prints after it is the supercell,
+    # primitive-cell atoms first, p.74), and DISPERSION runs on that cell
+    # (sec. 8.8 p.232). A FREQ deck from such a run starts from the supercell
+    # and, carrying the parent's SCELPHONO, would expand it again.
+    if calc_type == "FREQ" and parent_scelphono:
+        reason = ("the parent ran a phonon dispersion (SCELPHONO): its geometry is the "
+                  "SCELPHONO supercell, which a FREQ deck with SCELPHONO would expand again")
+        _fail(reason, f"\nNot writing {os.path.basename(new_filename)}: {reason}. Make the "
+                      f"FREQ deck from the OPT or SP output the dispersion run started from.")
+        return False, options
 
     # CUSTOM-XC names the parent's own EXCHANGE/CORRELAT/HYBRID records; a
     # parent without them has nothing to write, and the writer would stop
