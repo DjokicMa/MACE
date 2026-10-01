@@ -48,12 +48,30 @@ K 3/8 3/8 3/4
 U 5/8 1/4 5/8
 """)
 
+HR1_POINTS = _pts("""
+GAMMA 0 0 0
+T 1/2 1/2 1/2
+L 1/2 0 0
+F 1/2 0 1/2
+""")
+
+HR2_POINTS = _pts("""
+GAMMA 0 0 0
+T 1/2 -1/2 1/2
+L 1/2 0 0
+F 1/2 -1/2 0
+""")
+
 CF1 = _split("GAMMA-X X-U K-GAMMA GAMMA-L L-W W-X X-W_2")
 
 EXPECTED = {
     "cF1": (CF1, CF_POINTS),
     "cF1_noinv": (_primed(CF1), CF_POINTS),
     "cF2": (_split("GAMMA-X X-U K-GAMMA GAMMA-L L-W W-X"), CF_POINTS),
+    # R-3, R-3m, R-3c: the entries held Setyawan-Curtarolo's rhombohedral
+    # paths (B, B1, Q, P1, X, Z, ...), names SeeK-path does not use.
+    "hR1": (_split("GAMMA-T T-H_2 H_0-L L-GAMMA GAMMA-S_0 S_2-F F-GAMMA"), HR1_POINTS),
+    "hR2": (_split("GAMMA-L L-T T-P_0 P_2-GAMMA GAMMA-F"), HR2_POINTS),
 }
 
 

@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   have, backed by table entries copied from cI1's. Those entries are removed
   and every body-centred cubic group is cI1. The decks are unchanged (the
   paths were identical).
+- **The static rhombohedral SeeK-path paths are SeeK-path's.** Without the
+  seekpath library, R-3, R-3m and R-3c (148, 166, 167) got Setyawan-
+  Curtarolo's rhombohedral paths under a "SeeKPath" title, with points
+  (B, B1, Q, P1, X, Z) SeeK-path does not have: 11 segments for hR1, 10 for
+  hR2. They now get SeeK-path's hR1 path (Gamma-T-H_2|H_0-L-Gamma-S_0|S_2-F-
+  Gamma, 7 segments) and hR2 path (Gamma-L-T-P_0|P_2-Gamma-F, 5 segments),
+  with the same representative values for the lattice-dependent points
+  H, S and P as the non-centrosymmetric entries.
 
 ## [1.1.3] - 2026-10-01
 
