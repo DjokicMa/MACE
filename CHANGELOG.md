@@ -77,6 +77,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the in-plane SeeK-path path is written instead. The `opt2d12` SeeK-path
   phonon band path of a slab is cut the same way. Polymers (1D) are not
   changed. Untested on CRYSTAL.
+- **SeeK-path band paths keep ISS within three digits.** With the seekpath
+  library, ISS was the largest denominator of every SeeK-path point - also
+  points not on the path - after rounding lattice-dependent coordinates to a
+  denominator below 10**6, so decks carried ISS up to ~10**6 (median about
+  6*10**4 over representative cells of all 230 groups). CRYSTAL runs them
+  (the k-point density depends only on NSUB, manual p.309 note 4), but
+  fort.25 writes the segment ends with format 6I3 (App. D, p.447), so ends
+  of 1000 and more printed as asterisks. Now the points SeeK-path fixes by
+  fractions (its points.txt) set ISS to their lowest common denominator,
+  from 4 (cubic P 4, cI 4, cF 8, hexagonal 6, previously 16 or 18), and are
+  written exactly; lattice-dependent points are written as k/ISS with ISS at
+  most 999, a multiple of that denominator, choosing the ISS that moves them
+  least, provided no point moves by more than half the k-point spacing of
+  the path at 10000 points (the workflow's NSUB). Over all 230 groups and
+  about 4800 representative cells the largest move is 1.2e-4 of a reciprocal
+  lattice vector (3.7e-4 1/A with 2*pi, at most 0.42 of the k-point spacing
+  at 10000 points); MACE's old round trip of these decks already moved points
+  by up to 1.2e-4. Whether a point is lattice-dependent now comes from
+  SeeK-path's definitions, not from its value being within 1e-6 of a small
+  fraction. NSUB is unchanged. The `opt2d12` SeeK-path phonon path now
+  starts from the library's ISS, as `opt2d3` does, instead of rescaling the
+  library's points to the band shrink. Untested on CRYSTAL.
 
 ## [1.1.3] - 2026-10-01
 

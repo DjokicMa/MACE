@@ -610,6 +610,13 @@ def scale_kpoint_segments(frac_segments: List[List[float]], shrink: int) -> tupl
         print(f"WARNING: Invalid shrink factor {shrink}, using default 16")
         shrink = 16
 
+    # A shrink (from 4) that already puts every point on an integer is kept
+    # as it is: the seekpath library route chooses its ISS that way, and it
+    # can be odd (785), which the rounding-up below would replace.
+    if shrink >= 4 and all(abs(coord * shrink - round(coord * shrink)) < 1e-6
+                           for seg in frac_segments for coord in seg):
+        return [[int(round(coord * shrink)) for coord in seg] for seg in frac_segments], shrink
+
     # Check if shrink is sufficient for the given coordinates
     min_shrink = get_minimum_shrink_for_segments(frac_segments)
     if shrink < min_shrink:
