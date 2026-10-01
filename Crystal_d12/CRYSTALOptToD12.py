@@ -1603,6 +1603,20 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                         return False, None
                     options["functional"] = explicit_functional = hf_method
                     options["method"] = "HF"
+                    # HF3C / HFSOL3C are defined for a pure HF calculation in
+                    # the MINIX / SOLMINIX basis (manual 5.3.1 p.158, 5.4.1
+                    # p.162), written BASISSET / MINIX / HF3C / END (p.159).
+                    # The parent's basis, external or internal, was kept and
+                    # an external one came out as "BASISSET / EXTERNAL ...".
+                    required_basis = {"HF3C": "MINIX", "HFSOL3C": "SOLMINIX"}.get(hf_method)
+                    if required_basis:
+                        if options.get("basis_set") != required_basis:
+                            ui.info(f"  Basis set: {required_basis} (required by {hf_method}; "
+                                    f"the parent's basis is not used)")
+                        options["basis_set"] = required_basis
+                        options["basis_set_type"] = "INTERNAL"
+                        options["use_original_external_basis"] = False
+                        options["is_3c_method"] = True
                 if explicit_functional and "dispersion" not in config_data:
                     options["dispersion"] = str(explicit_functional).upper().endswith("-D3")
                 

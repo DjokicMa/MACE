@@ -49,3 +49,22 @@ def test_hf_config_with_a_dft_functional_is_refused(batch, tmp_path, capsys):
     status, out = _run(batch, tmp_path, capsys, {"method": "HF", "functional": "PBE0"})
     assert "0 written, 2 failed" in out.out + out.err
     assert not list((tmp_path / "sp").glob("*.d12"))
+
+
+@pytest.mark.parametrize("functional,basis", [("HF3C", "MINIX"), ("HFSOL3C", "SOLMINIX")])
+def test_hf_3c_config_writes_its_own_basis(batch, tmp_path, capsys, functional, basis):
+    """HF3C / HFSOL3C go with a pure HF calculation in MINIX / SOLMINIX
+    (manual 5.3.1 p.158, 5.4.1 p.162; deck BASISSET / MINIX / HF3C / END,
+    p.159). The parent's basis was kept: the external-basis parent (agbr)
+    came out as "BASISSET / EXTERNAL (from original D12)" and the internal
+    one (nacl) as BASISSET / POB-TZVP-REV2 under HF3C."""
+    status, out = _run(batch, tmp_path, capsys, {"method": "HF", "functional": functional})
+    assert status == 0, out.out + out.err
+    for stem, atoms in (("agbr", ["47", "35"]), ("nacl", ["11", "17"])):
+        deck = (tmp_path / "sp" / f"{stem}_sp_{functional}_optimized.d12").read_text()
+        lines = deck.splitlines()
+        k = lines.index("BASISSET")
+        assert lines[k:k + 4] == ["BASISSET", basis, functional, "END"], deck
+        assert "99 0" not in lines and "EXTERNAL" not in deck
+        # an internal basis takes plain atomic numbers, not the ECP's 247
+        assert [ln.split()[0] for ln in lines[6:8]] == atoms, deck
