@@ -47,6 +47,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`mace wannier` shows the conversion's progress while it runs.** The
+  conversion takes 10-15 minutes on a large dump, and its output (parsing, the
+  eigenproblems, each file written) was captured and printed only at the end.
+  It is now passed through line by line, framed by MACE's own stage lines, and
+  still read whole for the self-audit and written to the log. No change to
+  lcao2wannier itself.
 - **`mace opt2d3 --config-file` exits non-zero when the file cannot be
   loaded.** A missing, malformed or wrong-type config file printed the reason
   and exited 0 with no deck, single-file and batch alike, so a caller that

@@ -497,3 +497,92 @@ def test_the_cli_still_fails_a_refused_model(tmp_path, monkeypatch, capsys):
     assert code == 1
     assert "REFUSED" in text
     assert "Hand-off complete." not in text
+
+
+# --------------------------------------------------------------------------
+# Progress: a conversion runs for minutes, so his output must arrive live
+# --------------------------------------------------------------------------
+
+_FAKE_CHILD = r'''
+import os, sys, time
+gate = sys.argv[sys.argv.index("--gate") + 1]
+if "--dry-run" in sys.argv:
+    sys.exit(0)
+print("Step 1: Parsing CRYSTAL/LCAO output file...")
+# Block until the parent has SEEN the line above; a driver that buffers until
+# exit never creates the gate file, and this child then exits with 3.
+for _ in range(400):
+    if os.path.exists(gate):
+        break
+    time.sleep(0.025)
+else:
+    sys.exit(3)
+print("Step 6: Solving eigenvalue problems...")
+print("  wrote seed.eig/.amn/.mmn", file=sys.stderr)
+print("STATUS: PASS - satisfies Wannier90 disentanglement rules")
+'''
+
+
+def _fake_child(tmp_path, monkeypatch):
+    script = tmp_path / "fake_l2w.py"
+    script.write_text(_FAKE_CHILD)
+    gate = tmp_path / "gate"
+    real = driver.build_command
+
+    def fake_build(*args, **kwargs):
+        command = real(*args, **kwargs)
+        return [sys.executable, str(script)] + command[3:] + ["--gate", str(gate)]
+
+    monkeypatch.setattr(driver, "build_command", fake_build)
+    return gate
+
+
+def test_his_progress_is_streamed_while_the_conversion_runs(tmp_path, monkeypatch):
+    """A real conversion prints its stages (parse, eigenproblems, each file
+    written) over 10-15 minutes. The driver captured everything and printed it
+    at exit, so the user saw nothing until the end."""
+    gate = _fake_child(tmp_path, monkeypatch)
+    seen = []
+
+    def echo(line, stream="stdout"):
+        seen.append((stream, line))
+        if "Parsing CRYSTAL" in line:
+            gate.write_text("seen")
+
+    result = convert(_dump(tmp_path, 60), seed="seed",
+                     output_dir=tmp_path / "out", echo=echo)
+    assert result.returncode == 0, result.stdout + result.stderr
+    lines = [line for _, line in seen]
+    assert any("Parsing CRYSTAL" in line for line in lines)
+    assert any("Solving eigenvalue" in line for line in lines)
+    assert ("stderr", "  wrote seed.eig/.amn/.mmn") in seen
+    # Still captured whole for the audit and the log.
+    assert result.audit == "pass"
+    assert "Solving eigenvalue" in result.stdout
+    assert "wrote seed.eig" in result.stderr
+    assert result.streamed
+
+
+def test_the_cli_streams_and_does_not_print_his_output_twice(
+        tmp_path, monkeypatch, capsys):
+    import mace.wannier.cli as cli
+
+    gate = _fake_child(tmp_path, monkeypatch)
+    real_echo = cli._echo_child
+
+    def echo(line, stream="stdout"):
+        real_echo(line, stream)
+        if "Parsing CRYSTAL" in line:
+            gate.write_text("seen")
+
+    monkeypatch.setattr(cli, "_echo_child", echo)
+    code = cli.main(["--input", str(_dump(tmp_path, 60)),
+                     "--output-dir", str(tmp_path / "out"), "--seed", "seed"])
+    text = capsys.readouterr()
+    combined = text.out + text.err
+    assert combined.count("Solving eigenvalue problems") == 1, combined
+    assert "Parsing CRYSTAL" in combined
+    # MACE's own stage lines frame his output.
+    assert "dry run" in combined
+    assert "progress follows" in combined
+    assert code == 1    # no hand-off files were written by the fake

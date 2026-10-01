@@ -32,9 +32,10 @@ import os
 import re
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 LCAO2WANNIER_CREDIT = (
     "Wannier90 hand-off via lcao2wannier (William Comaskey)"
@@ -113,6 +114,9 @@ class ConversionResult:
     audit: str = "unknown"   # "pass" | "marginal" | "fail" | "unknown"
     audit_text: str = ""
     conditioning_text: str = ""
+    # True when every line was already passed to the caller's echo as it
+    # arrived, so the caller must not print stdout/stderr a second time.
+    streamed: bool = False
 
     @property
     def ok(self) -> bool:
@@ -315,6 +319,40 @@ def _collect_outputs(output_dir: Path, seed: str) -> Dict[str, List[str]]:
     return produced
 
 
+def _run_streaming(command: List[str], env: Dict[str, str],
+                   echo: Callable[[str, str], None]) -> Tuple[int, str, str]:
+    """Run ``command``, passing each output line to ``echo`` as it arrives.
+
+    A conversion runs for 10-15 minutes and prints its own stages (parsing,
+    the eigenproblems, each file written); capturing to the end left the user
+    with nothing to look at. Both streams are still kept whole, for the audit
+    and the log. ``PYTHONUNBUFFERED`` makes the child flush line by line,
+    which a Python writing to a pipe otherwise does not.
+    """
+    env = dict(env, PYTHONUNBUFFERED="1")
+    proc = subprocess.Popen(command, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True, bufsize=1,
+                            env=env)
+    captured: Dict[str, List[str]] = {"stdout": [], "stderr": []}
+
+    def pump(handle, name):
+        for line in handle:
+            captured[name].append(line)
+            echo(line.rstrip("\n"), name)
+        handle.close()
+
+    readers = [threading.Thread(target=pump, args=(proc.stdout, "stdout"),
+                                daemon=True),
+               threading.Thread(target=pump, args=(proc.stderr, "stderr"),
+                                daemon=True)]
+    for reader in readers:
+        reader.start()
+    returncode = proc.wait()
+    for reader in readers:
+        reader.join()
+    return returncode, "".join(captured["stdout"]), "".join(captured["stderr"])
+
+
 def convert(
     parent: Path,
     seed: Optional[str] = None,
@@ -324,6 +362,8 @@ def convert(
     wannier90: Optional[Path] = None,
     extra_args: Optional[Sequence[str]] = None,
     skip_preflight: bool = False,
+    echo: Optional[Callable[[str, str], None]] = None,
+    progress: Optional[Callable[[str], None]] = None,
 ) -> ConversionResult:
     """Run the conversion, in two phases, and report his diagnostics intact.
 
@@ -336,7 +376,9 @@ def convert(
     Dumps past cell 999 are no longer refused: the bundled parser reads
     CRYSTAL's I4 cell index (see the I4 note near the top of this module).
 
-    Phase 2 is the same list without it.
+    Phase 2 is the same list without it. With ``echo`` its output is passed
+    on line by line while it runs (``echo(line, "stdout"|"stderr")``);
+    ``progress`` receives MACE's own one-line stage messages.
     """
     parent = Path(parent)
     if not parent.exists():
@@ -349,7 +391,11 @@ def convert(
     base = dict(parent=parent, seed=seed, output_dir=output_dir, stage=stage,
                 threads=threads, wannier90=wannier90, extra_args=extra_args)
 
+    say = progress or (lambda message: None)
+
     if not skip_preflight:
+        say("Checking the dump and arguments (lcao2wannier dry run, "
+            "writes nothing)...")
         probe = build_command(dry_run=True, **base)
         completed = subprocess.run(probe, capture_output=True, text=True,
                                    env=_subprocess_env())
@@ -370,15 +416,23 @@ def convert(
             )
 
     command = build_command(dry_run=False, **base)
-    completed = subprocess.run(command, capture_output=True, text=True,
-                               env=_subprocess_env())
+    say(f"Converting {parent.name} (stage {stage}); lcao2wannier's progress "
+        "follows. A large dump takes 10-15 minutes.")
+    if echo is not None:
+        returncode, stdout, stderr = _run_streaming(command, _subprocess_env(),
+                                                    echo)
+    else:
+        completed = subprocess.run(command, capture_output=True, text=True,
+                                   env=_subprocess_env())
+        returncode, stdout, stderr = (completed.returncode, completed.stdout,
+                                      completed.stderr)
 
-    audit, audit_text = _classify_audit(completed.stdout)
-    conditioning_text = _conditioning_report(completed.stdout)
+    audit, audit_text = _classify_audit(stdout)
+    conditioning_text = _conditioning_report(stdout)
     result = ConversionResult(
-        returncode=completed.returncode,
-        stdout=completed.stdout,
-        stderr=completed.stderr,
+        returncode=returncode,
+        stdout=stdout,
+        stderr=stderr,
         command=command,
         output_dir=output_dir,
         seed=seed,
@@ -386,13 +440,14 @@ def convert(
         audit=audit,
         audit_text=audit_text,
         conditioning_text=conditioning_text,
+        streamed=echo is not None,
     )
 
     # Persist his full diagnostics beside the outputs. Everything except his
     # argparse refusals goes to stdout, including the audit block.
     try:
         (output_dir / f"{seed}.lcao2wannier.log").write_text(
-            completed.stdout + completed.stderr
+            stdout + stderr
         )
     except OSError:
         pass

@@ -78,6 +78,12 @@ def _emit(text: str, emitter) -> None:
         emitter(line) if line.strip() else print()
 
 
+def _echo_child(line: str, stream: str = "stdout") -> None:
+    """Pass one line of his output through as it arrives, unaltered."""
+    print(line, file=sys.stderr if stream == "stderr" else sys.stdout,
+          flush=True)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mace wannier",
@@ -126,6 +132,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             threads=args.threads,
             wannier90=Path(args.wannier90) if args.wannier90 else None,
             extra_args=args.l2w_args,
+            echo=lambda line, stream="stdout": _echo_child(line, stream),
+            progress=ui.info,
         )
     except Lcao2WannierUnavailable as exc:
         # Every refusal reaches the user as its own text, never a traceback.
@@ -134,9 +142,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # His diagnostics go to the user whole. He is the one who knows what they
     # mean, and summarizing them is how a reason gets lost.
-    if result.stdout:
+    # Already printed line by line while it ran when streamed.
+    if result.stdout and not result.streamed:
         print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
-    if result.stderr:
+    if result.stderr and not result.streamed:
         print(result.stderr, file=sys.stderr,
               end="" if result.stderr.endswith("\n") else "\n")
 

@@ -662,6 +662,10 @@ reason.
 
 #### Output handling
 
+`mace wannier` passes `lcao2wannier`'s own output through as it runs (its
+parsing, eigenproblem and file-writing stages), so a 10-15 minute conversion
+is not silent; the same output is kept in `<seed>.lcao2wannier.log`.
+
 The parent dump is large — cost is linear in `N` and quadratic in the AO count,
 measured at 34 MB for a 2-atom cell (36 AOs) at `N = 1247`. **Retain it:** every
 `lcao2wannier` stage but `localize` needs it, and its parse cache is keyed on
