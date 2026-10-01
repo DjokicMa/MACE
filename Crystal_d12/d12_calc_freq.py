@@ -261,7 +261,9 @@ def get_advanced_frequency_settings(parent_numderiv=None):
         print("     Forward difference: (g(x+t)-g(x))/t where t=0.001 Å")
         print("  2: Two displacements per atom (more accurate)")
         print("     Central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
-        numderiv_choice = _nav_read(f"\nSelect method (0-2) [{numderiv_default}]: ", valid_set={"_choice_"}).strip() or numderiv_default
+        # NUMDERIV takes 1 or 2 (manual p.218); 0 writes no keyword.
+        numderiv_choice = _read_choice(f"\nSelect method (0-2) [{numderiv_default}]: ",
+                                       ("0", "1", "2"), numderiv_default)
         if numderiv_choice == "0":
             freq_settings["numderiv"] = None  # Signal to skip NUMDERIV keyword
         else:
@@ -998,7 +1000,8 @@ def get_advanced_frequency_settings(parent_numderiv=None):
         print("2: Two displacements per atom (default, recommended)")
         print("   Uses central difference: (g(x+t)-g(x-t))/2t where t=0.001 Å")
 
-        numderiv = _nav_read(f"Select method (0-2) [{numderiv_default}]: ", valid_set={"_choice_"}).strip() or numderiv_default
+        numderiv = _read_choice(f"Select method (0-2) [{numderiv_default}]: ",
+                                ("0", "1", "2"), numderiv_default)
         if numderiv == "0":
             freq_settings["numderiv"] = None  # Signal to skip NUMDERIV keyword
         else:

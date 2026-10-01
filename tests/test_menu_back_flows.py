@@ -174,11 +174,15 @@ def test_unknown_ir_method_is_asked_again(terminal):
     assert d12_calc_freq.get_frequency_configuration()["ir_method"] == "CPHF"
 
 
-@pytest.mark.xfail(strict=True, raises=ValueError, reason="a non-number at the FREQ NUMDERIV "
-                   "menu raises ValueError from int() instead of being asked again")
 def test_unknown_numderiv_is_asked_again(terminal):
     terminal(["1", "1", "x", "1", "n", "n"])
     assert d12_calc_freq.get_frequency_configuration()["numderiv"] == 1
+
+
+def test_numderiv_out_of_range_is_asked_again(terminal):
+    """NUMDERIV takes 1 or 2 (manual p.218); 3 used to be written as is."""
+    terminal(["1", "1", "3", "2", "n", "n"])
+    assert d12_calc_freq.get_frequency_configuration()["numderiv"] == 2
 
 
 # ------------------------------------------------------------ opt2d3
