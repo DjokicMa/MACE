@@ -1960,6 +1960,9 @@ class CrystalInputParser:
             stripped = line.strip()
             if stripped == "SMEAR":
                 self.data["use_smearing"] = True
+                # ...under the key the deck writer reads (as the .out parser
+                # sets it); "use_smearing" alone wrote the deck back without SMEAR.
+                self.data["smearing"] = True
                 # Check next line for smearing width
                 if i + 1 < len(lines):
                     try:

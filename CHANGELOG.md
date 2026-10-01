@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   command calls `read_stuttgart`, and MACE's EXTERNAL basis readers use the
   `200+Z` name only for Z >= 37, so they never open 204-227 (a basis path
   pointed by hand at `stuttgart/` would still copy `294` as it is).
+- **An `opt2d12` child keeps its parent deck's SMEAR.** The .d12 parser
+  stored SMEAR as `use_smearing`, but the deck writer reads `smearing`, which
+  only the .out parser set (from a "FERMI SMEARING" line) and which `opt2d12`
+  took from the .out even when the parent deck had SMEAR. A parent whose .out
+  lacks that line gave a child without SMEAR - for a SOC parent, a deck that
+  can abort as fcc Au did at SHRINK 10 10. The parser now sets `smearing`
+  too, and `opt2d12` prefers the deck's value. Deck change: such a child,
+  SOC or not, now has the parent's `SMEAR` / width after its SHRINK records;
+  a child whose parent .out has the "FERMI SMEARING" line had it already.
 - **An `opt2d12` phonon deck with a SeeK-path band path is written.** The
   SeeK-path helpers read a `.out` file, but `opt2d12` passed them the parent's
   output text, so every such deck stopped with `OSError: File name too long`.

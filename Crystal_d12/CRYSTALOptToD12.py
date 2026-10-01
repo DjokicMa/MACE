@@ -1358,7 +1358,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 if key not in settings or settings[key] is None:
                     settings[key] = value
                 elif key in ["functional", "dispersion", "spin_polarized", "dft_grid", "method",
-                           "is_3c_method", "use_smearing", "smearing_width",
+                           "is_3c_method", "smearing", "use_smearing", "smearing_width",
                            "k_points", "scf_method", "scf_maxcycle", "fmixing", "scf_direct",
                            "mulliken_analysis", "diis_history", "calculation_type",
                            "optimization_settings", "freq_settings", "origin_setting",
@@ -2398,7 +2398,7 @@ def main():
                             if key not in settings or settings[key] is None:
                                 settings[key] = value
                             elif key in ["functional", "dispersion", "spin_polarized", "dft_grid", "method",
-                                       "is_3c_method", "use_smearing", "smearing_width",
+                                       "is_3c_method", "smearing", "use_smearing", "smearing_width",
                                        "k_points", "scf_method", "scf_maxcycle", "fmixing", "scf_direct",
                                        "mulliken_analysis", "diis_history", "calculation_type",
                                        "optimization_settings", "freq_settings", "origin_setting",

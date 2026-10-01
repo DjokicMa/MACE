@@ -480,6 +480,36 @@ def test_a_frequency_run_of_a_soc_parent_is_refused(opt2d12_soc_parent, capsys):
     assert "frequency calculation (FREQCALC) is not available" in capsys.readouterr().err
 
 
+# The output parser reports "smearing": False for a .out without a "FERMI
+# SMEARING" line (its default), as the stubbed .out here does.
+def _out_without_smearing_line(monkeypatch):
+    out, deck = PARENTS["pbte"]
+    monkeypatch.setitem(PARENTS, "pbte", (dict(out, smearing=False, smearing_width=None), deck))
+
+
+def test_a_soc_parents_smear_is_kept_in_its_child(opt2d12_soc_parent, tmp_path, monkeypatch):
+    _out_without_smearing_line(monkeypatch)
+    parent = SOC_PARENT.replace("SHRINK\n8 8\n", "SHRINK\n8 8\nSMEAR\n0.005000\n")
+    assert parent != SOC_PARENT
+    (tmp_path / "socpbte.d12").write_text(parent)
+    status, decks = opt2d12_soc_parent()
+    assert status == 0 and len(decks) == 1
+    text = decks[0].read_text()
+    assert "TWOCOMPON\nSOC\nEND\n" in text
+    assert text.count("SMEAR") == 1 and "SHRINK\n8 8\nSMEAR\n0.005000\n" in text
+
+
+def test_a_scalar_parents_smear_is_kept_in_its_child(opt2d12_soc_parent, tmp_path, monkeypatch):
+    """The same keys carry SMEAR for any parent: a non-SOC child keeps it too."""
+    _out_without_smearing_line(monkeypatch)
+    (tmp_path / "socpbte.d12").write_text(
+        PBTE.replace("SHRINK\n8 16\n", "SHRINK\n8 16\nSMEAR\n0.010000\n"))
+    status, decks = opt2d12_soc_parent()
+    assert status == 0 and len(decks) == 1
+    text = decks[0].read_text()
+    assert "TWOCOMPON" not in text and "SMEAR\n0.010000\n" in text
+
+
 def test_a_parent_known_as_2c_only_from_its_out_gives_a_scalar_deck_with_a_warning(
         opt2d12, monkeypatch, capsys):
     out, deck = PARENTS["pbte"]
