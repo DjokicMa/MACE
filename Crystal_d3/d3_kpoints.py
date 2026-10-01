@@ -1203,6 +1203,12 @@ def get_extended_bravais(sg: int, lat: str,
                 return determine_orthorhombic_i_variant(a, b, c)
             else:
                 return "oI1"
+        elif lat == "A":
+            # A-centred (Amm2, Aem2, Ama2, Aea2): SeeK-path (HPKOT) takes oA1
+            # for b < c and oA2 for b > c
+            if b is not None and c is not None:
+                return "oA1" if b < c else "oA2"
+            return "oA1"
         else:
             return "oP1"
             

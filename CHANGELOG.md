@@ -50,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hR2 otherwise; a cell given in rhombohedral axes is now read by its angle.
   Rhombohedral decks from outputs with c/a above sqrt(6) or below sqrt(3/2)
   change path.
+- **A-centred orthorhombic groups get SeeK-path's oA paths.** Without the
+  seekpath library, Amm2, Aem2, Ama2 and Aea2 (38-41) fell through to the
+  primitive orthorhombic oP1 path. They now get SeeK-path's oA1 (b < c) or
+  oA2 (b > c) path with its primed copy, and the title marks the jumps
+  C_0|SIGMA_0 and A_0|E_0 (F_0|DELTA_0, B_0|G_0) that the segments make.
 
 ## [1.1.3] - 2026-10-01
 
