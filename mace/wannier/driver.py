@@ -96,6 +96,129 @@ _AUDIT_FAIL_RE = re.compile(r"STATUS:\s*[^\n]*(FAIL|BAD)")
 _CONDITIONING_BANNER = "Overlap Matrix Conditioning Check"
 
 
+# --- 2-component dumps --------------------------------------------------------
+
+# Fock-block headers in a dump. A 2c dump from the development properties
+# prints each block as REAL and IMAG parts under the spinor labels; the stock
+# build on a 2c fort.9 prints scalar blocks only, without an error (MEASURED on
+# a real 2c-SOC Bi2 fort.9: 124 REAL + 124 IMAG blocks with ALPHA_ALPHA /
+# ALPHA_BETA / BETA_BETA from the development build, 62 scalar
+# "FOCK MATRIX - CELL" blocks from the stock one).
+_FOCK_SCALAR = b"FOCK MATRIX - CELL"
+_FOCK_REAL = b"FOCK MATRIX (REAL PART)"
+_FOCK_IMAG = b"FOCK MATRIX (IMAG PART)"
+_SPINOR_LABEL = b"ALPHA_ALPHA ELECTRONS"
+
+_D3_MATDUMP = Path(__file__).resolve().parents[2] / "Crystal_d3" / "d3_matdump.py"
+
+
+def _d3_matdump():
+    """Crystal_d3/d3_matdump.py, where MACE's 2-component detection lives."""
+    import importlib.util
+
+    loaded = sys.modules.get("d3_matdump")
+    if loaded is not None:
+        return loaded
+    spec = importlib.util.spec_from_file_location("d3_matdump", _D3_MATDUMP)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["d3_matdump"] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop("d3_matdump", None)
+        raise
+    return module
+
+
+def dump_fock_blocks(dump: Path) -> Dict[str, int]:
+    """Count the Fock-block headers in a dump, line by line (dumps are large)."""
+    counts = {"scalar": 0, "real": 0, "imag": 0, "spinor": 0}
+    with open(dump, "rb") as handle:
+        for raw in handle:
+            if _FOCK_SCALAR in raw:
+                counts["scalar"] += 1
+            elif _FOCK_REAL in raw:
+                counts["real"] += 1
+            elif _FOCK_IMAG in raw:
+                counts["imag"] += 1
+            elif _SPINOR_LABEL in raw:
+                counts["spinor"] += 1
+    return counts
+
+
+def find_scf_parents(dump: Path) -> List[Path]:
+    """The SCF outputs beside a dump that `mace opt2d3` names it after.
+
+    opt2d3 writes ``<base>_matdump.d3`` (so the dump is ``<base>_matdump.out``)
+    where ``<base>`` is the parent's stem without _opt/_sp/_OPT/_SP.
+    """
+    dump = Path(dump)
+    stem = dump.stem
+    base = stem[:-len("_matdump")] if stem.lower().endswith("_matdump") else stem
+    found = []
+    for parent_stem in (f"{base}_sp", f"{base}_opt", f"{base}_SP", f"{base}_OPT",
+                        base):
+        for suffix in (".out", ".log"):
+            candidate = dump.with_name(parent_stem + suffix)
+            if candidate.is_file() and candidate != dump:
+                found.append(candidate)
+    return found
+
+
+def scf_is_two_component(scf_output: Path) -> bool:
+    """Whether an SCF run was 2-component: its .out's own lines, or a TWOCOMPON
+    block in the .d12 beside it (manual sec. 6.2, p.170). The deck's first line
+    is its title and is never read as a keyword."""
+    md = _d3_matdump()
+    try:
+        out_text = Path(scf_output).read_text(errors="replace")
+    except OSError:
+        out_text = ""
+    if md.output_is_two_component(out_text):
+        return True
+    deck = Path(scf_output).with_suffix(".d12")
+    try:
+        deck_text = deck.read_text(errors="replace") if deck.is_file() else ""
+    except OSError:
+        deck_text = ""
+    body = deck_text.split("\n", 1)[1] if "\n" in deck_text else ""
+    return any(line.strip().upper() == "TWOCOMPON" for line in body.splitlines())
+
+
+def two_component_refusal(dump: Path, scf_outputs: Sequence[Path]) -> Optional[str]:
+    """Why a dump must not be converted, or None.
+
+    A 2c parent needs a dump with REAL and IMAG Fock parts AND the spinor
+    labels. A dump with all three is accepted whatever the parent; a dump from
+    a 2c parent without them is what the stock build prints on a 2c fort.9.
+    """
+    blocks = dump_fock_blocks(dump)
+    if blocks["real"] and blocks["imag"] and blocks["spinor"]:
+        return None
+    two_c = [p for p in scf_outputs if scf_is_two_component(p)]
+    if not two_c:
+        return None
+    found = (f"{blocks['scalar']} scalar 'FOCK MATRIX - CELL', "
+             f"{blocks['real']} REAL PART, {blocks['imag']} IMAG PART blocks, "
+             f"{blocks['spinor']} 'ALPHA_ALPHA ELECTRONS' labels")
+    return (
+        f"Refusing to convert {Path(dump).name}: its parent SCF\n"
+        f"({', '.join(p.name for p in two_c)}) is a 2-component (TWOCOMPON) run,\n"
+        f"but the dump does not hold 2-component matrices.\n"
+        f"\n"
+        f"  found    : {found}\n"
+        f"  needed   : FOCK MATRIX (REAL PART) and (IMAG PART) blocks under the\n"
+        f"             ALPHA_ALPHA / ALPHA_BETA / BETA_BETA spinor labels\n"
+        f"\n"
+        f"This is what the STOCK CRYSTAL23 properties prints on a 2-component\n"
+        f"fort.9, without any error (measured: only scalar 'FOCK MATRIX - CELL'\n"
+        f"blocks). Converting it would build a model from an incomplete\n"
+        f"Hamiltonian. Re-run the MATDUMP deck with the CRYSTAL23 development\n"
+        f"properties/Pproperties (request it from the CRYSTAL23 developers; MACE\n"
+        f"never bundles or redistributes it)."
+    )
+
+
 class Lcao2WannierUnavailable(Exception):
     """The conversion cannot run (bad input, broken numpy/scipy). Never a traceback."""
 
@@ -364,6 +487,7 @@ def convert(
     skip_preflight: bool = False,
     echo: Optional[Callable[[str, str], None]] = None,
     progress: Optional[Callable[[str], None]] = None,
+    scf_output: Optional[Path] = None,
 ) -> ConversionResult:
     """Run the conversion, in two phases, and report his diagnostics intact.
 
@@ -379,10 +503,33 @@ def convert(
     Phase 2 is the same list without it. With ``echo`` its output is passed
     on line by line while it runs (``echo(line, "stdout"|"stderr")``);
     ``progress`` receives MACE's own one-line stage messages.
+
+    Before either phase, a dump whose parent SCF (``scf_output``, or the
+    outputs beside the dump that opt2d3 names it after) was 2-component but
+    which lacks the 2-component Fock blocks is refused (see
+    ``two_component_refusal``).
     """
     parent = Path(parent)
     if not parent.exists():
         raise Lcao2WannierUnavailable(f"Matrix dump not found: {parent}")
+
+    say = progress or (lambda message: None)
+
+    if scf_output is not None:
+        if not Path(scf_output).is_file():
+            raise Lcao2WannierUnavailable(f"SCF output not found: {scf_output}")
+        scf_outputs = [Path(scf_output)]
+    else:
+        scf_outputs = find_scf_parents(parent)
+    refusal = two_component_refusal(parent, scf_outputs)
+    if refusal:
+        raise Lcao2WannierUnavailable(refusal)
+    if not scf_outputs:
+        blocks = dump_fock_blocks(parent)
+        if blocks["scalar"] and not blocks["real"]:
+            say("Note: no parent SCF output was found beside the dump, so a "
+                "2-component parent (whose stock dump would be incomplete) "
+                "could not be ruled out; pass --scf-output to check it.")
 
     seed = sanitize_seed(seed or parent.stem)
     output_dir = Path(output_dir) if output_dir else parent.parent / f"{seed}.wannier"
@@ -390,8 +537,6 @@ def convert(
 
     base = dict(parent=parent, seed=seed, output_dir=output_dir, stage=stage,
                 threads=threads, wannier90=wannier90, extra_args=extra_args)
-
-    say = progress or (lambda message: None)
 
     if not skip_preflight:
         say("Checking the dump and arguments (lcao2wannier dry run, "

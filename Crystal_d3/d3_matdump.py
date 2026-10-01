@@ -228,6 +228,23 @@ _SOC_OUTPUT_MARKERS = (
 )
 
 
+# Lines only a 2-component SCF prints. Its density is printed per cycle as a
+# particle-number density and three magnetization components, and, when the
+# Fermi level is searched, the occupied spinors (stock CRYSTAL23 on HPCC, fcc Au
+# 2c-SCF with SOC):
+#     TOTAL X-COMP MAGNETIZATION    0.00000001
+#     - NUMBER OF FULLY OCCUPIED/TOTAL SPINORS -    12 /     70
+# A 1c run prints "TOTAL ATOMIC SPINS" there instead. Matched at the start of a
+# line only, never inside the echoed title. The markers above
+# (_SOC_OUTPUT_MARKERS) are printed by the matrix dump, not by every SCF, so a
+# bare 2c SCF .out with no SPINORS line was classified collinear without these.
+_TWO_COMPONENT_SCF_LINE = re.compile(
+    r"^[ \t]*(?:TOTAL [XY]-COMP MAGNETIZATION[ \t]"
+    r"|- NUMBER OF FULLY OCCUPIED/TOTAL SPINORS[ \t])",
+    re.MULTILINE,
+)
+
+
 def deck_requests_two_component(deck_text: str) -> bool:
     """Whether a CRYSTAL deck opens a 2c-SCF (TWOCOMPON) block.
 
@@ -243,7 +260,8 @@ def deck_requests_two_component(deck_text: str) -> bool:
 
 def output_is_two_component(out_text: str) -> bool:
     """Whether an output carries the markers only a 2-component run emits."""
-    return any(marker in out_text for marker in _SOC_OUTPUT_MARKERS)
+    return (any(marker in out_text for marker in _SOC_OUTPUT_MARKERS)
+            or _TWO_COMPONENT_SCF_LINE.search(out_text) is not None)
 
 
 def detect_spin_treatment(out_text: str, deck_text: str = "") -> str:
@@ -579,6 +597,26 @@ def capability_refusal(spin: str, binary_path: Optional[Path]) -> Optional[str]:
         f"The SOC-capable properties/Pproperties are development builds. Request\n"
         f"them from the CRYSTAL23 developers directly. MACE never bundles,\n"
         f"downloads or redistributes them."
+    )
+
+
+def describe_two_component_dump_requirement() -> str:
+    """The warning opt2d3 prints for a 2-component parent.
+
+    MEASURED (HPCC, real 2c-SOC Bi2 fort.9): the development properties printed
+    124 FOCK MATRIX (REAL PART) + 124 (IMAG PART) blocks under ALPHA_ALPHA /
+    ALPHA_BETA / BETA_BETA headers; the STOCK properties on the same fort.9 ran
+    without error and printed only 62 scalar "FOCK MATRIX - CELL" blocks.
+    """
+    return (
+        "The parent is a 2-component (TWOCOMPON) SCF. Its matrix dump must be run\n"
+        "with the CRYSTAL23 development properties/Pproperties. MEASURED: the\n"
+        "stock properties runs this deck WITHOUT error but prints only scalar\n"
+        "'FOCK MATRIX - CELL' blocks (no REAL/IMAG parts, no ALPHA_ALPHA /\n"
+        "ALPHA_BETA / BETA_BETA spinor blocks) - an incomplete dump that\n"
+        "`mace wannier` refuses. Point submit_prop.sh at the development build\n"
+        "before submitting (request it from the CRYSTAL23 developers; MACE never\n"
+        "bundles or redistributes it)."
     )
 
 

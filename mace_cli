@@ -926,6 +926,8 @@ Options:
   --threads N           CPU budget; omit inside SLURM, where lcao2wannier
                         reads the allocation itself
   --wannier90 PATH      wannier90.x, to localize after the hand-off
+  --scf-output FILE     The parent SCF .out, if it is not beside the dump
+                        (a 2-component parent's scalar-only dump is refused)
   --l2w-arg ARG         Pass one raw argument through to lcao2wannier
                         (repeatable, unvalidated)
 

@@ -104,6 +104,10 @@ def build_parser() -> argparse.ArgumentParser:
                              "lcao2wannier reads the allocation itself")
     parser.add_argument("--wannier90",
                         help="path to wannier90.x, to localize after the hand-off")
+    parser.add_argument("--scf-output",
+                        help="the parent SCF .out, when it is not beside the dump "
+                             "(used to refuse an incomplete dump of a "
+                             "2-component run)")
     parser.add_argument("--l2w-arg", action="append", dest="l2w_args", metavar="ARG",
                         help="pass one raw argument through to lcao2wannier "
                              "(repeatable). MACE does not validate or interpret it, "
@@ -134,6 +138,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             extra_args=args.l2w_args,
             echo=lambda line, stream="stdout": _echo_child(line, stream),
             progress=ui.info,
+            scf_output=Path(args.scf_output) if args.scf_output else None,
         )
     except Lcao2WannierUnavailable as exc:
         # Every refusal reaches the user as its own text, never a traceback.

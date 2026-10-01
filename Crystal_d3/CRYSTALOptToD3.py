@@ -59,8 +59,11 @@ except ImportError:
 from d3_config import (save_d3_config, load_d3_config, validate_d3_config,
                       print_d3_config_summary, save_d3_options_prompt,
                       list_available_d3_configs, select_d3_config_file)
-from d3_matdump import (MatdumpRefusal, MATDUMP_CREDIT_BLOCK, capability_refusal,
-                        derive_n_rvectors, detect_spin_treatment, format_bytes,
+from d3_matdump import (MatdumpRefusal, MATDUMP_CREDIT_BLOCK, SPIN_SOC,
+                        capability_refusal,
+                        derive_n_rvectors, describe_two_component_dump_requirement,
+                        detect_spin_treatment, format_bytes,
+                        properties_binary_supports_soc,
                         parse_deck_dimensionality, parse_dimensionality,
                         parse_number_of_ao, predict_dump_bytes,
                         resolve_properties_binary, validate_n_rvectors,
@@ -1314,6 +1317,12 @@ class D3Generator:
                 for line in refusal.splitlines():
                     ui.err(line) if line.strip() else print()
                 return None
+            # Not refused does not mean capable: no binary may have been found,
+            # or this machine's is not the one the job will run. Only a binary
+            # checked and found capable makes the warning unnecessary.
+            if spin == SPIN_SOC and not (
+                    binary is not None and properties_binary_supports_soc(binary)):
+                _emit_warning(describe_two_component_dump_requirement())
 
             # --- N ---------------------------------------------------------
             requested = config.get("n_rvectors")

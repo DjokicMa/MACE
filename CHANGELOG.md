@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Incomplete 2-component dumps are refused.** The stock CRYSTAL23
+  `properties` on a 2c (TWOCOMPON) `fort.9` prints only scalar `FOCK MATRIX -
+  CELL` blocks, without an error (measured on a real Bi2 SOC run; the
+  development build prints REAL/IMAG parts under ALPHA_ALPHA/ALPHA_BETA/
+  BETA_BETA). `mace wannier` now refuses such a dump when the parent SCF beside
+  it (or `--scf-output`) was 2c, still accepts a dump with the full 2c blocks,
+  and `mace opt2d3 --calc-type MATDUMP` warns up front for a 2c parent. A 2c
+  SCF output is also recognised from its `TOTAL X-COMP MAGNETIZATION` /
+  spinor-count lines, so a bare 2c `.out` no longer classifies as collinear.
 - **MATDUMP and the Wannier90 conversion as workflow steps.** The planner
   offers `MATDUMP` and `WANNIER` (and a `wannier_handoff` template, `OPT -> SP
   -> MATDUMP -> WANNIER`, listed after `custom` so the existing template

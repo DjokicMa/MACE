@@ -642,6 +642,22 @@ is a heuristic on someone else's binary, so it is worth knowing its edges:
   `mace opt2d3 ... --properties-binary /path/to/properties` if you want the
   check made against a specific build.
 
+**A stock dump of a 2-component parent is refused.** Measured on a real 2c-SOC
+Bi2 `fort.9`: the development `properties` printed 124 `FOCK MATRIX (REAL PART)`
+and 124 `(IMAG PART)` blocks under `ALPHA_ALPHA`/`ALPHA_BETA`/`BETA_BETA`; the
+stock `properties` on the same file ran without error and printed only 62
+scalar `FOCK MATRIX - CELL` blocks. `mace opt2d3 --calc-type MATDUMP` therefore
+warns whenever the parent is 2-component (unless the binary it checked is the
+development build), and `mace wannier` refuses a dump whose parent SCF was
+2-component but which lacks the REAL/IMAG blocks and spinor labels. The parent
+is the `<base>_sp.out` / `<base>_opt.out` beside the dump (`--scf-output` names
+another); it counts as 2-component when its `.d12` opens a `TWOCOMPON` block
+(the title line excepted) or its `.out` prints `TOTAL X-COMP MAGNETIZATION` /
+`- NUMBER OF FULLY OCCUPIED/TOTAL SPINORS -` lines (or the markers above). A
+dump with the full 2-component blocks is accepted whatever the parent. With no
+parent found, a scalar dump is converted with a note saying the check could
+not be made.
+
 #### Reading the conversion's own verdict
 
 `lcao2wannier` runs two self-checks and **both verdicts are non-fatal** — a
