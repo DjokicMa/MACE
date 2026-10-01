@@ -2455,6 +2455,73 @@ seekpath_data = {
 }
 
 
+def is_slab_output(out_file: Optional[str]) -> bool:
+    """True when a CRYSTAL output is a SLAB (2D) calculation."""
+    if not out_file:
+        return False
+    try:
+        content = Path(out_file).read_text(errors="ignore")
+    except (OSError, ValueError):
+        return False
+    return 'SLAB CALCULATION' in content or 'SLAB GROUP' in content
+
+
+def _edges_of(labels: Optional[List[str]]) -> Optional[List[Tuple[str, str]]]:
+    if not labels:
+        return None
+    return [(a, b) for a, b in zip(labels, labels[1:]) if '|' not in (a, b)]
+
+
+def in_plane_path(segments: List[List[float]],
+                  labels: Optional[List[str]] = None) -> Tuple[List[List[float]], Optional[List[str]]]:
+    """Keep the segments of a band path that lie in the plane of a slab.
+
+    A slab is periodic in a and b only; CRYSTAL23 BAND (manual p.310, note 3)
+    takes the third coordinates I3, J3 of every segment as zero in 2D. A 3D
+    path's segments with an end off the kz = 0 plane are dropped, and the
+    kept ones keep their order. ``labels`` (a path broken by "|", one edge
+    per segment) is cut the same way; None is returned for it when it does
+    not name the segments one to one.
+    """
+    keep = [abs(seg[2]) < 1e-9 and abs(seg[5]) < 1e-9 for seg in segments]
+    kept = [seg for seg, k in zip(segments, keep) if k]
+    edges = _edges_of(labels)
+    if edges is None or len(edges) != len(segments):
+        return kept, None
+    out: List[str] = []
+    prev = None
+    for (a, b), seg, k in zip(edges, segments, keep):
+        if not k:
+            continue
+        if prev is not None and prev[0] == a and list(prev[1]) == list(seg[:3]):
+            out.append(b)
+        else:
+            if out:
+                out.append('|')
+            out += [a, b]
+        prev = (b, seg[3:])
+    return kept, out
+
+
+def in_plane_labels(labels: List[str], space_group: int, lattice_type: str) -> List[str]:
+    """Label path (CRYSTAL Tables 14.1-14.2 names) cut to its kz = 0 edges.
+
+    Edges whose labels have no table coordinates are kept as they are.
+    """
+    out: List[str] = []
+    for a, b in _edges_of(labels) or []:
+        coords = get_kpoint_coordinates_from_labels([a, b], space_group, lattice_type)
+        if coords and (abs(coords[0][2]) > 1e-9 or abs(coords[0][5]) > 1e-9):
+            continue
+        if out and out[-1] == a:
+            out.append(b)
+        else:
+            if out:
+                out.append('|')
+            out += [a, b]
+    return out
+
+
 def extract_lattice_parameters_from_output(out_file: str) -> Optional[Dict[str, float]]:
     """Extract lattice parameters from CRYSTAL output file.
     
@@ -2583,8 +2650,16 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
             kpath_info: Dict with inversion symmetry and source information
     """
 
+    # A slab's path stays in its plane (manual p.310, BAND note 3: I3, J3 are
+    # zero in 2D). The seekpath library is not used for a slab: it
+    # standardises the slab's 3D box and can turn the vacuum axis into a or b
+    # (an oblique slab becomes mP with b along the normal), so its
+    # coordinates would not be in CRYSTAL's slab cell. The static path of the
+    # corresponding space group is, and is cut to its kz = 0 segments.
+    slab = is_slab_output(out_file)
+
     # Try to use the accurate seekpath library if available and output file provided
-    if SEEKPATH_LIBRARY_AVAILABLE and out_file and get_accurate_bandpath is not None:
+    if SEEKPATH_LIBRARY_AVAILABLE and out_file and get_accurate_bandpath is not None and not slab:
         try:
             segments, labels, kpath_info = get_accurate_bandpath(out_file)
 
@@ -2655,6 +2730,8 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
         "lookup_key": lookup_key,
         "source": "seekpath_data"
     }
+    if slab:
+        kpath_info["in_plane"] = True
 
     # Warn about static data limitations for non-cubic
     if not ext_bravais.startswith('c'):
@@ -2663,6 +2740,8 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
 
     # Get path data if available
     if lookup_key in seekpath_data:
+        if slab:
+            return in_plane_path(seekpath_data[lookup_key]["segments"])[0], kpath_info
         return seekpath_data[lookup_key]["segments"], kpath_info
     else:
         # Fallback to literature path first
@@ -2673,15 +2752,16 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
         if lit_segments:
             print("Using literature k-path (Setyawan & Curtarolo 2010) instead")
             kpath_info["source"] = "literature"
-            return lit_segments, kpath_info
+            return (in_plane_path(lit_segments)[0] if slab else lit_segments), kpath_info
 
         # If no literature path, fall back to standard path
         print("Using standard path instead")
         kpath_info["source"] = "default"
-        return get_kpoint_coordinates_from_labels(
+        segments = get_kpoint_coordinates_from_labels(
             get_band_path_from_symmetry(space_group, lattice_type),
             space_group, lattice_type
-        ), kpath_info
+        )
+        return (in_plane_path(segments)[0] if slab else segments), kpath_info
 
 def unicode_to_ascii_kpoint(label: str) -> str:
     """Convert Unicode k-point labels to ASCII equivalents for CRYSTAL compatibility.
@@ -2748,8 +2828,12 @@ def get_seekpath_labels(space_group: int, lattice_type: str, out_file: Optional[
         List of k-point labels with '|' markers for discontinuities
     """
 
+    # A slab gets the static path cut to its plane, as in
+    # get_seekpath_full_kpath, so the labels name the segments written.
+    slab = is_slab_output(out_file)
+
     # Try to use the accurate seekpath library if available and output file provided
-    if SEEKPATH_LIBRARY_AVAILABLE and out_file and get_accurate_bandpath is not None:
+    if SEEKPATH_LIBRARY_AVAILABLE and out_file and get_accurate_bandpath is not None and not slab:
         try:
             segments, labels, kpath_info = get_accurate_bandpath(out_file)
             n_labels = len([l for l in labels if l != '|'])
@@ -2794,6 +2878,8 @@ def get_seekpath_labels(space_group: int, lattice_type: str, out_file: Optional[
     # Get path labels if available
     if lookup_key in seekpath_data and "labels" in seekpath_data[lookup_key]:
         labels = seekpath_data[lookup_key]["labels"]
+        if slab:
+            labels = in_plane_path(seekpath_data[lookup_key]["segments"], labels)[1] or []
         n_labels = len([l for l in labels if l != '|'])
         n_discontinuities = labels.count('|')
         print(f"  Using SeeK-path labels for '{lookup_key}': {n_labels} labels with {n_discontinuities} discontinuities")

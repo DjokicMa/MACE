@@ -255,7 +255,7 @@ Inversion is used only by the SeeK-path format (automatic path, format 4); the l
 - Without it (static `seekpath_data` fallback in `d3_kpoints.get_seekpath_full_kpath`): `d3_kpoints.detect_inversion_from_crystal_output` reads the output (the `SPACE GROUP (CENTROSYMMETRIC)` line, an inversion operator, or the space-group number), falling back to `d3_kpoints.has_inversion_symmetry`. A non-centrosymmetric structure gets the `<variant>_noinv` path with primed k-points; if no `_noinv` entry exists, the centrosymmetric path is used with a warning.
 
 ### Current Technical Limitations
-1. **2D Materials**: Band structure generation currently uses 3D k-paths even for SLAB calculations
+1. **2D Materials**: A SLAB output's BAND path is the path of its corresponding space group cut to the slab plane (segments with I3 = J3 = 0, manual p.310 note 3); the seekpath library is not used for slabs, so lattice-dependent points of centred-rectangular slabs take the static representative values. POLYMER (1D) outputs still get 3D paths.
 2. **Extended Bravais Variants**: Some variants (oS2, oI2-3) need full implementation
 3. **Layer Groups**: No support for 2D layer group k-paths (groups 1-80)
 4. **Inversion Symmetry**: Used only by the SeeK-path format (see Inversion Symmetry above)

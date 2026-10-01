@@ -62,6 +62,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was taken as space group 1 (P1) and, without the seekpath library, got the
   triclinic band path. It now takes the corresponding space group and the
   plane group's lattice letter.
+- **A slab's band path stays in the plane of the slab.** `opt2d3` BAND wrote
+  a 3D path for a SLAB parent: with the seekpath library, SeeK-path's path
+  for the slab's 500 A box, e.g. graphene's hP2 path with nine segments, six
+  of them at or towards kz = 1/2. A slab is periodic in a and b only, and
+  BAND takes I3 = J3 = 0 in 2D (manual p.310, note 3). The path of the
+  corresponding space group is now cut to its segments in the kz = 0 plane
+  (graphene: Gamma-M-K-Gamma), in coordinate and label mode, and the title
+  names the segments kept. For a slab the seekpath library is not used:
+  it standardises the 3D box and can turn the vacuum axis into a or b (an
+  oblique slab becomes mP with b along the normal), so its coordinates would
+  not be in CRYSTAL's slab cell; the static path is. If no segment of a path
+  lies in the plane (the literature path of a C-centred rectangular slab),
+  the in-plane SeeK-path path is written instead. The `opt2d12` SeeK-path
+  phonon band path of a slab is cut the same way. Polymers (1D) are not
+  changed. Untested on CRYSTAL.
 
 ## [1.1.3] - 2026-10-01
 

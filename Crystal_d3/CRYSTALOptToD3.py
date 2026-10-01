@@ -43,7 +43,7 @@ try:
     from Crystal_d3.d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
                            get_seekpath_full_kpath, get_literature_kpath_vectors, unicode_to_ascii_kpoint,
-                           validate_kpoint_labels_for_crystal23)
+                           validate_kpoint_labels_for_crystal23, in_plane_path, in_plane_labels)
 except ImportError:
     # Fall back to relative import (for script usage)
     from d3_interactive import (configure_d3_calculation, get_band_info_from_output,
@@ -53,7 +53,7 @@ except ImportError:
     from d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
                            get_seekpath_full_kpath, get_literature_kpath_vectors, unicode_to_ascii_kpoint,
-                           validate_kpoint_labels_for_crystal23)
+                           validate_kpoint_labels_for_crystal23, in_plane_path, in_plane_labels)
 from d3_config import (save_d3_config, load_d3_config, validate_d3_config,
                       print_d3_config_summary, save_d3_options_prompt,
                       list_available_d3_configs, select_d3_config_file)
@@ -399,13 +399,57 @@ class D3Generator:
         
         return None
     
+    def _in_plane_band_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """The BAND settings of a slab, cut to the plane of the slab.
+
+        A slab is periodic in a and b; BAND takes I3 = J3 = 0 in 2D (manual
+        p.310, note 3). The path settings were made for the corresponding 3D
+        space group, so the segments (or label edges) that leave the kz = 0
+        plane are dropped. The title labels are cut the same way, or left out
+        when they do not name the segments one to one.
+        """
+        config = dict(config)
+        space_group = self.structure_info.get('space_group', 1)
+        lattice_type = self.structure_info.get('lattice_type', 'P')
+        method = config.get("path_method")
+        if method == "labels":
+            path = config.get("path")
+            if not path or path == "auto":
+                path = get_band_path_from_symmetry(space_group, lattice_type)
+            config["path"] = in_plane_labels(path, space_group, lattice_type)
+        elif method != "manual" and config.get("segments"):
+            labels = config.get("path_labels")
+            if labels is None and config.get("seekpath_full"):
+                labels = get_seekpath_labels(space_group, lattice_type, str(self.input_file))
+            segments, labels = in_plane_path(config["segments"], labels)
+            if not segments:
+                # Nothing of this path lies in the plane: take the in-plane
+                # SeeK-path path of the corresponding space group.
+                frac, _ = get_seekpath_full_kpath(space_group, lattice_type, str(self.input_file))
+                frac, _ = in_plane_path(frac)
+                labels = get_seekpath_labels(space_group, lattice_type, str(self.input_file))
+                segments, config["shrink"] = scale_kpoint_segments(frac, config.get("shrink", 16))
+                ui.warn("  No segment of this k-path lies in the slab plane; "
+                        "using the in-plane SeeK-path path instead")
+            config["segments"] = segments
+            config["in_plane_labels"] = labels
+        return config
+
     def _write_band_d3(self, config: Dict[str, Any]) -> str:
         """Write BAND calculation D3 file."""
         lines = ["BAND"]
-        
+
+        in_plane = self.structure_info.get('dimensionality', 3) == 2
+        if in_plane:
+            config = self._in_plane_band_config(config)
+
         # Determine the path info for the title
         path_info = ""
-        if config.get("path_method") == "labels":
+        if in_plane and "in_plane_labels" in config:
+            labels = config["in_plane_labels"]
+            path_info = (" - " + "-".join(l if l == "|" else unicode_to_ascii_kpoint(l) for l in labels)
+                         if labels else " - in-plane path")
+        elif config.get("path_method") == "labels":
             # Get the path labels
             if "path" in config and config["path"] != "auto":
                 path = config["path"]
