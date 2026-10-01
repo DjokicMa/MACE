@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   groups (P321, P-3m1, P6_3/mmc, P6/mmm, ...) now get the hP2 path, one
   segment shorter. 143-145, 147, 149, 151, 153, 157, 159, 162 and 163 keep
   hP1.
+- **The static face-centred cubic SeeK-path paths are SeeK-path's.** Without
+  the seekpath library, the cF1 entry held Setyawan-Curtarolo's 9-segment
+  path (Gamma-X-W-K-Gamma-L-U-W|L-K|U-X) and the cF2 entry a 9-segment path
+  with a primed K' in a centrosymmetric group, both titled "SeeKPath". They
+  now hold SeeK-path's cF1 (Gamma-X-U|K-Gamma-L-W-X-W_2, 7 segments) and cF2
+  (Gamma-X-U|K-Gamma-L-W-X, 6 segments), and the cF1_noinv title gets the
+  "|" between U and K that its segments already had.
 
 ## [1.1.3] - 2026-10-01
 
