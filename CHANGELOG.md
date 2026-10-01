@@ -185,6 +185,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on. It now prints "Please respond with 'yes' or 'no' (or 'y' or 'n')." and
   asks again, as the D12 tools do. Every recognised answer, and end of input,
   behave as before.
+- **An `opt2d12` FREQ deck repeats its FREQ parent's FREQCALC settings.** Only
+  NUMDERIV was read from the parent's FREQCALC block, so the child of a parent
+  that asked for IR intensities (`INTENS / INTCPHF / ENDCPHF`), Raman
+  intensities or IR/Raman spectra was written with `NOINTENS`. The whole block
+  is read now, and a FREQ child written without questions (`--non-interactive`,
+  or a `--config-file` without FREQ settings of its own) repeats it; RESTART
+  is not repeated, as it restarts the parent's own run from the FREQINFO.DAT
+  that run wrote (manual sec. 8.2, p. 219). A record the writer never writes
+  (e.g. NOUSESYMM) is reported in the parse as `freq_unparsed`. The
+  interactive questions still default only NUMDERIV to the parent's.
+- **A Hartree-Fock parent deck reads back as Hartree-Fock.** `CrystalInputParser`
+  gave no functional for a deck with no Hamiltonian keyword (CRYSTAL's default
+  RHF, manual p. 123) or with `HF3C` / `HFSOL3C` (manual sec. 5.3.1, pp. 158,
+  162), so such a deck was written back with a DFT block. It now reads them as
+  the functionals `RHF`, `HF3C` and `HFSOL3C` (method HF), as the deck writer
+  takes them, and reads SMEAR under the writer's `smearing` key as well. For
+  `opt2d12`: an RHF parent's `.out` already names RHF, and SMEAR still comes
+  from the `.out`, so those children are unchanged; an HF-3c or HFsol-3c
+  parent's child now gets that functional, where the `.out` could give RHF and
+  drop the correction (untested: no HF-3c run to hand).
+- **A deck MACE wrote reads back as the same deck.** `CrystalInputParser`,
+  which reads the parent deck for `opt2d12`, kept coordinates only as floats
+  (`1.250000000000E-01` came back as `0.125`) and stripped the spacing of an
+  EXTERNAL basis' records. It now also keeps the title, each atom record's
+  coordinates and last word, and the EXTERNAL basis records as written.
+  Parsing a deck and writing it back with `opt2d12`'s writer now gives the
+  same deck byte for byte for all 811 decks `cif2d12` writes in the new
+  round-trip test (CRYSTAL, SLAB, POLYMER and MOLECULE; internal and EXTERNAL
+  basis; SP, OPT and FREQ; 80 before), for `opt2d12`'s own children of the
+  real runs in `tests/data`, and for 324 of the 401 real decks of the test
+  corpus apart from their title, which is `./<name>` (an older MACE took it
+  from the path). The other 77 hold records the writer never writes, or in
+  another order: they were edited after MACE wrote them (SUPERCEL, a RESTART
+  that recovery adds to OPTGEOM, GUESSP below MAXCYCLE, RAMSPEC ahead of
+  IRSPEC) or written by hand. The new keys never reach `opt2d12`'s settings,
+  so its decks are unchanged.
 
 ### Removed
 
