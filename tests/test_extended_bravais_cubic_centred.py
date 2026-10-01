@@ -36,3 +36,28 @@ def test_f23_static_path_is_cf1_noinv():
 def test_cf_variant_matches_seekpath(sg, seekpath_path):
     result = seekpath_path(sg, (5.1, 5.1, 5.1, 90, 90, 90))
     assert get_extended_bravais(sg, "F") == result["bravais_lattice_extended"]
+
+
+# SeeK-path has a single body-centred cubic variant, cI1. The static lookup
+# called 199, 204, 206, 211, 214, 217 and 220 "cI2", a lattice HPKOT does not
+# define, backed by table entries that copied cI1's.
+CI = [197, 199, 204, 206, 211, 214, 217, 220, 229, 230]
+
+
+@pytest.mark.parametrize("sg", CI)
+def test_body_centred_cubic_is_ci1(sg):
+    assert get_extended_bravais(sg, "I") == "cI1"
+    segments, info = get_seekpath_full_kpath(sg, "I")
+    assert info["extended_bravais"] == "cI1"
+    assert info["lookup_key"] in ("cI1", "cI1_noinv")
+    assert segments == seekpath_data[info["lookup_key"]]["segments"]
+
+
+def test_no_invented_ci2_entry():
+    assert not [key for key in seekpath_data if key.startswith("cI2")]
+
+
+@pytest.mark.parametrize("sg", CI)
+def test_ci_variant_matches_seekpath(sg, seekpath_path):
+    result = seekpath_path(sg, (5.1, 5.1, 5.1, 90, 90, 90))
+    assert get_extended_bravais(sg, "I") == result["bravais_lattice_extended"]

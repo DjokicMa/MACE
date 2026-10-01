@@ -354,18 +354,10 @@ def determine_cubic_i_variant(sg: int) -> str:
         sg: Space group number
         
     Returns:
-        "cI1" or "cI2" based on space group
+        "cI1" (every body-centred cubic group)
     """
-    # cI1: Standard BCC
-    # cI2: Alternative BCC groups
-    
-    # Space groups with cI2
-    cI2_groups = [199, 204, 206, 211, 214, 217, 220]
-    
-    if sg in cI2_groups:
-        return "cI2"
-    else:
-        return "cI1"
+    # SeeK-path (HPKOT) has a single body-centred cubic variant
+    return "cI1"
 
 
 def determine_monoclinic_variant(sg: int, a: float, b: float, c: float,
@@ -1254,7 +1246,6 @@ def get_extended_bravais(sg: int, lat: str,
             # Distinguish cF1 vs cF2 based on space group
             return determine_cubic_f_variant(sg)
         elif lat == "I":
-            # Distinguish cI1 vs cI2 based on space group
             return determine_cubic_i_variant(sg)
         else:
             return simple_cubic
@@ -1907,38 +1898,6 @@ seekpath_data = {
     },
     "cI1_noinv": {
         # Cubic body-centered without inversion (I-43m)
-        "segments": [
-            [0.0, 0.0, 0.0, 0.5, -0.5, 0.5],     # Γ → H
-            [0.5, -0.5, 0.5, 0.0, 0.0, 0.5],     # H → N
-            [0.0, 0.0, 0.5, 0.0, 0.0, 0.0],      # N → Γ
-            [0.0, 0.0, 0.0, 0.25, 0.25, 0.25],   # Γ → P
-            [0.25, 0.25, 0.25, 0.5, -0.5, 0.5],  # P → H
-            [0.25, 0.25, 0.25, 0.0, 0.0, 0.5],   # P → N
-            [0.0, 0.0, 0.0, -0.5, 0.5, -0.5],    # Γ → H'
-            [-0.5, 0.5, -0.5, 0.0, 0.0, -0.5],   # H' → N'
-            [0.0, 0.0, -0.5, 0.0, 0.0, 0.0],     # N' → Γ
-            [0.0, 0.0, 0.0, -0.25, -0.25, -0.25], # Γ → P'
-            [-0.25, -0.25, -0.25, -0.5, 0.5, -0.5], # P' → H'
-            [-0.25, -0.25, -0.25, 0.0, 0.0, -0.5] # P' → N'
-        ],
-        "labels": ["GAMMA", "H", "N", "GAMMA", "P", "H", "|", "P", "N", "|", "GAMMA", "H'", "N'", "GAMMA", "P'", "H'", "|", "P'", "N'"]
-    },
-    # cI2 and cI2_noinv use the same paths as cI1/cI1_noinv
-    # Space groups 199, 204, 206, 211, 214, 217, 220 are classified as cI2 but use identical BCC paths
-    "cI2": {
-        # Alias for cI1 - same BCC k-path for space groups in cI2_groups
-        "segments": [
-            [0.0, 0.0, 0.0, 0.5, -0.5, 0.5],     # Γ → H
-            [0.5, -0.5, 0.5, 0.0, 0.0, 0.5],     # H → N
-            [0.0, 0.0, 0.5, 0.0, 0.0, 0.0],      # N → Γ
-            [0.0, 0.0, 0.0, 0.25, 0.25, 0.25],   # Γ → P
-            [0.25, 0.25, 0.25, 0.5, -0.5, 0.5],  # P → H
-            [0.25, 0.25, 0.25, 0.0, 0.0, 0.5],   # P → N
-        ],
-        "labels": ["GAMMA", "H", "N", "GAMMA", "P", "H", "|", "P", "N"]
-    },
-    "cI2_noinv": {
-        # Alias for cI1_noinv - same BCC k-path with primed points for non-centrosymmetric groups
         "segments": [
             [0.0, 0.0, 0.0, 0.5, -0.5, 0.5],     # Γ → H
             [0.5, -0.5, 0.5, 0.0, 0.0, 0.5],     # H → N

@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SeeK-path uses cF1 below 207 (196, 202, 203) and cF2 from 207 (209, 210,
   216, 219, 225-228), so Fm-3m and Fd-3m decks lose the X-W_2 segment and
   F23 decks gain it.
+- **Body-centred cubic groups are all cI1.** The static lookup called 199,
+  204, 206, 211, 214, 217 and 220 "cI2", a lattice SeeK-path (HPKOT) does not
+  have, backed by table entries copied from cI1's. Those entries are removed
+  and every body-centred cubic group is cI1. The decks are unchanged (the
+  paths were identical).
 
 ## [1.1.3] - 2026-10-01
 

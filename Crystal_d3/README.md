@@ -149,13 +149,13 @@ The system uses a hierarchical approach to obtain valid SHRINK values:
 All SHRINK values are rounded up to even numbers for cleaner k-paths.
 
 **Recent Enhancements**:
-- Added all major SeeK-path extended Bravais lattice entries (aP2, aP3, mP1, oF1-3, tI1-2, hR1-2, cF1-2, cI1-2, etc.)
+- Added all major SeeK-path extended Bravais lattice entries (aP2, aP3, mP1, oF1-3, tI1-2, hR1-2, cF1-2, cI1, etc.)
 - Implemented cell parameter analysis functions to distinguish between variants:
   - Triclinic: aP2 vs aP3 based on angle relationships
   - Orthorhombic F: oF1/oF2/oF3 based on shortest axis
   - Tetragonal I: tI1 vs tI2 based on c/a ratio
   - Hexagonal R: hR1 vs hR2 based on c/a ratio
-  - Cubic: F and I variants based on space group
+  - Cubic: cF1 vs cF2 by space group (below 207 / from 207), as SeeK-path; one cI
 - Automatic lattice parameter extraction from CRYSTAL output files
 - Enhanced `get_extended_bravais()` function that uses cell parameters when available
 
