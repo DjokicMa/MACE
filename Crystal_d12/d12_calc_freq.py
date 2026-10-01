@@ -56,6 +56,17 @@ except Exception:  # pragma: no cover - defensive fallback
             except ValueError:
                 print("Please enter a number.")
 
+
+def _read_choice(prompt, choices, default):
+    """Read one of the numbered menu answers in ``choices``; ask again on
+    anything else. A blank answer gives ``default``."""
+    while True:
+        answer = _nav_read(prompt, valid_set={"_choice_"}).strip() or default
+        if answer in choices:
+            return answer
+        print(f"Please enter one of: {', '.join(choices)}.")
+
+
 # Add Crystal_d3 to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "Crystal_d3"))
 try:
@@ -284,7 +295,7 @@ def get_advanced_frequency_settings(parent_numderiv=None):
                 print("   - Memory: ~2x base requirement")
                 print("\nNote: CPHF (3) is the default due to its broad applicability")
                 print("      and highest accuracy for all material types")
-                ir_method_choice = _nav_read("\nSelect method (1-3) [3]: ", valid_set={"_choice_"}).strip() or "3"
+                ir_method_choice = _read_choice("\nSelect method (1-3) [3]: ", ("1", "2", "3"), "3")
                 ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
                 freq_settings["ir_method"] = ir_methods[ir_method_choice]
         elif template_choice in ["2", "3", "4"]:
@@ -321,7 +332,7 @@ def get_advanced_frequency_settings(parent_numderiv=None):
                     print("   - Memory: ~2x base requirement")
                     print("\nNote: CPHF (3) is the default due to its broad applicability")
                     print("      and highest accuracy for all material types")
-                    ir_method_choice = _nav_read("\nSelect method (1-3) [3]: ", valid_set={"_choice_"}).strip() or "3"
+                    ir_method_choice = _read_choice("\nSelect method (1-3) [3]: ", ("1", "2", "3"), "3")
                     ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
                     freq_settings["ir_method"] = ir_methods[ir_method_choice]
                 
@@ -1025,7 +1036,7 @@ def get_advanced_frequency_settings(parent_numderiv=None):
                 
                 print("\nNote: CPHF (3) is the default due to its broad applicability")
                 print("      and highest accuracy for all material types")
-                ir_method_choice = _nav_read("\nSelect method (1-3) [3]: ", valid_set={"_choice_"}).strip() or "3"
+                ir_method_choice = _read_choice("\nSelect method (1-3) [3]: ", ("1", "2", "3"), "3")
                 ir_methods = {"1": "BERRY", "2": "WANNIER", "3": "CPHF"}
                 freq_settings["ir_method"] = ir_methods[ir_method_choice]
                 
