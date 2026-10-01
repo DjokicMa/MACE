@@ -696,3 +696,42 @@ def test_the_citation_reminder_survives_where_developers_will_see_it():
     authorship = (REPO_ROOT / "AUTHORSHIP.md").read_text()
     assert "CITATION: TODO" in authorship
     assert "William Comaskey" in authorship
+
+
+# --------------------------------------------------------------------------
+# A --config-file that cannot be loaded is a failure, not a quiet exit 0
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("content", [None, "{not json", '{"type": "other"}'])
+def test_an_unloadable_config_file_exits_nonzero(tmp_path, content):
+    """Missing, malformed and wrong-type config files all exited 0 with no
+    deck, which the workflow executor (it gates on the exit code) reads as
+    success."""
+    staged = _distilled(tmp_path, stem="mat_sp")
+    config = tmp_path / "matdump.json"
+    if content is not None:
+        config.write_text(content)
+    result = _run_opt2d3("--input", str(staged), "--calc-type", "MATDUMP",
+                         "--config-file", str(config))
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0, combined
+    assert "Failed to load configuration" in combined
+    assert str(config.name) in combined
+    assert list(tmp_path.glob("*.d3")) == []
+
+
+def test_an_unloadable_config_file_exits_nonzero_in_batch_mode(tmp_path):
+    batch = tmp_path / "batch"
+    batch.mkdir()
+    _distilled(batch, stem="one_sp")
+    _distilled(batch, stem="two_sp")
+    result = subprocess.run(
+        [sys.executable, str(MACE_CLI), "--no-banner", "opt2d3", "--batch",
+         "--calc-type", "MATDUMP", "--shared-settings",
+         "--config-file", str(tmp_path / "missing.json")],
+        capture_output=True, text=True, cwd=str(batch))
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0, combined
+    assert "Failed to load configuration" in combined
+    assert list(batch.glob("*.d3")) == []

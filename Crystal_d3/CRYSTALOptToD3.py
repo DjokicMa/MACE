@@ -1861,8 +1861,10 @@ def main():
                 if "calculation_type" in shared_config:
                     calc_type = shared_config["calculation_type"]
             else:
+                # load_d3_config has printed why; exit non-zero so a caller
+                # gating on the exit code does not read this as success.
                 ui.err(f"Failed to load configuration from {args.config_file}")
-                return
+                sys.exit(1)
         elif args.shared_settings:
             print()
             ui.rule("Configuring shared settings for all files")
@@ -2045,7 +2047,7 @@ def main():
                 config = load_d3_config(args.config_file)
                 if not config:
                     ui.err(f"Failed to load configuration from {args.config_file}")
-                    return
+                    sys.exit(1)
                 if not args.calc_type and config.get('calculation_type'):
                     args.calc_type = config['calculation_type']
 

@@ -47,6 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`mace opt2d3 --config-file` exits non-zero when the file cannot be
+  loaded.** A missing, malformed or wrong-type config file printed the reason
+  and exited 0 with no deck, single-file and batch alike, so a caller that
+  gates on the exit code (the workflow executor) saw a success.
 - **An `opt2d12` phonon deck with a SeeK-path band path is written.** The
   SeeK-path helpers read a `.out` file, but `opt2d12` passed them the parent's
   output text, so every such deck stopped with `OSError: File name too long`.
