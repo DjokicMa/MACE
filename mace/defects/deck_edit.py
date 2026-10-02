@@ -16,6 +16,8 @@ Where the records go, and why (CRYSTAL23 manual pages):
   supercell records, so their labels and coordinates refer to the supercell.
   Under KEEPSYMM these act on every symmetry-equivalent atom (pp.41-44), so a
   host with KEEPSYMM in block 1 is refused.
+* ``GHOSTS`` (basis-set input, p.82) right after the BASISSET name line, or
+  after the ``99 0`` that ends an explicit basis (measured, FACTS.md).
 * ``DOPING`` (p.103) and ``SPINLOCK`` (p.128) in the SCF block, immediately
   before a trailing ``PPAN`` that directly precedes the final END, otherwise
   before the final END. This reproduces the decks measured on HPCC byte for
@@ -42,6 +44,26 @@ from mace.defects import DefectError, NeedsPristineOutput
 #: default (DEFAULT_SPINLOCK_CYCLES = 50) is deliberately not used here: the
 #: measured defect runs all used 30.
 DEFAULT_SPINLOCK_CYCLES = 30
+
+#: Shell capacities by CRYSTAL shell type LAT (0 s, 1 sp, 2 p, 3 d, 4 f).
+SHELL_CAPACITY = {0: 2, 1: 8, 2: 6, 3: 10, 4: 14}
+
+#: Pauling electronegativities, used only to pick the host's anion element for
+#: the odd-electron ghost recipe (the far atom whose guess loses the charge).
+PAULING = {
+    "H": 2.20, "Li": 0.98, "Be": 1.57, "B": 2.04, "C": 2.55, "N": 3.04, "O": 3.44,
+    "F": 3.98, "Na": 0.93, "Mg": 1.31, "Al": 1.61, "Si": 1.90, "P": 2.19, "S": 2.58,
+    "Cl": 3.16, "K": 0.82, "Ca": 1.00, "Sc": 1.36, "Ti": 1.54, "V": 1.63, "Cr": 1.66,
+    "Mn": 1.55, "Fe": 1.83, "Co": 1.88, "Ni": 1.91, "Cu": 1.90, "Zn": 1.65, "Ga": 1.81,
+    "Ge": 2.01, "As": 2.18, "Se": 2.55, "Br": 2.96, "Kr": 3.00, "Rb": 0.82, "Sr": 0.95,
+    "Y": 1.22, "Zr": 1.33, "Nb": 1.60, "Mo": 2.16, "Tc": 1.90, "Ru": 2.20, "Rh": 2.28,
+    "Pd": 2.20, "Ag": 1.93, "Cd": 1.69, "In": 1.78, "Sn": 1.96, "Sb": 2.05, "Te": 2.10,
+    "I": 2.66, "Xe": 2.60, "Cs": 0.79, "Ba": 0.89, "La": 1.10, "Ce": 1.12, "Pr": 1.13,
+    "Nd": 1.14, "Sm": 1.17, "Eu": 1.20, "Gd": 1.20, "Dy": 1.22, "Ho": 1.23, "Er": 1.24,
+    "Tm": 1.25, "Yb": 1.10, "Lu": 1.27, "Hf": 1.30, "Ta": 1.50, "W": 2.36, "Re": 1.90,
+    "Os": 2.20, "Ir": 2.20, "Pt": 2.28, "Au": 2.54, "Hg": 2.00, "Tl": 1.62, "Pb": 2.33,
+    "Bi": 2.02,
+}
 
 #: Records that end block 1 (manual: "terminated by END/ENDGEOM or STOP").
 _BLOCK1_TERMINATORS = {"END", "ENDG", "ENDGEOM", "BASISSET", "OPTGEOM"}
@@ -516,6 +538,47 @@ def defect_records(kind: str, *, label: Optional[int] = None, z_conv: Optional[i
     raise DefectError(f"no block-1 records for a {kind}")
 
 
+def ghost_records(label: int) -> List[str]:
+    """GHOSTS (basis-set input, p.82)."""
+    return ["GHOSTS", "1", str(label)]
+
+
+def ghost_chemod_records(ghost_label: int, far_label: int, charges: Sequence[float]) -> List[str]:
+    """The odd-electron ghost recipe measured on HPCC (FACTS.md, mgo_g1x)."""
+    return (["GHOSTS", "1", str(ghost_label), "CHEMOD", "1",
+             f"{far_label} " + " ".join(format_charge(c) for c in charges), "CHARGED"])
+
+
+def apply_shell_charge(shells: Sequence[Tuple[int, float]], q: float) -> List[float]:
+    """Shell charges of an atom after removing q electrons (q < 0 adds -q).
+
+    The change goes to the last occupied shell. When electrons are added and
+    that shell is full, they go to the first shell with room. Refused when the
+    shell cannot hold the change.
+    """
+    charges = [c for _, c in shells]
+    occupied = [i for i, c in enumerate(charges) if c > 0]
+    if not occupied:
+        raise DefectError("the far atom's basis has no occupied shell to charge")
+    last = occupied[-1]
+    lat = shells[last][0]
+    cap = SHELL_CAPACITY.get(lat, 0)
+    if q > 0:
+        if charges[last] < q - 1e-9:
+            raise DefectError(f"cannot remove {q} electrons from a shell holding {charges[last]}")
+        charges[last] -= q
+        return charges
+    add = -q
+    if charges[last] + add <= cap + 1e-9:
+        charges[last] += add
+        return charges
+    for i, (lat_i, c) in enumerate(shells):
+        if c + add <= SHELL_CAPACITY.get(lat_i, 0) + 1e-9 and c < SHELL_CAPACITY.get(lat_i, 0):
+            charges[i] += add
+            return charges
+    raise DefectError(f"no shell of the far atom has room for {add} more electrons")
+
+
 # ---------------------------------------------------------------------------
 # Electron count and spin
 # ---------------------------------------------------------------------------
@@ -556,6 +619,13 @@ def supercell_electrons(host: HostInfo, multiplicity: int, pristine_n: Optional[
         total = sum(z % 100 for z, *_ in host.atoms) * multiplicity
         return ElectronCount(None, total % 2, "sum of Z over a P1 host")
     return ElectronCount(None, None, "needs the pristine output")
+
+
+def has_ecp(host: HostInfo, z: int) -> bool:
+    """Whether element z carries an effective core potential in this host's basis."""
+    if host.basis_kind == "explicit":
+        return any(conv % 100 == z and conv > 200 for conv in host.explicit_basis)
+    return z > 36
 
 
 def default_nspin(parity: int) -> int:
@@ -707,20 +777,22 @@ class SetOptions:
     spinlock_cycles: int = DEFAULT_SPINLOCK_CYCLES
     host_spin: str = "refuse"
     shrink: Optional[List[int]] = None
+    force: bool = False
 
 
 @dataclass
 class DefectSite:
-    kind: str                 # vacancy, substitution, interstitial
+    kind: str                 # vacancy, ghost, substitution, interstitial
     element: str              # removed / replaced / inserted element
     new_element: Optional[str] = None
     label: Optional[int] = None
     cart: Optional[Tuple[float, float, float]] = None
+    far_label: Optional[int] = None   # odd ghost recipe, from the pristine output
 
     @property
     def delta_z(self) -> int:
         z_old = element_number(self.element)
-        if self.kind == "vacancy":
+        if self.kind in ("vacancy", "ghost"):
             return -z_old
         if self.kind == "substitution":
             return element_number(self.new_element) - z_old
@@ -729,6 +801,8 @@ class DefectSite:
     def describe(self) -> str:
         if self.kind == "vacancy":
             return f"V_{self.element}"
+        if self.kind == "ghost":
+            return f"V_{self.element} (ghost)"
         if self.kind == "substitution":
             return f"{self.new_element}_{self.element}"
         return f"{self.element}_i"
@@ -763,11 +837,13 @@ def check_element_coverage(host: HostInfo, z: int) -> None:
 
 
 def build_supercell_set(host: HostInfo, site: DefectSite, keyword: str, matrix, opts: SetOptions,
-                        electrons: ElectronCount, name: str, title_note: str = "") -> Tuple[List[Deck], List[str], List[str]]:
+                        electrons: ElectronCount, name: str, far_shells: Optional[List[Tuple[int, float]]] = None,
+                        title_note: str = "") -> Tuple[List[Deck], List[str], List[str]]:
     """Pristine + defect decks for one supercell.
 
     Returns (decks, messages, added_records). ``electrons`` is the pristine
-    supercell's count (exact or parity).
+    supercell's count (exact or parity). ``far_shells`` is the CH column of
+    the far atom for the odd ghost recipe (explicit basis only).
     """
     if electrons.parity is None and opts.charges:
         raise NeedsPristineOutput("the electron parity of the supercell is unknown: the supercell "
@@ -795,9 +871,18 @@ def build_supercell_set(host: HostInfo, site: DefectSite, keyword: str, matrix, 
                                 basis, basis_tail, block3_p], host.trailing_newline),
                   n_electrons=electrons.exact, odd=bool(electrons.parity))]
 
+    z_old = element_number(site.element)
     if site.kind in ("substitution", "interstitial"):
         z_new = element_number(site.new_element if site.kind == "substitution" else site.element)
         check_element_coverage(host, z_new)
+    if site.kind == "ghost":
+        if has_ecp(host, z_old) and not opts.force:
+            raise DefectError(f"GHOSTS on {site.element}: its basis carries an effective core "
+                              "potential and the manual says 'Do not use with ECP' (p.82); "
+                              "pass --force to build it anyway")
+        if host.method == "3c" or host.dispersion:
+            msgs.append("WARNING: GHOSTS with -D3, gCP or a 3c method is untested")
+
     rec1: List[str] = []
     if site.kind == "vacancy":
         rec1 = defect_records("vacancy", label=site.label)
@@ -830,7 +915,33 @@ def build_supercell_set(host: HostInfo, site: DefectSite, keyword: str, matrix, 
         scf: List[str] = []
         recipe = site.kind
         spin_note = ""
-        if q != 0:
+        if site.kind == "ghost":
+            odd_doping = int(q) % 2 != 0
+            if locked and odd_doping:
+                if host.basis_kind == "internal":
+                    raise DefectError(
+                        f"ghost q={fmt_q(q)} ({n_q.describe()}, NSPIN {nspin}) with an internal basis: "
+                        "GHOSTS + DOPING + SPINLOCK aborts ('GHOST NALPHA-NBETA NOT COMPATIBLE WITH "
+                        "NUMBER OF ELECTRONS': parity is checked before doping; measured g1), "
+                        "without SPINLOCK the state collapses to spin 0 (measured g1b), and "
+                        "CHEMOD + CHARGED is ignored by internal libraries (FACTS.md). Use "
+                        "--vacancy, or an explicit-basis host")
+                if far_shells is None or site.far_label is None:
+                    raise NeedsPristineOutput(f"ghost q={fmt_q(q)} needs the far-atom recipe, which needs the "
+                                      "pristine output (coordinates of the far atom)")
+                charges = apply_shell_charge(far_shells, q)
+                tail = ghost_chemod_records(site.label, site.far_label, charges) + tail
+                recipe = "ghost_odd_chemod"
+                msgs.append(f"q={fmt_q(q)}: odd ghost recipe - CHEMOD on far atom {site.far_label} "
+                            f"({' '.join(format_charge(c) for c in charges)}) + CHARGED, no DOPING "
+                            "(measured: mgo_g1x)")
+            else:
+                tail = ghost_records(site.label) + tail
+                if q != 0:
+                    scf.append("DOPING")
+                    scf.append(doping_value(q))
+                recipe = "ghost_doping"
+        elif q != 0:
             scf += ["DOPING", doping_value(q)]
 
         if locked:
@@ -847,13 +958,13 @@ def build_supercell_set(host: HostInfo, site: DefectSite, keyword: str, matrix, 
         text = ed.join([[title(f"{site.describe()} q={fmt_q(q)}")], head_d, basis, tail, b3],
                        host.trailing_newline)
         decks.append(Deck(name=f"{name}_{q_tag(q)}", role="defect", q=q,
-                          doping=-q,
+                          doping=-q if recipe != "ghost_odd_chemod" else 0.0,
                           nspin=nspin if locked else None,
                           restricted=not (host.spin or locked), recipe=recipe, text=text,
                           n_electrons=n_q.exact, odd=bool(parity)))
         what = spin_note or ("closed shell" if not host.spin else "host SPIN kept, unlocked")
         msgs.append(f"q={fmt_q(q)}: {n_q.describe()} -> {what}"
-                    + (f"; DOPING {doping_value(q)}" if q != 0 else ""))
+                    + (f"; DOPING {doping_value(q)}" if q != 0 and recipe != "ghost_odd_chemod" else ""))
 
     return decks, msgs, added
 

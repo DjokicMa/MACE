@@ -26,8 +26,10 @@ def _build(host_text, site, keyword="SUPERCON", matrix=MGO_222, charges=(0,), pr
                                host_spin=opts.get("host_spin", "refuse"))
     mult = de.supercell_multiplicity(host, keyword, matrix)
     electrons = de.supercell_electrons(host, mult, pristine_n)
+    far_shells = opts.pop("far_shells", None)
     o = de.SetOptions(charges=list(charges), **opts)
-    decks, msgs, added = de.build_supercell_set(host, site, keyword, matrix, o, electrons, name)
+    decks, msgs, added = de.build_supercell_set(host, site, keyword, matrix, o, electrons, name,
+                                                far_shells=far_shells)
     return {d.name: d for d in decks}, msgs, added
 
 
@@ -280,6 +282,72 @@ def _explicit_host():
     text = strip_records(text, "CHARGED", 0)
     text = strip_records(text, "SPINLOCK", 1)
     return text.replace("DFT\nSPIN\nPBE0", "DFT\nPBE0")
+
+
+# --- 6-9: ghosts ----------------------------------------------------------------------
+
+def test_even_ghost_states_reproduce_the_measured_decks():
+    decks, _, _ = _build(mgo_host(), de.DefectSite("ghost", "O", label=1), charges=(0, 2))
+    assert same_but_title(decks["mgo_q0"].text, deck("mgo_g0"))
+    assert same_but_title(decks["mgo_qp2"].text, deck("mgo_g2"))
+
+
+def test_odd_ghost_with_an_internal_basis_is_refused_with_the_measured_reasons():
+    with pytest.raises(DefectError) as exc:
+        _build(mgo_host(), de.DefectSite("ghost", "O", label=1), charges=(1,))
+    msg = str(exc.value)
+    assert "GHOSTS + DOPING + SPINLOCK aborts" in msg and "g1)" in msg
+    assert "collapses to spin 0" in msg and "g1b" in msg
+    assert "CHEMOD + CHARGED is ignored by internal libraries" in msg
+    assert "--vacancy" in msg and "explicit-basis host" in msg
+
+
+def test_odd_ghost_with_an_explicit_basis_reproduces_g1x():
+    from mace.defects import structure as st
+    geom = st.parse_geometry((DATA / "mgo_pris_geometry.out").read_text())
+    far = st.far_atom(geom, 1, "O")
+    assert far == 22                                  # the O at the supercell's body centre
+    host, _ = de.classify_host(_explicit_host())
+    site = de.DefectSite("ghost", "O", label=1, far_label=far)
+    decks, msgs, _ = _build(_explicit_host(), site, charges=(1,), pristine_n=640,
+                            far_shells=host.explicit_basis[8])
+    assert same_but_title(decks["mgo_qp1"].text, deck("mgo_g1x"))
+    assert decks["mgo_qp1"].recipe == "ghost_odd_chemod"
+    assert any("far atom 22" in m and "no DOPING" in m for m in msgs)
+
+
+def test_odd_ghost_without_the_far_atom_waits_for_the_pristine_output():
+    with pytest.raises(NeedsPristineOutput):
+        _build(_explicit_host(), de.DefectSite("ghost", "O", label=1), charges=(1,))
+
+
+def test_shell_charge_rule():
+    o = [(0, 2.0), (0, 2.0), (0, 0.0), (0, 0.0), (2, 4.0), (2, 0.0), (2, 0.0), (3, 0.0)]
+    assert de.apply_shell_charge(o, 1) == [2, 2, 0, 0, 3, 0, 0, 0]
+    assert de.apply_shell_charge(o, -2) == [2, 2, 0, 0, 6, 0, 0, 0]
+    full = [(0, 2.0), (2, 6.0), (0, 0.0)]
+    assert de.apply_shell_charge(full, -1) == [2, 6, 1]      # first shell with room
+    with pytest.raises(DefectError):
+        de.apply_shell_charge([(0, 2.0), (2, 1.0)], 2)
+    assert de.format_charge(3.0) == "3.0" and de.format_charge(4.25) == "4.25"
+
+
+def test_ghost_on_an_ecp_atom_needs_force():
+    sro = mgo_host().replace("12 0.5 0.5 0.5", "38 0.5 0.5 0.5")
+    with pytest.raises(DefectError, match="Do not use with ECP"):
+        _build(sro, de.DefectSite("ghost", "Sr", label=33), charges=(0,))
+    decks, _, _ = _build(sro, de.DefectSite("ghost", "Sr", label=33), charges=(0,), force=True)
+    assert "GHOSTS\n1\n33\n" in decks["mgo_q0"].text
+    h, _ = de.classify_host(_explicit_host())
+    assert not de.has_ecp(h, 8)
+    h.explicit_basis[282] = []
+    assert de.has_ecp(h, 82)
+
+
+def test_ghost_with_a_3c_method_is_marked_untested():
+    c3 = mgo_host().replace("PBE0", "HSESOL3C").replace("POB-TZVP-REV2", "SOLDEF2MSVP")
+    _, msgs, _ = _build(c3, de.DefectSite("ghost", "O", label=1), charges=(0,))
+    assert any("untested" in m and "3c" in m for m in msgs)
 
 
 # --- 14: decks written by MACE's own writer --------------------------------------------
