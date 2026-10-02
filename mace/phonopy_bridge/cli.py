@@ -1,4 +1,4 @@
-"""`mace phonopy generate` - argument parsing and reporting."""
+"""`mace phonopy generate | collect` - argument parsing and reporting."""
 
 from __future__ import annotations
 
@@ -17,12 +17,22 @@ with its geometry in .ext, staged as fort.34 by the job script), plus
 phonopy_disp.yaml and mace_phonopy.json. Then:
 
     mace submit DIR --walltime HH:MM:SS     (never --track or --progress)
+    mace phonopy collect DIR
 
 The parent must be a finished 3D OPT (OPT END - CONVERGED) or SP run. The
 method, basis and tolerances of the parent are kept; only TOLDEE (raised to at
 least 10), GUESSP (dropped), buffers, GRADCAL and END are edited, and SHRINK
 with --scale-shrink. Every edit is printed.
 """
+
+COLLECT_EPILOG = """
+Checks every output first (present, normal termination, SCF converged, one
+force row per atom, printed geometry == its displaced cell) and stops on any
+problem; --check stops there. Then writes FORCE_SETS, phonopy_params.yaml,
+band.yaml, mesh.yaml, total_dos.dat and thermal_properties.yaml (--plot adds
+band_dos.pdf). Frequencies are in THz (x 33.35641 for cm-1).
+"""
+
 
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="mace phonopy",
@@ -46,6 +56,20 @@ def _parser() -> argparse.ArgumentParser:
     g.add_argument("--scale-shrink", action="store_true",
                    help="divide SHRINK by the supercell size (diagonal --dim only)")
 
+    c = sub.add_parser("collect", help="check outputs, then forces -> phonons",
+                       epilog=COLLECT_EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
+    c.add_argument("directory")
+    c.add_argument("--check", action="store_true", help="only check the outputs")
+    c.add_argument("--band", default="auto",
+                   help='"auto" (SeeK-path, needs seekpath) or phonopy BAND points, e.g. '
+                        '"0 0 0  1/2 0 1/2, 1/2 1/2 1/2  0 0 0"; "none" to skip')
+    c.add_argument("--band-labels", help="labels for --band points, space separated")
+    c.add_argument("--band-points", type=int, default=51)
+    c.add_argument("--mesh", default="100.0", help='length (default 100.0) or "a b c"')
+    c.add_argument("--tmin", type=float, default=0.0)
+    c.add_argument("--tmax", type=float, default=1000.0)
+    c.add_argument("--tstep", type=float, default=10.0)
+    c.add_argument("--plot", action="store_true", help="write band_dos.pdf")
     return p
 
 
@@ -171,6 +195,7 @@ def cmd_generate(a) -> int:
     print(f"Wrote {len(names)} deck(s) + .ext to {outdir}/")
     print("Next:")
     print(f"  mace submit {outdir} --walltime 24:00:00    (adjust; do NOT add --track)")
+    print(f"  mace phonopy collect {outdir}")
     return 0
 
 
@@ -187,6 +212,62 @@ def _kpoints(lines: List[str]) -> Optional[List[int]]:
     return None
 
 
+# ---------------------------------------------------------------------------
+# collect
+# ---------------------------------------------------------------------------
+
+def cmd_collect(a) -> int:
+    from . import collect as C
+
+    d = Path(a.directory)
+    if not (d / "mace_phonopy.json").is_file():
+        print(f"Error: {d} has no mace_phonopy.json (not made by mace phonopy generate)",
+              file=sys.stderr)
+        return 1
+    band = None if a.band.lower() == "none" else a.band
+    if band == "auto":
+        try:
+            import seekpath  # noqa: F401
+        except ImportError:
+            print("Error: --band auto needs seekpath (pip install seekpath); give the path "
+                  "with --band or skip it with --band none", file=sys.stderr)
+            return 1
+    try:
+        res = C.collect(d, check_only=a.check, band=band, band_labels=a.band_labels,
+                        band_points=a.band_points, mesh=a.mesh, tmin=a.tmin, tmax=a.tmax,
+                        tstep=a.tstep, plot=a.plot)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    bad = [c for c in res.checks if c.problems]
+    for c in res.checks:
+        state = "ok" if not c.problems else "PROBLEM"
+        print(f"  {c.name}.out: {state}")
+        for p in c.problems:
+            print(f"      - {p}")
+    if bad:
+        print(f"{len(bad)} of {len(res.checks)} output(s) not usable; nothing written.",
+              file=sys.stderr)
+        return 1
+    if a.check:
+        print(f"All {len(res.checks)} output(s) usable.")
+        return 0
+    for ln in res.drifts:
+        print(f"  {ln}")
+    print("Wrote: " + ", ".join(res.files))
+    if res.min_frequency is not None:
+        print(f"Lowest mesh frequency: {res.min_frequency:.4f} THz "
+              f"({res.min_frequency * C.CM1_PER_THZ:.1f} cm-1)")
+    if res.imaginary:
+        worst = min(res.imaginary, key=lambda t: t[1])
+        print(f"WARNING: {len(res.imaginary)} q-point(s) away from Gamma with a mode below "
+              f"{C.IMAGINARY_THRESHOLD} THz (lowest {worst[1]:.3f} THz at q={worst[0]}): "
+              "the structure is dynamically unstable or the supercell is too small. Thermal "
+              "properties skip imaginary modes.")
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     p = _parser()
     a = p.parse_args(argv)
@@ -195,7 +276,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
     if not _require_phonopy():
         return 2
-    return cmd_generate(a)
+    if a.action == "generate":
+        return cmd_generate(a)
+    return cmd_collect(a)
 
 
 if __name__ == "__main__":

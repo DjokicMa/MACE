@@ -23,7 +23,7 @@ def _run(*args, env=None, cwd=None):
 def test_phonopy_help_exits_0():
     p = _run("phonopy", "--help")
     assert p.returncode == 0, p.stderr
-    assert "mace phonopy generate" in p.stdout
+    assert "mace phonopy generate" in p.stdout and "mace phonopy collect" in p.stdout
     assert "--track" in p.stdout                      # the "never --track" warning
 
 

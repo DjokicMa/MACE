@@ -749,6 +749,7 @@ login node only for a handful of decks.
 """,
         'phonopy': """
 Usage: mace phonopy generate PARENT.out --dim "N N N" [options]
+       mace phonopy collect DIR [options]
 
 Finite-displacement phonons with phonopy (optional dependency: pip install 'phonopy<5').
 
@@ -763,12 +764,21 @@ generate  Read a finished 3D OPT (OPT END - CONVERGED) or SP parent and write on
             --pm auto|yes|no      plus/minus displacements
             --toldee N            raise TOLDEE (default max(10, parent))
             --scale-shrink        divide SHRINK by the supercell size
+collect   Check every output (normal termination, SCF converged, forces, geometry
+          == its displaced cell), then write FORCE_SETS, phonopy_params.yaml,
+          band.yaml, mesh.yaml, total_dos.dat, thermal_properties.yaml.
+            --check               stop after the checks
+            --band auto|"q ..."   SeeK-path path (default) or phonopy BAND points; none
+            --band-labels, --band-points N, --mesh 100.0|"a b c"
+            --tmin --tmax --tstep thermal properties range (K)
+            --plot                band_dos.pdf
 
 Workflow:
   mace phonopy generate mat_opt.out --dim "2 2 2"
   mace submit phonopy_mat_opt_222 --walltime 24:00:00     (never --track)
+  mace phonopy collect phonopy_mat_opt_222
 
-Run `mace phonopy generate --help` for details.
+Run `mace phonopy generate --help` or `mace phonopy collect --help` for details.
 """,
         'monitor': """
 Usage: mace monitor [options]
@@ -1325,10 +1335,10 @@ def main():
             completion_main()
         sys.exit(0)
     
-    # `mace phonopy generate ...` goes straight to its own parser, so that
+    # `mace phonopy generate|collect ...` goes straight to its own parser, so that
     # `mace phonopy generate --help` shows the subcommand's options rather than
     # being taken by the top-level parser below.
-    if len(sys.argv) >= 3 and sys.argv[1] == 'phonopy' and sys.argv[2] in ('generate',):
+    if len(sys.argv) >= 3 and sys.argv[1] == 'phonopy' and sys.argv[2] in ('generate', 'collect'):
         from mace.phonopy_bridge.cli import main as phonopy_main
         sys.exit(phonopy_main([a for a in sys.argv[2:] if a != '--no-banner']))
 
@@ -1346,7 +1356,7 @@ Commands:
   workflow    Interactive workflow planner - design and execute complex calculation sequences
   submit      Submit calculations to queue - handles both D12 and D3 files automatically
   preflight   Validate D12 decks by running CRYSTAL with TESTPDIM before you spend a job
-  phonopy     Phonons with phonopy - displaced-supercell decks
+  phonopy     Phonons with phonopy - displaced-supercell decks, then bands, DOS, thermal
   monitor     System monitoring - real-time dashboard or quick status (--status, --detailed, --summary)
   analyze     Extract properties from outputs - band gaps, energies, convergence data
   completion  Check calculation status - categorize completed/errored jobs, organize files
