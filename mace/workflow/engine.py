@@ -564,7 +564,12 @@ class WorkflowEngine:
             from mace.submission.job_script_age import (
                 predates_scratch_guard, workflow_template_warning)
             if predates_scratch_guard(template_content):
-                print(workflow_template_warning(template_script.name))
+                rebuilt = self._rebuild_pre_guard_template(template_script, template_content,
+                                                           workflow_id)
+                if rebuilt is not None:
+                    template_content = rebuilt
+                else:
+                    print(workflow_template_warning(template_script.name))
         else:
             # Bare manual directory: no workflow_scripts/ and no local template
             # copy. Emit a script with the same generator `mace submit` uses,
@@ -607,6 +612,64 @@ class WorkflowEngine:
             print(f"  Error creating script {script_path}: {e}")
             raise
     
+    def _rebuild_pre_guard_template(self, template_script: Path, old_content: str,
+                                    workflow_id: str) -> Optional[str]:
+        """Rebuild a workflow_scripts/ template copied before 1.1.3 from the
+        current generator and the plan's own script settings, or None.
+
+        A workflow executed by 1.1.1/1.1.2 keeps the template copies taken
+        then (no scratch guard, no RESTART/GUESSP staging), and every later
+        step is built from them. Execution builds each template as the
+        plan's source script with the plan's resources, node exclusion and
+        custom directives applied; doing the same here gives the step what
+        a fresh execution of the same plan gives it. Only a template the
+        plan names is rebuilt. The old copy is kept beside it as
+        <name>.pre-1.1.3 (hand edits are there to re-apply).
+        """
+        from types import SimpleNamespace
+        from mace.submission.job_script_age import predates_scratch_guard
+        try:
+            plan = self._load_workflow_plan(workflow_id)
+            script_name = script_config = None
+            for step in ((plan or {}).get('step_configurations') or {}).values():
+                for name, cfg in (((step or {}).get('slurm_config') or {}).get('scripts') or {}).items():
+                    if isinstance(cfg, dict) and cfg.get('step_specific_name') == template_script.name:
+                        script_name, script_config = name, dict(cfg)
+                        break
+                if script_config:
+                    break
+            if not script_config:
+                return None
+            source = Path(__file__).resolve().parent.parent / "submission" / \
+                Path(script_config.get('source_script') or script_name).name
+            if not source.is_file():
+                return None
+            script_config['workflow_id'] = (plan or {}).get('workflow_id') or workflow_id
+            from mace.workflow.executor import WorkflowExecutor
+            stub = SimpleNamespace(work_dir=Path(self.base_work_dir), isolation_mode='isolated')
+            content = WorkflowExecutor.apply_script_customizations(
+                stub, source.read_text(), script_config)
+            # Keep the workflow context the old copy points the job at.
+            for var in ("MACE_WORKFLOW_ID", "MACE_CONTEXT_DIR", "MACE_ISOLATION_MODE"):
+                m = re.search(rf"^echo 'export {var}=.*$", old_content, re.M)
+                if m:
+                    content = re.sub(rf"^echo 'export {var}=.*$", lambda _m: m.group(0),
+                                     content, count=1, flags=re.M)
+            if predates_scratch_guard(content):
+                return None
+            backup = template_script.with_name(template_script.name + ".pre-1.1.3")
+            if not backup.exists():
+                backup.write_text(old_content)
+            template_script.write_text(content)
+            print(f"  workflow_scripts/{template_script.name} was copied from an older MACE "
+                  f"(before 1.1.3: no scratch guard, no GUESSP restart staging).\n"
+                  f"    Rebuilt it from the current {source.name} with this plan's resources; "
+                  f"the old copy is kept as {backup.name}.")
+            return content
+        except Exception as e:
+            print(f"  Could not rebuild workflow_scripts/{template_script.name}: {e}")
+            return None
+
     def _generate_template_with_submit_generator(self, calc_dir: Path,
                                                  material_name: str,
                                                  base_type: str) -> Optional[str]:
