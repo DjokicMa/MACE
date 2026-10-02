@@ -21,6 +21,8 @@ import pytest
 from conftest import find_data
 
 DATA = Path(__file__).resolve().parent / "data" / "charged_runs"
+# The crashed run's own deck is kept as .deck: the committed-sample sweeps
+# take every tests/data/**/*.d12 for a periodic deck with a cell.
 CRASHES = ["odd_hsesol3c_0d_crash.out", "odd_hse06_0d_crash.out", "odd_hsesol3c_3d_crash.out"]
 
 
@@ -72,7 +74,7 @@ def test_status_sweep_does_not_resubmit_it(monkeypatch, tmp_path):
     import mace.queue.manager as qm
     from mace.queue.manager import EnhancedCrystalQueueManager
 
-    shutil.copy(DATA / "odd_hsesol3c_0d_crash.d12", tmp_path / "li_odd.d12")
+    shutil.copy(DATA / "odd_hsesol3c_0d_crash.deck", tmp_path / "li_odd.d12")
     deck = (tmp_path / "li_odd.d12").read_text()
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("SLURM_JOB_ID", raising=False)
@@ -108,7 +110,7 @@ def _sweep_with_squeue_completed(monkeypatch, tmp_path, out_file):
     import mace.queue.manager as qm
     from mace.queue.manager import EnhancedCrystalQueueManager
 
-    shutil.copy(DATA / "odd_hsesol3c_0d_crash.d12", tmp_path / "li_odd.d12")
+    shutil.copy(DATA / "odd_hsesol3c_0d_crash.deck", tmp_path / "li_odd.d12")
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("SLURM_JOB_ID", raising=False)
     mgr = EnhancedCrystalQueueManager(d12_dir=str(tmp_path), db_path=str(tmp_path / "m.db"),
