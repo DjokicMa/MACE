@@ -213,6 +213,17 @@ def test_guesspnoso_never_gets_the_jobs_own_2c_f9(tmp_path):
     assert staged == "MATRIX-testmat.f20" and scratch_input == deck
 
 
+def test_the_no_matrix_echo_is_worded_per_keyword(tmp_path):
+    """Only GUESSPSO was measured to stop CRYSTAL with nothing in fort.20; a
+    GUESSPNOSO job must not be told that about GUESSPSO."""
+    block = _staging_block(tmp_path)
+    _, out, _, _ = _stage_deck(tmp_path, block, TWOC_SO, [], "so_echo")
+    assert "CRYSTAL stops on GUESSPSO without fort.20 (measured)" in out
+    _, out, _, _ = _stage_deck(tmp_path, block, TWOC_NOSO, ["testmat.f9"], "noso_echo")
+    assert out.startswith("GUESSPNOSO: no matrix to stage as fort.20")
+    assert "GUESSPSO" not in out and "1c parent" in out and "not measured" in out
+
+
 def test_an_atomic_guess_stages_nothing(tmp_path):
     block = _staging_block(tmp_path)
     for i, records in enumerate((["GUESSPAT"], ["TWOCOMPON", "SOC", "GUESSPATNC", "1",

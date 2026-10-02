@@ -201,8 +201,10 @@ elif MACE_GUESS2C=$(grep -oiE "^[[:space:]]*GUESSP(NO)?SO[[:space:]]*$" "$scratc
   elif [ "$MACE_GUESS2C" = "GUESSPSO" ] && [ -s "$DIR/$JOB.f9" ]; then
     cp "$DIR/$JOB.f9" "$scratch/$JOB/fort.20"
     echo "GUESSPSO: staged this job own 2c $JOB.f9 as fort.20 (the manual does not name the file it reads)"
+  elif [ "$MACE_GUESS2C" = "GUESSPSO" ]; then
+    echo "GUESSPSO: no matrix to stage as fort.20; the record is left in the deck as written; CRYSTAL stops on GUESSPSO without fort.20 (measured)"
   else
-    echo "$MACE_GUESS2C: no matrix to stage as fort.20; the record is left in the deck as written; CRYSTAL stops on GUESSPSO without fort.20 (measured)"
+    echo "$MACE_GUESS2C: no matrix to stage as fort.20 (it needs the 1c parent matrix as $JOB.f20); the record is left in the deck as written; what CRYSTAL does then was not measured"
   fi
 fi
 cd $scratch/$JOB

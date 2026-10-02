@@ -85,6 +85,15 @@ def test_a_2c_restart_deck_without_its_matrix_fails_the_step(tmp_path, capsys):
     assert "CRYSTAL stops on GUESSPSO with nothing in fort.20 (measured)" in capsys.readouterr().out
 
 
+def test_a_guesspnoso_step_without_its_matrix_is_not_told_about_guesspso(tmp_path, capsys):
+    eng = _engine(tmp_path, {"calculation_type": "SP", "soc": True, "soc_guess": "guesspnoso"})
+    _fake_opt2d12(eng, {}, stage=False, deck_text=CHILD_DECK.replace("GUESSPSO", "GUESSPNOSO"))
+    assert eng.generate_numbered_calculation("c1", "SP2") is None
+    out = capsys.readouterr().out
+    assert "GUESSPNOSO: no " in out and "is not kept" in out
+    assert "GUESSPSO" not in out and "(measured)" not in out and "not measured" in out
+
+
 def test_without_soc_guess_no_matrix_is_copied(tmp_path):
     eng = _engine(tmp_path, {"calculation_type": "SP", "soc": True})
     seen = {}

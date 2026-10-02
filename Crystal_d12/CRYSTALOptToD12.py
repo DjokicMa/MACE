@@ -218,8 +218,16 @@ def print_soc_metal_summary(names):
 
 
 # A "soc_guess" restart with nothing staged: CRYSTAL stops on GUESSPSO with
-# nothing in fort.20 (measured on HPCC), so such a deck is never written.
-NO_MATRIX_STOP = "CRYSTAL stops on GUESSPSO with nothing in fort.20 (measured)"
+# nothing in fort.20 (measured on HPCC), and GUESSPNOSO would have no parent
+# matrix to start from, so such a deck is never written.
+try:
+    from mace.utils.calc_detection import missing_2c_matrix_note
+except Exception:  # standalone run without mace importable
+    def missing_2c_matrix_note(record: str) -> str:
+        if record.upper() == "GUESSPSO":
+            return "CRYSTAL stops on GUESSPSO with nothing in fort.20 (measured)"
+        return (f"{record.upper()} would have no 1c parent matrix in fort.20 to start from "
+                f"(what CRYSTAL then does was not measured)")
 
 
 def soc_restart_plan(options, output_file, input_file, new_filename):
@@ -258,7 +266,8 @@ def soc_restart_plan(options, output_file, input_file, new_filename):
     if not os.path.isfile(f9) or os.path.getsize(f9) == 0:
         return (f"{record} restarts from the parent's density matrix, and "
                 f"{os.path.basename(f9)} next to {os.path.basename(output_file)} is "
-                f"{'empty' if os.path.isfile(f9) else 'missing'}; {NO_MATRIX_STOP}"), \
+                f"{'empty' if os.path.isfile(f9) else 'missing'}; "
+                f"{missing_2c_matrix_note(record)}"), \
             None, None, None
     f20 = os.path.splitext(new_filename)[0] + ".f20"
     if (os.path.realpath(os.path.dirname(os.path.abspath(f20)))
@@ -2185,7 +2194,8 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             except OSError as exc:
                 os.remove(new_filename)
                 _fail(f"could not stage {os.path.basename(restart_f9)} as "
-                      f"{os.path.basename(restart_f20)} ({exc}); {NO_MATRIX_STOP}")
+                      f"{os.path.basename(restart_f20)} ({exc}); "
+                      f"{missing_2c_matrix_note(converted_options['soc_guess'])}")
                 return False, options
             ui.info(f"  {converted_options['soc_guess'].upper()}: staged "
                     f"{os.path.basename(restart_f9)} as {os.path.basename(restart_f20)} "

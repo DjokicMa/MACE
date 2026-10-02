@@ -252,6 +252,7 @@ def restart_file_problem(deck, text: Optional[str] = None) -> Optional[str]:
     record = _two_component_guess(text)
     if record is None:
         return None
+    from mace.utils.calc_detection import missing_2c_matrix_note
     f20, f9 = deck.with_suffix(".f20"), deck.with_suffix(".f9")
     if f20.is_file() and f20.stat().st_size > 0:
         return None
@@ -260,9 +261,9 @@ def restart_file_problem(deck, text: Optional[str] = None) -> Optional[str]:
     wanted = f"{f20.name} or a non-empty {f9.name}" if record == "GUESSPSO" else f20.name
     return (f"{record} (manual p. 173) restarts from a density matrix read from fort.20, "
             f"and there is no {wanted} next to the deck for the job script to stage; "
-            + ("CRYSTAL stops on GUESSPSO with nothing in fort.20 (measured)"
-               if record == "GUESSPSO" else
-               "the job script stages only a .f20 for GUESSPNOSO"))
+            + missing_2c_matrix_note(record)
+            + ("" if record == "GUESSPSO" else
+               "; the job script stages only a .f20 for GUESSPNOSO"))
 
 
 def uncheckable_reason(text: str) -> Optional[str]:

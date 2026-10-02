@@ -283,7 +283,17 @@ def is_spin_orbit_deck(content: str) -> bool:
 # GUESSPSO starts from the density matrix of a previous 2c-SCF, GUESSPNOSO
 # from that of a previous 1c-SCF (unrestricted, without symmetry). Both read
 # fort.20; CRYSTAL stops on GUESSPSO with nothing there (measured on HPCC).
+# What CRYSTAL does on GUESSPNOSO with nothing there was not measured.
 TWO_COMPONENT_GUESSES = ('GUESSPSO', 'GUESSPNOSO')
+
+
+def missing_2c_matrix_note(record: str) -> str:
+    """What happens to a GUESSPSO or GUESSPNOSO deck run with nothing in
+    fort.20, worded for that record: only GUESSPSO was measured."""
+    if record.upper() == 'GUESSPSO':
+        return "CRYSTAL stops on GUESSPSO with nothing in fort.20 (measured)"
+    return (f"{record.upper()} would have no 1c parent matrix in fort.20 to start from "
+            f"(what CRYSTAL then does was not measured)")
 
 
 def two_component_guess(content: str) -> Union[str, None]:

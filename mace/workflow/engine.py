@@ -3311,8 +3311,8 @@ fi'''
             shutil.move(generated_input_file, final_location)
             # A 2c restart deck (GUESSPSO/GUESSPNOSO) has its parent's matrix
             # staged next to it as <deck stem>.f20; it moves with the deck,
-            # renamed to the job's name. Without it CRYSTAL stops (measured),
-            # so the step fails rather than leave a deck that aborts.
+            # renamed to the job's name. Without it CRYSTAL stops on GUESSPSO
+            # (measured), so the step fails rather than leave such a deck.
             if not self._move_staged_2c_guess(generated_input_file, final_location):
                 return None
             
@@ -3398,7 +3398,7 @@ fi'''
         ``<final deck stem>.f20``. True when the deck asks for no 2c restart
         or the file was moved; False (deck removed, reason printed) when the
         deck asks for one and nothing was staged."""
-        from mace.utils.calc_detection import staged_2c_guess
+        from mace.utils.calc_detection import missing_2c_matrix_note, staged_2c_guess
         staged = staged_2c_guess(final_deck)
         if staged is None:
             return True
@@ -3407,7 +3407,7 @@ fi'''
         target = Path(final_deck).with_suffix('.f20')
         if not source.is_file() or source.stat().st_size == 0:
             print(f"  {record}: no {source.name} was staged with {Path(generated_deck).name}; "
-                  f"CRYSTAL stops on {record} with nothing in fort.20 (measured), so "
+                  f"{missing_2c_matrix_note(record)}, so "
                   f"{Path(final_deck).name} is not kept")
             Path(final_deck).unlink()
             return False

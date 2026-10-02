@@ -255,7 +255,10 @@ def test_guesspnoso_needs_the_parent_matrix(opt2d12_restart, capsys):
     status, deck, sp = opt2d12_restart(text=P1_SPIN_PARENT, f9=None, soc=True,
                                        soc_guess="guesspnoso")
     assert status == 1 and deck is None
-    assert "socpbte.f9 next to socpbte.out is missing" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "socpbte.f9 next to socpbte.out is missing" in err
+    # only GUESSPSO was measured to stop CRYSTAL with nothing in fort.20
+    assert "GUESSPSO" not in err and "not measured" in err
 
 
 def test_guesspnoso_from_a_2c_parent_is_refused(opt2d12_restart, capsys):

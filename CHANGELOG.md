@@ -273,8 +273,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GUESSPSO only, the job's own non-empty `$JOB.f9` (a 2c matrix from an
   earlier run of the same deck). Measured on HPCC (Bi2): a GUESSPSO deck
   restarts from the 2c matrix staged as fort.20, and CRYSTAL stops on
-  GUESSPSO with nothing in fort.20. The recovery's refresh of pre-RESTART job
-  scripts writes the new GUESSP line. Decks are unchanged.
+  GUESSPSO with nothing in fort.20. With nothing to stage, the log says so
+  per record: for GUESSPSO that CRYSTAL stops (measured), for GUESSPNOSO
+  that it needs the 1c parent's matrix as `$JOB.f20` and that what CRYSTAL
+  then does was not measured. opt2d12, the workflow engine and `mace
+  preflight` word their refusals the same way. The recovery's refresh of
+  pre-RESTART job scripts writes the new GUESSP line. Decks are unchanged.
 
 ## [1.1.3] - 2026-10-01
 

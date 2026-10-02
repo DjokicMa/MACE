@@ -48,6 +48,8 @@ def test_restart_file_problem(tmp_path, text, f20, f9, missing):
         assert missing in problem
         if "GUESSPSO" in text:
             assert "CRYSTAL stops on GUESSPSO with nothing in fort.20 (measured)" in problem
+        else:
+            assert "GUESSPSO" not in problem and "not measured" in problem
 
 
 def test_a_guesspso_in_the_title_is_not_a_restart(tmp_path):
