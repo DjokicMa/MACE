@@ -1,7 +1,7 @@
 """The occupied-band count a BAND gap is computed with comes from the real electron count.
 
 The fallback was (header "N. OF ELECTRONS PER CELL") // 2. DOPING does not
-change that header (FACTS: it still shows the count before doping; the real
+change that header (measured on CRYSTAL23: it still shows the count before doping; the real
 count is the Mulliken "NO. OF ELECTRONS" line), so a doped parent gave the
 wrong HOMO index and a wrong gap. A spin-polarised run prints two Mulliken
 blocks, ALPHA+BETA then ALPHA-BETA: the last line is the spin, not the count.
