@@ -1297,6 +1297,23 @@ class CrystalPropertyExtractor:
         
         return saved_count
     
+    def remove_stale_untracked_rows(self, material_id: str, before: str) -> int:
+        """Delete this extractor's untracked (calc_id NULL) rows of a material
+        written before ``before`` (an ISO timestamp): rows a re-extraction of
+        all of the material's outputs did not write again. The caller decides
+        that every output of the material was re-extracted."""
+        if not self.enable_tracking or self.db is None:
+            return 0
+        try:
+            with self.db._get_connection() as conn:
+                return conn.execute(
+                    "DELETE FROM properties WHERE material_id = ? AND calc_id IS NULL "
+                    "AND extractor_script = 'crystal_property_extractor.py' AND extracted_at < ?",
+                    (material_id, before)).rowcount
+        except Exception as e:
+            print(f"⚠️  Error removing stale properties for {material_id}: {e}")
+            return 0
+
     def _extract_computational_properties(self, content: str) -> Dict[str, Any]:
         """Extract computational performance and timing properties."""
         props = {}
@@ -3471,11 +3488,14 @@ def main():
     extractor.extract_fragments = args.fragments
     
     output_files = []
+    seen_outputs = []  # every output the run could see, extracted or filtered out
     if args.output_file:
         output_files = [Path(args.output_file)]
+        seen_outputs = list(output_files[0].parent.glob("*.out"))
     elif args.scan_directory:
         scan_dir = Path(args.scan_directory)
         output_files = list(scan_dir.rglob("*.out"))
+        seen_outputs = list(output_files)
         
         # Apply filters if specified
         if args.filter_material or args.filter_type:
@@ -3502,6 +3522,14 @@ def main():
     total_properties = 0
     files_processed = 0
     materials_processed = set()
+    # Untracked outputs (no calculation record) share one set of rows per
+    # material, so a row cannot name the output that wrote it. Rows of such
+    # a material that this run did not write again are removed after the
+    # run, when it re-extracted every output of the material it could see
+    # (the scanned tree, or the directory of a single --output-file). Not
+    # with --material-id: outputs given one material by hand can be anywhere.
+    run_started = datetime.now().isoformat()
+    untracked = {}
     
     for output_file in output_files:
         print(f"\n📊 Processing: {output_file}")
@@ -3529,6 +3557,9 @@ def main():
             saved_count = extractor.save_properties_to_database(properties)
             total_properties += saved_count
             files_processed += 1
+            meta = properties.get('_metadata', {})
+            if meta.get('calc_id') is None and saved_count and not args.material_id:
+                untracked.setdefault(meta['material_id'], set()).add(Path(output_file).resolve())
             print(f"   ✅ Extracted and saved {saved_count} properties")
             if properties.get("fragment_charges"):
                 from mace.utils.ion_fragments import format_fragment_charges
@@ -3537,6 +3568,16 @@ def main():
         else:
             print(f"   ⚠️  No properties extracted")
     
+    for material_id, extracted in untracked.items():
+        siblings = {f.resolve() for f in seen_outputs
+                    if extractor._extract_material_id_from_filename(f) == material_id}
+        if not siblings <= extracted:
+            continue  # an output of the material was left out: its rows may be among them
+        removed = extractor.remove_stale_untracked_rows(material_id, run_started)
+        if removed:
+            print(f"   🧹 {material_id}: removed {removed} stale properties an earlier "
+                  f"extraction stored and this one no longer produces")
+
     print(f"\n🎉 Processing complete!")
     print(f"   Files processed: {files_processed}")
     print(f"   Total properties extracted: {total_properties}")
