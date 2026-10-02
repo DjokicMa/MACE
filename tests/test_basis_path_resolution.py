@@ -51,8 +51,10 @@ def test_bundled_config_path_now_resolves(monkeypatch):
     basis dir — proving the parent.parent.parent fix found mace_config.py."""
     for var in ("MACE_TZ_BASIS_PATH", "MACE_BASIS_DIR"):
         monkeypatch.delenv(var, raising=False)
+    import basis_library
+
     bundled = REPO_ROOT / "Crystal_d12" / "basis_sets" / "full.basis.triplezeta"
-    if not bundled.exists():
+    if not basis_library.path_exists(bundled):
         pytest.skip("repo does not ship the bundled triplezeta basis set")
     result = resolve(DUMMY, "mat_full.basis.triplezeta.d12")
     assert result is not None

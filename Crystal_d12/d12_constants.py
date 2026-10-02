@@ -2323,6 +2323,8 @@ def read_basis_file(basis_dir: str, atomic_number: int, basis_set_type: str = "E
     """
     import os
 
+    from basis_library import read_record
+
     # For EXTERNAL basis sets, ECP elements use +200 naming convention
     file_number = atomic_number
     if basis_set_type == "EXTERNAL" and atomic_number in ECP_ELEMENTS_EXTERNAL:
@@ -2331,14 +2333,12 @@ def read_basis_file(basis_dir: str, atomic_number: int, basis_set_type: str = "E
     basis_file_path = os.path.join(basis_dir, str(file_number))
 
     try:
-        with open(basis_file_path, "r") as f:
-            return f.read()
+        return read_record(basis_dir, file_number)
     except FileNotFoundError:
         # Also try without +200 offset as fallback (for non-standard directories)
         if file_number != atomic_number:
             try:
-                with open(os.path.join(basis_dir, str(atomic_number)), "r") as f:
-                    return f.read()
+                return read_record(basis_dir, atomic_number)
             except FileNotFoundError:
                 pass
 
@@ -2661,11 +2661,16 @@ def _external_basis_file_exists(basis_dir, atomic_number):
     """
     import os
 
+    from basis_library import bundled_family_for, record_exists
+
+    candidates = [atomic_number]
+    if atomic_number in ECP_ELEMENTS_EXTERNAL:
+        candidates.insert(0, atomic_number + 200)
+    if bundled_family_for(basis_dir):
+        # A bundled family is one library file, not a directory.
+        return any(record_exists(basis_dir, n) for n in candidates)
     if not basis_dir or not os.path.isdir(basis_dir):
         # Not a usable directory - let the existing "basis file not found"
         # warning in read_basis_file speak rather than blaming the elements.
         return True
-    candidates = [atomic_number]
-    if atomic_number in ECP_ELEMENTS_EXTERNAL:
-        candidates.insert(0, atomic_number + 200)
     return any(os.path.isfile(os.path.join(basis_dir, str(n))) for n in candidates)

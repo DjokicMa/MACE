@@ -123,9 +123,10 @@ def ensure_paths_exist():
         "Crystal_d12": CRYSTAL_D12_DIR,
         "Crystal_d3": CRYSTAL_D3_DIR,
         "Basis Sets Dir": BASIS_SETS_DIR,
-        "Basis DZ": BASIS_DOUBLEZETA_DIR,
-        "Basis TZ": BASIS_TRIPLEZETA_DIR,
-        "Stuttgart": BASIS_STUTTGART_DIR,
+        # The bundled families are one library file each (basis_library.py).
+        "Basis DZ": BASIS_SETS_DIR / "full.basis.doublezeta.lib",
+        "Basis TZ": BASIS_SETS_DIR / "full.basis.triplezeta.lib",
+        "Stuttgart": BASIS_SETS_DIR / "stuttgart.lib",
         "RCSR": RCSR_DIR,
         "Templates": D3_INPUT_DIR
     }
