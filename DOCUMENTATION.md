@@ -214,6 +214,12 @@ mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
   `thermal_properties.yaml` (`--tmin/--tmax/--tstep`), and `band_dos.pdf` with `--plot`.
   Frequencies are in THz (x 33.35641 = cm-1). Modes below -0.1 THz away from Gamma are
   reported; thermal properties skip imaginary modes.
+- **Masses differ from CRYSTAL's.** phonopy uses its own table of standard atomic
+  masses (natural-abundance averages); CRYSTAL's FREQCALC uses its own isotopic
+  masses. The same force constants therefore give slightly different frequencies:
+  about 1 cm-1 at 540 cm-1 for Si (measured, MACE phonopy against a CRYSTAL
+  FREQCALC). Compare the two only after setting phonopy's masses to CRYSTAL's
+  (phonopy's `MASS` tag or `--mass`).
 - **phonopy's own commands** (phonopy 4.7.2 syntax) work on the same set, run in its
   directory, e.g. to plot with a `band.conf` of your own:
   ```bash
