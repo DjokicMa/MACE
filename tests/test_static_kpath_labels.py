@@ -43,7 +43,9 @@ EXPECTED = {
     "oF1": _split("GAMMA-Y Y-T T-Z Z-GAMMA GAMMA-SIGMA_0 U_0-T Y-C_0 A_0-Z GAMMA-L"),
     "oF3": _split("GAMMA-Y Y-C_0 A_0-Z Z-B_0 D_0-T T-G_0 H_0-Y T-GAMMA GAMMA-Z GAMMA-L"),
     "oF2": _primed(OF2),
-    "mS1": _primed(MC1),
+    "mS1": MC1,
+    "mS1_noinv": _primed(MC1),
+    "aP1": _split("GAMMA-X Y-GAMMA GAMMA-Z R-GAMMA GAMMA-T U-GAMMA GAMMA-V"),
     "cF2_noinv": _primed(CF2),
 }
 

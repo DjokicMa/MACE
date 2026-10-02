@@ -1358,7 +1358,8 @@ seekpath_data = {
         "labels": ["GAMMA", "L", "T", "P_0", "|", "P_2", "GAMMA", "F"]
     },
     "aP1": {
-        # Default fallback for triclinic without specific variant
+        # Default fallback when no other lattice is recognised (never chosen
+        # for a triclinic group, which is aP2 or aP3)
         "segments": [
             [0.0, 0.0, 0.0, 0.5, 0.0, 0.0],    # Γ → X
             [0.0, 0.5, 0.0, 0.0, 0.0, 0.0],    # Y → Γ
@@ -1368,63 +1369,41 @@ seekpath_data = {
             [0.5, 0.0, 0.5, 0.0, 0.0, 0.0],    # U → Γ
             [0.0, 0.0, 0.0, 0.5, 0.5, 0.0]     # Γ → V
         ],
-        "labels": ["GAMMA", "X", "|", "Y", "GAMMA", "|", "Z", "|", "R", "GAMMA", "|", "T", "|", "U", "GAMMA", "|", "V"]
+        "labels": ["GAMMA", "X", "|", "Y", "GAMMA", "Z", "|", "R", "GAMMA", "T", "|", "U", "GAMMA", "V"]
     },
     "mS1": {
-        # Monoclinic C-centered with inversion (mC1 in SeeK-path)
-        # Note: fractional coordinates here, will be scaled by shrink
+        # Monoclinic C-centred with inversion (SeeK-path mC1, with time
+        # reversal: no primed copy). Cc is mS1_noinv.
         "segments": [
-            [0.0, 0.0, 0.0, 0.388, 0.388, 0.0],    # Γ → C (approx)
-            [-0.388, 0.612, 0.0, -0.5, 0.5, 0.0],  # C₂ → Y₂
-            [-0.5, 0.5, 0.0, 0.0, 0.0, 0.0],       # Y₂ → Γ
-            [0.0, 0.0, 0.0, -0.5, 0.5, 0.5],       # Γ → M₂
-            [-0.5, 0.5, 0.5, -0.368, 0.632, 0.5],  # M₂ → D (approx)
-            [0.368, 0.368, 0.5, 0.0, 0.0, 0.5],    # D₂ → A
-            [0.0, 0.0, 0.5, 0.0, 0.0, 0.0],        # A → Γ
-            [0.0, 0.5, 0.5, 0.0, 0.0, 0.0],        # L₂ → Γ
-            [0.0, 0.0, 0.0, 0.0, 0.5, 0.0]         # Γ → V₂
+            [0.0, 0.0, 0.0, 0.386966, 0.386966, 0.0],     # Γ → C (scaled)
+            [-0.386966, 0.613034, 0.0, -0.5, 0.5, 0.0],   # C₂ → Y₂
+            [-0.5, 0.5, 0.0, 0.0, 0.0, 0.0],              # Y₂ → Γ
+            [0.0, 0.0, 0.0, -0.5, 0.5, 0.5],              # Γ → M₂
+            [-0.5, 0.5, 0.5, -0.366050, 0.633950, 0.5],   # M₂ → D
+            [0.366050, 0.366050, 0.5, 0.0, 0.0, 0.5],     # D₂ → A
+            [0.0, 0.0, 0.5, 0.0, 0.0, 0.0],               # A → Γ
+            [0.0, 0.5, 0.5, 0.0, 0.0, 0.0],               # L₂ → Γ
+            [0.0, 0.0, 0.0, 0.0, 0.5, 0.0]                # Γ → V₂
         ],
-        "labels": ["GAMMA", "C", "C_2", "Y_2", "GAMMA", "M_2", "D", "D_2", "A", "GAMMA", "|", "L_2", "GAMMA", "|", "V_2"]
+        "labels": ["GAMMA", "C", "|", "C_2", "Y_2", "GAMMA", "M_2", "D", "|", "D_2", "A", "GAMMA", "|", "L_2", "GAMMA", "V_2"]
     },
     "oS1": {
-        # Orthorhombic C-centered with inversion (oC1 in SeeK-path)
-        # Note: fractional coordinates here
+        # Orthorhombic C-centred with inversion (SeeK-path oC1, with time
+        # reversal: no primed copy). Cmc2_1 and the like are oS1_noinv.
         "segments": [
-            [0.0, 0.0, 0.0, -0.5, 0.5, 0.0],       # Γ → Y
-            [-0.5, 0.5, 0.0, -0.446, 0.554, 0.0],  # Y → C₀ (approx)
-            [0.446, 0.446, 0.0, 0.0, 0.0, 0.0],    # Σ₀ → Γ
-            [0.0, 0.0, 0.0, 0.0, 0.0, 0.5],        # Γ → Z
-            [0.0, 0.0, 0.5, 0.446, 0.446, 0.5],    # Z → A₀ (approx)
-            [-0.446, 0.554, 0.5, -0.5, 0.5, 0.5],  # E₀ → T
-            [-0.5, 0.5, 0.5, -0.5, 0.5, 0.0],      # T → Y
-            [0.0, 0.0, 0.0, 0.0, 0.5, 0.0],        # Γ → S
-            [0.0, 0.5, 0.0, 0.0, 0.5, 0.5],        # S → R
-            [0.0, 0.5, 0.5, 0.0, 0.0, 0.5],        # R → Z
-            [0.0, 0.0, 0.5, -0.5, 0.5, 0.5]        # Z → T
+            [0.0, 0.0, 0.0, -0.5, 0.5, 0.0],             # Γ → Y
+            [-0.5, 0.5, 0.0, -0.281380, 0.718620, 0.0],  # Y → C₀
+            [0.281380, 0.281380, 0.0, 0.0, 0.0, 0.0],    # Σ₀ → Γ
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.5],              # Γ → Z
+            [0.0, 0.0, 0.5, 0.281380, 0.281380, 0.5],    # Z → A₀
+            [-0.281380, 0.718620, 0.5, -0.5, 0.5, 0.5],  # E₀ → T
+            [-0.5, 0.5, 0.5, -0.5, 0.5, 0.0],            # T → Y
+            [0.0, 0.0, 0.0, 0.0, 0.5, 0.0],              # Γ → S
+            [0.0, 0.5, 0.0, 0.0, 0.5, 0.5],              # S → R
+            [0.0, 0.5, 0.5, 0.0, 0.0, 0.5],              # R → Z
+            [0.0, 0.0, 0.5, -0.5, 0.5, 0.5]              # Z → T
         ],
-        "labels": ["GAMMA", "Y", "C_0", "SIGMA_0", "GAMMA", "Z", "A_0", "E_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T"]
-    },
-    
-    # Triclinic lattices
-    "aP1": {
-        # Triclinic primitive without inversion (P1)
-        "segments": [
-            [0.0, 0.0, 0.0, 0.5, 0.0, 0.0],      # Γ → X
-            [0.0, 0.5, 0.0, 0.0, 0.0, 0.0],      # Y → Γ
-            [0.0, 0.0, 0.0, 0.0, 0.0, 0.5],      # Γ → Z
-            [0.5, 0.5, 0.5, 0.0, 0.0, 0.0],      # R → Γ
-            [0.0, 0.0, 0.0, 0.0, 0.5, 0.5],      # Γ → T
-            [0.5, 0.0, 0.5, 0.0, 0.0, 0.0],      # U → Γ
-            [0.0, 0.0, 0.0, 0.5, 0.5, 0.0],      # Γ → V
-            [0.0, 0.0, 0.0, -0.5, 0.0, 0.0],     # Γ → X'
-            [0.0, -0.5, 0.0, 0.0, 0.0, 0.0],     # Y' → Γ
-            [0.0, 0.0, 0.0, 0.0, 0.0, -0.5],     # Γ → Z'
-            [-0.5, -0.5, -0.5, 0.0, 0.0, 0.0],   # R' → Γ
-            [0.0, 0.0, 0.0, 0.0, -0.5, -0.5],    # Γ → T'
-            [-0.5, 0.0, -0.5, 0.0, 0.0, 0.0],    # U' → Γ
-            [0.0, 0.0, 0.0, -0.5, -0.5, 0.0]     # Γ → V'
-        ],
-        "labels": ["GAMMA", "X", "Y", "GAMMA", "GAMMA", "Z", "R", "GAMMA", "GAMMA", "T", "U", "GAMMA", "GAMMA", "V", "GAMMA", "X'", "Y'", "GAMMA", "GAMMA", "Z'", "R'", "GAMMA", "GAMMA", "T'", "U'", "GAMMA", "GAMMA", "V'"]
+        "labels": ["GAMMA", "Y", "C_0", "|", "SIGMA_0", "GAMMA", "Z", "A_0", "|", "E_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T"]
     },
     "aP3": {
         # Triclinic primitive with inversion (P-1)
@@ -1744,7 +1723,7 @@ seekpath_data = {
     },
     
     # Without inversion symmetry entries (selected examples) - using shrink factor scaling
-    "mS1": {
+    "mS1_noinv": {
         # Monoclinic base-centered without inversion (Cc)
         "segments": [
             [0.0, 0.0, 0.0, 0.386966, 0.386966, 0.0],     # Γ → C (scaled)
@@ -1768,7 +1747,7 @@ seekpath_data = {
         ],
         "labels": ["GAMMA", "C", "|", "C_2", "Y_2", "GAMMA", "M_2", "D", "|", "D_2", "A", "GAMMA", "|", "L_2", "GAMMA", "V_2", "|", "GAMMA", "C'", "|", "C_2'", "Y_2'", "GAMMA", "M_2'", "D'", "|", "D_2'", "A'", "GAMMA", "|", "L_2'", "GAMMA", "V_2'"]
     },
-    "oS1": {
+    "oS1_noinv": {
         # Orthorhombic base-centered without inversion (Cmc2_1)
         "segments": [
             [0.0, 0.0, 0.0, -0.5, 0.5, 0.0],             # Γ → Y

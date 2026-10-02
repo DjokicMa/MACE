@@ -9,7 +9,7 @@ SIGMA_0-U_0, F_2-SIGMA_0, C_0-SIGMA_0, ...), so the BAND title had more edges
 than the deck had segments and the band-plot nodes were misnamed. Expected
 edges are SeeK-path's paths (seekpath 2.2.2, hpkot/band_path_data), with the
 primed copy it appends when time reversal is not used; oS1 is SeeK-path's
-oC1 path with its primed copy.
+oC1 path, and oS1_noinv that path with its primed copy.
 """
 import pytest
 
@@ -32,6 +32,8 @@ def _primed(edges):
 
 OI1 = _split("GAMMA-X X-F_2 SIGMA_0-GAMMA GAMMA-Y_0 U_0-X GAMMA-R R-W W-S S-GAMMA GAMMA-T T-W")
 
+OC1 = _split("GAMMA-Y Y-C_0 SIGMA_0-GAMMA GAMMA-Z Z-A_0 E_0-T T-Y GAMMA-S S-R R-Z Z-T")
+
 EXPECTED = {
     "hR1_noinv": _primed(_split("GAMMA-T T-H_2 H_0-L L-GAMMA GAMMA-S_0 S_2-F F-GAMMA")),
     "hR2_noinv": _primed(_split("GAMMA-L L-T T-P_0 P_2-GAMMA GAMMA-F")),
@@ -41,7 +43,8 @@ EXPECTED = {
     "oF3_noinv": _primed(_split("GAMMA-Y Y-C_0 A_0-Z Z-B_0 D_0-T T-G_0 H_0-Y T-GAMMA GAMMA-Z GAMMA-L")),
     "oI1": OI1,
     "oI1_noinv": _primed(OI1),
-    "oS1": _primed(_split("GAMMA-Y Y-C_0 SIGMA_0-GAMMA GAMMA-Z Z-A_0 E_0-T T-Y GAMMA-S S-R R-Z Z-T")),
+    "oS1": OC1,
+    "oS1_noinv": _primed(OC1),
 }
 
 
