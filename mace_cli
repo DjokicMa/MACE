@@ -763,6 +763,8 @@ generate  Read a finished 3D OPT (OPT END - CONVERGED) or SP parent and write on
             --amplitude A         displacement in Angstrom (default 0.01)
             --pm auto|yes|no      plus/minus displacements
             --toldee N            raise TOLDEE (default max(10, parent))
+            --cry-sym             symmetry of each displaced cell in its .ext
+                                  (phonopy's CRY_SYM; some groups, e.g. R-3m, fail)
             --keep-shrink         keep the parent's SHRINK (default: divide it by
                                   the supercell size, rounding up)
 collect   Check every output (normal termination, SCF converged, forces, geometry

@@ -172,7 +172,15 @@ mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
   that its geometry is assumed relaxed; a parent cell that is not primitive (P1,
   SUPERCEL) gives a folded-bands warning.
 - `--dim` takes 3 integers or a 9-integer matrix; `--amplitude` (default 0.01 A) and
-  `--pm auto|yes|no` are phonopy's. An `--output-dir` must be empty (or `--force`) and
+  `--pm auto|yes|no` are phonopy's.
+- `--cry-sym` (opt-in) writes the symmetry operators of each displaced cell into its
+  `.ext`, as phonopy does when a `CRY_SYM` file exists (one is written to the set
+  directory). The displaced cell keeps more symmetry than P1, so CRYSTAL needs fewer
+  k-points: measured on CRYSTAL23 for diamond (Fd-3m, 2x2x2), the same frequencies as
+  P1 to 0.04 cm-1 at about a third of the core hours. phonopy warns that some space
+  groups do not work this way (e.g. R-3m); a rhombohedral parent gets a louder
+  warning, and `collect` still checks that each output's printed geometry is its
+  displaced cell. Compare with a P1 set before trusting a new structure type. An `--output-dir` must be empty (or `--force`) and
   must not be inside `workflow_outputs/`.
 - **Do not use `--track` or `--progress`** with these decks: the completion callback
   would record the displaced supercells as calculations of the parent's material.

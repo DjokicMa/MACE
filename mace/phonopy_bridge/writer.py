@@ -14,6 +14,7 @@ from . import parent as P
 MANIFEST = "mace_phonopy.json"
 DISP_YAML = "phonopy_disp.yaml"
 TEMPLATE = "TEMPLATE"
+CRY_SYM = "CRY_SYM"
 
 
 @contextlib.contextmanager
@@ -42,15 +43,17 @@ def job_names(stem: str, tag: str, n: int) -> List[str]:
 
 
 def write_set(outdir: Path, stem: str, tag: str, deck: P.ParentDeck, template: P.Template,
-              phonon, conv_super: Sequence[int]) -> List[str]:
-    """One <job>.ext + <job>.d12 per displaced supercell; returns the job names."""
+              phonon, conv_super: Sequence[int], cry_sym: bool = False) -> List[str]:
+    """One <job>.ext + <job>.d12 per displaced supercell; returns the job names.
+    ``cry_sym`` writes each cell's symmetry operators into its .ext, as phonopy's
+    writer does when a CRY_SYM file exists."""
     from phonopy.interface.crystal import get_crystal_structure
 
     cells = phonon.supercells_with_displacements
     names = job_names(stem, tag, len(cells))
     width = max(3, len(str(len(cells))))
     for i, (name, cell) in enumerate(zip(names, cells), start=1):
-        (outdir / f"{name}.ext").write_text(get_crystal_structure(cell, list(conv_super), False))
+        (outdir / f"{name}.ext").write_text(get_crystal_structure(cell, list(conv_super), cry_sym))
         title = f"{deck.title.strip()} phonopy displacement {i:0{width}d}/{len(cells):0{width}d}"
         (outdir / f"{name}.d12").write_text(P.deck_text(title, deck, template))
     return names

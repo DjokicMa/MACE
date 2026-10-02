@@ -19,7 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no forces), then TOLDEE (at least 10), GRADCAL and END. The basis and SCF block
   are kept byte for byte apart from the printed edits (GUESSP dropped, buffers for
   large cells, SHRINK divided by the supercell size - rounded up where it does not
-  divide - unless `--keep-shrink` or a non-diagonal `--dim`). Parents it cannot reproduce in a P1 supercell (non-3D, charged,
+  divide - unless `--keep-shrink` or a non-diagonal `--dim`). `--cry-sym` (opt-in) writes each
+  displaced cell's symmetry into its `.ext` as phonopy's CRY_SYM does - the same
+  frequencies for diamond at about a third of the core hours, measured on CRYSTAL23 -
+  with phonopy's caveat that some space groups (e.g. R-3m) do not work. Parents it cannot reproduce in a P1 supercell (non-3D, charged,
   spin-locked, magnetic without a lock, ghosts, unknown SCF keywords, unconverged) are
   refused with the reason. `collect` checks every output - including that CRYSTAL ran
   the displaced geometry it was given - names any output whose forces phonopy cannot

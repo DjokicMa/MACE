@@ -57,6 +57,10 @@ def _parser() -> argparse.ArgumentParser:
                    help="plus/minus displacements (default: auto)")
     g.add_argument("--toldee", type=int, default=None,
                    help="TOLDEE for the supercells; can only raise the parent's (default: max(10, parent))")
+    g.add_argument("--cry-sym", action="store_true",
+                   help="write each displaced cell's symmetry into its .ext (phonopy's "
+                        "CRY_SYM): fewer k-points, but phonopy warns some space groups "
+                        "(e.g. R-3m) do not work")
     g.add_argument("--keep-shrink", action="store_true",
                    help="keep the parent's SHRINK (default: divide it by the supercell size, "
                         "rounding up; diagonal --dim only)")
@@ -163,7 +167,12 @@ def cmd_generate(a) -> int:
                       "cannot be divided per direction); set it in the decks by hand"))
 
     outdir.mkdir(parents=True, exist_ok=True)
-    names = W.write_set(outdir, stem, tag, deck, template, phonon, conv_super)
+    if a.cry_sym:
+        warns += [("CRY_SYM", m) for m in S.cry_sym_warnings(cell)]
+    names = W.write_set(outdir, stem, tag, deck, template, phonon, conv_super,
+                        cry_sym=a.cry_sym)
+    if a.cry_sym:
+        (outdir / W.CRY_SYM).write_text("")   # phonopy-init --crystal -d reads it too
     template_file = None
     if deck.basis_kind == "explicit":
         # phonopy-init --crystal -d reads this; it puts EXTERNAL / ENDGEOM in front,
@@ -178,7 +187,7 @@ def cmd_generate(a) -> int:
         "parent_d12": str(d12_path.resolve()), "parent_d12_sha256": W.sha256(d12_path),
         "dim": dim.tolist(), "amplitude": a.amplitude if a.amplitude is not None else 0.01,
         "pm": a.pm, "toldee": template.toldee, "scale_shrink": bool(scale_shrink),
-        "template": template_file,
+        "template": template_file, "cry_sym": bool(a.cry_sym),
         "edits": template.edits, "dropped_block1_keywords": deck.dropped_keywords,
         "basis": deck.basis_kind, "method_lines": P.method_lines(deck),
         "conv_numbers": [int(c) for c in conv], "conv_numbers_supercell": conv_super,
@@ -200,7 +209,8 @@ def cmd_generate(a) -> int:
         print(f"  {e}")
     n_cells = int(round(abs(np.linalg.det(dim))))
     print(f"Supercell {tag}: {n_super} atoms ({n_cells} cells), {len(names)} displaced "
-          f"deck(s), P1 (no symmetry)")
+          "deck(s), " + ("symmetry of each displaced cell (--cry-sym)" if a.cry_sym
+                         else "P1 (no symmetry)"))
     kp = _kpoints(template.lines)
     if kp:
         nk = kp[0] * kp[1] * kp[2]

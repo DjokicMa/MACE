@@ -79,6 +79,39 @@ def supercell_conv_numbers(phonon, conv_numbers: Sequence[int]) -> List[int]:
     return out
 
 
+#: spglib space-group numbers of the rhombohedral (R) groups.
+RHOMBOHEDRAL_GROUPS = frozenset({146, 148, 155, 160, 161, 166, 167})
+
+CRY_SYM_CAVEAT = (
+    "--cry-sym: symmetry operators of each displaced cell are written into its .ext "
+    "(phonopy's CRY_SYM). phonopy warns that some space groups do not work this way "
+    "(e.g. R-3m). Measured on CRYSTAL23 for diamond (Fd-3m): the same frequencies as "
+    "P1 to 0.04 cm-1 at about a third of the core hours. collect still checks that "
+    "the geometry CRYSTAL printed is each displaced cell.")
+
+
+def cry_sym_warnings(cell) -> List[str]:
+    """The CRY_SYM caveat, plus a stronger one for a rhombohedral parent."""
+    out = [CRY_SYM_CAVEAT]
+    try:
+        import spglib
+        ds = spglib.get_symmetry_dataset((cell.cell, cell.scaled_positions, cell.numbers),
+                                         symprec=1e-5)
+    except Exception:
+        return out
+    if ds is None:
+        return out
+    number = getattr(ds, "number", None)
+    symbol = getattr(ds, "international", None)
+    if number is None and isinstance(ds, dict):
+        number, symbol = ds.get("number"), ds.get("international")
+    if number in RHOMBOHEDRAL_GROUPS:
+        out.append(f"the parent is {symbol} (No. {number}), a rhombohedral group like the "
+                   "R-3m phonopy warns about: compare with a run without --cry-sym before "
+                   "trusting these phonons")
+    return out
+
+
 def folded_warning(cell) -> Optional[Tuple[str, str]]:
     """Warn when spglib finds a smaller primitive cell than the parent's cell."""
     try:

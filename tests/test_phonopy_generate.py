@@ -235,3 +235,59 @@ def test_internal_basis_writes_no_template(tmp_path, monkeypatch, capsys):
     assert not (out / "TEMPLATE").exists()
     man = json.loads((out / "mace_phonopy.json").read_text())
     assert man["template"] is None
+
+
+# ---------------------------------------------------------------------------
+# --cry-sym: phonopy's CRY_SYM (symmetry operators in each .ext), opt-in
+# ---------------------------------------------------------------------------
+
+def test_cry_sym_ext_is_byte_identical_to_phonopys_writer(tmp_path, monkeypatch, capsys):
+    from phonopy.interface.crystal import write_supercells_with_displacements
+
+    out = _generate(tmp_path, monkeypatch, "explicit", "--cry-sym")
+    text = capsys.readouterr().out
+    assert "R-3m" in text
+    man = json.loads((out / "mace_phonopy.json").read_text())
+    assert man["cry_sym"] is True and (out / "CRY_SYM").is_file()
+    ph = phonopy.load(str(out / "phonopy_disp.yaml"), produce_fc=False)
+    odir = tmp_path / "viaphonopy"
+    odir.mkdir()
+    (odir / "CRY_SYM").write_text("")
+    monkeypatch.chdir(odir)
+    write_supercells_with_displacements(
+        ph.supercell, ph.supercells_with_displacements,
+        list(range(1, len(ph.supercells_with_displacements) + 1)), man["conv_numbers"], 8,
+        template_file="NO_TEMPLATE")
+    for i, job in enumerate(man["jobs"], start=1):
+        ours = (out / f"{job}.ext").read_text()
+        assert ours == (odir / f"supercell-{i:03d}.ext").read_text()
+        assert int(ours.splitlines()[4]) > 1          # more than the identity
+
+
+def test_no_cry_sym_by_default(tmp_path, monkeypatch, capsys):
+    out = _generate(tmp_path, monkeypatch)
+    man = json.loads((out / "mace_phonopy.json").read_text())
+    assert man["cry_sym"] is False and not (out / "CRY_SYM").exists()
+    for job in man["jobs"]:
+        assert (out / f"{job}.ext").read_text().splitlines()[4] == "1"
+    assert "P1" in capsys.readouterr().out
+
+
+def test_cry_sym_warns_harder_for_a_rhombohedral_parent():
+    from phonopy.structure.atoms import PhonopyAtoms
+
+    from mace.phonopy_bridge import structure as S
+
+    a, alpha, u = 4.75, np.radians(57.2), 0.234      # Bi, R-3m
+    c = np.cos(alpha)
+    ty = (c - c * c) / np.sin(alpha)
+    lat = a * np.array([[1, 0, 0], [c, np.sin(alpha), 0],
+                        [c, ty, np.sqrt(1 - c * c - ty * ty)]])
+    bi = PhonopyAtoms(symbols=["Bi", "Bi"], cell=lat,
+                      scaled_positions=[[u, u, u], [-u, -u, -u]])
+    msgs = S.cry_sym_warnings(bi)
+    assert any("R-3m" in m and "parent" in m for m in msgs)
+    si = PhonopyAtoms(symbols=["Si", "Si"], cell=5.43 / 2 * np.array([[0, 1, 1], [1, 0, 1],
+                                                                       [1, 1, 0]]),
+                      scaled_positions=[[0.125] * 3, [-0.125] * 3])
+    assert not any("parent" in m for m in S.cry_sym_warnings(si))
