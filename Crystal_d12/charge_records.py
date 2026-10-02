@@ -272,15 +272,16 @@ def parent_electron_offset(parent_text: str, parent_out_text: Optional[str] = No
 
 
 def _child_electrons(child_text: str):
-    """The child deck's electron count, or None when it cannot be counted (symmetry, edits)."""
+    """(electron count, dimensionality) of a deck, or (None, None) when it cannot be
+    counted (symmetry, geometry editing)."""
     from decimal import Decimal
     ic = _ic()
     try:
         geom = ic.read_deck_geometry(child_text)
     except Exception:
-        return None
+        return None, None
     if geom.symmetric:
-        return None
+        return None, None
     rec = extract_charge_records(child_text)
     if deck_basis_name(child_text):
         total = Decimal(sum(z % 100 for z in geom.z_labels))
@@ -288,7 +289,7 @@ def _child_electrons(child_text: str):
         try:
             blocks = ic.parse_basis_blocks(child_text)
         except (ValueError, IndexError):
-            return None
+            return None, None
         total = Decimal(0)
         for z in geom.z_labels:
             block = blocks.get(z) or blocks.get(z % 100)
@@ -298,13 +299,14 @@ def _child_electrons(child_text: str):
             total -= deficit
     if rec["DOPING"]:
         total += _num(rec["DOPING"][1])
-    return total
+    return total, geom.dimensionality
 
 
 def ensure_open_shell(child_text: str, parent_text: Optional[str]) -> Tuple[str, List[str]]:
-    """Refuse (ChargeCarryError) a closed-shell child with an odd electron count,
-    or give it the parent's SPIN / SPINLOCK when the parent had them."""
-    electrons = _child_electrons(child_text)
+    """Give a closed-shell child with an odd electron count the parent's SPIN /
+    SPINLOCK, or refuse it (ChargeCarryError) - a molecule; a periodic cell
+    only gets a warning, since it can hold an odd count as a half-filled band."""
+    electrons, dim = _child_electrons(child_text)
     if electrons is None or electrons != electrons.to_integral_value() or int(electrons) % 2 == 0:
         return child_text, []
     ic = _ic()
@@ -328,6 +330,10 @@ def ensure_open_shell(child_text: str, parent_text: Optional[str]) -> Tuple[str,
         return "\n".join(lines) + ("\n" if child_text.endswith("\n") else ""), notes
     if child.spin:
         return child_text, []
+    if dim != "MOLECULE":
+        return child_text, [f"WARNING: the new deck holds {int(electrons)} electrons per cell (odd) "
+                            "and is closed shell (a half-filled band); the parent had no "
+                            "SPIN/SPINLOCK to keep"]
     raise ChargeCarryError(
         f"the new deck holds {int(electrons)} electrons (odd) but is closed shell; the parent "
         "had no SPIN/SPINLOCK to keep - give the child SPIN + SPINLOCK (or UHF)")

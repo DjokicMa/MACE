@@ -305,3 +305,14 @@ def test_strip_removes_every_record():
     deck = molecule_deck(ODD)
     charged = apply_charge_setup(deck, _plan(li_with(0, 2)))
     assert strip_charge_records(charged) == deck
+
+
+def test_a_periodic_cell_may_stay_closed_shell_with_an_odd_count():
+    cell = cell_matrix(12.0, 12.0, 12.0, 90, 90, 90)
+    atoms = [(s, (x + 6, y + 6, z + 6)) for s, (x, y, z) in li_with(0, 2)]
+    setup = _plan(atoms, cell=cell, periodic_dirs=(0, 1, 2), net_charge=0)
+    assert setup.spinlock is None and not setup.spin
+    assert any("half-filled band" in w for w in setup.warnings)
+    # given a spin state, it is used
+    setup = _plan(atoms, cell=cell, periodic_dirs=(0, 1, 2), net_charge=0, spinlock=1)
+    assert setup.spinlock == (1, 50)

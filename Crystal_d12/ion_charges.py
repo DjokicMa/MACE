@@ -532,9 +532,6 @@ def plan_charge_setup(symbols: Sequence[str], z_labels: Sequence[int], xyz, *, c
                 "GHOSTS with DOPING and an odd electron count stops CRYSTAL (\"NALPHA-NBETA NOT "
                 "COMPATIBLE WITH NUMBER OF ELECTRONS\": the parity is checked before the doping). "
                 "Use an explicit basis with CHEMOD + CHARGED on a far atom instead")
-        if method.method == "HF" and method.hf_method != "UHF":
-            raise IonChargeError(f"{method.hf_method} is closed shell and cannot hold an odd number "
-                                 f"of electrons ({fmt_n(electrons)}); use UHF")
         value, cycles = spinlock, spinlock_cycles
         source = "given"
         if not value and method.spinlock and method.spinlock[0]:
@@ -543,24 +540,35 @@ def plan_charge_setup(symbols: Sequence[str], z_labels: Sequence[int], xyz, *, c
         if not value and parent_spinlock and parent_spinlock[0]:
             value, cycles = parent_spinlock
             source = "the parent's"
-        if not value:
-            if not interactive:
-                raise IonChargeError(
-                    f"{fmt_n(electrons)} electrons is odd, so the run needs a spin state "
-                    "(SPIN + SPINLOCK); none was given and there is no terminal to ask - set "
-                    "spinlock (e.g. 1) and spinlock_cycles")
+        if not value and interactive:
             ask = ask or input
             reply = ask(f"Odd electron count ({fmt_n(electrons)}): SPINLOCK value nalpha-nbeta [1]: ").strip()
             value = int(reply) if reply else 1
             reply = ask(f"SPINLOCK cycles [{DEFAULT_SPINLOCK_CYCLES}]: ").strip()
             cycles = int(reply) if reply else DEFAULT_SPINLOCK_CYCLES
             source = "answered"
-        if int(value) % 2 == 0:
-            raise IonChargeError(f"SPINLOCK {value} is even, but {fmt_n(electrons)} electrons "
-                                 "need an odd nalpha-nbeta")
-        setup.spinlock = (int(value), int(cycles or DEFAULT_SPINLOCK_CYCLES))
-        setup.spin = method.method == "DFT"
-        setup.report.append(f"SPINLOCK {setup.spinlock[0]} {setup.spinlock[1]} ({source})")
+        if not value and periodic:
+            # a periodic cell may hold an odd count closed shell: the top band
+            # is then half filled (a metal), which is a state of its own
+            setup.warnings.append(
+                f"WARNING: {fmt_n(electrons)} electrons per cell is odd and no spin state was "
+                "given, so the deck stays closed shell (a half-filled band); set spinlock for a "
+                "localised open-shell state")
+        else:
+            if method.method == "HF" and method.hf_method != "UHF":
+                raise IonChargeError(f"{method.hf_method} is closed shell and cannot hold an odd "
+                                     f"number of electrons ({fmt_n(electrons)}); use UHF")
+            if not value:
+                raise IonChargeError(
+                    f"{fmt_n(electrons)} electrons is odd, so the run needs a spin state "
+                    "(SPIN + SPINLOCK); none was given and there is no terminal to ask - set "
+                    "spinlock (e.g. 1) and spinlock_cycles")
+            if int(value) % 2 == 0:
+                raise IonChargeError(f"SPINLOCK {value} is even, but {fmt_n(electrons)} electrons "
+                                     "need an odd nalpha-nbeta")
+            setup.spinlock = (int(value), int(cycles or DEFAULT_SPINLOCK_CYCLES))
+            setup.spin = method.method == "DFT"
+            setup.report.append(f"SPINLOCK {setup.spinlock[0]} {setup.spinlock[1]} ({source})")
     elif spinlock and integral and int(spinlock) % 2 != int(electrons) % 2:
         raise IonChargeError(f"SPINLOCK {spinlock} does not fit {fmt_n(electrons)} electrons "
                              "(nalpha-nbeta must have the parity of the electron count)")

@@ -160,3 +160,14 @@ def test_opt2d12_refuses_an_odd_closed_shell_child_and_writes_nothing(tmp_path):
     assert run.returncode != 0
     assert "odd" in run.stdout + run.stderr
     assert not list((tmp_path / "o").glob("*.d12")) if (tmp_path / "o").exists() else True
+
+
+def test_odd_periodic_child_is_only_warned_about():
+    cell = "CRYSTAL\n0 0 0\n1\n10.0 10.0 10.0 90.0 90.0 90.0\n"
+    rows = "4\n3 0.0 0.0 0.0\n8 0.195 0.0 0.0\n1 0.254 0.076 0.0\n1 0.254 -0.076 0.0\n"
+    tail = "END\nBASISSET\nSOLDEF2MSVP\nDFT\nPBE0\nENDDFT\nSHRINK\n1 1\n{}END\n"
+    parent = "p\n" + cell + rows + tail.format(ODD_TAIL)
+    child = "c\n" + cell + rows + tail.format("")
+    out, notes = carry_charge_records(child, parent)
+    assert _lines(out)[-3:] == ["DOPING", "-2", "END"]
+    assert any("half-filled band" in n for n in notes)
