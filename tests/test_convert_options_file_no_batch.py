@@ -27,6 +27,7 @@ def _env():
 
 @pytest.mark.parametrize("stdin", ["", "\n\n", None])
 def test_options_file_without_batch_and_no_answers(tmp_path, stdin):
+    pytest.importorskip("ase", reason="convert needs ase")
     cifs = tmp_path / "cifs"
     cifs.mkdir()
     shutil.copy(CIF, cifs)
