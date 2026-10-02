@@ -333,6 +333,163 @@ python CRYSTALOptToD12.py --out-file optimized/*.out --config-file sp_settings.j
 - Outputs compatible with enhanced queue manager
 - Preserves material ID and calculation history  
 
+## Charged systems and ion clusters
+
+Ion/solvent clusters (e.g. Li+ with FSI- and ethylene carbonate cut from MD) and
+charged cells need two things in the deck: the net electron count, and
+usually a starting guess with the ions already charged. MACE writes both, opt-in:
+
+```bash
+# cif2d12: ions found by connectivity, net charge = sum of the ions found
+mace convert --batch --options_file example_configs/ion_cluster_molecule.json --cif_dir clusters/
+mace convert --batch --options_file opts.json --ion-charges auto --net-charge 0 --spinlock 1 --spinlock-cycles 30
+
+# existing decks (any atom order): -o DIR or --in-place; --replace drops their own records first
+mace ions cluster.d12 --ion-charges auto -o charged/
+mace ions cell.d12 --net-charge -1 --in-place
+
+# derived decks: the parent's records are carried (see below), or worked out
+# again from the optimised geometry
+mace opt2d12 --out-file cluster_opt.out --calc-type SP --non-interactive --ion-charges auto
+```
+
+The same settings as config/options keys: `"ion_charges": "auto"`,
+`"net_charge": q`, `"site_states": [{"atom": i, "shell_charges": [...]}]`
+(1-based atom, one charge per shell of that atom's basis; needs `net_charge`),
+`"chemod": "auto" | "yes" | "no"`, `"fragment_bond_scale"` (default 1.15) and
+the existing `"spinlock"` / `"spinlock_cycles"`. Without them every deck is
+byte-identical to before (pinned by `tests/test_default_decks_pinned.py`).
+
+### The records (CRYSTAL23 manual, and what was measured)
+
+Tags: **[manual]** CRYSTAL23 user's manual; **[measured]** run on HPCC with
+CRYSTAL/23-intel-2023a (2026-10-01); **[untested]** not run.
+
+- `CHEMOD` (basis-set input, p.80): `NC`, then `LA CH(1..NS)` per atom; NS must
+  equal the atom's shell count [manual]. CRYSTAL checks the symmetry with the
+  new configuration and stops rather than lowering it [manual]; on one Li of a
+  symmetry orbit (Li2O, Fm-3m) it stops with `ERROR **** CHEMOD **** SHELL
+  CHARGES NOT COMPATIBLE WITH SYMMETRY` (Pcrystal prints only an MPI_Abort)
+  [measured]. Both Li of the orbit were accepted, as was one Li in the same cell
+  written in P1 [measured]; MACE writes `CHEMOD` only for decks without
+  symmetry (MOLECULE from cif2d12, P1 cells) and otherwise refuses it.
+- `CHARGED` (p.80): a non-neutral cell with a compensating background; "do not
+  use for total energy comparison" [manual].
+- `DOPING` (p.103): adds (positive) or removes (negative) electrons [manual]. It
+  prints nothing, and the SCF header's "N. OF ELECTRONS PER CELL" keeps the
+  count before doping; the Mulliken "NO. OF ELECTRONS" line has the real count
+  [measured: Li+(EC)2, header 95, Mulliken 94]. The properties (BAND) header of
+  a doped run does show the doped count [measured: MgO DOPING -2, SCF header
+  20, properties header 18; that SCF had not converged, the count is the point].
+- With an internal BASISSET, `CHEMOD` (+ `CHARGED`) does not change the count:
+  the guess is renormalised ("CHARGE NORMALIZATION FACTOR") [measured].
+- With an explicit basis (after `99 0`), a non-neutral `CHEMOD` sets the count
+  (with `CHARGED` it matches `DOPING` to 1e-9 Ha) [measured]. For Li+/EC with
+  the POB-TZVP-REV2 file: `CHEMOD` + `CHARGED` 48 electrons, `CHEMOD` alone 48
+  (a MOLECULE needs no `CHARGED`; same energy), `DOPING -1` alone 48 (energy
+  within 4e-7 Ha), but `CHEMOD` + `DOPING -1` 47 - the charge counted twice
+  [measured]. A periodic cell with a non-neutral explicit `CHEMOD` and no
+  `CHARGED` stops: `ERROR **** INPBAS **** UNIT CELL NOT NEUTRAL` [measured].
+  NO3- split 1/3 over its O under `CHARGED` gave 32.000000 electrons, and so
+  did 4.33 x 3 (0.01 short): CRYSTAL rounds the count [measured]. MACE still
+  writes such splits as 4.333333 / 4.333333 / 4.333334 so the sum is exact.
+
+So MACE writes:
+
+| Basis | Net charge q | CHEMOD asked for | Records |
+|---|---|---|---|
+| internal BASISSET | q != 0 | either | `DOPING -q`; `CHEMOD` only shapes the guess; never `CHARGED` |
+| explicit | q != 0 | yes (MOLECULE default) | `CHEMOD` + `CHARGED`, no `DOPING`; the shell charges must remove exactly q |
+| explicit | q != 0 | no (periodic default) | `DOPING -q` |
+| either | 0 | yes | `CHEMOD` only, never `DOPING 0` |
+
+A periodic explicit-basis cell gets `DOPING` alone unless `chemod: yes` (then
+`CHARGED` adds a background and MACE warns). Measured counts from decks MACE
+wrote (SOLDEF2MSVP, HSEsol-3c): Li+(EC)2 q=+1 94, Li+FSI-EC q=0 138, Li+(FSI-)2
+q=-1 182, Li+(FSI-)3 q=-2 272; explicit POB Li+(NO3-)2 q=-1 66 - each the
+neutral count minus q.
+
+### Ions and their starting guess
+
+Fragments come from bonds (distance < 1.15 x the sum of Cordero covalent
+radii; periodic images along the periodic directions, so an ion across a cell
+face is one fragment and a framework bonded to its own image is "extended").
+Known ions, matched by formula, coordination and terminal atoms:
+
+| Ion | Guess |
+|---|---|
+| Li+, Na+, K+, Mg2+, Ca2+, Zn2+ | charge removed from the valence s shell |
+| FSI-, TFSI- (4 sulfonyl O), OTf- (3 sulfonyl O), ClO4- (4 O), NO3- (3 O), PF6- (6 F), BF4- (4 F) | the extra electron spread over the terminal atoms' valence p shell |
+
+FSI- gives the group's recipe exactly: Li `2.0 0.0 0.0 0.0 0.0`, each sulfonyl
+O `2.0 2.0 0.0 0.0 4.25 0.0 0.0`. Anything else (HNO3, SO2F2, solvents) is
+neutral. The table cations are never bonded to anything, so a Li+ 1.95 A from a
+solvent O stays its own ion; that is also why auto mode refuses what looks
+like an ionic solid (lone O/F/Cl/... atoms, or a table metal bonded to an
+extended framework): there it would invent ions. Use `net_charge` (DOPING) for
+those. In a cell with a framework the framework is counted neutral (warning).
+
+Shell charges: for an explicit basis they are the file's own CHE values. For
+internal libraries MACE knows SOLDEF2MSVP, POB-TZVP-REV2 and POB-DZVP-REV2 for
+H B C N O F Na Mg P S Cl K Ca Zn Li [measured: CRYSTAL's LOCAL ATOMIC FUNCTIONS
+listing and atomic-guess shell occupations, filled in listing order, which
+reproduces the explicit files' CHE values]. Any other library or element needs
+`site_states`, checked against the shell listing of a parent .out
+(`mace ions --parent-out`).
+
+### Odd electron counts
+
+The count is the sum of atomic numbers (valence charges for an explicit ECP;
+pseudopotential cores are even) minus q. An odd count needs `SPIN` (DFT) +
+`SPINLOCK n cycles` or UHF + `SPINLOCK`: the value comes from the options, then
+the deck's or parent's own `SPINLOCK`, then a question at a terminal (default
+`1` and 50 cycles), otherwise a molecule's deck is refused [measured: `SPIN` +
+`SPINLOCK 1 30` works for ATOMREMO + DOPING cells]. RHF and HF-3c/HFsol-3c are refused, and
+so is `GHOSTS` + `DOPING` with an odd count ("NALPHA-NBETA NOT COMPATIBLE WITH
+NUMBER OF ELECTRONS": the parity is checked before the doping) [measured]; the
+working ghost recipe is an explicit basis with `CHEMOD` + `CHARGED`.
+A periodic cell may also keep an odd count closed shell (a half-filled band);
+MACE then only warns. Odd-electron MOLECULE runs with the screened hybrids
+HSEsol-3c, HSE06 and HSEsol stopped at SCF cycle 3-4 on CRYSTAL23 ("DIIS TEST:
+NaN", then a crash; Li+ clusters with `SPIN` + `SPINLOCK 1 30`, with and
+without DIIS), while PBE0 and PBEsol0 converged (PBEsol0: 95 electrons, spin
+1, 19 cycles) [measured]. MACE keeps the functional asked for and warns.
+
+### Derived decks (opt2d12)
+
+`CHEMOD`, `CHARGED` and `DOPING` of the parent are carried into SP/FREQ/...
+children (also when the parent deck could not be parsed). `CHEMOD` only when
+the child lists the same atoms and loads the same basis set (same BASISSET name
+or identical explicit blocks); otherwise it is dropped with a warning, and a
+charge it carried (an explicit basis) becomes `DOPING`, from the parent's
+Mulliken count when the .out is there. Without a parent deck the .out's
+Mulliken count minus the valence charges gives `DOPING`. An odd count gets the
+parent's `SPIN`/`SPINLOCK`, or a molecule's deck is refused (a periodic one is
+written with a warning). Measured through a
+POB-TZVP-REV2 template: a SOLDEF2MSVP Li+(EC)2 parent (`CHEMOD` + `DOPING -1`)
+gave `DOPING -1` without `CHEMOD`, 94 electrons; an explicit-basis Li+(NO3-)2
+parent (`CHEMOD` + `CHARGED`) gave `DOPING 1`, 66 electrons; with
+`--ion-charges auto` the guess was rebuilt for the new basis (94 electrons,
+energy within 3e-7 Ha) [measured].
+
+### Output side
+
+`mace analyze --extract-properties` adds `electron_count` and
+`fragment_charges` (per fragment: summed Mulliken charge = valence charge -
+population, spin, formal charge, deviation) for charged runs, and prints them as
+a Fragments section; an ion more than 0.5 e from its formal charge is flagged
+as having lost or gained its electron. This is a heuristic: Mulliken charges
+depend on the basis set and are never close to formal charges. `--fragments`
+computes them for neutral runs too.
+
+### Not run on CRYSTAL yet [untested]
+
+SLAB and POLYMER decks with charges; `chemod: yes` (CHEMOD + CHARGED) in a
+periodic explicit-basis cell; fractional net charges (written as fractional
+`DOPING`, no spin state); auto mode in a cell with a framework (counted
+neutral); internal-library ECP elements (the parity assumes the even cores
+pseudopotentials have); the fragment report on periodic outputs.
+
 ---
 
 ## Installation

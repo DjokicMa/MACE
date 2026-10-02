@@ -212,8 +212,9 @@ def test_every_example_config_converts_a_corpus_cif_in_batch_mode(tmp_path, path
     pytest.importorskip("ase")
     conf = unwrap_d12_config(json.loads(path.read_text()))
     # a SLAB config needs a layered structure; the P1 box is one CRYSTAL
-    # accepts as a slab (layer group 1)
-    cif = P1_BOX if conf.get("dimensionality") == "SLAB" else ROCKSALT
+    # accepts as a slab (layer group 1). A MOLECULE config (the ion-cluster
+    # example) gets the box's Li/FSI/EC cluster, not a slice of a rock salt.
+    cif = P1_BOX if conf.get("dimensionality") in ("SLAB", "MOLECULE") else ROCKSALT
     _need_corpus(cif)
     decks, log = _convert(tmp_path, path, cif)
     assert len(decks) == 1, log[-2000:]

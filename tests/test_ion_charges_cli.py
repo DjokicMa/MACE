@@ -183,3 +183,20 @@ def test_mace_ions_symmetric_deck_takes_doping_only(tmp_path):
     assert ok.returncode == 0, ok.stderr
     assert (tmp_path / "out" / "mgo.d12").read_text().splitlines()[-3:] == ["DOPING", "-2", "END"]
     assert "parity was not checked" in ok.stderr
+
+
+def test_the_ion_cluster_example_config(tmp_path):
+    pytest.importorskip("ase")
+    anion = fsi()
+    atoms = shuffled(cluster((anion, (0.0, 0.0, 0.0)), (ec(), (8.0, 0.0, 0.0))) + [li_near(anion, 2)], seed=6)
+    cifs = tmp_path / "cifs"
+    cifs.mkdir()
+    (cifs / "li_fsi_ec.cif").write_text(molecule_cif(atoms, name="li_fsi_ec"))
+    cfg = REPO_ROOT / "Crystal_d12" / "example_configs" / "ion_cluster_molecule.json"
+    run = _run(["convert", "--no-banner", "--batch", "--options_file", str(cfg), "--cif_dir", str(cifs),
+                "--output_dir", str(tmp_path / "out")], tmp_path)
+    assert run.returncode == 0, run.stdout + run.stderr
+    deck = next((tmp_path / "out").glob("*.d12")).read_text().splitlines()
+    i = deck.index("SOLDEF2MSVP")
+    assert deck[i + 1:i + 3] == ["CHEMOD", "5"]
+    assert "DOPING" not in deck and deck[1] == "MOLECULE"

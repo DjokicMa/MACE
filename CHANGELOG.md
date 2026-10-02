@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Charged systems and ion clusters** (opt-in; see "Charged systems and ion
+  clusters" in `Crystal_d12/README.md`). `cif2d12` (`--ion-charges auto`,
+  `--net-charge`, `--site-states`, `--chemod`, `--fragment-bond-scale`,
+  `--spinlock`, `--spinlock-cycles`, or the same keys in an options/config
+  file), `opt2d12` (the same flags, recomputed from the optimised geometry)
+  and a new `mace ions` command for existing decks write `CHEMOD` (starting
+  shell charges), `DOPING` (the net charge), `CHARGED` and, for an odd
+  electron count, `SPIN` + `SPINLOCK`. Ions are found by connectivity
+  (covalent radii), so atom order does not matter: Li+, Na+, K+, Mg2+, Ca2+,
+  Zn2+, FSI-, TFSI-, OTf-, ClO4-, NO3-, PF6-, BF4-; anything else is neutral.
+  On the 65 Li/FSI/solvent clusters of the test corpus it finds the same
+  ions in any atom order (the group's script assumed a fixed order and left
+  two clusters without records). The records follow what was measured on
+  CRYSTAL23: with an internal BASISSET the count comes from `DOPING` and
+  `CHEMOD` only shapes the guess; with an explicit basis a non-neutral
+  `CHEMOD` + `CHARGED` sets the count and `DOPING` is not added (both
+  together counted the charge twice). An odd count in a molecule is never
+  written closed shell (a periodic cell may be, with a warning: a half-filled
+  band); RHF/HF-3c and `GHOSTS` + `DOPING` with an odd count are refused; an
+  odd molecule with an HSE-type screened hybrid gets a warning (measured:
+  HSEsol-3c, HSE06 and HSEsol stopped at SCF cycle 3-4, PBE0/PBEsol0
+  converged; the functional is kept); and
+  `CHEMOD` needs a deck without symmetry (CRYSTAL stops: "SHELL CHARGES NOT
+  COMPATIBLE WITH SYMMETRY"). Shell charges for SOLDEF2MSVP, POB-TZVP-REV2
+  and POB-DZVP-REV2 (H B C N O F Na Mg P S Cl K Ca Zn Li) were measured on
+  HPCC; other internal libraries need explicit `site_states`. New example
+  config `ion_cluster_molecule.json`.
+- **Per-fragment Mulliken charges of charged runs.** Property extraction adds
+  `electron_count` and `fragment_charges` (each molecule/ion's charge, spin,
+  formal charge and deviation, an ion more than 0.5 e from its formal charge
+  flagged) when a run was charged (Mulliken count different from the sum of
+  valence charges, a renormalised guess, or "UNIT CELL NOT NEUTRAL"), and the
+  extractor prints them as a Fragments section; `mace analyze --fragments`
+  (or `MACE_FRAGMENT_CHARGES=1`) computes them for every run. Neutral runs
+  get no new properties.
+
+### Fixed
+
+- **The BAND gap of a doped run used the wrong band.** Without CRYSTAL's
+  "TOP OF VALENCE BANDS" line the occupied-band count was the header's
+  "N. OF ELECTRONS PER CELL" // 2. It now comes from the Mulliken
+  "NO. OF ELECTRONS" count (never the ALPHA-BETA print, which is the spin) of
+  the BAND .out or its SCF parent beside it; an odd or fractional count
+  leaves the BAND gap unset instead of wrong.
+- **Mulliken net charges of pseudopotential (ECP) atoms.** The net charge
+  was the Mulliken Z column minus the population; for an ECP atom that
+  column holds CRYSTAL's label (282 for Pb) and the population counts valence
+  electrons only, so Pb came out near +261. It is now measured against the
+  pseudopotential's NUCLEAR CHARGE. Newly extracted rows change for ECP
+  atoms; rows already in a database are not migrated (re-extract to update).
+- **Derived decks keep a charged parent's electron count when the basis set
+  changes.** An explicit-basis parent carries its charge in `CHEMOD` +
+  `CHARGED`; a child with an internal BASISSET got the same records, which
+  there only reshape the guess, so it ran neutral. The charge is now written
+  as `DOPING`. `CHEMOD` is copied only when the child loads the same basis
+  set (it was copied whenever the atom counts matched, although its shell
+  charges are per shell of the parent's basis) and is otherwise dropped
+  with a warning; `DOPING` is always kept, with a warning when the atom
+  count changed. Deck change for such children.
+- **A derived deck with an odd electron count is no longer written closed
+  shell.** It gets the parent's `SPIN`/`SPINLOCK`, or opt2d12 refuses it
+  with the reason.
+- **opt2d12 kept no charge records when the parent deck failed to parse,**
+  although the file was there; they are now carried from its text. **With
+  no parent deck at all**, a charged parent's `DOPING` is recovered from the
+  .out's Mulliken count; without a Mulliken print a warning says the charge
+  state cannot be recovered. Deck change for such children.
+
 ## [1.1.4] - 2026-10-02
 
 Everything since 1.1.3. **Band and phonon-dispersion paths made with the SeeK-path
