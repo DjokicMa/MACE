@@ -25,7 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   staging.
 - **`mace submit` reuses existing `<job>.sh` files.** Scripts generated
   before 1.1.3 lack the scratch guard and GUESSP staging; regenerate them
-  with `mace submit --overwrite-sh`.
+  with `mace submit --overwrite-sh` (MACE now warns when it reuses one).
+- **GUESSP from a hand-staged density** can go next to the deck as
+  `<job>.f20`, or into the scratch directory as `fort.20`.
+- **`<submit dir>/.mace_scratch` is now removed** after a run that ended
+  normally. Do not keep files of your own there.
 - **Piped answer files must be regenerated.** opt2d12 now asks for the
   integration grid, replaces the two basis menus with "Keep the basis set
   from the original D12? [Y/n]", takes LEVSHIFT as one "LEVSHIFT ISHIFT
@@ -425,6 +429,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   answers in a row to a yes/no question now stop the run with an error.
   Before, the next blank answer took the default and the run carried on with
   answers out of step.
+- **A fort.20 staged by hand for GUESSP is kept.** Copying a density matrix
+  into the job's scratch directory as fort.20 was how GUESSP restarts were
+  done in 1.1.1. Since 1.1.2 the job script stripped GUESSP when there was
+  no `<job>.f20`/`.f9` next to the deck, or copied the job's own old `.f9`
+  over it. A non-empty fort.20 in scratch is now used unless the job's `.f9`
+  is newer (then it was left by an earlier run of the same job). The same
+  applies in the TWOCOMPON branch.
+- **The `.mace_scratch` fallback is cleaned up.** When `$SCRATCH` is
+  unusable, CRYSTAL runs in `<submit dir>/.mace_scratch`, which was never
+  removed. Its job directory is now removed after a run that reached
+  CRYSTAL's normal end; a run that did not keeps it for an OPTGEOM restart.
+  Any scratch fallback is now also noted in `<job>.out`.
+- **A job script from before 1.1.3 is no longer reused silently.** `mace
+  submit` and workflow steps warn when a MACE-written `<job>.sh` or
+  `workflow_scripts/` template has no scratch guard, with the
+  `--overwrite-sh` (or re-plan) hint. The script is not changed.
+- **Decks are written through a symlink and keep their permissions.** The
+  atomic deck write replaced a symlinked deck with a regular file (the link
+  target kept the old deck) and gave every deck the umask's mode. The link
+  target is now written and the deck's mode kept, as in 1.1.1; `mace ions`
+  uses the same writer.
 
 ## [1.1.4] - 2026-10-02
 
