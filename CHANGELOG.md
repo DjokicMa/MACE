@@ -153,8 +153,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "inpsoc"`, a SOSCALE other than 1, or BASISSET is refused with the reason.
   The log notes that the valence basis now differs from a scalar parent's, so
   the SOC contribution needs a 2c run without SOC in this basis (manual
-  p. 174), which MACE does not write. Untested on CRYSTAL; decks without the
-  key are unchanged.
+  p. 174), which MACE does not write. Run on HPCC (PBE0, FMIXING 50): a Bi2
+  bilayer gives the energy of MACE's own SOC deck (-429.65783255 Ha; Bi's set
+  is pob-TZVP-rev2 with STUTSC), and the hand-edited 2c deck without SOC
+  -429.30489497 Ha; PbTe converges to -461.17688867 Ha (MACE's INPSOC deck
+  -461.17736583) and -461.00744195 Ha without SOC, a SOC contribution of
+  2.305 eV/atom against 2.309 with MACE's basis. Decks without the key are
+  unchanged.
 
 - **A SOC deck can restart from its parent's density matrix (opt-in,
   `opt2d12` and the workflow engine).** `"soc_guess": "guesspso"` in an
