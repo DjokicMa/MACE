@@ -111,7 +111,8 @@ def copy_dependencies(target_dir: str = "."):
                 "d12_writer.py",
                 "menu_nav.py",
                 "spglib_compat.py",
-                "charge_records.py"
+                "charge_records.py",
+                "ion_charges.py"
             ]
         },
         "Crystal_d3": {
