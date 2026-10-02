@@ -29,7 +29,9 @@ def _env():
 
 
 def _check(name, text):
-    path = GOLDEN / name
+    # .golden, not .d12: the committed-sample sweeps (test_committed_samples)
+    # read every tests/data/**/*.d12 as a real CRYSTAL deck
+    path = GOLDEN / (name[:-len(".d12")] + ".golden")
     if REGEN:
         GOLDEN.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
