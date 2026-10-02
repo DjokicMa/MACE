@@ -43,6 +43,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   primitive basis, as `opt2d12` writes the child in the input space group's
   cell. Single-point outputs without SUPERCEL or geometry editing are
   unchanged.
+- **Static band paths compute their lattice-dependent points for the cell.**
+  Without the seekpath library the static paths of body-centred tetragonal
+  (tI1, tI2), rhombohedral (hR1, hR2), face-centred orthorhombic (oF1) and
+  C-centred monoclinic (mS1, SeeK-path's mC1) lattices held the
+  lattice-dependent points of one particular cell (tI1's Z at 0.341718 for
+  every crystal), so their segments ended off the special points of any
+  other cell. Those points are now evaluated for the cell CRYSTAL prints with
+  SeeK-path's HPKOT formulas (new `Crystal_d3/hpkot_static.py`, numpy only;
+  transcribed from SeeK-path, MIT, Hinuma et al. 2017) and given in CRYSTAL's
+  reciprocal basis, with the ISS the library route chooses, so the static
+  and library routes write the same BAND path. The warning and the "install
+  seekpath" note are gone for these paths. Cells not in SeeK-path's setting
+  (oF axes not in a < b < c, a C-centred monoclinic cell whose a-c mesh
+  SeeK-path reduces) or of another variant (oF2/oF3, mC2/mC3) keep the old
+  entry with a warning that gives the reason; aP, mP, oP, oI, oS and oC paths
+  still warn as before. Paths written without an output file are unchanged.
 
 ## [1.1.4] - 2026-10-02
 

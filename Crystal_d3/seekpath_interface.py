@@ -714,10 +714,11 @@ def _is_parametric(label: str, coords, parametric: Optional[set]) -> bool:
     return any(_fixed_fraction(c) is None for c in coords)
 
 
-def rational_iss_step(seekpath_result: Dict[str, Any]) -> int:
+def rational_iss_step(seekpath_result: Dict[str, Any], parametric: Optional[set] = None) -> int:
     """Lowest common denominator of the fixed (rational) points on the path."""
     from math import gcd
-    parametric = parametric_point_names(seekpath_result.get('bravais_lattice_extended', ''))
+    if parametric is None:
+        parametric = parametric_point_names(seekpath_result.get('bravais_lattice_extended', ''))
     step = 1
     for label in _path_points(seekpath_result):
         coords = seekpath_result['point_coords'][label]
@@ -729,7 +730,8 @@ def rational_iss_step(seekpath_result: Dict[str, Any]) -> int:
     return step
 
 
-def choose_band_iss(seekpath_result: Dict[str, Any]) -> Tuple[int, float]:
+def choose_band_iss(seekpath_result: Dict[str, Any],
+                    parametric: Optional[set] = None) -> Tuple[int, float]:
     """ISS for a SeeK-path band path, and how far it moves the points.
 
     The fixed points of the path set ISS to the lowest common multiple of
@@ -740,11 +742,13 @@ def choose_band_iss(seekpath_result: Dict[str, Any]) -> Tuple[int, float]:
     held exactly as before (denominators up to 10**6). The displacement is
     measured in Cartesian reciprocal space (1/Angstrom, 2*pi included) with
     seekpath's reciprocal primitive lattice, or in fractional units without
-    one.
+    one. ``parametric`` names the lattice-dependent points when the caller
+    knows them (the static route without SeeK-path's definitions).
     """
     point_coords = seekpath_result['point_coords']
-    parametric = parametric_point_names(seekpath_result.get('bravais_lattice_extended', ''))
-    step = rational_iss_step(seekpath_result)
+    if parametric is None:
+        parametric = parametric_point_names(seekpath_result.get('bravais_lattice_extended', ''))
+    step = rational_iss_step(seekpath_result, parametric)
     # d3_kpoints.scale_kpoint_segments, which every deck's path goes through,
     # never writes an ISS below 4; start from the first multiple of the
     # fixed points' denominators that it keeps.

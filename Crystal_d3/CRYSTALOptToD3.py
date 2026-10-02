@@ -1280,7 +1280,7 @@ class D3Generator:
 
                             # For seekpath library results, use the library's calculated shrink factor
                             # This ensures exact integer representation of parametric k-points
-                            if kpath_info.get('source') == 'seekpath_library' and 'shrink_factor' in kpath_info:
+                            if kpath_info.get('source') in ('seekpath_library', 'seekpath_data_parametric') and 'shrink_factor' in kpath_info:
                                 shrink = kpath_info['shrink_factor']
                                 ui.info(f"    Using seekpath library's shrink factor: {shrink}")
                             else:

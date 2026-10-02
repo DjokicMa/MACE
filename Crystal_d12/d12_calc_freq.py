@@ -2064,7 +2064,7 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
                             # own ISS (chosen so lattice-dependent points
                             # fit fort.25); start from that, as opt2d3 does,
                             # not from the band shrink.
-                            if (kpath_info.get("source") == "seekpath_library"
+                            if (kpath_info.get("source") in ("seekpath_library", "seekpath_data_parametric")
                                     and "shrink_factor" in kpath_info):
                                 shrink = kpath_info["shrink_factor"]
                             # Store k-path source info

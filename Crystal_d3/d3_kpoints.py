@@ -37,6 +37,14 @@ except ImportError:
         SEEKPATH_LIBRARY_AVAILABLE = False
         get_accurate_bandpath = None
 
+# Lattice-dependent static points from the cell (numpy only)
+try:
+    from .hpkot_static import (FAMILY_CENTRING, NotInHpkotSetting, crystal_points,
+                               crystal_reciprocal, hpkot_key, parametric_names)
+except ImportError:
+    from hpkot_static import (FAMILY_CENTRING, NotInHpkotSetting, crystal_points,
+                              crystal_reciprocal, hpkot_key, parametric_names)
+
 # The computed-geometry reader (numpy only; seekpath is not needed for it)
 try:
     from .seekpath_interface import _geometry_blocks, select_geometry_block, expansion_before
@@ -2517,6 +2525,62 @@ def static_oa_segments(lookup_key: str, segments: List[List[float]],
     return out
 
 
+def parametric_static_segments(lookup_key: str, params: Dict[str, Any]
+                               ) -> Tuple[Optional[List[List[float]]], Optional[str], Dict[str, Any]]:
+    """A static entry's path with its lattice-dependent points for this cell.
+
+    The entry's segments are rebuilt from its own label edges, each point
+    evaluated for the conventional cell ``params`` with SeeK-path's (HPKOT)
+    formulas and moved to CRYSTAL's reciprocal basis (hpkot_static). ISS is
+    chosen as on the library route (seekpath_interface.choose_band_iss: the
+    fixed points exact, the lattice-dependent ones moved to the nearest
+    k/ISS by less than half a k-point spacing), so both routes write the
+    same deck; the points are k/ISS, or six decimals where no such ISS
+    exists. Returns (None, reason, {}) when the entry or the cell cannot be
+    converted; the caller keeps the entry.
+    """
+    entry = seekpath_data[lookup_key]
+    edges = _edges_of(entry.get("labels"))
+    if not edges or len(edges) != len(entry["segments"]):
+        return None, "its labels do not name its segments one to one", {}
+    try:
+        points, key = crystal_points(lookup_key, params, params.get('W'))
+    except NotInHpkotSetting as exc:
+        return None, str(exc), {}
+    missing = sorted({label for edge in edges for label in edge if label not in points})
+    if missing:
+        return None, f"no definition for {', '.join(missing)}", {}
+
+    info: Dict[str, Any] = {}
+    try:
+        try:
+            from .seekpath_interface import choose_band_iss
+        except ImportError:
+            from seekpath_interface import choose_band_iss
+        centring = FAMILY_CENTRING[key[:2]]
+        # The library route takes time reversal and has no primed copy; the
+        # ISS is chosen on the same path (a primed point is -X and lands on
+        # k/ISS with X).
+        unprimed = [edge for edge in edges if not any(label.endswith("'") for label in edge)]
+        path_result = {
+            'point_coords': {label: points[label] for edge in unprimed for label in edge},
+            'path': unprimed,
+            'bravais_lattice_extended': key,
+            'reciprocal_primitive_lattice': crystal_reciprocal(params, centring, params.get('W')),
+        }
+        iss, shift = choose_band_iss(path_result, parametric_names(key))
+        info = {'shrink_factor': int(iss), 'max_point_shift': shift}
+    except Exception:  # noqa: BLE001 - keep the six-decimal points
+        info = {}
+
+    def written(label):
+        if info:
+            return [0.0 if v == 0 else v / info['shrink_factor']
+                    for v in (int(round(x * info['shrink_factor'])) for x in points[label])]
+        return [0.0 if abs(x) < 5e-7 else round(x, 6) for x in points[label]]
+    return [written(a) + written(b) for a, b in edges], None, info
+
+
 def is_slab_output(out_file: Optional[str]) -> bool:
     """True when a CRYSTAL output is a SLAB (2D) calculation."""
     if not out_file:
@@ -2940,8 +3004,20 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
     def in_cell(segments):
         return expand_segments(segments, expansion) if expansion is not None else segments
 
+    # Lattice-dependent points for this cell, where SeeK-path's formulas
+    # apply to CRYSTAL's conventional cell (hpkot_static)
+    converted, refusal = None, None
+    if (lattice_params and not slab and lookup_key in seekpath_data
+            and hpkot_key(lookup_key) is not None):
+        converted, refusal, iss_info = parametric_static_segments(lookup_key, lattice_params)
+    if converted is not None:
+        kpath_info["source"] = "seekpath_data_parametric"
+        kpath_info.update(iss_info)
+        print(f"  Note: lattice-dependent points of the static {lookup_key} path computed for "
+              f"this cell (SeeK-path's HPKOT formulas), in CRYSTAL's reciprocal basis")
+
     # Warn about static data limitations for non-cubic
-    if not ext_bravais.startswith('c'):
+    if converted is None and not ext_bravais.startswith('c'):
         print(f"  Note: Using static seekpath_data for {ext_bravais}. "
               f"Install 'seekpath' library for accurate parametric k-points.")
     # The static entries are SeeK-path's numbers, in the reciprocal basis of
@@ -2950,13 +3026,19 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
     # centring vectors), so the points can carry other points' names or sit
     # off the special points. The oA entries are moved to CRYSTAL's basis
     # (static_oa_segments); the others cannot be without the structure.
-    if lookup_key[:2] in ('aP', 'mP', 'mS', 'mC', 'oP', 'oS', 'oC', 'oF', 'oI'):
+    if converted is None and lookup_key[:2] in ('aP', 'mP', 'mS', 'mC', 'oP', 'oS', 'oC', 'oF', 'oI'):
         print(f"  WARNING: the static {lookup_key} path is given in SeeK-path's standard cell, "
               f"which can differ from CRYSTAL's primitive cell for this lattice (axis order, "
               f"reduction, centring vectors); its labels may then name other points. "
               f"Install the 'seekpath' library for a path in CRYSTAL's cell.")
+    if refusal:
+        print(f"  WARNING: the lattice-dependent points of the static {lookup_key} path are "
+              f"not computed for this cell ({refusal}); they are the values the entry "
+              f"was written for.")
 
     # Get path data if available
+    if converted is not None:
+        return in_cell(converted), kpath_info
     if lookup_key in seekpath_data:
         segments = seekpath_data[lookup_key]["segments"]
         if lookup_key[:3] in OA_STATIC_PARAMETER:
