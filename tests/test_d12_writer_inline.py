@@ -349,23 +349,25 @@ def test_internal_basis_block_names_the_set():
 
 def test_external_basis_block_concatenates_files_in_z_order_and_ends_with_99_0(tmp_path):
     """External files are named by atomic number, ECP elements (Z >= 37) by
-    Z + 200; each unique element's file is written once, in Z order."""
-    (tmp_path / "1").write_text("1 2\n0 0 3 1.0 1.0\n")
-    (tmp_path / "8").write_text("8 3\n0 0 6 2.0 1.0\n")
-    (tmp_path / "282").write_text("282 5\nINPUT\n")
+    Z + 200; each unique element's file is written once, in Z order. (The
+    files are whole basis blocks: one CRYSTAL could not read is refused,
+    test_basis_file_refusal.)"""
+    (tmp_path / "1").write_text("1 1\n0 0 1 1.0 1.0\n1.0 1.0\n")
+    (tmp_path / "8").write_text("8 1\n0 0 1 2.0 1.0\n2.0 1.0\n")
+    (tmp_path / "282").write_text("282 1\nHAYWSC\n0 0 1 2.0 1.0\n3.0 1.0\n")
     lines = _lines(write_basis_block,
                    {"basis_set_type": "EXTERNAL", "basis_set": str(tmp_path)},
                    {"elements": [82, 8, 1, 8, 1]})
-    assert lines == ["1 2", "0 0 3 1.0 1.0", "8 3", "0 0 6 2.0 1.0",
-                     "282 5", "INPUT", "99 0"]
+    assert lines == ["1 1", "0 0 1 1.0 1.0", "1.0 1.0", "8 1", "0 0 1 2.0 1.0", "2.0 1.0",
+                     "282 1", "HAYWSC", "0 0 1 2.0 1.0", "3.0 1.0", "99 0"]
 
 
 def test_external_basis_block_skips_a_missing_element_file(tmp_path, capsys):
-    (tmp_path / "6").write_text("6 4\n")
+    (tmp_path / "6").write_text("6 1\n0 0 1 2.0 1.0\n1.0 1.0\n")
     lines = _lines(write_basis_block,
                    {"basis_set_type": "EXTERNAL", "basis_set": str(tmp_path)},
                    {"elements": [6, 9]})
-    assert lines == ["6 4", "99 0"]
+    assert lines == ["6 1", "0 0 1 2.0 1.0", "1.0 1.0", "99 0"]
     assert "element 9" in capsys.readouterr().out
 
 

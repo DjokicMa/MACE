@@ -113,7 +113,8 @@ def copy_dependencies(target_dir: str = "."):
                 "spglib_compat.py",
                 "charge_records.py",
                 "ion_charges.py",
-                "basis_library.py"  # reads the bundled basis library files
+                "basis_library.py",  # reads the bundled basis library files
+                "basis_file_check.py"  # basis_library refuses unreadable records
             ]
         },
         "Crystal_d3": {

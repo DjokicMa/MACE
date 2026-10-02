@@ -84,6 +84,7 @@ from d12_writer import (
 # Import write_scf_section from d12_writer
 from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES, atomic_deck
 from charge_records import ChargeCarryError, carry_charge_records, charge_from_parent_out
+from basis_file_check import BasisFileError
 import basis_library
 from d12_interactive import (
     display_current_settings, interactive_d12_configuration,
@@ -2086,9 +2087,16 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     # Use optimized geometry from output but with preserved settings
     # The geometry_data (out_data) contains the optimized coordinates with is_unique flags
     # The settings (options) contains the preserved symmetry and other settings from D12
-    if not write_d12_file(new_filename, out_data, converted_options, external_basis_data,
-                          parent_k_points=parent_k_points,
-                          ask=False if unattended else None):
+    try:
+        written = write_d12_file(new_filename, out_data, converted_options, external_basis_data,
+                                 parent_k_points=parent_k_points,
+                                 ask=False if unattended else None)
+    except BasisFileError as exc:
+        # A basis record CRYSTAL could not read (atomic_deck has removed the
+        # part-written deck).
+        _fail(str(exc), f"Not writing {os.path.basename(new_filename)}: {exc}")
+        written = False
+    if not written:
         ui.err(f"\nFailed to create {new_filename}: D12 creation aborted.")
         if not LAST_RESULT["reason"]:
             LAST_RESULT["reason"] = "D12 creation aborted"

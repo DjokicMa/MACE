@@ -2718,20 +2718,26 @@ def _external_basis_file_exists(basis_dir, atomic_number):
     """Whether read_basis_file() would find a file for this element.
 
     Mirrors read_basis_file's lookup exactly, including its +200 ECP naming and
-    its fallback to the un-offset name.
+    its fallback to the un-offset name. The record it would read is checked
+    as read_basis_file checks it, so one CRYSTAL could not read raises
+    BasisFileError (basis_file_check) here, before any question is asked.
     """
     import os
 
-    from basis_library import bundled_family_for, record_exists
+    from basis_library import bundled_family_for, read_record, record_exists
 
     candidates = [atomic_number]
     if atomic_number in ECP_ELEMENTS_EXTERNAL:
         candidates.insert(0, atomic_number + 200)
-    if bundled_family_for(basis_dir):
-        # A bundled family is one library file, not a directory.
-        return any(record_exists(basis_dir, n) for n in candidates)
-    if not basis_dir or not os.path.isdir(basis_dir):
+    bundled = bundled_family_for(basis_dir)
+    if not bundled and (not basis_dir or not os.path.isdir(basis_dir)):
         # Not a usable directory - let the existing "basis file not found"
         # warning in read_basis_file speak rather than blaming the elements.
         return True
-    return any(os.path.isfile(os.path.join(basis_dir, str(n))) for n in candidates)
+    for n in candidates:
+        # A bundled family is one library file, not a directory.
+        if (record_exists(basis_dir, n) if bundled
+                else os.path.isfile(os.path.join(basis_dir, str(n)))):
+            read_record(basis_dir, n)
+            return True
+    return False

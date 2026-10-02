@@ -127,6 +127,7 @@ from d12_calc_freq import (
     crystal_system_with_lattice,
 )
 from d12_calc_basic import write_optimization_section, configure_single_point
+from basis_file_check import BasisFileError
 from d12_writer import (
     write_basis_block,
     write_optimization_block,
@@ -1436,10 +1437,15 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
     symbols = cif_data["symbols"]
     positions = cif_data["positions"]
 
-    # Check basis set compatibility
-    is_compatible, missing_elements = check_basis_set_compatibility(
-        options["basis_set"], atomic_numbers, options["basis_set_type"]
-    )
+    # Check basis set compatibility. A basis record CRYSTAL could not read
+    # (basis_file_check) is refused here, before anything is asked.
+    try:
+        is_compatible, missing_elements = check_basis_set_compatibility(
+            options["basis_set"], atomic_numbers, options["basis_set_type"]
+        )
+    except BasisFileError as exc:
+        ui.err(f"Not writing {os.path.basename(output_file)}: {exc}")
+        return False
 
     if not is_compatible:
         ui.warn(
@@ -2084,7 +2090,12 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
                     print("END", file=f)
                     unique_atoms = set(atomic_numbers)
                     for atom_num in sorted(unique_atoms):
-                        basis_content = read_basis_file(basis_set, atom_num, "EXTERNAL")
+                        try:
+                            basis_content = read_basis_file(basis_set, atom_num, "EXTERNAL")
+                        except BasisFileError as exc:
+                            ui.err(f"Not writing {os.path.basename(output_file)}: {exc}")
+                            f.discard()
+                            return False
                         if basis_content:
                             print(basis_content, file=f, end="")
                     print("99 0", file=f)
@@ -2128,7 +2139,12 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
                 print("END", file=f)
                 unique_atoms = set(atomic_numbers)
                 for atom_num in sorted(unique_atoms):
-                    basis_content = read_basis_file(basis_set, atom_num, "EXTERNAL")
+                    try:
+                        basis_content = read_basis_file(basis_set, atom_num, "EXTERNAL")
+                    except BasisFileError as exc:
+                        ui.err(f"Not writing {os.path.basename(output_file)}: {exc}")
+                        f.discard()
+                        return False
                     if basis_content:
                         print(basis_content, file=f, end="")
                 print("99 0", file=f)

@@ -299,18 +299,33 @@ def record_exists(directory, key):
 def read_record(directory, key):
     """Text of <directory>/<key>: from the library for a bundled family, else
     from disk. Raises FileNotFoundError like open() when there is none - for a
-    bundled family's #%missing element the message carries the reason."""
+    bundled family's #%missing element the message carries the reason.
+
+    Every deck writer reads its basis records here, so a record CRYSTAL could
+    not read as it stands (basis_file_check: a placeholder for the shell
+    count, "X" for a charge, fewer shells than announced - stuttgart 204,
+    219, 220, 227, 294, say) raises BasisFileError, a ValueError naming it,
+    and no deck is written with it."""
     match = _match(directory)
     if match:
         lib = _library(match)
         if str(key) in lib:
-            return lib.record(key)
+            return _readable(os.path.join(directory, str(key)), lib.record(key), key)
         reason = lib.missing.get(str(key))
         raise FileNotFoundError(
             os.path.join(directory, str(key))
             + (f" (not in {match[0]}: {reason})" if reason else ""))
-    with open(os.path.join(directory, str(key)), "r") as fh:
-        return fh.read()
+    path = os.path.join(directory, str(key))
+    with open(path, "r") as fh:
+        return _readable(path, fh.read(), key)
+
+
+def _readable(path, text, key):
+    from basis_file_check import check_basis_file
+    if text:
+        number = str(key).split(".")[0]
+        check_basis_file(path, text, int(number) if number.isdigit() else 0)
+    return text
 
 
 def iter_records(family):
