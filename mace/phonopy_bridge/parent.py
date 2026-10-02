@@ -394,6 +394,12 @@ def refusal_reasons(deck: ParentDeck, out_text: str) -> List[Tuple[str, str]]:
                                 "with no ATOMSPIN/SPINLOCK: the magnetic state is not "
                                 "reproducible in a P1 supercell"))
 
+    stray = [i for i, k in _top_level(deck.block3) if k == "END"]
+    if stray:
+        reasons.append((REFUSE_DECK_STRUCTURE,
+                        f"block 3 has an END before its last record ({len(stray)} extra): "
+                        "CRYSTAL stops reading there, and in a displaced deck it would stop "
+                        "before GRADCAL and write no forces. Remove the extra END"))
     unknown = unknown_block3_keywords(deck.block3)
     if unknown:
         reasons.append((REFUSE_UNKNOWN_KEYWORD,
@@ -488,12 +494,18 @@ def template_lines(deck: ParentDeck, n_super_atoms: int, toldee: Optional[int] =
     edits = ["(a) final END of the parent removed (the deck's END follows GRADCAL)"]
     block3 = list(deck.block3)
 
-    # (b) TOLDEE: out of block 3, into the deck tail
-    old = parent_toldee(block3)
+    # (b) TOLDEE: out of block 3 (every top-level record of it), into the deck tail
+    found: List[int] = []
+    while True:
+        ti = _value_index(block3, "TOLDEE")
+        if ti is None:
+            break
+        value = parent_toldee(block3)
+        if value is not None:
+            found.append(value)
+        del block3[ti:ti + 2 if value is not None else ti + 1]
+    old = max(found) if found else None
     target = max(DEFAULT_TOLDEE if toldee is None else toldee, old or 0)
-    ti = _value_index(block3, "TOLDEE")
-    if ti is not None:
-        del block3[ti:ti + 2 if old is not None else ti + 1]
     if old is None:
         edits.append(f"(b) TOLDEE {target} written before GRADCAL (parent had none)")
     elif target != old:

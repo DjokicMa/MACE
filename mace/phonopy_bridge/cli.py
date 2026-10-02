@@ -194,6 +194,12 @@ def cmd_generate(a) -> int:
         warns.append(("SHRINK_KEPT", "non-diagonal --dim: SHRINK kept as in the parent (it "
                       "cannot be divided per direction); set it in the decks by hand"))
 
+    try:
+        P._check_template(deck, template)
+    except ValueError as exc:       # refusal_reasons should have caught it already
+        print(f"Error: {d12_path}: {exc}", file=sys.stderr)
+        return 1
+
     outdir.mkdir(parents=True, exist_ok=True)
     if a.cry_sym:
         warns += [("CRY_SYM", m) for m in S.cry_sym_warnings(cell)]

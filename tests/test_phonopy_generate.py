@@ -150,6 +150,21 @@ def test_refused_parent_writes_nothing(tmp_path, monkeypatch, capsys):
     assert not (tmp_path / "phonopy_parent_222").exists()
 
 
+@pytest.mark.parametrize("extra", ["END\n", "TOLDEE\n9\nEND\n"], ids=["end", "toldee-end"])
+def test_stray_end_in_block3_is_refused_before_anything_is_written(
+        tmp_path, monkeypatch, capsys, extra):
+    """CRYSTAL stops reading block 3 at its first END, so a parent may carry a
+    second one. Copied into a displaced deck it would stop CRYSTAL before
+    GRADCAL (rc 0, no forces): refuse cleanly, with no half-written set."""
+    _parent(tmp_path, "explicit")
+    d12 = tmp_path / "parent.d12"
+    d12.write_text(d12.read_text().rstrip("\n") + "\n" + extra)
+    monkeypatch.chdir(tmp_path)
+    assert cli.main(["generate", "parent.out", "--dim", "2 2 2"]) == 1
+    assert "[DECK_STRUCTURE]" in capsys.readouterr().err
+    assert not (tmp_path / "phonopy_parent_222").exists()
+
+
 def test_runs_without_contextlib_chdir(tmp_path, monkeypatch):
     """contextlib.chdir is Python 3.11+; MACE documents 3.7+, so generate and
     collect must not need it."""

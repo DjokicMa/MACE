@@ -268,6 +268,15 @@ def test_trailing_end_in_a_template_is_caught():
         P.deck_text("t", d, broken)
 
 
+def test_every_top_level_toldee_leaves_the_template():
+    """Two TOLDEE records in block 3 (CRYSTAL reads both): neither may stay in
+    the TEMPLATE, and the tail takes the tighter one."""
+    d = P.split_parent_deck(internal("7", extra_b3="TOLDEE\n12\n"))
+    t = P.template_lines(d, 16)
+    assert _toldees(t.lines) == [] and t.toldee == 12
+    assert _tail(d, t) == ["TOLDEE", "12", "GRADCAL", "END"]
+
+
 def test_guessp_dropped():
     t = P.template_lines(P.split_parent_deck(internal(extra_b3="GUESSP\n")), 16)
     assert "GUESSP" not in t.lines
