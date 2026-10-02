@@ -9,30 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`mace phonopy generate` / `mace phonopy collect`: finite-displacement phonons
-  with phonopy** (optional dependency, `phonopy<5`). `generate` reads a finished 3D
-  OPT or SP parent and writes one EXTERNAL deck per displaced supercell, named after
-  the parent and the supercell, with its geometry in `<job>.ext`. The deck has the
-  layout phonopy's own CRYSTAL writer gives it, measured to give forces on CRYSTAL23:
-  the parent's basis and SCF block (phonopy's TEMPLATE, also written to `TEMPLATE`
-  for an explicit basis; never with an END, which stops CRYSTAL before GRADCAL with
-  no forces), then TOLDEE (at least 10), GRADCAL and END. The basis and SCF block
-  are kept byte for byte apart from the printed edits (GUESSP dropped, buffers for
-  large cells, SHRINK divided by the supercell size - rounded up where it does not
-  divide - unless `--keep-shrink` or a non-diagonal `--dim`). `--cry-sym` (opt-in) writes each
+- **`mace phonopy generate` / `mace phonopy collect`: finite-displacement phonons with
+  phonopy** (optional dependency, `phonopy<5`). `generate` reads a finished 3D OPT or
+  SP parent and writes one EXTERNAL deck per displaced supercell, named after the
+  parent and the supercell, with its geometry in `<job>.ext`. The deck has the layout
+  phonopy's own CRYSTAL writer gives it, measured to give forces on CRYSTAL23: the
+  parent's basis and SCF block (phonopy's TEMPLATE, also written to `TEMPLATE` for an
+  explicit basis; never with an END, which stops CRYSTAL before GRADCAL with no
+  forces), then TOLDEE (at least 10), GRADCAL and END. The basis and SCF block are
+  kept byte for byte apart from the printed edits (GUESSP dropped, buffers for large
+  cells, SHRINK divided by the supercell size - rounded up where it does not divide -
+  unless `--keep-shrink` or a non-diagonal `--dim`). `--cry-sym` (opt-in) writes each
   displaced cell's symmetry into its `.ext` as phonopy's CRY_SYM does - the same
   frequencies for diamond at about a third of the core hours, measured on CRYSTAL23 -
-  with phonopy's caveat that some space groups (e.g. R-3m) do not work. Parents it cannot reproduce in a P1 supercell (non-3D, charged,
-  spin-locked, magnetic without a lock, ghosts, unknown SCF keywords, unconverged) are
-  refused with the reason. `collect` checks every output - including that CRYSTAL ran
-  the displaced geometry it was given - names any output whose forces phonopy cannot
-  read, and stops unless FORCE_SETS was really written (phonopy's `phonopy-init -f`
-  exits 0 when it fails) before writing band, mesh, DOS and
-  thermal properties, with optional non-analytical correction from a Gamma FREQCALC
-  with INTENS + INTCPHF. Submit the decks with a plain `mace submit DIR`, never
-  `--track`, with the walltime `generate` prints: it grows with k-points x atoms^3
-  (2 h for a 2x2x2 hybrid-DFT diamond, 20 h for 3x3x3, which measured on CRYSTAL23
-  did not finish its SCF in 2 h).
+  with phonopy's caveat that some space groups (e.g. R-3m) do not work. Parents it
+  cannot reproduce in a P1 supercell (non-3D, charged, spin-locked, magnetic without a
+  lock, ghosts, unknown SCF keywords, unconverged) are refused with the reason.
+  `collect` checks every output - including that CRYSTAL ran the displaced geometry it
+  was given - names any output whose forces phonopy cannot read, and stops unless
+  FORCE_SETS was really written (phonopy's `phonopy-init -f` exits 0 when it fails)
+  before writing band, mesh, DOS and thermal properties, with optional non-analytical
+  correction from a Gamma FREQCALC with INTENS + INTCPHF. Submit the decks with a
+  plain `mace submit DIR`, never `--track`, with the walltime `generate` prints: it
+  grows with k-points x atoms^3 (2 h for a 2x2x2 hybrid-DFT diamond, 20 h for 3x3x3,
+  which measured on CRYSTAL23 did not finish its SCF in 2 h).
 - The CRYSTAL job script copies `<job>.ext` to `fort.34` when that file exists next to
   the deck (EXTERNAL geometry). No existing deck has one, so their jobs are unchanged.
 - `mace preflight` checks an EXTERNAL deck when its geometry sits next to it as
