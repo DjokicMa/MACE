@@ -553,6 +553,42 @@ def use_low_dim_group(settings):
         settings["spacegroup"] = None
 
 
+def write_supercell_in_p1(out_data, settings):
+    """Describe a SUPERCEL/SUPERCON parent's cell in group 1 (P1). True if it did.
+
+    After SUPERCEL or SUPERCON (manual sec. 4.21, pp.74-77) the geometry
+    CRYSTAL prints - and computes - is the supercell, with only the symmetry
+    operators the supercell keeps; ATOMSUBS/ATOMREMO/GHOSTS etc. after it
+    reduce them further. The space group CRYSTAL printed (and the parent
+    deck's group record) is still the primitive host's, so the child deck was
+    that group with the supercell's lattice and its asymmetric atoms: SG 227
+    with a = 5.01 A and 5 atoms for a 2x2x2 diamond, not diamond. The
+    supercell's own operators cannot be written as a group record, so the
+    child lists every atom of the supercell in P1: the same cell and atoms,
+    in the same order (so atom labels such as GHOSTS still name the same
+    atoms), at the cost of CRYSTAL's symmetry reduction.
+    """
+    content = out_data.get("optimization_content") or ""
+    if "SUPERCELL GENERATED" not in content:
+        return False
+    group = settings.get("spacegroup")
+    settings["spacegroup"] = out_data["spacegroup"] = 1
+    settings["origin_setting"] = out_data["origin_setting"] = "0 0 0"
+    for key in ("layer_group", "rod_group"):
+        if settings.get(key) is not None:
+            settings[key] = 1
+    # The supercell is the primitive cell CRYSTAL computed; its lattice and
+    # its full atom list are the ones the writer must use.
+    if out_data.get("primitive_cell"):
+        out_data["conventional_cell"] = out_data["primitive_cell"]
+    out_data["coordinates"] = list(out_data.get("primitive_coordinates")
+                                   or out_data.get("coordinates") or [])
+    out_data["crystallographic_coordinates"] = list(out_data["coordinates"])
+    ui.info(f"  The parent computed a supercell (SUPERCEL/SUPERCON): writing its "
+            f"{len(out_data['coordinates'])} atoms in P1, not in the host's group {group}")
+    return True
+
+
 def low_dim_group_error(settings):
     """Why the SLAB/POLYMER group record would be invalid, or None if it is fine."""
     dim = settings.get("dimensionality")
@@ -1365,6 +1401,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             has_parent_deck = False
 
     use_low_dim_group(settings)
+    parent_supercell = write_supercell_in_p1(out_data, settings)
 
     # Set defaults if not found
     if not settings.get("spacegroup"):
@@ -1836,7 +1873,11 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             options["write_only_unique"] = True
         else:
             options["write_only_unique"] = False
-    
+    if parent_supercell:
+        # Every atom of the supercell, in P1, whatever a config or the
+        # shared settings of another file say.
+        options.update(spacegroup=1, origin_setting="0 0 0", write_only_unique=False)
+
     # The deck carries the parent's external basis only on this branch of
     # the writer; a 3c functional always writes BASISSET <its basis>.
     if (options.get("functional") not in THREE_C_FUNCTIONALS

@@ -515,6 +515,12 @@ def carry_charge_records(child_text: str, parent_text: str,
     child_has = extract_charge_records(child_text)
     notes = []
     n_parent = _geometry_atom_count(_records(parent_text))
+    if parent_out_text and "SUPERCELL GENERATED" in parent_out_text:
+        # The parent built a supercell (SUPERCEL/SUPERCON): its atom labels
+        # are the supercell's, which opt2d12 writes out atom by atom in P1.
+        cell = re.findall(r"ATOMS IN THE UNIT CELL:\s+(\d+)", parent_out_text)
+        if cell:
+            n_parent = int(cell[-1])
     n_child = _geometry_atom_count(lines)
     if library_basis_end(_records(parent_text)) is not None:
         notes.append("WARNING: the parent deck has an END right after its BASISSET library name "
