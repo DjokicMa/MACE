@@ -87,7 +87,7 @@ def get_safe_walltime_input(prompt, default):
         if not user_input:
             return default
         # Simple validation for walltime format (e.g., 7-00:00:00, 12:00:00)
-        if re.match(r'^\d+(-\d{2}:\d{2}:\d{2}|\d{2}:\d{2}:\d{2}|\d{2}:\d{2})$', user_input):
+        if re.match(r'^(\d+-\d{1,2}:\d{2}:\d{2}|\d{1,3}:\d{2}:\d{2}|\d{1,2}:\d{2})$', user_input):
             return user_input
         else:
             print("Please enter walltime in format like '7-00:00:00', '12:00:00', or '12:00'")
