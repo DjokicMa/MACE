@@ -495,8 +495,32 @@ none is on by default, and without them every deck is as above):
 | `soc_fmixing` | 0-100 | FMIXING of the SOC deck (default 50). |
 | `smear` | width in hartree | SMEAR after SHRINK (see above). |
 | `soc_ecp` | `"inpsoc"` (default), `"stutsc"` | `"stutsc"` writes CRYSTAL's internal `STUTSC` record (manual p. 84) in place of the INPSOC records, for the elements where it was measured to be the same potential with the same core (`soc_ecp.STUTSC_CORES`: Rb-Mo, Ru-I, Cs, Ba, Ta-Bi; not Hf, whose STUTSC differs, nor La-Lu, where CRYSTAL stops). The ECP must still pass the pairing check, and SOSCALE must be 1 (STUTSC has no scale factor). A parent deck's STUTSC is kept when its valence basis is MACE's library basis for such an element, or the official pob-TZVP-rev2-SOC block; anything else is refused. |
-| `soc_guess` | `"guesspso"`, `"guesspnoso"` | opt2d12 and workflow plan steps only (refused by cif2d12: no parent). Writes the 2c restart record in the TWOCOMPON block (manual p. 173) and stages the parent's `.f9` (beside its `.out`) as `<deck stem>.f20`, which the job script copies to fort.20. `guesspso`: the parent must be a 2c run (with or without SOC). `guesspnoso`: the parent must be a 1c run that was unrestricted (UHF or SPIN) and ran without symmetry (group 1 or SYMMREMO); the child gets no SYMMREMO (TWOCOMPON deactivates symmetry, p. 169). The parent deck and the deck as written must have the same symmetry frame and per-atom shells (ECP records aside), or nothing is written. FMIXING 80 for both (measured on a Bi2 bilayer only: at 50 both restarts diverged; at 80 GUESSPSO converged in 3-5 cycles and GUESSPNOSO in 29, where a cold SOC start takes 12), unless `soc_fmixing` is set. `mace preflight` and `mace submit` refuse a restart deck with nothing to stage (CRYSTAL stops on GUESSPSO with nothing in fort.20, measured). |
+| `soc_guess` | `"guesspso"`, `"guesspnoso"` | opt2d12 and workflow plan steps only (refused by cif2d12: no parent). Writes the 2c restart record in the TWOCOMPON block (manual p. 173) and stages the parent's `.f9` (beside its `.out`) as `<deck stem>.f20`, which the job script copies to fort.20. `guesspso`: the parent must be a 2c run (with or without SOC). `guesspnoso`: the parent must be a 1c run that was unrestricted (UHF or SPIN) and ran without symmetry (group 1 or SYMMREMO); the child gets no SYMMREMO (TWOCOMPON deactivates symmetry, p. 169). The parent deck and the deck as written must have the same symmetry frame and per-atom shells (ECP records aside), or nothing is written. FMIXING 80 for both (measured on a Bi2 bilayer only: at 50 both restarts diverged; at 80 GUESSPSO converged in 3-5 cycles and GUESSPNOSO in 29, where a cold SOC start takes 12), unless `soc_fmixing` is set. `mace preflight` and `mace submit` refuse a restart deck with nothing to stage (CRYSTAL stops on GUESSPSO with nothing in fort.20, measured; GUESSPNOSO without its parent's matrix was not run). A `guesspnoso` parent that is restricted or kept its symmetry is refused before anything is written: CRYSTAL23 aborts such a restart at once in READFG (measured; see "A 1c parent for GUESSPNOSO" below). |
 | `soc_basis` | `"pob-tzvp-rev2-soc"` | Replaces every ECP atom's basis block whole by the official X_pob_TZVP_rev2_SOC block for its element (CRYSTAL's STUTSC with the valence basis published for it, "to be used with CRYSTAL23"; J. Laun, T. Bredow, J. Comput. Chem. 43 (2022) 839, doi 10.1002/jcc.26839; J. K. Desmarais, J. P. Flament, A. Erba, Phys. Rev. B 101 (2020) 235142, doi 10.1103/PhysRevB.101.235142). The set covers Rb-I except Tc, Cs, Ba and Hf-Bi; a deck with any other ECP element (La-Lu, actinides, Po onwards) is refused, naming it. All-electron atoms (H-Br, and MACE's all-electron Tc) keep their block, since there is no SOC operator on an all-electron atom (manual p. 175); atom numbers never change. Refused with `"soc_ecp": "inpsoc"`, with SOSCALE other than 1, and for BASISSET decks. The data, with source URL, retrieval date and references, is `basis_sets/pob-tzvp-rev2-soc.lib`, written by `basis_sets/fetch_soc_basis.py`. The valence basis then differs from a scalar parent's: the SOC contribution needs a 2c run without SOC in the same basis (manual p. 174), which MACE does not write - copy the deck and delete the `SOC` line of its TWOCOMPON block. |
+
+**A 1c parent for GUESSPNOSO.** `"soc_guess": "guesspnoso"` needs a parent
+that ran as an unrestricted one-component SCF without symmetry (manual p. 173).
+MACE does not write that parent; make it by hand from the SOC deck you want to
+start (or from any deck in the same frame and basis):
+
+1. Delete the `TWOCOMPON` ... `END` block (the `TWOCOMPON`, `SOC` and `END`
+   lines before `SCFDIR`).
+2. Add `SYMMREMO` (p. 78) as the last record of the geometry block, before its
+   `END`.
+3. Add `SPIN` (p. 140) as the first record of the `DFT` block (`UHF`, p. 131,
+   for a Hartree-Fock deck).
+4. Keep the basis as it is, `INPSOC` (or `STUTSC`) records included, so the
+   parent's matrix has the shells of the SOC deck.
+
+Run it, then make the SOC deck from its `.out` with `opt2d12` and a template
+holding `"soc": true, "soc_guess": "guesspnoso"`; the parent's `.f9` is staged
+as the child's `.f20`, and the child gets FMIXING 80. Measured on CRYSTAL23
+(Bi2 bilayer): the restart from such a parent converged in 29 cycles to the
+cold-start SOC energy (5.6e-8 Ha apart; FMIXING 50 diverged); `SYMMREMO` in the
+2c deck changes nothing, so opt2d12 does not write it there. A parent that kept
+its symmetry makes CRYSTAL abort at once with `ERROR **** READFG **** RESTART
+NOT POSSIBLE - SYMMETRY INCOMPATIBILITY`, a restricted one with `... - OPEN-CLOSED
+SHELL INCOMPATIBILITY`; opt2d12 refuses both before writing anything.
 
 ### `d12_interactive.py`
 
