@@ -3,7 +3,11 @@
 #%description The external basis records MACE has always written for DZVP-REV2 (menu option 1).
 #%description 41 records (Tc, Cs-Bi, Ac-Es) are byte-identical to the triplezeta family's.
 #%record 1 bytes=194
-#%  provenance unverified (legacy MACE file)
+#%  source H_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/hydrogen.html#H_pob_DZVP_rev2
+#%  provenance exact numeric match to H_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 1 3
 0 0 3 1 1
   24.62344998        0.01857031
@@ -15,7 +19,11 @@
   0.184819860        1.00000000
 
 #%record 3 bytes=327
-#%  provenance unverified (legacy MACE file)
+#%  source Li_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/lithium.html#Li_pob_DZVP_rev2
+#%  provenance exact numeric match to Li_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 3  4
 0 0 5 2 1.0
   266.277855160     0.006492015033
@@ -31,7 +39,11 @@
   0.20621187000     1.000000000000
 
 #%record 4 bytes=324
-#%  provenance unverified (legacy MACE file)
+#%  source Be_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/beryllium.html#Be_pob_DZVP_rev2
+#%  provenance exact numeric match to Be_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 4 4
 0 0 5 2 1.0
   515.18616125     0.005561530798
@@ -47,7 +59,11 @@
   0.6951546600     1.000000000000
 
 #%record 5 bytes=497
-#%  provenance unverified (legacy MACE file)
+#%  source B_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/boron.html#B_pob_DZVP_rev2
+#%  provenance exact numeric match to B_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 5 6
 0 0 5 2 1
   839.31830086     -0.0055929201074
@@ -69,7 +85,11 @@
   0.5683718000      1.0000000000000
 
 #%record 6 bytes=520
-#%  provenance unverified (legacy MACE file)
+#%  source C_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/carbon.html#C_pob_DZVP_rev2
+#%  provenance exact numeric match to C_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 6 6
 0 0 5 2 1
   1238.40169380       0.0054568832082
@@ -91,7 +111,11 @@
   0.52857792000       1.0000000000000
 
 #%record 7 bytes=496
-#%  provenance unverified (legacy MACE file)
+#%  source N_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/nitrogen.html#N_pob_DZVP_rev2
+#%  provenance exact numeric match to N_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 7 6
 0 0 5 2 1
   1712.8415853     -0.0053934125305
@@ -113,7 +137,11 @@
   0.5119810200      1.0000000000000
 
 #%record 8 bytes=496
-#%  provenance unverified (legacy MACE file)
+#%  source O_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/oxygen.html#O_pob_DZVP_rev2
+#%  provenance exact numeric match to O_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 8 6
 0 0 5 2 1
   2266.1767785      -0.005343180993
@@ -135,7 +163,11 @@
   0.4790426200       1.000000000000
 
 #%record 9 bytes=496
-#%  provenance unverified (legacy MACE file)
+#%  source F_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/fluorine.html#F_pob_DZVP_rev2
+#%  provenance exact numeric match to F_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 9 6
 0 0 5 2 1
   2894.8325990     -0.0053408255515
@@ -157,7 +189,11 @@
   1.2725609300      1.0000000000000
 
 #%record 11 bytes=688
-#%  provenance unverified (legacy MACE file)
+#%  source Na_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/sodium.html#Na_pob_DZVP_rev2
+#%  provenance exact numeric match to Na_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 11  7
 0 0 5 2 1
   4098.2003908     -0.0058535911879
@@ -185,7 +221,11 @@
   0.2522706400      1.0000000000000
 
 #%record 12 bytes=687
-#%  provenance unverified (legacy MACE file)
+#%  source Mg_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/magnesium.html#Mg_pob_DZVP_rev2
+#%  provenance exact numeric match to Mg_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 12 7
 0 0 5 2 1
   4953.8339196     -0.0057778967498
@@ -213,7 +253,11 @@
   0.4148382900      1.0000000000000
 
 #%record 13 bytes=737
-#%  provenance unverified (legacy MACE file)
+#%  source Al_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/aluminium.html#Al_pob_DZVP_rev2
+#%  provenance exact numeric match to Al_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 13  8
 0 0 5 2 1
   5887.5727030      0.0013483347987
@@ -273,7 +317,11 @@
   0.3500000000      1.0000000000000
 
 #%record 15 bytes=752
-#%  provenance unverified (legacy MACE file)
+#%  source P_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/phosphorus.html#P_pob_DZVP_rev2
+#%  provenance exact numeric match to P_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 15 8
 0 0 5 2 1
   8002.4795106       0.0057503489302
@@ -303,7 +351,11 @@
   0.4500000000       1.0000000000000
 
 #%record 16 bytes=751
-#%  provenance unverified (legacy MACE file)
+#%  source S_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/sulphur.html#S_pob_DZVP_rev2
+#%  provenance exact numeric match to S_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 16 8
 0 0 5 2 1
   9184.9303010      -0.0022294387756
@@ -333,7 +385,11 @@
   0.1500000000       1.0000000000000
 
 #%record 17 bytes=737
-#%  provenance unverified (legacy MACE file)
+#%  source Cl_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/chlorine.html#Cl_pob_DZVP_rev2
+#%  provenance exact numeric match to Cl_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 17 8
 0 0 5 2 1
   10449.827566      0.0019708362484
@@ -363,7 +419,11 @@
   0.6513145300      1.0000000000000
 
 #%record 19 bytes=986
-#%  provenance unverified (legacy MACE file)
+#%  source K_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/potassium.html#K_pob_DZVP_rev2
+#%  provenance exact numeric match to K_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 19 9
 0 0 6 2 1
   31478.746764       0.0039838653994
@@ -400,7 +460,11 @@
   0.3966958300       1.0000000000000 
 
 #%record 20 bytes=935
-#%  provenance unverified (legacy MACE file)
+#%  source Ca_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/calcium.html#Ca_pob_DZVP_rev2
+#%  provenance exact numeric match to Ca_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 20 9
 0 0 6 2 1
   35138.713929      0.003948252074
@@ -437,7 +501,11 @@
   0.5251112100      1.000000000000
 
 #%record 21 bytes=1160
-#%  provenance unverified (legacy MACE file)
+#%  source Sc_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/scandium.html#Sc_pob_DZVP_rev2
+#%  provenance exact numeric match to Sc_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 21 11
 0 0 6 2 1
   38956.081804      0.0039293205858
@@ -481,7 +549,11 @@
   0.3450000000      1.0000000000000
 
 #%record 22 bytes=1218
-#%  provenance unverified (legacy MACE file)
+#%  source Ti_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/titanium.html#Ti_pob_DZVP_rev2
+#%  provenance exact numeric match to Ti_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 22 11
 0 0 6 2 1
   42961.5121850       0.0039127635355
@@ -525,7 +597,11 @@
   0.56200000000       1.0000000000000
 
 #%record 23 bytes=1161
-#%  provenance unverified (legacy MACE file)
+#%  source V_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/vanadium.html#V_pob_DZVP_rev2
+#%  provenance exact numeric match to V_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 23 11
 0 0 6 2 1
   47160.376060      0.0014498688908
@@ -569,7 +645,11 @@
   0.5310000000      1.0000000000000
 
 #%record 24 bytes=1190
-#%  provenance unverified (legacy MACE file)
+#%  source Cr_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/chromium.html#Cr_pob_DZVP_rev2
+#%  provenance exact numeric match to Cr_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 24 11
 0 0 6 2 1
   51528.0863490      0.0014405823106
@@ -613,7 +693,11 @@
   1.14700000000      1.0000000000000
 
 #%record 25 bytes=1190
-#%  provenance unverified (legacy MACE file)
+#%  source Mn_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/manganese.html#Mn_pob_DZVP_rev2
+#%  provenance exact numeric match to Mn_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 25 11
 0 0 6 2 1
   56137.0090370      0.0014321304702
@@ -657,7 +741,11 @@
   1.12600000000      1.0000000000000
 
 #%record 26 bytes=1189
-#%  provenance unverified (legacy MACE file)
+#%  source Fe_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/iron.html#Fe_pob_DZVP_rev2
+#%  provenance exact numeric match to Fe_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 26 11
 0 0 6 2 1
   60923.640643       0.0014302254466
@@ -701,7 +789,11 @@
   1.5980000000       1.0000000000000
 
 #%record 27 bytes=1160
-#%  provenance unverified (legacy MACE file)
+#%  source Co_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/cobalt.html#Co_pob_DZVP_rev2
+#%  provenance exact numeric match to Co_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 27 11
 0 0 6 2 1
   65902.208257      0.0014284614936
@@ -745,7 +837,11 @@
   1.9030000000      1.0000000000000
 
 #%record 28 bytes=1131
-#%  provenance unverified (legacy MACE file)
+#%  source Ni_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/nickel.html#Ni_pob_DZVP_rev2
+#%  provenance exact numeric match to Ni_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 28 11
 0 0 6 2 1
   71074.803211      0.001426038673
@@ -789,7 +885,11 @@
   2.1740000000      1.000000000000
 
 #%record 29 bytes=1161
-#%  provenance unverified (legacy MACE file)
+#%  source Cu_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/copper.html#Cu_pob_DZVP_rev2
+#%  provenance exact numeric match to Cu_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 29 11
 0 0 6 2 1
   76381.348056      0.0014336079896
@@ -833,7 +933,11 @@
   2.2330000000      1.0000000000000
 
 #%record 30 bytes=1133
-#%  provenance unverified (legacy MACE file)
+#%  source Zn_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/zinc.html#Zn_pob_DZVP_rev2
+#%  provenance exact numeric match to Zn_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 30 11
 0 0 6 2 1
   82000.711629      0.001421076400
@@ -877,7 +981,11 @@
   2.6140000000      1.000000000000
 
 #%record 31 bytes=1209
-#%  provenance unverified (legacy MACE file)
+#%  source Ga_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/gallium.html#Ga_pob_DZVP_rev2
+#%  provenance exact numeric match to Ga_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 31 12
 0 0 6 2 1
   87842.126296      0.0014271588798
@@ -923,7 +1031,11 @@
   0.1526260800      1.0000000000000
 
 #%record 32 bytes=1211
-#%  provenance unverified (legacy MACE file)
+#%  source Ge_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/germanium.html#Ge_pob_DZVP_rev2
+#%  provenance exact numeric match to Ge_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 32 12
 0 0 6 2 1
   93889.836642      0.0014233976060
@@ -969,7 +1081,11 @@
   0.2637066200      1.0000000000000
 
 #%record 33 bytes=1208
-#%  provenance unverified (legacy MACE file)
+#%  source As_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/arsenic.html#As_pob_DZVP_rev2
+#%  provenance exact numeric match to As_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 33 12
 0 0 6 2 1
   100146.52554      0.0014258349617
@@ -1015,7 +1131,11 @@
   0.1643010400      1.0000000000000
 
 #%record 34 bytes=1207
-#%  provenance unverified (legacy MACE file)
+#%  source Se_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/selenium.html#Se_pob_DZVP_rev2
+#%  provenance exact numeric match to Se_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 34 12
 0 0 6 2 1
   106612.20027      0.0014274889113
@@ -1061,7 +1181,11 @@
   0.1503429700      1.0000000000000
 
 #%record 35 bytes=1212
-#%  provenance unverified (legacy MACE file)
+#%  source Br_pob_DZVP_rev2
+#%  reference D. Vilela Oliveira, M. F. Peintinger, J. Laun, T. Bredow, J. Comput. Chem. 40 (2019) 2364-2376
+#%  doi 10.1002/jcc.26013
+#%  url https://www.crystal.unito.it/Basis_Sets/bromine.html#Br_pob_DZVP_rev2
+#%  provenance exact numeric match to Br_pob_DZVP_rev2 on crystal.unito.it (retrieved 2026-10-01)
 35 12
 0 0 6 2 1
   113286.38776      0.0014283037779
@@ -1162,7 +1286,11 @@
  0.400000000000 1.000000000000000
 
 #%record 237 bytes=843
-#%  provenance unverified (legacy MACE file)
+#%  source Rb_POB_DZVP_2018
+#%  reference J. Laun, D. V. Oliveira, T. Bredow, J. Comput. Chem. 39 (2018) 1285-1290
+#%  doi 10.1002/jcc.25195
+#%  url https://www.crystal.unito.it/Basis_Sets/rubidium.html#Rb_POB_DZVP_2018
+#%  provenance exact numeric match to Rb_POB_DZVP_2018 on crystal.unito.it (retrieved 2026-10-01)
 237 6
 INPUT
 9. 0 2 4 4 2 0
@@ -1197,7 +1325,11 @@ INPUT
   1.22600000000      1.000000000000
 
 #%record 238 bytes=856
-#%  provenance unverified (legacy MACE file)
+#%  source Sr_POB_DZVP_2018
+#%  reference J. Laun, D. V. Oliveira, T. Bredow, J. Comput. Chem. 39 (2018) 1285-1290
+#%  doi 10.1002/jcc.25195
+#%  url https://www.crystal.unito.it/Basis_Sets/strontium.html#Sr_POB_DZVP_2018
+#%  provenance exact numeric match to Sr_POB_DZVP_2018 on crystal.unito.it (retrieved 2026-10-01)
 238 6
 INPUT
 10. 0 2 4 4 2 0
@@ -1232,7 +1364,11 @@ INPUT
   0.25000000000      1.000000000000
 
 #%record 239 bytes=988
-#%  provenance unverified (legacy MACE file)
+#%  source Y_POB_DZVP_2018
+#%  reference J. Laun, D. V. Oliveira, T. Bredow, J. Comput. Chem. 39 (2018) 1285-1290
+#%  doi 10.1002/jcc.25195
+#%  url https://www.crystal.unito.it/Basis_Sets/yttrium.html#Y_POB_DZVP_2018
+#%  provenance exact numeric match to Y_POB_DZVP_2018 on crystal.unito.it (retrieved 2026-10-01)
 239 8
 INPUT
 11. 0 2 4 4 2 0
@@ -1274,7 +1410,11 @@ INPUT
   0.26515000000      1.000000000000
 
 #%record 240 bytes=988
-#%  provenance unverified (legacy MACE file)
+#%  source Zr_POB_DZVP_2018
+#%  reference J. Laun, D. V. Oliveira, T. Bredow, J. Comput. Chem. 39 (2018) 1285-1290
+#%  doi 10.1002/jcc.25195
+#%  url https://www.crystal.unito.it/Basis_Sets/zirconium.html#Zr_POB_DZVP_2018
+#%  provenance exact numeric match to Zr_POB_DZVP_2018 on crystal.unito.it (retrieved 2026-10-01)
 240 8
 INPUT
 12. 0 2 4 4 2 0
@@ -1316,7 +1456,11 @@ INPUT
   0.39261000000      1.000000000000
 
 #%record 241 bytes=988
-#%  provenance unverified (legacy MACE file)
+#%  source Nb_POB_DZVP_2018
+#%  reference J. Laun, D. V. Oliveira, T. Bredow, J. Comput. Chem. 39 (2018) 1285-1290
+#%  doi 10.1002/jcc.25195
+#%  url https://www.crystal.unito.it/Basis_Sets/niobium.html#Nb_POB_DZVP_2018
+#%  provenance exact numeric match to Nb_POB_DZVP_2018 on crystal.unito.it (retrieved 2026-10-01)
 241 8
 INPUT
 13. 0 2 4 4 2 0
@@ -1358,7 +1502,11 @@ INPUT
   0.52270000000      1.000000000000
 
 #%record 242 bytes=1000
-#%  provenance unverified (legacy MACE file)
+#%  source Mo_POB_DZVP_2018
+#%  reference J. Laun, D. V. Oliveira, T. Bredow, J. Comput. Chem. 39 (2018) 1285-1290
+#%  doi 10.1002/jcc.25195
+#%  url https://www.crystal.unito.it/Basis_Sets/molibdenum.html#Mo_POB_DZVP_2018
+#%  provenance exact numeric match to Mo_POB_DZVP_2018 on crystal.unito.it (retrieved 2026-10-01)
 242 8
 INPUT
 14. 0 2 4 4 2 0
@@ -1400,7 +1548,11 @@ INPUT
   1.05545000000      1.000000000000
 
 #%record 244 bytes=1000
-#%  provenance unverified (legacy MACE file)
+#%  source Ru_POB_DZVP_2018
+#%  reference J. Laun, D. V. Oliveira, T. Bredow, J. Comput. Chem. 39 (2018) 1285-1290
+#%  doi 10.1002/jcc.25195
+#%  url https://www.crystal.unito.it/Basis_Sets/ruthenium.html#Ru_POB_DZVP_2018
+#%  provenance exact numeric match to Ru_POB_DZVP_2018 on crystal.unito.it (retrieved 2026-10-01)
 244 8
 INPUT
 16. 0 2 4 4 2 0
@@ -1442,7 +1594,11 @@ INPUT
   0.94314000000      1.000000000000
 
 #%record 245 bytes=1000
-#%  provenance unverified (legacy MACE file)
+#%  source Rh_POB_DZVP_2018
+#%  reference J. Laun, D. V. Oliveira, T. Bredow, J. Comput. Chem. 39 (2018) 1285-1290
+#%  doi 10.1002/jcc.25195
+#%  url https://www.crystal.unito.it/Basis_Sets/rhodium.html#Rh_POB_DZVP_2018
+#%  provenance exact numeric match to Rh_POB_DZVP_2018 on crystal.unito.it (retrieved 2026-10-01)
 245 8
 INPUT
 17. 0 2 4 4 2 0
@@ -1484,7 +1640,11 @@ INPUT
   0.89499000000      1.000000000000
 
 #%record 246 bytes=1016
-#%  provenance unverified (legacy MACE file)
+#%  source Pd_POB_DZVP_2018
+#%  reference J. Laun, D. V. Oliveira, T. Bredow, J. Comput. Chem. 39 (2018) 1285-1290
+#%  doi 10.1002/jcc.25195
+#%  url https://www.crystal.unito.it/Basis_Sets/palladium.html#Pd_POB_DZVP_2018
+#%  provenance exact numeric match to Pd_POB_DZVP_2018 on crystal.unito.it (retrieved 2026-10-01)
 246 8
 INPUT
 18. 0 2 4 4 2 0
@@ -1526,7 +1686,11 @@ INPUT
   1.04629000000       1.000000000000
 
 #%record 247 bytes=1000
-#%  provenance unverified (legacy MACE file)
+#%  source Ag_POB_DZVP_2018
+#%  reference J. Laun, D. V. Oliveira, T. Bredow, J. Comput. Chem. 39 (2018) 1285-1290
+#%  doi 10.1002/jcc.25195
+#%  url https://www.crystal.unito.it/Basis_Sets/silver.html#Ag_POB_DZVP_2018
+#%  provenance exact numeric match to Ag_POB_DZVP_2018 on crystal.unito.it (retrieved 2026-10-01)
 247 8
 INPUT
 19. 0 2 4 4 2 0
@@ -1568,7 +1732,11 @@ INPUT
   1.39711000000      1.000000000000
 
 #%record 248 bytes=1001
-#%  provenance unverified (legacy MACE file)
+#%  source Cd_POB_DZVP_2018
+#%  reference J. Laun, D. V. Oliveira, T. Bredow, J. Comput. Chem. 39 (2018) 1285-1290
+#%  doi 10.1002/jcc.25195
+#%  url https://www.crystal.unito.it/Basis_Sets/cadmium.html#Cd_POB_DZVP_2018
+#%  provenance exact numeric match to Cd_POB_DZVP_2018 on crystal.unito.it (retrieved 2026-10-01)
 248 8
 INPUT
 20. 0 2 4 4 2 0
@@ -1610,7 +1778,11 @@ INPUT
   1.59813000000      1.000000000000
 
 #%record 249 bytes=1229
-#%  provenance unverified (legacy MACE file)
+#%  source In_POB_DZVP_2018
+#%  reference J. Laun, D. V. Oliveira, T. Bredow, J. Comput. Chem. 39 (2018) 1285-1290
+#%  doi 10.1002/jcc.25195
+#%  url https://www.crystal.unito.it/Basis_Sets/indium.html#In_POB_DZVP_2018
+#%  provenance exact numeric match to In_POB_DZVP_2018 on crystal.unito.it (retrieved 2026-10-01)
 249 9
 INPUT
 21. 0 2 4 4 2 0
@@ -1659,7 +1831,11 @@ INPUT
   0.19069890000      1.000000000000
 
 #%record 250 bytes=1229
-#%  provenance unverified (legacy MACE file)
+#%  source Sn_POB_DZVP_2018
+#%  reference J. Laun, D. V. Oliveira, T. Bredow, J. Comput. Chem. 39 (2018) 1285-1290
+#%  doi 10.1002/jcc.25195
+#%  url https://www.crystal.unito.it/Basis_Sets/tin.html#Sn_POB_DZVP_2018
+#%  provenance exact numeric match to Sn_POB_DZVP_2018 on crystal.unito.it (retrieved 2026-10-01)
 250 9
 INPUT
 22. 0 2 4 4 2 0
@@ -1708,7 +1884,11 @@ INPUT
   0.30500000000      1.000000000000
 
 #%record 251 bytes=1229
-#%  provenance unverified (legacy MACE file)
+#%  source Sb_POB_DZVP_2018
+#%  reference J. Laun, D. V. Oliveira, T. Bredow, J. Comput. Chem. 39 (2018) 1285-1290
+#%  doi 10.1002/jcc.25195
+#%  url https://www.crystal.unito.it/Basis_Sets/antimony.html#Sb_POB_DZVP_2018
+#%  provenance exact numeric match to Sb_POB_DZVP_2018 on crystal.unito.it (retrieved 2026-10-01)
 251 9
 INPUT
 23. 0 2 4 4 2 0
@@ -1757,7 +1937,11 @@ INPUT
   0.12000070000      1.000000000000
 
 #%record 252 bytes=1229
-#%  provenance unverified (legacy MACE file)
+#%  source Te_POB_DZVP_2018
+#%  reference J. Laun, D. V. Oliveira, T. Bredow, J. Comput. Chem. 39 (2018) 1285-1290
+#%  doi 10.1002/jcc.25195
+#%  url https://www.crystal.unito.it/Basis_Sets/tellurium.html#Te_POB_DZVP_2018
+#%  provenance exact numeric match to Te_POB_DZVP_2018 on crystal.unito.it (retrieved 2026-10-01)
 252 9
 INPUT
 24. 0 2 4 4 2 0
@@ -1806,7 +1990,11 @@ INPUT
   0.15001209000      1.000000000000
 
 #%record 253 bytes=1304
-#%  provenance unverified (legacy MACE file)
+#%  source I_POB_DZVP_2018
+#%  reference J. Laun, D. V. Oliveira, T. Bredow, J. Comput. Chem. 39 (2018) 1285-1290
+#%  doi 10.1002/jcc.25195
+#%  url https://www.crystal.unito.it/Basis_Sets/iodine.html#I_POB_DZVP_2018
+#%  provenance exact numeric match to I_POB_DZVP_2018 on crystal.unito.it (retrieved 2026-10-01)
 253 9
 INPUT
 25. 0 3 4 4 4 0

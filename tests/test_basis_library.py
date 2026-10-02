@@ -69,6 +69,26 @@ def test_copies_of_triplezeta_records_inherit_its_label():
     assert st.field("231", "provenance") == ["unverified (legacy MACE file)"]
 
 
+def test_doublezeta_provenance_is_an_exact_match_or_unverified():
+    """DZ records not copied from TZ were matched exactly (same lines, same
+    numbers at printed precision) against X_pob_DZVP_rev2 (H-Br) and
+    X_POB_DZVP_2018 (Rb-I); Si has no such set on the site."""
+    dz = BL.load_family("full.basis.doublezeta")
+    unverified = [k for k in dz.keys()
+                  if dz.field(k, "provenance") == ["unverified (legacy MACE file)"]]
+    assert unverified == ["14"]
+    for key in dz.keys():
+        prov = dz.field(key, "provenance")[0]
+        if key == "14":
+            continue
+        assert prov.startswith(("exact numeric match to ", "byte-identical to ")), key
+        source = dz.field(key, "source")[0]
+        if int(key) <= 35:
+            assert source.endswith("_pob_DZVP_rev2"), key
+        elif 237 <= int(key) <= 253:
+            assert source.endswith("_POB_DZVP_2018"), key
+
+
 def test_library_files_and_provenance_table_are_what_the_builder_makes():
     result = subprocess.run(
         [sys.executable, str(BASIS_SETS / "build_library.py"), "--check"],

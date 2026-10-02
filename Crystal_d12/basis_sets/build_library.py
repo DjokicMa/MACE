@@ -216,7 +216,20 @@ def provenance_for(family, records, tz_records):
 
 
 def doublezeta_provenance(key, body, tz_records):
-    return inherited_or_unverified(body, tz_records, "full.basis.doublezeta")
+    """Copies of TZ records inherit its label. The others were compared with
+    the site's X_pob_DZVP_rev2 (H-Br) and X_POB_DZVP_2018 (Rb-I) records:
+    exact numeric equality, same lines and numbers at printed precision
+    (build_library.py --verify). Si has no match there and stays unverified."""
+    meta = inherited_or_unverified(body, tz_records, "full.basis.doublezeta")
+    if meta != [("provenance", UNVERIFIED)]:
+        return meta
+    z = z_of(key)
+    sym = SYMBOLS[z - 1]
+    if z <= 35 and z != 14:
+        return site_match(z, f"{sym}_pob_DZVP_rev2", REF_REV2_2019, DOI_REV2_2019)
+    if 37 <= z <= 53 and z != 43:
+        return site_match(z, f"{sym}_POB_DZVP_2018", REF_2018, DOI_2018)
+    return meta
 
 
 def provenance_markdown(tables):
@@ -399,6 +412,22 @@ def verify_against_triplezeta(cache):
             lines.append(f"{fetch_unito.symbol(z):>2} {key}: not checkable ({exc})")
             continue
         same = fetch_unito.same_numbers(found["record"], tz.record(key))
+        lines.append(f"{fetch_unito.symbol(z):>2} {key}: "
+                     f"{'equal' if same else 'DIFFERENT'} ({found['anchor']})")
+    dz = basis_library.load_family("full.basis.doublezeta")
+    lines.append("full.basis.doublezeta against X_pob_DZVP_rev2 / X_POB_DZVP_2018:")
+    for key in dz.keys():
+        z = z_of(key)
+        if z > 53 or z == 43:
+            continue
+        name = (f"{fetch_unito.symbol(z)}_pob_DZVP_rev2" if z <= 35
+                else f"{fetch_unito.symbol(z)}_POB_DZVP_2018")
+        try:
+            found = fetch_unito.get_set(fetch_unito.fetch_page(z, cache), name)
+        except (LookupError, fetch_unito.GrammarError) as exc:
+            lines.append(f"{fetch_unito.symbol(z):>2} {key}: not checkable ({exc})")
+            continue
+        same = fetch_unito.same_numbers(found["record"], dz.record(key))
         lines.append(f"{fetch_unito.symbol(z):>2} {key}: "
                      f"{'equal' if same else 'DIFFERENT'} ({found['anchor']})")
     return lines
