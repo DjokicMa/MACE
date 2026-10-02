@@ -1,0 +1,3320 @@
+{
+ "compatibility": {
+  "full.basis.doublezeta/1": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/10": [
+   false,
+   [
+    10
+   ]
+  ],
+  "full.basis.doublezeta/100": [
+   false,
+   [
+    100
+   ]
+  ],
+  "full.basis.doublezeta/11": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/12": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/13": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/14": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/15": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/16": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/17": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/18": [
+   false,
+   [
+    18
+   ]
+  ],
+  "full.basis.doublezeta/19": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/2": [
+   false,
+   [
+    2
+   ]
+  ],
+  "full.basis.doublezeta/20": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/21": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/22": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/23": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/24": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/25": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/26": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/27": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/28": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/29": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/3": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/30": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/31": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/32": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/33": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/34": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/35": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/36": [
+   false,
+   [
+    36
+   ]
+  ],
+  "full.basis.doublezeta/37": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/38": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/39": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/4": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/40": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/41": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/42": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/43": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/44": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/45": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/46": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/47": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/48": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/49": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/5": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/50": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/51": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/52": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/53": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/54": [
+   false,
+   [
+    54
+   ]
+  ],
+  "full.basis.doublezeta/55": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/56": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/57": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/58": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/59": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/6": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/60": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/61": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/62": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/63": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/64": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/65": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/66": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/67": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/68": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/69": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/7": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/70": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/71": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/72": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/73": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/74": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/75": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/76": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/77": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/78": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/79": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/8": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/80": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/81": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/82": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/83": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/84": [
+   false,
+   [
+    84
+   ]
+  ],
+  "full.basis.doublezeta/85": [
+   false,
+   [
+    85
+   ]
+  ],
+  "full.basis.doublezeta/86": [
+   false,
+   [
+    86
+   ]
+  ],
+  "full.basis.doublezeta/87": [
+   false,
+   [
+    87
+   ]
+  ],
+  "full.basis.doublezeta/88": [
+   false,
+   [
+    88
+   ]
+  ],
+  "full.basis.doublezeta/89": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/9": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/90": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/91": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/92": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/93": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/94": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/95": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/96": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/97": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/98": [
+   true,
+   []
+  ],
+  "full.basis.doublezeta/99": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/1": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/10": [
+   false,
+   [
+    10
+   ]
+  ],
+  "full.basis.triplezeta/100": [
+   false,
+   [
+    100
+   ]
+  ],
+  "full.basis.triplezeta/11": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/12": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/13": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/14": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/15": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/16": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/17": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/18": [
+   false,
+   [
+    18
+   ]
+  ],
+  "full.basis.triplezeta/19": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/2": [
+   false,
+   [
+    2
+   ]
+  ],
+  "full.basis.triplezeta/20": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/21": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/22": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/23": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/24": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/25": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/26": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/27": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/28": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/29": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/3": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/30": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/31": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/32": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/33": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/34": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/35": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/36": [
+   false,
+   [
+    36
+   ]
+  ],
+  "full.basis.triplezeta/37": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/38": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/39": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/4": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/40": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/41": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/42": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/43": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/44": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/45": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/46": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/47": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/48": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/49": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/5": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/50": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/51": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/52": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/53": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/54": [
+   false,
+   [
+    54
+   ]
+  ],
+  "full.basis.triplezeta/55": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/56": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/57": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/58": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/59": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/6": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/60": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/61": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/62": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/63": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/64": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/65": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/66": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/67": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/68": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/69": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/7": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/70": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/71": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/72": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/73": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/74": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/75": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/76": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/77": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/78": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/79": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/8": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/80": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/81": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/82": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/83": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/84": [
+   false,
+   [
+    84
+   ]
+  ],
+  "full.basis.triplezeta/85": [
+   false,
+   [
+    85
+   ]
+  ],
+  "full.basis.triplezeta/86": [
+   false,
+   [
+    86
+   ]
+  ],
+  "full.basis.triplezeta/87": [
+   false,
+   [
+    87
+   ]
+  ],
+  "full.basis.triplezeta/88": [
+   false,
+   [
+    88
+   ]
+  ],
+  "full.basis.triplezeta/89": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/9": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/90": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/91": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/92": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/93": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/94": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/95": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/96": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/97": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/98": [
+   true,
+   []
+  ],
+  "full.basis.triplezeta/99": [
+   true,
+   []
+  ]
+ },
+ "decks": {
+  "cif2d12/Z001_H_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "7c0815ee9c978e2076ed2e7447ab4f4a8ddc0fd9235392b33a993d94acceac1a",
+  "cif2d12/Z001_H_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "0c769afe1bc24cd02f6570885679ee6c16a03b2a5f2bcd81ccd18ef6f8097e5d",
+  "cif2d12/Z003_Li_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "047823e6113c24bad77412674f4fc762428c9c032e54e315939eba2963471f12",
+  "cif2d12/Z003_Li_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "8813f10e6799f9a293da91ca4ea45937106d375d9ba5424628129a0499d46e1e",
+  "cif2d12/Z004_Be_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "6d983c32c5035b23273abdd96ed9705160cb88a32fa103f62f5ddd7a4d0404b2",
+  "cif2d12/Z004_Be_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "86a8bf74ba5a08124635066894380c175ecfd5175deb64a07a8901c968c98173",
+  "cif2d12/Z005_B_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "17e12a40da75ddf5ba876d8169975e5df080fa72cb08fa20adadd6d33a70d05e",
+  "cif2d12/Z005_B_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "b8f810077a408745e79d6924490416417bb95c4a79fb2edc2b8b56285fad0048",
+  "cif2d12/Z006_C_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "95c6ebcaacd669e0b770467836e6d7ddc6166381467b3d1f55b0dc12c0db1823",
+  "cif2d12/Z006_C_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "606b03f0e581212dfc007fcf0ca11186b738c91111040eac249975e81da08951",
+  "cif2d12/Z007_N_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "d7119670b522c95c34e2fd7035a273bcac0c944af66465162c2e4b7b16ace2bd",
+  "cif2d12/Z007_N_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "5f098096bebc5badd83711084f4eb456090cba36271d576e8dbe1940969ed428",
+  "cif2d12/Z008_O_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "90df7d2f06fe06b7695df1813e89aadbbfbcc2bfcd845d4ffb0c22f7e213d42b",
+  "cif2d12/Z008_O_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "16fa913e113fc115c74f0b764e662ce124569eccf26b2a62ffb9098125207271",
+  "cif2d12/Z009_F_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "c454a95c5ef7fc6f6180a608e968086c9593edb348c1d6b96456bc9d03dc0e64",
+  "cif2d12/Z009_F_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "923091bd33218417e9c0e4484378f49756d9ec167b962c64c4a2caa96abada0f",
+  "cif2d12/Z011_Na_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "a109c0574cc71fc339684b027f88d9d2e87134134ed631041a5854c1ac21b245",
+  "cif2d12/Z011_Na_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "ff91d7a1f03479598d5291a74c57cd845344e86a63818ff0e598bad067db51bc",
+  "cif2d12/Z012_Mg_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "c2e3bdc8834537a05d62fa48efb4a436af33cca8b9cf0aaadd91072257231937",
+  "cif2d12/Z012_Mg_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "567e8bb318eead2d5e353afb76e7afc01a7e122399bf039083c0c91fd6011e01",
+  "cif2d12/Z013_Al_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "620ec64aa995ba4e93b1c71ab735b10cf23fbd78625354466f9973c910e6f95f",
+  "cif2d12/Z013_Al_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "47f5d67d035d4c842f304dce225c0ead9e28a570cd4e0c2ef35ea8404582116e",
+  "cif2d12/Z014_Si_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "6dc15450b998cae868bf500d24c474897b8f4d1427e38d61a735dfe54869665e",
+  "cif2d12/Z014_Si_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "32e6bb9cf3b1005ec396bec5570040e5b007887a2e627d14843e7e0ac0fb0684",
+  "cif2d12/Z015_P_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "b79f41b67049f0eee76f489ec26471c5013c884daa7870ad8fcdd55b17d13224",
+  "cif2d12/Z015_P_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "8eb44a9c736bfcf21300af1e14825cba564eec6bfbae0ffa1c3258168d7d746e",
+  "cif2d12/Z016_S_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "aba1bd049deefb7a07142574e6b020d7e25298efa24a2ef55e2c9ff6a45d7009",
+  "cif2d12/Z016_S_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "99b22477b8e5c751144d486427be911711a2c2ada96e0399c1e473d08c4de9d4",
+  "cif2d12/Z017_Cl_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "e1fb71894bcfc429a39c02739cf3b5a9d4addf661a8231323350502f21b0fdc7",
+  "cif2d12/Z017_Cl_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "c8da4f927acef223bea7a56eda3da09926f0cdddd7657715ac1176cb38aa7d20",
+  "cif2d12/Z019_K_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "119298d0cb5debd6949e844401df5df0584f959f74558dadfbb85855647053b7",
+  "cif2d12/Z019_K_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "bdd89b84646d32af0b23aa7d393c842d76e4ffb2875038a68b0f740b98f905ac",
+  "cif2d12/Z020_Ca_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "d91b65efea1e0d524b17e9c0080d36dd7ad603d9654d6e0977f55772a8ca0b97",
+  "cif2d12/Z020_Ca_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "dec8ab68a6edeeabce148a752e3965ad72e84690c3bd466d3f3d912d2b2671b1",
+  "cif2d12/Z021_Sc_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "bf044dc5792ec365f013920ac8b62a22a15ec77350bd3a77f78cc57c76616189",
+  "cif2d12/Z021_Sc_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "bf82a672972c4595f76bc2465d4f4fcc856b37b54f269ded110f4ceabf331f82",
+  "cif2d12/Z022_Ti_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "438d8aeffe754d09897359360b354f95a3b172e8def516dfa3c8a113009b7599",
+  "cif2d12/Z022_Ti_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "74c58b70c23812d2952ef1911ab4ff172c2ef1e06d764838512fd0c4e904033f",
+  "cif2d12/Z023_V_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "b515146fc6c5fa2255c956f4d550b90dfad144ca5c00220f01698b11e2dc4586",
+  "cif2d12/Z023_V_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "5fab89267a3136bccfe090fdae8eb055afa8409af92301f9a03dafe7717b4175",
+  "cif2d12/Z024_Cr_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "96ed23ea273db79a807fd91e71eef4a75db96d2809c77cefa8ff87fb2bdc72b9",
+  "cif2d12/Z024_Cr_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "e9fd3686c9321848afb201ce0e923d480195bf2fe292c513becf2ae6405709f9",
+  "cif2d12/Z025_Mn_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "1cd1ca956373befe462b5a3754e22f25f6a66ca038cf5f5a07a9f21726061fd9",
+  "cif2d12/Z025_Mn_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "9868fd2e1a05413a6d3c84670265350d60758d9ced9824d9a2a74cfc80451410",
+  "cif2d12/Z026_Fe_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "a19561db6dfb81bd56ec434247960ef7be35739cb25888f532d78c1945b4044a",
+  "cif2d12/Z026_Fe_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "1cf453c6ad049fa9ae0845dc0e9d7022015203c8d8aba41b175a3382cba2b52d",
+  "cif2d12/Z027_Co_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "bea28520c0d28d38833147d037ac2bead5ad6259aa3f0d4f854bfb55647e6195",
+  "cif2d12/Z027_Co_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "c50fab2b7f81146e6128348b4d29a13a147f061d2d7ec984909676ced0739c19",
+  "cif2d12/Z028_Ni_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "e8971541b52de2a67cf2cada6ac078c5477af1b2ff94a4e060cf8f5a2c291596",
+  "cif2d12/Z028_Ni_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "2a5b5fc1997e22ef43af0584c02d87743f8f2c33ed609e62df905b9b39db1ea8",
+  "cif2d12/Z029_Cu_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "92c4df68ddf7a81f633de1594e60ee7970478ccc5e42f3646e7e6e17ce218b35",
+  "cif2d12/Z029_Cu_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "1af1059183c9e0575c6008f9766482dd72866028d10484f73fb052d1f64e3c1a",
+  "cif2d12/Z030_Zn_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "890b017abce0b3607ce5eca85dc1ea49a24b4f8a9e463d4e42330d6821b3d032",
+  "cif2d12/Z030_Zn_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "d0b9b94d8d68f2867fb99f03e541f64bb15625bea78a086a65b28839f084cf3a",
+  "cif2d12/Z031_Ga_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "45ca82da482e679b551f718dda20390e47fe93e45a1ac858f0d5239fe0843251",
+  "cif2d12/Z031_Ga_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "6a2e70fcea3a20d794259cf67521d752b1795a1332e575a9889d8e1dbef2f550",
+  "cif2d12/Z032_Ge_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "ea59b6b0d6f7aa5a2164f6cf5842a4960c40fff6c3f91690795b5442b3d37b1b",
+  "cif2d12/Z032_Ge_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "d2708276c07ed487febcb48089af81be45d15b0f312cd0012f40f479172b0634",
+  "cif2d12/Z033_As_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "146d36c1ed5c25140f82abe734d0e33bd4b74ea2ba434dfa57c116db2812bf05",
+  "cif2d12/Z033_As_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "a2cfbe253560480a896c3b78379ff6dc700c49a266949e6c519a9b39c1a420ca",
+  "cif2d12/Z034_Se_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "8af75031967eb2ca8da77a3ab8782d5fb552aa20254e1144c93ef99811ff125b",
+  "cif2d12/Z034_Se_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "8c344e4067bf98789562cd01322122bf7ef58c1900db05ac3548d306932e8344",
+  "cif2d12/Z035_Br_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "970249b38edf48f961261cba1df0532eed557fb14703fb6689301f058f0f3b1b",
+  "cif2d12/Z035_Br_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "18b98c75aab1d4cf47d54453b43e047c1f6c50962e168975552bb62a12c3f96e",
+  "cif2d12/Z037_Rb_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "d9be0589ce199dd9a6a0cdfd6b524a5b0adea3155a06f09db0100350c4b915ba",
+  "cif2d12/Z037_Rb_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "532448897f8c055c9fe6da126ec50cff3a7a99649ee124609f0d2f9c1647def9",
+  "cif2d12/Z038_Sr_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "721e69aebf0035cf15a06d607421cc93c0c29d5db6268190cbd6b6a011e2af4c",
+  "cif2d12/Z038_Sr_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "31a7b66c9bb8fa1d257f40d8da4d4f7107838b3b352b42dd4714723b96ff3225",
+  "cif2d12/Z039_Y_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "e6b646060f9e8dd7012eb6c6e5761f29e68d656abd91d28275e5853cc54e8064",
+  "cif2d12/Z039_Y_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "a6d6b2a88f3551844c341c8b832880352bdd0dbccbf2ebdb4906f641ac9a8110",
+  "cif2d12/Z040_Zr_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "025454253befef3723b4b676ce93d4e024060af3243c85e2a2bd93904ebbeee4",
+  "cif2d12/Z040_Zr_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "5531646284ed7f3512b49466f01dfee688a494b3750bbee3f53ec037479277e3",
+  "cif2d12/Z041_Nb_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "c60a8acc857e198e1a0e04bf7aa14cc6f96f387ae0bf5f433febf5f142c399f4",
+  "cif2d12/Z041_Nb_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "e6a15acd384da18e57184b320c99252e560d4b0af448651427584603e5eea0ce",
+  "cif2d12/Z042_Mo_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "4fd87c0f2418e423e9556f20dc930bf9480b29102976f5b8723613a8d6c053c0",
+  "cif2d12/Z042_Mo_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "03164e5ce1b188f350f7cbeadf4b648dfe0c29ca8f38b5f3d1ffae6678cedd0e",
+  "cif2d12/Z043_Tc_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "3c4e5de4a05a4f69eb7c75242afacaf9c7db8ebb8ecce29fa35014868985e69a",
+  "cif2d12/Z043_Tc_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "367fb84cbcee5762ff43dea02b773a899e6bf3479a27509cb51065d4bd91aba8",
+  "cif2d12/Z044_Ru_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "0a7ed3978d6675ba6d446a13244eb449e12a5e07c38e006785d16414d565b3c8",
+  "cif2d12/Z044_Ru_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "b3d35b5b8cdfb2a66917de5726bc5d570ffc0121c303e9552884b804fc3daafe",
+  "cif2d12/Z045_Rh_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "0aad3f195d721c66fe657b9b810e10db68401f0e68a1c4dcc2bd4edca2e720fe",
+  "cif2d12/Z045_Rh_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "41af6e4639a456d6fb556a1b7252331e77311556ebebfc8ee7146b1003106b26",
+  "cif2d12/Z046_Pd_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "ce1c20b32b59dfe382112a21c7e3b400d2eac431ece867a243d131aa58e1b91e",
+  "cif2d12/Z046_Pd_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "2d05b0cc5a6a8b814f80b1946080d6101d8e99e8c8af1ca537a7966918f2e79e",
+  "cif2d12/Z047_Ag_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "fcd95929ff0bf7e4cb0d82664f81becba1cb115a9d37c0dd9bc4c75b2572a80a",
+  "cif2d12/Z047_Ag_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "d2e7bfa3b1d8d29d3f04466393b1f59cf5a5db0fc22a22276e4c40f2eba444e3",
+  "cif2d12/Z048_Cd_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "d9f7ac0fe940d257f53cf4b3dcbba15bce6cde4fbe10d77128a9a6cca1d8c102",
+  "cif2d12/Z048_Cd_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "6a131085881be076447852c39a048608dca6014feed03236dfd9941b3a5898c6",
+  "cif2d12/Z049_In_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "fef88b2e9df17ee2d75f2e4f3a506a281d77ac7516fe3cb73696b96dee751432",
+  "cif2d12/Z049_In_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "276e39d6d5f8996f53f7bdada3c41090ee1bf98c8301f452932abf484cbc4ac6",
+  "cif2d12/Z050_Sn_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "43f9c696cbd7ade444c408da92bd692e15980c1280406f6bec5c68f9cdb33c88",
+  "cif2d12/Z050_Sn_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "24c06d0ee8cecc1e5f63c9efc3aa8ca23fbd8a08eaa468f6b181059ce64873bb",
+  "cif2d12/Z051_Sb_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "416021808a46bee10edd34ddfd56eee547ba4c21f7286513e52b0d8e37b2baf6",
+  "cif2d12/Z051_Sb_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "6282a4f9bcb79cc869df3257a62d0a5c37631df4618c494e3add0b2870c84cd7",
+  "cif2d12/Z052_Te_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "5626fd7a5d9b47b320a69121903d54d6f114254bc8c86936d24c85b39ae66969",
+  "cif2d12/Z052_Te_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "af4addeb9e57ef9cf7c7c172df22a69da7b3f19623e2c26c96ea8b8c132ed12b",
+  "cif2d12/Z053_I_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "a7ee2cf120d4c99ab3b55610986afbf877faf6d543465ea3a544317ea38f81c6",
+  "cif2d12/Z053_I_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "836cd783b92fd0fbcb3538e6ab66a2fca5e059661f9b4a6a2e832a6dbb5345b0",
+  "cif2d12/Z055_Cs_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "08ab5a4b693c8b83dc08239c5989a0fb7759e749cc20ac4371a53167922dbc82",
+  "cif2d12/Z055_Cs_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "5e44b840111e42b996d3fc666ecb777a5f363e1d63b65e1b0a662a5ad4c8e47e",
+  "cif2d12/Z056_Ba_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "91af77e1db16cff02be60aa87da76cdfada46d15682d799946ee5f939607cbc9",
+  "cif2d12/Z056_Ba_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "d0e587188bfed6923f1c2b4a713a1d8e827a030e2df9a6ebba49967a986c5c3e",
+  "cif2d12/Z057_La_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "3465ce4e77c61930324b6f280a4bdc1860dc730cd74c1db5ed9e8b1c08cf4f18",
+  "cif2d12/Z057_La_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "f0c9dc80d8d124b11fba58ad23f84b04a9c227f4f174e7f86fb57f41c20c91e2",
+  "cif2d12/Z058_Ce_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "b5528ba26eadad152b806f2dfce0718f2aff6896890c3a3ebb14845e6641cb5e",
+  "cif2d12/Z058_Ce_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "ab2055e204112de48ec06fb581475cf94a975a907836e13d24331e9e1f81fc78",
+  "cif2d12/Z059_Pr_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "8d1838745f607e5c1959329f212978276666c227b25854d14ce24f52011cf5b1",
+  "cif2d12/Z059_Pr_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "140c1c7fb5064b1a6c6ebbf76ae0b18afc6310c4e25647df64c0032bed9b2edd",
+  "cif2d12/Z060_Nd_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "5791692986c0cd59541d788ef4e7cfc68d29c5ea7e23a79cf88595a3dbefac39",
+  "cif2d12/Z060_Nd_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "30e6cb4fbc75efff15330789b654632756181bfc7536a9ce2e77f2adab0e6abb",
+  "cif2d12/Z061_Pm_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "63ff5de5fb5d9156460afd039b511149e7c72d8b00ed18ba62ff8e22bcf2c773",
+  "cif2d12/Z061_Pm_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "1932c597c9bbe0e69312b574c103523769b06c4f8ea3d8dba3f1d7f72c9de873",
+  "cif2d12/Z062_Sm_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "90c8465a40d4e19518ea28441ff1c82ede9680752e8eb5d4b39281236677007d",
+  "cif2d12/Z062_Sm_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "8644bc89abbbebcb4dcb42cc532769912692d3f6db3a619f2fc2e669c30c7556",
+  "cif2d12/Z063_Eu_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "b1b91591b80a57cc6b1ca93ba0c81146bfa87b36ea83d1ec949c26a0152c8b32",
+  "cif2d12/Z063_Eu_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "b4629c0cfa4266b2446f459e463fd04d05e46f24f878f61e4517009e4e718623",
+  "cif2d12/Z064_Gd_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "ac5a7be1daadb91737878d3d2a4d2b62854007634630dd300cc5a1bd97b358f3",
+  "cif2d12/Z064_Gd_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "4e177d760cf5cdcef5269460c2d999cbc54741b9b43b0875d38f7b3f69ebb0f8",
+  "cif2d12/Z065_Tb_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "480e73bd5e6995ae9c5031b7cbb1419135145ce847e240cd71700a703e9b84b4",
+  "cif2d12/Z065_Tb_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "f686d9232d2d0bd73704b6994cf4ac6a6081fba5d267381187d02338d946f0db",
+  "cif2d12/Z066_Dy_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "f9d607337a38eec1161f17e6ad3c6fff928d214fa60cd2790303922e948efe6b",
+  "cif2d12/Z066_Dy_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "1f8991785c467137f2e9cc6f86e5213344d4e668e59636eff85d0fefe3a3cbd5",
+  "cif2d12/Z067_Ho_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "fe7dfa477beef6b253b1ec686b10474d117c9c1a39bc82aaeef922b56dc87abd",
+  "cif2d12/Z067_Ho_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "edd3c5e545159ea911e611a65eb81e7195bc32f4b87437029ad89dd51d511ee7",
+  "cif2d12/Z068_Er_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "7045d5cdedfac687f328e81eeb39a57da3f8be1fa627726cc7509f82e0b2f408",
+  "cif2d12/Z068_Er_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "623a04a234cc2d227b97da989914f3009ebca03724f06399ab0ab57323f94c22",
+  "cif2d12/Z069_Tm_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "9d94faa0dd2634c96e0f825cdb47686c881bcb508a9fd1ed1a01b227702e6ab5",
+  "cif2d12/Z069_Tm_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "d5a75b052a9e7dee1e57d25cacb7340d595dc92a60308c6df5271b4db046a1b5",
+  "cif2d12/Z070_Yb_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "d54df65a982b2a72a2badde6d95e8459cd02b067a6ef5a8f7c96deb6fa765571",
+  "cif2d12/Z070_Yb_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "d462eedd8336e1e96b87e1ece2800275f8203586f12a648262f67de7b6a6df5a",
+  "cif2d12/Z071_Lu_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "cc86f4392ad15ad4b32190540aad1c2869d559991363cae99b7fe16a4e8cc9ae",
+  "cif2d12/Z071_Lu_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "3ff81b1b152455efb32b7e23dfa6a3061bea018d07af42ae0bb55736e1a37282",
+  "cif2d12/Z072_Hf_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "7acd0628c0b29137336966ad6e2728f045df2a8051a9d28ac493a43f1f8f963b",
+  "cif2d12/Z072_Hf_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "37e80506ff7b15ae3d49f486b6f8750b28399716d5d34b2063737f4ee502cabb",
+  "cif2d12/Z073_Ta_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "14e03f60d9b909393635e464e51d0696a1590869c6c2771e0d21898689f7cb41",
+  "cif2d12/Z073_Ta_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "c0830ced8e86bc134d1d468953663bb93811ea6bc3bd888e1870a5d80df22721",
+  "cif2d12/Z074_W_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "a48010509dfa33aab4400738c3f1595faaf29bd3349fe2769a69771601d7c09f",
+  "cif2d12/Z074_W_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "50e70f7ddd55330344103132eb5c3f04ea22b0c511c11199cba1e324fccc41c2",
+  "cif2d12/Z075_Re_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "b2f2587cbb232d2e91c7e106b7ef46febcdd82390643d940a2b724504c9da7a5",
+  "cif2d12/Z075_Re_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "402e909a09eeb2be636dc6c2580fed65378b8daf061571166ead04771f2c45be",
+  "cif2d12/Z076_Os_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "7db2aad0b199f87707e13ac666fece47f8db034108ab7ae605d1d2f390f5c46f",
+  "cif2d12/Z076_Os_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "bff0f9a021a5cbeaff6416ba4018bfa78f5077b785028a135c7237b86d4d032c",
+  "cif2d12/Z077_Ir_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "61192696bc7041b02036d7865654302ad160752aa8c5b5048e19c2359487de6b",
+  "cif2d12/Z077_Ir_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "c384b038f54b7dbc9ea581dfa68d0f2746e12853911594e930ee8934bce4dd86",
+  "cif2d12/Z078_Pt_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "780a48eb76db68ad6d929d5f80493724863c99a1e1e9426db9305c1e49c58fbf",
+  "cif2d12/Z078_Pt_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "dd2d2e4a8b8051ab102c969227286a15f8732deceaa2936666f535da9b60ac49",
+  "cif2d12/Z079_Au_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "f1d6d38963f41875df20d2aed5b504ecb4c205599468b5f8b5103a32f0afec2d",
+  "cif2d12/Z079_Au_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "6c01b8c3473c701ac292b1a4b2c20571664f288499d35aeab0c5967ecdb19a28",
+  "cif2d12/Z080_Hg_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "228f11c236f1bb1f5a8bcfeffb7967606acbda5a97fa4c4fa9218d9c66aebebc",
+  "cif2d12/Z080_Hg_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "8202d9e9c39d898cffc9bcb8ddc4d783df2f9942fab1ce0978f9c7cdcfd321b1",
+  "cif2d12/Z081_Tl_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "081e50d5d77d80c9fb20abe5a2849073019848fa19c8944b04c524a89d0d9760",
+  "cif2d12/Z081_Tl_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "72d7a14508066ea62a9528378e1f4806cd8c6c2922c7f761e075f6951190795c",
+  "cif2d12/Z082_Pb_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "008df9abec68de2206656557e749549c04315cc07ff3737810ea62a04d344098",
+  "cif2d12/Z082_Pb_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "8f60291f1ace4728e4eb9a4c552f959005c67677b01ad7597a0c8c8b26b03b17",
+  "cif2d12/Z083_Bi_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "b33325e823d24e155e39bd02b60ec44ac17edb347eebb64de89eb2fcdcd01aa0",
+  "cif2d12/Z083_Bi_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "6170f48ae8ae7f71fd2723919d690292ef8bf6a4b1e58f9303f15c5de0d84298",
+  "cif2d12/Z089_Ac_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "1c3dbd58330aede8b452436bfc0607484f16cadf5df625a1fe14149d4d275a21",
+  "cif2d12/Z089_Ac_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "d8e22efff7f54d93207db1636ec4d75204dac839ddc924372ca97abc30243fff",
+  "cif2d12/Z090_Th_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "4fb1f17a21ab604297b4d9eac96579e052705acb1012e373cdb6c7aae04b87b0",
+  "cif2d12/Z090_Th_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "c761051937cbcc0922645ef352738b46fb9f77f43c17494b01cffe5b77c57609",
+  "cif2d12/Z091_Pa_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "9037621a76ca9e6abbffe7c26ad56796c4291174727ff54ca7be5e59fd1909ca",
+  "cif2d12/Z091_Pa_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "c8fa849cf69eb761409bcf85700fc3baccb52fce1af79c032c62c4af6e2b1136",
+  "cif2d12/Z092_U_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "f402785fdebacc8b56baafad20ce5ac1da796da82271bd9e4d487ca8394101e8",
+  "cif2d12/Z092_U_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "c0668be344deef22abc9d2319d4273e215bb0e10f2bed2a2b0746ddea08d8a10",
+  "cif2d12/Z093_Np_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "21dcedfc17d705c0f2c1d34a53ea86b5c88e6db3a2bab8e556bb70945f8cb31f",
+  "cif2d12/Z093_Np_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "b807e8f6b5c6f7a447432afd7a08773b6377d568dcf1ec9a4f7006e52cf66257",
+  "cif2d12/Z094_Pu_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "0d59d69474d07f1bb8bb5d7277630c8fbeea5b6a4ca800f6ed3c0f90702b3b62",
+  "cif2d12/Z094_Pu_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "3cbd3c05786a186227e0b276ef9c41cc8fe15342a256e59da5d8b1509126f11d",
+  "cif2d12/Z095_Am_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "13e8305d91c384293482737fc79b946cc2fe5b65db9373f2944a955eb46056bd",
+  "cif2d12/Z095_Am_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "66799a1ce8463ca88af7e8b4e7a9e233a7bfec2dcb6e5b9e775fba502ae6a217",
+  "cif2d12/Z096_Cm_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "4c2fc34a009e44383a4423247335b15aa855ff0ceb56ce575fd13d084dd6e85d",
+  "cif2d12/Z096_Cm_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "4c471c54b8c4dcbcd2a60c61956537e581a9315be9ef270b63abfba0c2cfd020",
+  "cif2d12/Z097_Bk_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "4cb9a1334f6da215ce88e489e3f5b6050a99ff5dbd223764426a51acb7c59226",
+  "cif2d12/Z097_Bk_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "1c1dcfc6e63f41c1d3333a41d613c658f967ad924df3059f5db15f113fe57677",
+  "cif2d12/Z098_Cf_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "a02ec605ca5d245c9036fbf1c62f7a3fedd854e34890d375caf2f173dbd9213c",
+  "cif2d12/Z098_Cf_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "37204656e49e1968c1b07d8fa3619e716afbf8c50ba3cae1bea5f7752409547b",
+  "cif2d12/Z099_Es_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "6e06a08589acbf02a3dc792881d93af39d9ce4d5bc876085253f221cd156786d",
+  "cif2d12/Z099_Es_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "e7413356224bf4524a0f772adbaa4e238ed5dbc63cdecab27bf040cd43aad24b",
+  "cif2d12/mixed_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "4e1e6ce22b0cb5e849bc197ee7326d8c30277af9ba50b30b8aac653e095e4e0d",
+  "cif2d12/mixed_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "3818f383d98c91ed8eb7b32f48145d8bc4b4933036befd0a20d7b314bb70e4fb",
+  "d12_writer/full.basis.doublezeta": "1bb9e65f4d2a72268ca4ad14d2d2740c98f25968f7b4e13b7a35594220f11934",
+  "d12_writer/full.basis.triplezeta": "b145ca916629d584a5fd3e02816e0c4ef84d69fd3c79a24de21a4cd0dadb4dd7",
+  "opt2d12/tqc_agbr_opt_B3LYP-D3_optimized.d12": "5791909af81542687c48859556e4dd1aeffc6e862ab08dc4f2391235c39e0ec0"
+ },
+ "files": {
+  "full.basis.doublezeta": {
+   "1": "1c65739ff6a5b3d777d025f939fd896707d6cdbafc8c4049e08c9a6b24a3f061",
+   "11": "ea49917194af6bb5ef51b11a8a4e4780c7b4a6637614970f26ff31bf29d0fc34",
+   "12": "7182ee79590af59bf225964556b1c2d319768fb67a5f468afe25c4d3c0eb06b7",
+   "13": "7c025484079244fcc714d5c8975ec73dcfd3c844fd1b3ff25d32a28d833f6cb1",
+   "14": "855682824bd9a108e1f21631b9aa73a6aacae2bf05bf0e485a4e4c1ac4717d8e",
+   "15": "fd5c4f9f0452f4423f357fbc8ee385f57f5795ccd646b53e79b815f4e7741644",
+   "16": "e1c3598bb9c0b000d43ab84252aae2b0dd060479ce366d4db59dc5eddfd74bda",
+   "17": "6349b7a808001802417505b791b546a92f16a624659b1838774f4cffa0204474",
+   "19": "e09b6aa15274fc35ae7a33a4e72fee9f85b1f418c1035b577b93e3fcd6a5a028",
+   "20": "fbda369e6eaa77c5a9a618b28628d7d2c0dea9e2a5c2a73758ee504d33e9d3c8",
+   "21": "f3fee79958f1b5ab664dc5eb81c825b8299ef9b5f02afef7ea5e771b65d6a5db",
+   "22": "11acb0e18e4f2c5f69d97c1fb56eb44a3ffd06b9cb50bc9ba224f82b12777f1b",
+   "23": "6c09ae28802f22089ae53957d9ad9465b3ef70c8d6f13c7bfe53f963646a66f4",
+   "237": "f3bf87836e23fd987467a841bae78e638349088bde5b7af02af99df698ce7a11",
+   "238": "4095ae0530f959ef169cabbd35d2ece47019f4ead40cee90729992ef96d1008a",
+   "239": "9d9bfccc7906481e63b92fd8881ab071255161f6571ad8c2b7b15025a060e8ab",
+   "24": "3f6e371384d742d5e0f8029fc114f3de6b10ca7ce3c97fccea5d4e11b01a2ace",
+   "240": "9757ea89e6834bb7fa9adafc533b918939d17ded99c44a9b1712ca616bcf9276",
+   "241": "40c1b64abd493be9af2c5a1e8a9235fc1d82f4c60a7bf918662fea9f15ba5fc1",
+   "242": "2f5408fdfa8b5a086d9f818d0dd17d90282e6d8622ad50cd8f820ca2486a794b",
+   "244": "ef71c8e39cb2e70aa2eaadcdc428af669c1d91ec258b9fb1f32062cd15f13cf4",
+   "245": "290fa9cd78cc7672923bea1523828e6f946beff1762b335ff1249724c3e79717",
+   "246": "987d6bc42b88d0ec0c28f4ecc2beec5151250ab9d30904905479bd0a4485b7ce",
+   "247": "d0e8870ea273f155fd3c39e6bf674d77873d3b1c6f532ca9ecee8c8659c79c0d",
+   "248": "954f4c30b0dd65040c8d78cc08a5276582b9643a9e9b98a1bdd786eab488f4ce",
+   "249": "f87fa3b1d5fceb72779ddc02e9a3d488a874174a010889505292c057d3276c4d",
+   "25": "0496997cea285f835248488110a03f33c24a987c4ec9dadded73cb9117b20826",
+   "250": "3c1bfbbf4e00c6ef67a835963608eac823bed7d237bedb15f09bed29e74777b7",
+   "251": "d321645a23cc40b775debd2048ac54f702189a276b8edc17c62e8712c4879243",
+   "252": "91288f2aabb07f3865b0c306732fb16fd5d3ac0c3c1f1e8b62d81dbeeb07f172",
+   "253": "0933c0fe31fb8e89b01b6768f90ce6581030f6bbbd3b832d9b618b045a47ecd8",
+   "255": "aa8458fdd922b4889714743f99d399e10c58668645c1b62b2053c0e9655c7595",
+   "256": "dbcc7c189e803a27a605798fd4fc2ef532141215389da943edf086df3d740e98",
+   "257": "f910bd5cad4ee064495d5dfe6420261509d6f795b7feb158309b267ff4c0bc63",
+   "258": "93e7f79eb70f5ee7f6f10f73f926b3a35256b104528d26d4ea819d615447660c",
+   "259": "b29a0a2b3fc94335911f6a50c490da449c7bde009e39ac2bae905784e0da8236",
+   "26": "b303938564e8811165af07861f6615d800a8f2f6133ecec317d8b05c0c3ba28e",
+   "260": "8854b1fd1c44da4da322b3638e9ade934f33f3c7979571f82138f5c504089e82",
+   "261": "88ff617958e5904d3d00923171b22b3b9ba77793bf1b3dff50a1e58c7808c872",
+   "262": "8f245f6bc5d633393becd9fffacd897f481692c4f122462ebda2ead7cf849bb8",
+   "263": "84ac0fbf96f404b0a75754dfec0967731849b0b47b9fb8b23960b4b36c761f20",
+   "264": "143096f61422055d4af40db888be7e8d95a8837a949113a63931cf8d5d7f17f0",
+   "265": "a49b7f79d2c27cc88296be6e415fd04e8d7d5190b11c2d58ec49ea3fb169df7b",
+   "266": "a944fd7535bfed4531f89a4a11c7b250f97a01c36fae19b5e7f887e634d0ebf1",
+   "267": "15e7a6cd437c4a9960751ef1e8c68a31e064117fbd0019afcb22bb4c91b73349",
+   "268": "2df6069eeaeac2110802b0caa4d733e167674e009444d6206c7316573e65a84a",
+   "269": "50a41e230e699ff70b835021f3f96dab1e444c9aab5e933c1886a696aadd9d63",
+   "27": "ac373c3a2f698a2823263768869e190798d0479f871d32abb84b1ea57840aee2",
+   "270": "0be6524afb7419d42921f879280cc43877513c6386015b2af424539fa4214e3b",
+   "271": "b0cdd9b8c720d3f1985a3ff8f8fcf9ec3a9ebc1ee888053759f95dcb710afed9",
+   "272": "c53987e938ae521d77e3ad431c5ebf24d9c4b0a339fb1e4505f35ab034af2c96",
+   "273": "21791068672f5cbe4c66baca20b090c7948dabd19a846e4719471a1283e8ddc0",
+   "274": "8f11a67976864ca01e9c6960dc9cd88f72efd4b675fb1d6c1fac5a2cec0fc827",
+   "275": "e4c2b59a0edbc70d92133dcaba15a2be89a0caf418508b921a7952da9efeea65",
+   "276": "55e473df5fcb687595c872754fd3b540fd681d564d105180a9c268f6f2b28237",
+   "277": "b0e110a7591613c413d8e204bc5b2ea6ee78cb39fe78f4021cc5687c186e493d",
+   "278": "212db47cc6b4e02ff9d4941de8dfeca4b19de1160f0fbec20bdc1a235ffa2827",
+   "279": "638e12b0217d057f3640c741599ea46eb3c841a734cc8c69751457e37121b365",
+   "28": "39f869f4b5ec8fa9d992888d4f3c329d7db88f40e64cbd92b75274d347489a73",
+   "280": "a078847ae13ce90cbfef5226ab18284195f12add677bdf4088ff74ec9faed8a5",
+   "281": "7f72b0ba6caecea102fba1f973c89c97f22ad635370909b68a28211c49f6f54b",
+   "282": "cec656c47d1d7b62050dbc5197656e29e363090465a4e3566273f8cb06e170e2",
+   "283": "58f8cacd0bc6ff66bcf2752b1a9aa1b19172b1363914cfd5bd4bf96fa8fa8224",
+   "289": "84c834f3fb3fab11fb0a70a42acdb5df971a7dd006c991d61ca4a2706bc0d9bb",
+   "29": "43ba74970a4d46d2c8169f7d10b9838b71d829ad5dcf572758df5ac8d306d8e9",
+   "290": "24a881531214feebba7370fc1b7e17600e09ae08ce093deb9f6026a888a37747",
+   "291": "0816573646fc820b9c8c52b16af532d715b78853b88a052f686c7b9668ba0afb",
+   "292": "1b78d107314adf2cf959a86ecee6215151d8ae230b3b08307b9feae40d09d96c",
+   "293": "54cbd4d7d3b055363b779bd5524fed68a88ecee9acbb2c6c4d9c7999ed134104",
+   "294": "ca7af15f133d2dbd63f314d6ab079d116ac080fa90bcab7bfa7d65a347d94d87",
+   "295": "bdf1c98ef8a00996c818a92a006d0c55bdb90aa77b981345180339cc8e5934b4",
+   "296": "b3faf53d7ac2e68269df7f92b270954a999c55fc8ae21fcde3de2e581f2ae955",
+   "297": "0bf4a6118c19a74497c20477a6b78a8c54863ad83f231d44b2aa3a077617327f",
+   "298": "f39a98ef8f83491fa2d28a0547253b834026a91e3ee9ef4743950422f611b376",
+   "299": "a5e20fc17761791353131597e731039b1f8261e1d936d6d61ddfe6588b36db49",
+   "3": "832eed1239c4d53f032900100524d722d6bc82fc3b7cd72d6c2c82d4b05c9341",
+   "30": "355504f193b1d49cb91845f83ad23a3604559415287e5649edba50b66d5f8329",
+   "31": "7df36c2bed61f1554a12b5218969bab5dc7713d4d81c508ccd82b96e6ce39749",
+   "32": "01246a55859f85d35c57060be2b0a40ed8c67b31396f1e66c2b462b3352aa9ae",
+   "33": "c4c5881fdc71ea95c2689e71407d2f18a5e7d479a6e79d5f2b855e2a2f5d8cdd",
+   "34": "9fc38f451aa2d55978c38d04587b2719cd4d3ceb6408d6959d2057a64d8d27d5",
+   "35": "856a4b6928c819f56f6504fd251d4e4844f61609eb951c0ac48a8db77fe0ffa6",
+   "4": "9cfaaaaa90511d81b2c359e4678c2d0843488834c5f77988336e68e459d954be",
+   "43": "d8c0614137b4b2367dc1f46357228ccd3130ae3ce81d87e3564ccb38029b7ab4",
+   "5": "e80bfb4ec8f6a33b9bfe8bd23b5f3bc68ed2a4b071943a8756ee02d5e6328263",
+   "6": "264dbfffffceb815e9062b7249af5e00f70e2bc25a1a08f6ba482063dfbb2643",
+   "7": "5f6597d579208ef16be24ffd73e1a1bdf0568e52cd35324e981d7ffdc00c1288",
+   "8": "75dc7983c45063249141c1e6b00ccb7ff5a94c99edba59fbc5b73cec2300c16b",
+   "9": "9338444f57e3689fa41feb3e12d756df027c51cdd7eacbc44a77297996db19cf"
+  },
+  "full.basis.triplezeta": {
+   "1": "273d79be3253dd5b996ab0eb2ab019a299daa3c9487d2621dad2817285061daf",
+   "11": "245a7a83008e0280aaa4438d7aae482b1dbda085c115a556a5fb3c03e9911dc2",
+   "12": "d227d92e6035dec471b18791c749f94d8c497bbe413644b5d34f8940806f0d17",
+   "13": "bf5f15709a23bfe387f0fcce2fa83a8f493f0073bd18bc9a5b2e17492473c00e",
+   "14": "ea2f2c46337087b8421fcacbad27da7dd121e6f08e0ec64475d14e048de2862b",
+   "15": "48621f9a3835db8d0afe77b511e80ea339eb02b083a541772e35c04207a7d8f2",
+   "16": "1e93a056c43b66c465500951765772e3bbd845c13988985414d3f08d28e242b4",
+   "17": "493ae689247ce1ff4edf11668e9f43e010c6ef704bac6523a0b0850dc003697c",
+   "19": "e0c3c408fcb0cbf843496463c3e0c48c33c138f7718a3fdb487e9ecb533f2b14",
+   "20": "1df863bd9dd4db96fb3173f12889e65110f1de436238ecf4e7aa49f25e3c9bcf",
+   "21": "aaa83eded2dccc30677237b905146898e1d804540f09f9200ee83f5751b7e1f8",
+   "22": "dba78c5bfbd32e1aa277f1effbd159f12c3e83639cd596bb95f14bbf1e637c7e",
+   "23": "b61845432331d6ee14250e5e43f4a33cf2607f202266df766884fb8e9103fee9",
+   "237": "70ae181eb2fa4594567439142e8d3a77fad21295243e498cd636e5abb0a37f4e",
+   "238": "7ab3ef7fc7ba7b9c1ee6099e6a5a474b45823f7b2790efb9ec76215da2c51002",
+   "239": "51ea56aa7c579f57decad1fa3be7bf2caa112b0ff4c5ac9d9e4577606aea8c33",
+   "24": "302da02655036dca0c6f919c95183c6dfee5c7fa0b82efe20085869073bbe16d",
+   "240": "884c5bb7424b00394293286032d0c2bc5c247488ee9cee608a461e6850795c6f",
+   "241": "9ed7a0ffbdb9c0ec4fd1df5c6e3b50d9685a9b24413444ada50c8bd95011bea3",
+   "242": "fb97c69a703fcf67c00d8936135ef2ceb5411e1c87cde5dddffef6ea7d20bf18",
+   "244": "496f2f13af417c4794b0010edbe3e393782bf2fef56b3bf879aebf280ebd27a3",
+   "245": "4770e1ae3c5d152b140e1747e66292c6abf4d9af0675207cc23b31ee15d2898e",
+   "246": "f9a423d638bd9a3a6d18340894e7a46f22a1a7a9b7c4db1b68a5f406654695d4",
+   "247": "a3c7a09ce8c0b60e3346011b989845fb60a6e076d370ed24fa438a680167d029",
+   "248": "6479be4dedae7101e22a1719da8463960fe5865e97d62b343fae30eec8b9837b",
+   "249": "fdb73ebda9c685fe1fc4f19da25a6b31d5aa0ce4fa8200551e6c4613f8b422c0",
+   "25": "457733dc4a4018d029cc69d53872c1a071863e574de989bc10540c0a4831eb1d",
+   "250": "0f6f6518132ab28fe597374a40e7ce0384630289d91a026d43c4bf8629220618",
+   "251": "13db29b7c6e699dc3c6bc76aa527405be47d91a44202e245b273c76c60dfeae0",
+   "252": "556edf79854cc8b04cd707933ee87b150f8a62b2b0764d7db15581d5adf3d6ee",
+   "253": "83eff9040e6a76185cd27800b85808e894fe7289115c131f3b261db072c5e702",
+   "255": "aa8458fdd922b4889714743f99d399e10c58668645c1b62b2053c0e9655c7595",
+   "256": "dbcc7c189e803a27a605798fd4fc2ef532141215389da943edf086df3d740e98",
+   "257": "f910bd5cad4ee064495d5dfe6420261509d6f795b7feb158309b267ff4c0bc63",
+   "258": "93e7f79eb70f5ee7f6f10f73f926b3a35256b104528d26d4ea819d615447660c",
+   "259": "b29a0a2b3fc94335911f6a50c490da449c7bde009e39ac2bae905784e0da8236",
+   "26": "8627511f22e1731e231cb20032b51883eaad569e9443bd4c66774523fa44ae01",
+   "260": "8854b1fd1c44da4da322b3638e9ade934f33f3c7979571f82138f5c504089e82",
+   "261": "88ff617958e5904d3d00923171b22b3b9ba77793bf1b3dff50a1e58c7808c872",
+   "262": "8f245f6bc5d633393becd9fffacd897f481692c4f122462ebda2ead7cf849bb8",
+   "263": "84ac0fbf96f404b0a75754dfec0967731849b0b47b9fb8b23960b4b36c761f20",
+   "264": "143096f61422055d4af40db888be7e8d95a8837a949113a63931cf8d5d7f17f0",
+   "265": "a49b7f79d2c27cc88296be6e415fd04e8d7d5190b11c2d58ec49ea3fb169df7b",
+   "266": "a944fd7535bfed4531f89a4a11c7b250f97a01c36fae19b5e7f887e634d0ebf1",
+   "267": "15e7a6cd437c4a9960751ef1e8c68a31e064117fbd0019afcb22bb4c91b73349",
+   "268": "2df6069eeaeac2110802b0caa4d733e167674e009444d6206c7316573e65a84a",
+   "269": "50a41e230e699ff70b835021f3f96dab1e444c9aab5e933c1886a696aadd9d63",
+   "27": "5b4fe03f24c637246a2115244250cf4ef568850b1e294c3efce3ea9b893dda9c",
+   "270": "0be6524afb7419d42921f879280cc43877513c6386015b2af424539fa4214e3b",
+   "271": "b0cdd9b8c720d3f1985a3ff8f8fcf9ec3a9ebc1ee888053759f95dcb710afed9",
+   "272": "c53987e938ae521d77e3ad431c5ebf24d9c4b0a339fb1e4505f35ab034af2c96",
+   "273": "21791068672f5cbe4c66baca20b090c7948dabd19a846e4719471a1283e8ddc0",
+   "274": "8f11a67976864ca01e9c6960dc9cd88f72efd4b675fb1d6c1fac5a2cec0fc827",
+   "275": "e4c2b59a0edbc70d92133dcaba15a2be89a0caf418508b921a7952da9efeea65",
+   "276": "55e473df5fcb687595c872754fd3b540fd681d564d105180a9c268f6f2b28237",
+   "277": "b0e110a7591613c413d8e204bc5b2ea6ee78cb39fe78f4021cc5687c186e493d",
+   "278": "212db47cc6b4e02ff9d4941de8dfeca4b19de1160f0fbec20bdc1a235ffa2827",
+   "279": "638e12b0217d057f3640c741599ea46eb3c841a734cc8c69751457e37121b365",
+   "28": "189c6669bffccdb32f21f832eff37a62143e6c1c314f183e34d3ea41f8eafb90",
+   "280": "a078847ae13ce90cbfef5226ab18284195f12add677bdf4088ff74ec9faed8a5",
+   "281": "7f72b0ba6caecea102fba1f973c89c97f22ad635370909b68a28211c49f6f54b",
+   "282": "cec656c47d1d7b62050dbc5197656e29e363090465a4e3566273f8cb06e170e2",
+   "283": "58f8cacd0bc6ff66bcf2752b1a9aa1b19172b1363914cfd5bd4bf96fa8fa8224",
+   "289": "84c834f3fb3fab11fb0a70a42acdb5df971a7dd006c991d61ca4a2706bc0d9bb",
+   "29": "1ca95c527f18e2f705c38a99ad954ca66d8a03925e2e3838603e2512c4d11ecc",
+   "290": "24a881531214feebba7370fc1b7e17600e09ae08ce093deb9f6026a888a37747",
+   "291": "0816573646fc820b9c8c52b16af532d715b78853b88a052f686c7b9668ba0afb",
+   "292": "1b78d107314adf2cf959a86ecee6215151d8ae230b3b08307b9feae40d09d96c",
+   "293": "54cbd4d7d3b055363b779bd5524fed68a88ecee9acbb2c6c4d9c7999ed134104",
+   "294": "ca7af15f133d2dbd63f314d6ab079d116ac080fa90bcab7bfa7d65a347d94d87",
+   "295": "bdf1c98ef8a00996c818a92a006d0c55bdb90aa77b981345180339cc8e5934b4",
+   "296": "b3faf53d7ac2e68269df7f92b270954a999c55fc8ae21fcde3de2e581f2ae955",
+   "297": "0bf4a6118c19a74497c20477a6b78a8c54863ad83f231d44b2aa3a077617327f",
+   "298": "f39a98ef8f83491fa2d28a0547253b834026a91e3ee9ef4743950422f611b376",
+   "299": "a5e20fc17761791353131597e731039b1f8261e1d936d6d61ddfe6588b36db49",
+   "3": "a3d49da09fc6d7b6a14a0621a880fefb3485ee4d979a889e4ee218d5c498d8c0",
+   "30": "378e8016791228ba8022c84782a937ebdc2f78bf4df280873e45205b1fceafe0",
+   "31": "7c8d0eae7a9bbc4a2430f823682c976e613734a7b52a159085a148f317fac537",
+   "32": "0e784c2623da910583cee8459a80a7aacfd7b0f6846446b78521868c13d25898",
+   "33": "1224350418a3e0c06f915b6b86e071ee62dd297b77a0818a6881a0ed37762906",
+   "34": "b2b3b6305c07dcd2bbeeb35d3f0fc2764865896383cbceae070b7243c62969be",
+   "35": "fdcd965c83619ac96f2ae8964a4c55a6f177f099a7d96c8a95db575c1fd2e362",
+   "4": "9340902383b9e69113194c117e64db548eec54ff4b316eeca7b8869547016b12",
+   "43": "d8c0614137b4b2367dc1f46357228ccd3130ae3ce81d87e3564ccb38029b7ab4",
+   "5": "14d3ecc3af35082e69a9e81dff97867fbf196e0009c6e4c6b024fe17a3d74d3f",
+   "6": "b4458a15d726bd57891043285ddc526cd0b1125234acd2d94dd2381b9340e64d",
+   "7": "9bbf74efd6d0a89cadffdc0cb4889530912ad0ffc1db271a6773d10f6ca279b3",
+   "8": "02c0376691a3c17677b2416a30243c94e6ef1586f7079381d529a3c95ce7587b",
+   "9": "4dadd4c16ec66d2f929a7ed71005fdad08d4990237b705e0d74eca7b45062836"
+  },
+  "stuttgart": {
+   "1": "09fa3daa010d57ceac2075e722dfcf8a65e835c96f73aa306139895627360830",
+   "11": "864e420a115307faddb5e280343c742aff680509362d61362696e97635980641",
+   "12": "6ba0f567d7560154a6aedd364f1fa40de9aab8ef8dbcc7629688dcb807ee49ab",
+   "13": "af6904cfc7af42a0d92eb631502f40661716dd2d048bd1c609fd486901a364f8",
+   "14": "2216a0a693f4a551793db5b257171d9d114f0cdaaa36473c1bdf53a593202619",
+   "15": "c789a40d19a65b936ea234052648de8701b92a6fa78970ee8b452ab651c4982b",
+   "16": "255ee962a6daa1a93781404222e265f9774bb3df4e81aeaa500cb95bc65752f3",
+   "17": "17c6c3978f38150867a2a9492fc03e189c4bf7224e68cb7d204143bfd76c3817",
+   "19": "548ff42f38bf4c20ecf4affbd2196a291b2f1de0877be86940b36512abc32547",
+   "20": "2ae601934320fa734702129a7c1a722b573145f0e25fa21c7117883a00f074f2",
+   "203": "450fbe487f6dc641fefa59971ebcf5909bd2a8c67b4ef690474536ba537352d3",
+   "204": "e584b35ba9451ccf408d7925f3c94792d6aa2991d2d288bce07a3d1400aaac7c",
+   "205": "af3c9dbb1333f3a340bf1db14adb456b45fd77bba17037aacd410b42c5714963",
+   "206": "a6d435f82cfe5c01cc8a394c9633d18bc98ce31a48bbfca5995d5b292ddbdb17",
+   "207": "0a080628ed0bc72a4c9ffac7c4ff26390e5f54cf2df3a15885d2e76eea0fa22a",
+   "208": "08aeb679cffc4653f482d06eee341d79fac7f3b80a9dcfdfb8d33e5ed97ffaef",
+   "209": "491675206e8a83704acefd4c82f7c18769e011d8481bf14aa144707419179a39",
+   "21": "9e78ea71522b1e55a027ac83be0e31a4384007862242efe40ea7c033e8b38f6b",
+   "211": "462954091e88263e97f104a4b796fe5a9d4e0c774ff88db9f73d01e329d6334d",
+   "212": "366bb3f198ca6e6c83945dfc0530e3baf7a684e3eded344c4bb09cb830d6cd0c",
+   "213": "857dfbde3b20cdec504c870649ad76a981a49fbf0bd674af998dae9f8c2a1584",
+   "214": "6f52bb85f4b883453824272640706df0ca153488df46cf654f02be97b725905d",
+   "215": "204149944f5530487be4acc968917f6f16c784bc6e66273048286fc6e48b31bb",
+   "216": "88ee5fe675ee2902ad7a3e1edab08c863c9a1f523819a769d8668ba2bed6b75d",
+   "217": "b1eac71b855d159fc30a041921b6f40ec3c3aa9f324edf6ba5e0dac991d33a76",
+   "219": "fa3ebbed632d75d5d0d69f301e2ea198648266feb567334dda9a4b14cbdb0e2c",
+   "22": "28401e461541181ac305693734d5436dec02f28708111adf046530ac3f6d4a0f",
+   "220": "4153edc5ae6e8af36344093afec5e2ee3b392aaa1007d2f13f33f8559538ff9e",
+   "221": "10b48592a4605e6fa582f3044810cf9be62558ad542aab198a19b425b3237963",
+   "222": "f281b7f89b3a87dc3fa7588901eebbac28e215d578bbf9b8f40fae741c8f6a05",
+   "223": "bcb27e97e478fd282faecfb2012150018ce0f1654440b58c7a945bafc8fff898",
+   "224": "04e5375d9cc29369a082dff39a3e31b9dc5837c4d5189f884c2fa09ca3553072",
+   "225": "0abe1739ccee0dbc0f20de9a9344b3cb4247c818468e9f1fb336d092ea3260b5",
+   "226": "04d900f1159369f2d861dbefb4f86cfc09bae4dd1f1ca7813a26484d0a7e31e5",
+   "227": "a8c80eebd0607f4f664ebe07c264a810c664e376f2c0f9c1f8751bdbb9102a83",
+   "228": "941d0cd5dd6e22d908d5df300f00fa6b9b44175927150c75208b9195e035fbf0",
+   "229": "fda035f9d3265c8ab2bf9984e2e868964aa843a106e337c642ea09042cc2853c",
+   "23": "71c8bdb2ab800ef69055e199104f523f95239754c8377fadfcdb26ff3f37b1e7",
+   "230": "3cf1d958eb088753d9e160b1b60376a52b05cfc1d442f11bcea96079b340ec5d",
+   "231": "e80719aa401b3a95fb9e10ef95de50676553080a7c6e646bc5bb068c64c2765e",
+   "231.SDF": "fa4edb8a6ce7a217b8a3cf65f20b5fc19533936b3b97099df8d5294c68a68ee1",
+   "232": "5a9f08c1f10e5f93d652ac30ac81ca51099ccc46ff4997a1fe90f6a9991e6765",
+   "233": "142249fa80f62ad9c638eb804d480ca0c54ddb3cd823f1afad7bdf1898adff54",
+   "234": "a83f596dc1021d27dcbb4581c5b615489eef7d763c7e65aeddd281a6f18d31bd",
+   "235": "36de0e471023a1ec62d907f6c131a2afc450eca2219b04cb4be3d624aade6ecc",
+   "237": "da6f26e88cffc6c1739251b23f2d935c4251e0c0d22c382315d2569d82152da7",
+   "238": "6ae07b63d9e6b4fb58e8ddaab962b993496a7259c72cea7d4ebffd144a615113",
+   "239": "30ff57df56030c9ba0e84c598581c049a93b974619dd17e179ecc28ed839ca5a",
+   "24": "6143c0b4d2de696d76ab71779d28b76e15113e829724899146028d28c28689e9",
+   "240": "22830d4a44ee7ceaf4c133bc1fb1b65d89e2cee2f829f706de309bad5a0246d8",
+   "241": "9f689f506d1b48e51a65b6e0034018f620bf92c3084f9a81040e2a9e5321203d",
+   "242": "0383f23f93ac778c9e30b086a4b0967dfdc3bb5c2eeb5c905adc1db7e0f05b67",
+   "244": "22b5b71eb24621fe4f8819d89a896edbce56085f07dc22a67d144013d13d8787",
+   "245": "88a1ec159e2ddcf1a4f1e9ebf8449068b821ed8527b48615e28ba9e8b063db77",
+   "246": "a0e8e98d994526aa3b4904a9205bf21654083d11813ba672fa95993fdc4bef6d",
+   "247": "68a226f6df7de88eb83a52d8b2093b144c616c1747df411918027b99af93adb1",
+   "248": "4ebe4cb2a35ba0736e662c58ce8a8ea42f2600d38bfc14c92e134e92a48e1d71",
+   "249": "4e3f3270f912f2d64b1528cc16792cb76b40dbc6bdd6fab11621e6b2fd032f31",
+   "25": "ea3f6146c28d3cf89f6d1a010fd8164e08023c9ab9db4ed886559d912863562d",
+   "250": "0f6f6518132ab28fe597374a40e7ce0384630289d91a026d43c4bf8629220618",
+   "251": "13db29b7c6e699dc3c6bc76aa527405be47d91a44202e245b273c76c60dfeae0",
+   "252": "df8c721ce370e77a3824223ab05582d0bdb40c19e1fe40a6a535c7e5e14c8223",
+   "253": "70d0019ac50930dbf187d58320795cff2f4e2b2045cd9a52b3233b6e6a04287f",
+   "255": "eb758bd815a48d31236db86e1a7564a168b3698ae5cc56e26d35c011279c3ad9",
+   "256": "23990e9a1e83549048f2385a18574128d536c01efdce2e1ac30bc076d672521b",
+   "257": "746457fd678ade2748e6bdc1d430cdefd472a3032b042ab4ab5dc480b484fa32",
+   "258": "76cc4c04f5b871d8f7d1fbfbad1237f2adeb4c41b968c28955076b053900fed4",
+   "259": "f522484cc0d913892905eac98b5fb74139234136d3f2938d458d74f4a40d8357",
+   "260": "fa5e51d44549d83487e3ce4125f65dc1a245dd7d73541e15b4223be1b2477329",
+   "261": "03166abde3241fdd9270245410b0ca85242a35be7c21e56f40866725ebf31a8b",
+   "262": "2751d685ab861bceadf2f11e07247dfb460564fe84a03ccf790cd17a97c43524",
+   "263": "eb1e6775302b7b13b6c2a4fe379700fc43f89791c4d21cf59d4a4eff98728bc7",
+   "264": "1e2eebd720db88c42d9dc619183d91a1ad75454a4c521b3b15bca6f902c54a84",
+   "265": "234ae3b2b4983bfde730dbc43d65bcab79b7953cfefdd15b6354aa680cd1838c",
+   "266": "6e56dee3619228192118787b85ab261195c7c7ef9a3cc1863a81b07713d61c0a",
+   "267": "b6ac37be65a0f71d3be18c4b3efad7c8b6e38685150bc224177660e6c5ddb2a0",
+   "268": "cc9037fffbfc94456b03954bbed0bd818b99dd27d7dcf2462a9a1c6beeff2b2d",
+   "269": "6bbe2f22dd71ec201beb2cc2ab4a210c3e952226175c999f7df3646cebf83ca2",
+   "27": "5e8e9e34f08dc62bb5aae97fbb23f57c5efdc0bdefb62d8ecb9b1bf1ad9fe089",
+   "270": "4e6055b603d49adae5fdb509d5d4d08d3e8a1f9d2321d0ad8d5dec7abdea4f38",
+   "271": "11bcc4e128292b1dc54008aa5eb99a97e08834a4df5269bbd71320881ff4aa23",
+   "272": "7872ef7e9a5904397abf38ca24ecdb1eef6fc8f02c20821d2976d619e8ed59a4",
+   "273": "a4dc172b6bcc29ec62da7d902c982731cba12c2c3472cfad30558bc06ec950e8",
+   "274": "0148c4e3bb9d4efb94d521d203665e941b16aa754a688c79ec1b1f2ade7aa6ec",
+   "275": "0109cda1a43a9c8f9cf41b1f928ef93a26e324e1c9692a0e92d48ad2f41e3434",
+   "276": "ff7f1f0d1171290ae53d3bc7395a5a1aacc84699be146ae18194ce01fdfcc4d2",
+   "277": "bbd1bb75f42fe137ecdd93d9158a1d6f7df067545ce7f11aef15b01bcb0c6ee7",
+   "278": "1ec553d874096b82f42ef2d77ac59f17e3abda2d11df7f7af232a7ec4d0060a0",
+   "279": "1e46f393b8f2b4e08ffd74a0bfc0692ebf8cdc8c57b789120c319429cedb10b6",
+   "28": "def87d5f3961c184af1d8807b1254906e0c0d1723a0cdf10bf8600d5eb78335f",
+   "280": "838568e4deb12d05c91da45cf19423d96364eab9095deff348c7cc2a2479afd6",
+   "281": "39e61e320fba1d5732b9fdcb990df63b1bb9cc2d0701b3c835126885084c1a90",
+   "282": "25380694d82dd5c74cf863ccb4ba6bd20627858a7e36f504c12c5d47693cb973",
+   "283": "3693b1d0c5b7ee26ae0a553503182ca4eda2c96f2614f049604d0ea16e80e0dc",
+   "284": "25ad7ede3b8239f942235d5ad3bb9cee6556c1309b947aab007a90c6a96a1e49",
+   "289": "f29ada048b8959616c4b88583b1148842c7d2499fc077c7d495231810bd90615",
+   "29": "f0959081fb083c555305e93d2219e2dbd50db5595f4d65e793caeb1cc4355179",
+   "290": "8ef19c930dc0b1cafdc817acd0bf47c1815e67562dfce9571a0bc331363cf89b",
+   "291": "15591c6c0eab5adf4036a85a1782de7eddb8df97ed88e76dcd63df999fc4b2f8",
+   "292": "13336adad33e14360ccde489804596751c0400f70b3e42016e62c57add919f8b",
+   "293": "41796c7c73a6c3f84f2003e77dd86810450e706aea1659737403e3516ee6af13",
+   "294": "5ced1ce16d423d1c0f9852984b8b2666f97fe182c6851929275f7672c72c6429",
+   "295": "d7993ccf04935e5a20068139fb8805e2132eec43199ee0fb2a45aa7a374386cf",
+   "296": "0458248061bb4865d14846acbce70e5ba667faed80867774db2f790fd2440f5b",
+   "297": "d3943c3ba6444e0109ebdba038e02a123a1427e9afd3d80171233a511f27169e",
+   "298": "8fb27f28dac6fbcfaad8d33ca0fecfdb522992d95cc0bed8efda071e6606cb43",
+   "299": "72e29d89c70e53629d47a52dbf92bb45be7b98b5973a0d8ef47d4fdbff5c1d43",
+   "3": "ea8124855a9faff90f4e0ab15a371a815768e50fa5338c70e07086c970368072",
+   "30": "ab99502f84650d8588cb5ec3aac8047c2751386d64dad86d022541e6e212b102",
+   "31": "ba1985f1ea45ff4aebac82550ffb63ced34c9af1d95f8e3121c9f3d812c5003c",
+   "32": "0bf2e47223279ca0c8056af3f4441767f351387e8156a6f7c4f6f43684da9b52",
+   "33": "2e6e8082eb581ed617031ac6106853ecdb601240f1770007a5eef6a64fc328df",
+   "4": "97659d3e056ecee2d8ca7770bf3e9f1c68fb2aa173c969051e90e5ba42baaf4a",
+   "43": "3c9f271382c82e09f41aed25cec0d8fb509f52276d5b7aeaee12892268215eb7",
+   "5": "e439c289ee712142aba0561cfbf023c0ea01b0d7e72ca27aea0e49054ec20ad7",
+   "6": "28ee228250bbf8fec31a17261bf5e299d1e6585685cd4dbcb57b28b683971139",
+   "7": "6a93ffee3492c9b4e514789b27a7bc75b447700dd74458c87f66f2969e568a2a",
+   "8": "a43298c3cd379685c5a74ab826fa21433d5f2f8b7400aa43cca1d2ef1ec32e3e",
+   "9": "a79b2c18299779f7b2e176a6942a69df5f6b83507b312cda4d10b05a952a6b8e"
+  }
+ },
+ "read_basis_file": {
+  "full.basis.doublezeta/1/EXTERNAL": {
+   "empty": false,
+   "sha256": "1c65739ff6a5b3d777d025f939fd896707d6cdbafc8c4049e08c9a6b24a3f061",
+   "warning": ""
+  },
+  "full.basis.doublezeta/1/INTERNAL": {
+   "empty": false,
+   "sha256": "1c65739ff6a5b3d777d025f939fd896707d6cdbafc8c4049e08c9a6b24a3f061",
+   "warning": ""
+  },
+  "full.basis.doublezeta/10/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 10 (Z=10) not found in <BASIS>/ (tried: 10)\n"
+  },
+  "full.basis.doublezeta/10/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 10 (Z=10) not found in <BASIS>/ (tried: 10)\n"
+  },
+  "full.basis.doublezeta/11/EXTERNAL": {
+   "empty": false,
+   "sha256": "ea49917194af6bb5ef51b11a8a4e4780c7b4a6637614970f26ff31bf29d0fc34",
+   "warning": ""
+  },
+  "full.basis.doublezeta/11/INTERNAL": {
+   "empty": false,
+   "sha256": "ea49917194af6bb5ef51b11a8a4e4780c7b4a6637614970f26ff31bf29d0fc34",
+   "warning": ""
+  },
+  "full.basis.doublezeta/12/EXTERNAL": {
+   "empty": false,
+   "sha256": "7182ee79590af59bf225964556b1c2d319768fb67a5f468afe25c4d3c0eb06b7",
+   "warning": ""
+  },
+  "full.basis.doublezeta/12/INTERNAL": {
+   "empty": false,
+   "sha256": "7182ee79590af59bf225964556b1c2d319768fb67a5f468afe25c4d3c0eb06b7",
+   "warning": ""
+  },
+  "full.basis.doublezeta/13/EXTERNAL": {
+   "empty": false,
+   "sha256": "7c025484079244fcc714d5c8975ec73dcfd3c844fd1b3ff25d32a28d833f6cb1",
+   "warning": ""
+  },
+  "full.basis.doublezeta/13/INTERNAL": {
+   "empty": false,
+   "sha256": "7c025484079244fcc714d5c8975ec73dcfd3c844fd1b3ff25d32a28d833f6cb1",
+   "warning": ""
+  },
+  "full.basis.doublezeta/14/EXTERNAL": {
+   "empty": false,
+   "sha256": "855682824bd9a108e1f21631b9aa73a6aacae2bf05bf0e485a4e4c1ac4717d8e",
+   "warning": ""
+  },
+  "full.basis.doublezeta/14/INTERNAL": {
+   "empty": false,
+   "sha256": "855682824bd9a108e1f21631b9aa73a6aacae2bf05bf0e485a4e4c1ac4717d8e",
+   "warning": ""
+  },
+  "full.basis.doublezeta/15/EXTERNAL": {
+   "empty": false,
+   "sha256": "fd5c4f9f0452f4423f357fbc8ee385f57f5795ccd646b53e79b815f4e7741644",
+   "warning": ""
+  },
+  "full.basis.doublezeta/15/INTERNAL": {
+   "empty": false,
+   "sha256": "fd5c4f9f0452f4423f357fbc8ee385f57f5795ccd646b53e79b815f4e7741644",
+   "warning": ""
+  },
+  "full.basis.doublezeta/16/EXTERNAL": {
+   "empty": false,
+   "sha256": "e1c3598bb9c0b000d43ab84252aae2b0dd060479ce366d4db59dc5eddfd74bda",
+   "warning": ""
+  },
+  "full.basis.doublezeta/16/INTERNAL": {
+   "empty": false,
+   "sha256": "e1c3598bb9c0b000d43ab84252aae2b0dd060479ce366d4db59dc5eddfd74bda",
+   "warning": ""
+  },
+  "full.basis.doublezeta/17/EXTERNAL": {
+   "empty": false,
+   "sha256": "6349b7a808001802417505b791b546a92f16a624659b1838774f4cffa0204474",
+   "warning": ""
+  },
+  "full.basis.doublezeta/17/INTERNAL": {
+   "empty": false,
+   "sha256": "6349b7a808001802417505b791b546a92f16a624659b1838774f4cffa0204474",
+   "warning": ""
+  },
+  "full.basis.doublezeta/18/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 18 (Z=18) not found in <BASIS>/ (tried: 18)\n"
+  },
+  "full.basis.doublezeta/18/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 18 (Z=18) not found in <BASIS>/ (tried: 18)\n"
+  },
+  "full.basis.doublezeta/19/EXTERNAL": {
+   "empty": false,
+   "sha256": "e09b6aa15274fc35ae7a33a4e72fee9f85b1f418c1035b577b93e3fcd6a5a028",
+   "warning": ""
+  },
+  "full.basis.doublezeta/19/INTERNAL": {
+   "empty": false,
+   "sha256": "e09b6aa15274fc35ae7a33a4e72fee9f85b1f418c1035b577b93e3fcd6a5a028",
+   "warning": ""
+  },
+  "full.basis.doublezeta/2/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 2 (Z=2) not found in <BASIS>/ (tried: 2)\n"
+  },
+  "full.basis.doublezeta/2/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 2 (Z=2) not found in <BASIS>/ (tried: 2)\n"
+  },
+  "full.basis.doublezeta/20/EXTERNAL": {
+   "empty": false,
+   "sha256": "fbda369e6eaa77c5a9a618b28628d7d2c0dea9e2a5c2a73758ee504d33e9d3c8",
+   "warning": ""
+  },
+  "full.basis.doublezeta/20/INTERNAL": {
+   "empty": false,
+   "sha256": "fbda369e6eaa77c5a9a618b28628d7d2c0dea9e2a5c2a73758ee504d33e9d3c8",
+   "warning": ""
+  },
+  "full.basis.doublezeta/21/EXTERNAL": {
+   "empty": false,
+   "sha256": "f3fee79958f1b5ab664dc5eb81c825b8299ef9b5f02afef7ea5e771b65d6a5db",
+   "warning": ""
+  },
+  "full.basis.doublezeta/21/INTERNAL": {
+   "empty": false,
+   "sha256": "f3fee79958f1b5ab664dc5eb81c825b8299ef9b5f02afef7ea5e771b65d6a5db",
+   "warning": ""
+  },
+  "full.basis.doublezeta/22/EXTERNAL": {
+   "empty": false,
+   "sha256": "11acb0e18e4f2c5f69d97c1fb56eb44a3ffd06b9cb50bc9ba224f82b12777f1b",
+   "warning": ""
+  },
+  "full.basis.doublezeta/22/INTERNAL": {
+   "empty": false,
+   "sha256": "11acb0e18e4f2c5f69d97c1fb56eb44a3ffd06b9cb50bc9ba224f82b12777f1b",
+   "warning": ""
+  },
+  "full.basis.doublezeta/23/EXTERNAL": {
+   "empty": false,
+   "sha256": "6c09ae28802f22089ae53957d9ad9465b3ef70c8d6f13c7bfe53f963646a66f4",
+   "warning": ""
+  },
+  "full.basis.doublezeta/23/INTERNAL": {
+   "empty": false,
+   "sha256": "6c09ae28802f22089ae53957d9ad9465b3ef70c8d6f13c7bfe53f963646a66f4",
+   "warning": ""
+  },
+  "full.basis.doublezeta/24/EXTERNAL": {
+   "empty": false,
+   "sha256": "3f6e371384d742d5e0f8029fc114f3de6b10ca7ce3c97fccea5d4e11b01a2ace",
+   "warning": ""
+  },
+  "full.basis.doublezeta/24/INTERNAL": {
+   "empty": false,
+   "sha256": "3f6e371384d742d5e0f8029fc114f3de6b10ca7ce3c97fccea5d4e11b01a2ace",
+   "warning": ""
+  },
+  "full.basis.doublezeta/25/EXTERNAL": {
+   "empty": false,
+   "sha256": "0496997cea285f835248488110a03f33c24a987c4ec9dadded73cb9117b20826",
+   "warning": ""
+  },
+  "full.basis.doublezeta/25/INTERNAL": {
+   "empty": false,
+   "sha256": "0496997cea285f835248488110a03f33c24a987c4ec9dadded73cb9117b20826",
+   "warning": ""
+  },
+  "full.basis.doublezeta/26/EXTERNAL": {
+   "empty": false,
+   "sha256": "b303938564e8811165af07861f6615d800a8f2f6133ecec317d8b05c0c3ba28e",
+   "warning": ""
+  },
+  "full.basis.doublezeta/26/INTERNAL": {
+   "empty": false,
+   "sha256": "b303938564e8811165af07861f6615d800a8f2f6133ecec317d8b05c0c3ba28e",
+   "warning": ""
+  },
+  "full.basis.doublezeta/27/EXTERNAL": {
+   "empty": false,
+   "sha256": "ac373c3a2f698a2823263768869e190798d0479f871d32abb84b1ea57840aee2",
+   "warning": ""
+  },
+  "full.basis.doublezeta/27/INTERNAL": {
+   "empty": false,
+   "sha256": "ac373c3a2f698a2823263768869e190798d0479f871d32abb84b1ea57840aee2",
+   "warning": ""
+  },
+  "full.basis.doublezeta/28/EXTERNAL": {
+   "empty": false,
+   "sha256": "39f869f4b5ec8fa9d992888d4f3c329d7db88f40e64cbd92b75274d347489a73",
+   "warning": ""
+  },
+  "full.basis.doublezeta/28/INTERNAL": {
+   "empty": false,
+   "sha256": "39f869f4b5ec8fa9d992888d4f3c329d7db88f40e64cbd92b75274d347489a73",
+   "warning": ""
+  },
+  "full.basis.doublezeta/29/EXTERNAL": {
+   "empty": false,
+   "sha256": "43ba74970a4d46d2c8169f7d10b9838b71d829ad5dcf572758df5ac8d306d8e9",
+   "warning": ""
+  },
+  "full.basis.doublezeta/29/INTERNAL": {
+   "empty": false,
+   "sha256": "43ba74970a4d46d2c8169f7d10b9838b71d829ad5dcf572758df5ac8d306d8e9",
+   "warning": ""
+  },
+  "full.basis.doublezeta/3/EXTERNAL": {
+   "empty": false,
+   "sha256": "832eed1239c4d53f032900100524d722d6bc82fc3b7cd72d6c2c82d4b05c9341",
+   "warning": ""
+  },
+  "full.basis.doublezeta/3/INTERNAL": {
+   "empty": false,
+   "sha256": "832eed1239c4d53f032900100524d722d6bc82fc3b7cd72d6c2c82d4b05c9341",
+   "warning": ""
+  },
+  "full.basis.doublezeta/30/EXTERNAL": {
+   "empty": false,
+   "sha256": "355504f193b1d49cb91845f83ad23a3604559415287e5649edba50b66d5f8329",
+   "warning": ""
+  },
+  "full.basis.doublezeta/30/INTERNAL": {
+   "empty": false,
+   "sha256": "355504f193b1d49cb91845f83ad23a3604559415287e5649edba50b66d5f8329",
+   "warning": ""
+  },
+  "full.basis.doublezeta/31/EXTERNAL": {
+   "empty": false,
+   "sha256": "7df36c2bed61f1554a12b5218969bab5dc7713d4d81c508ccd82b96e6ce39749",
+   "warning": ""
+  },
+  "full.basis.doublezeta/31/INTERNAL": {
+   "empty": false,
+   "sha256": "7df36c2bed61f1554a12b5218969bab5dc7713d4d81c508ccd82b96e6ce39749",
+   "warning": ""
+  },
+  "full.basis.doublezeta/32/EXTERNAL": {
+   "empty": false,
+   "sha256": "01246a55859f85d35c57060be2b0a40ed8c67b31396f1e66c2b462b3352aa9ae",
+   "warning": ""
+  },
+  "full.basis.doublezeta/32/INTERNAL": {
+   "empty": false,
+   "sha256": "01246a55859f85d35c57060be2b0a40ed8c67b31396f1e66c2b462b3352aa9ae",
+   "warning": ""
+  },
+  "full.basis.doublezeta/33/EXTERNAL": {
+   "empty": false,
+   "sha256": "c4c5881fdc71ea95c2689e71407d2f18a5e7d479a6e79d5f2b855e2a2f5d8cdd",
+   "warning": ""
+  },
+  "full.basis.doublezeta/33/INTERNAL": {
+   "empty": false,
+   "sha256": "c4c5881fdc71ea95c2689e71407d2f18a5e7d479a6e79d5f2b855e2a2f5d8cdd",
+   "warning": ""
+  },
+  "full.basis.doublezeta/34/EXTERNAL": {
+   "empty": false,
+   "sha256": "9fc38f451aa2d55978c38d04587b2719cd4d3ceb6408d6959d2057a64d8d27d5",
+   "warning": ""
+  },
+  "full.basis.doublezeta/34/INTERNAL": {
+   "empty": false,
+   "sha256": "9fc38f451aa2d55978c38d04587b2719cd4d3ceb6408d6959d2057a64d8d27d5",
+   "warning": ""
+  },
+  "full.basis.doublezeta/35/EXTERNAL": {
+   "empty": false,
+   "sha256": "856a4b6928c819f56f6504fd251d4e4844f61609eb951c0ac48a8db77fe0ffa6",
+   "warning": ""
+  },
+  "full.basis.doublezeta/35/INTERNAL": {
+   "empty": false,
+   "sha256": "856a4b6928c819f56f6504fd251d4e4844f61609eb951c0ac48a8db77fe0ffa6",
+   "warning": ""
+  },
+  "full.basis.doublezeta/36/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 36 (Z=36) not found in <BASIS>/ (tried: 36)\n"
+  },
+  "full.basis.doublezeta/36/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 36 (Z=36) not found in <BASIS>/ (tried: 36)\n"
+  },
+  "full.basis.doublezeta/37/EXTERNAL": {
+   "empty": false,
+   "sha256": "f3bf87836e23fd987467a841bae78e638349088bde5b7af02af99df698ce7a11",
+   "warning": ""
+  },
+  "full.basis.doublezeta/37/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 37 (Z=37) not found in <BASIS>/ (tried: 37)\n"
+  },
+  "full.basis.doublezeta/38/EXTERNAL": {
+   "empty": false,
+   "sha256": "4095ae0530f959ef169cabbd35d2ece47019f4ead40cee90729992ef96d1008a",
+   "warning": ""
+  },
+  "full.basis.doublezeta/38/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 38 (Z=38) not found in <BASIS>/ (tried: 38)\n"
+  },
+  "full.basis.doublezeta/39/EXTERNAL": {
+   "empty": false,
+   "sha256": "9d9bfccc7906481e63b92fd8881ab071255161f6571ad8c2b7b15025a060e8ab",
+   "warning": ""
+  },
+  "full.basis.doublezeta/39/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 39 (Z=39) not found in <BASIS>/ (tried: 39)\n"
+  },
+  "full.basis.doublezeta/4/EXTERNAL": {
+   "empty": false,
+   "sha256": "9cfaaaaa90511d81b2c359e4678c2d0843488834c5f77988336e68e459d954be",
+   "warning": ""
+  },
+  "full.basis.doublezeta/4/INTERNAL": {
+   "empty": false,
+   "sha256": "9cfaaaaa90511d81b2c359e4678c2d0843488834c5f77988336e68e459d954be",
+   "warning": ""
+  },
+  "full.basis.doublezeta/40/EXTERNAL": {
+   "empty": false,
+   "sha256": "9757ea89e6834bb7fa9adafc533b918939d17ded99c44a9b1712ca616bcf9276",
+   "warning": ""
+  },
+  "full.basis.doublezeta/40/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 40 (Z=40) not found in <BASIS>/ (tried: 40)\n"
+  },
+  "full.basis.doublezeta/41/EXTERNAL": {
+   "empty": false,
+   "sha256": "40c1b64abd493be9af2c5a1e8a9235fc1d82f4c60a7bf918662fea9f15ba5fc1",
+   "warning": ""
+  },
+  "full.basis.doublezeta/41/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 41 (Z=41) not found in <BASIS>/ (tried: 41)\n"
+  },
+  "full.basis.doublezeta/42/EXTERNAL": {
+   "empty": false,
+   "sha256": "2f5408fdfa8b5a086d9f818d0dd17d90282e6d8622ad50cd8f820ca2486a794b",
+   "warning": ""
+  },
+  "full.basis.doublezeta/42/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 42 (Z=42) not found in <BASIS>/ (tried: 42)\n"
+  },
+  "full.basis.doublezeta/43/EXTERNAL": {
+   "empty": false,
+   "sha256": "d8c0614137b4b2367dc1f46357228ccd3130ae3ce81d87e3564ccb38029b7ab4",
+   "warning": ""
+  },
+  "full.basis.doublezeta/43/INTERNAL": {
+   "empty": false,
+   "sha256": "d8c0614137b4b2367dc1f46357228ccd3130ae3ce81d87e3564ccb38029b7ab4",
+   "warning": ""
+  },
+  "full.basis.doublezeta/44/EXTERNAL": {
+   "empty": false,
+   "sha256": "ef71c8e39cb2e70aa2eaadcdc428af669c1d91ec258b9fb1f32062cd15f13cf4",
+   "warning": ""
+  },
+  "full.basis.doublezeta/44/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 44 (Z=44) not found in <BASIS>/ (tried: 44)\n"
+  },
+  "full.basis.doublezeta/45/EXTERNAL": {
+   "empty": false,
+   "sha256": "290fa9cd78cc7672923bea1523828e6f946beff1762b335ff1249724c3e79717",
+   "warning": ""
+  },
+  "full.basis.doublezeta/45/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 45 (Z=45) not found in <BASIS>/ (tried: 45)\n"
+  },
+  "full.basis.doublezeta/46/EXTERNAL": {
+   "empty": false,
+   "sha256": "987d6bc42b88d0ec0c28f4ecc2beec5151250ab9d30904905479bd0a4485b7ce",
+   "warning": ""
+  },
+  "full.basis.doublezeta/46/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 46 (Z=46) not found in <BASIS>/ (tried: 46)\n"
+  },
+  "full.basis.doublezeta/47/EXTERNAL": {
+   "empty": false,
+   "sha256": "d0e8870ea273f155fd3c39e6bf674d77873d3b1c6f532ca9ecee8c8659c79c0d",
+   "warning": ""
+  },
+  "full.basis.doublezeta/47/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 47 (Z=47) not found in <BASIS>/ (tried: 47)\n"
+  },
+  "full.basis.doublezeta/48/EXTERNAL": {
+   "empty": false,
+   "sha256": "954f4c30b0dd65040c8d78cc08a5276582b9643a9e9b98a1bdd786eab488f4ce",
+   "warning": ""
+  },
+  "full.basis.doublezeta/48/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 48 (Z=48) not found in <BASIS>/ (tried: 48)\n"
+  },
+  "full.basis.doublezeta/49/EXTERNAL": {
+   "empty": false,
+   "sha256": "f87fa3b1d5fceb72779ddc02e9a3d488a874174a010889505292c057d3276c4d",
+   "warning": ""
+  },
+  "full.basis.doublezeta/49/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 49 (Z=49) not found in <BASIS>/ (tried: 49)\n"
+  },
+  "full.basis.doublezeta/5/EXTERNAL": {
+   "empty": false,
+   "sha256": "e80bfb4ec8f6a33b9bfe8bd23b5f3bc68ed2a4b071943a8756ee02d5e6328263",
+   "warning": ""
+  },
+  "full.basis.doublezeta/5/INTERNAL": {
+   "empty": false,
+   "sha256": "e80bfb4ec8f6a33b9bfe8bd23b5f3bc68ed2a4b071943a8756ee02d5e6328263",
+   "warning": ""
+  },
+  "full.basis.doublezeta/50/EXTERNAL": {
+   "empty": false,
+   "sha256": "3c1bfbbf4e00c6ef67a835963608eac823bed7d237bedb15f09bed29e74777b7",
+   "warning": ""
+  },
+  "full.basis.doublezeta/50/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 50 (Z=50) not found in <BASIS>/ (tried: 50)\n"
+  },
+  "full.basis.doublezeta/51/EXTERNAL": {
+   "empty": false,
+   "sha256": "d321645a23cc40b775debd2048ac54f702189a276b8edc17c62e8712c4879243",
+   "warning": ""
+  },
+  "full.basis.doublezeta/51/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 51 (Z=51) not found in <BASIS>/ (tried: 51)\n"
+  },
+  "full.basis.doublezeta/52/EXTERNAL": {
+   "empty": false,
+   "sha256": "91288f2aabb07f3865b0c306732fb16fd5d3ac0c3c1f1e8b62d81dbeeb07f172",
+   "warning": ""
+  },
+  "full.basis.doublezeta/52/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 52 (Z=52) not found in <BASIS>/ (tried: 52)\n"
+  },
+  "full.basis.doublezeta/53/EXTERNAL": {
+   "empty": false,
+   "sha256": "0933c0fe31fb8e89b01b6768f90ce6581030f6bbbd3b832d9b618b045a47ecd8",
+   "warning": ""
+  },
+  "full.basis.doublezeta/53/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 53 (Z=53) not found in <BASIS>/ (tried: 53)\n"
+  },
+  "full.basis.doublezeta/54/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 54 (Z=54) not found in <BASIS>/ (tried: 54)\n"
+  },
+  "full.basis.doublezeta/54/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 54 (Z=54) not found in <BASIS>/ (tried: 54)\n"
+  },
+  "full.basis.doublezeta/55/EXTERNAL": {
+   "empty": false,
+   "sha256": "aa8458fdd922b4889714743f99d399e10c58668645c1b62b2053c0e9655c7595",
+   "warning": ""
+  },
+  "full.basis.doublezeta/55/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 55 (Z=55) not found in <BASIS>/ (tried: 55)\n"
+  },
+  "full.basis.doublezeta/56/EXTERNAL": {
+   "empty": false,
+   "sha256": "dbcc7c189e803a27a605798fd4fc2ef532141215389da943edf086df3d740e98",
+   "warning": ""
+  },
+  "full.basis.doublezeta/56/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 56 (Z=56) not found in <BASIS>/ (tried: 56)\n"
+  },
+  "full.basis.doublezeta/57/EXTERNAL": {
+   "empty": false,
+   "sha256": "f910bd5cad4ee064495d5dfe6420261509d6f795b7feb158309b267ff4c0bc63",
+   "warning": ""
+  },
+  "full.basis.doublezeta/57/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 57 (Z=57) not found in <BASIS>/ (tried: 57)\n"
+  },
+  "full.basis.doublezeta/58/EXTERNAL": {
+   "empty": false,
+   "sha256": "93e7f79eb70f5ee7f6f10f73f926b3a35256b104528d26d4ea819d615447660c",
+   "warning": ""
+  },
+  "full.basis.doublezeta/58/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 58 (Z=58) not found in <BASIS>/ (tried: 58)\n"
+  },
+  "full.basis.doublezeta/59/EXTERNAL": {
+   "empty": false,
+   "sha256": "b29a0a2b3fc94335911f6a50c490da449c7bde009e39ac2bae905784e0da8236",
+   "warning": ""
+  },
+  "full.basis.doublezeta/59/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 59 (Z=59) not found in <BASIS>/ (tried: 59)\n"
+  },
+  "full.basis.doublezeta/6/EXTERNAL": {
+   "empty": false,
+   "sha256": "264dbfffffceb815e9062b7249af5e00f70e2bc25a1a08f6ba482063dfbb2643",
+   "warning": ""
+  },
+  "full.basis.doublezeta/6/INTERNAL": {
+   "empty": false,
+   "sha256": "264dbfffffceb815e9062b7249af5e00f70e2bc25a1a08f6ba482063dfbb2643",
+   "warning": ""
+  },
+  "full.basis.doublezeta/60/EXTERNAL": {
+   "empty": false,
+   "sha256": "8854b1fd1c44da4da322b3638e9ade934f33f3c7979571f82138f5c504089e82",
+   "warning": ""
+  },
+  "full.basis.doublezeta/60/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 60 (Z=60) not found in <BASIS>/ (tried: 60)\n"
+  },
+  "full.basis.doublezeta/61/EXTERNAL": {
+   "empty": false,
+   "sha256": "88ff617958e5904d3d00923171b22b3b9ba77793bf1b3dff50a1e58c7808c872",
+   "warning": ""
+  },
+  "full.basis.doublezeta/61/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 61 (Z=61) not found in <BASIS>/ (tried: 61)\n"
+  },
+  "full.basis.doublezeta/62/EXTERNAL": {
+   "empty": false,
+   "sha256": "8f245f6bc5d633393becd9fffacd897f481692c4f122462ebda2ead7cf849bb8",
+   "warning": ""
+  },
+  "full.basis.doublezeta/62/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 62 (Z=62) not found in <BASIS>/ (tried: 62)\n"
+  },
+  "full.basis.doublezeta/63/EXTERNAL": {
+   "empty": false,
+   "sha256": "84ac0fbf96f404b0a75754dfec0967731849b0b47b9fb8b23960b4b36c761f20",
+   "warning": ""
+  },
+  "full.basis.doublezeta/63/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 63 (Z=63) not found in <BASIS>/ (tried: 63)\n"
+  },
+  "full.basis.doublezeta/64/EXTERNAL": {
+   "empty": false,
+   "sha256": "143096f61422055d4af40db888be7e8d95a8837a949113a63931cf8d5d7f17f0",
+   "warning": ""
+  },
+  "full.basis.doublezeta/64/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 64 (Z=64) not found in <BASIS>/ (tried: 64)\n"
+  },
+  "full.basis.doublezeta/65/EXTERNAL": {
+   "empty": false,
+   "sha256": "a49b7f79d2c27cc88296be6e415fd04e8d7d5190b11c2d58ec49ea3fb169df7b",
+   "warning": ""
+  },
+  "full.basis.doublezeta/65/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 65 (Z=65) not found in <BASIS>/ (tried: 65)\n"
+  },
+  "full.basis.doublezeta/66/EXTERNAL": {
+   "empty": false,
+   "sha256": "a944fd7535bfed4531f89a4a11c7b250f97a01c36fae19b5e7f887e634d0ebf1",
+   "warning": ""
+  },
+  "full.basis.doublezeta/66/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 66 (Z=66) not found in <BASIS>/ (tried: 66)\n"
+  },
+  "full.basis.doublezeta/67/EXTERNAL": {
+   "empty": false,
+   "sha256": "15e7a6cd437c4a9960751ef1e8c68a31e064117fbd0019afcb22bb4c91b73349",
+   "warning": ""
+  },
+  "full.basis.doublezeta/67/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 67 (Z=67) not found in <BASIS>/ (tried: 67)\n"
+  },
+  "full.basis.doublezeta/68/EXTERNAL": {
+   "empty": false,
+   "sha256": "2df6069eeaeac2110802b0caa4d733e167674e009444d6206c7316573e65a84a",
+   "warning": ""
+  },
+  "full.basis.doublezeta/68/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 68 (Z=68) not found in <BASIS>/ (tried: 68)\n"
+  },
+  "full.basis.doublezeta/69/EXTERNAL": {
+   "empty": false,
+   "sha256": "50a41e230e699ff70b835021f3f96dab1e444c9aab5e933c1886a696aadd9d63",
+   "warning": ""
+  },
+  "full.basis.doublezeta/69/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 69 (Z=69) not found in <BASIS>/ (tried: 69)\n"
+  },
+  "full.basis.doublezeta/7/EXTERNAL": {
+   "empty": false,
+   "sha256": "5f6597d579208ef16be24ffd73e1a1bdf0568e52cd35324e981d7ffdc00c1288",
+   "warning": ""
+  },
+  "full.basis.doublezeta/7/INTERNAL": {
+   "empty": false,
+   "sha256": "5f6597d579208ef16be24ffd73e1a1bdf0568e52cd35324e981d7ffdc00c1288",
+   "warning": ""
+  },
+  "full.basis.doublezeta/70/EXTERNAL": {
+   "empty": false,
+   "sha256": "0be6524afb7419d42921f879280cc43877513c6386015b2af424539fa4214e3b",
+   "warning": ""
+  },
+  "full.basis.doublezeta/70/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 70 (Z=70) not found in <BASIS>/ (tried: 70)\n"
+  },
+  "full.basis.doublezeta/71/EXTERNAL": {
+   "empty": false,
+   "sha256": "b0cdd9b8c720d3f1985a3ff8f8fcf9ec3a9ebc1ee888053759f95dcb710afed9",
+   "warning": ""
+  },
+  "full.basis.doublezeta/71/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 71 (Z=71) not found in <BASIS>/ (tried: 71)\n"
+  },
+  "full.basis.doublezeta/72/EXTERNAL": {
+   "empty": false,
+   "sha256": "c53987e938ae521d77e3ad431c5ebf24d9c4b0a339fb1e4505f35ab034af2c96",
+   "warning": ""
+  },
+  "full.basis.doublezeta/72/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 72 (Z=72) not found in <BASIS>/ (tried: 72)\n"
+  },
+  "full.basis.doublezeta/73/EXTERNAL": {
+   "empty": false,
+   "sha256": "21791068672f5cbe4c66baca20b090c7948dabd19a846e4719471a1283e8ddc0",
+   "warning": ""
+  },
+  "full.basis.doublezeta/73/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 73 (Z=73) not found in <BASIS>/ (tried: 73)\n"
+  },
+  "full.basis.doublezeta/74/EXTERNAL": {
+   "empty": false,
+   "sha256": "8f11a67976864ca01e9c6960dc9cd88f72efd4b675fb1d6c1fac5a2cec0fc827",
+   "warning": ""
+  },
+  "full.basis.doublezeta/74/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 74 (Z=74) not found in <BASIS>/ (tried: 74)\n"
+  },
+  "full.basis.doublezeta/75/EXTERNAL": {
+   "empty": false,
+   "sha256": "e4c2b59a0edbc70d92133dcaba15a2be89a0caf418508b921a7952da9efeea65",
+   "warning": ""
+  },
+  "full.basis.doublezeta/75/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 75 (Z=75) not found in <BASIS>/ (tried: 75)\n"
+  },
+  "full.basis.doublezeta/76/EXTERNAL": {
+   "empty": false,
+   "sha256": "55e473df5fcb687595c872754fd3b540fd681d564d105180a9c268f6f2b28237",
+   "warning": ""
+  },
+  "full.basis.doublezeta/76/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 76 (Z=76) not found in <BASIS>/ (tried: 76)\n"
+  },
+  "full.basis.doublezeta/77/EXTERNAL": {
+   "empty": false,
+   "sha256": "b0e110a7591613c413d8e204bc5b2ea6ee78cb39fe78f4021cc5687c186e493d",
+   "warning": ""
+  },
+  "full.basis.doublezeta/77/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 77 (Z=77) not found in <BASIS>/ (tried: 77)\n"
+  },
+  "full.basis.doublezeta/78/EXTERNAL": {
+   "empty": false,
+   "sha256": "212db47cc6b4e02ff9d4941de8dfeca4b19de1160f0fbec20bdc1a235ffa2827",
+   "warning": ""
+  },
+  "full.basis.doublezeta/78/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 78 (Z=78) not found in <BASIS>/ (tried: 78)\n"
+  },
+  "full.basis.doublezeta/79/EXTERNAL": {
+   "empty": false,
+   "sha256": "638e12b0217d057f3640c741599ea46eb3c841a734cc8c69751457e37121b365",
+   "warning": ""
+  },
+  "full.basis.doublezeta/79/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 79 (Z=79) not found in <BASIS>/ (tried: 79)\n"
+  },
+  "full.basis.doublezeta/8/EXTERNAL": {
+   "empty": false,
+   "sha256": "75dc7983c45063249141c1e6b00ccb7ff5a94c99edba59fbc5b73cec2300c16b",
+   "warning": ""
+  },
+  "full.basis.doublezeta/8/INTERNAL": {
+   "empty": false,
+   "sha256": "75dc7983c45063249141c1e6b00ccb7ff5a94c99edba59fbc5b73cec2300c16b",
+   "warning": ""
+  },
+  "full.basis.doublezeta/80/EXTERNAL": {
+   "empty": false,
+   "sha256": "a078847ae13ce90cbfef5226ab18284195f12add677bdf4088ff74ec9faed8a5",
+   "warning": ""
+  },
+  "full.basis.doublezeta/80/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 80 (Z=80) not found in <BASIS>/ (tried: 80)\n"
+  },
+  "full.basis.doublezeta/81/EXTERNAL": {
+   "empty": false,
+   "sha256": "7f72b0ba6caecea102fba1f973c89c97f22ad635370909b68a28211c49f6f54b",
+   "warning": ""
+  },
+  "full.basis.doublezeta/81/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 81 (Z=81) not found in <BASIS>/ (tried: 81)\n"
+  },
+  "full.basis.doublezeta/82/EXTERNAL": {
+   "empty": false,
+   "sha256": "cec656c47d1d7b62050dbc5197656e29e363090465a4e3566273f8cb06e170e2",
+   "warning": ""
+  },
+  "full.basis.doublezeta/82/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 82 (Z=82) not found in <BASIS>/ (tried: 82)\n"
+  },
+  "full.basis.doublezeta/83/EXTERNAL": {
+   "empty": false,
+   "sha256": "58f8cacd0bc6ff66bcf2752b1a9aa1b19172b1363914cfd5bd4bf96fa8fa8224",
+   "warning": ""
+  },
+  "full.basis.doublezeta/83/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 83 (Z=83) not found in <BASIS>/ (tried: 83)\n"
+  },
+  "full.basis.doublezeta/84/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 84 (Z=84) not found in <BASIS>/ (tried: 284)\n"
+  },
+  "full.basis.doublezeta/84/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 84 (Z=84) not found in <BASIS>/ (tried: 84)\n"
+  },
+  "full.basis.doublezeta/85/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 85 (Z=85) not found in <BASIS>/ (tried: 285)\n"
+  },
+  "full.basis.doublezeta/85/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 85 (Z=85) not found in <BASIS>/ (tried: 85)\n"
+  },
+  "full.basis.doublezeta/86/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 86 (Z=86) not found in <BASIS>/ (tried: 86)\n"
+  },
+  "full.basis.doublezeta/86/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 86 (Z=86) not found in <BASIS>/ (tried: 86)\n"
+  },
+  "full.basis.doublezeta/87/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 87 (Z=87) not found in <BASIS>/ (tried: 287)\n"
+  },
+  "full.basis.doublezeta/87/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 87 (Z=87) not found in <BASIS>/ (tried: 87)\n"
+  },
+  "full.basis.doublezeta/88/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 88 (Z=88) not found in <BASIS>/ (tried: 288)\n"
+  },
+  "full.basis.doublezeta/88/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 88 (Z=88) not found in <BASIS>/ (tried: 88)\n"
+  },
+  "full.basis.doublezeta/89/EXTERNAL": {
+   "empty": false,
+   "sha256": "84c834f3fb3fab11fb0a70a42acdb5df971a7dd006c991d61ca4a2706bc0d9bb",
+   "warning": ""
+  },
+  "full.basis.doublezeta/89/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 89 (Z=89) not found in <BASIS>/ (tried: 89)\n"
+  },
+  "full.basis.doublezeta/9/EXTERNAL": {
+   "empty": false,
+   "sha256": "9338444f57e3689fa41feb3e12d756df027c51cdd7eacbc44a77297996db19cf",
+   "warning": ""
+  },
+  "full.basis.doublezeta/9/INTERNAL": {
+   "empty": false,
+   "sha256": "9338444f57e3689fa41feb3e12d756df027c51cdd7eacbc44a77297996db19cf",
+   "warning": ""
+  },
+  "full.basis.doublezeta/90/EXTERNAL": {
+   "empty": false,
+   "sha256": "24a881531214feebba7370fc1b7e17600e09ae08ce093deb9f6026a888a37747",
+   "warning": ""
+  },
+  "full.basis.doublezeta/90/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 90 (Z=90) not found in <BASIS>/ (tried: 90)\n"
+  },
+  "full.basis.doublezeta/91/EXTERNAL": {
+   "empty": false,
+   "sha256": "0816573646fc820b9c8c52b16af532d715b78853b88a052f686c7b9668ba0afb",
+   "warning": ""
+  },
+  "full.basis.doublezeta/91/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 91 (Z=91) not found in <BASIS>/ (tried: 91)\n"
+  },
+  "full.basis.doublezeta/92/EXTERNAL": {
+   "empty": false,
+   "sha256": "1b78d107314adf2cf959a86ecee6215151d8ae230b3b08307b9feae40d09d96c",
+   "warning": ""
+  },
+  "full.basis.doublezeta/92/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 92 (Z=92) not found in <BASIS>/ (tried: 92)\n"
+  },
+  "full.basis.doublezeta/93/EXTERNAL": {
+   "empty": false,
+   "sha256": "54cbd4d7d3b055363b779bd5524fed68a88ecee9acbb2c6c4d9c7999ed134104",
+   "warning": ""
+  },
+  "full.basis.doublezeta/93/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 93 (Z=93) not found in <BASIS>/ (tried: 93)\n"
+  },
+  "full.basis.doublezeta/94/EXTERNAL": {
+   "empty": false,
+   "sha256": "ca7af15f133d2dbd63f314d6ab079d116ac080fa90bcab7bfa7d65a347d94d87",
+   "warning": ""
+  },
+  "full.basis.doublezeta/94/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 94 (Z=94) not found in <BASIS>/ (tried: 94)\n"
+  },
+  "full.basis.doublezeta/95/EXTERNAL": {
+   "empty": false,
+   "sha256": "bdf1c98ef8a00996c818a92a006d0c55bdb90aa77b981345180339cc8e5934b4",
+   "warning": ""
+  },
+  "full.basis.doublezeta/95/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 95 (Z=95) not found in <BASIS>/ (tried: 95)\n"
+  },
+  "full.basis.doublezeta/96/EXTERNAL": {
+   "empty": false,
+   "sha256": "b3faf53d7ac2e68269df7f92b270954a999c55fc8ae21fcde3de2e581f2ae955",
+   "warning": ""
+  },
+  "full.basis.doublezeta/96/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 96 (Z=96) not found in <BASIS>/ (tried: 96)\n"
+  },
+  "full.basis.doublezeta/97/EXTERNAL": {
+   "empty": false,
+   "sha256": "0bf4a6118c19a74497c20477a6b78a8c54863ad83f231d44b2aa3a077617327f",
+   "warning": ""
+  },
+  "full.basis.doublezeta/97/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 97 (Z=97) not found in <BASIS>/ (tried: 97)\n"
+  },
+  "full.basis.doublezeta/98/EXTERNAL": {
+   "empty": false,
+   "sha256": "f39a98ef8f83491fa2d28a0547253b834026a91e3ee9ef4743950422f611b376",
+   "warning": ""
+  },
+  "full.basis.doublezeta/98/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 98 (Z=98) not found in <BASIS>/ (tried: 98)\n"
+  },
+  "full.basis.doublezeta/99/EXTERNAL": {
+   "empty": false,
+   "sha256": "a5e20fc17761791353131597e731039b1f8261e1d936d6d61ddfe6588b36db49",
+   "warning": ""
+  },
+  "full.basis.doublezeta/99/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 99 (Z=99) not found in <BASIS>/ (tried: 99)\n"
+  },
+  "full.basis.triplezeta/1/EXTERNAL": {
+   "empty": false,
+   "sha256": "273d79be3253dd5b996ab0eb2ab019a299daa3c9487d2621dad2817285061daf",
+   "warning": ""
+  },
+  "full.basis.triplezeta/1/INTERNAL": {
+   "empty": false,
+   "sha256": "273d79be3253dd5b996ab0eb2ab019a299daa3c9487d2621dad2817285061daf",
+   "warning": ""
+  },
+  "full.basis.triplezeta/10/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 10 (Z=10) not found in <BASIS>/ (tried: 10)\n"
+  },
+  "full.basis.triplezeta/10/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 10 (Z=10) not found in <BASIS>/ (tried: 10)\n"
+  },
+  "full.basis.triplezeta/11/EXTERNAL": {
+   "empty": false,
+   "sha256": "245a7a83008e0280aaa4438d7aae482b1dbda085c115a556a5fb3c03e9911dc2",
+   "warning": ""
+  },
+  "full.basis.triplezeta/11/INTERNAL": {
+   "empty": false,
+   "sha256": "245a7a83008e0280aaa4438d7aae482b1dbda085c115a556a5fb3c03e9911dc2",
+   "warning": ""
+  },
+  "full.basis.triplezeta/12/EXTERNAL": {
+   "empty": false,
+   "sha256": "d227d92e6035dec471b18791c749f94d8c497bbe413644b5d34f8940806f0d17",
+   "warning": ""
+  },
+  "full.basis.triplezeta/12/INTERNAL": {
+   "empty": false,
+   "sha256": "d227d92e6035dec471b18791c749f94d8c497bbe413644b5d34f8940806f0d17",
+   "warning": ""
+  },
+  "full.basis.triplezeta/13/EXTERNAL": {
+   "empty": false,
+   "sha256": "bf5f15709a23bfe387f0fcce2fa83a8f493f0073bd18bc9a5b2e17492473c00e",
+   "warning": ""
+  },
+  "full.basis.triplezeta/13/INTERNAL": {
+   "empty": false,
+   "sha256": "bf5f15709a23bfe387f0fcce2fa83a8f493f0073bd18bc9a5b2e17492473c00e",
+   "warning": ""
+  },
+  "full.basis.triplezeta/14/EXTERNAL": {
+   "empty": false,
+   "sha256": "ea2f2c46337087b8421fcacbad27da7dd121e6f08e0ec64475d14e048de2862b",
+   "warning": ""
+  },
+  "full.basis.triplezeta/14/INTERNAL": {
+   "empty": false,
+   "sha256": "ea2f2c46337087b8421fcacbad27da7dd121e6f08e0ec64475d14e048de2862b",
+   "warning": ""
+  },
+  "full.basis.triplezeta/15/EXTERNAL": {
+   "empty": false,
+   "sha256": "48621f9a3835db8d0afe77b511e80ea339eb02b083a541772e35c04207a7d8f2",
+   "warning": ""
+  },
+  "full.basis.triplezeta/15/INTERNAL": {
+   "empty": false,
+   "sha256": "48621f9a3835db8d0afe77b511e80ea339eb02b083a541772e35c04207a7d8f2",
+   "warning": ""
+  },
+  "full.basis.triplezeta/16/EXTERNAL": {
+   "empty": false,
+   "sha256": "1e93a056c43b66c465500951765772e3bbd845c13988985414d3f08d28e242b4",
+   "warning": ""
+  },
+  "full.basis.triplezeta/16/INTERNAL": {
+   "empty": false,
+   "sha256": "1e93a056c43b66c465500951765772e3bbd845c13988985414d3f08d28e242b4",
+   "warning": ""
+  },
+  "full.basis.triplezeta/17/EXTERNAL": {
+   "empty": false,
+   "sha256": "493ae689247ce1ff4edf11668e9f43e010c6ef704bac6523a0b0850dc003697c",
+   "warning": ""
+  },
+  "full.basis.triplezeta/17/INTERNAL": {
+   "empty": false,
+   "sha256": "493ae689247ce1ff4edf11668e9f43e010c6ef704bac6523a0b0850dc003697c",
+   "warning": ""
+  },
+  "full.basis.triplezeta/18/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 18 (Z=18) not found in <BASIS>/ (tried: 18)\n"
+  },
+  "full.basis.triplezeta/18/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 18 (Z=18) not found in <BASIS>/ (tried: 18)\n"
+  },
+  "full.basis.triplezeta/19/EXTERNAL": {
+   "empty": false,
+   "sha256": "e0c3c408fcb0cbf843496463c3e0c48c33c138f7718a3fdb487e9ecb533f2b14",
+   "warning": ""
+  },
+  "full.basis.triplezeta/19/INTERNAL": {
+   "empty": false,
+   "sha256": "e0c3c408fcb0cbf843496463c3e0c48c33c138f7718a3fdb487e9ecb533f2b14",
+   "warning": ""
+  },
+  "full.basis.triplezeta/2/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 2 (Z=2) not found in <BASIS>/ (tried: 2)\n"
+  },
+  "full.basis.triplezeta/2/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 2 (Z=2) not found in <BASIS>/ (tried: 2)\n"
+  },
+  "full.basis.triplezeta/20/EXTERNAL": {
+   "empty": false,
+   "sha256": "1df863bd9dd4db96fb3173f12889e65110f1de436238ecf4e7aa49f25e3c9bcf",
+   "warning": ""
+  },
+  "full.basis.triplezeta/20/INTERNAL": {
+   "empty": false,
+   "sha256": "1df863bd9dd4db96fb3173f12889e65110f1de436238ecf4e7aa49f25e3c9bcf",
+   "warning": ""
+  },
+  "full.basis.triplezeta/21/EXTERNAL": {
+   "empty": false,
+   "sha256": "aaa83eded2dccc30677237b905146898e1d804540f09f9200ee83f5751b7e1f8",
+   "warning": ""
+  },
+  "full.basis.triplezeta/21/INTERNAL": {
+   "empty": false,
+   "sha256": "aaa83eded2dccc30677237b905146898e1d804540f09f9200ee83f5751b7e1f8",
+   "warning": ""
+  },
+  "full.basis.triplezeta/22/EXTERNAL": {
+   "empty": false,
+   "sha256": "dba78c5bfbd32e1aa277f1effbd159f12c3e83639cd596bb95f14bbf1e637c7e",
+   "warning": ""
+  },
+  "full.basis.triplezeta/22/INTERNAL": {
+   "empty": false,
+   "sha256": "dba78c5bfbd32e1aa277f1effbd159f12c3e83639cd596bb95f14bbf1e637c7e",
+   "warning": ""
+  },
+  "full.basis.triplezeta/23/EXTERNAL": {
+   "empty": false,
+   "sha256": "b61845432331d6ee14250e5e43f4a33cf2607f202266df766884fb8e9103fee9",
+   "warning": ""
+  },
+  "full.basis.triplezeta/23/INTERNAL": {
+   "empty": false,
+   "sha256": "b61845432331d6ee14250e5e43f4a33cf2607f202266df766884fb8e9103fee9",
+   "warning": ""
+  },
+  "full.basis.triplezeta/24/EXTERNAL": {
+   "empty": false,
+   "sha256": "302da02655036dca0c6f919c95183c6dfee5c7fa0b82efe20085869073bbe16d",
+   "warning": ""
+  },
+  "full.basis.triplezeta/24/INTERNAL": {
+   "empty": false,
+   "sha256": "302da02655036dca0c6f919c95183c6dfee5c7fa0b82efe20085869073bbe16d",
+   "warning": ""
+  },
+  "full.basis.triplezeta/25/EXTERNAL": {
+   "empty": false,
+   "sha256": "457733dc4a4018d029cc69d53872c1a071863e574de989bc10540c0a4831eb1d",
+   "warning": ""
+  },
+  "full.basis.triplezeta/25/INTERNAL": {
+   "empty": false,
+   "sha256": "457733dc4a4018d029cc69d53872c1a071863e574de989bc10540c0a4831eb1d",
+   "warning": ""
+  },
+  "full.basis.triplezeta/26/EXTERNAL": {
+   "empty": false,
+   "sha256": "8627511f22e1731e231cb20032b51883eaad569e9443bd4c66774523fa44ae01",
+   "warning": ""
+  },
+  "full.basis.triplezeta/26/INTERNAL": {
+   "empty": false,
+   "sha256": "8627511f22e1731e231cb20032b51883eaad569e9443bd4c66774523fa44ae01",
+   "warning": ""
+  },
+  "full.basis.triplezeta/27/EXTERNAL": {
+   "empty": false,
+   "sha256": "5b4fe03f24c637246a2115244250cf4ef568850b1e294c3efce3ea9b893dda9c",
+   "warning": ""
+  },
+  "full.basis.triplezeta/27/INTERNAL": {
+   "empty": false,
+   "sha256": "5b4fe03f24c637246a2115244250cf4ef568850b1e294c3efce3ea9b893dda9c",
+   "warning": ""
+  },
+  "full.basis.triplezeta/28/EXTERNAL": {
+   "empty": false,
+   "sha256": "189c6669bffccdb32f21f832eff37a62143e6c1c314f183e34d3ea41f8eafb90",
+   "warning": ""
+  },
+  "full.basis.triplezeta/28/INTERNAL": {
+   "empty": false,
+   "sha256": "189c6669bffccdb32f21f832eff37a62143e6c1c314f183e34d3ea41f8eafb90",
+   "warning": ""
+  },
+  "full.basis.triplezeta/29/EXTERNAL": {
+   "empty": false,
+   "sha256": "1ca95c527f18e2f705c38a99ad954ca66d8a03925e2e3838603e2512c4d11ecc",
+   "warning": ""
+  },
+  "full.basis.triplezeta/29/INTERNAL": {
+   "empty": false,
+   "sha256": "1ca95c527f18e2f705c38a99ad954ca66d8a03925e2e3838603e2512c4d11ecc",
+   "warning": ""
+  },
+  "full.basis.triplezeta/3/EXTERNAL": {
+   "empty": false,
+   "sha256": "a3d49da09fc6d7b6a14a0621a880fefb3485ee4d979a889e4ee218d5c498d8c0",
+   "warning": ""
+  },
+  "full.basis.triplezeta/3/INTERNAL": {
+   "empty": false,
+   "sha256": "a3d49da09fc6d7b6a14a0621a880fefb3485ee4d979a889e4ee218d5c498d8c0",
+   "warning": ""
+  },
+  "full.basis.triplezeta/30/EXTERNAL": {
+   "empty": false,
+   "sha256": "378e8016791228ba8022c84782a937ebdc2f78bf4df280873e45205b1fceafe0",
+   "warning": ""
+  },
+  "full.basis.triplezeta/30/INTERNAL": {
+   "empty": false,
+   "sha256": "378e8016791228ba8022c84782a937ebdc2f78bf4df280873e45205b1fceafe0",
+   "warning": ""
+  },
+  "full.basis.triplezeta/31/EXTERNAL": {
+   "empty": false,
+   "sha256": "7c8d0eae7a9bbc4a2430f823682c976e613734a7b52a159085a148f317fac537",
+   "warning": ""
+  },
+  "full.basis.triplezeta/31/INTERNAL": {
+   "empty": false,
+   "sha256": "7c8d0eae7a9bbc4a2430f823682c976e613734a7b52a159085a148f317fac537",
+   "warning": ""
+  },
+  "full.basis.triplezeta/32/EXTERNAL": {
+   "empty": false,
+   "sha256": "0e784c2623da910583cee8459a80a7aacfd7b0f6846446b78521868c13d25898",
+   "warning": ""
+  },
+  "full.basis.triplezeta/32/INTERNAL": {
+   "empty": false,
+   "sha256": "0e784c2623da910583cee8459a80a7aacfd7b0f6846446b78521868c13d25898",
+   "warning": ""
+  },
+  "full.basis.triplezeta/33/EXTERNAL": {
+   "empty": false,
+   "sha256": "1224350418a3e0c06f915b6b86e071ee62dd297b77a0818a6881a0ed37762906",
+   "warning": ""
+  },
+  "full.basis.triplezeta/33/INTERNAL": {
+   "empty": false,
+   "sha256": "1224350418a3e0c06f915b6b86e071ee62dd297b77a0818a6881a0ed37762906",
+   "warning": ""
+  },
+  "full.basis.triplezeta/34/EXTERNAL": {
+   "empty": false,
+   "sha256": "b2b3b6305c07dcd2bbeeb35d3f0fc2764865896383cbceae070b7243c62969be",
+   "warning": ""
+  },
+  "full.basis.triplezeta/34/INTERNAL": {
+   "empty": false,
+   "sha256": "b2b3b6305c07dcd2bbeeb35d3f0fc2764865896383cbceae070b7243c62969be",
+   "warning": ""
+  },
+  "full.basis.triplezeta/35/EXTERNAL": {
+   "empty": false,
+   "sha256": "fdcd965c83619ac96f2ae8964a4c55a6f177f099a7d96c8a95db575c1fd2e362",
+   "warning": ""
+  },
+  "full.basis.triplezeta/35/INTERNAL": {
+   "empty": false,
+   "sha256": "fdcd965c83619ac96f2ae8964a4c55a6f177f099a7d96c8a95db575c1fd2e362",
+   "warning": ""
+  },
+  "full.basis.triplezeta/36/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 36 (Z=36) not found in <BASIS>/ (tried: 36)\n"
+  },
+  "full.basis.triplezeta/36/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 36 (Z=36) not found in <BASIS>/ (tried: 36)\n"
+  },
+  "full.basis.triplezeta/37/EXTERNAL": {
+   "empty": false,
+   "sha256": "70ae181eb2fa4594567439142e8d3a77fad21295243e498cd636e5abb0a37f4e",
+   "warning": ""
+  },
+  "full.basis.triplezeta/37/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 37 (Z=37) not found in <BASIS>/ (tried: 37)\n"
+  },
+  "full.basis.triplezeta/38/EXTERNAL": {
+   "empty": false,
+   "sha256": "7ab3ef7fc7ba7b9c1ee6099e6a5a474b45823f7b2790efb9ec76215da2c51002",
+   "warning": ""
+  },
+  "full.basis.triplezeta/38/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 38 (Z=38) not found in <BASIS>/ (tried: 38)\n"
+  },
+  "full.basis.triplezeta/39/EXTERNAL": {
+   "empty": false,
+   "sha256": "51ea56aa7c579f57decad1fa3be7bf2caa112b0ff4c5ac9d9e4577606aea8c33",
+   "warning": ""
+  },
+  "full.basis.triplezeta/39/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 39 (Z=39) not found in <BASIS>/ (tried: 39)\n"
+  },
+  "full.basis.triplezeta/4/EXTERNAL": {
+   "empty": false,
+   "sha256": "9340902383b9e69113194c117e64db548eec54ff4b316eeca7b8869547016b12",
+   "warning": ""
+  },
+  "full.basis.triplezeta/4/INTERNAL": {
+   "empty": false,
+   "sha256": "9340902383b9e69113194c117e64db548eec54ff4b316eeca7b8869547016b12",
+   "warning": ""
+  },
+  "full.basis.triplezeta/40/EXTERNAL": {
+   "empty": false,
+   "sha256": "884c5bb7424b00394293286032d0c2bc5c247488ee9cee608a461e6850795c6f",
+   "warning": ""
+  },
+  "full.basis.triplezeta/40/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 40 (Z=40) not found in <BASIS>/ (tried: 40)\n"
+  },
+  "full.basis.triplezeta/41/EXTERNAL": {
+   "empty": false,
+   "sha256": "9ed7a0ffbdb9c0ec4fd1df5c6e3b50d9685a9b24413444ada50c8bd95011bea3",
+   "warning": ""
+  },
+  "full.basis.triplezeta/41/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 41 (Z=41) not found in <BASIS>/ (tried: 41)\n"
+  },
+  "full.basis.triplezeta/42/EXTERNAL": {
+   "empty": false,
+   "sha256": "fb97c69a703fcf67c00d8936135ef2ceb5411e1c87cde5dddffef6ea7d20bf18",
+   "warning": ""
+  },
+  "full.basis.triplezeta/42/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 42 (Z=42) not found in <BASIS>/ (tried: 42)\n"
+  },
+  "full.basis.triplezeta/43/EXTERNAL": {
+   "empty": false,
+   "sha256": "d8c0614137b4b2367dc1f46357228ccd3130ae3ce81d87e3564ccb38029b7ab4",
+   "warning": ""
+  },
+  "full.basis.triplezeta/43/INTERNAL": {
+   "empty": false,
+   "sha256": "d8c0614137b4b2367dc1f46357228ccd3130ae3ce81d87e3564ccb38029b7ab4",
+   "warning": ""
+  },
+  "full.basis.triplezeta/44/EXTERNAL": {
+   "empty": false,
+   "sha256": "496f2f13af417c4794b0010edbe3e393782bf2fef56b3bf879aebf280ebd27a3",
+   "warning": ""
+  },
+  "full.basis.triplezeta/44/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 44 (Z=44) not found in <BASIS>/ (tried: 44)\n"
+  },
+  "full.basis.triplezeta/45/EXTERNAL": {
+   "empty": false,
+   "sha256": "4770e1ae3c5d152b140e1747e66292c6abf4d9af0675207cc23b31ee15d2898e",
+   "warning": ""
+  },
+  "full.basis.triplezeta/45/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 45 (Z=45) not found in <BASIS>/ (tried: 45)\n"
+  },
+  "full.basis.triplezeta/46/EXTERNAL": {
+   "empty": false,
+   "sha256": "f9a423d638bd9a3a6d18340894e7a46f22a1a7a9b7c4db1b68a5f406654695d4",
+   "warning": ""
+  },
+  "full.basis.triplezeta/46/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 46 (Z=46) not found in <BASIS>/ (tried: 46)\n"
+  },
+  "full.basis.triplezeta/47/EXTERNAL": {
+   "empty": false,
+   "sha256": "a3c7a09ce8c0b60e3346011b989845fb60a6e076d370ed24fa438a680167d029",
+   "warning": ""
+  },
+  "full.basis.triplezeta/47/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 47 (Z=47) not found in <BASIS>/ (tried: 47)\n"
+  },
+  "full.basis.triplezeta/48/EXTERNAL": {
+   "empty": false,
+   "sha256": "6479be4dedae7101e22a1719da8463960fe5865e97d62b343fae30eec8b9837b",
+   "warning": ""
+  },
+  "full.basis.triplezeta/48/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 48 (Z=48) not found in <BASIS>/ (tried: 48)\n"
+  },
+  "full.basis.triplezeta/49/EXTERNAL": {
+   "empty": false,
+   "sha256": "fdb73ebda9c685fe1fc4f19da25a6b31d5aa0ce4fa8200551e6c4613f8b422c0",
+   "warning": ""
+  },
+  "full.basis.triplezeta/49/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 49 (Z=49) not found in <BASIS>/ (tried: 49)\n"
+  },
+  "full.basis.triplezeta/5/EXTERNAL": {
+   "empty": false,
+   "sha256": "14d3ecc3af35082e69a9e81dff97867fbf196e0009c6e4c6b024fe17a3d74d3f",
+   "warning": ""
+  },
+  "full.basis.triplezeta/5/INTERNAL": {
+   "empty": false,
+   "sha256": "14d3ecc3af35082e69a9e81dff97867fbf196e0009c6e4c6b024fe17a3d74d3f",
+   "warning": ""
+  },
+  "full.basis.triplezeta/50/EXTERNAL": {
+   "empty": false,
+   "sha256": "0f6f6518132ab28fe597374a40e7ce0384630289d91a026d43c4bf8629220618",
+   "warning": ""
+  },
+  "full.basis.triplezeta/50/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 50 (Z=50) not found in <BASIS>/ (tried: 50)\n"
+  },
+  "full.basis.triplezeta/51/EXTERNAL": {
+   "empty": false,
+   "sha256": "13db29b7c6e699dc3c6bc76aa527405be47d91a44202e245b273c76c60dfeae0",
+   "warning": ""
+  },
+  "full.basis.triplezeta/51/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 51 (Z=51) not found in <BASIS>/ (tried: 51)\n"
+  },
+  "full.basis.triplezeta/52/EXTERNAL": {
+   "empty": false,
+   "sha256": "556edf79854cc8b04cd707933ee87b150f8a62b2b0764d7db15581d5adf3d6ee",
+   "warning": ""
+  },
+  "full.basis.triplezeta/52/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 52 (Z=52) not found in <BASIS>/ (tried: 52)\n"
+  },
+  "full.basis.triplezeta/53/EXTERNAL": {
+   "empty": false,
+   "sha256": "83eff9040e6a76185cd27800b85808e894fe7289115c131f3b261db072c5e702",
+   "warning": ""
+  },
+  "full.basis.triplezeta/53/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 53 (Z=53) not found in <BASIS>/ (tried: 53)\n"
+  },
+  "full.basis.triplezeta/54/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 54 (Z=54) not found in <BASIS>/ (tried: 54)\n"
+  },
+  "full.basis.triplezeta/54/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 54 (Z=54) not found in <BASIS>/ (tried: 54)\n"
+  },
+  "full.basis.triplezeta/55/EXTERNAL": {
+   "empty": false,
+   "sha256": "aa8458fdd922b4889714743f99d399e10c58668645c1b62b2053c0e9655c7595",
+   "warning": ""
+  },
+  "full.basis.triplezeta/55/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 55 (Z=55) not found in <BASIS>/ (tried: 55)\n"
+  },
+  "full.basis.triplezeta/56/EXTERNAL": {
+   "empty": false,
+   "sha256": "dbcc7c189e803a27a605798fd4fc2ef532141215389da943edf086df3d740e98",
+   "warning": ""
+  },
+  "full.basis.triplezeta/56/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 56 (Z=56) not found in <BASIS>/ (tried: 56)\n"
+  },
+  "full.basis.triplezeta/57/EXTERNAL": {
+   "empty": false,
+   "sha256": "f910bd5cad4ee064495d5dfe6420261509d6f795b7feb158309b267ff4c0bc63",
+   "warning": ""
+  },
+  "full.basis.triplezeta/57/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 57 (Z=57) not found in <BASIS>/ (tried: 57)\n"
+  },
+  "full.basis.triplezeta/58/EXTERNAL": {
+   "empty": false,
+   "sha256": "93e7f79eb70f5ee7f6f10f73f926b3a35256b104528d26d4ea819d615447660c",
+   "warning": ""
+  },
+  "full.basis.triplezeta/58/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 58 (Z=58) not found in <BASIS>/ (tried: 58)\n"
+  },
+  "full.basis.triplezeta/59/EXTERNAL": {
+   "empty": false,
+   "sha256": "b29a0a2b3fc94335911f6a50c490da449c7bde009e39ac2bae905784e0da8236",
+   "warning": ""
+  },
+  "full.basis.triplezeta/59/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 59 (Z=59) not found in <BASIS>/ (tried: 59)\n"
+  },
+  "full.basis.triplezeta/6/EXTERNAL": {
+   "empty": false,
+   "sha256": "b4458a15d726bd57891043285ddc526cd0b1125234acd2d94dd2381b9340e64d",
+   "warning": ""
+  },
+  "full.basis.triplezeta/6/INTERNAL": {
+   "empty": false,
+   "sha256": "b4458a15d726bd57891043285ddc526cd0b1125234acd2d94dd2381b9340e64d",
+   "warning": ""
+  },
+  "full.basis.triplezeta/60/EXTERNAL": {
+   "empty": false,
+   "sha256": "8854b1fd1c44da4da322b3638e9ade934f33f3c7979571f82138f5c504089e82",
+   "warning": ""
+  },
+  "full.basis.triplezeta/60/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 60 (Z=60) not found in <BASIS>/ (tried: 60)\n"
+  },
+  "full.basis.triplezeta/61/EXTERNAL": {
+   "empty": false,
+   "sha256": "88ff617958e5904d3d00923171b22b3b9ba77793bf1b3dff50a1e58c7808c872",
+   "warning": ""
+  },
+  "full.basis.triplezeta/61/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 61 (Z=61) not found in <BASIS>/ (tried: 61)\n"
+  },
+  "full.basis.triplezeta/62/EXTERNAL": {
+   "empty": false,
+   "sha256": "8f245f6bc5d633393becd9fffacd897f481692c4f122462ebda2ead7cf849bb8",
+   "warning": ""
+  },
+  "full.basis.triplezeta/62/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 62 (Z=62) not found in <BASIS>/ (tried: 62)\n"
+  },
+  "full.basis.triplezeta/63/EXTERNAL": {
+   "empty": false,
+   "sha256": "84ac0fbf96f404b0a75754dfec0967731849b0b47b9fb8b23960b4b36c761f20",
+   "warning": ""
+  },
+  "full.basis.triplezeta/63/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 63 (Z=63) not found in <BASIS>/ (tried: 63)\n"
+  },
+  "full.basis.triplezeta/64/EXTERNAL": {
+   "empty": false,
+   "sha256": "143096f61422055d4af40db888be7e8d95a8837a949113a63931cf8d5d7f17f0",
+   "warning": ""
+  },
+  "full.basis.triplezeta/64/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 64 (Z=64) not found in <BASIS>/ (tried: 64)\n"
+  },
+  "full.basis.triplezeta/65/EXTERNAL": {
+   "empty": false,
+   "sha256": "a49b7f79d2c27cc88296be6e415fd04e8d7d5190b11c2d58ec49ea3fb169df7b",
+   "warning": ""
+  },
+  "full.basis.triplezeta/65/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 65 (Z=65) not found in <BASIS>/ (tried: 65)\n"
+  },
+  "full.basis.triplezeta/66/EXTERNAL": {
+   "empty": false,
+   "sha256": "a944fd7535bfed4531f89a4a11c7b250f97a01c36fae19b5e7f887e634d0ebf1",
+   "warning": ""
+  },
+  "full.basis.triplezeta/66/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 66 (Z=66) not found in <BASIS>/ (tried: 66)\n"
+  },
+  "full.basis.triplezeta/67/EXTERNAL": {
+   "empty": false,
+   "sha256": "15e7a6cd437c4a9960751ef1e8c68a31e064117fbd0019afcb22bb4c91b73349",
+   "warning": ""
+  },
+  "full.basis.triplezeta/67/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 67 (Z=67) not found in <BASIS>/ (tried: 67)\n"
+  },
+  "full.basis.triplezeta/68/EXTERNAL": {
+   "empty": false,
+   "sha256": "2df6069eeaeac2110802b0caa4d733e167674e009444d6206c7316573e65a84a",
+   "warning": ""
+  },
+  "full.basis.triplezeta/68/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 68 (Z=68) not found in <BASIS>/ (tried: 68)\n"
+  },
+  "full.basis.triplezeta/69/EXTERNAL": {
+   "empty": false,
+   "sha256": "50a41e230e699ff70b835021f3f96dab1e444c9aab5e933c1886a696aadd9d63",
+   "warning": ""
+  },
+  "full.basis.triplezeta/69/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 69 (Z=69) not found in <BASIS>/ (tried: 69)\n"
+  },
+  "full.basis.triplezeta/7/EXTERNAL": {
+   "empty": false,
+   "sha256": "9bbf74efd6d0a89cadffdc0cb4889530912ad0ffc1db271a6773d10f6ca279b3",
+   "warning": ""
+  },
+  "full.basis.triplezeta/7/INTERNAL": {
+   "empty": false,
+   "sha256": "9bbf74efd6d0a89cadffdc0cb4889530912ad0ffc1db271a6773d10f6ca279b3",
+   "warning": ""
+  },
+  "full.basis.triplezeta/70/EXTERNAL": {
+   "empty": false,
+   "sha256": "0be6524afb7419d42921f879280cc43877513c6386015b2af424539fa4214e3b",
+   "warning": ""
+  },
+  "full.basis.triplezeta/70/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 70 (Z=70) not found in <BASIS>/ (tried: 70)\n"
+  },
+  "full.basis.triplezeta/71/EXTERNAL": {
+   "empty": false,
+   "sha256": "b0cdd9b8c720d3f1985a3ff8f8fcf9ec3a9ebc1ee888053759f95dcb710afed9",
+   "warning": ""
+  },
+  "full.basis.triplezeta/71/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 71 (Z=71) not found in <BASIS>/ (tried: 71)\n"
+  },
+  "full.basis.triplezeta/72/EXTERNAL": {
+   "empty": false,
+   "sha256": "c53987e938ae521d77e3ad431c5ebf24d9c4b0a339fb1e4505f35ab034af2c96",
+   "warning": ""
+  },
+  "full.basis.triplezeta/72/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 72 (Z=72) not found in <BASIS>/ (tried: 72)\n"
+  },
+  "full.basis.triplezeta/73/EXTERNAL": {
+   "empty": false,
+   "sha256": "21791068672f5cbe4c66baca20b090c7948dabd19a846e4719471a1283e8ddc0",
+   "warning": ""
+  },
+  "full.basis.triplezeta/73/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 73 (Z=73) not found in <BASIS>/ (tried: 73)\n"
+  },
+  "full.basis.triplezeta/74/EXTERNAL": {
+   "empty": false,
+   "sha256": "8f11a67976864ca01e9c6960dc9cd88f72efd4b675fb1d6c1fac5a2cec0fc827",
+   "warning": ""
+  },
+  "full.basis.triplezeta/74/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 74 (Z=74) not found in <BASIS>/ (tried: 74)\n"
+  },
+  "full.basis.triplezeta/75/EXTERNAL": {
+   "empty": false,
+   "sha256": "e4c2b59a0edbc70d92133dcaba15a2be89a0caf418508b921a7952da9efeea65",
+   "warning": ""
+  },
+  "full.basis.triplezeta/75/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 75 (Z=75) not found in <BASIS>/ (tried: 75)\n"
+  },
+  "full.basis.triplezeta/76/EXTERNAL": {
+   "empty": false,
+   "sha256": "55e473df5fcb687595c872754fd3b540fd681d564d105180a9c268f6f2b28237",
+   "warning": ""
+  },
+  "full.basis.triplezeta/76/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 76 (Z=76) not found in <BASIS>/ (tried: 76)\n"
+  },
+  "full.basis.triplezeta/77/EXTERNAL": {
+   "empty": false,
+   "sha256": "b0e110a7591613c413d8e204bc5b2ea6ee78cb39fe78f4021cc5687c186e493d",
+   "warning": ""
+  },
+  "full.basis.triplezeta/77/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 77 (Z=77) not found in <BASIS>/ (tried: 77)\n"
+  },
+  "full.basis.triplezeta/78/EXTERNAL": {
+   "empty": false,
+   "sha256": "212db47cc6b4e02ff9d4941de8dfeca4b19de1160f0fbec20bdc1a235ffa2827",
+   "warning": ""
+  },
+  "full.basis.triplezeta/78/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 78 (Z=78) not found in <BASIS>/ (tried: 78)\n"
+  },
+  "full.basis.triplezeta/79/EXTERNAL": {
+   "empty": false,
+   "sha256": "638e12b0217d057f3640c741599ea46eb3c841a734cc8c69751457e37121b365",
+   "warning": ""
+  },
+  "full.basis.triplezeta/79/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 79 (Z=79) not found in <BASIS>/ (tried: 79)\n"
+  },
+  "full.basis.triplezeta/8/EXTERNAL": {
+   "empty": false,
+   "sha256": "02c0376691a3c17677b2416a30243c94e6ef1586f7079381d529a3c95ce7587b",
+   "warning": ""
+  },
+  "full.basis.triplezeta/8/INTERNAL": {
+   "empty": false,
+   "sha256": "02c0376691a3c17677b2416a30243c94e6ef1586f7079381d529a3c95ce7587b",
+   "warning": ""
+  },
+  "full.basis.triplezeta/80/EXTERNAL": {
+   "empty": false,
+   "sha256": "a078847ae13ce90cbfef5226ab18284195f12add677bdf4088ff74ec9faed8a5",
+   "warning": ""
+  },
+  "full.basis.triplezeta/80/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 80 (Z=80) not found in <BASIS>/ (tried: 80)\n"
+  },
+  "full.basis.triplezeta/81/EXTERNAL": {
+   "empty": false,
+   "sha256": "7f72b0ba6caecea102fba1f973c89c97f22ad635370909b68a28211c49f6f54b",
+   "warning": ""
+  },
+  "full.basis.triplezeta/81/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 81 (Z=81) not found in <BASIS>/ (tried: 81)\n"
+  },
+  "full.basis.triplezeta/82/EXTERNAL": {
+   "empty": false,
+   "sha256": "cec656c47d1d7b62050dbc5197656e29e363090465a4e3566273f8cb06e170e2",
+   "warning": ""
+  },
+  "full.basis.triplezeta/82/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 82 (Z=82) not found in <BASIS>/ (tried: 82)\n"
+  },
+  "full.basis.triplezeta/83/EXTERNAL": {
+   "empty": false,
+   "sha256": "58f8cacd0bc6ff66bcf2752b1a9aa1b19172b1363914cfd5bd4bf96fa8fa8224",
+   "warning": ""
+  },
+  "full.basis.triplezeta/83/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 83 (Z=83) not found in <BASIS>/ (tried: 83)\n"
+  },
+  "full.basis.triplezeta/84/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 84 (Z=84) not found in <BASIS>/ (tried: 284)\n"
+  },
+  "full.basis.triplezeta/84/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 84 (Z=84) not found in <BASIS>/ (tried: 84)\n"
+  },
+  "full.basis.triplezeta/85/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 85 (Z=85) not found in <BASIS>/ (tried: 285)\n"
+  },
+  "full.basis.triplezeta/85/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 85 (Z=85) not found in <BASIS>/ (tried: 85)\n"
+  },
+  "full.basis.triplezeta/86/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 86 (Z=86) not found in <BASIS>/ (tried: 86)\n"
+  },
+  "full.basis.triplezeta/86/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 86 (Z=86) not found in <BASIS>/ (tried: 86)\n"
+  },
+  "full.basis.triplezeta/87/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 87 (Z=87) not found in <BASIS>/ (tried: 287)\n"
+  },
+  "full.basis.triplezeta/87/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 87 (Z=87) not found in <BASIS>/ (tried: 87)\n"
+  },
+  "full.basis.triplezeta/88/EXTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 88 (Z=88) not found in <BASIS>/ (tried: 288)\n"
+  },
+  "full.basis.triplezeta/88/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 88 (Z=88) not found in <BASIS>/ (tried: 88)\n"
+  },
+  "full.basis.triplezeta/89/EXTERNAL": {
+   "empty": false,
+   "sha256": "84c834f3fb3fab11fb0a70a42acdb5df971a7dd006c991d61ca4a2706bc0d9bb",
+   "warning": ""
+  },
+  "full.basis.triplezeta/89/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 89 (Z=89) not found in <BASIS>/ (tried: 89)\n"
+  },
+  "full.basis.triplezeta/9/EXTERNAL": {
+   "empty": false,
+   "sha256": "4dadd4c16ec66d2f929a7ed71005fdad08d4990237b705e0d74eca7b45062836",
+   "warning": ""
+  },
+  "full.basis.triplezeta/9/INTERNAL": {
+   "empty": false,
+   "sha256": "4dadd4c16ec66d2f929a7ed71005fdad08d4990237b705e0d74eca7b45062836",
+   "warning": ""
+  },
+  "full.basis.triplezeta/90/EXTERNAL": {
+   "empty": false,
+   "sha256": "24a881531214feebba7370fc1b7e17600e09ae08ce093deb9f6026a888a37747",
+   "warning": ""
+  },
+  "full.basis.triplezeta/90/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 90 (Z=90) not found in <BASIS>/ (tried: 90)\n"
+  },
+  "full.basis.triplezeta/91/EXTERNAL": {
+   "empty": false,
+   "sha256": "0816573646fc820b9c8c52b16af532d715b78853b88a052f686c7b9668ba0afb",
+   "warning": ""
+  },
+  "full.basis.triplezeta/91/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 91 (Z=91) not found in <BASIS>/ (tried: 91)\n"
+  },
+  "full.basis.triplezeta/92/EXTERNAL": {
+   "empty": false,
+   "sha256": "1b78d107314adf2cf959a86ecee6215151d8ae230b3b08307b9feae40d09d96c",
+   "warning": ""
+  },
+  "full.basis.triplezeta/92/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 92 (Z=92) not found in <BASIS>/ (tried: 92)\n"
+  },
+  "full.basis.triplezeta/93/EXTERNAL": {
+   "empty": false,
+   "sha256": "54cbd4d7d3b055363b779bd5524fed68a88ecee9acbb2c6c4d9c7999ed134104",
+   "warning": ""
+  },
+  "full.basis.triplezeta/93/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 93 (Z=93) not found in <BASIS>/ (tried: 93)\n"
+  },
+  "full.basis.triplezeta/94/EXTERNAL": {
+   "empty": false,
+   "sha256": "ca7af15f133d2dbd63f314d6ab079d116ac080fa90bcab7bfa7d65a347d94d87",
+   "warning": ""
+  },
+  "full.basis.triplezeta/94/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 94 (Z=94) not found in <BASIS>/ (tried: 94)\n"
+  },
+  "full.basis.triplezeta/95/EXTERNAL": {
+   "empty": false,
+   "sha256": "bdf1c98ef8a00996c818a92a006d0c55bdb90aa77b981345180339cc8e5934b4",
+   "warning": ""
+  },
+  "full.basis.triplezeta/95/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 95 (Z=95) not found in <BASIS>/ (tried: 95)\n"
+  },
+  "full.basis.triplezeta/96/EXTERNAL": {
+   "empty": false,
+   "sha256": "b3faf53d7ac2e68269df7f92b270954a999c55fc8ae21fcde3de2e581f2ae955",
+   "warning": ""
+  },
+  "full.basis.triplezeta/96/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 96 (Z=96) not found in <BASIS>/ (tried: 96)\n"
+  },
+  "full.basis.triplezeta/97/EXTERNAL": {
+   "empty": false,
+   "sha256": "0bf4a6118c19a74497c20477a6b78a8c54863ad83f231d44b2aa3a077617327f",
+   "warning": ""
+  },
+  "full.basis.triplezeta/97/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 97 (Z=97) not found in <BASIS>/ (tried: 97)\n"
+  },
+  "full.basis.triplezeta/98/EXTERNAL": {
+   "empty": false,
+   "sha256": "f39a98ef8f83491fa2d28a0547253b834026a91e3ee9ef4743950422f611b376",
+   "warning": ""
+  },
+  "full.basis.triplezeta/98/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 98 (Z=98) not found in <BASIS>/ (tried: 98)\n"
+  },
+  "full.basis.triplezeta/99/EXTERNAL": {
+   "empty": false,
+   "sha256": "a5e20fc17761791353131597e731039b1f8261e1d936d6d61ddfe6588b36db49",
+   "warning": ""
+  },
+  "full.basis.triplezeta/99/INTERNAL": {
+   "empty": true,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "warning": "Warning: Basis set file for element 99 (Z=99) not found in <BASIS>/ (tried: 99)\n"
+  }
+ }
+}
