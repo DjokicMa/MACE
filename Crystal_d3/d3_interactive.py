@@ -699,6 +699,8 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
             coord_segments, adjusted_shrink = scale_kpoint_segments(frac_segments, shrink)
             band_config["segments"] = coord_segments
             band_config["shrink"] = adjusted_shrink
+            # Names the path in the title, as the config route does
+            band_config["path_labels"] = path_labels
             print(f"\n✓ Converted path to k-point vectors (shrink={adjusted_shrink})")
         else:
             # SeeK-path full paths with comprehensive k-points
@@ -715,6 +717,8 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
                 # Literature path with comprehensive k-points
                 band_config["literature_path"] = True
                 band_config["path"] = "auto"  # Ensure auto-detection is triggered
+                # Names the path in the title, as the config route does
+                band_config["path_labels"] = path_labels
                 
                 # Get literature path based on space group and lattice type
                 frac_segments = get_literature_kpath_vectors(space_group, lattice_type)
@@ -723,6 +727,7 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
                     coord_segments, adjusted_shrink = scale_kpoint_segments(frac_segments, shrink)
                     band_config["segments"] = coord_segments
                     band_config["shrink"] = adjusted_shrink
+                    band_config["kpath_source"] = "literature"
                     print(f"✓ Using comprehensive literature k-path with {len(coord_segments)} segments (shrink={adjusted_shrink})")
                 else:
                     # Fallback to standard path

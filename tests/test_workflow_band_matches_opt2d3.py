@@ -108,3 +108,34 @@ def test_manual_slab_path_uses_corresponding_space_group(tmp_path, parent):
     manual = _manual(out, tmp_path / "manual", ["1", "2", "", "1", "n"])
     workflow = _workflow(out, tmp_path / "workflow", config)
     assert _records(manual)[2:] == _records(workflow)[2:]
+
+
+@pytest.mark.parametrize("parent", sorted(PARENTS))
+def test_default_vectors_deck_matches_opt2d3(tmp_path, parent):
+    """The engine's default BAND step (and the planner's Basic one) is
+    opt2d3's k-point vector format; the decks agree to the title, which on a
+    slab said "in-plane path" on the manual route only."""
+    from mace.workflow.engine import WorkflowEngine
+    out = _stage(tmp_path, parent)
+    config = WorkflowEngine.__new__(WorkflowEngine)._get_default_d3_config("BAND")
+    manual = _manual(out, tmp_path / "manual", ["1", "2", "", "1", "n"])
+    assert _workflow(out, tmp_path / "workflow", config) == manual
+
+
+@pytest.mark.parametrize("parent", sorted(PARENTS))
+@pytest.mark.parametrize("fmt", ["1", "2", "3", "4"])
+def test_expert_saved_config_replays_to_the_same_deck(tmp_path, parent, fmt):
+    """A planner Expert step saves opt2d3's own configuration and the engine
+    replays it through --config-file: the deck must be the one opt2d3 wrote
+    (the literature title lost its "Literature" source on the manual route)."""
+    out = _stage(tmp_path, parent)
+    saved = tmp_path / "saved.json"
+    r = subprocess.run([sys.executable, str(SCRIPT), "--input", str(out),
+                        "--calc-type", "BAND", "--output-dir", str(tmp_path / "manual"),
+                        "--save-config", "--options-file", str(saved)],
+                       input="\n".join(["1", fmt, "", "1", "n"]) + "\n" * 10,
+                       capture_output=True, text=True, env=_env(), timeout=120)
+    assert r.returncode == 0 and saved.exists(), r.stdout[-2000:] + r.stderr[-2000:]
+    manual = _deck(tmp_path / "manual")
+    config = json.loads(saved.read_text())["configuration"]
+    assert _workflow(out, tmp_path / "workflow", config) == manual

@@ -1368,9 +1368,9 @@ class D3Generator:
                                 ui.info(f"  SeeK-path not available, using standard k-point vectors for space group {space_group}")
                     
                     elif config.get("literature_path", False):
-                        # Use literature path
-                        config["kpath_source"] = "literature"
+                        # Use literature path ("default" when there is none)
                         frac_segments = get_literature_kpath_vectors(space_group, lattice_type)
+                        config["kpath_source"] = "literature" if frac_segments else "default"
                         if frac_segments:
                             # Extract and process shrink factor
                             shrink = extract_and_process_shrink(str(self.input_file), self.base_name, 
