@@ -112,6 +112,42 @@ def test_mgo_calibrated_levels():
     assert r["pristine"]["vbm_band"] == 320 and r["pristine"]["gap_ev"] == pytest.approx(7.249, abs=1e-3)
 
 
+# Pristine conventional 2x2x2 MgO with fractional DOPING (measured on CRYSTAL23):
+# name: (E, N Mulliken, EFERMI, spheropole)
+MGO_PRISTINE_CAL = {
+    "calm05": (-8810.9596014173, 639.5, -0.21811789, 143.17535849774),
+    "calm10": (-8811.0740946537, 639.0, -0.21882150, 142.77562289688),
+}
+
+
+def test_calibration_on_the_pristine_cell():
+    """--calibrate-on pristine: the ladder runs pristine -> pristine with DOPING, the
+    pristine job closes it at d=0 and the constant is applied to the defect cell."""
+    outs = {tag: fake_output(energy=e, electrons=n, header=640, efermi=ef, sph=sph)
+            for tag, (e, n, ef, sph) in MGO_PRISTINE_CAL.items()}
+    manifest = _manifest(mgo_host(), de.DefectSite("vacancy", "O", label=1), (0, 1, 2),
+                         calibrate=[0.5, 1.0, 1.5], calibrate_on="pristine")
+    assert manifest["calibration"] == {"on": "pristine"}
+    texts = {f"mgo_{tag}": _mgo_out(tag) for tag in ("pris", "q0", "qp1", "qp2")}
+    texts.update({f"mgo_{tag}": text for tag, text in outs.items()})    # no calm15 output
+    r = an.analyze(manifest, texts)
+    jobs = {j["name"]: j for j in r["jobs"]}
+    assert jobs["mgo_calm05"]["status"] == "ok" and jobs["mgo_calm10"]["status"] == "ok"
+    (cal,) = r["calibration"]
+    assert cal["points"] == ["mgo_calm10", "mgo_calm05", "mgo_pris"]
+    (v,) = cal["values"]
+    assert v["at"] == "mgo_calm05" and cal["single_central"]
+    slope = (MGO_PRISTINE_CAL["calm10"][0] - MGO["pris"][0]) / (639.0 - 640.0)
+    assert v["C"] == pytest.approx(slope - MGO_PRISTINE_CAL["calm05"][2], abs=1e-9)
+    assert v["C"] == pytest.approx(0.4474, abs=1e-4)
+    assert v["spheropole_crosscheck"] == pytest.approx(2 * 143.17535849774 / 639.5)
+    assert cal["q_range"] == [0.0, 1.0]
+    states = {s["q"]: s for s in r["states"]}
+    assert states[1.0]["C_ha"] == pytest.approx(v["C"]) and "not calibrated" in states[2.0]["status"]
+    expected = (MGO["q0"][0] - (MGO["qp1"][0] + v["C"]) - MGO["pris"][4]) * HARTREE_TO_EV
+    assert _level(r, "+1/0") == pytest.approx(expected) and expected == pytest.approx(3.49, abs=0.01)
+
+
 def test_uncalibrated_3d_reports_only_the_neutral_state():
     d = _mgo_set()
     r = _report(d)
