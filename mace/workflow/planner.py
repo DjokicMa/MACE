@@ -1386,7 +1386,10 @@ class WorkflowPlanner:
         ui.info("        0: Keep the previous step's tolerances (default)")
         for level, preset in SCF_TOLERANCE_PRESETS.items():
             ui.info(f"        {level}: {preset['name']} - {describe_scf_preset(level)}")
-        choice = input("      Choose convergence level (0-3) [0]: ").strip() or "0"
+        choice = self._ask_convergence_level(
+            "      Choose convergence level (0-3) [0]: ", SCF_TOLERANCE_PRESETS,
+            "'Use tight convergence?'", "3",
+            "Very tight (TOLINTEG 9 9 9 11 38, TOLDEE 11)")
         if choice in SCF_TOLERANCE_PRESETS:
             ui.info(f"      Using {SCF_TOLERANCE_PRESETS[choice]['name']} convergence: "
                     f"{describe_scf_preset(choice)}")
@@ -2495,14 +2498,44 @@ class WorkflowPlanner:
         ui.info("      0: Keep the previous OPT's convergence (default)")
         for level, preset in OPT_CONVERGENCE_PRESETS.items():
             ui.info(f"      {level}: {preset['name']} - {describe_opt_preset(level)}")
-        conv_choice = input("    Choose convergence level (0-3, default 0): ").strip() or "0"
+        conv_choice = self._ask_convergence_level(
+            "    Choose convergence level (0-3, default 0): ", OPT_CONVERGENCE_PRESETS,
+            "'Use tighter convergence?'", "tight",
+            "the 1.1.1 tighter values (TOLDEG=0.000015, TOLDEX=0.00006, "
+            "TOLDEE=8, MAXCYCLE=1000)")
 
         config = {"inherit_base_settings": True}
         if opt_choice in opt_types:
             config["optimization_type"] = opt_types[opt_choice]
         if conv_choice in OPT_CONVERGENCE_PRESETS:
             config["optimization_settings"] = opt_convergence(conv_choice, upper=True)
+        elif conv_choice == "tight":
+            # What "yes" to "Use tighter convergence?" wrote up to 1.1.1
+            config["optimization_settings"] = {
+                "TOLDEG": 1.5e-5, "TOLDEX": 6e-5, "TOLDEE": 8, "MAXCYCLE": 1000}
         return config
+
+    @staticmethod
+    def _ask_convergence_level(prompt: str, presets: Dict[str, Any], old_question: str,
+                               yes_choice: str, yes_meaning: str) -> str:
+        """Ask a 0-3 convergence menu that was a yes/no question up to 1.1.1.
+
+        Returns "0" (keep the previous step's values), a preset level, or
+        yes_choice for y/yes, which keeps the old question's meaning; n/no
+        is Standard. Any other answer is asked again rather than being taken
+        as 0.
+        """
+        valid = ", ".join(["0", *presets])
+        while True:
+            answer = input(prompt).strip().lower() or "0"
+            if answer == "0" or answer in presets:
+                return answer
+            if answer in ("y", "yes", "n", "no"):
+                yes = answer.startswith("y")
+                ui.info(f"      Note: {old_question} is now a 0-3 menu. Taking "
+                        f"'{answer}' as {yes_meaning if yes else 'Standard (1)'}.")
+                return yes_choice if yes else "1"
+            ui.info(f"      Please enter one of {valid} (blank for 0)")
 
     def _get_advanced_opt_config(self) -> Dict[str, Any]:
         """Get advanced optimization configuration"""
