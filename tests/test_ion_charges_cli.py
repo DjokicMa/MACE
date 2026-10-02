@@ -194,6 +194,8 @@ def test_mace_ions_symmetric_deck_takes_doping_only(tmp_path):
                     "DFT\nPBE0\nENDDFT\nTOLINTEG\n7 7 7 7 14\nSHRINK\n8 8\nEND\n")
     bad = _run(["ions", str(deck), "--ion-charges", "auto", "-o", "out"], tmp_path)
     assert bad.returncode == 1 and "P1" in bad.stderr
+    # the alternative CRYSTAL accepts by hand is named too (manual p.80)
+    assert "every atom of a symmetry orbit the same shell charges" in " ".join(bad.stderr.split())
     ok = _run(["ions", str(deck), "--net-charge", "2", "-o", "out"], tmp_path)
     assert ok.returncode == 0, ok.stderr
     assert (tmp_path / "out" / "mgo.d12").read_text().splitlines()[-3:] == ["DOPING", "-2", "END"]

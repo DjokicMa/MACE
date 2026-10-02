@@ -553,7 +553,10 @@ def plan_charge_setup(symbols: Sequence[str], z_labels: Sequence[int], xyz, *, c
         raise IonChargeError(
             "CHEMOD needs a deck without symmetry: CRYSTAL checks the symmetry with the new "
             "configuration and stops rather than lowering it (manual p.80). Write the structure "
-            "in P1 (cif2d12: symmetry handling P1) or set the charge with DOPING alone (chemod 'no')")
+            "in P1 (cif2d12: symmetry handling P1) or set the charge with DOPING alone (chemod "
+            "'no'). By hand, CRYSTAL also accepts CHEMOD that gives every atom of a symmetry "
+            "orbit the same shell charges (the symmetry is kept), or MODISYMM to lower the "
+            "symmetry first (manual pp.55, 80)")
     if write_chemod:
         setup.chemod = [(i + 1, mods[i]) for i in sorted(mods)]
 
@@ -894,7 +897,10 @@ def deck_method(text: str) -> MethodInfo:
 
 
 SYMMETRIC_AUTO_MESSAGE = ("fragments and CHEMOD labels need every atom of the cell, so write the "
-                          "structure in P1; a net charge alone (DOPING) is fine with symmetry")
+                          "structure in P1; a net charge alone (DOPING) is fine with symmetry. "
+                          "By hand, CRYSTAL also accepts CHEMOD that gives every atom of a "
+                          "symmetry orbit the same shell charges (the symmetry is kept; manual "
+                          "p.80)")
 
 
 def plan_for_deck(text: str, **options) -> Optional[ChargeSetup]:
