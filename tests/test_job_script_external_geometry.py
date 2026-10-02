@@ -44,7 +44,7 @@ def test_block_sits_after_guessp_and_before_crystal_runs(tmp_path):
     # Outside the region opt_restart.py lifts into old scripts ...
     assert script.index("# OPTGEOM RESTART") < script.index("# GUESSP restart") < ext
     # ... and before the job changes into scratch and starts CRYSTAL.
-    assert ext < script.index("cd $scratch/$JOB") < script.index("Pcrystal")
+    assert ext < script.index("cd $scratch/$JOB") < script.index("bin/Pcrystal")
 
 
 def test_workflow_copy_is_still_a_symlink_to_the_submission_script():
