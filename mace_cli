@@ -1303,6 +1303,15 @@ def main():
         print("--save-theme requires --theme NAME (e.g. mace --theme ember --save-theme).",
               file=sys.stderr)
 
+    # Handle --no-banner if it's the first argument (before the help
+    # checks below, so `mace --no-banner defects -h` reaches them)
+    no_banner_first = False
+    if len(sys.argv) >= 2 and sys.argv[1] == '--no-banner':
+        no_banner_first = True
+        os.environ['MACE_NO_BANNER'] = '1'
+        # Remove --no-banner and shift arguments
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+    
     # Check for action-specific help before argparse for any command
     if len(sys.argv) >= 5 and sys.argv[2] == '--action' and sys.argv[4] == '--help':
         command = sys.argv[1]
@@ -1325,14 +1334,6 @@ def main():
 
     # Special handling for commands that should pass through directly
     passthrough_commands = ['convert', 'opt2d12', 'opt2d3', 'opt2cif', 'completion', 'ions']
-    
-    # Handle --no-banner if it's the first argument
-    no_banner_first = False
-    if len(sys.argv) >= 2 and sys.argv[1] == '--no-banner':
-        no_banner_first = True
-        os.environ['MACE_NO_BANNER'] = '1'
-        # Remove --no-banner and shift arguments
-        sys.argv = [sys.argv[0]] + sys.argv[2:]
     
     # Check if we have a passthrough command
     if len(sys.argv) >= 2 and sys.argv[1] in passthrough_commands:
@@ -1392,7 +1393,11 @@ def main():
         sys.exit(phonopy_main([a for a in sys.argv[2:] if a != '--no-banner']))
 
     # Check if asking for help on a specific command (for non-passthrough commands)
-    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'preflight', 'defects', 'phonopy', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version']:
+    # `-h` counts like `--help`, and anywhere after the command
+    # (`mace preflight x -h`); otherwise the top-level parser answers -h
+    # with the general help.
+    if (len(sys.argv) >= 3 and any(a in ('-h', '--help') for a in sys.argv[2:])
+            and sys.argv[1] in ['workflow', 'submit', 'preflight', 'defects', 'phonopy', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version']):
         # Show command-specific help
         show_command_help(sys.argv[1])
         sys.exit(0)
