@@ -1230,6 +1230,20 @@ global 'mace --version' flag.
     else:
         ui.err(f"No help available for command: {command}")
 
+def _ask_mixed_submit_choice():
+    """Ask which decks of a mixed .d12/.d3 directory to submit.
+
+    With nothing on stdin (empty pipe, closed stdin) there is no answer to
+    take, so stop with a message instead of an EOFError traceback.
+    """
+    try:
+        return input("\nSelect option (1-3): ").strip()
+    except EOFError:
+        ui.err("\nNo answer given (stdin is empty), so nothing was submitted. Answer "
+               "1, 2 or 3 on stdin (e.g. echo 1 | mace submit DIR), or submit one deck.")
+        sys.exit(1)
+
+
 def main():
     """Main entry point with proper argument parsing"""
     # Save original sys.argv before any modifications
@@ -1656,7 +1670,7 @@ More Help:
                     ui.info("1. D12 files only")
                     ui.info("2. D3 files only")
                     ui.info("3. Both D12 and D3 files")
-                    choice = input("\nSelect option (1-3): ").strip()
+                    choice = _ask_mixed_submit_choice()
                     if choice == '1':
                         selected = d12s
                     elif choice == '2':
@@ -1766,7 +1780,7 @@ More Help:
                 ui.info("2. D3 files only")
                 ui.info("3. Both D12 and D3 files")
 
-                choice = input("\nSelect option (1-3): ").strip()
+                choice = _ask_mixed_submit_choice()
 
                 if choice == '1':
                     # Submit D12 only
