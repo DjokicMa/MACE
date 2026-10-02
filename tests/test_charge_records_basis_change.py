@@ -16,7 +16,6 @@ Three bugs in carrying CHEMOD / CHARGED / DOPING into a child deck
 * E3: an odd electron count in a closed-shell child was written without a
   spin state. It gets the parent's SPIN/SPINLOCK, or is refused.
 """
-import shutil
 import subprocess
 import sys
 

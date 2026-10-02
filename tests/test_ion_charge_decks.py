@@ -14,7 +14,7 @@ from conftest import REPO_ROOT
 from d12_constants import read_basis_file
 from ion_charges import (BasisInfo, IonChargeError, MethodInfo, SHELL_TABLE, apply_charge_setup,
                          fmt_charge, parse_basis_blocks, plan_charge_setup, strip_charge_records)
-from ion_fixtures import Z, cluster, ec, fsi, li_near, molecule_deck, no3, shuffled
+from ion_fixtures import Z, ec, fsi, li_near, molecule_deck, no3, shuffled
 from mace.utils.ion_fragments import cell_matrix
 
 LI_PLUS = "2.0 0.0 0.0 0.0 0.0"
@@ -182,7 +182,6 @@ def test_explicit_nitrate_is_chemod_plus_charged_with_exact_sums():
     atoms = shuffled(no3(), seed=3)
     setup = _plan(atoms, basis=_explicit(atoms))
     assert setup.charged and setup.doping is None
-    syms = [s for s, _ in atoms]
     ps = [vec[4] for label, vec in setup.chemod]
     assert [fmt_charge(p) for p in ps] == ["4.333333", "4.333333", "4.333334"]
     written = sum(Decimal(v) for line in setup.chemod_lines()[2:] for v in line.split()[1:])

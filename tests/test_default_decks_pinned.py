@@ -8,7 +8,6 @@ with MACE_REGEN_GOLDEN=1.
 """
 import json
 import os
-import shutil
 import subprocess
 import sys
 

@@ -5,7 +5,6 @@ charge records and nothing else, so each test strips the records again and
 compares with the deck written without the options.
 """
 import json
-import math
 import os
 import subprocess
 import sys
@@ -14,7 +13,7 @@ import pytest
 
 from conftest import REPO_ROOT
 from ion_charges import read_deck_geometry, strip_charge_records
-from ion_fixtures import Z, cluster, ec, fsi, li_near, molecule_cif, molecule_deck, no3, p1_cif, shuffled
+from ion_fixtures import cluster, ec, fsi, li_near, molecule_cif, molecule_deck, no3, p1_cif, shuffled
 
 MACE_CLI = REPO_ROOT / "mace_cli"
 

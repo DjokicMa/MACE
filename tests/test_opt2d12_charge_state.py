@@ -1,4 +1,4 @@
-"""opt2d12 children keep a charged parent's electron count on every path.
+"""opt2d12 children keep a charged parent's electron count on every path, or recompute it on request.
 
 E4a: when the parent deck failed to parse, process_files set has_parent_deck
 False and skipped carrying CHEMOD/CHARGED/DOPING although the file was there;
@@ -9,6 +9,8 @@ change) minus the valence charges gives DOPING; with no Mulliken print a
 warning says the state cannot be recovered.
 E4c (a pin, it passed before): a template that sets other settings keeps the
 records.
+E1: --ion-charges / --net-charge (or the same config keys) work the records
+out again from the optimised geometry instead of carrying them.
 """
 import builtins
 import json
@@ -16,10 +18,9 @@ import os
 import subprocess
 import sys
 
-
 import menu_nav
 from conftest import REPO_ROOT
-from ion_fixtures import molecule_deck, mulliken_block, synth_out
+from ion_fixtures import cluster, ec, fsi, li_near, molecule_deck, mulliken_block, shuffled, synth_out
 
 LI_WATER = [("Li", (0.0, 0.0, 0.0)), ("O", (1.95, 0.0, 0.0)), ("H", (2.54, 0.76, 0.0)),
             ("H", (2.54, -0.76, 0.0))]
@@ -121,3 +122,52 @@ def test_a_template_with_other_settings_keeps_the_records(tmp_path):
     assert child[child.index("FMIXING") + 1] == "50"
     assert child[child.index("SOLDEF2MSVP") + 1] == "CHEMOD"
     assert child[-3:] == ["DOPING", "-1", "END"]
+
+
+# ----------------------------------------------------------------------- E1
+
+def li_fsi_ec():
+    anion = fsi()
+    return shuffled(cluster((anion, (0.0, 0.0, 0.0)), (ec(), (8.0, 0.0, 0.0))) + [li_near(anion, 2)], seed=9)
+
+
+def test_ion_charges_are_recomputed_and_replace_the_carried_records(tmp_path):
+    atoms = li_fsi_ec()
+    stale = molecule_deck(atoms, title="parent").replace("ENDDFT\n", "ENDDFT\nDOPING\n-1\n")
+    (tmp_path / "parent.d12").write_text(stale)
+    (tmp_path / "parent.out").write_text(synth_out(atoms, title="parent"))
+    run = _run(tmp_path, "--ion-charges", "auto")
+    assert run.returncode == 0, run.stdout + run.stderr
+    child = _child(tmp_path)
+    i = child.index("SOLDEF2MSVP")
+    assert child[i + 1:i + 3] == ["CHEMOD", "5"]
+    assert "DOPING" not in child  # Li+ FSI- is neutral: the stale DOPING -1 is gone
+
+
+def test_ion_charge_config_keys_work_like_the_flags(tmp_path):
+    atoms = li_fsi_ec()
+    (tmp_path / "parent.d12").write_text(molecule_deck(atoms, title="parent"))
+    (tmp_path / "parent.out").write_text(synth_out(atoms, title="parent"))
+    (tmp_path / "t.json").write_text(json.dumps({"calculation_type": "SP", "method": "DFT",
+                                                 "functional": "HSESOL3C", "ion_charges": "auto",
+                                                 "net_charge": 1, "spinlock": 1, "spinlock_cycles": 30}))
+    run = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "mace_cli"), "opt2d12", "--out-file", "parent.out",
+         "--config-file", "t.json", "--yes", "--output-dir", "o"],
+        cwd=tmp_path, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=300, env=_env())
+    assert run.returncode == 0, run.stdout + run.stderr
+    child = _child(tmp_path)
+    assert "CHEMOD" in child and child[child.index("DOPING") + 1] == "-1"
+    assert "SPIN" in child and child[child.index("SPINLOCK") + 1] == "1 30"
+
+
+def test_a_changed_fragment_composition_is_reported():
+    import CRYSTALOptToD12 as M
+    atoms = li_fsi_ec()
+    parent = molecule_deck(atoms, title="parent")
+    moved = [(s, (p[0] + 20.0, p[1], p[2])) if s == "H" and k == next(
+        j for j, (t, _) in enumerate(atoms) if t == "H") else (s, p) for k, (s, p) in enumerate(atoms)]
+    child = molecule_deck(moved, title="child")
+    new, notes = M.recompute_ion_charges(child, parent, {"ion_charges": "auto", "net_charge": 0},
+                                         interactive=False)
+    assert any("fragments changed" in n for n in notes)

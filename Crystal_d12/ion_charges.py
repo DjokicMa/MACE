@@ -39,7 +39,6 @@ A periodic explicit-basis cell gets DOPING only unless CHEMOD is asked for
 """
 
 import importlib.util
-import math
 import re
 import sys
 from dataclasses import dataclass, field
