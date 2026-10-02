@@ -2,6 +2,7 @@
 
 Modules:
     deck_edit  host classification and the text edits (standard library only)
+    structure  geometry tables of CRYSTAL outputs, site resolution, PBC matching
 """
 
 

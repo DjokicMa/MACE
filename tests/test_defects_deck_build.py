@@ -11,7 +11,7 @@ import sys
 
 import pytest
 
-from _defects_fixtures import deck, edits, hbn_host, mgo_host, same_but_title, strip_records
+from _defects_fixtures import DATA, deck, edits, hbn_host, mgo_host, same_but_title, strip_records
 from conftest import REPO_ROOT
 
 from mace.defects import DefectError, NeedsPristineOutput
@@ -105,12 +105,21 @@ def test_n_on_o_substitution_parity():
 
 # --- 5: interstitial -------------------------------------------------------------
 
-def test_interstitial_record():
-    site = de.DefectSite("interstitial", "O", cart=(1.053, 1.053, 1.053))
+def test_interstitial_record_and_too_close_refusal():
+    from mace.defects import structure as st
+    geom = st.parse_geometry((DATA / "mgo_pris_geometry.out").read_text())
+    host, _ = de.classify_host(mgo_host(), insert=True)
+    point = st.insertion_point(host, geom, (0.25, 0.25, 0.25), False, "SUPERCON", MGO_222)
+    assert point.tolist() == pytest.approx([1.053, 1.053, 1.053])
+    site = de.DefectSite("interstitial", "O", cart=tuple(point))
     decks, msgs, _ = _build(mgo_host(), site, charges=(0, -2))
     assert "ATOMINSE\n1\n8 1.053000 1.053000 1.053000\nBASISSET" in decks["mgo_q0"].text
     assert "DOPING\n2.0\nPPAN" in decks["mgo_qm2"].text
     assert any("untested" in m for m in msgs)
+    with pytest.raises(DefectError, match="closer than 0.8"):
+        st.insertion_point(host, geom, (0.05, 0, 0), False, "SUPERCON", MGO_222)
+    with pytest.raises(DefectError, match="closer than 0.8"):
+        st.insertion_point(host, geom, (0.3, 0, 0), True, "SUPERCON", MGO_222)
 
 
 def test_insert_refuses_unit_changing_block1_keywords():
