@@ -38,7 +38,8 @@ module load Python-bundle-PyPI/2023.06-GCCcore-12.3.0
 #   1. /mnt/scratch/$USER resolved - what /etc/profile.d/hpcc.sh sets $SCRATCH
 #      to on MSU HPCC, so the same directory a healthy node uses (and the one
 #      a recovery looks in for OPTINFO.DAT);
-#   2. .mace_scratch under the submit directory (shared, kept after the job);
+#   2. .mace_scratch under the submit directory (shared; removed after a run
+#      that ended normally, see SCRATCH FALLBACK CLEANUP);
 #   3. $TMPDIR (node-local and removed with the job - last resort).
 # With none writable the job stops here rather than run CRYSTAL on an empty
 # INPUT. The directory used is written to $DIR/.$JOB.scratch, where the
@@ -245,6 +246,30 @@ cp fort.9 ${DIR}/${JOB}.f9
 # ADDED: Auto-submit new jobs when this one completes
 # Check multiple possible locations for queue managers
 cd $DIR
+
+# SCRATCH FALLBACK CLEANUP. When the scratch guard had to fall back, the
+# output says where CRYSTAL ran. The submit-directory fallback (.mace_scratch)
+# is on the shared file system and counts against the quota, so this job
+# directory there is removed once the run reached its normal end and its
+# files were copied back. A run that did not end normally keeps it, as a
+# restart of the optimization (OPTGEOM RESTART) reads OPTINFO.DAT and fort.20
+# there, and the queue manager reads fort.87 for the reason the run stopped.
+if [ "$scratch" != "$MACE_SCRATCH_WANTED" ]; then
+  MACE_NOTE="scratch: CRYSTAL ran in $scratch/$JOB instead of $MACE_SCRATCH_WANTED/$JOB (on $(hostname))"
+  if [ "$scratch" = "$DIR/.mace_scratch$MACE_SCRATCH_SUFFIX" ]; then
+    if grep -q "EEEEEEEEEE TERMINATION" "$DIR/$JOB.out" 2>/dev/null; then
+      rm -rf "$scratch/$JOB"
+      MACE_D=$scratch
+      while [ "$MACE_D" != "$DIR" ] && rmdir "$MACE_D" 2>/dev/null; do MACE_D=$(dirname "$MACE_D"); done
+      MACE_NOTE="$MACE_NOTE; removed it after the run"
+    else
+      MACE_NOTE="$MACE_NOTE; kept it, as the run did not reach its normal end (remove it by hand once no restart needs it)"
+    fi
+  fi
+  echo "$MACE_NOTE"
+  echo "$MACE_NOTE" >> "$DIR/$JOB.out"
+fi
+# END SCRATCH FALLBACK CLEANUP
 
 # First check if MACE_HOME is set and use it
 if [ ! -z "$MACE_HOME" ]; then

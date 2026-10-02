@@ -28,6 +28,8 @@ MPIRUN_STUB = """#!/bin/bash
 # Stand-in for mpirun: record where CRYSTAL would run and what it would read.
 { echo "CWD=$(pwd)"; echo "INPUT_BYTES=$(wc -c < INPUT 2>/dev/null || echo missing)"; } > "$DIR/$JOB.stub"
 echo "stub crystal run" > fort.9
+# STUB_ENDS: print CRYSTAL's normal-end line, as a run that finished does.
+if [ -n "$STUB_ENDS" ]; then echo " EEEEEEEEEE TERMINATION  DATE 02 10 2026"; fi
 """
 
 
@@ -463,3 +465,87 @@ def test_restart_keeps_this_directorys_newer_optinfo(tmp_path, submit):
     assert (new / "OPTINFO.DAT").read_text() == "new OPTINFO.DAT"
     assert (new / "fort.20").read_text() == "new fort.20"
     assert "brought OPTINFO.DAT" not in r.stdout
+
+
+# ---------------------------------------------------------------------------
+# The submit-directory fallback (.mace_scratch) is on the shared file system
+# and counts against the user's quota: a run that finished is cleaned up, one
+# that did not keeps it (a RESTART reads OPTINFO.DAT and fort.20 there, and the
+# queue manager reads fort.87). <JOB>.out says that a fallback was used.
+
+def test_finished_run_removes_its_submit_directory_scratch(tmp_path, submit):
+    other = submit / ".mace_scratch" / "crys23" / "other_job"
+    other.mkdir(parents=True)
+    (other / "fort.9").write_text("another job")
+    script = _generate(submit, "crystal", "diamond")
+    r = _run(tmp_path, script, {"SCRATCH": "", "USER": NO_HPCC_USER, "STUB_ENDS": "1"})
+    assert r.returncode == 0, r.stdout + r.stderr
+    job_dir = submit / ".mace_scratch" / "crys23" / "diamond"
+    assert _stub(submit, "diamond")["CWD"] == str(job_dir)
+    assert not job_dir.exists()
+    assert (other / "fort.9").read_text() == "another job"     # only this job's directory
+    assert (submit / "diamond.f9").read_text() == "stub crystal run\n"
+    out = (submit / "diamond.out").read_text()
+    assert "EEEEEEEEEE TERMINATION" in out
+    assert f"ran in {job_dir}" in out and "removed it after the run" in out
+
+
+def test_finished_run_leaves_no_empty_mace_scratch_behind(tmp_path, submit):
+    script = _generate(submit, "crystal", "diamond")
+    r = _run(tmp_path, script, {"SCRATCH": "", "USER": NO_HPCC_USER, "STUB_ENDS": "1"})
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not (submit / ".mace_scratch").exists()
+
+
+def test_unfinished_run_keeps_its_submit_directory_scratch(tmp_path, submit):
+    script = _generate(submit, "crystal", "diamond")
+    r = _run(tmp_path, script, {"SCRATCH": "", "USER": NO_HPCC_USER})
+    assert r.returncode == 0, r.stdout + r.stderr
+    job_dir = submit / ".mace_scratch" / "crys23" / "diamond"
+    assert (job_dir / "INPUT").is_file()
+    out = (submit / "diamond.out").read_text()
+    assert f"ran in {job_dir}" in out and "kept" in out
+
+
+def test_properties_run_cleans_up_its_submit_directory_scratch(tmp_path, submit):
+    (submit / "dia_band.d3").write_text("BAND\nEND\n")
+    (submit / "dia_band.f9").write_text("f9")
+    script = _generate(submit, "prop", "dia_band")
+    r = _run(tmp_path, script, {"SCRATCH": "", "USER": NO_HPCC_USER, "STUB_ENDS": "1"})
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not (submit / ".mace_scratch").exists()
+    assert "removed it after the run" in (submit / "dia_band.out").read_text()
+
+
+@pytest.mark.skipif(ROOT_USER, reason="root can write anywhere")
+def test_tmpdir_fallback_is_noted_in_the_output(tmp_path, submit):
+    script = _generate(submit, "crystal", "diamond")
+    tmpdir = tmp_path / "nodelocal"
+    tmpdir.mkdir()
+    (submit / ".mace_scratch").write_text("not a directory\n")
+    r = _run(tmp_path, script, {"SCRATCH": "", "USER": NO_HPCC_USER,
+                                "TMPDIR": str(tmpdir), "STUB_ENDS": "1"})
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert f"ran in {tmpdir}/crys23/diamond" in (submit / "diamond.out").read_text()
+
+
+def test_normal_scratch_is_left_alone_and_not_noted(tmp_path, submit):
+    scratch = tmp_path / "scr"
+    scratch.mkdir()
+    script = _generate(submit, "crystal", "diamond")
+    r = _run(tmp_path, script, {"SCRATCH": str(scratch), "USER": NO_HPCC_USER, "STUB_ENDS": "1"})
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (scratch / "crys23" / "diamond" / "INPUT").is_file()
+    assert (submit / "diamond.out").read_text() == " EEEEEEEEEE TERMINATION  DATE 02 10 2026\n"
+
+
+def test_cleanup_is_the_same_in_both_templates():
+    blocks = []
+    for path in TEMPLATES.values():
+        text = path.read_text()
+        start = text.index("# SCRATCH FALLBACK CLEANUP")
+        end = text.index("# END SCRATCH FALLBACK CLEANUP", start)
+        block = text[start:end]
+        assert "'" not in block and "$1" not in block
+        blocks.append(block)
+    assert blocks[0] == blocks[1]
