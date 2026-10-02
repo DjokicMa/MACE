@@ -481,13 +481,26 @@ def valence_charges(text: str) -> Dict[int, float]:
     return found
 
 
-def valence_of(z: int, valence: Optional[Dict] = None) -> float:
-    """Valence (pseudopotential) charge of atomic number z (any 1xx/2xx label), else z."""
-    z = int(z) % 100
+def valence_of(z: int, valence: Optional[Dict] = None) -> Optional[float]:
+    """The charge a Mulliken population of an atom with Z-column label z is measured against.
+
+    The pseudopotential charge from ``valence`` (valence_charges) when it
+    lists the element; otherwise Z for an all-electron label (Z or 100 + Z),
+    and None for a 200 + Z label - a valence-only (ECP) atom whose valence
+    charge is not known, which must be flagged rather than measured against Z.
+    """
+    label = int(z)
+    z = label % 100
     for key in (z, str(z)):
         if valence and key in valence:
             return float(valence[key])
+    if label >= 200:
+        return None
     return float(z)
+
+
+VALENCE_UNKNOWN_FLAG = ("pseudopotential atom whose valence charge the .out does not give "
+                        "(no PSEUDOPOTENTIAL INFORMATION line for it): charge not computed")
 
 
 _MULLIKEN_HEAD = re.compile(
@@ -624,17 +637,21 @@ def fragment_charges(text: str, force: bool = False) -> Dict[str, object]:
     if not pops:
         return {}
     pp = valence_charges(text)
-    zsum = sum(valence_of(a["z"], pp) for a in pops)
+    ref = [valence_of(a["z"], pp) for a in pops]
+    unknown = [f"{a['element']} (atom {a['atom']})" for a, r in zip(pops, ref) if r is None]
+    zsum = None if unknown else sum(ref)
     factors = [float(x) for x in re.findall(r"CHARGE NORMALIZATION FACTOR\s+([-\d.]+)", text)]
     renormalised = any(abs(f - 1.0) > 1e-6 for f in factors)
     not_neutral = "UNIT CELL NOT NEUTRAL" in text
-    net = round(zsum - count, 6)
-    if not (force or abs(net) > 1e-3 or renormalised or not_neutral):
+    net = None if zsum is None else round(zsum - count, 6)
+    if not (force or (net is not None and abs(net) > 1e-3) or renormalised or not_neutral):
         return {}
     result: Dict[str, object] = {"electron_count": {
         "mulliken": count, "valence_sum": zsum, "net_charge": net,
         "charge_normalization_factors": sorted({f for f in factors if abs(f - 1.0) > 1e-6}),
         "unit_cell_not_neutral": not_neutral}}
+    if unknown:
+        result["electron_count"]["valence_unknown"] = unknown
     geom = final_structure(text)
     if geom is None or len(geom["symbols"]) != len(pops):
         return result
@@ -645,8 +662,14 @@ def fragment_charges(text: str, force: bool = False) -> Dict[str, object]:
     spin_of = {a["atom"]: a["value"] for a in spins}
     entries = []
     for f in frags:
-        q = sum(valence_of(pops[i]["z"], pp) - pops[i]["value"] for i in f["atoms"])
         s = sum(spin_of.get(i + 1, 0.0) for i in f["atoms"]) if spins else None
+        if any(ref[i] is None for i in f["atoms"]):
+            entries.append({"formula": f["formula"], "atoms": [i + 1 for i in f["atoms"]], "ion": f["ion"],
+                            "extended": f["extended"], "formal_charge": f["charge"],
+                            "mulliken_charge": None, "spin": None if s is None else round(s, 4) + 0.0,
+                            "deviation": None, "flag": VALENCE_UNKNOWN_FLAG})
+            continue
+        q = sum(ref[i] - pops[i]["value"] for i in f["atoms"])
         dev = q - f["charge"]
         flag = None
         if f["ion"] and abs(dev) > FRAGMENT_DEVIATION_FLAG:
@@ -667,7 +690,8 @@ def format_fragment_charges(props: Dict[str, object]) -> List[str]:
     if not entries:
         return []
     count = props.get("electron_count") or {}
-    lines = ["Fragments" + (f" (net charge {count.get('net_charge', 0):+g}, "
+    net = count.get("net_charge", 0)
+    lines = ["Fragments" + (f" (net charge {'n/a' if net is None else format(net, '+g')}, "
                             f"{count.get('mulliken', 0):g} electrons)" if count else "")]
     for e in entries:
         name = e["ion"] or ("extended" if e["extended"] else "neutral")
@@ -676,6 +700,7 @@ def format_fragment_charges(props: Dict[str, object]) -> List[str]:
         where = f"atom {atoms[0]}" if len(atoms) == 1 else f"atoms {atoms[0]}..{atoms[-1]}" \
             if atoms == list(range(atoms[0], atoms[-1] + 1)) else f"{len(atoms)} atoms"
         lines.append(f"  {e['formula']:<12} {name:<10} formal {e['formal_charge']:+d}  "
-                     f"Mulliken {e['mulliken_charge']:+.3f}{spin}  ({where})"
+                     + ("Mulliken n/a" if e["mulliken_charge"] is None
+                        else f"Mulliken {e['mulliken_charge']:+.3f}") + f"{spin}  ({where})"
                      + (f"  <- {e['flag']}" if e["flag"] else ""))
     return lines

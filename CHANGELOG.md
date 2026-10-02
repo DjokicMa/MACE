@@ -64,8 +64,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was the Mulliken Z column minus the population; for an ECP atom that
   column holds CRYSTAL's label (282 for Pb) and the population counts valence
   electrons only, so Pb came out near +261. It is now measured against the
-  pseudopotential's NUCLEAR CHARGE. Newly extracted rows change for ECP
-  atoms; rows already in a database are not migrated (re-extract to update).
+  pseudopotential's NUCLEAR CHARGE. An ECP atom (Mulliken Z 200 + Z) whose
+  valence charge the .out does not give is flagged with no charge, rather
+  than measured against Z (the 21 ECP outputs of the test corpus all give
+  it). Newly extracted rows change for ECP atoms; rows already in a database
+  are not migrated (re-extract to update).
 - **Derived decks keep a charged parent's electron count when the basis set
   changes.** An explicit-basis parent carries its charge in `CHEMOD` +
   `CHARGED`; a child with an internal BASISSET got the same records, which

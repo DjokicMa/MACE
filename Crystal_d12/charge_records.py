@@ -291,7 +291,10 @@ def out_electron_offset(out_text: str):
     if not pops:
         return None
     pp = frag.valence_charges(out_text)
-    zsum = sum(frag.valence_of(a["z"], pp) for a in pops)
+    ref = [frag.valence_of(a["z"], pp) for a in pops]
+    if any(r is None for r in ref):
+        return None  # an ECP atom whose valence charge the .out does not give
+    zsum = sum(ref)
     offset = Decimal(str(round(count - zsum, 6)))
     return Decimal(0) if abs(offset) < Decimal("0.001") else offset
 
@@ -474,6 +477,16 @@ def carry_charge_records(child_text: str, parent_text: str,
     return out, notes + spin_notes
 
 
+def _ecp_valence_unknown(out_text: str) -> bool:
+    """True when the .out's Mulliken print has an ECP atom with no known valence charge."""
+    frag = _ic().frag
+    if frag.mulliken_electron_count(out_text) is None:
+        return False
+    pops, _ = frag.mulliken_atoms(out_text)
+    pp = frag.valence_charges(out_text)
+    return any(frag.valence_of(a["z"], pp) is None for a in pops)
+
+
 def out_charge_signs(out_text: str) -> List[str]:
     """What in a .out shows a charged or ionic run, without a Mulliken print.
 
@@ -511,6 +524,10 @@ def charge_from_parent_out(child_text: str, out_text: str) -> Tuple[str, List[st
     if extract_charge_records(child_text)["DOPING"]:
         return child_text, []
     offset = out_electron_offset(out_text)
+    if offset is None and _ecp_valence_unknown(out_text):
+        return child_text, ["WARNING: no parent deck, and the .out does not give the valence charge "
+                            "of its pseudopotential atom(s), so the parent's electron count (and any "
+                            "DOPING) cannot be recovered from its Mulliken print - check the new deck"]
     if offset is None:
         signs = out_charge_signs(out_text)
         if signs:

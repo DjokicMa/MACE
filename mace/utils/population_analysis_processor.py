@@ -19,9 +19,9 @@ from dataclasses import dataclass
 
 # Pseudopotential (ECP) valence charges: shared with the fragment-charge code.
 try:
-    from mace.utils.ion_fragments import valence_charges, valence_of as valence_charge
+    from mace.utils.ion_fragments import VALENCE_UNKNOWN_FLAG, valence_charges, valence_of as valence_charge
 except ImportError:  # copied flat next to this file (copy_dependencies)
-    from ion_fragments import valence_charges, valence_of as valence_charge
+    from ion_fragments import VALENCE_UNKNOWN_FLAG, valence_charges, valence_of as valence_charge
 
 
 @dataclass
@@ -29,10 +29,11 @@ class AtomicCharge:
     """Atomic charge information."""
     atom_number: int
     element: str
-    mulliken_charge: float
-    formal_charge: int
-    oxidation_state: int
+    mulliken_charge: Optional[float]      # None: an ECP atom with no known valence charge
+    formal_charge: Optional[int]
+    oxidation_state: Optional[int]
     spin_density: Optional[float] = None
+    flag: Optional[str] = None             # why the charge is missing (dropped when None)
 
 
 @dataclass
@@ -105,7 +106,7 @@ class PopulationAnalysisProcessor:
         if 'mulliken_population' in property_data:
             mulliken_data = json.loads(property_data['mulliken_population']) if isinstance(property_data['mulliken_population'], str) else property_data['mulliken_population']
             atomic_charges = self._process_atomic_charges(mulliken_data)
-            results['atomic_charges'] = [self._dataclass_to_dict(charge) for charge in atomic_charges]
+            results['atomic_charges'] = [self._charge_dict(charge) for charge in atomic_charges]
         
         # Process spin-polarized data
         if 'mulliken_alpha_plus_beta' in property_data and 'mulliken_alpha_minus_beta' in property_data:
@@ -113,7 +114,7 @@ class PopulationAnalysisProcessor:
             alpha_minus_beta = json.loads(property_data['mulliken_alpha_minus_beta']) if isinstance(property_data['mulliken_alpha_minus_beta'], str) else property_data['mulliken_alpha_minus_beta']
             
             atomic_charges = self._process_spin_polarized_charges(alpha_plus_beta, alpha_minus_beta)
-            results['atomic_charges'] = [self._dataclass_to_dict(charge) for charge in atomic_charges]
+            results['atomic_charges'] = [self._charge_dict(charge) for charge in atomic_charges]
             results['magnetic_info'] = self._process_magnetic_information(alpha_plus_beta, alpha_minus_beta)
         
         # Process overlap population data
@@ -140,6 +141,9 @@ class PopulationAnalysisProcessor:
         for atom_data in mulliken_data['atoms']:
             # Calculate net charge (nuclear charge - electron population)
             nuclear_charge = valence_charge(atom_data['atomic_number'], getattr(self, '_valence', None))
+            if nuclear_charge is None:
+                charges.append(self._unknown_charge(atom_data))
+                continue
             electron_population = atom_data['mulliken_charge']
             net_charge = nuclear_charge - electron_population
             
@@ -170,13 +174,16 @@ class PopulationAnalysisProcessor:
         for i, atom_data in enumerate(alpha_atoms):
             # Calculate net charge
             nuclear_charge = valence_charge(atom_data['atomic_number'], getattr(self, '_valence', None))
-            total_electrons = atom_data['mulliken_charge']
-            net_charge = nuclear_charge - total_electrons
-            
+
             # Calculate spin density if available
             spin_density = None
             if i < len(spin_atoms):
                 spin_density = spin_atoms[i]['mulliken_charge']
+            if nuclear_charge is None:
+                charges.append(self._unknown_charge(atom_data, spin_density))
+                continue
+            total_electrons = atom_data['mulliken_charge']
+            net_charge = nuclear_charge - total_electrons
             
             # Estimate oxidation state
             oxidation_state = self._estimate_oxidation_state(atom_data['element'], net_charge)
@@ -193,6 +200,20 @@ class PopulationAnalysisProcessor:
         
         return charges
     
+    @staticmethod
+    def _unknown_charge(atom_data: Dict, spin_density: Optional[float] = None) -> AtomicCharge:
+        """An ECP atom whose valence charge is not known: flagged, no charge guessed."""
+        return AtomicCharge(atom_number=atom_data['atom_number'], element=atom_data['element'],
+                            mulliken_charge=None, formal_charge=None, oxidation_state=None,
+                            spin_density=spin_density, flag=VALENCE_UNKNOWN_FLAG)
+
+    def _charge_dict(self, charge: AtomicCharge) -> Dict[str, Any]:
+        """The stored form of an atomic charge; 'flag' only when there is one."""
+        d = self._dataclass_to_dict(charge)
+        if d.get('flag') is None:
+            d.pop('flag', None)
+        return d
+
     def _process_bonding_analysis(self, overlap_data: List[Dict]) -> List[BondInformation]:
         """Analyze bonding from overlap population data."""
         bonds = []
@@ -351,6 +372,8 @@ class PopulationAnalysisProcessor:
                 element = charge.get('element') if isinstance(charge, dict) else charge.element
                 mulliken_charge = charge.get('mulliken_charge') if isinstance(charge, dict) else charge.mulliken_charge
                 
+                if mulliken_charge is None:
+                    continue  # flagged ECP atom without a valence charge
                 if element not in elements:
                     elements[element] = []
                 elements[element].append(mulliken_charge)
