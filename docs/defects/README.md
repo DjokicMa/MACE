@@ -268,6 +268,16 @@ applied, aligning the far-atom potentials made the agreement between cell
 sizes **worse** for charged cells (53 and 127 atom cells). It is off by
 default for that reason.
 
+**Sign convention (assumed, not verified).** The term added is q x (-dV), with
+dV the far-atom mean of V0(defect) - V0(pristine) from POTC.DAT, converted from
+au to eV. That sign is right if V0 is the electrostatic potential in the usual
+convention - the energy of a unit *positive* test charge, so that the defect
+cell's one-electron levels (its VBM) sit -dV relative to the pristine cell's.
+The manual (p.352) calls V "the exact electrostatic potential" and relates it to
+the charge density by Poisson's law, but MACE has not checked the sign against a
+reference calculation. Before relying on `--apply-alignment`, check the sign of
+dV on a case with a known answer.
+
 ## Refusals
 
 | host or request | reason |
