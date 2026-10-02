@@ -103,7 +103,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (the run falls back to HF; measured on CRYSTAL23). MACE never wrote it;
   `mace ions` now refuses a deck that has one (also with `--replace`, which
   used to strip `CHEMOD` and keep the stray `END`), and opt2d12 warns that
-  such a parent ran HF.
+  such a parent ran HF. A `CHEMOD` record whose atom labels stand on lines of
+  their own, the shell charges on the next line (as CRYSTAL also reads it),
+  is now read, carried and stripped whole; it used to be cut after one line
+  per atom, which hid that `END` from the check.
 
 ## [1.1.4] - 2026-10-02
 

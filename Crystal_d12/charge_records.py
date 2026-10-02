@@ -30,6 +30,37 @@ def _records(text: str) -> List[str]:
     return text.splitlines()
 
 
+def _numeric_line(line: str) -> bool:
+    """True for a line of numbers only (a CHEMOD label or shell-charge record)."""
+    tokens = line.split()
+    if not tokens:
+        return False
+    try:
+        for t in tokens:
+            float(t.upper().replace("D", "E"))
+    except ValueError:
+        return False
+    return True
+
+
+def chemod_end(lines: List[str], i: int) -> Optional[int]:
+    """Index just past the CHEMOD record starting at lines[i], or None if it is malformed.
+
+    CRYSTAL reads each atom's record (label, then its shell charges) free
+    format, so the label may share a line with the charges or stand on a line
+    of its own, the charges following; both layouts occur. The record is the
+    count line plus every line of numbers after it (at least one per atom).
+    """
+    try:
+        n = int(lines[i + 1].split()[0])
+    except (ValueError, IndexError):
+        return None
+    j = i + 2
+    while j < len(lines) and _numeric_line(lines[j]):
+        j += 1
+    return max(j, i + 2 + n)
+
+
 def extract_charge_records(parent_text: str) -> Dict[str, List[str]]:
     """The CHEMOD, CHARGED and DOPING records of a deck, as their original lines.
 
@@ -43,13 +74,12 @@ def extract_charge_records(parent_text: str) -> Dict[str, List[str]]:
     while i < len(lines):
         key = lines[i].strip().upper()
         if key == "CHEMOD" and not found["CHEMOD"] and i + 1 < len(lines):
-            try:
-                n = int(lines[i + 1].split()[0])
-            except (ValueError, IndexError):
+            end = chemod_end(lines, i)
+            if end is None:
                 i += 1
                 continue
-            found["CHEMOD"] = lines[i:i + 2 + n]
-            i += 2 + n
+            found["CHEMOD"] = lines[i:end]
+            i = end
             continue
         if key == "CHARGED" and not found["CHARGED"]:
             found["CHARGED"] = [lines[i]]
@@ -130,9 +160,8 @@ def library_basis_end(lines: List[str]) -> Optional[int]:
         while j < len(lines):
             key = lines[j].strip().upper()
             if key == "CHEMOD":
-                try:
-                    j += 2 + int(lines[j + 1].split()[0])
-                except (ValueError, IndexError):
+                j = chemod_end(lines, j)
+                if j is None:
                     return None
                 continue
             if key == "CHARGED":

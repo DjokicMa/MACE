@@ -58,7 +58,8 @@ except ImportError:
         frag = importlib.util.module_from_spec(_spec)
         _spec.loader.exec_module(frag)
 
-from charge_records import LIBRARY_END_MESSAGE, _basis_insert_index, extract_charge_records, library_basis_end
+from charge_records import (LIBRARY_END_MESSAGE, _basis_insert_index, chemod_end, extract_charge_records,
+                            library_basis_end)
 from d12_writer import DEFAULT_SPINLOCK_CYCLES
 
 IonChargeError = frag.IonChargeError
@@ -721,11 +722,10 @@ def strip_charge_records(text: str) -> str:
     while i < len(lines):
         key = lines[i].strip().upper()
         if key == "CHEMOD" and i + 1 < len(lines):
-            try:
-                i += 2 + int(lines[i + 1].split()[0])
+            end = chemod_end(lines, i)
+            if end is not None:
+                i = end
                 continue
-            except (ValueError, IndexError):
-                pass
         if key == "CHARGED":
             i += 1
             continue

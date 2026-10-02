@@ -143,3 +143,37 @@ def test_cif2d12_ion_charges_write_no_end_after_chemod(tmp_path):
     deck = next((tmp_path / "out").glob("*.d12")).read_text()
     assert "CHEMOD" in deck
     _assert_no_end_after_library(deck)
+
+
+# CRYSTAL reads each CHEMOD atom record free-format, so the label may stand on
+# a line of its own with the shell charges on the next one; the decks of the
+# HPCC measurement above were written that way (accepted: "ELECTRONIC
+# CONFIGURATION MODIFIED IN 1 ATOMS").
+CHEMOD_LI_TWO_LINE = "CHEMOD\n1\n1\n2.0 0.0 0.0 0.0 0.0\n"
+BAD_PARENT_TWO_LINE = BAD_PARENT.replace(CHEMOD_LI, CHEMOD_LI_TWO_LINE)
+
+
+def test_the_measured_failure_shape_is_found_with_the_label_on_its_own_line():
+    lines = BAD_PARENT_TWO_LINE.splitlines()
+    assert library_basis_end(lines) == lines.index("END")
+    good = BAD_PARENT_TWO_LINE.replace(CHEMOD_LI_TWO_LINE + "END\n", CHEMOD_LI_TWO_LINE)
+    assert library_basis_end(good.splitlines()) is None
+
+
+def test_a_two_line_chemod_record_is_read_and_stripped_whole():
+    from charge_records import extract_charge_records
+    from ion_charges import strip_charge_records
+    rec = extract_charge_records(BAD_PARENT_TWO_LINE)
+    assert rec["CHEMOD"] == CHEMOD_LI_TWO_LINE.splitlines()
+    stripped = strip_charge_records(BAD_PARENT_TWO_LINE)
+    assert "2.0 0.0 0.0 0.0 0.0" not in stripped
+    assert "SOLDEF2MSVP\nEND\n" in stripped  # the stray END stays visible to the guard
+
+
+def test_mace_ions_replace_refuses_the_stray_end_after_a_two_line_chemod(tmp_path):
+    deck = tmp_path / "parent.d12"
+    deck.write_text(BAD_PARENT_TWO_LINE)
+    run = _run(["ions", str(deck), "--net-charge", "1", "--replace", "-o", "out"], tmp_path)
+    assert run.returncode != 0, run.stdout + run.stderr
+    assert not (tmp_path / "out" / "parent.d12").exists()
+    assert "END right after the BASISSET" in run.stderr
