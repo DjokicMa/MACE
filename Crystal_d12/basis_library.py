@@ -31,7 +31,6 @@ a user's own basis directory - is still read from disk by the callers.
 Standard library only.
 """
 import functools
-import re
 import os
 
 FORMAT_HEADER = "#%MACE-BASIS-LIBRARY"
@@ -463,26 +462,3 @@ def numeric_tokens(record):
 def same_numbers(a, b):
     return numeric_tokens(a) == numeric_tokens(b)
 
-
-_END_OF_BASIS = re.compile(r"\s*99\s+0\s*")
-
-
-def parse_basis_block(lines):
-    """Split an explicit basis block into records.
-
-    ``lines`` starts at the first "NAT NSHL" line of a deck's basis input.
-    Returns ([(NAT, record text), ...], index of the "99 0" line). Raises
-    GrammarError if the lines are not a run of complete records ending in
-    "99 0"."""
-    out = []
-    i = 0
-    while i < len(lines):
-        if _END_OF_BASIS.fullmatch(lines[i]):
-            return out, i
-        if not lines[i].strip():
-            i += 1
-            continue
-        record, _ = cut_record("\n".join(lines[i:]))
-        out.append((int(record.split()[0]), record))
-        i += record.count("\n")
-    raise GrammarError("basis input does not end with 99 0")

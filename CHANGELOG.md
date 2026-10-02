@@ -65,13 +65,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     records say "unverified".
   - `python mace_config.py` (`ensure_paths_exist`) reports the three `.lib`
     files under the same names. This is diagnostic output only.
-- **opt2d12 refuses to carry a parent's `CHEMOD` onto a different basis
-  set.** CHEMOD lists charges per shell of the basis it was written for
-  (manual p.80). This covers a change to another internal set, internal to
-  explicit or the reverse, or an explicit record whose shells or numbers
-  differ (for example triplezeta to its rev2022 update). opt2d12 now names
-  the reason and writes no deck, where it used to carry the records onto the
-  wrong shells. A child with its own CHEMOD is not affected.
 
 ### Fixed
 
