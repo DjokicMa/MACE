@@ -120,11 +120,11 @@ class WorkflowEngine:
                         normalize_plan_functionals(plan)
                         return plan
                     except Exception as e:
-                        print(f"DEBUG: Error reading workflow plan: {e}")
+                        print(f"Error reading workflow plan {candidate}: {e}")
                         return None
 
-        print(f"DEBUG: Could not find workflow plan file for {workflow_id}")
-        print(f"DEBUG: Searched in: {[str(p) for p in search_paths if p.exists()]}")
+        print(f"Could not find the workflow plan file for {workflow_id}")
+        print(f"  Searched in: {[str(p) for p in search_paths if p.exists()]}")
         return None
 
     def get_workflow_sequence(self, workflow_id: str) -> Optional[List[str]]:
@@ -133,7 +133,6 @@ class WorkflowEngine:
         if plan is None:
             return None
         sequence = plan.get('workflow_sequence', [])
-        print(f"DEBUG: Found workflow sequence: {sequence}")
         return sequence
 
     def _get_plan_step_config(self, workflow_id: str, calc_type: str) -> Dict[str, Any]:
@@ -1227,7 +1226,7 @@ fi'''
                     if step_dir.is_dir() and step_dir.name.startswith("step_"):
                         for mat_dir in step_dir.iterdir():
                             if mat_dir.is_dir() and self.extract_core_material_name(material_id) in mat_dir.name:
-                                print(f"DEBUG: Found existing workflow {wf_dir.name} for material {material_id}")
+                                print(f"Found existing workflow {wf_dir.name} for material {material_id}")
                                 return wf_dir
         
         # Last resort - create new workflow (this should rarely happen)
@@ -2155,11 +2154,8 @@ fi'''
         if not workflow_id and os.environ.get('MACE_WORKFLOW_ID'):
             workflow_id = os.environ.get('MACE_WORKFLOW_ID')
         
-        print(f"DEBUG: Extracted workflow_id: {workflow_id}")
-        print(f"DEBUG: Settings: {settings}")
         
         planned_sequence = self.get_workflow_sequence(workflow_id) if workflow_id else None
-        print(f"DEBUG: Planned sequence: {planned_sequence}")
 
         # No plan -> no progression. A hand-submitted calculation reaches this
         # method through the same completion callback a workflow uses, and the
@@ -2181,9 +2177,7 @@ fi'''
             if planned_sequence:
                 # Find current position in sequence and get next step
                 current_index = self._find_calc_position_in_sequence(calc_type, completed_calc, planned_sequence)
-                print(f"DEBUG: Current index in sequence: {current_index}")
                 next_steps = self._get_next_steps_from_sequence(current_index, planned_sequence, calc_type)
-                print(f"DEBUG: Next steps: {next_steps}")
                 
                 # Track completed and failed calculations for dependency checking
                 all_calcs = self.db.get_calculations_by_status(material_id=material_id)
@@ -2558,24 +2552,19 @@ fi'''
             if seq_base == base_type:
                 type_positions.append(i)
         
-        print(f"DEBUG _find_calc_position: calc_type={calc_type}, base_type={base_type}")
-        print(f"DEBUG _find_calc_position: completed_count={completed_count}, type_positions={type_positions}")
         
         # Return the position corresponding to the just-completed calculation
         # completed_count = 1 means we just finished the first OPT, so we're at position 0
         if completed_count > 0 and completed_count <= len(type_positions):
             position = type_positions[completed_count - 1]
-            print(f"DEBUG _find_calc_position: returning position {position}")
             return position
         elif type_positions:
             # We've done more than planned, return last position of this type
             position = type_positions[-1]
-            print(f"DEBUG _find_calc_position: returning last position {position}")
             return position
         else:
             # Not found in sequence, return end
             position = len(planned_sequence) - 1
-            print(f"DEBUG _find_calc_position: returning end position {position}")
             return position
                 
     def _get_next_steps_from_sequence(self, current_index: int, planned_sequence: List[str], 
@@ -3169,7 +3158,6 @@ fi'''
                     if target_base_type == "FREQ":
                         freq_settings = workflow_config.get('frequency_settings') or workflow_config.get('freq_settings')
                         if freq_settings:
-                            print(f"  DEBUG: Found frequency settings: {freq_settings}")
                             # Check if it's the new comprehensive format or old format
                             if isinstance(freq_settings, dict):
                                 # New comprehensive format - pass through directly
