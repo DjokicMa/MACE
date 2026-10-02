@@ -1,0 +1,4 @@
+{
+  "_comment": "Absolute energies (with units) from the SAME method and basis as the set: PBE0/POB-TZVP-REV2. Placeholder value - replace it with your own reference (e.g. half the energy of O2 for O-rich conditions).",
+  "O": "-75.0 Ha"
+}
