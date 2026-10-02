@@ -1661,8 +1661,14 @@ def main():
 
         ui.info(f"Found {len(out_files)} output files")
 
+        # A config file's calculation_type answers the type question: load it
+        # first (it was loaded after the question, so a batch run with nothing
+        # on stdin hit the menu and the config's type was never used).
+        loaded_config = load_d3_config(args.config_file) if args.config_file else None
+        config_calc_type = (loaded_config or {}).get("calculation_type")
+
         # Get calculation type
-        if not args.calc_type:
+        if not args.calc_type and not config_calc_type:
             print()
             ui.info("Select calculation type for all files:")
             ui.info("1: BAND - Electronic band structure")
@@ -1672,23 +1678,30 @@ def main():
             ui.info("5: POTENTIAL - Electrostatic potential")
             ui.info("6: CHARGE+POTENTIAL - Combined calculation")
 
-            choice = input("\nSelect type (1-6): ").strip()
             calc_types = {
                 "1": "BAND", "2": "DOSS", "3": "TRANSPORT",
                 "4": "CHARGE", "5": "POTENTIAL", "6": "CHARGE+POTENTIAL"
             }
-            while choice not in calc_types:
-                # Re-prompt instead of silently defaulting a typo to BAND, which
-                # would generate the wrong property calculation with no warning
-                # (same contract as the single-file path).
-                ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-6.")
-                choice = input("Select type (1-6): ").strip()
+            try:
+                choice = input("\nSelect type (1-6): ").strip()
+                while choice not in calc_types:
+                    # Re-prompt instead of silently defaulting a typo to BAND, which
+                    # would generate the wrong property calculation with no warning
+                    # (same contract as the single-file path).
+                    ui.warn(f"  '{choice}' is not a valid choice; enter a number 1-6.")
+                    choice = input("Select type (1-6): ").strip()
+            except EOFError:
+                print()
+                ui.err("No calculation type: give --calc-type, or a config file with "
+                       "calculation_type. No D3 file was written.")
+                sys.exit(1)
             calc_type = calc_types[choice]
         else:
-            calc_type = args.calc_type
+            calc_type = args.calc_type or config_calc_type
         
         # Ask about shared settings if not specified and more than one file
-        if not args.shared_settings and len(out_files) > 1:
+        # (a config file is shared by every file already)
+        if not args.shared_settings and len(out_files) > 1 and not args.config_file:
             print()
             ui.info("Multiple files detected. Use shared settings for all files?")
             use_shared = yes_no_prompt("Use same configuration for all files?", "yes")
@@ -1699,7 +1712,7 @@ def main():
         
         # Load from config file if specified
         if args.config_file:
-            shared_config = load_d3_config(args.config_file)
+            shared_config = loaded_config
             if shared_config:
                 print_d3_config_summary(shared_config)
                 # Validate configuration
