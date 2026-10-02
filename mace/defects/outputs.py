@@ -7,8 +7,10 @@ Facts this module relies on (measured on CRYSTAL23):
 
 * DOPING prints no message, and the header "N. OF ELECTRONS PER CELL" still
   shows the count BEFORE doping. The real count is the Mulliken
-  "NO. OF ELECTRONS" line (ALPHA+BETA block, printed with PPAN). The header is
-  never used as the electron count.
+  "NO. OF ELECTRONS" line (ALPHA+BETA block, printed with PPAN). The header
+  alone is never taken as the count: the spheropole offset uses header + DOPING.
+* The dielectric tensors of CPHF ('DIELECTRIC TENSOR', principal axes) and of
+  FREQCALC INTENS INTCPHF (the vibrational static contribution as well).
 * POTC.DAT (``POTC / 0 0 0``): point index, x y z in bohr, V0, field
   components; atomic units, 6 significant figures. The planar average
   (``POTC / 2 41 0``) is an XMGR text file with ``#`` and ``@`` lines.
@@ -222,6 +224,57 @@ def spheropole(text: str) -> Optional[float]:
     for m in re.finditer(r"::: EXT EL-SPHEROPOLE\s+(\S+)", text):
         pass
     return float(m.group(1)) if m else None
+
+
+_DIELECTRIC = re.compile(r"DIELECTRIC TENSOR\s*\n\s*TENSOR IN PRINCIPAL AXES SYSTEM\s*\n"
+                         r"\s*AA\s+(\S+)\s+BB\s+(\S+)\s+CC\s+(\S+)")
+_VIB_SUM = re.compile(r"SUM TENSOR OF THE VIBRATIONAL CONTRIBUTIONS TO THE STATIC DIELECTRIC\s+TENSOR\s*\n"
+                      r"((?:\s*-?\d+\.\d+\s+-?\d+\.\d+\s+-?\d+\.\d+\s*\n){3})")
+
+
+@dataclass
+class Dielectric:
+    """Dielectric data of a CPHF or FREQCALC INTCPHF output."""
+    electronic: Optional[Tuple[float, float, float]] = None   # principal values of eps_inf
+    vibrational: Optional[List[List[float]]] = None            # ionic contribution (3x3)
+
+    @property
+    def eps_inf(self) -> Optional[float]:
+        """Isotropic average of the electronic (clamped-ion) tensor."""
+        return sum(self.electronic) / 3.0 if self.electronic else None
+
+    @property
+    def eps_0(self) -> Optional[float]:
+        """eps_inf plus the isotropic average of the vibrational contributions."""
+        if self.eps_inf is None or self.vibrational is None:
+            return None
+        return self.eps_inf + sum(self.vibrational[i][i] for i in range(3)) / 3.0
+
+    @property
+    def anisotropy(self) -> Optional[float]:
+        """(max - min) / mean of the electronic principal values."""
+        if not self.electronic:
+            return None
+        return (max(self.electronic) - min(self.electronic)) / self.eps_inf
+
+
+def dielectric(text: str) -> Dielectric:
+    """The last 'DIELECTRIC TENSOR' (principal axes) printed by CPHF, and the
+    'SUM TENSOR OF THE VIBRATIONAL CONTRIBUTIONS TO THE STATIC DIELECTRIC TENSOR'
+    printed by FREQCALC with INTENS + INTCPHF (both checked on CRYSTAL23 MgO
+    outputs: 2.865 and 6.477)."""
+    d = Dielectric()
+    m = None
+    for m in _DIELECTRIC.finditer(text):
+        pass
+    if m:
+        d.electronic = tuple(float(x) for x in m.groups())
+    v = None
+    for v in _VIB_SUM.finditer(text):
+        pass
+    if v:
+        d.vibrational = [[float(x) for x in row.split()] for row in v.group(1).strip().splitlines()]
+    return d
 
 
 @dataclass
