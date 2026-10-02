@@ -37,6 +37,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deck carries the parent's external basis. The legacy workflow executor
   likewise logs "Basis set: <3c basis> (required by <functional>; the
   parent's basis is not used)" for a 3c step. Log only: decks are unchanged.
+- **opt2d12 no longer writes SP or OPT decks from a phonon-dispersion
+  (SCELPHONO) parent.** The parent's output geometry is the SCELPHONO
+  supercell (manual sec. 4.21 p.73-74); measured on HPCC (MgO, SCELPHONO
+  2x2x2 + DISPERSION) the SP deck written from it was a space-group-225 cell
+  with a = 5.95 A and 5 asymmetric atoms instead of MgO. Such children are
+  now refused like FREQ children, with the advice to make them from the OPT
+  or SP output the dispersion run started from. Deck change: these decks are
+  no longer written.
 
 ## [1.1.4] - 2026-10-02
 

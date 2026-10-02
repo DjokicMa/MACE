@@ -1828,12 +1828,21 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     # sec. 4.21 p.73; the geometry CRYSTAL prints after it is the supercell,
     # primitive-cell atoms first, p.74), and DISPERSION runs on that cell
     # (sec. 8.8 p.232). A FREQ deck from such a run starts from the supercell
-    # and, carrying the parent's SCELPHONO, would expand it again.
-    if calc_type == "FREQ" and parent_scelphono:
-        reason = ("the parent ran a phonon dispersion (SCELPHONO): its geometry is the "
-                  "SCELPHONO supercell, which a FREQ deck with SCELPHONO would expand again")
+    # and, carrying the parent's SCELPHONO, would expand it again. An SP or
+    # OPT deck starts from that supercell too: measured on HPCC (MgO,
+    # SCELPHONO 2x2x2 + DISPERSION), the output parser returns the 16-atom
+    # supercell (a = 5.95 A, 60 deg), and the SP deck written from it was
+    # space group 225 with a = 5.95 A and 5 asymmetric atoms - not MgO.
+    if parent_scelphono:
+        if calc_type == "FREQ":
+            reason = ("the parent ran a phonon dispersion (SCELPHONO): its geometry is the "
+                      "SCELPHONO supercell, which a FREQ deck with SCELPHONO would expand again")
+        else:
+            reason = ("the parent ran a phonon dispersion (SCELPHONO): its output geometry is "
+                      "the SCELPHONO supercell (manual sec. 4.21 p.73-74), so a "
+                      f"{calc_type} deck would start from the supercell")
         _fail(reason, f"\nNot writing {os.path.basename(new_filename)}: {reason}. Make the "
-                      f"FREQ deck from the OPT or SP output the dispersion run started from.")
+                      f"{calc_type} deck from the OPT or SP output the dispersion run started from.")
         return False, options
 
     # CUSTOM-XC names the parent's own EXCHANGE/CORRELAT/HYBRID records; a
