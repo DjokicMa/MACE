@@ -1,8 +1,9 @@
 """A Pcrystal run hides "UNIT CELL NOT NEUTRAL": its .out ends in MPI_Abort only.
 
-Real CRYSTAL23 outputs (HPCC, 2026-10-01; tests/data/charged_runs/): a
-periodic box with an explicit basis and a non-neutral CHEMOD but no CHARGED.
-The serial run prints
+Synthetic excerpts in CRYSTAL23 format (tests/data/charged_runs/), modelled
+on real runs: a hand-built Li+ FSI- ethylene carbonate molecule in a periodic
+box, with an explicit basis and a non-neutral CHEMOD but no CHARGED. The
+serial run prints
 
     ERROR **** INPBAS **** UNIT CELL NOT NEUTRAL
 
