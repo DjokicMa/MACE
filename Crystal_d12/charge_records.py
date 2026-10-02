@@ -8,6 +8,8 @@ electrons the cell holds or where they start:
     CHARGED  (basis-set input, manual p.80)  allow a non-neutral periodic cell
     DOPING   (SCF input, manual p.102)       add (or with a negative value, remove)
              electrons; a compensating background is added when needed
+    GHOSTS   (basis-set input, manual p.82)  atoms kept as basis functions only
+             (a vacancy with its basis, as `mace defects --ghost` writes)
 
 A deck derived from such a parent (SP, FREQ, ... from an OPT) must keep them, or
 it silently runs a different charge state. MACE writes derived decks from the
@@ -89,6 +91,33 @@ def extract_charge_records(parent_text: str) -> Dict[str, List[str]]:
             continue
         i += 1
     return found
+
+
+def extract_ghosts(text: str) -> List[str]:
+    """The GHOSTS record of a deck (basis-set input, manual p.82) as its lines, or [].
+
+    "GHOSTS", the count NA, then NA atom labels, free format (one or several
+    lines). A record that does not read that way is not returned.
+    """
+    lines = _records(text)
+    for i in range(1, len(lines)):
+        if lines[i].strip().upper() != "GHOSTS":
+            continue
+        try:
+            n = int(lines[i + 1].split()[0])
+        except (ValueError, IndexError):
+            return []
+        labels, j = [], i + 2
+        while len(labels) < n and j < len(lines) and _numeric_line(lines[j]):
+            labels += lines[j].split()
+            j += 1
+        return lines[i:j] if len(labels) == n else []
+    return []
+
+
+def ghost_labels(ghosts: List[str]) -> List[int]:
+    """The atom labels a GHOSTS record names."""
+    return [int(t) for line in ghosts[2:] for t in line.split()]
 
 
 def chemod_labels(chemod: List[str]) -> List[int]:
@@ -369,6 +398,17 @@ def _child_electrons(child_text: str):
         deficit = explicit_chemod_deficit(child_text, rec["CHEMOD"])
         if deficit:
             total -= deficit
+    # A ghost atom keeps its basis functions but loses its nucleus and electrons.
+    for label in ghost_labels(extract_ghosts(child_text)):
+        try:
+            z = geom.z_labels[label - 1]
+        except IndexError:
+            return None, None
+        if deck_basis_name(child_text):
+            total -= z % 100
+        else:
+            block = blocks.get(z) or blocks.get(z % 100)
+            total -= block.valence if block else Decimal(z % 100)
     if rec["DOPING"]:
         total += _num(rec["DOPING"][1])
     return total, geom.dimensionality
@@ -504,11 +544,13 @@ def carry_charge_records(child_text: str, parent_text: str,
     charge it carried (an explicit basis with a non-neutral CHEMOD, measured to
     set the electron count) becomes DOPING, taken from the parent's Mulliken
     count when its .out is given. CHARGED goes with CHEMOD. DOPING is kept.
+    GHOSTS is copied, ahead of CHEMOD, when both decks list the same atoms.
     An odd count in a closed-shell child gets the parent's SPIN/SPINLOCK or
     is refused (ChargeCarryError).
     """
     parent = extract_charge_records(parent_text)
-    if not any(parent.values()):
+    parent_ghosts = extract_ghosts(parent_text)
+    if not any(parent.values()) and not parent_ghosts:
         return child_text, []
     lines = _records(child_text)
     trailing_newline = child_text.endswith("\n")
@@ -554,6 +596,17 @@ def carry_charge_records(child_text: str, parent_text: str,
             carry_chemod = True
 
     basis_add: List[str] = []
+    if parent_ghosts and not extract_ghosts(child_text):
+        # GHOSTS names atoms by their label, as CHEMOD does: kept only when
+        # the child lists the same atoms.
+        if n_parent is None or n_parent != n_child:
+            notes.append(
+                "WARNING: the parent deck has GHOSTS but the new deck lists "
+                f"{n_child} atoms against the parent's {n_parent}, so its atom labels "
+                "cannot be trusted; GHOSTS was NOT copied - add it by hand")
+        else:
+            basis_add += parent_ghosts
+            notes.append(f"kept the parent's GHOSTS (atoms {', '.join(map(str, ghost_labels(parent_ghosts)))})")
     if carry_chemod:
         basis_add += parent["CHEMOD"]
         notes.append(f"kept the parent's CHEMOD (atoms {', '.join(map(str, chemod_labels(parent['CHEMOD'])))})")
@@ -567,7 +620,7 @@ def carry_charge_records(child_text: str, parent_text: str,
     if basis_add:
         at = _basis_insert_index(lines)
         if at is None:
-            notes.append("WARNING: no basis-set block found; CHEMOD/CHARGED were NOT copied")
+            notes.append("WARNING: no basis-set block found; GHOSTS/CHEMOD/CHARGED were NOT copied")
         else:
             lines[at:at] = basis_add
 

@@ -139,3 +139,43 @@ def test_opt2d12_children_of_a_charged_cluster_keep_its_records(tmp_path, calc_t
     assert child[i + 1:i + 3] == ["1", "10     2.0 0.0 0.0 0.0 0.0"]
     j = child.index("DOPING")
     assert child[j + 1].strip() == "-1"
+
+
+GHOST_PARENT = """ghost parent
+CRYSTAL
+0 0 0
+225
+4.212
+2
+8  0.0 0.0 0.0
+12 0.5 0.5 0.5
+BASISSET
+POB-TZVP-REV2
+GHOSTS
+2
+1
+2
+DFT
+PBE0
+END
+SHRINK
+4 4
+END
+"""
+
+GHOST_CHILD = GHOST_PARENT.replace("ghost parent", "child").replace("GHOSTS\n2\n1\n2\n", "")
+
+
+def test_ghosts_are_kept_when_the_child_lists_the_same_atoms():
+    out, notes = carry_charge_records(GHOST_CHILD, GHOST_PARENT)
+    lines = out.splitlines()
+    at = lines.index("GHOSTS")
+    assert lines[at - 2:at + 4] == ["BASISSET", "POB-TZVP-REV2", "GHOSTS", "2", "1", "2"]
+    assert any("kept the parent's GHOSTS (atoms 1, 2)" in n for n in notes)
+
+
+def test_ghosts_are_not_kept_when_the_atom_lists_differ():
+    child = GHOST_CHILD.replace("2\n8  0.0 0.0 0.0\n12 0.5 0.5 0.5\n", "1\n8  0.0 0.0 0.0\n")
+    out, notes = carry_charge_records(child, GHOST_PARENT)
+    assert "GHOSTS" not in out.splitlines()
+    assert any("GHOSTS was NOT copied" in n for n in notes)

@@ -341,6 +341,32 @@ def extract_shrink_from_d12(d12_file: str, for_doss: bool = False, dimensionalit
     return [shrink_lines[0]]
 
 
+GHOST_SUFFIX = "_GHOST"
+
+
+def ghost_atom_labels(text: str) -> set:
+    """Labels of the atoms a run turned into ghosts (GHOSTS, manual p.82).
+
+    CRYSTAL lists them after " * ATOMS TRANSFORMED INTO GHOSTS :   N" as
+    "label(Z)" entries, e.g. "   1(  8)".
+    """
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        m = re.search(r"ATOMS TRANSFORMED INTO GHOSTS\s*:\s*(\d+)", line)
+        if not m:
+            continue
+        n, labels = int(m.group(1)), set()
+        for row in lines[i + 1:]:
+            found = re.findall(r"(\d+)\(\s*\d+\)", row)
+            if not found:
+                break
+            labels.update(int(x) for x in found)
+            if len(labels) >= n:
+                break
+        return labels
+    return set()
+
+
 def parse_basis_set_info(out_file: str) -> Tuple[List[List], int]:
     """Parse basis set information from CRYSTAL output file using alldos.py logic."""
     
@@ -388,7 +414,14 @@ def parse_basis_set_info(out_file: str) -> Tuple[List[List], int]:
     # Convert to data_list format
     for line in unclean_shells:
         data_list.append([x for x in line.split(" ") if x != ""])
-    
+
+    # A ghost atom's functions are listed under its element; projected with
+    # that element they would add the ghost's (empty) states to it.
+    ghosts = ghost_atom_labels("".join(lines))
+    for entry in data_list:
+        if len(entry) == 5 and entry[0].isdigit() and int(entry[0]) in ghosts:
+            entry[1] += GHOST_SUFFIX
+
     return data_list, n_ao
 
 
@@ -413,9 +446,12 @@ def get_atoms_and_shells(data_list: List[List]) -> Tuple[List[str], List[Dict]]:
     for i, line in enumerate(data_list):
         if len(line) == 5:
             atoms.append(line[1])  # Element symbol
-            if line[1] not in atom_list:
-                atom_and_index = [line[1], i]
-                atom_list.append(line[1])
+            # A ghost has its element's functions: CRYSTAL lists them under
+            # the first atom of that element, ghost or not.
+            element = line[1].removesuffix(GHOST_SUFFIX)
+            if element not in atom_list:
+                atom_and_index = [element, i]
+                atom_list.append(element)
                 atoms_index.append(atom_and_index)
     
     # Count shells for each atom type (similar to alldos.py's number_shells)
@@ -469,7 +505,10 @@ def get_atoms_and_shells(data_list: List[List]) -> Tuple[List[str], List[Dict]]:
                         F += 1
         atoms_shells[atom[0]] = {"S": S, "SP": SP, "P": P, "D": D, "F": F}
         S, P, SP, D, F = 0, 0, 0, 0, 0
-    
+    for atom in atoms:
+        if atom.endswith(GHOST_SUFFIX) and atom not in atoms_shells:
+            atoms_shells[atom] = dict(atoms_shells[atom.removesuffix(GHOST_SUFFIX)])
+
     return atoms, atoms_shells
 
 

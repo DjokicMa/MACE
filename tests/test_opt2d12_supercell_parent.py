@@ -81,3 +81,18 @@ def test_corpus_supercel_child_is_diamond_supercell(tmp_path, calc_type):
     assert group == 1
     assert [round(float(x), 5) for x in cell] == [5.01312, 5.01312, 5.01312, 60.0, 60.0, 60.0]
     assert len(atoms) == 16 and all(a.split()[0] == "6" for a in atoms)
+
+
+@pytest.mark.parametrize("calc_type", ["SP", "OPT"])
+def test_ghost_parent_child_keeps_ghosts_on_the_same_atom(tmp_path, calc_type):
+    """GHOSTS (basis-set input, p.82) names atom 1 of the supercell; the P1
+    child lists the supercell's atoms in CRYSTAL's order, so atom 1 is the
+    same O and the record is kept as the parent wrote it."""
+    _stage(tmp_path, "rg_q0")
+    lines, log = _opt2d12(tmp_path, "rg_q0", calc_type)
+    group, _cell, atoms = _geometry(lines)
+    assert group == 1 and len(atoms) == 64 and atoms[0].split()[-1] == "O"
+    at = lines.index("GHOSTS")
+    assert lines[at:at + 3] == ["GHOSTS", "1", "1"]
+    assert lines[at - 2:at] == ["BASISSET", "POB-TZVP-REV2"]
+    assert "kept the parent's GHOSTS" in log

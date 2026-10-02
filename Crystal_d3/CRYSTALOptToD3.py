@@ -39,7 +39,7 @@ try:
     from Crystal_d3.d3_interactive import (configure_d3_calculation, get_band_info_from_output,
                                parse_basis_set_info, get_atoms_and_shells,
                                generate_orbital_indices, create_doss_projections,
-                               extract_shrink_from_d12)
+                               extract_shrink_from_d12, ghost_atom_labels, GHOST_SUFFIX)
     from Crystal_d3.d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
                            get_seekpath_full_kpath, get_literature_kpath_vectors, unicode_to_ascii_kpoint,
@@ -49,7 +49,7 @@ except ImportError:
     from d3_interactive import (configure_d3_calculation, get_band_info_from_output,
                                parse_basis_set_info, get_atoms_and_shells,
                                generate_orbital_indices, create_doss_projections,
-                               extract_shrink_from_d12)
+                               extract_shrink_from_d12, ghost_atom_labels, GHOST_SUFFIX)
     from d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
                            get_seekpath_full_kpath, get_literature_kpath_vectors, unicode_to_ascii_kpoint,
@@ -280,6 +280,11 @@ class D3Generator:
                 break
             atom_elements.append(m.group(2))
             last_idx = idx
+        # GHOSTS atoms keep their basis but are not that element any more;
+        # the geometry listing (printed before GHOSTS acts) still names them.
+        for label in ghost_atom_labels(content):
+            if 0 < label <= len(atom_elements):
+                atom_elements[label - 1] += GHOST_SUFFIX
         if atom_elements:
             info['atom_elements'] = atom_elements
 
