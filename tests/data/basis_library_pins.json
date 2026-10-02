@@ -1028,7 +1028,7 @@
   "cif2d12/mixed_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "3818f383d98c91ed8eb7b32f48145d8bc4b4933036befd0a20d7b314bb70e4fb",
   "d12_writer/full.basis.doublezeta": "1bb9e65f4d2a72268ca4ad14d2d2740c98f25968f7b4e13b7a35594220f11934",
   "d12_writer/full.basis.triplezeta": "b145ca916629d584a5fd3e02816e0c4ef84d69fd3c79a24de21a4cd0dadb4dd7",
-  "opt2d12/tqc_agbr_opt_B3LYP-D3_optimized.d12": "5791909af81542687c48859556e4dd1aeffc6e862ab08dc4f2391235c39e0ec0"
+  "opt2d12/tqc_agbr_sp_B3LYP-D3_optimized.d12": "54136940306d600e09160ff211a8148c0b8c682d12e179a6c842b815e4d8a033"
  },
  "files": {
   "full.basis.doublezeta": {

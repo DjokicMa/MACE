@@ -1536,6 +1536,15 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                         # Handled below: a derived deck keeps its parent's mesh.
                         continue
                     options[key] = value
+                if calc_type:
+                    # An explicit --calc-type (and --opt-type) wins over the
+                    # config and over the parent's own type, which a config
+                    # without calculation_type left in place: --calc-type SP
+                    # wrote an OPT deck from an OPT parent.
+                    if options.get("calculation_type") != calc_type:
+                        ui.info(f"  Calculation type: {calc_type} (--calc-type)")
+                    options["calculation_type"] = calc_type
+                    apply_opt_type_flag(options, opt_type)
                 if "k_points" in config_data:
                     # --save-options before this release stored the saving
                     # structure's own mesh; applied here it made every mesh be
