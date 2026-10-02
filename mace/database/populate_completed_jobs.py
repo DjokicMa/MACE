@@ -105,6 +105,24 @@ def scan_for_completed_calculations(base_dir: Path) -> List[Dict]:
     return completed_calcs
 
 
+def _correct_calc_type(db, existing: Dict, scanned_type: str) -> None:
+    """Give a record the type its output shows, when an older scan typed it
+    from the file name (1.1.1 recorded an SP named "X_SLAB_OPT_FSI.out" as
+    OPT). Only a plain base type the scan itself writes is corrected: numbered
+    types (OPT2, SP2, ...) come from the workflow engine, which knows what it
+    ran. The calc_id keeps its old name - other tables refer to it."""
+    old = existing.get('calc_type')
+    if old not in CALC_TYPE_TO_BUCKET or old == scanned_type:
+        return
+    try:
+        with db._get_connection() as conn:
+            conn.execute("UPDATE calculations SET calc_type = ? WHERE calc_id = ?",
+                         (scanned_type, existing['calc_id']))
+        print(f"  Corrected {existing['calc_id']}: calc type {old} -> {scanned_type} (from its output)")
+    except Exception as e:
+        print(f"  Could not correct the calc type of {existing['calc_id']}: {e}")
+
+
 def populate_database(completed_calcs: List[Dict], db) -> int:
     """
     Populate database with completed calculations.
@@ -172,6 +190,7 @@ def populate_database(completed_calcs: List[Dict], db) -> int:
                 )
                 if same_output or same_workdir:
                     already_exists = True
+                    _correct_calc_type(db, existing, calc_type)
                     # Update status to completed if needed
                     if existing.get('status') != 'completed':
                         db.update_calculation_status(
