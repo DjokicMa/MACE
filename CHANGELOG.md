@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrading from 1.1.1-1.1.4
+
+- **Workflows planned before 1.1.2 produce mixed decks.** The plan's SP
+  basis, tolerance and functional overrides and its FREQ settings
+  (tolerances, NUMDERIV, IR/Raman) now apply, but only to steps generated
+  after the upgrade. Finish such workflows on the old version or re-plan
+  them.
+- **1.1.1 plans with a custom functional** stored prose names (HSEsol-3C,
+  HF-3C, M06-2X, HF, ...). They are now rewritten to the CRYSTAL23 keyword
+  when the plan is loaded, with a warning. A -D3 suffix CRYSTAL23 has no
+  parameters for is dropped, and an unknown name stops that step. Nothing to
+  do unless a step is refused; then re-plan it.
+- **`workflow_scripts/` is a snapshot** taken when the workflow is planned.
+  Re-plan, or copy the current `mace/submission/submitcrystal23.sh` and
+  `submit_prop.sh` into it, to get the empty-`$SCRATCH` guard and `.f20`
+  staging.
+- **`mace submit` reuses existing `<job>.sh` files.** Scripts generated
+  before 1.1.3 lack the scratch guard and GUESSP staging; regenerate them
+  with `mace submit --overwrite-sh`.
+- **Piped answer files must be regenerated.** opt2d12 now asks for the
+  integration grid, replaces the two basis menus with "Keep the basis set
+  from the original D12? [Y/n]", takes LEVSHIFT as one "LEVSHIFT ISHIFT
+  ILOCK" answer (was value, then cycles), and asks for the MAXTRADIUS value
+  and the HISTDIIS size. opt2d3 ECHG offers order 0-1 (was 0-2) and adds
+  "Number of points along the B-A segment"; without a terminal it needs
+  `map_points`/`map_coord_type` in a config. The planner's SP "Use tight
+  convergence?" and OPT "Use tighter convergence?" questions are 0-3 level
+  menus (y/yes and n/no are still taken, with a note). Shifted answers can
+  land in other questions (three invalid yes/no answers in a row now stop
+  the run); use `--save-options` and `--config-file` instead of piping.
+- **Planner and quick-start FREQ steps no longer write NUMDERIV 2.** New
+  plans use CRYSTAL's default; plans saved before 1.1.2 keep 2. Set NUMDERIV
+  2 to compare with older runs.
+- **opt2d12 templates saved by 1.1.1** do not record a "no" to MAXTRADIUS or
+  SPINLOCK, so they now pick up the parent's values. Re-save the template
+  if that is not wanted.
+- **Re-organising sorts previously misfiled SP/FREQ outputs** into
+  `completesp/` and `completefreq/` (1.1.1 put them in `complete/`).
+  Records already in the database keep their old `calc_type`.
+- **`mace/database/utils/populate_completed_jobs.py` was removed.** Use
+  `mace/database/populate_completed_jobs.py`.
+- **Stale property rows.** Re-extracting a calculation now removes the rows
+  it no longer produces (1.1.1's band fields on DOSS runs, optimisation rows
+  on OPTGEOM-titled SP runs, doped BAND gaps). Rows stored without a
+  calc_id cannot be attributed to one output and are kept; rebuild the
+  database to clean those.
+- **Basis sets are one file per family.** Old `basis_sets/<family>/` paths
+  still work, including at the custom-path prompt. Outside tools that read
+  the per-element files must use `basis_library.read_record`.
+
 ### Added
 
 - **Opt-in TZVP-REV2 2022 update: `full.basis.triplezeta.rev2022`.** The
@@ -79,7 +129,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `electron_count` and `fragment_charges` (each molecule/ion's charge, spin,
   formal charge and deviation, an ion more than 0.5 e from its formal charge
   flagged) when a run was charged (Mulliken count different from the sum of
-  valence charges, a renormalised guess, or "UNIT CELL NOT NEUTRAL"), and the
+  valence charges, a renormalised guess other than after a GUESSP restart,
+  or "UNIT CELL NOT NEUTRAL"), and the
   extractor prints them as a Fragments section;
   `mace analyze --extract-properties <dir> --fragments` (or
   `MACE_FRAGMENT_CHARGES=1`) computes them for every run. Neutral runs get
