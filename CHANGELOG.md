@@ -54,6 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (cold start), and GUESSPNOSO/2NDVARIAT are left as written with a warning
   (CRYSTAL stops without fort.20, measured). A GUESSP outside TWOCOMPON is
   handled as before.
+- `opt2d3 --config-file` finds the shipped example configs by bare name
+  (`band_auto_everything.json`) from any directory, and a relative
+  `.../Crystal_d3/example_configs/<name>` written against another working
+  directory, and prints the file it loaded. A configuration that cannot be
+  loaded now ends opt2d3 with exit status 1 instead of 0 with no deck.
 
 ## [1.1.4] - 2026-10-02
 
