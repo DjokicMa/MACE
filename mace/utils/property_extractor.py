@@ -623,7 +623,18 @@ class CrystalPropertyExtractor:
             props['overlap_population'] = general_overlap
         
         props['is_spin_polarized'] = is_spin_polarized
-        
+
+        # Valence charges of pseudopotential atoms: their Mulliken populations
+        # count valence electrons only (see population_analysis_processor).
+        if any(k.startswith('mulliken_') for k in props):
+            try:
+                from mace.utils.population_analysis_processor import valence_charges
+            except ImportError:
+                from population_analysis_processor import valence_charges
+            valence = valence_charges(content)
+            if valence:
+                props['mulliken_valence_charges'] = {str(z): v for z, v in valence.items()}
+
         return props
     
     def _extract_geometry_optimization(self, content: str) -> Dict[str, Any]:

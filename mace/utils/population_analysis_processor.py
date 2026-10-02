@@ -12,9 +12,43 @@ Author: Generated for materials database project
 """
 
 import json
+import re
 import numpy as np
 from typing import Dict, List, Any, Tuple, Optional
 from dataclasses import dataclass
+
+
+_PP_VALENCE = re.compile(r"ATOMIC NUMBER\s+(\d+)\s*,\s*NUCLEAR CHARGE\s+([-\d.]+)")
+
+
+def valence_charges(text: str) -> Dict[int, float]:
+    """{atomic number: valence charge} of the pseudopotential atoms in a CRYSTAL .out.
+
+    Read from the PSEUDOPOTENTIAL INFORMATION block, e.g. "ATOMIC NUMBER  82,
+    NUCLEAR CHARGE 22.000, GIVEN IN INPUT". The key is the plain atomic
+    number (Z % 100). All-electron atoms are not listed.
+    """
+    found = {}
+    for z, charge in _PP_VALENCE.findall(text):
+        try:
+            found[int(z) % 100] = float(charge)
+        except ValueError:
+            continue
+    return found
+
+
+def valence_charge(z_column: int, valence: Optional[Dict[Any, float]] = None) -> float:
+    """The nuclear charge a Mulliken population is measured against.
+
+    The Mulliken Z column carries CRYSTAL's conventional label (282 for Pb with
+    an input ECP); the population counts valence electrons only, so an ECP
+    atom's reference is its pseudopotential NUCLEAR CHARGE, not Z.
+    """
+    z = int(z_column) % 100
+    for key in (z, str(z)):
+        if valence and key in valence:
+            return float(valence[key])
+    return float(z)
 
 
 @dataclass
@@ -88,6 +122,12 @@ class PopulationAnalysisProcessor:
             'chemical_summary': {}
         }
         
+        # Valence charges of pseudopotential atoms (absent for all-electron runs)
+        valence = property_data.get('mulliken_valence_charges') or {}
+        if isinstance(valence, str):
+            valence = json.loads(valence)
+        self._valence = valence
+
         # Process Mulliken population data
         if 'mulliken_population' in property_data:
             mulliken_data = json.loads(property_data['mulliken_population']) if isinstance(property_data['mulliken_population'], str) else property_data['mulliken_population']
@@ -126,7 +166,7 @@ class PopulationAnalysisProcessor:
         
         for atom_data in mulliken_data['atoms']:
             # Calculate net charge (nuclear charge - electron population)
-            nuclear_charge = atom_data['atomic_number']
+            nuclear_charge = valence_charge(atom_data['atomic_number'], getattr(self, '_valence', None))
             electron_population = atom_data['mulliken_charge']
             net_charge = nuclear_charge - electron_population
             
@@ -156,7 +196,7 @@ class PopulationAnalysisProcessor:
         
         for i, atom_data in enumerate(alpha_atoms):
             # Calculate net charge
-            nuclear_charge = atom_data['atomic_number']
+            nuclear_charge = valence_charge(atom_data['atomic_number'], getattr(self, '_valence', None))
             total_electrons = atom_data['mulliken_charge']
             net_charge = nuclear_charge - total_electrons
             
