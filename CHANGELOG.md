@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (0 allowed for reserve slots, recovery attempts and DOSS projection type
   0-4); absolute chemical potentials have no default and are asked again
   when left blank.
+- Band and phonon paths for a slab no longer print "Install 'seekpath'":
+  the library is not used for a slab on purpose (it would standardise the
+  vacuum axis; manual p.310 note 3), so the advice changed nothing. A slab
+  now gets one line saying the static in-plane path is used; a 3D cell
+  without the library still gets the install hint. The path is unchanged.
 
 ## [1.1.4] - 2026-10-02
 
