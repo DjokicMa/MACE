@@ -92,6 +92,7 @@ def copy_dependencies(target_dir: str = "."):
                 "advanced_electronic_analyzer.py",
                 "dat_file_processor.py",
                 "population_analysis_processor.py",
+                "ion_fragments.py",
                 "show_properties.py",
                 "copy_dependencies.py"
             ]

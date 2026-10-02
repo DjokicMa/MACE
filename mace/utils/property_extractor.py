@@ -38,32 +38,8 @@ except ImportError as e:
     sys.exit(1)
 
 
-# A Mulliken print's count line, with the spin-section label CRYSTAL puts on
-# the line above it in spin-polarised runs ("ALPHA+BETA ELECTRONS" for the
-# populations, "ALPHA-BETA ELECTRONS" for the spin densities; closed-shell runs
-# print the populations without a label).
-_MULLIKEN_COUNT = re.compile(
-    r'(?:^[ \t]*(ALPHA\+BETA|ALPHA-BETA)[ \t]+ELECTRONS[ \t]*\n)?'
-    r'[ \t]*MULLIKEN POPULATION ANALYSIS[^\n]*?NO\. OF ELECTRONS[ \t]+([-\d.]+)',
-    re.MULTILINE)
-
-
-def mulliken_electron_count(text: str) -> Optional[float]:
-    """The electron count of the last Mulliken population print, or None.
-
-    This is the real count: DOPING leaves the header's "N. OF ELECTRONS PER
-    CELL" at the value before doping. The ALPHA-BETA print's line is the
-    spin (nalpha - nbeta), never the count, so it is skipped.
-    """
-    count = None
-    for match in _MULLIKEN_COUNT.finditer(text):
-        if match.group(1) == "ALPHA-BETA":
-            continue
-        try:
-            count = float(match.group(2))
-        except ValueError:
-            continue
-    return count
+# The real electron count of a run (DOPING does not change the header's count)
+from mace.utils.ion_fragments import mulliken_electron_count  # noqa: E402
 
 
 def _scf_parent_of_band_output(output_file: Path) -> Optional[Path]:
