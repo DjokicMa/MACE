@@ -81,6 +81,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no parent deck at all**, a charged parent's `DOPING` is recovered from the
   .out's Mulliken count; without a Mulliken print a warning says the charge
   state cannot be recovered. Deck change for such children.
+- **A failed run's message says what CRYSTAL printed.** The queue manager
+  reported "Calculation failed with unknown error" for any error it had no
+  pattern for; it now quotes CRYSTAL's `ERROR ****` line, and for an .out
+  that ends in `MPI_Abort` with no error text says that Pcrystal can hide an
+  input error such as INPBAS "UNIT CELL NOT NEUTRAL" (measured on CRYSTAL23:
+  only a serial run prints it). The error type, and so recovery, is
+  unchanged; such outputs were and are never counted as finished (pinned on
+  the real outputs).
 - **An END after `CHEMOD` in a library-basis deck is caught.** After
   `BASISSET <library>` the lines are already block 3, so an `END` closing
   `CHEMOD` ends the input there and CRYSTAL23 silently drops the DFT block

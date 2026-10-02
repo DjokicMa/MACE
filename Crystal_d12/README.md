@@ -397,6 +397,11 @@ CRYSTAL/23-intel-2023a (2026-10-01); **[untested]** not run.
   within 4e-7 Ha), but `CHEMOD` + `DOPING -1` 47 - the charge counted twice
   [measured]. A periodic cell with a non-neutral explicit `CHEMOD` and no
   `CHARGED` stops: `ERROR **** INPBAS **** UNIT CELL NOT NEUTRAL` [measured].
+  Under Pcrystal (8 ranks) that text is not printed at all - the .out ends in
+  `MPI_Abort` only; a serial run of the same deck shows it [measured]. MACE
+  never counts such an output as finished (`mace completion` sorts it with the
+  runtime failures), and the queue manager's failure message says to rerun
+  serially or read fort.87 rather than "unknown error".
   NO3- split 1/3 over its O under `CHARGED` gave 32.000000 electrons, and so
   did 4.33 x 3 (0.01 short): CRYSTAL rounds the count [measured]. MACE still
   writes such splits as 4.333333 / 4.333333 / 4.333334 so the sum is exact.
