@@ -240,6 +240,13 @@ def _match(path):
         for root in _bundled_roots():
             candidate = _normalise(os.path.join(root, family))
             if norm == candidate or real == os.path.realpath(candidate):
+                # Serve the library beside the matched root: $MACE_HOME's for
+                # a $MACE_HOME path. This module's own basis_sets/ is only the
+                # fallback - it is absent when copy_dependencies copied the
+                # scripts into a job directory.
+                for lib in (os.path.join(root, family + ".lib"), library_file(family)):
+                    if os.path.isfile(lib):
+                        return family, lib
                 return family, library_file(family)
     sibling = _sibling_library(norm)
     if sibling:

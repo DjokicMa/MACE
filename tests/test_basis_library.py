@@ -171,6 +171,60 @@ def test_a_copied_loader_still_serves_the_checkouts_paths(tmp_path, monkeypatch)
     assert copied.bundled_family_for(str(own)) is None
 
 
+def test_copied_scripts_with_mace_home_set_still_read_the_bundled_basis(tmp_path):
+    """The real job-directory setup: copy_dependencies copies the Crystal_d12
+    scripts flat into a directory, and activate_mace.sh exports MACE_HOME, so
+    mace_config's DEFAULT_TZ_PATH lies under $MACE_HOME. That path must be
+    served from $MACE_HOME's <family>.lib - not from a basis_sets/ beside the
+    copied basis_library.py, which does not exist - as main read the directory
+    there. Run as a subprocess so nothing of this test process leaks in."""
+    from mace.utils.copy_dependencies import copy_dependencies
+
+    job = tmp_path / "job"
+    job.mkdir()
+    with contextlib.redirect_stdout(io.StringIO()):
+        copy_dependencies(str(job))
+    assert (job / "basis_library.py").is_file()
+    assert not (job / "basis_sets").exists()
+    script = (
+        "import sys\n"
+        f"sys.path[:0] = [{str(job)!r}]\n"
+        f"sys.path.append({str(REPO_ROOT)!r})\n"
+        "import basis_library, mace_config\n"
+        f"assert basis_library.__file__.startswith({str(job)!r}), basis_library.__file__\n"
+        "from d12_constants import read_basis_file\n"
+        "for path in (mace_config.DEFAULT_TZ_PATH, mace_config.DEFAULT_DZ_PATH,\n"
+        "             mace_config.DEFAULT_TZ_REV2022_PATH):\n"
+        "    assert basis_library.record_exists(path, 6), path\n"
+        "    print(repr(read_basis_file(path, 6)))\n"
+    )
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH",)}
+    env["MACE_HOME"] = str(REPO_ROOT)
+    result = subprocess.run([sys.executable, "-c", script], cwd=job, env=env,
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "not found" not in result.stdout
+    expected = [repr(BL.read_record(str(BASIS_SETS / f), 6)) for f in
+                ("full.basis.triplezeta", "full.basis.doublezeta",
+                 "full.basis.triplezeta.rev2022")]
+    assert result.stdout.splitlines() == expected
+
+
+def test_a_root_match_prefers_the_library_beside_that_root(tmp_path, monkeypatch):
+    """A path under $MACE_HOME is served from $MACE_HOME's library file, even
+    when this module's own basis_sets/ has one too."""
+    home = tmp_path / "home"
+    (home / "Crystal_d12" / "basis_sets").mkdir(parents=True)
+    lib = home / "Crystal_d12" / "basis_sets" / "stuttgart.lib"
+    lib.write_bytes(b"#%MACE-BASIS-LIBRARY 1\n#%family stuttgart\n"
+                    b"#%record 6 bytes=4\n#%  provenance made up\n6 0\n\n")
+    monkeypatch.setenv("MACE_HOME", str(home))
+    path = str(home / "Crystal_d12" / "basis_sets" / "stuttgart") + "/"
+    assert BL.bundled_family_for(path) == "stuttgart"
+    assert BL.read_record(path, 6) == "6 0\n"
+    assert not BL.record_exists(path, 8)
+
+
 def test_mace_config_reports_the_library_files():
     """`python mace_config.py` lists the bundled basis sets as present."""
     env = {k: v for k, v in os.environ.items() if k != "MACE_HOME"}
