@@ -1344,7 +1344,8 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         settings["use_original_external_basis"] = True
         if not settings.get("basis_set"):
             settings["basis_set"] = "EXTERNAL (from original D12)"
-        ui.info("  Using external basis set from original D12 file")
+        # Said once the config or answers have chosen the method (below):
+        # an HF-3c or DFT-3c child is written with its own basis instead.
     elif not settings.get("basis_set"):
         # No external basis and no basis set specified - use default internal
         settings["basis_set"] = "POB-TZVP-REV2"
@@ -1500,7 +1501,6 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 if had_external_basis and "basis_set_type" not in config_data and "basis_set_path" not in config_data:
                     options["use_original_external_basis"] = True
                     options["basis_set_type"] = external_basis_type
-                    ui.info("  Preserving external basis settings from original D12")
 
                 # Handle both "frequency_settings" (from workflow) and "freq_settings" (direct usage)
                 freq_key = None
@@ -1733,7 +1733,6 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         if had_external_basis and "basis_set_type" not in shared_settings and "basis_set_path" not in shared_settings:
             options["use_original_external_basis"] = True
             options["basis_set_type"] = external_basis_type
-            ui.info("  Preserving external basis settings from original D12")
 
         # Ensure consistency for 3C methods
         if options.get("functional") in [
@@ -1791,6 +1790,14 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         else:
             options["write_only_unique"] = False
     
+    # The deck carries the parent's external basis only on this branch of
+    # the writer; a 3c functional always writes BASISSET <its basis>.
+    if (options.get("functional") not in THREE_C_FUNCTIONALS
+            and options.get("basis_set_type") == "EXTERNAL"
+            and options.get("use_original_external_basis")
+            and external_basis_data):
+        ui.info("  Using external basis set from original D12 file")
+
     # Create output filename
     base_name = os.path.splitext(output_file)[0]
     calc_type = options["calculation_type"]

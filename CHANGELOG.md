@@ -28,6 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   vacuum axis; manual p.310 note 3), so the advice changed nothing. A slab
   now gets one line saying the static in-plane path is used; a 3D cell
   without the library still gets the install hint. The path is unchanged.
+- opt2d12's log names the basis the deck is written with. From an
+  external-basis parent it printed "Using external basis set from original
+  D12 file" (and "Preserving external basis settings") before the config
+  chose the method, so HF-3c children logged that and then "Basis set:
+  MINIX", and DFT-3c children (PBEH3C, HSESOL3C, ...) logged it although the
+  deck says BASISSET <3c basis>. The line is now printed once, only when the
+  deck carries the parent's external basis. The legacy workflow executor
+  likewise logs "Basis set: <3c basis> (required by <functional>; the
+  parent's basis is not used)" for a 3c step. Log only: decks are unchanged.
 
 ## [1.1.4] - 2026-10-02
 
