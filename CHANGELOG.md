@@ -45,6 +45,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now refused like FREQ children, with the advice to make them from the OPT
   or SP output the dispersion run started from. Deck change: these decks are
   no longer written.
+- The job script no longer stages a job's own two-component `.f9` for a
+  GUESSP inside a TWOCOMPON block. There GUESSP means GUESSPNOSO (manual
+  p.173): the 2c-SCF starts from a one-component matrix of an unrestricted
+  run without symmetry. GUESSP, GUESSPNOSO and 2NDVARIAT inside TWOCOMPON now
+  use only an explicitly staged `$JOB.f20` (with a note of the p.173
+  requirement); with none, a bare GUESSP is dropped from the scratch copy
+  (cold start), and GUESSPNOSO/2NDVARIAT are left as written with a warning
+  (CRYSTAL stops without fort.20, measured). A GUESSP outside TWOCOMPON is
+  handled as before.
 
 ## [1.1.4] - 2026-10-02
 

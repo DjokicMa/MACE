@@ -15,6 +15,8 @@ answer, 6 fewer cycles.
 import io
 import sys
 
+import pytest
+
 from conftest import REPO_ROOT
 
 sys.path.insert(0, str(REPO_ROOT / "Crystal_d12"))
@@ -166,3 +168,88 @@ def test_an_empty_f20_is_not_staged(tmp_path):
     d = tmp_path / "onlyempty"
     assert _stage(tmp_path, block, True, [], "onlyempty", empty=["testmat.f20"]) is None
     assert "GUESSP" not in (d / "scratch" / "testmat" / "INPUT").read_text()
+
+
+# --- GUESSP inside TWOCOMPON (= GUESSPNOSO, manual p.173) ------------------
+#
+# Inside a TWOCOMPON block GUESSP / GUESSPNOSO start the 2c-SCF from a
+# ONE-component matrix of an unrestricted run without symmetry (p.173), and
+# 2NDVARIAT is GUESSPNOSO + PRTENESOC + FMIXING 0 + MAXCYCLE 1 (pp.173-174).
+# The job's own $JOB.f9 from an earlier run of a 2c deck is a TWO-component
+# matrix, so only a deliberately staged $JOB.f20 may become fort.20.
+
+def _deck_2c(guess, top_level=""):
+    return ("title\nCRYSTAL\nEND\n" + top_level + "DFT\nPBE0\nENDDFT\nTWOCOMPON\nSOC\n"
+            + (guess + "\n" if guess else "") + "END\nEND\n")
+
+
+def _stage_deck(tmp_path, block, deck, files, tag):
+    import subprocess
+
+    d = tmp_path / tag
+    scratch = d / "scratch" / "testmat"
+    scratch.mkdir(parents=True)
+    (d / "testmat.d12").write_text(deck)
+    for name in files:
+        (d / name).write_text("MATRIX-" + name)
+    (scratch / "INPUT").write_text(deck)
+    prelude = f'DIR="{d}"\nJOB=testmat\nscratch="{d}/scratch"\n'
+    run = subprocess.run(["bash", "-c", prelude + block], capture_output=True, text=True)
+    staged = scratch / "fort.20"
+    return (staged.read_text() if staged.exists() else None,
+            (scratch / "INPUT").read_text(), run.stdout + run.stderr)
+
+
+def test_guessp_in_twocompon_never_stages_the_jobs_own_2c_f9(tmp_path):
+    block = _staging_block(tmp_path)
+    staged, deck, log = _stage_deck(tmp_path, block, _deck_2c("GUESSP"), ["testmat.f9"], "f9")
+    assert staged is None
+    assert "GUESSP" not in deck.splitlines()          # cold start instead of an abort
+    assert "TWOCOMPON" in deck and "SOC" in deck.splitlines()
+    assert "TWOCOMPON" in log
+
+
+def test_guessp_in_twocompon_stages_an_explicit_f20(tmp_path):
+    block = _staging_block(tmp_path)
+    staged, deck, log = _stage_deck(tmp_path, block, _deck_2c("GUESSP"),
+                                    ["testmat.f20", "testmat.f9"], "f20")
+    assert staged == "MATRIX-testmat.f20"
+    assert "GUESSP" in deck.splitlines()
+    assert "SYMMREMO" in log and "p.173" in log
+
+
+@pytest.mark.parametrize("guess", ["GUESSPNOSO", "guesspnoso", "2NDVARIAT\n0"])
+def test_guesspnoso_in_twocompon_is_left_alone_without_an_f20(tmp_path, guess):
+    """Explicit GUESSPNOSO matched main's 1c prefix pattern and got the job's
+    own 2c .f9 as fort.20."""
+    block = _staging_block(tmp_path)
+    staged, deck, log = _stage_deck(tmp_path, block, _deck_2c(guess), ["testmat.f9"], "noso")
+    assert staged is None
+    assert deck == _deck_2c(guess)                    # left as written
+    assert "WARNING" in log
+
+
+def test_guesspnoso_in_twocompon_stages_an_explicit_f20(tmp_path):
+    block = _staging_block(tmp_path)
+    staged, deck, _ = _stage_deck(tmp_path, block, _deck_2c("GUESSPNOSO"),
+                                  ["testmat.f20", "testmat.f9"], "nosof20")
+    assert staged == "MATRIX-testmat.f20"
+    assert deck == _deck_2c("GUESSPNOSO")
+
+
+def test_endtwo_closes_the_twocompon_block(tmp_path):
+    """The manual's examples close TWOCOMPON with END or ENDTWO (p.172)."""
+    block = _staging_block(tmp_path)
+    deck = "title\nCRYSTAL\nEND\nTWOCOMPON\nGUESSP\nENDTWO\nEND\n"
+    staged, got, _ = _stage_deck(tmp_path, block, deck, ["testmat.f9"], "endtwo")
+    assert staged is None and "GUESSP" not in got.splitlines()
+
+
+def test_top_level_guessp_with_a_twocompon_block_keeps_the_1c_behaviour(tmp_path):
+    """A GUESSP outside the TWOCOMPON block is the ordinary restart: the job's
+    own .f9 is staged, as before."""
+    block = _staging_block(tmp_path)
+    deck = _deck_2c(None, top_level="GUESSP\n")
+    staged, got, _ = _stage_deck(tmp_path, block, deck, ["testmat.f9"], "toplevel")
+    assert staged == "MATRIX-testmat.f9"
+    assert got == deck

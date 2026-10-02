@@ -437,8 +437,18 @@ def _generated_script(tmp_path):
     return (tmp_path / "testmat.sh").read_text()
 
 
+def _without_twocompon_guess(script):
+    """The script as generated before GUESSP inside TWOCOMPON got its own
+    branch at the head of the GUESSP staging (round 6): the old 1c branch
+    was the chain's `if`."""
+    a = script.index("#\n# Inside a TWOCOMPON block")
+    b = script.index('elif [ -z "$RESTART_KEEPS_FORT20" ] && grep')
+    return script[:a] + script[b + 2:]
+
+
 def _as_before_this_change(script):
     """The same script as generated before the RESTART staging existed."""
+    script = _without_twocompon_guess(script)
     start = script.index("# OPTGEOM RESTART")
     end = script.index("# GUESSP restart")
     old = script[:start] + script[end:]
@@ -450,7 +460,8 @@ def test_old_script_gets_exactly_the_current_staging(tmp_path):
     old = _as_before_this_change(new)
     assert "# OPTGEOM RESTART" not in old and "RESTART_KEEPS_FORT20" not in old
     refreshed, what = opt_restart.refresh_restart_staging(old)
-    assert refreshed == new, what
+    # the RESTART staging only: the TWOCOMPON guess branch is not back-ported
+    assert refreshed == _without_twocompon_guess(new), what
     assert opt_restart.refresh_restart_staging(new) == (new, "already has the RESTART staging")
 
 

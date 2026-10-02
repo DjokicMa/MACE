@@ -168,7 +168,40 @@ fi
 # chain is exactly that case. Stripping the record from the scratch copy makes
 # the deck mean "restart if there is something to restart from"; $DIR/$JOB.d12
 # itself is never modified, so the next attempt still asks.
-if [ -z "$RESTART_KEEPS_FORT20" ] && grep -qiE "^[[:space:]]*GUESSP" "$scratch/$JOB/INPUT" 2>/dev/null; then
+#
+# Inside a TWOCOMPON block (closed by END or ENDTWO) GUESSP means GUESSPNOSO:
+# the 2c-SCF starts from a ONE-component matrix, which must come from an
+# unrestricted 1c run without symmetry (SYMMREMO) (manual p.173). 2NDVARIAT
+# is GUESSPNOSO + PRTENESOC + FMIXING 0 + MAXCYCLE 1 (pp.173-174), so it needs
+# the same matrix. This job own $JOB.f9, from an earlier run of this 2c deck,
+# is a TWO-component matrix and is never staged for these; only a
+# deliberately staged $JOB.f20 is. With none, a bare GUESSP comes out of the
+# scratch copy as above; GUESSPNOSO and 2NDVARIAT are left as written (the
+# 2NDVARIAT record has a data line) with a warning. Measured on HPCC (Bi2
+# slab, PBE0+SOC): GUESSP and GUESSPNOSO in TWOCOMPON both read the fort.20
+# of a UHF/SPIN + SYMMREMO 1c run (cycle 0 = the 1c energy); with no fort.20
+# both stop (a bare MPI_Abort under Pcrystal); a 1c matrix computed with
+# symmetry stops with "READFG RESTART NOT POSSIBLE - SYMMETRY INCOMPATIBILITY";
+# and the 2c fort.9 of the same deck staged as fort.20 stops with "io error
+# Read_real_1d" - what staging this job own $JOB.f9 used to do.
+MACE_GUESS1C=$(sed -n -E "/^[[:space:]]*TWOCOMPON[[:space:]]*$/I,/^[[:space:]]*END(TWO)?[[:space:]]*$/I{=;p}" "$scratch/$JOB/INPUT" 2>/dev/null | paste - - | grep -iE "^[0-9]+[[:space:]]+(GUESSP|GUESSPNOSO|2NDVARIAT)[[:space:]]*$" | head -n 1)
+if [ -z "$RESTART_KEEPS_FORT20" ] && [ -n "$MACE_GUESS1C" ]; then
+  MACE_GUESS1C_LINE=${MACE_GUESS1C%%[[:space:]]*}
+  MACE_GUESS1C_KEY=$(printf "%s" "${MACE_GUESS1C#*[[:space:]]}" | tr -d "[:space:]" | tr "[:lower:]" "[:upper:]")
+  if [ -s "$DIR/$JOB.f20" ]; then
+    cp "$DIR/$JOB.f20" "$scratch/$JOB/fort.20"
+    echo "$MACE_GUESS1C_KEY in TWOCOMPON: staged $JOB.f20 as fort.20 - it must be the matrix of"
+    echo "  an unrestricted one-component run with SYMMREMO (manual p.173)"
+  elif [ "$MACE_GUESS1C_KEY" = "GUESSP" ]; then
+    sed -i "${MACE_GUESS1C_LINE}d" "$scratch/$JOB/INPUT"
+    echo "GUESSP in TWOCOMPON requested but no $JOB.f20 on disk - dropped it from this"
+    echo "  run and cold starting (this job own $JOB.f9 is a two-component matrix)"
+  else
+    echo "WARNING: $MACE_GUESS1C_KEY in TWOCOMPON needs a one-component $JOB.f20 and there is"
+    echo "  none; left in the deck as written (this job own $JOB.f9 is a two-component"
+    echo "  matrix and is not used); CRYSTAL stops without fort.20"
+  fi
+elif [ -z "$RESTART_KEEPS_FORT20" ] && grep -qiE "^[[:space:]]*GUESSP" "$scratch/$JOB/INPUT" 2>/dev/null; then
   if [ -s "$DIR/$JOB.f20" ]; then
     cp "$DIR/$JOB.f20" "$scratch/$JOB/fort.20"
     echo "GUESSP: staged $JOB.f20 as fort.20"
