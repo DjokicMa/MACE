@@ -4,6 +4,7 @@ Modules:
     deck_edit  host classification and the text edits (standard library only)
     structure  geometry tables of CRYSTAL outputs, site resolution, PBC matching
     outputs    energies, electron counts, Mulliken charges/spins, band edges, POTC.DAT
+    analysis   checks, fractional-DOPING calibration, formation energies, levels
 """
 
 
