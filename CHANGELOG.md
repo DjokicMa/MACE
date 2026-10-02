@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   FREQCALC/ANHARM, mode and supercell questions took it as their first or
   last entry, and the phonon band-path crystal-system and template menus fell
   back to their first entry without saying so.
+- The workflow planner's number prompts (queue limits, BAND/DOSS points,
+  DOSS projection type and energy range, TRANSPORT chemical potentials,
+  temperatures and relaxation time, CHARGE+POTENTIAL grid, FREQ supercell,
+  k-point count, CPHF settings, peak widths, dielectric constant and the
+  temperature list) ask again on an answer that is not a number instead of
+  ending `mace workflow` with a ValueError. Counts must now be at least 1
+  (0 allowed for reserve slots, recovery attempts and DOSS projection type
+  0-4); absolute chemical potentials have no default and are asked again
+  when left blank.
 
 ## [1.1.4] - 2026-10-02
 
