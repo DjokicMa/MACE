@@ -13,7 +13,7 @@ from typing import List, Optional, Sequence, Tuple
 import numpy as np
 
 from . import parent as P
-from .writer import DISP_YAML, read_manifest
+from .writer import DISP_YAML, read_manifest, working_directory
 
 GEOMETRY_TOLERANCE = 1e-4          # Angstrom
 IMAGINARY_THRESHOLD = -0.1         # THz
@@ -251,7 +251,7 @@ def collect(outdir: Path, check_only: bool = False, band: Optional[str] = "auto"
         result.files.append("BORN")
         log(f"NAC: Born charges and dielectric tensor from {nac_from}")
 
-    with contextlib.chdir(outdir):
+    with working_directory(outdir):
         phonon.save("phonopy_params.yaml")
         write_FORCE_SETS(phonon.dataset, filename="FORCE_SETS")
         result.files += ["phonopy_params.yaml", "FORCE_SETS"]

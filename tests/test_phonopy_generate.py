@@ -148,3 +148,12 @@ def test_refused_parent_writes_nothing(tmp_path, monkeypatch, capsys):
     assert cli.main(["generate", "parent.out", "--dim", "2 2 2"]) == 1
     assert "[NOT_3D]" in capsys.readouterr().err
     assert not (tmp_path / "phonopy_parent_222").exists()
+
+
+def test_runs_without_contextlib_chdir(tmp_path, monkeypatch):
+    """contextlib.chdir is Python 3.11+; MACE documents 3.7+, so generate and
+    collect must not need it."""
+    import contextlib
+    monkeypatch.delattr(contextlib, "chdir", raising=False)
+    out = _generate(tmp_path, monkeypatch)
+    assert (out / "phonopy_disp.yaml").is_file()

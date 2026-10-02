@@ -153,8 +153,7 @@ def cmd_generate(a) -> int:
 
     outdir.mkdir(parents=True, exist_ok=True)
     names = W.write_set(outdir, stem, tag, deck, template, phonon, conv_super)
-    import contextlib
-    with contextlib.chdir(outdir):
+    with W.working_directory(outdir):
         phonon.save(W.DISP_YAML)
     import phonopy
     W.write_manifest(outdir, {

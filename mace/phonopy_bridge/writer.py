@@ -2,15 +2,29 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
+import os
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import Dict, Iterator, List, Sequence
 
 from . import parent as P
 
 MANIFEST = "mace_phonopy.json"
 DISP_YAML = "phonopy_disp.yaml"
+
+
+@contextlib.contextmanager
+def working_directory(path) -> Iterator[None]:
+    """Run the block inside ``path`` and always change back (contextlib.chdir
+    needs Python 3.11; MACE supports older interpreters)."""
+    old = os.getcwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(old)
 
 
 def sha256(path: Path) -> str:

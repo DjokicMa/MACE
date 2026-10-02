@@ -237,3 +237,13 @@ def test_generate_and_collect_through_mace_cli(tmp_path):
                                           str(REPO_ROOT / "Crystal_d3"))],
         capture_output=True, text=True, cwd=REPO_ROOT)
     assert REPO_ROOT not in Path(probe.stdout.strip()).resolve().parents, probe.stdout
+
+
+def test_collect_runs_without_contextlib_chdir(tmp_path, monkeypatch):
+    """contextlib.chdir is Python 3.11+; MACE documents 3.7+."""
+    import contextlib
+    d, _ = _setup(tmp_path, monkeypatch)
+    monkeypatch.delattr(contextlib, "chdir", raising=False)
+    cwd = os.getcwd()
+    assert cli.main(["collect", str(d), "--band", "none"]) == 0
+    assert (d / "FORCE_SETS").is_file() and os.getcwd() == cwd
