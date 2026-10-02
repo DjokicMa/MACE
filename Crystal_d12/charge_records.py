@@ -416,3 +416,30 @@ def carry_charge_records(child_text: str, parent_text: str,
     out = "\n".join(lines) + ("\n" if trailing_newline else "")
     out, spin_notes = ensure_open_shell(out, parent_text)
     return out, notes + spin_notes
+
+
+def charge_from_parent_out(child_text: str, out_text: str) -> Tuple[str, List[str]]:
+    """A child written from a .out alone (no parent deck) gets DOPING from its Mulliken count.
+
+    Without a Mulliken print the charge state cannot be recovered: a warning
+    says so and the deck is left as written.
+    """
+    if extract_charge_records(child_text)["DOPING"]:
+        return child_text, []
+    offset = out_electron_offset(out_text)
+    if offset is None:
+        return child_text, ["WARNING: no parent deck and no Mulliken electron count in the .out, "
+                            "so a charged parent's state (CHEMOD/DOPING) cannot be recovered - "
+                            "check the new deck"]
+    if not offset:
+        return child_text, []
+    lines = child_text.splitlines()
+    last_end = max((i for i, l in enumerate(lines) if l.strip().upper() == "END"), default=None)
+    if last_end is None:
+        return child_text, ["WARNING: no final END found; DOPING was NOT added"]
+    lines[last_end:last_end] = ["DOPING", _fmt_doping(offset)]
+    out = "\n".join(lines) + ("\n" if child_text.endswith("\n") else "")
+    notes = [f"the parent ran with {_fmt_doping(offset)} electron(s) beyond neutral "
+             f"(Mulliken count): DOPING {_fmt_doping(offset)}"]
+    out, spin_notes = ensure_open_shell(out, None)
+    return out, notes + spin_notes

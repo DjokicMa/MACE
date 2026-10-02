@@ -83,7 +83,7 @@ from d12_writer import (
 )
 # Import write_scf_section from d12_writer
 from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES, atomic_deck
-from charge_records import ChargeCarryError, carry_charge_records
+from charge_records import ChargeCarryError, carry_charge_records, charge_from_parent_out
 from d12_interactive import (
     display_current_settings, interactive_d12_configuration,
     get_calculation_options_from_current, get_calculation_options,
@@ -1983,8 +1983,10 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
 
     # A charged or ionic parent (CHEMOD / CHARGED / DOPING) must give a child
     # with the same electron count; the settings model does not carry these
-    # records, so copy them from the parent deck text.
-    parent_deck_exists = has_parent_deck
+    # records, so copy them from the parent deck text - whenever the parent
+    # deck exists, even if parsing it failed above. Without a parent deck the
+    # .out's Mulliken electron count gives the charge.
+    parent_deck_exists = bool(input_file and os.path.exists(input_file))
     try:
         with open(output_file, "r", errors="ignore") as of:
             parent_out_text = of.read()
@@ -2002,7 +2004,9 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 parent_text = pf.read()
         if parent_deck_exists:
             carried, charge_notes = carry_charge_records(child_text, parent_text, parent_out_text)
-    except ChargeCarryError as e:
+        elif parent_out_text:
+            carried, soft_notes = charge_from_parent_out(child_text, parent_out_text)
+    except (ChargeCarryError, ValueError) as e:
         try:
             os.remove(new_filename)
         except OSError:
