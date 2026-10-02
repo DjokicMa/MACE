@@ -167,12 +167,15 @@ mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
   an optimisation without `OPT END - CONVERGED`; a FREQCALC output as the geometry
   source; CHEMOD/CHARGED/DOPING, ATOMSPIN/SPINLOCK/BETALOCK or GHOSTS (atom labels and
   electron counts do not carry over to a supercell yet); a magnetic parent (Mulliken
-  spin above 0.1 on an atom) with no spin lock; and any SCF-block keyword not known to
-  be safe in a P1 supercell, which is named. An SP parent is accepted with a warning
+  spin above 0.1 on an atom) with no spin lock; an SCF block with a second END before
+  the last record (CRYSTAL stops at the first, so the displaced decks would stop before
+  GRADCAL); and any SCF-block keyword not known to be safe in a P1 supercell, which is
+  named. An SP parent is accepted with a warning
   that its geometry is assumed relaxed; a parent cell that is not primitive (P1,
   SUPERCEL) gives a folded-bands warning.
 - `--dim` takes 3 integers or a 9-integer matrix; `--amplitude` (default 0.01 A) and
-  `--pm auto|yes|no` are phonopy's.
+  `--pm auto|yes|no` are phonopy's. An `--output-dir` must be empty (or `--force`) and
+  must not be inside `workflow_outputs/`.
 - `--cry-sym` (opt-in) writes the symmetry operators of each displaced cell into its
   `.ext`, as phonopy does when a `CRY_SYM` file exists (one is written to the set
   directory). The displaced cell keeps more symmetry than P1, so CRYSTAL needs fewer
@@ -180,8 +183,7 @@ mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
   P1 to 0.04 cm-1 at about a third of the core hours. phonopy warns that some space
   groups do not work this way (e.g. R-3m); a rhombohedral parent gets a louder
   warning, and `collect` still checks that each output's printed geometry is its
-  displaced cell. Compare with a P1 set before trusting a new structure type. An `--output-dir` must be empty (or `--force`) and
-  must not be inside `workflow_outputs/`.
+  displaced cell. Compare with a P1 set before trusting a new structure type.
 - **Walltime.** A displaced supercell costs far more than its parent, and a job that
   runs out of walltime leaves no forces. `generate` prints a walltime per job, at
   `mace submit`'s 32 tasks, for `mace submit DIR --walltime ...`: k-points times
@@ -225,8 +227,9 @@ mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
   non-analytical correction on, `--nonac` off. With an explicit basis the set
   directory also holds `TEMPLATE` (and `CRY_SYM` with `--cry-sym`), so
   `phonopy-init --crystal -d --dim 2 2 2 -c ../mat_opt.out` there writes the same
-  decks (apart from the title) as `supercell-NNN.d12`, for the default `--amplitude`
-  and `--pm`.
+  decks as `supercell-NNN.d12` for the default `--amplitude` and `--pm`, apart from
+  the title and TOLDEE: phonopy always writes 10, MACE the parent's value when it is
+  higher (or `--toldee`).
 - **NAC** (`--nac-from`): a Gamma FREQCALC of the same material with `INTENS` and
   `INTCPHF`, same functional and basis (its `.d12` must sit beside the output). The Born
   charges and dielectric tensor are read with phonopy-crystal-born and written to
