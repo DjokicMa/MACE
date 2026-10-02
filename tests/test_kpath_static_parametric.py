@@ -285,6 +285,30 @@ def test_supercell_maps_the_converted_points(tmp_path, monkeypatch):
     np.testing.assert_allclose(segments, d3_kpoints.expand_segments(base, e), atol=1e-12)
 
 
+def test_optimised_supercell_maps_the_host_path(tmp_path, monkeypatch):
+    """An OPT of a SUPERCEL-built cell (the defect-supercell case): the final
+    block is the supercell, so its cell is not the host's conventional cell.
+    The path is the host's, expanded to the supercell's basis, as for the
+    SP of the same supercell - not a path for the supercell's cell read as
+    the host's group."""
+    e = [[2, 0, 0], [0, 1, 0], [0, 0, 1]]
+    head = cot.echo("I 4/M M M", (4.0, 4.0, 3.0, 90, 90, 90)) + cot.supercel(e)
+    super_params = (5.0, 3.2, 3.2, 100.0, 110.0, 120.0)   # the supercell's own cell
+    sp = tmp_path / "super_sp.out"
+    sp.write_text(head + cot.block(super_params, [(20, "CA", 0, 0, 0)], centring="1/1"))
+    opt = tmp_path / "super_opt.out"
+    opt.write_text(head + cot.block(super_params, [(20, "CA", 0, 0, 0)], centring="1/1")
+                   + cot.opt_step(super_params, [(20, "CA", 0, 0, 0)], centring="1/1")
+                   + cot.final_block(super_params, [(20, "CA", 0, 0, 0)], centring="1/1"))
+    params = d3_kpoints.extract_lattice_parameters_from_output(str(opt))
+    assert params["expansion"] == e
+    assert (params["a"], params["c"]) == (4.0, 3.0)
+    a = _static(monkeypatch, 139, "I", sp)
+    b = _static(monkeypatch, 139, "I", opt)
+    assert b[1].get("expansion") == e
+    np.testing.assert_allclose(b[0], a[0], atol=1e-12)
+
+
 @pytest.mark.skipif(not CORPUS.is_dir(), reason="test/ corpus not present")
 def test_table_a1_is_the_printed_w():
     """Every centred corpus output prints Table A.1's W for its centring."""

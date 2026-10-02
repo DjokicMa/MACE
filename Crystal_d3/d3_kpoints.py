@@ -2659,7 +2659,13 @@ def extract_lattice_parameters_from_output(out_file: str) -> Optional[Dict[str, 
     if _geometry_blocks is not None:
         lines = content.split('\n')
         block, which = select_geometry_block(_geometry_blocks(lines))
-        if which == 'final' and _final_dimensionality(lines, block['line']) == 3:
+        # An optimised SUPERCEL cell (a defect supercell, say) has no
+        # crystallographic cell of its own: its final block is the
+        # supercell, with the input echo's space group. The path is the
+        # host's, given in the supercell's basis by its expansion, as for
+        # any SUPERCEL output (below).
+        if (which == 'final' and _final_dimensionality(lines, block['line']) == 3
+                and expansion_before(lines, block['line']) is None):
             conventional = block['conventional']
             if conventional is None and block['W'] is None:
                 conventional = block['params']
