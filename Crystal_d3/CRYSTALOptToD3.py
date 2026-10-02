@@ -327,7 +327,7 @@ class D3Generator:
             # raising EOFError at the prompt. Nothing is on disk yet - the deck
             # is only written after this returns - so just signal failure and
             # let the caller report it instead of claiming success.
-            if not sys.stdin.isatty():
+            if not self._can_ask():
                 ui.err("Aborting D3 file creation (no wavefunction, no terminal to confirm).")
                 return False
             cont = yes_no_prompt("Continue anyway?", "no")
@@ -1251,7 +1251,8 @@ class D3Generator:
         lines.append("END")
         return '\n'.join(lines)
     
-    def generate_d3(self, shared_config: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    def generate_d3(self, shared_config: Optional[Dict[str, Any]] = None,
+                    answers_on_stdin: Optional[bool] = None) -> Optional[Dict[str, Any]]:
         """Generate the D3 file based on calculation type.
         
         Returns:
@@ -1259,8 +1260,11 @@ class D3Generator:
         """
         # With no settings given they are asked on stdin, and so are the
         # writers' own questions; answers piped in that run out end the
-        # run with no deck instead of an EOFError traceback.
-        self._answers_on_stdin = not shared_config
+        # run with no deck instead of an EOFError traceback. Settings shared
+        # by a multi-file run were themselves answered on stdin, so each
+        # file's own questions are too (answers_on_stdin=True).
+        self._answers_on_stdin = (not shared_config if answers_on_stdin is None
+                                  else answers_on_stdin)
         try:
             return self._generate_d3(shared_config)
         except EOFError:
@@ -1852,7 +1856,9 @@ def main():
                     generator = D3Generator(str(out_file), calc_type, args.output_dir)
 
                     if shared_config:
-                        config = generator.generate_d3(shared_config)
+                        # the shared settings were answered on stdin: so are
+                        # this file's own questions (map plane, points)
+                        config = generator.generate_d3(shared_config, answers_on_stdin=True)
                     else:
                         # Interactive configuration for each file
                         config = generator.generate_d3()

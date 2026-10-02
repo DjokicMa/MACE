@@ -170,12 +170,20 @@ def test_single_file_run_exits_nonzero_when_no_deck_is_written(tmp_path, monkeyp
 
     Fails against the old behaviour (EOFError propagated out of main), passes
     after: the single-file path exits 1, which is the only signal the workflow
-    executor gates on.
+    executor gates on. With no settings given, "Continue anyway?" is asked on
+    stdin even without a terminal (answers may be piped, as in 1.1.1); here
+    stdin is empty, so the question meets the end of input.
     """
+    import menu_nav
+
+    def eof(prompt=""):
+        raise EOFError
+
     out_file = tmp_path / "no_wavefunction_here.out"
     shutil.copy(_molecule_out(), out_file)
     _no_terminal(monkeypatch)
-    _no_input(monkeypatch)
+    monkeypatch.setattr(builtins, "input", eof)
+    monkeypatch.setattr(menu_nav, "_REAL_INPUT", eof)
     monkeypatch.setattr(sys, "argv", ["CRYSTALOptToD3.py", "--input", str(out_file),
                                       "--calc-type", "CHARGE",
                                       "--output-dir", str(tmp_path)])
