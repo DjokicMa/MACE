@@ -2476,7 +2476,18 @@ def main():
         print("=" * 60)
         ui.print("Enhanced by Marcus Djokic")
         print("")
-        options = get_calculation_options_new()
+        try:
+            options = get_calculation_options_new()
+        except EOFError:
+            # stdin ran out (empty pipe, closed stdin) before the setup
+            # questions were answered: no traceback, and point at --batch,
+            # which reads the options file instead of asking
+            ui.err("\nStdin ran out before the setup questions were answered; "
+                   "no deck was written.")
+            ui.print(f"To convert with the options saved in {args.options_file}, "
+                     "add --batch (e.g. mace convert --batch --options_file "
+                     f"{args.options_file}).")
+            sys.exit(1)
         print_summary(options)
 
     # Charged-system flags override the options (file or answers)
