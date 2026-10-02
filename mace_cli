@@ -747,6 +747,29 @@ Note: needs the serial `crystal` binary (not Pcrystal). It is found from
 loading the CRYSTAL/23-intel-2023a module. Run it on a compute node, or on a
 login node only for a handful of decks.
 """,
+        'phonopy': """
+Usage: mace phonopy generate PARENT.out --dim "N N N" [options]
+
+Finite-displacement phonons with phonopy (optional dependency: pip install 'phonopy<5').
+
+generate  Read a finished 3D OPT (OPT END - CONVERGED) or SP parent and write one
+          EXTERNAL deck per displaced supercell (<stem>_ph<dim>_disp-NNN.d12, geometry
+          in .ext, staged as fort.34 by the job script). The parent's method, basis
+          and tolerances are kept; every deck edit is printed.
+            --d12 PARENT.d12      parent deck (default: same stem as the output)
+            --dim "N N N"         supercell (or 9 integers)
+            --output-dir DIR      default phonopy_<stem>_<dim>/ (--force to reuse)
+            --amplitude A         displacement in Angstrom (default 0.01)
+            --pm auto|yes|no      plus/minus displacements
+            --toldee N            raise TOLDEE (default max(10, parent))
+            --scale-shrink        divide SHRINK by the supercell size
+
+Workflow:
+  mace phonopy generate mat_opt.out --dim "2 2 2"
+  mace submit phonopy_mat_opt_222 --walltime 24:00:00     (never --track)
+
+Run `mace phonopy generate --help` for details.
+""",
         'monitor': """
 Usage: mace monitor [options]
 
@@ -1302,8 +1325,15 @@ def main():
             completion_main()
         sys.exit(0)
     
+    # `mace phonopy generate ...` goes straight to its own parser, so that
+    # `mace phonopy generate --help` shows the subcommand's options rather than
+    # being taken by the top-level parser below.
+    if len(sys.argv) >= 3 and sys.argv[1] == 'phonopy' and sys.argv[2] in ('generate',):
+        from mace.phonopy_bridge.cli import main as phonopy_main
+        sys.exit(phonopy_main([a for a in sys.argv[2:] if a != '--no-banner']))
+
     # Check if asking for help on a specific command (for non-passthrough commands)
-    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'preflight', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version']:
+    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'preflight', 'phonopy', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version']:
         # Show command-specific help
         show_command_help(sys.argv[1])
         sys.exit(0)
@@ -1316,6 +1346,7 @@ Commands:
   workflow    Interactive workflow planner - design and execute complex calculation sequences
   submit      Submit calculations to queue - handles both D12 and D3 files automatically
   preflight   Validate D12 decks by running CRYSTAL with TESTPDIM before you spend a job
+  phonopy     Phonons with phonopy - displaced-supercell decks
   monitor     System monitoring - real-time dashboard or quick status (--status, --detailed, --summary)
   analyze     Extract properties from outputs - band gaps, energies, convergence data
   completion  Check calculation status - categorize completed/errored jobs, organize files
@@ -1346,7 +1377,7 @@ More Help:
     )
     
     parser.add_argument('command', nargs='?',
-                       choices=['workflow', 'submit', 'preflight', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif',
+                       choices=['workflow', 'submit', 'preflight', 'phonopy', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif',
                                'completion', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version'],
                        help='Command to run')
     parser.add_argument('args', nargs='*', help='Arguments for the command')
@@ -1781,6 +1812,11 @@ More Help:
         except ImportError:
             from submission.preflight import main as preflight_main
         sys.exit(preflight_main(command_args('preflight')))
+
+    elif args.command == 'phonopy':
+        # Lazy: phonopy is optional and only imported by the subcommands.
+        from mace.phonopy_bridge.cli import main as phonopy_main
+        sys.exit(phonopy_main(command_args('phonopy')))
 
     elif args.command == 'monitor':
         # Launch monitoring dashboard or show status

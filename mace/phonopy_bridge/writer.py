@@ -1,0 +1,51 @@
+"""Write the displaced-supercell decks, their .ext files and the manifest."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+from typing import Dict, List, Sequence
+
+from . import parent as P
+
+MANIFEST = "mace_phonopy.json"
+DISP_YAML = "phonopy_disp.yaml"
+
+
+def sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def job_names(stem: str, tag: str, n: int) -> List[str]:
+    width = max(3, len(str(n)))
+    return [f"{stem}_ph{tag}_disp-{i:0{width}d}" for i in range(1, n + 1)]
+
+
+def write_set(outdir: Path, stem: str, tag: str, deck: P.ParentDeck, template: P.Template,
+              phonon, conv_super: Sequence[int]) -> List[str]:
+    """One <job>.ext + <job>.d12 per displaced supercell; returns the job names."""
+    from phonopy.interface.crystal import get_crystal_structure
+
+    cells = phonon.supercells_with_displacements
+    names = job_names(stem, tag, len(cells))
+    width = max(3, len(str(len(cells))))
+    for i, (name, cell) in enumerate(zip(names, cells), start=1):
+        (outdir / f"{name}.ext").write_text(get_crystal_structure(cell, list(conv_super), False))
+        title = f"{deck.title.strip()} phonopy displacement {i:0{width}d}/{len(cells):0{width}d}"
+        (outdir / f"{name}.d12").write_text(P.deck_text(title, deck, template))
+    return names
+
+
+def write_manifest(outdir: Path, data: Dict) -> Path:
+    path = outdir / MANIFEST
+    path.write_text(json.dumps(data, indent=2) + "\n")
+    return path
+
+
+def read_manifest(outdir: Path) -> Dict:
+    return json.loads((Path(outdir) / MANIFEST).read_text())

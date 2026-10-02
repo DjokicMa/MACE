@@ -5,3 +5,5 @@
 ase<4
 spglib<3
 seekpath<3
+# Finite-displacement phonons (`mace phonopy`); 4.7.2 tested. Needs spglib>=2.5.
+phonopy<5
