@@ -4342,7 +4342,7 @@ INPUT
 #%  source Ac_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/actinium.html#Ac_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance Audit: ERD 2017. Exponents and coefficients equal Ac_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's
+#%  provenance Audit: ERD 2017. Exponents, coefficients and shell charges equal Ac_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE), 3 lower in the legacy MACE file (a cell that CRYSTAL23 stops with INPBAS UNIT CELL NOT NEUTRAL), is the site's again
 289 9
 INPUT
 29. 0 1 1 1 1 1
@@ -4375,7 +4375,7 @@ INPUT
  0.675636350252 0.127263860679000
 0 3 1 0.0 1.0
  0.380313226834 1.000000000000000
-0 4 4 0.0 1.0
+0 4 4 3.0 1.0
  37.63157551530 0.006174928789270
  13.83995223260 -0.01901530020040
  4.565594479300 0.013377984385400
@@ -4391,7 +4391,7 @@ INPUT
 #%  source Th_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/thorium.html#Th_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance Audit: ERD 2017. Exponents and coefficients equal Th_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's
+#%  provenance Audit: ERD 2017. Exponents, coefficients and shell charges equal Th_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE), 3 lower in the legacy MACE file (a cell that CRYSTAL23 stops with INPBAS UNIT CELL NOT NEUTRAL), is the site's again
 290 9
 INPUT
 30. 0 1 1 1 1 1
@@ -4424,7 +4424,7 @@ INPUT
  0.723098419090 0.11643160697700
 0 3 1 0.0 1.0
  0.353456194986 1.00000000000000
-0 4 4 1.0 1.0
+0 4 4 4.0 1.0
  42.72213841910 0.00617492878927
  15.71213394340 -0.0190153002004
  5.183199391430 0.01337798438540
@@ -4440,7 +4440,7 @@ INPUT
 #%  source Pa_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/protactinium.html#Pa_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance Audit: ERD 2017. Exponents and coefficients equal Pa_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's
+#%  provenance Audit: ERD 2017. Exponents, coefficients and shell charges equal Pa_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE), 3 lower in the legacy MACE file (a cell that CRYSTAL23 stops with INPBAS UNIT CELL NOT NEUTRAL), is the site's again
 291 9
 INPUT
 31. 0 1 1 1 1 1
@@ -4473,7 +4473,7 @@ INPUT
  0.811034611243 0.03608858956160
 0 3 1 0.0 1.0
  0.414217466663 1.00000000000000
-0 4 4 2.0 1.0
+0 4 4 5.0 1.0
  54.35404142480 0.00127741955136
  19.99005693100 0.01096922746880
  6.594422584120 -0.0282040090652
@@ -4489,7 +4489,7 @@ INPUT
 #%  source U_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/uranium.html#U_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance Audit: ERD 2017. Exponents and coefficients equal U_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's
+#%  provenance Audit: ERD 2017. Exponents, coefficients and shell charges equal U_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE), 3 lower in the legacy MACE file (a cell that CRYSTAL23 stops with INPBAS UNIT CELL NOT NEUTRAL), is the site's again
 292 9
 INPUT
 32. 0 1 1 1 1 1
@@ -4522,7 +4522,7 @@ INPUT
  0.899698120499 0.06057909149410
 0 3 1 0.0 1.0
  0.436608925521 1.00000000000000
-0 4 4 3.0 1.0
+0 4 4 6.0 1.0
  59.56384441810 0.00174597620125
  21.90609216440 0.01849169663460
  7.226494121370 0.01382798440130
@@ -4538,7 +4538,7 @@ INPUT
 #%  source Np_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/neptunium.html#Np_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance Audit: ERD 2017. Exponents and coefficients equal Np_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's
+#%  provenance Audit: ERD 2017. Exponents, coefficients and shell charges equal Np_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE), 3 lower in the legacy MACE file (a cell that CRYSTAL23 stops with INPBAS UNIT CELL NOT NEUTRAL), is the site's again
 293 9
 INPUT
 33. 0 1 1 1 1 1
@@ -4571,7 +4571,7 @@ INPUT
  0.922349404616 0.06860626233020
 0 3 1 0.0 1.0
  0.317630470474 1.00000000000000
-0 4 4 4.0 1.0
+0 4 4 7.0 1.0
  68.21773629300 0.00134829649294
  24.76238342280 0.01120428261590
  10.68265682970 0.02218792618970
@@ -4587,7 +4587,7 @@ INPUT
 #%  source Pu_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/plutonium.html#Pu_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance Audit: ERD 2017. Exponents and coefficients equal Pu_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's; the first line said 11 shells for the 9 the record has (corrected to 9, as the site prints it)
+#%  provenance Audit: ERD 2017. Exponents, coefficients and shell charges equal Pu_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE), 3 lower in the legacy MACE file (a cell that CRYSTAL23 stops with INPBAS UNIT CELL NOT NEUTRAL), is the site's again; the first line said 11 shells for the 9 the record has (corrected to 9, as the site prints it)
 294 9
 INPUT
 34. 0 1 1 1 1 1
@@ -4620,7 +4620,7 @@ INPUT
  0.947088200935 0.03919437528480
 0 3 1 0.0 1.0
  0.458439123041 1.00000000000000
-0 4 4 5.0 1.0
+0 4 4 8.0 1.0
  69.37838349420 0.00187991975295
  23.37582193250 0.01220848167450
  10.88478606270 0.03056967961810
@@ -4636,7 +4636,7 @@ INPUT
 #%  source Am_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/americium.html#Am_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance Audit: ERD 2017. Exponents and coefficients equal Am_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's
+#%  provenance Audit: ERD 2017. Exponents, coefficients and shell charges equal Am_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE), 3 lower in the legacy MACE file (a cell that CRYSTAL23 stops with INPBAS UNIT CELL NOT NEUTRAL), is the site's again
 295 9
 INPUT
 35. 0 1 1 1 1 1
@@ -4669,7 +4669,7 @@ INPUT
  0.970214155422 0.0230622276827000
 0 3 1 0.0 1.0
  0.580576751995 1.0000000000000000
-0 4 4 6.0 1.0
+0 4 4 9.0 1.0
  72.02433077980 0.0019994406870800
  24.61975257660 0.0139510926768000
  10.57071855950 0.0456138241690000
@@ -4681,11 +4681,11 @@ INPUT
 0 4 1 0.0 1.0
  0.207513065243 1.0000000000000000
 
-#%record 296 bytes=1376
+#%record 296 bytes=1377
 #%  source Cm_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/curium.html#Cm_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance Audit: ERD 2017. Exponents and coefficients equal Cm_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's
+#%  provenance Audit: ERD 2017. Exponents, coefficients and shell charges equal Cm_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE), 3 lower in the legacy MACE file (a cell that CRYSTAL23 stops with INPBAS UNIT CELL NOT NEUTRAL), is the site's again
 296 9
 INPUT
 36. 0 1 1 1 1 1
@@ -4718,7 +4718,7 @@ INPUT
  1.0571562370500 0.012309307084400
 0 3 1 0.0 1.0
  0.6356278293325 1.000000000000000
-0 4 4 7.0 1.0
+0 4 4 10.0 1.0
  73.949281508500 0.001996513559470
  26.247494226300 0.014708197348800
  10.538606625000 0.058463626174500
@@ -4730,11 +4730,11 @@ INPUT
 0 4 1 0.0 1.0
  0.2579773724598 1.000000000000000
 
-#%record 297 bytes=1354
+#%record 297 bytes=1355
 #%  source Bk_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/berkelium.html#Bk_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance Audit: ERD 2017. Exponents and coefficients equal Bk_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's
+#%  provenance Audit: ERD 2017. Exponents, coefficients and shell charges equal Bk_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE), 3 lower in the legacy MACE file (a cell that CRYSTAL23 stops with INPBAS UNIT CELL NOT NEUTRAL), is the site's again
 297 9
 INPUT
 37. 0 1 1 1 1 1
@@ -4767,7 +4767,7 @@ INPUT
  1.260097415430 -0.02931948818460
 0 3 1 0.0 1.0
  0.721391851282 1.000000000000000
-0 4 4 8.0 1.0
+0 4 4 11.0 1.0
  76.74417519300 0.002093377015830
  27.91135373300 0.016172719510100
  10.88784728900 0.068514623737100
@@ -4779,11 +4779,11 @@ INPUT
 0 4 1 0.0 1.0
  0.274173832360 1.000000000000000
 
-#%record 298 bytes=1350
+#%record 298 bytes=1351
 #%  source Cf_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/californium.html#Cf_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance Audit: ERD 2017. Exponents and coefficients equal Cf_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's
+#%  provenance Audit: ERD 2017. Exponents, coefficients and shell charges equal Cf_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE), 3 lower in the legacy MACE file (a cell that CRYSTAL23 stops with INPBAS UNIT CELL NOT NEUTRAL), is the site's again
 298 9
 INPUT
 38. 0 1 1 1 1 1
@@ -4816,7 +4816,7 @@ INPUT
  1.353597513480 -0.04050828862300
 0 3 1 0.0 1.0
  0.791877003382 1.000000000000000
-0 4 4 9.0 1.0
+0 4 4 12.0 1.0
  76.64296530680 0.003179361630050
  28.06361149310 0.022755370524500
  11.46951410230 0.088693595661200
@@ -4832,7 +4832,7 @@ INPUT
 #%  source Es_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/einsteinium.html#Es_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance Audit: ERD 2017. Exponents and coefficients equal Es_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's
+#%  provenance Audit: ERD 2017. Exponents, coefficients and shell charges equal Es_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE), 3 lower in the legacy MACE file (a cell that CRYSTAL23 stops with INPBAS UNIT CELL NOT NEUTRAL), is the site's again
 299 9
 INPUT
 39. 0 1 1 1 1 1
@@ -4865,7 +4865,7 @@ INPUT
  2.0228434717600 0.16302359393000
 0 3 1 0.0 1.0
  0.8410053062130 1.00000000000000
-0 4 4 10.0 1.0
+0 4 4 13.0 1.0
  75.458825332100 0.00407595675201
  27.128573289900 0.02855127359810
  11.215643142200 0.10305710807300

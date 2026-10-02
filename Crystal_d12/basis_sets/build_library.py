@@ -94,6 +94,16 @@ def site_match(z, anchor, reference, doi, extra=None):
     return meta
 
 
+# The site's ERD La-Lu records carry formal shell charges summing to ZNUC - 3
+# (a trivalent-ion guess). With a neutral basis on the other atoms CRYSTAL23
+# stops with "INPBAS UNIT CELL NOT NEUTRAL" (measured, LaN and CeO2), so MACE
+# stores them neutral; the charges only set the atomic guess.
+LN_NEUTRAL_NOTE = ("Formal shell charges made neutral here: the site's sum to ZNUC - 3 "
+                   "(an Ln3+ guess, which CRYSTAL23 stops with INPBAS UNIT CELL NOT NEUTRAL "
+                   "when the other atoms are neutral); +2 on the first empty s/sp shell and "
+                   "+1 on the first empty d shell (6s2 5d1), the 4f count as published")
+
+
 def triplezeta_provenance(key):
     z = z_of(key)
     sym = SYMBOLS[z - 1]
@@ -124,13 +134,17 @@ def triplezeta_provenance(key):
     if z == 55 or 72 <= z <= 83:
         return site_match(z, f"{sym}_pob_TZVP_rev2", REF_REV2_6TH, DOI_REV2_6TH)
     if 57 <= z <= 71:
-        return site_match(z, f"{sym}_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017", REF_ERD, None,
-                          "small-core pseudopotential, 4f in valence")
+        anchor = f"{sym}_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017"
+        return [("source", anchor), ("reference", REF_ERD), ("url", url(z, anchor)),
+                ("provenance", f"exponents and coefficients: exact numeric match to {anchor} "
+                               f"on crystal.unito.it (retrieved {RETRIEVED}); small-core "
+                               "pseudopotential, 4f in valence. " + LN_NEUTRAL_NOTE)]
     if 89 <= z <= 99:
         anchor = f"{sym}_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017"
-        note = ("Audit: ERD 2017. Exponents and coefficients equal "
-                f"{anchor} on crystal.unito.it; the f shell's formal charge (CHE) is "
-                "3 lower than the site's")
+        note = ("Audit: ERD 2017. Exponents, coefficients and shell charges equal "
+                f"{anchor} on crystal.unito.it; the f shell's formal charge (CHE), 3 lower "
+                "in the legacy MACE file (a cell that CRYSTAL23 stops with INPBAS UNIT "
+                "CELL NOT NEUTRAL), is the site's again")
         if z == 94:
             note += ("; the first line said 11 shells for the 9 the record has "
                      "(corrected to 9, as the site prints it)")
@@ -158,6 +172,7 @@ DESCRIPTIONS = {
         "Mixed provenance, per record below: pob-TZVP-rev2 for H-Br, Cs, Ba and Hf-Bi;",
         "pob-TZVP 2018 for Rb-I except Tc (ERD 2017, all-electron); ERD small-core 2017",
         "(4f in valence) for La-Lu; ERD 2017 for Ac-Es. No noble gases, Po, At, Fr, Ra.",
+        "La-Lu formal shell charges are neutral (the site's are an Ln3+ guess).",
     ],
     "full.basis.doublezeta": [
         "The external basis records MACE has always written for DZVP-REV2 (menu option 1).",
