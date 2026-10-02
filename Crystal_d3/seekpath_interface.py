@@ -27,8 +27,9 @@ try:
     import seekpath
     SEEKPATH_AVAILABLE = True
 except ImportError:
+    # Said where it matters (the static k-path route names the library when
+    # it would be used), not on every import: a slab never uses it.
     SEEKPATH_AVAILABLE = False
-    print("Note: seekpath library not installed. Install with: pip install seekpath")
 
 
 # =============================================================================
