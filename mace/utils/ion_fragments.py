@@ -624,7 +624,7 @@ def fragment_charges(text: str, force: bool = False) -> Dict[str, object]:
 
     Computed when the Mulliken count differs from the sum of valence charges,
     a CHARGE NORMALIZATION FACTOR other than 1 was printed (a CHEMOD guess was
-    renormalised), CRYSTAL warned "UNIT CELL NOT NEUTRAL", or force=True;
+    renormalised; ignored after a GUESSP density-matrix restart), CRYSTAL warned "UNIT CELL NOT NEUTRAL", or force=True;
     otherwise {}. Returns {"electron_count": {...}, "fragment_charges": [...]}.
     A fragment's charge is the sum over its atoms of (valence charge -
     Mulliken population); a deviation of more than FRAGMENT_DEVIATION_FLAG
@@ -641,6 +641,11 @@ def fragment_charges(text: str, force: bool = False) -> Dict[str, object]:
     unknown = [f"{a['element']} (atom {a['atom']})" for a, r in zip(pops, ref) if r is None]
     zsum = None if unknown else sum(ref)
     factors = [float(x) for x in re.findall(r"CHARGE NORMALIZATION FACTOR\s+([-\d.]+)", text)]
+    # After a density-matrix restart (GUESSP) CRYSTAL renormalises the
+    # projected density every cycle and does not read CHEMOD, so the factor
+    # says nothing about charge; net charge and UNIT CELL NOT NEUTRAL still do.
+    if "RESTART FROM A PREVIOUS DENSITY MATRIX" in text:
+        factors = []
     renormalised = any(abs(f - 1.0) > 1e-6 for f in factors)
     not_neutral = "UNIT CELL NOT NEUTRAL" in text
     net = None if zsum is None else round(zsum - count, 6)
