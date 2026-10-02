@@ -179,6 +179,12 @@ def fmt_q(q: float) -> str:
     return "0" if q == 0 else f"{q:+g}"
 
 
+def d_tag(d: float) -> str:
+    """Job-name tag for a calibration DOPING value: m05 for -0.5, p10 for +1.0."""
+    sign = "m" if d < 0 else "p"
+    return sign + f"{abs(d):.1f}".replace(".", "")
+
+
 # ---------------------------------------------------------------------------
 # Host classification
 # ---------------------------------------------------------------------------
@@ -639,7 +645,7 @@ def default_nspin(parity: int) -> int:
 @dataclass
 class Deck:
     name: str
-    role: str                 # pristine or defect
+    role: str                 # pristine, defect, calibration, endpoint
     q: float                  # defect charge (0 for pristine)
     doping: float             # DOPING value written (0 = none)
     nspin: Optional[int]      # SPINLOCK value written (None = none)
@@ -715,6 +721,33 @@ class DeckEditor:
         return ["UHF"] + block3, "added UHF"
 
     @staticmethod
+    def remove_spin(block3: List[str]) -> Tuple[List[str], List[str]]:
+        """Restricted copy for calibration: SPIN, SPINLOCK and UHF removed."""
+        keys = [_kw(l) for l in block3]
+        out, removed, skip = [], [], 0
+        in_dft = False
+        for i, (line, key) in enumerate(zip(block3, keys)):
+            if skip:
+                skip -= 1
+                continue
+            if key == "DFT":
+                in_dft = True
+            elif key in ("END", "ENDDFT") and in_dft:
+                in_dft = False
+            if in_dft and key == "SPIN":
+                removed.append("SPIN")
+                continue
+            if key == "SPINLOCK":
+                removed.append("SPINLOCK")
+                skip = 1
+                continue
+            if key == "UHF":
+                removed.append("UHF")
+                continue
+            out.append(line)
+        return out, removed
+
+    @staticmethod
     def replace_shrink(block3: List[str], tokens: Sequence[int]) -> List[str]:
         keys = [_kw(l) for l in block3]
         if "SHRINK" not in keys:
@@ -777,6 +810,9 @@ class SetOptions:
     spinlock_cycles: int = DEFAULT_SPINLOCK_CYCLES
     host_spin: str = "refuse"
     shrink: Optional[List[int]] = None
+    calibrate: Optional[List[float]] = None   # magnitudes, e.g. [0.5, 1.0, 1.5]
+    calibrate_on: str = "defect"
+    calibrate_endpoints: bool = False
     force: bool = False
 
 
@@ -839,7 +875,7 @@ def check_element_coverage(host: HostInfo, z: int) -> None:
 def build_supercell_set(host: HostInfo, site: DefectSite, keyword: str, matrix, opts: SetOptions,
                         electrons: ElectronCount, name: str, far_shells: Optional[List[Tuple[int, float]]] = None,
                         title_note: str = "") -> Tuple[List[Deck], List[str], List[str]]:
-    """Pristine + defect decks for one supercell.
+    """Pristine + defect (+ calibration) decks for one supercell.
 
     Returns (decks, messages, added_records). ``electrons`` is the pristine
     supercell's count (exact or parity). ``far_shells`` is the CH column of
@@ -966,5 +1002,69 @@ def build_supercell_set(host: HostInfo, site: DefectSite, keyword: str, matrix, 
         msgs.append(f"q={fmt_q(q)}: {n_q.describe()} -> {what}"
                     + (f"; DOPING {doping_value(q)}" if q != 0 and recipe != "ghost_odd_chemod" else ""))
 
+    if opts.calibrate:
+        decks += _calibration_decks(host, ed, site, opts, decks, head, sc, rec1, basis, basis_tail,
+                                    block3_p, name, title, msgs)
     return decks, msgs, added
 
+
+def calibration_ladder(charges: Sequence[float], magnitudes: Sequence[float]) -> List[float]:
+    """DOPING values on the side of the requested charges (q>0 removes electrons)."""
+    out: List[float] = []
+    if any(q > 0 for q in charges):
+        out += [-abs(m) for m in magnitudes]
+    if any(q < 0 for q in charges):
+        out += [abs(m) for m in magnitudes]
+    return out
+
+
+def _calibration_decks(host, ed, site, opts, decks, head, sc, rec1, basis, basis_tail, block3_p,
+                       name, title, msgs) -> List[Deck]:
+    if host.dimensionality != 3:
+        raise DefectError("--calibrate is for 3D sets: in 2D the fractional-DOPING slopes match the "
+                          "Fermi level directly (measured, FACTS.md); use --sizes and the A + B/L fit")
+    if host.has.get("SMEAR"):
+        raise DefectError("--calibrate with a SMEAR host: smearing changes the occupations and the "
+                          "meaning of EFERMI, so the calibration slope is not defined; remove SMEAR")
+    ladder = calibration_ladder(opts.charges, opts.calibrate)
+    if not ladder:
+        raise DefectError("--calibrate needs at least one charged state (q != 0)")
+    on = opts.calibrate_on
+    if on == "pristine":
+        base_head, base_tail = head[1:] + sc, list(basis_tail)
+        msgs.append("note: --calibrate-on pristine: measured on MgO, the pristine-cell C is within "
+                    "0.004 Ha of the defect-cell C (FACTS.md round 2); the defect cell is the default")
+    else:
+        base_head = head[1:] + sc + rec1
+        base_tail = (ghost_records(site.label) + list(basis_tail)) if site.kind == "ghost" else list(basis_tail)
+        if site.kind == "ghost":
+            msgs.append("WARNING: calibration on a ghost set is untested")
+    b3, removed = DeckEditor.remove_spin(block3_p)
+    msgs.append("calibration decks are restricted" + (f" (removed {', '.join(sorted(set(removed)))} "
+                "- a deliberate difference from the host, recorded in the manifest)" if removed else ""))
+    msgs.append("WARNING: fractional DOPING needs a converged k-mesh; the right SHRINK can be several "
+                "times larger than for the neutral cell (manual p.103)")
+    if host.has.get("LEVSHIFT"):
+        msgs.append("WARNING: LEVSHIFT with fractional DOPING (calibration decks): the level shift "
+                    "acts on a partly occupied level; check the SCF converged to the right state")
+    ends: List[float] = []
+    if opts.calibrate_endpoints:
+        ends = [0.0] + ([-2.0] if any(d < 0 for d in ladder) else []) \
+            + ([2.0] if any(d > 0 for d in ladder) else [])
+        ends = [d for d in ends if d not in ladder]
+    out = []
+    role_base = "pristine" if on == "pristine" else "defect"
+    for d in list(ladder) + ends:
+        is_end = d in ends
+        scf = [] if d == 0 else ["DOPING", repr(float(d))]
+        bb = list(b3)
+        at = DeckEditor.scf_insert_index(bb)
+        bb = bb[:at] + scf + bb[at:]
+        tag = "calr00" if d == 0 else f"cal{'r' if is_end else ''}{d_tag(d)}"
+        what = "restricted endpoint" if is_end else "calibration"
+        text = DeckEditor.join([[title(f"{what} {role_base} DOPING {d:+.1f}")],
+                                base_head, basis, base_tail, bb], host.trailing_newline)
+        out.append(Deck(name=f"{name}_{tag}", role="endpoint" if is_end else "calibration",
+                        q=-d, doping=d, nspin=None, restricted=True,
+                        recipe=f"calibration_{role_base}", text=text))
+    return out

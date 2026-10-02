@@ -350,6 +350,61 @@ def test_ghost_with_a_3c_method_is_marked_untested():
     assert any("untested" in m and "3c" in m for m in msgs)
 
 
+# --- 11: calibration ----------------------------------------------------------------
+
+def test_calibration_decks_reproduce_j05_j10_j15():
+    decks, msgs, _ = _build(mgo_host(), de.DefectSite("vacancy", "O", label=1), charges=(0, 1, 2),
+                            calibrate=[0.5, 1.0, 1.5])
+    assert same_but_title(decks["mgo_calm05"].text, deck("mgo_j05"))
+    assert same_but_title(decks["mgo_calm10"].text, deck("mgo_j10"))
+    assert same_but_title(decks["mgo_calm15"].text, deck("mgo_j15"))
+    assert all(decks[n].restricted and decks[n].role == "calibration" for n in
+               ("mgo_calm05", "mgo_calm10", "mgo_calm15"))
+    assert any("p.103" in m for m in msgs)
+
+
+def test_calibration_ladder_follows_the_sign_of_the_charges():
+    assert de.calibration_ladder([0, 1, 2], [0.5, 1.0, 1.5]) == [-0.5, -1.0, -1.5]
+    assert de.calibration_ladder([-2, -1, 0], [0.5, 1.0, 1.5]) == [0.5, 1.0, 1.5]
+    assert de.calibration_ladder([-1, 0, 1], [0.5]) == [-0.5, 0.5]
+    decks, _, _ = _build(mgo_host(), de.DefectSite("vacancy", "O", label=1), charges=(-1, 0),
+                         calibrate=[0.5, 1.0, 1.5])
+    assert "DOPING\n0.5\nPPAN" in decks["mgo_calp05"].text
+
+
+def test_calibration_of_a_spin_host_is_restricted_and_says_so():
+    host = mgo_host().replace("DFT\nPBE0", "DFT\nSPIN\nPBE0")
+    decks, msgs, _ = _build(host, de.DefectSite("vacancy", "O", label=1), charges=(0, 1, 2),
+                            calibrate=[0.5, 1.0, 1.5], calibrate_endpoints=True)
+    assert same_but_title(decks["mgo_calm05"].text, deck("mgo_j05"))
+    assert any("removed SPIN" in m for m in msgs)
+    assert decks["mgo_calr00"].role == "endpoint"
+    assert "DOPING" not in decks["mgo_calr00"].text.splitlines()[1:]
+    assert "DOPING\n-2.0\nPPAN" in decks["mgo_calrm20"].text and "SPIN" not in decks["mgo_calrm20"].text
+
+
+def test_calibration_on_the_pristine_cell():
+    decks, msgs, _ = _build(mgo_host(), de.DefectSite("vacancy", "O", label=1), charges=(0, 1),
+                            calibrate=[0.5], calibrate_on="pristine")
+    assert "ATOMREMO" not in decks["mgo_calm05"].text
+    assert decks["mgo_calm05"].recipe == "calibration_pristine"
+
+
+def test_calibration_is_refused_for_smear_and_2d_hosts():
+    smear = mgo_host().replace("PPAN", "SMEAR\n0.001\nPPAN")
+    with pytest.raises(DefectError, match="SMEAR"):
+        _build(smear, de.DefectSite("vacancy", "O", label=1), charges=(0, 1), calibrate=[0.5])
+    with pytest.raises(DefectError, match="3D"):
+        _build(hbn_host(), de.DefectSite("vacancy", "N", label=1), keyword="SUPERCEL",
+               matrix=[[4, 0], [0, 4]], charges=(0, 1), calibrate=[0.5], name="h")
+
+
+def test_levshift_host_is_warned_on_calibration():
+    lev = mgo_host().replace("PPAN", "LEVSHIFT\n5 1\nPPAN")
+    _, msgs, _ = _build(lev, de.DefectSite("vacancy", "O", label=1), charges=(0, 1), calibrate=[0.5])
+    assert any("LEVSHIFT" in m for m in msgs)
+
+
 # --- 14: decks written by MACE's own writer --------------------------------------------
 
 MGO_CIF = """data_MgO
@@ -421,12 +476,17 @@ def test_real_writer_hosts_keep_every_host_line(tmp_path, variant):
                                                                    label=1), (0, -1)
     else:
         kw, mat, site, charges = "SUPERCON", MGO_222, de.DefectSite("vacancy", "O", label=1), (0, 1, 2)
-    decks, msgs, added = _build(host_text, site, keyword=kw, matrix=mat, charges=charges)
+    calib = [0.5, 1.0, 1.5] if variant == "internal" else None
+    decks, msgs, added = _build(host_text, site, keyword=kw, matrix=mat, charges=charges,
+                                calibrate=calib)
     assert added == []                       # MACE decks already carry PPAN
     for d in decks.values():
         ins, dele, rep = edits(host_text, d.text)
         assert not rep, (d.name, rep)
-        assert not dele, (d.name, dele)
+        if d.role == "calibration":
+            assert set(dele) <= {"SPIN"}, (d.name, dele)
+        else:
+            assert not dele, (d.name, dele)
         assert set(ins) <= ALLOWED_RECORDS, (d.name, set(ins) - ALLOWED_RECORDS)
     if variant == "hf":
         assert "UHF" in decks["mgo_qp1"].text
