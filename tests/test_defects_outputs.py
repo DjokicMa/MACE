@@ -14,7 +14,7 @@ from mace.defects import outputs as out
 
 
 def test_electron_count_is_the_mulliken_line_not_the_pre_doping_header():
-    # MgO V_O q=+1: the header still says 632, DOPING -1 left 631 (FACTS.md)
+    # MgO V_O q=+1: the header still says 632, DOPING -1 left 631 (measured on CRYSTAL23)
     text = fake_output(energy=-8735.8147109285, header=632, electrons=631.0, spin=1.0)
     assert out.electron_count(text) == 631.0
     assert out.header_electrons(text) == 632

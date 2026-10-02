@@ -2,7 +2,7 @@
 
 Every result is for ions at the pristine positions ("unrelaxed").
 
-3D (FACTS.md, measured on MgO V_O): raw E(q) - E(0) of a charged supercell
+3D (measured on CRYSTAL23, MgO V_O): raw E(q) - E(0) of a charged supercell
 carries a constant offset C per electron removed. Fractional DOPING runs
 (-0.5, -1.0, -1.5) give dE/dN = eps_F + C, so
 
@@ -17,7 +17,7 @@ calibration only q = 0 is reported. C tracks 2*(EXT EL-SPHEROPOLE)/N_e
 (reported as a cross-check only; the relation is a hypothesis). Results are
 labelled "uncorrected for image charges": no dielectric correction exists yet.
 
-2D (FACTS.md, hBN V_N): fractional slopes match eps_F directly (no offset),
+2D (measured on CRYSTAL23, hBN V_N): fractional slopes match eps_F directly (no offset),
 and E(q) - E(0) converges as A + B/L with L = sqrt(|a x b|), fitted by least
 squares over the supercell sizes. A charged sheet has no vacuum level.
 
@@ -560,7 +560,7 @@ def _analyze_2d(manifest, texts, jobs, report, mu_term, vbm_override):
     report["pristine"]["L_angstrom"] = [s["L"] for s in sizes]
     report["notes"].append("L = sqrt(|a x b|) of the supercell (Angstrom); E(q) - E(0) fitted as A + B/L")
     report["notes"].append("a charged sheet is not compensated in the vacuum: there is no vacuum level "
-                           "in a charged 2D cell (FACTS.md)")
+                           "in a charged 2D cell")
     qs = sorted({q for s in sizes for q in s["states"] if q != 0})
     fits, a_q = {}, {0.0: 0.0}
     for q in qs:

@@ -17,7 +17,7 @@ Where the records go, and why (CRYSTAL23 manual pages):
   Under KEEPSYMM these act on every symmetry-equivalent atom (pp.41-44), so a
   host with KEEPSYMM in block 1 is refused.
 * ``GHOSTS`` (basis-set input, p.82) right after the BASISSET name line, or
-  after the ``99 0`` that ends an explicit basis (measured, FACTS.md).
+  after the ``99 0`` that ends an explicit basis (measured on CRYSTAL23).
 * ``DOPING`` (p.103) and ``SPINLOCK`` (p.128) in the SCF block, immediately
   before a trailing ``PPAN`` that directly precedes the final END, otherwise
   before the final END. This reproduces the decks measured on HPCC byte for
@@ -39,7 +39,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from mace.defects import DefectError, NeedsPristineOutput
 
-#: Lock length written with SPINLOCK. Measured on HPCC (FACTS.md): "SPIN +
+#: Lock length written with SPINLOCK. Measured on CRYSTAL23: "SPIN +
 #: SPINLOCK 1 30 works" for odd ATOMREMO + DOPING states. MACE's deck writer
 #: default (DEFAULT_SPINLOCK_CYCLES = 50) is deliberately not used here: the
 #: measured defect runs all used 30.
@@ -550,7 +550,7 @@ def ghost_records(label: int) -> List[str]:
 
 
 def ghost_chemod_records(ghost_label: int, far_label: int, charges: Sequence[float]) -> List[str]:
-    """The odd-electron ghost recipe measured on HPCC (FACTS.md, mgo_g1x)."""
+    """The odd-electron ghost recipe measured on CRYSTAL23 (MgO V_O, ghost q=+1)."""
     return (["GHOSTS", "1", str(ghost_label), "CHEMOD", "1",
              f"{far_label} " + " ".join(format_charge(c) for c in charges), "CHARGED"])
 
@@ -960,7 +960,7 @@ def build_supercell_set(host: HostInfo, site: DefectSite, keyword: str, matrix, 
                         "GHOSTS + DOPING + SPINLOCK aborts ('GHOST NALPHA-NBETA NOT COMPATIBLE WITH "
                         "NUMBER OF ELECTRONS': parity is checked before doping; measured g1), "
                         "without SPINLOCK the state collapses to spin 0 (measured g1b), and "
-                        "CHEMOD + CHARGED is ignored by internal libraries (FACTS.md). Use "
+                        "CHEMOD + CHARGED is ignored by internal libraries (measured on CRYSTAL23). Use "
                         "--vacancy, or an explicit-basis host")
                 if far_shells is None or site.far_label is None:
                     raise NeedsPristineOutput(f"ghost q={fmt_q(q)} needs the far-atom recipe, which needs the "
@@ -1022,7 +1022,7 @@ def _calibration_decks(host, ed, site, opts, decks, head, sc, rec1, basis, basis
                        name, title, msgs) -> List[Deck]:
     if host.dimensionality != 3:
         raise DefectError("--calibrate is for 3D sets: in 2D the fractional-DOPING slopes match the "
-                          "Fermi level directly (measured, FACTS.md); use --sizes and the A + B/L fit")
+                          "Fermi level directly (measured on CRYSTAL23); use --sizes and the A + B/L fit")
     if host.has.get("SMEAR"):
         raise DefectError("--calibrate with a SMEAR host: smearing changes the occupations and the "
                           "meaning of EFERMI, so the calibration slope is not defined; remove SMEAR")
@@ -1033,7 +1033,7 @@ def _calibration_decks(host, ed, site, opts, decks, head, sc, rec1, basis, basis
     if on == "pristine":
         base_head, base_tail = head[1:] + sc, list(basis_tail)
         msgs.append("note: --calibrate-on pristine: measured on MgO, the pristine-cell C is within "
-                    "0.004 Ha of the defect-cell C (FACTS.md round 2); the defect cell is the default")
+                    "0.004 Ha of the defect-cell C (measured on CRYSTAL23); the defect cell is the default")
     else:
         base_head = head[1:] + sc + rec1
         base_tail = (ghost_records(site.label) + list(basis_tail)) if site.kind == "ghost" else list(basis_tail)

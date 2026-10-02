@@ -3,7 +3,7 @@
 Private to mace.defects. The Mulliken parsing here duplicates what the
 charged-systems work reads; the two are to be unified later.
 
-Measured facts this module relies on (FACTS.md, HPCC, CRYSTAL23):
+Facts this module relies on (measured on CRYSTAL23):
 
 * DOPING prints no message, and the header "N. OF ELECTRONS PER CELL" still
   shows the count BEFORE doping. The real count is the Mulliken
@@ -83,7 +83,7 @@ def scf_cycles(text: str) -> Optional[int]:
 
 
 def header_electrons(text: str) -> Optional[int]:
-    """'N. OF ELECTRONS PER CELL' - the count BEFORE DOPING (FACTS.md); a cross-check only."""
+    """'N. OF ELECTRONS PER CELL' - the count BEFORE DOPING (measured on CRYSTAL23)."""
     m = None
     for m in re.finditer(r"N\. OF ELECTRONS PER CELL\s+(\d+)", text):
         pass

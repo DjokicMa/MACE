@@ -1,4 +1,4 @@
-"""mace.defects.analysis on the numbers of the HPCC defect runs (FACTS.md).
+"""mace.defects.analysis on the numbers of the HPCC defect runs (CRYSTAL23).
 
 Outputs are synthetic excerpts carrying the measured energies, electron counts,
 Fermi levels and band edges of the MgO V_O (3D) and hBN V_N (2D) runs, so the
