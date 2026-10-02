@@ -37,6 +37,7 @@ pd = get_pandas() if PANDAS_AVAILABLE else None
 from mace.database.materials import MaterialDatabase
 from mace.utils.file_manager import CrystalFileManager
 from mace.completion_checker import determine_completed_subtype
+from mace.recovery import screened_hybrid
 
 
 class CrystalErrorDetector:
@@ -308,8 +309,23 @@ class CrystalErrorDetector:
         # Extract runtime and performance information
         self._extract_runtime_info(lines, result)
         
-        # Check for errors first (following updatelists2.py logic)
-        error_found = self._check_for_errors(lines, result)
+        # The HSE-type odd-electron crash ends in the signal lines of an OOM
+        # crash; it is not one (see mace.recovery.screened_hybrid).
+        hse_odd = screened_hybrid.odd_electron_crash(content)
+        if hse_odd:
+            result['status'] = 'error'
+            result['error_type'] = screened_hybrid.ERROR_TYPE
+            result['error_details'].append({
+                'pattern': 'DIIS TEST: NaN', 'line': hse_odd, 'severity': 'high',
+                'description': 'HSE-type screened hybrid crash on an odd-electron open-shell system'})
+            result['recoverable'] = False
+            result['recovery_hints'] = [
+                'More memory does not help: the SCF blows up in its first cycles',
+                'PBE0 and PBEsol0 converged on the same systems; the functional is your choice']
+            error_found = True
+        else:
+            # Check for errors first (following updatelists2.py logic)
+            error_found = self._check_for_errors(lines, result)
         
         if not error_found:
             # Check for completion patterns

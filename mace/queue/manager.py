@@ -37,7 +37,7 @@ import threading
 from mace.database.materials import MaterialDatabase, create_material_id_from_file, extract_formula_from_d12, find_material_by_similarity
 from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.workflow.context import get_current_context
-from mace.recovery import opt_restart
+from mace.recovery import opt_restart, screened_hybrid
 from mace.utils.calc_detection import (
     PROPERTY_CALC_TYPES, calc_type_from_filename, d12_calc_type, d3_calc_type,
     deck_records)
@@ -1253,6 +1253,15 @@ class EnhancedCrystalQueueManager:
             collapsed = opt_restart.trust_radius_abort(content, fort87)
             if collapsed:
                 return "opt_trust_radius_error", collapsed
+
+            # An HSE-type screened hybrid on an odd-electron open-shell system
+            # blows up in its first SCF cycles and its ranks die by signal -
+            # lines the memory patterns below would take for an OOM crash.
+            # More memory cannot help and the functional is the user's to
+            # change, so it is reported as its own, non-recoverable error.
+            hse_odd = screened_hybrid.odd_electron_crash(content)
+            if hse_odd:
+                return screened_hybrid.ERROR_TYPE, hse_odd
 
             # Common CRYSTAL error patterns (from updatelists2.py logic)
             error_patterns = {
