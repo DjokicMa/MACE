@@ -83,7 +83,7 @@ from d12_writer import (
 )
 # Import write_scf_section from d12_writer
 from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES, atomic_deck
-from charge_records import carry_charge_records
+from charge_records import ChargeCarryError, carry_charge_records
 from d12_interactive import (
     display_current_settings, interactive_d12_configuration,
     get_calculation_options_from_current, get_calculation_options,
@@ -1984,21 +1984,45 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     # A charged or ionic parent (CHEMOD / CHARGED / DOPING) must give a child
     # with the same electron count; the settings model does not carry these
     # records, so copy them from the parent deck text.
-    if has_parent_deck:
-        with open(input_file, "r", errors="ignore") as pf:
-            parent_text = pf.read()
-        with open(new_filename, "r") as cf:
-            child_text = cf.read()
-        carried, charge_notes = carry_charge_records(child_text, parent_text)
-        if carried != child_text:
-            with open(new_filename, "w") as cf:
-                cf.write(carried)
-        for note in charge_notes:
-            if note.startswith("WARNING"):
-                ui.warn(note)
-                LAST_RESULT["notes"].append(note)
-            else:
-                ui.info(f"Charge state: {note}")
+    parent_deck_exists = has_parent_deck
+    try:
+        with open(output_file, "r", errors="ignore") as of:
+            parent_out_text = of.read()
+    except OSError:
+        parent_out_text = None
+    with open(new_filename, "r") as cf:
+        child_text = cf.read()
+    parent_text = None
+    soft_notes = []
+    charge_notes = []
+    carried = child_text
+    try:
+        if parent_deck_exists:
+            with open(input_file, "r", errors="ignore") as pf:
+                parent_text = pf.read()
+        if parent_deck_exists:
+            carried, charge_notes = carry_charge_records(child_text, parent_text, parent_out_text)
+    except ChargeCarryError as e:
+        try:
+            os.remove(new_filename)
+        except OSError:
+            pass
+        _fail(f"charge state: {e}", f"Not writing {new_filename}: {e}")
+        return False, options
+    if carried != child_text:
+        with atomic_deck(new_filename) as cf:
+            cf.write(carried)
+    for note in soft_notes:
+        if note.startswith("WARNING"):
+            ui.warn(note)
+        else:
+            ui.info(f"Charge state: {note}")
+    for note in charge_notes:
+        if note.startswith("WARNING"):
+            ui.warn(note)
+            LAST_RESULT["notes"].append(note)
+        else:
+            ui.info(f"Charge state: {note}")
 
     ui.ok(f"\nSuccessfully created {new_filename}")
     LAST_RESULT["deck"] = new_filename
@@ -2483,7 +2507,7 @@ def main():
                     confirm_config=confirm_config,
                     unattended=unattended,
                     reserved_decks=reserved_decks,
-                )
+                        )
                 reason = LAST_RESULT["reason"]
             except Exception as e:
                 # Per-file isolation (same contract as NewCifToD12): one bad
