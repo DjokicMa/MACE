@@ -1246,7 +1246,7 @@ def main():
         return
     
     # Special handling for commands that should pass through directly
-    passthrough_commands = ['convert', 'opt2d12', 'opt2d3', 'opt2cif', 'completion']
+    passthrough_commands = ['convert', 'opt2d12', 'opt2d3', 'opt2cif', 'completion', 'ions']
     
     # Handle --no-banner if it's the first argument
     no_banner_first = False
@@ -1300,6 +1300,10 @@ def main():
             from completion_checker import main as completion_main
             sys.argv = ['completion_checker.py'] + sys.argv[2:]
             completion_main()
+        elif command == 'ions':
+            sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
+            from ion_charges import main as ions_main
+            sys.exit(ions_main(sys.argv[2:]))
         sys.exit(0)
     
     # Check if asking for help on a specific command (for non-passthrough commands)
@@ -1323,6 +1327,7 @@ Commands:
   opt2d12     Generate D12 from optimized output - create SP/FREQ inputs from OPT results
   opt2d3      Generate D3 property inputs - BAND, DOSS, TRANSPORT, CHARGE calculations
   opt2cif     Convert CRYSTAL outputs to CIF - supports all dimensionalities and calc types
+  ions        Charged systems - CHEMOD/DOPING/SPIN for ion clusters and charged cells
   manager     Enhanced Queue Manager - material tracking, workflow automation, SLURM integration
   recover     Error recovery - automated fixes for SHRINK, memory, and convergence issues
   database    Database queries - search materials, export results, view statistics

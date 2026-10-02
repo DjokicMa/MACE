@@ -360,11 +360,14 @@ def plan_charge_setup(symbols: Sequence[str], z_labels: Sequence[int], xyz, *, c
                       parent_spinlock: Optional[Tuple[int, int]] = None,
                       parent_out_text: Optional[str] = None,
                       interactive: bool = False,
-                      ask: Optional[Callable[[str], str]] = None) -> Optional[ChargeSetup]:
+                      ask: Optional[Callable[[str], str]] = None,
+                      electron_count_known: bool = True) -> Optional[ChargeSetup]:
     """Work out the records for a charged system (see the module docstring).
 
     Returns None when nothing was asked for. Raises IonChargeError with the
-    reason for anything MACE will not write.
+    reason for anything MACE will not write. electron_count_known=False (a
+    deck with symmetry lists only its asymmetric unit) skips the parity check
+    and its spin state, with a warning.
     """
     if not ion_charges and net_charge is None and not site_states:
         return None
@@ -469,7 +472,7 @@ def plan_charge_setup(symbols: Sequence[str], z_labels: Sequence[int], xyz, *, c
         raise IonChargeError(
             "CHEMOD needs a deck without symmetry: CRYSTAL checks the symmetry with the new "
             "configuration and stops rather than lowering it (manual p.80). Write the structure "
-            "in P1 (cif2d12 --symmetry P1) or set the charge with DOPING alone (chemod 'no')")
+            "in P1 (cif2d12: symmetry handling P1) or set the charge with DOPING alone (chemod 'no')")
     if write_chemod:
         setup.chemod = [(i + 1, mods[i]) for i in sorted(mods)]
 
@@ -507,6 +510,17 @@ def plan_charge_setup(symbols: Sequence[str], z_labels: Sequence[int], xyz, *, c
     setup.electrons = electrons
     integral = electrons == electrons.to_integral_value()
     odd = integral and int(electrons) % 2 == 1
+    if not electron_count_known:
+        setup.electrons = None
+        setup.warnings.append("WARNING: the deck has symmetry, so its listed atoms are not the whole "
+                              "cell and the electron-count parity was not checked; if the count is "
+                              "odd, set SPIN + SPINLOCK and check the count in the output")
+        if spinlock:
+            setup.spinlock = (int(spinlock), int(spinlock_cycles or DEFAULT_SPINLOCK_CYCLES))
+            setup.spin = method.method == "DFT"
+        if setup.doping is not None:
+            setup.report.append(f"net charge {fmt_q(q)}: DOPING {setup.doping_lines()[1]}")
+        return setup
     setup.report.append(f"net charge {fmt_q(q)}: {fmt_n(electrons)} electrons"
                         + ("" if basis.internal is None else " (all-electron count)")
                         + (" - odd, open shell" if odd else ""))
@@ -654,3 +668,228 @@ def parse_site_states(value) -> Optional[List[dict]]:
     if not isinstance(data, list):
         raise IonChargeError("site_states must be a list of {\"atom\": i, \"shell_charges\": [...]}")
     return data
+
+
+# ------------------------------------------------------------ an existing deck
+
+GEOMETRY_EDITS = {"SUPERCEL", "SUPERCON", "SCELCONF", "SCELPHONO", "ATOMREMO", "ATOMSUBS", "ATOMINSE",
+                  "SLABCUT", "SLABINFO", "ATOMDISP", "MOLECULE", "CLUSTER", "NANOTUBE", "SWCNT",
+                  "ROTCRY", "PRIMITIV", "EXTERNAL"}
+
+
+@dataclass
+class DeckGeometry:
+    dimensionality: str
+    group: str
+    symbols: List[str]
+    z_labels: List[int]
+    xyz: List[Tuple[float, float, float]]
+    cell: Optional[List[Tuple[float, float, float]]]
+    periodic_dirs: Tuple[int, ...]
+    symmetric: bool
+
+
+def read_deck_geometry(text: str) -> DeckGeometry:
+    """The atoms of a deck's geometry block, in Cartesian A.
+
+    Coordinates are read as CRYSTAL reads them: CRYSTAL fractional x y z,
+    SLAB fractional x y and z in A, POLYMER fractional x and y z in A,
+    MOLECULE x y z in A. Atom numbers above 100 (ECP labels) map to Z % 100
+    for the element. The cell of a deck with symmetry is not rebuilt (its
+    minimal cell record and asymmetric unit do not give the whole cell), so
+    only the atom list is returned for it.
+    """
+    lines = [l.rstrip() for l in text.splitlines()]
+    if len(lines) < 4:
+        raise IonChargeError("not a deck: too short")
+    dim = lines[1].strip().upper()
+    if dim not in ("CRYSTAL", "SLAB", "POLYMER", "MOLECULE"):
+        raise IonChargeError(f"geometry {dim!r} is not read here (CRYSTAL, SLAB, POLYMER or MOLECULE)")
+    i = 2
+    if dim == "CRYSTAL":
+        i += 1  # IFLAG IFHR IFSO
+    group = lines[i].strip()
+    i += 1
+    symmetric = symmetric_from_deck_group(dim, group)
+    cell_vals: List[float] = []
+    if dim != "MOLECULE":
+        cell_vals = [float(x) for x in lines[i].split()]
+        i += 1
+    try:
+        natoms = int(lines[i].split()[0])
+    except (ValueError, IndexError):
+        raise IonChargeError(f"could not read the atom count (line {i + 1}: {lines[i]!r})")
+    rows = lines[i + 1:i + 1 + natoms]
+    after = [l.strip().upper() for l in lines[i + 1 + natoms:]]
+    for key in after:
+        if key in ("END", "ENDGEOM", "BASISSET", "OPTGEOM", "FREQCALC", "ELASTCON", "EOS"):
+            break
+        if key in GEOMETRY_EDITS:
+            raise IonChargeError(f"the geometry block edits the structure ({key}) after the atom list, "
+                                 "so the atoms CRYSTAL runs are not the ones listed")
+    cell = None
+    periodic: Tuple[int, ...] = ()
+    if not symmetric and dim != "MOLECULE":
+        if dim == "CRYSTAL" and len(cell_vals) == 6:
+            cell = frag.cell_matrix(*cell_vals)
+            periodic = (0, 1, 2)
+        elif dim == "SLAB" and len(cell_vals) == 3:
+            a, b, gamma = cell_vals
+            m = frag.cell_matrix(a, b, 500.0, 90.0, 90.0, gamma)
+            cell = [m[0], m[1], (0.0, 0.0, 500.0)]
+            periodic = (0, 1)
+        elif dim == "POLYMER" and len(cell_vals) == 1:
+            cell = [(cell_vals[0], 0.0, 0.0), (0.0, 500.0, 0.0), (0.0, 0.0, 500.0)]
+            periodic = (0,)
+        else:
+            raise IonChargeError(f"could not read the {dim} cell record {cell_vals!r}")
+    symbols, z_labels, xyz = [], [], []
+    for row in rows:
+        tok = row.split()
+        z = int(tok[0])
+        x, y, zc = (float(v) for v in tok[1:4])
+        if dim == "CRYSTAL" and cell:
+            p = tuple(x * cell[0][k] + y * cell[1][k] + zc * cell[2][k] for k in range(3))
+        elif dim == "SLAB" and cell:
+            p = tuple(x * cell[0][k] + y * cell[1][k] for k in range(2)) + (zc,)
+        elif dim == "POLYMER" and cell:
+            p = (x * cell[0][0], y, zc)
+        else:
+            p = (x, y, zc)
+        z_labels.append(z)
+        symbols.append(frag.SYMBOLS[z % 100] if 0 < z % 100 < len(frag.SYMBOLS) else "X")
+        xyz.append(p)
+    return DeckGeometry(dim, group, symbols, z_labels, xyz, cell, periodic, symmetric)
+
+
+def deck_basis(text: str) -> BasisInfo:
+    lines = [l.strip() for l in text.splitlines()]
+    for i, line in enumerate(lines[1:], start=1):
+        if line.upper() == "BASISSET" and i + 1 < len(lines):
+            return BasisInfo(internal=lines[i + 1].split()[0])
+    return BasisInfo(blocks=parse_basis_blocks(text))
+
+
+def deck_method(text: str) -> MethodInfo:
+    upper = [l.strip().upper() for l in text.splitlines()]
+    info = MethodInfo()
+    if "DFT" in upper[1:]:
+        info.method = "DFT"
+        start = upper.index("DFT", 1)
+        end = upper.index("ENDDFT", start) if "ENDDFT" in upper[start:] else len(upper)
+        info.spin = "SPIN" in upper[start:end]
+    else:
+        info.method = "HF"
+        for key in ("HF3C", "HFSOL3C", "UHF", "ROHF"):
+            if key in upper[1:]:
+                info.hf_method = key
+                break
+        info.spin = info.hf_method == "UHF"
+    if "SPINLOCK" in upper[1:]:
+        k = upper.index("SPINLOCK", 1)
+        try:
+            nums = upper[k + 1].split()
+            info.spinlock = (int(float(nums[0])), int(float(nums[1])))
+        except (IndexError, ValueError):
+            pass
+    info.ghosts = "GHOSTS" in upper[1:]
+    return info
+
+
+SYMMETRIC_AUTO_MESSAGE = ("fragments and CHEMOD labels need every atom of the cell, so write the "
+                          "structure in P1; a net charge alone (DOPING) is fine with symmetry")
+
+
+def plan_for_deck(text: str, **options) -> Optional[ChargeSetup]:
+    """plan_charge_setup for an existing deck's geometry, basis and Hamiltonian."""
+    geom = read_deck_geometry(text)
+    if geom.symmetric and (options.get("ion_charges") or options.get("site_states")):
+        raise IonChargeError(f"the deck has symmetry ({geom.dimensionality} group {geom.group}): "
+                             + SYMMETRIC_AUTO_MESSAGE)
+    method = deck_method(text)
+    return plan_charge_setup(geom.symbols, geom.z_labels, geom.xyz, cell=geom.cell,
+                             periodic_dirs=geom.periodic_dirs, symmetric=geom.symmetric,
+                             basis=deck_basis(text), method=method,
+                             electron_count_known=not geom.symmetric, **options)
+
+
+def main(argv=None) -> int:
+    """mace ions: add the records of a charged system to existing decks."""
+    import argparse
+    import os
+
+    parser = argparse.ArgumentParser(
+        prog="mace ions",
+        description="Add CHEMOD / DOPING / CHARGED (and SPIN + SPINLOCK for an odd electron count) "
+                    "to CRYSTAL decks of ion clusters or charged cells. Ions are found by "
+                    "connectivity, so atom order does not matter.")
+    parser.add_argument("decks", nargs="+", help=".d12 files")
+    parser.add_argument("--ion-charges", choices=["auto"], help="find known ions (Li+, FSI-, ...) "
+                        "and give them their formal charges")
+    parser.add_argument("--net-charge", type=float, help="net charge of the system (default: the "
+                        "sum of the ions found)")
+    parser.add_argument("--site-states", help='JSON (or a JSON file): [{"atom": 1, "shell_charges": '
+                        '[2.0, 0.0, ...]}] - per-atom shell charges, overriding --ion-charges')
+    parser.add_argument("--fragment-bond-scale", type=float, default=1.15,
+                        help="bond if distance < scale x (sum of covalent radii) (default 1.15)")
+    parser.add_argument("--chemod", choices=["auto", "yes", "no"], default="auto",
+                        help="write CHEMOD (default auto: not for a periodic explicit-basis cell)")
+    parser.add_argument("--spinlock", type=int, help="nalpha-nbeta for an odd electron count")
+    parser.add_argument("--spinlock-cycles", type=int, help="SCF cycles the SPINLOCK holds")
+    parser.add_argument("--parent-out", help="a .out with the same basis (its LOCAL ATOMIC FUNCTIONS "
+                        "listing checks site_states shell counts)")
+    parser.add_argument("--replace", action="store_true",
+                        help="remove the deck's own CHEMOD/CHARGED/DOPING first")
+    where = parser.add_mutually_exclusive_group(required=True)
+    where.add_argument("-o", "--output-dir", help="write the new decks here")
+    where.add_argument("--in-place", action="store_true", help="overwrite the decks")
+    parser.add_argument("--non-interactive", action="store_true", help="never ask")
+    args = parser.parse_args(argv)
+
+    if not (args.ion_charges or args.net_charge is not None or args.site_states):
+        parser.error("give --ion-charges auto, --net-charge or --site-states")
+    try:
+        site_states = parse_site_states(args.site_states)
+    except IonChargeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    parent_text = None
+    if args.parent_out:
+        with open(args.parent_out, errors="replace") as f:
+            parent_text = f.read()
+    interactive = sys.stdin.isatty() and not args.non_interactive
+    failed = 0
+    for path in args.decks:
+        name = os.path.basename(path)
+        try:
+            with open(path) as f:
+                text = f.read()
+            if args.replace:
+                text = strip_charge_records(text)
+            setup = plan_for_deck(text, ion_charges=args.ion_charges, net_charge=args.net_charge,
+                                  site_states=site_states, chemod=args.chemod,
+                                  fragment_bond_scale=args.fragment_bond_scale,
+                                  spinlock=args.spinlock, spinlock_cycles=args.spinlock_cycles,
+                                  parent_out_text=parent_text, interactive=interactive)
+            new = apply_charge_setup(text, setup)
+        except (IonChargeError, OSError, ValueError) as e:
+            print(f"{name}: NOT written - {e}", file=sys.stderr)
+            failed += 1
+            continue
+        target = path if args.in_place else os.path.join(args.output_dir, name)
+        if not args.in_place:
+            os.makedirs(args.output_dir, exist_ok=True)
+        tmp = os.path.join(os.path.dirname(os.path.abspath(target)), f".{os.path.basename(target)}.part")
+        with open(tmp, "w") as f:
+            f.write(new)
+        os.replace(tmp, target)
+        print(f"{name} -> {target}")
+        for line in setup.report:
+            print(f"  {line}")
+        for line in setup.warnings:
+            print(f"  {line}", file=sys.stderr)
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

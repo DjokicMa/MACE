@@ -1327,6 +1327,76 @@ def slab_cartesian_z(z_fractions, c, z_reversing):
     return [float(v) for v in (unwrapped - origin) * c]
 
 
+CHARGE_OPTION_KEYS = ("ion_charges", "net_charge", "site_states")
+
+
+def charge_options_requested(options):
+    """True when an options dict asks for a charged system (ion_charges.py)."""
+    return bool(options.get("ion_charges") not in (None, "", "none")
+                or options.get("net_charge") is not None or options.get("site_states"))
+
+
+def plan_deck_charges(options, dimensionality, atomic_numbers, symbols, positions, cell_params,
+                      spacegroup, layer_group, rod_group, slabcut, is_spin_polarized, interactive):
+    """The charge set-up (ion_charges.plan_charge_setup) for the deck being written.
+
+    Raises ion_charges.IonChargeError with the reason when it cannot be
+    written. Coordinates are built exactly as the deck writes them.
+    """
+    import ion_charges as ic
+
+    if slabcut is not None:
+        raise ic.IonChargeError("charge options are not used with SLABCUT: CRYSTAL builds the "
+                                "slab, so its atoms are not known here")
+    a, b, c, alpha, beta, gamma = cell_params
+    basis_type = options["basis_set_type"]
+    method = options["method"]
+    hf_method = options.get("hf_method", "RHF")
+    z_labels = [z + 200 if basis_type == "EXTERNAL" and z in ECP_ELEMENTS_EXTERNAL else z
+                for z in atomic_numbers]
+    cell, periodic, symmetric = None, (), False
+    if dimensionality == "MOLECULE":
+        xyz = [(p[0] * a, p[1] * b, p[2] * c) for p in positions]
+    elif dimensionality == "CRYSTAL":
+        symmetric = spacegroup != 1
+        cell = ic.frag.cell_matrix(a, b, c, alpha, beta, gamma)
+        xyz = [tuple(sum(p[d] * cell[d][k] for d in range(3)) for k in range(3)) for p in positions]
+        periodic = (0, 1, 2)
+    elif dimensionality == "SLAB":
+        symmetric = layer_group != 1
+        m = ic.frag.cell_matrix(a, b, c, alpha, beta, gamma)
+        cell = [m[0], m[1], (0.0, 0.0, 500.0)]
+        zs = slab_cartesian_z([p[2] for p in positions], c,
+                              z_reversing=layer_group not in LAYER_GROUPS_POLAR_IN_Z)
+        xyz = [(p[0] * m[0][0] + p[1] * m[1][0], p[0] * m[0][1] + p[1] * m[1][1], z)
+               for p, z in zip(positions, zs)]
+        periodic = (0, 1)
+    else:  # POLYMER
+        symmetric = rod_group != 1
+        cell = [(a, 0.0, 0.0), (0.0, 500.0, 0.0), (0.0, 0.0, 500.0)]
+        xyz = [(p[0] * a, p[1] * b, p[2] * c) for p in positions]
+        periodic = (0,)
+    if symmetric and (options.get("ion_charges") or options.get("site_states")):
+        raise ic.IonChargeError(f"the structure keeps its symmetry: {ic.SYMMETRIC_AUTO_MESSAGE} "
+                                "(symmetry handling P1)")
+    if basis_type == "INTERNAL" or (method == "HF" and hf_method in ("HF3C", "HFSOL3C")):
+        basis = ic.BasisInfo(internal=options["basis_set"])
+    else:
+        text = "".join(read_basis_file(options["basis_set"], z, "EXTERNAL")
+                       for z in sorted(set(atomic_numbers)))
+        basis = ic.BasisInfo(blocks=ic.parse_basis_blocks(text + "99 0\n"))
+    return ic.plan_charge_setup(
+        symbols, z_labels, xyz, cell=cell, periodic_dirs=periodic, symmetric=symmetric,
+        basis=basis,
+        method=ic.MethodInfo(method=method, hf_method=hf_method, spin=bool(is_spin_polarized)),
+        ion_charges=options.get("ion_charges"), net_charge=options.get("net_charge"),
+        site_states=ic.parse_site_states(options.get("site_states")),
+        chemod=options.get("chemod") or "auto",
+        fragment_bond_scale=options.get("fragment_bond_scale") or 1.15,
+        spinlock=options.get("spinlock") or None, spinlock_cycles=options.get("spinlock_cycles"),
+        interactive=interactive, electron_count_known=not symmetric)
+
+
 def create_d12_file(cif_data, output_file, options, interactive=None):
     """
     Create a D12 input file for CRYSTAL23 from CIF data
@@ -1797,6 +1867,27 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
                 f"2D cell CRYSTAL prints."
             )
 
+    # Charged systems (opt-in): plan the records before writing, so an odd
+    # electron count can switch on SPIN + SPINLOCK through the writer.
+    charge_setup = None
+    if charge_options_requested(options):
+        import ion_charges as ic
+
+        if interactive is None:
+            interactive = sys.stdin.isatty()
+        try:
+            charge_setup = plan_deck_charges(
+                options, dimensionality, atomic_numbers, symbols, positions,
+                (a, b, c, alpha, beta, gamma), spacegroup, layer_group, rod_group, slabcut,
+                is_spin_polarized, interactive)
+        except ic.IonChargeError as e:
+            ui.err(f"Not writing {os.path.basename(output_file)}: {e}")
+            return False
+        if charge_setup is not None and charge_setup.spinlock:
+            is_spin_polarized = True
+            options = dict(options, is_spin_polarized=True, spinlock=charge_setup.spinlock[0],
+                           spinlock_cycles=charge_setup.spinlock[1])
+
     # Open output file (renamed into place only once the deck is complete)
     with atomic_deck(output_file) as f:
         # Write title
@@ -2067,6 +2158,18 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
 
         # Note: The single END at the very end is written by write_scf_section
 
+    if charge_setup is not None:
+        import ion_charges as ic
+
+        with open(output_file) as fh:
+            written = fh.read()
+        with atomic_deck(output_file) as f:
+            f.write(ic.apply_charge_setup(written, charge_setup))
+        for line in charge_setup.report:
+            ui.print(f"  Charge: {line}")
+        for line in charge_setup.warnings:
+            ui.warn(f"  {line}")
+
     return True
 
 
@@ -2309,6 +2412,23 @@ def main():
         help="File to save/load options for batch mode",
     )
 
+    charged = parser.add_argument_group(
+        "charged systems (CHEMOD / DOPING / SPIN; see Crystal_d12/README.md)")
+    charged.add_argument("--ion-charges", choices=["auto"],
+                         help="find known ions (Li+, FSI-, ...) by connectivity and give them "
+                              "their formal charges")
+    charged.add_argument("--net-charge", type=float,
+                         help="net charge (default: the sum of the ions found)")
+    charged.add_argument("--site-states",
+                         help='JSON or JSON file: [{"atom": 1, "shell_charges": [...]}]')
+    charged.add_argument("--fragment-bond-scale", type=float,
+                         help="bond when distance < scale x covalent radii sum (default 1.15)")
+    charged.add_argument("--chemod", choices=["auto", "yes", "no"],
+                         help="write CHEMOD (default auto)")
+    charged.add_argument("--spinlock", type=int,
+                         help="nalpha-nbeta for an odd electron count")
+    charged.add_argument("--spinlock-cycles", type=int, help="SCF cycles the SPINLOCK holds")
+
     args = parser.parse_args()
 
     if args.batch:
@@ -2332,6 +2452,24 @@ def main():
         print("")
         options = get_calculation_options_new()
         print_summary(options)
+
+    # Charged-system flags override the options (file or answers)
+    for key, value in (("ion_charges", args.ion_charges), ("net_charge", args.net_charge),
+                       ("site_states", args.site_states),
+                       ("fragment_bond_scale", args.fragment_bond_scale),
+                       ("chemod", args.chemod), ("spinlock", args.spinlock),
+                       ("spinlock_cycles", args.spinlock_cycles)):
+        if value is not None:
+            if key == "net_charge" and float(value).is_integer():
+                value = int(value)
+            if key == "site_states":
+                import ion_charges as ic
+                try:
+                    value = ic.parse_site_states(value)
+                except ic.IonChargeError as e:
+                    ui.err(f"--site-states: {e}")
+                    sys.exit(1)
+            options[key] = value
 
     # Always ask about saving options (unless in batch mode)
     if not args.batch:
