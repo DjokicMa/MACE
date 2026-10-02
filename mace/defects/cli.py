@@ -4,7 +4,8 @@ build    pristine supercell + one deck per charge state (+ calibration decks)
          from a single-point host deck; submit them with ``mace submit DIR``
 potc     stage POTC (electrostatic potential at the atoms) property runs for
          potential alignment into DIR/potc; submit with ``mace submit DIR/potc``
-analyze  checks, calibration, formation energies and transition levels
+analyze  checks, charged-cell offset and image-charge corrections, formation
+         energies and transition levels
 """
 
 import argparse
@@ -396,7 +397,9 @@ def analyze(args) -> int:
         data = json.loads(Path(args.mu_file).read_text())
         mu.update(an.parse_mu([f"{k}={v}" for k, v in data.items() if not k.startswith("_")]))
     vbm = an.parse_energy(args.vbm, "--vbm") if args.vbm else None
-    report = an.analyze(manifest, texts, mu=mu, vbm=vbm, potc=potc_texts, apply_alignment=args.apply_alignment)
+    dielectric = _dielectric(args)
+    report = an.analyze(manifest, texts, mu=mu, vbm=vbm, potc=potc_texts, apply_alignment=args.apply_alignment,
+                        dielectric=dielectric, offset=args.offset)
     _print_report(report)
     if args.json:
         Path(args.json).write_text(json.dumps(report, indent=2, default=str) + "\n")
@@ -405,13 +408,31 @@ def analyze(args) -> int:
         with open(args.csv, "w", newline="") as fh:
             w = csv.writer(fh)
             w.writerow(["q", "job", "status", "E_raw_ha", "E_corr_ha", "formation_energy_ev_at_vbm",
-                        "formation_energy_rel_q0_ev_at_vbm"])
+                        "formation_energy_rel_q0_ev_at_vbm", "offset_ha", "image_charge_ev", "alignment_ev"])
             for s in report.get("states", []):
                 w.writerow([s.get("q"), s.get("job"), s.get("status", "ok"), s.get("E_raw_ha"),
                             s.get("E_corr_ha"), s.get("formation_energy_ev_at_vbm"),
-                            s.get("formation_energy_rel_q0_ev_at_vbm")])
+                            s.get("formation_energy_rel_q0_ev_at_vbm"), s.get("offset_ha"),
+                            s.get("image_charge_ev"), s.get("alignment_ev")])
         _p(f"wrote {args.csv}")
     return 0
+
+
+def _dielectric(args) -> Optional[dict]:
+    from mace.defects import analysis as an
+    if args.eps is not None and args.eps_from:
+        raise DefectError("give --eps or --eps-from, not both")
+    if args.eps_static and not args.eps_from:
+        raise DefectError("--eps-static reads eps_0 from a FREQCALC INTCPHF output: give --eps-from FILE")
+    if args.eps is not None:
+        return an.dielectric_choice(value=args.eps)
+    if args.eps_from:
+        path = Path(args.eps_from)
+        if not path.is_file():
+            raise DefectError(f"--eps-from {path}: no such file")
+        return an.dielectric_choice(text=path.read_text(errors="replace"), source=path.name,
+                                    static=args.eps_static)
+    return None
 
 
 def _print_report(r: dict) -> None:
@@ -430,13 +451,22 @@ def _print_report(r: dict) -> None:
         gap = f"{p['gap_ev']:.3f}" if p.get("gap_ev") is not None else "?"
         _p(f"pristine: VBM {p['vbm_ev']:.3f} eV (band {p['vbm_band']}, k {p['vbm_k']}; SCF k-mesh), gap {gap} eV"
            + (f"; --vbm {p['vbm_override_ev']:.3f} eV used" if p.get("vbm_override_ev") is not None else ""))
+    off = r.get("offset")
+    if off:
+        cs = ", ".join(f"q={q}: {c:.5f}" for q, c in (off.get("C_ha") or {}).items() if c is not None)
+        _p(f"offset ({off['method']}): {off['formula']}" + (f"; C (Ha) {cs}" if cs else ""))
+    ic = r.get("image_charge")
+    if ic:
+        _p(f"image charge: f = {ic['lany_zunger_factor']:.4f}, L = V^1/3 = {ic['L_angstrom']:.2f} A, "
+           f"E_MP(q=1) = {ic['E_MP_q1_ev']:.3f} eV (x q^2)")
     for c in r.get("calibration", []) or []:
         if c.get("C") is not None:
-            _p(f"calibration ({c['side']}): C = {c['C']:.5f} Ha (spread {c['spread']:.5f}) over "
+            label = "cross-check" if (off or {}).get("method") == "spheropole" else "calibration"
+            _p(f"{label} ({c['side']}): C = {c['C']:.5f} Ha (spread {c['spread']:.5f}) over "
                f"{', '.join(c['points'])}; q range {c['q_range']}")
             for v in c["values"]:
                 x = v.get("spheropole_crosscheck")
-                _p(f"    at {v['at']}: C = {v['C']:.5f} Ha" + (f"  (2*sph/N = {x:.5f}, cross-check only)" if x else ""))
+                _p(f"    at {v['at']}: C = {v['C']:.5f} Ha" + (f"  (2*sph/N = {x:.5f})" if x else ""))
     for f, v in (r.get("fits") or {}).items():
         if "A_ev" in v:
             _p(f"fit q={f}: A = {v['A_ev']:.3f} eV, B = {v['B_ev_A']:.2f} eV*A, residuals "
@@ -454,6 +484,9 @@ def _print_report(r: dict) -> None:
     for lv in r.get("levels", []):
         _p(f"  eps({lv['transition']}) = {lv['eV_above_VBM']:.3f} eV above the VBM"
            + (f"  [{lv['flag']}]" if lv.get("flag") else ""))
+    for lv in r.get("levels_calibration_crosscheck", []):
+        _p(f"  cross-check with the DOPING calibration offset: eps({lv['transition']}) = "
+           f"{lv['eV_above_VBM']:.3f} eV")
     for q, a in (r.get("alignment") or {}).items():
         if "dV_ev" in a:
             _p(f"  alignment q={q}: dV = {a['dV_ev']:.3f} eV (std {a['std_ev']:.3f}, {a['n_far']} far atoms)"
@@ -532,7 +565,22 @@ def make_parser() -> argparse.ArgumentParser:
     a.add_argument("--mu", action="append", metavar="EL=val[eV|Ha]", help="chemical potential (absolute)")
     a.add_argument("--mu-file", metavar="FILE", help='JSON {"O": "-75.1Ha"}')
     a.add_argument("--vbm", metavar="val[eV|Ha]", help="override the pristine VBM")
-    a.add_argument("--apply-alignment", action="store_true", help="add q*(-dV) from POTC to E_f")
+    e = a.add_argument_group("3D charged states")
+    e.add_argument("--eps", type=float, metavar="VALUE",
+                   help="dielectric constant for the Lany-Zunger-scaled Makov-Payne image-charge term "
+                        "(eps_inf for these unrelaxed defects)")
+    e.add_argument("--eps-from", metavar="FILE",
+                   help="read it from a CPHF output (DIELECTRIC TENSOR: eps_inf) or a FREQCALC "
+                        "INTENS INTCPHF output")
+    e.add_argument("--eps-static", action="store_true",
+                   help="with --eps-from a FREQCALC INTCPHF output: use eps_0 (electronic + ionic), "
+                        "the choice for relaxed defects")
+    e.add_argument("--offset", choices=("spheropole", "calibration"), default="spheropole",
+                   help="charged-cell offset: q*(C(q)+C(0))/2 with C = 2*E_sph/N (default), or q*C "
+                        "from the fractional-DOPING decks of --calibrate (otherwise only a cross-check)")
+    e.add_argument("--apply-alignment", action="store_true",
+                   help="add q*(-dV) from POTC to E_f (off by default: measured to worsen the "
+                        "agreement between charged cells of different size)")
     a.add_argument("--json", metavar="FILE")
     a.add_argument("--csv", metavar="FILE")
     return ap

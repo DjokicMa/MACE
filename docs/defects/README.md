@@ -20,8 +20,8 @@ Where this page says *measured*, the behaviour was run with CRYSTAL23
 #    of the optimised structure first)
 mace opt2d12 --calc-type SP ...            # -> mgo_sp.d12
 
-# 2. the deck set
-mace defects build mgo_sp.d12 --vacancy O --supercon 2x2x2 --charges 0,1,2 --calibrate -o mgo_VO
+# 2. the deck set (--calibrate adds the optional fractional-DOPING cross-check decks)
+mace defects build mgo_sp.d12 --vacancy O --supercon 2x2x2 --charges 0,1,2 -o mgo_VO
 
 # 3. without a site label only the pristine deck is written (status
 #    "awaiting_pristine"): CRYSTAL numbers the supercell atoms, so the label comes
@@ -35,8 +35,12 @@ for j in mgo_sp_q0 mgo_sp_qp1 ...; do mace submit $PWD/mgo_VO/$j.d12; done   # a
 mace defects potc mgo_VO                    # -> mgo_VO/potc/<job>_potc.d3 + .f9
 mace submit $PWD/mgo_VO/potc
 
-# 5. results
-mace defects analyze mgo_VO --mu O=-75.0Ha --json report.json
+# 5. 3D charged states: the dielectric constant for the image-charge term, from a
+#    CPHF run of the host (CPHF / END as the last geometry keyword), or --eps VALUE
+mace submit $PWD/mgo_cphf.d12
+
+# 6. results
+mace defects analyze mgo_VO --mu O=-75.0Ha --eps-from mgo_cphf.out --json report.json
 ```
 
 `mace submit` takes one target, so after a resume submit only the new decks
@@ -120,26 +124,77 @@ printed commands use absolute paths). `potc` writes into `DIR/potc/` so that a l
   with ECP" (p.82).
 * `GHOSTS` with -D3, gCP or a 3c method: **untested** (warned).
 
-## 3D: fractional-DOPING calibration
+## 3D: charged-cell offset and image charge
 
-Measured on MgO V_O (2x2x2, 63 atoms): raw E(q) - E(0) of a charged supercell
-carries a constant offset C per electron. With raw energies eps(+/0) comes out
-15.7 eV above the VBM inside a 7.25 eV gap, which is impossible. Fractional
-DOPING runs give dE/dN = eps_F + C with C = 0.444 Ha, constant to 0.001-0.004
-Ha along the ladder and tracking 2 x (EXT EL-SPHEROPOLE) / N_e. **That relation
-is a hypothesis, not proven**; MACE reports it as a cross-check only.
+Measured on CRYSTAL23 (MgO, LiF and Si, pristine and defect cells of 53-249
+atoms): the raw energy of a charged supercell carries an offset C per electron.
+With raw energies eps(+/0) of MgO V_O comes out 15.7 eV above the VBM inside a
+7.25 eV gap. C does not shrink with the cell and is material dependent (MgO
+0.449, LiF 0.307, Si 0.445 Ha); it equals
+
+    C = 2 E_sph / N          (to 0.2-1 % in all 10 measured series)
+
+with E_sph the last `::: EXT EL-SPHEROPOLE` term of the output and N the
+electron count of the cell: the header `N. OF ELECTRONS PER CELL` (printed
+before DOPING) plus the DOPING value. The analysis applies it as the trapezoid
+between the charge state and the neutral defect of the same cell:
+
+    E_corr(q) = E_raw(q) + q (C(q) + C(0)) / 2
+
+(E_raw + q C(q) alone leaves 0.13 eV at q = 2). Janak residuals after this
+correction are at most 0.03 eV. No extra runs are needed; a state whose output
+has no spheropole line, or a set without a converged q = 0 defect, is not
+reported, with the reason. The correction was validated on electron removal
+(q > 0); negative states get a note.
+
+The image-charge term is the Makov-Payne monopole term with the Lany-Zunger
+scaling, added to E_f(q):
+
+    E_MP(q) = f q^2 |v_M| / (2 eps),    f = 1 - (1 - 1/eps) / 3
+
+v_M is the Ewald Madelung potential of the actual supercell lattice (read
+from the pristine output; simple cubic: -2.837297 / L). eps is
+
+* `--eps VALUE`: used as given;
+* `--eps-from FILE`: eps_inf from the `DIELECTRIC TENSOR` of a CPHF output
+  (`CPHF` / `END` as the last geometry keyword of the host), or of a FREQCALC
+  INTENS INTCPHF output; with `--eps-static`, eps_0 = eps_inf + the `SUM TENSOR
+  OF THE VIBRATIONAL CONTRIBUTIONS TO THE STATIC DIELECTRIC TENSOR` of a
+  FREQCALC INTCPHF output. Tensors are averaged (a warning above 5 %
+  anisotropy).
+
+eps_inf is the choice for these unrelaxed (vertical) defects; eps_0 is for
+relaxed ones and gets a note. Measured MgO: eps_inf 2.865, eps_0 9.34. Without
+a dielectric constant the charged states are reported with the offset only and
+labelled **"uncorrected for image charges"**; their levels then still depend on
+the cell size.
+
+Measured, MgO V_O (unrelaxed, PBE0/POB-TZVP-REV2, eps_inf 2.865):
+
+| cell | atoms | eps(+/0) | eps(2+/+) |
+|---|---|---|---|
+| primitive 3x3x3 | 53 | 2.851 | -0.193 |
+| conventional 2x2x2 | 63 | 2.883 | -0.092 |
+| primitive 4x4x4 | 127 | 2.878 | -0.137 |
+| primitive 5x5x5 | 249 | 2.875 | -0.146 |
+
+Every report says which corrections were applied: the labels name the offset
+(spheropole or calibration), the image-charge term with its eps and v_M (or
+"uncorrected for image charges") and whether potential alignment was applied.
+
+### Optional cross-check: fractional-DOPING calibration
 
 `--calibrate` writes restricted decks with DOPING -0.5, -1.0, -1.5 (on the side
 of the requested charges: +0.5, +1.0, +1.5 for acceptors; both when q has both
 signs). They are restricted (SPIN, SPINLOCK, UHF removed, recorded in the
 manifest as a deliberate difference from the host) and placed on the q = 0
-defect cell by default. Measured round 2: the pristine-cell C agrees with the
+defect cell by default. Measured: the pristine-cell C agrees with the
 defect-cell C within 0.004 Ha for MgO (conventional 2x2x2 and primitive 3x3x3),
-so `--calibrate-on pristine` is offered, but untested as a source for a defect
-set. Fractional DOPING needs a converged k-mesh: "the appropriate value of the
-shrinking factor ... is in some cases several times larger than for the
-neutral cell" (p.103). SMEAR hosts are refused (free energies, smeared
-occupations); LEVSHIFT hosts are warned.
+so `--calibrate-on pristine` is offered as well. Fractional DOPING needs a
+converged k-mesh: "the appropriate value of the shrinking factor ... is in
+some cases several times larger than for the neutral cell" (p.103). SMEAR
+hosts are refused (free energies, smeared occupations); LEVSHIFT hosts are
+warned.
 
 At each interior point i of the ladder, with its neighbours i-1 and i+1:
 
@@ -150,12 +205,15 @@ with |Mulliken spin| < 0.01, else the `--calibrate-endpoints` decks. Without
 usable endpoints only the central value at DOPING -1.0 exists, and the
 analysis says so. C is the mean; a spread above 0.005 Ha is a warning.
 
+When the calibration decks exist, the analysis prints C next to the
+spheropole values and the levels it would give (`levels_calibration_crosscheck`
+in the JSON). `analyze --offset calibration` uses it instead:
+
     E_corr(q) = E_raw(q) + q C        only for q inside the calibrated range
 
-A charge outside the range is "not calibrated" and not reported (never
-extrapolated). Without a calibration only q = 0 is reported, with the reason.
-Every 3D result carries `"image_charge_correction": "none"` and the label
-**"uncorrected for image charges"**: no dielectric correction exists yet.
+A charge outside the range is then "not calibrated" and not reported (never
+extrapolated). Measured on MgO V_O (conventional 2x2x2) the calibration C is
+0.444 Ha and the levels differ from the spheropole ones by 0.02-0.05 eV.
 
 ## 2D: size extrapolation
 
@@ -174,7 +232,7 @@ there is **no vacuum level** in a charged 2D cell.
 
 ## Formation energies and levels
 
-    E_f(q; E_F) = E_corr(q) - E_pristine - sum_i n_i mu_i + q (E_VBM + E_F)
+    E_f(q; E_F) = E_corr(q) - E_pristine - sum_i n_i mu_i + q (E_VBM + E_F) + E_MP(q)
 
 * n_i > 0 for atoms added (vacancy: n = -1).
 * mu_i are **absolute** energies with units (`--mu O=-75.0Ha`, `--mu O=-2040.8eV`
@@ -186,7 +244,7 @@ there is **no vacuum level** in a charged 2D cell.
   not the bare `== SCF ENDED ... E(AU)` value. The terms do not cancel when
   the defect cell has an atom fewer or more than the pristine cell, so mu_i
   must be total energies on the same footing. They do cancel between charge
-  states at fixed geometry: levels and the calibration constant are unchanged.
+  states at fixed geometry: levels and the offsets are unchanged.
   A job whose terms differ from the pristine's (e.g. D3 missing) is excluded.
 * E_VBM is the top of the valence bands on the pristine cell's SCF k-mesh;
   its band and k index are printed; `--vbm` overrides it.
@@ -202,8 +260,10 @@ POTC.DAT columns: index, x y z in bohr, V0 in au) and copies `<job>.f9` to
 the defect and pristine cells by their bohr coordinates under PBC and reports
 dV = <V_def - V_pris> over the farthest quarter of the atoms from the defect,
 with its spread (a warning above 0.05 eV). It is **reported always and applied
-only with `--apply-alignment`**, as q x (-dV). Measured: a 2x2x2 MgO cell is too
-small for a plateau. Alignment may double-count with C; it is not applied by
+only with `--apply-alignment`**, as q x (-dV). Measured on MgO V_O: a 2x2x2
+cell is too small for a plateau, and with the offset and image-charge terms
+applied, aligning the far-atom potentials made the agreement between cell
+sizes **worse** for charged cells (53 and 127 atom cells). It is off by
 default for that reason.
 
 ## Refusals
@@ -234,10 +294,11 @@ default for that reason.
 
 ## Analysis checks
 
-* The electron count is the Mulliken `NO. OF ELECTRONS` line, never the header
-  `N. OF ELECTRONS PER CELL`, which shows the count **before** DOPING
-  (measured). A job whose count differs from N_pristine + dZ - q by more than
-  1e-4 is excluded ("DOPING not applied").
+* The electron count checked is the Mulliken `NO. OF ELECTRONS` line (PPAN),
+  not the header `N. OF ELECTRONS PER CELL`, which shows the count **before**
+  DOPING (measured); the spheropole offset uses header + DOPING. A job whose
+  count differs from N_pristine + dZ - q by more than 1e-4 is excluded
+  ("DOPING not applied").
 * |Mulliken spin - NSPIN| > 0.1 is a warning, saying whether the SCF ended
   with the lock still on or after it was released. Measured: MgO N_O q=0 with
   SPINLOCK 1 30 converged in 15 cycles, still locked, and its final Mulliken
@@ -259,18 +320,19 @@ default for that reason.
 Label 1 (an O at the origin) was read from the measured probe output of the
 same supercell. The decks are byte-identical (titles aside) to the ones run on
 HPCC: q = 0, +1, +2 and the calibration decks (DOPING -0.5, -1.0, -1.5). The
-set is not run here; its measured results were C = 0.444 Ha, eps(2+/+) about
-1.9 eV and eps(+/0) about 3.6 eV above the VBM (unrelaxed, uncorrected for image
-charges). `mu.example.json` shows the `--mu-file` format; its value is a
+set is not run here; with eps_inf = 2.865 its measured levels are eps(+/0) =
+2.883 eV and eps(2+/+) = -0.092 eV (unrelaxed; table above). Without the
+image-charge term they are 3.546 and 1.896 eV. `mu.example.json` shows the `--mu-file` format; its value is a
 placeholder.
 
 ## Known limits
 
 * Labels come from CRYSTAL's output or from you, which costs one round trip
   (shortened by reading the running pristine output).
-* The C hypothesis is unproven; calibration covers only the measured direction
-  (electron removal on MgO) and the range of the ladder.
+* The spheropole offset was validated on electron removal (q > 0); the
+  calibration cross-check covers only the range of its ladder.
 * SPINLOCK release can let a state drift; the final spin is checked.
-* No relaxation, no dielectric (image-charge) correction.
+* No relaxation. The image-charge term is the isotropic Makov-Payne monopole
+  term (Lany-Zunger scaled); anisotropic dielectrics use the average.
 * Not handled: decks derived later from a ghost parent (opt2d12 / opt2d3) do
   not carry GHOSTS.

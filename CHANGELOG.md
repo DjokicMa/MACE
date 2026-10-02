@@ -26,20 +26,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (measured to abort or collapse), GHOSTS on ECP atoms (p.82), and more (see
   `docs/defects/README.md`). Supercell labels come from CRYSTAL's output: a set
   without one writes the pristine deck and finishes with `--resume DIR` as soon
-  as the running pristine output shows its geometry. `--calibrate` adds
-  restricted fractional-DOPING decks (3D) for the measured constant offset per
-  electron of charged cells. `mace defects potc DIR` stages POTC runs (with
-  copies of the `.f9`) into `DIR/potc`. `mace defects analyze DIR` checks the
-  Mulliken electron count (never the pre-DOPING header) and the final spin,
-  and reports formation energies and transition levels: 3D only for
-  calibrated charges and labelled "uncorrected for image charges", 2D from an
-  A + B/L fit over the sizes; all results are unrelaxed. Energies are
-  SCF + D3 + gCP for -D3 and 3c methods (CRYSTAL's `TOTAL ENERGY + DISP + GCP`
-  line, not the bare `SCF ENDED` value): those terms do not cancel between a
-  defect cell and the pristine cell, so chemical potentials must include them
-  too, and a job whose terms differ from the pristine's is excluded. Potential alignment
-  is reported, and applied only with `--apply-alignment`. A worked MgO V_O
-  deck set is in `docs/defects/MgO_VO` (not run).
+  as the running pristine output shows its geometry. `mace defects potc DIR`
+  stages POTC runs (with copies of the `.f9`) into `DIR/potc`. `mace defects
+  analyze DIR` checks the Mulliken electron count (DOPING applied) and the
+  final spin, and reports formation energies and transition levels, all
+  unrelaxed. 3D charged states get the offset measured on CRYSTAL23 (MgO, LiF,
+  Si): `E(q) + q*(C(q)+C(0))/2` with `C = 2*E_sph/N` from the output's
+  `EXT EL-SPHEROPOLE` term and N = header electron count + DOPING, and, with
+  `--eps VALUE` or `--eps-from` a CPHF (eps_inf) or FREQCALC INTCPHF output
+  (`--eps-static`: eps_0), the Lany-Zunger-scaled Makov-Payne image-charge
+  term with the Ewald Madelung potential of the actual supercell. On the
+  measured MgO V_O runs (53 to 249 atoms, eps_inf 2.865) this gives eps(+/0)
+  2.85-2.88 eV and eps(2+/+) -0.09 to -0.19 eV. Without a dielectric constant
+  charged states are labelled "uncorrected for image charges"; every report
+  names the corrections it applied. `--calibrate` adds restricted
+  fractional-DOPING decks as an optional cross-check (`analyze --offset
+  calibration` uses them instead). 2D sets use an A + B/L fit over the sizes.
+  Energies are SCF + D3 + gCP for -D3 and 3c methods (CRYSTAL's
+  `TOTAL ENERGY + DISP + GCP` line, not the bare `SCF ENDED` value): those
+  terms do not cancel between a defect cell and the pristine cell, so chemical
+  potentials must include them too, and a job whose terms differ from the
+  pristine's is excluded. Potential alignment is reported, and applied only
+  with `--apply-alignment` (measured to worsen the agreement between charged
+  cells of different size). A worked MgO V_O deck set is in
+  `docs/defects/MgO_VO` (not run).
 
 ## [1.1.4] - 2026-10-02
 

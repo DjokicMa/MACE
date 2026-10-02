@@ -9,8 +9,10 @@ stages the electrostatic-potential runs used for potential alignment and
 Modules:
     deck_edit  host classification and the text edits (standard library only)
     structure  geometry tables of CRYSTAL outputs, site resolution, PBC matching
-    outputs    energies, electron counts, Mulliken charges/spins, band edges, POTC.DAT
-    analysis   checks, fractional-DOPING calibration, formation energies, levels
+    outputs    energies, electron counts, Mulliken charges/spins, band edges, POTC.DAT,
+               dielectric tensors
+    analysis   checks, charged-cell offsets, formation energies, levels
+    image_charge  Ewald Madelung potential and the Lany-Zunger-scaled Makov-Payne term
     cli        the ``mace defects`` command
 """
 

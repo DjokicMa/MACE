@@ -760,11 +760,15 @@ and tolerances are kept byte for byte).
                    [--calibrate] [-o DIR]       (then: mace submit DIR)
   build --resume DIR                            (once the pristine output shows its geometry)
   potc DIR         stage POTC runs into DIR/potc (then: mace submit DIR/potc)
-  analyze DIR      [--mu EL=val[eV|Ha]] [--vbm val] [--apply-alignment] [--json F] [--csv F]
+  analyze DIR      [--mu EL=val[eV|Ha]] [--vbm val] [--eps VALUE | --eps-from CPHF.out]
+                   [--offset spheropole|calibration] [--apply-alignment] [--json F] [--csv F]
 
-Results are for unrelaxed defects; 3D charged states are only reported with the
-fractional-DOPING calibration (--calibrate) and are uncorrected for image
-charges. See docs/defects/README.md, and `mace defects build --help`.
+Results are for unrelaxed defects. 3D charged states get the charged-cell offset
+q*(C(q)+C(0))/2 with C = 2*E_sph/N (EXT EL-SPHEROPOLE), and the Lany-Zunger-scaled
+Makov-Payne image-charge term when a dielectric constant is given (otherwise
+they are labelled uncorrected for image charges). The --calibrate decks are an
+optional cross-check; POTC alignment is opt-in. See docs/defects/README.md, and
+`mace defects analyze --help`.
 """,
         'monitor': """
 Usage: mace monitor [options]

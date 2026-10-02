@@ -66,6 +66,20 @@ def test_build_resume_analyze(tmp_path):
     report = json.loads((tmp_path / "r.json").read_text())
     assert report["image_charge_correction"] == "none"
     assert (tmp_path / "r.csv").read_text().startswith("q,job,status")
+    assert "offset (spheropole)" in text and "cross-check with the DOPING calibration offset" in text
+    # the image-charge term from a CPHF output
+    from test_defects_image_charge import CPHF
+    (tmp_path / "cphf.out").write_text(CPHF)
+    rc, text = _mace("defects", "analyze", "set", "--eps-from", "cphf.out", "--csv", "r.csv", cwd=tmp_path)
+    assert rc == 0, text
+    assert "eps(+1/0) = 2.88" in text and "eps(+2/+1) = -0.09" in text
+    assert "image charge: Lany-Zunger-scaled Makov-Payne, eps = 2.865 (eps_inf from cphf.out)" in text
+    assert "uncorrected for image charges" not in text
+    assert "image_charge_ev" in (tmp_path / "r.csv").read_text().splitlines()[0]
+    rc, text = _mace("defects", "analyze", "set", "--eps", "2.865", "--eps-from", "cphf.out", cwd=tmp_path)
+    assert rc == 2 and "not both" in text
+    rc, text = _mace("defects", "analyze", "set", "--eps-static", "--eps", "9.3", cwd=tmp_path)
+    assert rc == 2 and "--eps-from" in text
 
 
 def test_refusals_exit_2_with_the_reason(tmp_path):

@@ -2,36 +2,51 @@
 
 Every result is for ions at the pristine positions ("unrelaxed").
 
-3D (measured on CRYSTAL23, MgO V_O): raw E(q) - E(0) of a charged supercell
-carries a constant offset C per electron removed. Fractional DOPING runs
-(-0.5, -1.0, -1.5) give dE/dN = eps_F + C, so
+3D (measured on CRYSTAL23: MgO, LiF and Si cells of 53-249 atoms). The raw
+energy of a charged supercell carries an offset C per electron that does not
+shrink with the cell. C = 2 * E_sph / N to 0.2-1 %, with E_sph the last
+'::: EXT EL-SPHEROPOLE' term of the output and N the cell's electron count
+('N. OF ELECTRONS PER CELL', printed before DOPING, plus the DOPING value).
+The default correction is the trapezoid between the charge state and the
+neutral defect in the same cell:
 
-    C_i = (E_{i+1} - E_{i-1}) / (N_{i+1} - N_{i-1}) - EFERMI_i
+    E_corr(q) = E_raw(q) + q * (C(q) + C(0)) / 2
 
-at each interior point of the calibration ladder, and
+(E_raw + q*C(q) alone leaves 0.13 eV at q=2 on MgO V_O). With a dielectric
+constant (--eps, or a CPHF / FREQCALC INTCPHF output) the Lany-Zunger-scaled
+Makov-Payne image-charge term of mace.defects.image_charge is added to
+E_f(q); without one, results are labelled "uncorrected for image charges".
+For MgO V_O with eps_inf = 2.865 this gives eps(+/0) = 2.85-2.88 eV and
+eps(2+/+) = -0.09 to -0.19 eV over four cell sizes.
 
-    E_corr(q) = E_raw(q) + q * C
+The fractional-DOPING calibration (--calibrate decks) is an optional
+cross-check: dE/dN = eps_F + C at each interior point of the ladder,
 
-only for q inside the calibrated range (never extrapolated). Without a
-calibration only q = 0 is reported. C tracks 2*(EXT EL-SPHEROPOLE)/N_e
-(reported as a cross-check only; the relation is a hypothesis). Results are
-labelled "uncorrected for image charges": no dielectric correction exists yet.
+    C_i = (E_{i+1} - E_{i-1}) / (N_{i+1} - N_{i-1}) - EFERMI_i,
 
-2D (measured on CRYSTAL23, hBN V_N): fractional slopes match eps_F directly (no offset),
-and E(q) - E(0) converges as A + B/L with L = sqrt(|a x b|), fitted by least
-squares over the supercell sizes. A charged sheet has no vacuum level.
+reported next to the spheropole values, or used as the offset with
+offset="calibration" (E_corr = E_raw + q*C, only inside the calibrated range).
+
+2D (measured on CRYSTAL23, hBN V_N): fractional slopes match eps_F directly
+(no offset), and E(q) - E(0) converges as A + B/L with L = sqrt(|a x b|),
+fitted by least squares over the supercell sizes. A charged sheet has no
+vacuum level.
 
 Formation energy (E_F measured from the VBM):
 
-    E_f(q; E_F) = E_corr(q) - E_pristine - sum_i n_i mu_i + q (E_VBM + E_F)
+    E_f(q; E_F) = E_corr(q) - E_pristine - sum_i n_i mu_i + q (E_VBM + E_F) + E_MP(q)
 
 with n_i > 0 for atoms added. mu_i are absolute energies of the same method
 and basis. Every E is SCF + D3 + gCP where the method has them (-D3, 3c): the
 '== SCF ENDED' value alone leaves them out, and they do not cancel when the
 defect cell has an atom fewer or more than the pristine one. They do cancel
-between charge states at fixed geometry, so levels and calibration constants
-are the same either way; mu_i must include them too. Potential alignment (POTC) is always reported and only applied with
---apply-alignment, as q * (-dV), dV = <V_defect - V_pristine> over far atoms.
+between charge states at fixed geometry, so levels and offsets are the same
+either way; mu_i must include them too.
+
+Potential alignment (POTC) is reported when the POTC runs exist and only
+applied with apply_alignment, as q * (-dV), dV = <V_defect - V_pristine> over
+far atoms. Measured on MgO V_O it made the agreement between cell sizes worse
+for charged cells, so it is off by default.
 """
 
 import math
@@ -43,6 +58,7 @@ import numpy as np
 
 from mace.constants import ANGSTROM_TO_BOHR, HARTREE_TO_EV
 from mace.defects import DefectError
+from mace.defects import image_charge as ic
 from mace.defects import outputs as out
 from mace.defects.deck_edit import element_number, fmt_q
 from mace.defects.structure import Geometry, match_atoms, neighbours, parse_geometry, pbc_distance
@@ -61,10 +77,12 @@ ALIGN_STD_WARN = 0.05
 UNRELAXED = "unrelaxed (ions at the pristine positions)"
 UNCORRECTED = "uncorrected for image charges"
 NO_CALIBRATION_3D = (
-    "3D charged states are not reported without --calibrate: raw E(q) - E(0) of a charged "
-    "supercell carries a constant offset per electron (measured on MgO V_O: C = 0.444 Ha, "
-    "which put eps(+/0) 15.7 eV above the VBM inside a 7.25 eV gap). Rebuild with "
-    "--calibrate and run the calibration decks")
+    "the calibration offset needs the fractional-DOPING decks: rebuild with --calibrate and run "
+    "them, or use the default spheropole offset")
+#: Offsets for charged 3D cells: the default and the fractional-DOPING cross-check.
+OFFSET_METHODS = ("spheropole", "calibration")
+#: (max - min) / mean of the dielectric principal values above this is a warning.
+EPS_ANISOTROPY_WARN = 0.05
 
 
 def parse_energy(text: str, what: str = "value") -> float:
@@ -415,14 +433,83 @@ def site_report(manifest: dict, pris_text: str, pris_sum: out.OutputSummary,
 
 
 # ---------------------------------------------------------------------------
+# Charged-cell offset and dielectric constant (3D)
+# ---------------------------------------------------------------------------
+
+def spheropole_offset(job: JobResult) -> Tuple[Optional[float], Optional[float], str]:
+    """(C = 2 * E_sph / N in Ha per electron, N, reason when None).
+
+    N is the header 'N. OF ELECTRONS PER CELL' (printed before DOPING) plus
+    the job's DOPING value; the Mulliken count (after DOPING) stands in when
+    the header is missing.
+    """
+    s = job.summary
+    if s is None or s.spheropole is None:
+        return None, None, "no '::: EXT EL-SPHEROPOLE' line in the output"
+    if s.header_electrons is not None:
+        n = s.header_electrons + job.doping
+    elif s.electrons is not None:
+        n = s.electrons
+    else:
+        return None, None, "no electron count in the output"
+    if n <= 0:
+        return None, None, f"electron count {n:g}"
+    return 2.0 * s.spheropole / n, n, ""
+
+
+def dielectric_choice(value: Optional[float] = None, text: Optional[str] = None, source: str = "",
+                      static: bool = False) -> dict:
+    """The dielectric constant for the image-charge term.
+
+    ``value``: a number the user gives (used as is). ``text``: a CPHF output
+    (eps_inf from 'DIELECTRIC TENSOR') or a FREQCALC INTENS INTCPHF output
+    (eps_inf, and eps_0 = eps_inf + the vibrational static tensor when
+    ``static``). Tensors are reduced to their isotropic average.
+    """
+    if (value is None) == (text is None):
+        raise DefectError("give a dielectric constant or an output to read it from (not both)")
+    if value is not None:
+        if value <= 0:
+            raise DefectError(f"--eps {value}: a dielectric constant is positive")
+        return {"eps": float(value), "kind": "given", "source": "--eps"}
+    d = out.dielectric(text)
+    if d.eps_inf is None:
+        raise DefectError(f"{source}: no 'DIELECTRIC TENSOR' (CPHF) in the output")
+    res = {"eps": d.eps_inf, "kind": "eps_inf", "source": source,
+           "principal_eps_inf": list(d.electronic), "eps_inf": d.eps_inf}
+    if d.eps_0 is not None:
+        res["eps_0"] = d.eps_0
+    if static:
+        if d.eps_0 is None:
+            raise DefectError(f"{source}: no vibrational contribution to the static dielectric tensor "
+                              "(needs FREQCALC with INTENS and INTCPHF)")
+        res.update(eps=d.eps_0, kind="eps_0")
+    if d.anisotropy is not None and d.anisotropy > EPS_ANISOTROPY_WARN:
+        res["warning"] = (f"the dielectric tensor is anisotropic ({', '.join(f'{x:.3f}' for x in d.electronic)}): "
+                          "the isotropic average is used")
+    return res
+
+
+def _dielectric_label(diel: dict) -> str:
+    kind = {"eps_inf": "eps_inf", "eps_0": "eps_0", "given": "given"}[diel["kind"]]
+    src = "" if diel["kind"] == "given" else f" from {diel['source']}"
+    return f"eps = {diel['eps']:.3f} ({kind}{src})"
+
+
+# ---------------------------------------------------------------------------
 # The whole set
 # ---------------------------------------------------------------------------
 
 def analyze(manifest: dict, texts: Dict[str, str], *, mu: Optional[Dict[str, float]] = None,
             vbm: Optional[float] = None, potc: Optional[Dict[str, str]] = None,
-            apply_alignment: bool = False) -> dict:
+            apply_alignment: bool = False, dielectric: Optional[dict] = None,
+            offset: str = "spheropole") -> dict:
     """Report for a built set. ``texts`` maps job name -> output text; ``potc``
-    maps job name -> POTC.DAT text (atoms)."""
+    maps job name -> POTC.DAT text (atoms); ``dielectric`` comes from
+    :func:`dielectric_choice`; ``offset`` is "spheropole" (default) or
+    "calibration" (3D only)."""
+    if offset not in OFFSET_METHODS:
+        raise DefectError(f"offset {offset!r}: one of {', '.join(OFFSET_METHODS)}")
     mu = mu or {}
     potc = potc or {}
     jobs = check_jobs(manifest, texts)
@@ -431,7 +518,7 @@ def analyze(manifest: dict, texts: Dict[str, str], *, mu: Optional[Dict[str, flo
         "dimensionality": dim,
         "defect": manifest["defect"],
         "site": manifest.get("site"),
-        "labels": [UNRELAXED] + ([UNCORRECTED] if dim == 3 else []),
+        "labels": [UNRELAXED],
         "image_charge_correction": "none" if dim == 3 else "A + B/L extrapolation (empirical)",
         "jobs": [j.as_dict() for j in jobs],
         "notes": [],
@@ -451,8 +538,10 @@ def analyze(manifest: dict, texts: Dict[str, str], *, mu: Optional[Dict[str, flo
     mu_term = -sum(n * mu[el] for el, n in counts.items()) if not missing_mu else None
 
     if dim == 3:
-        _analyze_3d(manifest, texts, jobs, report, mu_term, vbm, potc, apply_alignment)
+        _analyze_3d(manifest, texts, jobs, report, mu_term, vbm, potc, apply_alignment, dielectric, offset)
     else:
+        if dielectric is not None:
+            report["notes"].append("the dielectric constant is for 3D sets: not used in 2D")
         _analyze_2d(manifest, texts, jobs, report, mu_term, vbm)
     return report
 
@@ -470,21 +559,7 @@ def _vbm_info(pris: out.OutputSummary, override: Optional[float], report: dict) 
     return vbm, e.gap
 
 
-def _analyze_3d(manifest, texts, jobs, report, mu_term, vbm_override, potc, apply_alignment):
-    pris_job = next((j for j in jobs if j.role == "pristine"), None)
-    if pris_job is None or not pris_job.ok:
-        report["notes"].append("the pristine job has no converged output: nothing to analyse")
-        return
-    vbm, gap = _vbm_info(pris_job.summary, vbm_override, report)
-    if vbm is None:
-        report["notes"].append("no VBM in the pristine output (metal or locked spin): give --vbm")
-        return
-    cal = calibrate(jobs, manifest.get("calibration", {}).get("on", "defect") if manifest.get("calibration") else "defect")
-    report["calibration"] = cal
-    for c in cal:
-        report["notes"] += c.get("notes", [])
-    defects = {j.q: j for j in jobs if j.role == "defect" and j.ok}
-    e_pris = pris_job.energy
+def _alignments(manifest, texts, pris_job, defects, potc) -> Dict[float, dict]:
     align = {}
     site_label = manifest.get("site", {}).get("label")
     pris_text = texts.get(pris_job.name)
@@ -498,29 +573,154 @@ def _analyze_3d(manifest, texts, jobs, report, mu_term, vbm_override, potc, appl
                     align[q] = potential_alignment(pris_geom, center, potc[pris_job.name], potc[j.name])
                 except DefectError as exc:
                     align[q] = {"error": str(exc)}
-    report["alignment"] = {fmt_q(q): a for q, a in align.items()}
-    report["alignment_applied"] = bool(apply_alignment)
+    return align
+
+
+def _image_charge(pris_text: Optional[str], dielectric: Optional[dict], report: dict) -> Optional[dict]:
+    """{'eps', 'v_M', 'f', ...} for the image-charge term, or None (reason in the notes)."""
+    if dielectric is None:
+        return None
+    geom = parse_geometry(pris_text) if pris_text else None
+    if geom is None or geom.dimensionality != 3:
+        report["notes"].append("no lattice in the pristine output: the image-charge term needs the "
+                               "supercell lattice and is not applied")
+        return None
+    v_m = ic.madelung(geom.lattice * ANGSTROM_TO_BOHR)
+    eps = dielectric["eps"]
+    res = dict(dielectric, v_M_per_bohr=v_m, lany_zunger_factor=ic.lany_zunger_factor(eps),
+               L_angstrom=abs(float(np.linalg.det(geom.lattice))) ** (1.0 / 3.0),
+               E_MP_q1_ev=ic.makov_payne(1, eps, v_m) * HARTREE_TO_EV)
+    if dielectric.get("warning"):
+        report["notes"].append(dielectric["warning"])
+    if dielectric["kind"] == "eps_0":
+        report["notes"].append("eps_0 screens relaxed defects; these results are unrelaxed, for which "
+                               "eps_inf is the measured choice")
+    return res
+
+
+def _offsets_spheropole(defects: Dict[float, JobResult], report: dict) -> Dict[float, dict]:
+    """{q: {'C_ha', 'N', 'offset_ha'} or {'reason'}} for the trapezoid correction."""
+    per_q = {}
+    for q, j in defects.items():
+        c, n, why = spheropole_offset(j)
+        per_q[q] = {"C_ha": c, "N": n} if c is not None else {"reason": why}
+    c0 = per_q.get(0.0, {}).get("C_ha")
+    for q, entry in per_q.items():
+        if q == 0 or entry.get("C_ha") is None:
+            continue
+        if c0 is None:
+            entry["reason"] = "no spheropole offset of the neutral defect (q=0) in the same cell"
+            continue
+        entry["offset_ha"] = q * (entry["C_ha"] + c0) / 2.0
+    report["offset"] = {
+        "method": "spheropole",
+        "formula": "E_corr(q) = E_raw(q) + q*(C(q) + C(0))/2, C = 2*E_sph/N",
+        "C_ha": {fmt_q(q): e.get("C_ha") for q, e in sorted(per_q.items())},
+    }
+    if any(q < 0 for q in defects):
+        report["notes"].append("the spheropole offset was validated on positive charge states (electron "
+                               "removal); check negative states against the --calibrate cross-check")
+    return per_q
+
+
+def _offsets_calibration(defects: Dict[float, JobResult], cal: List[dict], report: dict) -> Dict[float, dict]:
+    per_q = {}
+    calibrated = any(x.get("C") is not None for x in cal)
+    for q in defects:
+        if q == 0:
+            continue
+        c = _in_range(q, cal)
+        if c is None:
+            per_q[q] = {"reason": "not calibrated (outside the calibrated range)" if calibrated
+                        else "not reported (no calibration)"}
+        else:
+            per_q[q] = {"C_ha": c, "offset_ha": q * c}
+    report["offset"] = {"method": "calibration",
+                        "formula": "E_corr(q) = E_raw(q) + q*C, C from the fractional-DOPING ladder"}
+    if not calibrated:
+        report["notes"].append(NO_CALIBRATION_3D)
+    return per_q
+
+
+def _formation(defects, per_q, e_pris, vbm, image, align, apply_alignment) -> Tuple[List[dict], Dict[float, float]]:
     states, a_q = [], {}
     for q in sorted(defects):
         j = defects[q]
-        c = _in_range(q, cal)
         entry = {"q": q, "job": j.name, "E_raw_ha": j.energy}
-        if c is None:
-            entry["status"] = ("not calibrated (outside the calibrated range)" if cal and any(x.get("C") is not None for x in cal)
-                               else "not reported (no calibration)")
+        corr = dict(per_q.get(q, {}))
+        if q == 0:
+            corr["offset_ha"] = 0.0
+        if corr.get("C_ha") is not None:
+            entry["C_ha"] = corr["C_ha"]
+        if "offset_ha" not in corr:
+            entry["status"] = corr.get("reason", "not reported")
             states.append(entry)
             continue
-        e_corr = j.energy + q * c
+        e_corr = j.energy + corr["offset_ha"]
         e_f = (e_corr - e_pris + q * vbm) * HARTREE_TO_EV
+        entry.update({"offset_ha": corr["offset_ha"], "E_corr_ha": e_corr})
+        if image is not None and q != 0:
+            entry["image_charge_ev"] = ic.makov_payne(q, image["eps"], image["v_M_per_bohr"]) * HARTREE_TO_EV
+            e_f += entry["image_charge_ev"]
         if apply_alignment and q in align and "dV_ev" in align[q]:
-            e_f += alignment_term(q, align[q]["dV_ev"])
-        entry.update({"E_corr_ha": e_corr, "C_ha": c})
+            entry["alignment_ev"] = alignment_term(q, align[q]["dV_ev"])
+            e_f += entry["alignment_ev"]
         a_q[q] = e_f
         states.append(entry)
+    return states, a_q
+
+
+def _analyze_3d(manifest, texts, jobs, report, mu_term, vbm_override, potc, apply_alignment,
+                dielectric=None, offset="spheropole"):
+    pris_job = next((j for j in jobs if j.role == "pristine"), None)
+    if pris_job is None or not pris_job.ok:
+        report["notes"].append("the pristine job has no converged output: nothing to analyse")
+        return
+    vbm, gap = _vbm_info(pris_job.summary, vbm_override, report)
+    if vbm is None:
+        report["notes"].append("no VBM in the pristine output (metal or locked spin): give --vbm")
+        return
+    has_cal = any(j.role in ("calibration", "endpoint") for j in jobs)
+    cal = (calibrate(jobs, (manifest.get("calibration") or {}).get("on", "defect"))
+           if has_cal or offset == "calibration" else [])
+    report["calibration"] = cal
+    for c in cal:
+        report["notes"] += c.get("notes", [])
+    defects = {j.q: j for j in jobs if j.role == "defect" and j.ok}
+    pris_text = texts.get(pris_job.name)
+    align = _alignments(manifest, texts, pris_job, defects, potc)
+    report["alignment"] = {fmt_q(q): a for q, a in align.items()}
+    report["alignment_applied"] = bool(apply_alignment)
+    image = _image_charge(pris_text, dielectric, report)
+    report["image_charge"] = image
+
+    if offset == "calibration":
+        per_q = _offsets_calibration(defects, cal, report)
+    else:
+        per_q = _offsets_spheropole(defects, report)
+    states, a_q = _formation(defects, per_q, pris_job.energy, vbm, image, align, apply_alignment)
     if 0 not in a_q:
         report["notes"].append("no converged q=0 defect job")
-    if not any(x.get("C") is not None for x in cal):
-        report["notes"].append(NO_CALIBRATION_3D)
+
+    # what was applied, in words
+    charged = any(q != 0 for q in a_q)
+    report["labels"].append("charged-cell offset: " + (
+        "q*(C(q)+C(0))/2, C = 2*E_sph/N (EXT EL-SPHEROPOLE)" if offset == "spheropole"
+        else "q*C, fractional-DOPING calibration"))
+    if image is not None:
+        report["image_charge_correction"] = (f"Lany-Zunger-scaled Makov-Payne, {_dielectric_label(image)}, "
+                                             f"v_M = {image['v_M_per_bohr']:.6f} / bohr")
+        report["labels"].append("image charge: " + report["image_charge_correction"])
+    else:
+        report["labels"].append(UNCORRECTED)
+        if charged:
+            report["notes"].append("charged states carry no image-charge term: give the dielectric "
+                                   "constant (--eps, or --eps-from a CPHF output) for the Makov-Payne "
+                                   "correction; without it the levels still depend on the cell size")
+    report["labels"].append("potential alignment: " + ("applied (POTC)" if apply_alignment else "not applied"))
+    report["corrections"] = {"offset": offset, "image_charge": image is not None,
+                             "alignment": bool(apply_alignment)}
+
     ref = a_q.get(0.0, 0.0)
     for entry in states:
         q = entry["q"]
@@ -531,6 +731,10 @@ def _analyze_3d(manifest, texts, jobs, report, mu_term, vbm_override, potc, appl
                 entry["formation_energy_rel_q0_ev_at_vbm"] = a_q[q] - ref
     report["states"] = states
     report["levels"] = transition_levels(a_q, _ev(gap))
+    if offset == "spheropole" and any(x.get("C") is not None for x in cal):
+        cross = _offsets_calibration(defects, cal, {"notes": []})
+        _, a_cal = _formation(defects, cross, pris_job.energy, vbm, image, align, apply_alignment)
+        report["levels_calibration_crosscheck"] = transition_levels(a_cal, _ev(gap))
     if mu_term is None:
         report["notes"].append("no --mu: formation energies are relative to q=0 (E_F at the VBM)")
     report["site_report"] = site_report(manifest, pris_text, pris_job.summary, jobs, texts) if pris_text else []

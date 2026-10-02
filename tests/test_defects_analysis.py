@@ -1,9 +1,12 @@
 """mace.defects.analysis on the numbers of the HPCC defect runs (CRYSTAL23).
 
 Outputs are synthetic excerpts carrying the measured energies, electron counts,
-Fermi levels and band edges of the MgO V_O (3D) and hBN V_N (2D) runs, so the
-expected results are the measured ones: C = 0.444 Ha, eps(2+/+) ~ 1.9 and
-eps(+/0) ~ 3.6 eV for MgO; eps(+/0) ~ 3.8 and eps(0/-) ~ 6.6 eV for hBN.
+Fermi levels, spheropole terms and band edges of the MgO V_O (3D, conventional
+2x2x2) and hBN V_N (2D) runs, so the expected results are the measured ones:
+for MgO C = 2*E_sph/N = 0.441-0.447 Ha, eps(+/0) = 2.883 and eps(2+/+) = -0.092 eV
+with the spheropole offset and the image-charge term at eps_inf = 2.865
+(3.546 / 1.896 eV without it; the DOPING calibration gives C = 0.444 Ha);
+eps(+/0) ~ 3.8 and eps(0/-) ~ 6.6 eV for hBN.
 """
 import json
 
@@ -98,7 +101,7 @@ def _level(r, name):
 
 def test_mgo_calibrated_levels():
     d = _mgo_set(calibrate=True)
-    r = _report(d)
+    r = _report(d, offset="calibration")
     (cal,) = r["calibration"]
     assert cal["C"] == pytest.approx(0.444, abs=0.002)
     assert cal["q_range"] == [0.0, 2.0] and not cal["single_central"]
@@ -130,7 +133,7 @@ def test_calibration_on_the_pristine_cell():
     assert manifest["calibration"] == {"on": "pristine"}
     texts = {f"mgo_{tag}": _mgo_out(tag) for tag in ("pris", "q0", "qp1", "qp2")}
     texts.update({f"mgo_{tag}": text for tag, text in outs.items()})    # no calm15 output
-    r = an.analyze(manifest, texts)
+    r = an.analyze(manifest, texts, offset="calibration")
     jobs = {j["name"]: j for j in r["jobs"]}
     assert jobs["mgo_calm05"]["status"] == "ok" and jobs["mgo_calm10"]["status"] == "ok"
     (cal,) = r["calibration"]
@@ -148,9 +151,118 @@ def test_calibration_on_the_pristine_cell():
     assert _level(r, "+1/0") == pytest.approx(expected) and expected == pytest.approx(3.49, abs=0.01)
 
 
-def test_uncalibrated_3d_reports_only_the_neutral_state():
+# --- default 3D path: spheropole offset + image charge -------------------------------
+
+EPS_INF = 2.865435    # MgO, CPHF (measured on CRYSTAL23)
+
+
+def _with_lattice(d):
+    from _defects_fixtures import DATA
+    d[1]["mgo_pris"] = _mgo_out("pris") + (DATA / "mgo_pris_geometry.out").read_text()
+    return d
+
+
+def test_spheropole_offset_is_the_default():
+    """No calibration decks needed: C = 2*E_sph/N with N = header + DOPING, trapezoid in q."""
+    r = _report(_mgo_set())
+    assert r["offset"]["method"] == "spheropole" and r["calibration"] == []
+    c = {q: 2 * MGO[tag][7] / n for q, tag, n in ((0, "q0", 632), (1, "qp1", 631), (2, "qp2", 630))}
+    assert r["offset"]["C_ha"] == {"0": pytest.approx(c[0]), "+1": pytest.approx(c[1]), "+2": pytest.approx(c[2])}
+    states = {s["q"]: s for s in r["states"]}
+    assert states[1.0]["offset_ha"] == pytest.approx((c[1] + c[0]) / 2)
+    assert states[2.0]["offset_ha"] == pytest.approx(2 * (c[2] + c[0]) / 2)
+    assert states[0.0]["offset_ha"] == 0.0 and states[0.0]["C_ha"] == pytest.approx(c[0])
+    # measured conventional 2x2x2 levels without the image-charge term
+    assert _level(r, "+1/0") == pytest.approx(3.546, abs=0.001)
+    assert _level(r, "+2/+1") == pytest.approx(1.896, abs=0.001)
+    assert r["image_charge_correction"] == "none" and "uncorrected for image charges" in r["labels"]
+    assert any("q*(C(q)+C(0))/2" in x for x in r["labels"])
+    assert "potential alignment: not applied" in r["labels"]
+    assert any("--eps" in n and "cell size" in n for n in r["notes"])
+    assert r["corrections"] == {"offset": "spheropole", "image_charge": False, "alignment": False}
+
+
+def test_electron_count_is_the_header_plus_doping():
+    """The header is printed before DOPING: q=+1 header 632, DOPING -1 -> N = 631."""
+    from mace.defects import outputs as out
+    summary = out.summarise("qp1", _mgo_out("qp1", electrons=None))
+    job = an.JobResult("mgo_qp1", "defect", 1, -1.0, 1, False, 0, summary)
+    c, n, why = an.spheropole_offset(job)
+    assert n == 631 and c == pytest.approx(2 * MGO["qp1"][7] / 631) and not why
+    r = _report(_mgo_set(outs={"qp1": _mgo_out("qp1", header=None)}))       # Mulliken stands in
+    assert r["offset"]["C_ha"]["+1"] == pytest.approx(2 * MGO["qp1"][7] / 631)
+
+
+def test_mgo_levels_with_the_image_charge_term():
+    """The measured MgO V_O levels: conventional 2x2x2, eps_inf from CPHF."""
+    d = _with_lattice(_mgo_set())
+    diel = an.dielectric_choice(value=EPS_INF)
+    r = _report(d, dielectric=diel)
+    ic = r["image_charge"]
+    assert ic["v_M_per_bohr"] == pytest.approx(-0.178233, abs=1e-6)
+    assert ic["L_angstrom"] == pytest.approx(8.424, abs=1e-3)
+    assert _level(r, "+1/0") == pytest.approx(2.883, abs=0.002)
+    assert _level(r, "+2/+1") == pytest.approx(-0.092, abs=0.002)
+    states = {s["q"]: s for s in r["states"]}
+    assert states[2.0]["image_charge_ev"] == pytest.approx(4 * states[1.0]["image_charge_ev"])
+    assert states[1.0]["image_charge_ev"] == pytest.approx(ic["E_MP_q1_ev"]) and "image_charge_ev" not in states[0.0]
+    assert r["image_charge_correction"].startswith("Lany-Zunger-scaled Makov-Payne, eps = 2.865 (given)")
+    assert "uncorrected for image charges" not in r["labels"]
+    assert r["corrections"]["image_charge"] is True
+
+
+def test_image_charge_needs_the_lattice():
+    r = _report(_mgo_set(), dielectric=an.dielectric_choice(value=EPS_INF))
+    assert r["image_charge"] is None and "uncorrected for image charges" in r["labels"]
+    assert any("needs the supercell lattice" in n for n in r["notes"])
+
+
+def test_eps_0_is_flagged_for_unrelaxed_results():
+    from test_defects_image_charge import CPHF, VIB
+    diel = an.dielectric_choice(text=CPHF + VIB, source="mgo_freq.out", static=True)
+    r = _report(_with_lattice(_mgo_set()), dielectric=diel)
+    assert "eps_0 from mgo_freq.out" in r["image_charge_correction"]
+    assert any("eps_inf is the measured choice" in n for n in r["notes"])
+
+
+def test_spheropole_states_without_their_inputs_are_not_reported():
+    r = _report(_mgo_set(outs={"qp2": _mgo_out("qp2", sph=None)}))
+    states = {s["q"]: s for s in r["states"]}
+    assert "EXT EL-SPHEROPOLE" in states[2.0]["status"] and "offset_ha" in states[1.0]
+    assert [x["transition"] for x in r["levels"]] == ["+1/0"]
+    r = _report(_mgo_set(outs={"q0": _mgo_out("q0", sph=None)}))
+    states = {s["q"]: s for s in r["states"]}
+    assert "neutral defect" in states[1.0]["status"] and r["levels"] == []
+
+
+def test_calibration_is_a_cross_check_next_to_the_spheropole_offset():
+    r = _report(_mgo_set(calibrate=True))
+    assert r["offset"]["method"] == "spheropole"
+    (cal,) = r["calibration"]
+    assert cal["C"] == pytest.approx(0.444, abs=0.002)
+    cross = {x["transition"]: x["eV_above_VBM"] for x in r["levels_calibration_crosscheck"]}
+    assert cross["+1/0"] == pytest.approx(3.565, abs=0.002)
+    assert _level(r, "+1/0") == pytest.approx(3.546, abs=0.001)
+    assert "levels_calibration_crosscheck" not in _report(_mgo_set(calibrate=True), offset="calibration")
+
+
+def test_unknown_offset_and_negative_states():
+    with pytest.raises(DefectError, match="offset"):
+        _report(_mgo_set(), offset="potc")
+    outs = {"qm1": _mgo_out("q0", electrons=633.0, sph=141.5)}
+    r = _report(_mgo_set(charges=(-1, 0), outs=outs))
+    assert any("validated on positive charge states" in n for n in r["notes"])
+
+
+def test_2d_ignores_the_dielectric_constant():
+    r = _report(_hbn_set(), dielectric=an.dielectric_choice(value=4.0))
+    assert any("not used in 2D" in n for n in r["notes"])
+    assert r["image_charge_correction"].startswith("A + B/L")
+
+
+def test_calibration_offset_without_calibration_reports_only_the_neutral_state():
     d = _mgo_set()
-    r = _report(d)
+    r = _report(d, offset="calibration")
     assert r["levels"] == []
     raw = (MGO["q0"][0] - MGO["qp1"][0] - MGO["pris"][4]) * HARTREE_TO_EV
     assert raw == pytest.approx(15.66, abs=0.01)          # the impossible raw level
@@ -158,14 +270,14 @@ def test_uncalibrated_3d_reports_only_the_neutral_state():
     reported = {s["q"]: s for s in r["states"]}
     assert "formation_energy_rel_q0_ev_at_vbm" in reported[0.0]
     assert "not reported" in reported[1.0]["status"] and "formation_energy_rel_q0_ev_at_vbm" not in reported[1.0]
-    assert any("not reported without --calibrate" in n for n in r["notes"])
+    assert any("needs the fractional-DOPING decks" in n for n in r["notes"])
     assert r["image_charge_correction"] == "none" and "uncorrected for image charges" in r["labels"]
 
 
 def test_charges_outside_the_calibrated_range_are_not_reported():
     outs = {"qp3": _mgo_out("qp2", energy=-8736.2, electrons=629.0, spin=1.0)}
     d = _mgo_set(charges=(0, 1, 2, 3), calibrate=True, outs=outs)
-    r = _report(d)
+    r = _report(d, offset="calibration")
     states = {s["q"]: s for s in r["states"]}
     assert "not calibrated" in states[3.0]["status"]
     assert all("+3" not in x["transition"] for x in r["levels"])
@@ -175,7 +287,7 @@ def test_spin_polarised_endpoints_fall_back_to_the_single_central_value():
     spin_host = mgo_host().replace("DFT\nPBE0", "DFT\nSPIN\nPBE0")
     outs = {"q0": _mgo_out("q0", spin=0.5), "qp2": _mgo_out("qp2", spin=0.5)}
     d = _mgo_set(calibrate=True, host_text=spin_host, outs=outs)
-    r = _report(d)
+    r = _report(d, offset="calibration")
     (cal,) = r["calibration"]
     assert cal["single_central"] and len(cal["values"]) == 1 and cal["values"][0]["doping"] == -1.0
     assert cal["C"] == pytest.approx(0.444, abs=0.002)
