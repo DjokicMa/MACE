@@ -22,7 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   divide - unless `--keep-shrink` or a non-diagonal `--dim`). Parents it cannot reproduce in a P1 supercell (non-3D, charged,
   spin-locked, magnetic without a lock, ghosts, unknown SCF keywords, unconverged) are
   refused with the reason. `collect` checks every output - including that CRYSTAL ran
-  the displaced geometry it was given - before writing FORCE_SETS, band, mesh, DOS and
+  the displaced geometry it was given - names any output whose forces phonopy cannot
+  read, and stops unless FORCE_SETS was really written (phonopy's `phonopy-init -f`
+  exits 0 when it fails) before writing band, mesh, DOS and
   thermal properties, with optional non-analytical correction from a Gamma FREQCALC
   with INTENS + INTCPHF. Submit the decks with a plain `mace submit DIR`, never
   `--track`.

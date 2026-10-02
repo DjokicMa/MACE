@@ -247,3 +247,56 @@ def test_collect_runs_without_contextlib_chdir(tmp_path, monkeypatch):
     cwd = os.getcwd()
     assert cli.main(["collect", str(d), "--band", "none"]) == 0
     assert (d / "FORCE_SETS").is_file() and os.getcwd() == cwd
+
+
+# ---------------------------------------------------------------------------
+# FORCE_SETS: phonopy-init -f exits 0 when it cannot parse an output; the API
+# path must not let the same failure through.
+# ---------------------------------------------------------------------------
+
+def test_unparseable_forces_name_the_output(tmp_path, monkeypatch, capsys):
+    import phonopy.interface.crystal as pic
+
+    d, man = _setup(tmp_path, monkeypatch)
+    bad = man["jobs"][1]
+    real = pic.parse_set_of_forces
+
+    def fake(num_atoms, files, verbose=True):
+        if any(bad in str(f) for f in files):
+            print(f'***** Parsing "{files[0]}" failed. *****')
+            return []
+        return real(num_atoms, files, verbose=verbose)
+
+    monkeypatch.setattr(pic, "parse_set_of_forces", fake)
+    rc = cli.main(["collect", str(d), "--band", "none"])
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert f"{bad}.out" in err and man["jobs"][0] not in err
+    assert not (d / "FORCE_SETS").exists()
+
+
+def test_force_sets_not_created_is_an_error(tmp_path, monkeypatch, capsys):
+    import phonopy.file_IO as fio
+
+    d, _ = _setup(tmp_path, monkeypatch)
+    (d / "FORCE_SETS").write_text("stale\n")          # from an earlier run
+    monkeypatch.setattr(fio, "write_FORCE_SETS", lambda *a, **k: None)
+    rc = cli.main(["collect", str(d), "--band", "none"])
+    err = capsys.readouterr().err
+    assert rc == 1 and "FORCE_SETS" in err and "could not be created" in err
+    assert not (d / "FORCE_SETS").exists()
+    assert not (d / "thermal_properties.yaml").exists()
+
+
+def test_output_without_forces_points_at_the_deck(tmp_path, monkeypatch, capsys):
+    """A deck with an END before GRADCAL: SCF converged, normal termination,
+    no forces (measured on CRYSTAL23)."""
+    d, man = _setup(tmp_path, monkeypatch)
+    f = d / f"{man['jobs'][0]}.out"
+    text = f.read_text()
+    i = text.index(" CARTESIAN FORCES")
+    j = text.index(" EEEEEEEEEE TERMINATION")
+    f.write_text(text[:i] + text[j:])
+    rc, out = _check(d, capsys)
+    assert rc == 1 and "force block has 0 rows" in out
+    assert "stopped before GRADCAL" in out and "terminate normally" not in out

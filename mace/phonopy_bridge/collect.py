@@ -128,7 +128,13 @@ def check_outputs(outdir: Path, names: Sequence[str], cells) -> List[OutputCheck
             r.problems.append("SCF did not converge (no 'SCF ENDED - CONVERGENCE ON ENERGY')")
         rows = force_rows(text)
         if rows != n_super:
-            r.problems.append(f"force block has {rows} rows, expected {n_super}")
+            msg = f"force block has {rows} rows, expected {n_super}"
+            if rows == 0 and not r.problems:
+                # Measured on CRYSTAL23: an END before GRADCAL in the deck ends the
+                # run after the SCF with return code 0 and no forces.
+                msg += ("; the run ended normally, so CRYSTAL stopped before GRADCAL "
+                        "(is there an END before it in the .d12?)")
+            r.problems.append(msg)
         why = geometry_mismatch(text, cell)
         if why:
             r.problems.append(
@@ -229,12 +235,24 @@ def collect(outdir: Path, check_only: bool = False, band: Optional[str] = "auto"
         return result
 
     n_super = len(cells[0].numbers)
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        forces = parse_set_of_forces(n_super, [str(outdir / f"{n}.out") for n in names])
-    result.drifts = [ln.strip() for ln in buf.getvalue().splitlines() if "drift" in ln.lower()]
-    if len(forces) != len(names):
-        raise ValueError("phonopy could not read forces from every output:\n" + buf.getvalue())
+    # One output at a time, so that a failure names its file: phonopy's parser
+    # returns a short (or empty) list without saying which file failed, and
+    # `phonopy-init -f` exits 0 in that case.
+    forces, failed, failed_log, drifts = [], [], [], []
+    for n in names:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            got = parse_set_of_forces(n_super, [str(outdir / f"{n}.out")])
+        if len(got) != 1:
+            failed.append(f"{n}.out")
+            failed_log.append(buf.getvalue().strip())
+        else:
+            forces.append(got[0])
+            drifts += [ln.strip() for ln in buf.getvalue().splitlines() if "drift" in ln.lower()]
+    result.drifts = drifts
+    if failed:
+        raise ValueError(f"phonopy could not read the forces of {', '.join(failed)}; "
+                         "FORCE_SETS not written:\n" + "\n".join(failed_log))
     phonon.forces = np.array(forces)
     with contextlib.redirect_stdout(io.StringIO()):
         phonon.produce_force_constants()
@@ -252,9 +270,14 @@ def collect(outdir: Path, check_only: bool = False, band: Optional[str] = "auto"
         log(f"NAC: Born charges and dielectric tensor from {nac_from}")
 
     with working_directory(outdir):
+        fs = Path("FORCE_SETS")
+        if fs.exists():
+            fs.unlink()                     # never let an old file pass the check below
+        write_FORCE_SETS(phonon.dataset, filename=str(fs))
+        if not fs.is_file() or fs.stat().st_size == 0:
+            raise ValueError(f"{outdir / fs} could not be created; nothing else written")
         phonon.save("phonopy_params.yaml")
-        write_FORCE_SETS(phonon.dataset, filename="FORCE_SETS")
-        result.files += ["phonopy_params.yaml", "FORCE_SETS"]
+        result.files += ["FORCE_SETS", "phonopy_params.yaml"]
 
         prim = phonon.primitive
         if band:

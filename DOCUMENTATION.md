@@ -180,8 +180,12 @@ mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
   one force row per supercell atom, and the geometry CRYSTAL printed equal (to 1e-4 A)
   to that deck's displaced cell - a converged run of the wrong geometry (a stale job
   script that never staged the `.ext`; resubmit with `--overwrite-sh`) would otherwise
-  give silently wrong force constants. Any problem is listed per file and nothing is
-  written; `--check` stops after the checks. Then it writes `FORCE_SETS`,
+  give silently wrong force constants. A run that ended normally with no forces
+  usually means an END before GRADCAL in its deck, and is reported as such. Any
+  problem is listed per file and nothing is written; `--check` stops after the
+  checks. Forces are then read one output at a time, so an output phonopy cannot
+  parse is named, and `FORCE_SETS` is checked to exist before anything else is
+  written (phonopy's own `phonopy-init -f` exits 0 when it fails). Then it writes `FORCE_SETS`,
   `phonopy_params.yaml`, `band.yaml` (`--band auto` uses SeeK-path on the parent's
   primitive cell, converted to CRYSTAL's reciprocal basis; or give phonopy BAND points
   with `--band "0 0 0  1/2 0 1/2, ..."` and `--band-labels`; `--band none` skips it),
