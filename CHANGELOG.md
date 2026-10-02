@@ -134,6 +134,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unreadable block and are now refused. 204-227 are Z < 37, so cif2d12 reads
   the bare-Z file for those elements and never opened them. Decks written
   from readable files are unchanged.
+- **`opt2d12` labels an ECP atom with its element.** Each geometry line ends
+  with a comment naming the element (`282 x y z Biso 1.000000 Pb`); for an
+  EXTERNAL-basis parent, which keeps the conventional number 200+Z of an ECP
+  atom, the label was looked up with that number and came out `X`. It is now
+  the element of the number modulo 100. Deck change: in every `opt2d12` child
+  (scalar or SOC) of a parent whose geometry carries atom numbers above 100,
+  that trailing comment changes from `X` to the element symbol. Atom numbers
+  and coordinates do not change; CRYSTAL reads only NAT and the coordinates
+  on these lines, so the run is the same.
 - **An `opt2d12` child keeps its parent deck's SMEAR.** The .d12 parser
   stored SMEAR as `use_smearing`, but the deck writer reads `smearing`, which
   only the .out parser set (from a "FERMI SMEARING" line) and which `opt2d12`

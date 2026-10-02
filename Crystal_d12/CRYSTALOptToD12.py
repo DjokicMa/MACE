@@ -769,7 +769,10 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 atom_num += 200
             # For internal basis sets, do NOT add 200 - they handle ECP internally
 
-            symbol = ATOMIC_NUMBER_TO_SYMBOL.get(original_atom_num, "X")
+            # An EXTERNAL-basis parent keeps conventional numbers (282 = Pb
+            # with an ECP); the element is the number modulo 100.
+            symbol = ATOMIC_NUMBER_TO_SYMBOL.get(
+                original_atom_num % 100 if original_atom_num > 100 else original_atom_num, "X")
             
             # Handle different coordinate systems based on dimensionality
             if dimensionality == "SLAB":

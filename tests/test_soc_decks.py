@@ -310,10 +310,12 @@ def _sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-# Written by main (9fcdb9c2) from the same parents and template.
+# Written by main (9fcdb9c2) from the same parents and template, except that
+# the geometry comment of an ECP atom (282, 252) is its element, not "X"
+# (round 6; nothing else in pbte and pbi changed).
 MAIN_SHA = {
-    "pbte": "a816e774a163a29f6c5117fdf45d97cdd3bf79f975cd2db70eb26c325852f85a",
-    "pbi": "322b662e8cacb0b7bbf850ddbe33bafb173e1643455389840b01c366e86ef0d4",
+    "pbte": "d84c931bf60ae58094c72de2cc6ac8d4f874bfef8b876ec4fdaae452645a579c",
+    "pbi": "7aa474debb373bba9f91b726b48434a1dca270782243e9e60a35dd1bcde0fad9",
     "nacl": "19a47a987caa03630ac0bb75f1db6cc5966787277fe0acb5913fcf252d637091",
 }
 

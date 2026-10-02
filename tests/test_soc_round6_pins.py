@@ -4,7 +4,7 @@ Every new option is off by default, so these decks must not change unless a
 listed deck change says so. The hashes were taken from decks written by
 cloud/soc-round5 (c9837e3b) and are updated only by such a change: the
 geometry comment of an ECP atom (atom number 2xx) in an opt2d12 child was
-"X" before the element symbol was written there.
+"X" before the element symbol was written there (both opt2d12 pins).
 
 The second part pins which files of MACE's basis libraries CRYSTAL could
 read as they stand (basis_file_check.basis_block_problem).
@@ -28,9 +28,9 @@ def _sha(text):
 
 PINS = {
     "soc_deck_pbte": "52e7e9b1d1dc034ccbd22eafb83e88a1b7c8f46471851239d8a76a400decb668",
-    "opt2d12_soc_child": "397a28854e9914cca28af0507d07350cab0e1801d5abd5fa3599ae8b799004b5",
+    "opt2d12_soc_child": "d61a5057635d4d3e3b8d24d8ab589fc3756169c30727fda02ac471215132c432",
     "cif2d12_soc_au": "6491de160c3dada85f346eb45e6b01f013e18e6ed516a1ab5cd3be59f2556c55",
-    "opt2d12_scalar_child": "a816e774a163a29f6c5117fdf45d97cdd3bf79f975cd2db70eb26c325852f85a",
+    "opt2d12_scalar_child": "d84c931bf60ae58094c72de2cc6ac8d4f874bfef8b876ec4fdaae452645a579c",
 }
 
 
@@ -57,7 +57,7 @@ def test_opt2d12_scalar_child_of_an_ecp_parent_is_pinned(opt2d12):
     assert _sha(text) == PINS["opt2d12_scalar_child"]
     # The geometry lines of the two ECP atoms (282 Pb, 252 Te).
     geometry = [ln for ln in text.split("\n") if " Biso " in ln]
-    assert [ln.rsplit(" ", 1)[-1] for ln in geometry] == ["X", "X"]
+    assert [ln.rsplit(" ", 1)[-1] for ln in geometry] == ["Pb", "Te"]
 
 
 # --- basis libraries ----------------------------------------------------------
