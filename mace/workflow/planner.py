@@ -51,6 +51,8 @@ except Exception:
         def badge(self, s): return str(s).upper()
     ui = _UIShim()
 
+from mace.workflow.plan_functionals import normalize_plan_functionals
+
 # Import MACE components
 try:
     from mace.database.materials import create_material_id_from_file
@@ -117,6 +119,16 @@ except ImportError as e:
             except ImportError:
                 DummyFileCreator = None
                 ui.warn("Warning: DummyFileCreator not available - will use fallback dummy files")
+
+
+def _report_plan_functionals(plan: Dict[str, Any]) -> None:
+    """Write a plan's functionals as CRYSTAL23 keywords (1.1.1 plans hold
+    prose spellings) and say what changed or cannot be used."""
+    messages, errors = normalize_plan_functionals(plan)
+    for msg in messages:
+        ui.warn(f"Plan step {msg}")
+    for err in errors:
+        ui.err(f"Plan step {err}")
 
 
 class WorkflowPlanner:
@@ -4483,6 +4495,7 @@ class WorkflowPlanner:
         timestamp = workflow_id.replace("workflow_", "")
         plan_file = self.configs_dir / f"workflow_plan_{timestamp}.json"
 
+        _report_plan_functionals(workflow_plan)
         with open(plan_file, "w") as f:
             json.dump(workflow_plan, f, indent=2, default=str)
 
@@ -4501,6 +4514,7 @@ class WorkflowPlanner:
 
         with open(plan_file, "r") as f:
             plan = json.load(f)
+        _report_plan_functionals(plan)
 
         ui.info("Workflow execution summary:")
         ui.info(f"  Input files: {len(plan['input_files']['cif'])} CIFs, {len(plan['input_files']['d12'])} D12s")

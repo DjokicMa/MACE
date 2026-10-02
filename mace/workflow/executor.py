@@ -33,6 +33,7 @@ try:
     from mace.database.materials import MaterialDatabase
     from mace.queue.manager import EnhancedCrystalQueueManager
     from mace.workflow.context import WorkflowContext, workflow_context, get_current_context
+    from mace.workflow.plan_functionals import normalize_plan_functionals
     # Crystal_d12 modules no longer needed here - handled by subprocess calls
 except ImportError as e:
     print(f"Error importing required modules: {e}")
@@ -358,7 +359,13 @@ class WorkflowExecutor:
         
         with open(plan_file, 'r') as f:
             plan = json.load(f)
-            
+        # 1.1.1 plans hold prose functional spellings CRYSTAL23 rejects
+        fn_msgs, fn_errs = normalize_plan_functionals(plan)
+        for msg in fn_msgs:
+            ui.warn(f"Plan step {msg}")
+        for err in fn_errs:
+            ui.err(f"Plan step {err}")
+
         # Use workflow_id from plan, or generate new one if missing/None —
         # and write it back so every later consumer of this plan dict
         # (script preparation, step execution) sees the SAME id instead of

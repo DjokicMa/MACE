@@ -38,6 +38,8 @@ from mace.database.materials import MaterialDatabase, create_material_id_from_fi
 from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.workflow.context import get_current_context
 from mace.utils.settings_extractor import extract_input_settings
+from mace.workflow.plan_functionals import (normalize_plan_functionals,
+                                            normalize_step_functionals)
 
 
 def _planless_progression_allowed() -> bool:
@@ -113,7 +115,10 @@ class WorkflowEngine:
                 if candidate.exists():
                     try:
                         with open(candidate, 'r') as f:
-                            return json.load(f)
+                            plan = json.load(f)
+                        # 1.1.1 plans hold prose functional spellings
+                        normalize_plan_functionals(plan)
+                        return plan
                     except Exception as e:
                         print(f"DEBUG: Error reading workflow plan: {e}")
                         return None
@@ -3064,6 +3069,15 @@ fi'''
             elif not expert_config_file:
                 # Check if workflow configuration has settings for this calculation type
                 workflow_config = self.get_workflow_step_config(workflow_id, target_calc_type)
+                if workflow_config:
+                    fn_msgs, fn_errs = normalize_step_functionals(workflow_config)
+                    for msg in fn_msgs:
+                        print(f"  Warning: plan step {target_calc_type}: {msg}")
+                    if fn_errs:
+                        for err in fn_errs:
+                            print(f"  Error: plan step {target_calc_type}: {err}")
+                        print(f"  No {target_calc_type} deck written for {material_id}")
+                        return None
                 # Plan method_modifications / optimization_settings. No functional
                 # is passed in: without a plan override the parent's own method
                 # must survive.
