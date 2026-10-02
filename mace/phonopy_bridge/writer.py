@@ -13,6 +13,7 @@ from . import parent as P
 
 MANIFEST = "mace_phonopy.json"
 DISP_YAML = "phonopy_disp.yaml"
+TEMPLATE = "TEMPLATE"
 
 
 @contextlib.contextmanager

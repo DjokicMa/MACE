@@ -146,15 +146,22 @@ mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
   two sets never share a scratch directory. It also writes `phonopy_disp.yaml` (the
   displacements) and `mace_phonopy.json` (parent paths and checksums, every deck edit,
   versions).
-- **The parent's method is kept.** The deck is the parent's basis set and SCF block
-  byte for byte, after `EXTERNAL` (`BASISSET` replaces the END of the geometry block,
-  manual p.28). The only edits, each printed: the final END removed; TOLDEE raised to
-  at least 10 (`--toldee N` raises it further, never lowers it); GUESSP dropped;
+- **The parent's method is kept.** The deck has the layout phonopy's own CRYSTAL
+  writer gives it: `EXTERNAL`, the parent's basis set and SCF block byte for byte
+  (`BASISSET` replaces the END of the geometry block, manual p.28), then `TOLDEE`,
+  `GRADCAL` (manual p.111) and `END`. The part in between is phonopy's TEMPLATE and
+  must not contain an END, TOLDEE or GRADCAL: measured on CRYSTAL23, a TEMPLATE that
+  ends with END makes CRYSTAL stop before GRADCAL, with return code 0 and no forces.
+  For an explicit basis it is also written to `TEMPLATE` in the set directory. The
+  edits, each printed: the final END removed; TOLDEE moved before GRADCAL and raised
+  to at least 10 (`--toldee N` raises it further, never lowers it); GUESSP dropped;
   `BIPOSIZE`/`EXCHSIZE 110000000` added when the parent had neither and the supercell
-  has more than 5 atoms (d12_writer's rule); `GRADCAL` (manual p.111) and END appended.
-  With `--scale-shrink` (diagonal `--dim` only) SHRINK is divided by the supercell size,
-  rounding up, with a note where the size does not divide the parent's mesh; by default
-  SHRINK is kept, which samples the supercell more densely than the parent.
+  has more than 5 atoms (d12_writer's rule); a parent GRADCAL moved to the end.
+  SHRINK is divided by the supercell size in each direction, so the supercell is
+  sampled as densely as the parent (diamond, parent `SHRINK 12 24`: `6 12` for 2x2x2,
+  `4 8` for 3x3x3); where the size does not divide the parent's value it is rounded
+  up, never coarser than the parent, and a note says so. A non-diagonal `--dim`
+  keeps the parent's SHRINK with a warning; `--keep-shrink` keeps it always.
 - **Refused parents** (each with its reason): not 3D (use CRYSTAL's FREQCALC +
   SCELPHONO + DISPERSI, manual pp.73, 232); not terminated normally; SCF not converged;
   an optimisation without `OPT END - CONVERGED`; a FREQCALC output as the geometry

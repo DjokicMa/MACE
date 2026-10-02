@@ -36,7 +36,7 @@ def test_top_level_help_lists_phonopy():
 def test_subcommand_help_reaches_the_subcommand_parser():
     p = _run("phonopy", "generate", "--help")
     assert p.returncode == 0, p.stderr
-    assert "--scale-shrink" in p.stdout and "--amplitude" in p.stdout
+    assert "--keep-shrink" in p.stdout and "--amplitude" in p.stdout
 
 
 def test_generate_without_phonopy_exits_2_with_hint(tmp_path):

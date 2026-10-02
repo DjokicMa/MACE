@@ -12,10 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`mace phonopy generate` / `mace phonopy collect`: finite-displacement phonons
   with phonopy** (optional dependency, `phonopy<5`). `generate` reads a finished 3D
   OPT or SP parent and writes one EXTERNAL deck per displaced supercell, named after
-  the parent and the supercell, with its geometry in `<job>.ext`; the parent's basis
-  and SCF block are kept byte for byte apart from the printed edits (TOLDEE at least
-  10, GUESSP dropped, buffers for large cells, GRADCAL; SHRINK only with
-  `--scale-shrink`). Parents it cannot reproduce in a P1 supercell (non-3D, charged,
+  the parent and the supercell, with its geometry in `<job>.ext`. The deck has the
+  layout phonopy's own CRYSTAL writer gives it, measured to give forces on CRYSTAL23:
+  the parent's basis and SCF block (phonopy's TEMPLATE, also written to `TEMPLATE`
+  for an explicit basis; never with an END, which stops CRYSTAL before GRADCAL with
+  no forces), then TOLDEE (at least 10), GRADCAL and END. The basis and SCF block
+  are kept byte for byte apart from the printed edits (GUESSP dropped, buffers for
+  large cells, SHRINK divided by the supercell size - rounded up where it does not
+  divide - unless `--keep-shrink` or a non-diagonal `--dim`). Parents it cannot reproduce in a P1 supercell (non-3D, charged,
   spin-locked, magnetic without a lock, ghosts, unknown SCF keywords, unconverged) are
   refused with the reason. `collect` checks every output - including that CRYSTAL ran
   the displaced geometry it was given - before writing FORCE_SETS, band, mesh, DOS and

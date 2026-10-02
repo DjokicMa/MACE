@@ -20,9 +20,13 @@ phonopy_disp.yaml and mace_phonopy.json. Then:
     mace phonopy collect DIR [--nac-from FREQ.out]
 
 The parent must be a finished 3D OPT (OPT END - CONVERGED) or SP run. The
-method, basis and tolerances of the parent are kept; only TOLDEE (raised to at
-least 10), GUESSP (dropped), buffers, GRADCAL and END are edited, and SHRINK
-with --scale-shrink. Every edit is printed.
+method, basis and tolerances of the parent are kept. The deck is phonopy's own
+layout: EXTERNAL, the parent's basis and SCF block (no END, TOLDEE or GRADCAL in
+it - written to TEMPLATE for an explicit basis), then TOLDEE (at least 10),
+GRADCAL and END. GUESSP is dropped, buffers are added for large cells, and
+SHRINK is divided by the supercell size in each direction (rounded up when it
+does not divide; kept for a non-diagonal --dim or with --keep-shrink). Every
+edit is printed.
 """
 
 COLLECT_EPILOG = """
@@ -53,8 +57,10 @@ def _parser() -> argparse.ArgumentParser:
                    help="plus/minus displacements (default: auto)")
     g.add_argument("--toldee", type=int, default=None,
                    help="TOLDEE for the supercells; can only raise the parent's (default: max(10, parent))")
-    g.add_argument("--scale-shrink", action="store_true",
-                   help="divide SHRINK by the supercell size (diagonal --dim only)")
+    g.add_argument("--keep-shrink", action="store_true",
+                   help="keep the parent's SHRINK (default: divide it by the supercell size, "
+                        "rounding up; diagonal --dim only)")
+    g.add_argument("--scale-shrink", action="store_true", help=argparse.SUPPRESS)
 
     c = sub.add_parser("collect", help="check outputs, then forces -> phonons",
                        epilog=COLLECT_EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -113,9 +119,11 @@ def cmd_generate(a) -> int:
         return 1
     tag = S.dim_tag(dim)
     stem = out_path.stem
-    if a.scale_shrink and not P.is_diagonal(dim.tolist()):
-        print("Error: --scale-shrink needs a diagonal --dim", file=sys.stderr)
+    if a.keep_shrink and a.scale_shrink:
+        print("Error: --keep-shrink and --scale-shrink contradict each other", file=sys.stderr)
         return 1
+    diagonal = P.is_diagonal(dim.tolist())
+    scale_shrink = diagonal and not a.keep_shrink
 
     outdir = Path(a.output_dir) if a.output_dir else Path(f"phonopy_{stem}_{tag}")
     if _inside_workflow_outputs(outdir):
@@ -149,10 +157,19 @@ def cmd_generate(a) -> int:
     n_super = len(phonon.supercell.numbers)
     template = P.template_lines(
         deck, n_super, toldee=a.toldee,
-        scale_shrink_dims=[int(v) for v in np.diag(dim)] if a.scale_shrink else None)
+        scale_shrink_dims=[int(v) for v in np.diag(dim)] if scale_shrink else None)
+    if not diagonal and not a.keep_shrink:
+        warns.append(("SHRINK_KEPT", "non-diagonal --dim: SHRINK kept as in the parent (it "
+                      "cannot be divided per direction); set it in the decks by hand"))
 
     outdir.mkdir(parents=True, exist_ok=True)
     names = W.write_set(outdir, stem, tag, deck, template, phonon, conv_super)
+    template_file = None
+    if deck.basis_kind == "explicit":
+        # phonopy-init --crystal -d reads this; it puts EXTERNAL / ENDGEOM in front,
+        # which only an explicit basis can follow.
+        template_file = W.TEMPLATE
+        (outdir / W.TEMPLATE).write_text(P.template_text(template))
     with W.working_directory(outdir):
         phonon.save(W.DISP_YAML)
     import phonopy
@@ -160,7 +177,8 @@ def cmd_generate(a) -> int:
         "parent_out": str(out_path.resolve()), "parent_out_sha256": W.sha256(out_path),
         "parent_d12": str(d12_path.resolve()), "parent_d12_sha256": W.sha256(d12_path),
         "dim": dim.tolist(), "amplitude": a.amplitude if a.amplitude is not None else 0.01,
-        "pm": a.pm, "toldee": template.toldee, "scale_shrink": bool(a.scale_shrink),
+        "pm": a.pm, "toldee": template.toldee, "scale_shrink": bool(scale_shrink),
+        "template": template_file,
         "edits": template.edits, "dropped_block1_keywords": deck.dropped_keywords,
         "basis": deck.basis_kind, "method_lines": P.method_lines(deck),
         "conv_numbers": [int(c) for c in conv], "conv_numbers_supercell": conv_super,
@@ -188,10 +206,9 @@ def cmd_generate(a) -> int:
         nk = kp[0] * kp[1] * kp[2]
         print(f"  cost per job ~ {nk} k-points (before time reversal) x {n_super} atoms"
               f" = {nk * n_super} k-point x atom")
-        if not a.scale_shrink and n_cells > 1:
+        if not scale_shrink and n_cells > 1:
             print(f"  The supercell keeps the parent's SHRINK: {n_cells}x the k-point density "
-                  "the parent used. --scale-shrink keeps the parent's density with about "
-                  f"1/{n_cells} of the k-points per job.")
+                  "the parent used.")
     print(f"Wrote {len(names)} deck(s) + .ext to {outdir}/")
     print("Next:")
     print(f"  mace submit {outdir} --walltime 24:00:00    (adjust; do NOT add --track)")

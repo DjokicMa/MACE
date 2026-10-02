@@ -1,13 +1,21 @@
 """`mace phonopy generate`: reading a parent deck into a supercell template.
 
-No phonopy needed. The displaced-supercell deck is the parent's basis set and
-block 3 behind ``EXTERNAL`` (manual p.21) - BASISSET replaces the END of block 1
-(p.28) - with only these edits: (a) final END removed, (b) TOLDEE raised,
-(c) GUESSP dropped, (d) SHRINK scaled with --scale-shrink, (e) BIPOSIZE/EXCHSIZE
-added under d12_writer's rule, (f) GRADCAL + END appended. The method, basis
-and tolerances must come through byte for byte: a phonon run on a different
-method than the parent's is a different calculation.
+No phonopy needed. The template is what phonopy's CRYSTAL interface calls
+TEMPLATE: the parent's basis set and block 3, with no final END, no TOLDEE and
+no GRADCAL. The deck is ``EXTERNAL`` (manual p.21) - BASISSET replaces the END
+of block 1 (p.28) - then the template, then ``TOLDEE / N / GRADCAL / END``, the
+tail phonopy's own writer appends. Edits: (a) final END removed, (b) TOLDEE
+moved to the tail and raised to at least 10, (c) GUESSP dropped, (d) SHRINK
+divided by the supercell size, (e) BIPOSIZE/EXCHSIZE added under d12_writer's
+rule, (f) GRADCAL moved to the tail. The method, basis and tolerances must come
+through byte for byte: a phonon run on a different method than the parent's is
+a different calculation.
+
+Measured on CRYSTAL23 (phonopy 4.7.2): a TEMPLATE that ends with END gives
+``... END / TOLDEE 10 / GRADCAL / END``; CRYSTAL stops at the first END, the
+SCF finishes with return code 0 and no forces are written.
 """
+from pathlib import Path
 import pytest
 
 from mace.phonopy_bridge import parent as P
@@ -174,7 +182,8 @@ def test_nested_dft_dftd3_gcp_ends_do_not_end_block3():
     body = t.lines[len(d.basis_lines):]
     assert body[:11] == _lines(NESTED_B3)[:11]          # DFT, DFTD3, GCP verbatim
     assert "GUESSP" not in body
-    assert body[-2:] == ["GRADCAL", "END"]
+    assert "GRADCAL" not in body and body[-1] != "END"
+    assert P.deck_text("t", d, t).splitlines()[-4:] == ["TOLDEE", "11", "GRADCAL", "END"]
 
 
 def test_deck_without_final_end_is_refused():
@@ -190,33 +199,73 @@ def _toldees(lines):
     return [lines[i + 1] for i, ln in enumerate(lines) if ln == "TOLDEE"]
 
 
-def test_toldee_raised_in_place():
-    t = P.template_lines(P.split_parent_deck(internal("7")), 16)
-    assert _toldees(t.lines) == ["10"]
-    assert t.lines.index("TOLDEE") < t.lines.index("SHRINK")       # in place
+def _tail(d, t):
+    return P.deck_text("t", d, t).splitlines()[-4:]
+
+
+def test_toldee_moved_to_the_tail_and_raised():
+    d = P.split_parent_deck(internal("7"))
+    t = P.template_lines(d, 16)
+    assert _toldees(t.lines) == []                    # not in the template
+    assert t.toldee == 10 and _tail(d, t) == ["TOLDEE", "10", "GRADCAL", "END"]
     assert any(e.startswith("(b) TOLDEE 7 -> 10") for e in t.edits)
 
 
 def test_toldee_kept_when_already_tighter():
-    t = P.template_lines(P.split_parent_deck(internal("11")), 16)
-    assert _toldees(t.lines) == ["11"]
+    d = P.split_parent_deck(internal("11"))
+    t = P.template_lines(d, 16)
+    assert _toldees(t.lines) == [] and _tail(d, t)[:2] == ["TOLDEE", "11"]
 
 
 def test_toldee_requested_can_only_raise():
-    t = P.template_lines(P.split_parent_deck(internal("11")), 16, toldee=8)
-    assert _toldees(t.lines) == ["11"]
-    t = P.template_lines(P.split_parent_deck(internal("11")), 16, toldee=12)
-    assert _toldees(t.lines) == ["12"]
+    d = P.split_parent_deck(internal("11"))
+    assert P.template_lines(d, 16, toldee=8).toldee == 11
+    assert P.template_lines(d, 16, toldee=12).toldee == 12
 
 
-def test_toldee_appended_at_top_level_when_absent():
-    text = internal().replace("TOLDEE\n7\nSHRINK", "SHRINK")
-    text = text.replace("ENDOPT", "ENDOPT")          # the OPTGEOM TOLDEE stays in block 1
-    t = P.template_lines(P.split_parent_deck(text), 16)
-    assert _toldees(t.lines) == ["10"]
-    i = t.lines.index("TOLDEE")
-    assert i > t.lines.index("ENDDFT")              # not inside the DFT block
-    assert t.lines[-2:] == ["GRADCAL", "END"]
+def test_toldee_added_when_absent():
+    text = internal().replace("TOLDEE\n7\nSHRINK", "SHRINK")  # the OPTGEOM TOLDEE stays in block 1
+    d = P.split_parent_deck(text)
+    t = P.template_lines(d, 16)
+    assert _toldees(t.lines) == [] and _tail(d, t) == ["TOLDEE", "10", "GRADCAL", "END"]
+    deck = P.deck_text("t", d, t).splitlines()
+    assert deck.count("TOLDEE") == 1
+
+
+def _block3_part(d, t):
+    return t.lines[len(d.basis_lines):]
+
+
+@pytest.mark.parametrize("text", [internal(), internal(extra_b3="GRADCAL\n"), explicit(),
+                                  explicit(NESTED_B3)],
+                         ids=["internal", "internal-gradcal", "explicit", "explicit-nested"])
+def test_template_has_no_end_toldee_or_gradcal(text):
+    """phonopy appends TOLDEE / 10 / GRADCAL / END to the TEMPLATE; an END left
+    in it stops CRYSTAL before GRADCAL (rc 0, no forces)."""
+    d = P.split_parent_deck(text)
+    t = P.template_lines(d, 16)
+    body = _block3_part(d, t)
+    top = [k for _, k in P._top_level(body)]
+    assert "END" not in top and body[-1].strip().upper() != "END"
+    assert "TOLDEE" not in top and "GRADCAL" not in top
+    for banned in ("OPTGEOM", "FREQCALC", "ENDOPT", "ENDFREQ", "CRYSTAL"):
+        assert banned not in [ln.strip() for ln in t.lines]
+    tmpl = P.template_text(t)
+    assert not tmpl.rstrip().endswith("\nEND")
+    deck = P.deck_text("t", d, t).splitlines()
+    assert deck[-4:] == ["TOLDEE", str(t.toldee), "GRADCAL", "END"]
+    assert [ln.strip() for ln in deck].count("GRADCAL") == 1
+    assert [ln.strip() for ln in deck].count("TOLDEE") == 1
+
+
+def test_trailing_end_in_a_template_is_caught():
+    """The check the tests above rely on really fails on the broken layout."""
+    d = P.split_parent_deck(internal())
+    t = P.template_lines(d, 16)
+    broken = P.Template(lines=t.lines + ["END"], edits=t.edits, toldee=t.toldee)
+    assert [k for _, k in P._top_level(_block3_part(d, broken))][-1] == "END"
+    with pytest.raises(ValueError):
+        P.deck_text("t", d, broken)
 
 
 def test_guessp_dropped():
@@ -225,7 +274,7 @@ def test_guessp_dropped():
     assert any(e.startswith("(c)") for e in t.edits)
 
 
-def test_shrink_verbatim_by_default():
+def test_shrink_verbatim_without_dims():
     d = P.split_parent_deck(internal())
     t = P.template_lines(d, 16)
     i = t.lines.index("SHRINK")
@@ -272,10 +321,12 @@ def test_buffers_added_only_for_large_supercells_without_parent_buffers():
     assert t.lines[t.lines.index("BIPOSIZE") + 1] == "30000000"
 
 
-def test_gradcal_appended_once():
+def test_parent_gradcal_moves_to_the_tail():
     d = P.split_parent_deck(internal(extra_b3="GRADCAL\n"))
     t = P.template_lines(d, 16)
-    assert t.lines.count("GRADCAL") == 1 and t.lines[-1] == "END"
+    assert "GRADCAL" not in t.lines
+    deck = P.deck_text("t", d, t).splitlines()
+    assert deck.count("GRADCAL") == 1 and deck[-2:] == ["GRADCAL", "END"]
 
 
 @pytest.mark.parametrize("text", [internal(), internal(label="SOLDEF2MSVP", method="HSESOL3C"),
@@ -298,7 +349,32 @@ def test_deck_layout_internal_and_explicit():
     d = P.split_parent_deck(explicit())
     lines = P.deck_text("title", d, P.template_lines(d, 16)).splitlines()
     assert lines[:4] == ["title", "EXTERNAL", "END", "12 4"]
-    assert lines[-1] == "END"
+    assert lines[-4:] == ["TOLDEE", "10", "GRADCAL", "END"]
+
+
+# Measured on CRYSTAL23 with phonopy 4.7.2 (diamond, B3LYP-D3, parent
+# test/SP/1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized.d12): this TEMPLATE block 3,
+# after the parent's basis verbatim, ran and gave forces for 2x2x2 (SHRINK 6 12)
+# and 3x3x3 (SHRINK 4 8). The parent has TOLDEE 9 and SHRINK 12 24.
+DIAMOND_BLOCK3 = ["END", "DFT", "SPIN", "B3LYP-D3", "XLGRID", "ENDDFT", "TOLINTEG",
+                  "8 8 8 9 24", "SHRINK", "{shrink}", "SCFDIR", "MAXCYCLE", "1600", "FMIXING",
+                  "30", "DIIS", "HISTDIIS", "100", "PPAN"]
+
+
+@pytest.mark.parametrize("n,shrink", [(2, "6 12"), (3, "4 8")])
+def test_diamond_template_matches_the_measured_one(n, shrink):
+    from conftest import find_data
+    parent = find_data("SP/1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized.d12")
+    text = Path(parent).read_text()
+    d = P.split_parent_deck(text)
+    t = P.template_lines(d, 2 * n ** 3, scale_shrink_dims=[n, n, n])
+    want_basis = text.splitlines()[text.splitlines().index("END") + 1:]
+    want_basis = want_basis[:want_basis.index("99 0") + 1]
+    want = want_basis + [ln.format(shrink=shrink) for ln in DIAMOND_BLOCK3]
+    # MACE adds the buffers d12_writer adds above 5 atoms; CRYSTAL23 accepts them.
+    got = [ln for ln in t.lines
+           if ln not in ("BIPOSIZE", "EXCHSIZE", P.BUFFER_SIZE)]
+    assert got == want
 
 
 # ---------------------------------------------------------------------------

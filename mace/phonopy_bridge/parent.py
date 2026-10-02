@@ -2,28 +2,39 @@
 
 Standard library only: nothing here imports phonopy.
 
-The displaced-supercell deck is::
+The displaced-supercell deck is the one phonopy's CRYSTAL interface writes
+around a TEMPLATE file::
 
     <title>
     EXTERNAL                      geometry from fort.34 (manual p.21, format pp.450-451)
     BASISSET / <name>             internal library: replaces the END of block 1 (p.28)
       - or -
     END / <basis records> / 99 0 / ... / END     explicit basis and block 2
-    <block 3 of the parent, edited only as listed below>
+    <block 3 of the parent, edited only as listed below>      } the TEMPLATE
+    TOLDEE / N                    phonopy's writer appends TOLDEE / 10 here
     GRADCAL                       analytical gradient after the SCF (p.111)
     END
+
+The TEMPLATE (basis part + block 3) has no final END, no TOLDEE and no GRADCAL.
+Measured on CRYSTAL23 with phonopy 4.7.2: a TEMPLATE ending with END gives
+``... END / TOLDEE 10 / GRADCAL / END``; CRYSTAL stops at the first END, the
+SCF finishes with return code 0 and no forces are written.
 
 Block 1 of the parent (its geometry, OPTGEOM, FREQCALC, ...) is dropped: the
 geometry comes from the parent's output via phonopy. Everything from the basis
 on is copied byte for byte, except for these edits, each reported:
 
-    (a) the final END is removed (GRADCAL and END are appended again by (f));
-    (b) TOLDEE is raised in place to max(parent, requested), or appended;
+    (a) the final END is removed (the deck's END follows GRADCAL);
+    (b) TOLDEE is removed from block 3 and written once after it, as
+        max(10, parent, requested) - phonopy's own writer always writes 10;
     (c) GUESSP is dropped (no density matrix exists for a displaced supercell);
-    (d) SHRINK is scaled down by the supercell size, only with --scale-shrink;
+    (d) SHRINK is divided by the supercell size in each direction (diagonal
+        supercells; rounded up where the size does not divide the parent's
+        value, so the k-point density never drops below the parent's);
     (e) BIPOSIZE/EXCHSIZE 110000000 are added when the parent has neither and
         the supercell has more than 5 atoms (d12_writer's own rule);
-    (f) GRADCAL (if absent) and END are appended.
+    (f) GRADCAL is removed from block 3 if the parent had it, and written once
+        after TOLDEE, followed by END.
 
 The method, the basis label and every other tolerance are never changed.
 """
@@ -406,7 +417,8 @@ def warnings_for(deck: ParentDeck, out_text: str) -> List[Tuple[str, str]]:
 
 @dataclass
 class Template:
-    lines: List[str]                     # basis part + edited block 3 + GRADCAL + END
+    lines: List[str]                     # the TEMPLATE: basis part + edited block 3,
+                                         # without TOLDEE, GRADCAL and the final END
     edits: List[str]
     toldee: int
 
@@ -472,24 +484,22 @@ def scale_shrink(block3: List[str], diag: Sequence[int]) -> Tuple[List[str], Opt
 
 def template_lines(deck: ParentDeck, n_super_atoms: int, toldee: Optional[int] = None,
                    scale_shrink_dims: Optional[Sequence[int]] = None) -> Template:
-    """Basis part + block 3 of the parent with edits (a)-(f) only."""
-    edits = ["(a) final END of the parent removed (re-added after GRADCAL)"]
+    """The TEMPLATE: basis part + block 3 of the parent with edits (a)-(f)."""
+    edits = ["(a) final END of the parent removed (the deck's END follows GRADCAL)"]
     block3 = list(deck.block3)
 
-    # (b) TOLDEE
+    # (b) TOLDEE: out of block 3, into the deck tail
     old = parent_toldee(block3)
     target = max(DEFAULT_TOLDEE if toldee is None else toldee, old or 0)
     ti = _value_index(block3, "TOLDEE")
-    append_toldee = False
-    if ti is not None and old is not None:
-        if target != old:
-            block3[ti + 1] = str(target)
-            edits.append(f"(b) TOLDEE {old} -> {target} (in place)")
-        else:
-            edits.append(f"(b) TOLDEE {old} kept")
+    if ti is not None:
+        del block3[ti:ti + 2 if old is not None else ti + 1]
+    if old is None:
+        edits.append(f"(b) TOLDEE {target} written before GRADCAL (parent had none)")
+    elif target != old:
+        edits.append(f"(b) TOLDEE {old} -> {target}, moved before GRADCAL")
     else:
-        append_toldee = True
-        edits.append(f"(b) TOLDEE {target} appended (parent had none)")
+        edits.append(f"(b) TOLDEE {old} kept, moved before GRADCAL")
 
     # (c) GUESSP
     gi = [i for i, k in _top_level(block3) if k == "GUESSP"]
@@ -504,33 +514,48 @@ def template_lines(deck: ParentDeck, n_super_atoms: int, toldee: Optional[int] =
         if note:
             edits.append(f"(d) {note}")
 
+    # (f) GRADCAL: out of block 3, into the deck tail
+    gr = [i for i, k in _top_level(block3) if k == "GRADCAL"]
+    for i in reversed(gr):
+        del block3[i]
+    gradcal_note = ("(f) GRADCAL moved before the final END" if gr
+                    else "(f) GRADCAL and END appended")
+
     # (e) buffers
     keys = {k for _, k in _top_level(block3)}
-    extra: List[str] = []
-    if append_toldee:
-        extra += ["TOLDEE", str(target)]
     if not ({"BIPOSIZE", "EXCHSIZE"} & keys) and n_super_atoms > BUFFER_ATOM_THRESHOLD:
-        extra += ["BIPOSIZE", BUFFER_SIZE, "EXCHSIZE", BUFFER_SIZE]
+        block3 += ["BIPOSIZE", BUFFER_SIZE, "EXCHSIZE", BUFFER_SIZE]
         edits.append(f"(e) BIPOSIZE/EXCHSIZE {BUFFER_SIZE} added ({n_super_atoms} atoms in "
                      "the supercell, parent had neither)")
+    edits.append(gradcal_note)
 
-    # (f) GRADCAL + END
-    if "GRADCAL" not in keys:
-        extra.append("GRADCAL")
-        edits.append("(f) GRADCAL and END appended")
-    else:
-        edits.append("(f) END appended (parent already had GRADCAL)")
-    extra.append("END")
+    return Template(lines=list(deck.basis_lines) + block3, edits=edits, toldee=target)
 
-    return Template(lines=list(deck.basis_lines) + block3 + extra, edits=edits, toldee=target)
+
+def _check_template(deck: ParentDeck, template: Template) -> None:
+    """A top-level END, TOLDEE or GRADCAL in the block-3 part would stop or
+    duplicate what the deck tail adds."""
+    body = template.lines[len(deck.basis_lines):]
+    bad = [k for _, k in _top_level(body) if k in ("END", "TOLDEE", "GRADCAL")]
+    if bad:
+        raise ValueError(f"template block 3 must not contain {', '.join(dict.fromkeys(bad))}")
+
+
+def template_text(template: Template) -> str:
+    """The TEMPLATE file phonopy's CRYSTAL writer (phonopy-init --crystal -d)
+    inserts after ``EXTERNAL / ENDGEOM``: explicit basis sets only."""
+    return "\n".join(template.lines) + "\n"
 
 
 def deck_text(title: str, deck: ParentDeck, template: Template) -> str:
-    """The full displaced-supercell deck."""
+    """The full displaced-supercell deck: header, TEMPLATE, then the tail
+    phonopy's own writer appends (TOLDEE, GRADCAL, END)."""
+    _check_template(deck, template)
     head = [title, "EXTERNAL"]
     if deck.basis_kind == "explicit":
         head.append("END")
-    return "\n".join(head + template.lines) + "\n"
+    tail = ["TOLDEE", str(template.toldee), "GRADCAL", "END"]
+    return "\n".join(head + template.lines + tail) + "\n"
 
 
 def method_lines(deck: ParentDeck) -> Dict[str, List[str]]:

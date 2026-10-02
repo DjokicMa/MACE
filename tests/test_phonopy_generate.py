@@ -157,3 +157,81 @@ def test_runs_without_contextlib_chdir(tmp_path, monkeypatch):
     monkeypatch.delattr(contextlib, "chdir", raising=False)
     out = _generate(tmp_path, monkeypatch)
     assert (out / "phonopy_disp.yaml").is_file()
+
+
+# ---------------------------------------------------------------------------
+# The TEMPLATE and the deck tail (measured on CRYSTAL23 with phonopy 4.7.2)
+# ---------------------------------------------------------------------------
+
+def _shrink(deck_lines):
+    i = [ln.strip() for ln in deck_lines].index("SHRINK")
+    return deck_lines[i + 1].strip()
+
+
+def test_shrink_is_divided_by_the_supercell_by_default(tmp_path, monkeypatch, capsys):
+    out = _generate(tmp_path, monkeypatch)
+    man = json.loads((out / "mace_phonopy.json").read_text())
+    assert man["scale_shrink"] is True
+    lines = (out / f"{man['jobs'][0]}.d12").read_text().splitlines()
+    assert _shrink(lines) == "4 4"                     # parent 8 8, 2x2x2
+    assert "(d) SHRINK 8 8 8 (ISP 8) -> 4 4 4 (ISP 4)" in capsys.readouterr().out
+
+
+def test_keep_shrink(tmp_path, monkeypatch):
+    out = _generate(tmp_path, monkeypatch, "explicit", "--keep-shrink")
+    man = json.loads((out / "mace_phonopy.json").read_text())
+    assert man["scale_shrink"] is False
+    assert _shrink((out / f"{man['jobs'][0]}.d12").read_text().splitlines()) == "8 8"
+
+
+def test_non_diagonal_dim_keeps_shrink_with_a_warning(tmp_path, monkeypatch, capsys):
+    _parent(tmp_path, "explicit")
+    monkeypatch.chdir(tmp_path)
+    assert cli.main(["generate", "parent.out", "--dim",
+                     "-1 1 1  1 -1 1  1 1 -1"]) == 0
+    text = capsys.readouterr().out
+    assert "SHRINK kept" in text
+    d = next(tmp_path.glob("phonopy_parent_m*"))
+    man = json.loads((d / "mace_phonopy.json").read_text())
+    assert man["scale_shrink"] is False
+    assert _shrink((d / f"{man['jobs'][0]}.d12").read_text().splitlines()) == "8 8"
+
+
+def test_template_file_has_no_trailing_end(tmp_path, monkeypatch):
+    out = _generate(tmp_path, monkeypatch)
+    tmpl = (out / "TEMPLATE").read_text().splitlines()
+    assert tmpl[-1].strip().upper() != "END"
+    assert tmpl.count("99 0") == 1 and tmpl[tmpl.index("99 0") + 1] == "END"
+    for banned in ("TOLDEE", "GRADCAL", "OPTGEOM", "FREQCALC", "CRYSTAL"):
+        assert banned not in [ln.strip() for ln in tmpl]
+
+
+def test_template_through_phonopys_writer_gives_maces_deck(tmp_path, monkeypatch):
+    """phonopy-init --crystal -d with MACE's TEMPLATE writes the same deck as
+    MACE, apart from the title and phonopy's ENDGEOM for END."""
+    from phonopy.interface.crystal import write_supercells_with_displacements
+
+    out = _generate(tmp_path, monkeypatch)
+    man = json.loads((out / "mace_phonopy.json").read_text())
+    ph = phonopy.load(str(out / "phonopy_disp.yaml"), produce_fc=False)
+    odir = tmp_path / "viaphonopy"
+    odir.mkdir()
+    shutil.copy(out / "TEMPLATE", odir / "TEMPLATE")
+    monkeypatch.chdir(odir)
+    write_supercells_with_displacements(
+        ph.supercell, ph.supercells_with_displacements,
+        list(range(1, len(ph.supercells_with_displacements) + 1)),
+        man["conv_numbers"], 8)
+    for i, job in enumerate(man["jobs"], start=1):
+        theirs = (odir / f"supercell-{i:03d}.d12").read_text().splitlines()
+        ours = (out / f"{job}.d12").read_text().splitlines()
+        assert theirs[:3] == ["Created by Phonopy CRYSTAL interface", "EXTERNAL", "ENDGEOM"]
+        assert ours[1:3] == ["EXTERNAL", "END"]
+        assert ours[3:] == theirs[3:]
+
+
+def test_internal_basis_writes_no_template(tmp_path, monkeypatch, capsys):
+    out = _generate(tmp_path, monkeypatch, "internal")
+    assert not (out / "TEMPLATE").exists()
+    man = json.loads((out / "mace_phonopy.json").read_text())
+    assert man["template"] is None
