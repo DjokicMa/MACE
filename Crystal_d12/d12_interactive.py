@@ -2172,6 +2172,50 @@ _NO_ANSWER = object()
 _NEW_LEVSHIFT_DEFAULT = (5, 1)
 
 
+def _ask_levshift(default):
+    """Read one "ISHIFT ILOCK" answer; blank keeps ``default``.
+
+    Anything else is asked again (and stops a piped run after three tries):
+    a 1.1.1 answer file gives the shift and the cycles on two lines, and
+    those used to fall back to the default and shift every later answer.
+    """
+    from d12_constants import stop_if_out_of_step
+    prompt = f"LEVSHIFT ISHIFT ILOCK [{default[0]} {default[1]}]: "
+    invalid = 0
+    while True:
+        answer = input(prompt).strip()
+        if not answer:
+            return tuple(default)
+        try:
+            parts = [int(x) for x in answer.split()]
+        except ValueError:
+            parts = []
+        if len(parts) == 2 and parts[1] in (0, 1):
+            return tuple(parts)
+        invalid += 1
+        stop_if_out_of_step(invalid, prompt, "two whole numbers, ISHIFT and ILOCK (0 or 1)")
+        print("Enter ISHIFT and ILOCK as two whole numbers, e.g. 5 1 (blank keeps the default).")
+
+
+def _ask_positive_int(prompt, default):
+    """Read a positive whole number; blank keeps ``default``, anything else asks again."""
+    from d12_constants import stop_if_out_of_step
+    invalid = 0
+    while True:
+        answer = input(prompt).strip()
+        if not answer:
+            return default
+        try:
+            value = int(answer)
+        except ValueError:
+            value = 0
+        if value > 0:
+            return value
+        invalid += 1
+        stop_if_out_of_step(invalid, prompt, "a positive whole number")
+        print("Enter a positive whole number (blank keeps the default).")
+
+
 def _parent_levshift(options: Dict[str, Any]) -> Optional[Tuple[int, int]]:
     """The parent deck's LEVSHIFT (ISHIFT, ILOCK) from scf_settings, or None."""
     levshift = (options.get("scf_settings") or {}).get("levshift")
@@ -2322,16 +2366,7 @@ def configure_advanced_electronic_settings(options: Dict[str, Any], show_current
         if parent_levshift:
             print(f"Current: LEVSHIFT {parent_levshift[0]} {parent_levshift[1]}")
             if yes_no_prompt("Use level shifting (for difficult SCF convergence)?", "yes"):
-                answer = input(f"LEVSHIFT ISHIFT ILOCK [{parent_levshift[0]} {parent_levshift[1]}]: ").strip()
-                levshift_answer = parent_levshift
-                try:
-                    parts = [int(x) for x in answer.split()]
-                    if len(parts) == 2:
-                        levshift_answer = tuple(parts)
-                    elif answer:
-                        print(f"Invalid input, keeping LEVSHIFT {parent_levshift[0]} {parent_levshift[1]}")
-                except ValueError:
-                    print(f"Invalid input, keeping LEVSHIFT {parent_levshift[0]} {parent_levshift[1]}")
+                levshift_answer = _ask_levshift(parent_levshift)
             else:
                 levshift_answer = None
         elif yes_no_prompt("Use level shifting (for difficult SCF convergence)?", default_levshift):
@@ -2340,17 +2375,7 @@ def configure_advanced_electronic_settings(options: Dict[str, Any], show_current
             # answer is now the LEVSHIFT record itself: ISHIFT (in 0.1 Hartree)
             # and ILOCK (1 keeps the shift on, 0 releases it).
             print("LEVSHIFT takes ISHIFT (the shift in units of 0.1 Hartree) and ILOCK (1 = lock, 0 = no lock)")
-            default_ls = _NEW_LEVSHIFT_DEFAULT
-            answer = input(f"LEVSHIFT ISHIFT ILOCK [{default_ls[0]} {default_ls[1]}]: ").strip()
-            levshift_answer = default_ls
-            try:
-                parts = [int(x) for x in answer.split()]
-                if len(parts) == 2:
-                    levshift_answer = tuple(parts)
-                elif answer:
-                    print(f"Invalid input, using LEVSHIFT {default_ls[0]} {default_ls[1]}")
-            except ValueError:
-                print(f"Invalid input, using LEVSHIFT {default_ls[0]} {default_ls[1]}")
+            levshift_answer = _ask_levshift(_NEW_LEVSHIFT_DEFAULT)
         
         # SCF settings - use wrapper to show current settings
         scf_config = configure_scf_settings_with_defaults(options.get("scf_settings", {}))
@@ -2370,11 +2395,8 @@ def configure_advanced_electronic_settings(options: Dict[str, Any], show_current
             
             if yes_no_prompt("\nUse HISTDIIS (keep more SCF history)?", default_hist):
                 hist_default = current_histdiis if current_histdiis else 100
-                hist_size = safe_int(
-                    input(f"HISTDIIS size [{hist_default}]: ").strip(),
-                    hist_default
-                )
-                scf_config["histdiis"] = hist_size
+                scf_config["histdiis"] = _ask_positive_int(
+                    f"HISTDIIS size [{hist_default}]: ", hist_default)
             else:
                 scf_config["histdiis"] = None
         

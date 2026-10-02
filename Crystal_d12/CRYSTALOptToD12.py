@@ -130,6 +130,48 @@ def _fail(reason, message=None):
     LAST_RESULT["reason"] = reason
 
 
+# The records an answer piped onto the wrong question changes without any
+# question rejecting it: compared between the parent deck and the new one.
+_DRIFT_RECORDS = ("BASISSET", "TOLINTEG", "TOLDEE", "LEVSHIFT", "HISTDIIS", "MAXTRADIUS")
+_GRID_KEYWORDS = ("OLDGRID", "LGRID", "XLGRID", "XXLGRID", "XXXLGRID", "HUGEGRID")
+
+
+def _drift_records(text):
+    """The settings of a deck that piped answers can move, as display strings."""
+    lines = [" ".join(line.split()) for line in text.splitlines()]
+    upper = [line.upper() for line in lines]
+    records = {}
+    for i, key in enumerate(upper):
+        if key in _DRIFT_RECORDS and key not in records:
+            records[key] = lines[i + 1] if i + 1 < len(lines) else ""
+        elif key == "DFT" and "functional" not in records and i + 1 < len(lines):
+            records["functional"] = lines[i + 1]
+    if "DFT" in upper:
+        records["DFT grid"] = next((k for k in upper if k in _GRID_KEYWORDS), "DEFAULT")
+    return records
+
+
+def _same_record(a, b):
+    try:
+        return [float(x) for x in a.split()] == [float(x) for x in b.split()]
+    except (AttributeError, ValueError):
+        return a == b
+
+
+def settings_changed_from_parent(parent_text, child_text):
+    """``(name, parent value, new value)`` for each drift-prone record that differs."""
+    parent = _drift_records(parent_text)
+    child = _drift_records(child_text)
+    changed = []
+    for name in ("functional", "BASISSET", "DFT grid") + _DRIFT_RECORDS[1:]:
+        before, after = parent.get(name), child.get(name)
+        if name == "DFT grid" and (before is None or after is None):
+            continue                     # HF on one side: no grid to compare
+        if not _same_record(before, after):
+            changed.append((name, before or "(none)", after or "(none)"))
+    return changed
+
+
 def stdin_is_terminal() -> bool:
     """True when someone at a terminal can answer a question.
 
@@ -1241,6 +1283,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     LAST_RESULT["deck"] = None
     LAST_RESULT["reason"] = None
     LAST_RESULT["notes"] = []
+    answers_piped = False
     if unattended:
         confirm_config = False
 
@@ -1745,6 +1788,7 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         ensure_known_functional(options)
     else:
         # Interactive mode (possibly with pre-selected calc_type)
+        answers_piped = not stdin_is_terminal()
         options = get_calculation_options_from_current(
             _with_opt_type_default(settings, opt_type), calc_type=calc_type)
         # An explicit --opt-type wins over the parent's type and the answers.
@@ -2054,6 +2098,21 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             ui.info(f"Charge state: {note}")
 
     ui.ok(f"\nSuccessfully created {new_filename}")
+    if answers_piped and parent_text:
+        # Answers read from a pipe: an answer file written for another MACE
+        # version lands answers on other questions, and a valid answer on the
+        # wrong question is taken without complaint. Show what moved away
+        # from the parent so it cannot happen silently.
+        with open(new_filename, "r") as cf:
+            changed = settings_changed_from_parent(parent_text, cf.read())
+        if changed:
+            ui.warn("Answers were read from a pipe, and these settings differ from the "
+                    "parent deck. Check they are the ones you meant: an answer file "
+                    "written for an older MACE puts answers on other questions "
+                    "(see Upgrading in CHANGELOG.md; --save-options and --config-file "
+                    "do not drift).")
+            for name, before, after in changed:
+                ui.warn(f"  {name}: {before} -> {after}")
     LAST_RESULT["deck"] = new_filename
     if reserved_decks is not None:
         reserved_decks[os.path.realpath(new_filename)] = output_file
