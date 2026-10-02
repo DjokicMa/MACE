@@ -172,6 +172,32 @@ def save_d3_config(config: Dict[str, Any], filename: str, overwrite: bool = True
         return False
 
 
+EXAMPLE_CONFIGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "example_configs")
+
+
+def resolve_d3_config_path(name: str) -> str:
+    """Find a D3 configuration file named on the command line.
+
+    Tried in order: the path as given; for a relative path, the same path
+    under this install's Crystal_d3/example_configs; and for a relative path
+    ending in "example_configs/<file>" (one written against another working
+    directory, e.g. a code checkout given as a relative path), this
+    install's example_configs/<file>. The absolute path of the first that
+    exists is returned, else ``name`` unchanged. No other path is reduced to
+    its bare file name, which could load a different file.
+    """
+    candidates = [name]
+    if not os.path.isabs(name):
+        candidates.append(os.path.join(EXAMPLE_CONFIGS_DIR, name))
+        parts = os.path.normpath(name).split(os.sep)
+        if len(parts) >= 2 and parts[-2] == "example_configs":
+            candidates.append(os.path.join(EXAMPLE_CONFIGS_DIR, parts[-1]))
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return os.path.abspath(candidate)
+    return name
+
+
 def load_d3_config(filename: str) -> Optional[Dict[str, Any]]:
     """
     Load D3 configuration from JSON file.
@@ -182,6 +208,7 @@ def load_d3_config(filename: str) -> Optional[Dict[str, Any]]:
     Returns:
         dict: Configuration dictionary or None if error
     """
+    filename = resolve_d3_config_path(filename)
     try:
         if not os.path.exists(filename):
             print(f"Error: Configuration file {filename} not found.")

@@ -1344,7 +1344,8 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         settings["use_original_external_basis"] = True
         if not settings.get("basis_set"):
             settings["basis_set"] = "EXTERNAL (from original D12)"
-        ui.info("  Using external basis set from original D12 file")
+        # Said once the config or answers have chosen the method (below):
+        # an HF-3c or DFT-3c child is written with its own basis instead.
     elif not settings.get("basis_set"):
         # No external basis and no basis set specified - use default internal
         settings["basis_set"] = "POB-TZVP-REV2"
@@ -1500,7 +1501,6 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 if had_external_basis and "basis_set_type" not in config_data and "basis_set_path" not in config_data:
                     options["use_original_external_basis"] = True
                     options["basis_set_type"] = external_basis_type
-                    ui.info("  Preserving external basis settings from original D12")
 
                 # Handle both "frequency_settings" (from workflow) and "freq_settings" (direct usage)
                 freq_key = None
@@ -1733,7 +1733,6 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         if had_external_basis and "basis_set_type" not in shared_settings and "basis_set_path" not in shared_settings:
             options["use_original_external_basis"] = True
             options["basis_set_type"] = external_basis_type
-            ui.info("  Preserving external basis settings from original D12")
 
         # Ensure consistency for 3C methods
         if options.get("functional") in [
@@ -1791,6 +1790,14 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         else:
             options["write_only_unique"] = False
     
+    # The deck carries the parent's external basis only on this branch of
+    # the writer; a 3c functional always writes BASISSET <its basis>.
+    if (options.get("functional") not in THREE_C_FUNCTIONALS
+            and options.get("basis_set_type") == "EXTERNAL"
+            and options.get("use_original_external_basis")
+            and external_basis_data):
+        ui.info("  Using external basis set from original D12 file")
+
     # Create output filename
     base_name = os.path.splitext(output_file)[0]
     calc_type = options["calculation_type"]
@@ -1821,12 +1828,21 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     # sec. 4.21 p.73; the geometry CRYSTAL prints after it is the supercell,
     # primitive-cell atoms first, p.74), and DISPERSION runs on that cell
     # (sec. 8.8 p.232). A FREQ deck from such a run starts from the supercell
-    # and, carrying the parent's SCELPHONO, would expand it again.
-    if calc_type == "FREQ" and parent_scelphono:
-        reason = ("the parent ran a phonon dispersion (SCELPHONO): its geometry is the "
-                  "SCELPHONO supercell, which a FREQ deck with SCELPHONO would expand again")
+    # and, carrying the parent's SCELPHONO, would expand it again. An SP or
+    # OPT deck starts from that supercell too: measured on HPCC (MgO,
+    # SCELPHONO 2x2x2 + DISPERSION), the output parser returns the 16-atom
+    # supercell (a = 5.95 A, 60 deg), and the SP deck written from it was
+    # space group 225 with a = 5.95 A and 5 asymmetric atoms - not MgO.
+    if parent_scelphono:
+        if calc_type == "FREQ":
+            reason = ("the parent ran a phonon dispersion (SCELPHONO): its geometry is the "
+                      "SCELPHONO supercell, which a FREQ deck with SCELPHONO would expand again")
+        else:
+            reason = ("the parent ran a phonon dispersion (SCELPHONO): its output geometry is "
+                      "the SCELPHONO supercell (manual sec. 4.21 p.73-74), so a "
+                      f"{calc_type} deck would start from the supercell")
         _fail(reason, f"\nNot writing {os.path.basename(new_filename)}: {reason}. Make the "
-                      f"FREQ deck from the OPT or SP output the dispersion run started from.")
+                      f"{calc_type} deck from the OPT or SP output the dispersion run started from.")
         return False, options
 
     # CUSTOM-XC names the parent's own EXCHANGE/CORRELAT/HYBRID records; a

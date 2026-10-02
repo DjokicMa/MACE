@@ -8,7 +8,10 @@ atoms first (p. 74), and DISPERSION runs on that supercell (sec. 8.8, p. 232).
 So the child starts from the supercell, and its inherited SCELPHONO would
 expand the supercell again (2x2x2 of a 2x2x2: a 4x4x4 MgO). opt2d12 refuses
 such a child and says to build it from the OPT/SP the dispersion run started
-from. Children of other types (SP, OPT) are not touched here.
+from. SP and OPT children are refused the same way: they would start from the
+supercell too (measured on HPCC, MgO SCELPHONO 2x2x2 + DISPERSION: the output
+parser returns the 16-atom supercell and the SP deck written from it was a
+wrong space-group-225 cell with a = 5.95 A and 5 asymmetric atoms).
 
 The parent deck is a synthetic MgO deck read by the real CrystalInputParser;
 the output parser is replaced by the dictionary it returns.
@@ -94,22 +97,24 @@ def child(tmp_path, monkeypatch, capsys):
     return run
 
 
-def test_freq_child_of_a_scelphono_parent_is_refused(child):
-    ok, log, decks = child("FREQ")
+@pytest.mark.parametrize("calc_type", ["FREQ", "SP", "OPT"])
+def test_child_of_a_scelphono_parent_is_refused(child, calc_type):
+    ok, log, decks = child(calc_type)
     assert ok is False
     assert decks == []
     assert "SCELPHONO" in log and "supercell" in log
-    assert "expand it again" in log or "expand again" in log
+    assert f"Make the {calc_type} deck from the OPT or SP output" in log
+    if calc_type == "FREQ":
+        assert "expand it again" in log or "expand again" in log
+    else:
+        assert "would start from the supercell" in log and "p.73" in log
 
 
-def test_freq_child_of_a_gamma_only_freq_parent_is_still_written(child):
-    ok, log, decks = child("FREQ", dispersion=False)
+@pytest.mark.parametrize("calc_type", ["FREQ", "SP", "OPT"])
+def test_child_of_a_gamma_only_freq_parent_is_still_written(child, calc_type):
+    ok, log, decks = child(calc_type, dispersion=False)
     assert ok is True, log
     lines = decks[0].read_text().splitlines()
-    assert "SCELPHONO" not in lines and "FREQCALC" in lines
-
-
-def test_sp_child_of_a_scelphono_parent_is_not_refused_here(child):
-    ok, log, decks = child("SP")
-    assert ok is True, log
-    assert "SCELPHONO" not in decks[0].read_text().splitlines()
+    assert "SCELPHONO" not in lines
+    assert ("FREQCALC" in lines) == (calc_type == "FREQ")
+    assert ("OPTGEOM" in lines) == (calc_type == "OPT")

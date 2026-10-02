@@ -1782,8 +1782,8 @@ class WorkflowPlanner:
                 config["bands"] = "auto"
             
             # NSUB: total k points along the whole path (manual p.309)
-            npoints = input("  Total k-points along the whole path (NSUB) [10000]: ").strip()
-            config["n_points"] = int(npoints) if npoints else 10000
+            config["n_points"] = self.get_safe_integer_input(
+                "  Total k-points along the whole path (NSUB) [10000]: ", 10000)
             
             # Set path_method based on path_format for proper D3 generation
             if config.get("path_format") == "vectors":
@@ -1806,8 +1806,8 @@ class WorkflowPlanner:
             ui.info("    3. Atomic orbital contributions")
             ui.info("    4. Shell + AO contributions")
             
-            proj_type = input("  Select projection type [4]: ").strip() or "4"
-            config["projection_type"] = int(proj_type)
+            config["projection_type"] = self.get_safe_integer_input(
+                "  Select projection type [4]: ", 4, min_val=0, max_val=4)
             
             if config["projection_type"] > 0:
                 # Auto projections based on basis set
@@ -1820,16 +1820,14 @@ class WorkflowPlanner:
                     config["manual_projections"] = True
             
             # Energy range
-            e_min = input("\n  Energy minimum (eV) [-20]: ").strip()
-            e_max = input("  Energy maximum (eV) [20]: ").strip()
             config["e_range"] = [
-                float(e_min) if e_min else -20,
-                float(e_max) if e_max else 20
+                self.get_safe_float_input("\n  Energy minimum (eV) [-20]: ", -20),
+                self.get_safe_float_input("  Energy maximum (eV) [20]: ", 20),
             ]
             
             # Number of points
-            npoints = input("  Number of energy points [10000]: ").strip()
-            config["n_points"] = int(npoints) if npoints else 10000
+            config["n_points"] = self.get_safe_integer_input(
+                "  Number of energy points [10000]: ", 10000)
             
         elif calc_type == "TRANSPORT":
             ui.info("\n  Advanced TRANSPORT configuration:")
@@ -1845,11 +1843,9 @@ class WorkflowPlanner:
             if mu_ref == "1":
                 config["mu_reference"] = "fermi"
                 config["mu_range_type"] = "auto_fermi"
-                mu_min = input("  Min μ relative to Fermi (eV) [-2]: ").strip()
-                mu_max = input("  Max μ relative to Fermi (eV) [2]: ").strip()
                 config["mu_range"] = [
-                    float(mu_min) if mu_min else -2.0,
-                    float(mu_max) if mu_max else 2.0,
+                    self.get_safe_float_input("  Min μ relative to Fermi (eV) [-2]: ", -2.0),
+                    self.get_safe_float_input("  Max μ relative to Fermi (eV) [2]: ", 2.0),
                     0.01
                 ]
             elif mu_ref == "2":
@@ -1857,23 +1853,22 @@ class WorkflowPlanner:
                 ui.info("  You will need to specify VBM value during execution")
             else:
                 config["mu_reference"] = "absolute"
-                mu_min = input("  Min μ absolute (eV): ").strip()
-                mu_max = input("  Max μ absolute (eV): ").strip()
-                config["mu_range"] = [float(mu_min), float(mu_max), 0.01]
+                config["mu_range"] = [
+                    self.get_safe_float_input("  Min μ absolute (eV): "),
+                    self.get_safe_float_input("  Max μ absolute (eV): "),
+                    0.01
+                ]
             
             # Temperature range
-            t_min = input("\n  Min temperature (K) [100]: ").strip()
-            t_max = input("  Max temperature (K) [800]: ").strip()
-            t_step = input("  Temperature step (K) [50]: ").strip()
             config["temperature_range"] = [
-                int(t_min) if t_min else 100,
-                int(t_max) if t_max else 800,
-                int(t_step) if t_step else 50
+                self.get_safe_integer_input("\n  Min temperature (K) [100]: ", 100),
+                self.get_safe_integer_input("  Max temperature (K) [800]: ", 800),
+                self.get_safe_integer_input("  Temperature step (K) [50]: ", 50),
             ]
             
             # Relaxation time
-            relax = input("  Relaxation time (fs) [10]: ").strip()
-            config["relaxation_time"] = float(relax) if relax else 10
+            config["relaxation_time"] = self.get_safe_float_input(
+                "  Relaxation time (fs) [10]: ", 10)
             
         elif calc_type == "CHARGE+POTENTIAL":
             ui.info(f"\n  Advanced {calc_type} configuration:")
@@ -1892,13 +1887,10 @@ class WorkflowPlanner:
             
             if out_type == "1":
                 # 3D grid
-                nx = input("  Grid points in x [100]: ").strip()
-                ny = input("  Grid points in y [100]: ").strip()
-                nz = input("  Grid points in z [100]: ").strip()
                 config["mapnet"] = [
-                    int(nx) if nx else 100,
-                    int(ny) if ny else 100,
-                    int(nz) if nz else 100
+                    self.get_safe_integer_input("  Grid points in x [100]: ", 100),
+                    self.get_safe_integer_input("  Grid points in y [100]: ", 100),
+                    self.get_safe_integer_input("  Grid points in z [100]: ", 100),
                 ]
             elif out_type in ["2", "3"]:
                 ui.info("  Plane/line parameters will be configured during execution")
@@ -2056,13 +2048,10 @@ class WorkflowPlanner:
                     ui.info("    Note: For 2D materials, use 2x2x1 or 3x3x1")
                     supercell_choice = input("  Select supercell [1]: ").strip() or "1"
                     if supercell_choice == "2":
-                        nx = input("    Expansion in x [2]: ").strip()
-                        ny = input("    Expansion in y [2]: ").strip()
-                        nz = input("    Expansion in z [2]: ").strip()
                         config["frequency_settings"]["scelphono"] = [
-                            int(nx) if nx else 2,
-                            int(ny) if ny else 2,
-                            int(nz) if nz else 2,
+                            self.get_safe_integer_input("    Expansion in x [2]: ", 2),
+                            self.get_safe_integer_input("    Expansion in y [2]: ", 2),
+                            self.get_safe_integer_input("    Expansion in z [2]: ", 2),
                         ]
                     else:
                         config["frequency_settings"]["scelphono"] = [2, 2, 2]
@@ -2088,11 +2077,8 @@ class WorkflowPlanner:
                     ui.info("  Example: Calculate at specific q-points for testing")
 
                     # Ask how many k-points
-                    nkpoints = input(
-                        "\n  Number of k-points to calculate [4]: "
-                    ).strip()
-                    config["frequency_settings"]["num_kpoints"] = (
-                        int(nkpoints) if nkpoints else 4
+                    config["frequency_settings"]["num_kpoints"] = self.get_safe_integer_input(
+                        "\n  Number of k-points to calculate [4]: ", 4
                     )
 
                 elif phonon_type == "3":
@@ -2195,10 +2181,10 @@ class WorkflowPlanner:
                     
                     # CPHF settings if selected
                     if config["frequency_settings"]["ir_method"] == "CPHF":
-                        max_iter = input("  CPHF max iterations [30]: ").strip()
-                        config["frequency_settings"]["cphf_max_iter"] = int(max_iter) if max_iter else 30
-                        tol = input("  CPHF convergence (10^-x) [6]: ").strip()
-                        config["frequency_settings"]["cphf_tolerance"] = int(tol) if tol else 6
+                        config["frequency_settings"]["cphf_max_iter"] = self.get_safe_integer_input(
+                            "  CPHF max iterations [30]: ", 30)
+                        config["frequency_settings"]["cphf_tolerance"] = self.get_safe_integer_input(
+                            "  CPHF convergence (10^-x) [6]: ", 6)
                     
                     # Ask about minimal IR
                     ui.info("\n  Spectrum plot generation:")
@@ -2225,10 +2211,10 @@ class WorkflowPlanner:
                     ui.info("        CPHF will be used (required for Raman)")
                     
                     # CPHF settings
-                    max_iter = input("\n  CPHF max iterations [30]: ").strip()
-                    config["frequency_settings"]["cphf_max_iter"] = int(max_iter) if max_iter else 30
-                    tol = input("  CPHF convergence (10^-x) [6]: ").strip()
-                    config["frequency_settings"]["cphf_tolerance"] = int(tol) if tol else 6
+                    config["frequency_settings"]["cphf_max_iter"] = self.get_safe_integer_input(
+                        "\n  CPHF max iterations [30]: ", 30)
+                    config["frequency_settings"]["cphf_tolerance"] = self.get_safe_integer_input(
+                        "  CPHF convergence (10^-x) [6]: ", 6)
                     
                     # Ask about minimal Raman
                     ui.info("\n  Spectrum plot generation:")
@@ -2255,10 +2241,10 @@ class WorkflowPlanner:
                     ui.info("        CPHF will be used (required for Raman)")
                     
                     # CPHF settings
-                    max_iter = input("\n  CPHF max iterations [30]: ").strip()
-                    config["frequency_settings"]["cphf_max_iter"] = int(max_iter) if max_iter else 30
-                    tol = input("  CPHF convergence (10^-x) [6]: ").strip()
-                    config["frequency_settings"]["cphf_tolerance"] = int(tol) if tol else 6
+                    config["frequency_settings"]["cphf_max_iter"] = self.get_safe_integer_input(
+                        "\n  CPHF max iterations [30]: ", 30)
+                    config["frequency_settings"]["cphf_tolerance"] = self.get_safe_integer_input(
+                        "  CPHF convergence (10^-x) [6]: ", 6)
                     
                     # Ask about minimal options
                     ui.info("\n  Spectrum plot generation options:")
@@ -2306,8 +2292,8 @@ class WorkflowPlanner:
                         if gen_spectra == "y":
                             if has_ir_spectra:
                                 config["frequency_settings"]["irspec"] = True
-                                width = input("  IR peak width (cm^-1) [10]: ").strip()
-                                config["frequency_settings"]["spec_dampfac"] = float(width) if width else 10
+                                config["frequency_settings"]["spec_dampfac"] = self.get_safe_float_input(
+                                    "  IR peak width (cm^-1) [10]: ", 10)
 
                                 # Dielectric information required for IRSPEC
                                 ui.info("\n  Dielectric information (required for IR spectrum):")
@@ -2316,8 +2302,8 @@ class WorkflowPlanner:
                                 diel_type = input("  Select type [1]: ").strip() or "1"
 
                                 if diel_type == "1":
-                                    diel_const = input("  Dielectric constant [2.5]: ").strip()
-                                    config["frequency_settings"]["dielectric_constant"] = float(diel_const) if diel_const else 2.5
+                                    config["frequency_settings"]["dielectric_constant"] = self.get_safe_float_input(
+                                        "  Dielectric constant [2.5]: ", 2.5)
                                     ui.ok(f"  ✓ Using dielectric constant: {config['frequency_settings']['dielectric_constant']}")
                                 else:
                                     ui.info("  Enter 3x3 dielectric tensor (9 values, row-wise):")
@@ -2343,11 +2329,11 @@ class WorkflowPlanner:
                                     # Ask for Raman width only if different from IR
                                     use_same = input("  Use same peak width for Raman? [Y/n]: ").strip().lower()
                                     if use_same == "n":
-                                        width = input("  Raman peak width (cm^-1) [10]: ").strip()
-                                        config["frequency_settings"]["raman_dampfac"] = float(width) if width else 10
+                                        config["frequency_settings"]["raman_dampfac"] = self.get_safe_float_input(
+                                            "  Raman peak width (cm^-1) [10]: ", 10)
                                 else:
-                                    width = input("  Raman peak width (cm^-1) [10]: ").strip()
-                                    config["frequency_settings"]["spec_dampfac"] = float(width) if width else 10
+                                    config["frequency_settings"]["spec_dampfac"] = self.get_safe_float_input(
+                                        "  Raman peak width (cm^-1) [10]: ", 10)
             else:
                 # Not gamma point mode - no intensities possible
                 config["frequency_settings"]["intensities"] = False
@@ -2399,15 +2385,9 @@ class WorkflowPlanner:
 
             # Temperature list
             if config["frequency_settings"].get("mode") == "GAMMA":
-                temp_input = input(
-                    "\n  Temperatures (K) space-separated [298.15]: "
-                ).strip()
-                if temp_input:
-                    config["frequency_settings"]["temperatures"] = [
-                        float(t) for t in temp_input.split()
-                    ]
-                else:
-                    config["frequency_settings"]["temperatures"] = [298.15]
+                config["frequency_settings"]["temperatures"] = self.get_safe_float_list_input(
+                    "\n  Temperatures (K) space-separated [298.15]: ", [298.15]
+                )
 
             # Always use high accuracy tolerances for FREQ
             ui.info("\n  Using high accuracy tolerances for frequency calculations:")
@@ -3951,6 +3931,44 @@ class WorkflowPlanner:
                 ui.warn(f"          ⚠️  Invalid input '{user_input}'. Please enter a number.")
                 continue
 
+    def get_safe_float_input(self, prompt: str, default=None, min_val=None, max_val=None):
+        """Read a number, asking again on anything else.
+
+        A blank answer returns ``default`` exactly as passed (an int default
+        stays an int); with no default a blank answer is asked again.
+        """
+        while True:
+            user_input = input(prompt).strip()
+            if not user_input:
+                if default is not None:
+                    return default
+                ui.warn("          ⚠️  Please enter a number.")
+                continue
+            try:
+                value = float(user_input)
+            except ValueError:
+                ui.warn(f"          ⚠️  Invalid input '{user_input}'. Please enter a number.")
+                continue
+            if min_val is not None and value < min_val:
+                ui.warn(f"          ⚠️  Value must be at least {min_val}. Please try again.")
+                continue
+            if max_val is not None and value > max_val:
+                ui.warn(f"          ⚠️  Value must be at most {max_val}. Please try again.")
+                continue
+            return value
+
+    def get_safe_float_list_input(self, prompt: str, default: list) -> list:
+        """Read space-separated numbers, asking again if any is not a number.
+        A blank answer returns ``default``."""
+        while True:
+            user_input = input(prompt).strip()
+            if not user_input:
+                return default
+            try:
+                return [float(x) for x in user_input.split()]
+            except ValueError:
+                ui.warn(f"          ⚠️  Invalid input '{user_input}'. Please enter numbers separated by spaces.")
+
     def get_safe_memory_input(self, prompt: str, default: str) -> str:
         """Get memory input with validation"""
         import re
@@ -4653,30 +4671,30 @@ class WorkflowPlanner:
         ui.info(f"   Current default: {default_config['max_jobs']}")
         ui.info(f"   This prevents exceeding your cluster's job limit")
         ui.info(f"   Recommended: 950 for clusters with 1000-job limits")
-        max_jobs_input = input(f"   Enter value [{default_config['max_jobs']}]: ").strip()
-        config['max_jobs'] = int(max_jobs_input) if max_jobs_input else default_config['max_jobs']
+        config['max_jobs'] = self.get_safe_integer_input(
+            f"   Enter value [{default_config['max_jobs']}]: ", default_config['max_jobs'])
         
         # Reserve slots
         ui.info(f"\n2. SLURM slots to keep in reserve:")
         ui.info(f"   Current default: {default_config['reserve_slots']}")
         ui.info(f"   Safety buffer to prevent submitting too close to limit")
-        reserve_input = input(f"   Enter value [{default_config['reserve_slots']}]: ").strip()
-        config['reserve_slots'] = int(reserve_input) if reserve_input else default_config['reserve_slots']
+        config['reserve_slots'] = self.get_safe_integer_input(
+            f"   Enter value [{default_config['reserve_slots']}]: ", default_config['reserve_slots'], min_val=0)
         
         # Max submit per callback
         ui.info(f"\n3. Maximum jobs to submit per callback:")
         ui.info(f"   Current default: {default_config['max_submit_batch']}")
         ui.info(f"   Controls batch size when completed jobs trigger new submissions")
         ui.info(f"   Higher values = faster throughput, lower values = more stability")
-        submit_input = input(f"   Enter value [{default_config['max_submit_batch']}]: ").strip()
-        config['max_submit_batch'] = int(submit_input) if submit_input else default_config['max_submit_batch']
+        config['max_submit_batch'] = self.get_safe_integer_input(
+            f"   Enter value [{default_config['max_submit_batch']}]: ", default_config['max_submit_batch'])
         
         # Recovery attempts
         ui.info(f"\n4. Maximum error recovery attempts:")
         ui.info(f"   Current default: {default_config['max_recovery_attempts']}")
         ui.info(f"   How many times to retry failed calculations with fixes")
-        recovery_input = input(f"   Enter value [{default_config['max_recovery_attempts']}]: ").strip()
-        config['max_recovery_attempts'] = int(recovery_input) if recovery_input else default_config['max_recovery_attempts']
+        config['max_recovery_attempts'] = self.get_safe_integer_input(
+            f"   Enter value [{default_config['max_recovery_attempts']}]: ", default_config['max_recovery_attempts'], min_val=0)
         
         ui.info(f"\nQueue management configuration:")
         for key, value in config.items():

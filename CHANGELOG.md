@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- opt2d12's FREQ menus ask again on an answer that is not on the menu. The
+  template menu took any other answer (e.g. "9") as "Custom settings", the
+  FREQCALC/ANHARM, mode and supercell questions took it as their first or
+  last entry, and the phonon band-path crystal-system and template menus fell
+  back to their first entry without saying so.
+- The workflow planner's number prompts (queue limits, BAND/DOSS points,
+  DOSS projection type and energy range, TRANSPORT chemical potentials,
+  temperatures and relaxation time, CHARGE+POTENTIAL grid, FREQ supercell,
+  k-point count, CPHF settings, peak widths, dielectric constant and the
+  temperature list) ask again on an answer that is not a number instead of
+  ending `mace workflow` with a ValueError. Counts must now be at least 1
+  (0 allowed for reserve slots, recovery attempts and DOSS projection type
+  0-4); absolute chemical potentials have no default and are asked again
+  when left blank.
+- Band and phonon paths for a slab no longer print "Install 'seekpath'":
+  the library is not used for a slab on purpose (it would standardise the
+  vacuum axis; manual p.310 note 3), so the advice changed nothing. A slab
+  now gets one line saying the static in-plane path is used; a 3D cell
+  without the library still gets the install hint. The path is unchanged.
+- opt2d12's log names the basis the deck is written with. From an
+  external-basis parent it printed "Using external basis set from original
+  D12 file" (and "Preserving external basis settings") before the config
+  chose the method, so HF-3c children logged that and then "Basis set:
+  MINIX", and DFT-3c children (PBEH3C, HSESOL3C, ...) logged it although the
+  deck says BASISSET <3c basis>. The line is now printed once, only when the
+  deck carries the parent's external basis. The legacy workflow executor
+  likewise logs "Basis set: <3c basis> (required by <functional>; the
+  parent's basis is not used)" for a 3c step. Log only: decks are unchanged.
+- **opt2d12 no longer writes SP or OPT decks from a phonon-dispersion
+  (SCELPHONO) parent.** The parent's output geometry is the SCELPHONO
+  supercell (manual sec. 4.21 p.73-74); measured on HPCC (MgO, SCELPHONO
+  2x2x2 + DISPERSION) the SP deck written from it was a space-group-225 cell
+  with a = 5.95 A and 5 asymmetric atoms instead of MgO. Such children are
+  now refused like FREQ children, with the advice to make them from the OPT
+  or SP output the dispersion run started from. Deck change: these decks are
+  no longer written.
+- The job script no longer stages a job's own two-component `.f9` for a
+  GUESSP inside a TWOCOMPON block. There GUESSP means GUESSPNOSO (manual
+  p.173): the 2c-SCF starts from a one-component matrix of an unrestricted
+  run without symmetry. GUESSP, GUESSPNOSO and 2NDVARIAT inside TWOCOMPON now
+  use only an explicitly staged `$JOB.f20` (with a note of the p.173
+  requirement); with none, a bare GUESSP is dropped from the scratch copy
+  (cold start), and GUESSPNOSO/2NDVARIAT are left as written with a warning
+  (CRYSTAL stops without fort.20, measured). A GUESSP outside TWOCOMPON is
+  handled as before.
+- `opt2d3 --config-file` finds the shipped example configs by bare name
+  (`band_auto_everything.json`) from any directory, and a relative
+  `.../Crystal_d3/example_configs/<name>` written against another working
+  directory, and prints the file it loaded. A configuration that cannot be
+  loaded now ends opt2d3 with exit status 1 instead of 0 with no deck.
+
 ## [1.1.4] - 2026-10-02
 
 Everything since 1.1.3. **Band and phonon-dispersion paths made with the SeeK-path

@@ -1988,8 +1988,24 @@ fi'''
                 sys.path.insert(0, str(Path(__file__).parent.parent / "Crystal_d12"))
                 from d12_parsers import CrystalInputParser
 
+                from d12_constants import required_basis_for
+
                 parser = CrystalInputParser(input_file)
                 d12_data = parser.parse()
+
+                # A 3c step is written with its own basis whatever the parent
+                # had; name that one instead of the parent's. The step's
+                # functional is found the way CRYSTALOptToD12 finds it.
+                method_mods = config.get("method_modifications") or {}
+                step_functional = method_mods.get("new_functional") or method_mods.get("functional")
+                if not step_functional and str(config.get("method") or "").upper() == "HF":
+                    step_functional = config.get("hf_method") or config.get("functional") or "RHF"
+                if not step_functional:
+                    step_functional = config.get("functional")
+                step_basis = required_basis_for(step_functional)
+                basis_note = (f"      Basis set: {step_basis} (required by "
+                              f"{str(step_functional).upper()}; the parent's basis is not used)"
+                              if step_basis else None)
 
                 # Check if this was an external basis set calculation
                 if d12_data.get("basis_set_type") == "EXTERNAL" or self._has_external_basis(input_file):
@@ -2001,21 +2017,24 @@ fi'''
                     if basis_path == "USE_ORIGINAL_EXTERNAL_BASIS":
                         # Use the original external basis data from the D12 file
                         crystal_opt_config["use_original_external_basis"] = True
-                        ui.info(f"      Using original external basis data from {Path(input_file).name}")
+                        ui.info(basis_note or f"      Using original external basis data from {Path(input_file).name}")
                     elif basis_path:
                         crystal_opt_config["basis_set_path"] = basis_path
                         crystal_opt_config["use_original_external_basis"] = False
-                        ui.info(f"      Using external basis from: {basis_path}")
+                        ui.info(basis_note or f"      Using external basis from: {basis_path}")
                     else:
                         # Fallback: try to use original basis data if possible
                         crystal_opt_config["use_original_external_basis"] = True
-                        ui.warn(f"      Warning: External basis detected but path not found, using original basis data")
+                        if basis_note:
+                            ui.info(basis_note)
+                        else:
+                            ui.warn(f"      Warning: External basis detected but path not found, using original basis data")
 
                 elif d12_data.get("basis_set"):
                     # Internal basis set - preserve the specific basis set name
                     crystal_opt_config["basis_set_type"] = "INTERNAL"
                     crystal_opt_config["basis_set"] = d12_data.get("basis_set")
-                    ui.info(f"      Preserving internal basis set: {d12_data.get('basis_set')}")
+                    ui.info(basis_note or f"      Preserving internal basis set: {d12_data.get('basis_set')}")
 
             except Exception as e:
                 ui.warn(f"      Warning: Could not extract basis set info from {input_file}: {e}")

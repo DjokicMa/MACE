@@ -2785,11 +2785,17 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
     }
     if slab:
         kpath_info["in_plane"] = True
+        print("  SeeK-path is not used for a slab (it would standardise the vacuum axis; "
+              "manual p.310 note 3): the static in-plane path is used.")
+
+    # Installing seekpath helps only where the library would be used
+    install_hint = not slab and not SEEKPATH_LIBRARY_AVAILABLE
 
     # Warn about static data limitations for non-cubic
     if not ext_bravais.startswith('c'):
-        print(f"  Note: Using static seekpath_data for {ext_bravais}. "
-              f"Install 'seekpath' library for accurate parametric k-points.")
+        print(f"  Note: Using static seekpath_data for {ext_bravais}."
+              + (" Install 'seekpath' library for accurate parametric k-points."
+                 if install_hint else ""))
     # The static entries are SeeK-path's numbers, in the reciprocal basis of
     # SeeK-path's standard cell. For these lattices that cell is not fixed by
     # CRYSTAL's (SeeK-path reorders or reduces the axes, or picks other
@@ -2799,8 +2805,9 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
     if lookup_key[:2] in ('aP', 'mP', 'mS', 'mC', 'oP', 'oS', 'oC', 'oF', 'oI'):
         print(f"  WARNING: the static {lookup_key} path is given in SeeK-path's standard cell, "
               f"which can differ from CRYSTAL's primitive cell for this lattice (axis order, "
-              f"reduction, centring vectors); its labels may then name other points. "
-              f"Install the 'seekpath' library for a path in CRYSTAL's cell.")
+              f"reduction, centring vectors); its labels may then name other points."
+              + (" Install the 'seekpath' library for a path in CRYSTAL's cell."
+                 if install_hint else ""))
 
     # Get path data if available
     if lookup_key in seekpath_data:
