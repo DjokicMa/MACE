@@ -1,7 +1,9 @@
 """Shared helpers for the mace.defects tests (no test_ prefix: not collected).
 
 The decks under tests/defects_data/ are the ones run on HPCC for the defect
-facts in round 6 (MgO V_O, hBN V_N; PBE0/POB-TZVP-REV2).
+facts in round 6 (MgO V_O, hBN V_N; PBE0/POB-TZVP-REV2). Outputs are never
+copied in whole: ``fake_output`` writes just the lines the parsers read, with
+numbers taken from those runs.
 """
 import difflib
 from pathlib import Path
@@ -47,3 +49,66 @@ def edits(host: str, built: str):
             rep.append((h[i1:i2], b[j1:j2]))
     return ins, dele, rep
 
+
+def _e(x):
+    return f"{x: .13E}"
+
+
+def fake_output(*, energy=None, electrons=None, header=None, efermi=None, vbm=None, cbm=None,
+                spin=None, sph=None, lattice=None, atoms=None, converged=True, mulliken_atoms=None,
+                spin_atoms=None, vbm_k=1):
+    """A minimal CRYSTAL23-like output holding only the lines mace.defects reads."""
+    out = [" CRYSTAL23 (synthetic excerpt for tests)"]
+    if lattice is not None and atoms:
+        out += [" ATOMS IN THE ASYMMETRIC UNIT    1 - ATOMS IN THE UNIT CELL:   %d" % len(atoms),
+                "     ATOM                 X/A                 Y/B                 Z/C    ",
+                " *******************************************************************************"]
+        for i, (z, sym, x, y, zz) in enumerate(atoms, 1):
+            out.append(f"  {i:5d} {'T' if i == 1 else 'F'} {z:3d} {sym:<2s}   0.0 0.0 0.0")
+        out += ["", " DIRECT LATTICE VECTORS CARTESIAN COMPONENTS (ANGSTROM)",
+                "          X                    Y                    Z"]
+        out += ["   " + "   ".join(f"{v: .12E}" for v in row) for row in lattice]
+        out += ["", "", " CARTESIAN COORDINATES - PRIMITIVE CELL",
+                " *******************************************************************************",
+                " *      ATOM          X(ANGSTROM)         Y(ANGSTROM)         Z(ANGSTROM)",
+                " *******************************************************************************"]
+        for i, (z, sym, x, y, zz) in enumerate(atoms, 1):
+            out.append(f"  {i:3d}    {z:2d} {sym:<2s}   {x: .12E} {y: .12E} {zz: .12E}")
+        out.append("")
+    if header is not None:
+        out.append(f" N. OF ELECTRONS PER CELL   {header}  EXCHANGE PSEUDO OVP (F(G))  (T4) 10**   -7")
+    if efermi is not None:
+        out += [" TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT FDIK        TELAPSE        1.00 TCPU        1.00",
+                f" POSSIBLY CONDUCTING STATE - EFERMI(AU) {efermi:.7E} (RES. CHARGE  7.12E-10;IT.  6)",
+                " TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT PDIG        TELAPSE        1.00 TCPU        1.00"]
+    if vbm is not None:
+        out += [" TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT FDIK        TELAPSE        1.00 TCPU        1.00",
+                " INSULATING STATE",
+                f" TOP OF VALENCE BANDS -    BAND    320; K {vbm_k:4d}; EIG {vbm:.7E} AU",
+                f" BOTTOM OF VIRTUAL BANDS - BAND    321; K    1; EIG {cbm:.7E} AU",
+                " DIRECT ENERGY BAND GAP:   7.2486 eV",
+                " TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT PDIG        TELAPSE        1.00 TCPU        1.00"]
+    if sph is not None:
+        out.append(f" ::: EXT EL-SPHEROPOLE                            {_e(sph)}")
+    if energy is not None:
+        if converged:
+            out.append(f" == SCF ENDED - CONVERGENCE ON ENERGY      E(AU) {_e(energy)} CYCLES  14")
+        else:
+            out.append(f" == SCF ENDED - TOO MANY CYCLES            E(AU) {_e(energy)} CYCLES 150")
+    if electrons is not None:
+        out += [" MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM",
+                "     ALPHA+BETA ELECTRONS",
+                f" MULLIKEN POPULATION ANALYSIS - NO. OF ELECTRONS  {electrons:.6f}", "",
+                "  ATOM    Z CHARGE  A.O. POPULATION", ""]
+        for lab, sym, z, pop in (mulliken_atoms or [(1, "O", 8, 9.293)]):
+            out.append(f"  {lab:3d} {sym:<2s} {z:4d} {pop:6.3f}  0.792  1.181  0.682  1.163  0.620  0.620  0.631  0.599")
+            out.append("                    0.599  0.607  0.591  0.591  0.608  0.002  0.001  0.001")
+        out += ["", " OVERLAP POPULATION CONDENSED TO ATOMS FOR FIRST NEIGHBORS (ELECTRONS)"]
+    if spin is not None:
+        out += ["     ALPHA-BETA ELECTRONS",
+                f" MULLIKEN POPULATION ANALYSIS - NO. OF ELECTRONS  {spin:10.6f}", "",
+                "  ATOM    Z CHARGE  A.O. POPULATION", ""]
+        for lab, sym, z, pop in (spin_atoms or [(1, "O", 8, 0.0)]):
+            out.append(f"  {lab:3d} {sym:<2s} {z:4d} {pop:6.3f}  0.000 -0.000  0.001")
+        out += ["", " OVERLAP POPULATION CONDENSED TO ATOMS FOR FIRST NEIGHBORS (ELECTRONS)"]
+    return "\n".join(out) + "\n"
