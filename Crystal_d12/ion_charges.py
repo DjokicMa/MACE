@@ -313,6 +313,18 @@ class MethodInfo:
     spin: bool = False             # SPIN already in the DFT block / UHF
     spinlock: Optional[Tuple[int, int]] = None   # an existing SPINLOCK record
     ghosts: bool = False
+    functional: str = ""           # the DFT functional keyword, when known
+
+
+# Measured on HPCC (CRYSTAL/23-intel-2023a): odd-electron MOLECULE runs of Li+
+# clusters with SPIN + SPINLOCK 1 30 stopped at SCF cycle 3-4 with HSEsol-3c
+# (serial run: "DIIS TEST: NaN AT SCF CYCLE 3", then a crash), HSE06 and
+# HSEsol, with and without DIIS; the same deck with PBEsol0 or PBE0 converged.
+SCREENED_HYBRID_ODD_MOLECULE_WARNING = (
+    "WARNING: on CRYSTAL23, odd-electron MOLECULE runs with the screened hybrids HSEsol-3c, "
+    "HSE06 and HSEsol stopped at SCF cycle 3-4 (\"DIIS TEST: NaN\", then a crash) where PBE0 "
+    "and PBEsol0 converged (measured on Li+ clusters); the deck keeps {functional} as asked - "
+    "check that the SCF gets past cycle 4")
 
 
 def _atom_shells(i: int, z_label: int, element: str, basis: BasisInfo, out_shells: Dict[str, List[str]]):
@@ -569,6 +581,9 @@ def plan_charge_setup(symbols: Sequence[str], z_labels: Sequence[int], xyz, *, c
             setup.spinlock = (int(value), int(cycles or DEFAULT_SPINLOCK_CYCLES))
             setup.spin = method.method == "DFT"
             setup.report.append(f"SPINLOCK {setup.spinlock[0]} {setup.spinlock[1]} ({source})")
+            if not periodic and method.method == "DFT" and method.functional.upper().startswith("HSE"):
+                setup.warnings.append(SCREENED_HYBRID_ODD_MOLECULE_WARNING.format(
+                    functional=method.functional))
     elif spinlock and integral and int(spinlock) % 2 != int(electrons) % 2:
         raise IonChargeError(f"SPINLOCK {spinlock} does not fit {fmt_n(electrons)} electrons "
                              "(nalpha-nbeta must have the parity of the electron count)")
@@ -785,6 +800,10 @@ def deck_method(text: str) -> MethodInfo:
         start = upper.index("DFT", 1)
         end = upper.index("ENDDFT", start) if "ENDDFT" in upper[start:] else len(upper)
         info.spin = "SPIN" in upper[start:end]
+        info.functional = next((l.split()[0] for l in upper[start + 1:end]
+                                if l and l.split()[0] not in ("SPIN", "XLGRID", "XXLGRID", "LGRID",
+                                                              "OLDGRID", "RADIAL", "ANGULAR")),
+                               "")
     else:
         info.method = "HF"
         for key in ("HF3C", "HFSOL3C", "UHF", "ROHF"):

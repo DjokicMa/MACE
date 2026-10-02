@@ -1327,9 +1327,6 @@ def slab_cartesian_z(z_fractions, c, z_reversing):
     return [float(v) for v in (unwrapped - origin) * c]
 
 
-CHARGE_OPTION_KEYS = ("ion_charges", "net_charge", "site_states")
-
-
 def charge_options_requested(options):
     """True when an options dict asks for a charged system (ion_charges.py)."""
     return bool(options.get("ion_charges") not in (None, "", "none")
@@ -1388,7 +1385,9 @@ def plan_deck_charges(options, dimensionality, atomic_numbers, symbols, position
     return ic.plan_charge_setup(
         symbols, z_labels, xyz, cell=cell, periodic_dirs=periodic, symmetric=symmetric,
         basis=basis,
-        method=ic.MethodInfo(method=method, hf_method=hf_method, spin=bool(is_spin_polarized)),
+        method=ic.MethodInfo(method=method, hf_method=hf_method, spin=bool(is_spin_polarized),
+                             functional=str((options.get("method_modifications") or {}).get("functional")
+                                            or options.get("dft_functional") or "")),
         ion_charges=options.get("ion_charges"), net_charge=options.get("net_charge"),
         site_states=ic.parse_site_states(options.get("site_states")),
         chemod=options.get("chemod") or "auto",

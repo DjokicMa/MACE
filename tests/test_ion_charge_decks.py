@@ -316,3 +316,17 @@ def test_a_periodic_cell_may_stay_closed_shell_with_an_odd_count():
     # given a spin state, it is used
     setup = _plan(atoms, cell=cell, periodic_dirs=(0, 1, 2), net_charge=0, spinlock=1)
     assert setup.spinlock == (1, 50)
+
+
+def test_odd_molecule_with_a_screened_hybrid_is_written_with_a_warning():
+    setup = _plan(ODD, net_charge=0, spinlock=1, method=MethodInfo(functional="HSESOL3C"))
+    assert setup.spinlock == (1, 50)
+    assert any("HSESOL3C as asked" in w for w in setup.warnings)
+    quiet = _plan(ODD, net_charge=0, spinlock=1, method=MethodInfo(functional="PBE0"))
+    assert not any("screened" in w for w in quiet.warnings)
+
+
+def test_deck_method_reads_the_functional():
+    from ion_charges import deck_method
+    assert deck_method(molecule_deck(ODD)).functional == "HSESOL3C"
+    assert deck_method(molecule_deck(ODD, spin=True, dft="PBE0\nXLGRID\n")).functional == "PBE0"
