@@ -15,6 +15,7 @@ Institution: Michigan State University, Mendoza Group
 """
 
 import math
+import sys
 from dataclasses import dataclass
 from typing import Dict, List, Any, Optional, Tuple
 
@@ -2093,11 +2094,32 @@ def yes_no_prompt(prompt: str, default: str = "yes") -> bool:
     else:
         raise ValueError(f"Invalid default value: {default}")
     
+    invalid = 0
     while True:
         choice = _nav_read(prompt, valid_set=valid).lower() or default
         if choice in valid:
             return valid[choice]
+        invalid += 1
+        if invalid >= _MAX_INVALID_PIPED_ANSWERS and not _stdin_is_terminal():
+            # Answers piped from a file that no longer matches the questions
+            # (one was added or merged): stop rather than let the next blank
+            # take the default and the run carry on out of step.
+            raise SystemExit(
+                f"Error: {invalid} answers in a row to '{prompt.strip()}' were not "
+                f"yes or no, and stdin is not a terminal. The piped answers are "
+                f"probably out of step with the questions, so the run stops here.")
         print("Please respond with 'yes' or 'no' (or 'y' or 'n').")
+
+
+# A yes/no question with no terminal stops after this many invalid answers
+_MAX_INVALID_PIPED_ANSWERS = 3
+
+
+def _stdin_is_terminal() -> bool:
+    try:
+        return sys.stdin is not None and sys.stdin.isatty()
+    except Exception:
+        return False
 
 
 def get_valid_input(prompt: str, valid_values: List[str], 
