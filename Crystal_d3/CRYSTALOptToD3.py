@@ -130,7 +130,18 @@ class D3Generator:
             if self.base_name.endswith(suffix):
                 self.base_name = self.base_name[:-len(suffix)]
                 break
-        
+        # anatase_sp.out and anatase_opt.out side by side would both write
+        # anatase_band.d3 (and anatase_band.f9), the second over the first:
+        # then each keeps its whole name.
+        if self.base_name != self.input_file.stem:
+            for other in self.input_file.parent.glob(f"{self.base_name}_*"):
+                if (other.suffix in ('.out', '.log') and other.resolve() != self.input_file
+                        and other.stem[len(self.base_name):] in ('_opt', '_sp', '_OPT', '_SP')):
+                    ui.info(f"Note: {other.name} is beside {self.input_file.name}; naming the "
+                            f"files {self.input_file.stem}_* so neither overwrites the other")
+                    self.base_name = self.input_file.stem
+                    break
+
         self.input_dir = self.input_file.parent
         self.output_dir = Path(output_dir).resolve() if output_dir else self.input_dir
         

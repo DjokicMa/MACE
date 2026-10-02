@@ -1,0 +1,48 @@
+"""opt2d3 names its files after the output without _sp/_opt - unless that collides.
+
+anatase_sp.out and anatase_opt.out in one directory both became
+anatase_doss.d3 (and anatase_doss.f9), the second overwriting the first.
+With both present each keeps its whole name; alone, the name is as before
+(the workflow expects material_band.d3). Real output: the AgBr OPT in
+tests/data, under the two names.
+"""
+import shutil
+import subprocess
+import sys
+
+from conftest import REPO_ROOT
+
+SRC = REPO_ROOT / "tests" / "data" / "opt_restart" / "tqc_agbr.out"
+CONFIG = REPO_ROOT / "Crystal_d3" / "example_configs" / "doss_total_only.json"
+
+
+def _doss(cwd, name):
+    run = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "mace_cli"), "opt2d3", "--input", name,
+         "--calc-type", "DOSS", "--config-file", str(CONFIG), "--output-dir", str(cwd)],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, cwd=cwd, timeout=300)
+    assert run.returncode == 0, run.stdout + run.stderr
+    return run.stdout + run.stderr
+
+
+def _stage(cwd, stems):
+    for stem in stems:
+        shutil.copy(SRC, cwd / f"{stem}.out")
+        (cwd / f"{stem}.f9").write_bytes(stem.encode())
+
+
+def test_sp_and_opt_side_by_side_keep_their_own_decks(tmp_path):
+    _stage(tmp_path, ["agbr_sp", "agbr_opt"])
+    _doss(tmp_path, "agbr_sp.out")
+    _doss(tmp_path, "agbr_opt.out")
+    assert (tmp_path / "agbr_sp_doss.d3").exists() and (tmp_path / "agbr_opt_doss.d3").exists()
+    assert (tmp_path / "agbr_sp_doss.f9").read_bytes() == b"agbr_sp"
+    assert (tmp_path / "agbr_opt_doss.f9").read_bytes() == b"agbr_opt"
+    assert not (tmp_path / "agbr_doss.d3").exists()
+
+
+def test_a_lone_output_keeps_the_short_name(tmp_path):
+    _stage(tmp_path, ["agbr_sp"])
+    _doss(tmp_path, "agbr_sp.out")
+    assert (tmp_path / "agbr_doss.d3").exists()
+    assert (tmp_path / "agbr_doss.f9").read_bytes() == b"agbr_sp"
