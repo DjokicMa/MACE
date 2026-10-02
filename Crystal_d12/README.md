@@ -507,8 +507,9 @@ energy within 3e-7 Ha) [measured].
 population, spin, formal charge, deviation) for charged runs, and prints them as
 a Fragments section; an ion more than 0.5 e from its formal charge is flagged
 as having lost or gained its electron. This is a heuristic: Mulliken charges
-depend on the basis set and are never close to formal charges. `--fragments`
-computes them for neutral runs too.
+depend on the basis set and are never close to formal charges.
+`mace analyze --extract-properties <dir> --fragments` computes them for
+neutral runs too.
 
 ### Not run on CRYSTAL yet [untested]
 

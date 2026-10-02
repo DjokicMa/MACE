@@ -200,7 +200,7 @@ class CrystalPropertyExtractor:
         return properties
     
     # Fragment charges for every run, not only charged ones (opt-in; also
-    # MACE_FRAGMENT_CHARGES=1 or `mace analyze --fragments`).
+    # MACE_FRAGMENT_CHARGES=1 or `mace analyze --extract-properties DIR --fragments`).
     extract_fragments = False
 
     def _extract_fragment_charges(self, content: str) -> Dict[str, Any]:

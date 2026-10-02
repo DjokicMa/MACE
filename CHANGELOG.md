@@ -47,9 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   formal charge and deviation, an ion more than 0.5 e from its formal charge
   flagged) when a run was charged (Mulliken count different from the sum of
   valence charges, a renormalised guess, or "UNIT CELL NOT NEUTRAL"), and the
-  extractor prints them as a Fragments section; `mace analyze --fragments`
-  (or `MACE_FRAGMENT_CHARGES=1`) computes them for every run. Neutral runs
-  get no new properties.
+  extractor prints them as a Fragments section;
+  `mace analyze --extract-properties <dir> --fragments` (or
+  `MACE_FRAGMENT_CHARGES=1`) computes them for every run. Neutral runs get
+  no new properties otherwise.
 
 ### Fixed
 
