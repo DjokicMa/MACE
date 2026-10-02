@@ -361,6 +361,57 @@ def _check_capacity(i, element, types, vec):
                                  f"{fmt_charge(v)} electrons (allowed 0-{cap})")
 
 
+ANION_LIKE_ELEMENTS = {"O", "N", "S", "F"}
+
+
+def _check_unrecognised_anions(frags, syms, xyz, cell, periodic_dirs, scale, q_auto, net_charge,
+                               setup) -> None:
+    """Refuse (or, with net_charge given, warn) when auto mode would count an anion as neutral.
+
+    Auto mode counts only the table ions. A fragment outside the table that
+    cannot be a closed-shell neutral molecule (ion_fragments.free_valence > 0:
+    CO3, OH, SO4, a carboxylate or alkoxide) is almost always an anion, so the
+    table cations' charge alone would write a wrong DOPING (Li2CO3: +2). A
+    fragment that cannot be judged gets a warning when it touches a table
+    cation, holds O/N/S/F and the auto net charge is not 0.
+    """
+    if not any(f["ion"] for f in frags):
+        return
+    suspects, unknown = [], []
+    for f in frags:
+        if f["ion"] or f["extended"]:
+            continue
+        fv = frag.free_valence(f, syms)
+        if fv:
+            suspects.append((f, fv))
+        elif fv is None and any(syms[i] in ANION_LIKE_ELEMENTS for i in f["atoms"]):
+            unknown.append(f)
+    if suspects:
+        what = ", ".join(sorted({f"{f['formula']} ({fv} unpaired valence{'s' if fv > 1 else ''})"
+                                 for f, fv in suspects}))
+        first = suspects[0][0]["atoms"][0] + 1
+        if net_charge is None:
+            raise IonChargeError(
+                f"auto ion charges count only the table ions ({q_auto:+d} here), but {what} "
+                f"(first at atom {first}) cannot be a closed-shell neutral molecule - most likely "
+                "an anion such as carbonate, hydroxide, sulfate or a carboxylate, which auto mode "
+                "would leave neutral and so write the wrong DOPING. Give the net charge "
+                "(net_charge / --net-charge); site_states can shape its guess")
+        setup.warnings.append(
+            f"WARNING: {what} is not in the ion table and looks like an anion; its guess is "
+            "left neutral and net_charge sets the electron count")
+    if unknown and q_auto and net_charge is None:
+        touch = frag.find_fragments(syms, xyz, cell, periodic_dirs, scale, exclude_metals=False)
+        nb = {i: js for t in touch for i, js in t["neighbours"].items()}
+        for f in unknown:
+            atoms = set(f["atoms"])
+            if any(syms[j] in frag.TABLE_METALS for i in atoms for j in nb.get(i, ())):
+                setup.warnings.append(
+                    f"WARNING: {f['formula']} (atom {f['atoms'][0] + 1}) touches a table cation and "
+                    f"is counted neutral, but MACE cannot tell whether it is an anion; the net "
+                    f"charge {q_auto:+d} assumes it is neutral - give net_charge if it is not")
+
+
 def plan_charge_setup(symbols: Sequence[str], z_labels: Sequence[int], xyz, *, cell=None,
                       periodic_dirs: Sequence[int] = (), symmetric: bool = False,
                       basis: BasisInfo, method: MethodInfo,
@@ -411,6 +462,8 @@ def plan_charge_setup(symbols: Sequence[str], z_labels: Sequence[int], xyz, *, c
             setup.warnings.append(
                 "WARNING: the cell has an extended (framework) fragment, which auto mode leaves "
                 "neutral; a charge it carries is not counted - check the net charge")
+        _check_unrecognised_anions(frags, syms, xyz, cell, periodic_dirs, fragment_bond_scale,
+                                   q_auto, net_charge, setup)
         for f in frags:
             if not f["ion"]:
                 continue

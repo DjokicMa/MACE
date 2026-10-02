@@ -429,6 +429,18 @@ like an ionic solid (lone O/F/Cl/... atoms, or a table metal bonded to an
 extended framework): there it would invent ions. Use `net_charge` (DOPING) for
 those. In a cell with a framework the framework is counted neutral (warning).
 
+An anion outside the table would also be counted neutral, so auto mode
+refuses a structure with table ions and a molecule that cannot be a
+closed-shell neutral one: each bond gets order 1-3 and every atom's bond
+orders must add up to one of its usual valences (H 1, C 4, N 3/5, O 2, S
+2/4/6, P 3/5, halogens 1/3/5/7, ...). CO3 and SO4 (2 unpaired valences), OH,
+carboxylates and alkoxides (1) fail that test; EC, water, SO2F2, HNO3, DMSO and
+benzene pass. Li2CO3 in auto mode is therefore refused rather than written
+with `DOPING -2`; give `net_charge` (the guess of the anion stays neutral, with
+a warning; `site_states` can shape it). A molecule MACE cannot judge (an
+element without a valence entry) that touches a table cation gets a warning
+when the auto net charge is not 0.
+
 Shell charges: for an explicit basis they are the file's own CHE values. For
 internal libraries MACE knows SOLDEF2MSVP, POB-TZVP-REV2 and POB-DZVP-REV2 for
 H B C N O F Na Mg P S Cl K Ca Zn Li [measured: CRYSTAL's LOCAL ATOMIC FUNCTIONS

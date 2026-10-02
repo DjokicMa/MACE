@@ -278,6 +278,105 @@ def classify_fragment(fragment: dict, symbols: Sequence[str]) -> Optional[str]:
     return None
 
 
+# Valences an atom of a closed-shell neutral molecule can have (hypervalent
+# S/P/N/halogens included, so DMSO, sulfones, nitro groups and SO2F2 pass).
+VALENCES = {"H": (1,), "B": (3,), "C": (4,), "N": (3, 5), "O": (2,), "F": (1,), "Si": (4,),
+            "P": (3, 5), "S": (2, 4, 6), "Cl": (1, 3, 5, 7), "Br": (1, 3, 5, 7), "I": (1, 3, 5, 7),
+            "Se": (2, 4, 6), "As": (3, 5), "Ge": (4,), "Sn": (4,)}
+_FREE_VALENCE_BUDGET = 200000
+
+
+def free_valence(fragment: dict, symbols: Sequence[str]) -> Optional[int]:
+    """Valences a fragment leaves unpaired at best, or None when it cannot be judged.
+
+    Every bond found has order 1-3; an atom's bond orders must add up to one
+    of its VALENCES. 0 means some Lewis structure makes the fragment a
+    closed-shell neutral molecule (EC, water, SO2F2, DMSO, benzene); more
+    means it cannot be one - an anion such as CO3 2- (2), OH- or a
+    carboxylate (1) - or a radical. None: an element without a VALENCES entry,
+    an atom with more bonds than its largest valence (a bond-length artefact),
+    an extended fragment, or the search budget ran out.
+    """
+    if fragment.get("extended"):
+        return None
+    syms = [element_symbol(s) for s in symbols]
+    atoms = fragment["atoms"]
+    nb = fragment["neighbours"]
+    residues = {}  # atom -> sorted allowed (valence - bonds)
+    for i in atoms:
+        opts = VALENCES.get(syms[i])
+        if opts is None:
+            return None
+        deg = len(set(nb[i]))
+        if len(nb[i]) != deg:  # bonded to its own image twice: not a molecule
+            return None
+        allowed = sorted(v - deg for v in opts if v >= deg)
+        if not allowed:
+            return None
+        residues[i] = allowed
+    # extra bond order (0-2 per bond) only where both ends have room
+    room = {i for i in atoms if residues[i][-1] > 0}
+    edges = sorted({(min(i, j), max(i, j)) for i in room for j in nb[i] if j in room and j != i})
+    last_edge = {}
+    for k, (i, j) in enumerate(edges):
+        last_edge[i] = k
+        last_edge[j] = k
+    load = {i: 0 for i in atoms}
+
+    def leftover(i):
+        for r in residues[i]:
+            if r >= load[i]:
+                return r - load[i]
+        return None
+
+    base = 0
+    for i in atoms:
+        if i not in last_edge:
+            base += residues[i][0]
+    best = [None]
+    nodes = [0]
+
+    def search(k, partial):
+        nodes[0] += 1
+        if nodes[0] > _FREE_VALENCE_BUDGET:
+            raise _Budget()
+        if best[0] is not None and partial >= best[0]:
+            return
+        if k == len(edges):
+            best[0] = partial
+            return
+        i, j = edges[k]
+        for x in (2, 1, 0):
+            if load[i] + x > residues[i][-1] or load[j] + x > residues[j][-1]:
+                continue
+            load[i] += x
+            load[j] += x
+            add, ok = 0, True
+            for a in (i, j):
+                if last_edge[a] == k:
+                    left = leftover(a)
+                    if left is None:
+                        ok = False
+                        break
+                    add += left
+            if ok:
+                search(k + 1, partial + add)
+            load[i] -= x
+            load[j] -= x
+            if best[0] == 0:
+                return
+
+    try:
+        search(0, base)
+    except _Budget:
+        return None
+    return best[0]
+
+
+class _Budget(Exception):
+    pass
+
+
 def terminal_atoms(fragment: dict, symbols: Sequence[str], ion: str) -> List[int]:
     """The atoms an ion's charge is put on: the cation itself, or the anion's terminal atoms."""
     syms = [element_symbol(s) for s in symbols]

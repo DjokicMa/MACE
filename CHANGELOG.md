@@ -18,7 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shell charges), `DOPING` (the net charge), `CHARGED` and, for an odd
   electron count, `SPIN` + `SPINLOCK`. Ions are found by connectivity
   (covalent radii), so atom order does not matter: Li+, Na+, K+, Mg2+, Ca2+,
-  Zn2+, FSI-, TFSI-, OTf-, ClO4-, NO3-, PF6-, BF4-; anything else is neutral.
+  Zn2+, FSI-, TFSI-, OTf-, ClO4-, NO3-, PF6-, BF4-; anything else is neutral,
+  except that a molecule that cannot be closed-shell neutral by its bonds
+  (CO3, SO4, OH, a carboxylate: an anion outside the table) stops auto mode
+  until `net_charge` is given, so Li2CO3 is not written with `DOPING -2`.
   On the 65 Li/FSI/solvent clusters of the test corpus it finds the same
   ions in any atom order (the group's script assumed a fixed order and left
   two clusters without records). The records follow what was measured on

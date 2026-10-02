@@ -14,7 +14,8 @@ from conftest import REPO_ROOT
 from d12_constants import read_basis_file
 from ion_charges import (BasisInfo, IonChargeError, MethodInfo, SHELL_TABLE, apply_charge_setup,
                          fmt_charge, parse_basis_blocks, plan_charge_setup, strip_charge_records)
-from ion_fixtures import Z, ec, fsi, li_near, molecule_deck, no3, shuffled
+from ion_fixtures import (Z, acetate, carbonate, ec, fsi, hydroxide, li_near, molecule_deck, no3, shuffled,
+                          sulfate)
 from mace.utils.ion_fragments import cell_matrix
 
 LI_PLUS = "2.0 0.0 0.0 0.0 0.0"
@@ -157,6 +158,54 @@ def test_net_charge_differing_from_the_ions_warns():
     setup = _plan(li_with(0, 2), net_charge=0, spinlock=1)
     assert any("differs from the ions found (+1)" in w for w in setup.warnings)
     assert setup.doping is None
+
+
+# ------------------------------------------- anions outside the ion table
+
+def _salt(anion, n_li):
+    """``n_li`` Li 1.95 A from the anion's O atoms (shuffled): Li2CO3, LiOH, Li2SO4, LiOAc."""
+    atoms = anion()
+    o_atoms = [k for k, (s, _) in enumerate(atoms) if s == "O"]
+    return shuffled(atoms + [li_near(atoms, o_atoms[k]) for k in range(n_li)], seed=3)
+
+
+@pytest.mark.parametrize("anion,n_li,formula,free", [(carbonate, 2, "CO3", 2), (hydroxide, 1, "HO", 1),
+                                                     (sulfate, 2, "O4S", 2), (acetate, 1, "C2H3O2", 1)],
+                         ids=["Li2CO3", "LiOH", "Li2SO4", "LiOAc"])
+def test_auto_refuses_a_salt_whose_anion_is_not_in_the_table(anion, n_li, formula, free):
+    # the review's case: auto mode counted only the Li+ and wrote DOPING -2 for Li2CO3
+    with pytest.raises(IonChargeError, match=rf"count only the table ions \(\+{n_li} here\), but "
+                                             rf"{formula} \({free} unpaired valence.*Give the net charge"):
+        _plan(_salt(anion, n_li))
+
+
+def test_a_net_charge_lets_the_salt_through_with_a_warning():
+    setup = _plan(_salt(carbonate, 2), net_charge=0)
+    assert setup.net_charge == 0 and setup.doping is None
+    assert any("CO3 (2 unpaired valences) is not in the ion table and looks like an anion" in w
+               for w in setup.warnings)
+
+
+def test_an_unrecognised_anion_next_to_a_table_salt_is_refused_too():
+    # LiFSI (auto net 0) with a stray carbonate: the real charge is -2
+    lifsi = li_with(1, 0)
+    co3 = [(s, (x, y - 9.0, z)) for s, (x, y, z) in carbonate()]
+    with pytest.raises(IonChargeError, match=r"\(\+0 here\), but CO3"):
+        _plan(lifsi + co3)
+
+
+@pytest.mark.parametrize("n_fsi,n_ec", [(0, 2), (1, 1), (2, 0)])
+def test_solvated_table_ions_are_not_flagged(n_fsi, n_ec):
+    setup = _plan(li_with(n_fsi, n_ec))
+    assert not any("anion" in w for w in setup.warnings)
+
+
+def test_an_unjudgeable_fragment_on_a_cation_warns():
+    # Fe has no VALENCES entry: MACE cannot tell whether FeO2 is an anion
+    feo2 = [("Fe", (0.0, 0.0, 0.0)), ("O", (1.62, 0.0, 0.0)), ("O", (-1.62, 0.0, 0.0))]
+    li = li_near(feo2, 1)
+    setup = _plan(shuffled(feo2 + [li]))
+    assert any("FeO2" in w and "touches a table cation" in w for w in setup.warnings)
 
 
 # ----------------------------------------------------------- explicit basis

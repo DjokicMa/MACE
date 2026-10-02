@@ -109,6 +109,40 @@ def water():
     return [("O", (0.0, 0.0, 0.0)), ("H", (0.757, 0.586, 0.0)), ("H", (-0.757, 0.586, 0.0))]
 
 
+def carbonate():
+    """CO3 (2-): not in the ion table."""
+    return [("C", (0.0, 0.0, 0.0))] + [
+        ("O", (1.28 * math.cos(2 * math.pi * k / 3), 1.28 * math.sin(2 * math.pi * k / 3), 0.0)) for k in range(3)]
+
+
+def hydroxide():
+    return [("O", (0.0, 0.0, 0.0)), ("H", (0.97, 0.0, 0.0))]
+
+
+def sulfate():
+    return _star("S", "O", _TETRA, 1.48)
+
+
+def acetate():
+    """CH3COO (1-): a carboxylate."""
+    return [("C", (0.0, 0.0, 0.0)), ("C", (1.52, 0.0, 0.0)),
+            ("O", (2.15, 1.08, 0.0)), ("O", (2.15, -1.08, 0.0)),
+            ("H", (-0.36, 1.03, 0.0)), ("H", (-0.36, -0.51, 0.89)), ("H", (-0.36, -0.51, -0.89))]
+
+
+def dmso():
+    """Dimethyl sulfoxide: hypervalent S, neutral."""
+    return [("S", (0.0, 0.0, 0.0)), ("O", (0.0, 0.0, 1.50)),
+            ("C", (1.55, 0.73, -0.55)), ("C", (-1.55, 0.73, -0.55)),
+            ("H", (2.40, 0.25, -0.05)), ("H", (1.60, 1.80, -0.35)), ("H", (1.60, 0.60, -1.64)),
+            ("H", (-2.40, 0.25, -0.05)), ("H", (-1.60, 1.80, -0.35)), ("H", (-1.60, 0.60, -1.64))]
+
+
+def benzene():
+    return ([("C", (1.39 * math.cos(k * math.pi / 3), 1.39 * math.sin(k * math.pi / 3), 0.0)) for k in range(6)]
+            + [("H", (2.48 * math.cos(k * math.pi / 3), 2.48 * math.sin(k * math.pi / 3), 0.0)) for k in range(6)])
+
+
 IONS = {"FSI-": fsi, "TFSI-": tfsi, "OTf-": otf, "ClO4-": clo4, "NO3-": no3,
         "PF6-": pf6, "BF4-": bf4}
 CATIONS = {"Li+": "Li", "Na+": "Na", "K+": "K", "Mg2+": "Mg", "Ca2+": "Ca", "Zn2+": "Zn"}
@@ -149,7 +183,7 @@ def shuffled(atoms, seed=7):
 
 
 Z = {"H": 1, "Li": 3, "B": 5, "C": 6, "N": 7, "O": 8, "F": 9, "Na": 11, "Mg": 12, "P": 15,
-     "S": 16, "Cl": 17, "K": 19, "Ca": 20, "Zn": 30}
+     "S": 16, "Cl": 17, "K": 19, "Ca": 20, "Fe": 26, "Zn": 30}
 
 
 def molecule_deck(atoms, title="cluster", basis="BASISSET\nSOLDEF2MSVP\n", dft="HSESOL3C\nXLGRID\n",

@@ -9,10 +9,10 @@ import math
 
 import pytest
 
-from ion_fixtures import (IONS, cluster, ec, fsi, hno3, li_near, mulliken_block, otf, shuffled,
-                          so2f2, water)
+from ion_fixtures import (IONS, acetate, benzene, carbonate, cluster, dmso, ec, fsi, hno3, hydroxide, li_near,
+                          mulliken_block, otf, shuffled, so2f2, sulfate, water)
 from mace.utils.ion_fragments import (COVALENT_RADII, ION_TABLE, IonChargeError, cell_matrix, classify,
-                                      find_fragments, format_fragment_report, mulliken_atoms,
+                                      find_fragments, format_fragment_report, free_valence, mulliken_atoms,
                                       mulliken_electron_count, valence_charges)
 
 
@@ -210,3 +210,27 @@ def test_corpus_mulliken_atoms_match_the_count():
     pops, spins = mulliken_atoms(Path(path).read_text(errors="ignore"))
     assert len(pops) == len(spins) == 25
     assert sum(a["value"] for a in pops) == pytest.approx(156.0, abs=0.05)
+
+
+# ------------------------------------------- anions outside the ion table
+
+@pytest.mark.parametrize("builder,free", [(carbonate, 2), (hydroxide, 1), (sulfate, 2), (acetate, 1)],
+                         ids=["CO3", "OH", "SO4", "CH3COO"])
+def test_anions_outside_the_table_have_free_valences(builder, free):
+    syms, xyz = _split(builder())
+    (frag,) = find_fragments(syms, xyz)
+    assert free_valence(frag, syms) == free
+
+
+@pytest.mark.parametrize("builder", [ec, water, so2f2, hno3, dmso, benzene],
+                         ids=["EC", "H2O", "SO2F2", "HNO3", "DMSO", "C6H6"])
+def test_neutral_molecules_have_no_free_valence(builder):
+    syms, xyz = _split(builder())
+    (frag,) = find_fragments(syms, xyz)
+    assert free_valence(frag, syms) == 0
+
+
+def test_free_valence_is_unknown_for_elements_without_valences():
+    syms, xyz = ["Fe", "O", "O"], [(0.0, 0.0, 0.0), (1.62, 0.0, 0.0), (-1.62, 0.0, 0.0)]
+    (frag,) = find_fragments(syms, xyz)
+    assert free_valence(frag, syms) is None

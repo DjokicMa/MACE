@@ -13,7 +13,7 @@ import pytest
 
 from conftest import REPO_ROOT
 from ion_charges import read_deck_geometry, strip_charge_records
-from ion_fixtures import cluster, ec, fsi, li_near, molecule_cif, molecule_deck, no3, p1_cif, shuffled
+from ion_fixtures import carbonate, cluster, ec, fsi, li_near, molecule_cif, molecule_deck, no3, p1_cif, shuffled
 
 MACE_CLI = REPO_ROOT / "mace_cli"
 
@@ -138,6 +138,21 @@ def test_mace_ions_refuses_an_odd_count_without_a_terminal(tmp_path):
     assert run.returncode == 1
     assert "NOT written" in run.stderr and "odd" in run.stderr
     assert not (tmp_path / "out" / "li_ec2.d12").exists()
+
+
+def test_mace_ions_refuses_li2co3_in_auto_mode(tmp_path):
+    # CO3 2- is not in the ion table; auto mode used to write DOPING -2 for neutral Li2CO3
+    co3 = carbonate()
+    deck = tmp_path / "li2co3.d12"
+    deck.write_text(molecule_deck(shuffled(co3 + [li_near(co3, 1), li_near(co3, 2)], seed=5)))
+    run = _run(["ions", str(deck), "--ion-charges", "auto", "-o", "out"], tmp_path)
+    assert run.returncode == 1 and "NOT written" in run.stderr
+    assert "CO3 (2 unpaired valences)" in run.stderr and "net charge" in run.stderr
+    assert not (tmp_path / "out" / "li2co3.d12").exists()
+    ok = _run(["ions", str(deck), "--ion-charges", "auto", "--net-charge", "0", "-o", "out"], tmp_path)
+    assert ok.returncode == 0, ok.stderr
+    assert "looks like an anion" in ok.stdout + ok.stderr
+    assert "DOPING" not in (tmp_path / "out" / "li2co3.d12").read_text()
 
 
 def test_mace_ions_in_place_and_replace(tmp_path):
