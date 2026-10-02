@@ -133,6 +133,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   child of a SOC parent now names STUTSC records too. The default stays
   INPSOC, and decks without the key are unchanged.
 
+- **SOC decks can use the official pob-TZVP-rev2-SOC basis sets (opt-in).**
+  `"soc_basis": "pob-tzvp-rev2-soc"` in a cif2d12 options file or an opt2d12
+  template replaces every ECP atom's basis block whole by the
+  X_pob_TZVP_rev2_SOC set for its element from the CRYSTAL basis set library
+  (crystal.unito.it, "To be used with CRYSTAL23"): CRYSTAL's STUTSC
+  spin-orbit ECP with the valence basis published for it (J. Laun, T.
+  Bredow, J. Comput. Chem. 43 (2022) 839, doi 10.1002/jcc.26839; J. K.
+  Desmarais, J. P. Flament, A. Erba, Phys. Rev. B 101 (2020) 235142). The 30
+  sets (Rb-I except Tc, Cs, Ba, Hf-Bi) are in
+  `Crystal_d12/basis_sets/pob-tzvp-rev2-soc.lib`, each with its source URL,
+  references and retrieval date (2026-10-01), fetched with
+  `basis_sets/fetch_soc_basis.py`; every record is checked when loaded. For
+  Hf-Bi the valence basis is pob-TZVP-rev2's own; for Rb-I, Cs and Ba it is
+  re-fitted. All-electron atoms keep their block, with a note that there is
+  no SOC operator on them (manual p. 175); MACE's Tc, which has no SOC set,
+  stays all-electron the same way, and atom numbers never change. A deck with
+  any other ECP element (La-Lu, actinides, Po onwards), `"soc_ecp":
+  "inpsoc"`, a SOSCALE other than 1, or BASISSET is refused with the reason.
+  The log notes that the valence basis now differs from a scalar parent's, so
+  the SOC contribution needs a 2c run without SOC in this basis (manual
+  p. 174), which MACE does not write. Untested on CRYSTAL; decks without the
+  key are unchanged.
+
 ### Fixed
 
 - **Basis-library files CRYSTAL cannot read are refused on every deck

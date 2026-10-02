@@ -433,10 +433,143 @@ def _library_shells(z: int) -> List[List[List[str]]]:
     return found
 
 
+# --- the official pob-TZVP-rev2-SOC basis sets --------------------------------
+#
+# X_pob_TZVP_rev2_SOC of the CRYSTAL basis set library (crystal.unito.it,
+# "To be used with CRYSTAL23"): CRYSTAL's STUTSC spin-orbit ECP with the valence
+# basis published for it (J. Laun, T. Bredow, J. Comput. Chem. 43 (2022) 839,
+# doi 10.1002/jcc.26839; J. K. Desmarais, J. P. Flament, A. Erba, Phys. Rev. B
+# 101 (2020) 235142). Rb-I except Tc, Cs, Ba and Hf-Bi; the site has no such set
+# for Tc, La-Lu, the actinides or Po onwards. The records, with their source
+# and retrieval date, are in basis_sets/pob-tzvp-rev2-soc.lib (written by
+# basis_sets/fetch_soc_basis.py).
+SOC_BASIS_FAMILIES = ("pob-tzvp-rev2-soc",)
+SOC_BASIS_DIR = os.path.join(_HERE, "basis_sets")
+
+
+def _checked_soc_basis(value) -> Optional[str]:
+    """A "soc_basis" value, or None when none was given."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or value.strip().lower() not in SOC_BASIS_FAMILIES:
+        raise SocError(f"soc_basis must be one of {', '.join(SOC_BASIS_FAMILIES)}, "
+                       f"not {value!r}")
+    return value.strip().lower()
+
+
+_SOC_BASIS_CACHE: Dict[str, Dict[int, List[str]]] = {}
+
+
+def load_soc_basis(family: str) -> Dict[int, List[str]]:
+    """{Z: record lines} of an official SOC basis family, read from
+    basis_sets/<family>.lib ("MACE basis library v1": "#%record <NAT>
+    bytes=<n>", metadata lines "#%  field value", then exactly n bytes of the
+    record and a newline). Every record must pass basis_block_problem, have
+    NAT = 200 + Z with STUTSC on its second line. Raises SocError otherwise.
+
+    TODO: delegate to the basis-library loader (basis_library.py, one file
+    per family) once it is merged; this reads the same format."""
+    family = _checked_soc_basis(family)
+    if family in _SOC_BASIS_CACHE:
+        return _SOC_BASIS_CACHE[family]
+    path = os.path.join(SOC_BASIS_DIR, family + ".lib")
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError as exc:
+        raise SocError(f"no data for soc_basis {family} ({exc})")
+    records: Dict[int, List[str]] = {}
+    pos = 0
+    first = True
+    while pos < len(data):
+        end = data.find(b"\n", pos)
+        if end < 0:
+            raise SocError(f"{os.path.basename(path)}: no newline at byte {pos}")
+        line = data[pos:end].decode("ascii")
+        pos = end + 1
+        if first:
+            if line.split() != ["#%MACE-BASIS-LIBRARY", "1"]:
+                raise SocError(f"{os.path.basename(path)}: not a MACE basis library")
+            first = False
+            continue
+        m = re.fullmatch(r"#%record (\d+) bytes=(\d+)", line)
+        if not m:
+            continue                    # header, metadata or blank line
+        while data.startswith(b"#%  ", pos):
+            pos = data.find(b"\n", pos) + 1
+        nat, size = int(m.group(1)), int(m.group(2))
+        text = data[pos:pos + size].decode("ascii")
+        pos += size
+        lines = [ln.rstrip() for ln in text.split("\n") if ln.strip()]
+        problem = basis_block_problem(text)
+        if problem or not 200 < nat < 300 or lines[0].split()[0] != str(nat) \
+                or lines[1].strip().upper() != "STUTSC":
+            raise SocError(f"{os.path.basename(path)}: record {nat} is not an ECP block "
+                           f"with STUTSC that CRYSTAL can read ({problem or lines[:2]})")
+        records[nat - 200] = lines
+    if not records:
+        raise SocError(f"{os.path.basename(path)}: no records")
+    _SOC_BASIS_CACHE[family] = records
+    return records
+
+
 def official_soc_block(z: int) -> Optional[List[str]]:
     """The official pob-TZVP-rev2-SOC block for element ``z`` (NAT 200+Z,
-    STUTSC, shells), or None when MACE has none for it (none yet)."""
-    return None
+    STUTSC, shells), or None when MACE has none for it."""
+    try:
+        return load_soc_basis(SOC_BASIS_FAMILIES[0]).get(z)
+    except SocError:
+        return None
+
+
+def _soc_basis_atoms(lines: List[str], geom_end: int, end99: int, family: str,
+                     ecp_form: Optional[str], soscale: float, log) -> List[str]:
+    """The basis input (lines geom_end+1 .. end99) with every ECP atom's
+    block (200 < NAT < 300) replaced whole by the ``family`` block for its
+    element; all-electron atoms keep theirs. Atom numbers never change."""
+    if ecp_form == "inpsoc":
+        raise SocError(f"soc_basis {family} is written with CRYSTAL's STUTSC ECP (\"To be "
+                       f"used with CRYSTAL23\"), so it cannot be combined with \"soc_ecp\": "
+                       f"\"inpsoc\"; leave out soc_ecp")
+    _no_scale_for_stutsc(soscale, f"soc_basis {family}")
+    sets = load_soc_basis(family)
+    out, i, missing, replaced = [], geom_end + 1, [], []
+    while i < end99:
+        try:
+            number = int(lines[i].split()[0])
+            _s, _e, nxt = _basis_block_span(lines, i)
+        except (ValueError, IndexError):
+            raise SocError(f"could not read the basis-set input at line {i + 1}: {lines[i]!r}")
+        if 200 < number < 300:
+            z = number - 200
+            if z not in sets:
+                missing.append(f"{_symbol(z)} (Z={z})")
+            else:
+                out += sets[z]
+                replaced.append(_symbol(z))
+        else:
+            out += lines[i:nxt]
+            z = number % 100 if number > 100 else number
+            note = (" (MACE's Tc is all-electron and stays so: the set has no Tc)"
+                    if z == 43 else "")
+            log(f"SOC deck: atom {number} is all-electron and keeps its basis; there is no "
+                f"SOC operator on an all-electron atom (CRYSTAL23 manual p. 175){note}")
+        i = nxt
+    if missing:
+        raise SocError(f"soc_basis {family} has no basis set for "
+                       f"{', '.join(dict.fromkeys(missing))} (the official set covers "
+                       f"Rb-I except Tc, Cs, Ba and Hf-Bi; not La-Lu, the actinides or "
+                       f"Po onwards)")
+    if replaced:
+        log(f"SOC deck: {', '.join(dict.fromkeys(replaced))} get the official {family} "
+            f"basis (CRYSTAL's STUTSC ECP with its own valence basis), replacing the "
+            f"deck's block")
+        log(f"Note: with soc_basis the valence basis differs from a scalar parent's, so "
+            f"its energy is not the reference for the SOC contribution: that needs a "
+            f"two-component run without SOC in this same basis (manual p. 174), which "
+            f"MACE does not write - copy this deck and delete the SOC line from its "
+            f"TWOCOMPON block")
+    return out
 
 
 def _kept_stutsc(z: int, block: List[str], soscale: float, ecp_form: Optional[str],
@@ -556,7 +689,7 @@ def _basis_block_span(lines: List[str], i: int) -> Tuple[int, int, int]:
 
 def soc_deck(deck: str, soscale: float = 1.0, log=print,
              fmixing: Optional[int] = None, smear: Optional[float] = None,
-             ecp_form: Optional[str] = None) -> str:
+             ecp_form: Optional[str] = None, basis: Optional[str] = None) -> str:
     """Turn a finished single-point MACE deck into a 2c-SCF SOC deck.
 
     Every atom whose basis block carries an INPUT ECP (conventional atomic
@@ -576,12 +709,16 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print,
     only and with SOSCALE 1; "inpsoc" or None writes INPSOC. A deck derived
     from a SOC deck keeps INPSOC records MACE wrote (converted to STUTSC with
     "stutsc") and a STUTSC record on a basis MACE would have written it with
-    (_kept_stutsc). Notes and warnings go to ``log``. Raises SocError, and
-    returns no deck, for anything the manual says the 2c-SCF does not
-    support."""
+    (_kept_stutsc). ``basis`` (the "soc_basis" setting, "pob-tzvp-rev2-soc")
+    replaces every ECP atom's block whole by the official SOC basis set for
+    its element (STUTSC and its own valence basis); all-electron atoms keep
+    theirs (_soc_basis_atoms). Notes and warnings go to ``log``. Raises
+    SocError, and returns no deck, for anything the manual says the 2c-SCF
+    does not support."""
     fmixing = _checked_fmixing(fmixing)
     smear = checked_smear(smear)
     ecp_form = _checked_ecp_form(ecp_form)
+    basis = _checked_soc_basis(basis)
     lines = deck.rstrip("\n").split("\n")
     upper = [ln.strip().upper() for ln in lines]
 
@@ -606,6 +743,11 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print,
     # Basis section: replace ECP atoms' blocks.
     out = lines[:geom_end + 1]
     i, ecp_atoms = geom_end + 1, 0
+    if basis is not None:
+        replaced = _soc_basis_atoms(lines, geom_end, end99, basis, ecp_form, soscale, log)
+        lines = lines[:geom_end + 1] + replaced + lines[end99:]
+        upper = [ln.strip().upper() for ln in lines]
+        end99 = geom_end + 1 + len(replaced)
     while i < end99:
         try:
             number = int(lines[i].split()[0])
@@ -624,8 +766,9 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print,
             ecp_atoms += 1
         elif key == "STUTSC" and 200 < number < 300:
             # A deck derived from a SOC deck written with STUTSC.
-            out += [lines[i]] + _kept_stutsc(number - 200, lines[i:nxt], soscale,
-                                             ecp_form, log)
+            # (a block soc_basis has just written is not "kept": no note)
+            out += [lines[i]] + _kept_stutsc(number - 200, lines[i:nxt], soscale, ecp_form,
+                                             log if basis is None else (lambda m: None))
             out += lines[ecp_end:nxt]
             ecp_atoms += 1
         elif key is not None:
@@ -966,7 +1109,8 @@ def cif_metal_warning_once(log=print) -> None:
 
 # The keys of a cif2d12 options file or opt2d12 template that tune a SOC deck,
 # and the soc_deck argument each one sets.
-SOC_OPTION_KEYS = {"soc_fmixing": "fmixing", "smear": "smear", "soc_ecp": "ecp_form"}
+SOC_OPTION_KEYS = {"soc_fmixing": "fmixing", "smear": "smear", "soc_ecp": "ecp_form",
+                   "soc_basis": "basis"}
 
 
 def soc_deck_options(options) -> Dict[str, object]:
