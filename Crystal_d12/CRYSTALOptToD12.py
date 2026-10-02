@@ -1551,6 +1551,14 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                     # Rename to freq_settings for consistency with rest of script
                     if freq_key == "frequency_settings":
                         options["freq_settings"] = options.pop("frequency_settings")
+                    # A FREQ parent's NUMDERIV stays unless the config names
+                    # one (None: no keyword), as a FREQ child of opt2d12 keeps
+                    # the parent's FREQCALC block.
+                    parent_numderiv = (settings.get("freq_settings") or {}).get("numderiv")
+                    if "numderiv" not in options["freq_settings"] and parent_numderiv is not None:
+                        options["freq_settings"] = dict(options["freq_settings"],
+                                                        numderiv=parent_numderiv)
+                        ui.info(f"  NUMDERIV {parent_numderiv}: kept from the parent")
                     
                     # Convert temprange from dict to tuple if needed
                     if "temprange" in options["freq_settings"] and isinstance(options["freq_settings"]["temprange"], dict):

@@ -2138,10 +2138,14 @@ class WorkflowPlanner:
             ui.info("       - Time: N atoms × 2 SCF per atom (2x slower)")
             ui.info("       - Error: O(t²), much more accurate")
             ui.info("       - Quality: Reliable frequencies, better for publication")
-            # NUMDERIV is written only when asked for (0/blank: none)
-            numderiv = input("  Select method (0-2) [0]: ").strip() or "0"
+            # NUMDERIV is written only when asked for. Blank keeps a FREQ
+            # parent's NUMDERIV (none otherwise), as opt2d12 does; 0 is an
+            # explicit "no keyword".
+            numderiv = input("  Select method (0-2) [parent's, else 0]: ").strip()
             if numderiv in ("1", "2"):
                 config["frequency_settings"]["numderiv"] = int(numderiv)
+            elif numderiv == "0":
+                config["frequency_settings"]["numderiv"] = None
 
             # Gamma point spectroscopy options
             if config["frequency_settings"]["mode"] == "GAMMA":
