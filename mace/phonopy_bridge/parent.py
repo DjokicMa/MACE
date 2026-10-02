@@ -518,7 +518,7 @@ def template_lines(deck: ParentDeck, n_super_atoms: int, toldee: Optional[int] =
     gr = [i for i, k in _top_level(block3) if k == "GRADCAL"]
     for i in reversed(gr):
         del block3[i]
-    gradcal_note = ("(f) GRADCAL moved before the final END" if gr
+    gradcal_note = ("(f) the parent's GRADCAL moved to the end, after TOLDEE" if gr
                     else "(f) GRADCAL and END appended")
 
     # (e) buffers
