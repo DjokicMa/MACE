@@ -12,7 +12,9 @@ Three bugs in carrying CHEMOD / CHARGED / DOPING into a child deck
 * E5: CHEMOD was copied whenever both decks listed the same number of atoms,
   although its shell charges belong to the parent's basis (CRYSTAL wants one
   per shell of the atom's basis, manual p.80). It is now copied only with the
-  same basis, else left out with a warning; DOPING is always kept.
+  same basis. With another basis, a CHEMOD that MACE's ion charges wrote for
+  the parent is worked out again for the new basis (decided D2); any other is
+  left out with a warning. The net charge is always kept.
 * E3: an odd electron count in a closed-shell child was written without a
   spin state. It gets the parent's SPIN/SPINLOCK, or is refused.
 """
@@ -30,6 +32,9 @@ TZ = REPO_ROOT / "Crystal_d12" / "basis_sets" / "full.basis.triplezeta"
 LI_WATER = [("Li", (0.0, 0.0, 0.0)), ("O", (1.95, 0.0, 0.0)), ("H", (2.54, 0.76, 0.0)),
             ("H", (2.54, -0.76, 0.0))]
 LI_PLUS = "1 2.0 0.0 0.0 0.0 0.0"
+# Li+ with its two electrons moved to the second shell: not what MACE's ion
+# charges write, so MACE cannot say what it means in another basis
+HAND_MADE = "1 1.0 1.0 0.0 0.0 0.0"
 
 
 def _explicit(zs=(1, 3, 8)):
@@ -52,11 +57,24 @@ def _lines(text):
 # --------------------------------------------------------------------- E2
 
 def test_explicit_chemod_charge_becomes_doping_in_an_internal_basis_child():
+    """MACE's own Li+ CHEMOD is worked out again for the library (D2): its
+    charge, set by CHEMOD + CHARGED in the explicit basis, is DOPING there."""
     out, notes = carry_charge_records(internal(), explicit_parent())
+    lines = _lines(out)
+    assert "CHARGED" not in lines
+    assert lines[lines.index("CHEMOD") + 1:lines.index("CHEMOD") + 3] == ["1", LI_PLUS]
+    assert lines[-3:] == ["DOPING", "-1", "END"]
+    assert any("worked out again for the new basis" in n for n in notes)
+
+
+def test_a_hand_made_explicit_chemod_is_dropped_and_its_charge_becomes_doping():
+    parent = explicit_parent("CHEMOD\n1\n" + HAND_MADE + "\nCHARGED\n")
+    out, notes = carry_charge_records(internal(), parent)
     lines = _lines(out)
     assert "CHEMOD" not in lines and "CHARGED" not in lines
     assert lines[-3:] == ["DOPING", "-1", "END"]
-    assert any("CHEMOD was NOT copied" in n for n in notes)
+    assert any("CHEMOD was NOT copied" in n and "not the CHEMOD MACE's ion charges write" in n
+               for n in notes)
 
 
 def test_the_parent_mulliken_count_sets_the_doping():
@@ -77,13 +95,31 @@ def test_same_explicit_basis_still_keeps_chemod_and_charged():
 
 # --------------------------------------------------------------------- E5
 
-def test_internal_chemod_is_not_copied_into_another_library():
+def test_internal_chemod_is_worked_out_again_for_another_library():
+    """POB-DZVP-REV2 gives Li one shell fewer than SOLDEF2MSVP: the copied
+    record would have had one charge too many (CRYSTAL wants one per shell)."""
     parent = internal("SOLDEF2MSVP", "CHEMOD\n1\n" + LI_PLUS + "\n", tail="DOPING\n-1\n")
+    out, notes = carry_charge_records(internal("POB-DZVP-REV2"), parent)
+    lines = _lines(out)
+    assert lines[lines.index("CHEMOD") + 1:lines.index("CHEMOD") + 3] == ["1", "1 2.0 0.0 0.0 0.0"]
+    assert lines[-3:] == ["DOPING", "-1", "END"]
+
+
+def test_hand_made_internal_chemod_is_not_copied_into_another_library():
+    parent = internal("SOLDEF2MSVP", "CHEMOD\n1\n" + HAND_MADE + "\n", tail="DOPING\n-1\n")
     out, notes = carry_charge_records(internal("POB-TZVP-REV2"), parent)
     lines = _lines(out)
     assert "CHEMOD" not in lines
     assert lines[-3:] == ["DOPING", "-1", "END"]
     assert any("different one" in n for n in notes)
+
+
+def test_a_library_mace_has_no_shells_for_drops_chemod_and_says_why():
+    parent = internal("SOLDEF2MSVP", "CHEMOD\n1\n" + LI_PLUS + "\n", tail="DOPING\n-1\n")
+    out, notes = carry_charge_records(internal("DEF2-TZVP"), parent)
+    lines = _lines(out)
+    assert "CHEMOD" not in lines and lines[-3:] == ["DOPING", "-1", "END"]
+    assert any("CHEMOD was NOT copied" in n and "DEF2-TZVP" in n for n in notes)
 
 
 def test_same_library_keeps_chemod():
@@ -92,21 +128,34 @@ def test_same_library_keeps_chemod():
     assert "CHEMOD" in _lines(out)
 
 
-def test_internal_chemod_does_not_enter_an_explicit_child():
+def test_internal_chemod_enters_an_explicit_child_as_its_own():
+    """In an explicit basis MACE's CHEMOD sets the count (with CHARGED), so
+    the charge is no longer DOPING."""
     parent = internal("SOLDEF2MSVP", "CHEMOD\n1\n" + LI_PLUS + "\n", tail="DOPING\n-1\n")
     child = molecule_deck(LI_WATER, title="c", basis=_explicit() + "END\n", dft="PBE0\nXLGRID\n")
     out, _ = carry_charge_records(child, parent)
     lines = _lines(out)
-    assert "CHEMOD" not in lines and "CHARGED" not in lines
-    assert lines[-3:] == ["DOPING", "-1", "END"]
+    i = lines.index("99 0")
+    assert lines[i + 1:i + 5] == ["CHEMOD", "1", LI_PLUS, "CHARGED"]
+    assert "DOPING" not in lines
 
 
-def test_a_different_explicit_basis_drops_chemod_and_keeps_the_charge():
+def test_a_different_explicit_basis_drops_a_hand_made_chemod_and_keeps_the_charge():
+    blocks = _explicit().replace("0 0 1 0.0 1.0\n  0.1200746200", "0 0 1 0.0 1.0\n  0.1300000000")
+    child = molecule_deck(LI_WATER, title="c", basis=blocks + "END\n", dft="PBE0\nXLGRID\n")
+    out, _ = carry_charge_records(child, explicit_parent("CHEMOD\n1\n" + HAND_MADE + "\nCHARGED\n"))
+    lines = _lines(out)
+    assert "CHEMOD" not in lines and lines[-3:] == ["DOPING", "-1", "END"]
+
+
+def test_a_different_explicit_basis_gets_maces_chemod_again():
     blocks = _explicit().replace("0 0 1 0.0 1.0\n  0.1200746200", "0 0 1 0.0 1.0\n  0.1300000000")
     child = molecule_deck(LI_WATER, title="c", basis=blocks + "END\n", dft="PBE0\nXLGRID\n")
     out, _ = carry_charge_records(child, explicit_parent())
     lines = _lines(out)
-    assert "CHEMOD" not in lines and lines[-3:] == ["DOPING", "-1", "END"]
+    i = lines.index("99 0")
+    assert lines[i + 1:i + 5] == ["CHEMOD", "1", LI_PLUS, "CHARGED"]
+    assert "DOPING" not in lines
 
 
 def test_doping_into_a_different_atom_count_warns():
@@ -172,3 +221,19 @@ def test_odd_periodic_child_is_only_warned_about():
     out, notes = carry_charge_records(child, parent)
     assert _lines(out)[-3:] == ["DOPING", "-2", "END"]
     assert any("half-filled band" in n for n in notes)
+
+
+def test_opt2d12_basis_change_writes_the_chemod_for_the_new_basis(tmp_path):
+    """The real command: a basis change in an SP child of MACE's charged Li+
+    parent (D2: regenerate CHEMOD, keep the net charge)."""
+    (tmp_path / "c.json").write_text('{"calculation_type": "SP", "basis_set": "POB-DZVP-REV2", '
+                                     '"basis_set_type": "INTERNAL"}')
+    parent = internal("SOLDEF2MSVP", "CHEMOD\n1\n" + LI_PLUS + "\n", tail="DOPING\n-1\n")
+    run = _opt2d12(tmp_path, parent, synth_out(LI_WATER), "--d12-file", "parent.d12",
+                   "--config-file", "c.json")
+    assert run.returncode == 0, (run.stdout + run.stderr)[-2000:]
+    (deck,) = (tmp_path / "o").glob("*.d12")
+    lines = deck.read_text().splitlines()
+    i = lines.index("POB-DZVP-REV2")
+    assert lines[i + 1:i + 4] == ["CHEMOD", "1", "1 2.0 0.0 0.0 0.0"]
+    assert lines[-3:] == ["DOPING", "-1", "END"]

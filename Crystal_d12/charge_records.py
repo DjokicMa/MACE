@@ -414,6 +414,83 @@ def ensure_open_shell(child_text: str, parent_text: Optional[str]) -> Tuple[str,
         "had no SPIN/SPINLOCK to keep - give the child SPIN + SPINLOCK (or UHF)")
 
 
+def _chemod_numbers(chemod: List[str]) -> List[float]:
+    """A CHEMOD record's numbers after its count, whatever the line layout."""
+    return [float(t.upper().replace("D", "E")) for line in chemod[2:] for t in line.split()]
+
+
+def _setup_matches(setup, parent: Dict[str, List[str]]) -> bool:
+    """True when an ion_charges set-up writes exactly the parent's charge records."""
+    from decimal import Decimal
+    mine = setup.chemod_lines()
+    if not mine or len(mine) < 2 or mine[1].strip() != parent["CHEMOD"][1].split()[0]:
+        return False
+    a, b = _chemod_numbers(mine), _chemod_numbers(parent["CHEMOD"])
+    if len(a) != len(b) or any(abs(x - y) > 1e-6 for x, y in zip(a, b)):
+        return False
+    if bool(setup.charged) != bool(parent["CHARGED"]):
+        return False
+    parent_doping = _num(parent["DOPING"][1]) if parent["DOPING"] else None
+    if (setup.doping is None) != (parent_doping is None):
+        return False
+    return setup.doping is None or abs(Decimal(setup.doping) - parent_doping) < Decimal("1e-6")
+
+
+def regenerate_chemod(child_text: str, parent_text: str,
+                      parent_out_text: Optional[str] = None):
+    """The child with the parent's CHEMOD worked out again for the child's basis.
+
+    Only when the parent's CHEMOD (with its CHARGED/DOPING) is exactly what
+    MACE's ion charges (ion_charges.plan_for_deck, ion_charges auto) write
+    for the parent deck: then the same set-up is planned for the child's
+    geometry and basis, and its records keep the parent's net charge.
+    Returns (child text, notes), or (None, the reason it was not done).
+    """
+    ic = _ic()
+    parent = extract_charge_records(parent_text)
+    stripped_parent = ic.strip_charge_records(parent_text)
+    offset = parent_electron_offset(parent_text, parent_out_text)
+    variants = []
+    for chemod in ("auto", "yes"):
+        variants.append({"ion_charges": "auto", "chemod": chemod})
+        if offset:
+            variants.append({"ion_charges": "auto", "chemod": chemod, "net_charge": -offset})
+    match = None
+    for opts in variants:
+        try:
+            setup = ic.plan_for_deck(stripped_parent, **opts)
+        except Exception:
+            continue
+        if setup is not None and _setup_matches(setup, parent):
+            match = (opts, setup)
+            break
+    if match is None:
+        return None, ("it is not the CHEMOD MACE's ion charges write for the parent, so "
+                      "MACE cannot work out its equivalent")
+    opts, parent_setup = match
+    stripped_child = ic.strip_charge_records(child_text)
+    try:
+        setup = ic.plan_for_deck(stripped_child, parent_spinlock=ic.deck_method(parent_text).spinlock,
+                                 **opts)
+        if setup is None or not setup.chemod:
+            return None, "the new basis takes no CHEMOD for these ions"
+        if setup.net_charge != parent_setup.net_charge:
+            return None, (f"the new deck's ions give a net charge of {setup.net_charge}, "
+                          f"the parent's {parent_setup.net_charge}")
+        text = ic.apply_charge_setup(stripped_child, setup)
+    except Exception as e:
+        return None, str(e)
+    labels = ", ".join(str(label) for label, _ in setup.chemod)
+    notes = [f"the parent's CHEMOD (MACE's ion charges) was worked out again for the new basis "
+             f"(atoms {labels})"]
+    if setup.charged:
+        notes.append("kept the parent's net charge with CHARGED (CHEMOD sets the count in an "
+                     "explicit basis)")
+    if setup.doping is not None:
+        notes.append(f"kept the parent's net charge as DOPING {setup.doping_lines()[1]}")
+    return text, notes + list(setup.warnings)
+
+
 def carry_charge_records(child_text: str, parent_text: str,
                          parent_out_text: Optional[str] = None) -> Tuple[str, List[str]]:
     """The child deck with the parent's charge state, and messages for the user.
@@ -421,7 +498,9 @@ def carry_charge_records(child_text: str, parent_text: str,
     Records the child already has are left alone (an explicit template wins).
     CHEMOD is copied only when both decks list the same atoms (its labels are
     positions in that list) and load the same basis (its shell charges are
-    per shell of that basis); otherwise it is left out with a warning, and a
+    per shell of that basis). With another basis, a CHEMOD that MACE's ion
+    charges wrote for the parent is worked out again for the new basis
+    (regenerate_chemod); any other is left out with a warning, and a
     charge it carried (an explicit basis with a non-neutral CHEMOD, measured to
     set the electron count) becomes DOPING, taken from the parent's Mulliken
     count when its .out is given. CHARGED goes with CHEMOD. DOPING is kept.
@@ -454,10 +533,17 @@ def carry_charge_records(child_text: str, parent_text: str,
                 f"{n_child} atoms against the parent's {n_parent}, so its atom labels "
                 "cannot be trusted; CHEMOD was NOT copied - add it by hand")
         elif not same_basis(parent_text, child_text, labels):
+            if not any(child_has.values()):
+                regenerated, why = regenerate_chemod(child_text, parent_text, parent_out_text)
+                if regenerated is not None:
+                    out, spin_notes = ensure_open_shell(regenerated, parent_text)
+                    return out, notes + why + spin_notes
+            else:
+                why = "the new deck already has its own charge records"
             notes.append(
                 "WARNING: the parent's CHEMOD gives shell charges for its own basis set, and "
-                "the new deck loads a different one; CHEMOD was NOT copied - set it for the "
-                "new basis with --ion-charges auto (opt2d12 or mace ions)")
+                f"the new deck loads a different one; CHEMOD was NOT copied ({why}) - set it "
+                "for the new basis with --ion-charges auto (opt2d12 or mace ions)")
         else:
             carry_chemod = True
 

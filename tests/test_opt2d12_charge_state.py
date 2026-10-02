@@ -72,10 +72,11 @@ def test_records_are_carried_when_the_parent_deck_fails_to_parse(tmp_path, monke
     assert ok
     child = _child(tmp_path)
     # the deck was unreadable, so the child's basis comes from the .out alone;
-    # CHEMOD belongs to the parent's basis and stays out, the charge is kept
+    # the parent's CHEMOD (MACE's Li+) is kept or worked out again for that
+    # basis, and the charge is kept
     assert child[-3:] == ["DOPING", "-1", "END"]
-    if "SOLDEF2MSVP" not in child:
-        assert "CHEMOD" not in child
+    assert child[child.index("CHEMOD") + 1] == "1"
+    assert child[child.index("CHEMOD") + 2].startswith("1 2.0 0.0 0.0")
 
 
 # ---------------------------------------------------------------------- E4b
