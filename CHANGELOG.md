@@ -181,6 +181,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refusal now points at `soc_guess`. `soc_guess` is never inherited from a
   parent deck: each child opts in. Decks without the key are unchanged.
 
+- **A SOC deck can start from a 1c parent's density matrix (opt-in,
+  untested on CRYSTAL).** `"soc_guess": "guesspnoso"` (with `"soc": true`)
+  writes GUESSPNOSO in the TWOCOMPON block and stages the parent's `.f9` as
+  for GUESSPSO, only when the parent is what manual p. 173 asks for: a
+  one-component SCF that was unrestricted (UHF, p. 131, or SPIN, p. 140) and
+  ran without symmetry (SYMMREMO, p. 78, or group 1), read from the parent
+  deck with its .out as the fallback (CRYSTAL's "SPIN POLARIZED" /
+  "UNRESTRICTED" lines and "NUMBER OF SYMMETRY OPERATORS"), with a non-empty
+  `.f9` and the same frame and shells. Otherwise nothing is written, and the
+  reason says how to rerun the parent and names 2NDVARIAT (p. 174) as the
+  manual's one-cycle alternative. The child gets no SYMMREMO: opening
+  TWOCOMPON deactivates symmetry (p. 169), and opt2d12 does not write it; for
+  a SYMMREMO parent whose group is not 1 a warning says that the atom order
+  of the expanded cell matching the parent's matrix was not measured. A
+  parent's SPIN carries over (a 2c deck accepts it). FMIXING is the SOC
+  default 50 (or `soc_fmixing`), unmeasured for GUESSPNOSO.
+
 ### Fixed
 
 - **Basis-library files CRYSTAL cannot read are refused on every deck

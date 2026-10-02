@@ -1249,6 +1249,12 @@ def restart_mismatch(parent_deck: str, child_deck: str) -> Optional[str]:
     parent_frame, child_frame = geometry_frame(parent_deck), geometry_frame(child_deck)
     if parent_frame is None or child_frame is None:
         return "the symmetry and atom list of the parent deck and this deck could not be read"
+    # SYMMREMO (p. 78) only stops CRYSTAL using the symmetry the frame
+    # describes, and opening TWOCOMPON does that for the 2c child (p. 169);
+    # GUESSPNOSO asks for a parent run so (p. 173). Whether the atoms then come
+    # in the same order is not measured; the caller warns.
+    parent_frame, child_frame = (f[:4] + (tuple(r for r in f[4] if r != ("SYMMREMO",)),)
+                                 for f in (parent_frame, child_frame))
     if parent_frame != child_frame:
         return "the symmetry or the atom list differs from the parent's"
     parent_shells, child_shells = shell_signature(parent_deck), shell_signature(child_deck)

@@ -276,9 +276,53 @@ def soc_restart_plan(options, output_file, input_file, new_filename):
     return None, f9, f20, parent
 
 
+_SYMMETRY_OPERATORS = re.compile(r"^[ \t]*NUMBER OF SYMMETRY OPERATORS[ \t]*:[ \t]*(\d+)",
+                                 re.MULTILINE)
+GUESSPNOSO_HOWTO = (
+    "Rerun the parent as an unrestricted 1c-SCF (UHF, manual p. 131, or SPIN in the "
+    "DFT block, p. 140) without symmetry (space group 1, or SYMMREMO in its geometry "
+    "block, p. 78), then make this deck from it. For the SOC energy from a scalar "
+    "matrix in one cycle the manual offers 2NDVARIAT (p. 174), which MACE does not write.")
+
+
 def guesspnoso_parent_problem(options, parent, output_file):
-    """Why a 1c parent cannot start a GUESSPNOSO deck, or None (round 6, C6)."""
-    return ("GUESSPNOSO is not written yet")
+    """Why a parent cannot start a GUESSPNOSO deck, or None. GUESSP[NOSO]
+    needs a previous 1c-SCF that was unrestricted (UHF, p. 131, or SPIN,
+    p. 140) and ran without space-group or point-group symmetry (SYMMREMO,
+    p. 78) - manual p. 173. Read from the parent deck, with the parent .out
+    as the fallback for each. Untested on CRYSTAL."""
+    records = {ln.strip().upper() for ln in parent.splitlines()[1:]}
+    try:
+        with open(output_file, errors="replace") as fh:
+            out = fh.read()
+    except OSError:
+        out = ""
+    if options.get("two_component") or "TWOCOMPON" in records:
+        return ("GUESSPNOSO starts from a previous one-component SCF (manual p. 173), and "
+                "the parent is a two-component run; \"guesspso\" restarts from it")
+    problems = []
+    unrestricted = ("UHF" in records or "SPIN" in records
+                    or bool(re.search(r"SPIN POLARIZED|TYPE OF CALCULATION.*UNRESTRICTED", out)))
+    if not unrestricted:
+        problems.append("the parent is restricted (no UHF, p. 131, or SPIN, p. 140)")
+    frame = soc_ecp.geometry_frame(parent)
+    group_one = frame is not None and frame[1] and \
+        frame[1][1 if frame[0] == "CRYSTAL" else 0] == (repr(1.0),)
+    operators = _SYMMETRY_OPERATORS.findall(out)
+    if "SYMMREMO" in records:
+        if not group_one:
+            ui.warn("  Warning: GUESSPNOSO from a SYMMREMO parent with a space group other "
+                    "than 1: whether the child's expanded atom list is in the order of the "
+                    "parent's matrix was not measured (CRYSTAL does not check it)")
+    elif not group_one and not (operators and operators[-1] == "1"):
+        problems.append("the parent ran with symmetry (its group is not 1 and it has no "
+                        "SYMMREMO, p. 78)")
+    if problems:
+        return ("GUESSPNOSO needs an unrestricted 1c-SCF run without symmetry (manual "
+                "p. 173), and " + "; ".join(problems) + ". " + GUESSPNOSO_HOWTO)
+    ui.info("  GUESSPNOSO: the parent is an unrestricted one-component run without "
+            "symmetry (untested on CRYSTAL)")
+    return None
 
 
 def optimisation_problem(out_file):

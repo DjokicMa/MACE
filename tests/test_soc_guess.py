@@ -202,3 +202,62 @@ def test_cif2d12_refuses_soc_guess(cif2d12, capsys):
     ok, out = cif2d12("external", soc=True, soc_guess="guesspso")
     assert ok is False and not out.exists()
     assert "a deck written from a CIF has no parent" in capsys.readouterr().err
+
+
+# --- GUESSPNOSO from a 1c parent (manual p. 173; untested on CRYSTAL) ---------------
+
+P1 = ("\n225\n6.462\n", "\n1\n6.462 6.462 6.462 90.0 90.0 90.0\n")
+SPIN = ("DFT\nPBE0\n", "DFT\nSPIN\nPBE0\n")
+P1_SPIN_PARENT = PBTE.replace(*P1).replace(*SPIN)
+assert P1_SPIN_PARENT.count("\n1\n6.462") == 1 and "SPIN" in P1_SPIN_PARENT
+
+
+def test_a_p1_spin_parent_starts_a_guesspnoso_deck(opt2d12_restart, capsys):
+    status, deck, sp = opt2d12_restart(text=P1_SPIN_PARENT, f9=b"1c matrix", soc=True,
+                                       soc_guess="guesspnoso")
+    assert status == 0 and deck is not None
+    text = deck.read_text()
+    assert "TWOCOMPON\nSOC\nGUESSPNOSO\nEND\nSCFDIR\n" in text
+    assert "FMIXING\n50\n" in text and "DFT\nSPIN\nPBE0\n" in text
+    assert "SYMMREMO" not in text        # TWOCOMPON deactivates symmetry (p. 169)
+    assert deck.with_suffix(".f20").read_bytes() == b"1c matrix"
+    out = capsys.readouterr().out
+    assert "unrestricted one-component run without symmetry" in out
+    assert "unmeasured for GUESSPNOSO" in out
+
+
+def test_a_symmremo_parent_with_a_group_is_accepted_with_a_warning(opt2d12_restart, capsys):
+    parent = PBTE.replace("252 0.5 0.5 0.5\nEND\n", "252 0.5 0.5 0.5\nSYMMREMO\nEND\n").replace(*SPIN)
+    assert "SYMMREMO" in parent
+    status, deck, sp = opt2d12_restart(text=parent, soc=True, soc_guess="guesspnoso")
+    err = capsys.readouterr().err
+    assert "order of the parent's matrix was not measured" in err
+    # the child has no SYMMREMO (opt2d12 does not write it, and TWOCOMPON
+    # deactivates symmetry, p. 169); its frame is the parent's otherwise
+    assert status == 0 and deck is not None
+    assert "SYMMREMO" not in deck.read_text() and "GUESSPNOSO" in deck.read_text()
+
+
+@pytest.mark.parametrize("text,why", [
+    (PBTE.replace(*P1), "the parent is restricted (no UHF, p. 131, or SPIN, p. 140)"),
+    (PBTE.replace(*SPIN), "the parent ran with symmetry"),
+    (PBTE, "restricted (no UHF, p. 131, or SPIN, p. 140); the parent ran with symmetry"),
+], ids=["restricted", "symmetric", "both"])
+def test_a_parent_guesspnoso_cannot_start_from_is_refused(opt2d12_restart, capsys, text, why):
+    status, deck, sp = opt2d12_restart(text=text, soc=True, soc_guess="guesspnoso")
+    err = capsys.readouterr().err
+    assert status == 1 and deck is None
+    assert why in err and "SYMMREMO" in err and "2NDVARIAT (p. 174)" in err
+
+
+def test_guesspnoso_needs_the_parent_matrix(opt2d12_restart, capsys):
+    status, deck, sp = opt2d12_restart(text=P1_SPIN_PARENT, f9=None, soc=True,
+                                       soc_guess="guesspnoso")
+    assert status == 1 and deck is None
+    assert "socpbte.f9 next to socpbte.out is missing" in capsys.readouterr().err
+
+
+def test_guesspnoso_from_a_2c_parent_is_refused(opt2d12_restart, capsys):
+    status, deck, sp = opt2d12_restart(soc_guess="guesspnoso")
+    assert status == 1 and deck is None
+    assert '"guesspso" restarts from it' in capsys.readouterr().err
