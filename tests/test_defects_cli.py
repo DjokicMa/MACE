@@ -20,8 +20,10 @@ def _mace(*args, cwd=None):
 def test_help_lists_the_command():
     rc, text = _mace("--help")
     assert rc == 0 and "defects" in text and "Point-defect deck sets" in text
-    rc, text = _mace("defects", "--help")
-    assert rc == 0 and "mace defects {build,potc,analyze}" in text
+    for flag in ("--help", "-h"):
+        rc, text = _mace("defects", flag)
+        assert rc == 0 and "mace defects {build,potc,analyze}" in text, flag
+        assert "Command to run" not in text, flag          # not the general help
     rc, text = _mace("defects", "build", "--help")
     assert rc == 0 and "--calibrate-on" in text and "--resume" in text
 

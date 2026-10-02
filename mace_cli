@@ -1264,6 +1264,12 @@ def main():
         show_action_specific_help(command, action)
         return
     
+    # `mace defects -h` / `--help`: the defects help, not the general help
+    # the top-level parser below would print for -h.
+    if len(sys.argv) == 3 and sys.argv[1] == 'defects' and sys.argv[2] in ('-h', '--help'):
+        show_command_help('defects')
+        sys.exit(0)
+
     # `mace defects build --help`: the subcommand's own help, before the
     # top-level parser below would answer -h with the general help.
     if (len(sys.argv) >= 4 and sys.argv[1] == 'defects'
