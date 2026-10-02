@@ -1932,15 +1932,16 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     # supercell (a = 5.95 A, 60 deg), and the SP deck written from it was
     # space group 225 with a = 5.95 A and 5 asymmetric atoms - not MgO.
     if parent_scelphono:
+        # Any SCELPHONO run, a Gamma-only FREQ as much as a DISPERSION one.
         if calc_type == "FREQ":
-            reason = ("the parent ran a phonon dispersion (SCELPHONO): its geometry is the "
+            reason = ("the parent built a phonon supercell (SCELPHONO): its geometry is the "
                       "SCELPHONO supercell, which a FREQ deck with SCELPHONO would expand again")
         else:
-            reason = ("the parent ran a phonon dispersion (SCELPHONO): its output geometry is "
+            reason = ("the parent built a phonon supercell (SCELPHONO): its output geometry is "
                       "the SCELPHONO supercell (manual sec. 4.21 p.73-74), so a "
                       f"{calc_type} deck would start from the supercell")
         _fail(reason, f"\nNot writing {os.path.basename(new_filename)}: {reason}. Make the "
-                      f"{calc_type} deck from the OPT or SP output the dispersion run started from.")
+                      f"{calc_type} deck from the OPT or SP output the SCELPHONO run started from.")
         return False, options
 
     # CUSTOM-XC names the parent's own EXCHANGE/CORRELAT/HYBRID records; a

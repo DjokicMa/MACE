@@ -80,14 +80,15 @@ def child(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(M, "CrystalOutputParser",
                         lambda p: type("P", (), {"parse": lambda self: copy.deepcopy(OUT)})())
 
-    def run(calc_type, dispersion=True):
-        deck = PARENT_DECK.format(scel=SCEL if dispersion else "",
+    def run(calc_type, dispersion=True, scelphono=None):
+        scelphono = dispersion if scelphono is None else scelphono
+        deck = PARENT_DECK.format(scel=SCEL if scelphono else "",
                                   disp=DISP if dispersion else "")
         (tmp_path / "mgo.d12").write_text(deck)
         (tmp_path / "mgo.out").write_text("")
         with contextlib.redirect_stdout(io.StringIO()):
             parsed = CrystalInputParser("mgo.d12").parse()
-        assert ("scelphono" in parsed["freq_settings"]) == dispersion
+        assert ("scelphono" in parsed["freq_settings"]) == scelphono
         (tmp_path / "c.json").write_text(json.dumps({"calculation_type": calc_type}))
         ok, _ = M.process_files("mgo.out", "mgo.d12", config_file="c.json",
                                 unattended=True)
@@ -118,3 +119,14 @@ def test_child_of_a_gamma_only_freq_parent_is_still_written(child, calc_type):
     assert "SCELPHONO" not in lines
     assert ("FREQCALC" in lines) == (calc_type == "FREQ")
     assert ("OPTGEOM" in lines) == (calc_type == "OPT")
+
+
+@pytest.mark.parametrize("calc_type", ["FREQ", "SP", "OPT"])
+def test_child_of_a_gamma_only_scelphono_freq_is_refused_too(child, calc_type):
+    """SCELPHONO without DISPERSION (a Gamma-point FREQ of the supercell):
+    the geometry is the supercell all the same, and the refusal names the
+    supercell, not a dispersion the parent never ran."""
+    ok, log, decks = child(calc_type, dispersion=False, scelphono=True)
+    assert ok is False and decks == []
+    assert "phonon supercell (SCELPHONO)" in log
+    assert "dispersion" not in log.lower()
