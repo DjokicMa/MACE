@@ -12,6 +12,13 @@ from pathlib import Path
 
 import pytest
 
+# Some tests import code that lives in the read-only test/ corpus (e.g.
+# test/AddedPlottingFunctionalty/subtract_cubes.py); importing it wrote a
+# __pycache__/*.pyc into the corpus. No bytecode is written by the suite or
+# by the subprocesses it starts.
+sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+
 # CI terminals advertise no color depth (COLORTERM unset), so rich would
 # auto-detect an 8-color system and downgrade palette hex colors — and since
 # rich caches a Style's first-rendered ANSI codes globally, one downgraded
