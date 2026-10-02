@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **SeeK-path band paths use the computed geometry: the optimised cell after
+  an optimisation, the supercell after SUPERCEL.** With the seekpath library,
+  `opt2d3` (and the workflow BAND step, and `opt2d12` phonon-dispersion paths)
+  read the cell from the first "PRIMITIVE CELL" lattice parameters and the
+  atoms from the first atom list of the parent output. For an OPT parent that
+  is the initial geometry, so the path's lattice-dependent points (and, when
+  the cell changed enough, the lattice variant, tI1 or tI2 say) were those of
+  the starting cell. After SUPERCEL the cell was the input primitive cell
+  while the atoms were the supercell's (FREQ `..._supercel222.out`: 16 atoms
+  in a 2.507 A cell instead of the 5.013 A supercell). Cell and atoms now come
+  from one computed geometry block: the one after the last FINAL OPTIMIZED
+  GEOMETRY, otherwise the first (GEOMETRY FOR WAVE FUNCTION, the cell fort.9
+  holds). **K-paths are in the basis of the computed cell**: a BAND deck from
+  a SUPERCEL output is in the supercell's reciprocal basis (folded bands).
+  Outputs whose geometry input edits the cell (SUPERCEL, ATOMSUBS, ATOMREMO,
+  ELASTIC, ...) change the same way. An atom count that does not match the
+  one CRYSTAL prints, or an output without such a block, is read as before
+  with a warning. Known limitation: an optimisation that stopped before
+  converging prints no final geometry; its first geometry is used, while its
+  fort.9 holds the last step.
+
 ## [1.1.4] - 2026-10-02
 
 Everything since 1.1.3. **Band and phonon-dispersion paths made with the SeeK-path
