@@ -306,11 +306,15 @@ def test_table_a1_is_the_printed_w():
 @pytest.mark.skipif(not CORPUS.is_dir(), reason="test/ corpus not present")
 def test_corpus_static_route_writes_the_library_deck(monkeypatch):
     """Centred corpus outputs of the converted lattices: the static deck is
-    the library deck (same ISS and integers)."""
+    the library deck (same ISS and integers). A group without inversion may
+    add the primed copy after it; a centrosymmetric one writes exactly the
+    library's path (C 2/M did not, before mS1 stopped being the Cc path;
+    the corpus has no I 41/A M D output)."""
     pytest.importorskip("seekpath")
     import re
     names = {"I 4/M M M": 139, "I 4/M": 87, "R -3 C": 167, "R -3 M": 166, "R -3": 148,
-             "F M M M": 69, "C 2": 5, "C M": 8}
+             "F M M M": 69, "C 2": 5, "C M": 8, "C 2/M": 12}
+    centrosymmetric = {"I 4/M M M", "I 4/M", "R -3 C", "R -3 M", "R -3", "F M M M", "C 2/M"}
     checked = 0
     for out in sorted(CORPUS.glob("*/*.out")):
         text = out.read_text(errors="ignore")
@@ -328,5 +332,7 @@ def test_corpus_static_route_writes_the_library_deck(monkeypatch):
         assert sinfo["source"] == "seekpath_data_parametric", out.name
         assert sinfo["shrink_factor"] == linfo["shrink_factor"], out.name
         assert sta_ints[:len(lib_ints)] == lib_ints, out.name
+        if match.group(1) in centrosymmetric:
+            assert len(sta_ints) == len(lib_ints), out.name
         checked += 1
-    assert checked >= 20
+    assert checked >= 22
