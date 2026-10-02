@@ -654,3 +654,28 @@ def test_cli_help_lists_preflight():
                          timeout=300)
     assert sub.returncode == 0, (sub.stdout + sub.stderr)[-2000:]
     assert "TESTPDIM" in sub.stdout, sub.stdout[-2000:]
+
+
+def test_external_deck_with_its_ext_is_checked_with_fort34_staged(tmp_path):
+    """An EXTERNAL deck whose geometry sits next to it as <stem>.ext (what
+    `mace phonopy generate` writes, and what the job script stages as fort.34)
+    can be checked: the .ext is staged as fort.34 in the throwaway directory."""
+    ext_bytes = b"3 1 1\n  5.0 0.0 0.0\n  0.0 5.0 0.0\n  0.0 0.0 5.0\n1\n"
+    deck = tmp_path / "disp-001.d12"
+    deck.write_text("title\nEXTERNAL\nBASISSET\nPOB-TZVP-REV2\nGRADCAL\nEND\n")
+    (tmp_path / "disp-001.ext").write_bytes(ext_bytes)
+    staged = []
+
+    class Runner(FakeRunner):
+        def __call__(self, workdir):
+            f34 = Path(workdir) / "fort.34"
+            staged.append(f34.read_bytes() if f34.exists() else None)
+            return super().__call__(workdir)
+
+    runner = Runner(out=GOOD_OUT)
+    result = pf.preflight_deck(deck, runner=runner)
+    assert result.status == pf.PASS, result.reason
+    assert staged == [ext_bytes]
+    # DLVINPUT, or EXTERNAL without a .ext, is still refused.
+    (tmp_path / "disp-001.ext").unlink()
+    assert pf.preflight_deck(deck, runner=runner).status == pf.ERROR
