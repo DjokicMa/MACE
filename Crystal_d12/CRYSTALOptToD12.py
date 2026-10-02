@@ -290,7 +290,7 @@ def guesspnoso_parent_problem(options, parent, output_file):
     needs a previous 1c-SCF that was unrestricted (UHF, p. 131, or SPIN,
     p. 140) and ran without space-group or point-group symmetry (SYMMREMO,
     p. 78) - manual p. 173. Read from the parent deck, with the parent .out
-    as the fallback for each. Untested on CRYSTAL."""
+    as the fallback for each."""
     records = {ln.strip().upper() for ln in parent.splitlines()[1:]}
     try:
         with open(output_file, errors="replace") as fh:
@@ -313,7 +313,8 @@ def guesspnoso_parent_problem(options, parent, output_file):
         if not group_one:
             ui.warn("  Warning: GUESSPNOSO from a SYMMREMO parent with a space group other "
                     "than 1: whether the child's expanded atom list is in the order of the "
-                    "parent's matrix was not measured (CRYSTAL does not check it)")
+                    "parent's matrix was measured only for a Bi2 bilayer (layer group 72, "
+                    "where it was); CRYSTAL does not check it")
     elif not group_one and not (operators and operators[-1] == "1"):
         problems.append("the parent ran with symmetry (its group is not 1 and it has no "
                         "SYMMREMO, p. 78)")
@@ -321,7 +322,7 @@ def guesspnoso_parent_problem(options, parent, output_file):
         return ("GUESSPNOSO needs an unrestricted 1c-SCF run without symmetry (manual "
                 "p. 173), and " + "; ".join(problems) + ". " + GUESSPNOSO_HOWTO)
     ui.info("  GUESSPNOSO: the parent is an unrestricted one-component run without "
-            "symmetry (untested on CRYSTAL)")
+            "symmetry")
     return None
 
 

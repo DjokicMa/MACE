@@ -732,8 +732,8 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print,
     "guesspso" or "guesspnoso") writes that restart record in the TWOCOMPON
     block (manual p. 173); whether the deck may restart from a given parent
     is for the caller to check (restart_mismatch), and the parent's .f9 has
-    to be staged as <deck stem>.f20. GUESSPSO gets FMIXING
-    SOC_RESTART_FMIXING unless ``fmixing`` is given. Notes and warnings go to
+    to be staged as <deck stem>.f20. Both get FMIXING SOC_RESTART_FMIXING
+    unless ``fmixing`` is given. Notes and warnings go to
     ``log``. Raises SocError, and returns no deck, for anything the manual
     says the 2c-SCF does not support."""
     fmixing = _checked_fmixing(fmixing)
@@ -935,9 +935,12 @@ def _monkhorst_equals_gilat(block3: List[str], log) -> List[str]:
 # replaced is named in the log.
 SOC_FMIXING = 50
 SOC_MIN_MAXCYCLE = 200
-# FMIXING for a GUESSPSO restart (soc_guess "guesspso"). Measured on Bi2 only:
-# 50 diverged (charges 19.7/26.3), 80 converged in 5 cycles. "soc_fmixing"
-# wins. A GUESSPNOSO restart keeps SOC_FMIXING (unmeasured for GUESSPNOSO).
+# FMIXING for a 2c restart (soc_guess), measured on a Bi2 bilayer only (HPCC):
+# GUESSPSO from a 2c matrix diverged at 50 (charges 19.7/26.3) and converged
+# in 5 cycles at 80 (3 cycles from a 6-cycle parent); GUESSPNOSO from a P1
+# unrestricted 1c matrix diverged at 50 (E -420.87 Ha by cycle 70) and
+# converged in 29 cycles at 80, to the energy a cold SOC start reaches in 12
+# cycles at 50. "soc_fmixing" wins.
 SOC_RESTART_FMIXING = 80
 SOC_GUESSES = ("guesspso", "guesspnoso")
 
@@ -991,7 +994,10 @@ def _scf_convergence(block3: List[str], log, fmixing: Optional[int] = None,
         why = ("the GUESSPSO restart default, measured on Bi2 only: 50 diverged (charges "
                "19.7/26.3), 80 converged in 5 cycles; \"soc_fmixing\" sets another")
     elif fmixing is None and guess == "guesspnoso":
-        why += "; unmeasured for GUESSPNOSO"
+        target = SOC_RESTART_FMIXING
+        why = ("the GUESSPNOSO restart default, measured on Bi2 only: 50 diverged, 80 "
+               "converged in 29 cycles (a cold SOC start took 12); \"soc_fmixing\" sets "
+               "another")
     if "FMIXING" in keys:
         i = keys.index("FMIXING")
         value = out[i + 1].split()[0]

@@ -179,29 +179,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   converged in 5 cycles) unless `"soc_fmixing"` sets another. The workflow
   engine copies the parent's `.f9` to where opt2d12 looks for it and moves
   the `.f20` with the deck, renamed to the job; a 2c restart deck without
-  one fails the step instead of leaving a deck that aborts. `mace preflight`
+  one fails the step instead of leaving a deck that aborts. Measured on HPCC
+  (Bi2 bilayer): from a parent stopped after 6 cycles, the opt2d12 child and
+  the engine's SP2 step both read the matrix ("SCF GUESS FROM PREVIOUS
+  SPIN-ORBIT DENSITY MATRIX") and converged in 3 cycles at FMIXING 80 to the
+  converged parent's energy (5e-9 Ha); the same deck without its `.f20`
+  stopped at once. `mace preflight`
   fails, and `mace submit` does not submit, a GUESSPSO deck with neither
   `<stem>.f20` nor a non-empty `<stem>.f9`, or a GUESSPNOSO deck without
   `<stem>.f20`. cif2d12 refuses `soc_guess` (no parent). The SOC GUESSP
   refusal now points at `soc_guess`. `soc_guess` is never inherited from a
   parent deck: each child opts in. Decks without the key are unchanged.
 
-- **A SOC deck can start from a 1c parent's density matrix (opt-in,
-  untested on CRYSTAL).** `"soc_guess": "guesspnoso"` (with `"soc": true`)
-  writes GUESSPNOSO in the TWOCOMPON block and stages the parent's `.f9` as
-  for GUESSPSO, only when the parent is what manual p. 173 asks for: a
-  one-component SCF that was unrestricted (UHF, p. 131, or SPIN, p. 140) and
-  ran without symmetry (SYMMREMO, p. 78, or group 1), read from the parent
-  deck with its .out as the fallback (CRYSTAL's "SPIN POLARIZED" /
-  "UNRESTRICTED" lines and "NUMBER OF SYMMETRY OPERATORS"), with a non-empty
-  `.f9` and the same frame and shells. Otherwise nothing is written, and the
-  reason says how to rerun the parent and names 2NDVARIAT (p. 174) as the
-  manual's one-cycle alternative. The child gets no SYMMREMO: opening
-  TWOCOMPON deactivates symmetry (p. 169), and opt2d12 does not write it; for
-  a SYMMREMO parent whose group is not 1 a warning says that the atom order
-  of the expanded cell matching the parent's matrix was not measured. A
-  parent's SPIN carries over (a 2c deck accepts it). FMIXING is the SOC
-  default 50 (or `soc_fmixing`), unmeasured for GUESSPNOSO.
+- **A SOC deck can start from a 1c parent's density matrix (opt-in).**
+  `"soc_guess": "guesspnoso"` (with `"soc": true`) writes GUESSPNOSO in the
+  TWOCOMPON block and stages the parent's `.f9` as for GUESSPSO, only when
+  the parent is what manual p. 173 asks for: a one-component SCF that was
+  unrestricted (UHF, p. 131, or SPIN, p. 140) and ran without symmetry
+  (SYMMREMO, p. 78, or group 1), read from the parent deck with its .out as
+  the fallback (CRYSTAL's "SPIN POLARIZED" / "UNRESTRICTED" lines and
+  "NUMBER OF SYMMETRY OPERATORS"), with a non-empty `.f9` and the same frame
+  and shells. Otherwise nothing is written, and the reason says how to rerun
+  the parent and names 2NDVARIAT (p. 174) as the manual's one-cycle
+  alternative. The child gets no SYMMREMO: opening TWOCOMPON deactivates
+  symmetry (p. 169), and opt2d12 does not write it; for a SYMMREMO parent
+  whose group is not 1 a warning says the atom order was checked only for a
+  Bi2 bilayer. A parent's SPIN carries over (a 2c deck accepts it). Measured
+  on HPCC (Bi2 bilayer, PBE0): CRYSTAL reads the matrix ("SCF GUESS FROM A
+  PREVIOUS RUN DENSITY MATRIX", cycle 0 at the 1c energy) from a P1 parent
+  and from a SYMMREMO parent in layer group 72 alike; at FMIXING 50 the
+  restart diverged, at 80 it converged in 29 cycles to the cold-start SOC
+  energy (5.6e-8 Ha apart; a cold start takes 12 cycles at 50). So the
+  restart gets FMIXING 80, like GUESSPSO, unless `soc_fmixing` is set.
 
 ### Fixed
 
