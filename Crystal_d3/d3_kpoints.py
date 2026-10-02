@@ -2534,9 +2534,9 @@ def parametric_static_segments(lookup_key: str, params: Dict[str, Any]
     formulas and moved to CRYSTAL's reciprocal basis (hpkot_static). ISS is
     chosen as on the library route (seekpath_interface.choose_band_iss: the
     fixed points exact, the lattice-dependent ones moved to the nearest
-    k/ISS by less than half a k-point spacing), so both routes write the
-    same deck; the points are k/ISS, or six decimals where no such ISS
-    exists. Returns (None, reason, {}) when the entry or the cell cannot be
+    k/ISS with ISS at most 999, by less than half a k-point spacing where
+    the cell allows it), so both routes write the same deck; the points are
+    k/ISS, or six decimals should that choice fail. Returns (None, reason, {}) when the entry or the cell cannot be
     converted; the caller keeps the entry.
     """
     entry = seekpath_data[lookup_key]

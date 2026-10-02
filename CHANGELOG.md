@@ -59,6 +59,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SeeK-path reduces) or of another variant (oF2/oF3, mC2/mC3) keep the old
   entry with a warning that gives the reason; aP, mP, oP, oI, oS and oC paths
   still warn as before. Paths written without an output file are unchanged.
+- **Band-path ISS stays at most 999 for long-axis cells.** When no ISS up to
+  999 placed the lattice-dependent points within half a k-point spacing (at
+  10000 points), both the seekpath library route and the new static
+  computed-point route wrote the points exactly, with ISS up to ~10**6 (a
+  C2/m cell of 9.7 x 3.7 x 20.8 A: ISS 959108 with the library, 588382
+  statically). fort.25 writes the segment ends as fixed-width integers (6I3
+  in App. D p.447; 6I5 measured), so such ends overflowed there. ISS is now
+  the one up to 999 that moves the points least (990 for that cell, a move
+  of 8.6e-4 1/A, 0.13 of the k-point spacing at NSUB 1000), with a warning
+  giving the move. Deck change: the ISS and segment-end integers of BAND
+  paths for such cells only; cells that fitted before are unchanged.
+  Untested on CRYSTAL.
 
 ## [1.1.4] - 2026-10-02
 

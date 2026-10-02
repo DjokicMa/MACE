@@ -737,9 +737,11 @@ def choose_band_iss(seekpath_result: Dict[str, Any],
     The fixed points of the path set ISS to the lowest common multiple of
     their denominators (or its first multiple from 4) and are written exactly. Lattice-dependent points are
     written as k/ISS with ISS a multiple of that, at most FORT25_MAX_ISS,
-    taking the ISS that moves them least, when every point then moves by at
-    most half the path's k-point spacing at REFERENCE_NSUB. Otherwise they are
-    held exactly as before (denominators up to 10**6). The displacement is
+    taking the ISS that moves them least. When even that ISS moves a point
+    by more than half the path's k-point spacing at REFERENCE_NSUB (a long
+    cell axis), it is still taken, with a warning giving the move: the
+    exact representation used before (denominators up to 10**6) put ends of
+    10**5 and more into fort.25's fixed-width integers. The displacement is
     measured in Cartesian reciprocal space (1/Angstrom, 2*pi included) with
     seekpath's reciprocal primitive lattice, or in fractional units without
     one. ``parametric`` names the lattice-dependent points when the caller
@@ -769,16 +771,18 @@ def choose_band_iss(seekpath_result: Dict[str, Any],
         shift = float(np.linalg.norm((np.round(points * iss) / iss - points) @ recip, axis=1).max())
         if best_shift is None or shift < best_shift - 1e-15:
             best_iss, best_shift = iss, shift
-    if best_iss is not None and best_shift <= tolerance:
-        return best_iss, best_shift
-
-    # Keep the exact representation: the largest denominator of the moving
-    # coordinates (below 10**6), raised to a multiple of the fixed points'.
-    largest = max(Fraction(float(c)).limit_denominator(1000000).denominator
-                  for xyz in moving for c in xyz)
-    iss = -(-max(largest, smallest) // step) * step
-    shift = float(np.linalg.norm((np.round(points * iss) / iss - points) @ recip, axis=1).max())
-    return iss, shift
+    if best_iss is None:
+        # the fixed points alone need an ISS above FORT25_MAX_ISS
+        best_iss = smallest
+        best_shift = float(np.linalg.norm((np.round(points * best_iss) / best_iss - points) @ recip,
+                                          axis=1).max())
+    if best_shift > tolerance:
+        unit = '1/A' if 'reciprocal_primitive_lattice' in seekpath_result else '(fractional)'
+        print(f"  WARNING: no ISS up to {FORT25_MAX_ISS} places the lattice-dependent points "
+              f"within half a k-point spacing at NSUB {REFERENCE_NSUB} "
+              f"({tolerance:.2e} {unit}); ISS {best_iss} moves them by at most "
+              f"{best_shift:.2e} {unit} ({best_shift / (2 * tolerance):.2f} of that spacing)")
+    return best_iss, best_shift
 
 
 def convert_to_mace_format(seekpath_result: Dict[str, Any],
