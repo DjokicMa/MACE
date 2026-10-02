@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -16,7 +17,7 @@ Writes one EXTERNAL deck per displaced supercell (<stem>_ph<dim>_disp-NNN.d12
 with its geometry in .ext, staged as fort.34 by the job script), plus
 phonopy_disp.yaml and mace_phonopy.json. Then:
 
-    mace submit DIR --walltime HH:MM:SS     (never --track or --progress)
+    mace submit DIR --walltime <printed>    (never --track or --progress)
     mace phonopy collect DIR [--nac-from FREQ.out]
 
 The parent must be a finished 3D OPT (OPT END - CONVERGED) or SP run. The
@@ -36,6 +37,33 @@ problem; --check stops there. Then writes FORCE_SETS, phonopy_params.yaml,
 band.yaml, mesh.yaml, total_dos.dat and thermal_properties.yaml (--plot adds
 band_dos.pdf). Frequencies are in THz (x 33.35641 for cm-1).
 """
+
+
+# Walltime estimate for one displaced-supercell job at mace submit's default 32
+# tasks. Calibrated on the heaviest case measured on CRYSTAL23: diamond,
+# B3LYP-D3 + SPIN + XLGRID, 2x2x2 (16 atoms) in P1 with SHRINK 6 (216 k-points
+# before time reversal) took 3160 s on 64 tasks, i.e. about 6300 s on 32. The
+# cost is taken as k-points x atoms^3; 3x3x3 at SHRINK 4 (54 atoms) did not
+# finish its SCF within 2 h on 64 tasks, which this puts at about 20 h on 32.
+_SECONDS_PER_K_ATOM3 = 2 * 3160.0 / (216 * 16 ** 3)
+MIN_WALLTIME_HOURS = 2
+MAX_WALLTIME_HOURS = 7 * 24          # mace submit's default (submitcrystal23.sh)
+FALLBACK_WALLTIME = "1-00:00:00"
+
+
+def format_walltime(hours: int) -> str:
+    """SLURM -t value as mace submit --walltime passes it on: H:MM:SS or D-HH:MM:SS."""
+    if hours < 24:
+        return f"{hours}:00:00"
+    return f"{hours // 24}-{hours % 24:02d}:00:00"
+
+
+def suggest_walltime(n_kpoints: int, n_atoms: int):
+    """(walltime, capped) for one job; capped when the estimate exceeds 7 days."""
+    seconds = _SECONDS_PER_K_ATOM3 * n_kpoints * n_atoms ** 3
+    hours = max(MIN_WALLTIME_HOURS, math.ceil(seconds / 3600))
+    capped = hours > MAX_WALLTIME_HOURS
+    return format_walltime(min(hours, MAX_WALLTIME_HOURS)), capped
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -181,13 +209,21 @@ def cmd_generate(a) -> int:
         (outdir / W.TEMPLATE).write_text(P.template_text(template))
     with W.working_directory(outdir):
         phonon.save(W.DISP_YAML)
+    n_cells = int(round(abs(np.linalg.det(dim))))
+    kp = _kpoints(template.lines)
+    nk = kp[0] * kp[1] * kp[2] if kp else None
+    if nk:
+        walltime, capped = suggest_walltime(nk, n_super)
+    else:
+        walltime, capped = FALLBACK_WALLTIME, False
+
     import phonopy
     W.write_manifest(outdir, {
         "parent_out": str(out_path.resolve()), "parent_out_sha256": W.sha256(out_path),
         "parent_d12": str(d12_path.resolve()), "parent_d12_sha256": W.sha256(d12_path),
         "dim": dim.tolist(), "amplitude": a.amplitude if a.amplitude is not None else 0.01,
         "pm": a.pm, "toldee": template.toldee, "scale_shrink": bool(scale_shrink),
-        "template": template_file, "cry_sym": bool(a.cry_sym),
+        "template": template_file, "cry_sym": bool(a.cry_sym), "walltime": walltime,
         "edits": template.edits, "dropped_block1_keywords": deck.dropped_keywords,
         "basis": deck.basis_kind, "method_lines": P.method_lines(deck),
         "conv_numbers": [int(c) for c in conv], "conv_numbers_supercell": conv_super,
@@ -207,21 +243,28 @@ def cmd_generate(a) -> int:
     print("Deck edits relative to the parent:")
     for e in template.edits:
         print(f"  {e}")
-    n_cells = int(round(abs(np.linalg.det(dim))))
     print(f"Supercell {tag}: {n_super} atoms ({n_cells} cells), {len(names)} displaced "
           "deck(s), " + ("symmetry of each displaced cell (--cry-sym)" if a.cry_sym
                          else "P1 (no symmetry)"))
-    kp = _kpoints(template.lines)
-    if kp:
-        nk = kp[0] * kp[1] * kp[2]
+    if nk:
         print(f"  cost per job ~ {nk} k-points (before time reversal) x {n_super} atoms"
               f" = {nk * n_super} k-point x atom")
         if not scale_shrink and n_cells > 1:
             print(f"  The supercell keeps the parent's SHRINK: {n_cells}x the k-point density "
                   "the parent used.")
+    if nk:
+        print(f"Walltime per job ~ {walltime} at mace submit's 32 tasks (k-points x atoms^3, "
+              "calibrated on a hybrid-DFT diamond supercell measured on CRYSTAL23; lighter "
+              "methods run faster). A job that hits its walltime leaves no forces, and "
+              "collect reports it.")
+        if capped:
+            print("  WARNING: the estimate is beyond 7 days, the longest mace submit asks "
+                  "for: use --cry-sym, a smaller supercell or fewer k-points (SHRINK).")
+    else:
+        print(f"Walltime per job: no SHRINK found to estimate from; {walltime} suggested.")
     print(f"Wrote {len(names)} deck(s) + .ext to {outdir}/")
     print("Next:")
-    print(f"  mace submit {outdir} --walltime 24:00:00    (adjust; do NOT add --track)")
+    print(f"  mace submit {outdir} --walltime {walltime}    (do NOT add --track)")
     print(f"  mace phonopy collect {outdir}")
     return 0
 

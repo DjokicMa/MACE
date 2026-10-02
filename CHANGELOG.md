@@ -30,7 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exits 0 when it fails) before writing band, mesh, DOS and
   thermal properties, with optional non-analytical correction from a Gamma FREQCALC
   with INTENS + INTCPHF. Submit the decks with a plain `mace submit DIR`, never
-  `--track`.
+  `--track`, with the walltime `generate` prints: it grows with k-points x atoms^3
+  (2 h for a 2x2x2 hybrid-DFT diamond, 20 h for 3x3x3, which measured on CRYSTAL23
+  did not finish its SCF in 2 h).
 - The CRYSTAL job script copies `<job>.ext` to `fort.34` when that file exists next to
   the deck (EXTERNAL geometry). No existing deck has one, so their jobs are unchanged.
 - `mace preflight` checks an EXTERNAL deck when its geometry sits next to it as

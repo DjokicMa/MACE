@@ -291,3 +291,41 @@ def test_cry_sym_warns_harder_for_a_rhombohedral_parent():
                                                                        [1, 1, 0]]),
                       scaled_positions=[[0.125] * 3, [-0.125] * 3])
     assert not any("parent" in m for m in S.cry_sym_warnings(si))
+
+
+# ---------------------------------------------------------------------------
+# Walltime: scaled with the supercell, in mace submit's --walltime format
+# ---------------------------------------------------------------------------
+
+def test_walltime_estimate_scales_with_the_supercell():
+    """Calibrated on the heaviest measured case (CRYSTAL23, diamond B3LYP-D3,
+    spin, XLGRID, 2x2x2 P1, SHRINK 6: 3160 s on 64 tasks). 3x3x3 at SHRINK 4
+    did not finish its SCF in 2 h on 64 tasks, so its estimate must be far
+    above 2 h."""
+    two, capped2 = cli.suggest_walltime(6 ** 3, 16)
+    three, capped3 = cli.suggest_walltime(4 ** 3, 54)
+    assert two == "2:00:00" and not capped2
+    h3 = int(three.split(":")[0])
+    assert h3 >= 12 and not capped3
+    big, capped = cli.suggest_walltime(12 ** 3, 250)
+    assert big == "7-00:00:00" and capped
+
+
+def test_walltime_format_is_what_mace_submit_accepts():
+    """mace submit --walltime goes into #SBATCH -t: SLURM's H:MM:SS or D-HH:MM:SS."""
+    import re
+    pat = re.compile(r"^(\d+-\d{2}|\d{1,2}):\d{2}:\d{2}$")
+    for nk, n in ((1, 2), (216, 16), (64, 54), (512, 128), (1728, 250)):
+        assert pat.match(cli.suggest_walltime(nk, n)[0])
+    assert cli.format_walltime(2) == "2:00:00"
+    assert cli.format_walltime(23) == "23:00:00"
+    assert cli.format_walltime(30) == "1-06:00:00"
+
+
+def test_generate_prints_and_records_the_scaled_walltime(tmp_path, monkeypatch, capsys):
+    out = _generate(tmp_path, monkeypatch)
+    text = capsys.readouterr().out
+    man = json.loads((out / "mace_phonopy.json").read_text())
+    assert man["walltime"] == "2:00:00"
+    assert f"mace submit {out.name} --walltime 2:00:00" in text
+    assert "24:00:00" not in text

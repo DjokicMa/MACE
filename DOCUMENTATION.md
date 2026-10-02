@@ -134,8 +134,8 @@ type the commands; the cluster only runs CRYSTAL.
 ```bash
 # 1. Displaced supercells from a finished OPT (or SP) parent
 mace phonopy generate mat_opt.out --dim "2 2 2"          # reads mat_opt.d12 beside it
-# 2. Run them - a plain submission, NOT --track or --progress
-mace submit phonopy_mat_opt_222 --walltime 24:00:00
+# 2. Run them - a plain submission, NOT --track or --progress, with the walltime step 1 printed
+mace submit phonopy_mat_opt_222 --walltime 2:00:00
 # 3. Check the outputs, then forces -> band.yaml, mesh.yaml, total_dos.dat, thermal_properties.yaml
 mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
 ```
@@ -182,6 +182,15 @@ mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
   warning, and `collect` still checks that each output's printed geometry is its
   displaced cell. Compare with a P1 set before trusting a new structure type. An `--output-dir` must be empty (or `--force`) and
   must not be inside `workflow_outputs/`.
+- **Walltime.** A displaced supercell costs far more than its parent, and a job that
+  runs out of walltime leaves no forces. `generate` prints a walltime per job, at
+  `mace submit`'s 32 tasks, for `mace submit DIR --walltime ...`: k-points times
+  atoms cubed, calibrated on the heaviest case measured on CRYSTAL23 (diamond,
+  B3LYP-D3 with SPIN and XLGRID, 2x2x2 in P1, SHRINK 6: 3160 s on 64 tasks), never
+  below 2 h and at most 7 days (with a warning). For that diamond it gives 2 h at
+  2x2x2 and 20 h at 3x3x3, where the measured 3x3x3 job had not finished its SCF
+  after 2 h on 64 tasks. Lighter methods run faster than the estimate. It is also
+  recorded as `walltime` in `mace_phonopy.json`.
 - **Do not use `--track` or `--progress`** with these decks: the completion callback
   would record the displaced supercells as calculations of the parent's material.
 - **collect** first checks every output: present, terminated normally, SCF converged,

@@ -780,7 +780,8 @@ collect   Check every output (normal termination, SCF converged, forces, geometr
 
 Workflow:
   mace phonopy generate mat_opt.out --dim "2 2 2"
-  mace submit phonopy_mat_opt_222 --walltime 24:00:00     (never --track)
+  mace submit phonopy_mat_opt_222 --walltime 2:00:00      (the walltime generate
+                                                           prints; never --track)
   mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out]
 
 Run `mace phonopy generate --help` or `mace phonopy collect --help` for details.

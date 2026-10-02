@@ -229,7 +229,7 @@ mace plotting --band -d ./band_calcs -o ./plots
 ```bash
 # Displaced supercells from a finished OPT parent, plain submission, then collect
 mace phonopy generate mat_opt.out --dim "2 2 2"
-mace submit phonopy_mat_opt_222 --walltime 24:00:00
+mace submit phonopy_mat_opt_222 --walltime 2:00:00     # the walltime generate prints
 mace phonopy collect phonopy_mat_opt_222 --plot
 ```
 See DOCUMENTATION.md, "Phonons with phonopy", for the deck edits, refusals and NAC.
