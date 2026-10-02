@@ -40,7 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   COMPATIBLE WITH SYMMETRY"). Shell charges for SOLDEF2MSVP, POB-TZVP-REV2
   and POB-DZVP-REV2 (H B C N O F Na Mg P S Cl K Ca Zn Li) were measured on
   HPCC; other internal libraries need explicit `site_states`. New example
-  config `ion_cluster_molecule.json`.
+  config `ion_cluster_molecule.json` (P1, every atom written, so a cluster
+  CIF that declares a space group is not reduced).
 - **Per-fragment Mulliken charges of charged runs.** Property extraction adds
   `electron_count` and `fragment_charges` (each molecule/ion's charge, spin,
   formal charge and deviation, an ion more than 0.5 e from its formal charge

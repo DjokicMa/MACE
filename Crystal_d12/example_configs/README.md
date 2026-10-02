@@ -118,6 +118,13 @@ python NewCifToD12.py --batch --options_file my_custom_config.json --cif_dir ./c
   - An odd electron count needs `"spinlock"` (and `"spinlock_cycles"`), or a
     terminal to ask; it is never written closed shell
   - Add `"net_charge"` to override the sum of the ions found
+  - `"symmetry_handling": "P1"` and `"write_only_unique": false`: every atom
+    of the cluster is written. CHEMOD labels are positions in the full atom
+    list and CHEMOD needs a deck without symmetry, so a cluster CIF that
+    declares a space group would otherwise be reduced and refused
+  - The odd-count warning for HSEsol-3c applies here: HSE-type screened
+    hybrids crashed on odd-electron open-shell clusters on CRYSTAL23 where
+    PBE0/PBEsol0 converged; the config keeps HSEsol-3c
 
 ## Configuration Structure
 

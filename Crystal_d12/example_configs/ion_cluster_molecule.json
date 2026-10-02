@@ -14,6 +14,8 @@
     "basis_set_type": "INTERNAL",
     "dft_grid": "XLGRID",
     "dimensionality": "MOLECULE",
+    "symmetry_handling": "P1",
+    "write_only_unique": false,
     "tolerances": {
       "TOLINTEG": "8 8 8 9 24",
       "TOLDEE": 9

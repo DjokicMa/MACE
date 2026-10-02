@@ -97,7 +97,9 @@ def test_every_example_config_maps_to_complete_cif2d12_options(path):
     assert opts["tolerances"] == conf["tolerances"]
     # interactive defaults for what a configuration file does not say
     assert opts["dimensionality"] == conf.get("dimensionality", "CRYSTAL")
-    assert opts["symmetry_handling"] == "CIF" and opts["write_only_unique"] is True
+    # (a config that sets them, as ion_cluster_molecule.json does, keeps its own)
+    assert opts["symmetry_handling"] == conf.get("symmetry_handling", "CIF")
+    assert opts["write_only_unique"] is conf.get("write_only_unique", True)
 
 
 def test_a_flat_cif2d12_options_file_is_kept_as_written():
