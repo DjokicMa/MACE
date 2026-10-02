@@ -491,7 +491,10 @@ the child lists the same atoms and loads the same basis set (same BASISSET name
 or identical explicit blocks); otherwise it is dropped with a warning, and a
 charge it carried (an explicit basis) becomes `DOPING`, from the parent's
 Mulliken count when the .out is there. Without a parent deck the .out's
-Mulliken count minus the valence charges gives `DOPING`. An odd count gets the
+Mulliken count minus the valence charges gives `DOPING`; without a Mulliken
+print (a FREQ parent, often) MACE warns only when the .out shows a sign of a
+charged run (CHEMOD, CHARGED, "UNIT CELL NOT NEUTRAL", a renormalised guess),
+since `DOPING` itself leaves no trace in the .out [measured]. An odd count gets the
 parent's `SPIN`/`SPINLOCK`, or a molecule's deck is refused (a periodic one is
 written with a warning). Measured through a
 POB-TZVP-REV2 template: a SOLDEF2MSVP Li+(EC)2 parent (`CHEMOD` + `DOPING -1`)

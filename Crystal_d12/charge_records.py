@@ -474,19 +474,53 @@ def carry_charge_records(child_text: str, parent_text: str,
     return out, notes + spin_notes
 
 
+def out_charge_signs(out_text: str) -> List[str]:
+    """What in a .out shows a charged or ionic run, without a Mulliken print.
+
+    CHEMOD ("ELECTRONIC CONFIGURATION MODIFIED IN n ATOMS"), CHARGED
+    ("CHARGED CELL"), "UNIT CELL NOT NEUTRAL" and a renormalised guess (a
+    CHARGE NORMALIZATION FACTOR other than 1). DOPING prints nothing
+    (measured on CRYSTAL23), so a doped run with none of these shows no sign.
+    """
+    text = out_text or ""
+    signs = []
+    if "ELECTRONIC CONFIGURATION MODIFIED" in text:
+        signs.append("CHEMOD")
+    if "CHARGED CELL" in text:
+        signs.append("CHARGED")
+    if "UNIT CELL NOT NEUTRAL" in text:
+        signs.append("UNIT CELL NOT NEUTRAL")
+    for value in re.findall(r"CHARGE NORMALIZATION FACTOR\s+([-\d.]+)", text):
+        try:
+            if abs(float(value) - 1.0) > 1e-6:
+                signs.append("a renormalised guess")
+                break
+        except ValueError:
+            continue
+    return signs
+
+
 def charge_from_parent_out(child_text: str, out_text: str) -> Tuple[str, List[str]]:
     """A child written from a .out alone (no parent deck) gets DOPING from its Mulliken count.
 
-    Without a Mulliken print the charge state cannot be recovered: a warning
-    says so and the deck is left as written.
+    Without a Mulliken print the charge state cannot be recovered and the
+    deck is left as written: a warning says so when the .out shows a sign of
+    a charged run (out_charge_signs), otherwise an informational note (a
+    neutral FREQ parent, the usual case, is not warned about).
     """
     if extract_charge_records(child_text)["DOPING"]:
         return child_text, []
     offset = out_electron_offset(out_text)
     if offset is None:
-        return child_text, ["WARNING: no parent deck and no Mulliken electron count in the .out, "
-                            "so a charged parent's state (CHEMOD/DOPING) cannot be recovered - "
-                            "check the new deck"]
+        signs = out_charge_signs(out_text)
+        if signs:
+            return child_text, [f"WARNING: no parent deck and no Mulliken electron count in the .out, "
+                                f"which shows a charged or ionic run ({', '.join(signs)}), so the "
+                                "parent's charge state (CHEMOD/DOPING) cannot be recovered - check "
+                                "the new deck"]
+        return child_text, ["no parent deck and no Mulliken electron count in the .out; it shows "
+                            "no sign of a charged run, so the new deck is neutral (DOPING leaves "
+                            "no trace in an .out: add it by hand if the parent had one)"]
     if not offset:
         return child_text, []
     lines = child_text.splitlines()

@@ -6,7 +6,8 @@ the child silently ran neutral. Records are now carried from the raw text.
 E4b: with no parent deck at all (only the .out), a charged parent's state was
 lost. The .out's Mulliken count (never the header, which DOPING does not
 change) minus the valence charges gives DOPING; with no Mulliken print a
-warning says the state cannot be recovered.
+warning says the state cannot be recovered when the .out shows a sign of
+charge (otherwise an informational note).
 E4c (a pin, it passed before): a template that sets other settings keeps the
 records.
 E1: --ion-charges / --net-charge (or the same config keys) work the records
@@ -96,7 +97,10 @@ def test_a_neutral_parent_out_alone_adds_nothing(tmp_path):
 
 
 def test_without_deck_or_mulliken_the_state_is_reported_unknown(tmp_path):
-    (tmp_path / "parent.out").write_text(synth_out(LI_WATER, title="parent"))
+    # a parent that shows CHEMOD (a neutral-looking one gets an informational
+    # note only: tests/test_opt2d12_no_deck_charge_note.py)
+    chemod = " * ELECTRONIC CONFIGURATION MODIFIED IN    1 ATOMS\n"
+    (tmp_path / "parent.out").write_text(synth_out(LI_WATER, title="parent", extra=chemod))
     run = _run(tmp_path)
     assert run.returncode == 0
     assert "cannot be recovered" in run.stdout + run.stderr

@@ -82,7 +82,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   although the file was there; they are now carried from its text. **With
   no parent deck at all**, a charged parent's `DOPING` is recovered from the
   .out's Mulliken count; without a Mulliken print a warning says the charge
-  state cannot be recovered. Deck change for such children.
+  state cannot be recovered when the .out shows a sign of a charged run
+  (CHEMOD, CHARGED, "UNIT CELL NOT NEUTRAL", a renormalised guess), and an
+  informational note says so otherwise (a neutral FREQ parent is not warned
+  about). Deck change for such children.
 - **A failed run's message says what CRYSTAL printed.** The queue manager
   reported "Calculation failed with unknown error" for any error it had no
   pattern for; it now quotes CRYSTAL's `ERROR ****` line, and for an .out
