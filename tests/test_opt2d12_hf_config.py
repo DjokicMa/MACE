@@ -169,7 +169,7 @@ def _executor_step(tmp_path, monkeypatch, capsys, parent_deck, step):
         stderr = ""
 
     def run(cmd, **kwargs):
-        options = cmd[cmd.index("--options-file") + 1]
+        options = cmd[cmd.index("--config-file") + 1]
         sent.update(json.loads(Path(options).read_text()))
         return Done()
 

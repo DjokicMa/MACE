@@ -1943,7 +1943,8 @@ fi'''
                 "--out-file", output_file,
                 "--d12-file", input_file,
                 "--output-dir", str(output_dir),
-                "--options-file", str(temp_config)
+                # --options-file is only where --save-options writes
+                "--config-file", str(temp_config), "--non-interactive"
             ]
             
             try:
@@ -2096,7 +2097,8 @@ fi'''
             "--out-file", output_file,
             "--d12-file", input_file,
             "--output-dir", str(output_dir),
-            "--options-file", str(temp_config)
+            # --options-file is only where --save-options writes
+            "--config-file", str(temp_config), "--non-interactive"
         ]
         
         try:
