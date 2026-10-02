@@ -219,14 +219,18 @@ def early_stop_record(text: str) -> Optional[str]:
     return None
 
 
-def uncheckable_reason(text: str) -> Optional[str]:
+def uncheckable_reason(text: str, has_ext: bool = False) -> Optional[str]:
     """Why this deck cannot be pre-flighted in an isolated directory, or None.
 
     * EXTERNAL / DLVINPUT - manual, "Geometry input from external geometry
       editor. Keywords: EXTERNAL, DLVINPUT ... The complete geometry input data
       are read from file fort.34." (EXTPRT is what writes that fort.34.) The
       throwaway directory has no fort.34, so a failure would say nothing about
-      the deck. No deck under ``test/`` uses either keyword.
+      the deck. No deck under ``test/`` uses either keyword. The exception is
+      an EXTERNAL deck with its geometry next to it as ``<stem>.ext`` (what
+      ``mace phonopy generate`` writes and the job script stages as fort.34):
+      with ``has_ext`` that file is staged here the same way and the deck is
+      checked.
     * GUESSP - manual, "The density matrix from a previous run, P0 (direct
       lattice), is read from disk, and used as SCF guess", "read as file
       fort.20". The manual does not say at which point fort.20 is opened
@@ -236,6 +240,8 @@ def uncheckable_reason(text: str) -> Optional[str]:
     """
     for line in split_lines(text)[1:]:
         body = _LINE_SPLIT_RE.split(line)[0].strip().upper()
+        if body == "EXTERNAL" and has_ext:
+            continue
         if body in ("EXTERNAL", "DLVINPUT"):
             return (f"deck reads its geometry from fort.34 ({body}); "
                     "a throwaway pre-flight directory has no fort.34")
@@ -510,7 +516,8 @@ def preflight_deck(deck, *, runner, keep_dir=None) -> PreflightResult:
 
     # These are all "the harness cannot check this deck", never "this deck is
     # bad" - the explanation IS the reason, so it reaches the report table.
-    blocked = uncheckable_reason(text)
+    ext = deck.with_suffix(".ext")
+    blocked = uncheckable_reason(text, has_ext=ext.is_file())
     if blocked:
         return PreflightResult(deck, ERROR, blocked)
 
@@ -526,6 +533,9 @@ def preflight_deck(deck, *, runner, keep_dir=None) -> PreflightResult:
     workdir = Path(tempfile.mkdtemp(prefix="mace_preflight_"))
     try:
         write_deck(workdir / "INPUT", prepared)
+        if ext.is_file():
+            # Staged exactly as the job script does: <stem>.ext -> fort.34.
+            shutil.copyfile(ext, workdir / "fort.34")
         try:
             outcome = runner(workdir)
         except DeckStructureError as exc:

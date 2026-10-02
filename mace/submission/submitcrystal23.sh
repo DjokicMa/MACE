@@ -214,6 +214,11 @@ elif [ -z "$RESTART_KEEPS_FORT20" ] && grep -qiE "^[[:space:]]*GUESSP" "$scratch
     echo "  this run and cold starting (CRYSTAL aborts on GUESSP with no fort.20)"
   fi
 fi
+# EXTERNAL geometry (phonopy displaced supercells, or any deck shipping its own fort.34): staged only when $JOB.ext exists next to the deck.
+if [ -f "$DIR/$JOB.ext" ]; then
+  cp "$DIR/$JOB.ext" "$scratch/$JOB/fort.34"
+  echo "EXTERNAL: staged $JOB.ext as fort.34"
+fi
 cd $scratch/$JOB
 
 I_MPI_HYDRA_BOOTSTRAP="ssh" mpirun -n $SLURM_NTASKS $EBROOTCRYSTAL/bin/Pcrystal 2>&1 >& $DIR/${JOB}.out

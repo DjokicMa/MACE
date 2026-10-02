@@ -341,11 +341,14 @@ def main():
         target = sys.argv[1]
         if os.path.isfile(target) and target.endswith('.d12'):
             # Single file submission
-            data_folder = os.path.dirname(target) or os.getcwd()
+            # Absolute: the loop below changes into this directory and then
+            # looks for <data_folder>/<job>.sh, which a relative path would
+            # resolve against the wrong directory.
+            data_folder = os.path.dirname(os.path.abspath(target))
             data_files = [os.path.basename(target)]
         elif os.path.isdir(target):
             # Directory submission
-            data_folder = target
+            data_folder = os.path.abspath(target)
             data_files = os.listdir(data_folder)
         else:
             print(f"Error: {target} is not a valid D12 file or directory")

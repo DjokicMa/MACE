@@ -770,6 +770,45 @@ they are labelled uncorrected for image charges). The --calibrate decks are an
 optional cross-check; POTC alignment is opt-in. See docs/defects/README.md, and
 `mace defects analyze --help`.
 """,
+        'phonopy': """
+Usage: mace phonopy generate PARENT.out --dim "N N N" [options]
+       mace phonopy collect DIR [options]
+
+Finite-displacement phonons with phonopy (optional dependency: pip install 'phonopy<5').
+
+generate  Read a finished 3D OPT (OPT END - CONVERGED) or SP parent and write one
+          EXTERNAL deck per displaced supercell (<stem>_ph<dim>_disp-NNN.d12, geometry
+          in .ext, staged as fort.34 by the job script). The parent's method, basis
+          and tolerances are kept; every deck edit is printed.
+            --d12 PARENT.d12      parent deck (default: same stem as the output)
+            --dim "N N N"         supercell (or 9 integers)
+            --output-dir DIR      default phonopy_<stem>_<dim>/ (--force to reuse)
+            --amplitude A         displacement in Angstrom (default 0.01)
+            --pm auto|yes|no      plus/minus displacements
+            --toldee N            raise TOLDEE (default max(10, parent))
+            --cry-sym             symmetry of each displaced cell in its .ext
+                                  (phonopy's CRY_SYM; some groups, e.g. R-3m, fail)
+            --keep-shrink         keep the parent's SHRINK (default: divide it by
+                                  the supercell size, rounding up)
+collect   Check every output (normal termination, SCF converged, forces, geometry
+          == its displaced cell), then write FORCE_SETS, phonopy_params.yaml,
+          band.yaml, mesh.yaml, total_dos.dat, thermal_properties.yaml.
+            --check               stop after the checks
+            --band auto|"q ..."   SeeK-path path (default) or phonopy BAND points; none
+            --band-labels, --band-points N, --mesh 100.0|"a b c"
+            --tmin --tmax --tstep thermal properties range (K)
+            --nac-from FREQ.out   Born charges + dielectric tensor from a Gamma
+                                  FREQCALC with INTENS + INTCPHF
+            --plot                band_dos.pdf
+
+Workflow:
+  mace phonopy generate mat_opt.out --dim "2 2 2"
+  mace submit phonopy_mat_opt_222 --walltime 2:00:00      (the walltime generate
+                                                           prints; never --track)
+  mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out]
+
+Run `mace phonopy generate --help` or `mace phonopy collect --help` for details.
+""",
         'monitor': """
 Usage: mace monitor [options]
 
@@ -1345,8 +1384,15 @@ def main():
             sys.exit(ions_main(sys.argv[2:]))
         sys.exit(0)
     
+    # `mace phonopy generate|collect ...` goes straight to its own parser, so that
+    # `mace phonopy generate --help` shows the subcommand's options rather than
+    # being taken by the top-level parser below.
+    if len(sys.argv) >= 3 and sys.argv[1] == 'phonopy' and sys.argv[2] in ('generate', 'collect'):
+        from mace.phonopy_bridge.cli import main as phonopy_main
+        sys.exit(phonopy_main([a for a in sys.argv[2:] if a != '--no-banner']))
+
     # Check if asking for help on a specific command (for non-passthrough commands)
-    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'preflight', 'defects', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version']:
+    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'preflight', 'defects', 'phonopy', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version']:
         # Show command-specific help
         show_command_help(sys.argv[1])
         sys.exit(0)
@@ -1360,6 +1406,7 @@ Commands:
   submit      Submit calculations to queue - handles both D12 and D3 files automatically
   preflight   Validate D12 decks by running CRYSTAL with TESTPDIM before you spend a job
   defects     Point-defect deck sets (charge states, calibration) and their analysis
+  phonopy     Phonons with phonopy - displaced-supercell decks, then bands, DOS, thermal
   monitor     System monitoring - real-time dashboard or quick status (--status, --detailed, --summary)
   analyze     Extract properties from outputs - band gaps, energies, convergence data
   completion  Check calculation status - categorize completed/errored jobs, organize files
@@ -1391,7 +1438,7 @@ More Help:
     )
     
     parser.add_argument('command', nargs='?',
-                       choices=['workflow', 'submit', 'preflight', 'defects', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif',
+                       choices=['workflow', 'submit', 'preflight', 'defects', 'phonopy', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif',
                                'completion', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version'],
                        help='Command to run')
     parser.add_argument('args', nargs='*', help='Arguments for the command')
@@ -1835,6 +1882,11 @@ More Help:
         except ImportError:
             from defects.cli import main as defects_main
         sys.exit(defects_main(command_args('defects')))
+
+    elif args.command == 'phonopy':
+        # Lazy: phonopy is optional and only imported by the subcommands.
+        from mace.phonopy_bridge.cli import main as phonopy_main
+        sys.exit(phonopy_main(command_args('phonopy')))
 
     elif args.command == 'monitor':
         # Launch monitoring dashboard or show status

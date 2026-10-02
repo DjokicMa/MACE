@@ -126,6 +126,116 @@ mace opt2d12 --out-file opts/*.out --config-file sp_template.json --output-dir s
 - With several files, the plan is printed and asked about once (`Apply to all N files?`), only when run at a terminal; `--yes` (`-y`) skips that question. No per-file questions are asked: a file that would need an answer fails with the reason and the others carry on
 - `--output-dir` is created if missing (default: beside each `.out`). The run exits non-zero if any file failed or nothing was written
 
+### Phonons with phonopy (`mace phonopy`)
+Finite-displacement phonon dispersion, DOS and thermal properties for a 3D
+crystal, with CRYSTAL computing the forces and phonopy (optional dependency,
+`pip install 'phonopy<5'`) doing the rest. phonopy runs on the machine where you
+type the commands; the cluster only runs CRYSTAL.
+```bash
+# 1. Displaced supercells from a finished OPT (or SP) parent
+mace phonopy generate mat_opt.out --dim "2 2 2"          # reads mat_opt.d12 beside it
+# 2. Run them - a plain submission, NOT --track or --progress, with the walltime step 1 printed
+mace submit phonopy_mat_opt_222 --walltime 2:00:00
+# 3. Check the outputs, then forces -> band.yaml, mesh.yaml, total_dos.dat, thermal_properties.yaml
+mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
+```
+- **generate** writes one deck per displaced supercell, `<stem>_ph<dim>_disp-NNN.d12`,
+  with its geometry in `<stem>_ph<dim>_disp-NNN.ext`. The deck starts with `EXTERNAL`
+  (manual p.21) and the job script copies the `.ext` to `fort.34` before CRYSTAL starts
+  (format: manual pp.450-451). Job names carry the parent's name and the supercell, so
+  two sets never share a scratch directory. It also writes `phonopy_disp.yaml` (the
+  displacements) and `mace_phonopy.json` (parent paths and checksums, every deck edit,
+  versions).
+- **The parent's method is kept.** The deck has the layout phonopy's own CRYSTAL
+  writer gives it: `EXTERNAL`, the parent's basis set and SCF block byte for byte
+  (`BASISSET` replaces the END of the geometry block, manual p.28), then `TOLDEE`,
+  `GRADCAL` (manual p.111) and `END`. The part in between is phonopy's TEMPLATE and
+  must not contain an END, TOLDEE or GRADCAL: measured on CRYSTAL23, a TEMPLATE that
+  ends with END makes CRYSTAL stop before GRADCAL, with return code 0 and no forces.
+  For an explicit basis it is also written to `TEMPLATE` in the set directory. The
+  edits, each printed: the final END removed; TOLDEE moved before GRADCAL and raised
+  to at least 10 (`--toldee N` raises it further, never lowers it); GUESSP dropped;
+  `BIPOSIZE`/`EXCHSIZE 110000000` added when the parent had neither and the supercell
+  has more than 5 atoms (d12_writer's rule); a parent GRADCAL moved to the end.
+  SHRINK is divided by the supercell size in each direction, so the supercell is
+  sampled as densely as the parent (diamond, parent `SHRINK 12 24`: `6 12` for 2x2x2,
+  `4 8` for 3x3x3); where the size does not divide the parent's value it is rounded
+  up, never coarser than the parent, and a note says so. A non-diagonal `--dim`
+  keeps the parent's SHRINK with a warning; `--keep-shrink` keeps it always.
+- **Refused parents** (each with its reason): not 3D (use CRYSTAL's FREQCALC +
+  SCELPHONO + DISPERSI, manual pp.73, 232); not terminated normally; SCF not converged;
+  an optimisation without `OPT END - CONVERGED`; a FREQCALC output as the geometry
+  source; CHEMOD/CHARGED/DOPING, ATOMSPIN/SPINLOCK/BETALOCK or GHOSTS (atom labels and
+  electron counts do not carry over to a supercell yet); a magnetic parent (Mulliken
+  spin above 0.1 on an atom) with no spin lock; an SCF block with a second END before
+  the last record (CRYSTAL stops at the first, so the displaced decks would stop before
+  GRADCAL); and any SCF-block keyword not known to be safe in a P1 supercell, which is
+  named. An SP parent is accepted with a warning
+  that its geometry is assumed relaxed; a parent cell that is not primitive (P1,
+  SUPERCEL) gives a folded-bands warning.
+- `--dim` takes 3 integers or a 9-integer matrix; `--amplitude` (default 0.01 A) and
+  `--pm auto|yes|no` are phonopy's. An `--output-dir` must be empty (or `--force`) and
+  must not be inside `workflow_outputs/`.
+- `--cry-sym` (opt-in) writes the symmetry operators of each displaced cell into its
+  `.ext`, as phonopy does when a `CRY_SYM` file exists (one is written to the set
+  directory). The displaced cell keeps more symmetry than P1, so CRYSTAL needs fewer
+  k-points: measured on CRYSTAL23 for diamond (Fd-3m, 2x2x2), the same frequencies as
+  P1 to 0.04 cm-1 at about a third of the core hours. phonopy warns that some space
+  groups do not work this way (e.g. R-3m); a rhombohedral parent gets a louder
+  warning, and `collect` still checks that each output's printed geometry is its
+  displaced cell. Compare with a P1 set before trusting a new structure type.
+- **Walltime.** A displaced supercell costs far more than its parent, and a job that
+  runs out of walltime leaves no forces. `generate` prints a walltime per job, at
+  `mace submit`'s 32 tasks, for `mace submit DIR --walltime ...`: k-points times
+  atoms cubed, calibrated on the heaviest case measured on CRYSTAL23 (diamond,
+  B3LYP-D3 with SPIN and XLGRID, 2x2x2 in P1, SHRINK 6: 3160 s on 64 tasks), never
+  below 2 h and at most 7 days (with a warning). For that diamond it gives 2 h at
+  2x2x2 and 20 h at 3x3x3, where the measured 3x3x3 job had not finished its SCF
+  after 2 h on 64 tasks. Lighter methods run faster than the estimate. It is also
+  recorded as `walltime` in `mace_phonopy.json`.
+- **Do not use `--track` or `--progress`** with these decks: the completion callback
+  would record the displaced supercells as calculations of the parent's material.
+- **collect** first checks every output: present, terminated normally, SCF converged,
+  one force row per supercell atom, and the geometry CRYSTAL printed equal (to 1e-4 A)
+  to that deck's displaced cell - a converged run of the wrong geometry (a stale job
+  script that never staged the `.ext`; resubmit with `--overwrite-sh`) would otherwise
+  give silently wrong force constants. A run that ended normally with no forces
+  usually means an END before GRADCAL in its deck, and is reported as such. Any
+  problem is listed per file and nothing is written; `--check` stops after the
+  checks. Forces are then read one output at a time, so an output phonopy cannot
+  parse is named, and `FORCE_SETS` is checked to exist before anything else is
+  written (phonopy's own `phonopy-init -f` exits 0 when it fails). Then it writes `FORCE_SETS`,
+  `phonopy_params.yaml`, `band.yaml` (`--band auto` uses SeeK-path on the parent's
+  primitive cell, converted to CRYSTAL's reciprocal basis; or give phonopy BAND points
+  with `--band "0 0 0  1/2 0 1/2, ..."` and `--band-labels`; `--band none` skips it),
+  `mesh.yaml` (`--mesh 100.0` or `"a b c"`), `total_dos.dat` and
+  `thermal_properties.yaml` (`--tmin/--tmax/--tstep`), and `band_dos.pdf` with `--plot`.
+  Frequencies are in THz (x 33.35641 = cm-1). Modes below -0.1 THz away from Gamma are
+  reported; thermal properties skip imaginary modes.
+- **phonopy's own commands** (phonopy 4.7.2 syntax) work on the same set, run in its
+  directory, e.g. to plot with a `band.conf` of your own:
+  ```bash
+  phonopy-init --crystal -f mat_opt_ph222_disp-*.out   # -> FORCE_SETS (collect writes it too)
+  phonopy --factor=521.47083 --config band.conf        # band.yaml in cm-1 (default THz)
+  ```
+  `phonopy-init -f` exits 0 even when it cannot read an output: check that
+  `FORCE_SETS` exists. Since phonopy 4 the setup options (`-d`, `--dim`, `-c`, `-f`)
+  belong to `phonopy-init`; `phonopy` itself takes no `--crystal` (the calculator is
+  in `phonopy_disp.yaml`); a configuration file needs `--config` (a bare
+  `phonopy` with a .conf as its argument computes nothing); and there is no `--nac`:
+  a `BORN` file in the directory (as `collect --nac-from` writes) switches the
+  non-analytical correction on, `--nonac` off. With an explicit basis the set
+  directory also holds `TEMPLATE` (and `CRY_SYM` with `--cry-sym`), so
+  `phonopy-init --crystal -d --dim 2 2 2 -c ../mat_opt.out` there writes the same
+  decks as `supercell-NNN.d12` for the default `--amplitude` and `--pm`, apart from
+  the title and TOLDEE: phonopy always writes 10, MACE the parent's value when it is
+  higher (or `--toldee`).
+- **NAC** (`--nac-from`): a Gamma FREQCALC of the same material with `INTENS` and
+  `INTCPHF`, same functional and basis (its `.d12` must sit beside the output). The Born
+  charges and dielectric tensor are read with phonopy-crystal-born and written to
+  `BORN`; the run is refused unless its cell has the same cartesian orientation, atoms
+  and positions as the phonopy cell and CRYSTAL's asymmetric unit is phonopy's.
+
 ### Job Management (Direct Script Access)
 ```bash
 # Enhanced queue management with material tracking
@@ -214,12 +324,16 @@ pip install plotly scipy kaleido==0.2.1 scikit-image
 
 # For accurate band structure k-paths (highly recommended)
 pip install seekpath>=2.0.0
+
+# Finite-displacement phonons (mace phonopy)
+pip install 'phonopy<5'
 ```
 
 #### Package Purposes (Optional)
 - **rich**: Themed terminal UI (status lines, tables, progress bars, live dashboards)
 - **plotly / scipy / kaleido**: Cube and FREQ plot rendering — HTML output needs only plotly; kaleido adds static PNG/SVG/PDF export; scipy interpolates non-orthogonal cube grids
 - **scikit-image**: Isosurface extraction for cube plots
+- **phonopy**: `mace phonopy generate/collect` (finite-displacement phonons, NAC); 4.7.2 tested
 - **seekpath**: Accurate band structure k-path generation using the HPKOT methodology (Hinuma et al., Comp. Mat. Sci. 128, 140 (2017)). Provides correct parametric k-points for non-cubic lattices and proper discontinuity detection. Without seekpath, band paths fall back to static dictionaries which are only accurate for cubic systems.
 
 #### Installation Verification
