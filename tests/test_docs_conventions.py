@@ -23,3 +23,10 @@ def test_phonopy_docs_explain_the_mass_offset():
     text = _text("DOCUMENTATION.md")
     assert "Masses differ from CRYSTAL's" in text
     assert "about 1 cm-1 at 540 cm-1 for Si" in text
+
+
+def test_stuttgart_library_says_its_records_are_unverified():
+    import basis_library
+    text = " ".join(basis_library.load_family("stuttgart").description.split())
+    assert "the other 117 are unverified" in text
+    assert "every deck path refuses them" in text

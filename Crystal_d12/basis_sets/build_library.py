@@ -181,7 +181,10 @@ DESCRIPTIONS = {
     "stuttgart": [
         "Legacy Stuttgart-type records shipped with MACE. Not written into decks by the",
         "standard basis menus; read by the SOC tooling. 250 and 251 are byte-identical",
-        "to the triplezeta family's records.",
+        "to the triplezeta family's records; the other 117 are unverified (no published",
+        "source matched). 204, 219, 220, 227 and 294 cannot be read by CRYSTAL as they",
+        "stand, and every deck path refuses them (basis_file_check); 231.SDF is not a",
+        "CRYSTAL record and no deck path reads it.",
     ],
 }
 

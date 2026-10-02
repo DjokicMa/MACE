@@ -2,7 +2,10 @@
 #%family stuttgart
 #%description Legacy Stuttgart-type records shipped with MACE. Not written into decks by the
 #%description standard basis menus; read by the SOC tooling. 250 and 251 are byte-identical
-#%description to the triplezeta family's records.
+#%description to the triplezeta family's records; the other 117 are unverified (no published
+#%description source matched). 204, 219, 220, 227 and 294 cannot be read by CRYSTAL as they
+#%description stand, and every deck path refuses them (basis_file_check); 231.SDF is not a
+#%description CRYSTAL record and no deck path reads it.
 #%record 1 bytes=227
 #%  provenance unverified (legacy MACE file)
 1 4
