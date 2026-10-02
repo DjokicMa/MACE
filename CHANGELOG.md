@@ -352,6 +352,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per atom, which hid that `END` from the check.
 - `mace submit DIR` with a relative directory (or `sub/deck.d12`) submitted nothing:
   every deck failed with "Failed to generate/find script". Absolute paths were fine.
+- **cif2d12 / `mace convert` custom setup shows the functional menus again.**
+  Since 1.1.2 every CIF was treated as a parent whose functional could not be
+  identified. The category and functional menus were replaced by a free-text
+  prompt that rejected menu numbers, and blank answers wrote HSE06 without
+  D3. Blank answers write HSE06-D3 again, as in 1.1.1 and as the defaults
+  banner says. opt2d12 parents keep the replacement prompt.
+- **Workflow planner convergence menus accept yes/no again.** The SP and OPT
+  convergence questions became 0-3 menus, and any other answer was quietly
+  taken as 0 (keep the previous step's values). y/yes now gives the 1.1.1
+  tight values: SP Very tight (TOLINTEG 9 9 9 11 38, TOLDEE 11), OPT
+  TOLDEG 1.5e-5, TOLDEX 6e-5, TOLDEE 8, MAXCYCLE 1000. n/no gives Standard.
+  A note is printed for both, and any other answer is asked again.
+- **Answers piped into interactive cif2d12 and opt2d3 runs are read again.**
+  cif2d12 ignored a piped answer to the space-group mismatch question, and
+  opt2d3 ECHG refused with "no terminal to ask". If the pipe runs out, the
+  question takes the unattended choice (cif2d12) or the run writes no deck
+  and exits 1 (opt2d3), with no traceback. `--batch` and `--config-file` runs
+  are unchanged.
+- **Out-of-step piped answers stop the run.** With no terminal, three invalid
+  answers in a row to a yes/no question now stop the run with an error.
+  Before, the next blank answer took the default and the run carried on with
+  answers out of step.
 
 ## [1.1.4] - 2026-10-02
 
