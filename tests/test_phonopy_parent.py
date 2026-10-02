@@ -427,6 +427,14 @@ def test_spin_locks_refused(rec):
     assert P.REFUSE_SPIN_LOCKS in _codes(internal(extra_b3=rec))
 
 
+@pytest.mark.parametrize("rec,code", [("ATOMSPIN\n1\n1 1\n", "SPIN"), ("SPINLOCK\n2 30\n", "SPIN"),
+                                      ("BETALOCK\n2 30\n", "SPIN"), ("DOPING\n-1\n", "CHARGE")])
+def test_named_refusal_is_not_repeated_as_an_unknown_keyword(rec, code):
+    """A SPINLOCK parent was refused twice, as SPIN_LOCKS and as UNKNOWN_KEYWORD."""
+    codes = _codes(internal(extra_b3=rec))
+    assert codes == [P.REFUSE_SPIN_LOCKS if code == "SPIN" else P.REFUSE_CHARGE_RECORDS]
+
+
 def test_ghosts_refused():
     text = internal().replace("POB-TZVP-REV2\n", "POB-TZVP-REV2\nGHOSTS\n1\n2\n", 1)
     assert P.REFUSE_GHOSTS in _codes(text)

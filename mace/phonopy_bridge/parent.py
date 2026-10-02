@@ -400,7 +400,10 @@ def refusal_reasons(deck: ParentDeck, out_text: str) -> List[Tuple[str, str]]:
                         f"block 3 has an END before its last record ({len(stray)} extra): "
                         "CRYSTAL stops reading there, and in a displaced deck it would stop "
                         "before GRADCAL and write no forces. Remove the extra END"))
-    unknown = unknown_block3_keywords(deck.block3)
+    # Keywords refused by name above are not refused a second time as unknown
+    # (a SPINLOCK parent was reported as SPIN_LOCKS and as UNKNOWN_KEYWORD).
+    unknown = [k for k in unknown_block3_keywords(deck.block3)
+               if k not in ("ATOMSPIN", "SPINLOCK", "BETALOCK", "DOPING")]
     if unknown:
         reasons.append((REFUSE_UNKNOWN_KEYWORD,
                         f"block 3 keyword(s) not known to be safe in a supercell: "
