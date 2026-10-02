@@ -136,6 +136,22 @@ class D3Generator:
         
         # Parse output file for structure info
         self.structure_info = self._parse_output_file()
+        # True while generate_d3 gathers the settings by asking on stdin
+        self._answers_on_stdin = False
+
+    def _can_ask(self) -> bool:
+        """May a writer ask a question here?
+
+        At a terminal, or while the settings are being asked on stdin (a
+        terminal or answers piped in, as 1.1.1 read them). A run given its
+        settings (--config-file, shared settings) with no terminal may not.
+        """
+        if self._answers_on_stdin:
+            return True
+        try:
+            return sys.stdin is not None and sys.stdin.isatty()
+        except Exception:
+            return False
     
     def _parse_output_file(self) -> Dict[str, Any]:
         """Extract structure information from output file."""
@@ -1018,7 +1034,7 @@ class D3Generator:
             return [" ".join(str(v) for v in range_min),
                     " ".join(str(v) for v in range_max)]
 
-        if not sys.stdin.isatty():
+        if not self._can_ask():
             # Non-interactive (batch/workflow callback): fail cleanly instead of
             # raising EOFError at the prompt.
             ui.err("RANGE boundaries requested but there is no terminal to ask for them.")
@@ -1093,7 +1109,7 @@ class D3Generator:
                         npy = 50
                         ui.warn(f"No n_points (MAPNET NPY) in the configuration, using {npy}.")
                 else:
-                    if not sys.stdin.isatty():
+                    if not self._can_ask():
                         # Non-interactive (batch/workflow callback): fail cleanly
                         # instead of raising EOFError at the prompt.
                         ui.err("ECHG needs the MAPNET map plane and there is no terminal to ask.")
@@ -1209,7 +1225,7 @@ class D3Generator:
                         for point in supplied:
                             lines.append(" ".join(str(v) for v in point))
                     else:
-                        if not sys.stdin.isatty():
+                        if not self._can_ask():
                             # Non-interactive (batch/workflow callback): fail
                             # cleanly instead of raising EOFError at the prompt.
                             ui.err(f"POTC needs {npu} point(s) and there is no terminal to ask.")
@@ -1241,6 +1257,21 @@ class D3Generator:
         Returns:
             Configuration dictionary if successful, None otherwise
         """
+        # With no settings given they are asked on stdin, and so are the
+        # writers' own questions; answers piped in that run out end the
+        # run with no deck instead of an EOFError traceback.
+        self._answers_on_stdin = not shared_config
+        try:
+            return self._generate_d3(shared_config)
+        except EOFError:
+            print()
+            ui.err("The input ended before every question was answered "
+                   "(end of input); no D3 file was written.")
+            return None
+        finally:
+            self._answers_on_stdin = False
+
+    def _generate_d3(self, shared_config: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         print()
         ui.rule(f"Generating {self.calc_type} D3 file")
         ui.info(f"Input file: {self.input_file}")

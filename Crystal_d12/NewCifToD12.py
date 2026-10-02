@@ -303,7 +303,14 @@ def parse_cif(cif_file, interactive=None):
                     f"{cif_file} names no space group and batch mode cannot "
                     f"ask for one - add _symmetry_Int_Tables_number to the CIF"
                 )
-            spacegroup = int(input("Please enter the space group number: "))
+            try:
+                spacegroup = int(input("Please enter the space group number: "))
+            except EOFError:
+                raise _MissingSpaceGroup(
+                    f"{cif_file} names no space group and the input ended "
+                    f"before one was given (end of input) - add "
+                    f"_symmetry_Int_Tables_number to the CIF"
+                )
 
         # Convert symbols to atomic numbers
         atomic_numbers = []
@@ -1141,6 +1148,13 @@ def verify_and_reduce_to_asymmetric_unit(
         ui.ok(f"Successfully reduced structure to asymmetric unit.")
         return new_cif_data
 
+    except EOFError:
+        # Answers piped into an interactive run ran out: what an unattended
+        # run does, as it would have done with no answers at all
+        ui.warn("No answer left on stdin (end of input) - taking the "
+                "unattended choice for this structure.")
+        return verify_and_reduce_to_asymmetric_unit(
+            cif_data, tolerance, validate_symmetry, interactive=False)
     except Exception as e:
         ui.err(f"❌ Error during symmetry analysis: {e}")
         ui.print("Using all atoms from the CIF file.")
@@ -1445,7 +1459,13 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
                 "Aborting D12 file creation (unsupported elements, no terminal to confirm)."
             )
             return False
-        if not yes_no_prompt("Continue anyway?", "no"):
+        try:
+            go_on = yes_no_prompt("Continue anyway?", "no")
+        except EOFError:
+            ui.err("Aborting D12 file creation (unsupported elements, no "
+                   "answer left on stdin to confirm).")
+            return False
+        if not go_on:
             ui.err("Aborting D12 file creation.")
             return False
 
@@ -1875,10 +1895,17 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
         if interactive is None:
             interactive = sys.stdin.isatty()
         try:
-            charge_setup = plan_deck_charges(
-                options, dimensionality, atomic_numbers, symbols, positions,
-                (a, b, c, alpha, beta, gamma), spacegroup, layer_group, rod_group, slabcut,
-                is_spin_polarized, interactive)
+            try:
+                charge_setup = plan_deck_charges(
+                    options, dimensionality, atomic_numbers, symbols, positions,
+                    (a, b, c, alpha, beta, gamma), spacegroup, layer_group, rod_group,
+                    slabcut, is_spin_polarized, interactive)
+            except EOFError:
+                # Piped answers ran out: plan as an unattended run would
+                charge_setup = plan_deck_charges(
+                    options, dimensionality, atomic_numbers, symbols, positions,
+                    (a, b, c, alpha, beta, gamma), spacegroup, layer_group, rod_group,
+                    slabcut, is_spin_polarized, False)
         except ic.IonChargeError as e:
             ui.err(f"Not writing {os.path.basename(output_file)}: {e}")
             return False
@@ -2491,8 +2518,11 @@ def main():
             "each deck is written from the CIF's own atom records "
             "(pip install spglib)."
         )
+    # Without --batch the setup questions above were answered on stdin, a
+    # terminal or a pipe, so the per-file questions are asked there too (as
+    # in 1.1.1); a pipe that has run out gets the unattended choice.
     written, found = process_cifs(args.cif_dir, options, args.output_dir,
-                                  interactive=False if args.batch else None)
+                                  interactive=not args.batch)
     if found and not written:
         ui.err(f"No D12 file was written for the {found} CIF file(s) in "
                f"{args.cif_dir}.")
