@@ -1684,6 +1684,17 @@ fi'''
                     config_file = cand
                     print(f"  Using plan expert D3 config: {config_file.name}")
 
+            # Expert, individual material handling: one opt2d3 configuration
+            # per material, saved at planning time.
+            if config_file is None and step_cfg.get('material_configs'):
+                config_file = self._per_material_d3_config(
+                    step_cfg['material_configs'], material_id, target_calc_type)
+                if config_file is not None:
+                    print(f"  Using plan per-material D3 config: {config_file.name}")
+                else:
+                    print(f"  Warning: the plan has no {target_calc_type} configuration for "
+                          f"{material_id}; using the default one")
+
             if config_file is None:
                 if step_cfg.get('d3_settings'):
                     json_config = step_cfg['d3_settings']
@@ -1772,6 +1783,28 @@ fi'''
             if work_dir.exists():
                 shutil.rmtree(work_dir, ignore_errors=True)
     
+    def _per_material_d3_config(self, material_configs: Dict[str, Any], material_id: str,
+                                calc_type: str) -> Optional[Path]:
+        """This material's saved per-material D3 configuration file, or None.
+
+        Matched on the material id, else on its core name; a path saved on
+        another machine is looked up again under this run's
+        workflow_configs/expert_<type>_configs.
+        """
+        entry = material_configs.get(material_id)
+        if entry is None:
+            core = self.extract_core_material_name(material_id)
+            entry = next((v for k, v in material_configs.items()
+                          if self.extract_core_material_name(k) == core), None)
+        if not isinstance(entry, dict) or not entry.get('config_file'):
+            return None
+        cand = Path(entry['config_file'])
+        if not cand.exists():
+            base_type = re.sub(r'\d+$', '', calc_type).lower()
+            cand = (self.base_work_dir / "workflow_configs"
+                    / f"expert_{base_type}_configs" / cand.name)
+        return cand if cand.exists() else None
+
     def _get_default_d3_config(self, calc_type: str) -> Dict[str, Any]:
         """Get default D3 configuration for different calculation types"""
         configs = {

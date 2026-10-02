@@ -253,3 +253,31 @@ def test_d3_plan_lookup_falls_back_to_env_workflow_id(monkeypatch, tmp_path):
     cfg = eng._get_plan_step_config(plan_workflow_id, "BAND")
 
     assert cfg.get("d3_settings", {}).get("configuration", {}).get("n_points") == 1000
+
+
+def test_band_per_material_expert_config_is_used(engine, tmp_path, monkeypatch):
+    """Expert, individual material handling: the planner saves one opt2d3
+    configuration per material (material_configs). The engine read only a
+    shared expert_config_file / d3_settings / d3_config and so ran the
+    engine default instead of the configuration the user made."""
+    cfg_dir = tmp_path / "workflow_configs" / "expert_band_configs"
+    cfg_dir.mkdir(parents=True)
+    mine = cfg_dir / "1_dia_band_expert_config.json"
+    mine.write_text(json.dumps({
+        "version": "1.0", "type": "d3_configuration", "calculation_type": "BAND",
+        "configuration": {"n_points": 555, "path_method": "labels", "shrink": 0,
+                          "auto_path": True}}))
+    plan = json.loads(json.dumps(PLAN))
+    plan["step_configurations"]["BAND_3"] = {
+        "calculation_type": "BAND", "d3_config_mode": "expert", "expert_mode": True,
+        "per_material_configs": True, "config_directory": "/mnt/OTHER-MACHINE/expert_band_configs",
+        "material_configs": {
+            "2_other": {"config_file": "/mnt/OTHER-MACHINE/2_other_band_expert_config.json"},
+            # planned elsewhere: the file is found again under this run's configs
+            "1_dia": {"config_file": "/mnt/OTHER-MACHINE/expert_band_configs/" + mine.name},
+        }}
+    (tmp_path / "workflow_configs" / f"workflow_plan_{WF_ID.replace('workflow_', '')}.json"
+     ).write_text(json.dumps(plan))
+    cap = _run_d3_generation(engine, tmp_path, monkeypatch, "BAND")
+    assert cap["config_path"] == mine
+    assert cap["config"]["configuration"]["n_points"] == 555
