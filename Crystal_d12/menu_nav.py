@@ -203,6 +203,34 @@ def _patched_input(prompt=""):
     return session.handle_input(prompt, intercept=False)
 
 
+# A question with no terminal stops after this many invalid answers in a row:
+# answers piped from a file that no longer matches the questions (one was
+# added or merged) would otherwise be re-asked until a blank took the default
+# and the run carried on out of step - or, with no blank, spin on the menu.
+MAX_INVALID_PIPED_ANSWERS = 3
+
+
+def stdin_is_terminal():
+    try:
+        return sys.stdin is not None and sys.stdin.isatty()
+    except Exception:
+        return False
+
+
+def stop_if_out_of_step(invalid, prompt, expected):
+    """Stop a run whose piped answers no longer match its questions.
+
+    ``invalid`` is how many answers in a row this question rejected and
+    ``expected`` says what it takes ("yes or no", "one of 1, 2, 3"). At a
+    terminal the question just asks again.
+    """
+    if invalid >= MAX_INVALID_PIPED_ANSWERS and not stdin_is_terminal():
+        raise SystemExit(
+            f"Error: {invalid} answers in a row to '{str(prompt).strip()}' were not "
+            f"{expected}, and stdin is not a terminal. The piped answers are "
+            f"probably out of step with the questions, so the run stops here.")
+
+
 def nav_read(prompt="", valid_set=None):
     """Read one answer, with scoped back interception.
 
@@ -291,6 +319,7 @@ def nav_choice(prompt="", choices=None, default=None):
     a normal validated input() loop.
     """
     valid = {str(c) for c in (choices or [])}
+    invalid = 0
     while True:
         raw = nav_read(prompt, valid_set=valid if valid else None)
         raw = raw.strip()
@@ -298,6 +327,8 @@ def nav_choice(prompt="", choices=None, default=None):
             return str(default)
         if not valid or raw in valid:
             return raw
+        invalid += 1
+        stop_if_out_of_step(invalid, prompt, f"one of {', '.join(sorted(valid))}")
         print(f"Invalid choice. Please choose from: {', '.join(sorted(valid))}")
 
 
@@ -310,6 +341,7 @@ def nav_int(prompt="", default=None, choices=None):
     restricts the allowed integers. With no wrapped flow this is a robust int(input()) loop.
     """
     allowed = None if choices is None else {int(c) for c in choices}
+    invalid = 0
     while True:
         # valid_set excludes 'b' so the back token is intercepted when back is available.
         raw = nav_read(prompt, valid_set={"__int__"})
@@ -320,9 +352,13 @@ def nav_int(prompt="", default=None, choices=None):
             val = int(raw)
         except (ValueError, TypeError):
             extra = f" from {sorted(allowed)}" if allowed else ""
+            invalid += 1
+            stop_if_out_of_step(invalid, prompt, f"a whole number{extra}")
             print(f"Please enter a whole number{extra}.")
             continue
         if allowed is not None and val not in allowed:
+            invalid += 1
+            stop_if_out_of_step(invalid, prompt, f"one of {sorted(allowed)}")
             print(f"Please choose from: {sorted(allowed)}")
             continue
         return val
@@ -331,6 +367,7 @@ def nav_int(prompt="", default=None, choices=None):
 def nav_float(prompt="", default=None):
     """Back-aware reader for a float answer. 'b'/'back' goes back (never crashes float()),
     invalid input re-prompts, empty returns default. Like nav_int but for floats."""
+    invalid = 0
     while True:
         raw = nav_read(prompt, valid_set={"__float__"}).strip()
         if not raw and default is not None:
@@ -338,6 +375,8 @@ def nav_float(prompt="", default=None):
         try:
             return float(raw)
         except (ValueError, TypeError):
+            invalid += 1
+            stop_if_out_of_step(invalid, prompt, "a number")
             print("Please enter a number.")
             continue
 

@@ -52,6 +52,7 @@ except Exception:
     ui = _UIShim()
 
 from mace.workflow.plan_functionals import normalize_plan_functionals
+from mace.utils.piped_answers import stop_if_out_of_step
 
 # Import MACE components
 try:
@@ -4960,6 +4961,7 @@ def get_user_input(prompt: str, options: Dict[str, str], default: str = "") -> s
     for key, desc in options.items():
         ui.info(f"  {key}: {desc}")
 
+    invalid = 0
     while True:
         choice = input(f"Enter choice [{default}]: ").strip()
         if not choice and default:
@@ -4967,6 +4969,8 @@ def get_user_input(prompt: str, options: Dict[str, str], default: str = "") -> s
         elif choice in options:
             return choice
         else:
+            invalid += 1
+            stop_if_out_of_step(invalid, prompt, f"one of {', '.join(options.keys())}")
             ui.err(f"Invalid choice. Please select from: {', '.join(options.keys())}")
 
 
@@ -4974,6 +4978,7 @@ def yes_no_prompt(prompt: str, default: str = "yes") -> bool:
     """Get yes/no response from user with validation"""
     default_char = "Y/n" if default.lower() == "yes" else "y/N"
 
+    invalid = 0
     while True:
         response = input(f"{prompt} [{default_char}]: ").strip().lower()
 
@@ -4985,6 +4990,8 @@ def yes_no_prompt(prompt: str, default: str = "yes") -> bool:
         elif response in ["n", "no", "false", "0"]:
             return False
         else:
+            invalid += 1
+            stop_if_out_of_step(invalid, prompt, "yes or no")
             ui.warn(f"⚠️  Invalid response '{response}'. Please enter yes/no (y/n).")
             continue
 

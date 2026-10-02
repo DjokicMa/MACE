@@ -2062,6 +2062,7 @@ def get_user_input(prompt: str, options: Any, default: Optional[str] = None) -> 
 
     default_str = f" (default: {default})" if default else ""
 
+    invalid = 0
     while True:
         print(f"\n{prompt}{default_str}:\n{opt_str}")
         choice = _nav_read("Enter your choice: ", valid_set=valid_inputs).strip()
@@ -2072,6 +2073,8 @@ def get_user_input(prompt: str, options: Any, default: Optional[str] = None) -> 
         if choice in valid_inputs:
             return choice
         
+        invalid += 1
+        stop_if_out_of_step(invalid, prompt, f"one of {', '.join(valid_inputs)}")
         print(f"Invalid input. Please choose from {', '.join(valid_inputs)}")
 
 
@@ -2100,18 +2103,14 @@ def yes_no_prompt(prompt: str, default: str = "yes") -> bool:
         if choice in valid:
             return valid[choice]
         invalid += 1
-        if invalid >= _MAX_INVALID_PIPED_ANSWERS and not _stdin_is_terminal():
-            # Answers piped from a file that no longer matches the questions
-            # (one was added or merged): stop rather than let the next blank
-            # take the default and the run carry on out of step.
-            raise SystemExit(
-                f"Error: {invalid} answers in a row to '{prompt.strip()}' were not "
-                f"yes or no, and stdin is not a terminal. The piped answers are "
-                f"probably out of step with the questions, so the run stops here.")
+        # Answers piped from a file that no longer matches the questions
+        # (one was added or merged): stop rather than let the next blank
+        # take the default and the run carry on out of step.
+        stop_if_out_of_step(invalid, prompt, "yes or no")
         print("Please respond with 'yes' or 'no' (or 'y' or 'n').")
 
 
-# A yes/no question with no terminal stops after this many invalid answers
+# A question with no terminal stops after this many invalid answers in a row
 _MAX_INVALID_PIPED_ANSWERS = 3
 
 
@@ -2122,15 +2121,33 @@ def _stdin_is_terminal() -> bool:
         return False
 
 
+def stop_if_out_of_step(invalid: int, prompt: str, expected: str) -> None:
+    """Stop a run whose piped answers no longer match its questions.
+
+    ``invalid`` is how many answers in a row the question rejected and
+    ``expected`` says what it takes. At a terminal the question asks again.
+    (menu_nav and mace.utils.piped_answers carry the same rule for the
+    readers that do not import this module.)
+    """
+    if invalid >= _MAX_INVALID_PIPED_ANSWERS and not _stdin_is_terminal():
+        raise SystemExit(
+            f"Error: {invalid} answers in a row to '{str(prompt).strip()}' were not "
+            f"{expected}, and stdin is not a terminal. The piped answers are "
+            f"probably out of step with the questions, so the run stops here.")
+
+
 def get_valid_input(prompt: str, valid_values: List[str], 
                    default: Optional[str] = None) -> str:
     """Get validated user input from a list of valid values"""
+    invalid = 0
     while True:
         value = _nav_read(prompt, valid_set=valid_values).strip()
         if not value and default:
             return default
         if value in valid_values:
             return value
+        invalid += 1
+        stop_if_out_of_step(invalid, prompt, f"one of {', '.join(valid_values)}")
         print(f"Invalid input. Please choose from: {', '.join(valid_values)}")
 
 

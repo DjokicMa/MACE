@@ -8,11 +8,14 @@ Institution: Michigan State University, Mendoza Group
 """
 from typing import List
 
+from mace.utils.piped_answers import stop_if_out_of_step
+
 
 def yes_no_prompt(prompt: str, default: str = "yes") -> bool:
     """Get yes/no response from user with validation."""
     default_char = "Y/n" if default.lower() == "yes" else "y/N"
 
+    invalid = 0
     while True:
         response = input(f"{prompt} [{default_char}]: ").strip().lower()
 
@@ -24,6 +27,8 @@ def yes_no_prompt(prompt: str, default: str = "yes") -> bool:
         elif response in ["n", "no", "false", "0"]:
             return False
         else:
+            invalid += 1
+            stop_if_out_of_step(invalid, prompt, "yes or no")
             print(f"  Invalid response '{response}'. Please enter yes/no (y/n).")
 
 
@@ -34,6 +39,7 @@ def select_option(prompt: str, options: List[str], default: int = 1) -> int:
         marker = " *" if i == default else ""
         print(f"  {i}. {option}{marker}")
 
+    invalid = 0
     while True:
         response = input(f"\nSelect option [1-{len(options)}] (default: {default}): ").strip()
 
@@ -47,11 +53,14 @@ def select_option(prompt: str, options: List[str], default: int = 1) -> int:
         except ValueError:
             pass
 
+        invalid += 1
+        stop_if_out_of_step(invalid, prompt, f"a number from 1 to {len(options)}")
         print(f"  Invalid selection. Please enter 1-{len(options)}.")
 
 
 def get_float_input(prompt: str, default: float) -> float:
     """Get a float value from user with default."""
+    invalid = 0
     while True:
         response = input(f"{prompt} [{default}]: ").strip()
 
@@ -61,6 +70,8 @@ def get_float_input(prompt: str, default: float) -> float:
         try:
             return float(response)
         except ValueError:
+            invalid += 1
+            stop_if_out_of_step(invalid, prompt, "a number")
             print(f"  Invalid number. Please enter a numeric value.")
 
 

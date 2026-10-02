@@ -385,7 +385,11 @@ def get_user_choice(prompt: str, options: List[Tuple[str, str]], default: str = 
     # twice. _nav_read is a pass-through when no back-nav flow is active.
     choice = _nav_read(f"{prompt} (default: {default}): ", valid_set=valid_keys).strip() or default
 
+    invalid = 0
     while choice not in valid_keys:
+        invalid += 1
+        from d12_constants import stop_if_out_of_step
+        stop_if_out_of_step(invalid, prompt, f"one of {', '.join(valid_keys)}")
         print(f"Invalid input. Please choose from: {', '.join(valid_keys)}")
         choice = _nav_read(f"{prompt} (default: {default}): ", valid_set=valid_keys).strip() or default
     
