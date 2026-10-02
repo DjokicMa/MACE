@@ -529,9 +529,6 @@ def configure_dft_grid_with_defaults(functional: str, current_grid: str = "XLGRI
     if "-3C" in functional or functional.endswith("3C"):
         return current_grid if current_grid and current_grid != "DEFAULT" else None
     
-    # Store the original get_user_input function
-    original_get_user_input = d12_constants.get_user_input
-    
     # Map grid names to choice numbers
     grid_map = {
         "OLDGRID": "1",
@@ -546,24 +543,10 @@ def configure_dft_grid_with_defaults(functional: str, current_grid: str = "XLGRI
     # Get the default choice based on current grid
     default_choice = grid_map.get(current_grid, "4")
     
-    # Ask, with the parent's grid as the default. This used to return the
-    # default without asking, so the grid could not be changed here.
-    def patched_get_user_input(prompt, options, default):
-        if "Select integration grid" in prompt:
-            return original_get_user_input(prompt, options, default_choice)
-        return original_get_user_input(prompt, options, default)
-    
-    # Temporarily replace the function
-    d12_constants.get_user_input = patched_get_user_input
-    
-    try:
-        # Call the original configure_dft_grid with our patched input function
-        result = configure_dft_grid(functional, shared_mode)
-    finally:
-        # Always restore the original function
-        d12_constants.get_user_input = original_get_user_input
-    
-    return result
+    # Ask, with the parent's grid as the default (and labelled as such in
+    # the menu). This used to return the default without asking, so the grid
+    # could not be changed here.
+    return configure_dft_grid(functional, shared_mode, default=default_choice)
 
 
 _TOLERANCE_PRESETS = {

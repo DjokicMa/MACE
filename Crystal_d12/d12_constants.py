@@ -1820,7 +1820,8 @@ def select_basis_set(elements: List[int], method: str = "DFT",
     return basis_config
 
 
-def configure_dft_grid(functional: str, shared_mode: bool = False) -> Optional[str]:
+def configure_dft_grid(functional: str, shared_mode: bool = False,
+                       default: str = "4") -> Optional[str]:
     """
     Configure DFT integration grid.
     
@@ -1840,19 +1841,23 @@ def configure_dft_grid(functional: str, shared_mode: bool = False) -> Optional[s
     print("\n=== DFT INTEGRATION GRID ===")
     print("Integration grid quality affects accuracy and speed")
     
+    # "(default)" marks the grid a blank answer gives: XLGRID for a new deck,
+    # the parent's grid when opt2d12 passes it as ``default``.
     print("\nAvailable grids:")
-    print("1: OLDGRID - Old default grid from CRYSTAL09, pruned (55,434)")
-    print("2: DEFAULT - Default grid in CRYSTAL23")
-    print("3: LGRID - Large grid, pruned (75,434)")
-    print("4: XLGRID - Extra large grid (default)")
-    print("5: XXLGRID - Extra extra large grid, pruned (99,1454)")
-    print("6: XXXLGRID - Ultra extra extra large grid, pruned (150,1454)")
-    print("7: HUGEGRID - Ultra extra extra large grid for SCAN, pruned (300,1454)")
+    for key, text in (
+            ("1", "OLDGRID - Old default grid from CRYSTAL09, pruned (55,434)"),
+            ("2", "DEFAULT - Default grid in CRYSTAL23"),
+            ("3", "LGRID - Large grid, pruned (75,434)"),
+            ("4", "XLGRID - Extra large grid"),
+            ("5", "XXLGRID - Extra extra large grid, pruned (99,1454)"),
+            ("6", "XXXLGRID - Ultra extra extra large grid, pruned (150,1454)"),
+            ("7", "HUGEGRID - Ultra extra extra large grid for SCAN, pruned (300,1454)")):
+        print(f"{key}: {text}{' (default)' if key == default else ''}")
     
     grid_choice = get_user_input(
         "Select integration grid",
         DFT_GRIDS,
-        "4"  # Default to XLGRID as in original
+        default
     )
     
     return DFT_GRIDS[grid_choice]
