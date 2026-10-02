@@ -415,10 +415,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   banner says. opt2d12 parents keep the replacement prompt.
 - **Workflow planner convergence menus accept yes/no again.** The SP and OPT
   convergence questions became 0-3 menus, and any other answer was quietly
-  taken as 0 (keep the previous step's values). y/yes now gives the 1.1.1
-  tight values: SP Very tight (TOLINTEG 9 9 9 11 38, TOLDEE 11), OPT
-  TOLDEG 1.5e-5, TOLDEX 6e-5, TOLDEE 8, MAXCYCLE 1000. n/no gives Standard.
-  A note is printed for both, and any other answer is asked again.
+  taken as 0 (keep the previous step's values). y/yes and n/no now mean
+  what they did in 1.1.1. SP: y/yes is Very tight (TOLINTEG 9 9 9 11 38,
+  TOLDEE 11), n/no keeps the previous step's tolerances. OPT: y/yes is
+  TOLDEG 1.5e-5, TOLDEX 6e-5, TOLDEE 8, MAXCYCLE 1000; n/no is TOLDEG 3e-5,
+  TOLDEX 1.2e-4, TOLDEE 7, MAXCYCLE 800. A note is printed for both, and
+  any other answer is asked again.
 - **Answers piped into interactive cif2d12 and opt2d3 runs are read again.**
   cif2d12 ignored a piped answer to the space-group mismatch question, and
   opt2d3 ECHG refused with "no terminal to ask". If the pipe runs out, the

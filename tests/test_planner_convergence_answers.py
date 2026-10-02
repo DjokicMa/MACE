@@ -4,8 +4,9 @@ Up to 1.1.1 the planner asked "Use tight convergence? [y/N]" (SP) and "Use
 tighter convergence for refined optimization? [Y/n]" (OPT). Both became 0-3
 level menus, and any answer outside the menu, a habitual or scripted 'y'
 included, was taken silently as 0 (keep the previous step's values). Now
-y/yes gives the old tight values, n/no gives Standard, each with a note, and
-any other answer is asked again.
+y/yes and n/no keep their 1.1.1 meaning, each with a note: SP y/yes is Very
+tight and n/no keeps the previous step's tolerances; OPT y/yes and n/no give
+the values 1.1.1 wrote for them. Any other answer is asked again.
 
 The questions are answered through a real piped stdin in a subprocess.
 """
@@ -43,6 +44,7 @@ def _run(kind, stdin):
 
 
 OLD_OPT_TIGHT = {"TOLDEG": 1.5e-5, "TOLDEX": 6e-5, "TOLDEE": 8, "MAXCYCLE": 1000}
+OLD_OPT_NOT_TIGHT = {"TOLDEG": 3e-5, "TOLDEX": 1.2e-4, "TOLDEE": 7, "MAXCYCLE": 800}
 
 
 @pytest.mark.parametrize("answer", ["y", "yes", "Y"])
@@ -54,9 +56,10 @@ def test_sp_yes_is_the_old_tight_convergence(answer):
 
 
 @pytest.mark.parametrize("answer", ["n", "no"])
-def test_sp_no_is_standard(answer):
+def test_sp_no_keeps_the_previous_tolerances(answer):
+    # 1.1.1: "Use tight convergence? [y/N]" answered n added no tolerances
     cfg, out = _run("sp", f"{answer}\n")
-    assert cfg["tolerance_modifications"] == {"custom_tolerances": scf_tolerances("1")}
+    assert "tolerance_modifications" not in cfg
     assert "now a 0-3 menu" in out
 
 
@@ -80,9 +83,11 @@ def test_opt_yes_is_the_old_tight_convergence(answer):
 
 
 @pytest.mark.parametrize("answer", ["n", "no"])
-def test_opt_no_is_standard(answer):
-    cfg, _ = _run("opt", f"1\n{answer}\n")
-    assert cfg["optimization_settings"] == opt_convergence("1", upper=True)
+def test_opt_no_is_the_old_not_tighter_convergence(answer):
+    # 1.1.1: "Use tighter convergence ...? [Y/n]" answered n wrote these
+    cfg, out = _run("opt", f"1\n{answer}\n")
+    assert cfg["optimization_settings"] == OLD_OPT_NOT_TIGHT
+    assert "now a 0-3 menu" in out
 
 
 def test_opt_other_answer_is_asked_again():

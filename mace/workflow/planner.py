@@ -1401,7 +1401,8 @@ class WorkflowPlanner:
         choice = self._ask_convergence_level(
             "      Choose convergence level (0-3) [0]: ", SCF_TOLERANCE_PRESETS,
             "'Use tight convergence?'", "3",
-            "Very tight (TOLINTEG 9 9 9 11 38, TOLDEE 11)")
+            "Very tight (TOLINTEG 9 9 9 11 38, TOLDEE 11)",
+            "0", "0 (keep the previous step's tolerances)")
         if choice in SCF_TOLERANCE_PRESETS:
             ui.info(f"      Using {SCF_TOLERANCE_PRESETS[choice]['name']} convergence: "
                     f"{describe_scf_preset(choice)}")
@@ -2514,7 +2515,9 @@ class WorkflowPlanner:
             "    Choose convergence level (0-3, default 0): ", OPT_CONVERGENCE_PRESETS,
             "'Use tighter convergence?'", "tight",
             "the 1.1.1 tighter values (TOLDEG=0.000015, TOLDEX=0.00006, "
-            "TOLDEE=8, MAXCYCLE=1000)")
+            "TOLDEE=8, MAXCYCLE=1000)",
+            "not-tight", "the 1.1.1 values for 'n' (TOLDEG=0.00003, "
+            "TOLDEX=0.00012, TOLDEE=7, MAXCYCLE=800)")
 
         config = {"inherit_base_settings": True}
         if opt_choice in opt_types:
@@ -2525,17 +2528,22 @@ class WorkflowPlanner:
             # What "yes" to "Use tighter convergence?" wrote up to 1.1.1
             config["optimization_settings"] = {
                 "TOLDEG": 1.5e-5, "TOLDEX": 6e-5, "TOLDEE": 8, "MAXCYCLE": 1000}
+        elif conv_choice == "not-tight":
+            # What "no" to "Use tighter convergence?" wrote up to 1.1.1
+            config["optimization_settings"] = {
+                "TOLDEG": 3e-5, "TOLDEX": 1.2e-4, "TOLDEE": 7, "MAXCYCLE": 800}
         return config
 
     @staticmethod
     def _ask_convergence_level(prompt: str, presets: Dict[str, Any], old_question: str,
-                               yes_choice: str, yes_meaning: str) -> str:
+                               yes_choice: str, yes_meaning: str,
+                               no_choice: str, no_meaning: str) -> str:
         """Ask a 0-3 convergence menu that was a yes/no question up to 1.1.1.
 
         Returns "0" (keep the previous step's values), a preset level, or
-        yes_choice for y/yes, which keeps the old question's meaning; n/no
-        is Standard. Any other answer is asked again rather than being taken
-        as 0.
+        yes_choice for y/yes and no_choice for n/no, which keep the old
+        question's meaning. Any other answer is asked again rather than
+        being taken as 0.
         """
         valid = ", ".join(["0", *presets])
         while True:
@@ -2545,8 +2553,8 @@ class WorkflowPlanner:
             if answer in ("y", "yes", "n", "no"):
                 yes = answer.startswith("y")
                 ui.info(f"      Note: {old_question} is now a 0-3 menu. Taking "
-                        f"'{answer}' as {yes_meaning if yes else 'Standard (1)'}.")
-                return yes_choice if yes else "1"
+                        f"'{answer}' as {yes_meaning if yes else no_meaning}.")
+                return yes_choice if yes else no_choice
             ui.info(f"      Please enter one of {valid} (blank for 0)")
 
     def _get_advanced_opt_config(self) -> Dict[str, Any]:
