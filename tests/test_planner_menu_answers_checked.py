@@ -50,3 +50,17 @@ def test_opt_type_stops_a_piped_run_out_of_step():
     rc, cfg, out = _run("opt", "y\nFULLOPTG\n9\n\n\n")
     assert rc == 1 and cfg is None, out[-2000:]
     assert "not a terminal" in out
+
+
+def test_charge_potential_output_type_off_menu_is_asked_again():
+    rc, cfg, out = _run("cp", "9\n2\n" + "\n" * 30)
+    assert "Traceback" not in out and "KeyError" not in out, out[-2000:]
+    assert rc == 0, out[-2000:]
+    assert cfg["option_type"] == 3
+
+
+def test_charge_potential_output_type_stops_a_piped_run_out_of_step():
+    rc, cfg, out = _run("cp", "9\nx\n0\n" + "\n" * 30)
+    assert "Traceback" not in out and "KeyError" not in out, out[-2000:]
+    assert rc == 1, out[-2000:]
+    assert "not a terminal" in out

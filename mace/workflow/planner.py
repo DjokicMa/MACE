@@ -1897,7 +1897,8 @@ class WorkflowPlanner:
             ui.info("    3. 1D line")
             ui.info("    4. Points at atomic positions")
             
-            out_type = input("  Select output type [1]: ").strip() or "1"
+            out_type = self._ask_menu_choice(
+                "  Select output type [1]: ", ["1", "2", "3", "4"], "1")
             
             type_map = {"1": 6, "2": 3, "3": 2, "4": 7}
             config["option_type"] = type_map[out_type]
