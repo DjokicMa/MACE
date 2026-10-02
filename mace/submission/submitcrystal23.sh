@@ -122,10 +122,19 @@ cp $DIR/$JOB.d12  $scratch/$JOB/INPUT
 # this runs before the GUESSP staging and tells it to stand aside. Without
 # OPTINFO.DAT there is nothing to continue, so RESTART comes back out of the
 # scratch copy and the job starts over; $DIR/$JOB.d12 itself is not modified.
+# A two-component deck whose TWOCOMPON block asks for GUESSP, GUESSPNOSO or
+# 2NDVARIAT starts from a ONE-component matrix (manual p.173), and the killed
+# run left its own two-component matrix in fort.20 (staged, it stops with "io
+# error Read_real_1d"): that fort.20 is removed and the guess is staged below
+# as for any such deck.
 RESTART_KEEPS_FORT20=""
 if [ -f "$scratch/$JOB/INPUT" ] && sed -n "/^[[:space:]]*OPTGEOM[[:space:]]*$/I,/^[[:space:]]*END/Ip" "$scratch/$JOB/INPUT" | grep -qiE "^[[:space:]]*RESTART[[:space:]]*$"; then
   if [ -f "$scratch/$JOB/OPTINFO.DAT" ]; then
-    if [ -s "$scratch/$JOB/fort.20" ]; then
+    if sed -n -E "/^[[:space:]]*TWOCOMPON[[:space:]]*$/I,/^[[:space:]]*END(TWO)?[[:space:]]*$/Ip" "$scratch/$JOB/INPUT" | grep -qiE "^[[:space:]]*(GUESSP|GUESSPNOSO|2NDVARIAT)[[:space:]]*$"; then
+      rm -f "$scratch/$JOB/fort.20"
+      echo "RESTART: continuing the optimization from OPTINFO.DAT; its guess inside TWOCOMPON needs a"
+      echo "  one-component matrix, so the killed run own two-component fort.20 is not used"
+    elif [ -s "$scratch/$JOB/fort.20" ]; then
       RESTART_KEEPS_FORT20=1
       echo "RESTART: continuing the optimization from OPTINFO.DAT, SCF guess from its own fort.20"
     elif [ -s "$scratch/$JOB/fort.9" ]; then

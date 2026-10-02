@@ -378,8 +378,44 @@ def restart_staging_block(template_text: Optional[str] = None) -> Optional[str]:
     return text[start:end]
 
 
+_TWOCOMPON_GUESS_START = '#\n# Inside a TWOCOMPON block'
+_TWOCOMPON_ELIF = 'el' + _NEW_GUESSP_IF
+
+
+def twocompon_guess_branch(template_text: Optional[str] = None) -> Optional[str]:
+    """The GUESSP-inside-TWOCOMPON branch of the template's GUESSP staging,
+    from its comment to the "el" that turns the one-component branch's `if`
+    into its `elif` - what a script generated before it (1.1.5) lacks."""
+    try:
+        text = template_text if template_text is not None else _TEMPLATE.read_text()
+    except OSError:
+        return None
+    start = text.find(_TWOCOMPON_GUESS_START)
+    end = text.find(_TWOCOMPON_ELIF, start)
+    if start < 0 or end < 0:
+        return None
+    return text[start:end + 2]
+
+
+def _with_twocompon_guess(text: str, template_text: Optional[str]) -> Tuple[str, bool]:
+    """Insert the TWOCOMPON guess branch before a one-component GUESSP
+    staging of the current form that has none. Without it a two-component
+    deck's GUESSP staged the job's own (two-component) .f9, and CRYSTAL
+    stopped with "io error Read_real_1d"."""
+    if _TWOCOMPON_GUESS_START in text:
+        return text, False
+    code = [l.strip() for l in text.splitlines()]
+    if code.count(_NEW_GUESSP_IF) != 1:
+        return text, False
+    branch = twocompon_guess_branch(template_text)
+    if branch is None:
+        return text, False
+    at = text.index(_NEW_GUESSP_IF)
+    return text[:at] + branch + text[at:], True
+
+
 def refresh_restart_staging(script_text: str, template_text: Optional[str] = None) -> Tuple[str, str]:
-    """Give a job script written before the RESTART staging existed that
+    """Give a job script written before the current RESTART staging that
     staging. Returns (text, what happened).
 
     Such a script (a workflow copies the generator into workflow_scripts/
@@ -390,11 +426,23 @@ def refresh_restart_staging(script_text: str, template_text: Optional[str] = Non
     point where the current template has it - and an existing GUESSP staging
     of the current form is told to stand aside. Only when that is all the
     script does with fort.20: any other fort.20 handling is left alone and the
-    script is not changed.
+    script is not changed. A script that has a RESTART staging gets the
+    template's current one in its place. Either way a GUESSP staging without
+    the TWOCOMPON branch (a two-component deck needs a one-component matrix,
+    not its own .f9) gets it.
     """
-    if _STAGING_START in script_text:
-        return script_text, 'already has the RESTART staging'
     block = restart_staging_block(template_text)
+    if _STAGING_START in script_text:
+        text = script_text
+        start = text.find(_STAGING_START)
+        end = text.find(_GUESSP_START, start)
+        if block is not None and end > start and text[start:end] != block:
+            text = text[:start] + block + text[end:]
+        text, branch = _with_twocompon_guess(text, template_text)
+        if text == script_text:
+            return script_text, 'already has the RESTART staging'
+        return text, ('replaced the RESTART staging with the current template\'s'
+                      + (' and added its TWOCOMPON guess branch' if branch else ''))
     if block is None:
         return script_text, 'template staging block not found; script unchanged'
     copies = list(_INPUT_COPY_RE.finditer(script_text))
@@ -409,4 +457,5 @@ def refresh_restart_staging(script_text: str, template_text: Optional[str] = Non
     text = script_text[:at] + '\n' + block.rstrip('\n') + script_text[at:]
     if guessp_ifs == 1:
         text = text.replace(_OLD_GUESSP_IF, _NEW_GUESSP_IF, 1)
+        text, _ = _with_twocompon_guess(text, template_text)
     return text, 'added the RESTART staging of the current template'

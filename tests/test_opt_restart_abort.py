@@ -460,9 +460,81 @@ def test_old_script_gets_exactly_the_current_staging(tmp_path):
     old = _as_before_this_change(new)
     assert "# OPTGEOM RESTART" not in old and "RESTART_KEEPS_FORT20" not in old
     refreshed, what = opt_restart.refresh_restart_staging(old)
-    # the RESTART staging only: the TWOCOMPON guess branch is not back-ported
-    assert refreshed == _without_twocompon_guess(new), what
+    # the RESTART staging and the TWOCOMPON guess branch: the current script
+    assert refreshed == new, what
     assert opt_restart.refresh_restart_staging(new) == (new, "already has the RESTART staging")
+
+
+def test_script_with_an_older_restart_staging_gets_the_current_one(tmp_path):
+    """A script refreshed (or generated) before 1.1.5's TWOCOMPON handling:
+    its RESTART staging kept a two-component run's own fort.20, and its
+    GUESSP staging had no TWOCOMPON branch."""
+    new = _generated_script(tmp_path)
+    start, end = new.index("# OPTGEOM RESTART"), new.index("# GUESSP restart")
+    older_block = new[start:end].replace(
+        new[start:end][new[start:end].index("# A two-component deck"):
+                       new[start:end].index("RESTART_KEEPS_FORT20=")], "")
+    older_block = older_block.replace(
+        older_block[older_block.index('    if sed -n -E'):older_block.index('    elif [ -s "$scratch/$JOB/fort.20" ]')]
+        + "    elif", "    if")
+    older = _without_twocompon_guess(new[:start] + older_block + new[end:])
+    assert "TWOCOMPON" not in older
+    refreshed, what = opt_restart.refresh_restart_staging(older)
+    assert refreshed == new, what
+    assert "TWOCOMPON guess branch" in what
+
+
+def _run_staging(tmp_path, deck, scratch_files=(), dir_files=()):
+    """Run the generated script's staging (RESTART + GUESSP) in bash on a
+    scratch directory; returns (stdout, INPUT afterwards, fort.20 or None)."""
+    script = _generated_script(tmp_path)
+    block = script[script.index("# OPTGEOM RESTART"):script.index("\ncd $scratch/$JOB") + 1]
+    d = tmp_path / "run"
+    s = d / "scratch" / "testmat"
+    s.mkdir(parents=True)
+    (s / "INPUT").write_text(deck)
+    for name, text in scratch_files:
+        (s / name).write_text(text)
+    for name, text in dir_files:
+        (d / name).write_text(text)
+    r = subprocess.run(["bash", "-c", f'DIR="{d}"\nJOB=testmat\nscratch="{d}/scratch"\n' + block],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    f20 = s / "fort.20"
+    return r.stdout, (s / "INPUT").read_text(), f20.read_text() if f20.exists() else None
+
+
+TWOC_RESTART = ("t\nCRYSTAL\nOPTGEOM\nRESTART\nENDOPT\nEND\nTWOCOMPON\nSOC\n{guess}END\n"
+                "DFT\nPBE0\nEND\nEND\n")
+
+
+def test_2c_restart_does_not_stage_its_own_two_component_fort20(tmp_path):
+    """GUESSP inside TWOCOMPON reads a one-component matrix (manual p.173); the
+    killed run's fort.20 is two-component ("io error Read_real_1d")."""
+    out, deck, f20 = _run_staging(
+        tmp_path, TWOC_RESTART.format(guess="GUESSP\n"),
+        scratch_files=[("OPTINFO.DAT", "x"), ("fort.20", "2c matrix")],
+        dir_files=[("testmat.f20", "1c matrix"), ("testmat.f9", "2c f9")])
+    assert f20 == "1c matrix", out
+    assert "RESTART" in deck and "GUESSP" in deck
+
+
+def test_2c_restart_without_a_one_component_matrix_cold_starts(tmp_path):
+    out, deck, f20 = _run_staging(
+        tmp_path, TWOC_RESTART.format(guess="GUESSP\n"),
+        scratch_files=[("OPTINFO.DAT", "x"), ("fort.20", "2c matrix")],
+        dir_files=[("testmat.f9", "2c f9")])
+    assert f20 is None, out
+    assert "GUESSP" not in deck
+    assert "RESTART" in deck and "SOC" in deck
+
+
+def test_1c_restart_still_keeps_its_own_fort20(tmp_path):
+    deck = "t\nCRYSTAL\nOPTGEOM\nRESTART\nENDOPT\nEND\nGUESSP\nEND\n"
+    out, _, f20 = _run_staging(tmp_path, deck,
+                               scratch_files=[("OPTINFO.DAT", "x"), ("fort.20", "own matrix")],
+                               dir_files=[("testmat.f9", "older f9")])
+    assert f20 == "own matrix", out
 
 
 def test_old_script_with_other_fort20_handling_is_left_alone(tmp_path):
