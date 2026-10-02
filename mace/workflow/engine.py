@@ -38,6 +38,13 @@ from mace.database.materials import MaterialDatabase, create_material_id_from_fi
 from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.workflow.context import get_current_context
 from mace.utils.settings_extractor import extract_input_settings
+from mace.utils.calc_detection import staged_2c_guess as _staged_2c_guess
+
+
+def deck_has_2c_guess(deck_path) -> bool:
+    """Whether a deck asks for a two-component restart (GUESSPSO/GUESSPNOSO),
+    which a 1c GUESSP restart must leave alone."""
+    return _staged_2c_guess(deck_path) is not None
 
 
 def _planless_progression_allowed() -> bool:
@@ -176,8 +183,12 @@ class WorkflowEngine:
         # asking for it on another step fails there, with its reason.
         soc = plan_cfg.get('soc')
         soc = soc if isinstance(soc, bool) else None
+        # The SOC deck options a plan step may name (the deck writer checks
+        # them): "soc_ecp", "soc_basis" and the 2c restart "soc_guess".
+        soc_options = {k: plan_cfg[k] for k in ('soc_ecp', 'soc_basis', 'soc_guess')
+                       if plan_cfg.get(k) is not None}
 
-        if not functional and not opt_settings and soc is None:
+        if not functional and not opt_settings and soc is None and not soc_options:
             return None
 
         config_data: Dict[str, Any] = {"calculation_type": target_base_type}
@@ -185,6 +196,9 @@ class WorkflowEngine:
             config_data["soc"] = soc
             print(f"    Plan: {'two-component spin-orbit (SOC)' if soc else 'scalar'} "
                   f"deck for {target_calc_type}")
+        if soc_options:
+            config_data.update(soc_options)
+            print(f"    Plan SOC options for {target_calc_type}: {soc_options}")
         if functional:
             config_data["functional"] = functional
         if mm.get('use_dispersion'):
@@ -3012,6 +3026,14 @@ fi'''
         files_to_copy = [source_output_file, source_input_file]
         if original_input_file and original_input_file.exists():
             files_to_copy.append(original_input_file)
+        # A planned 2c restart ("soc_guess") reads the parent's density matrix:
+        # CRYSTALOptToD12 looks for <parent stem>.f9 next to the .out, and
+        # refuses the deck without it.
+        if self._get_plan_step_config(workflow_id, target_calc_type).get('soc_guess'):
+            from mace.workflow import guessp_chain
+            parent_f9 = guessp_chain.predecessor_f9(source_calc)
+            if parent_f9 is not None and parent_f9.stem == source_output_file.stem:
+                files_to_copy.append(parent_f9)
         
         work_dir = self.create_isolated_calculation_directory(
             material_id, f"{target_calc_type}_generation", files_to_copy
@@ -3287,6 +3309,12 @@ fi'''
             clean_name = f"{core_name}{suffix}.d12"
             final_location = step_dir / clean_name
             shutil.move(generated_input_file, final_location)
+            # A 2c restart deck (GUESSPSO/GUESSPNOSO) has its parent's matrix
+            # staged next to it as <deck stem>.f20; it moves with the deck,
+            # renamed to the job's name. Without it CRYSTAL stops (measured),
+            # so the step fails rather than leave a deck that aborts.
+            if not self._move_staged_2c_guess(generated_input_file, final_location):
+                return None
             
             # Fix naming for numbered calculations if needed
             if target_num > 1:
@@ -3316,7 +3344,7 @@ fi'''
                 'parent_calc_id': source_calc_id
             }
             
-            if self._guessp_restart_enabled(workflow_id):
+            if self._guessp_restart_enabled(workflow_id) and not deck_has_2c_guess(final_location):
                 if self._stage_guessp_restart(source_calc, source_input_file,
                                               final_location, slurm_script_path,
                                               job_name):
@@ -3364,6 +3392,29 @@ fi'''
             # Clean up isolated directory
             shutil.rmtree(work_dir, ignore_errors=True)
             
+    @staticmethod
+    def _move_staged_2c_guess(generated_deck: Path, final_deck: Path) -> bool:
+        """Move the .f20 CRYSTALOptToD12 staged beside a 2c restart deck to
+        ``<final deck stem>.f20``. True when the deck asks for no 2c restart
+        or the file was moved; False (deck removed, reason printed) when the
+        deck asks for one and nothing was staged."""
+        from mace.utils.calc_detection import staged_2c_guess
+        staged = staged_2c_guess(final_deck)
+        if staged is None:
+            return True
+        record, _ = staged
+        source = Path(generated_deck).with_suffix('.f20')
+        target = Path(final_deck).with_suffix('.f20')
+        if not source.is_file() or source.stat().st_size == 0:
+            print(f"  {record}: no {source.name} was staged with {Path(generated_deck).name}; "
+                  f"CRYSTAL stops on {record} with nothing in fort.20 (measured), so "
+                  f"{Path(final_deck).name} is not kept")
+            Path(final_deck).unlink()
+            return False
+        shutil.move(str(source), str(target))
+        print(f"  {record}: the parent's density matrix moved with the deck as {target.name}")
+        return True
+
     def _guessp_restart_enabled(self, workflow_id: Optional[str]) -> bool:
         """The plan's opt-in ``execution_settings.guessp_restart`` (default off)."""
         plan = self._load_workflow_plan(workflow_id) if workflow_id else None

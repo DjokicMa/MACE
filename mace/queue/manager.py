@@ -40,7 +40,7 @@ from mace.workflow.context import get_current_context
 from mace.recovery import opt_restart
 from mace.utils.calc_detection import (
     PROPERTY_CALC_TYPES, calc_type_from_filename, d12_calc_type, d3_calc_type,
-    deck_records)
+    deck_records, two_component_guess)
 
 # Import lock manager for race condition prevention
 try:
@@ -599,6 +599,14 @@ class EnhancedCrystalQueueManager:
         Returns:
             calc_id if successful, None if failed
         """
+        # A two-component restart (GUESSPSO/GUESSPNOSO) with no density
+        # matrix beside the deck would stop in CRYSTAL: not submitted.
+        from mace.submission.preflight import restart_file_problem
+        missing = restart_file_problem(d12_file)
+        if missing:
+            print(f"    Not submitting {Path(d12_file).name}: {missing}")
+            return None
+
         # Extract material information
         if material_id is None:
             material_id, formula, metadata = self.extract_material_info_from_d12(d12_file)
@@ -643,6 +651,10 @@ class EnhancedCrystalQueueManager:
             # resubmission (phase-3 QA: 3,4^2T7_CA second memory bump).
             if Path(d12_file).resolve() != calc_input_file.resolve():
                 shutil.copy2(d12_file, calc_input_file)
+                # A 2c restart's staged matrix goes with its deck, renamed.
+                staged = Path(d12_file).with_suffix('.f20')
+                if staged.is_file() and two_component_guess(Path(d12_file).read_text(errors='replace')):
+                    shutil.copy2(staged, calc_input_file.with_suffix('.f20'))
         
         # Create calculation record
         calc_id = None

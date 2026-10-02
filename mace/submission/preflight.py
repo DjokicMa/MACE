@@ -219,6 +219,52 @@ def early_stop_record(text: str) -> Optional[str]:
     return None
 
 
+# The two-component restarts (manual p. 173) are records of the TWOCOMPON
+# block and read fort.20, which submitcrystal23.sh stages from $JOB.f20 (and,
+# for GUESSPSO only, from the job's own non-empty $JOB.f9).
+_TWO_COMPONENT_GUESSES = ("GUESSPSO", "GUESSPNOSO")
+
+
+def _two_component_guess(text: str) -> Optional[str]:
+    inside = False
+    for line in split_lines(text)[1:]:
+        body = _LINE_SPLIT_RE.split(line)[0].strip().upper()
+        if not inside:
+            inside = body == "TWOCOMPON"
+        elif body in ("END", "ENDTWO"):
+            inside = False
+        elif body in _TWO_COMPONENT_GUESSES:
+            return body
+    return None
+
+
+def restart_file_problem(deck, text: Optional[str] = None) -> Optional[str]:
+    """Why a deck asking for a two-component restart would stop for want of
+    its density matrix, or None. GUESSPSO needs ``<stem>.f20`` or a non-empty
+    ``<stem>.f9`` beside the deck, GUESSPNOSO ``<stem>.f20`` (what the job
+    script stages as fort.20 for each)."""
+    deck = Path(deck)
+    if text is None:
+        try:
+            text = read_deck(deck)
+        except OSError:
+            return None
+    record = _two_component_guess(text)
+    if record is None:
+        return None
+    f20, f9 = deck.with_suffix(".f20"), deck.with_suffix(".f9")
+    if f20.is_file() and f20.stat().st_size > 0:
+        return None
+    if record == "GUESSPSO" and f9.is_file() and f9.stat().st_size > 0:
+        return None
+    wanted = f"{f20.name} or a non-empty {f9.name}" if record == "GUESSPSO" else f20.name
+    return (f"{record} (manual p. 173) restarts from a density matrix read from fort.20, "
+            f"and there is no {wanted} next to the deck for the job script to stage; "
+            + ("CRYSTAL stops on GUESSPSO with nothing in fort.20 (measured)"
+               if record == "GUESSPSO" else
+               "the job script stages only a .f20 for GUESSPNOSO"))
+
+
 def uncheckable_reason(text: str) -> Optional[str]:
     """Why this deck cannot be pre-flighted in an isolated directory, or None.
 
@@ -241,6 +287,9 @@ def uncheckable_reason(text: str) -> Optional[str]:
                     "a throwaway pre-flight directory has no fort.34")
         if body == "GUESSP":
             return ("deck restarts from a previous density matrix (GUESSP reads "
+                    "fort.20); a throwaway pre-flight directory has no fort.20")
+        if body in _TWO_COMPONENT_GUESSES:
+            return (f"deck restarts from a previous density matrix ({body} reads "
                     "fort.20); a throwaway pre-flight directory has no fort.20")
     return None
 
@@ -507,6 +556,11 @@ def preflight_deck(deck, *, runner, keep_dir=None) -> PreflightResult:
             deck, ERROR, "mixed line terminators",
             "CR, LF and CRLF are mixed in this deck; refusing to normalise it, "
             "because the copy CRYSTAL saw would then differ from the file you submit")
+
+    # A 2c restart with no matrix to stage: the job would stop (FAIL).
+    missing = restart_file_problem(deck, text)
+    if missing:
+        return PreflightResult(deck, FAIL, missing)
 
     # These are all "the harness cannot check this deck", never "this deck is
     # bad" - the explanation IS the reason, so it reaches the report table.

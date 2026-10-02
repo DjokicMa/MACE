@@ -10,6 +10,11 @@ import shutil
 import itertools
 from pathlib import Path
 
+try:
+    from mace.submission.preflight import restart_file_problem
+except ImportError:  # run as submission.crystal (mace_cli's fallback path)
+    from submission.preflight import restart_file_problem
+
 
 def extract_slurm_job_id(output):
     """Parse the SLURM job id ('Submitted batch job N') from sbatch stdout.
@@ -371,6 +376,13 @@ def main():
         # Process each D12 file
         for file_name in d12_files:
             submit_name = file_name.split(".d12")[0]
+
+            # A two-component restart (GUESSPSO/GUESSPNOSO) with no density
+            # matrix beside it would stop in CRYSTAL: not submitted.
+            missing = restart_file_problem(os.path.join(data_folder, file_name))
+            if missing and not nosubmit_mode:
+                print(f"  Not submitting {file_name}: {missing}")
+                continue
 
             if nosubmit_mode:
                 print(f"Generating script for: {file_name}")

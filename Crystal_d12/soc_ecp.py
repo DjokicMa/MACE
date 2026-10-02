@@ -52,7 +52,8 @@ from basis_file_check import basis_block_problem, shell_problem  # noqa: E402
 # inline.
 try:
     from mace.utils.calc_detection import (is_spin_orbit_deck, is_two_component_deck,
-                                           is_two_component_output)
+                                           is_two_component_output, staged_2c_guess,
+                                           two_component_guess)
 except ImportError:
     try:
         import importlib.util as _ilu
@@ -64,6 +65,8 @@ except ImportError:
         is_spin_orbit_deck = _calc_detection.is_spin_orbit_deck
         is_two_component_deck = _calc_detection.is_two_component_deck
         is_two_component_output = _calc_detection.is_two_component_output
+        staged_2c_guess = _calc_detection.staged_2c_guess
+        two_component_guess = _calc_detection.two_component_guess
     except Exception:  # pragma: no cover - flat copy without the mace package
         def _twocompon_records(content):
             records = None
@@ -87,6 +90,18 @@ except ImportError:
             return re.search(r"^[ \t]*(?:TOTAL [XY]-COMP MAGNETIZATION[ \t]"
                              r"|- NUMBER OF FULLY OCCUPIED/TOTAL SPINORS[ \t])",
                              content, re.MULTILINE) is not None
+
+        def two_component_guess(content):
+            block = _twocompon_records(content) or ()
+            return next((r for r in ("GUESSPSO", "GUESSPNOSO") if r in block), None)
+
+        def staged_2c_guess(deck_path):
+            try:
+                with open(deck_path, errors="replace") as fh:
+                    record = two_component_guess(fh.read())
+            except OSError:
+                return None
+            return None if record is None else (record, os.path.splitext(str(deck_path))[0] + ".f20")
 
 SOPSEUD_DIR = os.path.join(_HERE, "..", "Crystal_d3", "Archived", "basis", "sopseud")
 STUTTGART_DIR = os.path.join(_HERE, "basis_sets", "stuttgart")
@@ -689,7 +704,8 @@ def _basis_block_span(lines: List[str], i: int) -> Tuple[int, int, int]:
 
 def soc_deck(deck: str, soscale: float = 1.0, log=print,
              fmixing: Optional[int] = None, smear: Optional[float] = None,
-             ecp_form: Optional[str] = None, basis: Optional[str] = None) -> str:
+             ecp_form: Optional[str] = None, basis: Optional[str] = None,
+             guess: Optional[str] = None) -> str:
     """Turn a finished single-point MACE deck into a 2c-SCF SOC deck.
 
     Every atom whose basis block carries an INPUT ECP (conventional atomic
@@ -712,10 +728,16 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print,
     (_kept_stutsc). ``basis`` (the "soc_basis" setting, "pob-tzvp-rev2-soc")
     replaces every ECP atom's block whole by the official SOC basis set for
     its element (STUTSC and its own valence basis); all-electron atoms keep
-    theirs (_soc_basis_atoms). Notes and warnings go to ``log``. Raises
-    SocError, and returns no deck, for anything the manual says the 2c-SCF
-    does not support."""
+    theirs (_soc_basis_atoms). ``guess`` (the "soc_guess" setting,
+    "guesspso" or "guesspnoso") writes that restart record in the TWOCOMPON
+    block (manual p. 173); whether the deck may restart from a given parent
+    is for the caller to check (restart_mismatch), and the parent's .f9 has
+    to be staged as <deck stem>.f20. GUESSPSO gets FMIXING
+    SOC_RESTART_FMIXING unless ``fmixing`` is given. Notes and warnings go to
+    ``log``. Raises SocError, and returns no deck, for anything the manual
+    says the 2c-SCF does not support."""
     fmixing = _checked_fmixing(fmixing)
+    guess = _checked_guess(guess)
     smear = checked_smear(smear)
     ecp_form = _checked_ecp_form(ecp_form)
     basis = _checked_soc_basis(basis)
@@ -832,14 +854,14 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print,
     if "GUESSP" in problems:
         # The 2c restarts are GUESSPSO (from a 2c run) and GUESSP[NOSO] (from
         # an unrestricted 1c run without symmetry, SYMMREMO), both inside the
-        # TWOCOMPON block (manual p. 173). Neither is written: the manual does
-        # not say which file they read, and submitcrystal23.sh stages fort.20
-        # for GUESSP and, when there is none, removes only a bare GUESSP line.
+        # TWOCOMPON block (manual p. 173). They are written only on request
+        # ("soc_guess"), from a parent whose .f9 is staged as fort.20.
         raise SocError(
             "GUESSP (a restart) is not a 2c-SCF keyword. A 2c run restarts with GUESSPSO "
             "(from an earlier 2c run) or GUESSPNOSO (from an unrestricted 1c run without "
-            "symmetry) inside TWOCOMPON (CRYSTAL23 manual p. 173); MACE does not write "
-            "those, since the manual does not say which file they read")
+            "symmetry) inside TWOCOMPON (CRYSTAL23 manual p. 173): set \"soc_guess\": "
+            "\"guesspso\" or \"guesspnoso\" in an opt2d12 template, which checks the "
+            "parent and stages its .f9 as fort.20")
     if problems:
         raise SocError(
             "not supported in a two-component SCF (CRYSTAL23 manual ch. 6 lists every "
@@ -847,11 +869,12 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print,
     if scfdir is None:
         raise SocError("no SCFDIR record to place the TWOCOMPON block before")
 
-    rest = rest[:scfdir] + ["TWOCOMPON", "SOC", "END"] + rest[scfdir:]
+    twocompon = ["TWOCOMPON", "SOC"] + ([guess.upper()] if guess else []) + ["END"]
+    rest = rest[:scfdir] + twocompon + rest[scfdir:]
     rest = _monkhorst_equals_gilat(_strip_records(rest), log)
     if smear is not None:
         rest = _with_smear(rest, smear, log)
-    out += _scf_convergence(rest, log, fmixing)
+    out += _scf_convergence(rest, log, fmixing, guess)
     return "\n".join(out) + "\n"
 
 
@@ -912,6 +935,22 @@ def _monkhorst_equals_gilat(block3: List[str], log) -> List[str]:
 # replaced is named in the log.
 SOC_FMIXING = 50
 SOC_MIN_MAXCYCLE = 200
+# FMIXING for a GUESSPSO restart (soc_guess "guesspso"). Measured on Bi2 only:
+# 50 diverged (charges 19.7/26.3), 80 converged in 5 cycles. "soc_fmixing"
+# wins. A GUESSPNOSO restart keeps SOC_FMIXING (unmeasured for GUESSPNOSO).
+SOC_RESTART_FMIXING = 80
+SOC_GUESSES = ("guesspso", "guesspnoso")
+
+
+def _checked_guess(value) -> Optional[str]:
+    """A "soc_guess" value, "guesspso" or "guesspnoso", or None."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or value.strip().lower() not in SOC_GUESSES:
+        raise SocError(f'soc_guess must be "guesspso" (restart from a 2c run) or '
+                       f'"guesspnoso" (restart from an unrestricted 1c run without '
+                       f'symmetry), manual p. 173, not {value!r}')
+    return value.strip().lower()
 
 
 def _checked_fmixing(value) -> Optional[int]:
@@ -932,7 +971,8 @@ def _checked_fmixing(value) -> Optional[int]:
     return number
 
 
-def _scf_convergence(block3: List[str], log, fmixing: Optional[int] = None) -> List[str]:
+def _scf_convergence(block3: List[str], log, fmixing: Optional[int] = None,
+                     guess: Optional[str] = None) -> List[str]:
     """block3 with FMIXING SOC_FMIXING (or ``fmixing``, the "soc_fmixing"
     setting) and at least SOC_MIN_MAXCYCLE cycles.
 
@@ -946,6 +986,12 @@ def _scf_convergence(block3: List[str], log, fmixing: Optional[int] = None) -> L
     target = SOC_FMIXING if fmixing is None else fmixing
     why = ("soc_fmixing" if fmixing is not None else
            f"the SOC default; \"soc_fmixing\" in the options file or template sets another")
+    if fmixing is None and guess == "guesspso":
+        target = SOC_RESTART_FMIXING
+        why = ("the GUESSPSO restart default, measured on Bi2 only: 50 diverged (charges "
+               "19.7/26.3), 80 converged in 5 cycles; \"soc_fmixing\" sets another")
+    elif fmixing is None and guess == "guesspnoso":
+        why += "; unmeasured for GUESSPNOSO"
     if "FMIXING" in keys:
         i = keys.index("FMIXING")
         value = out[i + 1].split()[0]
@@ -1107,10 +1153,122 @@ def cif_metal_warning_once(log=print) -> None:
         log(CIF_METAL_WARNING)
 
 
+# --- 2c restarts: may this deck start from that parent's density matrix? ------
+#
+# GUESSPSO / GUESSPNOSO read the parent's density matrix (fort.20) as the guess
+# (manual p. 173). As for GUESSP (pp. 114-115) CRYSTAL does not check that the
+# matrix fits, so the two decks must have the same symmetry frame and the same
+# atoms, shells and basis functions in the same order. The ECP records are left
+# out of the comparison (GUESSPNOSO goes from INPUT to INPSOC/STUTSC, a GUESSPSO
+# child may go from INPSOC to STUTSC), and the child is compared as written,
+# after soc_deck (soc_basis replaces shells). These mirror
+# mace/workflow/guessp_chain.geometry_frame without importing mace.
+
+_GEOMETRY_STOP = {"OPTGEOM", "FREQCALC", "END", "ENDG", "ENDGEOM", "BASISSET"}
+
+
+def _norm(line: str) -> Tuple[str, ...]:
+    """Tokens of a record, numbers compared as numbers (2.0 == 2.)."""
+    out = []
+    for tok in line.split():
+        try:
+            out.append(repr(float(tok)))
+        except ValueError:
+            out.append(tok.upper())
+    return tuple(out)
+
+
+def geometry_frame(deck: str) -> Optional[tuple]:
+    """(dimensionality, symmetry header, NAT tuple, extra geometry records) of
+    a deck, or None when it cannot be read."""
+    lines = [ln.strip() for ln in deck.splitlines()]
+    try:
+        dim = lines[1].upper()
+        i = 2
+        if dim == "CRYSTAL":
+            flags = lines[i].split()
+            header = [_norm(lines[i]), _norm(lines[i + 1])]
+            i += 2
+            if len(flags) >= 3 and int(flags[2]) > 1:
+                header.append(_norm(lines[i]))
+                i += 1
+            i += 1
+        elif dim in ("SLAB", "POLYMER"):
+            header = [_norm(lines[i])]
+            i += 2
+        elif dim == "MOLECULE":
+            header = [_norm(lines[i])]
+            i += 1
+        else:
+            return None
+        natoms = int(lines[i].split()[0])
+        atoms = tuple(int(lines[i + 1 + k].split()[0]) for k in range(natoms))
+        i += 1 + natoms
+        extra = []
+        while i < len(lines) and lines[i].upper() not in _GEOMETRY_STOP:
+            if lines[i]:
+                extra.append(_norm(lines[i]))
+            i += 1
+        if i >= len(lines):
+            return None
+    except (IndexError, ValueError):
+        return None
+    return (dim, tuple(header), natoms, atoms, tuple(extra))
+
+
+def shell_signature(deck: str) -> Optional[tuple]:
+    """((NAT, shell records), ...) per atom of a deck's explicit basis input,
+    ECP records left out, or None when there is none to read."""
+    lines = deck.rstrip("\n").split("\n")
+    upper = [ln.strip().upper() for ln in lines]
+    if "BASISSET" in upper or "99 0" not in upper:
+        return None
+    end99 = upper.index("99 0")
+    try:
+        start = max(k for k in range(end99) if upper[k] == "END") + 1
+    except ValueError:
+        return None
+    blocks, i = [], start
+    try:
+        while i < end99:
+            if not lines[i].strip():
+                i += 1
+                continue
+            _s, ecp_end, nxt = _basis_block_span(lines, i)
+            blocks.append((int(lines[i].split()[0]),
+                           tuple(_norm(ln) for ln in lines[ecp_end:nxt] if ln.strip())))
+            i = nxt
+    except (ValueError, IndexError):
+        return None
+    return tuple(blocks) if i == end99 else None
+
+
+def restart_mismatch(parent_deck: str, child_deck: str) -> Optional[str]:
+    """Why ``child_deck`` (as written) cannot restart from ``parent_deck``'s
+    density matrix, or None."""
+    parent_frame, child_frame = geometry_frame(parent_deck), geometry_frame(child_deck)
+    if parent_frame is None or child_frame is None:
+        return "the symmetry and atom list of the parent deck and this deck could not be read"
+    if parent_frame != child_frame:
+        return "the symmetry or the atom list differs from the parent's"
+    parent_shells, child_shells = shell_signature(parent_deck), shell_signature(child_deck)
+    if parent_shells is None or child_shells is None:
+        return "the explicit basis input of the parent deck and this deck could not be read"
+    if parent_shells != child_shells:
+        return ("the basis shells differ from the parent's (soc_basis, or another basis, "
+                "changes the basis functions)")
+    return None
+
+
 # The keys of a cif2d12 options file or opt2d12 template that tune a SOC deck,
 # and the soc_deck argument each one sets.
 SOC_OPTION_KEYS = {"soc_fmixing": "fmixing", "smear": "smear", "soc_ecp": "ecp_form",
-                   "soc_basis": "basis"}
+                   "soc_basis": "basis", "soc_guess": "guess"}
+
+# Why a SOC deck with soc_guess has no parent to restart from (cif2d12).
+NO_PARENT_FOR_GUESS = ("soc_guess restarts from a parent run's density matrix (manual p. 173), "
+                       "and a deck written from a CIF has no parent; use soc_guess in an "
+                       "opt2d12 template")
 
 
 def soc_deck_options(options) -> Dict[str, object]:
@@ -1125,12 +1283,26 @@ class SocDeckBuffer(io.StringIO):
     reaches the atomic_deck file; ``discard`` is passed through. ``options``
     are the writer's options or settings, read for the SOC_OPTION_KEYS."""
 
-    def __init__(self, deck_file, log=print, options=None):
+    def __init__(self, deck_file, log=print, options=None, restart_from=None):
         super().__init__()
         self._deck = deck_file
         self._log = log
         self._kwargs = soc_deck_options(options)
+        # The parent deck a "soc_guess" deck restarts from (its text).
+        self._restart_from = restart_from
         self.written = None
+
+    def _restart_refusal(self, deck: str) -> Optional[str]:
+        if self._kwargs.get("guess") is None:
+            return None
+        if self._restart_from is None:
+            return NO_PARENT_FOR_GUESS
+        mismatch = restart_mismatch(self._restart_from, deck)
+        if mismatch:
+            return (f"{self._kwargs['guess'].upper()} cannot restart from the parent: "
+                    f"{mismatch} (CRYSTAL does not check that the matrix fits, manual "
+                    f"pp. 114-115 and 173)")
+        return None
 
     def discard(self):
         self._deck.discard()
@@ -1148,18 +1320,23 @@ class SocDeckBuffer(io.StringIO):
         """Why finish would refuse the deck written so far, or None; writes
         and prints nothing, so a refusal can come before any warning."""
         try:
-            soc_deck(self.getvalue(), soscale, log=lambda message: None, **self._kwargs)
-            return None
+            deck = soc_deck(self.getvalue(), soscale, log=lambda message: None, **self._kwargs)
         except SocError as exc:
             return str(exc)
+        return self._restart_refusal(deck)
 
     def finish(self, soscale: float = 1.0) -> Optional[str]:
         """Write the SOC deck; on refusal discard it and return the reason.
         ``written`` then holds the deck written."""
         try:
-            self.written = soc_deck(self.getvalue(), soscale, log=self._log, **self._kwargs)
-            self._deck.write(self.written)
-            return None
+            deck = soc_deck(self.getvalue(), soscale, log=self._log, **self._kwargs)
         except SocError as exc:
             self._deck.discard()
             return str(exc)
+        refusal = self._restart_refusal(deck)
+        if refusal:
+            self._deck.discard()
+            return refusal
+        self.written = deck
+        self._deck.write(deck)
+        return None

@@ -172,11 +172,13 @@ fi
 # that read no matrix (manual pp. 115, 171), and GUESSPSO / GUESSPNOSO,
 # inside a TWOCOMPON block, are the two-component restarts (p. 173): the
 # guess from a previous 2c-SCF and from a previous 1c-SCF density matrix.
-# The manual does not say which file those two read. fort.20 is where every
-# other density-matrix guess is read from (p. 115), and CRYSTAL ignores a
-# fort.20 nothing asks for, so the matrix is staged there (untested in 2c),
-# but such a record is never taken out of the deck: what CRYSTAL does without
-# its matrix was not measured. The job own $JOB.f9, from an earlier run of
+# The manual does not say which file those two read; fort.20 is where every
+# other density-matrix guess is read from (p. 115), and a GUESSPSO deck
+# restarted from a 2c matrix staged there (measured on HPCC, Bi2: converged in
+# 5 cycles at FMIXING 80). CRYSTAL stops on GUESSPSO with nothing in fort.20
+# (measured); the record is still never taken out of the deck, since MACE
+# writes it only with the parent matrix staged as $JOB.f20 and mace submit
+# and mace preflight refuse it without one. The job own $JOB.f9, from an earlier run of
 # this same 2c deck, is a 2c matrix - right for GUESSPSO, wrong for
 # GUESSPNOSO, which gets only a deliberately staged $JOB.f20. A 2c deck has
 # no OPTGEOM (p. 166), so there is no RESTART fort.20 to stand aside for.
@@ -200,7 +202,7 @@ elif MACE_GUESS2C=$(grep -oiE "^[[:space:]]*GUESSP(NO)?SO[[:space:]]*$" "$scratc
     cp "$DIR/$JOB.f9" "$scratch/$JOB/fort.20"
     echo "GUESSPSO: staged this job own 2c $JOB.f9 as fort.20 (the manual does not name the file it reads)"
   else
-    echo "$MACE_GUESS2C: no matrix to stage as fort.20; the record is left in the deck as written"
+    echo "$MACE_GUESS2C: no matrix to stage as fort.20; the record is left in the deck as written; CRYSTAL stops on GUESSPSO without fort.20 (measured)"
   fi
 fi
 cd $scratch/$JOB

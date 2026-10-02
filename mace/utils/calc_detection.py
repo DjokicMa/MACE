@@ -277,3 +277,36 @@ def is_spin_orbit_deck(content: str) -> bool:
     """True when a .d12 deck asks for a 2c-SCF with spin-orbit coupling (SOC
     inside its TWOCOMPON block)."""
     return 'SOC' in (two_component_block(content) or ())
+
+
+# The two-component restarts (manual p. 173), records of the TWOCOMPON block:
+# GUESSPSO starts from the density matrix of a previous 2c-SCF, GUESSPNOSO
+# from that of a previous 1c-SCF (unrestricted, without symmetry). Both read
+# fort.20; CRYSTAL stops on GUESSPSO with nothing there (measured on HPCC).
+TWO_COMPONENT_GUESSES = ('GUESSPSO', 'GUESSPNOSO')
+
+
+def two_component_guess(content: str) -> Union[str, None]:
+    """'GUESSPSO' or 'GUESSPNOSO' when a .d12 deck's TWOCOMPON block asks for
+    that restart, or None."""
+    block = two_component_block(content) or ()
+    for record in TWO_COMPONENT_GUESSES:
+        if record in block:
+            return record
+    return None
+
+
+def staged_2c_guess(deck_path: Union[str, Path]):
+    """(restart record, path of the .f20 it needs) for a deck asking for a
+    two-component restart, or None. The .f20 is ``<deck stem>.f20`` next to
+    the deck: the file submitcrystal23.sh stages as fort.20 for job
+    ``<deck stem>``."""
+    deck_path = Path(deck_path)
+    try:
+        content = deck_path.read_text(errors='replace')
+    except OSError:
+        return None
+    record = two_component_guess(content)
+    if record is None:
+        return None
+    return record, deck_path.with_suffix('.f20')

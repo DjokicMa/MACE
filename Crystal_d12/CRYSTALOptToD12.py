@@ -85,7 +85,8 @@ from d12_writer import (
 from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES, atomic_deck
 from basis_file_check import BasisFileError, check_basis_file
 from soc_ecp import (SocDeckBuffer, SocError, checked_smear, metal_parent_warning,
-                     parent_metal_evidence)
+                     parent_metal_evidence, is_spin_orbit_deck)
+import soc_ecp
 from d12_interactive import (
     display_current_settings, interactive_d12_configuration,
     get_calculation_options_from_current, get_calculation_options,
@@ -214,6 +215,70 @@ def print_soc_metal_summary(names):
                 "in hartree> in the template, or use a denser mesh:")
         for name in names:
             ui.warn(f"  {name}")
+
+
+# A "soc_guess" restart with nothing staged: CRYSTAL stops on GUESSPSO with
+# nothing in fort.20 (measured on HPCC), so such a deck is never written.
+NO_MATRIX_STOP = "CRYSTAL stops on GUESSPSO with nothing in fort.20 (measured)"
+
+
+def soc_restart_plan(options, output_file, input_file, new_filename):
+    """For a deck asking for a 2c restart ("soc_guess", manual p. 173):
+    (problem, parent .f9, child .f20, parent deck text). problem is None when
+    the restart may be written; the frame and shell comparison with the deck
+    as written comes later (SocDeckBuffer). Nothing is written here."""
+    try:
+        guess = soc_ecp._checked_guess(options.get("soc_guess"))
+    except SocError as exc:
+        return str(exc), None, None, None
+    record = guess.upper()
+    if not options.get("soc"):
+        return (f"soc_guess ({record}) is a restart of a two-component SOC deck, and this "
+                f"deck is scalar; set \"soc\": true"), None, None, None
+    if not (input_file and os.path.exists(input_file)):
+        return (f"{record} needs the parent deck (.d12) to check that its density matrix "
+                f"fits this deck"), None, None, None
+    with open(input_file, errors="replace") as fh:
+        parent = fh.read()
+    if guess == "guesspso":
+        if not options.get("two_component"):
+            return (f"GUESSPSO restarts from the density matrix of a previous two-component "
+                    f"SCF (manual p. 173), and the parent is a one-component run; "
+                    f"\"guesspnoso\" starts from an unrestricted 1c run without symmetry"), \
+                None, None, None
+        ui.info("  GUESSPSO: the parent is a two-component run "
+                + ("with SOC" if is_spin_orbit_deck(parent) else
+                   "without SOC (a 2c reference run; manual p. 173 asks only for a "
+                   "previous 2c-SCF)"))
+    else:
+        problem = guesspnoso_parent_problem(options, parent, output_file)
+        if problem:
+            return problem, None, None, None
+    f9 = os.path.splitext(output_file)[0] + ".f9"
+    if not os.path.isfile(f9) or os.path.getsize(f9) == 0:
+        return (f"{record} restarts from the parent's density matrix, and "
+                f"{os.path.basename(f9)} next to {os.path.basename(output_file)} is "
+                f"{'empty' if os.path.isfile(f9) else 'missing'}; {NO_MATRIX_STOP}"), \
+            None, None, None
+    f20 = os.path.splitext(new_filename)[0] + ".f20"
+    if (os.path.realpath(os.path.dirname(os.path.abspath(f20)))
+            == os.path.realpath(os.path.dirname(os.path.abspath(f9)))
+            and os.path.splitext(os.path.basename(f20))[0]
+            == os.path.splitext(os.path.basename(f9))[0]):
+        return (f"the deck would have the parent's own name in the parent's directory, so "
+                f"its job would overwrite the parent's {os.path.basename(f9)}; write it "
+                f"elsewhere (--output-dir)"), None, None, None
+    if os.path.exists(f20):
+        import filecmp
+        if not filecmp.cmp(f20, f9, shallow=False):
+            return (f"{os.path.basename(f20)} already exists and is not "
+                    f"{os.path.basename(f9)}; not overwriting it"), None, None, None
+    return None, f9, f20, parent
+
+
+def guesspnoso_parent_problem(options, parent, output_file):
+    """Why a 1c parent cannot start a GUESSPNOSO deck, or None (round 6, C6)."""
+    return ("GUESSPNOSO is not written yet")
 
 
 def optimisation_problem(out_file):
@@ -614,7 +679,7 @@ THREE_C_FUNCTIONALS = ("HF3C", "HFSOL3C", "PBEH3C", "HSE3C", "B973C", "PBESOL03C
 
 
 def write_d12_file(output_file, geometry_data, settings, external_basis_data=None,
-                   parent_k_points=None, ask=None, parent_metal=None):
+                   parent_k_points=None, ask=None, parent_metal=None, soc_restart_parent=None):
     """Write new D12 file with optimized geometry and settings.
 
     parent_k_points is the raw k-point value parsed from the parent .d12 this
@@ -672,7 +737,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
         if settings.get("soc"):
             # Two-component SOC deck: written as usual, then rewritten by
             # soc_ecp.soc_deck before it reaches the file.
-            f = SocDeckBuffer(f, options=settings)
+            f = SocDeckBuffer(f, options=settings, restart_from=soc_restart_parent)
 
         # Title
         # Title from the file NAME only: with --output-dir the path carries a
@@ -2051,12 +2116,35 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     # Use optimized geometry from output but with preserved settings
     # The geometry_data (out_data) contains the optimized coordinates with is_unique flags
     # The settings (options) contains the preserved symmetry and other settings from D12
+    # A 2c restart ("soc_guess"): checked before the deck is written, and the
+    # parent's .f9 staged as <deck stem>.f20 once it is.
+    restart_f9 = restart_f20 = restart_parent = None
+    if converted_options.get("soc_guess") is not None:
+        problem, restart_f9, restart_f20, restart_parent = soc_restart_plan(
+            converted_options, output_file, input_file, new_filename)
+        if problem:
+            _fail(problem, f"\nNot writing {os.path.basename(new_filename)}: {problem}")
+            return False, options
     parent_metal = soc_parent_metal(output_file) if converted_options.get("soc") else None
     try:
         written = write_d12_file(new_filename, out_data, converted_options, external_basis_data,
                                  parent_k_points=parent_k_points,
                                  ask=False if unattended else None,
-                                 parent_metal=parent_metal)
+                                 parent_metal=parent_metal,
+                                 soc_restart_parent=restart_parent)
+        if written and restart_f9:
+            import shutil
+            try:
+                if not os.path.exists(restart_f20):
+                    shutil.copyfile(restart_f9, restart_f20)
+            except OSError as exc:
+                os.remove(new_filename)
+                _fail(f"could not stage {os.path.basename(restart_f9)} as "
+                      f"{os.path.basename(restart_f20)} ({exc}); {NO_MATRIX_STOP}")
+                return False, options
+            ui.info(f"  {converted_options['soc_guess'].upper()}: staged "
+                    f"{os.path.basename(restart_f9)} as {os.path.basename(restart_f20)} "
+                    f"(the job script reads it as fort.20)")
     except BasisFileError as exc:
         # A basis-library file CRYSTAL could not read (atomic_deck has
         # removed the part-written deck).

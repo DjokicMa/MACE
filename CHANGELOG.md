@@ -156,6 +156,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   p. 174), which MACE does not write. Untested on CRYSTAL; decks without the
   key are unchanged.
 
+- **A SOC deck can restart from its parent's density matrix (opt-in,
+  `opt2d12` and the workflow engine).** `"soc_guess": "guesspso"` in an
+  opt2d12 template (or a workflow plan step) writes GUESSPSO in the
+  TWOCOMPON block (manual p. 173) and stages the parent's `.f9` next to the
+  deck as `<deck stem>.f20`, the file the job script copies to fort.20. The
+  parent must be a two-component run, with SOC or without (p. 173 asks only
+  for a previous 2c-SCF; the log says which), its `.f9` beside its `.out`
+  must be non-empty, and the parent deck and the deck as written must have
+  the same symmetry frame and the same shells per atom, ECP records aside
+  (so INPSOC to STUTSC is fine, `soc_basis` from a parent in another basis
+  is not): CRYSTAL does not check that the matrix fits (pp. 114-115). A
+  different existing `.f20` is never overwritten, and a deck named as its
+  parent in the parent's directory is refused. Otherwise nothing is written
+  and the reason is given. Such a deck gets FMIXING 80 (measured on Bi2 only:
+  from a staged 2c matrix FMIXING 50 diverged, charges 19.7/26.3, and 80
+  converged in 5 cycles) unless `"soc_fmixing"` sets another. The workflow
+  engine copies the parent's `.f9` to where opt2d12 looks for it and moves
+  the `.f20` with the deck, renamed to the job; a 2c restart deck without
+  one fails the step instead of leaving a deck that aborts. `mace preflight`
+  fails, and `mace submit` does not submit, a GUESSPSO deck with neither
+  `<stem>.f20` nor a non-empty `<stem>.f9`, or a GUESSPNOSO deck without
+  `<stem>.f20`. cif2d12 refuses `soc_guess` (no parent). The SOC GUESSP
+  refusal now points at `soc_guess`. `soc_guess` is never inherited from a
+  parent deck: each child opts in. Decks without the key are unchanged.
+
 ### Fixed
 
 - **Basis-library files CRYSTAL cannot read are refused on every deck
@@ -215,8 +240,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (pp. 170-175); fort.20 is where a density-matrix guess is read from
   (pp. 114-115), so `$JOB.f20` is staged there if present, else, for
   GUESSPSO only, the job's own non-empty `$JOB.f9` (a 2c matrix from an
-  earlier run of the same deck) - untested in 2c. The recovery's refresh of
-  pre-RESTART job scripts writes the new GUESSP line. Decks are unchanged.
+  earlier run of the same deck). Measured on HPCC (Bi2): a GUESSPSO deck
+  restarts from the 2c matrix staged as fort.20, and CRYSTAL stops on
+  GUESSPSO with nothing in fort.20. The recovery's refresh of pre-RESTART job
+  scripts writes the new GUESSP line. Decks are unchanged.
 
 ## [1.1.3] - 2026-10-01
 
