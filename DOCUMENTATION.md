@@ -210,6 +210,23 @@ mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
   `thermal_properties.yaml` (`--tmin/--tmax/--tstep`), and `band_dos.pdf` with `--plot`.
   Frequencies are in THz (x 33.35641 = cm-1). Modes below -0.1 THz away from Gamma are
   reported; thermal properties skip imaginary modes.
+- **phonopy's own commands** (phonopy 4.7.2 syntax) work on the same set, run in its
+  directory, e.g. to plot with a `band.conf` of your own:
+  ```bash
+  phonopy-init --crystal -f mat_opt_ph222_disp-*.out   # -> FORCE_SETS (collect writes it too)
+  phonopy --factor=521.47083 --config band.conf        # band.yaml in cm-1 (default THz)
+  ```
+  `phonopy-init -f` exits 0 even when it cannot read an output: check that
+  `FORCE_SETS` exists. Since phonopy 4 the setup options (`-d`, `--dim`, `-c`, `-f`)
+  belong to `phonopy-init`; `phonopy` itself takes no `--crystal` (the calculator is
+  in `phonopy_disp.yaml`); a configuration file needs `--config` (a bare
+  `phonopy` with a .conf as its argument computes nothing); and there is no `--nac`:
+  a `BORN` file in the directory (as `collect --nac-from` writes) switches the
+  non-analytical correction on, `--nonac` off. With an explicit basis the set
+  directory also holds `TEMPLATE` (and `CRY_SYM` with `--cry-sym`), so
+  `phonopy-init --crystal -d --dim 2 2 2 -c ../mat_opt.out` there writes the same
+  decks (apart from the title) as `supercell-NNN.d12`, for the default `--amplitude`
+  and `--pm`.
 - **NAC** (`--nac-from`): a Gamma FREQCALC of the same material with `INTENS` and
   `INTCPHF`, same functional and basis (its `.d12` must sit beside the output). The Born
   charges and dielectric tensor are read with phonopy-crystal-born and written to
