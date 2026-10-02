@@ -31,9 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   together counted the charge twice). An odd count in a molecule is never
   written closed shell (a periodic cell may be, with a warning: a half-filled
   band); RHF/HF-3c and `GHOSTS` + `DOPING` with an odd count are refused; an
-  odd molecule with an HSE-type screened hybrid gets a warning (measured:
-  HSEsol-3c, HSE06 and HSEsol stopped at SCF cycle 3-4, PBE0/PBEsol0
-  converged; the functional is kept); and
+  odd-electron open-shell deck with an HSE-type screened hybrid gets a
+  warning in every dimensionality, also in opt2d12 children (measured:
+  HSEsol-3c, HSE06 and HSEsol crash at SCF cycle 1-3 on any odd-electron
+  open-shell system, 0D and 3D, while PBE0/PBEsol0 converge; the functional
+  is never changed); and
   `CHEMOD` needs a deck without symmetry (CRYSTAL stops: "SHELL CHARGES NOT
   COMPATIBLE WITH SYMMETRY"). Shell charges for SOLDEF2MSVP, POB-TZVP-REV2
   and POB-DZVP-REV2 (H B C N O F Na Mg P S Cl K Ca Zn Li) were measured on

@@ -351,8 +351,11 @@ def ensure_open_shell(child_text: str, parent_text: Optional[str]) -> Tuple[str,
         return child_text, []
     ic = _ic()
     child = ic.deck_method(child_text)
+    # an open-shell odd count with an HSE-type screened hybrid (measured to
+    # crash on CRYSTAL23, 0D and 3D); the functional is kept, with a warning
+    hybrid = [w for w in (ic.screened_hybrid_odd_warning(child),) if w]
     if child.spin and (child.method == "HF" or child.spinlock):
-        return child_text, []
+        return child_text, hybrid
     parent = ic.deck_method(parent_text) if parent_text else None
     lines = child_text.splitlines()
     notes = []
@@ -367,9 +370,9 @@ def ensure_open_shell(child_text: str, parent_text: Optional[str]) -> Tuple[str,
             notes.append(f"kept the parent's SPINLOCK {parent.spinlock[0]} {parent.spinlock[1]}")
         if not (parent.spinlock or child.spinlock):
             notes.append("WARNING: odd electron count with SPIN but no SPINLOCK, as in the parent")
-        return "\n".join(lines) + ("\n" if child_text.endswith("\n") else ""), notes
+        return "\n".join(lines) + ("\n" if child_text.endswith("\n") else ""), notes + hybrid
     if child.spin:
-        return child_text, []
+        return child_text, hybrid
     if dim != "MOLECULE":
         return child_text, [f"WARNING: the new deck holds {int(electrons)} electrons per cell (odd) "
                             "and is closed shell (a half-filled band); the parent had no "

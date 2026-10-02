@@ -316,15 +316,31 @@ class MethodInfo:
     functional: str = ""           # the DFT functional keyword, when known
 
 
-# Measured on HPCC (CRYSTAL/23-intel-2023a): odd-electron MOLECULE runs of Li+
-# clusters with SPIN + SPINLOCK 1 30 stopped at SCF cycle 3-4 with HSEsol-3c
-# (serial run: "DIIS TEST: NaN AT SCF CYCLE 3", then a crash), HSE06 and
-# HSEsol, with and without DIIS; the same deck with PBEsol0 or PBE0 converged.
-SCREENED_HYBRID_ODD_MOLECULE_WARNING = (
-    "WARNING: on CRYSTAL23, odd-electron MOLECULE runs with the screened hybrids HSEsol-3c, "
-    "HSE06 and HSEsol stopped at SCF cycle 3-4 (\"DIIS TEST: NaN\", then a crash) where PBE0 "
-    "and PBEsol0 converged (measured on Li+ clusters); the deck keeps {functional} as asked - "
-    "check that the SCF gets past cycle 4")
+# Measured on HPCC (CRYSTAL/23-intel-2023a, 2026-10-01/02): HSEsol-3c, HSE06
+# and HSEsol (the HJS screened-exchange functionals) crash on any odd-electron
+# open-shell system, charged or not, as a MOLECULE and in a 3D box alike
+# ("DIIS TEST: NaN" at SCF cycle 1-3, then a segfault or malloc assert);
+# NODIIS + LEVSHIFT, SPINLOCK 1 30 and dropping BIPOSIZE/EXCHSIZE did not help.
+# The same decks with PBE0 or PBEsol0 converged. Even counts with SPIN are fine.
+SCREENED_HYBRID_ODD_ELECTRON_WARNING = (
+    "WARNING: {functional} is an HSE-type screened hybrid. On CRYSTAL23, HSEsol-3c, HSE06 and "
+    "HSEsol crashed on every odd-electron open-shell system measured, molecules (0D) and periodic "
+    "boxes (3D) alike, charged or not (\"DIIS TEST: NaN\" at SCF cycle 1-3, then a segfault; "
+    "NODIIS + LEVSHIFT and SPINLOCK did not help), while PBE0 and PBEsol0 converged on the same "
+    "systems. The deck keeps {functional} as asked - MACE does not change the functional; if the "
+    "run stops in its first SCF cycles, choosing PBE0 or PBEsol0 is up to you")
+
+
+def screened_hybrid(functional) -> bool:
+    """True for an HSE-type screened hybrid (HSE06, HSEsol, HSEsol-3c, with or without -D3)."""
+    return bool(functional) and re.sub(r"[^0-9A-Z]", "", str(functional).upper()).startswith("HSE")
+
+
+def screened_hybrid_odd_warning(method: "MethodInfo") -> Optional[str]:
+    """The warning for an odd-electron open-shell run with this Hamiltonian, or None."""
+    if method.method == "DFT" and screened_hybrid(method.functional):
+        return SCREENED_HYBRID_ODD_ELECTRON_WARNING.format(functional=method.functional)
+    return None
 
 
 def _atom_shells(i: int, z_label: int, element: str, basis: BasisInfo, out_shells: Dict[str, List[str]]):
@@ -634,9 +650,9 @@ def plan_charge_setup(symbols: Sequence[str], z_labels: Sequence[int], xyz, *, c
             setup.spinlock = (int(value), int(cycles or DEFAULT_SPINLOCK_CYCLES))
             setup.spin = method.method == "DFT"
             setup.report.append(f"SPINLOCK {setup.spinlock[0]} {setup.spinlock[1]} ({source})")
-            if not periodic and method.method == "DFT" and method.functional.upper().startswith("HSE"):
-                setup.warnings.append(SCREENED_HYBRID_ODD_MOLECULE_WARNING.format(
-                    functional=method.functional))
+            warning = screened_hybrid_odd_warning(method)
+            if warning:
+                setup.warnings.append(warning)
     elif spinlock and integral and int(spinlock) % 2 != int(electrons) % 2:
         raise IonChargeError(f"SPINLOCK {spinlock} does not fit {fmt_n(electrons)} electrons "
                              "(nalpha-nbeta must have the parity of the electron count)")

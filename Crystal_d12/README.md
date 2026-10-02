@@ -468,11 +468,15 @@ so is `GHOSTS` + `DOPING` with an odd count ("NALPHA-NBETA NOT COMPATIBLE WITH
 NUMBER OF ELECTRONS": the parity is checked before the doping) [measured]; the
 working ghost recipe is an explicit basis with `CHEMOD` + `CHARGED`.
 A periodic cell may also keep an odd count closed shell (a half-filled band);
-MACE then only warns. Odd-electron MOLECULE runs with the screened hybrids
-HSEsol-3c, HSE06 and HSEsol stopped at SCF cycle 3-4 on CRYSTAL23 ("DIIS TEST:
-NaN", then a crash; Li+ clusters with `SPIN` + `SPINLOCK 1 30`, with and
-without DIIS), while PBE0 and PBEsol0 converged (PBEsol0: 95 electrons, spin
-1, 19 cycles) [measured]. MACE keeps the functional asked for and warns.
+MACE then only warns. The screened hybrids HSEsol-3c, HSE06 and HSEsol (HJS
+screened exchange) crash on any odd-electron open-shell system on CRYSTAL23,
+charged or not, as a MOLECULE (0D) and in a periodic 3D box alike: "DIIS TEST:
+NaN" at SCF cycle 1-3, then a segfault or malloc assert; `NODIIS` +
+`LEVSHIFT`, `SPINLOCK 1 30` and dropping `BIPOSIZE`/`EXCHSIZE` do not help
+[measured]. The same systems converge with PBE0 and PBEsol0 (175-531 cycles),
+and even counts with `SPIN` are fine [measured]. MACE keeps the functional
+asked for - it never changes the method - and warns for every dimensionality
+(cif2d12, opt2d12 and `mace ions`), naming PBE0/PBEsol0 as what converged.
 
 ### Derived decks (opt2d12)
 
