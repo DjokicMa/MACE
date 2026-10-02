@@ -104,6 +104,35 @@ def generate_k_points(system: str, n_points: int = 30) -> List[Tuple[str, List[f
     ]
 
 
+def crystal_family_and_centring(out_file: str) -> Tuple[str, str]:
+    """(crystal family, centring letter) of a CRYSTAL output's space group,
+    e.g. ("TRIGONAL", "R") for R -3 C, as get_crystal_supported_labels takes
+    them; ("CUBIC", "P") when the group cannot be read."""
+    try:
+        from d12_constants import SPACEGROUP_SYMBOL_TO_NUMBER, SPACEGROUP_ALTERNATIVES
+    except ImportError:
+        sys.path.insert(0, str(Path(__file__).parent.parent / "Crystal_d12"))
+        from d12_constants import SPACEGROUP_SYMBOL_TO_NUMBER, SPACEGROUP_ALTERNATIVES
+    with open(out_file, 'r', errors='ignore') as f:
+        content = f.read()
+    match = re.search(r'^\s*SPACE GROUP \((?:NON)?CENTROSYMMETRIC\)\s*:\s*(\S.*?)\s*$',
+                      content, re.M)
+    if not match:
+        return "CUBIC", "P"
+    symbol = match.group(1)
+    number = (SPACEGROUP_SYMBOL_TO_NUMBER.get(symbol) or SPACEGROUP_ALTERNATIVES.get(symbol)
+              or SPACEGROUP_SYMBOL_TO_NUMBER.get(symbol.replace(' ', ''))
+              or SPACEGROUP_ALTERNATIVES.get(symbol.replace(' ', '')))
+    if not number:
+        return "CUBIC", "P"
+    for top, family in ((2, "TRICLINIC"), (15, "MONOCLINIC"), (74, "ORTHORHOMBIC"),
+                        (142, "TETRAGONAL"), (167, "TRIGONAL"), (194, "HEXAGONAL"),
+                        (230, "CUBIC")):
+        if number <= top:
+            return family, symbol[0].upper()
+    return "CUBIC", "P"
+
+
 def get_band_info_from_output(out_file: str) -> Dict[str, Any]:
     """Extract band structure information from CRYSTAL output file."""
     info = {
@@ -704,27 +733,8 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
             band_config["path_method"] = "coordinates"
             band_config["path"] = "auto"  # Ensure auto-detection is triggered
             
-            # Calculate appropriate shrink based on lattice parameters
-            # Try to extract lattice parameters from output file
-            a, b, c = 10.0, 10.0, 10.0  # Default fallback
-            if out_file:
-                try:
-                    with open(out_file, 'r') as f:
-                        content = f.read()
-                    # Look for lattice parameters
-                    import re
-                    # Pattern for PRIMITIVE CELL or LATTICE PARAMETERS
-                    param_match = re.search(r'LATTICE PARAMETERS.*?\n\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)', content, re.DOTALL)
-                    if not param_match:
-                        param_match = re.search(r'PRIMITIVE CELL.*?\n\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)', content, re.DOTALL)
-                    if param_match:
-                        a = float(param_match.group(1))
-                        b = float(param_match.group(2))
-                        c = float(param_match.group(3))
-                except:
-                    pass
-            
-            # Extract and process shrink factor
+            # Extract and process shrink factor (from the parent's SHRINK,
+            # else from the cell fort.9 holds)
             base_name = Path(out_file).stem.split('_')[0] if out_file else "material"
             input_dir = Path(out_file).parent if out_file else Path.cwd()
             shrink = extract_and_process_shrink(out_file, base_name, input_dir, band_config)
@@ -876,12 +886,11 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
         
         if out_file:
             try:
-                # Extract lattice info from output file
-                lattice_params = extract_lattice_parameters_from_output(out_file)
-                if lattice_params:
-                    crystal_system = lattice_params.get('crystal_system', 'CUBIC')
-                    lattice_type = lattice_params.get('lattice_type', 'P')
-            except:
+                # extract_lattice_parameters_from_output returns the cell
+                # only (no crystal_system / lattice_type), so every output
+                # was shown the cubic P labels; read the space group instead
+                crystal_system, lattice_type = crystal_family_and_centring(out_file)
+            except Exception:
                 pass
         
         # Get supported labels

@@ -511,16 +511,29 @@ def extract_and_process_shrink(out_file: str, base_name: str,
         with open(out_file, 'r') as f:
             content = f.read()
         
-        # Look for lattice parameters
-        lattice_match = re.search(r'LATTICE PARAMETERS.*?\n\s*A\s+B\s+C\s+ALPHA\s+BETA\s+GAMMA.*?\n\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)', content, re.DOTALL)
-        if not lattice_match:
-            # Try PRIMITIVE CELL pattern
-            lattice_match = re.search(r'PRIMITIVE CELL.*?\n\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)', content, re.DOTALL)
-        
-        if lattice_match:
-            a = float(lattice_match.group(1))
-            b = float(lattice_match.group(2))
-            c = float(lattice_match.group(3))
+        # The cell fort.9 holds (the computed geometry block: a SUPERCEL
+        # supercell, an optimised cell), not the first one printed (the
+        # input's); the first lattice parameters only when there is none
+        computed = None
+        if _geometry_blocks is not None:
+            block, _ = select_geometry_block(_geometry_blocks(content.split('\n')),
+                                             content.split('\n'))
+            if block is not None and block['params'] is not None:
+                computed = block['params']
+        lattice_match = None
+        if computed is None:
+            lattice_match = re.search(r'LATTICE PARAMETERS.*?\n\s*A\s+B\s+C\s+ALPHA\s+BETA\s+GAMMA.*?\n\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)', content, re.DOTALL)
+            if not lattice_match:
+                # Try PRIMITIVE CELL pattern
+                lattice_match = re.search(r'PRIMITIVE CELL.*?\n\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)', content, re.DOTALL)
+
+        if computed is not None or lattice_match:
+            if computed is not None:
+                a, b, c = computed['a'], computed['b'], computed['c']
+            else:
+                a = float(lattice_match.group(1))
+                b = float(lattice_match.group(2))
+                c = float(lattice_match.group(3))
             
             # Calculate shrink factors using a*k > 60 rule for band structures
             ka = max(2, int(60.0 / a))
