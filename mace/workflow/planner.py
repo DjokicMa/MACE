@@ -1691,7 +1691,7 @@ class WorkflowPlanner:
                 "shrink": "auto",
                 "labels": "auto",
                 "auto_path": True,
-                "n_points": 10000,
+                "n_points": 1000,
                 "path_method": "coordinates"
             },
             "DOSS": {
@@ -1800,7 +1800,7 @@ class WorkflowPlanner:
             
             # NSUB: total k points along the whole path (manual p.309)
             config["n_points"] = self.get_safe_integer_input(
-                "  Total k-points along the whole path (NSUB) [10000]: ", 10000)
+                "  Total k-points along the whole path (NSUB) [1000]: ", 1000)
             
             # Set path_method based on path_format for proper D3 generation
             if config.get("path_format") == "vectors":

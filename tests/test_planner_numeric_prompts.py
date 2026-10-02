@@ -78,7 +78,7 @@ def test_queue_settings_accept_zero_recovery_attempts(planner, monkeypatch):
 def test_band_nsub_not_a_number_is_asked_again(planner, monkeypatch):
     prompts = scripted(monkeypatch, ["", "", "", "ten", "500"])
     assert planner._get_advanced_d3_config("BAND")["n_points"] == 500
-    assert prompts[-2] == prompts[-1] == "  Total k-points along the whole path (NSUB) [10000]: "
+    assert prompts[-2] == prompts[-1] == "  Total k-points along the whole path (NSUB) [1000]: "
 
 
 def test_doss_projection_out_of_range_is_asked_again_and_zero_is_kept(planner, monkeypatch):
@@ -119,7 +119,7 @@ def test_all_blank_answers_keep_the_defaults_and_their_types(planner, monkeypatc
     doss = planner._get_advanced_d3_config("DOSS")
     transport = planner._get_advanced_d3_config("TRANSPORT")
     charge = planner._get_advanced_d3_config("CHARGE+POTENTIAL")
-    assert band["n_points"] == 10000
+    assert band["n_points"] == 1000
     assert doss["projection_type"] == 4
     assert doss["e_range"] == [-20, 20] and all(type(v) is int for v in doss["e_range"])
     assert doss["n_points"] == 10000

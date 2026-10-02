@@ -294,7 +294,7 @@ def test_band_nsub_prompt_says_total_points_along_the_path(planner, monkeypatch)
 
     monkeypatch.setattr(builtins, "input", answer)
     config = planner._get_advanced_d3_config("BAND")
-    assert config["n_points"] == 10000                 # default unchanged
-    nsub_prompt = next(p for p in prompts if "10000" in p)
+    assert config["n_points"] == 1000                  # opt2d3's default
+    nsub_prompt = next(p for p in prompts if "[1000]" in p)
     assert "segment" not in nsub_prompt
     assert "total" in nsub_prompt.lower() and "path" in nsub_prompt

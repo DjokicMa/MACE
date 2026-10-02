@@ -217,10 +217,11 @@ def test_cp_generation_wraps_plan_d3_config(engine, tmp_path, monkeypatch):
 
 
 def test_no_plan_uses_engine_defaults(engine, tmp_path, monkeypatch):
-    """Without a matching plan the engine defaults still apply (BAND 10000)."""
+    """Without a matching plan the engine defaults still apply (BAND 1000,
+    as opt2d3)."""
     cap = _run_d3_generation(engine, tmp_path, monkeypatch, "BAND",
                              plan_wf_id="workflow_no_plan_here")
-    assert cap["config"]["configuration"]["n_points"] == 10000
+    assert cap["config"]["configuration"]["n_points"] == 1000
 
 
 def test_d3_plan_lookup_falls_back_to_env_workflow_id(monkeypatch, tmp_path):

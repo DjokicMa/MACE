@@ -275,7 +275,7 @@ def _get_basic_d3_config_for_quick_start(calc_type: str) -> Dict[str, Any]:
             "shrink": "auto",
             "labels": "auto",
             "auto_path": True,
-            "n_points": 10000,
+            "n_points": 1000,
             "path_method": "coordinates",
             # Ask for the SeeK-path (HPKOT) k-path. Without this the generator
             # used its static extended-Bravais tables, which are only accurate

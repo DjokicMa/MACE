@@ -667,7 +667,8 @@ FORT25_MAX_ISS = 999
 # A lattice-dependent point may be moved to the nearest k/ISS by at most half
 # the spacing of the k points CRYSTAL computes along the path (manual p.309,
 # note 4: the density depends only on NSUB, the total number of points) at
-# this NSUB - MACE's largest default (workflow BAND steps).
+# this NSUB - the workflow BAND default before 1.1.5 (now 1000, as opt2d3);
+# kept, so the ISS chosen does not depend on the NSUB a deck uses.
 REFERENCE_NSUB = 10000
 
 

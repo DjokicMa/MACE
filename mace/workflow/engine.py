@@ -1783,7 +1783,7 @@ fi'''
                 "shrink": "auto",
                 "labels": "auto",
                 "auto_path": True,
-                "n_points": 10000,
+                "n_points": 1000,
                 "path_method": "coordinates"
             },
             "DOSS": {
