@@ -319,11 +319,22 @@ def test_walltime_estimate_scales_with_the_supercell():
     above 2 h."""
     two, capped2 = cli.suggest_walltime(6 ** 3, 16)
     three, capped3 = cli.suggest_walltime(4 ** 3, 54)
-    assert two == "2:00:00" and not capped2
-    h3 = int(three.split(":")[0])
+    assert two == "3:00:00" and not capped2      # 1.76 h measured-scaled, x 1.5
+    days, _, hours = three.split(":")[0].rpartition("-")
+    h3 = 24 * int(days or 0) + int(hours)
     assert h3 >= 12 and not capped3
     big, capped = cli.suggest_walltime(12 ** 3, 250)
     assert big == "7-00:00:00" and capped
+
+
+def test_walltime_estimate_has_a_margin_over_the_measured_run():
+    """The calibration run (3160 s on 64 tasks, ~6300 s on 32) must not land
+    within a few percent of the suggestion: a job killed at its walltime leaves
+    no forces, so the estimate carries a 1.5x margin (the old 2 h left 14%)."""
+    measured_on_32 = 2 * 3160.0
+    walltime, _ = cli.suggest_walltime(6 ** 3, 16)
+    hours = int(walltime.split(":")[0])
+    assert hours * 3600 >= 1.5 * measured_on_32
 
 
 def test_walltime_format_is_what_mace_submit_accepts():

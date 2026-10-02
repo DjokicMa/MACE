@@ -44,8 +44,16 @@ band_dos.pdf). Frequencies are in THz (x 33.35641 for cm-1).
 # B3LYP-D3 + SPIN + XLGRID, 2x2x2 (16 atoms) in P1 with SHRINK 6 (216 k-points
 # before time reversal) took 3160 s on 64 tasks, i.e. about 6300 s on 32. The
 # cost is taken as k-points x atoms^3; 3x3x3 at SHRINK 4 (54 atoms) did not
-# finish its SCF within 2 h on 64 tasks, which this puts at about 20 h on 32.
+# finish its SCF within 2 h on 64 tasks, which this puts at about 20 h on 32
+# (30 h with the margin below).
 _SECONDS_PER_K_ATOM3 = 2 * 3160.0 / (216 * 16 ** 3)
+# Margin over that calibration: the 32-task time is extrapolated from the
+# 64-task run, and a job killed at its walltime leaves no forces, so a low
+# estimate costs the whole set while a high one only queue time (mace submit's
+# own default is 7 days). Lighter methods and --cry-sym (measured: Si PBE0
+# 4x4x4 at 1.7 h, --cry-sym about 3x cheaper) are not shortened for the same
+# reason.
+WALLTIME_MARGIN = 1.5
 MIN_WALLTIME_HOURS = 2
 MAX_WALLTIME_HOURS = 7 * 24          # mace submit's default (submitcrystal23.sh)
 FALLBACK_WALLTIME = "1-00:00:00"
@@ -60,7 +68,7 @@ def format_walltime(hours: int) -> str:
 
 def suggest_walltime(n_kpoints: int, n_atoms: int):
     """(walltime, capped) for one job; capped when the estimate exceeds 7 days."""
-    seconds = _SECONDS_PER_K_ATOM3 * n_kpoints * n_atoms ** 3
+    seconds = WALLTIME_MARGIN * _SECONDS_PER_K_ATOM3 * n_kpoints * n_atoms ** 3
     hours = max(MIN_WALLTIME_HOURS, math.ceil(seconds / 3600))
     capped = hours > MAX_WALLTIME_HOURS
     return format_walltime(min(hours, MAX_WALLTIME_HOURS)), capped
@@ -260,8 +268,8 @@ def cmd_generate(a) -> int:
                   "the parent used.")
     if nk:
         print(f"Walltime per job ~ {walltime} at mace submit's 32 tasks (k-points x atoms^3, "
-              "calibrated on a hybrid-DFT diamond supercell measured on CRYSTAL23; lighter "
-              "methods run faster). A job that hits its walltime leaves no forces, and "
+              "calibrated on a hybrid-DFT diamond supercell measured on CRYSTAL23, with a 1.5x "
+              "margin; lighter methods and --cry-sym run faster). A job that hits its walltime leaves no forces, and "
               "collect reports it.")
         if capped:
             print("  WARNING: the estimate is beyond 7 days, the longest mace submit asks "
