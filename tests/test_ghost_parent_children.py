@@ -59,3 +59,12 @@ def test_ghost_labels_are_read_from_the_output():
     assert ghost_atom_labels(" * ATOMS TRANSFORMED INTO GHOSTS :   3\n"
                              "   1(  8)  17(  8)\n  40( 12)\n SYMMETRY MAY BE BROKEN\n") == {1, 17, 40}
     assert ghost_atom_labels("no ghosts here") == set()
+
+
+def test_d3_reads_the_electron_count(tmp_path):
+    """CRYSTAL prints "N. OF ELECTRONS PER CELL", which the D3 reader's
+    "PER UNIT CELL" pattern never matched (n_electrons was always 0)."""
+    from CRYSTALOptToD3 import D3Generator
+    out = tmp_path / "rg_q0.out"
+    out.write_text(gzip.open(DATA / "rg_q0.out.gz", "rt").read())
+    assert D3Generator(str(out), "DOSS").structure_info["n_electrons"] == 632

@@ -209,7 +209,8 @@ class D3Generator:
             info['n_ao'] = int(ao_match.group(1))
         
         # Number of electrons
-        elec_match = re.search(r'N\. OF ELECTRONS PER UNIT CELL\s+(\d+)', content)
+        # CRYSTAL prints "N. OF ELECTRONS PER CELL   632" (not PER UNIT CELL)
+        elec_match = re.search(r'N\. OF ELECTRONS PER (?:UNIT )?CELL\s+(\d+)', content)
         if elec_match:
             info['n_electrons'] = int(elec_match.group(1))
         
