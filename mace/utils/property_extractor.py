@@ -1215,7 +1215,24 @@ class CrystalPropertyExtractor:
         calc_id = metadata['calc_id']
         
         saved_count = 0
-        
+
+        # Re-extraction replaces this extractor's rows for the calculation:
+        # rows an older extractor wrote that this one no longer produces
+        # (e.g. 1.1.1's band fields on DOSS runs) would otherwise stay.
+        # Untracked rows (calc_id NULL) are shared by every output of the
+        # material, so they cannot be attributed and are left alone.
+        if calc_id is not None:
+            produced = [name for name in properties if not name.startswith('_')]
+            try:
+                with self.db._get_connection() as conn:
+                    conn.execute(
+                        "DELETE FROM properties WHERE material_id = ? AND calc_id = ? "
+                        "AND extractor_script = 'crystal_property_extractor.py' "
+                        f"AND property_name NOT IN ({','.join('?' * len(produced))})",
+                        (material_id, calc_id, *produced))
+            except Exception as e:
+                print(f"⚠️  Error removing stale properties for {calc_id}: {e}")
+
         # Save each property
         for prop_name, prop_value in properties.items():
             if prop_name.startswith('_'):
