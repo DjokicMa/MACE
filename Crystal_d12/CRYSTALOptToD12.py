@@ -410,7 +410,7 @@ def _get_phonon_band_path_title(band_settings, geometry_data):
                 from d12_calc_freq import _output_as_file
                 with _output_as_file(opt_content or None) as out_file:
                     path_labels = get_seekpath_labels(space_group, lattice_type, out_file)
-                    result = get_seekpath_full_kpath(space_group, lattice_type, out_file)
+                    result = get_seekpath_full_kpath(space_group, lattice_type, out_file, cell="primitive")
                 if result:
                     kpath_info = result[1]
                     if kpath_info.get("source") in ("literature", "default"):

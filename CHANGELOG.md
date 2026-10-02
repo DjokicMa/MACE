@@ -29,6 +29,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with a warning. Known limitation: an optimisation that stopped before
   converging prints no final geometry; its first geometry is used, while its
   fort.9 holds the last step.
+- **Static band paths (without the seekpath library) use the computed cell
+  too.** The static route took the conventional cell of the input echo: an
+  optimisation's starting cell chose the lattice variant (tI1 or tI2, oF1 or
+  oF3, hR1 or hR2) and the oA parameter. It now takes the CRYSTALLOGRAPHIC
+  CELL printed with the final optimised geometry. A SUPERCEL output's static
+  path is mapped to the supercell's reciprocal basis, f_super = E f_prim with
+  E the printed EXPANSION MATRIX OF PRIMITIVE CELL (rows), as the library
+  route gives it; before, it was written in the primitive cell's basis while
+  BAND ran on the supercell. An R cell given in rhombohedral axes (CRYSTAL
+  echoes it as a = b = c, alpha = beta = gamma) is read in hexagonal axes.
+  `opt2d12` phonon-dispersion paths from a SUPERCEL parent stay in the
+  primitive basis, as `opt2d12` writes the child in the input space group's
+  cell. Single-point outputs without SUPERCEL or geometry editing are
+  unchanged.
 
 ## [1.1.4] - 2026-10-02
 

@@ -961,6 +961,11 @@ def get_accurate_bandpath(
     segments, labels, kpath_info = convert_to_mace_format(result, shrink_factor)
 
     print(f"  Discontinuities detected: {kpath_info['n_discontinuities']}")
+    # The cell the path is in: a supercell's (SUPERCEL or SCELPHONO) when
+    # the output computed one, with its expansion of the primitive cell.
+    kpath_info['supercell'] = structure.get('supercell', 'none')
+    if structure.get('expansion') is not None:
+        kpath_info['expansion'] = np.array(structure['expansion']).tolist()
 
     return segments, labels, kpath_info
 

@@ -37,6 +37,15 @@ except ImportError:
         SEEKPATH_LIBRARY_AVAILABLE = False
         get_accurate_bandpath = None
 
+# The computed-geometry reader (numpy only; seekpath is not needed for it)
+try:
+    from .seekpath_interface import _geometry_blocks, select_geometry_block, expansion_before
+except ImportError:
+    try:
+        from seekpath_interface import _geometry_blocks, select_geometry_block, expansion_before
+    except ImportError:
+        _geometry_blocks = select_geometry_block = expansion_before = None
+
 
 # Centrosymmetric space groups (with inversion symmetry)
 CENTROSYMMETRIC_SPACE_GROUPS = {
@@ -2575,32 +2584,58 @@ def in_plane_labels(labels: List[str], space_group: int, lattice_type: str) -> L
     return out
 
 
-def extract_lattice_parameters_from_output(out_file: str) -> Optional[Dict[str, float]]:
+def extract_lattice_parameters_from_output(out_file: str) -> Optional[Dict[str, Any]]:
     """Extract lattice parameters from CRYSTAL output file.
-    
+
+    The conventional cell: after a 3D optimisation the CRYSTALLOGRAPHIC
+    CELL printed with the last FINAL OPTIMIZED GEOMETRY (its primitive
+    cell for a primitive lattice, which prints none), otherwise the
+    conventional cell of the input echo, as before. The printed
+    PRIMITIVE-CRYSTALLOGRAPHIC transformation W of that geometry ('W',
+    rows A_conv = W^T A_prim) and a SUPERCEL expansion matrix ('expansion',
+    A_super = E A_prim) are added when the output prints them.
+
     Args:
         out_file: Path to CRYSTAL output file
-        
+
     Returns:
-        Dictionary with keys: a, b, c, alpha, beta, gamma
-        or None if extraction fails
+        Dictionary with keys: a, b, c, alpha, beta, gamma (and W,
+        expansion when printed) or None if extraction fails
     """
     if not out_file or not Path(out_file).exists():
         return None
-        
+
     try:
         with open(out_file, 'r') as f:
             content = f.read()
-            
+    except Exception:
+        return None
+
+    block = None
+    lines = None
+    if _geometry_blocks is not None:
+        lines = content.split('\n')
+        block, which = select_geometry_block(_geometry_blocks(lines))
+        if which == 'final' and _final_dimensionality(lines, block['line']) == 3:
+            conventional = block['conventional']
+            if conventional is None and block['W'] is None:
+                conventional = block['params']
+            if conventional is not None:
+                params = dict(conventional)
+                if block['W'] is not None:
+                    params['W'] = block['W'].tolist()
+                return params
+
+    try:
         # Look for lattice parameters section
         params_match = re.search(
             r'LATTICE PARAMETERS.*?\n\s*A\s+B\s+C\s+ALPHA\s+BETA\s+GAMMA.*?\n\s*'
             r'([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)',
             content, re.DOTALL | re.IGNORECASE
         )
-        
+
         if params_match:
-            return {
+            params = {
                 'a': float(params_match.group(1)),
                 'b': float(params_match.group(2)),
                 'c': float(params_match.group(3)),
@@ -2608,11 +2643,107 @@ def extract_lattice_parameters_from_output(out_file: str) -> Optional[Dict[str, 
                 'beta': float(params_match.group(5)),
                 'gamma': float(params_match.group(6))
             }
-            
+            if block is not None:
+                if block['W'] is not None:
+                    params['W'] = block['W'].tolist()
+                expansion = expansion_before(lines, block['line'])
+                if expansion is not None:
+                    params['expansion'] = expansion.tolist()
+            return params
+
     except Exception:
         pass
-        
+
     return None
+
+
+def _final_dimensionality(lines: List[str], block_line: int) -> Optional[int]:
+    """Dimensionality on the FINAL OPTIMIZED GEOMETRY line heading a block."""
+    for j in range(block_line - 1, max(-1, block_line - 7), -1):
+        if 'FINAL OPTIMIZED GEOMETRY' in lines[j]:
+            match = re.search(r'DIMENSIONALITY OF THE SYSTEM\s+(\d)', lines[j])
+            return int(match.group(1)) if match else None
+    return None
+
+
+def hexagonal_axes(params: Dict[str, Any]) -> Dict[str, Any]:
+    """A rhombohedral cell given in rhombohedral axes, in hexagonal axes.
+
+    CRYSTAL echoes an R lattice input in rhombohedral axes (IFHR = 1) as a
+    "CONVENTIONAL CELL" with a = b = c and alpha = beta = gamma (measured on
+    CRYSTAL23); the hR variant and SeeK-path's parameters are written for
+    the hexagonal axes: a_h = 2 a sin(alpha/2), c_h = a sqrt(3 (1 + 2 cos alpha)).
+    Other cells are returned unchanged.
+    """
+    a, b, c = params['a'], params['b'], params['c']
+    alpha, beta, gamma = params['alpha'], params['beta'], params['gamma']
+    if not (abs(a - b) < 1e-4 and abs(b - c) < 1e-4 and abs(alpha - beta) < 1e-3
+            and abs(beta - gamma) < 1e-3 and abs(alpha - 90.0) > 1e-3):
+        return params
+    rad = np.radians(alpha)
+    out = dict(params)
+    out.update({'a': 2 * a * np.sin(rad / 2), 'b': 2 * a * np.sin(rad / 2),
+                'c': a * np.sqrt(3 * (1 + 2 * np.cos(rad))),
+                'alpha': 90.0, 'beta': 90.0, 'gamma': 120.0})
+    return out
+
+
+def static_cell_parameters(out_file: Optional[str], lattice_type: str) -> Optional[Dict[str, Any]]:
+    """The conventional cell the static route uses, read once for path and labels."""
+    if not out_file:
+        return None
+    params = extract_lattice_parameters_from_output(out_file)
+    if params and normalize_lattice_type(lattice_type) == 'R':
+        params = hexagonal_axes(params)
+    return params
+
+
+def expand_segments(segments: List[List[float]], expansion) -> List[List[float]]:
+    """Points in the primitive cell's reciprocal basis, in the supercell's.
+
+    The supercell vectors are E times the primitive ones (rows, as CRYSTAL
+    prints E1, E2, E3), so a point's fractions are f_super = E f_prim.
+    """
+    e = np.array(expansion, dtype=float)
+    out = []
+    for seg in segments:
+        ends = []
+        for point in (seg[:3], seg[3:]):
+            f = e @ np.array(point, dtype=float)
+            ends += [0.0 if abs(x) < 1e-12 else round(float(x), 6) for x in f]
+        out.append(ends)
+    return out
+
+
+def _library_to_primitive(segments: List[List[float]], kpath_info: Dict[str, Any]) -> List[List[float]]:
+    """Library segments in a supercell's basis, back in the primitive cell's.
+
+    f_prim = E^-1 f_super. The ends stay exact: with ISS the library's and
+    E^-1 = adj(E)/det(E), each end is an integer over ISS |det E|, reduced
+    by the common divisor; kpath_info['shrink_factor'] becomes that ISS.
+    """
+    from math import gcd
+    e = np.array(kpath_info['expansion'], dtype=float)
+    det = int(round(np.linalg.det(e)))
+    adj = np.round(np.linalg.inv(e) * det).astype(int)
+    iss = int(kpath_info.get('shrink_factor', 16))
+    ints = []
+    for seg in segments:
+        row = []
+        for point in (seg[:3], seg[3:]):
+            k = np.round(np.array(point) * iss).astype(int)
+            row += [int(v) for v in (adj @ k) * (1 if det > 0 else -1)]
+        ints.append(row)
+    new_iss = iss * abs(det)
+    divisor = new_iss
+    for row in ints:
+        for v in row:
+            divisor = gcd(divisor, abs(v))
+    new_iss //= divisor
+    kpath_info['shrink_factor'] = new_iss
+    kpath_info['supercell'] = 'none'
+    kpath_info.pop('expansion', None)
+    return [[v // divisor / new_iss for v in row] for row in ints]
 
 
 def has_inversion_symmetry(space_group: int) -> bool:
@@ -2680,7 +2811,8 @@ def detect_inversion_from_crystal_output(output_file: str) -> Tuple[bool, str]:
         return False, 'file_error'
 
 
-def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optional[str] = None) -> Tuple[List[List[float]], Dict[str, Any]]:
+def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optional[str] = None,
+                            cell: str = "computed") -> Tuple[List[List[float]], Dict[str, Any]]:
     """Get comprehensive SeeK-path k-paths with extended Bravais lattice notation.
 
     Based on SeeK-path (https://seekpath.materialscloud.io/)
@@ -2696,6 +2828,11 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
         space_group: Space group number
         lattice_type: Lattice type (P, C, F, I, R, etc.)
         out_file: Optional CRYSTAL output file to extract cell parameters
+        cell: "computed" (default) gives the path in the reciprocal basis of
+            the cell the output computed - a SUPERCEL output's supercell, as
+            its fort.9 holds; "primitive" in that of the primitive cell the
+            supercell was made from (opt2d12, whose child deck is written in
+            the input space group's cell)
 
     Returns:
         Tuple of (segments, kpath_info) where:
@@ -2730,6 +2867,8 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
 
             kpath_info['source'] = 'seekpath_library'
             kpath_info['labels'] = labels  # Include labels for reference
+            if cell == "primitive" and kpath_info.get('expansion') is not None:
+                fractional_segments = _library_to_primitive(fractional_segments, kpath_info)
 
             print(f"  Using seekpath library: {kpath_info.get('bravais_lattice_extended', 'unknown')} "
                   f"({'centrosymmetric' if kpath_info.get('has_inversion', True) else 'non-centrosymmetric'})")
@@ -2747,7 +2886,7 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
     has_inversion = has_inversion_symmetry(space_group)  # Default from space group
 
     if out_file:
-        lattice_params = extract_lattice_parameters_from_output(out_file)
+        lattice_params = static_cell_parameters(out_file, lattice_type)
 
         # Detect inversion from output file
         detected_inv, method = detect_inversion_from_crystal_output(out_file)
@@ -2755,6 +2894,11 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
             has_inversion = detected_inv
             print(f"  Detected {'centrosymmetric' if has_inversion else 'non-centrosymmetric'} "
                   f"structure via {method}")
+    # A SUPERCEL output's fort.9 holds the supercell; the static paths are in
+    # the primitive cell's basis (a slab's expansion is 2D and not used)
+    expansion = None
+    if lattice_params and lattice_params.get('expansion') is not None and not slab:
+        expansion = lattice_params['expansion']
 
     # Get extended Bravais symbol with cell parameters if available
     if lattice_params:
@@ -2785,6 +2929,16 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
     }
     if slab:
         kpath_info["in_plane"] = True
+    if expansion is not None:
+        if cell == "primitive":
+            expansion = None
+        else:
+            kpath_info["expansion"] = expansion
+            print("  Note: the output computed a supercell (SUPERCEL); the path is given "
+                  "in the supercell's reciprocal basis")
+
+    def in_cell(segments):
+        return expand_segments(segments, expansion) if expansion is not None else segments
 
     # Warn about static data limitations for non-cubic
     if not ext_bravais.startswith('c'):
@@ -2812,7 +2966,7 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
                 lattice_params['c'] if lattice_params else None)
         if slab:
             return in_plane_path(segments)[0], kpath_info
-        return segments, kpath_info
+        return in_cell(segments), kpath_info
     else:
         # Fallback to literature path first
         print(f"\nSeeK-path data not available for {lookup_key}")
@@ -2822,7 +2976,7 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
         if lit_segments:
             print("Using literature k-path (Setyawan & Curtarolo 2010) instead")
             kpath_info["source"] = "literature"
-            return (in_plane_path(lit_segments)[0] if slab else lit_segments), kpath_info
+            return (in_plane_path(lit_segments)[0] if slab else in_cell(lit_segments)), kpath_info
 
         # If no literature path, fall back to standard path
         print("Using standard path instead")
@@ -2831,7 +2985,7 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
             get_band_path_from_symmetry(space_group, lattice_type),
             space_group, lattice_type
         )
-        return (in_plane_path(segments)[0] if slab else segments), kpath_info
+        return (in_plane_path(segments)[0] if slab else in_cell(segments)), kpath_info
 
 def unicode_to_ascii_kpoint(label: str) -> str:
     """Convert Unicode k-point labels to ASCII equivalents for CRYSTAL compatibility.
@@ -2920,7 +3074,7 @@ def get_seekpath_labels(space_group: int, lattice_type: str, out_file: Optional[
     has_inversion = has_inversion_symmetry(space_group)  # Default from space group
 
     if out_file:
-        lattice_params = extract_lattice_parameters_from_output(out_file)
+        lattice_params = static_cell_parameters(out_file, lattice_type)
 
         # Detect inversion from output file
         detected_inv, method = detect_inversion_from_crystal_output(out_file)

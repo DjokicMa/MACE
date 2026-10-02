@@ -1536,7 +1536,7 @@ def get_auto_phonon_path(crystal_system: str = None, space_group: int = None,
     # For format_type == "seekpath", get SeeK-path full path
     if format_type == "seekpath" and get_seekpath_full_kpath:
         with _output_as_file(optimization_section) as out_file:
-            result = get_seekpath_full_kpath(space_group, lattice_type, out_file)
+            result = get_seekpath_full_kpath(space_group, lattice_type, out_file, cell="primitive")
         if result:
             coord_segments, kpath_info = result
             # Store k-path source info if band_settings provided
@@ -2054,7 +2054,7 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
                     if band_settings.get("seekpath_full", False) and get_seekpath_full_kpath:
                         # SeeK-path full path
                         with _output_as_file(optimization_section) as out_file:
-                            result = get_seekpath_full_kpath(space_group, lattice_type, out_file)
+                            result = get_seekpath_full_kpath(space_group, lattice_type, out_file, cell="primitive")
                             # Get seekpath labels if available
                             path_labels = (get_seekpath_labels(space_group, lattice_type, out_file)
                                            if get_seekpath_labels else None)
