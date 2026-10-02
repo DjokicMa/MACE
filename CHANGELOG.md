@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- opt2d12's FREQ menus ask again on an answer that is not on the menu. The
+  template menu took any other answer (e.g. "9") as "Custom settings", the
+  FREQCALC/ANHARM, mode and supercell questions took it as their first or
+  last entry, and the phonon band-path crystal-system and template menus fell
+  back to their first entry without saying so.
+
 ## [1.1.4] - 2026-10-02
 
 Everything since 1.1.3. **Band and phonon-dispersion paths made with the SeeK-path

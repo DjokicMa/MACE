@@ -234,7 +234,7 @@ def get_advanced_frequency_settings(parent_numderiv=None):
     print("8: Custom settings")
     print("   - Full control over all parameters")
     
-    template_choice = _nav_read("Select template (1-8) [1]: ", valid_set={"_choice_"}).strip() or "1"
+    template_choice = _read_choice("Select template (1-8) [1]: ", ("1", "2", "3", "4", "5", "6", "7", "8"), "1")
     
     template_map = {
         "1": "basic",
@@ -439,14 +439,14 @@ def get_advanced_frequency_settings(parent_numderiv=None):
                 print("5: Monoclinic")
                 print("6: Triclinic")
                 
-                system_choice = _nav_read("Select system (1-6) [1]: ", valid_set={"_choice_"}).strip() or "1"
+                system_choice = _read_choice("Select system (1-6) [1]: ", ("1", "2", "3", "4", "5", "6"), "1")
                 
                 if system_choice == "1":
                     print("\nCubic templates:")
                     print("1: Simple cubic (sc)")
                     print("2: Face-centered cubic (fcc)")
                     print("3: Body-centered cubic (bcc)")
-                    template_idx = _nav_read("Select template (1-3) [1]: ", valid_set={"_choice_"}).strip() or "1"
+                    template_idx = _read_choice("Select template (1-3) [1]: ", ("1", "2", "3"), "1")
                     template_map = {"1": "cubic_simple", "2": "cubic_fc", "3": "cubic_bc"}
                     template_name = template_map.get(template_idx, "cubic_simple")
                 elif system_choice == "2":
@@ -455,7 +455,7 @@ def get_advanced_frequency_settings(parent_numderiv=None):
                     print("\nTetragonal templates:")
                     print("1: Simple tetragonal")
                     print("2: Body-centered tetragonal")
-                    template_idx = _nav_read("Select template (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
+                    template_idx = _read_choice("Select template (1-2) [1]: ", ("1", "2"), "1")
                     template_map = {"1": "tetragonal_simple", "2": "tetragonal_bc"}
                     template_name = template_map.get(template_idx, "tetragonal_simple")
                 elif system_choice == "4":
@@ -464,7 +464,7 @@ def get_advanced_frequency_settings(parent_numderiv=None):
                     print("2: Base-centered orthorhombic (ab)")
                     print("3: Base-centered orthorhombic (bc)")
                     print("4: Face-centered orthorhombic")
-                    template_idx = _nav_read("Select template (1-4) [1]: ", valid_set={"_choice_"}).strip() or "1"
+                    template_idx = _read_choice("Select template (1-4) [1]: ", ("1", "2", "3", "4"), "1")
                     template_map = {"1": "orthorhombic_simple", "2": "orthorhombic_ab", 
                                   "3": "orthorhombic_bc", "4": "orthorhombic_fc"}
                     template_name = template_map.get(template_idx, "orthorhombic_simple")
@@ -472,7 +472,7 @@ def get_advanced_frequency_settings(parent_numderiv=None):
                     print("\nMonoclinic templates:")
                     print("1: Simple monoclinic")
                     print("2: Base-centered monoclinic")
-                    template_idx = _nav_read("Select template (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
+                    template_idx = _read_choice("Select template (1-2) [1]: ", ("1", "2"), "1")
                     template_map = {"1": "monoclinic_simple", "2": "monoclinic_ac"}
                     template_name = template_map.get(template_idx, "monoclinic_simple")
                 else:
@@ -698,7 +698,7 @@ def get_advanced_frequency_settings(parent_numderiv=None):
         print("   - Cannot calculate IR/Raman intensities")
         print("   - Time: ~4-20x optimization (supercell dependent)")
         
-        mode_choice = _nav_read("Select mode (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
+        mode_choice = _read_choice("Select mode (1-2) [1]: ", ("1", "2"), "1")
         
         if mode_choice == "1":
             freq_settings["mode"] = "GAMMA"
@@ -711,7 +711,7 @@ def get_advanced_frequency_settings(parent_numderiv=None):
             print("1: Automatic (2x2x2)")
             print("2: Custom expansion factors")
             print("3: Custom transformation matrix")
-            supercell_choice = _nav_read("Select supercell method (1-3) [1]: ", valid_set={"_choice_"}).strip() or "1"
+            supercell_choice = _read_choice("Select supercell method (1-3) [1]: ", ("1", "2", "3"), "1")
             
             if supercell_choice == "1":
                 freq_settings["scelphono"] = [2, 2, 2]
@@ -837,14 +837,14 @@ def get_advanced_frequency_settings(parent_numderiv=None):
                         print("5: Monoclinic")
                         print("6: Triclinic")
                         
-                        system_choice = _nav_read("Select system (1-6) [1]: ", valid_set={"_choice_"}).strip() or "1"
+                        system_choice = _read_choice("Select system (1-6) [1]: ", ("1", "2", "3", "4", "5", "6"), "1")
                         
                         if system_choice == "1":
                             print("\nCubic templates:")
                             print("1: Simple cubic (sc)")
                             print("2: Face-centered cubic (fcc)")
                             print("3: Body-centered cubic (bcc)")
-                            template_idx = _nav_read("Select template (1-3) [1]: ", valid_set={"_choice_"}).strip() or "1"
+                            template_idx = _read_choice("Select template (1-3) [1]: ", ("1", "2", "3"), "1")
                             template_map = {"1": "cubic_simple", "2": "cubic_fc", "3": "cubic_bc"}
                             template_name = template_map.get(template_idx, "cubic_simple")
                         elif system_choice == "2":
@@ -853,7 +853,7 @@ def get_advanced_frequency_settings(parent_numderiv=None):
                             print("\nTetragonal templates:")
                             print("1: Simple tetragonal")
                             print("2: Body-centered tetragonal")
-                            template_idx = _nav_read("Select template (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
+                            template_idx = _read_choice("Select template (1-2) [1]: ", ("1", "2"), "1")
                             template_map = {"1": "tetragonal_simple", "2": "tetragonal_bc"}
                             template_name = template_map.get(template_idx, "tetragonal_simple")
                         elif system_choice == "4":
@@ -862,7 +862,7 @@ def get_advanced_frequency_settings(parent_numderiv=None):
                             print("2: Base-centered orthorhombic (ab)")
                             print("3: Base-centered orthorhombic (bc)")
                             print("4: Face-centered orthorhombic")
-                            template_idx = _nav_read("Select template (1-4) [1]: ", valid_set={"_choice_"}).strip() or "1"
+                            template_idx = _read_choice("Select template (1-4) [1]: ", ("1", "2", "3", "4"), "1")
                             template_map = {"1": "orthorhombic_simple", "2": "orthorhombic_ab", 
                                           "3": "orthorhombic_bc", "4": "orthorhombic_fc"}
                             template_name = template_map.get(template_idx, "orthorhombic_simple")
@@ -870,7 +870,7 @@ def get_advanced_frequency_settings(parent_numderiv=None):
                             print("\nMonoclinic templates:")
                             print("1: Simple monoclinic")
                             print("2: Base-centered monoclinic")
-                            template_idx = _nav_read("Select template (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
+                            template_idx = _read_choice("Select template (1-2) [1]: ", ("1", "2"), "1")
                             template_map = {"1": "monoclinic_simple", "2": "monoclinic_ac"}
                             template_name = template_map.get(template_idx, "monoclinic_simple")
                         else:
@@ -1354,7 +1354,7 @@ def _get_frequency_configuration_impl(current_settings: Optional[Dict[str, Any]]
     print("   - More accurate frequencies for hydrogen stretching")
     print("   - Calculates anharmonic corrections")
     
-    freq_type_choice = _nav_read("Select type (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
+    freq_type_choice = _read_choice("Select type (1-2) [1]: ", ("1", "2"), "1")
     
     if freq_type_choice == "2":
         # ANHARM calculation
