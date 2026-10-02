@@ -5,7 +5,7 @@ and fort.25 writes them again with format 6I3 (App. D, p.447), so an end
 coordinate of 1000 or more prints as asterisks there. The library route
 took ISS from the largest denominator of every SeeK-path point - including
 points not on the path - after rounding lattice-dependent coordinates to a
-denominator below 10**6, so ISS reached ~10**6 (FACTS: decks with ISS
+denominator below 10**6, so ISS reached ~10**6 (measured on CRYSTAL23: decks with ISS
 867098-995110 ran; BAND.DAT is unaffected, fort.25 is not).
 
 Now:

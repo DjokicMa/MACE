@@ -2096,7 +2096,7 @@ INPUT
 #%  source pob-TZVP-rev2
 #%  reference J. Laun, T. Bredow, J. Comput. Chem. (2021), "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the sixth period for solid-state calculations"
 #%  doi 10.1002/jcc.26521
-#%  provenance byte-identical to full.basis.triplezeta record 256 (FACTS.md audit (basissetexchange.org): pob-TZVP-rev2; crystal.unito.it lists only Ba_pob_TZVP_rev2_SOC)
+#%  provenance byte-identical to full.basis.triplezeta record 256 (audit against basissetexchange.org: pob-TZVP-rev2; crystal.unito.it lists only Ba_pob_TZVP_rev2_SOC)
 256 8
 INPUT
 10. 0 2 4 4 4 2
@@ -3596,7 +3596,7 @@ INPUT
 #%  source Ac_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/actinium.html#Ac_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance byte-identical to full.basis.triplezeta record 289 (FACTS.md audit: ERD 2017. Exponents and coefficients equal Ac_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
+#%  provenance byte-identical to full.basis.triplezeta record 289 (Audit: ERD 2017. Exponents and coefficients equal Ac_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
 289 9
 INPUT
 29. 0 1 1 1 1 1
@@ -3645,7 +3645,7 @@ INPUT
 #%  source Th_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/thorium.html#Th_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance byte-identical to full.basis.triplezeta record 290 (FACTS.md audit: ERD 2017. Exponents and coefficients equal Th_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
+#%  provenance byte-identical to full.basis.triplezeta record 290 (Audit: ERD 2017. Exponents and coefficients equal Th_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
 290 9
 INPUT
 30. 0 1 1 1 1 1
@@ -3694,7 +3694,7 @@ INPUT
 #%  source Pa_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/protactinium.html#Pa_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance byte-identical to full.basis.triplezeta record 291 (FACTS.md audit: ERD 2017. Exponents and coefficients equal Pa_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
+#%  provenance byte-identical to full.basis.triplezeta record 291 (Audit: ERD 2017. Exponents and coefficients equal Pa_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
 291 9
 INPUT
 31. 0 1 1 1 1 1
@@ -3743,7 +3743,7 @@ INPUT
 #%  source U_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/uranium.html#U_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance byte-identical to full.basis.triplezeta record 292 (FACTS.md audit: ERD 2017. Exponents and coefficients equal U_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
+#%  provenance byte-identical to full.basis.triplezeta record 292 (Audit: ERD 2017. Exponents and coefficients equal U_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
 292 9
 INPUT
 32. 0 1 1 1 1 1
@@ -3792,7 +3792,7 @@ INPUT
 #%  source Np_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/neptunium.html#Np_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance byte-identical to full.basis.triplezeta record 293 (FACTS.md audit: ERD 2017. Exponents and coefficients equal Np_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
+#%  provenance byte-identical to full.basis.triplezeta record 293 (Audit: ERD 2017. Exponents and coefficients equal Np_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
 293 9
 INPUT
 33. 0 1 1 1 1 1
@@ -3841,7 +3841,7 @@ INPUT
 #%  source Pu_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/plutonium.html#Pu_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance byte-identical to full.basis.triplezeta record 294 (FACTS.md audit: ERD 2017. Exponents and coefficients equal Pu_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's; the first line said 11 shells for the 9 the record has (corrected to 9, as the site prints it))
+#%  provenance byte-identical to full.basis.triplezeta record 294 (Audit: ERD 2017. Exponents and coefficients equal Pu_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's; the first line said 11 shells for the 9 the record has (corrected to 9, as the site prints it))
 294 9
 INPUT
 34. 0 1 1 1 1 1
@@ -3890,7 +3890,7 @@ INPUT
 #%  source Am_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/americium.html#Am_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance byte-identical to full.basis.triplezeta record 295 (FACTS.md audit: ERD 2017. Exponents and coefficients equal Am_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
+#%  provenance byte-identical to full.basis.triplezeta record 295 (Audit: ERD 2017. Exponents and coefficients equal Am_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
 295 9
 INPUT
 35. 0 1 1 1 1 1
@@ -3939,7 +3939,7 @@ INPUT
 #%  source Cm_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/curium.html#Cm_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance byte-identical to full.basis.triplezeta record 296 (FACTS.md audit: ERD 2017. Exponents and coefficients equal Cm_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
+#%  provenance byte-identical to full.basis.triplezeta record 296 (Audit: ERD 2017. Exponents and coefficients equal Cm_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
 296 9
 INPUT
 36. 0 1 1 1 1 1
@@ -3988,7 +3988,7 @@ INPUT
 #%  source Bk_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/berkelium.html#Bk_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance byte-identical to full.basis.triplezeta record 297 (FACTS.md audit: ERD 2017. Exponents and coefficients equal Bk_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
+#%  provenance byte-identical to full.basis.triplezeta record 297 (Audit: ERD 2017. Exponents and coefficients equal Bk_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
 297 9
 INPUT
 37. 0 1 1 1 1 1
@@ -4037,7 +4037,7 @@ INPUT
 #%  source Cf_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/californium.html#Cf_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance byte-identical to full.basis.triplezeta record 298 (FACTS.md audit: ERD 2017. Exponents and coefficients equal Cf_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
+#%  provenance byte-identical to full.basis.triplezeta record 298 (Audit: ERD 2017. Exponents and coefficients equal Cf_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
 298 9
 INPUT
 38. 0 1 1 1 1 1
@@ -4086,7 +4086,7 @@ INPUT
 #%  source Es_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/einsteinium.html#Es_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance byte-identical to full.basis.triplezeta record 299 (FACTS.md audit: ERD 2017. Exponents and coefficients equal Es_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
+#%  provenance byte-identical to full.basis.triplezeta record 299 (Audit: ERD 2017. Exponents and coefficients equal Es_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's)
 299 9
 INPUT
 39. 0 1 1 1 1 1

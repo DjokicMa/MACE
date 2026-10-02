@@ -12,7 +12,7 @@ Record bodies are never edited here: tests/data/basis_library_pins.json pins
 the bytes of every record, and tests/test_basis_library_pins.py fails if a
 body changes. Provenance comes from the CRYSTAL23 basis set library pages
 (crystal.unito.it, matched by exact numeric comparison - same lines, same
-numbers at printed precision) and from FACTS.md's audit against
+numbers at printed precision) and from an audit against
 basissetexchange.org. A DOI is written only when it was copied from a page.
 """
 import argparse
@@ -100,13 +100,13 @@ def triplezeta_provenance(key):
     if z == 7:
         return [("source", "pob-TZVP-rev2"), ("reference", REF_REV2_2019),
                 ("doi", DOI_REV2_2019), ("url", url(7, "N_pob_TZVP_2012")),
-                ("provenance", "FACTS.md audit (basissetexchange.org): pob-TZVP-rev2; "
+                ("provenance", "audit against basissetexchange.org: pob-TZVP-rev2; "
                                "numerically identical to N_pob_TZVP_2012 on crystal.unito.it, "
                                "which lists no N_pob_TZVP_rev2")]
     if z == 14:
         return [("source", "pob-TZVP-rev2"), ("reference", REF_REV2_2019),
                 ("doi", DOI_REV2_2019),
-                ("provenance", "FACTS.md audit (basissetexchange.org): pob-TZVP-rev2; "
+                ("provenance", "audit against basissetexchange.org: pob-TZVP-rev2; "
                                "crystal.unito.it lists only Si_pob_TZVP_2012, which differs")]
     if z <= 35:
         return site_match(z, f"{sym}_pob_TZVP_rev2", REF_REV2_2019, DOI_REV2_2019)
@@ -119,7 +119,7 @@ def triplezeta_provenance(key):
     if z == 56:
         return [("source", "pob-TZVP-rev2"), ("reference", REF_REV2_6TH),
                 ("doi", DOI_REV2_6TH),
-                ("provenance", "FACTS.md audit (basissetexchange.org): pob-TZVP-rev2; "
+                ("provenance", "audit against basissetexchange.org: pob-TZVP-rev2; "
                                "crystal.unito.it lists only Ba_pob_TZVP_rev2_SOC")]
     if z == 55 or 72 <= z <= 83:
         return site_match(z, f"{sym}_pob_TZVP_rev2", REF_REV2_6TH, DOI_REV2_6TH)
@@ -128,7 +128,7 @@ def triplezeta_provenance(key):
                           "small-core pseudopotential, 4f in valence")
     if 89 <= z <= 99:
         anchor = f"{sym}_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017"
-        note = ("FACTS.md audit: ERD 2017. Exponents and coefficients equal "
+        note = ("Audit: ERD 2017. Exponents and coefficients equal "
                 f"{anchor} on crystal.unito.it; the f shell's formal charge (CHE) is "
                 "3 lower than the site's")
         if z == 94:

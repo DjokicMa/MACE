@@ -7,7 +7,7 @@ exists (a C2/m cell of about 9.7 x 3.7 x 20.8 A, beta 91.7: mC1), and the
 points used to be written exactly, with ISS ~10**6 (959108 on the library
 route, 588382 on the static one). BAND writes the ends again in fort.25 in
 a fixed-width integer format (manual App. D p.447: 6I3; measured 6I5,
-FACTS.md), so ends of 10**5 and more overflow there. ISS now stays at most
+measured on CRYSTAL23), so ends of 10**5 and more overflow there. ISS now stays at most
 999, taking the ISS that moves the points least, with a warning that gives
 the move.
 """

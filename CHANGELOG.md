@@ -170,10 +170,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     call `basis_library.read_record(path, n)` instead, or
     `basis_library.load_family(name)`.
   - Each record now states where it came from (`basis_sets/PROVENANCE.md`).
-    The records were matched exactly against crystal.unito.it and the FACTS
-    audit: H-Br, Cs, Ba and Hf-Bi are pob-TZVP-rev2, Rb-I are pob-TZVP 2018,
-    and DZ H-Br and Rb-I are pob-DZVP-rev2 and pob-DZVP 2018. Unmatched
-    records say "unverified".
+    The records were matched exactly against crystal.unito.it and checked
+    against basissetexchange.org: H-Br, Cs, Ba and Hf-Bi are pob-TZVP-rev2,
+    Rb-I are pob-TZVP 2018, and DZ H-Br and Rb-I are pob-DZVP-rev2 and
+    pob-DZVP 2018. Unmatched records say "unverified".
   - `python mace_config.py` (`ensure_paths_exist`) reports the three `.lib`
     files under the same names. This is diagnostic output only.
 
