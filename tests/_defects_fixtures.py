@@ -1,7 +1,7 @@
 """Shared helpers for the mace.defects tests (no test_ prefix: not collected).
 
-The decks under tests/defects_data/ are the ones run on HPCC for the defect
-facts in round 6 (MgO V_O, hBN V_N; PBE0/POB-TZVP-REV2). Outputs are never
+The decks under tests/defects_data/ are the ones run with CRYSTAL23 on HPCC to
+measure the defect corrections (MgO V_O, hBN V_N; PBE0/POB-TZVP-REV2). Outputs are never
 copied in whole: ``fake_output`` writes just the lines the parsers read, with
 numbers taken from those runs.
 """

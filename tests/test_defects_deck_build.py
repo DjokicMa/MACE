@@ -1,7 +1,7 @@
 """mace.defects.deck_edit: defect deck sets are the host deck plus records.
 
 The reference decks (tests/defects_data) are the ones run on HPCC with
-CRYSTAL23 for the round-6 defect facts: they converged, so a builder that
+CRYSTAL23 to measure the defect corrections: they converged, so a builder that
 reproduces them byte for byte (titles aside) writes decks CRYSTAL accepts and
 places DOPING / SPINLOCK where the measured runs had them.
 """

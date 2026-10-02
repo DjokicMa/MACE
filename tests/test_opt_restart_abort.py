@@ -439,7 +439,7 @@ def _generated_script(tmp_path):
 
 def _without_twocompon_guess(script):
     """The script as generated before GUESSP inside TWOCOMPON got its own
-    branch at the head of the GUESSP staging (round 6): the old 1c branch
+    branch at the head of the GUESSP staging (1.1.5): the old 1c branch
     was the chain's `if`."""
     a = script.index("#\n# Inside a TWOCOMPON block")
     b = script.index('elif [ -z "$RESTART_KEEPS_FORT20" ] && grep')
