@@ -613,6 +613,19 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
                 if sg_match:
                     space_group = int(sg_match.group(1))
 
+                # A slab names its layer group and the corresponding space
+                # group ("CORRESPONDING SPACE GROUP N. 191", manual App. A.2,
+                # p.421), as CRYSTALOptToD3's structure parser reads it; the
+                # symbol search above finds nothing there, so a slab's path
+                # was the P1 one.
+                if 'SLAB CALCULATION' in content or 'SLAB GROUP' in content:
+                    slab_sg = re.search(r'CORRESPONDING SPACE GROUP N\.\s*(\d+)', content)
+                    if slab_sg:
+                        space_group = int(slab_sg.group(1))
+                    slab_lat = re.search(r'PLANE GROUP N\.\s*\d+\s*:\s*([A-Z])', content)
+                    if slab_lat:
+                        lattice_type = slab_lat.group(1)
+
                 # crystal_system is the descriptive form (e.g. "cubic_fc") for
                 # display only. Keep lattice_type as the single-letter centering:
                 # get_band_path_from_symmetry / get_kpoint_coordinates_from_labels
