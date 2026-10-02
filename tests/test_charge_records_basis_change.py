@@ -21,6 +21,7 @@ import sys
 
 import pytest
 
+from basis_library import read_record
 from charge_records import ChargeCarryError, carry_charge_records
 from conftest import REPO_ROOT
 from ion_fixtures import molecule_deck, mulliken_block, synth_out
@@ -32,7 +33,7 @@ LI_PLUS = "1 2.0 0.0 0.0 0.0 0.0"
 
 
 def _explicit(zs=(1, 3, 8)):
-    return "END\n" + "".join((TZ / str(z)).read_text() for z in zs) + "99 0\n"
+    return "END\n" + "".join(read_record(str(TZ), z) for z in zs) + "99 0\n"
 
 
 def explicit_parent(records="CHEMOD\n1\n" + LI_PLUS + "\nCHARGED\n"):

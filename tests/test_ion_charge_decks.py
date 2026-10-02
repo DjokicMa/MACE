@@ -10,6 +10,7 @@ from decimal import Decimal
 
 import pytest
 
+from basis_library import read_record
 from conftest import REPO_ROOT
 from d12_constants import read_basis_file
 from ion_charges import (BasisInfo, IonChargeError, MethodInfo, SHELL_TABLE, apply_charge_setup,
@@ -223,7 +224,7 @@ def test_explicit_basis_blocks_are_parsed():
 
 
 def test_explicit_ecp_header_is_skipped():
-    blocks = parse_basis_blocks((TZ / "282").read_text() + "99 0\n")
+    blocks = parse_basis_blocks(read_record(str(TZ), 282) + "99 0\n")
     assert blocks[282].ecp and blocks[282].valence == 22
 
 

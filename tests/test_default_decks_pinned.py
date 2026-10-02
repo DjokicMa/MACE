@@ -13,6 +13,7 @@ import sys
 
 import pytest
 
+from basis_library import read_record
 from conftest import REPO_ROOT
 from ion_fixtures import cluster, ec, fsi, li_near, molecule_cif, molecule_deck, p1_cif, shuffled, synth_out
 
@@ -115,11 +116,11 @@ def test_opt2d12_sp_of_a_charged_internal_parent_is_unchanged(tmp_path):
     _check("opt2d12_sp_charged_internal.d12", _opt2d12(tmp_path, deck, out))
 
 
-LI_BASIS = (REPO_ROOT / "Crystal_d12" / "basis_sets" / "full.basis.triplezeta" / "3")
+TZ = REPO_ROOT / "Crystal_d12" / "basis_sets" / "full.basis.triplezeta"
 
 
 def _explicit_block():
-    blocks = "".join((LI_BASIS.parent / str(z)).read_text() for z in (1, 3, 8))
+    blocks = "".join(read_record(str(TZ), z) for z in (1, 3, 8))
     return f"END\n{blocks}99 0\n"
 
 
