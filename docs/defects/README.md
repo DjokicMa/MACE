@@ -150,10 +150,12 @@ reported, with the reason. The correction was validated on electron removal
 The image-charge term is the Makov-Payne monopole term with the Lany-Zunger
 scaling, added to E_f(q):
 
-    E_MP(q) = f q^2 |v_M| / (2 eps),    f = 1 - (1 - 1/eps) / 3
+    E_MP(q) = -f q^2 v_M / (2 eps),    f = 1 - (1 - 1/eps) / 3
 
 v_M is the Ewald Madelung potential of the actual supercell lattice (read
-from the pristine output; simple cubic: -2.837297 / L). eps is
+from the pristine output; simple cubic: -2.837297 / L, so E_MP > 0). A cell
+elongated or flattened by a factor of about 4 or more has v_M > 0 and a
+negative E_MP. eps is
 
 * `--eps VALUE`: used as given;
 * `--eps-from FILE`: eps_inf from the `DIELECTRIC TENSOR` of a CPHF output

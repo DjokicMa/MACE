@@ -2,13 +2,15 @@
 
 The Makov-Payne monopole term with the Lany-Zunger scaling:
 
-    E_MP(q) = f * q**2 * |v_M| / (2 * eps),   f = 1 - (1 - 1/eps) / 3
+    E_MP(q) = -f * q**2 * v_M / (2 * eps),   f = 1 - (1 - 1/eps) / 3
 
 v_M is the Ewald Madelung potential of the actual supercell lattice: the
 potential (atomic units, per unit charge) at a point charge from all its
 periodic images plus the neutralising background, self term removed. For a
 simple cubic lattice of edge L it is -2.837297/L. E_MP is added to the
-formation energy of the charge state.
+formation energy of the charge state. For near-cubic cells v_M < 0 and E_MP is
+positive (= f q^2 |v_M| / 2 eps); a cell elongated or flattened by a factor
+of about 4 or more has v_M > 0, and E_MP keeps the sign of -v_M.
 
 eps is the dielectric constant that screens the defect charge: eps_inf
 (electronic only) for defects at the pristine positions (unrelaxed, vertical),
@@ -70,7 +72,9 @@ def lany_zunger_factor(eps: float) -> float:
 
 
 def makov_payne(q: float, eps: float, v_m: float) -> float:
-    """Lany-Zunger-scaled Makov-Payne energy (units of ``v_m``, Ha for v_m in 1/bohr)."""
+    """Lany-Zunger-scaled Makov-Payne energy -f q^2 v_M / (2 eps): minus the
+    screened point-charge energy of the periodic images (units of ``v_m``, Ha
+    for v_m in 1/bohr)."""
     if eps <= 0:
         raise DefectError(f"dielectric constant {eps} must be positive")
-    return lany_zunger_factor(eps) * q * q * abs(v_m) / (2.0 * eps)
+    return -lany_zunger_factor(eps) * q * q * v_m / (2.0 * eps)

@@ -99,3 +99,16 @@ def test_dielectric_choice():
     a = an.dielectric_choice(text=aniso, source="x.out")
     assert a["eps"] == pytest.approx((2 * 2.865435 + 3.5) / 3) and "anisotropic" in a["warning"]
     assert math.isclose(out.dielectric(aniso).anisotropy, (3.5 - 2.865435) / a["eps"])
+
+
+def test_makov_payne_keeps_the_sign_of_the_madelung_potential():
+    """An elongated cell (aspect ratio about 4 or more) has v_M > 0: its
+    spurious point-charge energy q^2 v_M / (2 eps) is positive, so the
+    correction -q^2 v_M / (2 eps) must be negative, not |v_M|."""
+    elongated = np.diag([1.0, 1.0, 5.0]) * 10.0
+    v = ic.madelung(elongated)
+    assert v > 0
+    eps = 2.865
+    f = ic.lany_zunger_factor(eps)
+    assert ic.makov_payne(1, eps, v) == pytest.approx(-f * v / (2 * eps))
+    assert ic.makov_payne(1, eps, v) < 0
