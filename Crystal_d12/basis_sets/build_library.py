@@ -25,6 +25,8 @@ sys.path.insert(0, os.path.dirname(HERE))
 import basis_library  # noqa: E402
 
 SITE = "https://www.crystal.unito.it/Basis_Sets/"
+# The families built from MACE's old per-element directories.
+LEGACY_FAMILIES = ("full.basis.triplezeta", "full.basis.doublezeta", "stuttgart")
 RETRIEVED = "2026-10-01"
 UNVERIFIED = "unverified (legacy MACE file)"
 
@@ -192,7 +194,7 @@ def render(family, description, records, provenance, missing=None):
 
 def read_dirs(root):
     out = {}
-    for family in basis_library.FAMILIES:
+    for family in LEGACY_FAMILIES:
         d = os.path.join(root, family)
         out[family] = {name: open(os.path.join(d, name), "rb").read()
                        for name in os.listdir(d)
@@ -202,7 +204,7 @@ def read_dirs(root):
 
 def read_libs():
     return {family: dict(basis_library.iter_records(family))
-            for family in basis_library.FAMILIES}
+            for family in LEGACY_FAMILIES}
 
 
 def provenance_for(family, records, tz_records):
@@ -245,7 +247,7 @@ def build_bundled(root=None):
     sources = read_dirs(root) if root else read_libs()
     tz = sources["full.basis.triplezeta"]
     files, tables = {}, {}
-    for family in basis_library.FAMILIES:
+    for family in LEGACY_FAMILIES:
         records = sources[family]
         provenance = provenance_for(family, records, tz)
         files[family] = render(family, DESCRIPTIONS[family], records, provenance)
@@ -256,14 +258,152 @@ def build_bundled(root=None):
 PROVENANCE_MD = os.path.join(HERE, "PROVENANCE.md")
 
 
+# --- fetched families (need the crystal.unito.it pages: --fetch CACHE) -------
+
+REV2022 = "full.basis.triplezeta.rev2022"
+REV2022_ELEMENTS = list(range(37, 43)) + list(range(44, 54)) + list(range(57, 72))
+REV2022_DESCRIPTION = [
+    "Opt-in update of full.basis.triplezeta (menu option 4, external_basis_family",
+    "\"tz-rev2022\"). Rb-Mo and Ru-I use X_POB_TZVP_rev2 (Laun & Bredow, J. Comput.",
+    "Chem. 2022, 43, 839) and La-Lu use X_pob_TZVP_rev2 (Seidler, Laun & Bredow,",
+    "J. Comput. Chem. 2023) in place of pob-TZVP 2018 and ERD small-core 2017. Tc keeps",
+    "the ERD 2017 all-electron record (the site has no Tc_POB_TZVP_rev2); every other",
+    "record is byte-identical to full.basis.triplezeta.",
+    "Core treatment: Rb-I keep the same INPUT ECP as pob-TZVP 2018 (same ZNUC). Ce-Lu",
+    "use a 28-electron core with 4f in the valence (ZNUC = Z - 28), the same core size",
+    "as the ERD small-core records. La differs: ZNUC = 11, a 46-electron core, where",
+    "ERD has ZNUC = 29 - each La atom carries 18 fewer electrons than with",
+    "full.basis.triplezeta, which shows in the Mulliken NO. OF ELECTRONS.",
+]
+
+def fetched_meta(found, extra_note):
+    import fetch_unito
+
+    meta = [("source", found["anchor"]),
+            ("reference", fetch_unito.ascii_text(found["reference"]))]
+    meta += [("doi", d) for d in found["dois"]]
+    meta += [("url", found["url"]), ("site", fetch_unito.SITE_LABEL),
+             ("retrieved", found["retrieved"]), ("page_sha256", found["page_sha256"]),
+             ("core", found["core"]),
+             ("provenance", "fetched from crystal.unito.it and cut by the CRYSTAL23 "
+                            f"basis grammar; label {found['label']} = 200 + Z checked"
+                            + (f"; {extra_note}" if extra_note else ""))]
+    return meta
+
+
+def fetch_sets(elements, set_name_for, cache):
+    """{z: found-dict} for every element that passed, {z: reason} otherwise."""
+    import fetch_unito
+
+    good, missing = {}, {}
+    for z in elements:
+        try:
+            page = fetch_unito.fetch_page(z, cache)
+            found = fetch_unito.get_set(page, set_name_for(z))
+        except (LookupError, fetch_unito.GrammarError) as exc:
+            missing[str(z)] = fetch_unito.ascii_text(str(exc))
+            continue
+        problem = fetch_unito.check_ecp_set(z, found)
+        if problem:
+            missing[str(z)] = fetch_unito.ascii_text(f"{found['anchor']}: {problem}")
+            continue
+        good[z] = found
+    return good, missing
+
+
+def _znuc(record):
+    lines = record.split("\n")
+    return lines[2].split()[0] if lines[1].strip().upper() == "INPUT" else None
+
+
+def build_rev2022(cache):
+    import fetch_unito
+
+    tz = dict(basis_library.iter_records("full.basis.triplezeta"))
+    tz_prov = {k: basis_library.load_family("full.basis.triplezeta").provenance(k) for k in tz}
+    good, missing = fetch_sets(
+        REV2022_ELEMENTS, lambda z: f"{fetch_unito.symbol(z)}_pob_TZVP_rev2", cache)
+    records, provenance = dict(tz), dict(tz_prov)
+    for z in REV2022_ELEMENTS:
+        key = str(200 + z)
+        if str(z) in missing:
+            # Never fall back silently to the older record: the element is
+            # refused, with the reason, until the data can be fetched.
+            records.pop(key, None)
+            provenance.pop(key, None)
+            continue
+        found = good[z]
+        old_znuc, new_znuc = _znuc(tz[key].decode("ascii")), _znuc(found["record"])
+        note = (f"replaces full.basis.triplezeta {key} "
+                f"({dict(tz_prov[key])['source']}, ZNUC {old_znuc}); ZNUC {new_znuc}")
+        if old_znuc != new_znuc:
+            note += " - DIFFERENT CORE from full.basis.triplezeta"
+        records[key] = found["record"].encode("ascii")
+        provenance[key] = fetched_meta(found, note)
+    provenance["43"] = list(provenance["43"]) + [
+        ("note", "kept: crystal.unito.it lists no Tc_POB_TZVP_rev2 (checked "
+                 f"{RETRIEVED}); CRYSTAL23's internal POB-TZVP-REV2 has no Tc either")]
+    return render(REV2022, REV2022_DESCRIPTION, records, provenance, missing), \
+        (records, provenance, missing)
+
+
+FETCHED_FAMILIES = (REV2022,)
+
+
+def verify_against_triplezeta(cache):
+    """The one-off check behind the rev2022 family: the site's rev2 records
+    for H-Br, Cs, Ba and Hf-Bi must equal the bundled TZ records."""
+    import fetch_unito
+
+    tz = basis_library.load_family("full.basis.triplezeta")
+    lines = []
+    for z in [z for z in range(1, 36)] + [55, 56] + list(range(72, 84)):
+        key = str(200 + z) if z > 36 else str(z)
+        if key not in tz:
+            continue
+        try:
+            page = fetch_unito.fetch_page(z, cache)
+            found = fetch_unito.get_set(page, f"{fetch_unito.symbol(z)}_pob_TZVP_rev2")
+        except (LookupError, fetch_unito.GrammarError) as exc:
+            lines.append(f"{fetch_unito.symbol(z):>2} {key}: not checkable ({exc})")
+            continue
+        same = fetch_unito.same_numbers(found["record"], tz.record(key))
+        lines.append(f"{fetch_unito.symbol(z):>2} {key}: "
+                     f"{'equal' if same else 'DIFFERENT'} ({found['anchor']})")
+    return lines
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--from-dirs", metavar="DIR",
                         help="build from the old per-element directories under DIR")
     parser.add_argument("--check", action="store_true",
                         help="compare with the committed files, write nothing")
+    parser.add_argument("--fetch", metavar="CACHE",
+                        help="(re)build the families fetched from crystal.unito.it, "
+                             "caching the pages in CACHE")
+    parser.add_argument("--verify", metavar="CACHE",
+                        help="compare the site's rev2 records with full.basis.triplezeta")
     args = parser.parse_args(argv)
+    if args.verify:
+        print("\n".join(verify_against_triplezeta(args.verify)))
+        return 0
+    if args.fetch:
+        for name, build in ((REV2022, build_rev2022),):
+            data, (records, _prov, missing) = build(args.fetch)
+            with open(basis_library.library_file(name), "wb") as fh:
+                fh.write(data)
+            print(f"wrote {basis_library.library_file(name)}: {len(records)} records"
+                  + (f", missing {sorted(missing, key=int)}" if missing else ""))
+            for z, reason in sorted(missing.items(), key=lambda kv: int(kv[0])):
+                print(f"  missing {z}: {reason}")
+        basis_library.load_family.cache_clear()
     files, tables = build_bundled(args.from_dirs)
+    for name in FETCHED_FAMILIES:
+        if os.path.isfile(basis_library.library_file(name)):
+            lib = basis_library.load_file(basis_library.library_file(name))
+            tables[name] = ({k: lib.record_bytes(k) for k in lib.keys()},
+                            {k: lib.provenance(k) for k in lib.keys()}, lib.missing)
     markdown = provenance_markdown(tables)
     if args.check:
         stale = [f for f, data in files.items()

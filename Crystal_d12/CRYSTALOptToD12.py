@@ -83,7 +83,7 @@ from d12_writer import (
 )
 # Import write_scf_section from d12_writer
 from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES, atomic_deck
-from charge_records import carry_charge_records
+from charge_records import carry_charge_records, chemod_basis_change
 import basis_library
 from d12_interactive import (
     display_current_settings, interactive_d12_configuration,
@@ -1980,6 +1980,11 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             parent_text = pf.read()
         with open(new_filename, "r") as cf:
             child_text = cf.read()
+        refusal = chemod_basis_change(child_text, parent_text)
+        if refusal:
+            os.remove(new_filename)
+            _fail(refusal, f"\nNot writing {os.path.basename(new_filename)}: {refusal}")
+            return False, options
         carried, charge_notes = carry_charge_records(child_text, parent_text)
         if carried != child_text:
             with open(new_filename, "w") as cf:

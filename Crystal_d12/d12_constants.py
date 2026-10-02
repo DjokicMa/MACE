@@ -1663,9 +1663,14 @@ def select_basis_set(elements: List[int], method: str = "DFT",
         print("2: TZVP-REV2 - Triple-zeta + polarization")
         print("   - Higher accuracy, more expensive")
         print("3: Custom path - Specify your own basis set directory")
+        print("4: TZVP-REV2 (2022 update: Rb-I, La-Lu)")
+        print("   - Opt-in: X_POB_TZVP_rev2 for Rb-I, X_pob_TZVP_rev2 for La-Lu;")
+        print("     La uses a 46-electron ECP core (basis_sets/PROVENANCE.md)")
 
         # Add custom option
         external_options["3"] = "CUSTOM"
+        # The 2022 update lives beside full.basis.triplezeta (basis_library.py)
+        external_options["4"] = external_options["2"].rstrip("/") + ".rev2022/"
 
         external_choice = get_user_input(
             "Select external basis set",

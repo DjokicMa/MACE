@@ -456,7 +456,10 @@ def select_basis_set_with_defaults(elements: List[int], method: str = "DFT",
 
         # For external basis selection - use current setting as default but still prompt
         elif "Select external basis set" in prompt and current_basis_type == "EXTERNAL":
-            if "DZVP" in current_basis or "doublezeta" in current_basis:
+            if "triplezeta.rev2022" in current_basis:
+                # The opt-in 2022 update: keep the parent's choice (option 4)
+                return original_get_user_input(prompt, options, "4")
+            elif "DZVP" in current_basis or "doublezeta" in current_basis:
                 return original_get_user_input(prompt, options, "1")
             elif "TZVP" in current_basis or "triplezeta" in current_basis:
                 return original_get_user_input(prompt, options, "2")

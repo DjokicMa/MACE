@@ -2109,6 +2109,14 @@ fi'''
         # material_CRYSTAL_OPT_symm_HSE06-D3_full.basis.triplezeta.d12
         filename = Path(d12_file).name
 
+        # The opt-in 2022 update of the triplezeta family is checked first: its
+        # name contains "full.basis.triplezeta", so the override and bundled
+        # checks below would hand it the older TZ set. It has no per-site
+        # override; it is always the bundled library.
+        if "full.basis.triplezeta.rev2022" in filename:
+            return str(Path(__file__).parent.parent.parent / "Crystal_d12" / "basis_sets"
+                       / "full.basis.triplezeta.rev2022") + "/"
+
         # Explicit per-site override wins (set by the user); avoids hardcoding any
         # one institution's basis directory. MACE_TZ_BASIS_PATH / MACE_DZ_BASIS_PATH
         # point directly at a tz/dz dir; MACE_BASIS_DIR is a parent holding both.

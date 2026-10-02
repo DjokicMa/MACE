@@ -43,14 +43,17 @@ def test_every_record_says_where_it_came_from(family):
 
 
 def test_doi_only_where_copied_from_a_page():
-    """Every DOI in the library is one printed on crystal.unito.it for that
-    set family (pob-TZVP-rev2 2019, pob-TZVP 2018, sixth-period rev2 2021)."""
-    seen = set()
+    """Every DOI in the library was printed on crystal.unito.it: either in the
+    fetched record's own reference text, or - for the legacy families, whose
+    records were matched against the site - one of the three set families'
+    papers (pob-TZVP-rev2 2019, pob-TZVP 2018, sixth-period rev2 2021)."""
+    legacy = {"10.1002/jcc.26013", "10.1002/jcc.25195", "10.1002/jcc.26521"}
     for family in BL.FAMILIES:
         lib = BL.load_family(family)
         for key in lib.keys():
-            seen.update(lib.field(key, "doi"))
-    assert seen <= {"10.1002/jcc.26013", "10.1002/jcc.25195", "10.1002/jcc.26521"}
+            for doi in lib.field(key, "doi"):
+                ref = " ".join(lib.field(key, "reference"))
+                assert doi in legacy or doi in ref, (family, key, doi)
 
 
 def test_copies_of_triplezeta_records_inherit_its_label():

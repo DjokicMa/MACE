@@ -154,3 +154,82 @@ def carry_charge_records(child_text: str, parent_text: str) -> Tuple[str, List[s
 
     out = "\n".join(lines)
     return out + ("\n" if trailing_newline else ""), notes
+
+
+_NAT_NSHL = re.compile(r"\s*\d+\s+\d+\s*")
+
+
+def deck_basis(text: str):
+    """The basis set a deck uses, for comparing two decks.
+
+    ("INTERNAL", NAME) for a BASISSET keyword, ("EXTERNAL", {NAT: record}) for
+    an explicit basis block ending in "99 0", or None when neither can be
+    found. Records are compared by numeric_tokens, so spacing does not count.
+    """
+    from basis_library import GrammarError, numeric_tokens, parse_basis_block
+
+    lines = _records(text)
+    for i, line in enumerate(lines[1:], start=1):
+        if line.strip().upper() == "BASISSET" and i + 1 < len(lines):
+            return ("INTERNAL", lines[i + 1].strip().upper())
+    ends = [i for i, line in enumerate(lines) if re.fullmatch(r"\s*99\s+0\s*", line)]
+    if not ends:
+        return None
+    for start in range(1, ends[-1]):
+        if not _NAT_NSHL.fullmatch(lines[start]):
+            continue
+        try:
+            records, end = parse_basis_block(lines[start:])
+        except (GrammarError, ValueError):
+            continue
+        if start + end == ends[-1]:
+            return ("EXTERNAL", {nat: (rec, numeric_tokens(rec)) for nat, rec in records})
+    return None
+
+
+def _shells(record: str) -> int:
+    return int(record.split()[1])
+
+
+def chemod_basis_change(child_text: str, parent_text: str) -> Optional[str]:
+    """Why the parent's CHEMOD cannot be carried into this child, or None.
+
+    CHEMOD gives one charge per shell of each atom's basis (manual p.80), so
+    it only fits the basis set it was written for. When the child does not
+    have its own CHEMOD and its basis differs from the parent's - another
+    internal set, internal against explicit, or any explicit record with a
+    different shell count or different numbers (e.g. full.basis.triplezeta
+    against full.basis.triplezeta.rev2022) - the parent's CHEMOD would assign
+    its charges to the wrong shells. Decks whose basis block cannot be read
+    are not judged here (None).
+    """
+    if not extract_charge_records(parent_text)["CHEMOD"]:
+        return None
+    if extract_charge_records(child_text)["CHEMOD"]:
+        return None
+    parent, child = deck_basis(parent_text), deck_basis(child_text)
+    if parent is None or child is None:
+        return None
+    lead = ("the parent deck's CHEMOD gives per-shell charges for the parent's basis "
+            "set, and this deck's basis set differs ({}); it cannot be carried. Keep "
+            "the parent's basis set, or write CHEMOD for the new basis by hand.")
+    if parent[0] != child[0]:
+        return lead.format(f"parent: {parent[0].lower()} basis, this deck: "
+                           f"{child[0].lower()} basis")
+    if parent[0] == "INTERNAL":
+        if parent[1] != child[1]:
+            return lead.format(f"parent: BASISSET {parent[1]}, this deck: BASISSET {child[1]}")
+        return None
+    for nat in sorted(set(parent[1]) | set(child[1])):
+        p, c = parent[1].get(nat), child[1].get(nat)
+        if p is None or c is None:
+            continue
+        if p[1] != c[1]:
+            if _shells(p[0]) != _shells(c[0]):
+                detail = (f"atom type {nat}: {_shells(p[0])} shells in the parent, "
+                          f"{_shells(c[0])} in this deck")
+            else:
+                detail = (f"atom type {nat}: same {_shells(p[0])} shells, different "
+                          f"exponents or coefficients")
+            return lead.format(detail)
+    return None
