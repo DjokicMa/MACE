@@ -1438,7 +1438,7 @@ More Help:
     )
     
     parser.add_argument('command', nargs='?',
-                       choices=['workflow', 'submit', 'preflight', 'defects', 'phonopy', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif',
+                       choices=['workflow', 'submit', 'preflight', 'defects', 'phonopy', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif', 'ions',
                                'completion', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version'],
                        help='Command to run')
     parser.add_argument('args', nargs='*', help='Arguments for the command')
