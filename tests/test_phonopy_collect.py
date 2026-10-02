@@ -98,7 +98,11 @@ def test_forces_fc_frequencies_and_thermal_match_phonopy(tmp_path, monkeypatch):
     ref.run_mesh(100.0)
     ref.run_thermal_properties(t_min=300, t_max=300)
     assert abs(row["heat_capacity"] - ref.get_thermal_properties_dict()["heat_capacity"][0]) < 1e-6
-    assert abs(row["heat_capacity"] - REF_CV_300) < 1e-6
+    # Against the CLI number: the symfc-projector symmetrization lands on 47.14695 with
+    # numpy 2.5 and on the unsymmetrized 47.14611 with numpy 2.4 (same phonopy/symfc);
+    # 2e-5 relative, so the CLI value is held to 1e-3 and the same-environment API
+    # oracle above to 1e-6.
+    assert abs(row["heat_capacity"] - REF_CV_300) < 1e-3
 
 
 def test_force_sets_equal_phonopys(tmp_path, monkeypatch):
