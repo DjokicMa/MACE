@@ -435,3 +435,148 @@ def mulliken_atoms(text: str) -> Tuple[List[dict], List[dict]]:
         else:
             pops = rows
     return pops, spins
+
+
+_DIMENSIONALITY = re.compile(r"DIMENSIONALITY OF THE SYSTEM\s+(\d)")
+_LATTICE_VALUES = re.compile(r"^\s*A\s+B\s+C\s+ALPHA\s+BETA\s+GAMMA\s*$")
+_ATOM_LINE = re.compile(r"^\s*\d+\s+[TF]\s+(\d+)\s+([A-Z]{1,2})\s+(\S+)\s+(\S+)\s+(\S+)\s*$")
+
+
+def final_structure(text: str) -> Optional[dict]:
+    """The last geometry an .out prints: atoms (Cartesian A), cell and periodic directions.
+
+    Read from the last "ATOMS IN THE ASYMMETRIC UNIT ... ATOMS IN THE UNIT
+    CELL" table (every atom of the cell, in the order the Mulliken analysis
+    uses), its column header (X/A fractional, X(ANGSTROM) Cartesian) and the
+    lattice parameters printed above it. None when there is no such table.
+    """
+    lines = text.splitlines()
+    idx = [i for i, l in enumerate(lines) if "ATOMS IN THE ASYMMETRIC UNIT" in l]
+    if not idx:
+        return None
+    start = idx[-1]
+    dim = 3
+    lattice = None
+    for j in range(start, max(start - 40, -1), -1):
+        if lattice is None and _LATTICE_VALUES.match(lines[j]) and j + 1 < len(lines):
+            try:
+                lattice = [float(x) for x in lines[j + 1].split()[:6]]
+            except ValueError:
+                lattice = None
+        m = _DIMENSIONALITY.search(lines[j])
+        if m:
+            dim = int(m.group(1))
+            break
+    header = lines[start + 1].split()[1:] if start + 1 < len(lines) else []
+    frac_cols = [("/" in h) for h in header[:3]]
+    symbols, zs, coords = [], [], []
+    for line in lines[start + 3:]:
+        m = _ATOM_LINE.match(line)
+        if not m:
+            if symbols:
+                break
+            continue
+        try:
+            vals = [float(m.group(k)) for k in (3, 4, 5)]
+        except ValueError:
+            return None
+        zs.append(int(m.group(1)))
+        symbols.append(element_symbol(m.group(2)))
+        coords.append(vals)
+    if not symbols:
+        return None
+    periodic = {3: (0, 1, 2), 2: (0, 1), 1: (0,), 0: ()}.get(dim, ())
+    cell = None
+    if periodic:
+        if not lattice or len(lattice) < 6:
+            return None
+        cell = cell_matrix(*lattice)
+    xyz = []
+    for vals in coords:
+        p = [0.0, 0.0, 0.0]
+        for d in range(3):
+            if d < len(frac_cols) and frac_cols[d] and cell:
+                for k in range(3):
+                    p[k] += vals[d] * cell[d][k]
+            else:
+                p[d] += vals[d]
+        xyz.append(tuple(p))
+    return {"symbols": symbols, "z": zs, "xyz": xyz, "cell": cell, "periodic_dirs": periodic}
+
+
+FRAGMENT_DEVIATION_FLAG = 0.5  # e; a heuristic, not a test
+
+
+def fragment_charges(text: str, force: bool = False) -> Dict[str, object]:
+    """Per-fragment Mulliken charge and spin of a run, when the run was charged.
+
+    Computed when the Mulliken count differs from the sum of valence charges,
+    a CHARGE NORMALIZATION FACTOR other than 1 was printed (a CHEMOD guess was
+    renormalised), CRYSTAL warned "UNIT CELL NOT NEUTRAL", or force=True;
+    otherwise {}. Returns {"electron_count": {...}, "fragment_charges": [...]}.
+    A fragment's charge is the sum over its atoms of (valence charge -
+    Mulliken population); a deviation of more than FRAGMENT_DEVIATION_FLAG
+    from the formal charge of a known ion is flagged (electron delocalised).
+    """
+    count = mulliken_electron_count(text)
+    if count is None:
+        return {}
+    pops, spins = mulliken_atoms(text)
+    if not pops:
+        return {}
+    pp = valence_charges(text)
+    zsum = sum(valence_of(a["z"], pp) for a in pops)
+    factors = [float(x) for x in re.findall(r"CHARGE NORMALIZATION FACTOR\s+([-\d.]+)", text)]
+    renormalised = any(abs(f - 1.0) > 1e-6 for f in factors)
+    not_neutral = "UNIT CELL NOT NEUTRAL" in text
+    net = round(zsum - count, 6)
+    if not (force or abs(net) > 1e-3 or renormalised or not_neutral):
+        return {}
+    result: Dict[str, object] = {"electron_count": {
+        "mulliken": count, "valence_sum": zsum, "net_charge": net,
+        "charge_normalization_factors": sorted({f for f in factors if abs(f - 1.0) > 1e-6}),
+        "unit_cell_not_neutral": not_neutral}}
+    geom = final_structure(text)
+    if geom is None or len(geom["symbols"]) != len(pops):
+        return result
+    try:
+        frags = classify(geom["symbols"], geom["xyz"], geom["cell"], geom["periodic_dirs"], auto=False)
+    except IonChargeError:
+        return result
+    spin_of = {a["atom"]: a["value"] for a in spins}
+    entries = []
+    for f in frags:
+        q = sum(valence_of(pops[i]["z"], pp) - pops[i]["value"] for i in f["atoms"])
+        s = sum(spin_of.get(i + 1, 0.0) for i in f["atoms"]) if spins else None
+        dev = q - f["charge"]
+        flag = None
+        if f["ion"] and abs(dev) > FRAGMENT_DEVIATION_FLAG:
+            flag = f"electron delocalised from {f['ion']} (Mulliken {q:+.2f} vs formal {f['charge']:+d})"
+        elif not f["ion"] and abs(q) > FRAGMENT_DEVIATION_FLAG:
+            flag = f"neutral fragment carries {q:+.2f} e"
+        entries.append({"formula": f["formula"], "atoms": [i + 1 for i in f["atoms"]], "ion": f["ion"],
+                        "extended": f["extended"], "formal_charge": f["charge"],
+                        "mulliken_charge": round(q, 4) + 0.0, "spin": None if s is None else round(s, 4) + 0.0,
+                        "deviation": round(dev, 4) + 0.0, "flag": flag})
+    result["fragment_charges"] = entries
+    return result
+
+
+def format_fragment_charges(props: Dict[str, object]) -> List[str]:
+    """The "Fragments" report section (empty without fragment_charges)."""
+    entries = props.get("fragment_charges")
+    if not entries:
+        return []
+    count = props.get("electron_count") or {}
+    lines = ["Fragments" + (f" (net charge {count.get('net_charge', 0):+g}, "
+                            f"{count.get('mulliken', 0):g} electrons)" if count else "")]
+    for e in entries:
+        name = e["ion"] or ("extended" if e["extended"] else "neutral")
+        spin = "" if e["spin"] is None else f", spin {e['spin']:+.2f}"
+        atoms = e["atoms"]
+        where = f"atom {atoms[0]}" if len(atoms) == 1 else f"atoms {atoms[0]}..{atoms[-1]}" \
+            if atoms == list(range(atoms[0], atoms[-1] + 1)) else f"{len(atoms)} atoms"
+        lines.append(f"  {e['formula']:<12} {name:<10} formal {e['formal_charge']:+d}  "
+                     f"Mulliken {e['mulliken_charge']:+.3f}{spin}  ({where})"
+                     + (f"  <- {e['flag']}" if e["flag"] else ""))
+    return lines

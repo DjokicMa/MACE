@@ -159,6 +159,14 @@ class CrystalPropertyExtractor:
             'extractor_version': '1.0'
         }
         
+        # Charged runs (DOPING / CHEMOD / CHARGED): electron count and the
+        # Mulliken charge and spin of each molecular fragment. Self-skipping:
+        # nothing is added for a neutral run unless asked for.
+        try:
+            properties.update(self._extract_fragment_charges(content))
+        except Exception as e:
+            print(f"Warning: Could not compute fragment charges: {e}")
+
         # Process population analysis data if available. Package-qualified
         # import first: the bare name only resolves when mace/utils is on
         # sys.path directly, so in every production context the ImportError
@@ -191,6 +199,16 @@ class CrystalPropertyExtractor:
         
         return properties
     
+    # Fragment charges for every run, not only charged ones (opt-in; also
+    # MACE_FRAGMENT_CHARGES=1 or `mace analyze --fragments`).
+    extract_fragments = False
+
+    def _extract_fragment_charges(self, content: str) -> Dict[str, Any]:
+        """electron_count and fragment_charges of a charged run (ion_fragments.fragment_charges)."""
+        from mace.utils.ion_fragments import fragment_charges
+        force = self.extract_fragments or os.environ.get("MACE_FRAGMENT_CHARGES") == "1"
+        return fragment_charges(content, force=force)
+
     def _extract_structural_properties(self, content: str) -> Dict[str, Any]:
         """Extract structural properties."""
         props = {}
@@ -3423,6 +3441,8 @@ def main():
     parser.add_argument("--calc-type", help="Filter by calculation type (OPT, SP, FREQ, BAND, DOSS, etc.)")
     parser.add_argument("--filter-material", help="Only extract properties for specific material ID")
     parser.add_argument("--filter-type", help="Only extract properties from specific calculation type")
+    parser.add_argument("--fragments", action="store_true",
+                        help="Per-fragment Mulliken charges for every run (charged runs get them anyway)")
     
     args = parser.parse_args()
     
@@ -3431,6 +3451,7 @@ def main():
         sys.exit(1)
     
     extractor = CrystalPropertyExtractor(args.db_path)
+    extractor.extract_fragments = args.fragments
     
     output_files = []
     if args.output_file:
@@ -3492,6 +3513,10 @@ def main():
             total_properties += saved_count
             files_processed += 1
             print(f"   ✅ Extracted and saved {saved_count} properties")
+            if properties.get("fragment_charges"):
+                from mace.utils.ion_fragments import format_fragment_charges
+                for line in format_fragment_charges(properties):
+                    print(f"   {line}")
         else:
             print(f"   ⚠️  No properties extracted")
     
