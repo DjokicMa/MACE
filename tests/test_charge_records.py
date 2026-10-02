@@ -96,7 +96,8 @@ def test_explicit_basis_gets_records_after_99_0():
 
 
 def test_a_different_atom_count_keeps_doping_but_not_chemod():
-    child = CHILD.replace("3\n3 0.0 0.0 0.1 Li", "4\n3 0.0 0.0 0.1 Li\n1 5.0 0.0 0.0 H")
+    # two H, so the child's electron count stays even (an odd one is refused, E3)
+    child = CHILD.replace("3\n3 0.0 0.0 0.1 Li", "5\n3 0.0 0.0 0.1 Li\n1 5.0 0.0 0.0 H\n1 5.7 0.0 0.0 H")
     out, notes = carry_charge_records(child, PARENT)
     assert "CHEMOD" not in out.splitlines()
     assert out.splitlines()[-3:] == ["DOPING", "-1", "END"]

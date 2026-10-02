@@ -107,6 +107,25 @@ python NewCifToD12.py --batch --options_file my_custom_config.json --cif_dir ./c
   - 3D crystals only: a MOLECULE, SLAB or POLYMER is refused with the
     reason (use `freq_analysis.json` for their frequencies)
 
+### 9. `ion_cluster_molecule.json`
+- **Purpose**: Li-salt / solvent clusters (or any ion cluster) as a MOLECULE
+- **Method**: HSEsol-3c/sol-def2-mSVP, the group's Li/FSI/EC settings
+- **Features**:
+  - `"ion_charges": "auto"`: ions (Li+, FSI-, ...) are found by connectivity,
+    whatever the atom order, and get a CHEMOD starting guess; the net charge
+    becomes DOPING (see "Charged systems and ion clusters" in
+    `Crystal_d12/README.md`)
+  - An odd electron count needs `"spinlock"` (and `"spinlock_cycles"`), or a
+    terminal to ask; it is never written closed shell
+  - Add `"net_charge"` to override the sum of the ions found
+  - `"symmetry_handling": "P1"` and `"write_only_unique": false`: every atom
+    of the cluster is written. CHEMOD labels are positions in the full atom
+    list and CHEMOD needs a deck without symmetry, so a cluster CIF that
+    declares a space group would otherwise be reduced and refused
+  - The odd-count warning for HSEsol-3c applies here: HSE-type screened
+    hybrids crashed on odd-electron open-shell clusters on CRYSTAL23 where
+    PBE0/PBEsol0 converged; the config keeps HSEsol-3c
+
 ## Configuration Structure
 
 Each JSON file contains:

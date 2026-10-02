@@ -1320,7 +1320,23 @@ class EnhancedCrystalQueueManager:
                 line = next((l.strip() for l in fort87.splitlines() if 'ERROR' in l.upper()),
                             fort87.splitlines()[0].strip())
                 return "crystal_error", f"fort.87: {line}"
-                        
+
+            # Same type as before (recovery routing is unchanged), but say
+            # what CRYSTAL printed. Under Pcrystal an input error such as
+            # "ERROR **** INPBAS **** UNIT CELL NOT NEUTRAL" is often not
+            # printed at all - the .out ends in MPI_Abort; a serial run of
+            # the same deck shows it (measured on CRYSTAL23).
+            crystal_error = next((l.strip() for l in content.splitlines()
+                                  if l.strip().startswith('ERROR ****')), None)
+            if crystal_error:
+                return "unknown_error", f"CRYSTAL: {crystal_error}"
+            if 'MPI_ABORT' in content_upper:
+                return ("unknown_error",
+                        "CRYSTAL stopped with MPI_Abort and printed no error: under Pcrystal an "
+                        "input error (e.g. INPBAS UNIT CELL NOT NEUTRAL - a charged periodic cell "
+                        "without CHARGED) may be hidden; run the deck serially (crystal < INPUT) "
+                        "or check fort.87 in the scratch directory to see it")
+
             # If no specific error found, return generic
             return "unknown_error", "Calculation failed with unknown error"
             

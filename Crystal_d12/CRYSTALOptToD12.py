@@ -83,7 +83,7 @@ from d12_writer import (
 )
 # Import write_scf_section from d12_writer
 from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES, atomic_deck
-from charge_records import carry_charge_records
+from charge_records import ChargeCarryError, carry_charge_records, charge_from_parent_out
 import basis_library
 from d12_interactive import (
     display_current_settings, interactive_d12_configuration,
@@ -1207,7 +1207,7 @@ def _keep_extracted_settings(settings, calc_type, opt_type, origin_setting):
 
 def process_files(output_file, input_file=None, shared_settings=None, config_file=None, non_interactive=False, calc_type=None, opt_type=None, origin_setting="auto",
                   output_dir=None, confirm_config=None, unattended=False,
-                  reserved_decks=None):
+                  reserved_decks=None, charge_options=None):
     """Process CRYSTAL output and input files
 
     Args:
@@ -1229,6 +1229,10 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
             with its reason instead, so the result is the same either way.
         reserved_decks: {deck path: .out} of the decks this run has written;
             a deck that would overwrite one of them fails instead.
+        charge_options: ion_charges / net_charge / site_states / chemod /
+            fragment_bond_scale / spinlock / spinlock_cycles for a charged
+            system, recomputed from the new geometry (ion_charges.py); the
+            same keys in a config file apply too, these win.
 
     Returns:
         tuple: (success, settings_used). LAST_RESULT then holds the deck
@@ -1990,22 +1994,64 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
 
     # A charged or ionic parent (CHEMOD / CHARGED / DOPING) must give a child
     # with the same electron count; the settings model does not carry these
-    # records, so copy them from the parent deck text.
-    if has_parent_deck:
-        with open(input_file, "r", errors="ignore") as pf:
-            parent_text = pf.read()
-        with open(new_filename, "r") as cf:
-            child_text = cf.read()
-        carried, charge_notes = carry_charge_records(child_text, parent_text)
-        if carried != child_text:
-            with open(new_filename, "w") as cf:
-                cf.write(carried)
-        for note in charge_notes:
-            if note.startswith("WARNING"):
-                ui.warn(note)
-                LAST_RESULT["notes"].append(note)
-            else:
-                ui.info(f"Charge state: {note}")
+    # records, so copy them from the parent deck text - whenever the parent
+    # deck exists, even if parsing it failed above. Without a parent deck the
+    # .out's Mulliken electron count gives the charge.
+    parent_deck_exists = bool(input_file and os.path.exists(input_file))
+    try:
+        with open(output_file, "r", errors="ignore") as of:
+            parent_out_text = of.read()
+    except OSError:
+        parent_out_text = None
+    with open(new_filename, "r") as cf:
+        child_text = cf.read()
+    parent_text = None
+    soft_notes = []
+    charge_notes = []
+    carried = child_text
+    requested = {k: v for k, v in (charge_options or {}).items() if v is not None}
+    if config_file:
+        # the same keys in the config (applied to options above) count too;
+        # the command-line flags win
+        requested = {**{k: options.get(k) for k in CHARGE_OPTION_KEYS
+                        if (options or {}).get(k) is not None}, **requested}
+    recompute = any(requested.get(k) not in (None, "", "none")
+                    for k in ("ion_charges", "net_charge", "site_states"))
+    try:
+        if parent_deck_exists:
+            with open(input_file, "r", errors="ignore") as pf:
+                parent_text = pf.read()
+        if recompute:
+            # asked for: the charge is worked out again from the new geometry
+            # and replaces whatever the parent carried
+            carried, charge_notes = recompute_ion_charges(
+                child_text, parent_text, requested,
+                interactive=not unattended and stdin_is_terminal())
+        elif parent_deck_exists:
+            carried, charge_notes = carry_charge_records(child_text, parent_text, parent_out_text)
+        elif parent_out_text:
+            carried, soft_notes = charge_from_parent_out(child_text, parent_out_text)
+    except (ChargeCarryError, ValueError) as e:
+        try:
+            os.remove(new_filename)
+        except OSError:
+            pass
+        _fail(f"charge state: {e}", f"Not writing {new_filename}: {e}")
+        return False, options
+    if carried != child_text:
+        with atomic_deck(new_filename) as cf:
+            cf.write(carried)
+    for note in soft_notes:
+        if note.startswith("WARNING"):
+            ui.warn(note)
+        else:
+            ui.info(f"Charge state: {note}")
+    for note in charge_notes:
+        if note.startswith("WARNING"):
+            ui.warn(note)
+            LAST_RESULT["notes"].append(note)
+        else:
+            ui.info(f"Charge state: {note}")
 
     ui.ok(f"\nSuccessfully created {new_filename}")
     LAST_RESULT["deck"] = new_filename
@@ -2015,6 +2061,51 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         LAST_RESULT["notes"].append(opt_problem)
 
     return True, options
+
+
+CHARGE_OPTION_KEYS = ("ion_charges", "net_charge", "site_states", "chemod", "fragment_bond_scale",
+                      "spinlock", "spinlock_cycles")
+
+
+def recompute_ion_charges(child_text, parent_text, requested, interactive=False):
+    """The child deck with its charge records worked out again from its own geometry.
+
+    The carried records are replaced (ion_charges.plan_for_deck on the new
+    deck). When the parent deck's fragments differ in composition from the
+    child's, a warning says so (a proton or an anion moved between molecules
+    during the optimisation changes which ions there are).
+    """
+    import ion_charges as ic
+
+    stripped = ic.strip_charge_records(child_text)
+    parent_spin = ic.deck_method(parent_text).spinlock if parent_text else None
+    try:
+        setup = ic.plan_for_deck(
+            stripped, ion_charges=requested.get("ion_charges"), net_charge=requested.get("net_charge"),
+            site_states=ic.parse_site_states(requested.get("site_states")),
+            chemod=requested.get("chemod") or "auto",
+            fragment_bond_scale=requested.get("fragment_bond_scale") or 1.15,
+            spinlock=requested.get("spinlock") if "spinlock" in requested else None,
+            spinlock_cycles=requested.get("spinlock_cycles"), parent_spinlock=parent_spin,
+            interactive=interactive)
+    except ic.IonChargeError as e:
+        raise ValueError(str(e))
+    notes = [f"recomputed from the new geometry: {line}" for line in setup.report] + list(setup.warnings)
+    if parent_text and requested.get("ion_charges") == "auto":
+        try:
+            def kinds(text):
+                g = ic.read_deck_geometry(text)
+                frags = ic.frag.classify(g.symbols, g.xyz, g.cell, g.periodic_dirs,
+                                         requested.get("fragment_bond_scale") or 1.15, auto=False)
+                return sorted((f["formula"], f["ion"] or "") for f in frags)
+            before, after = kinds(parent_text), kinds(stripped)
+            if before != after:
+                notes.append("WARNING: the fragments changed during the optimisation (parent: "
+                             + ", ".join(f for f, _ in before) + "; now: "
+                             + ", ".join(f for f, _ in after) + ") - check the charges")
+        except Exception:
+            pass
+    return ic.apply_charge_setup(stripped, setup), notes
 
 
 def find_file_pairs(directory):
@@ -2198,7 +2289,29 @@ def main():
         help="Origin setting: 'auto', '0 0 1', '0 1 0', etc. (default: auto-detect)",
     )
 
+    charged = parser.add_argument_group(
+        "charged systems (recomputed from the new geometry; see Crystal_d12/README.md)")
+    charged.add_argument("--ion-charges", choices=["auto"],
+                         help="find known ions (Li+, FSI-, ...) in the new geometry and set "
+                              "CHEMOD/DOPING for them, replacing the parent's records")
+    charged.add_argument("--net-charge", type=float, help="net charge (default: the ions found)")
+    charged.add_argument("--site-states",
+                         help='JSON or JSON file: [{"atom": 1, "shell_charges": [...]}]')
+    charged.add_argument("--chemod", choices=["auto", "yes", "no"], help="write CHEMOD (default auto)")
+    charged.add_argument("--fragment-bond-scale", type=float,
+                         help="bond when distance < scale x covalent radii sum (default 1.15)")
+    charged.add_argument("--spinlock", type=int, help="nalpha-nbeta for an odd electron count")
+    charged.add_argument("--spinlock-cycles", type=int, help="SCF cycles the SPINLOCK holds")
+
     args = parser.parse_args()
+    charge_options = {
+        "ion_charges": args.ion_charges,
+        "net_charge": (int(args.net_charge) if args.net_charge is not None
+                       and float(args.net_charge).is_integer() else args.net_charge),
+        "site_states": args.site_states, "chemod": args.chemod,
+        "fragment_bond_scale": args.fragment_bond_scale,
+        "spinlock": args.spinlock, "spinlock_cycles": args.spinlock_cycles,
+    }
     repeated = []
     if args.out_file:
         # A path given twice (or as a.out and ./a.out) is converted once: a
@@ -2262,6 +2375,7 @@ def main():
             output_dir=args.output_dir,
             confirm_config=False if args.yes else None,
             unattended=bool(args.yes or args.non_interactive),
+            charge_options=charge_options,
         )
 
         if success and args.save_options:
@@ -2490,6 +2604,7 @@ def main():
                     confirm_config=confirm_config,
                     unattended=unattended,
                     reserved_decks=reserved_decks,
+                    charge_options=charge_options,
                 )
                 reason = LAST_RESULT["reason"]
             except Exception as e:

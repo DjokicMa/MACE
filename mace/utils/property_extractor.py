@@ -38,6 +38,48 @@ except ImportError as e:
     sys.exit(1)
 
 
+# The real electron count of a run (DOPING does not change the header's count)
+from mace.utils.ion_fragments import mulliken_electron_count  # noqa: E402
+
+
+def _scf_parent_of_band_output(output_file: Path) -> Optional[Path]:
+    """The SCF .out a BAND .out was run from, when it sits beside it as <stem>.out."""
+    stem = output_file.stem
+    for suffix in ("_band", "_BAND", ".band", ".BAND"):
+        if stem.endswith(suffix) and len(stem) > len(suffix):
+            candidate = output_file.with_name(stem[:-len(suffix)] + ".out")
+            if candidate.exists() and candidate != output_file:
+                return candidate
+    return None
+
+
+def band_occupied_count(content: str, output_file: Optional[Path] = None) -> Optional[int]:
+    """Occupied bands (closed shell) for a BAND .out, or None when not known.
+
+    The real electron count is the Mulliken one, from the BAND .out itself or
+    from its SCF parent's .out beside it; the properties header is used only
+    when neither has one. An odd or fractional count has no closed-shell HOMO
+    index, so None is returned and the BAND gap stays unset rather than wrong.
+    """
+    count = mulliken_electron_count(content)
+    if count is None and output_file is not None:
+        parent = _scf_parent_of_band_output(Path(output_file))
+        if parent is not None:
+            try:
+                count = mulliken_electron_count(parent.read_text(errors="ignore"))
+            except OSError:
+                count = None
+    if count is None:
+        header = re.findall(r'N\.?\s*OF ELECTRONS PER CELL\s*(\d+)', content)
+        if not header:
+            return None
+        count = float(header[-1])
+    nearest = round(count)
+    if abs(count - nearest) > 1e-3 or nearest % 2:
+        return None
+    return nearest // 2
+
+
 class CrystalPropertyExtractor:
     """Extract comprehensive properties from CRYSTAL output files."""
     
@@ -117,6 +159,14 @@ class CrystalPropertyExtractor:
             'extractor_version': '1.0'
         }
         
+        # Charged runs (DOPING / CHEMOD / CHARGED): electron count and the
+        # Mulliken charge and spin of each molecular fragment. Self-skipping:
+        # nothing is added for a neutral run unless asked for.
+        try:
+            properties.update(self._extract_fragment_charges(content))
+        except Exception as e:
+            print(f"Warning: Could not compute fragment charges: {e}")
+
         # Process population analysis data if available. Package-qualified
         # import first: the bare name only resolves when mace/utils is on
         # sys.path directly, so in every production context the ImportError
@@ -149,6 +199,16 @@ class CrystalPropertyExtractor:
         
         return properties
     
+    # Fragment charges for every run, not only charged ones (opt-in; also
+    # MACE_FRAGMENT_CHARGES=1 or `mace analyze --extract-properties DIR --fragments`).
+    extract_fragments = False
+
+    def _extract_fragment_charges(self, content: str) -> Dict[str, Any]:
+        """electron_count and fragment_charges of a charged run (ion_fragments.fragment_charges)."""
+        from mace.utils.ion_fragments import fragment_charges
+        force = self.extract_fragments or os.environ.get("MACE_FRAGMENT_CHARGES") == "1"
+        return fragment_charges(content, force=force)
+
     def _extract_structural_properties(self, content: str) -> Dict[str, Any]:
         """Extract structural properties."""
         props = {}
@@ -557,7 +617,18 @@ class CrystalPropertyExtractor:
             props['overlap_population'] = general_overlap
         
         props['is_spin_polarized'] = is_spin_polarized
-        
+
+        # Valence charges of pseudopotential atoms: their Mulliken populations
+        # count valence electrons only (see population_analysis_processor).
+        if any(k.startswith('mulliken_') for k in props):
+            try:
+                from mace.utils.population_analysis_processor import valence_charges
+            except ImportError:
+                from population_analysis_processor import valence_charges
+            valence = valence_charges(content)
+            if valence:
+                props['mulliken_valence_charges'] = {str(z): v for z, v in valence.items()}
+
         return props
     
     def _extract_geometry_optimization(self, content: str) -> Dict[str, Any]:
@@ -1599,17 +1670,16 @@ class CrystalPropertyExtractor:
                 # computed by band index. Determine the occupied-band count (HOMO
                 # index): prefer the explicit "TOP OF VALENCE BANDS - BAND N"
                 # line, else fall back to (electrons per cell)//2 — exact for
-                # closed-shell / non-magnetic systems (the band .out usually only
-                # carries the electron count). Without it the BAND-derived gap is
-                # left unset rather than wrong.
+                # closed-shell / non-magnetic systems. The count is the Mulliken
+                # one (band_occupied_count): the header is the count before
+                # DOPING. Without it the BAND-derived gap is left unset rather
+                # than wrong.
                 num_occ = None
                 nocc_match = re.findall(r'TOP OF VALENCE BANDS\s*-\s*BAND\s*(\d+)', content)
                 if nocc_match:
                     num_occ = int(nocc_match[-1])
                 else:
-                    nelec_match = re.findall(r'N\.?\s*OF ELECTRONS PER CELL\s*(\d+)', content)
-                    if nelec_match:
-                        num_occ = int(nelec_match[-1]) // 2
+                    num_occ = band_occupied_count(content, output_file)
                 dat_info = processor.process_band_dat_file(
                     band_dat_file, fermi_energy=props.get('fermi_energy_band'),
                     num_occupied_bands=num_occ)
@@ -3371,6 +3441,8 @@ def main():
     parser.add_argument("--calc-type", help="Filter by calculation type (OPT, SP, FREQ, BAND, DOSS, etc.)")
     parser.add_argument("--filter-material", help="Only extract properties for specific material ID")
     parser.add_argument("--filter-type", help="Only extract properties from specific calculation type")
+    parser.add_argument("--fragments", action="store_true",
+                        help="Per-fragment Mulliken charges for every run (charged runs get them anyway)")
     
     args = parser.parse_args()
     
@@ -3379,6 +3451,7 @@ def main():
         sys.exit(1)
     
     extractor = CrystalPropertyExtractor(args.db_path)
+    extractor.extract_fragments = args.fragments
     
     output_files = []
     if args.output_file:
@@ -3440,6 +3513,10 @@ def main():
             total_properties += saved_count
             files_processed += 1
             print(f"   ✅ Extracted and saved {saved_count} properties")
+            if properties.get("fragment_charges"):
+                from mace.utils.ion_fragments import format_fragment_charges
+                for line in format_fragment_charges(properties):
+                    print(f"   {line}")
         else:
             print(f"   ⚠️  No properties extracted")
     

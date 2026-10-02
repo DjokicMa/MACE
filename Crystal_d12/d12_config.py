@@ -500,12 +500,45 @@ def config_to_cif_options(data: Any) -> Dict[str, Any]:
         raise ValueError("the options file names no basis_set")
     opts.setdefault("basis_set_type", "INTERNAL")
 
+    charge_issues = charge_option_issues(opts)
+    if charge_issues:
+        raise ValueError("; ".join(charge_issues))
+
     opts.setdefault("is_spin_polarized", False)
     opts.setdefault("use_dispersion", False)
     if not isinstance(opts.get("tolerances"), dict):
         opts["tolerances"] = scf_tolerances("1")
     opts.setdefault("scf_method", "DIIS")
     return opts
+
+
+def charge_option_issues(config: Dict[str, Any]) -> List[str]:
+    """Type problems in the charged-system keys of a config (ion_charges.py)."""
+    issues = []
+    if config.get("ion_charges") not in (None, "auto", "none"):
+        issues.append("ion_charges must be 'auto'")
+    q = config.get("net_charge")
+    if q is not None and (isinstance(q, bool) or not isinstance(q, (int, float))):
+        issues.append("net_charge must be a number")
+    states = config.get("site_states")
+    if states is not None:
+        if not isinstance(states, list) or not all(
+                isinstance(s, dict) and isinstance(s.get("atom"), int)
+                and isinstance(s.get("shell_charges"), list)
+                and all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                        for v in s["shell_charges"])
+                for s in states):
+            issues.append('site_states must be a list of {"atom": <1-based int>, '
+                          '"shell_charges": [numbers]}')
+        if q is None:
+            issues.append("site_states needs net_charge")
+    scale = config.get("fragment_bond_scale")
+    if scale is not None and (isinstance(scale, bool) or not isinstance(scale, (int, float))
+                              or scale <= 0):
+        issues.append("fragment_bond_scale must be a positive number")
+    if config.get("chemod") not in (None, "auto", "yes", "no"):
+        issues.append("chemod must be auto, yes or no")
+    return issues
 
 
 def validate_d12_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
@@ -556,6 +589,8 @@ def validate_d12_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
         if "basis_set_type" not in config:
             issues.append("Missing required field: basis_set_type")
         
+        issues.extend(charge_option_issues(config))
+
         # Tolerance requirements
         if "tolerances" not in config:
             issues.append("Missing required field: tolerances")
@@ -667,7 +702,9 @@ def apply_config_to_options(config: Dict[str, Any], options: Dict[str, Any]) -> 
         'dft_grid', 'spin_polarized', 'spinlock', 'spinlock_cycles',
         'use_smearing', 'smearing_width', 'dimensionality',
         'symmetry_handling', 'write_only_unique', 'validate_symmetry',
-        'trigonal_axes', 'origin_setting', 'is_3c_method'
+        'trigonal_axes', 'origin_setting', 'is_3c_method',
+        # charged systems (ion_charges.py): opt-in
+        'ion_charges', 'net_charge', 'site_states', 'fragment_bond_scale', 'chemod'
     ]
     
     for field in direct_mappings:

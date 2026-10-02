@@ -1,0 +1,37 @@
+{
+  "version": "1.0",
+  "type": "d12_configuration",
+  "configuration": {
+    "name": "ion_cluster_molecule",
+    "description": "Salt/solvent cluster as a MOLECULE (HSEsol-3c, sol-def2-mSVP) with ion charges found automatically",
+    "calculation_type": "OPT",
+    "optimization_type": "FULLOPTG",
+    "method": "DFT",
+    "functional": "HSESOL3C",
+    "is_3c_method": true,
+    "dispersion": false,
+    "basis_set": "SOLDEF2MSVP",
+    "basis_set_type": "INTERNAL",
+    "dft_grid": "XLGRID",
+    "dimensionality": "MOLECULE",
+    "symmetry_handling": "P1",
+    "write_only_unique": false,
+    "tolerances": {
+      "TOLINTEG": "8 8 8 9 24",
+      "TOLDEE": 9
+    },
+    "optimization_settings": {
+      "toldeg": 0.0003,
+      "toldex": 0.0012,
+      "toldee": 7,
+      "maxcycle": 800
+    },
+    "scf_settings": {
+      "method": "DIIS",
+      "maxcycle": 800,
+      "fmixing": 30
+    },
+    "spin_polarized": false,
+    "ion_charges": "auto"
+  }
+}
