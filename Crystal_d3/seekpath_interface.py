@@ -310,6 +310,131 @@ def get_seekpath_bandpath(cell: np.ndarray, positions: np.ndarray, numbers: List
 
 
 # =============================================================================
+# From SeeK-path's cell to CRYSTAL's
+# =============================================================================
+#
+# SeeK-path gives its points as fractions of the reciprocal vectors of ITS
+# standardised primitive cell (HPKOT). BAND reads a segment end as fractions
+# of the reciprocal vectors of CRYSTAL's own primitive cell (CRYSTAL23 manual
+# p.309: I1/ISS b1 + I2/ISS b2 + I3/ISS b3), which is the cell given in input
+# reduced by CRYSTAL's matrices (Appendix A.5). The two cells describe the
+# same lattice but are not the same cell: a C-centred orthorhombic cell is
+# (a/2, b/2, 0), (-a/2, b/2, 0), c in CRYSTAL and (a/2, -b/2, 0),
+# (a/2, b/2, 0), c in SeeK-path; an A-centred one, a triclinic one or a
+# primitive orthorhombic one not in a < b < c order also differ.
+#
+# With the rows of A the CRYSTAL primitive vectors and of A_sp SeeK-path's,
+# A_sp = N A for an integer N of determinant 1. A point k has fractional
+# coordinates f_i = k . a_i / 2pi in a basis, so f_sp = N f, and the point
+# SeeK-path names is f = N^-1 f_sp in CRYSTAL's basis (as rows,
+# f = f_sp N^-T). Its Cartesian vector f B = f_sp B_sp is unchanged, B and
+# B_sp being the reciprocal vectors (rows) with B = N^T B_sp.
+
+def crystal_cell_matrix(seekpath_result: Dict[str, Any], cell) -> np.ndarray:
+    """N with SeeK-path's primitive vectors = N @ ``cell`` (vectors as rows).
+
+    ``cell`` is the cell SeeK-path was given (CRYSTAL's primitive cell, in
+    any orientation). SeeK-path returns its cell rotated by
+    ``rotation_matrix`` R, so A_sp = N (A R^T). N is rounded to integers
+    when it is one; it is not when SeeK-path found a smaller primitive cell
+    than the one given (a supercell given as P1, say).
+    """
+    asp = np.array(seekpath_result['primitive_lattice'], dtype=float)
+    rot = np.array(seekpath_result['rotation_matrix'], dtype=float)
+    n = asp @ np.linalg.inv(np.array(cell, dtype=float) @ rot.T)
+    rounded = np.round(n)
+    if np.allclose(n, rounded, atol=1e-3) and abs(abs(np.linalg.det(rounded)) - 1) < 1e-9:
+        return rounded
+    if not np.all(np.isfinite(n)) or abs(np.linalg.det(n)) < 1e-6:
+        raise ValueError("SeeK-path's primitive cell cannot be related to the CRYSTAL cell")
+    return n
+
+
+def _same_path_by_symmetry(original: Dict[str, Any], moved: Dict[str, Any],
+                           path, rotations, time_reversal: bool) -> bool:
+    """True when every original segment is a symmetry image of its moved one.
+
+    A rotation W of the crystal (fractional, x' = W x) takes a point with
+    fractional row f to f W^-1; over the whole group that is the set
+    {f W}. Time reversal adds -f, and a reciprocal lattice vector G added
+    to both ends of a segment changes nothing. When for each segment some
+    operation and G map its two moved ends onto its two original ends, the
+    original segment runs through points equivalent to those of the right
+    one, one for one, and has the same bands.
+    """
+    signs = (1, -1) if time_reversal else (1,)
+    ops = [np.array(w, dtype=float) for w in rotations]
+    for a, b in path:
+        fa, fb = np.array(moved[a], dtype=float), np.array(moved[b], dtype=float)
+        oa, ob = np.array(original[a], dtype=float), np.array(original[b], dtype=float)
+        found = False
+        for w in ops:
+            for s in signs:
+                da = s * (fa @ w) - oa
+                db = s * (fb @ w) - ob
+                g = np.round(da)
+                if np.allclose(da, g, atol=1e-8) and np.allclose(db, g, atol=1e-8):
+                    found = True
+                    break
+            if found:
+                break
+        if not found:
+            return False
+    return True
+
+
+def to_crystal_basis(seekpath_result: Dict[str, Any], cell, positions, numbers,
+                     with_time_reversal: bool = True) -> Dict[str, Any]:
+    """SeeK-path's result with its points given in CRYSTAL's reciprocal basis.
+
+    ``cell``, ``positions`` and ``numbers`` are the structure SeeK-path was
+    given: CRYSTAL's primitive cell and the atoms in it. Each point becomes
+    N^-1 f_sp (see crystal_cell_matrix) and ``reciprocal_primitive_lattice``
+    becomes CRYSTAL's (B = N^T B_sp), so every point keeps its Cartesian
+    vector. When each segment of SeeK-path's own numbers, read in CRYSTAL's
+    basis, is a symmetry image of the right segment (a cubic cell whose axes
+    SeeK-path only relabels, say), those numbers already give the right
+    bands and are kept as they are, so such decks do not change.
+    """
+    n = crystal_cell_matrix(seekpath_result, cell)
+    m = np.linalg.inv(n)
+    integer = np.allclose(m, np.round(m), atol=1e-9)
+    if integer:
+        m = np.round(m)
+    original = seekpath_result['point_coords']
+    moved = {}
+    for label, coords in original.items():
+        f = m @ np.array(coords, dtype=float)
+        f[np.abs(f) < 1e-12] = 0.0
+        moved[label] = [float(x) for x in f]
+
+    out = dict(seekpath_result)
+    out['crystal_cell_matrix'] = n.tolist()
+    labels = _path_points(seekpath_result)
+    if all(np.allclose(moved[lab], original[lab], atol=1e-8) for lab in labels):
+        return out
+    try:
+        import spglib
+        rotations = spglib.get_symmetry(
+            (np.array(cell, dtype=float), np.array(positions, dtype=float), list(numbers)),
+            symprec=1e-5)['rotations']
+    except Exception:
+        rotations = [np.eye(3, dtype=int)]
+    if _same_path_by_symmetry(original, moved, seekpath_result['path'], rotations,
+                              with_time_reversal):
+        return out
+
+    out['point_coords'] = moved
+    recip = seekpath_result.get('reciprocal_primitive_lattice')
+    if recip is not None:
+        out['reciprocal_primitive_lattice'] = (n.T @ np.array(recip, dtype=float)).tolist()
+    print("  Note: SeeK-path's points rewritten in the reciprocal basis of CRYSTAL's "
+          "primitive cell (SeeK-path's standard cell differs)"
+          + ("" if integer else "; SeeK-path found a smaller primitive cell"))
+    return out
+
+
+# =============================================================================
 # Format Conversion
 # =============================================================================
 
@@ -623,6 +748,10 @@ def get_accurate_bandpath(
         structure['numbers'],
         with_time_reversal=with_time_reversal
     )
+    # SeeK-path's points are in its own cell's reciprocal basis; BAND reads
+    # them in CRYSTAL's.
+    result = to_crystal_basis(result, structure['cell'], structure['positions'],
+                              structure['numbers'], with_time_reversal)
 
     print(f"  Bravais lattice: {result.get('bravais_lattice_extended', 'unknown')}")
     print(f"  Inversion symmetry: {result.get('has_inversion_symmetry', False)}")
@@ -689,6 +818,8 @@ def get_point_coordinates(
         structure['numbers'],
         with_time_reversal=with_time_reversal
     )
+    result = to_crystal_basis(result, structure['cell'], structure['positions'],
+                              structure['numbers'], with_time_reversal)
 
     kpath_info = {
         'source': 'seekpath',

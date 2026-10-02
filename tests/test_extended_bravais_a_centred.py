@@ -42,7 +42,13 @@ def test_amm2_static_path_from_output(tmp_path, monkeypatch, a, b, c):
     segments, info = get_seekpath_full_kpath(38, "A", str(out))
     key = "oA1_noinv" if b < c else "oA2_noinv"
     assert info["lookup_key"] == key
-    assert segments == seekpath_data[key]["segments"]
+    # This used to pin the entry's numbers as written, which are fractions
+    # of SeeK-path's oA reciprocal vectors, not CRYSTAL's, and carry one
+    # cell's lattice-dependent parameter. The path written is the entry in
+    # CRYSTAL's basis with this cell's parameter (test_kpath_crystal_basis
+    # checks it point by point against SeeK-path).
+    assert segments == d3_kpoints.static_oa_segments(key, seekpath_data[key]["segments"], b, c)
+    assert segments != seekpath_data[key]["segments"]
 
 
 @pytest.mark.parametrize("sg", A_GROUPS)

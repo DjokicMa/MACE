@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **SeeK-path band and phonon-dispersion paths are written in CRYSTAL's
+  reciprocal basis.** Since 1.0.0 the seekpath-library route (BAND `.d3`
+  decks from `opt2d3`, phonon-dispersion paths in FREQ `.d12` decks from
+  `opt2d12`, and the workflow steps that run them) copied SeeK-path's point
+  coordinates unchanged. Those are fractions of the reciprocal vectors of
+  SeeK-path's standardised primitive cell; BAND reads them as fractions of
+  the reciprocal vectors of CRYSTAL's primitive cell (manual p.309), which is
+  often a different cell. The points are now converted (f = N^-1 f_SeeK-path,
+  with SeeK-path's cell = N times CRYSTAL's), keeping their labels and
+  Cartesian positions; SeeK-path's own numbers are kept where every segment
+  is already a symmetry image of the right one, so those decks are
+  unchanged. Affected: **C-centred orthorhombic (oC)** and **A-centred
+  orthorhombic (oA, groups 38-41)** cells, whose points and segments were
+  wrong; **triclinic (aP)** cells, whose labels named other points;
+  **primitive orthorhombic (oP)** cells of groups whose setting does not fix
+  the axes (Pmmm, for one) when not given in a < b < c order; and any other
+  cell CRYSTAL holds in a setting SeeK-path standardises differently (in the
+  test corpus a cubic cF1 cell given in a non-standard primitive cell, and
+  two P2/m and P2_1/m cells whose Gamma-A and E-Z segments ran to another
+  copy of A and E). Without the library, the static oA paths (added in this
+  release cycle) are converted the same way and take the cell's own
+  lattice-dependent parameter; the static paths of other lattices whose
+  standard cell CRYSTAL's can differ from (aP, mP, mC, oP, oC, oF, oI) now
+  warn. Band-structure and phonon-dispersion decks made for such cells
+  should be regenerated.
+
 - **A deck derived from a charged or ionic parent keeps its charge state.**
   `opt2d12` wrote SP, FREQ and other children without the parent's `CHEMOD`
   (per-atom starting shell charges, e.g. Li+ and FSI-), `CHARGED` and `DOPING`

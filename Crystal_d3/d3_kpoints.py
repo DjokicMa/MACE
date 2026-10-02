@@ -2462,6 +2462,52 @@ seekpath_data = {
 }
 
 
+# The static oA entries are SeeK-path's numbers: fractions of the reciprocal
+# vectors of SeeK-path's A-centred primitive cell (0, b/2, -c/2),
+# (0, b/2, c/2), (a, 0, 0). BAND reads them as fractions of the reciprocal
+# vectors of CRYSTAL's primitive cell, a, (0, b/2, c/2), (0, -b/2, c/2)
+# (CRYSTAL23 manual p.309 and Appendix A.5). SeeK-path's cell is N times
+# CRYSTAL's with N = [[0,0,-1],[0,1,0],[1,0,0]], and a point f_sp is
+# N^-1 f_sp = N^T f_sp in CRYSTAL's basis (see seekpath_interface).
+OA_SEEKPATH_TO_CRYSTAL = ((0, 0, 1), (0, 1, 0), (-1, 0, 0))
+
+# The parameter of the lattice-dependent oA points (SeeK-path's
+# hpkot/band_path_data/oA1, oA2 k_vector_parameters.txt) and the value the
+# static entries were written with.
+OA_STATIC_PARAMETER = {"oA1": 0.276078, "oA2": 0.335185}
+
+
+def oa_parameter(variant: str, b: float, c: float) -> float:
+    """SeeK-path's oA parameter: (1 + b^2/c^2)/4 for oA1, (1 + c^2/b^2)/4 for oA2."""
+    return (1 + b * b / (c * c)) / 4 if variant == "oA1" else (1 + c * c / (b * b)) / 4
+
+
+def static_oa_segments(lookup_key: str, segments: List[List[float]],
+                       b: Optional[float] = None, c: Optional[float] = None) -> List[List[float]]:
+    """A static oA path in CRYSTAL's reciprocal basis.
+
+    With the conventional b and c the lattice-dependent points take this
+    cell's parameter (to six decimals, as the entries are written) in place
+    of the one the entry was written for; the points are then moved from
+    SeeK-path's basis to CRYSTAL's.
+    """
+    variant = lookup_key[:3]
+    old = OA_STATIC_PARAMETER[variant]
+    new = round(oa_parameter(variant, b, c), 6) if b and c else old
+    m = OA_SEEKPATH_TO_CRYSTAL
+    out = []
+    for seg in segments:
+        ends = []
+        for point in (seg[:3], seg[3:]):
+            point = [(1 if v > 0 else -1) * new if abs(abs(v) - old) < 1e-9 else
+                     (1 if v > 0 else -1) * round(1 - new, 6) if abs(abs(v) - (1 - old)) < 1e-9 else v
+                     for v in point]
+            moved = [sum(m[i][j] * point[j] for j in range(3)) for i in range(3)]
+            ends += [0.0 if x == 0 else float(x) for x in moved]
+        out.append(ends)
+    return out
+
+
 def is_slab_output(out_file: Optional[str]) -> bool:
     """True when a CRYSTAL output is a SLAB (2D) calculation."""
     if not out_file:
@@ -2744,12 +2790,29 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
     if not ext_bravais.startswith('c'):
         print(f"  Note: Using static seekpath_data for {ext_bravais}. "
               f"Install 'seekpath' library for accurate parametric k-points.")
+    # The static entries are SeeK-path's numbers, in the reciprocal basis of
+    # SeeK-path's standard cell. For these lattices that cell is not fixed by
+    # CRYSTAL's (SeeK-path reorders or reduces the axes, or picks other
+    # centring vectors), so the points can carry other points' names or sit
+    # off the special points. The oA entries are moved to CRYSTAL's basis
+    # (static_oa_segments); the others cannot be without the structure.
+    if lookup_key[:2] in ('aP', 'mP', 'mS', 'mC', 'oP', 'oS', 'oC', 'oF', 'oI'):
+        print(f"  WARNING: the static {lookup_key} path is given in SeeK-path's standard cell, "
+              f"which can differ from CRYSTAL's primitive cell for this lattice (axis order, "
+              f"reduction, centring vectors); its labels may then name other points. "
+              f"Install the 'seekpath' library for a path in CRYSTAL's cell.")
 
     # Get path data if available
     if lookup_key in seekpath_data:
+        segments = seekpath_data[lookup_key]["segments"]
+        if lookup_key[:3] in OA_STATIC_PARAMETER:
+            segments = static_oa_segments(
+                lookup_key, segments,
+                lattice_params['b'] if lattice_params else None,
+                lattice_params['c'] if lattice_params else None)
         if slab:
-            return in_plane_path(seekpath_data[lookup_key]["segments"])[0], kpath_info
-        return seekpath_data[lookup_key]["segments"], kpath_info
+            return in_plane_path(segments)[0], kpath_info
+        return segments, kpath_info
     else:
         # Fallback to literature path first
         print(f"\nSeeK-path data not available for {lookup_key}")
