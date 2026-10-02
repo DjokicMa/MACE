@@ -79,6 +79,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no parent deck at all**, a charged parent's `DOPING` is recovered from the
   .out's Mulliken count; without a Mulliken print a warning says the charge
   state cannot be recovered. Deck change for such children.
+- **An END after `CHEMOD` in a library-basis deck is caught.** After
+  `BASISSET <library>` the lines are already block 3, so an `END` closing
+  `CHEMOD` ends the input there and CRYSTAL23 silently drops the DFT block
+  (the run falls back to HF; measured on CRYSTAL23). MACE never wrote it;
+  `mace ions` now refuses a deck that has one (also with `--replace`, which
+  used to strip `CHEMOD` and keep the stray `END`), and opt2d12 warns that
+  such a parent ran HF.
 
 ## [1.1.4] - 2026-10-02
 

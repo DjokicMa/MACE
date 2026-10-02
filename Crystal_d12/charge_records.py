@@ -106,6 +106,46 @@ def _basis_insert_index(lines: List[str]) -> Optional[int]:
     return None if last is None else last + 1
 
 
+LIBRARY_END_MESSAGE = (
+    "the deck has an END right after the BASISSET library name (and its CHEMOD/CHARGED): "
+    "with a library basis there is no basis-set block, so that END ends block 3 and CRYSTAL23 "
+    "silently ignores the DFT block and every keyword after it (the run falls back to HF, "
+    "measured on CRYSTAL23) - remove that END")
+
+
+def library_basis_end(lines: List[str]) -> Optional[int]:
+    """Index of an END that directly follows a BASISSET library name, or None.
+
+    With "BASISSET <library>" there is no basis-set block: the lines after the
+    name are already block 3 (CHEMOD and CHARGED are still read there,
+    measured on CRYSTAL23). An END after the name and its CHEMOD/CHARGED
+    records - "closing" CHEMOD as an explicit basis would - ends block 3, and
+    the DFT block, TOLINTEG and everything after it are ignored without an
+    error. Only an END followed by more input counts.
+    """
+    for i, line in enumerate(lines[1:], start=1):
+        if line.strip().upper() != "BASISSET" or i + 1 >= len(lines):
+            continue
+        j = i + 2
+        while j < len(lines):
+            key = lines[j].strip().upper()
+            if key == "CHEMOD":
+                try:
+                    j += 2 + int(lines[j + 1].split()[0])
+                except (ValueError, IndexError):
+                    return None
+                continue
+            if key == "CHARGED":
+                j += 1
+                continue
+            break
+        if j < len(lines) and lines[j].strip().upper() == "END" \
+                and any(l.strip() for l in lines[j + 1:]):
+            return j
+        return None
+    return None
+
+
 class ChargeCarryError(ValueError):
     """The child deck cannot get the parent's charge state (the reason)."""
 
@@ -362,6 +402,13 @@ def carry_charge_records(child_text: str, parent_text: str,
     notes = []
     n_parent = _geometry_atom_count(_records(parent_text))
     n_child = _geometry_atom_count(lines)
+    if library_basis_end(_records(parent_text)) is not None:
+        notes.append("WARNING: the parent deck has an END right after its BASISSET library name "
+                     "(and CHEMOD), which ends block 3 there: CRYSTAL23 ignored the parent's DFT "
+                     "block and the keywords after it, so the parent ran HF - check its energy "
+                     "before using it")
+    if library_basis_end(lines) is not None:
+        raise ChargeCarryError(LIBRARY_END_MESSAGE.replace("the deck", "the new deck", 1))
 
     carry_chemod = False
     if parent["CHEMOD"] and not child_has["CHEMOD"]:

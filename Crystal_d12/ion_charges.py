@@ -58,7 +58,7 @@ except ImportError:
         frag = importlib.util.module_from_spec(_spec)
         _spec.loader.exec_module(frag)
 
-from charge_records import _basis_insert_index, extract_charge_records
+from charge_records import LIBRARY_END_MESSAGE, _basis_insert_index, extract_charge_records, library_basis_end
 from d12_writer import DEFAULT_SPINLOCK_CYCLES
 
 IonChargeError = frag.IonChargeError
@@ -673,6 +673,8 @@ def apply_charge_setup(text: str, setup: ChargeSetup) -> str:
         raise IonChargeError(f"the deck already has {names}; remove it first")
     trailing = text.endswith("\n")
     lines = text.splitlines()
+    if library_basis_end(lines) is not None:
+        raise IonChargeError(LIBRARY_END_MESSAGE)
     basis_add = setup.chemod_lines() + (["CHARGED"] if setup.charged else [])
     if basis_add:
         at = _basis_insert_index(lines)

@@ -383,6 +383,13 @@ CRYSTAL/23-intel-2023a (2026-10-01); **[untested]** not run.
   20, properties header 18; that SCF had not converged, the count is the point].
 - With an internal BASISSET, `CHEMOD` (+ `CHARGED`) does not change the count:
   the guess is renormalised ("CHARGE NORMALIZATION FACTOR") [measured].
+- After `BASISSET <library>` there is no basis-set block: the lines after the
+  library name are already block 3, and `CHEMOD` is accepted there ("ELECTRONIC
+  CONFIGURATION MODIFIED IN n ATOMS") [measured]. Do not close it with `END`:
+  that `END` ends block 3, and the DFT block, `TOLINTEG` and everything after
+  it are silently ignored - the run falls back to HF without an error
+  [measured]. MACE never writes that `END`; `mace ions` refuses a deck that has
+  one, and opt2d12 warns when a parent had one (the parent ran HF).
 - With an explicit basis (after `99 0`), a non-neutral `CHEMOD` sets the count
   (with `CHARGED` it matches `DOPING` to 1e-9 Ha) [measured]. For Li+/EC with
   the POB-TZVP-REV2 file: `CHEMOD` + `CHARGED` 48 electrons, `CHEMOD` alone 48
