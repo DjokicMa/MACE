@@ -13,6 +13,7 @@ Institution: Michigan State University, Mendoza Group
 
 import contextlib
 import os
+import shutil
 from typing import Dict, Any, List, Optional, Sequence, TextIO
 
 
@@ -25,8 +26,13 @@ def atomic_deck(path: str):
     calls ``f.discard()`` (a deck refused half way), the part file is
     removed and ``path`` is left as it was - never a 0-byte or truncated
     deck for a job to pick up.
+
+    A symlinked ``path`` is written through, as ``open(path, "w")`` does:
+    the file it points to is replaced, the link stays a link. A deck that
+    already exists keeps its permissions.
     """
-    directory, name = os.path.split(os.path.abspath(path))
+    path = os.path.realpath(path)
+    directory, name = os.path.split(path)
     part = os.path.join(directory, f".{name}.part")
     keep = [True]
     f = open(part, "w")
@@ -40,6 +46,9 @@ def atomic_deck(path: str):
         raise
     f.close()
     if keep[0]:
+        if os.path.exists(path):
+            with contextlib.suppress(OSError):
+                shutil.copymode(path, part)
         os.replace(part, path)
     else:
         os.remove(part)

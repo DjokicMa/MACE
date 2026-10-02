@@ -60,7 +60,7 @@ except ImportError:
 
 from charge_records import (LIBRARY_END_MESSAGE, _basis_insert_index, chemod_end, extract_charge_records,
                             library_basis_end)
-from d12_writer import DEFAULT_SPINLOCK_CYCLES
+from d12_writer import DEFAULT_SPINLOCK_CYCLES, atomic_deck
 
 IonChargeError = frag.IonChargeError
 
@@ -976,10 +976,8 @@ def main(argv=None) -> int:
         target = path if args.in_place else os.path.join(args.output_dir, name)
         if not args.in_place:
             os.makedirs(args.output_dir, exist_ok=True)
-        tmp = os.path.join(os.path.dirname(os.path.abspath(target)), f".{os.path.basename(target)}.part")
-        with open(tmp, "w") as f:
+        with atomic_deck(target) as f:
             f.write(new)
-        os.replace(tmp, target)
         print(f"{name} -> {target}")
         for line in setup.report:
             print(f"  {line}")
