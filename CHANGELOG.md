@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`mace phonopy generate` / `mace phonopy collect`: finite-displacement phonons
+  with phonopy** (optional dependency, `phonopy<5`). `generate` reads a finished 3D
+  OPT or SP parent and writes one EXTERNAL deck per displaced supercell, named after
+  the parent and the supercell, with its geometry in `<job>.ext`; the parent's basis
+  and SCF block are kept byte for byte apart from the printed edits (TOLDEE at least
+  10, GUESSP dropped, buffers for large cells, GRADCAL; SHRINK only with
+  `--scale-shrink`). Parents it cannot reproduce in a P1 supercell (non-3D, charged,
+  spin-locked, magnetic without a lock, ghosts, unknown SCF keywords, unconverged) are
+  refused with the reason. `collect` checks every output - including that CRYSTAL ran
+  the displaced geometry it was given - before writing FORCE_SETS, band, mesh, DOS and
+  thermal properties, with optional non-analytical correction from a Gamma FREQCALC
+  with INTENS + INTCPHF. Submit the decks with a plain `mace submit DIR`, never
+  `--track`.
+- The CRYSTAL job script copies `<job>.ext` to `fort.34` when that file exists next to
+  the deck (EXTERNAL geometry). No existing deck has one, so their jobs are unchanged.
+- `mace preflight` checks an EXTERNAL deck when its geometry sits next to it as
+  `<stem>.ext`, staging it as fort.34 the way the job script does.
+
+### Fixed
+
+- `mace submit DIR` with a relative directory (or `sub/deck.d12`) submitted nothing:
+  every deck failed with "Failed to generate/find script". Absolute paths were fine.
+
 ## [1.1.4] - 2026-10-02
 
 Everything since 1.1.3. **Band and phonon-dispersion paths made with the SeeK-path

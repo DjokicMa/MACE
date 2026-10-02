@@ -225,6 +225,15 @@ mace plotting
 mace plotting --band -d ./band_calcs -o ./plots
 ```
 
+#### Phonons (phonopy)
+```bash
+# Displaced supercells from a finished OPT parent, plain submission, then collect
+mace phonopy generate mat_opt.out --dim "2 2 2"
+mace submit phonopy_mat_opt_222 --walltime 24:00:00
+mace phonopy collect phonopy_mat_opt_222 --plot
+```
+See DOCUMENTATION.md, "Phonons with phonopy", for the deck edits, refusals and NAC.
+
 #### Direct Script Usage
 ```bash
 # Convert the CIF files in a directory to D12

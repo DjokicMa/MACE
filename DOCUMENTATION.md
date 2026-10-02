@@ -126,6 +126,68 @@ mace opt2d12 --out-file opts/*.out --config-file sp_template.json --output-dir s
 - With several files, the plan is printed and asked about once (`Apply to all N files?`), only when run at a terminal; `--yes` (`-y`) skips that question. No per-file questions are asked: a file that would need an answer fails with the reason and the others carry on
 - `--output-dir` is created if missing (default: beside each `.out`). The run exits non-zero if any file failed or nothing was written
 
+### Phonons with phonopy (`mace phonopy`)
+Finite-displacement phonon dispersion, DOS and thermal properties for a 3D
+crystal, with CRYSTAL computing the forces and phonopy (optional dependency,
+`pip install 'phonopy<5'`) doing the rest. phonopy runs on the machine where you
+type the commands; the cluster only runs CRYSTAL.
+```bash
+# 1. Displaced supercells from a finished OPT (or SP) parent
+mace phonopy generate mat_opt.out --dim "2 2 2"          # reads mat_opt.d12 beside it
+# 2. Run them - a plain submission, NOT --track or --progress
+mace submit phonopy_mat_opt_222 --walltime 24:00:00
+# 3. Check the outputs, then forces -> band.yaml, mesh.yaml, total_dos.dat, thermal_properties.yaml
+mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
+```
+- **generate** writes one deck per displaced supercell, `<stem>_ph<dim>_disp-NNN.d12`,
+  with its geometry in `<stem>_ph<dim>_disp-NNN.ext`. The deck starts with `EXTERNAL`
+  (manual p.21) and the job script copies the `.ext` to `fort.34` before CRYSTAL starts
+  (format: manual pp.450-451). Job names carry the parent's name and the supercell, so
+  two sets never share a scratch directory. It also writes `phonopy_disp.yaml` (the
+  displacements) and `mace_phonopy.json` (parent paths and checksums, every deck edit,
+  versions).
+- **The parent's method is kept.** The deck is the parent's basis set and SCF block
+  byte for byte, after `EXTERNAL` (`BASISSET` replaces the END of the geometry block,
+  manual p.28). The only edits, each printed: the final END removed; TOLDEE raised to
+  at least 10 (`--toldee N` raises it further, never lowers it); GUESSP dropped;
+  `BIPOSIZE`/`EXCHSIZE 110000000` added when the parent had neither and the supercell
+  has more than 5 atoms (d12_writer's rule); `GRADCAL` (manual p.111) and END appended.
+  With `--scale-shrink` (diagonal `--dim` only) SHRINK is divided by the supercell size,
+  rounding up, with a note where the size does not divide the parent's mesh; by default
+  SHRINK is kept, which samples the supercell more densely than the parent.
+- **Refused parents** (each with its reason): not 3D (use CRYSTAL's FREQCALC +
+  SCELPHONO + DISPERSI, manual pp.73, 232); not terminated normally; SCF not converged;
+  an optimisation without `OPT END - CONVERGED`; a FREQCALC output as the geometry
+  source; CHEMOD/CHARGED/DOPING, ATOMSPIN/SPINLOCK/BETALOCK or GHOSTS (atom labels and
+  electron counts do not carry over to a supercell yet); a magnetic parent (Mulliken
+  spin above 0.1 on an atom) with no spin lock; and any SCF-block keyword not known to
+  be safe in a P1 supercell, which is named. An SP parent is accepted with a warning
+  that its geometry is assumed relaxed; a parent cell that is not primitive (P1,
+  SUPERCEL) gives a folded-bands warning.
+- `--dim` takes 3 integers or a 9-integer matrix; `--amplitude` (default 0.01 A) and
+  `--pm auto|yes|no` are phonopy's. An `--output-dir` must be empty (or `--force`) and
+  must not be inside `workflow_outputs/`.
+- **Do not use `--track` or `--progress`** with these decks: the completion callback
+  would record the displaced supercells as calculations of the parent's material.
+- **collect** first checks every output: present, terminated normally, SCF converged,
+  one force row per supercell atom, and the geometry CRYSTAL printed equal (to 1e-4 A)
+  to that deck's displaced cell - a converged run of the wrong geometry (a stale job
+  script that never staged the `.ext`; resubmit with `--overwrite-sh`) would otherwise
+  give silently wrong force constants. Any problem is listed per file and nothing is
+  written; `--check` stops after the checks. Then it writes `FORCE_SETS`,
+  `phonopy_params.yaml`, `band.yaml` (`--band auto` uses SeeK-path on the parent's
+  primitive cell, converted to CRYSTAL's reciprocal basis; or give phonopy BAND points
+  with `--band "0 0 0  1/2 0 1/2, ..."` and `--band-labels`; `--band none` skips it),
+  `mesh.yaml` (`--mesh 100.0` or `"a b c"`), `total_dos.dat` and
+  `thermal_properties.yaml` (`--tmin/--tmax/--tstep`), and `band_dos.pdf` with `--plot`.
+  Frequencies are in THz (x 33.35641 = cm-1). Modes below -0.1 THz away from Gamma are
+  reported; thermal properties skip imaginary modes.
+- **NAC** (`--nac-from`): a Gamma FREQCALC of the same material with `INTENS` and
+  `INTCPHF`, same functional and basis (its `.d12` must sit beside the output). The Born
+  charges and dielectric tensor are read with phonopy-crystal-born and written to
+  `BORN`; the run is refused unless its cell has the same cartesian orientation, atoms
+  and positions as the phonopy cell and CRYSTAL's asymmetric unit is phonopy's.
+
 ### Job Management (Direct Script Access)
 ```bash
 # Enhanced queue management with material tracking
@@ -214,12 +276,16 @@ pip install plotly scipy kaleido==0.2.1 scikit-image
 
 # For accurate band structure k-paths (highly recommended)
 pip install seekpath>=2.0.0
+
+# Finite-displacement phonons (mace phonopy)
+pip install 'phonopy<5'
 ```
 
 #### Package Purposes (Optional)
 - **rich**: Themed terminal UI (status lines, tables, progress bars, live dashboards)
 - **plotly / scipy / kaleido**: Cube and FREQ plot rendering — HTML output needs only plotly; kaleido adds static PNG/SVG/PDF export; scipy interpolates non-orthogonal cube grids
 - **scikit-image**: Isosurface extraction for cube plots
+- **phonopy**: `mace phonopy generate/collect` (finite-displacement phonons, NAC); 4.7.2 tested
 - **seekpath**: Accurate band structure k-path generation using the HPKOT methodology (Hinuma et al., Comp. Mat. Sci. 128, 140 (2017)). Provides correct parametric k-points for non-cubic lattices and proper discontinuity detection. Without seekpath, band paths fall back to static dictionaries which are only accurate for cubic systems.
 
 #### Installation Verification
