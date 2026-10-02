@@ -38,6 +38,72 @@ except ImportError as e:
     sys.exit(1)
 
 
+# A Mulliken print's count line, with the spin-section label CRYSTAL puts on
+# the line above it in spin-polarised runs ("ALPHA+BETA ELECTRONS" for the
+# populations, "ALPHA-BETA ELECTRONS" for the spin densities; closed-shell runs
+# print the populations without a label).
+_MULLIKEN_COUNT = re.compile(
+    r'(?:^[ \t]*(ALPHA\+BETA|ALPHA-BETA)[ \t]+ELECTRONS[ \t]*\n)?'
+    r'[ \t]*MULLIKEN POPULATION ANALYSIS[^\n]*?NO\. OF ELECTRONS[ \t]+([-\d.]+)',
+    re.MULTILINE)
+
+
+def mulliken_electron_count(text: str) -> Optional[float]:
+    """The electron count of the last Mulliken population print, or None.
+
+    This is the real count: DOPING leaves the header's "N. OF ELECTRONS PER
+    CELL" at the value before doping. The ALPHA-BETA print's line is the
+    spin (nalpha - nbeta), never the count, so it is skipped.
+    """
+    count = None
+    for match in _MULLIKEN_COUNT.finditer(text):
+        if match.group(1) == "ALPHA-BETA":
+            continue
+        try:
+            count = float(match.group(2))
+        except ValueError:
+            continue
+    return count
+
+
+def _scf_parent_of_band_output(output_file: Path) -> Optional[Path]:
+    """The SCF .out a BAND .out was run from, when it sits beside it as <stem>.out."""
+    stem = output_file.stem
+    for suffix in ("_band", "_BAND", ".band", ".BAND"):
+        if stem.endswith(suffix) and len(stem) > len(suffix):
+            candidate = output_file.with_name(stem[:-len(suffix)] + ".out")
+            if candidate.exists() and candidate != output_file:
+                return candidate
+    return None
+
+
+def band_occupied_count(content: str, output_file: Optional[Path] = None) -> Optional[int]:
+    """Occupied bands (closed shell) for a BAND .out, or None when not known.
+
+    The real electron count is the Mulliken one, from the BAND .out itself or
+    from its SCF parent's .out beside it; the properties header is used only
+    when neither has one. An odd or fractional count has no closed-shell HOMO
+    index, so None is returned and the BAND gap stays unset rather than wrong.
+    """
+    count = mulliken_electron_count(content)
+    if count is None and output_file is not None:
+        parent = _scf_parent_of_band_output(Path(output_file))
+        if parent is not None:
+            try:
+                count = mulliken_electron_count(parent.read_text(errors="ignore"))
+            except OSError:
+                count = None
+    if count is None:
+        header = re.findall(r'N\.?\s*OF ELECTRONS PER CELL\s*(\d+)', content)
+        if not header:
+            return None
+        count = float(header[-1])
+    nearest = round(count)
+    if abs(count - nearest) > 1e-3 or nearest % 2:
+        return None
+    return nearest // 2
+
+
 class CrystalPropertyExtractor:
     """Extract comprehensive properties from CRYSTAL output files."""
     
@@ -1599,17 +1665,16 @@ class CrystalPropertyExtractor:
                 # computed by band index. Determine the occupied-band count (HOMO
                 # index): prefer the explicit "TOP OF VALENCE BANDS - BAND N"
                 # line, else fall back to (electrons per cell)//2 — exact for
-                # closed-shell / non-magnetic systems (the band .out usually only
-                # carries the electron count). Without it the BAND-derived gap is
-                # left unset rather than wrong.
+                # closed-shell / non-magnetic systems. The count is the Mulliken
+                # one (band_occupied_count): the header is the count before
+                # DOPING. Without it the BAND-derived gap is left unset rather
+                # than wrong.
                 num_occ = None
                 nocc_match = re.findall(r'TOP OF VALENCE BANDS\s*-\s*BAND\s*(\d+)', content)
                 if nocc_match:
                     num_occ = int(nocc_match[-1])
                 else:
-                    nelec_match = re.findall(r'N\.?\s*OF ELECTRONS PER CELL\s*(\d+)', content)
-                    if nelec_match:
-                        num_occ = int(nelec_match[-1]) // 2
+                    num_occ = band_occupied_count(content, output_file)
                 dat_info = processor.process_band_dat_file(
                     band_dat_file, fermi_energy=props.get('fermi_energy_band'),
                     num_occupied_bands=num_occ)
