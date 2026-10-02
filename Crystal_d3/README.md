@@ -127,7 +127,9 @@ When seekpath is installed and you select "SeeK-path full paths" (option 4) duri
 - Discontinuities in the path are detected and marked with "|" (`seekpath_interface.convert_to_mace_format` inserts one wherever a segment does not start at the previous segment's end)
 - Inversion symmetry comes from seekpath's own symmetry analysis of the structure (`has_inversion_symmetry`). The path is requested with time-reversal symmetry (`seekpath_interface.get_accurate_bandpath`, `with_time_reversal=True`), so it has no primed k-points even for a non-centrosymmetric structure
 
-Without seekpath, the code falls back to static dictionaries which are only accurate for cubic systems.
+Without seekpath, the code falls back to static dictionaries (`d3_kpoints.seekpath_data`). Their lattice-dependent points are computed for the output's cell for tI1, tI2, hR1, hR2, oF1 and C-centred monoclinic (mC1) lattices (`hpkot_static.py`, SeeK-path's HPKOT formulas, in CRYSTAL's reciprocal basis and with the library's ISS rule), when CRYSTAL's conventional cell is in SeeK-path's setting; other non-cubic lattices (and cells outside that setting, with the reason) get a warning.
+
+Both routes take the computed geometry of the output: the final optimised geometry after an optimisation, otherwise the first computed geometry, so a SUPERCEL output's path is in the supercell's reciprocal basis (f_super = E f_prim).
 
 **SHRINK Factor Extraction Logic**:
 The system uses a hierarchical approach to obtain valid SHRINK values:

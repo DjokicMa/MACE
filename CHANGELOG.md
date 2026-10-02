@@ -59,6 +59,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.../Crystal_d3/example_configs/<name>` written against another working
   directory, and prints the file it loaded. A configuration that cannot be
   loaded now ends opt2d3 with exit status 1 instead of 0 with no deck.
+- **SeeK-path band paths use the computed geometry: the optimised cell after
+  an optimisation, the supercell after SUPERCEL.** With the seekpath library,
+  `opt2d3` (and the workflow BAND step, and `opt2d12` phonon-dispersion paths)
+  read the cell from the first "PRIMITIVE CELL" lattice parameters and the
+  atoms from the first atom list of the parent output. For an OPT parent that
+  is the initial geometry, so the path's lattice-dependent points (and, when
+  the cell changed enough, the lattice variant, tI1 or tI2 say) were those of
+  the starting cell. After SUPERCEL the cell was the input primitive cell
+  while the atoms were the supercell's (FREQ `..._supercel222.out`: 16 atoms
+  in a 2.507 A cell instead of the 5.013 A supercell). Cell and atoms now come
+  from one computed geometry block: the one after the last FINAL OPTIMIZED
+  GEOMETRY, otherwise the first (GEOMETRY FOR WAVE FUNCTION, the cell fort.9
+  holds). **K-paths are in the basis of the computed cell**: a BAND deck from
+  a SUPERCEL output is in the supercell's reciprocal basis (folded bands).
+  Outputs whose geometry input edits the cell (SUPERCEL, ATOMSUBS, ATOMREMO,
+  ELASTIC, ...) change the same way. An atom count that does not match the
+  one CRYSTAL prints, or an output without such a block, is read as before
+  with a warning. Known limitation: an optimisation that stopped before
+  converging prints no final geometry; its first geometry is used, while its
+  fort.9 holds the last step.
+- **Static band paths (without the seekpath library) use the computed cell
+  too.** The static route took the conventional cell of the input echo: an
+  optimisation's starting cell chose the lattice variant (tI1 or tI2, oF1 or
+  oF3, hR1 or hR2) and the oA parameter. It now takes the CRYSTALLOGRAPHIC
+  CELL printed with the final optimised geometry. A SUPERCEL output's static
+  path is mapped to the supercell's reciprocal basis, f_super = E f_prim with
+  E the printed EXPANSION MATRIX OF PRIMITIVE CELL (rows), as the library
+  route gives it; before, it was written in the primitive cell's basis while
+  BAND ran on the supercell. An R cell given in rhombohedral axes (CRYSTAL
+  echoes it as a = b = c, alpha = beta = gamma) is read in hexagonal axes.
+  `opt2d12` phonon-dispersion paths from a SUPERCEL parent stay in the
+  primitive basis, as `opt2d12` writes the child in the input space group's
+  cell. Single-point outputs without SUPERCEL or geometry editing are
+  unchanged.
+- **Static band paths compute their lattice-dependent points for the cell.**
+  Without the seekpath library the static paths of body-centred tetragonal
+  (tI1, tI2), rhombohedral (hR1, hR2), face-centred orthorhombic (oF1) and
+  C-centred monoclinic (mS1, SeeK-path's mC1) lattices held the
+  lattice-dependent points of one particular cell (tI1's Z at 0.341718 for
+  every crystal), so their segments ended off the special points of any
+  other cell. Those points are now evaluated for the cell CRYSTAL prints with
+  SeeK-path's HPKOT formulas (new `Crystal_d3/hpkot_static.py`, numpy only;
+  transcribed from SeeK-path, MIT, Hinuma et al. 2017) and given in CRYSTAL's
+  reciprocal basis, with the ISS the library route chooses, so the static
+  and library routes write the same BAND path. The warning and the "install
+  seekpath" note are gone for these paths. Cells not in SeeK-path's setting
+  (oF axes not in a < b < c, a C-centred monoclinic cell whose a-c mesh
+  SeeK-path reduces) or of another variant (oF2/oF3, mC2/mC3) keep the old
+  entry with a warning that gives the reason; aP, mP, oP, oI, oS and oC paths
+  still warn as before. Paths written without an output file are unchanged.
+- **Band-path ISS stays at most 999 for long-axis cells.** When no ISS up to
+  999 placed the lattice-dependent points within half a k-point spacing (at
+  10000 points), both the seekpath library route and the new static
+  computed-point route wrote the points exactly, with ISS up to ~10**6 (a
+  C2/m cell of 9.7 x 3.7 x 20.8 A: ISS 959108 with the library, 588382
+  statically). fort.25 writes the segment ends as fixed-width integers (6I3
+  in App. D p.447; 6I5 measured), so such ends overflowed there. ISS is now
+  the one up to 999 that moves the points least (990 for that cell, a move
+  of 8.6e-4 1/A, 0.13 of the k-point spacing at NSUB 1000), with a warning
+  giving the move. Deck change: the ISS and segment-end integers of BAND
+  paths for such cells only; cells that fitted before are unchanged.
+  Untested on CRYSTAL.
 
 ## [1.1.4] - 2026-10-02
 

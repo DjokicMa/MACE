@@ -16,8 +16,9 @@ Now:
 - a lattice-dependent (parametric) point is written as k/ISS with
   ISS <= 999, ISS a multiple of that LCM, choosing the ISS that moves the
   parametric points least, provided each moves less than half the k-point
-  spacing of the path at NSUB = 10000 (MACE's largest default); otherwise
-  the old exact representation is kept;
+  spacing of the path at NSUB = 10000; when no ISS <= 999 does (a long
+  cell axis), the least-moving one is still taken, with a warning
+  (test_kpath_iss_cap);
 - whether a point is parametric comes from SeeK-path's own definitions,
   not from whether its value happens to be close to p/q (an old heuristic
   that multiplied ISS by such a q).

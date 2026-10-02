@@ -76,9 +76,171 @@ def cell_params_to_vectors(a: float, b: float, c: float,
 # CRYSTAL Output Parsing
 # =============================================================================
 
+# A computed geometry block - "GEOMETRY FOR WAVE FUNCTION", each optimisation
+# step, "FINAL OPTIMIZED GEOMETRY" - starts with this line, then the cell
+# (A B C ALPHA BETA GAMMA), "ATOMS IN THE ASYMMETRIC UNIT n - ATOMS IN THE
+# UNIT CELL: m" and the m atoms (T/F rows). A centred lattice adds the
+# "TRANSFORMATION MATRIX PRIMITIVE-CRYSTALLOGRAPHIC CELL" W and the
+# "CRYSTALLOGRAPHIC CELL" parameters. The input echo before it ("LATTICE
+# PARAMETERS ... - PRIMITIVE CELL") is the cell given in input, which is not
+# the computed one after SUPERCEL or other geometry editing, nor the
+# optimised one.
+_BLOCK_START = re.compile(r'^\s*PRIMITIVE CELL - CENTRING CODE')
+_UNIT_CELL_ATOMS = re.compile(r'ATOMS IN THE UNIT CELL:\s*(\d+)')
+
+
+def _six_numbers(line: str) -> Optional[List[float]]:
+    parts = line.split()
+    if len(parts) < 6:
+        return None
+    try:
+        return [float(x) for x in parts[:6]]
+    except ValueError:
+        return None
+
+
+def _params_after(lines: List[str], start: int, stop: int) -> Optional[Dict[str, float]]:
+    """Cell parameters on the line after the first A B C ALPHA BETA GAMMA header."""
+    for j in range(start, min(stop, len(lines) - 1)):
+        if 'ALPHA' in lines[j] and 'GAMMA' in lines[j]:
+            values = _six_numbers(lines[j + 1])
+            if values is None:
+                return None
+            return dict(zip(('a', 'b', 'c', 'alpha', 'beta', 'gamma'), values))
+    return None
+
+
+def _atom_row(line: str):
+    parts = line.split()
+    if len(parts) < 7 or parts[1] not in ('T', 'F') or not parts[0].isdigit():
+        return None
+    try:
+        return int(parts[2]), [float(parts[4]), float(parts[5]), float(parts[6])]
+    except ValueError:
+        return None
+
+
+def _geometry_blocks(lines: List[str]) -> List[Dict[str, Any]]:
+    """Every computed geometry block of a CRYSTAL output, in order.
+
+    Each block holds its line index ('line'), the cell parameters
+    ('params'), the atom count CRYSTAL prints ('n_atoms') and the atoms read
+    ('numbers', 'positions'), W when printed ('W', with the conventional
+    vectors a, b, c = the columns of W in terms of the primitive ones: rows
+    A_conv = W^T A_prim, as the DIRECT LATTICE VECTORS of C- and R-centred
+    outputs show), the CRYSTALLOGRAPHIC CELL parameters when printed
+    ('conventional') and whether FINAL OPTIMIZED GEOMETRY heads it ('final').
+    """
+    starts = [i for i, line in enumerate(lines) if _BLOCK_START.match(line)]
+    blocks = []
+    for n, start in enumerate(starts):
+        stop = starts[n + 1] if n + 1 < len(starts) else len(lines)
+        block = {
+            'line': start,
+            'final': any('FINAL OPTIMIZED GEOMETRY' in lines[j]
+                         for j in range(max(0, start - 6), start)),
+            'params': _params_after(lines, start + 1, min(start + 4, stop)),
+            'n_atoms': None, 'numbers': [], 'positions': [],
+            'W': None, 'conventional': None,
+        }
+        blocks.append(block)
+        k = start + 1
+        while k < min(start + 8, stop):
+            match = _UNIT_CELL_ATOMS.search(lines[k])
+            if match:
+                block['n_atoms'] = int(match.group(1))
+                break
+            k += 1
+        if block['n_atoms'] is None:
+            continue
+        k += 1
+        # the column header and the line of stars
+        while k < min(stop, start + 14) and _atom_row(lines[k]) is None:
+            k += 1
+        while k < stop:
+            row = _atom_row(lines[k])
+            if row is None:
+                break
+            block['numbers'].append(row[0])
+            block['positions'].append(row[1])
+            k += 1
+        for q in range(k, min(k + 16, stop)):
+            if 'TRANSFORMATION MATRIX PRIMITIVE-CRYSTALLOGRAPHIC CELL' in lines[q] and q + 1 < stop:
+                try:
+                    values = [float(x) for x in lines[q + 1].split()[:9]]
+                except ValueError:
+                    values = []
+                if len(values) == 9:
+                    block['W'] = np.array(values).reshape(3, 3)
+            elif re.match(r'^\s*CRYSTALLOGRAPHIC CELL', lines[q]):
+                block['conventional'] = _params_after(lines, q + 1, min(q + 4, stop))
+                break
+    return blocks
+
+
+def select_geometry_block(blocks: List[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """The block BAND's fort.9 holds, and which one it is ('final' or 'first').
+
+    After an optimisation that is the block after the last FINAL OPTIMIZED
+    GEOMETRY. Otherwise it is the first computed block (GEOMETRY FOR WAVE
+    FUNCTION). An optimisation that stopped before converging prints no final
+    block; its fort.9 holds the last step, but the first block is taken, as
+    before.
+    """
+    finals = [b for b in blocks if b['final']]
+    if finals:
+        return finals[-1], 'final'
+    if blocks:
+        return blocks[0], 'first'
+    return None, None
+
+
+def expansion_before(lines: List[str], stop: int) -> Optional[np.ndarray]:
+    """The SUPERCEL "EXPANSION MATRIX OF PRIMITIVE CELL" printed before line ``stop``.
+
+    Rows E1, E2, E3 as printed: the supercell vectors are E times the
+    primitive ones (rows), A_super = E A_prim, so a point's fractions are
+    f_super = E f_prim.
+    """
+    matrix = None
+    for i in range(min(stop, len(lines))):
+        if 'EXPANSION MATRIX OF PRIMITIVE CELL' not in lines[i]:
+            continue
+        rows = []
+        for line in lines[i + 1:i + 6]:
+            parts = line.split()
+            if len(parts) == 4 and re.fullmatch(r'E\d', parts[0]):
+                try:
+                    rows.append([float(x) for x in parts[1:]])
+                except ValueError:
+                    break
+            elif rows:
+                break
+        if len(rows) == 3:
+            matrix = np.array(rows)
+    return matrix
+
+
+def _ran_scelphono(content: str) -> bool:
+    """True for a SCELPHONO supercell rather than a SUPERCEL one.
+
+    CRYSTAL23 does not echo the input keywords, and prints the same
+    "EXPANSION MATRIX OF PRIMITIVE CELL" for both; SCELPHONO (manual sec.
+    4.21 p.73) then reorders the atoms, small cell first, under this line
+    (measured on CRYSTAL23 with a TESTGEOM deck).
+    """
+    return 'ATOMS IN THE SUPERCELL REORDERED FOR PHONON CALCULATION' in content
+
+
 def parse_crystal_structure(output_file: str) -> Optional[Dict[str, Any]]:
     """
     Extract full crystal structure from CRYSTAL output file.
+
+    The cell and the atoms are read from one computed geometry block: the
+    final optimised geometry after an optimisation, otherwise the first
+    computed geometry (the cell fort.9 holds; a SUPERCEL supercell, say).
+    When the output has no such block, or its atom count does not match the
+    atoms read, the earlier parser is used with a warning.
 
     Args:
         output_file: Path to CRYSTAL .out file
@@ -88,6 +250,11 @@ def parse_crystal_structure(output_file: str) -> Optional[Dict[str, Any]]:
         - 'cell': 3x3 numpy array of lattice vectors
         - 'positions': Nx3 numpy array of fractional coordinates
         - 'numbers': List of atomic numbers
+        - 'geometry': 'final' or 'first' (the block read), 'legacy' for
+          the earlier parser
+        - 'supercell': 'none', 'supercel' or 'scelphono'
+        - 'expansion': the expansion matrix E (A_super = E A_prim) or None
+        - 'W': the printed primitive-to-crystallographic matrix or None
         Or None if parsing fails
     """
     if not Path(output_file).exists():
@@ -98,6 +265,39 @@ def parse_crystal_structure(output_file: str) -> Optional[Dict[str, Any]]:
         content = f.read()
     lines = content.split('\n')
 
+    block, which = select_geometry_block(_geometry_blocks(lines))
+    if block is not None and block['params'] is not None and block['n_atoms']:
+        if len(block['numbers']) == block['n_atoms']:
+            p = block['params']
+            expansion = expansion_before(lines, block['line'])
+            supercell = 'none'
+            if expansion is not None:
+                supercell = 'scelphono' if _ran_scelphono(content) else 'supercel'
+            return {
+                'cell': cell_params_to_vectors(p['a'], p['b'], p['c'],
+                                               p['alpha'], p['beta'], p['gamma']),
+                'positions': np.array(block['positions']),
+                'numbers': block['numbers'],
+                'geometry': which,
+                'supercell': supercell,
+                'expansion': expansion,
+                'W': block['W'],
+            }
+        print(f"WARNING: the {which} geometry block of {Path(output_file).name} lists "
+              f"{len(block['numbers'])} atoms where CRYSTAL prints {block['n_atoms']}; "
+              f"reading the structure as before")
+    else:
+        print(f"WARNING: no computed geometry block found in {Path(output_file).name}; "
+              f"reading the structure as before")
+    structure = _legacy_structure(content, lines)
+    if structure is not None:
+        structure.update({'geometry': 'legacy', 'supercell': 'none',
+                          'expansion': None, 'W': None})
+    return structure
+
+
+def _legacy_structure(content: str, lines: List[str]) -> Optional[Dict[str, Any]]:
+    """The structure as read before computed geometry blocks were used."""
     # Extract cell parameters
     cell_params = _extract_cell_parameters(content, lines)
     if cell_params is None:
@@ -514,10 +714,11 @@ def _is_parametric(label: str, coords, parametric: Optional[set]) -> bool:
     return any(_fixed_fraction(c) is None for c in coords)
 
 
-def rational_iss_step(seekpath_result: Dict[str, Any]) -> int:
+def rational_iss_step(seekpath_result: Dict[str, Any], parametric: Optional[set] = None) -> int:
     """Lowest common denominator of the fixed (rational) points on the path."""
     from math import gcd
-    parametric = parametric_point_names(seekpath_result.get('bravais_lattice_extended', ''))
+    if parametric is None:
+        parametric = parametric_point_names(seekpath_result.get('bravais_lattice_extended', ''))
     step = 1
     for label in _path_points(seekpath_result):
         coords = seekpath_result['point_coords'][label]
@@ -529,22 +730,27 @@ def rational_iss_step(seekpath_result: Dict[str, Any]) -> int:
     return step
 
 
-def choose_band_iss(seekpath_result: Dict[str, Any]) -> Tuple[int, float]:
+def choose_band_iss(seekpath_result: Dict[str, Any],
+                    parametric: Optional[set] = None) -> Tuple[int, float]:
     """ISS for a SeeK-path band path, and how far it moves the points.
 
     The fixed points of the path set ISS to the lowest common multiple of
     their denominators (or its first multiple from 4) and are written exactly. Lattice-dependent points are
     written as k/ISS with ISS a multiple of that, at most FORT25_MAX_ISS,
-    taking the ISS that moves them least, when every point then moves by at
-    most half the path's k-point spacing at REFERENCE_NSUB. Otherwise they are
-    held exactly as before (denominators up to 10**6). The displacement is
+    taking the ISS that moves them least. When even that ISS moves a point
+    by more than half the path's k-point spacing at REFERENCE_NSUB (a long
+    cell axis), it is still taken, with a warning giving the move: the
+    exact representation used before (denominators up to 10**6) put ends of
+    10**5 and more into fort.25's fixed-width integers. The displacement is
     measured in Cartesian reciprocal space (1/Angstrom, 2*pi included) with
     seekpath's reciprocal primitive lattice, or in fractional units without
-    one.
+    one. ``parametric`` names the lattice-dependent points when the caller
+    knows them (the static route without SeeK-path's definitions).
     """
     point_coords = seekpath_result['point_coords']
-    parametric = parametric_point_names(seekpath_result.get('bravais_lattice_extended', ''))
-    step = rational_iss_step(seekpath_result)
+    if parametric is None:
+        parametric = parametric_point_names(seekpath_result.get('bravais_lattice_extended', ''))
+    step = rational_iss_step(seekpath_result, parametric)
     # d3_kpoints.scale_kpoint_segments, which every deck's path goes through,
     # never writes an ISS below 4; start from the first multiple of the
     # fixed points' denominators that it keeps.
@@ -565,16 +771,18 @@ def choose_band_iss(seekpath_result: Dict[str, Any]) -> Tuple[int, float]:
         shift = float(np.linalg.norm((np.round(points * iss) / iss - points) @ recip, axis=1).max())
         if best_shift is None or shift < best_shift - 1e-15:
             best_iss, best_shift = iss, shift
-    if best_iss is not None and best_shift <= tolerance:
-        return best_iss, best_shift
-
-    # Keep the exact representation: the largest denominator of the moving
-    # coordinates (below 10**6), raised to a multiple of the fixed points'.
-    largest = max(Fraction(float(c)).limit_denominator(1000000).denominator
-                  for xyz in moving for c in xyz)
-    iss = -(-max(largest, smallest) // step) * step
-    shift = float(np.linalg.norm((np.round(points * iss) / iss - points) @ recip, axis=1).max())
-    return iss, shift
+    if best_iss is None:
+        # the fixed points alone need an ISS above FORT25_MAX_ISS
+        best_iss = smallest
+        best_shift = float(np.linalg.norm((np.round(points * best_iss) / best_iss - points) @ recip,
+                                          axis=1).max())
+    if best_shift > tolerance:
+        unit = '1/A' if 'reciprocal_primitive_lattice' in seekpath_result else '(fractional)'
+        print(f"  WARNING: no ISS up to {FORT25_MAX_ISS} places the lattice-dependent points "
+              f"within half a k-point spacing at NSUB {REFERENCE_NSUB} "
+              f"({tolerance:.2e} {unit}); ISS {best_iss} moves them by at most "
+              f"{best_shift:.2e} {unit} ({best_shift / (2 * tolerance):.2f} of that spacing)")
+    return best_iss, best_shift
 
 
 def convert_to_mace_format(seekpath_result: Dict[str, Any],
@@ -761,6 +969,11 @@ def get_accurate_bandpath(
     segments, labels, kpath_info = convert_to_mace_format(result, shrink_factor)
 
     print(f"  Discontinuities detected: {kpath_info['n_discontinuities']}")
+    # The cell the path is in: a supercell's (SUPERCEL or SCELPHONO) when
+    # the output computed one, with its expansion of the primitive cell.
+    kpath_info['supercell'] = structure.get('supercell', 'none')
+    if structure.get('expansion') is not None:
+        kpath_info['expansion'] = np.array(structure['expansion']).tolist()
 
     return segments, labels, kpath_info
 
