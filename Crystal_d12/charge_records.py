@@ -120,15 +120,55 @@ def ghost_labels(ghosts: List[str]) -> List[int]:
     return [int(t) for line in ghosts[2:] for t in line.split()]
 
 
-def chemod_labels(chemod: List[str]) -> List[int]:
-    """The atom labels a CHEMOD record names."""
-    labels = []
-    for line in chemod[2:]:
+def chemod_entries(chemod: List[str], shells_of=None) -> List[Tuple[int, List[str]]]:
+    """(label, shell charges) for each atom of a CHEMOD record.
+
+    CRYSTAL reads the record free format: NC, then per atom its label and
+    one charge per shell of its basis, the label on the charges' line or on
+    a line of its own (both layouts occur). With ``shells_of(label)`` giving
+    each atom's shell count the record is read as that token stream, exactly.
+    Without it, a line holding one bare integer is a label on its own line
+    (its charges follow), and any other line starts with its label - which
+    a charges line of bare integers (2 8 0 0) can only be read as with the
+    shell counts.
+    """
+    try:
+        nc = int(chemod[1].split()[0])
+    except (ValueError, IndexError):
+        return []
+    entries: List[Tuple[int, List[str]]] = []
+    if shells_of is not None:
+        tokens = [t for line in chemod[2:] for t in line.split()]
+        i = 0
         try:
-            labels.append(int(line.split()[0]))
-        except (ValueError, IndexError):
-            pass
-    return labels
+            for _ in range(nc):
+                label = int(tokens[i])
+                n = int(shells_of(label))
+                entries.append((label, tokens[i + 1:i + 1 + n]))
+                i += 1 + n
+            return entries
+        except (ValueError, IndexError, KeyError, TypeError):
+            entries = []
+    for line in chemod[2:]:
+        tok = line.split()
+        if not tok:
+            continue
+        if len(tok) == 1 and re.fullmatch(r"[+-]?\d+", tok[0]) and \
+                (not entries or entries[-1][1]):
+            entries.append((int(tok[0]), []))
+        elif entries and not entries[-1][1]:
+            entries[-1] = (entries[-1][0], tok)
+        else:
+            try:
+                entries.append((int(tok[0]), tok[1:]))
+            except ValueError:
+                pass
+    return entries[:nc]
+
+
+def chemod_labels(chemod: List[str], shells_of=None) -> List[int]:
+    """The atom labels a CHEMOD record names."""
+    return [label for label, _ in chemod_entries(chemod, shells_of)]
 
 
 def _geometry_atom_count(lines: List[str]) -> Optional[int]:
@@ -322,13 +362,14 @@ def explicit_chemod_deficit(parent_text: str, chemod: List[str]):
     try:
         blocks = ic.parse_basis_blocks(parent_text)
         geom = ic.read_deck_geometry(parent_text)
-        deficit = Decimal(0)
-        for line in chemod[2:]:
-            tok = line.split()
-            label = int(tok[0])
+
+        def block_of(label):
             z = geom.z_labels[label - 1]
-            block = blocks.get(z) or blocks.get(z % 100)
-            deficit += block.valence - sum((Decimal(t) for t in tok[1:]), Decimal(0))
+            return blocks.get(z) or blocks.get(z % 100)
+
+        deficit = Decimal(0)
+        for label, charges in chemod_entries(chemod, lambda lab: len(block_of(lab).che)):
+            deficit += block_of(label).valence - sum((Decimal(t) for t in charges), Decimal(0))
         return deficit
     except Exception:
         return None
