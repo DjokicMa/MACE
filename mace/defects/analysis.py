@@ -357,11 +357,14 @@ def site_report(manifest: dict, pris_text: str, pris_sum: out.OutputSummary,
                 jobs: Sequence[JobResult], texts: Dict[str, str]) -> List[dict]:
     geom_p = parse_geometry(pris_text)
     label = manifest.get("site", {}).get("label")
-    if geom_p is None or label is None or pris_sum.mulliken is None:
-        return []
     kind = manifest["defect"]["kind"]
+    # an inserted atom has no pristine label: the report centres on its position
+    if geom_p is None or pris_sum.mulliken is None or (label is None and kind != "interstitial"):
+        return []
     if kind == "interstitial":
         center = manifest["defect"].get("cart")
+        if center is None:
+            return []
         exclude = ()
     else:
         center = geom_p.atom(label).cart

@@ -226,6 +226,31 @@ def test_alignment_sign_and_application():
     assert shift == pytest.approx(dv * HARTREE_TO_EV, rel=1e-3)   # E_f(+1) lowered by dV
 
 
+def test_interstitial_site_report_has_no_label_to_wait_for():
+    """An inserted atom has no pristine label; the report centres on its position."""
+    from _defects_fixtures import DATA
+    geom = (DATA / "mgo_pris_geometry.out").read_text()
+    with_atom = (geom.replace("ATOMS IN THE UNIT CELL:   64", "ATOMS IN THE UNIT CELL:   65")
+                 .replace(" T = ATOM BELONGING",
+                          "     65 T   8 O     1.250000000000E-01  1.250000000000E-01  1.250000000000E-01\n\n T = ATOM BELONGING")
+                 .replace("\n\n N. OF ELECTRONS",
+                          "\n   65     8 O     1.053000000000E+00  1.053000000000E+00  1.053000000000E+00\n\n N. OF ELECTRONS"))
+    site = de.DefectSite("interstitial", "O", cart=(1.053, 1.053, 1.053))
+    manifest = _manifest(mgo_host(), site, (0,))
+    manifest["defect"]["cart"] = [1.053, 1.053, 1.053]
+    manifest["site"] = {"label": None, "source": "fractional (host cell)"}
+    pris = fake_output(energy=MGO["pris"][0], electrons=640.0, header=640, vbm=-0.218, cbm=0.048,
+                       mulliken_atoms=[(1, "O", 8, 9.345), (33, "MG", 12, 10.655)]) + geom
+    dfc = fake_output(energy=-8885.5, electrons=648.0, header=648,
+                      mulliken_atoms=[(1, "O", 8, 9.300), (65, "O", 8, 8.700)]) + with_atom
+    r = an.analyze(manifest, {"mgo_pris": pris, "mgo_q0": dfc})
+    (row,) = r["site_report"]
+    labels = {a["label"] for a in row["atoms"]}
+    assert 65 in labels and 1 in labels           # the inserted atom and its O neighbour at 1.82 A
+    new = next(a for a in row["atoms"] if a["label"] == 65)
+    assert new["pristine_label"] is None and new["charge"] == pytest.approx(-0.7)
+
+
 # --- 2D ---------------------------------------------------------------------------
 
 def _hbn_set(energies=None):
