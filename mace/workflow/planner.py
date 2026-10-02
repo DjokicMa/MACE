@@ -2502,9 +2502,8 @@ class WorkflowPlanner:
         ui.info("      2: ATOMONLY (optimize atoms only)")
         ui.info("      3: CELLONLY (optimize cell only)")
 
-        opt_choice = (
-            input("    Choose optimization type (0-3, default 0): ").strip() or "0"
-        )
+        opt_choice = self._ask_menu_choice(
+            "    Choose optimization type (0-3, default 0): ", ["0", "1", "2", "3"], "0")
         opt_types = {"1": "FULLOPTG", "2": "ATOMONLY", "3": "CELLONLY"}
 
         # Convergence: opt2d12's three levels, or the previous OPT's values
@@ -2547,6 +2546,7 @@ class WorkflowPlanner:
         being taken as 0.
         """
         valid = ", ".join(["0", *presets])
+        invalid = 0
         while True:
             answer = input(prompt).strip().lower() or "0"
             if answer == "0" or answer in presets:
@@ -2556,7 +2556,22 @@ class WorkflowPlanner:
                 ui.info(f"      Note: {old_question} is now a 0-3 menu. Taking "
                         f"'{answer}' as {yes_meaning if yes else no_meaning}.")
                 return yes_choice if yes else no_choice
+            invalid += 1
+            stop_if_out_of_step(invalid, prompt, f"one of {valid}")
             ui.info(f"      Please enter one of {valid} (blank for 0)")
+
+    @staticmethod
+    def _ask_menu_choice(prompt: str, valid: List[str], default: str) -> str:
+        """Ask a numbered menu: blank is ``default``, an off-menu answer is
+        asked again (and stops a piped run after three in a row)."""
+        invalid = 0
+        while True:
+            answer = input(prompt).strip() or default
+            if answer in valid:
+                return answer
+            invalid += 1
+            stop_if_out_of_step(invalid, prompt, f"one of {', '.join(valid)}")
+            ui.info(f"      Please enter one of {', '.join(valid)} (blank for {default})")
 
     def _get_advanced_opt_config(self) -> Dict[str, Any]:
         """Get advanced optimization configuration"""
