@@ -1786,31 +1786,42 @@ class WorkflowPlanner:
                 }
                 config["path_format"] = format_map.get(format_choice, "labels")
                 config["labels"] = "auto" if config["path_format"] == "labels" else "none"
+                # The keys opt2d3 itself saves for these formats, which are
+                # the ones CRYSTALOptToD3 reads: "labels" came out as k-point
+                # vectors, and "literature"/"seekpath" as a deck with no path.
+                if config["path_format"] == "labels":
+                    config["path_method"] = "labels"
+                    config["shrink"] = 0
+                else:
+                    config["path_method"] = "coordinates"
+                    if config["path_format"] == "literature":
+                        config["literature_path"] = True
+                    elif config["path_format"] == "seekpath_full":
+                        config["seekpath_full"] = True
             else:
-                ui.info("  Custom path configuration selected")
-                ui.info("  You will specify the path during execution")
-                config["custom_path"] = True
+                # The workflow runs unattended, so the path is asked for now
+                # (opt2d3's "Custom labels" path).
+                ui.info("  Custom path: space-separated labels (e.g. G X M G);")
+                ui.info("  | starts a new, unconnected segment")
+                path_str = input("  Path [GAMMA X M GAMMA]: ").strip()
+                config["path"] = path_str.split() if path_str else ["GAMMA", "X", "M", "GAMMA"]
+                config["path_method"] = "labels"
+                config["shrink"] = 0
+                config["kpath_source"] = "manual"
             
             # Band selection
             use_all = input("\n  Use all bands? [Y/n]: ").strip().lower()
             if use_all == 'n':
-                config["band"] = input("  Band range (e.g., '1-50' or 'all'): ").strip()
+                # opt2d3's custom band range: first and last band (0: all)
+                config["first_band"] = self.get_safe_integer_input("  First band [1]: ", 1)
+                last = self.get_safe_integer_input("  Last band [all]: ", 0, min_val=0)
+                config["last_band"] = last if last > 0 else None
             else:
                 config["bands"] = "auto"
             
             # NSUB: total k points along the whole path (manual p.309)
             config["n_points"] = self.get_safe_integer_input(
                 "  Total k-points along the whole path (NSUB) [1000]: ", 1000)
-            
-            # Set path_method based on path_format for proper D3 generation
-            if config.get("path_format") == "vectors":
-                config["path_method"] = "coordinates" 
-            elif config.get("path_format") == "literature":
-                config["path_method"] = "literature"
-            elif config.get("path_format") == "seekpath_full":
-                config["path_method"] = "seekpath"
-            else:
-                config["path_method"] = "coordinates"  # Default to coordinates for compatibility
             
         elif calc_type == "DOSS":
             ui.info("\n  Advanced DOSS configuration:")

@@ -1,16 +1,11 @@
 """A workflow BAND deck is the deck opt2d3 writes for the same choices.
 
-The planner's Advanced BAND menu offers opt2d3's four automatic path formats
-(labels, k-point vectors, literature path, SeeK-path), a custom path and a
-band range. The workflow engine hands the planner's configuration to
-CRYSTALOptToD3.py --config-file. Before this fix the planner wrote keys the
-generator does not read: "labels" came out as k-point vectors, "literature"
-and "SeeK-path" as a deck with no path at all (NLINE 0), a custom path as no
-path either, and a band range was stored under a key nothing reads.
-
-Each test runs both real routes as subprocesses on the same parent: opt2d3
-interactively with piped answers, and the generator with the planner's
-configuration wrapped the way the engine wraps it.
+The workflow engine hands a plan's BAND configuration (the engine default,
+the planner's Basic or Advanced answers, or opt2d3's own saved configuration
+from an Expert step) to CRYSTALOptToD3.py --config-file. Each test runs both
+real routes as subprocesses on the same parent: opt2d3 interactively with
+piped answers, and the generator with the configuration wrapped the way the
+engine wraps it.
 """
 import builtins
 import json
@@ -139,3 +134,24 @@ def test_expert_saved_config_replays_to_the_same_deck(tmp_path, parent, fmt):
     manual = _deck(tmp_path / "manual")
     config = json.loads(saved.read_text())["configuration"]
     assert _workflow(out, tmp_path / "workflow", config) == manual
+
+
+@pytest.mark.parametrize("parent", sorted(PARENTS))
+@pytest.mark.parametrize("fmt", ["1", "2", "3", "4"])
+def test_advanced_path_format_matches_opt2d3(tmp_path, monkeypatch, parent, fmt):
+    out = _stage(tmp_path, parent)
+    config = _advanced(tmp_path, monkeypatch, ["1", fmt, "", ""])
+    manual = _manual(out, tmp_path / "manual", ["1", fmt, "", "1", "n"])
+    workflow = _workflow(out, tmp_path / "workflow", config)
+    assert _records(workflow) == _records(manual)
+
+
+def test_advanced_custom_labels_and_band_range(tmp_path, monkeypatch):
+    out = _stage(tmp_path, "tqb_pto")
+    config = _advanced(tmp_path, monkeypatch,
+                       ["2", "G X M G", "n", "3", "40", ""])
+    manual = _manual(out, tmp_path / "manual",
+                     ["3", "G X M G", "", "3", "3", "40", "n"])
+    workflow = _workflow(out, tmp_path / "workflow", config)
+    assert _records(workflow) == _records(manual)
+    assert workflow.splitlines()[2].split()[3:5] == ["3", "40"]
