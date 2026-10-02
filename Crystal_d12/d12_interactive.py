@@ -1072,9 +1072,14 @@ def _apply_replacement_functional(options: Dict[str, Any], chosen: str) -> None:
     options["dft_functional"] = options["functional"]
 
 
-def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
-    """Configure method type and functional"""
-    parent_functional_unknown = _functional_unknown(options)
+def configure_method(options: Dict[str, Any], from_parent: bool = True) -> Dict[str, Any]:
+    """Configure method type and functional
+
+    from_parent is False for a deck built from scratch (a CIF): there is no
+    parent functional to identify, so the menus are shown and D3 defaults
+    to yes, as in 1.1.1.
+    """
+    parent_functional_unknown = from_parent and _functional_unknown(options)
 
     method_options = [
         ("1", "Hartree-Fock (HF)"),
@@ -1249,7 +1254,8 @@ def configure_method(options: Dict[str, Any]) -> Dict[str, Any]:
         # The parent's dispersion state is the default: a blank answer keeps
         # it. Defaulting to "yes" turned PBE0/HSE06/HSEsol/... parents into
         # their -D3 versions on every planless or blank-answer run.
-        parent_d3 = bool(options.get("dispersion")) or current_functional.upper().endswith("-D3")
+        parent_d3 = (not from_parent or bool(options.get("dispersion"))
+                     or current_functional.upper().endswith("-D3"))
 
         while True:
             func_choice = get_user_choice(f"Select {FUNCTIONAL_CATEGORIES[category]['name'].split()[0]} functional", func_options, default_func)
@@ -1314,7 +1320,7 @@ def get_shared_calculation_options() -> Dict[str, Any]:
             options["advanced_freq_settings"] = get_advanced_frequency_settings()
     
     # Method configuration
-    options = configure_method(options)
+    options = configure_method(options, from_parent=False)
     
     # Basis set
     basis_config = select_basis_set_with_defaults(
@@ -1820,7 +1826,7 @@ def get_calculation_options_new() -> Dict[str, Any]:
                 options["advanced_freq_settings"] = get_advanced_frequency_settings()
         
         # 4. Method selection (HF/DFT)
-        options = configure_method(options)
+        options = configure_method(options, from_parent=False)
         
         # 5. Functional selection (if DFT) - already handled in configure_method
         
