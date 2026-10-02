@@ -211,7 +211,7 @@ def load_set(outdir: Path):
 def collect(outdir: Path, check_only: bool = False, band: Optional[str] = "auto",
             band_labels: Optional[str] = None, band_points: int = 51,
             mesh="100.0", tmin: float = 0.0, tmax: float = 1000.0, tstep: float = 10.0,
-            plot: bool = False, log=print) -> CollectResult:
+            nac_from: Optional[Path] = None, plot: bool = False, log=print) -> CollectResult:
     from phonopy.file_IO import write_FORCE_SETS
     from phonopy.interface.crystal import parse_set_of_forces
 
@@ -242,6 +242,14 @@ def collect(outdir: Path, check_only: bool = False, band: Optional[str] = "auto"
         # space-group, translational and index symmetries that finite
         # differences only satisfy approximately (symfc projector).
         phonon.symmetrize_force_constants(use_symfc_projector=True)
+
+    if nac_from is not None:
+        from .nac import nac_params_from_freq
+        params, born_text = nac_params_from_freq(Path(nac_from), phonon, man)
+        phonon.nac_params = params
+        (outdir / "BORN").write_text(born_text)
+        result.files.append("BORN")
+        log(f"NAC: Born charges and dielectric tensor from {nac_from}")
 
     with contextlib.chdir(outdir):
         phonon.save("phonopy_params.yaml")

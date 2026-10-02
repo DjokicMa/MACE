@@ -17,7 +17,7 @@ with its geometry in .ext, staged as fort.34 by the job script), plus
 phonopy_disp.yaml and mace_phonopy.json. Then:
 
     mace submit DIR --walltime HH:MM:SS     (never --track or --progress)
-    mace phonopy collect DIR
+    mace phonopy collect DIR [--nac-from FREQ.out]
 
 The parent must be a finished 3D OPT (OPT END - CONVERGED) or SP run. The
 method, basis and tolerances of the parent are kept; only TOLDEE (raised to at
@@ -69,6 +69,7 @@ def _parser() -> argparse.ArgumentParser:
     c.add_argument("--tmin", type=float, default=0.0)
     c.add_argument("--tmax", type=float, default=1000.0)
     c.add_argument("--tstep", type=float, default=10.0)
+    c.add_argument("--nac-from", help="Gamma FREQCALC output with INTENS + INTCPHF")
     c.add_argument("--plot", action="store_true", help="write band_dos.pdf")
     return p
 
@@ -218,6 +219,7 @@ def _kpoints(lines: List[str]) -> Optional[List[int]]:
 
 def cmd_collect(a) -> int:
     from . import collect as C
+    from .nac import NacError
 
     d = Path(a.directory)
     if not (d / "mace_phonopy.json").is_file():
@@ -235,7 +237,10 @@ def cmd_collect(a) -> int:
     try:
         res = C.collect(d, check_only=a.check, band=band, band_labels=a.band_labels,
                         band_points=a.band_points, mesh=a.mesh, tmin=a.tmin, tmax=a.tmax,
-                        tstep=a.tstep, plot=a.plot)
+                        tstep=a.tstep, nac_from=a.nac_from, plot=a.plot)
+    except NacError as exc:
+        print(f"Error: NAC refused: {exc}", file=sys.stderr)
+        return 1
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

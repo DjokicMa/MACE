@@ -771,12 +771,14 @@ collect   Check every output (normal termination, SCF converged, forces, geometr
             --band auto|"q ..."   SeeK-path path (default) or phonopy BAND points; none
             --band-labels, --band-points N, --mesh 100.0|"a b c"
             --tmin --tmax --tstep thermal properties range (K)
+            --nac-from FREQ.out   Born charges + dielectric tensor from a Gamma
+                                  FREQCALC with INTENS + INTCPHF
             --plot                band_dos.pdf
 
 Workflow:
   mace phonopy generate mat_opt.out --dim "2 2 2"
   mace submit phonopy_mat_opt_222 --walltime 24:00:00     (never --track)
-  mace phonopy collect phonopy_mat_opt_222
+  mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out]
 
 Run `mace phonopy generate --help` or `mace phonopy collect --help` for details.
 """,
