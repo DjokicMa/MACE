@@ -84,8 +84,9 @@ def cell_params_to_vectors(a: float, b: float, c: float,
 # "CRYSTALLOGRAPHIC CELL" parameters. The input echo before it ("LATTICE
 # PARAMETERS ... - PRIMITIVE CELL") is the cell given in input, which is not
 # the computed one after SUPERCEL or other geometry editing, nor the
-# optimised one.
-_BLOCK_START = re.compile(r'^\s*PRIMITIVE CELL - CENTRING CODE')
+# optimised one. A SLAB or POLYMER output prints a plain "PRIMITIVE CELL"
+# line there (no centring code).
+_BLOCK_START = re.compile(r'^\s*PRIMITIVE CELL(?:\s+- CENTRING CODE|\s*$)')
 _UNIT_CELL_ATOMS = re.compile(r'ATOMS IN THE UNIT CELL:\s*(\d+)')
 
 
