@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Opt-in TZVP-REV2 2022 update: `full.basis.triplezeta.rev2022`.** The
+  bundled triplezeta set carries pob-TZVP 2018 for Rb-I and ERD small-core
+  2017 for La-Lu. The new family replaces those with the newer sets from
+  crystal.unito.it: X_POB_TZVP_rev2 for Rb-Mo and Ru-I (Laun & Bredow, JCC
+  2022, DOI 10.1002/jcc.26839) and X_pob_TZVP_rev2 for La-Lu (Seidler, Laun &
+  Bredow, JCC 2023, DOI 10.1002/jcc.27097). Tc keeps the ERD 2017 all-electron
+  record, because the site has no Tc_POB_TZVP_rev2. Every other record is
+  byte-identical to `full.basis.triplezeta`.
+  - **Core treatment.** Rb-I keep the ECPs of pob-TZVP 2018 (the same ZNUC).
+    Ce-Lu keep a 28-electron core with 4f in the valence, as ERD has.
+    **La changes:** its rev2 ECP has ZNUC 11, a 46-electron core, where ERD
+    has ZNUC 29. With this family each La atom carries 18 fewer electrons,
+    which shows in the Mulliken `NO. OF ELECTRONS`.
+  - **How to choose it.** Pick external basis menu option `4: TZVP-REV2 (2022
+    update: Rb-I, La-Lu)`, or put `"external_basis_family": "tz-rev2022"` in a
+    configuration file. In code, use `mace_config.DEFAULT_TZ_REV2022_PATH` or
+    `get_basis_path("tz-rev2022")`. Options 1-3 are unchanged and 2 is still
+    the default. Decks are named `..._full.basis.triplezeta.rev2022.d12`, and
+    the workflow executor keeps such a child on this family even when
+    `MACE_TZ_BASIS_PATH` or `MACE_BASIS_DIR` is set.
+  - **Provenance.** Each record keeps its URL, retrieval date, page checksum,
+    DOI as printed and core. `basis_sets/fetch_unito.py` and `build_library.py
+    --fetch` rebuild the family.
+  - **Status.** Untested in CRYSTAL. The Rb-I records should reproduce
+    CRYSTAL23's internal `BASISSET POB-TZVP-REV2` energies exactly.
+- **POB-TZVP-REV2 SOC basis records (data only).** X_pob_TZVP_rev2_SOC for
+  Rb-Mo, Ru-I, Cs, Ba and Hf-Bi, from crystal.unito.it. Each is the rev2
+  valence shells (checked numerically) on CRYSTAL's internal STUTSC library
+  (manual p.84), for two-component SOC runs (pp.169-175).
+  - Read them with `basis_library.soc_basis_record(z)`. They are never offered
+    as an ordinary external basis: there is no menu entry, path or
+    configuration key for them.
+  - Untested in CRYSTAL.
+
+### Changed
+
+- **The bundled external basis sets are one file per family.**
+  - `Crystal_d12/basis_sets/full.basis.triplezeta/`, `full.basis.doublezeta/`
+    and `stuttgart/` (about 300 per-element files) are now
+    `full.basis.triplezeta.lib`, `full.basis.doublezeta.lib` and
+    `stuttgart.lib`, read by `Crystal_d12/basis_library.py`.
+  - The old directory paths still work everywhere MACE takes a basis path,
+    including `mace_config.DEFAULT_TZ_PATH` and configuration files that name
+    them. Any other directory is still read from disk.
+  - Every record is returned byte for byte: tests pin all records and the
+    decks written from them. No deck changes, apart from the Pu fix below.
+  - **Custom tooling** that opened `basis_sets/<family>/<n>` directly should
+    call `basis_library.read_record(path, n)` instead, or
+    `basis_library.load_family(name)`.
+  - Each record now states where it came from (`basis_sets/PROVENANCE.md`).
+    The records were matched exactly against crystal.unito.it and the FACTS
+    audit: H-Br, Cs, Ba and Hf-Bi are pob-TZVP-rev2, Rb-I are pob-TZVP 2018,
+    and DZ H-Br and Rb-I are pob-DZVP-rev2 and pob-DZVP 2018. Unmatched
+    records say "unverified".
+  - `python mace_config.py` (`ensure_paths_exist`) reports the three `.lib`
+    files under the same names. This is diagnostic output only.
+- **opt2d12 refuses to carry a parent's `CHEMOD` onto a different basis
+  set.** CHEMOD lists charges per shell of the basis it was written for
+  (manual p.80). This covers a change to another internal set, internal to
+  explicit or the reverse, or an explicit record whose shells or numbers
+  differ (for example triplezeta to its rev2022 update). opt2d12 now names
+  the reason and writes no deck, where it used to carry the records onto the
+  wrong shells. A child with its own CHEMOD is not affected.
+
+### Fixed
+
+- **The bundled Pu basis record (`294`, triplezeta and doublezeta) declared
+  11 shells but holds 9.** CRYSTAL would have read the next atom's records,
+  or `99 0`, as Pu's missing shells. It now says `294 9`, as the source set
+  does. **Deck change:** any deck with Pu and a bundled external basis.
+  Untested in CRYSTAL.
+
 ## [1.1.4] - 2026-10-02
 
 Everything since 1.1.3. **Band and phonon-dispersion paths made with the SeeK-path
