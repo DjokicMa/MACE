@@ -68,6 +68,8 @@ def write_basis_block(f: TextIO, basis_config: Dict[str, Any],
         # Write basis sets for each unique element
         unique_elements = sorted(set(elements))
         for element in unique_elements:
+            # Raises BasisFileError (a ValueError naming the file) for a file
+            # CRYSTAL could not read; the caller refuses the deck.
             basis_content = read_basis_file(basis_path, element)
             if basis_content:
                 f.write(basis_content)

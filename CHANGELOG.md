@@ -112,18 +112,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Stuttgart basis files CRYSTAL cannot read are refused by the SOC ECP
-  reader.** `stuttgart/219`, `220` and `227` (K, Ca, Co) have a placeholder
+- **Basis-library files CRYSTAL cannot read are refused on every deck
+  path.** `stuttgart/219`, `220` and `227` (K, Ca, Co) have a placeholder
   sentence where the shell count belongs and `X` for every shell charge;
   `204` (Be) announces 2 shells and holds 1, and `294` (Pu) announces 11 and
-  holds 9 (manual pp. 25-27: NSHL shells, each with a numeric charge).
-  Which shells are missing, or how the electrons are shared among them, is
-  not in those files, so the data is left as it is and
-  `soc_ecp.read_stuttgart` now refuses them with the reason instead of
-  returning a block CRYSTAL would misread. No deck changes: no current
-  command calls `read_stuttgart`, and MACE's EXTERNAL basis readers use the
-  `200+Z` name only for Z >= 37, so they never open 204-227 (a basis path
-  pointed by hand at `stuttgart/` would still copy `294` as it is).
+  holds 9 - in `stuttgart/` and in both `full.basis.triplezeta` and
+  `full.basis.doublezeta` (manual pp. 25-27: NSHL shells, each with a
+  numeric charge). Which shells are missing, or how the electrons are shared
+  among them, is not in those files, so the data is left as it is and every
+  reader that copies a library file into a deck refuses it, naming the file
+  and the fault, and writes no deck: `soc_ecp.read_stuttgart`,
+  `d12_constants.read_basis_file` (cif2d12, and `d12_writer`'s basis block),
+  and `opt2d12`'s four basis-directory reads. cif2d12 refuses before it asks
+  anything (the EXTERNAL coverage check reads the same files). The check is
+  `Crystal_d12/basis_file_check.py`; blank lines and trailing whitespace are
+  skipped as the readers skip them, and every other file in the three
+  libraries passes it. Deck change: a Pu deck from an EXTERNAL basis
+  directory (the default `full.basis.triplezeta` included), and an `opt2d12`
+  deck from a parent whose geometry carries atom number 204, 219, 220 or 227
+  with `stuttgart/` as its basis directory, used to be written with the
+  unreadable block and are now refused. 204-227 are Z < 37, so cif2d12 reads
+  the bare-Z file for those elements and never opened them. Decks written
+  from readable files are unchanged.
 - **An `opt2d12` child keeps its parent deck's SMEAR.** The .d12 parser
   stored SMEAR as `use_smearing`, but the deck writer reads `smearing`, which
   only the .out parser set (from a "FERMI SMEARING" line) and which `opt2d12`

@@ -83,6 +83,7 @@ from d12_writer import (
 )
 # Import write_scf_section from d12_writer
 from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES, atomic_deck
+from basis_file_check import BasisFileError, check_basis_file
 from soc_ecp import (SocDeckBuffer, SocError, checked_smear, metal_parent_warning,
                      parent_metal_evidence)
 from d12_interactive import (
@@ -599,6 +600,16 @@ def conventional_atom_number(atom_number, settings) -> int:
     return number
 
 
+def _checked_basis(path, text, atom_num):
+    """``text``, the basis file ``path`` read for atom ``atom_num``; raises
+    BasisFileError, naming the file, when CRYSTAL could not read it as it
+    stands. process_files turns that into the file's refusal, and
+    atomic_deck leaves no deck."""
+    if text:
+        check_basis_file(path, text, atom_num)
+    return text
+
+
 THREE_C_FUNCTIONALS = ("HF3C", "HFSOL3C", "PBEH3C", "HSE3C", "B973C", "PBESOL03C", "HSESOL3C")
 
 
@@ -905,7 +916,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                         basis_file = os.path.join(settings["basis_set_path"], str(file_num))
                         if os.path.exists(basis_file):
                             with open(basis_file, "r") as bf:
-                                f.write(bf.read())
+                                f.write(_checked_basis(basis_file, bf.read(), atom_num))
                         else:
                             ui.warn(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
 
@@ -926,7 +937,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                             basis_file = os.path.join(legacy_path, str(file_num))
                             if os.path.exists(basis_file):
                                 with open(basis_file, "r") as bf:
-                                    f.write(bf.read())
+                                    f.write(_checked_basis(basis_file, bf.read(), atom_num))
                             else:
                                 ui.warn(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
 
@@ -988,7 +999,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                         )
                         if os.path.exists(basis_file):
                             with open(basis_file, "r") as bf:
-                                f.write(bf.read())
+                                f.write(_checked_basis(basis_file, bf.read(), atom_num))
                         else:
                             ui.warn(
                                 f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})"
@@ -1012,7 +1023,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                             basis_file = os.path.join(legacy_path, str(file_num))
                             if os.path.exists(basis_file):
                                 with open(basis_file, "r") as bf:
-                                    f.write(bf.read())
+                                    f.write(_checked_basis(basis_file, bf.read(), atom_num))
                             else:
                                 ui.warn(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
 
@@ -2037,10 +2048,17 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
     # The geometry_data (out_data) contains the optimized coordinates with is_unique flags
     # The settings (options) contains the preserved symmetry and other settings from D12
     parent_metal = soc_parent_metal(output_file) if converted_options.get("soc") else None
-    if not write_d12_file(new_filename, out_data, converted_options, external_basis_data,
-                          parent_k_points=parent_k_points,
-                          ask=False if unattended else None,
-                          parent_metal=parent_metal):
+    try:
+        written = write_d12_file(new_filename, out_data, converted_options, external_basis_data,
+                                 parent_k_points=parent_k_points,
+                                 ask=False if unattended else None,
+                                 parent_metal=parent_metal)
+    except BasisFileError as exc:
+        # A basis-library file CRYSTAL could not read (atomic_deck has
+        # removed the part-written deck).
+        _fail(str(exc), f"Not writing {os.path.basename(new_filename)}: {exc}")
+        written = False
+    if not written:
         ui.err(f"\nFailed to create {new_filename}: D12 creation aborted.")
         if not LAST_RESULT["reason"]:
             LAST_RESULT["reason"] = "D12 creation aborted"

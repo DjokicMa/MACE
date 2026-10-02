@@ -2289,6 +2289,10 @@ def read_basis_file(basis_dir: str, atomic_number: int, basis_set_type: str = "E
 
     Returns:
         Content of the basis set file
+
+    Raises:
+        BasisFileError (basis_file_check) for a file CRYSTAL could not read as
+        it stands, so no deck is written with it.
     """
     import os
 
@@ -2298,16 +2302,25 @@ def read_basis_file(basis_dir: str, atomic_number: int, basis_set_type: str = "E
         file_number = atomic_number + 200
 
     basis_file_path = os.path.join(basis_dir, str(file_number))
+    # A file CRYSTAL could not read as it stands raises BasisFileError, naming it.
+    from basis_file_check import check_basis_file
 
     try:
         with open(basis_file_path, "r") as f:
-            return f.read()
+            text = f.read()
+        if text:
+            check_basis_file(basis_file_path, text, atomic_number)
+        return text
     except FileNotFoundError:
         # Also try without +200 offset as fallback (for non-standard directories)
         if file_number != atomic_number:
             try:
                 with open(os.path.join(basis_dir, str(atomic_number)), "r") as f:
-                    return f.read()
+                    text = f.read()
+                if text:
+                    check_basis_file(os.path.join(basis_dir, str(atomic_number)), text,
+                                     atomic_number)
+                return text
             except FileNotFoundError:
                 pass
 
@@ -2626,9 +2639,12 @@ def _external_basis_file_exists(basis_dir, atomic_number):
     """Whether read_basis_file() would find a file for this element.
 
     Mirrors read_basis_file's lookup exactly, including its +200 ECP naming and
-    its fallback to the un-offset name.
+    its fallback to the un-offset name. The file it would read is checked as
+    read_basis_file checks it, so a file CRYSTAL could not read raises
+    BasisFileError here, before any question is asked.
     """
     import os
+    from basis_file_check import check_basis_file
 
     if not basis_dir or not os.path.isdir(basis_dir):
         # Not a usable directory - let the existing "basis file not found"
@@ -2637,4 +2653,12 @@ def _external_basis_file_exists(basis_dir, atomic_number):
     candidates = [atomic_number]
     if atomic_number in ECP_ELEMENTS_EXTERNAL:
         candidates.insert(0, atomic_number + 200)
-    return any(os.path.isfile(os.path.join(basis_dir, str(n))) for n in candidates)
+    for n in candidates:
+        path = os.path.join(basis_dir, str(n))
+        if os.path.isfile(path):
+            with open(path, "r") as f:
+                text = f.read()
+            if text:
+                check_basis_file(path, text, atomic_number)
+            return True
+    return False
