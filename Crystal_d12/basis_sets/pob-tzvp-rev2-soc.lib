@@ -1,0 +1,1315 @@
+#%MACE-BASIS-LIBRARY 1
+#%family pob-tzvp-rev2-soc
+#%description X_pob_TZVP_rev2_SOC records from crystal.unito.it, for two-component SCF with
+#%description spin-orbit coupling (CRYSTAL23 manual pp.169-175): the pob-TZVP-rev2 valence shells
+#%description (numerically identical to the X_POB_TZVP_rev2 / X_pob_TZVP_rev2 records, checked)
+#%description on CRYSTAL's internal STUTSC library, the Stuttgart-Cologne small-core fully
+#%description relativistic ECP (manual p.84), in place of the scalar INPUT ECP. Rb-Mo, Ru-I, Cs,
+#%description Ba and Hf-Bi. Data only: never offered as an ordinary external basis; read with
+#%description basis_library.soc_basis_record(z). Not bundled: the site's special X_*_SOC sets
+#%description (e.g. Bi_4s3p3d_SOC, Cs_5s5p2d_SOC) and Po_pob_TZVP_rev2_SOC (no Po in
+#%description full.basis.triplezeta).
+#%record 237 bytes=553
+#%  source Rb_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/rubidium.html#Rb_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 f5a36c1277bd6c8343e789d19215dd81ecb47a212b092fea45e210102981d9d1
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 237 = 200 + Z checked; STUTSC kept exactly as printed
+237 8
+STUTSC
+0 0 2 2 1.0
+  7.47446180400       0.269978663630
+  6.72961805940      -0.426292518140
+0 0 1 1 1.0
+  1.91033355000       1.000000000000
+0 0 1 0 1.0
+  0.46047766000       1.000000000000
+0 0 1 0 1.0
+  0.12311440000       1.000000000000
+0 2 4 6 1.0
+  5.67206431940       0.048114224135
+  3.33201839560      -0.184851314260
+  0.80150054910       0.328118649540
+  0.36302220227       0.486731654110
+0 2 1 0 1.0
+  0.26042034000       1.000000000000
+0 2 1 0 1.0
+  0.13898589000       1.000000000000
+0 3 1 0 1.0
+  0.15913676000       1.000000000000
+
+#%record 238 bytes=541
+#%  source Sr_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/strontium.html#Sr_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 e81c402e2350b4221bb5e0342a8b70873fc91cc9c2860b03d06c767bee75eb95
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 238 = 200 + Z checked; STUTSC kept exactly as printed
+238 8
+STUTSC
+0 0 2 2 1.0
+  10.0000000000     -0.185305502620
+  8.50000000000      0.339703553760
+0 0 1 2 1.0
+  2.84443739000      1.000000000000
+0 0 1 0 1.0
+  0.42600116000      1.000000000000
+0 0 1 0 1.0
+  0.12156848000      1.000000000000
+0 2 4 6 1.0
+  7.58830778690      0.033731690287
+  3.67313073920     -0.205231850050
+  0.90496618455      0.492099726650
+  0.43310256408      0.621052965120
+0 2 1 0 1.0
+  0.30715943000      1.000000000000
+0 2 1 0 1.0
+  0.16229703000      1.000000000000
+0 3 1 0 1.0
+  0.37841885000      1.000000000000
+
+#%record 239 bytes=758
+#%  source Y_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/yttrium.html#Y_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 6bfc83eaa6309b3df96bcb7749e4d31a417d10b575476bddb25cdbf87e5866f0
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 239 = 200 + Z checked; STUTSC kept exactly as printed
+239 11
+STUTSC
+0 0 2 2 1.0
+  10.0000000000     -0.174876867960
+  8.50000000000      0.341523450840
+0 0 1 0 1.0
+  3.36996640000      1.000000000000
+0 0 1 0 1.0
+  0.67918260000      1.000000000000
+0 0 1 0 1.0
+  0.30191780000      1.000000000000
+0 2 4 6 1.0
+  8.05540936160      0.036410978939
+  4.01634587510     -0.208725725470
+  1.02329154040      0.489569293350
+  0.49843561636      0.606119438330
+0 2 1 0 1.0
+  0.35648910000      1.000000000000
+0 2 1 0 1.0
+  0.19193110000      1.000000000000
+0 3 3 3 1.0
+  3.90308330600     -0.009820979262
+  1.13632343020      0.191836296640
+  0.45617043877      0.405977885390
+0 3 1 0 1.0
+  0.32917530000      1.000000000000
+0 3 1 0 1.0
+  0.13006830000      1.000000000000
+0 4 1 0 1.0
+  0.65147450000      1.000000000000
+
+#%record 240 bytes=758
+#%  source Zr_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/zirconium.html#Zr_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 6c213c8b2de176d7387f64d44d376fcadec2aefad215a6b16f2fcfa8b4741c9e
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 240 = 200 + Z checked; STUTSC kept exactly as printed
+240 11
+STUTSC
+0 0 2 2 1.0
+  11.0000000000     -0.190755952570
+  9.50000000000      0.338955887540
+0 0 1 2 1.0
+  3.91891211000      1.000000000000
+0 0 1 0 1.0
+  1.48625300000      1.000000000000
+0 0 1 0 1.0
+  0.581428600000     1.000000000000
+0 2 4 6 1.0
+  8.60663055430      0.040404260236
+  4.44009799580     -0.211877452010
+  1.12810269460      0.491642668910
+  0.54346076310      0.573033706580
+0 2 1 0 1.0
+  0.49792620000      1.000000000000
+0 2 1 0 1.0
+  0.16451000000      1.000000000000
+0 3 3 2 1.0
+  4.55679577950     -0.009619056902
+  1.29049397970      0.205699901550
+  0.51646987222      0.418313818510
+0 3 1 0 1.0
+  0.38034710000      1.000000000000
+0 3 1 0 1.0
+  0.16106300000      1.000000000000
+0 4 1 0 1.0
+  0.34548200000      1.000000000000
+
+#%record 241 bytes=758
+#%  source Nb_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/niobium.html#Nb_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 f3300676f21c59378c707d1d877a1a0bbd1a238af48f54e22b0ca6778b30a96a
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 241 = 200 + Z checked; STUTSC kept exactly as printed
+241 11
+STUTSC
+0 0 2 2 1.0
+  12.0000000000     -0.202195075300
+  10.5000000000      0.336401059390
+0 0 1 2 1.0
+  3.97281720000      1.000000000000
+0 0 1 0 1.0
+  0.78973709000      1.000000000000
+0 0 1 0 1.0
+  0.32754617000      1.000000000000
+0 2 4 6 1.0
+  9.20562856460      0.043347689874
+  4.86796321250     -0.213024792330
+  1.24421557920      0.481021271360
+  0.60390590312      0.539178589600
+0 2 1 0 1.0
+  1.05781677000      1.000000000000
+0 2 1 0 1.0
+  0.27033618000      1.000000000000
+0 3 3 3 1.0
+  4.61709758670     -0.013574476955
+  1.56634384800      0.203743104960
+  0.66952425826      0.429974531050
+0 3 1 0 1.0
+  0.43085068000      1.000000000000
+0 3 1 0 1.0
+  0.21829131000      1.000000000000
+0 4 1 0 1.0
+  0.52270000000      1.000000000000
+
+#%record 242 bytes=758
+#%  source Mo_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/molibdenum.html#Mo_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 493c82b87acc5c8854326d590e7fbbe7c024829e8fae0d6ac025e520ebd97ff7
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 242 = 200 + Z checked; STUTSC kept exactly as printed
+242 11
+STUTSC
+0 0 2 2 1.0
+  14.0000000000     -0.224900434060
+  12.5000000000      0.331512485550
+0 0 1 2 1.0
+  4.25053415000      1.000000000000
+0 0 1 0 1.0
+  0.65151308000      1.000000000000
+0 0 1 0 1.0
+  0.18122290000      1.000000000000
+0 2 4 6 1.0
+  8.89311179150      0.069994449475
+  5.46891122700     -0.235471418830
+  1.35484730070      0.463154600070
+  0.65494867461      0.488201847100
+0 2 1 0 1.0
+  0.46348506000      1.000000000000
+0 2 1 0 1.0
+  0.24987406000      1.000000000000
+0 3 3 4 1.0
+  5.00444454970     -0.021587364862
+  1.77368233240      0.209586800860
+  0.76950591696      0.437308805990
+0 3 1 0 1.0
+  0.56023361000      1.000000000000
+0 3 1 0 1.0
+  0.20486424000      1.000000000000
+0 4 1 0 1.0
+  0.55911598000      1.000000000000
+
+#%record 244 bytes=758
+#%  source Ru_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/ruthenium.html#Ru_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 17ca9e234375ccb3cd94dc03ea01705e87820979eb012b887c3fc03ec17a1aba
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 244 = 200 + Z checked; STUTSC kept exactly as printed
+244 11
+STUTSC
+0 0 2 2 1.0
+  16.0000000000     -0.206340029190
+  13.9105816940      0.335504377250
+0 0 1 2 1.0
+  4.99907995000      1.000000000000
+0 0 1 0 1.0
+  0.80110331000      1.000000000000
+0 0 1 0 1.0
+  0.12159163000      1.000000000000
+0 2 4 6 1.0
+  11.1872086710      0.053225073263
+  6.24776887340     -0.227316620500
+  1.62794728590      0.478694860560
+  0.79326493538      0.502133115670
+0 2 1 0 1.0
+  0.45221559000      1.000000000000
+0 2 1 0 1.0
+  0.19888221000      1.000000000000
+0 3 3 6 1.0
+  5.73418466190     -0.035266111560
+  2.24836862940      0.218025022220
+  0.98376978359      0.447095650130
+0 3 1 0 1.0
+  0.39654230000      1.000000000000
+0 3 1 0 1.0
+  0.20001560000      1.000000000000
+0 4 1 0 1.0
+  0.67553182000      1.000000000000
+
+#%record 245 bytes=794
+#%  source Rh_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/rhodium.html#Rh_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 3b9fc8d1a4eb47d6cb64344112df441334bb75ca3d00c316d65fb69f8722ae34
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 245 = 200 + Z checked; STUTSC kept exactly as printed
+245 11
+STUTSC
+0 0 2 2 1.0
+  17.0000000000     -0.166908031390
+  13.9105816940      0.342350016520
+0 0 1 2 1.0
+  5.53521752000      1.000000000000
+0 0 1 0 1.0
+  0.96962135000      1.000000000000
+0 0 1 0 1.0
+  0.15055984000      1.000000000000
+0 2 4 6 1.0
+  11.7671036310      0.059494859388
+  6.74851330830     -0.237358534770
+  1.75026798340      0.490193343030
+  0.84321166133      0.506239337510
+0 2 1 0 1.0
+  0.90997935000      1.000000000000
+0 2 1 0 1.0
+  0.43661647000      1.000000000000
+0 3 4 7 1.0
+  19.8578301360      0.006696077819
+  10.0613781390     -0.021981738213
+  2.26195464770      0.379187062360
+  0.97098845035      0.672899765920
+0 3 1 0 1.0
+  0.39040439000      1.000000000000
+0 3 1 0 1.0
+  0.20178380000      1.000000000000
+0 4 1 0 1.0
+  0.60333196000      1.000000000000
+
+#%record 246 bytes=776
+#%  source Pd_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/palladium.html#Pd_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 4111833f99fb9fe6309b0b71d0f7d618e144195082b38e138139d2c22d365f93
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 246 = 200 + Z checked; STUTSC kept exactly as printed
+246 11
+STUTSC
+0 0 2 2 1.0
+  18.000000000     -0.166053885980
+  14.662134308      0.348999550550
+0 0 1 2 1.0
+  5.4319418700      1.000000000000
+0 0 1 0 1.0
+  1.2147866500      1.000000000000
+0 0 1 0 1.0
+  0.1458883100      1.000000000000
+0 2 4 6 1.0
+  12.552899300      0.061728998206
+  7.2444496380     -0.241786267530
+  1.8905941078      0.494532009150
+  0.9073716876      0.504543626260
+0 2 1 0 1.0
+  0.6800411300      1.000000000000
+0 2 1 0 1.0
+  0.3528875400      1.000000000000
+0 3 4 8 1.0
+  22.357457575      0.003955947955
+  10.682526382     -0.014039011601
+  2.4858232550      0.242194767760
+  1.0735333903      0.425802832810
+0 3 1 0 1.0
+  0.4174517400      1.000000000000
+0 3 1 0 1.0
+  0.2000108200      1.000000000000
+0 4 1 0 1.0
+  0.4031589900      1.000000000000
+
+#%record 247 bytes=795
+#%  source Ag_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/silver.html#Ag_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 82b313df5aac4e860bbe936e68b019e71d35f113dc06927795ff2e6e34bfa510
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 247 = 200 + Z checked; STUTSC kept exactly as printed
+247 11
+STUTSC
+0 0 2 2 1.0
+  19.0000000000     -0.166001041410
+  15.4281999330      0.356650959180
+0 0 1 1 1.0
+  6.51041165000      1.000000000000
+0 0 1 0 1.0
+  1.15010024000      1.000000000000
+0 0 1 0 1.0
+  0.15069126000      1.000000000000
+0 2 4 6 1.0
+  13.1881801800      0.066928737147
+  7.79527891380     -0.247352354090
+  2.03515719120      0.491542802160
+  0.98093914842      0.497416090060
+0 2 1 0 1.0
+  0.38690507000      1.000000000000
+0 2 1 0 1.0
+  0.12043653000      1.000000000000
+0 3 4 10 1.0
+  25.7843973510      0.003564506308
+  11.3966367550     -0.012984262784
+  2.73455813610      0.241088265480
+  1.18735836050      0.424123307440
+0 3 1 0 1.0
+  0.41210766000      1.000000000000
+0 3 1 0 1.0
+  0.19662803000      1.000000000000
+0 4 1 0 1.0
+  0.46700165000      1.000000000000
+
+#%record 248 bytes=777
+#%  source Cd_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/cadmium.html#Cd_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 b0b2c826234fd0756ec980a4d6816ea67941e4a43ffa891fbd3d9e1998f80ada
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 248 = 200 + Z checked; STUTSC kept exactly as printed
+248 11
+STUTSC
+0 0 2 2 1.0
+  20.000000000     -0.174011969270
+  16.309051661      0.371372771940
+0 0 1 2 1.0
+  6.8390301300      1.000000000000
+0 0 1 0 1.0
+  1.2775680000      1.000000000000
+0 0 1 0 1.0
+  0.1414597900      1.000000000000
+0 2 4 6 1.0
+  14.000681404      0.069333062793
+  8.3094019872     -0.254201036810
+  2.2020058122      0.492009803680
+  1.0779246137      0.497021181310
+0 2 1 0 1.0
+  0.4868044300      1.000000000000
+0 2 1 0 1.0
+  0.1392537500      1.000000000000
+0 3 4 10 1.0
+  30.380789793      0.003254512384
+  11.474551578     -0.014212074843
+  3.0507394903      0.249617564360
+  1.3622028524      0.449056351760
+0 3 1 0 1.0
+  0.5382728300      1.000000000000
+0 3 1 0 1.0
+  0.2030809300      1.000000000000
+0 4 1 0 1.0
+  0.7676352500      1.000000000000
+
+#%record 249 bytes=1099
+#%  source In_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/indium.html#In_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 282686592c61b598346db220f2c1c86cbb84afd174355e679fbb1450265470c2
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 249 = 200 + Z checked; STUTSC kept exactly as printed
+249 12
+STUTSC
+0 0 4 2 1
+  847.79276774      0.00012432052471
+  72.041054824      0.00236003676070
+  41.061316522     -0.00855882994530
+  12.407609713      0.62952032489000
+0 0 2 2 1
+  11.640316941      1.55434292000000
+  6.3695642727      0.67492488361000
+0 0 2 0 1.0
+  2.3993232000      0.81602366100000
+  1.0042563000      0.68397633900000
+0 0 1 0 1
+  0.1493536000      1.00000000000000
+0 2 3 6 1
+  268.28136685      0.00011542193636
+  14.781553782      0.07777983029200
+  8.8041476194     -0.28332389472000
+0 2 3 1 1
+  2.3717277227      0.47896111744000
+  1.1927065422      0.48293819961000
+  0.5835281204      0.16843883728000
+0 2 1 0 1
+  0.3123694000      1.00000000000000
+0 2 1 0 1
+  0.1207702000      1.00000000000000
+0 3 6 10 1
+  94.282575063      0.00043652729696
+  19.716431102      0.63918753088000
+  19.600106824     -0.64663115577000
+  3.5643186737      0.21187579614000
+  1.7017801400      0.42129321741000
+  0.7645661553      0.38418127707000
+0 3 1 0 1
+  0.5776793000      1.00000000000000
+0 3 1 0 1
+  0.2839258000      1.00000000000000
+0 3 1 0 1
+  0.1521716000      1.00000000000000
+
+#%record 250 bytes=1095
+#%  source Sn_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/tin.html#Sn_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 a956106d20e54c4485f3d0bcce7f043b960ff7a1216315cc0e1daf0a8101500a
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 250 = 200 + Z checked; STUTSC kept exactly as printed
+250 12
+STUTSC
+0 0 4 2 1.0
+  1577.0715931       0.000170427677
+  235.26601078       0.000814670573
+  38.206330645      -0.003905790429
+  13.097031765       0.532459223430
+0 0 2 2 1.0
+  11.681492759       1.543528727500
+  5.9647604361       0.764215100410
+0 0 2 0 1.0
+  1.5864660300       0.648270000000
+  0.7151408100       0.325330000000
+0 0 1 0 1.0
+  0.1451275400       1.000000000000
+0 2 3 6 1.0
+  221.55767496       0.000311251780
+  21.084021433       0.031108097016
+  8.7600138521      -0.275715609180
+0 2 3 2 1.0
+  2.5912909722       0.459123286660
+  1.3426801157       0.496828672170
+  0.6773273582       0.189623778210
+0 2 1 0 1.0
+  0.4186376200       1.000000000000
+0 2 1 0 1.0
+  0.1482663100       1.000000000000
+0 3 6 10 1.0
+  108.33210154       0.000465618533
+  23.703936630       0.054063163067
+  22.339843906      -0.058928768877
+  4.0874834028       0.195885008960
+  1.9737354146       0.423017991850
+  0.9015825769       0.392527161760
+0 3 1 0 1.0
+  0.6296582000       1.000000000000
+0 3 1 0 1.0
+  0.3185426800       1.000000000000
+0 3 1 0 1.0
+  0.1611010800       1.000000000000
+
+#%record 251 bytes=1095
+#%  source Sb_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/antimony.html#Sb_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 e2ba7ede1da939b1fd18fa6944744fb9c8685cec57073e021ff26fdbd84fb6ec
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 251 = 200 + Z checked; STUTSC kept exactly as printed
+251 12
+STUTSC
+0 0 4 2 1.0
+  1612.41999330      0.000285403808
+  238.844520970      0.001339377875
+  23.9981188090     -0.049388154574
+  15.1931242130      0.433922272540
+0 0 2 2 1.0
+  11.7364097330      0.921255199650
+  6.52597747940      0.792352802260
+0 0 2 0 1.0
+  1.83896167000      0.662490890000
+  0.78348739000      0.337509120000
+0 0 1 0 1.0
+  0.18345132000      1.000000000000
+0 2 3 6 1.0
+  215.683933540      0.000260518232
+  16.3744790880      0.073728000195
+  9.72162833450     -0.272300281280
+0 2 3 3 1.0
+  2.79826431540      0.464726923740
+  1.47110450330      0.503642420750
+  0.75165385301      0.187066662940
+0 2 1 0 1.0
+  0.37211239000      1.000000000000
+0 2 1 0 1.0
+  0.12000672000      1.000000000000
+0 3 6 10 1.0
+  115.903122530      0.000531409151
+  30.4742337200      0.005941113917
+  18.2284182390     -0.010563706947
+  4.32914566460      0.203481773410
+  2.12948184960      0.427483789280
+  0.99682636692      0.385395608090
+0 3 1 0 1.0
+  0.56589790000      1.000000000000
+0 3 1 0 1.0
+  0.31224235000      1.000000000000
+0 3 1 0 1.0
+  0.12000012000      1.000000000000
+
+#%record 252 bytes=1131
+#%  source Te_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/tellurium.html#Te_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 ef56ba5f17398edf0f9f067e1cc475767e93f6860cc87d13f5d60135f600a7b1
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 252 = 200 + Z checked; STUTSC kept exactly as printed
+252 12
+STUTSC
+0 0 5 2 1.0
+  6213.20016500      0.000173920733
+  920.896400170      0.001193358984
+  199.280427080      0.003625655678
+  24.7742330980     -0.059791033012
+  14.8381991690      0.959432032630
+0 0 2 2 1.0
+  12.2787619540      0.759424299360
+  6.38078455320      0.353316895420
+0 0 2 0 1.0
+  2.22117377000      0.599267000000
+  1.07760434000      0.231420000000
+0 0 1 0 1.0
+  0.18518007000      1.000000000000
+0 2 3 6 1.0
+  204.294008520      0.000406054068
+  18.2087593580      0.060255451613
+  9.92110243020     -0.274916712770
+0 2 3 4 1.0
+  3.14415286850      0.431548499740
+  1.72208840310      0.554030791100
+  0.89098945714      0.240873112270
+0 2 1 0 1.0
+  0.50599144000      1.000000000000
+0 2 1 0 1.0
+  0.15135485000      1.000000000000
+0 3 6 10 1.0
+  121.510552490      0.000634906290
+  32.9687943960      0.006181193632
+  19.2498624510     -0.008892982522
+  4.71984072540      0.201598847640
+  2.34280614160      0.429760490130
+  1.11353794120      0.382471267510
+0 3 1 0 1.0
+  0.91220583000      1.000000000000
+0 3 1 0 1.0
+  0.44722408000      1.000000000000
+0 3 1 0 1.0
+  0.18628260000      1.000000000000
+
+#%record 253 bytes=1139
+#%  source I_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/iodine.html#I_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 89338cfdcd468608ec2132242955bf65c86aab906645b156329666438449f535
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 253 = 200 + Z checked; STUTSC kept exactly as printed
+253 12
+STUTSC
+0 0 5 2 1.0
+  5899.5791533      0.000241882693
+  898.54238765      0.001547404174
+  200.37237912      0.004283668446
+  31.418053840     -0.039417936275
+  15.645987838      0.960866919920
+0 0 2 2 1.0
+  11.815741857      0.759615240910
+  6.4614458287      0.424955018350
+0 0 2 0 1.0
+  2.2210057600      0.701255197000
+  1.0420511800      0.298744803000
+0 0 1 0 1.0
+  0.2321271300      1.000000000000
+0 2 3 6 1.0
+  197.30030547      0.000739512269
+  20.061411349      0.066168450008
+  9.7631460485     -0.285546623480
+0 2 4 5 1.0
+  12.984316904     -0.049096186164
+  3.6199503008      0.389144324820
+  2.0232273090      0.656108172620
+  1.0367490559      0.318035516470
+0 2 1 0 1.0
+  0.3995601300      1.000000000000
+0 2 1 0 1.0
+  0.1221941700      1.000000000000
+0 3 6 10 1.0
+  119.12671745      0.000825960396
+  33.404240134      0.006837767577
+  17.805918203     -0.010308158997
+  4.8990510353      0.226704576580
+  2.4516753106      0.441801139370
+  1.1820693432      0.367754722250
+0 3 1 0 1.0
+  1.0035336200      1.000000000000
+0 3 1 0 1.0
+  0.5277932300      1.000000000000
+0 3 1 0 1.0
+  0.2009869100      1.000000000000
+
+#%record 255 bytes=603
+#%  source Cs_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Komorovsky, S., Flament, J. P., and Erba, A. (2021). Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/caesium.html#Cs_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 883bf8df159425e748b495bd4f75b8380844ac3be04c22454c72765f2fd9248d
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 255 = 200 + Z checked; STUTSC kept exactly as printed
+255 8
+STUTSC
+0 0 3 2 1.0
+  5.877811344300       0.128599949830
+  4.363153828600      -0.346325697250
+  1.804847515500       0.699306370510
+0 0 1 1 1.0
+  0.666409630000       1.000000000000
+0 0 1 0 1.0
+  0.300557260000       1.000000000000
+0 0 1 0 1.0
+  0.150401350000       1.000000000000
+0 2 4 6 1.0
+  4.275185615400       0.045723074174
+  1.965666336000      -0.250199619760
+  0.476891952120       0.556608500660
+  0.215297495880       0.582185534060
+0 2 1 0 1.0
+  0.301612360000       1.000000000000
+0 2 1 0 1.0
+  0.150000770000       1.000000000000
+0 3 1 0 1.0
+  0.159720620000       1.000000000000
+
+#%record 256 bytes=565
+#%  source Ba_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/barium.html#Ba_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 a9206560a620d41a5fec2e1cb49d237ab737ae759cc7a05ed21d02ffddc3b528
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 256 = 200 + Z checked; STUTSC kept exactly as printed
+256 8
+STUTSC
+0 0 2 2 1.0
+  6.000000000000      -0.565871748380
+  4.982208222600       0.975147685350
+0 0 1 2 1.0
+  1.955486070000       1.000000000000
+0 0 1 0 1.0
+  0.402650690000       1.000000000000
+0 0 1 0 1.0
+  0.150342160000       1.000000000000
+0 2 4 6 1.0
+  5.500000000000      -0.445863129980
+  4.901793833600       0.677554798130
+  2.614268506200      -0.460105549540
+  0.479033949830       0.687496080210
+0 2 1 0 1.0
+  0.368107090000       1.000000000000
+0 2 1 0 1.0
+  0.160866000000       1.000000000000
+0 3 1 0 1.0
+  0.261872980000       1.000000000000
+
+#%record 272 bytes=849
+#%  source Hf_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/hafnium.html#Hf_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 f6f129a1536c79a3cf0e1f5af8ca0a1ae433c2fe0ffc5f45671391d8cb1eee41
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 272 = 200 + Z checked; STUTSC kept exactly as printed
+272 11
+STUTSC
+0 0 4 2 1.0
+  24.0000000000       0.193694486440
+  16.0000000000      -3.506463078200
+  14.4000000000       4.308258100000
+  10.3045046670      -0.910458097420
+0 0 1 2 1.0
+  3.44828252000       1.000000000000
+0 0 1 0 1.0
+  0.96247078000       1.000000000000
+0 0 1 0 1.0
+  0.39628742000       1.000000000000
+0 2 4 6 1.0
+  17.0000000000      -0.030316491880
+  11.7380720970       0.101392796860
+  4.92039671610      -0.282279246570
+  1.12517261380       0.520320085010
+0 2 1 0 1.0
+  0.61894120000       1.000000000000
+0 2 1 0 1.0
+  0.38553583000       1.000000000000
+0 3 3 2 1.0
+  3.98206232290      -0.042446023944
+  1.30779877720       0.184092325640
+  0.53272310298       0.414844235160
+0 3 1 0 1.0
+  1.13258482000       1.000000000000
+0 3 1 0 1.0
+  0.18168857000       1.000000000000
+0 4 1 0 1.0
+  0.31547000000       1.000000000000
+
+#%record 273 bytes=849
+#%  source Ta_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/tantalum.html#Ta_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 1da2b0ea57f5270caae59abd494eed98abd851aea434d94db30858be19000694
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 273 = 200 + Z checked; STUTSC kept exactly as printed
+273 11
+STUTSC
+0 0 4 2 1.0
+  24.4736509440       0.205903224880
+  18.7213725490      -0.746707955140
+  11.5000000000       3.407136389700
+  10.3500000000      -2.817548760900
+0 0 1 2 1.0
+  3.54142726000       1.000000000000
+0 0 1 0 1.0
+  1.04824462000       1.000000000000
+0 0 1 0 1.0
+  0.42845553000       1.000000000000
+0 2 4 6 1.0
+  17.0000000000      -0.032577305616
+  12.0081865360       0.103362873650
+  5.02787605830      -0.285265216960
+  1.19371241840       0.517901411550
+0 2 1 0 1.0
+  0.61019100000       1.000000000000
+0 2 1 0 1.0
+  0.25240065000       1.000000000000
+0 3 3 3 1.0
+  3.97387962780      -0.052799310714
+  1.45288848130       0.185583194710
+  0.61042908544       0.429590716310
+0 3 1 0 1.0
+  0.30647046000       1.000000000000
+0 3 1 0 1.0
+  0.15529436000       1.000000000000
+0 4 1 0 1.0
+  0.57386000000       1.000000000000
+
+#%record 274 bytes=849
+#%  source W_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/tungsten.html#W_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 6c1e2b76aa1675ee7584603332860c9ccc00e76352cc109413cccfb839140bd2
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 274 = 200 + Z checked; STUTSC kept exactly as printed
+274 11
+STUTSC
+0 0 3 2 1.0
+  30.0000000000       0.322464834100
+  27.0000000000      -0.466922572140
+  13.0780456840       0.426995637760
+0 0 1 2 1.0
+  4.56489858000       1.000000000000
+0 0 1 0 1.0
+  0.92909758000       1.000000000000
+0 0 1 0 1.0
+  0.25943180000       1.000000000000
+0 2 4 6 1.0
+  17.0000000000      -0.037817768433
+  12.4319734320       0.109056738450
+  5.15862176580      -0.293999550200
+  1.28014548120       0.515607266970
+0 2 1 0 1.0
+  0.69177050000       1.000000000000
+0 2 1 0 1.0
+  0.35872359000       1.000000000000
+0 3 4 4 1.0
+  7.40647373150       0.086993963018
+  5.90262686030      -0.176675400110
+  1.29847567500       0.551456970300
+  0.57153508541       0.953135965350
+0 3 1 0 1.0
+  0.39060699000       1.000000000000
+0 3 1 0 1.0
+  0.22840914000       1.000000000000
+0 4 1 0 1.0
+  0.43199000000       1.000000000000
+
+#%record 275 bytes=849
+#%  source Re_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/rhenium.html#Re_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 bb8de730e370f6ed1f23f99e13d5e2dbbf8249744b0c9ae4a5c5689378feb3c6
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 275 = 200 + Z checked; STUTSC kept exactly as printed
+275 11
+STUTSC
+0 0 3 2 1.0
+  30.0000000000       0.317807178110
+  27.0000000000      -0.464923213320
+  13.0780456840       0.457236413050
+0 0 1 2 1.0
+  5.03527130000       1.000000000000
+0 0 1 0 1.0
+  0.84827060000       1.000000000000
+0 0 1 0 1.0
+  0.13708770000       1.000000000000
+0 2 4 6 1.0
+  18.0000000000      -0.026890962397
+  12.3186062500       0.099711498502
+  5.37192345050      -0.292893981450
+  1.35066467480       0.514663014340
+0 2 1 0 1.0
+  0.70111920000       1.000000000000
+0 2 1 0 1.0
+  0.29071390000       1.000000000000
+0 3 4 5 1.0
+  7.73528776720       0.083901798556
+  6.09494436100      -0.177222587340
+  1.38711054970       0.552382596920
+  0.62324027854       0.919801112390
+0 3 1 0 1.0
+  0.38849660000       1.000000000000
+0 3 1 0 1.0
+  0.20321100000       1.000000000000
+0 4 1 0 1.0
+  0.52989000000       1.000000000000
+
+#%record 276 bytes=849
+#%  source Os_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/osmium.html#Os_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 5b0b5acc3043c13b1d8bfb7edbc7d70b2c947d4cdf5d4d547a3b3ef75e739d76
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 276 = 200 + Z checked; STUTSC kept exactly as printed
+276 11
+STUTSC
+0 0 3 2 1.0
+  30.0000000000       0.322130048040
+  27.0000000000      -0.479229181370
+  13.5247300050       0.474659468370
+0 0 1 2 1.0
+  5.07180090000       1.000000000000
+0 0 1 0 1.0
+  1.01689660000       1.000000000000
+0 0 1 0 1.0
+  0.15681750000       1.000000000000
+0 2 4 6 1.0
+  15.5000000000       0.160164633760
+  14.0000000000      -0.232015204020
+  5.54582904200       0.297725872740
+  1.41395022150      -0.542532381760
+0 2 1 0 1.0
+  1.02881280000       1.000000000000
+0 2 1 0 1.0
+  0.39942220000       1.000000000000
+0 3 4 6 1.0
+  8.29450594870       0.069648222110
+  6.30603974300      -0.164442296300
+  1.48901091100       0.551545410330
+  0.67315390607       0.884613702910
+0 3 1 0 1.0
+  0.41898000000       1.000000000000
+0 3 1 0 1.0
+  0.20060820000       1.000000000000
+0 4 1 0 1.0
+  0.55065000000       1.000000000000
+
+#%record 277 bytes=849
+#%  source Ir_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/iridium.html#Ir_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 fc761f376085f2c0f0fc894fcf6aaa8a3147be8c779e1bc111cdc2c11efe7f24
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 277 = 200 + Z checked; STUTSC kept exactly as printed
+277 11
+STUTSC
+0 0 3 2 1.0
+  30.0000000000       0.307979032280
+  27.0000000000      -0.467263617810
+  13.9619739110       0.471610031460
+0 0 1 2 1.0
+  5.47856190000       1.000000000000
+0 0 1 0 1.0
+  1.03410270000       1.000000000000
+0 0 1 0 1.0
+  0.15511300000       1.000000000000
+0 2 4 6 1.0
+  15.9026641430      -0.162907200990
+  14.4158306980       0.234832129870
+  5.75976089910      -0.303053371760
+  1.50089131080       0.555129820690
+0 2 1 0 1.0
+  0.79499330000       1.000000000000
+0 2 1 0 1.0
+  0.34430910000       1.000000000000
+0 3 4 7 1.0
+  8.63216925040       0.075000099949
+  6.58981923020      -0.173269651730
+  1.58083796630       0.550651969130
+  0.71827834905       0.852736414360
+0 3 1 0 1.0
+  0.39656820000       1.000000000000
+0 3 1 0 1.0
+  0.20217030000       1.000000000000
+0 4 1 0 1.0
+  0.61008000000       1.000000000000
+
+#%record 278 bytes=850
+#%  source Pt_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/platinum.html#Pt_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 0dd6b6f65a374c0cea49761994edadb4ecf1d73dbdde9cea6f03b6f369d562e7
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 278 = 200 + Z checked; STUTSC kept exactly as printed
+278 11 
+STUTSC
+0 0 3 2 1.0
+  30.0000000000       0.271482639000
+  27.0000000000      -0.422267587740
+  14.4083185640       0.443615819950
+0 0 1 2 1.0
+  5.76260815000       1.000000000000
+0 0 1 0 1.0
+  1.06835871000       1.000000000000
+0 0 1 0 1.0
+  0.15368971000       1.000000000000
+0 2 4 6 1.0
+  15.5000000000      -0.156727186290
+  14.0000000000       0.238534129890
+  6.11612123390      -0.310413797330
+  1.57155863850       0.564735250890
+0 2 1 0 1.0
+  0.77232013000       1.000000000000
+0 2 1 0 1.0
+  0.25285881000       1.000000000000
+0 3 4 8 1.0
+  8.32079376110       0.062945798646
+  7.42072265200      -0.090271847072
+  1.65704106390       0.168125264160
+  0.73943569960       0.250454169700
+0 3 1 0 1.0
+  1.12524984000       1.000000000000
+0 3 1 0 1.0
+  0.27562365000       1.000000000000
+0 4 1 0 1.0
+  0.56813000000       1.000000000000
+
+#%record 279 bytes=849
+#%  source Au_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/gold.html#Au_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 9693261d2a68d1fea815f59e15803edca23ee534508e2988632ef65344ff7129
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 279 = 200 + Z checked; STUTSC kept exactly as printed
+279 11
+STUTSC
+0 0 3 2 1.0
+  30.0000000000       0.207492311080
+  27.0000000000      -0.332678933940
+  14.7468243310       0.383028179580
+0 0 1 2 1.0
+  6.10568239000       1.000000000000
+0 0 1 0 1.0
+  1.13068946000       1.000000000000
+0 0 1 0 1.0
+  0.18001283000       1.000000000000
+0 2 4 6 1.0
+  15.5000000000       0.150017118800
+  14.0000000000      -0.236098131830
+  6.42273682050       0.314588969480
+  1.65956016810      -0.572796704460
+0 2 1 0 1.0
+  0.87155106000       1.000000000000
+0 2 1 0 1.0
+  0.20887895000       1.000000000000
+0 3 4 9 1.0
+  9.55240986560       0.040145559502
+  7.26988869370      -0.093690906606
+  1.77464967890       0.317462823170
+  0.79960541055       0.467951924830
+0 3 1 0 1.0
+  0.55708019000       1.000000000000
+0 3 1 0 1.0
+  0.28104926000       1.000000000000
+0 4 1 0 1.0
+  0.72482000000       1.000000000000
+
+#%record 280 bytes=850
+#%  source Hg_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/mercury.html#Hg_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 d2db2689d415de9ff4624610c4fa74a9dd8b390c43e9c9f8c16d64ae6ea9e006
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 280 = 200 + Z checked; STUTSC kept exactly as printed
+280 11
+STUTSC
+0 0 3 2 1.0
+  48.0137869900       0.005800816491
+  21.2398750950      -0.173281652350
+  15.8761008790       0.364166850340
+0 0 1 2 1.0
+  5.75903016000       1.000000000000
+0 0 1 0 1.0
+  1.09413075000       1.000000000000
+0 0 1 0 1.0
+  0.15391724000       1.000000000000
+0 2 4 6 1.0
+  17.5000000000      -0.086457187331
+  15.2525948550       0.153273182340
+  6.44047151690      -0.302749552490
+  1.81801599200       0.543612850260
+0 2 1 0 1.0
+  0.76252216000       1.000000000000
+0 2 1 0 1.0
+  0.23979495000       1.000000000000
+0 3 4 10 1.0
+  10.0281977010       0.039922353165
+  7.59206614930      -0.094774230522
+  1.91442561180       0.311641574630
+  0.88641552102       0.455670784060
+0 3 1 0 1.0
+  0.65496994000       1.000000000000
+0 3 1 0 1.0
+  0.25845433000       1.000000000000
+0 4 1 0 1.0
+  0.69569000000       1.000000000000
+
+#%record 281 bytes=1121
+#%  source Tl_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/thallium.html#Tl_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 9027b73d2786e73afa446c70f3b99dff50f55e6b3aef2b9ff646a524dd8e58c4
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 281 = 200 + Z checked; STUTSC kept exactly as printed
+281 12
+STUTSC
+0 0 4 2 1.0
+  729.650381450       0.000136728298
+  46.6655487070       0.006044343995
+  20.9704487260      -0.200220666970
+  14.1495886770       0.408016784880
+0 0 2 2 1.0
+  20.7301342850      -0.071861135918
+  6.15276313090       0.980575084450
+0 0 2 0 1.0
+  1.52213990000       0.757226530531
+  0.60808142000       0.242773469468
+0 0 1 0 1.0
+  0.19536816000       1.000000000000
+0 2 3 6 1.0
+  15.3838526160       0.617179491800
+  14.8149295440      -0.728592351510
+  6.72612536580       0.404381953640
+0 2 3 1 1.0
+  1.96261821490       0.431576611600
+  1.03318578510       0.392304038530
+  0.53837445996       0.140074068200
+0 2 1 0 1.0
+  0.51586349000       1.000000000000
+0 2 1 0 1.0
+  0.15756134000       1.000000000000
+0 3 6 10 1.0
+  57.6068199280       0.000160548111
+  9.73688666670       0.024456562496
+  6.92562016790      -0.069914775031
+  2.13962307310       0.194962694900
+  1.08361871100       0.297316297050
+  0.52356298209       0.237287081020
+0 3 1 0 1.0
+  0.99500000000       1.000000000000
+0 3 1 0 1.0
+  0.30021654000       1.000000000000
+0 3 1 0 1.0
+  0.15000166000       1.000000000000
+
+#%record 282 bytes=1121
+#%  source Pb_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/lead.html#Pb_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 3231d8871a90e8e6acf264929a85c175afd6d706453803495cb010068106f665
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 282 = 200 + Z checked; STUTSC kept exactly as printed
+282 12
+STUTSC
+0 0 4 2 1.0
+  591.611243700       0.000221265211
+  46.7572325590       0.005696195913
+  20.7464626960      -0.213740638310
+  14.6107964190       0.405026206160
+0 0 2 2 1.0
+  20.2226376120      -0.083541883299
+  6.47673248650       0.979108923880
+0 0 2 0 1.0
+  1.79457548000       0.585086349000
+  0.96331994000       0.414913651000
+0 0 1 0 1.0
+  0.18390382000       1.000000000000
+0 2 3 6 1.0
+  15.1891021180       0.619523035830
+  14.6931444150      -0.724984970860
+  6.87058900480       0.376800079840
+0 2 3 2 1.0
+  2.20214261230       0.401962848060
+  1.22091251190       0.460581318620
+  0.63367559815       0.193676553970
+0 2 1 0 1.0
+  0.37699185000       1.000000000000
+0 2 1 0 1.0
+  0.15000232000       1.000000000000
+0 3 6 10 1.0
+  61.3153696280       0.000338708008
+  12.3721958400       0.013788683942
+  6.92549449830      -0.075979608103
+  2.33195399390       0.281137842980
+  1.21087300030       0.444745122690
+  0.60090478506       0.353268743510
+0 3 1 0 1.0
+  1.46521682000       1.000000000000
+0 3 1 0 1.0
+  0.27112992000       1.000000000000
+0 3 1 0 1.0
+  0.15026464000       1.000000000000
+
+#%record 283 bytes=1121
+#%  source Bi_pob_TZVP_rev2_SOC
+#%  reference J. Laun, T. Bredow J. Comput. Chem. (2022), 43:839-846 "BSSE-corrected consistent Gaussian basis sets of triple-zeta valence with polarization quality of the fifth period for solid-state calculation", DOI: 10.1002/jcc.26839 Desmarais, J. K., Flament, J. P., Erba, A. (2020). Spin-orbit coupling in periodic systems with broken time-reversal symmetry: Formal and computational aspects. Physical Review B, 101(23), 235142. Note: To be used with CRYSTAL23
+#%  doi 10.1002/jcc.26839
+#%  url https://www.crystal.unito.it/Basis_Sets/bismuth.html#Bi_pob_TZVP_rev2_SOC
+#%  site CRYSTAL basis set library (crystal.unito.it)
+#%  retrieved 2026-10-01
+#%  page_sha256 2d6fd2c747ad82b5411826f0ae4cb4d6b0b609a69eae849f1df5b4a0ad7d8b25
+#%  core STUTSC (internal ECP library)
+#%  provenance fetched from crystal.unito.it and cut by the CRYSTAL23 basis grammar; label 283 = 200 + Z checked; STUTSC kept exactly as printed
+283 12
+STUTSC
+0 0 4 2 1.0
+  716.414353100       0.000312543071
+  83.8060590470       0.001762476895
+  21.1169628530      -0.219109834370
+  15.4914481870       0.404112249310
+0 0 2 2 1.0
+  23.2398550290      -0.068255758685
+  6.64742550000       0.978880464710
+0 0 2 0 1.0
+  1.96177440000       0.653863290000
+  0.97252866000       0.346136700000
+0 0 1 0 1.0
+  0.20618896000       1.000000000000
+0 2 3 6 1.0
+  15.2496446690       0.745603560000
+  14.8461760530      -0.855786373380
+  7.06368267840       0.401491595920
+0 2 3 3 1.0
+  2.58812556160       0.355427296330
+  1.50202084990       0.639769918900
+  0.76732724388       0.323327738390
+0 2 1 0 1.0
+  0.42288904000       1.000000000000
+0 2 1 0 1.0
+  0.17062087000       1.000000000000
+0 3 6 10 1.0
+  66.4044819480       0.000381028783
+  13.8584269610       0.010746152442
+  7.06545190000      -0.071947646845
+  2.52521440350       0.261959749890
+  1.34195850000       0.425947500000
+  0.68340941000       0.336803256270
+0 3 1 0 1.0
+  0.90438000000       1.000000000000
+0 3 1 0 1.0
+  0.41457000000       1.000000000000
+0 3 1 0 1.0
+  0.15146817000       1.000000000000
+

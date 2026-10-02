@@ -51,7 +51,11 @@ FAMILIES = (
 
 # Data-only families: loadable by name, never mapped from a basis path, so
 # they cannot be picked up as an ordinary external basis of a deck.
-DATA_ONLY_FAMILIES = ()
+# pob-tzvp-rev2-soc: X_pob_TZVP_rev2_SOC, valence bases re-fitted for CRYSTAL's
+# internal STUTSC library (fully relativistic, manual p.84) - for two-component
+# SOC decks only (manual pp.169-175); read with soc_basis_record().
+SOC_FAMILY = "pob-tzvp-rev2-soc"
+DATA_ONLY_FAMILIES = (SOC_FAMILY,)
 
 
 class LibraryFormatError(ValueError):
@@ -308,6 +312,19 @@ def iter_records(family):
     lib = load_family(family)
     for key in lib.keys():
         yield key, lib.record_bytes(key)
+
+
+def soc_basis_elements():
+    """Atomic numbers with an X_pob_TZVP_rev2_SOC record."""
+    return sorted(int(k) - 200 for k in load_family(SOC_FAMILY).keys())
+
+
+def soc_basis_record(z):
+    """The X_pob_TZVP_rev2_SOC record of element z (label 200 + Z, STUTSC
+    ECP), exactly as crystal.unito.it prints it. For two-component SOC decks
+    only: STUTSC is the fully relativistic Stuttgart-Cologne library. Raises
+    MissingRecord (with the reason) or KeyError for an element without one."""
+    return load_family(SOC_FAMILY).record(str(200 + int(z)))
 
 
 def shell_count(family, key):

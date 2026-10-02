@@ -276,6 +276,21 @@ REV2022_DESCRIPTION = [
     "full.basis.triplezeta, which shows in the Mulliken NO. OF ELECTRONS.",
 ]
 
+SOC = "pob-tzvp-rev2-soc"
+SOC_ELEMENTS = list(range(37, 43)) + list(range(44, 54)) + [55, 56] + list(range(72, 84))
+SOC_DESCRIPTION = [
+    "X_pob_TZVP_rev2_SOC records from crystal.unito.it, for two-component SCF with",
+    "spin-orbit coupling (CRYSTAL23 manual pp.169-175): the pob-TZVP-rev2 valence shells",
+    "(numerically identical to the X_POB_TZVP_rev2 / X_pob_TZVP_rev2 records, checked)",
+    "on CRYSTAL's internal STUTSC library, the Stuttgart-Cologne small-core fully",
+    "relativistic ECP (manual p.84), in place of the scalar INPUT ECP. Rb-Mo, Ru-I, Cs,",
+    "Ba and Hf-Bi. Data only: never offered as an ordinary external basis; read with",
+    "basis_library.soc_basis_record(z). Not bundled: the site's special X_*_SOC sets",
+    "(e.g. Bi_4s3p3d_SOC, Cs_5s5p2d_SOC) and Po_pob_TZVP_rev2_SOC (no Po in",
+    "full.basis.triplezeta).",
+]
+
+
 def fetched_meta(found, extra_note):
     import fetch_unito
 
@@ -347,7 +362,23 @@ def build_rev2022(cache):
         (records, provenance, missing)
 
 
-FETCHED_FAMILIES = (REV2022,)
+def build_soc(cache):
+    import fetch_unito
+
+    good, missing = fetch_sets(
+        SOC_ELEMENTS, lambda z: f"{fetch_unito.symbol(z)}_pob_TZVP_rev2_SOC", cache)
+    records, provenance = {}, {}
+    for z, found in good.items():
+        if found["record"].split("\n")[1].strip().upper() != "STUTSC":
+            missing[str(z)] = f"{found['anchor']}: ECP is not STUTSC"
+            continue
+        records[str(200 + z)] = found["record"].encode("ascii")
+        provenance[str(200 + z)] = fetched_meta(found, "STUTSC kept exactly as printed")
+    return render(SOC, SOC_DESCRIPTION, records, provenance, missing), \
+        (records, provenance, missing)
+
+
+FETCHED_FAMILIES = (REV2022, SOC)
 
 
 def verify_against_triplezeta(cache):
@@ -389,7 +420,7 @@ def main(argv=None):
         print("\n".join(verify_against_triplezeta(args.verify)))
         return 0
     if args.fetch:
-        for name, build in ((REV2022, build_rev2022),):
+        for name, build in ((REV2022, build_rev2022), (SOC, build_soc)):
             data, (records, _prov, missing) = build(args.fetch)
             with open(basis_library.library_file(name), "wb") as fh:
                 fh.write(data)
