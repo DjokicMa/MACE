@@ -559,6 +559,12 @@ class WorkflowEngine:
             # Read template content
             with open(template_script, 'r') as f:
                 template_content = f.read()
+            # A workflow planned before 1.1.3 keeps its copied scripts; say so
+            # rather than silently running without the scratch guard.
+            from mace.submission.job_script_age import (
+                predates_scratch_guard, workflow_template_warning)
+            if predates_scratch_guard(template_content):
+                print(workflow_template_warning(template_script.name))
         else:
             # Bare manual directory: no workflow_scripts/ and no local template
             # copy. Emit a script with the same generator `mace submit` uses,

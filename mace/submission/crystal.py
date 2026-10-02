@@ -244,12 +244,28 @@ def check_existing_sh_file(data_folder, submit_name):
     """Check if corresponding .sh file already exists"""
     return Path(data_folder) / f"{submit_name}.sh"
 
+def _warn_if_pre_guard(script_path):
+    """Say so when the reused script was written by a MACE older than 1.1.3
+    (no scratch guard, no GUESSP staging); it is left as it is."""
+    try:
+        from mace.submission.job_script_age import predates_scratch_guard, reused_script_warning
+    except ImportError:  # run as a script from mace/submission/
+        from job_script_age import predates_scratch_guard, reused_script_warning
+    try:
+        text = Path(script_path).read_text(errors='ignore')
+    except OSError:
+        return
+    if predates_scratch_guard(text):
+        print(reused_script_warning(Path(script_path).name))
+
+
 def generate_or_use_script(script_to_use, submit_name, data_folder, overwrite_sh):
     """Generate .sh file or use existing one based on flags"""
     existing_sh = check_existing_sh_file(data_folder, submit_name)
 
     if existing_sh.exists() and not overwrite_sh:
         print(f"  Using existing script: {existing_sh.name}")
+        _warn_if_pre_guard(existing_sh)
         return existing_sh, False  # (script_path, was_generated)
     else:
         if existing_sh.exists() and overwrite_sh:
