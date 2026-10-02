@@ -311,3 +311,124 @@ def shell_count(family, key):
     one charge per shell, so this is what a carried CHEMOD must match."""
     first = load_family(family).record(key).split("\n", 1)[0].split()
     return int(first[1])
+
+
+# --- CRYSTAL23 basis-set grammar -------------------------------------------
+#
+# CRYSTAL23 user's manual, "2.2.1 Standard route" (p.25) and "Effective core
+# pseudo-potentials - ECP" (p.84):
+#
+#     NAT NSHL
+#     [if NAT > 200: the ECP]
+#         PSN keyword: HAYWLC HAYWSC BARTHE DURAND COLUSC COLULC COLUSH STUTSC
+#                      STUTLC STUTSH (internal libraries, no further records), or
+#         INPUT:  ZNUC M M0 M1 M2 M3 M4, then M+M0+M1+M2+M3+M4 records
+#                 "ALFKL CGKL NKL"
+#         INPSOC: PSONAME, SOSCALE, then ZNUC M M0..M4 and M+M0+..+M4 records
+#                 "ALFKL CGKL CSOGKL NKL"
+#     NSHL shells: "ITYB LAT NG CHE SCAL", then - only when ITYB = 0 - NG records
+#                  "EXP COE1" (plus COE2 when LAT = 1, an SP shell).
+
+ECP_KEYWORDS = {"HAYWLC", "HAYWSC", "BARTHE", "DURAND", "COLUSC", "COLULC", "COLUSH",
+                "STUTSC", "STUTLC", "STUTSH"}
+
+
+class GrammarError(ValueError):
+    """Text does not start with a basis record CRYSTAL can read."""
+
+
+def _numbers(line, count, what):
+    parts = line.split()
+    if len(parts) != count:
+        raise GrammarError(f"{what}: expected {count} numbers, got {line!r}")
+    try:
+        return [float(p.replace("D", "E").replace("d", "e")) for p in parts]
+    except ValueError:
+        raise GrammarError(f"{what}: not numeric: {line!r}") from None
+
+
+def cut_record(text):
+    """Split text that starts with a basis record into (record, trailing text).
+
+    The record is the exact lines CRYSTAL reads, each newline-terminated; the
+    trailing text (authors, journal, DOI, notes) is returned stripped."""
+    lines = text.split("\n")
+    i = 0
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    if i == len(lines):
+        raise GrammarError("empty block")
+    start = i
+
+    def take():
+        nonlocal i
+        if i >= len(lines):
+            raise GrammarError("record ends early")
+        line = lines[i]
+        i += 1
+        return line
+
+    head = take().split()
+    if len(head) != 2 or not all(t.isdigit() for t in head):
+        raise GrammarError(f"first line is not 'NAT NSHL': {lines[start]!r}")
+    nat, nshl = int(head[0]), int(head[1])
+    if nat > 200:
+        psn = take().strip()
+        key = psn.upper()
+        if key in ECP_KEYWORDS:
+            pass
+        elif key in ("INPUT", "INPSOC"):
+            if key == "INPSOC":
+                take()                               # PSONAME
+                _numbers(take(), 1, "SOSCALE")
+            counts = _numbers(take(), 7, "ZNUC M M0 M1 M2 M3 M4")
+            per_line = 4 if key == "INPSOC" else 3
+            for _ in range(int(sum(counts[1:]))):
+                _numbers(take(), per_line, "ECP term")
+        else:
+            raise GrammarError(f"unknown pseudo-potential keyword {psn!r}")
+    for _ in range(nshl):
+        shell = _numbers(take(), 5, "ITYB LAT NG CHE SCAL")
+        ityb, lat, ng = int(shell[0]), int(shell[1]), int(shell[2])
+        if ityb == 0:
+            for _ in range(ng):
+                _numbers(take(), 3 if lat == 1 else 2, "primitive")
+    record = "".join(line.rstrip("\n") + "\n" for line in lines[start:i])
+    trailing = "\n".join(lines[i:]).strip()
+    return record, trailing
+
+
+def describe_record(record):
+    """(label, nshl, core) of a cut record: core is 'ZNUC=<x> (INPUT ECP)',
+    the keyword library name, or 'all-electron'."""
+    lines = record.split("\n")
+    nat, nshl = (int(t) for t in lines[0].split())
+    if nat <= 200:
+        return nat, nshl, "all-electron"
+    psn = lines[1].strip().upper()
+    if psn == "INPUT":
+        return nat, nshl, f"ZNUC={lines[2].split()[0]} (INPUT ECP)"
+    if psn == "INPSOC":
+        return nat, nshl, f"ZNUC={lines[4].split()[0]} (INPSOC ECP)"
+    return nat, nshl, f"{psn} (internal ECP library)"
+
+
+def numeric_tokens(record):
+    """The record as a list of per-line token lists, numbers as floats, so two
+    records compare equal at printed precision whatever their spacing."""
+    out = []
+    for line in record.split("\n"):
+        if not line.strip():
+            continue
+        row = []
+        for tok in line.split():
+            try:
+                row.append(float(tok.replace("D", "E").replace("d", "e")))
+            except ValueError:
+                row.append(tok.upper())
+        out.append(row)
+    return out
+
+
+def same_numbers(a, b):
+    return numeric_tokens(a) == numeric_tokens(b)

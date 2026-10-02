@@ -1012,8 +1012,8 @@
   "cif2d12/Z092_U_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "c0668be344deef22abc9d2319d4273e215bb0e10f2bed2a2b0746ddea08d8a10",
   "cif2d12/Z093_Np_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "21dcedfc17d705c0f2c1d34a53ea86b5c88e6db3a2bab8e556bb70945f8cb31f",
   "cif2d12/Z093_Np_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "b807e8f6b5c6f7a447432afd7a08773b6377d568dcf1ec9a4f7006e52cf66257",
-  "cif2d12/Z094_Pu_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "0d59d69474d07f1bb8bb5d7277630c8fbeea5b6a4ca800f6ed3c0f90702b3b62",
-  "cif2d12/Z094_Pu_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "3cbd3c05786a186227e0b276ef9c41cc8fe15342a256e59da5d8b1509126f11d",
+  "cif2d12/Z094_Pu_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "865f53a7cac982e38f7ad090da40bed02ac5d49252c7f617ac6a2cef07719875",
+  "cif2d12/Z094_Pu_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "93d403da958e78dfe790512a20d1c432483d8db01f4cf5f69a25828ec9dc8a7c",
   "cif2d12/Z095_Am_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "13e8305d91c384293482737fc79b946cc2fe5b65db9373f2944a955eb46056bd",
   "cif2d12/Z095_Am_CRYSTAL_SP_P1_PBE_full.basis.triplezeta.d12": "66799a1ce8463ca88af7e8b4e7a9e233a7bfec2dcb6e5b9e775fba502ae6a217",
   "cif2d12/Z096_Cm_CRYSTAL_SP_P1_PBE_full.basis.doublezeta.d12": "4c2fc34a009e44383a4423247335b15aa855ff0ceb56ce575fd13d084dd6e85d",
@@ -1101,7 +1101,7 @@
    "291": "0816573646fc820b9c8c52b16af532d715b78853b88a052f686c7b9668ba0afb",
    "292": "1b78d107314adf2cf959a86ecee6215151d8ae230b3b08307b9feae40d09d96c",
    "293": "54cbd4d7d3b055363b779bd5524fed68a88ecee9acbb2c6c4d9c7999ed134104",
-   "294": "ca7af15f133d2dbd63f314d6ab079d116ac080fa90bcab7bfa7d65a347d94d87",
+   "294": "b889dc1b9ad9c9d195a8c5ee8cd7a0233a57469134a07e2a17a4b4a41cdc1e04",
    "295": "bdf1c98ef8a00996c818a92a006d0c55bdb90aa77b981345180339cc8e5934b4",
    "296": "b3faf53d7ac2e68269df7f92b270954a999c55fc8ae21fcde3de2e581f2ae955",
    "297": "0bf4a6118c19a74497c20477a6b78a8c54863ad83f231d44b2aa3a077617327f",
@@ -1192,7 +1192,7 @@
    "291": "0816573646fc820b9c8c52b16af532d715b78853b88a052f686c7b9668ba0afb",
    "292": "1b78d107314adf2cf959a86ecee6215151d8ae230b3b08307b9feae40d09d96c",
    "293": "54cbd4d7d3b055363b779bd5524fed68a88ecee9acbb2c6c4d9c7999ed134104",
-   "294": "ca7af15f133d2dbd63f314d6ab079d116ac080fa90bcab7bfa7d65a347d94d87",
+   "294": "b889dc1b9ad9c9d195a8c5ee8cd7a0233a57469134a07e2a17a4b4a41cdc1e04",
    "295": "bdf1c98ef8a00996c818a92a006d0c55bdb90aa77b981345180339cc8e5934b4",
    "296": "b3faf53d7ac2e68269df7f92b270954a999c55fc8ae21fcde3de2e581f2ae955",
    "297": "0bf4a6118c19a74497c20477a6b78a8c54863ad83f231d44b2aa3a077617327f",
@@ -2268,7 +2268,7 @@
   },
   "full.basis.doublezeta/94/EXTERNAL": {
    "empty": false,
-   "sha256": "ca7af15f133d2dbd63f314d6ab079d116ac080fa90bcab7bfa7d65a347d94d87",
+   "sha256": "b889dc1b9ad9c9d195a8c5ee8cd7a0233a57469134a07e2a17a4b4a41cdc1e04",
    "warning": ""
   },
   "full.basis.doublezeta/94/INTERNAL": {
@@ -3258,7 +3258,7 @@
   },
   "full.basis.triplezeta/94/EXTERNAL": {
    "empty": false,
-   "sha256": "ca7af15f133d2dbd63f314d6ab079d116ac080fa90bcab7bfa7d65a347d94d87",
+   "sha256": "b889dc1b9ad9c9d195a8c5ee8cd7a0233a57469134a07e2a17a4b4a41cdc1e04",
    "warning": ""
   },
   "full.basis.triplezeta/94/INTERNAL": {

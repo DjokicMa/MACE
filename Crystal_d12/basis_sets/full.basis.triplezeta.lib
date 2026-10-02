@@ -4172,12 +4172,12 @@ INPUT
 0 4 1 0.0 1.0
  0.212366626926 1.00000000000000
 
-#%record 294 bytes=1325
+#%record 294 bytes=1324
 #%  source Pu_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
 #%  reference Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. (2018) (as printed on the site, no DOI given)
 #%  url https://www.crystal.unito.it/Basis_Sets/plutonium.html#Pu_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017
-#%  provenance FACTS.md audit: ERD 2017. Exponents and coefficients equal Pu_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's; the first line says 11 shells but the record has 9 (the site's record says 9)
-294 11
+#%  provenance FACTS.md audit: ERD 2017. Exponents and coefficients equal Pu_ERD_SMALL_CORE_PP_4F_IN_VALENCE_NO_G_2017 on crystal.unito.it; the f shell's formal charge (CHE) is 3 lower than the site's; the first line said 11 shells for the 9 the record has (corrected to 9, as the site prints it)
+294 9
 INPUT
 34. 0 1 1 1 1 1
 18.55968916 662.75624198 0

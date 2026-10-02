@@ -130,8 +130,8 @@ def triplezeta_provenance(key):
                 f"{anchor} on crystal.unito.it; the f shell's formal charge (CHE) is "
                 "3 lower than the site's")
         if z == 94:
-            note += ("; the first line says 11 shells but the record has 9 "
-                     "(the site's record says 9)")
+            note += ("; the first line said 11 shells for the 9 the record has "
+                     "(corrected to 9, as the site prints it)")
         return [("source", anchor), ("reference", REF_ERD), ("url", url(z, anchor)),
                 ("provenance", note)]
     raise KeyError(f"no provenance rule for full.basis.triplezeta record {key}")

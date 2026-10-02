@@ -73,6 +73,21 @@ def test_library_files_and_provenance_table_are_what_the_builder_makes():
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+@pytest.mark.parametrize("family", ["full.basis.triplezeta", "full.basis.doublezeta"])
+def test_every_external_record_follows_the_basis_grammar(family):
+    """Each record is exactly one basis record by the CRYSTAL23 grammar
+    (manual pp.25, 84): NSHL shells, each with NG primitives when ITYB = 0,
+    after the ECP when NAT > 200 - nothing missing, nothing left over."""
+    lib = BL.load_family(family)
+    for key in lib.keys():
+        text = lib.record(key)
+        try:
+            record, trailing = BL.cut_record(text)
+        except BL.GrammarError as exc:
+            pytest.fail(f"{family} record {key}: {exc}")
+        assert (record, trailing) == (text, ""), key
+
+
 def test_shell_count_reads_nshl():
     assert BL.shell_count("full.basis.triplezeta", "282") == 12
     assert BL.shell_count("full.basis.triplezeta", "1") == 4
