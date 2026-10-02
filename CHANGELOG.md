@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-10-02
+
+Everything since 1.1.3. **Band and phonon-dispersion paths made with the SeeK-path
+library were written in SeeK-path's cell, not CRYSTAL's, since 1.0.0:**
+C-centred (oC) and A-centred (oA) orthorhombic paths went through wrong
+k-points, and triclinic, some monoclinic and non-standard orthorhombic paths had
+wrong labels or segments. They are now converted to CRYSTAL's reciprocal basis;
+regenerate affected BAND and phonon paths. Decks derived from a charged or
+ionic parent now keep its `CHEMOD`, `CHARGED` and `DOPING`; before, SP and FREQ
+children ran a different charge state. Also: SeeK-path-consistent static paths
+for more lattices, in-plane band paths for slabs, smaller band-path ISS, HF-3c
+and HFsol-3c configs write their MINIX/SOLMINIX basis, and several menu,
+workflow-state and job-script fixes. Several of these change generated decks -
+see Fixed below.
+
 ### Fixed
 
 - **SeeK-path band and phonon-dispersion paths are written in CRYSTAL's
