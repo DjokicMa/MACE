@@ -504,11 +504,12 @@ MACE does not write that parent; make it by hand from the SOC deck you want to
 start (or from any deck in the same frame and basis):
 
 1. Delete the `TWOCOMPON` ... `END` block (the `TWOCOMPON`, `SOC` and `END`
-   lines before `SCFDIR`).
+   lines before `SCFDIR`, and a `GUESSPSO` or `GUESSPNOSO` line between them).
 2. Add `SYMMREMO` (p. 78) as the last record of the geometry block, before its
    `END`.
-3. Add `SPIN` (p. 140) as the first record of the `DFT` block (`UHF`, p. 131,
-   for a Hartree-Fock deck).
+3. Add `SPIN` (p. 140) as the first record of the `DFT` block, unless it is
+   there already. A Hartree-Fock deck has no `DFT` block: add `UHF` (p. 131)
+   to its SCF records instead.
 4. Keep the basis as it is, `INPSOC` (or `STUTSC`) records included, so the
    parent's matrix has the shells of the SOC deck.
 
