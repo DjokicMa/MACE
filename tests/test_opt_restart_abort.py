@@ -521,11 +521,11 @@ def test_2c_restart_does_not_stage_its_own_two_component_fort20(tmp_path):
 
 def test_2c_restart_without_a_one_component_matrix_cold_starts(tmp_path):
     out, deck, f20 = _run_staging(
-        tmp_path, TWOC_RESTART.format(guess="GUESSP\n"),
+        tmp_path, TWOC_RESTART.format(guess="GUESSP\nGUESSROTM\n90.0 90.0\n"),
         scratch_files=[("OPTINFO.DAT", "x"), ("fort.20", "2c matrix")],
         dir_files=[("testmat.f9", "2c f9")])
     assert f20 is None, out
-    assert "GUESSP" not in deck
+    assert "GUESSP" not in deck and "GUESSROTM" not in deck and "90.0 90.0" not in deck
     assert "RESTART" in deck and "SOC" in deck
 
 

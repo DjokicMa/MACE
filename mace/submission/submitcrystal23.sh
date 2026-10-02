@@ -218,6 +218,12 @@ if [ -z "$RESTART_KEEPS_FORT20" ] && [ -n "$MACE_GUESS1C" ]; then
     echo "GUESSP in TWOCOMPON requested but there is no $JOB.f20 next to the deck and no fort.20"
     echo "  in $scratch/$JOB - dropped it from this run and cold starting (this job own"
     echo "  $JOB.f9 is a two-component matrix)"
+    # GUESSROTM rotates the magnetization of that guess (manual p.173); its
+    # record (RTHETA RPHI) goes with it.
+    if sed -n -E "/^[[:space:]]*TWOCOMPON[[:space:]]*$/I,/^[[:space:]]*END(TWO)?[[:space:]]*$/Ip" "$scratch/$JOB/INPUT" | grep -qiE "^[[:space:]]*GUESSROTM[[:space:]]*$"; then
+      sed -i -E "/^[[:space:]]*GUESSROTM[[:space:]]*$/I{N;d}" "$scratch/$JOB/INPUT"
+      echo "  GUESSROTM (and its angles) dropped with it: there is no guess to rotate"
+    fi
   else
     echo "WARNING: $MACE_GUESS1C_KEY in TWOCOMPON needs a one-component $JOB.f20 and there is"
     echo "  none next to the deck and no fort.20 in $scratch/$JOB; left in the deck as written"
