@@ -954,14 +954,20 @@ class EnhancedCrystalQueueManager:
 
                 if slurm_job_id in queue_jobs:
                     slurm_state = queue_jobs[slurm_job_id]
-                    
+
+                    # SLURM says COMPLETED for a job whose ranks were killed
+                    # (OOM, segfault) as well: only the .out says whether
+                    # CRYSTAL finished, so classify from it, as for a job that
+                    # has left the queue.
+                    if slurm_state == 'COMPLETED':
+                        self.check_completed_or_failed_job(calc, slurm_state=slurm_state)
+                        continue
+
                     # Map SLURM state to our status
                     if slurm_state in ['PENDING', 'CONFIGURING']:
                         status = 'submitted'
                     elif slurm_state in ['RUNNING']:
                         status = 'running'
-                    elif slurm_state in ['COMPLETED']:
-                        status = 'completed'
                     elif slurm_state in ['FAILED', 'CANCELLED', 'TIMEOUT', 'NODE_FAIL']:
                         status = 'failed'
                     else:
@@ -975,9 +981,7 @@ class EnhancedCrystalQueueManager:
                             calc['calc_id'], status, slurm_state=slurm_state
                         )
 
-                    if status == 'completed':
-                        self.handle_completed_calculation(calc['calc_id'])
-                    elif status == 'failed':
+                    if status == 'failed':
                         self.handle_failed_calculation(calc['calc_id'], slurm_state)
                         
                 else:

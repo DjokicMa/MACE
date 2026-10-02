@@ -99,3 +99,51 @@ def test_status_sweep_does_not_resubmit_it(monkeypatch, tmp_path):
     assert len(submitted) == 1
     assert (tmp_path / "li_odd.d12").read_text() == deck
     assert not list(tmp_path.glob("*recovery*.sh"))
+
+
+# ------------------------------------------- squeue COMPLETED is not enough
+
+def _sweep_with_squeue_completed(monkeypatch, tmp_path, out_file):
+    """squeue still lists the job as COMPLETED; the .out says what happened."""
+    import mace.queue.manager as qm
+    from mace.queue.manager import EnhancedCrystalQueueManager
+
+    shutil.copy(DATA / "odd_hsesol3c_0d_crash.d12", tmp_path / "li_odd.d12")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    mgr = EnhancedCrystalQueueManager(d12_dir=str(tmp_path), db_path=str(tmp_path / "m.db"),
+                                      enable_tracking=True, organize_outputs=False)
+    mgr.is_workflow_context = False
+    submitted, completed = [], []
+    mgr.submit_to_slurm = (lambda input_file, work_dir, calc_type, submit_script_override=None:
+                           submitted.append(input_file) or str(777001 + len(submitted) - 1))
+    mgr.handle_completed_calculation = completed.append
+    calc_id = mgr.submit_calculation(tmp_path / "li_odd.d12")
+    (tmp_path / "li_odd.sh").write_text("#!/bin/bash\n#SBATCH --mem-per-cpu=5G\n#SBATCH -t 1:00:00\n")
+    shutil.copy(out_file, tmp_path / "li_odd.out")
+
+    def fake_run(cmd, capture_output=True, text=True, **kw):
+        if cmd[0] == "squeue":
+            return subprocess.CompletedProcess(cmd, 0, "JOBID,STATE,START\n777001,COMPLETED,N/A\n", "")
+        return subprocess.CompletedProcess(cmd, 0, "COMPLETED \n", "")
+    monkeypatch.setattr(qm.subprocess, "run", fake_run)
+    mgr.check_queue_status()
+    return mgr.db.get_calculation(calc_id), completed, submitted
+
+
+def test_squeue_completed_with_a_crashed_out_is_failed(monkeypatch, tmp_path):
+    """SLURM records a job whose ranks were killed as COMPLETED (measured:
+    job 12091685); while squeue still lists it, the record was marked
+    completed and its properties extracted without the .out being read."""
+    calc, completed, submitted = _sweep_with_squeue_completed(
+        monkeypatch, tmp_path, DATA / "odd_hsesol3c_0d_crash.out")
+    assert calc["status"] == "failed", calc
+    assert calc["error_type"] == "screened_hybrid_odd_error"
+    assert completed == [] and len(submitted) == 1
+
+
+def test_squeue_completed_with_a_finished_out_is_completed(monkeypatch, tmp_path):
+    calc, completed, _ = _sweep_with_squeue_completed(
+        monkeypatch, tmp_path, DATA / "li_fsi_ec_neutral.out")
+    assert calc["status"] == "completed", calc
+    assert completed == [calc["calc_id"]]
