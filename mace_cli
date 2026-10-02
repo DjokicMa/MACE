@@ -747,6 +747,29 @@ Note: needs the serial `crystal` binary (not Pcrystal). It is found from
 loading the CRYSTAL/23-intel-2023a module. Run it on a compute node, or on a
 login node only for a handful of decks.
 """,
+        'defects': """
+Usage: mace defects {build,potc,analyze} [options]
+
+Point defects in a periodic cell: a pristine supercell plus one single-point
+deck per charge state, all edited from your SP host deck (method, basis, grids
+and tolerances are kept byte for byte).
+
+  build HOST.d12   --vacancy EL | --ghost EL | --substitute OLD=NEW | --insert EL@x,y,z
+                   --supercell NxNxN | --supercon NxNxN | --supercell-matrix M | --sizes 3,4,5 (2D)
+                   [--site-label N | --site-frac x,y,z] [--charges 0,1,2] [--spin-state q=NSPIN]
+                   [--calibrate] [-o DIR]       (then: mace submit DIR)
+  build --resume DIR                            (once the pristine output shows its geometry)
+  potc DIR         stage POTC runs into DIR/potc (then: mace submit DIR/potc)
+  analyze DIR      [--mu EL=val[eV|Ha]] [--vbm val] [--eps VALUE | --eps-from CPHF.out]
+                   [--offset spheropole|calibration] [--apply-alignment] [--json F] [--csv F]
+
+Results are for unrelaxed defects. 3D charged states get the charged-cell offset
+q*(C(q)+C(0))/2 with C = 2*E_sph/N (EXT EL-SPHEROPOLE), and the Lany-Zunger-scaled
+Makov-Payne image-charge term when a dielectric constant is given (otherwise
+they are labelled uncorrected for image charges). The --calibrate decks are an
+optional cross-check; POTC alignment is opt-in. See docs/defects/README.md, and
+`mace defects analyze --help`.
+""",
         'monitor': """
 Usage: mace monitor [options]
 
@@ -1248,6 +1271,19 @@ def main():
         show_action_specific_help(command, action)
         return
     
+    # `mace defects -h` / `--help`: the defects help, not the general help
+    # the top-level parser below would print for -h.
+    if len(sys.argv) == 3 and sys.argv[1] == 'defects' and sys.argv[2] in ('-h', '--help'):
+        show_command_help('defects')
+        sys.exit(0)
+
+    # `mace defects build --help`: the subcommand's own help, before the
+    # top-level parser below would answer -h with the general help.
+    if (len(sys.argv) >= 4 and sys.argv[1] == 'defects'
+            and any(a in ('-h', '--help') for a in sys.argv[3:])):
+        from mace.defects.cli import main as defects_main
+        sys.exit(defects_main([a for a in sys.argv[2:] if a != '--no-banner']))
+
     # Special handling for commands that should pass through directly
     passthrough_commands = ['convert', 'opt2d12', 'opt2d3', 'opt2cif', 'completion', 'ions']
     
@@ -1310,7 +1346,7 @@ def main():
         sys.exit(0)
     
     # Check if asking for help on a specific command (for non-passthrough commands)
-    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'preflight', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version']:
+    if len(sys.argv) >= 3 and sys.argv[2] == '--help' and sys.argv[1] in ['workflow', 'submit', 'preflight', 'defects', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version']:
         # Show command-specific help
         show_command_help(sys.argv[1])
         sys.exit(0)
@@ -1323,6 +1359,7 @@ Commands:
   workflow    Interactive workflow planner - design and execute complex calculation sequences
   submit      Submit calculations to queue - handles both D12 and D3 files automatically
   preflight   Validate D12 decks by running CRYSTAL with TESTPDIM before you spend a job
+  defects     Point-defect deck sets (charge states, calibration) and their analysis
   monitor     System monitoring - real-time dashboard or quick status (--status, --detailed, --summary)
   analyze     Extract properties from outputs - band gaps, energies, convergence data
   completion  Check calculation status - categorize completed/errored jobs, organize files
@@ -1354,7 +1391,7 @@ More Help:
     )
     
     parser.add_argument('command', nargs='?',
-                       choices=['workflow', 'submit', 'preflight', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif',
+                       choices=['workflow', 'submit', 'preflight', 'defects', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif',
                                'completion', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version'],
                        help='Command to run')
     parser.add_argument('args', nargs='*', help='Arguments for the command')
@@ -1789,6 +1826,15 @@ More Help:
         except ImportError:
             from submission.preflight import main as preflight_main
         sys.exit(preflight_main(command_args('preflight')))
+
+    elif args.command == 'defects':
+        # Defect deck sets and their analysis; argv rebuilt from the original
+        # command line like preflight.
+        try:
+            from mace.defects.cli import main as defects_main
+        except ImportError:
+            from defects.cli import main as defects_main
+        sys.exit(defects_main(command_args('defects')))
 
     elif args.command == 'monitor':
         # Launch monitoring dashboard or show status

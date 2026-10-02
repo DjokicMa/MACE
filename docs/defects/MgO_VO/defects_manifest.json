@@ -1,0 +1,256 @@
+{
+  "version": 1,
+  "host": "docs/defects/MgO_host.d12",
+  "host_sha256": "4dc8560d2ae5876e155c2f7d3c2cb6d66168529707aa07abad131df975d16283",
+  "host_text": "MgO host for the V_O example (PBE0, POB-TZVP-REV2)\nCRYSTAL\n0 0 0\n225\n4.212\n2\n8  0.0 0.0 0.0\n12 0.5 0.5 0.5\nBASISSET\nPOB-TZVP-REV2\nDFT\nPBE0\nEND\nTOLINTEG\n7 7 7 7 14\nSHRINK\n4 4\nTOLDEE\n8\nFMIXING\n40\nMAXCYCLE\n150\nPPAN\nEND\n",
+  "dimensionality": 3,
+  "defect": {
+    "kind": "vacancy",
+    "element": "O",
+    "new_element": null,
+    "cart": null,
+    "delta_electrons": -8
+  },
+  "site": {
+    "label": 1,
+    "source": "label (unchecked)"
+  },
+  "status": "built",
+  "charges": [
+    0.0,
+    1.0,
+    2.0
+  ],
+  "spin_states": {},
+  "spinlock_cycles": 30,
+  "calibration": {
+    "ladder": [
+      -0.5,
+      -1.0,
+      -1.5
+    ],
+    "on": "defect",
+    "restricted": true,
+    "endpoints": false,
+    "differences_from_host": "SPIN, SPINLOCK and UHF removed (restricted)"
+  },
+  "added_records": [],
+  "supercells": [
+    {
+      "keyword": "SUPERCON",
+      "matrix": [
+        [
+          2,
+          0,
+          0
+        ],
+        [
+          0,
+          2,
+          0
+        ],
+        [
+          0,
+          0,
+          2
+        ]
+      ],
+      "size": null,
+      "multiplicity": 32,
+      "status": "built",
+      "reason": "",
+      "pristine_job": "mgo_pris",
+      "n_electrons": null,
+      "parity": 0,
+      "parity_source": "32 primitive cells (even)",
+      "jobs": [
+        {
+          "name": "mgo_pris",
+          "role": "pristine",
+          "q": 0,
+          "doping": 0.0,
+          "nspin": null,
+          "restricted": true,
+          "odd": false,
+          "n_electrons": null,
+          "recipe": "pristine"
+        },
+        {
+          "name": "mgo_q0",
+          "role": "defect",
+          "q": 0.0,
+          "doping": -0.0,
+          "nspin": null,
+          "restricted": true,
+          "odd": false,
+          "n_electrons": null,
+          "recipe": "vacancy"
+        },
+        {
+          "name": "mgo_qp1",
+          "role": "defect",
+          "q": 1.0,
+          "doping": -1.0,
+          "nspin": 1,
+          "restricted": false,
+          "odd": true,
+          "n_electrons": null,
+          "recipe": "vacancy"
+        },
+        {
+          "name": "mgo_qp2",
+          "role": "defect",
+          "q": 2.0,
+          "doping": -2.0,
+          "nspin": null,
+          "restricted": true,
+          "odd": false,
+          "n_electrons": null,
+          "recipe": "vacancy"
+        },
+        {
+          "name": "mgo_calm05",
+          "role": "calibration",
+          "q": 0.5,
+          "doping": -0.5,
+          "nspin": null,
+          "restricted": true,
+          "odd": null,
+          "n_electrons": null,
+          "recipe": "calibration_defect"
+        },
+        {
+          "name": "mgo_calm10",
+          "role": "calibration",
+          "q": 1.0,
+          "doping": -1.0,
+          "nspin": null,
+          "restricted": true,
+          "odd": null,
+          "n_electrons": null,
+          "recipe": "calibration_defect"
+        },
+        {
+          "name": "mgo_calm15",
+          "role": "calibration",
+          "q": 1.5,
+          "doping": -1.5,
+          "nspin": null,
+          "restricted": true,
+          "odd": null,
+          "n_electrons": null,
+          "recipe": "calibration_defect"
+        }
+      ]
+    }
+  ],
+  "jobs": [
+    {
+      "name": "mgo_pris",
+      "role": "pristine",
+      "q": 0,
+      "doping": 0.0,
+      "nspin": null,
+      "restricted": true,
+      "odd": false,
+      "n_electrons": null,
+      "recipe": "pristine",
+      "supercell": 0
+    },
+    {
+      "name": "mgo_q0",
+      "role": "defect",
+      "q": 0.0,
+      "doping": -0.0,
+      "nspin": null,
+      "restricted": true,
+      "odd": false,
+      "n_electrons": null,
+      "recipe": "vacancy",
+      "supercell": 0
+    },
+    {
+      "name": "mgo_qp1",
+      "role": "defect",
+      "q": 1.0,
+      "doping": -1.0,
+      "nspin": 1,
+      "restricted": false,
+      "odd": true,
+      "n_electrons": null,
+      "recipe": "vacancy",
+      "supercell": 0
+    },
+    {
+      "name": "mgo_qp2",
+      "role": "defect",
+      "q": 2.0,
+      "doping": -2.0,
+      "nspin": null,
+      "restricted": true,
+      "odd": false,
+      "n_electrons": null,
+      "recipe": "vacancy",
+      "supercell": 0
+    },
+    {
+      "name": "mgo_calm05",
+      "role": "calibration",
+      "q": 0.5,
+      "doping": -0.5,
+      "nspin": null,
+      "restricted": true,
+      "odd": null,
+      "n_electrons": null,
+      "recipe": "calibration_defect",
+      "supercell": 0
+    },
+    {
+      "name": "mgo_calm10",
+      "role": "calibration",
+      "q": 1.0,
+      "doping": -1.0,
+      "nspin": null,
+      "restricted": true,
+      "odd": null,
+      "n_electrons": null,
+      "recipe": "calibration_defect",
+      "supercell": 0
+    },
+    {
+      "name": "mgo_calm15",
+      "role": "calibration",
+      "q": 1.5,
+      "doping": -1.5,
+      "nspin": null,
+      "restricted": true,
+      "odd": null,
+      "n_electrons": null,
+      "recipe": "calibration_defect",
+      "supercell": 0
+    }
+  ],
+  "options": {
+    "vacancy": "O",
+    "ghost": null,
+    "substitute": null,
+    "insert": null,
+    "cart": false,
+    "site_label": 1,
+    "site_frac": null,
+    "supercell": null,
+    "supercon": "2x2x2",
+    "supercell_matrix": null,
+    "sizes": null,
+    "charges": "0,1,2",
+    "spin_state": null,
+    "spinlock_cycles": 30,
+    "host_spin": "refuse",
+    "calibrate": "0.5,1.0,1.5",
+    "calibrate_on": "defect",
+    "calibrate_endpoints": false,
+    "pristine_out": null,
+    "shrink": null,
+    "name": "mgo"
+  }
+}
