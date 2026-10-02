@@ -162,8 +162,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `full.basis.triplezeta.lib`, `full.basis.doublezeta.lib` and
     `stuttgart.lib`, read by `Crystal_d12/basis_library.py`.
   - The old directory paths still work everywhere MACE takes a basis path,
-    including `mace_config.DEFAULT_TZ_PATH` and configuration files that name
-    them. Any other directory is still read from disk.
+    including `mace_config.DEFAULT_TZ_PATH`, configuration files that name
+    them and the custom-path prompt (menu option 3). Any other directory is
+    still read from disk.
   - Every record is returned byte for byte: tests pin all records and the
     decks written from them. No deck changes, apart from the Pu fix below.
   - **Custom tooling** that opened `basis_sets/<family>/<n>` directly should

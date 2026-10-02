@@ -1691,6 +1691,18 @@ def select_basis_set(elements: List[int], method: str = "DFT",
                     print("Please enter a valid path.")
                     continue
 
+                # A bundled set's old folder path (up to 1.1.4 it was a
+                # directory of numbered files) is now served from its library
+                # file, as everywhere else that path is used.
+                from basis_library import bundled_family_for
+                family = bundled_family_for(custom_path)
+                if family:
+                    custom_path_str = custom_path.rstrip("/") + "/"
+                    basis_config["basis_set"] = custom_path_str
+                    basis_config["basis_set_path"] = custom_path_str
+                    print(f"Using the bundled {family} set: {custom_path_str}")
+                    break
+
                 custom_path = Path(custom_path)
                 if not custom_path.exists():
                     print(f"Error: Path does not exist: {custom_path}")

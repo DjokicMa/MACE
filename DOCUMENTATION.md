@@ -437,9 +437,9 @@ per family, read by `Crystal_d12/basis_library.py`:
 | `pob-tzvp-rev2-soc` | - | X_pob_TZVP_rev2_SOC (STUTSC) records for two-component SOC decks; data only, `basis_library.soc_basis_record(z)` |
 
 - **Paths.** A path such as `mace_config.DEFAULT_TZ_PATH`
-  (`.../basis_sets/full.basis.triplezeta/`) still names its family. Only these
-  exact paths are served from the library; any other directory (menu option
-  3, a custom path) is read from disk as numbered files.
+  (`.../basis_sets/full.basis.triplezeta/`) still names its family, also when
+  typed at menu option 3 (custom path). Only these exact paths are served from
+  the library; any other directory is read from disk as numbered files.
 - **Configuration files.** `"external_basis_family": "tz"`, `"dz"` or
   `"tz-rev2022"` selects a family without writing a path.
 - **Provenance.** Each record carries its source set, reference, DOI and how it
