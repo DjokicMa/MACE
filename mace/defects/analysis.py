@@ -26,7 +26,11 @@ Formation energy (E_F measured from the VBM):
     E_f(q; E_F) = E_corr(q) - E_pristine - sum_i n_i mu_i + q (E_VBM + E_F)
 
 with n_i > 0 for atoms added. mu_i are absolute energies of the same method
-and basis. Potential alignment (POTC) is always reported and only applied with
+and basis. Every E is SCF + D3 + gCP where the method has them (-D3, 3c): the
+'== SCF ENDED' value alone leaves them out, and they do not cancel when the
+defect cell has an atom fewer or more than the pristine one. They do cancel
+between charge states at fixed geometry, so levels and calibration constants
+are the same either way; mu_i must include them too. Potential alignment (POTC) is always reported and only applied with
 --apply-alignment, as q * (-dV), dV = <V_defect - V_pristine> over far atoms.
 """
 
@@ -112,6 +116,7 @@ class JobResult:
         s = self.summary
         return {"name": self.name, "role": self.role, "q": self.q, "doping": self.doping,
                 "nspin": self.nspin, "energy_ha": s.energy if s else None,
+                "energy_terms": s.energy_terms if s else None,
                 "electrons": s.electrons if s else None, "spin": s.spin if s else None,
                 "status": "ok" if self.ok else "excluded", "reason": self.excluded or (s.reason if s else "no output"),
                 "warnings": list(self.warnings)}
@@ -145,6 +150,9 @@ def check_jobs(manifest: dict, texts: Dict[str, str]) -> List[JobResult]:
                 res.excluded = "no output"
             elif summary.energy is None:
                 res.excluded = summary.reason
+            elif pris is not None and pris.energy is not None and summary.energy_terms != pris.energy_terms:
+                res.excluded = (f"energy is {summary.energy_terms} but the pristine's is "
+                                f"{pris.energy_terms}: not comparable")
             elif job["role"] != "pristine":
                 n = summary.electrons
                 on_pristine = job.get("recipe", "").endswith("_pristine")
@@ -433,6 +441,13 @@ def analyze(manifest: dict, texts: Dict[str, str], *, mu: Optional[Dict[str, flo
     if mu and missing_mu:
         raise DefectError(f"--mu is missing {', '.join(missing_mu)}")
     report["notes"].append("chemical potentials must be absolute energies from the same method and basis")
+    terms = sorted({j.summary.energy_terms for j in jobs if j.ok})
+    report["energy_terms"] = terms[0] if len(terms) == 1 else terms
+    if any(t != "SCF" for t in terms):
+        report["notes"].append(
+            f"energies are {' / '.join(terms)} (CRYSTAL's 'TOTAL ENERGY + DISP' total), not the bare "
+            "'SCF ENDED' value: the dispersion/gCP terms do not cancel between cells with different "
+            "atoms, so chemical potentials must include them as well")
     mu_term = -sum(n * mu[el] for el, n in counts.items()) if not missing_mu else None
 
     if dim == 3:

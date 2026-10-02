@@ -33,7 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Mulliken electron count (never the pre-DOPING header) and the final spin,
   and reports formation energies and transition levels: 3D only for
   calibrated charges and labelled "uncorrected for image charges", 2D from an
-  A + B/L fit over the sizes; all results are unrelaxed. Potential alignment
+  A + B/L fit over the sizes; all results are unrelaxed. Energies are
+  SCF + D3 + gCP for -D3 and 3c methods (CRYSTAL's `TOTAL ENERGY + DISP + GCP`
+  line, not the bare `SCF ENDED` value): those terms do not cancel between a
+  defect cell and the pristine cell, so chemical potentials must include them
+  too, and a job whose terms differ from the pristine's is excluded. Potential alignment
   is reported, and applied only with `--apply-alignment`. A worked MgO V_O
   deck set is in `docs/defects/MgO_VO` (not run).
 

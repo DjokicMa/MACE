@@ -12,6 +12,14 @@ Measured facts this module relies on (FACTS.md, HPCC, CRYSTAL23):
 * POTC.DAT (``POTC / 0 0 0``): point index, x y z in bohr, V0, field
   components; atomic units, 6 significant figures. The planar average
   (``POTC / 2 41 0``) is an XMGR text file with ``#`` and ``@`` lines.
+
+The '== SCF ENDED ... E(AU)' value leaves out the D3 dispersion and gCP terms
+that -D3 and 3c methods print after the SCF ("D3 DISPERSION ENERGY (AU)",
+"GCP ENERGY (AU)"). A vacancy or interstitial cell has one atom fewer or more
+than the pristine cell, so those terms do not cancel in a formation energy:
+the energy used is SCF + D3 + gCP. In all 340 dispersion outputs of the test
+corpus this sum equals CRYSTAL's own 'TOTAL ENERGY + DISP (+ GCP) (AU)' line
+to 1e-8 Ha, and the terms always follow the last SCF.
 """
 
 import re
@@ -22,6 +30,8 @@ _SCF_END = re.compile(r"== SCF ENDED - (.*?)\s+E\(AU\)\s+(\S+)\s+CYCLES\s+(\d+)"
 _MULL = re.compile(r"MULLIKEN POPULATION ANALYSIS - NO\. OF ELECTRONS\s+(\S+)")
 _ATOM_ROW = re.compile(r"^\s*(\d+)\s+([A-Za-z]{1,2})\s+(\d+)\s+(-?\d+\.\d+)")
 _CONT_ROW = re.compile(r"^\s+-?\d+\.\d+(\s+-?\d+\.\d+)*\s*$")
+_D3 = re.compile(r"D3 DISPERSION ENERGY \(AU\)\s+(\S+)")
+_GCP = re.compile(r"GCP ENERGY \(AU\)\s+(\S+)")
 _TOP = re.compile(r"TOP OF VALENCE BANDS -\s+BAND\s+(\d+);\s+K\s+(\d+);\s+EIG\s+(\S+)")
 _BOTTOM = re.compile(r"BOTTOM OF VIRTUAL BANDS -\s+BAND\s+(\d+);\s+K\s+(\d+);\s+EIG\s+(\S+)")
 
@@ -39,6 +49,29 @@ def scf_energy(text: str) -> Tuple[Optional[float], str]:
     if "TOO MANY CYCLES" in status or "CONVERGENCE ON ENERGY" not in status:
         return None, f"SCF ended without convergence ({status.strip()})"
     return float(found.group(2)), ""
+
+
+def dispersion_terms(text: str) -> Tuple[Optional[float], Optional[float]]:
+    """(D3, gCP) in Ha printed after the last '== SCF ENDED' line; None where absent."""
+    found = None
+    for found in _SCF_END.finditer(text):
+        pass
+    tail = text[found.end():] if found else ""
+    d3 = _D3.search(tail)
+    gcp = _GCP.search(tail)
+    return (float(d3.group(1)) if d3 else None, float(gcp.group(1)) if gcp else None)
+
+
+def total_energy(text: str) -> Tuple[Optional[float], str, Optional[float], Optional[float]]:
+    """(SCF + D3 + gCP in Ha, reason, D3, gCP); the energy is None with a reason when unusable."""
+    e, reason = scf_energy(text)
+    if e is None:
+        return None, reason, None, None
+    d3, gcp = dispersion_terms(text)
+    if d3 is None and gcp is None and (_D3.search(text) or _GCP.search(text)):
+        return None, ("D3/gCP terms are printed for an earlier SCF but not after the last one: "
+                      "the final total energy is unknown"), None, None
+    return e + (d3 or 0.0) + (gcp or 0.0), "", d3, gcp
 
 
 def scf_cycles(text: str) -> Optional[int]:
@@ -194,7 +227,7 @@ def spheropole(text: str) -> Optional[float]:
 @dataclass
 class OutputSummary:
     name: str
-    energy: Optional[float] = None
+    energy: Optional[float] = None       # SCF + D3 + gCP (Ha): what formation energies use
     reason: str = ""
     cycles: Optional[int] = None
     electrons: Optional[float] = None
@@ -205,10 +238,19 @@ class OutputSummary:
     spheropole: Optional[float] = None
     mulliken: Optional[Mulliken] = None
     mulliken_spin: Optional[Mulliken] = None
+    scf_energy: Optional[float] = None   # the '== SCF ENDED' E(AU) alone
+    d3: Optional[float] = None
+    gcp: Optional[float] = None
+
+    @property
+    def energy_terms(self) -> str:
+        """Which terms ``energy`` holds: 'SCF', 'SCF + D3', 'SCF + gCP' or 'SCF + D3 + gCP'."""
+        return " + ".join(["SCF"] + (["D3"] if self.d3 is not None else [])
+                          + (["gCP"] if self.gcp is not None else []))
 
 
 def summarise(name: str, text: str) -> OutputSummary:
-    e, reason = scf_energy(text)
+    e, reason, d3, gcp = total_energy(text)
     mul = mulliken(text)
     spin = mulliken_spin(text)
     return OutputSummary(name=name, energy=e, reason=reason, cycles=scf_cycles(text),
@@ -216,7 +258,8 @@ def summarise(name: str, text: str) -> OutputSummary:
                          header_electrons=header_electrons(text),
                          spin=spin.total if spin else None, edges=band_edges(text),
                          efermi=efermi(text), spheropole=spheropole(text),
-                         mulliken=mul, mulliken_spin=spin)
+                         mulliken=mul, mulliken_spin=spin, scf_energy=scf_energy(text)[0],
+                         d3=d3, gcp=gcp)
 
 
 # ---------------------------------------------------------------------------

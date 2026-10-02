@@ -253,8 +253,10 @@ def test_interstitial_site_report_has_no_label_to_wait_for():
 
 # --- 2D ---------------------------------------------------------------------------
 
-def _hbn_set(energies=None):
+def _hbn_set(energies=None, terms=None):
+    """``terms``: {"pris" | "defect": dict(d3=..., gcp=...)} added to every size."""
     energies = energies or HBN
+    terms = terms or {}
     sizes = [([[n, 0], [0, n]], n, 12 * n * n) for n in sorted(energies)]
     manifest = _manifest(hbn_host(), de.DefectSite("vacancy", "N", label=1), (-1, 0, 1), keyword="SUPERCEL",
                          sizes=sizes, name="hbn")
@@ -265,11 +267,11 @@ def _hbn_set(energies=None):
         vbm, cbm = HBN_VBM[n]
         texts[f"hbn{n}_pris"] = fake_output(energy=tags["pris"][0], electrons=tags["pris"][1],
                                             header=int(tags["pris"][1]), vbm=vbm, cbm=cbm, lattice=lat,
-                                            atoms=[(7, "N", 0.0, 0.0, 0.0)])
+                                            atoms=[(7, "N", 0.0, 0.0, 0.0)], **terms.get("pris", {}))
         for tag in ("q0", "qp1", "qm1"):
             e, ne = tags[tag]
             texts[f"hbn{n}_{tag}"] = fake_output(energy=e, electrons=ne, header=101,
-                                                 spin=1.0 if tag == "q0" else None)
+                                                 spin=1.0 if tag == "q0" else None, **terms.get("defect", {}))
     return manifest, texts
 
 
@@ -300,3 +302,53 @@ def test_two_sizes_warn():
     energies = {n: HBN[n] for n in (4, 6)}
     r = _report(_hbn_set(energies))
     assert "warning" in r["fits"]["+1"] and "2 sizes" in r["fits"]["+1"]["warning"]
+
+
+# --- dispersion / gCP (-D3 and 3c hosts) ------------------------------------------
+
+# Synthetic terms (Ha): the vacancy cell has one O fewer, so its D3 and gCP differ from
+# the pristine cell's; all charge states share the defect geometry, hence the same terms.
+PRIS_TERMS = dict(d3=-0.3125, gcp=0.2000)
+DEF_TERMS = dict(d3=-0.3050, gcp=0.1950)
+DELTA_TERMS = (DEF_TERMS["d3"] + DEF_TERMS["gcp"]) - (PRIS_TERMS["d3"] + PRIS_TERMS["gcp"])
+
+
+def _mgo_3c_set(**kw):
+    outs = {tag: _mgo_out(tag, **(PRIS_TERMS if tag == "pris" else DEF_TERMS)) for tag in MGO}
+    return _mgo_set(calibrate=True, outs=outs, **kw)
+
+
+def test_3d_formation_energy_includes_the_dispersion_and_gcp_difference():
+    plain = _report(_mgo_set(calibrate=True), mu={"O": -75.0})
+    r = _report(_mgo_3c_set(), mu={"O": -75.0})
+    s0 = next(s for s in r["states"] if s["q"] == 0)
+    expected = (MGO["q0"][0] - MGO["pris"][0] + DELTA_TERMS - 75.0) * HARTREE_TO_EV
+    assert s0["formation_energy_ev_at_vbm"] == pytest.approx(expected)
+    p0 = next(s for s in plain["states"] if s["q"] == 0)
+    assert s0["formation_energy_ev_at_vbm"] - p0["formation_energy_ev_at_vbm"] == \
+        pytest.approx(DELTA_TERMS * HARTREE_TO_EV)
+    # charge-independent at fixed geometry: levels and the calibration constant do not move
+    assert r["calibration"][0]["C"] == pytest.approx(plain["calibration"][0]["C"], abs=1e-9)
+    for name in ("+1/0", "+2/+1"):
+        assert _level(r, name) == pytest.approx(_level(plain, name), abs=1e-6)
+    assert r["energy_terms"] == "SCF + D3 + gCP" and plain["energy_terms"] == "SCF"
+    assert all(j["energy_terms"] == "SCF + D3 + gCP" for j in r["jobs"] if j["status"] == "ok")
+    assert any("must include them" in n for n in r["notes"])
+    assert not any("must include them" in n for n in plain["notes"])
+
+
+def test_a_job_without_the_pristine_dispersion_terms_is_excluded():
+    outs = {tag: _mgo_out(tag, **PRIS_TERMS) for tag in ("pris",)}
+    r = _report(_mgo_set(calibrate=True, outs=outs))
+    q1 = next(j for j in r["jobs"] if j["name"] == "mgo_qp1")
+    assert q1["status"] == "excluded" and "not comparable" in q1["reason"]
+    assert "SCF + D3 + gCP" in q1["reason"]
+
+
+def test_2d_neutral_formation_energy_includes_the_dispersion_and_gcp_difference():
+    plain = _report(_hbn_set(), mu={"N": -54.0})
+    r = _report(_hbn_set(terms={"pris": PRIS_TERMS, "defect": DEF_TERMS}), mu={"N": -54.0})
+    assert r["neutral_formation_energy_ev"] - plain["neutral_formation_energy_ev"] == \
+        pytest.approx(DELTA_TERMS * HARTREE_TO_EV)
+    for name in ("+1/0", "0/-1"):
+        assert _level(r, name) == pytest.approx(_level(plain, name), abs=1e-6)

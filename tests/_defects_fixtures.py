@@ -56,7 +56,7 @@ def _e(x):
 
 def fake_output(*, energy=None, electrons=None, header=None, efermi=None, vbm=None, cbm=None,
                 spin=None, sph=None, lattice=None, atoms=None, converged=True, mulliken_atoms=None,
-                spin_atoms=None, vbm_k=1, cycles=14):
+                spin_atoms=None, vbm_k=1, cycles=14, d3=None, gcp=None):
     """A minimal CRYSTAL23-like output holding only the lines mace.defects reads."""
     out = [" CRYSTAL23 (synthetic excerpt for tests)"]
     if lattice is not None and atoms:
@@ -95,6 +95,17 @@ def fake_output(*, energy=None, electrons=None, header=None, efermi=None, vbm=No
             out.append(f" == SCF ENDED - CONVERGENCE ON ENERGY      E(AU) {_e(energy)} CYCLES {cycles:3d}")
         else:
             out.append(f" == SCF ENDED - TOO MANY CYCLES            E(AU) {_e(energy)} CYCLES 150")
+    if energy is not None and (d3 is not None or gcp is not None):
+        # CRYSTAL23 prints these after the SCF (SP; format as in -D3 and 3c outputs)
+        total = energy + (d3 or 0.0) + (gcp or 0.0)
+        if gcp is not None:
+            out += ["", " DFT-D3-GCP DISPERSION AND COUNTERPOISE CORRECTION", "",
+                    f" D3 DISPERSION ENERGY (AU)      {_e(d3 or 0.0)}",
+                    f" GCP ENERGY (AU)                {_e(gcp)}",
+                    f" TOTAL ENERGY + DISP + GCP (AU) {_e(total)}"]
+        else:
+            out += ["", f" D3 DISPERSION ENERGY (AU)       {_e(d3)}",
+                    f" TOTAL ENERGY + DISP (AU)        {_e(total)}"]
     if electrons is not None:
         out += [" MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM",
                 "     ALPHA+BETA ELECTRONS",

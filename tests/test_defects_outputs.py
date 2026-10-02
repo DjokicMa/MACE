@@ -3,6 +3,9 @@
 Excerpts are synthetic (built line by line in the CRYSTAL23 format, with
 numbers from the HPCC defect runs).
 """
+import re
+from pathlib import Path
+
 import pytest
 
 from _defects_fixtures import fake_output
@@ -94,3 +97,53 @@ def test_potc_files():
     assert atoms[2][0] == 33 and len(atoms) == 3
     planar = out.read_potc_planar(POTC_PLANAR)
     assert planar == [(-20.0, pytest.approx(-2.8421709e-14)), (-19.0, pytest.approx(9.9475983e-14))]
+
+
+def test_dispersion_and_gcp_terms_are_added_to_the_scf_energy():
+    # The '== SCF ENDED' E(AU) leaves out D3 and gCP (corpus: SCF + D3 + gCP equals CRYSTAL's
+    # 'TOTAL ENERGY + DISP + GCP' line in all 340 dispersion outputs checked). Synthetic numbers.
+    text = fake_output(energy=-1000.25, d3=-0.0125, gcp=0.0875, electrons=100.0)
+    s = out.summarise("c3", text)
+    assert s.scf_energy == pytest.approx(-1000.25)
+    assert s.d3 == pytest.approx(-0.0125) and s.gcp == pytest.approx(0.0875)
+    assert s.energy == pytest.approx(-1000.25 - 0.0125 + 0.0875)
+    assert s.energy_terms == "SCF + D3 + gCP"
+    d3_only = out.summarise("d3", fake_output(energy=-10.0, d3=-0.5))
+    assert d3_only.energy == pytest.approx(-10.5) and d3_only.gcp is None
+    assert d3_only.energy_terms == "SCF + D3"
+    plain = out.summarise("p", fake_output(energy=-10.0))
+    assert plain.energy == pytest.approx(-10.0) and plain.energy_terms == "SCF"
+
+
+def test_dispersion_terms_must_belong_to_the_last_scf():
+    # terms printed after an earlier SCF only: the final total is unknown, not the bare SCF value
+    text = fake_output(energy=-10.0, d3=-0.5) + fake_output(energy=-10.2)
+    s = out.summarise("x", text)
+    assert s.energy is None and "D3/gCP" in s.reason
+    assert out.dispersion_terms(fake_output(energy=-10.0) + fake_output(energy=-10.2, d3=-0.5)) \
+        == (pytest.approx(-0.5), None)
+
+
+CORPUS = Path(__file__).resolve().parents[1] / "test"
+_PRINTED_TOTAL = re.compile(r"TOTAL ENERGY \+ DISP(?: \+ GCP)? \(AU\)\s+(\S+)")
+
+
+@pytest.mark.skipif(not CORPUS.is_dir(), reason="test/ corpus not present")
+def test_corpus_totals_match_crystals_disp_gcp_line():
+    """SCF + D3 + gCP equals the printed 'TOTAL ENERGY + DISP (+ GCP)' after the last SCF."""
+    checked = 0
+    for path in sorted(CORPUS.glob("*/*.out")):
+        text = path.read_text(errors="replace")
+        if "D3 DISPERSION ENERGY" not in text and "GCP ENERGY" not in text:
+            continue
+        e, reason, d3, gcp = out.total_energy(text)
+        if e is None:
+            continue
+        last = list(re.finditer(r"== SCF ENDED", text))[-1]
+        printed = _PRINTED_TOTAL.search(text, last.end())
+        if printed is None:
+            continue
+        assert e == pytest.approx(float(printed.group(1)), abs=1e-8), path.name
+        assert e != pytest.approx(out.scf_energy(text)[0], abs=1e-6), path.name
+        checked += 1
+    assert checked > 0

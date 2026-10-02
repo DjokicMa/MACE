@@ -180,6 +180,14 @@ there is **no vacuum level** in a charged 2D cell.
 * mu_i are **absolute** energies with units (`--mu O=-75.0Ha`, `--mu O=-2040.8eV`
   or `--mu-file`), from the **same method and basis**. Without mu, E_f is
   reported relative to q = 0.
+* Every E is the cell's total energy **including D3 dispersion and gCP**
+  where the method has them (-D3 functionals, 3c methods such as HSEsol-3c):
+  SCF + D3 + gCP, which is CRYSTAL's `TOTAL ENERGY + DISP (+ GCP) (AU)` line,
+  not the bare `== SCF ENDED ... E(AU)` value. The terms do not cancel when
+  the defect cell has an atom fewer or more than the pristine cell, so mu_i
+  must be total energies on the same footing. They do cancel between charge
+  states at fixed geometry: levels and the calibration constant are unchanged.
+  A job whose terms differ from the pristine's (e.g. D3 missing) is excluded.
 * E_VBM is the top of the valence bands on the pristine cell's SCF k-mesh;
   its band and k index are printed; `--vbm` overrides it.
 * eps(q/q') = (E_f(q'; 0) - E_f(q; 0)) / (q - q'), flagged when outside [0, gap].
