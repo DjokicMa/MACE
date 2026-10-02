@@ -150,17 +150,23 @@ fi
 # be pure I/O; gating on the keyword also keeps the script honest about what
 # the deck is doing.
 #
-# Two sources, in order of specificity:
+# Three sources, in order of specificity:
 #   $JOB.f20  a matrix deliberately staged for this job, e.g. a chained step
 #             restarting from a DIFFERENT predecessor (OPT -> SP), where the
 #             predecessor is named after its own job and not this one.
 #             Only a NON-EMPTY one, like the .f9 below: an empty file is no guess.
+#   fort.20   already in $scratch/$JOB (non-empty) and not older than a
+#             non-empty $JOB.f9 - a matrix copied there by hand, the way
+#             GUESSP restarts were done before MACE staged them. It is kept,
+#             not overwritten. One older than $JOB.f9 is what an earlier run
+#             of this job left behind, and the .f9 that run ended with is the
+#             better guess.
 #   $JOB.f9   this material own matrix from an earlier run of this same job -
 #             the walltime-killed restart, where the right guess is the one it
 #             already produced. Only a NON-EMPTY one: a run CRYSTAL aborted
 #             in the middle of an optimization still copies its fort.9 back,
 #             and that is empty (measured on HPCC: a 0-byte $JOB.f9).
-# With NEITHER, the GUESSP record has to come back out of the deck. CRYSTAL
+# With NONE of them, the GUESSP record has to come back out of the deck. CRYSTAL
 # does not quietly fall back to the atomic guess - it stops:
 #   ERROR **** GUESSP **** COPY OF WAVEFUNCTION FILE fort.20 CAN NOT BE FOUND
 # (measured, not assumed). So a deck carrying GUESSP before it has ever run
@@ -175,7 +181,8 @@ fi
 # is GUESSPNOSO + PRTENESOC + FMIXING 0 + MAXCYCLE 1 (pp.173-174), so it needs
 # the same matrix. This job own $JOB.f9, from an earlier run of this 2c deck,
 # is a TWO-component matrix and is never staged for these; only a
-# deliberately staged $JOB.f20 is. With none, a bare GUESSP comes out of the
+# deliberately staged $JOB.f20 is, or a non-empty fort.20 already in
+# $scratch/$JOB is kept (copied there by hand). With neither, a bare GUESSP comes out of the
 # scratch copy as above; GUESSPNOSO and 2NDVARIAT are left as written (the
 # 2NDVARIAT record has a data line) with a warning. Measured on HPCC (Bi2
 # slab, PBE0+SOC): GUESSP and GUESSPNOSO in TWOCOMPON both read the fort.20
@@ -192,26 +199,35 @@ if [ -z "$RESTART_KEEPS_FORT20" ] && [ -n "$MACE_GUESS1C" ]; then
     cp "$DIR/$JOB.f20" "$scratch/$JOB/fort.20"
     echo "$MACE_GUESS1C_KEY in TWOCOMPON: staged $JOB.f20 as fort.20 - it must be the matrix of"
     echo "  an unrestricted one-component run with SYMMREMO (manual p.173)"
+  elif [ -s "$scratch/$JOB/fort.20" ]; then
+    echo "$MACE_GUESS1C_KEY in TWOCOMPON: no $JOB.f20 next to the deck - kept the fort.20 already in"
+    echo "  $scratch/$JOB; it must be the matrix of an unrestricted one-component run with"
+    echo "  SYMMREMO (manual p.173)"
   elif [ "$MACE_GUESS1C_KEY" = "GUESSP" ]; then
     sed -i "${MACE_GUESS1C_LINE}d" "$scratch/$JOB/INPUT"
-    echo "GUESSP in TWOCOMPON requested but no $JOB.f20 on disk - dropped it from this"
-    echo "  run and cold starting (this job own $JOB.f9 is a two-component matrix)"
+    echo "GUESSP in TWOCOMPON requested but there is no $JOB.f20 next to the deck and no fort.20"
+    echo "  in $scratch/$JOB - dropped it from this run and cold starting (this job own"
+    echo "  $JOB.f9 is a two-component matrix)"
   else
     echo "WARNING: $MACE_GUESS1C_KEY in TWOCOMPON needs a one-component $JOB.f20 and there is"
-    echo "  none; left in the deck as written (this job own $JOB.f9 is a two-component"
-    echo "  matrix and is not used); CRYSTAL stops without fort.20"
+    echo "  none next to the deck and no fort.20 in $scratch/$JOB; left in the deck as written"
+    echo "  (this job own $JOB.f9 is a two-component matrix and is not used); CRYSTAL stops"
+    echo "  without fort.20"
   fi
 elif [ -z "$RESTART_KEEPS_FORT20" ] && grep -qiE "^[[:space:]]*GUESSP" "$scratch/$JOB/INPUT" 2>/dev/null; then
   if [ -s "$DIR/$JOB.f20" ]; then
     cp "$DIR/$JOB.f20" "$scratch/$JOB/fort.20"
     echo "GUESSP: staged $JOB.f20 as fort.20"
+  elif [ -s "$scratch/$JOB/fort.20" ] && ! { [ -s "$DIR/$JOB.f9" ] && [ "$DIR/$JOB.f9" -nt "$scratch/$JOB/fort.20" ]; }; then
+    echo "GUESSP: no $JOB.f20 next to the deck - kept the fort.20 already in $scratch/$JOB"
   elif [ -s "$DIR/$JOB.f9" ]; then
     cp "$DIR/$JOB.f9" "$scratch/$JOB/fort.20"
     echo "GUESSP: restarting from this job own $JOB.f9 as fort.20"
   else
     sed -i "/^[[:space:]]*[Gg][Uu][Ee][Ss][Ss][Pp][[:space:]]*$/d" "$scratch/$JOB/INPUT"
-    echo "GUESSP requested but no $JOB.f20 or $JOB.f9 on disk - dropped it from"
-    echo "  this run and cold starting (CRYSTAL aborts on GUESSP with no fort.20)"
+    echo "GUESSP requested but there is no $JOB.f20 or $JOB.f9 next to the deck and no fort.20"
+    echo "  in $scratch/$JOB - dropped it from this run and cold starting (CRYSTAL aborts on"
+    echo "  GUESSP with no fort.20)"
   fi
 fi
 # EXTERNAL geometry (phonopy displaced supercells, or any deck shipping its own fort.34): staged only when $JOB.ext exists next to the deck.
