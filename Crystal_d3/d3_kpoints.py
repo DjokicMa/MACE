@@ -2658,13 +2658,13 @@ def extract_lattice_parameters_from_output(out_file: str) -> Optional[Dict[str, 
     lines = None
     if _geometry_blocks is not None:
         lines = content.split('\n')
-        block, which = select_geometry_block(_geometry_blocks(lines))
+        block, which = select_geometry_block(_geometry_blocks(lines), lines)
         # An optimised SUPERCEL cell (a defect supercell, say) has no
         # crystallographic cell of its own: its final block is the
         # supercell, with the input echo's space group. The path is the
         # host's, given in the supercell's basis by its expansion, as for
         # any SUPERCEL output (below).
-        if (which == 'final' and _final_dimensionality(lines, block['line']) == 3
+        if (which in ('final', 'last') and _final_dimensionality(lines, block['line']) == 3
                 and expansion_before(lines, block['line']) is None):
             conventional = block['conventional']
             if conventional is None and block['W'] is None:
@@ -2707,10 +2707,16 @@ def extract_lattice_parameters_from_output(out_file: str) -> Optional[Dict[str, 
 
 
 def _final_dimensionality(lines: List[str], block_line: int) -> Optional[int]:
-    """Dimensionality on the FINAL OPTIMIZED GEOMETRY line heading a block."""
+    """Dimensionality on the FINAL OPTIMIZED GEOMETRY line heading a block;
+    for an optimisation step's block (no such line), the run's own, on its
+    GEOMETRY FOR WAVE FUNCTION line."""
     for j in range(block_line - 1, max(-1, block_line - 7), -1):
         if 'FINAL OPTIMIZED GEOMETRY' in lines[j]:
             match = re.search(r'DIMENSIONALITY OF THE SYSTEM\s+(\d)', lines[j])
+            return int(match.group(1)) if match else None
+    for line in lines[:block_line]:
+        if 'GEOMETRY FOR WAVE FUNCTION' in line:
+            match = re.search(r'DIMENSIONALITY OF THE SYSTEM\s+(\d)', line)
             return int(match.group(1)) if match else None
     return None
 

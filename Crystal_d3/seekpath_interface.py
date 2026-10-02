@@ -139,6 +139,8 @@ def _geometry_blocks(lines: List[str]) -> List[Dict[str, Any]]:
             'line': start,
             'final': any('FINAL OPTIMIZED GEOMETRY' in lines[j]
                          for j in range(max(0, start - 6), start)),
+            'opt_point': any('OPTIMIZATION - POINT' in lines[j]
+                             for j in range(max(0, start - 6), start)),
             'params': _params_after(lines, start + 1, min(start + 4, stop)),
             'n_atoms': None, 'numbers': [], 'positions': [],
             'W': None, 'conventional': None,
@@ -178,18 +180,26 @@ def _geometry_blocks(lines: List[str]) -> List[Dict[str, Any]]:
     return blocks
 
 
-def select_geometry_block(blocks: List[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-    """The block BAND's fort.9 holds, and which one it is ('final' or 'first').
+def select_geometry_block(blocks: List[Dict[str, Any]],
+                          lines: Optional[List[str]] = None
+                          ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """The block BAND's fort.9 holds, and which one it is ('final', 'last'
+    or 'first').
 
     After an optimisation that is the block after the last FINAL OPTIMIZED
-    GEOMETRY. Otherwise it is the first computed block (GEOMETRY FOR WAVE
-    FUNCTION). An optimisation that stopped before converging prints no final
-    block; its fort.9 holds the last step, but the first block is taken, as
-    before.
+    GEOMETRY. An optimisation that ended without converging ("OPT END -
+    FAILED", given the output's ``lines``) prints no final block; its fort.9
+    holds the last point's SCF, whose geometry is the last block printed
+    (measured on HPCC: point 800 of 800, its energy the one OPT END reports)
+    - 'last'. Otherwise it is the first computed block (GEOMETRY FOR WAVE
+    FUNCTION).
     """
     finals = [b for b in blocks if b['final']]
     if finals:
         return finals[-1], 'final'
+    if (lines is not None and blocks and blocks[-1].get('opt_point')
+            and any('OPT END' in line for line in lines[blocks[-1]['line']:])):
+        return blocks[-1], 'last'
     if blocks:
         return blocks[0], 'first'
     return None, None
@@ -250,7 +260,7 @@ def parse_crystal_structure(output_file: str) -> Optional[Dict[str, Any]]:
         - 'cell': 3x3 numpy array of lattice vectors
         - 'positions': Nx3 numpy array of fractional coordinates
         - 'numbers': List of atomic numbers
-        - 'geometry': 'final' or 'first' (the block read), 'legacy' for
+        - 'geometry': 'final', 'last' or 'first' (the block read), 'legacy' for
           the earlier parser
         - 'supercell': 'none', 'supercel' or 'scelphono'
         - 'expansion': the expansion matrix E (A_super = E A_prim) or None
@@ -265,7 +275,7 @@ def parse_crystal_structure(output_file: str) -> Optional[Dict[str, Any]]:
         content = f.read()
     lines = content.split('\n')
 
-    block, which = select_geometry_block(_geometry_blocks(lines))
+    block, which = select_geometry_block(_geometry_blocks(lines), lines)
     if block is not None and block['params'] is not None and block['n_atoms']:
         if len(block['numbers']) == block['n_atoms']:
             p = block['params']
