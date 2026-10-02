@@ -285,12 +285,21 @@ def soc_restart_plan(options, output_file, input_file, new_filename):
     return None, f9, f20, parent
 
 
+# What CRYSTAL does with a GUESSPNOSO deck whose 1c parent does not fit:
+# it aborts at once in READFG (measured on CRYSTAL23, Bi2 bilayer), never
+# runs on from a wrong matrix.
+READFG_SYMMETRY = "ERROR **** READFG **** RESTART NOT POSSIBLE - SYMMETRY INCOMPATIBILITY"
+READFG_SHELLS = ("ERROR **** READFG **** RESTART NOT POSSIBLE - OPEN-CLOSED SHELL "
+                 "INCOMPATIBILITY")
+
 _SYMMETRY_OPERATORS = re.compile(r"^[ \t]*NUMBER OF SYMMETRY OPERATORS[ \t]*:[ \t]*(\d+)",
                                  re.MULTILINE)
 GUESSPNOSO_HOWTO = (
     "Rerun the parent as an unrestricted 1c-SCF (UHF, manual p. 131, or SPIN in the "
     "DFT block, p. 140) without symmetry (space group 1, or SYMMREMO in its geometry "
-    "block, p. 78), then make this deck from it. For the SOC energy from a scalar "
+    "block, p. 78), then make this deck from it; from a SOC deck that is the deck "
+    "without its TWOCOMPON block, with SYMMREMO and SPIN added and its INPSOC basis "
+    "kept (Crystal_d12/README.md). For the SOC energy from a scalar "
     "matrix in one cycle the manual offers 2NDVARIAT (p. 174), which MACE does not write.")
 
 
@@ -309,11 +318,12 @@ def guesspnoso_parent_problem(options, parent, output_file):
     if options.get("two_component") or "TWOCOMPON" in records:
         return ("GUESSPNOSO starts from a previous one-component SCF (manual p. 173), and "
                 "the parent is a two-component run; \"guesspso\" restarts from it")
-    problems = []
+    problems, crystal_says = [], []
     unrestricted = ("UHF" in records or "SPIN" in records
                     or bool(re.search(r"SPIN POLARIZED|TYPE OF CALCULATION.*UNRESTRICTED", out)))
     if not unrestricted:
         problems.append("the parent is restricted (no UHF, p. 131, or SPIN, p. 140)")
+        crystal_says.append(READFG_SHELLS)
     frame = soc_ecp.geometry_frame(parent)
     group_one = frame is not None and frame[1] and \
         frame[1][1 if frame[0] == "CRYSTAL" else 0] == (repr(1.0),)
@@ -327,9 +337,12 @@ def guesspnoso_parent_problem(options, parent, output_file):
     elif not group_one and not (operators and operators[-1] == "1"):
         problems.append("the parent ran with symmetry (its group is not 1 and it has no "
                         "SYMMREMO, p. 78)")
+        crystal_says.append(READFG_SYMMETRY)
     if problems:
         return ("GUESSPNOSO needs an unrestricted 1c-SCF run without symmetry (manual "
-                "p. 173), and " + "; ".join(problems) + ". " + GUESSPNOSO_HOWTO)
+                "p. 173), and " + "; ".join(problems) + ". CRYSTAL would abort at once with "
+                + " or ".join(f'"{words}"' for words in crystal_says)
+                + " (measured on CRYSTAL23). " + GUESSPNOSO_HOWTO)
     ui.info("  GUESSPNOSO: the parent is an unrestricted one-component run without "
             "symmetry")
     return None

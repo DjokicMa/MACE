@@ -199,9 +199,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (SYMMREMO, p. 78, or group 1), read from the parent deck with its .out as
   the fallback (CRYSTAL's "SPIN POLARIZED" / "UNRESTRICTED" lines and
   "NUMBER OF SYMMETRY OPERATORS"), with a non-empty `.f9` and the same frame
-  and shells. Otherwise nothing is written, and the reason says how to rerun
-  the parent and names 2NDVARIAT (p. 174) as the manual's one-cycle
-  alternative. The child gets no SYMMREMO: opening TWOCOMPON deactivates
+  and shells. Otherwise nothing is written, and the reason quotes what
+  CRYSTAL would do, measured on CRYSTAL23: abort at once with "ERROR ****
+  READFG **** RESTART NOT POSSIBLE - SYMMETRY INCOMPATIBILITY" (a parent that
+  kept its symmetry) or "... - OPEN-CLOSED SHELL INCOMPATIBILITY" (a
+  restricted parent), never run on from a matrix that does not fit. It says
+  how to rerun the parent (from a SOC deck: drop TWOCOMPON, add SYMMREMO and
+  SPIN, keep the INPSOC basis) and names 2NDVARIAT (p. 174) as the manual's
+  one-cycle alternative. The child gets no SYMMREMO: opening TWOCOMPON deactivates
   symmetry (p. 169), and opt2d12 does not write it; for a SYMMREMO parent
   whose group is not 1 a warning says the atom order was checked only for a
   Bi2 bilayer. A parent's SPIN carries over (a 2c deck accepts it). Measured

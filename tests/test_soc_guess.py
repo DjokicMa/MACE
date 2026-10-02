@@ -251,6 +251,64 @@ def test_a_parent_guesspnoso_cannot_start_from_is_refused(opt2d12_restart, capsy
     assert why in err and "SYMMREMO" in err and "2NDVARIAT (p. 174)" in err
 
 
+# CRYSTAL's own words for each (measured on CRYSTAL23, Bi2 bilayer): it aborts
+# at once in READFG rather than run from a matrix that does not fit.
+READFG_SYMMETRY = "ERROR **** READFG **** RESTART NOT POSSIBLE - SYMMETRY INCOMPATIBILITY"
+READFG_SHELLS = "ERROR **** READFG **** RESTART NOT POSSIBLE - OPEN-CLOSED SHELL INCOMPATIBILITY"
+
+
+@pytest.mark.parametrize("text,said,unsaid", [
+    (PBTE.replace(*P1), [READFG_SHELLS], [READFG_SYMMETRY]),
+    (PBTE.replace(*SPIN), [READFG_SYMMETRY], [READFG_SHELLS]),
+    (PBTE, [READFG_SHELLS, READFG_SYMMETRY], []),
+], ids=["restricted", "symmetric", "both"])
+def test_the_refusal_quotes_what_crystal_would_say(opt2d12_restart, capsys, text, said, unsaid):
+    status, deck, sp = opt2d12_restart(text=text, soc=True, soc_guess="guesspnoso")
+    err = " ".join(capsys.readouterr().err.split())
+    assert status == 1 and deck is None and not list(sp.glob("*.f20"))
+    for words in said:
+        assert words in err
+    for words in unsaid:
+        assert words not in err
+
+
+# The 1c parent of a SOC deck, made by hand as Crystal_d12/README.md says:
+# the SOC deck without its TWOCOMPON block, with SYMMREMO in the geometry
+# block and SPIN in the DFT block, its INPSOC basis kept.
+SOC_TO_1C = [("TWOCOMPON\nSOC\nEND\n", ""), ("252 0.5 0.5 0.5\nEND\n", "252 0.5 0.5 0.5\nSYMMREMO\nEND\n"),
+             SPIN]
+
+
+def _one_component(deck, skip=None):
+    for i, change in enumerate(SOC_TO_1C):
+        if i != skip:
+            assert change[0] in deck
+            deck = deck.replace(*change)
+    return deck
+
+
+def test_the_documented_1c_parent_of_a_soc_deck_starts_a_guesspnoso_deck(opt2d12_restart, capsys):
+    parent = _one_component(SOC_PARENT)
+    assert "TWOCOMPON" not in parent and "INPSOC" in parent
+    status, deck, sp = opt2d12_restart(text=parent, f9=b"1c matrix", soc=True,
+                                       soc_guess="guesspnoso")
+    assert status == 0 and deck is not None, capsys.readouterr().err
+    text = deck.read_text()
+    assert "TWOCOMPON\nSOC\nGUESSPNOSO\nEND\nSCFDIR\n" in text and "FMIXING\n80\n" in text
+    # the INPSOC basis carried over
+    assert [ln.split() for ln in _basis(text)] == [ln.split() for ln in _basis(SOC_PARENT)]
+    assert deck.with_suffix(".f20").read_bytes() == b"1c matrix"
+
+
+@pytest.mark.parametrize("skip,words", [(1, READFG_SYMMETRY), (2, READFG_SHELLS)],
+                         ids=["no-symmremo", "no-spin"])
+def test_the_1c_parent_without_symmremo_or_spin_is_refused(opt2d12_restart, capsys, skip, words):
+    status, deck, sp = opt2d12_restart(text=_one_component(SOC_PARENT, skip), f9=b"1c matrix",
+                                       soc=True, soc_guess="guesspnoso")
+    assert status == 1 and deck is None
+    assert words in " ".join(capsys.readouterr().err.split())
+
+
 def test_guesspnoso_needs_the_parent_matrix(opt2d12_restart, capsys):
     status, deck, sp = opt2d12_restart(text=P1_SPIN_PARENT, f9=None, soc=True,
                                        soc_guess="guesspnoso")
