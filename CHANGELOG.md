@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A deck derived from a charged or ionic parent keeps its charge state.**
+  `opt2d12` wrote SP, FREQ and other children without the parent's `CHEMOD`
+  (per-atom starting shell charges, e.g. Li+ and FSI-), `CHARGED` and `DOPING`
+  (net electrons added or removed) records, so the child of a +1 Li/FSI/EC
+  cluster ran as a neutral one with a different electron count. They are now
+  copied from the parent deck: `CHEMOD`/`CHARGED` after the basis set and
+  `DOPING` in the SCF block, as in decks CRYSTAL23 runs. `CHEMOD` names atoms by
+  position, so it is only copied when the child lists the same number of atoms;
+  otherwise the deck is written with a warning to add it by hand.
+
 - **An opt2d12 config with `"method": "HF"` and HF3C or HFSOL3C writes MINIX
   or SOLMINIX.** It kept the parent's basis: an external-basis parent gave
   `BASISSET / EXTERNAL (from original D12) / HF3C / END`, which is not input,

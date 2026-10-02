@@ -83,6 +83,7 @@ from d12_writer import (
 )
 # Import write_scf_section from d12_writer
 from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES, atomic_deck
+from charge_records import carry_charge_records
 from d12_interactive import (
     display_current_settings, interactive_d12_configuration,
     get_calculation_options_from_current, get_calculation_options,
@@ -1979,6 +1980,25 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
         if not LAST_RESULT["reason"]:
             LAST_RESULT["reason"] = "D12 creation aborted"
         return False, options
+
+    # A charged or ionic parent (CHEMOD / CHARGED / DOPING) must give a child
+    # with the same electron count; the settings model does not carry these
+    # records, so copy them from the parent deck text.
+    if has_parent_deck:
+        with open(input_file, "r", errors="ignore") as pf:
+            parent_text = pf.read()
+        with open(new_filename, "r") as cf:
+            child_text = cf.read()
+        carried, charge_notes = carry_charge_records(child_text, parent_text)
+        if carried != child_text:
+            with open(new_filename, "w") as cf:
+                cf.write(carried)
+        for note in charge_notes:
+            if note.startswith("WARNING"):
+                ui.warn(note)
+                LAST_RESULT["notes"].append(note)
+            else:
+                ui.info(f"Charge state: {note}")
 
     ui.ok(f"\nSuccessfully created {new_filename}")
     LAST_RESULT["deck"] = new_filename
