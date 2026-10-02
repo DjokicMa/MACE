@@ -327,6 +327,152 @@ def soc_ecp_records(z: int, input_lines: List[str], soscale: float = 1.0) -> Lis
     return inpsoc_records(ecp, z, soscale)
 
 
+# --- CRYSTAL's internal STUTSC library -------------------------------------
+#
+# Instead of the inline INPSOC records, an atom's ECP can be CRYSTAL's own
+# Stuttgart spin-orbit library, the one-line keyword STUTSC (manual p. 84).
+# STUTSC_CORES lists the elements for which CRYSTAL's STUTSC was measured to be
+# the same potential as MACE's INPSOC conversion of sopseud/<200+Z>.mol, with
+# the core size of both. Measured on HPCC, CRYSTAL/23-intel-2023a:
+#   - Te, Au, Pb, Bi (FACTS): bulk/slab SOC runs, the same printed
+#     PSEUDOPOTENTIAL INFORMATION and energies (Bi2, Au identical; PbTe 2.8e-7 Ha).
+#   - the others (round 6, H1): one atom as MOLECULE, INPSOC and STUTSC decks
+#     differing only in that record, MAXCYCLE 2. The PSEUDOPOTENTIAL INFORMATION
+#     tables print the same nuclear charge and the same numbers, and the
+#     cycle-1 energies are identical, except where CRYSTAL's own data has one
+#     digit less (Pb 9.9406230 vs 9.9406210, In 9.1034300 vs 9.1034330;
+#     In's energy still identical, Pb's 2.8e-7 Ha apart).
+# Not in the table, also from H1: Hf, whose STUTSC local term has a different
+# exponent (10.2488560 where sopseud/272.mol has 10.7291270; cycle-1 energy
+# 9e-5 Ha apart); La-Lu, where CRYSTAL stops (MPI_Abort) right after printing
+# the PSEUDOPOTENTIAL INFORMATION header for STUTSC; Tc and Yb, which MACE gives
+# no spin-orbit ECP. For an element outside the table the default INPSOC is
+# written.
+STUTSC_CORES = {
+    37: 28, 38: 28, 39: 28, 40: 28, 41: 28, 42: 28,             # Rb-Mo, measured (H1)
+    44: 28, 45: 28, 46: 28, 47: 28, 48: 28, 49: 28, 50: 28,     # Ru-Sn, measured (H1)
+    51: 28, 53: 28,                                             # Sb, I, measured (H1)
+    52: 28,                                                     # Te, measured (FACTS, H1)
+    55: 46, 56: 46,                                             # Cs, Ba, measured (H1)
+    73: 60, 74: 60, 75: 60, 76: 60, 77: 60, 78: 60,             # Ta-Pt, measured (H1)
+    80: 60, 81: 60,                                             # Hg, Tl, measured (H1)
+    79: 60, 82: 60, 83: 60,                                     # Au, Pb, Bi, measured (FACTS, H1)
+}
+ECP_FORMS = ("inpsoc", "stutsc")
+# Library directories whose ECP atoms soc_deck can give a spin-orbit part.
+LIBRARY_DIRS = tuple(os.path.join(_HERE, "basis_sets", d)
+                     for d in ("full.basis.triplezeta", "full.basis.doublezeta", "stuttgart"))
+
+
+def _checked_ecp_form(value) -> Optional[str]:
+    """A "soc_ecp" value, "inpsoc" or "stutsc", or None when none was given."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or value.strip().lower() not in ECP_FORMS:
+        raise SocError(f'soc_ecp must be "inpsoc" (MACE\'s INPSOC records, the default) '
+                       f'or "stutsc" (CRYSTAL\'s STUTSC library, manual p. 84), not {value!r}')
+    return value.strip().lower()
+
+
+def _symbol(z: int) -> str:
+    try:
+        return load_so_ecp(z).symbol
+    except SocError:
+        return f"Z={z}"
+
+
+def _stutsc_elements() -> str:
+    return ", ".join(_symbol(z) for z in sorted(STUTSC_CORES))
+
+
+def _no_scale_for_stutsc(soscale: float, what: str) -> None:
+    if float(soscale) != 1.0:
+        raise SocError(f"{what}: CRYSTAL's STUTSC has no scale factor for its spin-orbit "
+                       f"terms (INPSOC's SOSCALE, manual p. 84), so SOSCALE {soscale} "
+                       f"would be dropped; use the INPSOC records (\"soc_ecp\": \"inpsoc\")")
+
+
+def stutsc_records(z: int, soscale: float = 1.0) -> List[str]:
+    """["STUTSC"] for element ``z``, whose deck ECP has already been found to
+    be the scalar part of sopseud/<200+Z>.mol (soc_ecp_records), when
+    CRYSTAL's STUTSC was measured to be that same potential (STUTSC_CORES)."""
+    ecp = load_so_ecp(z)
+    if z not in STUTSC_CORES or ecp.ncore != STUTSC_CORES[z]:
+        raise SocError(
+            f"{ecp.symbol} (Z={z}): CRYSTAL's STUTSC spin-orbit ECP was compared with "
+            f"MACE's INPSOC conversion only for {_stutsc_elements()} (the same potential, "
+            f"measured on HPCC); for {ecp.symbol} the default INPSOC (\"soc_ecp\": "
+            f"\"inpsoc\") works")
+    _no_scale_for_stutsc(soscale, f"{ecp.symbol} (Z={z})")
+    return ["STUTSC"]
+
+
+def _tokens(lines: List[str]) -> List[List[str]]:
+    return [ln.split() for ln in lines if ln.strip()]
+
+
+def _library_shells(z: int) -> List[List[List[str]]]:
+    """The valence shells (as tokens) of MACE's library files for 200+Z whose
+    INPUT ECP is the scalar part of sopseud/<200+Z>.mol."""
+    found = []
+    ecp = load_so_ecp(z)
+    for directory in LIBRARY_DIRS:
+        path = os.path.join(directory, str(200 + z))
+        if not os.path.exists(path):
+            continue
+        with open(path) as fh:
+            lines = [ln.rstrip("\n") for ln in fh if ln.strip()]
+        try:
+            if lines[1].strip() != "INPUT":
+                continue
+            end = 3 + sum(int(c) for c in lines[2].split()[1:])
+            if same_scalar_potential(ecp, z, lines[1:end]):
+                found.append(_tokens(lines[end:]))
+        except (IndexError, ValueError):
+            continue
+    return found
+
+
+def official_soc_block(z: int) -> Optional[List[str]]:
+    """The official pob-TZVP-rev2-SOC block for element ``z`` (NAT 200+Z,
+    STUTSC, shells), or None when MACE has none for it (none yet)."""
+    return None
+
+
+def _kept_stutsc(z: int, block: List[str], soscale: float, ecp_form: Optional[str],
+                 log) -> List[str]:
+    """The STUTSC record of a deck derived from a SOC deck (``block`` is the
+    atom's whole basis block), kept when MACE would have written that block
+    itself: its shells are MACE's library basis for an element whose STUTSC
+    core was measured to match (STUTSC_CORES), or the block is the official
+    pob-TZVP-rev2-SOC one. Anything else is refused, as for INPSOC: MACE does
+    not take over a potential it did not write."""
+    what = f"{_symbol(z)} (Z={z})"
+    if ecp_form == "inpsoc":
+        raise SocError(f"{what}: the deck has CRYSTAL's STUTSC ECP, and \"soc_ecp\": "
+                       f"\"inpsoc\" would change the potential its valence basis was "
+                       f"kept with; leave out soc_ecp to keep STUTSC")
+    _no_scale_for_stutsc(soscale, what)
+    official = official_soc_block(z)
+    if official is not None and _tokens(block) == _tokens(official):
+        log(f"SOC deck: {_symbol(z)} keeps CRYSTAL's STUTSC spin-orbit ECP it already has "
+            f"(the official pob-TZVP-rev2-SOC block)")
+        return [block[1]]
+    try:
+        library = (z in STUTSC_CORES and load_so_ecp(z).ncore == STUTSC_CORES[z]
+                   and _tokens(block[2:]) in _library_shells(z))
+    except SocError:
+        library = False
+    if not library:
+        raise SocError(
+            f"{what}: the deck's STUTSC ECP sits on a valence basis that is neither MACE's "
+            f"library basis for an element whose STUTSC core was measured to match "
+            f"({_stutsc_elements()}) nor the official pob-TZVP-rev2-SOC block; MACE does "
+            f"not take over a potential it did not write")
+    log(f"SOC deck: {_symbol(z)} keeps CRYSTAL's STUTSC spin-orbit ECP it already has")
+    return [block[1]]
+
+
 # Keywords the 2c-SCF accepts, from manual chapter 6 (pp. 166-169): anything
 # not listed there "is not supported for calculations in the two-component
 # spinor basis" (p. 166).
@@ -409,7 +555,8 @@ def _basis_block_span(lines: List[str], i: int) -> Tuple[int, int, int]:
 
 
 def soc_deck(deck: str, soscale: float = 1.0, log=print,
-             fmixing: Optional[int] = None, smear: Optional[float] = None) -> str:
+             fmixing: Optional[int] = None, smear: Optional[float] = None,
+             ecp_form: Optional[str] = None) -> str:
     """Turn a finished single-point MACE deck into a 2c-SCF SOC deck.
 
     Every atom whose basis block carries an INPUT ECP (conventional atomic
@@ -423,11 +570,18 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print,
     below). ``fmixing`` (the "soc_fmixing" setting) asks for that FMIXING
     whatever the deck had. ``smear`` (the "smear" setting, a width in
     hartree) writes SMEAR with that width after the SHRINK records, or gives
-    the deck's own SMEAR that width; SMEAR is never added otherwise. Notes and
-    warnings go to ``log``. Raises SocError, and returns no deck, for anything
-    the manual says the 2c-SCF does not support."""
+    the deck's own SMEAR that width; SMEAR is never added otherwise.
+    ``ecp_form`` (the "soc_ecp" setting): "stutsc" writes CRYSTAL's STUTSC
+    record in place of the INPSOC records, for the elements in STUTSC_CORES
+    only and with SOSCALE 1; "inpsoc" or None writes INPSOC. A deck derived
+    from a SOC deck keeps INPSOC records MACE wrote (converted to STUTSC with
+    "stutsc") and a STUTSC record on a basis MACE would have written it with
+    (_kept_stutsc). Notes and warnings go to ``log``. Raises SocError, and
+    returns no deck, for anything the manual says the 2c-SCF does not
+    support."""
     fmixing = _checked_fmixing(fmixing)
     smear = checked_smear(smear)
+    ecp_form = _checked_ecp_form(ecp_form)
     lines = deck.rstrip("\n").split("\n")
     upper = [ln.strip().upper() for ln in lines]
 
@@ -458,20 +612,36 @@ def soc_deck(deck: str, soscale: float = 1.0, log=print,
             ecp_start, ecp_end, nxt = _basis_block_span(lines, i)
         except (ValueError, IndexError):
             raise SocError(f"could not read the basis-set input at line {i + 1}: {lines[i]!r}")
-        if ecp_end > ecp_start and lines[ecp_start].strip().upper() == "INPSOC" \
-                and 200 < number < 300:
+        key = lines[ecp_start].strip().upper() if ecp_end > ecp_start else None
+        if key == "INPSOC" and 200 < number < 300:
             # A deck derived from a SOC deck carries the INPSOC records already.
-            out += [lines[i]] + _kept_inpsoc(number - 200, lines[ecp_start:ecp_end],
-                                             soscale, log)
+            records = _kept_inpsoc(number - 200, lines[ecp_start:ecp_end], soscale, log)
+            if ecp_form == "stutsc":
+                records = stutsc_records(number - 200, soscale)
+                log(f"SOC deck: {_symbol(number - 200)}'s INPSOC records become CRYSTAL's "
+                    f"STUTSC (soc_ecp)")
+            out += [lines[i]] + records + lines[ecp_end:nxt]
+            ecp_atoms += 1
+        elif key == "STUTSC" and 200 < number < 300:
+            # A deck derived from a SOC deck written with STUTSC.
+            out += [lines[i]] + _kept_stutsc(number - 200, lines[i:nxt], soscale,
+                                             ecp_form, log)
             out += lines[ecp_end:nxt]
             ecp_atoms += 1
-        elif ecp_end > ecp_start:
-            if lines[ecp_start].strip().upper() != "INPUT" or not 200 < number < 300:
+        elif key is not None:
+            if key != "INPUT" or not 200 < number < 300:
                 raise SocError(
                     f"atom {number}: only an ECP entered with INPUT can be given its "
-                    f"spin-orbit part, not {lines[ecp_start].strip()}")
-            out += [lines[i]] + soc_ecp_records(number - 200, lines[ecp_start:ecp_end], soscale)
-            out += lines[ecp_end:nxt]
+                    f"spin-orbit part, not {lines[ecp_start].strip()} (a SOC deck takes "
+                    f"INPUT, which MACE converts; INPSOC records as MACE writes them; or "
+                    f"CRYSTAL's STUTSC on MACE's library basis for "
+                    f"{_stutsc_elements()} or on the official pob-TZVP-rev2-SOC block)")
+            records = soc_ecp_records(number - 200, lines[ecp_start:ecp_end], soscale)
+            if ecp_form == "stutsc":
+                records = stutsc_records(number - 200, soscale)
+                log(f"SOC deck: {_symbol(number - 200)} gets CRYSTAL's STUTSC spin-orbit "
+                    f"ECP (soc_ecp), the same potential as MACE's INPSOC (measured)")
+            out += [lines[i]] + records + lines[ecp_end:nxt]
             ecp_atoms += 1
         else:
             out += lines[i:nxt]
@@ -796,7 +966,7 @@ def cif_metal_warning_once(log=print) -> None:
 
 # The keys of a cif2d12 options file or opt2d12 template that tune a SOC deck,
 # and the soc_deck argument each one sets.
-SOC_OPTION_KEYS = {"soc_fmixing": "fmixing", "smear": "smear"}
+SOC_OPTION_KEYS = {"soc_fmixing": "fmixing", "smear": "smear", "soc_ecp": "ecp_form"}
 
 
 def soc_deck_options(options) -> Dict[str, object]:

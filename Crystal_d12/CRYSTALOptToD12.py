@@ -662,10 +662,11 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
             ui.warn(f"  Warning: the parent is a two-component run, but this deck is "
                     f"scalar ({reason})")
             if settings.get("use_original_external_basis") and any(
-                    str(line).strip().upper() == "INPSOC" for line in external_basis_data or []):
-                ui.warn("  Warning: its basis keeps the parent's INPSOC spin-orbit ECPs; "
-                        "what a one-component SCF does with a SOREP is not in the "
-                        "CRYSTAL23 manual (untested)")
+                    str(line).strip().upper() in ("INPSOC", "STUTSC")
+                    for line in external_basis_data or []):
+                ui.warn("  Warning: its basis keeps the parent's spin-orbit ECPs (INPSOC "
+                        "or STUTSC); what a one-component SCF does with a SOREP is not "
+                        "in the CRYSTAL23 manual (untested)")
 
     with atomic_deck(output_file) as f:
         if settings.get("soc"):

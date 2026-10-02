@@ -110,6 +110,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selects was not measured, DOSS keeps a warning to check that range.
   Decks from scalar parents are unchanged.
 
+- **SOC decks can use CRYSTAL's internal STUTSC ECP (opt-in).** A
+  `"soc_ecp": "stutsc"` key in a cif2d12 options file or an opt2d12 template
+  writes the one-line `STUTSC` record (CRYSTAL's Stuttgart spin-orbit
+  library, manual p. 84) in place of MACE's INPSOC records; the header and
+  the valence shells stay as they are. It is written only for elements where
+  CRYSTAL's STUTSC was measured to be the same potential as MACE's INPSOC,
+  with the same core (`soc_ecp.STUTSC_CORES`): Te, Au, Pb and Bi from bulk and
+  slab SOC runs (identical energies for Bi2 and Au, 2.8e-7 Ha for PbTe), and
+  Rb-Mo, Ru-I, Cs, Ba and Ta-Bi from one-atom MOLECULE decks (same
+  PSEUDOPOTENTIAL INFORMATION table and nuclear charge, identical cycle-1
+  energies; CRYSTAL's data has one digit less for In and Pb). Not for Hf,
+  whose STUTSC local term has another exponent (10.2488560 against
+  sopseud's 10.7291270), nor La-Lu, where CRYSTAL stops after the
+  PSEUDOPOTENTIAL INFORMATION header; those, and anything with SOSCALE other
+  than 1 (STUTSC has no scale factor), are refused with the reason. The
+  pairing check of the INPUT ECP runs first, as for INPSOC. A deck derived
+  from a SOC deck keeps a STUTSC record only when its valence basis is MACE's
+  library basis for such an element (or the official pob-TZVP-rev2-SOC
+  block), as MACE does not take over a potential it did not write; with
+  `"stutsc"` a kept INPSOC becomes STUTSC. The opt2d12 warning for a scalar
+  child of a SOC parent now names STUTSC records too. The default stays
+  INPSOC, and decks without the key are unchanged.
+
 ### Fixed
 
 - **Basis-library files CRYSTAL cannot read are refused on every deck

@@ -487,6 +487,15 @@ for with `"soc": true` in a cif2d12 options file or an opt2d12 template.
   functionals and keywords manual chapter 6 does not list (including a DFTD3
   block), `BASISSET`, and ECPs that are not a spin-orbit ECP's scalar part.
 
+Options for SOC decks (keys of a cif2d12 options file or an opt2d12 template;
+none is on by default, and without them every deck is as above):
+
+| Key | Values | What it does |
+| --- | --- | --- |
+| `soc_fmixing` | 0-100 | FMIXING of the SOC deck (default 50). |
+| `smear` | width in hartree | SMEAR after SHRINK (see above). |
+| `soc_ecp` | `"inpsoc"` (default), `"stutsc"` | `"stutsc"` writes CRYSTAL's internal `STUTSC` record (manual p. 84) in place of the INPSOC records, for the elements where it was measured to be the same potential with the same core (`soc_ecp.STUTSC_CORES`: Rb-Mo, Ru-I, Cs, Ba, Ta-Bi; not Hf, whose STUTSC differs, nor La-Lu, where CRYSTAL stops). The ECP must still pass the pairing check, and SOSCALE must be 1 (STUTSC has no scale factor). A parent deck's STUTSC is kept when its valence basis is MACE's library basis for such an element, or the official pob-TZVP-rev2-SOC block; anything else is refused. |
+
 ### `d12_interactive.py`
 
 **Purpose:** Interactive prompts and user interface utilities.
