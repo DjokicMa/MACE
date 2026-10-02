@@ -110,7 +110,8 @@ def copy_dependencies(target_dir: str = "."):
                 "d12_writer.py",
                 "menu_nav.py",
                 "spglib_compat.py",
-                "charge_records.py"
+                "charge_records.py",
+                "basis_library.py"  # reads the bundled basis library files
             ]
         },
         "Crystal_d3": {

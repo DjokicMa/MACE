@@ -322,8 +322,51 @@ def unwrap_d12_config(data: Any) -> Any:
     if (isinstance(data, dict) and isinstance(data.get("configuration"), dict)
             and (data.get("type") == "d12_configuration"
                  or set(data) <= {"version", "type", "configuration"})):
-        return data["configuration"]
-    return data
+        return apply_external_basis_family(data["configuration"])
+    return apply_external_basis_family(data)
+
+
+# "external_basis_family" names a bundled external basis family in a
+# configuration file instead of a path (which differs per checkout).
+EXTERNAL_BASIS_FAMILIES = {
+    "tz": "full.basis.triplezeta",
+    "triplezeta": "full.basis.triplezeta",
+    "dz": "full.basis.doublezeta",
+    "doublezeta": "full.basis.doublezeta",
+    "tz-rev2022": "full.basis.triplezeta.rev2022",
+    "rev2022": "full.basis.triplezeta.rev2022",
+}
+
+
+def apply_external_basis_family(config: Any) -> Any:
+    """Resolve ``"external_basis_family"`` to the bundled family's path.
+
+    ``{"external_basis_family": "tz-rev2022"}`` sets basis_set_type EXTERNAL
+    and basis_set / basis_set_path to that family's path in this checkout.
+    A config without the key is returned unchanged (the same object); one
+    with it is copied, never edited in place. An unknown name, or a
+    basis_set_path naming a different directory, is a ValueError.
+    """
+    if not isinstance(config, dict) or "external_basis_family" not in config:
+        return config
+    name = str(config["external_basis_family"]).strip().lower()
+    family = EXTERNAL_BASIS_FAMILIES.get(name)
+    if family is None:
+        raise ValueError(
+            f"external_basis_family must be one of "
+            f"{', '.join(sorted(EXTERNAL_BASIS_FAMILIES))} "
+            f"(got {config['external_basis_family']!r})")
+    from basis_library import BASIS_SETS_DIR, bundled_family_for
+
+    path = os.path.join(BASIS_SETS_DIR, family) + "/"
+    given = config.get("basis_set_path")
+    if given and bundled_family_for(given) != family:
+        raise ValueError(
+            f"external_basis_family {config['external_basis_family']!r} and "
+            f"basis_set_path {given!r} name different basis sets")
+    resolved = dict(config)
+    resolved.update(basis_set_type="EXTERNAL", basis_set=path, basis_set_path=path)
+    return resolved
 
 
 # cif2d12 option name for each configuration-file field that is spelled

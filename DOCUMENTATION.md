@@ -309,6 +309,37 @@ The scripts recognize specific CRYSTAL output patterns:
 - `ETOT(AU)` - Total energy extraction
 - `POSSIBLY CONDUCTING STATE` - Electronic state classification
 
+### Bundled Basis Sets
+
+MACE's external basis sets live in `Crystal_d12/basis_sets/`, one library file
+per family, read by `Crystal_d12/basis_library.py`:
+
+| family | menu (external basis) | what it is |
+|---|---|---|
+| `full.basis.doublezeta` | 1: DZVP-REV2 | pob-DZVP-rev2 (H-Br), pob-DZVP 2018 (Rb-I), shared ERD / rev2 records for Tc, Cs-Bi and Ac-Es |
+| `full.basis.triplezeta` | 2: TZVP-REV2 (default) | pob-TZVP-rev2 (H-Br, Cs, Ba, Hf-Bi), pob-TZVP 2018 (Rb-I), ERD 2017 (Tc, La-Lu small-core with 4f in the valence, Ac-Es) |
+| `full.basis.triplezeta.rev2022` | 4: TZVP-REV2 (2022 update: Rb-I, La-Lu) | triplezeta with X_POB_TZVP_rev2 for Rb-I (not Tc) and X_pob_TZVP_rev2 for La-Lu; La has a 46-electron core here |
+| `stuttgart` | - | legacy Stuttgart-type records used by the SOC tooling |
+| `pob-tzvp-rev2-soc` | - | X_pob_TZVP_rev2_SOC (STUTSC) records for two-component SOC decks; data only, `basis_library.soc_basis_record(z)` |
+
+- **Paths.** A path such as `mace_config.DEFAULT_TZ_PATH`
+  (`.../basis_sets/full.basis.triplezeta/`) still names its family. Only these
+  exact paths are served from the library; any other directory (menu option
+  3, a custom path) is read from disk as numbered files.
+- **Configuration files.** `"external_basis_family": "tz"`, `"dz"` or
+  `"tz-rev2022"` selects a family without writing a path.
+- **Provenance.** Each record carries its source set, reference, DOI and how it
+  was identified. `basis_sets/PROVENANCE.md` is the generated summary.
+- **Rebuilding.** `basis_sets/build_library.py` rebuilds the files: `--check`
+  compares them with the committed files, `--fetch CACHE` rebuilds the families
+  fetched from crystal.unito.it, and `--verify CACHE` compares the site's
+  records with the bundled ones.
+- **Format.** In a `.lib` file each record is stored as `#%record <n>
+  bytes=<N>`, then `#%  field value` lines, then exactly N bytes of the record
+  as CRYSTAL reads it.
+- **Record names.** A record's name is the old file name: Z for all-electron
+  records and 200 + Z for ECP records, which MACE also writes in the geometry.
+
 ### HPC Environment Requirements
 
 - **SLURM** workload manager with `squeue`, `sbatch`, `scancel`
@@ -806,7 +837,7 @@ The file storage system extends the existing database schema:
 - All file paths should be absolute, not relative
 - Scripts designed for batch processing of hundreds of calculations
 - Job queue manager implements intelligent throttling and resource management
-- Basis sets organized by atomic number in `full.basis.doublezeta/`, `full.basis.triplezeta/`, and `stuttgart/`
+- External basis sets are one library file per family in `Crystal_d12/basis_sets/` (see Bundled Basis Sets); records are keyed by atomic number (200 + Z for ECP records)
 - RCSR database provides extensive 2P and 3P periodic structure templates with symmetry data
 - Phonon calculations supported with automatic band structure plotting from f25 files
 - Crystal symmetry analysis integrated for automated structure classification

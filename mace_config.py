@@ -29,6 +29,9 @@ BASIS_SETS_DIR = CRYSTAL_D12_DIR / "basis_sets"
 BASIS_DOUBLEZETA_DIR = BASIS_SETS_DIR / "full.basis.doublezeta"
 BASIS_TRIPLEZETA_DIR = BASIS_SETS_DIR / "full.basis.triplezeta"
 BASIS_STUTTGART_DIR = BASIS_SETS_DIR / "stuttgart"
+# Opt-in TZVP-REV2 with the 2022 Rb-I and La-Lu updates. Like the others it is
+# one library file (basis_library.py); this path names it.
+BASIS_TZ_REV2022_DIR = BASIS_SETS_DIR / "full.basis.triplezeta.rev2022"
 
 # Data directories
 RCSR_DIR = CRYSTAL_D3_DIR / "RCSR"
@@ -47,13 +50,15 @@ EXAMPLE_CONFIGS_DIR = CRYSTAL_D3_DIR / "example_configs"
 DEFAULT_DZ_PATH = str(BASIS_DOUBLEZETA_DIR) + "/"
 DEFAULT_TZ_PATH = str(BASIS_TRIPLEZETA_DIR) + "/"
 DEFAULT_STUTTGART_PATH = str(BASIS_STUTTGART_DIR) + "/"
+DEFAULT_TZ_REV2022_PATH = str(BASIS_TZ_REV2022_DIR) + "/"
 
 def get_basis_path(basis_type="doublezeta"):
     """
     Get the path to a basis set directory.
     
     Args:
-        basis_type: One of "doublezeta", "triplezeta", or "stuttgart"
+        basis_type: One of "doublezeta", "triplezeta", "stuttgart" or
+            "tz-rev2022" (the opt-in 2022 update of triplezeta)
         
     Returns:
         Path object to the basis set directory
@@ -63,7 +68,9 @@ def get_basis_path(basis_type="doublezeta"):
         "dz": BASIS_DOUBLEZETA_DIR,
         "triplezeta": BASIS_TRIPLEZETA_DIR,
         "tz": BASIS_TRIPLEZETA_DIR,
-        "stuttgart": BASIS_STUTTGART_DIR
+        "stuttgart": BASIS_STUTTGART_DIR,
+        "tz-rev2022": BASIS_TZ_REV2022_DIR,
+        "rev2022": BASIS_TZ_REV2022_DIR,
     }
     return basis_map.get(basis_type.lower(), BASIS_DOUBLEZETA_DIR)
 
@@ -123,9 +130,10 @@ def ensure_paths_exist():
         "Crystal_d12": CRYSTAL_D12_DIR,
         "Crystal_d3": CRYSTAL_D3_DIR,
         "Basis Sets Dir": BASIS_SETS_DIR,
-        "Basis DZ": BASIS_DOUBLEZETA_DIR,
-        "Basis TZ": BASIS_TRIPLEZETA_DIR,
-        "Stuttgart": BASIS_STUTTGART_DIR,
+        # The bundled families are one library file each (basis_library.py).
+        "Basis DZ": BASIS_SETS_DIR / "full.basis.doublezeta.lib",
+        "Basis TZ": BASIS_SETS_DIR / "full.basis.triplezeta.lib",
+        "Stuttgart": BASIS_SETS_DIR / "stuttgart.lib",
         "RCSR": RCSR_DIR,
         "Templates": D3_INPUT_DIR
     }

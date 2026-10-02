@@ -65,6 +65,25 @@ except Exception:
     ui = _UIShim()
 
 
+def _basis_path_exists(path) -> bool:
+    """Whether a basis set path is usable. The bundled families are single
+    library files (Crystal_d12/basis_sets/<family>.lib), so their directory
+    paths no longer exist on disk; Crystal_d12/basis_library.py knows them.
+    If it cannot be loaded, fall back to the plain existence check."""
+    try:
+        try:
+            import basis_library
+        except ImportError:
+            import importlib.util
+            lib_path = Path(__file__).parent.parent.parent / "Crystal_d12" / "basis_library.py"
+            spec = importlib.util.spec_from_file_location("basis_library", lib_path)
+            basis_library = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(basis_library)
+        return basis_library.path_exists(path)
+    except Exception:
+        return Path(path).exists()
+
+
 class WorkflowExecutor:
     """
     Executes planned workflows with full configuration management and error handling.
@@ -2109,6 +2128,14 @@ fi'''
         # material_CRYSTAL_OPT_symm_HSE06-D3_full.basis.triplezeta.d12
         filename = Path(d12_file).name
 
+        # The opt-in 2022 update of the triplezeta family is checked first: its
+        # name contains "full.basis.triplezeta", so the override and bundled
+        # checks below would hand it the older TZ set. It has no per-site
+        # override; it is always the bundled library.
+        if "full.basis.triplezeta.rev2022" in filename:
+            return str(Path(__file__).parent.parent.parent / "Crystal_d12" / "basis_sets"
+                       / "full.basis.triplezeta.rev2022") + "/"
+
         # Explicit per-site override wins (set by the user); avoids hardcoding any
         # one institution's basis directory. MACE_TZ_BASIS_PATH / MACE_DZ_BASIS_PATH
         # point directly at a tz/dz dir; MACE_BASIS_DIR is a parent holding both.
@@ -2139,12 +2166,12 @@ fi'''
                 # Check for bundled basis set indicators in filename
                 if any(tz_indicator in filename.lower() for tz_indicator in ['full.basis.triplezeta', 'triplezeta', 'tz', 'tzvp']):
                     bundled_tz_path = getattr(mace_config, 'DEFAULT_TZ_PATH', None)
-                    if bundled_tz_path and Path(bundled_tz_path).exists():
+                    if bundled_tz_path and _basis_path_exists(bundled_tz_path):
                         return bundled_tz_path
 
                 elif any(dz_indicator in filename.lower() for dz_indicator in ['full.basis.doublezeta', 'doublezeta', 'dz', 'dzvp']):
                     bundled_dz_path = getattr(mace_config, 'DEFAULT_DZ_PATH', None)
-                    if bundled_dz_path and Path(bundled_dz_path).exists():
+                    if bundled_dz_path and _basis_path_exists(bundled_dz_path):
                         return bundled_dz_path
         except Exception:
             pass

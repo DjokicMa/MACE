@@ -84,6 +84,7 @@ from d12_writer import (
 # Import write_scf_section from d12_writer
 from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES, atomic_deck
 from charge_records import carry_charge_records
+import basis_library
 from d12_interactive import (
     display_current_settings, interactive_d12_configuration,
     get_calculation_options_from_current, get_calculation_options,
@@ -826,10 +827,8 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                     for atom_num in sorted(unique_atoms):
                         # Determine correct file name (add 200 for ECP elements)
                         file_num = atom_num + 200 if atom_num in ECP_ELEMENTS_EXTERNAL else atom_num
-                        basis_file = os.path.join(settings["basis_set_path"], str(file_num))
-                        if os.path.exists(basis_file):
-                            with open(basis_file, "r") as bf:
-                                f.write(bf.read())
+                        if basis_library.record_exists(settings["basis_set_path"], file_num):
+                            f.write(basis_library.read_record(settings["basis_set_path"], file_num))
                         else:
                             ui.warn(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
 
@@ -838,7 +837,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 else:
                     # Fallback: basis_set_type is EXTERNAL but no path provided
                     legacy_path = settings.get("basis_set")
-                    if legacy_path and os.path.isdir(legacy_path):
+                    if legacy_path and basis_library.path_exists(legacy_path):
                         ui.info(f"  Note: Using legacy basis_set field as path: {legacy_path}")
                         unique_atoms = set()
                         for atom in coords_to_write:
@@ -847,10 +846,8 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                         # For ECP elements (Z >= 37), basis files are named with +200 offset
                         for atom_num in sorted(unique_atoms):
                             file_num = atom_num + 200 if atom_num in ECP_ELEMENTS_EXTERNAL else atom_num
-                            basis_file = os.path.join(legacy_path, str(file_num))
-                            if os.path.exists(basis_file):
-                                with open(basis_file, "r") as bf:
-                                    f.write(bf.read())
+                            if basis_library.record_exists(legacy_path, file_num):
+                                f.write(basis_library.read_record(legacy_path, file_num))
                             else:
                                 ui.warn(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
 
@@ -907,12 +904,8 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                     for atom_num in sorted(unique_atoms):
                         # Determine correct file name (add 200 for ECP elements)
                         file_num = atom_num + 200 if atom_num in ECP_ELEMENTS_EXTERNAL else atom_num
-                        basis_file = os.path.join(
-                            settings["basis_set_path"], str(file_num)
-                        )
-                        if os.path.exists(basis_file):
-                            with open(basis_file, "r") as bf:
-                                f.write(bf.read())
+                        if basis_library.record_exists(settings["basis_set_path"], file_num):
+                            f.write(basis_library.read_record(settings["basis_set_path"], file_num))
                         else:
                             ui.warn(
                                 f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})"
@@ -924,7 +917,7 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                     # Fallback: basis_set_type is EXTERNAL but no path provided
                     # This can happen if basis_set contains a path (legacy behavior)
                     legacy_path = settings.get("basis_set")
-                    if legacy_path and os.path.isdir(legacy_path):
+                    if legacy_path and basis_library.path_exists(legacy_path):
                         ui.info(f"  Note: Using legacy basis_set field as path: {legacy_path}")
                         unique_atoms = set()
                         for atom in coords_to_write:
@@ -933,10 +926,8 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                         # For ECP elements (Z >= 37), basis files are named with +200 offset
                         for atom_num in sorted(unique_atoms):
                             file_num = atom_num + 200 if atom_num in ECP_ELEMENTS_EXTERNAL else atom_num
-                            basis_file = os.path.join(legacy_path, str(file_num))
-                            if os.path.exists(basis_file):
-                                with open(basis_file, "r") as bf:
-                                    f.write(bf.read())
+                            if basis_library.record_exists(legacy_path, file_num):
+                                f.write(basis_library.read_record(legacy_path, file_num))
                             else:
                                 ui.warn(f"Warning: Basis set file not found for element {atom_num} (tried: {file_num})")
 
