@@ -1,10 +1,17 @@
 """Point defects in periodic cells: deck sets, output parsing and analysis.
 
+``mace defects build`` turns a single-point host deck into a pristine supercell
+deck plus one deck per charge state, by editing the host's text (the method,
+basis set, grids and tolerances are never re-rendered). ``mace defects potc``
+stages the electrostatic-potential runs used for potential alignment and
+``mace defects analyze`` reads the outputs back.
+
 Modules:
     deck_edit  host classification and the text edits (standard library only)
     structure  geometry tables of CRYSTAL outputs, site resolution, PBC matching
     outputs    energies, electron counts, Mulliken charges/spins, band edges, POTC.DAT
     analysis   checks, fractional-DOPING calibration, formation energies, levels
+    cli        the ``mace defects`` command
 """
 
 

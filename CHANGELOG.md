@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`mace defects`: point-defect deck sets and their analysis (new command;
+  nothing existing changes).** `mace defects build HOST.d12` writes a pristine
+  supercell deck (SUPERCEL/SUPERCON, 3D or 2D including CRYSTAL + SLABCUT
+  hosts) and one single-point deck per charge state for a vacancy (ATOMREMO),
+  ghost vacancy (GHOSTS), substitution (ATOMSUBS) or interstitial (ATOMINSE,
+  untested on HPCC), by editing the host deck's text: method, basis, grids and
+  tolerances stay byte for byte. Charge is `DOPING = -q`; odd electron counts
+  (or `--spin-state q=NSPIN`, parity-checked, p.128) get SPIN/UHF and
+  `SPINLOCK NSPIN 30`, and every choice is printed. The records sit where the
+  decks run on HPCC had them, and those decks (MgO V_O q=0/+1/+2, ghost q=0/+2,
+  the explicit-basis odd-ghost recipe, fractional-DOPING decks, hBN V_N 3x3 to
+  6x6) are reproduced byte for byte. Refused with the reason: OPT/FREQ hosts
+  (build from an SP), KEEPSYMM in block 1, charged hosts, host spin locks
+  (unless `--host-spin keep`), odd ghost states with an internal basis
+  (measured to abort or collapse), GHOSTS on ECP atoms (p.82), and more (see
+  `docs/defects/README.md`). Supercell labels come from CRYSTAL's output: a set
+  without one writes the pristine deck and finishes with `--resume DIR` as soon
+  as the running pristine output shows its geometry. `--calibrate` adds
+  restricted fractional-DOPING decks (3D) for the measured constant offset per
+  electron of charged cells. `mace defects potc DIR` stages POTC runs (with
+  copies of the `.f9`) into `DIR/potc`. `mace defects analyze DIR` checks the
+  Mulliken electron count (never the pre-DOPING header) and the final spin,
+  and reports formation energies and transition levels: 3D only for
+  calibrated charges and labelled "uncorrected for image charges", 2D from an
+  A + B/L fit over the sizes; all results are unrelaxed. Potential alignment
+  is reported, and applied only with `--apply-alignment`. A worked MgO V_O
+  deck set is in `docs/defects/MgO_VO` (not run).
+
 ## [1.1.4] - 2026-10-02
 
 Everything since 1.1.3. **Band and phonon-dispersion paths made with the SeeK-path
