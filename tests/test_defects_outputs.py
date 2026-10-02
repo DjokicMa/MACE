@@ -21,6 +21,7 @@ def test_electron_count_is_the_mulliken_line_not_the_pre_doping_header():
 
 def test_scf_energy_and_unconverged_runs():
     assert out.scf_energy(fake_output(energy=-8810.8448478966))[0] == pytest.approx(-8810.8448478966)
+    assert out.scf_cycles(fake_output(energy=-1.0, cycles=15)) == 15
     e, why = out.scf_energy(fake_output(energy=-1.0, converged=False))
     assert e is None and "TOO MANY CYCLES" in why
     e, why = out.scf_energy("SCF still running\n")

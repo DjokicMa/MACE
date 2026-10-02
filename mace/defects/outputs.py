@@ -41,6 +41,14 @@ def scf_energy(text: str) -> Tuple[Optional[float], str]:
     return float(found.group(2)), ""
 
 
+def scf_cycles(text: str) -> Optional[int]:
+    """Number of SCF cycles on the last '== SCF ENDED' line."""
+    found = None
+    for found in _SCF_END.finditer(text):
+        pass
+    return int(found.group(3)) if found else None
+
+
 def header_electrons(text: str) -> Optional[int]:
     """'N. OF ELECTRONS PER CELL' - the count BEFORE DOPING (FACTS.md); a cross-check only."""
     m = None
@@ -188,6 +196,7 @@ class OutputSummary:
     name: str
     energy: Optional[float] = None
     reason: str = ""
+    cycles: Optional[int] = None
     electrons: Optional[float] = None
     header_electrons: Optional[int] = None
     spin: Optional[float] = None
@@ -202,7 +211,7 @@ def summarise(name: str, text: str) -> OutputSummary:
     e, reason = scf_energy(text)
     mul = mulliken(text)
     spin = mulliken_spin(text)
-    return OutputSummary(name=name, energy=e, reason=reason,
+    return OutputSummary(name=name, energy=e, reason=reason, cycles=scf_cycles(text),
                          electrons=mul.total if mul else None,
                          header_electrons=header_electrons(text),
                          spin=spin.total if spin else None, edges=band_edges(text),

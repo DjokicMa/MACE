@@ -230,8 +230,10 @@ default for that reason.
   `N. OF ELECTRONS PER CELL`, which shows the count **before** DOPING
   (measured). A job whose count differs from N_pristine + dZ - q by more than
   1e-4 is excluded ("DOPING not applied").
-* |Mulliken spin - NSPIN| > 0.1 is a warning: the state drifted after the lock
-  was released.
+* |Mulliken spin - NSPIN| > 0.1 is a warning, saying whether the SCF ended
+  with the lock still on or after it was released. Measured: MgO N_O q=0 with
+  SPINLOCK 1 30 converged in 15 cycles, still locked, and its final Mulliken
+  spin was 0.84, not 1.
 * Unconverged SCFs (`TOO MANY CYCLES`) are excluded with the reason.
 * Site report: Mulliken charges (and spins) of the defect's neighbours (within
   1.2 x the shortest distance), the ghost's XX row, or the substituted /

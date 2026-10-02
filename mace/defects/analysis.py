@@ -45,7 +45,7 @@ from mace.defects.structure import Geometry, match_atoms, neighbours, parse_geom
 
 #: |Delta N_e + q| above this excludes a job ("DOPING not applied").
 ELECTRON_TOL = 1e-4
-#: |Mulliken spin - NSPIN| above this is a warning (SPINLOCK released and drifted).
+#: |Mulliken spin - NSPIN| above this is a warning: the cell did not end in the locked state.
 SPIN_TOL = 0.1
 #: |spin| below this lets an unrestricted integer state serve as a calibration endpoint.
 CLOSED_SHELL_SPIN = 0.01
@@ -130,6 +130,7 @@ def check_jobs(manifest: dict, texts: Dict[str, str]) -> List[JobResult]:
     """Parse each job's output and apply the electron-count and spin checks."""
     results = []
     delta_z = manifest["defect"].get("delta_electrons")
+    lock_cycles = manifest.get("spinlock_cycles")
     for sc_index, sc in enumerate(manifest["supercells"]):
         pris_name = sc.get("pristine_job")
         pris_text = texts.get(pris_name)
@@ -161,11 +162,27 @@ def check_jobs(manifest: dict, texts: Dict[str, str]) -> List[JobResult]:
                                         f"{summary.header_electrons} (DOPING {job['doping']})")
                 if not res.excluded and job.get("nspin") is not None and summary.spin is not None:
                     if abs(summary.spin - job["nspin"]) > SPIN_TOL:
-                        warns.append(f"final Mulliken spin {summary.spin:g} differs from the locked "
-                                     f"NSPIN {job['nspin']} - the state drifted after SPINLOCK was released")
+                        warns.append(_spin_warning(summary, job["nspin"], lock_cycles))
             res.warnings = tuple(warns)
             results.append(res)
     return results
+
+
+def _spin_warning(summary: out.OutputSummary, nspin: int, lock_cycles: Optional[int]) -> str:
+    """Say whether the SCF ended under the lock or after it was released.
+
+    Measured (MgO N_O q=0, SPINLOCK 1 30): the SCF converged in 15 cycles,
+    still locked, and the final Mulliken spin was 0.84, not 1.
+    """
+    head = f"final Mulliken spin {summary.spin:g} differs from the locked NSPIN {nspin}"
+    if summary.cycles is not None and lock_cycles is not None:
+        if summary.cycles <= lock_cycles:
+            return (f"{head}, although the SCF converged in {summary.cycles} cycles with the lock "
+                    f"still on ({lock_cycles}): the final density is not in the locked spin state; "
+                    "check the state before using this energy")
+        return (f"{head}: the state drifted after SPINLOCK was released (lock {lock_cycles} cycles, "
+                f"SCF {summary.cycles})")
+    return f"{head}: the cell did not end in the locked spin state; check it before using this energy"
 
 
 # ---------------------------------------------------------------------------

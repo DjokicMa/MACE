@@ -56,7 +56,7 @@ def _e(x):
 
 def fake_output(*, energy=None, electrons=None, header=None, efermi=None, vbm=None, cbm=None,
                 spin=None, sph=None, lattice=None, atoms=None, converged=True, mulliken_atoms=None,
-                spin_atoms=None, vbm_k=1):
+                spin_atoms=None, vbm_k=1, cycles=14):
     """A minimal CRYSTAL23-like output holding only the lines mace.defects reads."""
     out = [" CRYSTAL23 (synthetic excerpt for tests)"]
     if lattice is not None and atoms:
@@ -92,7 +92,7 @@ def fake_output(*, energy=None, electrons=None, header=None, efermi=None, vbm=No
         out.append(f" ::: EXT EL-SPHEROPOLE                            {_e(sph)}")
     if energy is not None:
         if converged:
-            out.append(f" == SCF ENDED - CONVERGENCE ON ENERGY      E(AU) {_e(energy)} CYCLES  14")
+            out.append(f" == SCF ENDED - CONVERGENCE ON ENERGY      E(AU) {_e(energy)} CYCLES {cycles:3d}")
         else:
             out.append(f" == SCF ENDED - TOO MANY CYCLES            E(AU) {_e(energy)} CYCLES 150")
     if electrons is not None:

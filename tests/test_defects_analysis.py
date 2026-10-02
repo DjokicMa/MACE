@@ -159,11 +159,16 @@ def test_closed_shell_unrestricted_endpoints_are_used():
 
 def test_doping_check_spin_check_and_gap_flag():
     outs = {"qp2": _mgo_out("qp2", electrons=631.0),            # DOPING silently not applied
-            "qp1": _mgo_out("qp1", spin=0.3)}                     # lock released and drifted
+            "qp1": _mgo_out("qp1", spin=0.3, cycles=45)}          # lock released and drifted
     d = _mgo_set(outs=outs)
+    d[0]["spinlock_cycles"] = 30
     jobs = {j["name"]: j for j in _report(d)["jobs"]}
     assert jobs["mgo_qp2"]["status"] == "excluded" and "DOPING not applied" in jobs["mgo_qp2"]["reason"]
-    assert any("drifted" in w for w in jobs["mgo_qp1"]["warnings"])
+    assert any("drifted after SPINLOCK was released" in w for w in jobs["mgo_qp1"]["warnings"])
+    # measured: N_O q=0 converged in 15 cycles, still locked, with a Mulliken spin of 0.84
+    d[1]["mgo_qp1"] = _mgo_out("qp1", spin=0.843544, cycles=15)
+    (w,) = {j["name"]: j for j in _report(d)["jobs"]}["mgo_qp1"]["warnings"]
+    assert "lock still on" in w and "drifted" not in w
     levels = an.transition_levels({0.0: 0.0, 1.0: -9.0}, 7.25)
     assert levels[0]["eV_above_VBM"] == pytest.approx(9.0) and "outside the gap" in levels[0]["flag"]
 
