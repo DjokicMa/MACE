@@ -193,13 +193,24 @@ def load_file(path):
 
 @functools.lru_cache(maxsize=None)
 def load_family(family):
-    """The parsed library of a bundled family (cached)."""
+    """The parsed library of a bundled family (cached).
+
+    Read from this module's basis_sets/, or - when that is absent, as in a
+    job directory copy_dependencies filled with the scripts alone - from
+    $MACE_HOME's Crystal_d12/basis_sets/."""
     if family not in FAMILIES and family not in DATA_ONLY_FAMILIES:
         raise KeyError(f"no bundled basis family {family!r}")
-    parsed = load_file(library_file(family))
+    path = library_file(family)
+    if not os.path.isfile(path):
+        for root in _bundled_roots()[1:]:
+            candidate = os.path.join(root, family + ".lib")
+            if os.path.isfile(candidate):
+                path = candidate
+                break
+    parsed = load_file(path)
     if parsed.name != family:
         raise LibraryFormatError(
-            f"{os.path.basename(library_file(family))}: names family {parsed.name!r}")
+            f"{os.path.basename(path)}: names family {parsed.name!r}")
     return parsed
 
 
