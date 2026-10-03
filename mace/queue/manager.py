@@ -2116,12 +2116,12 @@ class EnhancedCrystalQueueManager:
             # Full monitoring cycle
             self.run_monitoring_cycle()
             
-        # Print status summary
-        if self.enable_tracking:
+        # Print status summary (a full_check's monitoring cycle has printed it)
+        if self.enable_tracking and mode != 'full_check':
             stats = self.db.get_database_stats()
             print(f"Database Stats: {stats['total_materials']} materials, "
                   f"{sum(stats.get('calculations_by_status', {}).values())} calculations")
-                  
+
         print("=== Callback Complete ===\n")
             
     def get_status_report(self) -> Dict:

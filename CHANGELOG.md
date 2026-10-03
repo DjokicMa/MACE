@@ -965,6 +965,8 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 - `export` in the interactive database explorer (`mace database --action
   interactive`) failed every time with "unexpected keyword argument
   'material_ids'"; it now writes the materials of the last query.
+- `mace manager` (a full_check cycle) printed its "Database Stats" line
+  twice; it prints it once.
 
 ## [1.1.4] - 2026-10-02
 
