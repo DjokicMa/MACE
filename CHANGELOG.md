@@ -962,6 +962,9 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   follows; it now has its own `opt_unconverged` category, and the queue
   manager recovers it (`opt_unconverged_error`) with a fresh optimization
   from the best geometry reached instead of leaving it as an unknown error.
+- `export` in the interactive database explorer (`mace database --action
+  interactive`) failed every time with "unexpected keyword argument
+  'material_ids'"; it now writes the materials of the last query.
 
 ## [1.1.4] - 2026-10-02
 

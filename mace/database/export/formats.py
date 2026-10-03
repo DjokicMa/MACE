@@ -383,7 +383,8 @@ def export_materials(db, format: str = 'csv', output_file: str = None,
                     filters: List[str] = None, logic: str = 'AND',
                     properties_only: bool = False,
                     include_properties: List[str] = None,
-                    include_structures: bool = False) -> str:
+                    include_structures: bool = False,
+                    material_ids: List[str] = None) -> str:
     """
     Convenience function to export materials from database.
     
@@ -396,6 +397,8 @@ def export_materials(db, format: str = 'csv', output_file: str = None,
         properties_only: Export properties instead of materials
         include_properties: Property names to include (None = all, [] = none)
         include_structures: Whether to include structure data
+        material_ids: Export only these materials (None = all); what the
+            interactive explorer's `export` passes for its last results
         
     Returns:
         Path to exported file
@@ -436,6 +439,10 @@ def export_materials(db, format: str = 'csv', output_file: str = None,
         else:
             data = db.get_all_materials()
             metadata = {'export_type': 'all_materials'}
+        if material_ids is not None:
+            wanted = set(material_ids)
+            data = [m for m in data if m['material_id'] in wanted]
+            metadata['material_ids'] = list(material_ids)
             
         # Add properties to the materials: all of them for None (the
         # default, and what `mace database --action export` passes), the
