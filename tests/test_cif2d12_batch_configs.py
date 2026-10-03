@@ -416,8 +416,9 @@ def test_phonon_dispersion_is_refused_where_it_cannot_be_written():
     assert phonon_dispersion_refusal("CRYSTAL", disp) is None
     assert phonon_dispersion_refusal("MOLECULE", {"dispersion": False}) is None
     assert "NOT ALLOWED FOR MOLECULES" in phonon_dispersion_refusal("MOLECULE", disp)
-    for dim in ("SLAB", "POLYMER"):
-        assert "only written for a 3D CRYSTAL" in phonon_dispersion_refusal(dim, disp)
+    # cif2d12 has no slab output to read the corresponding space group from
+    assert "CORRESPONDING SPACE GROUP" in phonon_dispersion_refusal("SLAB", disp)
+    assert "not written for a POLYMER" in phonon_dispersion_refusal("POLYMER", disp)
 
 
 def test_crystal_system_carries_the_lattice_centring():
@@ -472,11 +473,13 @@ PHONON_BANDS = REPO_ROOT / "Crystal_d12" / "example_configs" / "phonon_bands.jso
     ("1LiFSI-1DEC-conf1_MOLECULE_OPT_symm_HSESOL3C_SOLDEF2MSVP_opt_HSESOL3C_optimized",
      "NOT ALLOWED FOR MOLECULES"),
     ("4LG_FSI_2x2_ABAB_opt_HSESOL3C_Attempt2_SLAB_OPT_symm_HSESOL3C_SOLDEF2MSVP_opt_HSESOL3C_optimized",
-     "only written for a 3D CRYSTAL"),
+     "PDOS has not been run on CRYSTAL23 for a slab"),
 ], ids=["molecule", "slab"])
 def test_opt2d12_refuses_phonon_dispersion_off_a_3d_crystal(tmp_path, parent, expect):
     """The SLAB crashed in the title (no space group) and left a 0-byte deck;
-    the MOLECULE deck was written and CRYSTAL23 stopped at SCELPHONO."""
+    the MOLECULE deck was written and CRYSTAL23 stopped at SCELPHONO. A slab
+    now takes SCELPHONO 2x2 + BANDS (test_slab_phonon_dispersion), but not
+    this config's PDOS, which was not run for a slab."""
     out = tmp_path / "out"
     rc, log, par = _opt2d12(tmp_path, parent, PHONON_BANDS, out)
     assert rc != 0, log[-2000:]

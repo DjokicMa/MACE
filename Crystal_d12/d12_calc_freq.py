@@ -1696,15 +1696,46 @@ def get_auto_phonon_path(crystal_system: str = None, space_group: int = None,
         ]
 
 
-def phonon_dispersion_refusal(dimensionality, freq_settings) -> Optional[str]:
+class PhononDispersionRefused(ValueError):
+    """A phonon dispersion was asked of a system MACE does not write it for."""
+
+
+# FREQCALC DISPERSION options not written for a slab: WANG is for 3D systems
+# only (manual p.234); the others take dimension-dependent input and were not
+# run on CRYSTAL23 for a slab (the measured slab deck is SCELPHONO 2x2 +
+# DISPERSION + BANDS).
+_SLAB_DISPERSION_UNSUPPORTED = {
+    "wang": "WANG is for 3D systems only (manual p.234)",
+    "interphess": "INTERPHESS has not been run on CRYSTAL23 for a slab",
+    "pdos": "PDOS has not been run on CRYSTAL23 for a slab",
+    "ins": "INS has not been run on CRYSTAL23 for a slab",
+}
+
+
+def slab_corresponding_group(output_text) -> Optional[Tuple[int, str]]:
+    """(corresponding space group, lattice letter) a slab's output prints.
+
+    A slab names its layer group and its corresponding space group
+    ("TWO-SIDED PLANE GROUP N. 78 : P -6 M 2", "CORRESPONDING SPACE GROUP N.
+    187"); the k path is that space group's, as opt2d3 takes it.
+    """
+    import re
+    m = re.search(r'CORRESPONDING SPACE GROUP N\.\s*(\d+)', output_text or "")
+    if not m:
+        return None
+    lat = re.search(r'PLANE GROUP N\.\s*\d+\s*:\s*([A-Z])', output_text)
+    return int(m.group(1)), (lat.group(1) if lat else "P")
+
+
+def phonon_dispersion_refusal(dimensionality, freq_settings, parent_output="") -> Optional[str]:
     """Why a phonon-dispersion FREQCALC cannot be written, or None if it can.
 
-    Dispersion is written as a SCELPHONO supercell (a 3x3 expansion matrix)
-    plus a k-path taken from a 3D space group, so it is only written for a
-    3D CRYSTAL. For a MOLECULE CRYSTAL23 stops at SCELPHONO with "SUPERCELL
-    OPTION NOT ALLOWED FOR MOLECULES"; for a SLAB it stops at the 3x3 matrix
-    with "THE SUPERCELL IS OF ZERO VOLUME" (a slab takes 2x2), and a SLAB or
-    POLYMER has no space group to take the path from.
+    A 3D CRYSTAL takes the 3x3 SCELPHONO matrix and the space group's path.
+    A SLAB takes a 2x2 matrix and the in-plane part of its corresponding
+    space group's path, read from the parent's output (``parent_output``;
+    None when it is not known yet, which skips that check). For a MOLECULE
+    CRYSTAL23 stops at SCELPHONO with "SUPERCELL OPTION NOT ALLOWED FOR
+    MOLECULES". A POLYMER dispersion deck has not been run on CRYSTAL23.
     """
     if not isinstance(freq_settings, dict) or not freq_settings.get("dispersion"):
         return None
@@ -1716,11 +1747,98 @@ def phonon_dispersion_refusal(dimensionality, freq_settings) -> Optional[str]:
                 "stops a MOLECULE at SCELPHONO (SUPERCELL OPTION NOT ALLOWED "
                 "FOR MOLECULES). Use a FREQ setup without dispersion (e.g. "
                 "example_configs/freq_analysis.json) for a molecule.")
-    return (f"phonon dispersion is only written for a 3D CRYSTAL: the "
-            f"SCELPHONO matrix and the automatic phonon k-path are 3D (CRYSTAL23 "
-            f"rejects the 3x3 matrix for a slab), and a {dim} has no space "
-            f"group to take the path from. Use a FREQ setup without "
-            f"dispersion (e.g. example_configs/freq_analysis.json).")
+    if dim == "SLAB":
+        problems = [why for key, why in _SLAB_DISPERSION_UNSUPPORTED.items()
+                    if key in freq_settings]
+        scel = freq_settings.get("scelphono")
+        if (isinstance(scel, (list, tuple)) and len(scel) == 9
+                and any(scel[i] for i in (2, 5, 6, 7))):
+            problems.append("the SCELPHONO matrix leaves the slab plane (a slab "
+                            "takes a 2x2 matrix, manual p.73)")
+        if problems:
+            return ("this slab phonon dispersion cannot be written: " + "; ".join(problems)
+                    + ". Leave those options out (template 6 writes SCELPHONO 2x2 and "
+                    "the in-plane BANDS path).")
+        if parent_output is not None and slab_corresponding_group(parent_output) is None:
+            return ("a slab's phonon band path is the in-plane part of its "
+                    "CORRESPONDING SPACE GROUP's path, which CRYSTAL prints in the "
+                    "slab's output; there is none here. Make the FREQ deck with "
+                    "opt2d12 from the slab's OPT or SP output.")
+        return None
+    return (f"phonon dispersion is not written for a {dim}: a {dim} dispersion "
+            f"deck (SCELPHONO and BANDS take dimension-dependent input, manual "
+            f"p.73 and p.233) has not been run on CRYSTAL23. Use a FREQ setup "
+            f"without dispersion (e.g. example_configs/freq_analysis.json).")
+
+
+def _slab_band_path(band_settings, space_group, lattice_type, shrink,
+                    optimization_section=None):
+    """(segments, ISS, labels) of a slab's phonon band path, in 3D integers.
+
+    The path of the corresponding space group cut to the kz = 0 plane, as
+    opt2d3 cuts a slab's BAND path (in_plane_labels / in_plane_path).
+    """
+    from d3_kpoints import in_plane_path, in_plane_labels
+
+    def label_coords(labels):
+        frac, run = [], []
+        for label in list(labels) + ["|"]:
+            if label != "|":
+                run.append(label)
+                continue
+            if len(run) >= 2:
+                frac += get_kpoint_coordinates_from_labels(run, space_group, lattice_type) or []
+            run = []
+        return frac
+
+    path = band_settings.get("path", [])
+    auto = path in ("AUTO", "auto") or band_settings.get("auto_path", False)
+    labels = None
+    if not auto and isinstance(path, list) and path:
+        frac = []
+        for seg in path:
+            if isinstance(seg, str) and len(seg.split()) == 2:
+                frac += label_coords(seg.split())
+            elif isinstance(seg, (list, tuple)) and len(seg) == 6:
+                frac.append([float(c) / shrink for c in seg])
+        frac, _ = in_plane_path(frac)
+    elif band_settings.get("seekpath_full") and get_seekpath_full_kpath:
+        with _output_as_file(optimization_section) as out_file:
+            result = get_seekpath_full_kpath(space_group, lattice_type, out_file, cell="primitive")
+            labels = get_seekpath_labels(space_group, lattice_type, out_file) if get_seekpath_labels else None
+        frac = result[0] if result else []
+        frac, labels = in_plane_path(frac, labels)
+    elif band_settings.get("literature_path") and get_literature_kpath_vectors:
+        frac = get_literature_kpath_vectors(space_group, lattice_type) or []
+        frac, labels = in_plane_path(frac, get_band_path_from_symmetry(space_group, lattice_type))
+    else:
+        frac = []
+    if not frac:
+        labels = in_plane_labels(get_band_path_from_symmetry(space_group, lattice_type),
+                                 space_group, lattice_type)
+        frac = label_coords(labels)
+        frac, labels = in_plane_path(frac, labels)
+    if not frac:
+        frac, labels = [[0.0, 0.0, 0.0, 0.5, 0.0, 0.0]], ["GAMMA", "X"]
+    segments, shrink = scale_kpoint_segments(frac, shrink)
+    return segments, shrink, labels
+
+
+def slab_phonon_band_path(band_settings, optimization_section):
+    """(4-integer records I1 I2 J1 J2, ISS, labels) of a slab's BANDS path.
+
+    FREQCALC BANDS reads only I1 I2 J1 J2 from each record of a slab
+    (measured on CRYSTAL23: 6-integer records ran but went to other k
+    points) and takes no labels (INPFREQ FORMAT ERROR). None without the
+    corresponding space group in the output.
+    """
+    group = slab_corresponding_group(optimization_section)
+    if group is None:
+        return None
+    segments, iss, labels = _slab_band_path(band_settings, group[0], group[1],
+                                            band_settings.get("shrink", 16) or 16,
+                                            optimization_section)
+    return [[s[0], s[1], s[3], s[4]] for s in segments], iss, labels
 
 
 def crystal_system_with_lattice(space_group) -> Optional[str]:
@@ -1751,7 +1869,8 @@ def crystal_system_with_lattice(space_group) -> Optional[str]:
 
 
 def write_frequency_section(f, freq_settings, crystal_system: str = None, 
-                          space_group: int = None, optimization_section: str = None):
+                          space_group: int = None, optimization_section: str = None,
+                          dimensionality: str = "CRYSTAL"):
     """
     Write the frequency calculation section of the D12 file
     
@@ -1775,6 +1894,17 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
     if freq_settings.get("dispersion", False) and "scelphono" in freq_settings:
         supercell = freq_settings["scelphono"]
         print("SCELPHONO", file=f)
+        if str(dimensionality).upper() == "SLAB" and isinstance(supercell, list):
+            # A slab takes a 2x2 matrix, 4 reals (manual p.73); the 3x3
+            # matrix stops CRYSTAL23 after the geometry. Its in-plane part.
+            if len(supercell) == 3:
+                supercell = [supercell[0], 0, 0, supercell[1]]
+            elif len(supercell) == 9:
+                supercell = [supercell[0], supercell[1], supercell[3], supercell[4]]
+            if len(supercell) == 4:
+                print(f"{supercell[0]} {supercell[1]}", file=f)
+                print(f"{supercell[2]} {supercell[3]}", file=f)
+            supercell = None
         # Expansion matrix E is read by rows: 9 reals for a 3D system
         if isinstance(supercell, list) and len(supercell) == 3:
             # Simple expansion factors [nx, ny, nz] -> diagonal expansion matrix
@@ -2092,201 +2222,212 @@ def write_frequency_section(f, freq_settings, crystal_system: str = None,
             shrink = band_settings.get("shrink", 16)
             npoints = band_settings.get("npoints", 100)
 
-            # Get path
-            path = band_settings.get("path", [])
+            slab_path = (slab_phonon_band_path(band_settings, optimization_section)
+                         if str(dimensionality).upper() == "SLAB" else None)
+            if slab_path is not None:
+                records, iss, labels = slab_path
+                band_settings["path_labels"] = labels
+                print("BANDS", file=f)
+                print(f"{iss} {npoints}", file=f)
+                print(len(records), file=f)
+                for rec in records:
+                    print(" ".join(str(c) for c in rec), file=f)
+            else:
+                # Get path
+                path = band_settings.get("path", [])
             
-            # Handle AUTO path generation or path == "auto"
-            if path == "AUTO" or path == "auto" or band_settings.get("auto_path", False):
-                # Initialize default lattice type
-                lattice_type = "P"  # Default
+                # Handle AUTO path generation or path == "auto"
+                if path == "AUTO" or path == "auto" or band_settings.get("auto_path", False):
+                    # Initialize default lattice type
+                    lattice_type = "P"  # Default
                 
-                # Extract space group and lattice type from optimization section if available
-                import re
-                if optimization_section:
-                    # Find space group number
-                    sg_match = re.search(r'SPACE GROUP.*?NUMBER:\s*(\d+)', optimization_section)
-                    if sg_match:
-                        space_group = int(sg_match.group(1))
+                    # Extract space group and lattice type from optimization section if available
+                    import re
+                    if optimization_section:
+                        # Find space group number
+                        sg_match = re.search(r'SPACE GROUP.*?NUMBER:\s*(\d+)', optimization_section)
+                        if sg_match:
+                            space_group = int(sg_match.group(1))
                     
-                    # Find lattice type from space group symbol
-                    sg_symbol_match = re.search(r'SPACE GROUP.*?:\s+([A-Z]\s*[\-/0-9\s]*[A-Z0-9]*)', optimization_section)
-                    if sg_symbol_match:
-                        symbol = sg_symbol_match.group(1).strip()
-                        if symbol:
-                            lattice_type = symbol[0]
-                else:
-                    # Try to extract from crystal_system if available
-                    if crystal_system and "-" in crystal_system:
-                        # Extract lattice type from crystal_system like "cubic-F"
-                        lattice_type = crystal_system.split("-")[1]
-                
-                # Get format type from band settings
-                format_type = band_settings.get("format", "labels")
-                path_method = band_settings.get("path_method", "labels")
-                
-                # For vector-based paths, we need to handle them differently
-                if format_type == "vectors" or path_method == "coordinates":
-                    # Get the fractional k-point segments
-                    if band_settings.get("seekpath_full", False) and get_seekpath_full_kpath:
-                        # SeeK-path full path
-                        with _output_as_file(optimization_section) as out_file:
-                            result = get_seekpath_full_kpath(space_group, lattice_type, out_file, cell="primitive")
-                            # Get seekpath labels if available
-                            path_labels = (get_seekpath_labels(space_group, lattice_type, out_file)
-                                           if get_seekpath_labels else None)
-                        if result:
-                            frac_segments, kpath_info = result
-                            # The seekpath library's points are exact at its
-                            # own ISS (chosen so lattice-dependent points
-                            # fit fort.25); start from that, as opt2d3 does,
-                            # not from the band shrink.
-                            if (kpath_info.get("source") in ("seekpath_library", "seekpath_data_parametric")
-                                    and "shrink_factor" in kpath_info):
-                                shrink = kpath_info["shrink_factor"]
-                            # Store k-path source info
-                            if kpath_info.get("source") == "literature":
-                                band_settings["kpath_source"] = "literature"
-                            elif kpath_info.get("source") == "default":
-                                band_settings["kpath_source"] = "default"
-                            elif kpath_info.get("has_inversion"):
-                                band_settings["kpath_source"] = "seekpath_inv"
-                            else:
-                                band_settings["kpath_source"] = "seekpath_noinv"
-                        if get_seekpath_labels:
-                            band_settings["path_labels"] = path_labels
-                    elif band_settings.get("literature_path", False) and get_literature_kpath_vectors:
-                        # Literature path vectors
-                        frac_segments = get_literature_kpath_vectors(space_group, lattice_type)
-                        band_settings["kpath_source"] = "literature"
-                        # Get standard labels for literature path
-                        path_labels = get_band_path_from_symmetry(space_group, lattice_type)
-                        band_settings["path_labels"] = path_labels
+                        # Find lattice type from space group symbol
+                        sg_symbol_match = re.search(r'SPACE GROUP.*?:\s+([A-Z]\s*[\-/0-9\s]*[A-Z0-9]*)', optimization_section)
+                        if sg_symbol_match:
+                            symbol = sg_symbol_match.group(1).strip()
+                            if symbol:
+                                lattice_type = symbol[0]
                     else:
-                        # Standard path vectors
+                        # Try to extract from crystal_system if available
+                        if crystal_system and "-" in crystal_system:
+                            # Extract lattice type from crystal_system like "cubic-F"
+                            lattice_type = crystal_system.split("-")[1]
+                
+                    # Get format type from band settings
+                    format_type = band_settings.get("format", "labels")
+                    path_method = band_settings.get("path_method", "labels")
+                
+                    # For vector-based paths, we need to handle them differently
+                    if format_type == "vectors" or path_method == "coordinates":
+                        # Get the fractional k-point segments
+                        if band_settings.get("seekpath_full", False) and get_seekpath_full_kpath:
+                            # SeeK-path full path
+                            with _output_as_file(optimization_section) as out_file:
+                                result = get_seekpath_full_kpath(space_group, lattice_type, out_file, cell="primitive")
+                                # Get seekpath labels if available
+                                path_labels = (get_seekpath_labels(space_group, lattice_type, out_file)
+                                               if get_seekpath_labels else None)
+                            if result:
+                                frac_segments, kpath_info = result
+                                # The seekpath library's points are exact at its
+                                # own ISS (chosen so lattice-dependent points
+                                # fit fort.25); start from that, as opt2d3 does,
+                                # not from the band shrink.
+                                if (kpath_info.get("source") in ("seekpath_library", "seekpath_data_parametric")
+                                        and "shrink_factor" in kpath_info):
+                                    shrink = kpath_info["shrink_factor"]
+                                # Store k-path source info
+                                if kpath_info.get("source") == "literature":
+                                    band_settings["kpath_source"] = "literature"
+                                elif kpath_info.get("source") == "default":
+                                    band_settings["kpath_source"] = "default"
+                                elif kpath_info.get("has_inversion"):
+                                    band_settings["kpath_source"] = "seekpath_inv"
+                                else:
+                                    band_settings["kpath_source"] = "seekpath_noinv"
+                            if get_seekpath_labels:
+                                band_settings["path_labels"] = path_labels
+                        elif band_settings.get("literature_path", False) and get_literature_kpath_vectors:
+                            # Literature path vectors
+                            frac_segments = get_literature_kpath_vectors(space_group, lattice_type)
+                            band_settings["kpath_source"] = "literature"
+                            # Get standard labels for literature path
+                            path_labels = get_band_path_from_symmetry(space_group, lattice_type)
+                            band_settings["path_labels"] = path_labels
+                        else:
+                            # Standard path vectors
+                            band_settings["kpath_source"] = "default"
+                            path_labels = get_band_path_from_symmetry(space_group, lattice_type)
+                            frac_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
+                            band_settings["path_labels"] = path_labels
+                    
+                        if frac_segments and scale_kpoint_segments:
+                            # Scale fractional coordinates by shrink factor
+                            path, shrink = scale_kpoint_segments(frac_segments, shrink)
+                        else:
+                            # Fallback to manual scaling
+                            path = []
+                            for seg in frac_segments:
+                                int_seg = [
+                                    int(seg[0] * shrink), int(seg[1] * shrink), int(seg[2] * shrink),
+                                    int(seg[3] * shrink), int(seg[4] * shrink), int(seg[5] * shrink)
+                                ]
+                                path.append(int_seg)
+                    else:
+                        # Label-based path - validate for CRYSTAL23 compatibility
                         band_settings["kpath_source"] = "default"
                         path_labels = get_band_path_from_symmetry(space_group, lattice_type)
-                        frac_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
-                        band_settings["path_labels"] = path_labels
-                    
-                    if frac_segments and scale_kpoint_segments:
-                        # Scale fractional coordinates by shrink factor
-                        path, shrink = scale_kpoint_segments(frac_segments, shrink)
-                    else:
-                        # Fallback to manual scaling
-                        path = []
-                        for seg in frac_segments:
-                            int_seg = [
-                                int(seg[0] * shrink), int(seg[1] * shrink), int(seg[2] * shrink),
-                                int(seg[3] * shrink), int(seg[4] * shrink), int(seg[5] * shrink)
-                            ]
-                            path.append(int_seg)
-                else:
-                    # Label-based path - validate for CRYSTAL23 compatibility
-                    band_settings["kpath_source"] = "default"
-                    path_labels = get_band_path_from_symmetry(space_group, lattice_type)
 
-                    # Validate k-point labels for CRYSTAL23 compatibility
-                    if validate_kpoint_labels_for_crystal23:
-                        labels_valid, validated_path = validate_kpoint_labels_for_crystal23(path_labels, space_group, lattice_type)
+                        # Validate k-point labels for CRYSTAL23 compatibility
+                        if validate_kpoint_labels_for_crystal23:
+                            labels_valid, validated_path = validate_kpoint_labels_for_crystal23(path_labels, space_group, lattice_type)
 
-                        if not labels_valid:
-                            print("Warning: Some k-point labels are invalid for CRYSTAL23. Switching to coordinate mode for phonon bands.")
-                            # Switch to coordinate mode
-                            if get_kpoint_coordinates_from_labels:
-                                frac_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
-                                if frac_segments and scale_kpoint_segments:
-                                    path, shrink = scale_kpoint_segments(frac_segments, 16)  # Use default shrink=16 for coordinates
-                                    band_settings["path_labels"] = path_labels  # Keep original for title
+                            if not labels_valid:
+                                print("Warning: Some k-point labels are invalid for CRYSTAL23. Switching to coordinate mode for phonon bands.")
+                                # Switch to coordinate mode
+                                if get_kpoint_coordinates_from_labels:
+                                    frac_segments = get_kpoint_coordinates_from_labels(path_labels, space_group, lattice_type)
+                                    if frac_segments and scale_kpoint_segments:
+                                        path, shrink = scale_kpoint_segments(frac_segments, 16)  # Use default shrink=16 for coordinates
+                                        band_settings["path_labels"] = path_labels  # Keep original for title
+                                    else:
+                                        # Fallback
+                                        path = [[0, 0, 0, 1, 0, 0]]
+                                        shrink = 16
                                 else:
-                                    # Fallback
-                                    path = [[0, 0, 0, 1, 0, 0]]
-                                    shrink = 16
+                                    # Fallback if coordinate conversion fails
+                                    path = []
+                                    for i in range(len(validated_path) - 1):
+                                        path.append(f"{validated_path[i]} {validated_path[i+1]}")
+                                    shrink = 0
                             else:
-                                # Fallback if coordinate conversion fails
+                                # Use validated labels
                                 path = []
                                 for i in range(len(validated_path) - 1):
-                                    path.append(f"{validated_path[i]} {validated_path[i+1]}")
+                                    if validated_path[i] == "|":
+                                        continue
+                                    j = i + 1
+                                    while j < len(validated_path) and validated_path[j] == "|":
+                                        j += 1
+                                    if j < len(validated_path):
+                                        path.append(f"{validated_path[i]} {validated_path[j]}")
                                 shrink = 0
+                                band_settings["path_labels"] = validated_path
                         else:
-                            # Use validated labels
+                            # Fallback if validation function not available
                             path = []
-                            for i in range(len(validated_path) - 1):
-                                if validated_path[i] == "|":
-                                    continue
-                                j = i + 1
-                                while j < len(validated_path) and validated_path[j] == "|":
-                                    j += 1
-                                if j < len(validated_path):
-                                    path.append(f"{validated_path[i]} {validated_path[j]}")
+                            for i in range(len(path_labels) - 1):
+                                path.append(f"{path_labels[i]} {path_labels[i+1]}")
                             shrink = 0
-                            band_settings["path_labels"] = validated_path
-                    else:
-                        # Fallback if validation function not available
-                        path = []
-                        for i in range(len(path_labels) - 1):
-                            path.append(f"{path_labels[i]} {path_labels[i+1]}")
-                        shrink = 0
-                        band_settings["path_labels"] = path_labels
+                            band_settings["path_labels"] = path_labels
             
-            # Path and final shrink (ISS) are now resolved — write the BANDS
-            # header (keyword, then "ISS NSUB") before the segment count.
-            print("BANDS", file=f)
-            print(f"{shrink} {npoints}", file=f)
+                # Path and final shrink (ISS) are now resolved — write the BANDS
+                # header (keyword, then "ISS NSUB") before the segment count.
+                print("BANDS", file=f)
+                print(f"{shrink} {npoints}", file=f)
 
-            # Second line: NLINE (number of lines/segments)
-            if isinstance(path, list):
-                print(len(path), file=f)
-            else:
-                # Fallback for unexpected path type
-                print(1, file=f)
-                path = [[0, 0, 0, 1, 0, 0]]  # Default segment
+                # Second line: NLINE (number of lines/segments)
+                if isinstance(path, list):
+                    print(len(path), file=f)
+                else:
+                    # Fallback for unexpected path type
+                    print(1, file=f)
+                    path = [[0, 0, 0, 1, 0, 0]]  # Default segment
             
-            # Then the path segments
-            if band_settings.get("mixed_path", False):
-                # Handle mixed label/coordinate segments
-                for segment in path:
-                    if isinstance(segment, str):
-                        # Label segment
-                        print(segment, file=f)
-                    elif isinstance(segment, (list, tuple)) and len(segment) == 2:
-                        # Coordinate segment - scale by shrink if needed
-                        if all(isinstance(coord, (list, tuple)) for coord in segment):
-                            # Format: [[x1,y1,z1], [x2,y2,z2]]
-                            start, end = segment
-                            if shrink > 0:
-                                # Scale fractional to integer coordinates
-                                print(f"{int(start[0]*shrink)} {int(start[1]*shrink)} {int(start[2]*shrink)} "
-                                      f"{int(end[0]*shrink)} {int(end[1]*shrink)} {int(end[2]*shrink)}", file=f)
+                # Then the path segments
+                if band_settings.get("mixed_path", False):
+                    # Handle mixed label/coordinate segments
+                    for segment in path:
+                        if isinstance(segment, str):
+                            # Label segment
+                            print(segment, file=f)
+                        elif isinstance(segment, (list, tuple)) and len(segment) == 2:
+                            # Coordinate segment - scale by shrink if needed
+                            if all(isinstance(coord, (list, tuple)) for coord in segment):
+                                # Format: [[x1,y1,z1], [x2,y2,z2]]
+                                start, end = segment
+                                if shrink > 0:
+                                    # Scale fractional to integer coordinates
+                                    print(f"{int(start[0]*shrink)} {int(start[1]*shrink)} {int(start[2]*shrink)} "
+                                          f"{int(end[0]*shrink)} {int(end[1]*shrink)} {int(end[2]*shrink)}", file=f)
+                                else:
+                                    # Keep as fractional
+                                    print(f"{start[0]} {start[1]} {start[2]} {end[0]} {end[1]} {end[2]}", file=f)
                             else:
-                                # Keep as fractional
-                                print(f"{start[0]} {start[1]} {start[2]} {end[0]} {end[1]} {end[2]}", file=f)
+                                # Direct coordinate list
+                                print(" ".join(str(coord) for coord in segment), file=f)
                         else:
-                            # Direct coordinate list
+                            # Fallback
+                            print("G X", file=f)
+                elif shrink == 0:
+                    # ISS=0: Use high-symmetry labels
+                    for segment in path:
+                        if isinstance(segment, str) and len(segment) >= 2:
+                            # Labels like "G X" or "GM"
+                            print(segment, file=f)
+                        else:
+                            print("G X", file=f)  # Default fallback
+                else:
+                    # ISS>0: Use integer coordinates
+                    for segment in path:
+                        if isinstance(segment, (list, tuple)) and len(segment) == 6:
+                            # Direct format: 6 coordinates on one line
                             print(" ".join(str(coord) for coord in segment), file=f)
-                    else:
-                        # Fallback
-                        print("G X", file=f)
-            elif shrink == 0:
-                # ISS=0: Use high-symmetry labels
-                for segment in path:
-                    if isinstance(segment, str) and len(segment) >= 2:
-                        # Labels like "G X" or "GM"
-                        print(segment, file=f)
-                    else:
-                        print("G X", file=f)  # Default fallback
-            else:
-                # ISS>0: Use integer coordinates
-                for segment in path:
-                    if isinstance(segment, (list, tuple)) and len(segment) == 6:
-                        # Direct format: 6 coordinates on one line
-                        print(" ".join(str(coord) for coord in segment), file=f)
-                    elif isinstance(segment, (list, tuple)) and len(segment) == 2:
-                        # Tuple format: ((x1,y1,z1), (x2,y2,z2))
-                        start, end = segment
-                        print(f"{start[0]} {start[1]} {start[2]} {end[0]} {end[1]} {end[2]}", file=f)
-                    else:
-                        # Default path segment
-                        print("0 0 0 1 0 0", file=f)
+                        elif isinstance(segment, (list, tuple)) and len(segment) == 2:
+                            # Tuple format: ((x1,y1,z1), (x2,y2,z2))
+                            start, end = segment
+                            print(f"{start[0]} {start[1]} {start[2]} {end[0]} {end[1]} {end[2]}", file=f)
+                        else:
+                            # Default path segment
+                            print("0 0 0 1 0 0", file=f)
         
         # Phonon DOS
         if "pdos" in freq_settings:

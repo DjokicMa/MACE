@@ -1468,6 +1468,15 @@ def get_calculation_options_from_current(current_settings: Dict[str, Any],
             from d12_calc_freq import get_frequency_configuration
             freq_settings = get_frequency_configuration(current_settings=options, shared_mode=shared_mode)
             options["freq_settings"] = freq_settings
+            if not shared_mode:
+                # Refuse a dispersion this system cannot take now, not after
+                # the method, basis and SCF questions (a batch's files are
+                # checked one by one when their decks are written).
+                from d12_calc_freq import phonon_dispersion_refusal, PhononDispersionRefused
+                refusal = phonon_dispersion_refusal(
+                    options.get("dimensionality", "CRYSTAL"), freq_settings, None)
+                if refusal:
+                    raise PhononDispersionRefused(refusal)
         
         # Ensure method_type is set from functional if not already present
         if "method_type" not in options and "functional" in options:

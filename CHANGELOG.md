@@ -397,6 +397,20 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   keep their segments along the chain (I2 = I3 = J2 = J3 = 0), or fall back
   to Gamma -> X. Measured on CRYSTAL23 for rod groups 1, 4 and 28. Deck
   change: regenerate polymer BAND decks.
+- **opt2d12 writes the phonon band structure (template 6) for a slab.** It
+  asked every question and then refused, saying a slab has no space group
+  to take the path from. A slab now gets SCELPHONO as a 2x2 matrix (`2 0 /
+  0 2`, manual p.73; the 3x3 matrix aborts) and BANDS records of 4 integers
+  (I1 I2 J1 J2), the in-plane part of the corresponding space group's path
+  as opt2d3 cuts it. CRYSTAL23 takes no BANDS labels for a slab (INPFREQ
+  FORMAT ERROR) and reads only 4 integers of each record, so 6-integer
+  records went to other k points. Measured on an hBN monolayer: `12 100 / 2
+  / 6 0 0 0 / 0 0 4 4` ran as M-Gamma-K and the P1 slab path as
+  V-Y-Gamma-X. WANG (3D only, manual p.234), INTERPHESS, PDOS and INS are
+  still refused for a slab (not run on CRYSTAL23), as is a slab from
+  cif2d12 (no output to read the corresponding space group from) and a
+  polymer dispersion (not run). opt2d12 now refuses a dispersion as soon as
+  the FREQ template is chosen, before the method, basis and SCF questions.
 - The advanced electronic analysis in property extraction reads only the
   output's own BAND.DAT / DOSS.DAT: `<stem>.BAND.DAT`, else the same
   parent's `_band` / `_doss` run. It took the first such file in the

@@ -73,7 +73,7 @@ from d12_config import unwrap_d12_config
 from d12_calc_freq import (
     get_advanced_frequency_settings, write_frequency_section, INTENSITY_SETTINGS,
     freq_mode,
-    phonon_dispersion_refusal,
+    phonon_dispersion_refusal, PhononDispersionRefused,
 )
 from d12_calc_basic import write_optimization_section, configure_single_point
 from d12_writer import (
@@ -420,11 +420,25 @@ def dedupe_dispersion_suffix(functional: str) -> str:
     return re.sub(r'(?:-D3){2,}', '-D3', functional)
 
 
-def _get_phonon_band_path_title(band_settings, geometry_data):
+def _get_phonon_band_path_title(band_settings, geometry_data, dimensionality="CRYSTAL"):
     """Generate path information string for phonon band calculations."""
     from d3_kpoints import get_band_path_from_symmetry, unicode_to_ascii_kpoint
 
     seekpath_source = None
+    if str(dimensionality).upper() == "SLAB":
+        # The in-plane path write_frequency_section writes for a slab
+        from d12_calc_freq import slab_phonon_band_path
+        slab_path = slab_phonon_band_path(dict(band_settings),
+                                          geometry_data.get("optimization_content") or "")
+        if slab_path is None:
+            return None
+        labels = slab_path[2]
+        source = " - Literature" if band_settings.get("literature_path") else (
+            " - SeeKPath" if band_settings.get("seekpath_full") else " - default")
+        if not labels:
+            return " - Phonon Band Structure" + source + " - in-plane path"
+        return (" - Phonon Band Structure" + source + " - "
+                + "-".join(l if l == "|" else unicode_to_ascii_kpoint(l) for l in labels))
     # For automatic paths, we need to determine the path based on space group
     if band_settings.get("auto_path", False) or band_settings.get("path") == "AUTO" or band_settings.get("path") == "auto":
         # Try to get path from space group
@@ -657,7 +671,8 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
     calc_type = settings.get("calculation_type", settings.get("calc_type", "OPT"))
     if calc_type == "FREQ":
         refusal = phonon_dispersion_refusal(
-            settings.get("dimensionality", "CRYSTAL"), settings.get("freq_settings"))
+            settings.get("dimensionality", "CRYSTAL"), settings.get("freq_settings"),
+            geometry_data.get("optimization_content") or "")
         if refusal:
             _fail(refusal, f"\nNot writing {os.path.basename(output_file)}: {refusal}")
             return False
@@ -676,7 +691,8 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 band_settings = freq_settings["bands"]
                 # Debug output
                 # print(f"DEBUG: band_settings = {band_settings}")
-                path_info = _get_phonon_band_path_title(band_settings, geometry_data)
+                path_info = _get_phonon_band_path_title(
+                    band_settings, geometry_data, settings.get("dimensionality", "CRYSTAL"))
                 if path_info:
                     title += path_info
         
@@ -853,7 +869,8 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                     
                 write_frequency_section(
                     f, settings.get("freq_settings", DEFAULT_FREQ_SETTINGS), 
-                    crystal_system, spacegroup, optimization_section
+                    crystal_system, spacegroup, optimization_section,
+                    dimensionality=settings.get("dimensionality", "CRYSTAL")
                 )
         else:
             # For SP: Plain SP calculations don't have OPTGEOM/FREQCALC blocks
@@ -1286,7 +1303,20 @@ def _keep_extracted_settings(settings, calc_type, opt_type, origin_setting):
     return options
 
 
-def process_files(output_file, input_file=None, shared_settings=None, config_file=None, non_interactive=False, calc_type=None, opt_type=None, origin_setting="auto",
+def process_files(*args, **kwargs):
+    """Process CRYSTAL output and input files (see _process_files).
+
+    A phonon dispersion refused as soon as it is chosen (a POLYMER, say)
+    ends the file there, before the questions that follow it.
+    """
+    try:
+        return _process_files(*args, **kwargs)
+    except PhononDispersionRefused as exc:
+        _fail(str(exc), f"\nNot writing a deck: {exc}")
+        return False, None
+
+
+def _process_files(output_file, input_file=None, shared_settings=None, config_file=None, non_interactive=False, calc_type=None, opt_type=None, origin_setting="auto",
                   output_dir=None, confirm_config=None, unattended=False,
                   reserved_decks=None, charge_options=None):
     """Process CRYSTAL output and input files
