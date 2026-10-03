@@ -237,7 +237,12 @@ mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
   `phonopy-init --crystal -d --dim 2 2 2 -c ../mat_opt.out` there writes the same
   decks as `supercell-NNN.d12` for the default `--amplitude` and `--pm`, apart from
   the title and TOLDEE: phonopy always writes 10, MACE the parent's value when it is
-  higher (or `--toldee`).
+  higher (or `--toldee`). An internal-basis (`BASISSET`) set has no `TEMPLATE`:
+  phonopy's writer puts `ENDGEOM` before the template, and only an explicit basis can
+  follow that (an internal library replaces the END of block 1), so such a set cannot
+  be rewritten with `phonopy-init -d`; use the decks MACE wrote. MACE also adds
+  `BIPOSIZE`/`EXCHSIZE` 110000000 to a supercell of more than 5 atoms when the parent
+  has neither (d12_writer's rule); phonopy's writer does not.
 - **NAC** (`--nac-from`): a Gamma FREQCALC of the same material with `INTENS` and
   `INTCPHF`, same functional and basis (its `.d12` must sit beside the output). The Born
   charges and dielectric tensor are read with phonopy-crystal-born and written to

@@ -30,3 +30,9 @@ def test_stuttgart_library_says_its_records_are_unverified():
     text = " ".join(basis_library.load_family("stuttgart").description.split())
     assert "the other 117 are unverified" in text
     assert "every deck path refuses them" in text
+
+
+def test_phonopy_docs_say_internal_basis_sets_have_no_template():
+    text = _text("DOCUMENTATION.md")
+    assert "An internal-basis (`BASISSET`) set has no `TEMPLATE`" in text
+    assert "`BIPOSIZE`/`EXCHSIZE` 110000000" in text
