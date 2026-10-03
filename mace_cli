@@ -719,6 +719,64 @@ The --interactive flag allows you to customize SLURM resources similar to
 the workflow interactive mode, with defaults optimized for each calculation type.
 By default, existing .sh files are reused; use --overwrite-sh to regenerate them.
 For directories with mixed file types, you'll be prompted to choose.
+To run decks on the node you are on (a dev node, no SLURM), use: mace run
+""",
+        'run': """
+Usage: mace run [files/directories] [options]
+
+Run CRYSTAL decks now, on the node you are on - an HPCC dev node - without
+SLURM. For calculations that take seconds or minutes: a MATDUMP, BAND/DOSS/POTC
+properties, a small SP, a quick rerun.
+
+Each deck runs through the job script mace submit would submit (written to
+.mace_local/<job>.sh beside the deck), so it is staged, run in its own scratch
+directory ($SCRATCH/crys23/<job>, $SCRATCH/crys23/prop/<job>) and copied back
+exactly as a SLURM job: <job>.out, <job>.f9, <job>.BAND.DAT, <job>.DOSS.DAT,
+<job>.f25, ... The job log is <job>-local.o (a SLURM job writes <job>-<id>.o).
+No completion callback runs: nothing is submitted afterwards.
+
+Arguments:
+  files/directories     .d12/.d3 decks, or directories of them (not recursive;
+                        default: current directory)
+
+Options:
+  -n, --cores N         MPI ranks (default: 4, or fewer on a smaller machine;
+                        1 to 16 - dev nodes are shared, 4-8 is polite)
+  --serial              Run the serial crystal/properties binaries instead of
+                        mpirun (a BAND or DOSS is often quickest this way)
+  --timeout T           Wall time per deck: 90s, 30m, 1h or H:MM:SS
+                        (default: 30m; at most 1h55m, as HPCC dev nodes stop
+                        any process after 2 hours of CPU time)
+  --dry-run             Print the order, scratch directories and .f9 hand-offs;
+                        run nothing
+
+Order: every .d12 runs first, then each .d3 after the SCF that feeds it - the
+SCF named like it the way opt2d3 names its decks (x_sp.d12 or x.d12 feeds
+x_band.d3) - with that SCF's new .f9 copied to <d3>.f9. A .d3 without its SCF
+in the same run needs its own non-empty <d3>.f9. A deck whose SCF failed is
+skipped; a failed deck does not stop the others.
+
+Ctrl-C (or a lost connection, or the timeout) stops the running deck at once,
+all its CRYSTAL processes included; nothing is copied back, and its scratch
+directory is kept. Decks reuse $SCRATCH/crys23/<job> as SLURM jobs do.
+
+Refused: on the login gateway (log in to a dev node: ssh dev-amd20, dev-amd24
+or dev-intel18), inside a SLURM job, and where the CRYSTAL/23-intel-2023a
+module cannot be loaded. OPT and FREQ decks rarely fit; they get a warning.
+
+Exit codes:
+  0    every deck completed
+  1    at least one deck failed or was skipped
+  2    refused (nothing was run)
+  124  a deck hit the timeout
+  128+signal  stopped by Ctrl-C (130), a hang-up (129) or SIGTERM (143)
+
+Examples:
+  mace run dia_sp.d12
+  mace run dia/ -n 8
+  mace run dia_sp.d12 dia_band.d3 dia_doss.d3
+  mace run --serial dia_band.d3
+  mace run --dry-run dia/
 """,
         'preflight': """
 Usage: mace preflight [files/directories] [options]
@@ -1421,7 +1479,7 @@ def main():
     # (`mace preflight x -h`); otherwise the top-level parser answers -h
     # with the general help.
     if (len(sys.argv) >= 3 and any(a in ('-h', '--help') for a in sys.argv[2:])
-            and sys.argv[1] in ['workflow', 'submit', 'preflight', 'defects', 'phonopy', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version']):
+            and sys.argv[1] in ['workflow', 'submit', 'run', 'preflight', 'defects', 'phonopy', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version']):
         # Show command-specific help
         show_command_help(sys.argv[1])
         sys.exit(0)
@@ -1433,6 +1491,7 @@ def main():
 Commands:
   workflow    Interactive workflow planner - design and execute complex calculation sequences
   submit      Submit calculations to queue - handles both D12 and D3 files automatically
+  run         Run decks on this node now (dev node, no SLURM) - quick SP, BAND/DOSS/POTC, MATDUMP
   preflight   Validate D12 decks by running CRYSTAL with TESTPDIM before you spend a job
   defects     Point-defect deck sets (charge states, calibration) and their analysis
   phonopy     Phonons with phonopy - displaced-supercell decks, then bands, DOS, thermal
@@ -1467,7 +1526,7 @@ More Help:
     )
     
     parser.add_argument('command', nargs='?',
-                       choices=['workflow', 'submit', 'preflight', 'defects', 'phonopy', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif', 'ions',
+                       choices=['workflow', 'submit', 'run', 'preflight', 'defects', 'phonopy', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif', 'ions',
                                'completion', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version'],
                        help='Command to run')
     parser.add_argument('args', nargs='*', help='Arguments for the command')
@@ -1905,6 +1964,12 @@ More Help:
         else:
             ui.err(f"Error: {target} is not a valid file or directory")
             sys.exit(1)
+
+    elif args.command == 'run':
+        # Run decks on this node through their normal job script; argv rebuilt
+        # from the original command line like preflight.
+        from mace.submission.local_run import main as run_main
+        sys.exit(run_main(command_args('run')))
 
     elif args.command == 'preflight':
         # Validate decks with a TESTPDIM run before they cost a job.
