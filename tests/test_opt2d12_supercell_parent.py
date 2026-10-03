@@ -10,7 +10,8 @@ of the supercell in P1 - the cell the parent computed, atoms in the same order.
 
 Real outputs: the corpus diamond FREQ (skipped without the corpus) and two MgO
 defect runs made on HPCC with `mace defects` (CRYSTAL23, SUPERCON 2x2x2 of the
-conventional cell; one with ATOMSUBS + DOPING, one with GHOSTS), stored gzipped.
+conventional cell; one with ATOMSUBS + DOPING, one with GHOSTS), stored as
+gzipped excerpts without run-host data (tests/test_supercell_parent_excerpts.py).
 """
 import gzip
 import shutil

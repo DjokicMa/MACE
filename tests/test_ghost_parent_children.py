@@ -3,7 +3,8 @@
 GHOSTS (basis-set input, manual p.82) turns atoms into ghosts: their basis
 functions stay, their nucleus and electrons go (a vacancy with its basis, as
 `mace defects --ghost` writes). Real output: an MgO V_O ghost run made on
-HPCC with `mace defects` (CRYSTAL23, SUPERCON 2x2x2, GHOSTS on atom 1).
+HPCC with `mace defects` (CRYSTAL23, SUPERCON 2x2x2, GHOSTS on atom 1), stored as a
+gzipped excerpt.
 
 * opt2d12 keeps the record (tests/test_opt2d12_supercell_parent.py).
 * opt2d3 DOSS: CRYSTAL lists the ghost's functions under its element ("1 O"
