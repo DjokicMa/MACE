@@ -3324,6 +3324,42 @@ class CrystalPropertyExtractor:
             print(f"Warning: Could not extract charge/potential properties: {e}")
             return {}
 
+    @staticmethod
+    def _dat_file_for(output_file: Path, kind: str):
+        """The ``<name>.<kind>.DAT`` file that belongs to ``output_file``.
+
+        Its own run's file, ``<stem>.<kind>.DAT``, comes first; otherwise the
+        BAND/DOSS run of the same parent, ``<base>_<kind>.<kind>.DAT`` or
+        ``<base>.<kind>.DAT``, where ``<base>`` is the stem without a
+        ``_band``/``_doss`` suffix. Files of other stems belong to other
+        calculations and are never used. Returns ``(path, [])``, or
+        ``(None, names)`` when two files of the same rank match.
+        """
+        stem = output_file.stem
+        base = stem
+        for suffix in ("_band", "_doss"):
+            if base.lower().endswith(suffix):
+                base = base[: -len(suffix)]
+                break
+        tail = f".{kind}.DAT".lower()
+        siblings = {f"{base}_{kind}".lower(), base.lower()}
+        own, sibling = [], []
+        for path in sorted(output_file.parent.iterdir()):
+            name = path.name
+            if not name.lower().endswith(tail) or not path.is_file():
+                continue
+            dat_stem = name[: -len(tail)]
+            if dat_stem == stem:
+                own.append(path)
+            elif dat_stem.lower() in siblings:
+                sibling.append(path)
+        for rank in (own, sibling):
+            if len(rank) == 1:
+                return rank[0], []
+            if len(rank) > 1:
+                return None, [p.name for p in rank]
+        return None, []
+
     def _extract_advanced_band_dos_analysis(self, output_file: Path, properties: Dict[str, Any]) -> Dict[str, Any]:
         """
         Extract advanced electronic properties using BAND/DOSS data analysis.
@@ -3338,20 +3374,21 @@ class CrystalPropertyExtractor:
             except ImportError:
                 from advanced_electronic_analyzer import AdvancedElectronicAnalyzer
             
-            # Look for BAND.DAT and DOSS.DAT files in the same directory
-            output_dir = output_file.parent
-            
-            # Find BAND and DOSS data files
-            band_files = list(output_dir.glob("*.BAND.DAT")) + list(output_dir.glob("*_band.BAND.DAT"))
-            doss_files = list(output_dir.glob("*.DOSS.DAT")) + list(output_dir.glob("*_doss.DOSS.DAT"))
-            
-            band_file = band_files[0] if band_files else None
-            doss_file = doss_files[0] if doss_files else None
+            # This output's own BAND.DAT / DOSS.DAT, matched by stem: a
+            # directory can hold other calculations' files.
+            band_file, band_ambiguous = self._dat_file_for(output_file, "BAND")
+            doss_file, doss_ambiguous = self._dat_file_for(output_file, "DOSS")
+            notes = [f"ambiguous {kind}.DAT files skipped: {', '.join(names)}"
+                     for kind, names in (("BAND", band_ambiguous), ("DOSS", doss_ambiguous))
+                     if names]
+            if notes:
+                advanced_props['advanced_analysis_note'] = '; '.join(notes)
             
             if not band_file and not doss_file:
                 # No advanced data available
                 advanced_props['advanced_analysis_available'] = False
-                advanced_props['advanced_analysis_note'] = 'No BAND.DAT or DOSS.DAT files found'
+                advanced_props.setdefault('advanced_analysis_note',
+                                          'No BAND.DAT or DOSS.DAT files found')
                 return advanced_props
             
             # Perform advanced analysis
