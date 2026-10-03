@@ -973,7 +973,10 @@ Options:
   --reserve N           Reserved job slots (default: 30)
   --organize            Copy inputs into <calc_type>/<material_id>/ folders
                         (default: submit in place)
-  --callback-mode MODE  Callback mode for completion handling
+  --callback-mode MODE  One cycle of: full_check (default: update records,
+                        catch early failures, submit new decks), submit_new,
+                        status_check, early_failure, completion (what a job
+                        script runs when it ends)
   --dry-run             NOT implemented: currently ignored (a warning prints and a
                         REAL submission proceeds). Use --status for a non-submitting view.
 
@@ -2121,17 +2124,17 @@ More Help:
             else:
                 i += 1
         
-        # Initialize queue manager. Manual `mace manager` defaults to in-place
-        # (organize_outputs=False); pass --organize to get the organized folder tree.
-        manager = EnhancedCrystalQueueManager(
-            d12_dir=base_dir,
-            max_jobs=max_jobs,
-            reserve_slots=reserve,
-            organize_outputs=organize
-        )
-        
         if show_status:
-            # Show queue status using the check_queue method
+            # Show queue status using the check_queue method. Manual `mace
+            # manager` defaults to in-place (organize_outputs=False); pass
+            # --organize to get the organized folder tree. (Built only here:
+            # the run below builds its own in manager.main.)
+            manager = EnhancedCrystalQueueManager(
+                d12_dir=base_dir,
+                max_jobs=max_jobs,
+                reserve_slots=reserve,
+                organize_outputs=organize
+            )
             try:
                 running, pending = manager.check_queue()
                 available = max_jobs - running
@@ -2163,8 +2166,11 @@ More Help:
                 # default (omitted) is in-place submission.
                 sys.argv.append('--organize')
 
-            if callback_mode:
-                sys.argv.extend(['--callback-mode', callback_mode])
+            # Without a mode, run a full cycle: update the records, catch
+            # early failures and submit the decks in --d12-dir. manager.py's
+            # own default is the job-script callback mode ('completion'),
+            # which submits nothing outside a workflow.
+            sys.argv.extend(['--callback-mode', callback_mode or 'full_check'])
             
             if dry_run:
                 # manager.py argparse does not implement --dry-run;

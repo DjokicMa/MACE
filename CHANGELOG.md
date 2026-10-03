@@ -892,6 +892,10 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   manager gives property extraction, settings extraction, the workflow
   engine and error recovery the database it opened rather than the
   `materials.db` default.
+- `mace manager --d12-dir DIR` submitted nothing: with no `--callback-mode`
+  it ran the job-script completion callback, which outside a workflow only
+  records status. It now runs a full cycle (update the records, catch early
+  failures, submit the decks in `DIR`), and the manager is built once.
 
 ## [1.1.4] - 2026-10-02
 
