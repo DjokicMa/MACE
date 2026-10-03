@@ -340,7 +340,9 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   `tests/data/supercell_parents/rg_q0.out.gz` and `rs_qm1.out.gz` are now
   trimmed excerpts (about 500 lines each) with no MPI start-up lines,
   process counts, run dates, timings or per-node CPU times;
-  `tests/test_supercell_parent_excerpts.py` keeps such lines out.
+  `tests/test_supercell_parent_excerpts.py` keeps such lines out. So is
+  the rod group 4 polymer parent `tests/data/low_dim_groups/polyyne_rg4.out`
+  (now without its SCF cycles and timings, about 410 lines).
 
 ### Fixed
 
