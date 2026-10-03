@@ -158,13 +158,16 @@ def check_jobs(manifest: dict, texts: Dict[str, str]) -> List[JobResult]:
         pris_name = sc.get("pristine_job")
         pris_text = texts.get(pris_name)
         pris = out.summarise(pris_name, pris_text) if pris_text else None
+        wrong_site = _wrong_site(manifest, pris_text)
         for job in sc.get("jobs", []):
             text = texts.get(job["name"])
             summary = out.summarise(job["name"], text) if text is not None else None
             res = JobResult(job["name"], job["role"], job["q"], job["doping"], job.get("nspin"),
                             job.get("restricted", False), sc_index, summary)
             warns = []
-            if summary is None:
+            if wrong_site and job["role"] != "pristine":
+                res.excluded = wrong_site
+            elif summary is None:
                 res.excluded = "no output"
             elif summary.energy is None:
                 res.excluded = summary.reason
@@ -192,6 +195,31 @@ def check_jobs(manifest: dict, texts: Dict[str, str]) -> List[JobResult]:
             res.warnings = tuple(warns)
             results.append(res)
     return results
+
+
+def _wrong_site(manifest: dict, pris_text: Optional[str]) -> Optional[str]:
+    """Why the defect sits on the wrong atom, or None.
+
+    A --site-label given before the pristine output existed is accepted with
+    a warning only (structure.resolve_site); the pristine output is where it
+    can first be checked. Without this, a V_O built on a Mg site was reported
+    as "DOPING not applied" (the electron count of the wrong atom)."""
+    site = manifest.get("site") or {}
+    label, element = site.get("label"), manifest["defect"].get("element")
+    if not pris_text or label is None or not element or manifest["defect"]["kind"] == "interstitial":
+        return None
+    geom = parse_geometry(pris_text)
+    if geom is None:
+        return None
+    try:
+        atom = geom.atom(int(label))
+    except DefectError as exc:
+        return f"site {label}: {exc}"
+    if atom.element.lower() != element.lower():
+        return (f"site {label} of the pristine supercell is {atom.element}, not {element}: the "
+                f"defect was built on the wrong atom (--site-label is checked only once the "
+                f"pristine output exists); rebuild with the label of a {element}")
+    return None
 
 
 def _spin_warning(summary: out.OutputSummary, nspin: int, lock_cycles: Optional[int]) -> str:
@@ -384,6 +412,8 @@ def site_report(manifest: dict, pris_text: str, pris_sum: out.OutputSummary,
     geom_p = parse_geometry(pris_text)
     label = manifest.get("site", {}).get("label")
     kind = manifest["defect"]["kind"]
+    if _wrong_site(manifest, pris_text):
+        return []
     # an inserted atom has no pristine label: the report centres on its position
     if geom_p is None or pris_sum.mulliken is None or (label is None and kind != "interstitial"):
         return []
@@ -564,6 +594,8 @@ def _alignments(manifest, texts, pris_job, defects, potc) -> Dict[float, dict]:
     site_label = manifest.get("site", {}).get("label")
     pris_text = texts.get(pris_job.name)
     pris_geom = parse_geometry(pris_text) if pris_text else None
+    if _wrong_site(manifest, pris_text):
+        return align
     if pris_job.name in potc and pris_geom is not None:
         center = (manifest["defect"].get("cart") if manifest["defect"]["kind"] == "interstitial"
                   else pris_geom.atom(site_label).cart if site_label else None)
