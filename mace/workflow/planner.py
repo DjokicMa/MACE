@@ -2507,19 +2507,18 @@ class WorkflowPlanner:
                 ui.ok("  ✅ Expert FREQ configuration completed successfully")
                 return expert_config
             else:
-                ui.err("  ❌ Expert FREQ configuration failed, using advanced settings")
-                # Fall back to advanced settings
+                ui.err("  ❌ Expert FREQ configuration failed, using opt2d12's FREQ defaults:")
+                ui.err("     Gamma-point frequencies, no IR/Raman intensities (or the parent's")
+                ui.err("     own when it is a FREQ calculation)")
+                # Fall back to what opt2d12's interactive FREQ route gives on
+                # default answers: no intensity setting named, so none, or a
+                # FREQ parent's own.
                 config = {
                     "calculation_type": "FREQ",
                     "source": "CRYSTALOptToD12.py",
                     "inherit_base_settings": True,
                     "frequency_settings": {
                         "mode": "GAMMA",
-                        "intensities": True,
-                        "ir_method": "CPHF",
-                        "raman": True,
-                        "cphf_max_iter": 30,
-                        "cphf_tolerance": 6,
                         "temperatures": [298.15],
                     },
                 }
