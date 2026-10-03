@@ -850,6 +850,11 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   copies. Job scripts and `workflow_scripts/` copies written before 1.1.5
   are not pinned; regenerate them with `mace submit --overwrite-sh`, or
   re-plan the workflow.
+- **`mace opt2d3 --help` names `mace opt2d3`.** The help of the commands
+  handed to a script's own options (convert, opt2d12, opt2d3, opt2cif,
+  completion) began `usage: CRYSTALOptToD3.py ...`, the script's file name;
+  it now reads `usage: mace opt2d3 ...`, and opt2cif's examples say
+  `mace opt2cif`. Run directly, a script keeps its own name.
 
 ## [1.1.4] - 2026-10-02
 

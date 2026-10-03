@@ -1372,31 +1372,33 @@ def main():
         if not suppress_banner:
             show_banner()
         
-        # Execute the command
+        # Execute the command. argv[0] is the mace command, not the script
+        # file: argparse names its prog after it, so `mace opt2d3 --help`
+        # reads `usage: mace opt2d3 ...` (and %(prog)s examples match).
         if command == 'convert':
             sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
             from NewCifToD12 import main as cif_main
-            sys.argv = ['NewCifToD12.py'] + sys.argv[2:]
+            sys.argv = ['mace convert'] + sys.argv[2:]
             cif_main()
         elif command == 'opt2d12':
             sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
             from CRYSTALOptToD12 import main as opt2d12_main
-            sys.argv = ['CRYSTALOptToD12.py'] + sys.argv[2:]
+            sys.argv = ['mace opt2d12'] + sys.argv[2:]
             opt2d12_main()
         elif command == 'opt2d3':
             sys.path.insert(0, str(Path(__file__).parent / "Crystal_d3"))
             from CRYSTALOptToD3 import main as opt2d3_main
-            sys.argv = ['CRYSTALOptToD3.py'] + sys.argv[2:]
+            sys.argv = ['mace opt2d3'] + sys.argv[2:]
             opt2d3_main()
         elif command == 'opt2cif':
             sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
             from CrystalOutToCif import main as opt2cif_main
-            sys.argv = ['CrystalOutToCif.py'] + sys.argv[2:]
+            sys.argv = ['mace opt2cif'] + sys.argv[2:]
             opt2cif_main()
         elif command == 'completion':
             sys.path.insert(0, str(Path(__file__).parent / "mace"))
             from completion_checker import main as completion_main
-            sys.argv = ['completion_checker.py'] + sys.argv[2:]
+            sys.argv = ['mace completion'] + sys.argv[2:]
             completion_main()
         elif command == 'ions':
             sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
