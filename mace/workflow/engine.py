@@ -37,7 +37,7 @@ OPTIONAL_CALC_TYPES = {'BAND', 'DOSS', 'FREQ', 'TRANSPORT', 'CHARGE+POTENTIAL'}
 from mace.database.materials import MaterialDatabase, create_material_id_from_file, extract_formula_from_d12
 from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.workflow.context import get_current_context
-from mace.workflow.common.constants import opt2d3_default_band_config
+from mace.workflow.common.constants import opt2d3_default_band_config, opt2d3_default_doss_config
 from mace.utils.settings_extractor import extract_input_settings
 from mace.workflow.plan_functionals import (normalize_plan_functionals,
                                             normalize_step_functionals)
@@ -1809,13 +1809,7 @@ fi'''
         configs = {
             # opt2d3's answers when Enter is pressed through it
             "BAND": opt2d3_default_band_config(),
-            "DOSS": {
-                "calculation_type": "DOSS",
-                "n_points": 10000,
-                "bands": "all",
-                "projection_type": 0,
-                "energy_range": [-20, 20]
-            },
+            "DOSS": opt2d3_default_doss_config(),
             "TRANSPORT": {
                 "calculation_type": "TRANSPORT",
                 "temperature_range": [100, 800, 50],

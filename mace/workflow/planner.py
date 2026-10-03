@@ -52,7 +52,7 @@ except Exception:
     ui = _UIShim()
 
 from mace.workflow.plan_functionals import normalize_plan_functionals
-from mace.workflow.common.constants import opt2d3_default_band_config
+from mace.workflow.common.constants import opt2d3_default_band_config, opt2d3_default_doss_config
 from mace.utils.piped_answers import read_answer, stop_if_out_of_step
 
 # Import MACE components
@@ -1718,13 +1718,7 @@ class WorkflowPlanner:
         configs = {
             # opt2d3's answers when Enter is pressed through it
             "BAND": opt2d3_default_band_config(),
-            "DOSS": {
-                "calculation_type": "DOSS",
-                "n_points": 10000,
-                "bands": "all",
-                "projection_type": 0,  # Total DOS only
-                "energy_range": [-20, 20]
-            },
+            "DOSS": opt2d3_default_doss_config(),
             "TRANSPORT": {
                 "calculation_type": "TRANSPORT",
                 "temperature_range": [100, 800, 50],

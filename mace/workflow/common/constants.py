@@ -156,6 +156,31 @@ DEFAULT_MAX_JOBS = 250
 DEFAULT_RESERVE_JOBS = 30
 DEFAULT_MAX_SUBMIT = 5
 
+def opt2d3_default_doss_config():
+    """The DOSS configuration opt2d3 builds when every question is answered
+    with Enter: projected DOS by element and orbital type with element
+    totals (menu answer 3), all bands, 10000 energy points, DOSS.DAT output
+    (format 2), NPOL 14, no integrated DOS.
+
+    The workflow routes that choose a DOSS configuration for the user use
+    this. They carried {projection_type: 0, energy_range: [-20, 20]}, which
+    the writer does not read (it takes projection_type 1-4 and
+    energy_window), so the plan described total DOS in a window while the
+    deck was this one. A fresh dict is returned on every call.
+    """
+    return {
+        "calculation_type": "DOSS",
+        "projection_type": 3,
+        "project_orbital_types": True,
+        "element_only": False,
+        "include_element_totals": True,
+        "n_points": 10000,
+        "output_format": 2,
+        "npol": 14,
+        "print_integrated": False,
+    }
+
+
 def opt2d3_default_band_config():
     """The BAND configuration opt2d3 builds when every question is answered
     with Enter: the automatic path in high-symmetry label format (shrink 0),

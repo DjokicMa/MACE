@@ -267,19 +267,13 @@ def _get_quick_slurm_config(calc_type: str, step_num: int) -> Dict[str, Any]:
 
 def _get_basic_d3_config_for_quick_start(calc_type: str) -> Dict[str, Any]:
     """Get basic D3 configuration for quick start mode"""
-    from mace.workflow.common.constants import opt2d3_default_band_config
+    from mace.workflow.common.constants import opt2d3_default_band_config, opt2d3_default_doss_config
     configs = {
         # opt2d3's answers when Enter is pressed through it, as the engine
         # default and the planner's Basic BAND use: the same parent gets the
         # same deck by every route
         "BAND": opt2d3_default_band_config(),
-        "DOSS": {
-            "calculation_type": "DOSS",
-            "n_points": 10000,
-            "bands": "all",
-            "projection_type": 0,  # Total DOS only
-            "energy_range": [-20, 20]
-        },
+        "DOSS": opt2d3_default_doss_config(),
         "TRANSPORT": {
             "calculation_type": "TRANSPORT",
             "temperature_range": [100, 800, 50],

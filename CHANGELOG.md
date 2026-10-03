@@ -923,6 +923,12 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 - `mace database --action export --format excel` without openpyxl wrote
   CSV text into the `.xlsx` file and reported success; it now stops with
   the install hint and writes nothing.
+- The DOSS step a quick-start, `--progress` or Basic plan chooses (and the
+  engine's default) was described as total DOS in a -20..20 eV window, but
+  the writer reads neither of those keys and wrote opt2d3's Enter-through
+  deck (projected by element and orbital type, all bands). The plan now
+  carries opt2d3's Enter-through answers, so it says what the deck holds.
+  Decks are unchanged.
 
 ## [1.1.4] - 2026-10-02
 
