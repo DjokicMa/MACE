@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-10-02
+
+Everything since 1.1.4. New: charged systems and ion clusters (fragments found
+by connectivity, CHEMOD/DOPING/spin planned for you, per-fragment Mulliken
+charges), `mace defects` (defect deck sets and formation energies, with the 3D
+charged-cell offset and image-charge corrections measured on CRYSTAL23),
+`mace phonopy` (finite-displacement phonons through phonopy 4.x), and one basis
+file per family with an opt-in TZVP-REV2 2022 update and the SOC basis records.
+**Band paths from an OPT parent now use the optimised cell** (they used the
+initial cell), static band paths compute their lattice-dependent points for the
+cell, and long-axis cells keep the band-path ISS at most 999; regenerate BAND
+decks made from OPT parents. Also fixed: the bundled Pu basis record, the BAND
+gap of doped runs, ECP Mulliken net charges, odd-electron and charged-parent
+decks, 1.1.1 plans' functional names, piped answers to interactive runs, and
+several menu and job-script fixes. Workflow BAND steps now write the deck
+opt2d3 writes for the same choices (NSUB 1000; a default step is opt2d3's
+Enter-through label path), opt2d12 children of a
+SUPERCEL/SUPERCON parent are the supercell in P1, and the bundled La-Lu and
+Ac-Es basis records are neutral. Several of these change generated decks -
+see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
+
 ### Upgrading from 1.1.1-1.1.4
 
 - **Workflows planned before 1.1.2 produce mixed decks.** The plan's SP
@@ -20,9 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parameters for is dropped, and an unknown name stops that step. Nothing to
   do unless a step is refused; then re-plan it.
 - **`workflow_scripts/` is a snapshot** taken when the workflow is planned.
-  Re-plan, or copy the current `mace/submission/submitcrystal23.sh` and
-  `submit_prop.sh` into it, to get the empty-`$SCRATCH` guard and `.f20`
-  staging.
+  A template copied before 1.1.3 that the plan names is now rebuilt from the
+  plan (current generator, the plan's resources and directives) when the
+  engine uses it; the old copy is kept as `<name>.pre-1.1.3`. A template the
+  plan does not name is left alone, with a warning: re-plan, or copy the
+  current `mace/submission/submitcrystal23.sh` and `submit_prop.sh` into it,
+  to get the empty-`$SCRATCH` guard and `.f20` staging.
 - **`mace submit` reuses existing `<job>.sh` files.** Scripts generated
   before 1.1.3 lack the scratch guard and GUESSP staging; regenerate them
   with `mace submit --overwrite-sh` (MACE now warns when it reuses one).
@@ -33,14 +57,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Piped answer files must be regenerated.** opt2d12 now asks for the
   integration grid, replaces the two basis menus with "Keep the basis set
   from the original D12? [Y/n]", takes LEVSHIFT as one "LEVSHIFT ISHIFT
-  ILOCK" answer (was value, then cycles), and asks for the MAXTRADIUS value
-  and the HISTDIIS size. opt2d3 ECHG offers order 0-1 (was 0-2) and adds
-  "Number of points along the B-A segment"; without a terminal it needs
-  `map_points`/`map_coord_type` in a config. The planner's SP "Use tight
+  ILOCK" answer (was value, then cycles; a single value is now asked again),
+  and asks for the MAXTRADIUS value and the HISTDIIS size. opt2d3 ECHG
+  offers order 0-1 (was 0-2) and adds "Number of points along the B-A
+  segment"; a `--config-file` run without a terminal needs
+  `map_points`/`map_coord_type` in the config. The planner's SP "Use tight
   convergence?" and OPT "Use tighter convergence?" questions are 0-3 level
   menus (y/yes and n/no are still taken, with a note). Shifted answers can
-  land in other questions (three invalid yes/no answers in a row now stop
-  the run); use `--save-options` and `--config-file` instead of piping.
+  land in other questions. Three invalid answers in a row to any question
+  now stop a piped run, and a piped opt2d12 run lists every setting that
+  differs from the parent deck, but a shifted answer that is valid for the
+  question it lands on cannot be caught; use `--save-options` and
+  `--config-file` instead of piping.
 - **Planner and quick-start FREQ steps no longer write NUMDERIV 2.** New
   plans use CRYSTAL's default; plans saved before 1.1.2 keep 2. Set NUMDERIV
   2 to compare with older runs.
@@ -49,14 +77,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   if that is not wanted.
 - **Re-organising sorts previously misfiled SP/FREQ outputs** into
   `completesp/` and `completefreq/` (1.1.1 put them in `complete/`).
-  Records already in the database keep their old `calc_type`.
+  The same scan corrects the `calc_type` of a record an older MACE typed
+  from its file name (an SP named `*_OPT_*` recorded as OPT); workflow types
+  (OPT2, SP2, ...) are left as they are, and `calc_id` keeps its old name.
 - **`mace/database/utils/populate_completed_jobs.py` was removed.** Use
   `mace/database/populate_completed_jobs.py`.
 - **Stale property rows.** Re-extracting a calculation now removes the rows
   it no longer produces (1.1.1's band fields on DOSS runs, optimisation rows
   on OPTGEOM-titled SP runs, doped BAND gaps). Rows stored without a
-  calc_id cannot be attributed to one output and are kept; rebuild the
-  database to clean those.
+  calc_id cannot be attributed to one output: `mace analyze
+  --extract-properties` removes those of a material when it re-extracted
+  every output of that material it can see. With `--material-id`, or when
+  `--filter-type`/`--calc-type` left one of the material's outputs out, they
+  are kept; rebuild the database to clean those.
+- **Workflow BAND steps planned before 1.1.5.** Plans store the BAND
+  settings they were made with: a planner BAND step keeps the NSUB 10000 it
+  stored (new plans and the engine default use opt2d3's 1000), and a step set
+  in the planner's Advanced menu keeps keys opt2d3 does not read ("labels"
+  writes k-point vectors; literature, SeeK-path and custom paths write a deck
+  with no path, NLINE 0). Basic and quick-start BAND steps keep the k-point
+  vector or SeeK-path format they stored (new plans and the engine default
+  write opt2d3's Enter-through label path), and Basic, Advanced and
+  quick-start FREQ steps keep the Very tight tolerances they stored, which
+  replace a FREQ parent's own. Re-plan such BAND and FREQ steps.
+- **Regenerate opt2d12 children of SUPERCEL/SUPERCON parents** (e.g. defect
+  supercells). They were the host's space group with the supercell's cell
+  and asymmetric atoms, not the parent's crystal.
+- **Regenerate decks with La-Lu on the bundled triplezeta/doublezeta records,
+  or Ac-Es on any bundled family.** Their shell charges did not add up to a
+  neutral atom, and CRYSTAL stopped with INPBAS "UNIT CELL NOT NEUTRAL".
 - **Basis sets are one file per family.** Old `basis_sets/<family>/` paths
   still work, including at the custom-path prompt. Outside tools that read
   the per-element files must use `basis_library.read_record`.
@@ -202,8 +251,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before writing band, mesh, DOS and thermal properties, with optional non-analytical
   correction from a Gamma FREQCALC with INTENS + INTCPHF. Submit the decks with a
   plain `mace submit DIR`, never `--track`, with the walltime `generate` prints: it
-  grows with k-points x atoms^3 (2 h for a 2x2x2 hybrid-DFT diamond, 20 h for 3x3x3,
-  which measured on CRYSTAL23 did not finish its SCF in 2 h).
+  grows with k-points x atoms^3 and carries a 1.5x margin (3 h for a 2x2x2 hybrid-DFT
+  diamond, 30 h for 3x3x3, which measured on CRYSTAL23 did not finish its SCF in 2 h).
 - The CRYSTAL job script copies `<job>.ext` to `fort.34` when that file exists next to
   the deck (EXTERNAL geometry). No existing deck has one, so their jobs are unchanged.
 - `mace preflight` checks an EXTERNAL deck when its geometry sits next to it as
@@ -221,7 +270,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     them and the custom-path prompt (menu option 3). Any other directory is
     still read from disk.
   - Every record is returned byte for byte: tests pin all records and the
-    decks written from them. No deck changes, apart from the Pu fix below.
+    decks written from them. No deck changes, apart from the Pu, La-Lu and
+    Ac-Es fixes below; five stuttgart records CRYSTAL cannot read are refused.
   - **Custom tooling** that opened `basis_sets/<family>/<n>` directly should
     call `basis_library.read_record(path, n)` instead, or
     `basis_library.load_family(name)`.
@@ -232,9 +282,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     pob-DZVP 2018. Unmatched records say "unverified".
   - `python mace_config.py` (`ensure_paths_exist`) reports the three `.lib`
     files under the same names. This is diagnostic output only.
+- **Workflow BAND steps use NSUB 1000, as opt2d3** (engine default, planner
+  Basic and Advanced, quick-start), instead of 10000. DOSS keeps its 10000
+  energy points. Deck change: NSUB only.
+- **Default workflow BAND steps write opt2d3's Enter-through deck**: the
+  automatic path as high-symmetry labels (format 1, ISS 0). The engine
+  default and the planner's Basic BAND wrote k-point vectors, and
+  quick-start / `--progress` the SeeK-path vectors, so the same parent got a
+  different path, title and NLINE record by route; the decks now match opt2d3
+  byte for byte (checked on 13 lattices and a slab). Deck change: path
+  records, NLINE, ISS and title. Vectors, literature and SeeK-path paths are
+  formats 2-4 in the planner's Advanced BAND menu.
+- opt2d3's k-point-vector and literature BAND titles name the path
+  ("V-Y-GAMMA-X" instead of "in-plane path" on slabs) and the "Literature"
+  source, as the same configuration replayed from a file (a workflow step or
+  a saved Expert config) titles it. Only the title line changes; a
+  literature request with no literature path is titled "default".
+- opt2d12 runs answered through a pipe list every setting that differs from
+  the parent deck (functional, basis, grid, TOLINTEG, TOLDEE, LEVSHIFT,
+  HISTDIIS, MAXTRADIUS), so an answer file written for an older MACE cannot
+  change a deck silently. The deck is unchanged.
+- The phonopy walltime suggestion carries a 1.5x margin (diamond 2x2x2
+  hybrid 2 h -> 3 h, 3x3x3 20 h -> 30 h); lighter methods and `--cry-sym`
+  are not shortened, since a job killed at its walltime leaves no forces.
+- The workflow engine no longer prints raw DEBUG dumps (FREQ settings,
+  workflow id/settings/sequence, sequence position).
+- The defects README states the POTC sign convention the alignment assumes
+  (unverified), and the phonopy docs explain the phonopy/CRYSTAL mass offset
+  (about 1 cm-1 at 540 cm-1 for Si) and why an internal-basis set has no
+  TEMPLATE (phonopy's writer puts ENDGEOM before it).
+- The stuttgart library's description says which records are unverified (117
+  of 119) and which CRYSTAL cannot read.
 
 ### Fixed
 
+- **A workflow FREQ step keeps a FREQ parent's SCF tolerances.** The
+  planner's Basic, Advanced and Expert-fallback FREQ steps and the
+  quick-start FREQ step wrote Very tight (9 9 9 11 38 / 11) into the plan as
+  if the user had chosen it, replacing a FREQ parent's tolerances. They now
+  leave the choice to opt2d12: Very tight after an OPT parent (as before, and
+  as the manual opt2d12 route gives), the parent's own after a FREQ parent.
+  Tolerances set in the plan still win.
+- **opt2d12 `--config-file` reads legacy functional spellings** ("HSEsol-3C",
+  "PBEh-3C", "M06-2X", "HF", ...) as workflow plans do: the CRYSTAL23 keyword
+  is written and a 3c method gets its basis. This covers the planner's Expert
+  configs under `workflow_configs/expert_*_configs`, which the engine hands to
+  opt2d12. "M06-2X" reached the deck, which CRYSTAL23 rejects, and
+  "HSEsol-3C" kept the parent's explicit basis as "BASISSET / EXTERNAL". An
+  unknown name now writes nothing and says why.
+- The workflow planner's free-text questions (the sequence builder's "Next
+  calculation", the Advanced BAND custom path and "Use all bands?", and the
+  SLURM directives) refuse answers that cannot be meant for them (an unknown
+  calculation type, a path that is not k-point labels, a directive that is
+  not an sbatch option, anything but yes/no) and stop a piped run after
+  three in a row. These and the planner's shared yes/no, menu and number
+  questions stop with a message, not an EOFError traceback, when piped
+  answers run out.
 - opt2d12's FREQ menus ask again on an answer that is not on the menu. The
   template menu took any other answer (e.g. "9") as "Custom settings", the
   FREQCALC/ANHARM, mode and supercell questions took it as their first or
@@ -263,14 +366,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deck carries the parent's external basis. The legacy workflow executor
   likewise logs "Basis set: <3c basis> (required by <functional>; the
   parent's basis is not used)" for a 3c step. Log only: decks are unchanged.
-- **opt2d12 no longer writes SP or OPT decks from a phonon-dispersion
-  (SCELPHONO) parent.** The parent's output geometry is the SCELPHONO
-  supercell (manual sec. 4.21 p.73-74); measured on HPCC (MgO, SCELPHONO
-  2x2x2 + DISPERSION) the SP deck written from it was a space-group-225 cell
-  with a = 5.95 A and 5 asymmetric atoms instead of MgO. Such children are
-  now refused like FREQ children, with the advice to make them from the OPT
-  or SP output the dispersion run started from. Deck change: these decks are
-  no longer written.
+- **opt2d12 no longer writes SP or OPT decks from a phonon-supercell
+  (SCELPHONO) parent** (a dispersion or a Gamma-only SCELPHONO FREQ; the
+  refusal says "phonon supercell (SCELPHONO)"). The parent's output geometry
+  is the SCELPHONO supercell (manual sec. 4.21 p.73-74); measured on HPCC
+  (MgO, SCELPHONO 2x2x2 + DISPERSION) the SP deck written from it was a
+  space-group-225 cell with a = 5.95 A and 5 asymmetric atoms instead of
+  MgO. Such children are now refused like FREQ children, with the advice to
+  make them from the OPT or SP output the dispersion run started from. Deck
+  change: these decks are no longer written.
 - The job script no longer stages a job's own two-component `.f9` for a
   GUESSP inside a TWOCOMPON block. There GUESSP means GUESSPNOSO (manual
   p.173): the 2c-SCF starts from a one-component matrix of an unrestricted
@@ -309,9 +413,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Outputs whose geometry input edits the cell (SUPERCEL, ATOMSUBS, ATOMREMO,
   ELASTIC, ...) change the same way. An atom count that does not match the
   one CRYSTAL prints, or an output without such a block, is read as before
-  with a warning. Known limitation: an optimisation that stopped before
-  converging prints no final geometry; its first geometry is used, while its
-  fort.9 holds the last step.
+  with a warning. An optimisation that ended unconverged (OPT END - FAILED)
+  prints no final geometry; its last printed point is used, the geometry its
+  fort.9 holds (a killed run keeps the first).
 - **Static band paths (without the seekpath library) use the computed cell
   too.** The static route took the conventional cell of the input echo: an
   optimisation's starting cell chose the lattice variant (tI1 or tI2, oF1 or
@@ -322,26 +426,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   route gives it; before, it was written in the primitive cell's basis while
   BAND ran on the supercell. An R cell given in rhombohedral axes (CRYSTAL
   echoes it as a = b = c, alpha = beta = gamma) is read in hexagonal axes.
-  `opt2d12` phonon-dispersion paths from a SUPERCEL parent stay in the
-  primitive basis, as `opt2d12` writes the child in the input space group's
-  cell. Single-point outputs without SUPERCEL or geometry editing are
-  unchanged.
+  `opt2d12` now writes the child of a SUPERCEL parent as the supercell in P1
+  (below), and its phonon-dispersion path is that cell's own. Single-point
+  outputs without SUPERCEL or geometry editing are unchanged.
 - **Static band paths compute their lattice-dependent points for the cell.**
   Without the seekpath library the static paths of body-centred tetragonal
   (tI1, tI2), rhombohedral (hR1, hR2), face-centred orthorhombic (oF1) and
   C-centred monoclinic (mS1, SeeK-path's mC1) lattices held the
   lattice-dependent points of one particular cell (tI1's Z at 0.341718 for
   every crystal), so their segments ended off the special points of any
-  other cell. Those points are now evaluated for the cell CRYSTAL prints with
-  SeeK-path's HPKOT formulas (new `Crystal_d3/hpkot_static.py`, numpy only;
-  transcribed from SeeK-path, MIT, Hinuma et al. 2017) and given in CRYSTAL's
-  reciprocal basis, with the ISS the library route chooses, so the static
-  and library routes write the same BAND path. The warning and the "install
-  seekpath" note are gone for these paths. Cells not in SeeK-path's setting
-  (oF axes not in a < b < c, a C-centred monoclinic cell whose a-c mesh
-  SeeK-path reduces) or of another variant (oF2/oF3, mC2/mC3) keep the old
-  entry with a warning that gives the reason; aP, mP, oP, oI, oS and oC paths
-  still warn as before. Paths written without an output file are unchanged.
+  other cell. Those points are now evaluated for the cell CRYSTAL prints
+  with SeeK-path's HPKOT formulas (new `Crystal_d3/hpkot_static.py`, numpy
+  only; transcribed from SeeK-path, MIT, Hinuma et al. 2017) and given in
+  CRYSTAL's reciprocal basis, with the ISS the library route chooses: the
+  static and library routes write the same BAND path for the 30 centred
+  corpus outputs; for about 1% of random cells the ISS chosen can differ.
+  The warning and the "install seekpath" note are gone for these paths.
+  Cells not in SeeK-path's setting (oF axes not in a < b < c, a C-centred
+  monoclinic cell whose a-c mesh SeeK-path reduces) or of another variant
+  (oF2/oF3, mC2/mC3) keep the old entry with a warning that gives the
+  reason; aP, mP, oP, oI, oS and oC paths still warn as before. Paths
+  written without an output file are unchanged.
 - **Band-path ISS stays at most 999 for long-axis cells.** When no ISS up to
   999 placed the lattice-dependent points within half a k-point spacing (at
   10000 points), both the seekpath library route and the new static
@@ -357,8 +462,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The bundled Pu basis record (`294`, triplezeta and doublezeta) declared
   11 shells but holds 9.** CRYSTAL would have read the next atom's records,
   or `99 0`, as Pu's missing shells. It now says `294 9`, as the source set
-  does. **Deck change:** any deck with Pu and a bundled external basis.
-  Untested in CRYSTAL.
+  does. That alone did not make Pu decks run: its f-shell charge was also 3
+  short of neutral (see the Ac-Es fix below). **Deck change:** any deck with
+  Pu and a bundled external basis. Untested in CRYSTAL.
 - **The BAND gap of a doped run used the wrong band.** Without CRYSTAL's
   "TOP OF VALENCE BANDS" line the occupied-band count was the header's
   "N. OF ELECTRONS PER CELL" // 2. It now comes from the Mulliken
@@ -380,9 +486,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   there only reshape the guess, so it ran neutral. The charge is now written
   as `DOPING`. `CHEMOD` is copied only when the child loads the same basis
   set (it was copied whenever the atom counts matched, although its shell
-  charges are per shell of the parent's basis) and is otherwise dropped
-  with a warning; `DOPING` is always kept, with a warning when the atom
-  count changed. Deck change for such children.
+  charges are per shell of the parent's basis). When the basis changes and
+  the parent's records are exactly what MACE's ion charges write for it, the
+  equivalent `CHEMOD` is worked out again for the child's basis (net charge
+  as `DOPING`, or `CHARGED` in an explicit basis); any other `CHEMOD` is
+  dropped with a warning that gives the reason. `DOPING` is always kept,
+  with a warning when the atom count changed. Deck change for such children.
 - **A derived deck with an odd electron count is no longer written closed
   shell.** It gets the parent's `SPIN`/`SPINLOCK`, or opt2d12 refuses it
   with the reason.
@@ -435,9 +544,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and exits 1 (opt2d3), with no traceback. `--batch` and `--config-file` runs
   are unchanged.
 - **Out-of-step piped answers stop the run.** With no terminal, three invalid
-  answers in a row to a yes/no question now stop the run with an error.
+  answers in a row to any question (yes/no, numbered menus, numbers,
+  opt2d3, the planner and plotting) now stop the run with an error; at a
+  terminal the question still asks until answered.
   Before, the next blank answer took the default and the run carried on with
-  answers out of step.
+  answers out of step. In the planner this covers its number, memory,
+  walltime and level menus too, and an off-menu Advanced BAND path option or
+  path format is asked again (it was taken as a custom path, or as labels).
 - **A fort.20 staged by hand for GUESSP is kept.** Copying a density matrix
   into the job's scratch directory as fort.20 was how GUESSP restarts were
   done in 1.1.1. Since 1.1.2 the job script stripped GUESSP when there was
@@ -451,14 +564,154 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CRYSTAL's normal end; a run that did not keeps it for an OPTGEOM restart.
   Any scratch fallback is now also noted in `<job>.out`.
 - **A job script from before 1.1.3 is no longer reused silently.** `mace
-  submit` and workflow steps warn when a MACE-written `<job>.sh` or
-  `workflow_scripts/` template has no scratch guard, with the
-  `--overwrite-sh` (or re-plan) hint. The script is not changed.
+  submit` warns when a MACE-written `<job>.sh` has no scratch guard, with the
+  `--overwrite-sh` hint; the script is not changed. A workflow's
+  `workflow_scripts/` template from before 1.1.3 that the plan names is
+  rebuilt from the plan, the way a fresh execution of the plan writes it
+  (the old copy kept as `<name>.pre-1.1.3`), so later steps get the scratch
+  guard and RESTART/GUESSP staging; one the plan does not name is warned
+  about, with the re-plan hint.
 - **Decks are written through a symlink and keep their permissions.** The
   atomic deck write replaced a symlinked deck with a regular file (the link
   target kept the old deck) and gave every deck the umask's mode. The link
   target is now written and the deck's mode kept, as in 1.1.1; `mace ions`
   uses the same writer.
+- `mace <command> -h` (and a help flag after other arguments, or after
+  `--no-banner`) shows that command's help instead of the general usage.
+- `mace submit DIR` on a mixed .d12/.d3 directory stops with a message (exit
+  1) instead of an EOFError traceback when stdin has no answer.
+- `mace convert` without `--batch` stops with a message pointing at
+  `--batch`, instead of an EOFError traceback, when stdin ends before the
+  setup questions are answered.
+- opt2d12's free-text LEVSHIFT ("ISHIFT ILOCK") and HISTDIIS-size answers
+  are asked again on bad input instead of quietly taking the default (which
+  pushed the rest of a piped answer file one more question out of step).
+  Deck change: an ILOCK other than 0/1, a single LEVSHIFT value or a
+  non-positive HISTDIIS size is no longer written or replaced.
+- The planner's optimization-type menu asks again on an off-menu answer
+  instead of silently keeping the previous type, and its CHARGE+POTENTIAL
+  output-type question asks again instead of crashing with a KeyError.
+- `mace submit --interactive` accepts walltimes like 12:00:00, 2:00:00 and
+  12:00, which its own prompt gives as examples (they were refused and the
+  default used).
+- opt2d3 runs answered through a pipe read their later questions there too
+  (missing-wavefunction "Continue anyway?", each file's ECHG map plane and
+  POTC points with shared settings), as in 1.1.1, instead of refusing for
+  want of a terminal. Runs given a `--config-file` still never ask.
+- `opt2d3 --batch --config-file` takes the calculation type from the config
+  instead of asking for it first; with none anywhere it exits 1 naming
+  `--calc-type`.
+- opt2d12's grid menu marks the parent's grid as the default instead of
+  always labelling XLGRID. The default itself is unchanged.
+- **The HSE-type odd-electron crash is no longer resubmitted with more
+  memory.** A DIIS NaN at SCF cycle 1-3, then ranks killed by signal 11/6/9,
+  on an odd-electron open-shell run with HSEsol-3c, HSE06 or HSEsol is
+  reported as `screened_hybrid_odd_error`, which names PBE0/PBEsol0 as what
+  converged and keeps the functional. A closed-shell out-of-memory kill is
+  still `memory_error`.
+- A job squeue still lists as COMPLETED is classified from its .out; a run
+  whose ranks were killed (SLURM records OOM and segfault kills as
+  COMPLETED) is no longer marked completed.
+- Re-extracting untracked outputs (no calculation record) also removes the
+  rows an older extractor wrote and the current one no longer produces (e.g.
+  1.1.1's band fields of DOSS runs), when the run re-extracts every output
+  of that material it can see; a database rebuild is no longer needed for
+  that.
+- Re-organising (the populate scan) corrects the calc type of a record an
+  older MACE typed from its file name (e.g. an SP named `*_OPT_*` recorded
+  as OPT); workflow-numbered types are left as they are.
+- **Workflow BAND steps write the deck opt2d3 writes for the same choices.**
+  The planner's Advanced BAND menu stored keys opt2d3 does not read:
+  "labels" gave k-point vectors, and literature, SeeK-path and custom paths
+  gave a deck with no path (NLINE 0). It now writes the keys opt2d3 saves,
+  asks for a custom path at planning time instead of promising it "during
+  execution", and stores a band range as first and last band. Checked on the
+  59 periodic SP parents of the test corpus, with and without seekpath: the
+  engine default, planner Basic, quick-start and Advanced formats 1-4 are
+  byte-identical to opt2d3's decks for the same choices.
+- Interactive opt2d3 reads a slab's "CORRESPONDING SPACE GROUP N." line. It
+  wrote the P1 (triclinic) path for slab outputs that print only that line;
+  the config route already read it.
+- Workflow D3 steps use a plan's per-material Expert configurations; the
+  engine ignored them and ran its own default deck. A config file planned on
+  another machine is found again under this run's `workflow_configs`.
+- Workflow FREQ steps keep a FREQ parent's NUMDERIV when the plan names
+  none, as opt2d12 does. At the planner prompt a blank answer means "the
+  parent's, else none" and 0 means no keyword.
+- The legacy WorkflowExecutor step generator passes its step config (and an
+  Expert plan's saved config) as `--config-file` with `--non-interactive`;
+  it used `--options-file`, which opt2d12 only writes to, so nothing was
+  applied and no deck was written.
+- **opt2d12 writes the child of a SUPERCEL/SUPERCON parent as the supercell
+  it computed**, every atom in P1 in CRYSTAL's order, instead of the host's
+  space group with the supercell's cell and asymmetric atoms (the diamond
+  2x2x2 SP child was SG 227, a = 5.01 A, 5 atoms). The parent's DOPING,
+  CHEMOD and GHOSTS are kept, and SHRINK is written in the P1 form (same
+  mesh). The workflow engine goes through the same code.
+- Decks derived from a GHOSTS parent keep its ghost atoms: opt2d12 copies
+  GHOSTS when the child lists the same atoms (ghosts are not counted in the
+  electron parity), and opt2d3 DOSS projects the ghosts' basis functions on
+  their own (`<El>_GHOST`) instead of under their element.
+- opt2d12 `--calc-type` (and `--opt-type`) win over a `--config-file`: a
+  config without `calculation_type` no longer turns `--calc-type SP` into an
+  OPT deck.
+- Without the seekpath library, centrosymmetric C-centred groups (C2/m,
+  C2/c, Cmcm, ...) get SeeK-path's path (9 and 11 segments) instead of the
+  primed Cc / Cmc2_1 path (18 and 22); the static k-path table has no
+  duplicate keys, and aP1's labels name its segments. An orthorhombic F cell
+  gets the oF variant SeeK-path takes (1/a^2 vs 1/b^2 + 1/c^2), not the
+  shortest-axis guess, and a centrosymmetric oF2 cell the time-reversal
+  path.
+- **The bundled La-Lu (ERD, full.basis.triplezeta/doublezeta) and Ac-Es (all
+  three families) basis records have neutral formal shell charges;** every
+  La-Lu or Ac-Es deck on them stopped with INPBAS "UNIT CELL NOT NEUTRAL".
+  La-Lu: +2 on the first empty s/sp shell and +1 on the first empty d,
+  keeping the published 4f count (the site prints an Ln3+ guess); Ac-Es: the
+  site's f charge restored. Exponents and coefficients are unchanged.
+  Untested in CRYSTAL.
+- Basis records CRYSTAL cannot read (stuttgart 204, 219, 220, 227, 294) are
+  refused on every deck path, naming the record, instead of being copied
+  into decks.
+- A walltime-killed two-component OPT whose TWOCOMPON block asks for
+  GUESSP/GUESSPNOSO/2NDVARIAT is no longer restarted from its own
+  two-component fort.20 (io error Read_real_1d), and the job script drops
+  GUESSROTM (and its angles) with the TWOCOMPON GUESSP it drops for want of
+  a one-component matrix. Refreshed old job scripts get the same staging.
+- CHEMOD records with the label on its own line and integer charges are read
+  correctly (labels, and the charge an explicit-basis CHEMOD sets).
+- The static k-path of an optimised SUPERCEL cell is the host's path in the
+  supercell basis, as for its SP.
+- The custom-labels BAND menu lists the labels for the output's own lattice
+  (it always showed cubic P), and the shrink fallback (no SHRINK in deck or
+  output) uses the computed cell.
+- Computed geometry blocks of SLAB and POLYMER outputs are recognised.
+- opt2d3 no longer overwrites X_sp's deck with X_opt's when both are in one
+  directory: they are written as `X_sp_<type>.d3` and `X_opt_<type>.d3`; a
+  lone output keeps the short name.
+- The seekpath-missing note is no longer printed on every import.
+- An opt2d12 `--config-file` whose top-level `functional` is a 3c method
+  (HSESOL3C, PBEH3C, ...) and that names no basis gets the method's own
+  basis. On a parent with an explicit basis the deck said "BASISSET /
+  EXTERNAL (from original D12)", which CRYSTAL cannot read. A functional
+  under `method_modifications`, and a config that names its basis, already
+  worked.
+- Charged-system setup refuses when the parent .out lists other shells than
+  MACE's table for an internal library, and the CHEMOD-with-symmetry refusal
+  names the orbit-wide CHEMOD and MODISYMM alternatives.
+- opt2d3 reads the electron count CRYSTAL prints.
+- `mace defects analyze` says when a `--site-label` sits on the wrong
+  element instead of reporting DOPING not applied; an ECP site's electron
+  count is given as its parity only; and a warning is printed when the
+  image-charge term is applied to a far-from-cubic supercell.
+- A Mulliken atom with a second all-electron basis (label Z + 1000) is
+  measured against Z instead of being flagged as an ECP of unknown valence;
+  CRYSTAL takes an ECP only on Z + 200 or Z + 300 (manual p.25).
+- A SPINLOCK, ATOMSPIN, BETALOCK or DOPING phonopy parent is refused once,
+  not twice.
+- `basis_library` loads a family from `MACE_HOME` in a `copy_dependencies`
+  job directory.
+- The test suite writes no bytecode, so it never writes into the test
+  corpus.
 
 ## [1.1.4] - 2026-10-02
 

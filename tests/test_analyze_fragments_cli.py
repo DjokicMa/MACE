@@ -52,7 +52,9 @@ def test_the_help_and_changelog_give_the_working_form():
                                capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL).stdout
     assert "--fragments" in help_text
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text()
-    unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
-    flat = " ".join(unreleased.split())
+    # The entry lives under [Unreleased] until a release dates it: read from
+    # [Unreleased] through the newest released section.
+    after = changelog.split("## [Unreleased]", 1)[1]
+    flat = " ".join("\n## [".join(after.split("\n## [", 2)[:2]).split())
     assert "mace analyze --extract-properties <dir> --fragments" in flat
     assert "`mace analyze --fragments`" not in flat
