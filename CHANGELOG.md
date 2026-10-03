@@ -385,6 +385,18 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   "FORMAT ERROR IN INPUT DECK". A label path that MACE cannot express for
   the lattice now writes no deck, where it used to write placeholder
   records.
+- **A polymer's BAND deck runs along the chain** (opt2d3 Enter-through, and
+  so the workflow default): Gamma -> X, `1 2 NSUB ... / 0 0 0  1 0 0`,
+  whatever space group the polymer's symbol maps to. A polymer whose
+  corresponding space group MACE maps (rod groups 28, 51) got an ISS = 0
+  label deck, which CRYSTAL23 stops with "BANDE **** FORMAT ERROR IN INPUT
+  DECK" (a polymer takes no label records). One whose symbol it does not map
+  (rod groups 1 and 4) got the triclinic 3D path with I2/I3 != 0, against
+  manual p.310 note 3: CRYSTAL ran it as five copies of Gamma-X under
+  meaningless labels. The k-point vector, literature and SeeK-path formats
+  keep their segments along the chain (I2 = I3 = J2 = J3 = 0), or fall back
+  to Gamma -> X. Measured on CRYSTAL23 for rod groups 1, 4 and 28. Deck
+  change: regenerate polymer BAND decks.
 - The advanced electronic analysis in property extraction reads only the
   output's own BAND.DAT / DOSS.DAT: `<stem>.BAND.DAT`, else the same
   parent's `_band` / `_doss` run. It took the first such file in the

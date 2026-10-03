@@ -2634,6 +2634,27 @@ def in_plane_path(segments: List[List[float]],
     return kept, out
 
 
+def on_chain_path(segments: List[List[float]]) -> List[List[float]]:
+    """Keep the segments of a band path that run along a polymer's chain.
+
+    A polymer is periodic in a only; CRYSTAL23 BAND (manual p.310, note 3)
+    takes I2, I3, J2 and J3 as zero in 1D. Measured on CRYSTAL23: a path
+    with them nonzero runs, but points go only where k1 changes (a 3D
+    triclinic path became five copies of Gamma-X). Segments with an end off
+    the chain axis, or no k1 change, are dropped.
+    """
+    return [seg for seg in segments
+            if all(abs(seg[i]) < 1e-9 for i in (1, 2, 4, 5)) and abs(seg[0] - seg[3]) > 1e-9]
+
+
+# Gamma -> X = (1/2, 0, 0) along the chain, ISS 2: the polymer BAND path
+# CRYSTAL23 ran for rod groups 1, 4 and 28 ("LINE 1 ( 0.00 0.00 0.00:
+# 0.50 0.00 0.00)"). A polymer takes no label records (FORMAT ERROR).
+CHAIN_PATH_SEGMENTS = [[0, 0, 0, 1, 0, 0]]
+CHAIN_PATH_SHRINK = 2
+CHAIN_PATH_LABELS = ["GAMMA", "X"]
+
+
 def in_plane_labels(labels: List[str], space_group: int, lattice_type: str) -> List[str]:
     """Label path (CRYSTAL Tables 14.1-14.2 names) cut to its kz = 0 edges.
 

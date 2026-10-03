@@ -44,6 +44,7 @@ try:
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
                            get_seekpath_full_kpath, get_literature_kpath_vectors, unicode_to_ascii_kpoint,
                            validate_kpoint_labels_for_crystal23, in_plane_path, in_plane_labels,
+                           on_chain_path, CHAIN_PATH_SEGMENTS, CHAIN_PATH_SHRINK, CHAIN_PATH_LABELS,
                            get_crystal_system_from_space_group, CRYSTAL23_VALID_LABELS)
 except ImportError:
     # Fall back to relative import (for script usage)
@@ -55,6 +56,7 @@ except ImportError:
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
                            get_seekpath_full_kpath, get_literature_kpath_vectors, unicode_to_ascii_kpoint,
                            validate_kpoint_labels_for_crystal23, in_plane_path, in_plane_labels,
+                           on_chain_path, CHAIN_PATH_SEGMENTS, CHAIN_PATH_SHRINK, CHAIN_PATH_LABELS,
                            get_crystal_system_from_space_group, CRYSTAL23_VALID_LABELS)
 from d3_config import (save_d3_config, load_d3_config, validate_d3_config,
                       print_d3_config_summary, save_d3_options_prompt,
@@ -470,6 +472,30 @@ class D3Generator:
             config["in_plane_labels"] = labels
         return config
 
+    def _chain_band_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """The BAND settings of a polymer, cut to its chain axis.
+
+        CRYSTAL23 takes no label records for a polymer (rod groups 1, 28 and
+        51 stopped with "BANDE **** FORMAT ERROR IN INPUT DECK") and only the
+        k1 component of each point (manual p.310, note 3). A label path, or
+        a k-point path with no segment along the chain, becomes Gamma -> X
+        whatever space group the polymer's symbol maps to; the along-chain
+        segments of a k-point path are kept.
+        """
+        segments = []
+        if config.get("path_method") != "labels" and config.get("segments"):
+            segments = on_chain_path(config["segments"])
+        config = {k: v for k, v in config.items()
+                  if k not in ("seekpath_full", "literature_path", "path", "path_labels")}
+        config["path_method"] = "coordinates"
+        if segments:
+            config["segments"] = segments
+            config["path_labels"] = ["along the chain"]
+        else:
+            config.update(segments=[list(s) for s in CHAIN_PATH_SEGMENTS],
+                          shrink=CHAIN_PATH_SHRINK, path_labels=list(CHAIN_PATH_LABELS))
+        return config
+
     def _label_path_as_coordinates(self, config: Dict[str, Any],
                                    path: List[str]) -> Optional[Dict[str, Any]]:
         """A label BAND configuration rewritten as opt2d3's k-point vector one.
@@ -510,6 +536,8 @@ class D3Generator:
         lines = ["BAND"]
 
         dimensionality = self.structure_info.get('dimensionality', 3)
+        if dimensionality == 1 and config.get("path_method") != "manual":
+            config = self._chain_band_config(config)
         if config.get("path_method") == "labels":
             space_group = self.structure_info.get('space_group', 1)
             lattice_type = self.structure_info.get('lattice_type', 'P')
