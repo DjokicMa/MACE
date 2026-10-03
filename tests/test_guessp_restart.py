@@ -245,11 +245,40 @@ def test_endtwo_closes_the_twocompon_block(tmp_path):
     assert staged is None and "GUESSP" not in got.splitlines()
 
 
-def test_top_level_guessp_with_a_twocompon_block_keeps_the_1c_behaviour(tmp_path):
-    """A GUESSP outside the TWOCOMPON block is the ordinary restart: the job's
-    own .f9 is staged, as before."""
+# A GUESSP at the top level of a deck that has a TWOCOMPON block is read by
+# CRYSTAL like GUESSPNOSO too (measured on HPCC, Bi2 slab, PBE0+SOC): with the
+# fort.20 of a 1c UKS SYMMREMO run cycle 0 is exactly the 1c energy; with the
+# deck own 2c fort.9 as fort.20 it stops with "io error Read_real_1d"; with a
+# 1c matrix computed with symmetry it stops with "READFG RESTART NOT POSSIBLE -
+# SYMMETRY INCOMPATIBILITY". So it gets the TWOCOMPON treatment.
+
+
+def test_top_level_guessp_in_a_twocompon_deck_never_stages_the_jobs_own_2c_f9(tmp_path):
     block = _staging_block(tmp_path)
     deck = _deck_2c(None, top_level="GUESSP\n")
-    staged, got, _ = _stage_deck(tmp_path, block, deck, ["testmat.f9"], "toplevel")
+    staged, got, log = _stage_deck(tmp_path, block, deck, ["testmat.f9"], "toplevel")
+    assert staged is None                             # was the 2c .f9 -> Read_real_1d crash
+    assert "GUESSP" not in got.splitlines()           # cold start instead
+    assert "TWOCOMPON" in got and "SOC" in got.splitlines()
+    assert "TWOCOMPON" in log
+
+
+def test_top_level_guessp_in_a_twocompon_deck_stages_an_explicit_f20(tmp_path):
+    block = _staging_block(tmp_path)
+    deck = _deck_2c(None, top_level="GUESSP\n")
+    staged, got, log = _stage_deck(tmp_path, block, deck,
+                                   ["testmat.f20", "testmat.f9"], "toplevelf20")
+    assert staged == "MATRIX-testmat.f20"
+    assert got == deck
+    assert "SYMMREMO" in log and "p.173" in log
+    # Measured: that guess was read but the SCF then diverged where the cold
+    # start converged, so the user is told.
+    assert "WARNING" in log and "diverged" in log
+
+
+def test_top_level_guessp_without_twocompon_still_restarts_from_the_jobs_own_f9(tmp_path):
+    block = _staging_block(tmp_path)
+    deck = "title\nCRYSTAL\nEND\nGUESSP\nDFT\nPBE0\nENDDFT\nEND\n"
+    staged, got, _ = _stage_deck(tmp_path, block, deck, ["testmat.f9"], "onecomp")
     assert staged == "MATRIX-testmat.f9"
     assert got == deck

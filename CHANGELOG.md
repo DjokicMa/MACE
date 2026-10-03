@@ -278,8 +278,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use only an explicitly staged `$JOB.f20` (with a note of the p.173
   requirement); with none, a bare GUESSP is dropped from the scratch copy
   (cold start), and GUESSPNOSO/2NDVARIAT are left as written with a warning
-  (CRYSTAL stops without fort.20, measured). A GUESSP outside TWOCOMPON is
-  handled as before.
+  (CRYSTAL stops without fort.20, measured). A GUESSP at the top level of a
+  deck with a TWOCOMPON block gets the same handling, as CRYSTAL reads it like
+  GUESSPNOSO too (measured on HPCC, Bi2 slab, PBE0+SOC: the deck's own 2c
+  `.f9` as fort.20 stops with "io error Read_real_1d", a 1c matrix computed
+  with symmetry with "SYMMETRY INCOMPATIBILITY"); the OPTGEOM RESTART of such
+  a deck no longer keeps its own 2c fort.20 either. A one-component
+  `$JOB.f20` staged for a top-level GUESSP is used with a warning: that
+  measured run read it, then diverged where the cold start converged in 12
+  cycles. A GUESSP in a one-component deck is handled as before.
 - `opt2d3 --config-file` finds the shipped example configs by bare name
   (`band_auto_everything.json`) from any directory, and a relative
   `.../Crystal_d3/example_configs/<name>` written against another working

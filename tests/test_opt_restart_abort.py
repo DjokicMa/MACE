@@ -529,6 +529,20 @@ def test_2c_restart_without_a_one_component_matrix_cold_starts(tmp_path):
     assert "RESTART" in deck and "SOC" in deck
 
 
+def test_2c_restart_with_a_top_level_guessp_does_not_stage_its_own_fort20(tmp_path):
+    """A GUESSP outside the TWOCOMPON block of a 2c deck is read like
+    GUESSPNOSO as well (measured on HPCC: the deck own 2c matrix as fort.20
+    stops with "io error Read_real_1d")."""
+    deck = ("t\nCRYSTAL\nOPTGEOM\nRESTART\nENDOPT\nEND\nGUESSP\nTWOCOMPON\nSOC\nEND\n"
+            "DFT\nPBE0\nEND\nEND\n")
+    out, got, f20 = _run_staging(
+        tmp_path, deck,
+        scratch_files=[("OPTINFO.DAT", "x"), ("fort.20", "2c matrix")],
+        dir_files=[("testmat.f9", "2c f9")])
+    assert f20 is None, out
+    assert "GUESSP" not in got.splitlines() and "RESTART" in got and "SOC" in got
+
+
 def test_1c_restart_still_keeps_its_own_fort20(tmp_path):
     deck = "t\nCRYSTAL\nOPTGEOM\nRESTART\nENDOPT\nEND\nGUESSP\nEND\n"
     out, _, f20 = _run_staging(tmp_path, deck,

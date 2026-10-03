@@ -123,16 +123,18 @@ cp $DIR/$JOB.d12  $scratch/$JOB/INPUT
 # OPTINFO.DAT there is nothing to continue, so RESTART comes back out of the
 # scratch copy and the job starts over; $DIR/$JOB.d12 itself is not modified.
 # A two-component deck whose TWOCOMPON block asks for GUESSP, GUESSPNOSO or
-# 2NDVARIAT starts from a ONE-component matrix (manual p.173), and the killed
+# 2NDVARIAT - or a two-component deck with GUESSP at the top level, which
+# CRYSTAL reads the same way (measured, see the GUESSP staging below) -
+# starts from a ONE-component matrix (manual p.173), and the killed
 # run left its own two-component matrix in fort.20 (staged, it stops with "io
 # error Read_real_1d"): that fort.20 is removed and the guess is staged below
 # as for any such deck.
 RESTART_KEEPS_FORT20=""
 if [ -f "$scratch/$JOB/INPUT" ] && sed -n "/^[[:space:]]*OPTGEOM[[:space:]]*$/I,/^[[:space:]]*END/Ip" "$scratch/$JOB/INPUT" | grep -qiE "^[[:space:]]*RESTART[[:space:]]*$"; then
   if [ -f "$scratch/$JOB/OPTINFO.DAT" ]; then
-    if sed -n -E "/^[[:space:]]*TWOCOMPON[[:space:]]*$/I,/^[[:space:]]*END(TWO)?[[:space:]]*$/Ip" "$scratch/$JOB/INPUT" | grep -qiE "^[[:space:]]*(GUESSP|GUESSPNOSO|2NDVARIAT)[[:space:]]*$"; then
+    if sed -n -E "/^[[:space:]]*TWOCOMPON[[:space:]]*$/I,/^[[:space:]]*END(TWO)?[[:space:]]*$/Ip" "$scratch/$JOB/INPUT" | grep -qiE "^[[:space:]]*(GUESSP|GUESSPNOSO|2NDVARIAT)[[:space:]]*$" || { grep -qiE "^[[:space:]]*TWOCOMPON[[:space:]]*$" "$scratch/$JOB/INPUT" && grep -qiE "^[[:space:]]*(GUESSP|GUESSPNOSO)[[:space:]]*$" "$scratch/$JOB/INPUT"; }; then
       rm -f "$scratch/$JOB/fort.20"
-      echo "RESTART: continuing the optimization from OPTINFO.DAT; its guess inside TWOCOMPON needs a"
+      echo "RESTART: continuing the optimization from OPTINFO.DAT; its guess in a TWOCOMPON deck needs a"
       echo "  one-component matrix, so the killed run own two-component fort.20 is not used"
     elif [ -s "$scratch/$JOB/fort.20" ]; then
       RESTART_KEEPS_FORT20=1
@@ -201,21 +203,33 @@ fi
 # symmetry stops with "READFG RESTART NOT POSSIBLE - SYMMETRY INCOMPATIBILITY";
 # and the 2c fort.9 of the same deck staged as fort.20 stops with "io error
 # Read_real_1d" - what staging this job own $JOB.f9 used to do.
+#
+# A GUESSP at the TOP LEVEL of a deck with a TWOCOMPON block is no ordinary
+# restart either: CRYSTAL reads it like GUESSPNOSO (measured on HPCC, same Bi2
+# slab: the 1c UKS SYMMREMO fort.20 is read, cycle 0 = the 1c energy; the 2c
+# fort.9 stops with "io error Read_real_1d"; a 1c matrix with symmetry stops
+# with the SYMMETRY INCOMPATIBILITY above). It takes this branch as well, so a
+# rerun of such a deck no longer gets its own 2c $JOB.f9 as fort.20. With a
+# staged 1c $JOB.f20 that run read the guess, reached the cold-start energy by
+# cycle 5 and then diverged (FMIXING 50, cancelled at cycle 135) where the cold
+# start converged in 12 cycles, so staging one is warned about.
 MACE_GUESS1C=$(sed -n -E "/^[[:space:]]*TWOCOMPON[[:space:]]*$/I,/^[[:space:]]*END(TWO)?[[:space:]]*$/I{=;p}" "$scratch/$JOB/INPUT" 2>/dev/null | paste - - | grep -iE "^[0-9]+[[:space:]]+(GUESSP|GUESSPNOSO|2NDVARIAT)[[:space:]]*$" | head -n 1)
+MACE_GUESS1C_TOP=
+[ -z "$MACE_GUESS1C" ] && grep -qiE "^[[:space:]]*TWOCOMPON[[:space:]]*$" "$scratch/$JOB/INPUT" 2>/dev/null && MACE_GUESS1C=$(grep -niE "^[[:space:]]*(GUESSP|GUESSPNOSO)[[:space:]]*$" "$scratch/$JOB/INPUT" | head -n 1 | sed "s/:/ /") && [ -n "$MACE_GUESS1C" ] && MACE_GUESS1C_TOP=1
 if [ -z "$RESTART_KEEPS_FORT20" ] && [ -n "$MACE_GUESS1C" ]; then
   MACE_GUESS1C_LINE=${MACE_GUESS1C%%[[:space:]]*}
   MACE_GUESS1C_KEY=$(printf "%s" "${MACE_GUESS1C#*[[:space:]]}" | tr -d "[:space:]" | tr "[:lower:]" "[:upper:]")
   if [ -s "$DIR/$JOB.f20" ]; then
     cp "$DIR/$JOB.f20" "$scratch/$JOB/fort.20"
-    echo "$MACE_GUESS1C_KEY in TWOCOMPON: staged $JOB.f20 as fort.20 - it must be the matrix of"
+    echo "$MACE_GUESS1C_KEY in a TWOCOMPON deck: staged $JOB.f20 as fort.20 - it must be the matrix of"
     echo "  an unrestricted one-component run with SYMMREMO (manual p.173)"
   elif [ -s "$scratch/$JOB/fort.20" ]; then
-    echo "$MACE_GUESS1C_KEY in TWOCOMPON: no $JOB.f20 next to the deck - kept the fort.20 already in"
+    echo "$MACE_GUESS1C_KEY in a TWOCOMPON deck: no $JOB.f20 next to the deck - kept the fort.20 already in"
     echo "  $scratch/$JOB; it must be the matrix of an unrestricted one-component run with"
     echo "  SYMMREMO (manual p.173)"
   elif [ "$MACE_GUESS1C_KEY" = "GUESSP" ]; then
     sed -i "${MACE_GUESS1C_LINE}d" "$scratch/$JOB/INPUT"
-    echo "GUESSP in TWOCOMPON requested but there is no $JOB.f20 next to the deck and no fort.20"
+    echo "GUESSP in a TWOCOMPON deck requested but there is no $JOB.f20 next to the deck and no fort.20"
     echo "  in $scratch/$JOB - dropped it from this run and cold starting (this job own"
     echo "  $JOB.f9 is a two-component matrix)"
     # GUESSROTM rotates the magnetization of that guess (manual p.173); its
@@ -225,10 +239,15 @@ if [ -z "$RESTART_KEEPS_FORT20" ] && [ -n "$MACE_GUESS1C" ]; then
       echo "  GUESSROTM (and its angles) dropped with it: there is no guess to rotate"
     fi
   else
-    echo "WARNING: $MACE_GUESS1C_KEY in TWOCOMPON needs a one-component $JOB.f20 and there is"
+    echo "WARNING: $MACE_GUESS1C_KEY in a TWOCOMPON deck needs a one-component $JOB.f20 and there is"
     echo "  none next to the deck and no fort.20 in $scratch/$JOB; left in the deck as written"
     echo "  (this job own $JOB.f9 is a two-component matrix and is not used); CRYSTAL stops"
     echo "  without fort.20"
+  fi
+  if [ -n "$MACE_GUESS1C_TOP" ] && [ -s "$scratch/$JOB/fort.20" ]; then
+    echo "WARNING: $MACE_GUESS1C_KEY is outside the TWOCOMPON block; CRYSTAL reads it like GUESSPNOSO."
+    echo "  Measured on HPCC (Bi2 slab, PBE0+SOC): from a 1c SYMMREMO guess the 2c-SCF diverged"
+    echo "  after cycle 5 and oscillated, where the cold start converged in 12 cycles"
   fi
 elif [ -z "$RESTART_KEEPS_FORT20" ] && grep -qiE "^[[:space:]]*GUESSP" "$scratch/$JOB/INPUT" 2>/dev/null; then
   if [ -s "$DIR/$JOB.f20" ]; then
