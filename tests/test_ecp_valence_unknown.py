@@ -44,6 +44,9 @@ def test_valence_of_an_ecp_label_without_data_is_unknown():
     assert valence_of(247, {47: 19.0}) == 19.0
     assert valence_of(17, {}) == 17.0
     assert valence_of(147, {}) == 47.0  # 100 + Z: a second all-electron basis
+    # 1000 + Z is all-electron too (manual p.25); 300 + Z a second ECP basis
+    assert valence_of(1006, {}) == 6.0 and valence_of(1047, {}) == 47.0
+    assert valence_of(347, {}) is None
 
 
 def test_fragment_charges_flag_the_unknown_valence():

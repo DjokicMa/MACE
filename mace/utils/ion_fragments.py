@@ -485,16 +485,19 @@ def valence_of(z: int, valence: Optional[Dict] = None) -> Optional[float]:
     """The charge a Mulliken population of an atom with Z-column label z is measured against.
 
     The pseudopotential charge from ``valence`` (valence_charges) when it
-    lists the element; otherwise Z for an all-electron label (Z or 100 + Z),
-    and None for a 200 + Z label - a valence-only (ECP) atom whose valence
-    charge is not known, which must be flagged rather than measured against Z.
+    lists the element; otherwise Z for an all-electron label (Z, 100 + Z or
+    1000 + Z), and None for a 200 + Z or 300 + Z label - a valence-only (ECP)
+    atom whose valence charge is not known, which must be flagged rather than
+    measured against Z. CRYSTAL takes a pseudopotential only on a label above
+    200 (manual p.25: NAT < 200 or > 1000 all-electron, NAT = Z + 200 or
+    Z + 300 valence only), so a 1xx label never carries one.
     """
     label = int(z)
     z = label % 100
     for key in (z, str(z)):
         if valence and key in valence:
             return float(valence[key])
-    if label >= 200:
+    if 200 <= label < 1000:
         return None
     return float(z)
 
