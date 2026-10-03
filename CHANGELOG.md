@@ -882,6 +882,16 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   job ended, the record is marked failed with that reason (`no_output`).
   `mace monitor --status` also counts submitted calculations, which it
   left out of the totals.
+- **`mace submit --progress` split a workflow over two databases.** It
+  recorded the submissions in `./materials.db`, but the plan's job scripts
+  export the workflow context, so the completion callback recorded the step
+  again in `.mace_context_<id>/materials.db`, filed its properties in
+  `./materials.db` under the second record's id, and left the first record
+  `submitted`. The submissions are now recorded in the context database,
+  as `mace workflow --execute` records its first step, and the queue
+  manager gives property extraction, settings extraction, the workflow
+  engine and error recovery the database it opened rather than the
+  `materials.db` default.
 
 ## [1.1.4] - 2026-10-02
 

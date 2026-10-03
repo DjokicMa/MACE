@@ -84,6 +84,14 @@ def _calc_rows(db_path):
             "SELECT calc_type, status, settings_json FROM calculations")]
 
 
+def _context_db(workdir, workflow_id=None):
+    """The workflow's own database, which its job callbacks use."""
+    if workflow_id is None:
+        (plan,) = (workdir / "workflow_configs").glob("workflow_plan_*.json")
+        workflow_id = json.loads(plan.read_text())["workflow_id"]
+    return workdir / f".mace_context_{workflow_id}" / "materials.db"
+
+
 def test_bare_track_submit_creates_no_workflow(tmp_path, fake_slurm):
     """The reported bug, from the outside: a hand-run submission must leave a
     single calculation and no workflow directory behind."""
@@ -115,7 +123,7 @@ def test_progress_writes_plan_and_stamps_submission(tmp_path, fake_slurm):
     workflow_id = plan["workflow_id"]
     assert plan["workflow_sequence"] == ["OPT", "SP", "BAND", "DOSS"]
 
-    rows = _calc_rows(tmp_path / "materials.db")
+    rows = _calc_rows(_context_db(tmp_path, workflow_id))
     assert len(rows) == 1, rows
     settings = json.loads(rows[0]["settings_json"] or "{}")
     assert settings.get("workflow_id") == workflow_id, (
@@ -133,7 +141,7 @@ def test_progress_records_mid_sequence_step_number(tmp_path, fake_slurm):
     proc = _run_submit(tmp_path, fake_slurm, "--progress", "full_electronic", str(deck))
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
-    rows = _calc_rows(tmp_path / "materials.db")
+    rows = _calc_rows(_context_db(tmp_path))
     settings = json.loads(rows[0]["settings_json"] or "{}")
     assert rows[0]["calc_type"] == "SP"
     assert settings.get("workflow_step") == 2, settings
@@ -147,3 +155,26 @@ def test_unknown_template_fails_before_submitting(tmp_path, fake_slurm):
     assert proc.returncode != 0
     assert "Unknown workflow template" in (proc.stdout + proc.stderr)
     assert not (tmp_path / "materials.db").exists(), "nothing may be submitted"
+
+
+def test_progress_records_in_the_database_its_callback_uses(tmp_path, fake_slurm):
+    """HPCC QA (2026-10-03): `mace submit --progress` recorded the OPT in
+    ./materials.db, while the job script exports MACE_CONTEXT_DIR, so the
+    OPT's completion callback opened the workflow context database instead:
+    the OPT was recorded a second time there, its properties went to
+    ./materials.db under that second calc_id, and the first record stayed
+    'submitted'. The submission must use the database the job will use."""
+    deck = tmp_path / "MgO_opt.d12"
+    deck.write_text(OPT_D12)
+
+    proc = _run_submit(tmp_path, fake_slurm, "--progress", "full_electronic", str(deck))
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+    script = (tmp_path / "MgO_opt.sh").read_text()
+    exported = [l for l in script.splitlines() if l.startswith("export MACE_CONTEXT_DIR=")]
+    assert len(exported) == 1, exported
+    context_dir = Path(exported[0].split("=", 1)[1].strip('"'))
+    rows = _calc_rows(context_dir / "materials.db")
+    assert [r["calc_type"] for r in rows] == ["OPT"]
+    assert not (tmp_path / "materials.db").exists(), (
+        "a second database the callback never reads")

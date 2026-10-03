@@ -1711,10 +1711,23 @@ More Help:
                     sys.exit(1)
                 describe_plan(plan_file, workflow_id, sequence)
 
+            # The plan's job scripts export the workflow context
+            # (.mace_context_<id>), so the completion callbacks use that
+            # context's database. The submissions are recorded there too, as
+            # `mace workflow --execute` records its first step; recording
+            # them in ./materials.db split the workflow over two databases.
+            manager_db = 'materials.db'
+            if workflow_id:
+                from mace.workflow.context import WorkflowContext
+                progress_ctx = WorkflowContext(workflow_id, base_dir=Path(base_dir).resolve(),
+                                               isolation_mode='isolated')
+                progress_ctx.activate()
+                manager_db = str(progress_ctx.get_database_path())
             manager = EnhancedCrystalQueueManager(
                 d12_dir=base_dir, enable_tracking=True, organize_outputs=False,
-                walltime_override=walltime)
-            ui.info(f"\nTracking enabled: recording {len(selected)} calculation(s) in materials.db (in-place)")
+                walltime_override=walltime, db_path=manager_db)
+            ui.info(f"\nTracking enabled: recording {len(selected)} calculation(s) in "
+                    f"{manager_db} (in-place)")
             submitted = 0
             for f in ui.progress(selected, total=len(selected), description="Submitting"):
                 try:

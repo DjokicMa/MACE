@@ -104,6 +104,11 @@ class EnhancedCrystalQueueManager:
             else:
                 # Traditional database
                 self.db = MaterialDatabase(db_path)
+            # The database opened above is the one every helper must use
+            # (property and settings extraction, the workflow engine, error
+            # recovery). With a workflow context active it is the context's,
+            # not the 'materials.db' default this was called with.
+            self.db_path = str(getattr(self.db, 'db_path', db_path) or db_path)
         else:
             self.db = None
             
@@ -113,7 +118,7 @@ class EnhancedCrystalQueueManager:
             try:
                 # Lazy import to avoid pandas/pyarrow conflicts
                 from mace.recovery.recovery import ErrorRecoveryEngine
-                self.error_recovery_engine = ErrorRecoveryEngine(db_path)
+                self.error_recovery_engine = ErrorRecoveryEngine(self.db_path)
                 print(f"Error recovery enabled with max {self.max_recovery_attempts} attempts per job")
             except ImportError as e:
                 print(f"Warning: Error recovery disabled - could not import ErrorRecoveryEngine: {e}")
