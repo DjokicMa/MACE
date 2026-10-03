@@ -237,6 +237,11 @@ if [ ! -z "$QUEUE_MANAGER" ]; then
     if [ ! -z "$MACE_CONTEXT_DIR" ] && [ -f "$MACE_CONTEXT_DIR/materials.db" ]; then
         echo "Using workflow context database: $MACE_CONTEXT_DIR/materials.db"
         python "$QUEUE_MANAGER" --max-jobs 950 --reserve 50 --max-submit 10 --callback-mode completion --max-recovery-attempts 3 --db-path "$MACE_CONTEXT_DIR/materials.db"
+    elif [ -n "$MACE_DB_PATH" ] && [ -f "$MACE_DB_PATH" ]; then
+        # the database the queue manager recorded this job in (set when the
+        # job directory is not where that database is, e.g. --organize)
+        echo "Using the database this job was recorded in: $MACE_DB_PATH"
+        python "$QUEUE_MANAGER" --max-jobs 950 --reserve 50 --max-submit 10 --callback-mode completion --max-recovery-attempts 3 --db-path "$MACE_DB_PATH"
     else
         python "$QUEUE_MANAGER" --max-jobs 950 --reserve 50 --max-submit 10 --callback-mode completion --max-recovery-attempts 3
     fi

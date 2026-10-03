@@ -896,6 +896,14 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   it ran the job-script completion callback, which outside a workflow only
   records status. It now runs a full cycle (update the records, catch early
   failures, submit the decks in `DIR`), and the manager is built once.
+- Jobs the queue manager submitted outside its database's directory
+  (`mace manager --organize`, or `--d12-dir` elsewhere) had completion
+  callbacks that opened a new `materials.db` in the job directory, so the
+  manager's records stayed `submitted` with no properties. The job script
+  now exports `MACE_DB_PATH`, and the callback passes it as `--db-path`.
+  Job scripts written before this release do not carry it; regenerate
+  them, or run `mace manager --callback-mode status_check` from the
+  database's directory to bring the records up to date.
 
 ## [1.1.4] - 2026-10-02
 

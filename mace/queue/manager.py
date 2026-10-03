@@ -745,6 +745,32 @@ class EnhancedCrystalQueueManager:
             print(f"  Warning: could not apply walltime override: {e}")
             return None
 
+    def _export_db_path(self, job_script: Path) -> None:
+        """Tell the job's completion callback which database recorded it.
+
+        Without a workflow context the callback opened materials.db in the
+        job directory. For an --organize job (<calc_type>/<material>/) or a
+        --d12-dir away from the database that is a new, empty database, so
+        the record the manager wrote never left 'submitted'. The generators
+        pass MACE_DB_PATH to the callback as --db-path.
+        """
+        if not (self.enable_tracking and self.db_path):
+            return
+        try:
+            db_file = str(Path(self.db_path).resolve())
+            if any(c in db_file for c in '"$`\\\n'):
+                return
+            lines = job_script.read_text().split('\n')
+            if any(l.startswith('export MACE_DB_PATH=') for l in lines):
+                return
+            for i, line in enumerate(lines):
+                if line.startswith('export JOB='):
+                    lines.insert(i + 1, f'export MACE_DB_PATH="{db_file}"')
+                    job_script.write_text('\n'.join(lines))
+                    return
+        except OSError as e:
+            print(f"  Warning: could not record the database path in {job_script.name}: {e}")
+
     def submit_to_slurm(self, input_file: Path, work_dir: Path, calc_type: str,
                         submit_script_override: Path = None) -> Optional[str]:
         """
@@ -807,12 +833,12 @@ class EnhancedCrystalQueueManager:
                     if job_id_match:
                         return job_id_match.group(1)
                     else:
-                        print(f"Could not extract job ID from template output: {output}")
-                        # Maybe the template just generated the script but didn't submit it
-                        # Look for generated script and submit it manually
+                        # The shipped generators write <job>.sh and leave the
+                        # submission to the caller.
                         generated_script = work_dir / f"{job_name}.sh"
                         if generated_script.exists():
                             print(f"  Found generated script: {generated_script}")
+                            self._export_db_path(generated_script)
                             cmd = ['sbatch', str(generated_script)]
                             result = subprocess.run(cmd, capture_output=True, text=True)
                             if result.returncode == 0:
