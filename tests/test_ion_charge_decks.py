@@ -380,3 +380,40 @@ def test_deck_method_reads_the_functional():
     from ion_charges import deck_method
     assert deck_method(molecule_deck(ODD)).functional == "HSESOL3C"
     assert deck_method(molecule_deck(ODD, spin=True, dft="PBE0\nXLGRID\n")).functional == "PBE0"
+
+
+def _listing(element, shells):
+    rows = "".join(f"                                  {k + 1} {t}  \n" for k, t in enumerate(shells))
+    return (" *******************************************************************************\n"
+            " LOCAL ATOMIC FUNCTIONS BASIS SET\n"
+            " *******************************************************************************\n"
+            "   ATOM   X(AU)   Y(AU)   Z(AU)  N. TYPE  EXPONENT  S COEF   P COEF   D/F/G COEF\n"
+            " *******************************************************************************\n"
+            f"   1 {element.upper()}   0.000   0.000   0.000\n" + rows +
+            " *******************************************************************************\n")
+
+
+def test_table_shells_are_checked_against_the_parent_listing():
+    """The SHELL_TABLE vector of an internal library was used even when the
+    parent .out listed other shells (another version of the library), so the
+    CHEMOD charges would not match the basis CRYSTAL loaded."""
+    atoms = [("Li", (0.0, 0.0, 0.0))]
+    state = [{"atom": 1, "shell_charges": [2, 0, 0, 0, 0]}]
+    same = _plan(atoms, ion_charges=None, net_charge=1, site_states=state,
+                 parent_out_text=_listing("Li", ["S", "S", "S", "P", "P"]))
+    assert same.chemod_lines()[2].startswith("1 2.0")
+    with pytest.raises(IonChargeError, match=r"lists Li's SOLDEF2MSVP shells as SSSPPD, but "
+                                             r"MACE's table has SSSPP"):
+        _plan(atoms, ion_charges=None, net_charge=1, site_states=state,
+              parent_out_text=_listing("Li", ["S", "S", "S", "P", "P", "D"]))
+
+
+def test_table_agrees_with_a_real_pob_tzvp_rev2_listing():
+    """MgO (POB-TZVP-REV2, CRYSTAL23 on HPCC): the listing matches the table."""
+    import gzip
+    from conftest import REPO_ROOT
+    from ion_charges import SHELL_TABLE, basis_shells_from_output
+    text = gzip.open(REPO_ROOT / "tests/data/supercell_parents/rg_q0.out.gz", "rt").read()
+    listed = basis_shells_from_output(text)
+    for element in ("O", "Mg"):
+        assert listed[element] == list(SHELL_TABLE[("POB-TZVP-REV2", element)][1])

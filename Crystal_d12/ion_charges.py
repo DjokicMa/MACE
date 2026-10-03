@@ -360,6 +360,16 @@ def _atom_shells(i: int, z_label: int, element: str, basis: BasisInfo, out_shell
             "with site_states (and the parent .out to check the shell count), or use chemod 'no' "
             "to set the charge with DOPING alone")
     vec, types = entry
+    listed = out_shells.get(element)
+    if listed and list(listed) != list(types):
+        # The table was measured for one version of the library; the parent's
+        # own listing is what CRYSTAL loaded. Refuse rather than write CHEMOD
+        # charges for shells the basis does not have.
+        raise IonChargeError(
+            f"atom {i + 1} ({element}): the parent .out lists {element}'s {basis.internal} shells "
+            f"as {''.join(listed)}, but MACE's table has {types} (measured for another version of "
+            "the library?). Give the atom's shell charges with site_states, or use chemod 'no' "
+            "to set the charge with DOPING alone")
     return [_dec(v) for v in vec], list(types)
 
 
