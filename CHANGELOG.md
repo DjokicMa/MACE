@@ -936,6 +936,11 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   when only its first step is submitted, `mace database --action stats`
   suggests `--action export --format csv --output FILE` (not
   `--export-csv`), and `mace submit --help` lists `--walltime`.
+- With the whole script submitted (above), follow-up steps ran CRYSTAL and
+  then stopped with "syntax error: unexpected end of file" before their
+  completion callback: the engine replaced the template's callback section
+  from `# ADDED` up to the `fi` in the word "file" of a comment. A template
+  that already carries the current callback is now left as it is.
 
 ## [1.1.4] - 2026-10-02
 

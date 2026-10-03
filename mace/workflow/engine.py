@@ -792,8 +792,14 @@ export MACE_ISOLATION_MODE="isolated"'''
                 customized
             )
         
-        # Enhance queue manager path resolution to handle workflow directory structure
-        if "# ADDED: Auto-submit new jobs when this one completes" in customized:
+        # Enhance queue manager path resolution to handle workflow directory
+        # structure - for an old template only. The shipped generators carry
+        # this logic already (with the context and MACE_DB_PATH database
+        # choice), and the replacement below cut theirs from '# ADDED' to the
+        # 'fi' in the word 'file' of the scratch-cleanup comment, leaving a
+        # script that stopped with a syntax error before its callback.
+        if ("# ADDED: Auto-submit new jobs when this one completes" in customized
+                and "mace/queue/manager.py" not in customized):
             # Replace the existing queue manager logic with enhanced path resolution
             queue_manager_logic = '''
 # ADDED: Auto-submit new jobs when this one completes

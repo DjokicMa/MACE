@@ -13,6 +13,7 @@ with sbatch replaced by a stub that keeps a copy of the script it is given.
 """
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -42,6 +43,14 @@ def capture_sbatch(tmp_path, monkeypatch):
 
 def _assert_complete(script: Path, program: str):
     text = script.read_text()
+    # HPCC rerun: with the whole script submitted, the SP and FREQ ran
+    # CRYSTAL and then stopped at 'syntax error: unexpected end of file'
+    # before the callback, because the engine had replaced the generator's
+    # callback section from '# ADDED' up to the 'fi' in the word 'file'.
+    check = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
+    assert check.returncode == 0, check.stderr
+    assert "# END SCRATCH FALLBACK CLEANUP" in text
+    assert 'MACE_DB_PATH' in text, "the generator's own callback was replaced"
     assert text.startswith("#!/bin/bash --login"), text[:200]
     assert f"$EBROOTCRYSTAL/bin/{program}" in text, (
         f"submitted script has no {program} line ({len(text.splitlines())} lines)")
