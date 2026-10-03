@@ -345,6 +345,15 @@ if [ "$scratch" != "$MACE_SCRATCH_WANTED" ]; then
 fi
 # END SCRATCH FALLBACK CLEANUP
 
+# LOCAL RUN. mace run runs this script on the node it is on, without SLURM,
+# and records the result itself. No completion callback: it would submit the
+# follow-up jobs from that node. Never inside a SLURM job (sbatch exports the
+# environment, and a MACE_LOCAL_RUN in it must not cost a job its callback).
+if [ -n "$MACE_LOCAL_RUN" ] && [ -z "$SLURM_JOB_ID" ]; then
+  echo "mace run: no completion callback (local run on $(hostname))"
+  exit 0
+fi
+
 # First check if MACE_HOME is set and use it
 if [ ! -z "$MACE_HOME" ]; then
     if [ -f "$MACE_HOME/mace/queue/manager.py" ]; then

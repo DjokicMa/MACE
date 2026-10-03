@@ -131,12 +131,51 @@ def test_script_with_a_submit_directory_runs_as_before(env, submit, kind, job, e
     assert (submit / f"{job}.out").is_file()
 
 
+# --- LOCAL RUN: no completion callback -----------------------------------------
+
+@pytest.mark.parametrize("kind, job, ext", JOBS)
+def test_local_run_skips_the_completion_callback(env, submit, kind, job, ext):
+    script = _generate(submit, kind, job)
+    r = _run(script, env, submit, SLURM_SUBMIT_DIR=str(submit), SLURM_NTASKS="2",
+             MACE_LOCAL_RUN="1")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "mace run: no completion callback" in r.stdout
+    log = _log(env)
+    assert "mpirun -n 2" in log                         # CRYSTAL did run
+    assert "python " not in log                         # the callback did not
+    assert (submit / f"{job}.out").is_file()
+
+
+@pytest.mark.parametrize("kind, job, ext", JOBS)
+def test_local_run_flag_inside_a_slurm_job_keeps_the_callback(env, submit, kind, job, ext):
+    """sbatch exports the user's environment; a stray MACE_LOCAL_RUN must not
+    make a real batch job skip its callback."""
+    script = _generate(submit, kind, job)
+    r = _run(script, env, submit, SLURM_SUBMIT_DIR=str(submit), SLURM_NTASKS="2",
+             MACE_LOCAL_RUN="1", SLURM_JOB_ID="123")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "no completion callback" not in r.stdout
+    assert "python " in _log(env)
+
+
+@pytest.mark.parametrize("local", [False, True])
+def test_scratch_fallback_cleanup_still_runs_in_a_local_run(env, submit, local):
+    script = _generate(submit, "crystal", "dia")
+    extra = {"SLURM_SUBMIT_DIR": str(submit), "SLURM_NTASKS": "1", "SCRATCH": ""}
+    if local:
+        extra["MACE_LOCAL_RUN"] = "1"
+    r = _run(script, env, submit, **extra)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "removed it after the run" in r.stdout
+    assert not (submit / ".mace_scratch" / "crys23" / "dia").exists()
+
+
 def test_new_blocks_have_no_text_the_workflow_rewrites_would_touch():
     """The blocks live inside single-quoted echo sections: no apostrophes, and
     no literal $1 (the engine replaces every $1 with the material name)."""
     for path in TEMPLATES.values():
         text = path.read_text()
-        for marker, end in (("# NO SUBMIT DIRECTORY", "fi\n"),):
+        for marker, end in (("# NO SUBMIT DIRECTORY", "fi\n"), ("# LOCAL RUN", "fi\n")):
             start = text.index(marker)
             block = text[start:text.index(end, start) + len(end)]
             assert "'" not in block and "$1" not in block, block
