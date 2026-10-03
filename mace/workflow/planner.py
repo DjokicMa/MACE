@@ -2076,6 +2076,12 @@ class WorkflowPlanner:
                     
                     if output_type == "1":
                         config["frequency_settings"]["calculation_type"] = "bands"
+                        # opt2d12's "6: Phonon band structure" Enter-through
+                        # path: the automatic high-symmetry label path.
+                        config["frequency_settings"]["bands"] = {
+                            "shrink": 0, "npoints": 100, "path": "AUTO", "auto_path": True,
+                            "path_method": "labels", "format": "labels",
+                        }
                         ui.ok("  ✓ Phonon band structure selected")
                     elif output_type == "2":
                         config["frequency_settings"]["calculation_type"] = "dos"
@@ -2108,13 +2114,14 @@ class WorkflowPlanner:
                     else:
                         config["frequency_settings"]["scelphono"] = [2, 2, 2]
 
-                    # Fourier interpolation
+                    # Fourier interpolation: off unless asked, as opt2d12's
+                    # phonon templates write no INTERPHESS.
                     use_interphess = (
-                        input("\n  Use Fourier interpolation (INTERPHESS)? [Y/n]: ")
+                        input("\n  Use Fourier interpolation (INTERPHESS)? [y/N]: ")
                         .strip()
                         .lower()
                     )
-                    if use_interphess != "n":
+                    if use_interphess == "y":
                         config["frequency_settings"]["interphess"] = {
                             "expand": [2, 2, 2],  # Default values
                             "print": 0,

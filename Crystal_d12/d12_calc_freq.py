@@ -201,6 +201,23 @@ INTENSITY_SETTINGS = frozenset({
 })
 
 
+def freq_mode(freq_settings: dict) -> str:
+    """GAMMA, or the phonon mode (DISPERSION, CUSTOM) a FREQCALC block runs in.
+
+    A plan step names it as "mode"; a parsed deck has "dispersion" when its
+    FREQCALC block has DISPERSION.
+    """
+    mode = str((freq_settings or {}).get("mode") or "").upper()
+    if mode:
+        return mode
+    return "DISPERSION" if (freq_settings or {}).get("dispersion") else "GAMMA"
+
+
+def has_intensity_settings(freq_settings: dict) -> bool:
+    """Whether FREQCALC settings ask for IR/Raman intensities or spectra."""
+    return any(v for k, v in (freq_settings or {}).items() if k in INTENSITY_SETTINGS)
+
+
 def _kept_freq_summary(kept: dict) -> str:
     """The parent's FREQCALC settings in a few words, for the keep option."""
     parts = []
@@ -233,10 +250,11 @@ def get_advanced_frequency_settings(parent_numderiv=None, parent_freq=None):
 
     parent_numderiv: NUMDERIV of a parent FREQ deck, the default answer at
     the NUMDERIV prompt (None: no keyword).
-    parent_freq: a FREQ parent's FREQCALC settings. When there are any, the
-    template menu offers "0: Keep the parent's FREQCALC settings" as its
-    default, so a FREQ child keeps the parent's intensities and spectra
-    unless the user picks something else. RESTART is never kept: it
+    parent_freq: a FREQ parent's FREQCALC settings. When they ask for IR/Raman
+    intensities or spectra, the template menu offers "0: Keep the parent's
+    FREQCALC settings" as its default, so a FREQ child keeps them unless the
+    user picks something else. A parent without them (NUMDERIV only, say)
+    goes through the usual questions, its NUMDERIV the NUMDERIV default. RESTART is never kept: it
     restarts the parent's own run (manual sec. 8.2, p. 219).
     """
     numderiv_default = str(parent_numderiv) if parent_numderiv in (1, 2) else "0"
@@ -244,6 +262,8 @@ def get_advanced_frequency_settings(parent_numderiv=None, parent_freq=None):
     
     freq_settings = {}
     kept = {k: v for k, v in (parent_freq or {}).items() if k != "restart"}
+    if not has_intensity_settings(kept):
+        kept = {}
     
     print("\n=== FREQUENCY CALCULATION SETTINGS ===")
     
