@@ -857,6 +857,9 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   never shown and calculations with only workflow metadata were listed.
   Databases from before that column still have theirs read from
   `settings_json`.
+- Importing `mace.utils.show_properties` no longer opens (and creates) a
+  `materials.db` in the current directory; the query runs only when the
+  script is run.
 
 ## [1.1.4] - 2026-10-02
 
