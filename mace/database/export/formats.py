@@ -394,7 +394,7 @@ def export_materials(db, format: str = 'csv', output_file: str = None,
         filters: Property filters to apply
         logic: Filter logic (AND/OR)
         properties_only: Export properties instead of materials
-        include_properties: List of property names to include
+        include_properties: Property names to include (None = all, [] = none)
         include_structures: Whether to include structure data
         
     Returns:
@@ -437,8 +437,11 @@ def export_materials(db, format: str = 'csv', output_file: str = None,
             data = db.get_all_materials()
             metadata = {'export_type': 'all_materials'}
             
-        # Add properties to materials if requested
-        if include_properties and data:
+        # Add properties to the materials: all of them for None (the
+        # default, and what `mace database --action export` passes), the
+        # named ones for a list, none for an empty list. This read None as
+        # 'none', so a plain export held the materials table only.
+        if data and include_properties != []:
             for material in data:
                 mat_id = material['material_id']
                 props = db.get_material_properties(mat_id)

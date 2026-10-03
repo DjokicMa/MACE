@@ -917,6 +917,9 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   context database `mace database` and `mace monitor` read (not
   `./materials.db`), and "Materials processed" counts the materials (it
   always printed 0).
+- `mace database --action export` (CSV, JSON) left out every property
+  unless `--include-property` named some; it now includes them all by
+  default, as intended.
 
 ## [1.1.4] - 2026-10-02
 
