@@ -170,12 +170,40 @@ def test_scratch_fallback_cleanup_still_runs_in_a_local_run(env, submit, local):
     assert not (submit / ".mace_scratch" / "crys23" / "dia").exists()
 
 
+# --- serial binaries ----------------------------------------------------------
+
+@pytest.mark.parametrize("kind, job, binary", [("crystal", "dia", "crystal"),
+                                                ("prop", "dia_band", "properties")])
+def test_serial_run_uses_the_serial_binary_with_input_on_stdin(env, submit, kind, job, binary):
+    script = _generate(submit, kind, job)
+    r = _run(script, env, submit, SLURM_SUBMIT_DIR=str(submit), SLURM_NTASKS="1",
+             MACE_LOCAL_RUN="1", MACE_RUN_SERIAL="1")
+    assert r.returncode == 0, r.stdout + r.stderr
+    log = _log(env)
+    assert "mpirun" not in log
+    size = (submit / f"{job}{'.d12' if kind == 'crystal' else '.d3'}").stat().st_size
+    assert f"{binary} stdin={size}" in log
+    assert "TOTAL CPU TIME" in (submit / f"{job}.out").read_text()
+
+
+@pytest.mark.parametrize("kind, job, binary", [("crystal", "dia", "Pcrystal"),
+                                                ("prop", "dia_band", "Pproperties")])
+def test_serial_flag_inside_a_slurm_job_still_uses_mpirun(env, submit, kind, job, binary):
+    script = _generate(submit, kind, job)
+    r = _run(script, env, submit, SLURM_SUBMIT_DIR=str(submit), SLURM_NTASKS="4",
+             MACE_RUN_SERIAL="1", SLURM_JOB_ID="123")
+    assert r.returncode == 0, r.stdout + r.stderr
+    log = _log(env)
+    assert "mpirun -n 4" in log and f"{binary} stdin=" in log
+
+
 def test_new_blocks_have_no_text_the_workflow_rewrites_would_touch():
     """The blocks live inside single-quoted echo sections: no apostrophes, and
     no literal $1 (the engine replaces every $1 with the material name)."""
     for path in TEMPLATES.values():
         text = path.read_text()
-        for marker, end in (("# NO SUBMIT DIRECTORY", "fi\n"), ("# LOCAL RUN", "fi\n")):
+        for marker, end in (("# NO SUBMIT DIRECTORY", "fi\n"), ("# LOCAL RUN", "fi\n"),
+                            ("# SERIAL", "\nfi\n")):
             start = text.index(marker)
             block = text[start:text.index(end, start) + len(end)]
             assert "'" not in block and "$1" not in block, block

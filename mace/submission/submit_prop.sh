@@ -155,7 +155,13 @@ cp $DIR/$JOB.d3  $scratch/$JOB/INPUT
 cp $DIR/$JOB.f9  $scratch/$JOB/fort.9
 cd $scratch/$JOB
 
+# SERIAL (mace run --serial only, never inside a SLURM job): the serial binary,
+# which reads INPUT on stdin.
+if [ -n "$MACE_RUN_SERIAL" ] && [ -z "$SLURM_JOB_ID" ]; then
+  $EBROOTCRYSTAL/bin/properties < INPUT >& $DIR/${JOB}.out
+else
 I_MPI_HYDRA_BOOTSTRAP="ssh" mpirun -n $SLURM_NTASKS $EBROOTCRYSTAL/bin/Pproperties 2>&1 >& $DIR/${JOB}.out
+fi
 #srun $EBROOTCRYSTAL/bin/Pproperties 2>&1 >& $DIR/${JOB}.out
 #srun Pproperties 2>&1 >& $DIR/${JOB}.out
 
