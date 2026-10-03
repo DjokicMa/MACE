@@ -88,6 +88,13 @@ LOGGER = """#!/bin/bash
 echo "$(basename "$0") $*" >> "$STUB_LOG"
 """
 
+# squeue -h -u USER -o "%j %i %T": the jobs listed in $STUB_SQUEUE.
+SQUEUE = """#!/bin/bash
+echo "squeue $*" >> "$STUB_LOG"
+[ -n "$STUB_SQUEUE" ] && printf "%s\\n" "$STUB_SQUEUE"
+exit 0
+"""
+
 
 def _exe(path: Path, text: str):
     path.write_text(text)
@@ -102,6 +109,7 @@ def box(tmp_path):
     _exe(stubs / "mpirun", MPIRUN_STUB)
     for name in ("python", "sbatch"):
         _exe(stubs / name, LOGGER)
+    _exe(stubs / "squeue", SQUEUE)
     ebroot = tmp_path / "ebroot"
     (ebroot / "bin").mkdir(parents=True)
     for name in ("Pcrystal", "Pproperties", "crystal", "properties"):
@@ -490,6 +498,56 @@ def test_same_job_name_twice_is_refused(box):
     assert "share the scratch directory" in r.text
 
 
+def _lock_path(box, kind, job):
+    return box.root / "xdg" / f"mace-run-{os.getuid()}" / f"{kind}-{job}.lock"
+
+
+def test_job_name_another_mace_run_holds_is_refused(box):
+    """Scratch is $SCRATCH/crys23/<job> whatever the directory: the same job
+    name in another directory must wait for the run that has it."""
+    box.deck("x.d12", where=box.work / "one")
+    box.deck("x.d12", where=box.work / "two")
+    first = box.start("-n", "1", "one/x.d12", STUB_SLEEP="60")
+    try:
+        box.wait_for(box.stubdir / "x.sleeping")
+        r = box.run("-n", "1", "two/x.d12")
+        assert r.returncode == 2, r.text
+        assert "another mace run" in r.text and "x" in r.text
+        assert not (box.work / "two" / ".mace_local").exists()
+    finally:
+        first.send_signal(signal.SIGINT)
+        first.communicate(timeout=40)
+    again = box.run("-n", "1", "two/x.d12")            # free once the first has stopped
+    assert again.returncode == 0, again.text
+    assert _lock_path(box, "scf", "x").exists()        # never unlinked
+
+
+def test_held_lock_refuses_and_properties_have_their_own(box):
+    import fcntl
+    box.deck("x.d12")
+    lock = _lock_path(box, "scf", "x")
+    lock.parent.mkdir(mode=0o700)
+    with open(lock, "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        r = box.run("-n", "1", "x.d12")
+        assert r.returncode == 2, r.text
+        assert "another mace run" in r.text
+        box.deck("x_band.d3", BAND, where=box.work / "p")
+        (box.work / "p" / "x_band.f9").write_text("wavefunction")
+        ok = box.run("-n", "1", "p/x_band.d3")         # crys23/prop/x_band: no clash
+        assert ok.returncode == 0, ok.text
+
+
+def test_same_named_slurm_job_is_refused(box):
+    box.deck("x.d12")
+    r = box.run("-n", "1", "x.d12", STUB_SQUEUE="x 777 RUNNING\nother 778 PENDING")
+    assert r.returncode == 2, r.text
+    assert "SLURM job 777 (RUNNING)" in r.text
+    assert box.binary_runs() == []
+    ok = box.run("-n", "1", "x.d12", STUB_SQUEUE="other 778 PENDING")
+    assert ok.returncode == 0, ok.text
+
+
 def test_opt_deck_gets_a_warning(box):
     box.deck("o.d12", DECK.replace("END\n6 0", "OPTGEOM\nENDOPT\nEND\n6 0", 1))
     r = box.run("--dry-run", "o.d12")
@@ -507,7 +565,8 @@ def test_dry_run_prints_the_plan_and_writes_nothing(box):
     assert "a_sp.f9 -> a_band.f9" in r.stdout
     assert sorted(p.name for p in box.work.iterdir()) == ["a_band.d3", "a_sp.d12"]
     assert not box.scratch.exists()
-    assert box.stub_log() == ""
+    assert box.binary_runs() == []
+    assert not (box.root / "xdg" / f"mace-run-{os.getuid()}").exists()     # no lock taken
 
 
 # --------------------------------------------------------------------------

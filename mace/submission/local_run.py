@@ -636,6 +636,76 @@ def check_node(decks: List[Deck], serial: bool) -> str:
     return host
 
 
+def check_slurm_jobs(decks: List[Deck]) -> None:
+    """Refuse a deck whose name a SLURM job of this user has: they would share
+    the scratch directory and write the same output names. (Conservative - a
+    workflow step of that name uses another scratch directory - and one way
+    only: mace submit does not look for mace run.)"""
+    squeue = shutil.which("squeue")
+    if not squeue:
+        return
+    user = os.environ.get("USER") or os.environ.get("LOGNAME") or str(os.getuid())
+    try:
+        r = subprocess.run([squeue, "-h", "-u", user, "-o", "%j %i %T"],
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        say(f"mace run: warning: could not ask squeue for running jobs ({exc})", err=True)
+        return
+    if r.returncode != 0:
+        say(f"mace run: warning: squeue failed ({r.stderr.strip()}); not checked for "
+            "SLURM jobs of the same name", err=True)
+        return
+    jobs = {}
+    for line in r.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 3:
+            jobs.setdefault(parts[0], (parts[1], parts[2]))
+    for d in decks:
+        if d.job in jobs:
+            job_id, state = jobs[d.job]
+            raise Refusal(f"{d.job} is also SLURM job {job_id} ({state}): it uses the same "
+                          f"scratch directory and output names - wait for it or scancel it")
+
+
+def lock_dir() -> Path:
+    base = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+    d = Path(base) / f"mace-run-{os.getuid()}"
+    d.mkdir(mode=0o700, exist_ok=True)
+    return d
+
+
+def acquire_locks(decks: List[Deck], host: str) -> List[int]:
+    """One lock per scratch directory ($SCRATCH/crys23[/prop]/<job>), held for
+    the whole run, so two runs on this node never share one. The lock files
+    are never removed: unlinking one while another run waits on it would let
+    both hold a lock, each on its own inode."""
+    import fcntl
+    held = []
+    try:
+        locks = lock_dir()
+        for d in decks:
+            path = locks / f"{d.kind}-{d.job}.lock"
+            fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                try:
+                    owner = os.pread(fd, 400, 0).decode(errors="replace").strip()
+                except OSError:
+                    owner = ""
+                os.close(fd)
+                raise Refusal(f"another mace run has {d.job} ($SCRATCH/{SCRATCH_SUBDIR[d.kind]}/"
+                              f"{d.job}){' - ' + owner if owner else ''}; wait for it to finish")
+            os.ftruncate(fd, 0)
+            os.pwrite(fd, f"pid {os.getpid()} on {host}: {d.path}\n".encode(), 0)
+            held.append(fd)
+    except BaseException:
+        for fd in held:
+            os.close(fd)
+        raise
+    return held
+
+
 def print_plan(decks: List[Deck], opts) -> None:
     how = "serial" if opts.serial else f"{opts.cores} ranks"
     say(f"mace run: {len(decks)} deck(s), {how}, timeout {fmt_duration(opts.timeout)} each, "
@@ -678,6 +748,7 @@ def main(argv=None) -> int:
         decks = plan(collect_decks(opts.targets))
         warnings = check_options(opts)
         host = check_node(decks, opts.serial)
+        check_slurm_jobs(decks)
     except Refusal as exc:
         say(f"mace run: {exc}", err=True)
         return EXIT_REFUSED
@@ -691,6 +762,15 @@ def main(argv=None) -> int:
         print_plan(decks, opts)
         say("mace run: dry run - nothing was written")
         return EXIT_OK
+
+    try:
+        locks = acquire_locks(decks, host)
+    except Refusal as exc:
+        say(f"mace run: {exc}", err=True)
+        return EXIT_REFUSED
+    except OSError as exc:
+        say(f"mace run: cannot take the run lock: {exc}", err=True)
+        return EXIT_REFUSED
 
     stop = StopFlag()
     previous = {signal.SIGINT: signal.signal(signal.SIGINT, stop),
@@ -708,6 +788,8 @@ def main(argv=None) -> int:
                 signal.signal(sig, handler)
             except (OSError, ValueError, TypeError):
                 pass
+        for fd in locks:
+            os.close(fd)
     return summarize(decks, stop)
 
 
