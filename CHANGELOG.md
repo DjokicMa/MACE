@@ -867,6 +867,8 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 - The install docs (README, INSTALLATION, the Crystal_d12 and Crystal_d3
   READMEs) require Python 3.11 or newer, the oldest version CI tests; they
   said 3.6+ or 3.7+, which nothing tests.
+- `pytest.ini` no longer says the Crystal_d12 menu tests run separately;
+  every test is under `tests/`.
 
 ## [1.1.4] - 2026-10-02
 
