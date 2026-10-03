@@ -92,6 +92,7 @@ echo "$(basename "$0") $*" >> "$STUB_LOG"
 SQUEUE = """#!/bin/bash
 echo "squeue $*" >> "$STUB_LOG"
 [ -n "$STUB_SQUEUE" ] && printf "%s\\n" "$STUB_SQUEUE"
+[ -n "$STUB_SQUEUE_SLEEP" ] && sleep "$STUB_SQUEUE_SLEEP"
 exit 0
 """
 
@@ -636,6 +637,28 @@ def test_interrupt_stops_the_job_and_the_batch(box, sig):
     assert f"interrupted ({signal.Signals(sig).name})" in (box.work / "x-local.o").read_text()
     assert "not run: y.d12" in out
     assert "job=y" not in box.stub_log()
+
+
+def test_ctrl_c_before_a_deck_starts_ends_quietly(box):
+    """Ctrl-C while mace run is still checking the node (the module probe,
+    squeue) ends it with 130 and a plain line - no Python traceback."""
+    box.deck("x.d12")
+    p = box.start("-n", "1", "x.d12", STUB_SQUEUE_SLEEP="30")
+    try:
+        end = time.monotonic() + 30
+        while "squeue" not in box.stub_log() and time.monotonic() < end:
+            time.sleep(0.1)
+        assert "squeue" in box.stub_log()
+        p.send_signal(signal.SIGINT)
+        out, _ = p.communicate(timeout=40)
+    finally:
+        if p.poll() is None:
+            p.kill()
+    assert p.returncode == 130, out
+    assert "Traceback" not in out and "KeyboardInterrupt" not in out
+    assert "nothing was run" in out
+    assert box.binary_runs() == []
+    assert not (box.work / ".mace_local").exists()
 
 
 def test_second_ctrl_c_kills_a_job_that_ignores_sigterm(box):

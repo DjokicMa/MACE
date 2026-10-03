@@ -851,6 +851,18 @@ def report(deck: Deck, i: int, n: int) -> None:
 
 
 def main(argv=None) -> int:
+    # Ctrl-C before the run's own handlers are in place (the module probe and
+    # squeue can take seconds) is an ordinary way to stop it, not a traceback.
+    started = []
+    try:
+        return _main(argv, started)
+    except KeyboardInterrupt:
+        say("mace run: interrupted" + ("" if started else
+                                       " before any deck started - nothing was run"), err=True)
+        return 128 + int(signal.SIGINT)
+
+
+def _main(argv, started) -> int:
     parser = build_parser()
     opts = parser.parse_args(argv)
     try:
@@ -900,6 +912,7 @@ def main(argv=None) -> int:
             say(f"mace run: --track: cannot open materials.db: {exc}", err=True)
             return EXIT_REFUSED
 
+    started.append(True)
     stop = StopFlag()
     previous = {signal.SIGINT: signal.signal(signal.SIGINT, stop),
                 signal.SIGTERM: signal.signal(signal.SIGTERM, stop)}
