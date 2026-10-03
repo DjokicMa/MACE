@@ -2074,23 +2074,33 @@ class WorkflowPlanner:
                     
                     output_type = input("  Select output type [1]: ").strip() or "1"
                     
+                    # opt2d12's "6: Phonon band structure" Enter-through
+                    # path (the automatic high-symmetry label path) and its
+                    # "7: Phonon density of states" Enter-through PDOS
+                    # (2000 cm-1 as opt2d12 reads it, a float; 200 bins;
+                    # atom-projected). "Both" is opt2d12's custom dispersion
+                    # route without INTERPHESS: the two together.
+                    opt2d12_bands = {
+                        "shrink": 0, "npoints": 100, "path": "AUTO", "auto_path": True,
+                        "path_method": "labels", "format": "labels",
+                    }
+                    opt2d12_pdos = {"max_freq": 2000.0, "nbins": 200, "projected": True}
                     if output_type == "1":
                         config["frequency_settings"]["calculation_type"] = "bands"
-                        # opt2d12's "6: Phonon band structure" Enter-through
-                        # path: the automatic high-symmetry label path.
-                        config["frequency_settings"]["bands"] = {
-                            "shrink": 0, "npoints": 100, "path": "AUTO", "auto_path": True,
-                            "path_method": "labels", "format": "labels",
-                        }
+                        config["frequency_settings"]["bands"] = opt2d12_bands
                         ui.ok("  ✓ Phonon band structure selected")
                     elif output_type == "2":
                         config["frequency_settings"]["calculation_type"] = "dos"
+                        config["frequency_settings"]["pdos"] = opt2d12_pdos
                         ui.ok("  ✓ Phonon density of states selected")
                     elif output_type == "3":
                         config["frequency_settings"]["calculation_type"] = "both"
+                        config["frequency_settings"]["bands"] = opt2d12_bands
+                        config["frequency_settings"]["pdos"] = opt2d12_pdos
                         ui.ok("  ✓ Both phonon bands and DOS selected")
                     else:
                         config["frequency_settings"]["calculation_type"] = "bands"
+                        config["frequency_settings"]["bands"] = opt2d12_bands
                         ui.err("  Invalid choice - defaulting to band structure")
 
                     # Supercell for phonon calculation

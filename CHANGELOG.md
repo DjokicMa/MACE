@@ -374,6 +374,17 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   high-symmetry BANDS label path, with no INTERPHESS (checked byte for byte
   on the corpus AgCl FREQ parent). Deck change: BANDS records instead of
   INTERPHESS, and the title names the path.
+- **The workflow's phonon DOS steps write opt2d12's deck.** The planner's
+  Advanced FREQ phonon route with output type "2: Phonon density of
+  states" or "3: Both band structure and DOS" stored only a label nothing
+  reads, so the deck was `FREQCALC / NOINTENS / DISPERSION / ENDFREQ`: no
+  PDOS, and no BANDS for "both". On default answers DOS now writes what
+  opt2d12's "7: Phonon density of states" writes (PDOS `2000.0 200`,
+  atom-projected), and "both" what opt2d12's custom dispersion route
+  without INTERPHESS writes: template 6's BANDS path, then that PDOS. An
+  output type not on the menu, which says it defaults to the band
+  structure, now writes its BANDS path too. Deck change: re-plan phonon
+  DOS steps.
 - The planner's Expert FREQ fallback (used when the interactive opt2d12 run
   fails) wrote IR + Raman intensities through CPHF while saying "using
   advanced settings". It now writes what opt2d12's interactive FREQ route
@@ -419,8 +430,8 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   cif2d12 (no output to read the corresponding space group from) and a
   polymer dispersion (not run). opt2d12 now refuses a dispersion as soon as
   the FREQ template is chosen, before the method, basis and SCF questions.
-- opt2d12's phonon FREQ templates (6: band structure, 7: DOS) no longer
-  carry one run's answers into the next run in the same process: the
+- opt2d12's "6: Phonon band structure" FREQ template no longer carries
+  one run's answers into the next run in the same process: the
   template's BANDS settings were shared, so after a default label-path run
   a later run lost the k-point density question and wrote the earlier
   run's segment count. Each run now starts from the template itself.
