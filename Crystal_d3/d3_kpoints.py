@@ -855,8 +855,9 @@ CRYSTAL23_VALID_LABELS = {
     "tetragonal_simple": {"M", "R", "A", "X", "Z"},
     # BC Tetragonal (Table 14.2)
     "tetragonal_bc": {"M", "P", "X"},
-    # Triclinic (derived from coordinates table)
-    "triclinic": {"V", "Y", "Z", "T", "R", "X", "U"},
+    # Triclinic has no entry in Tables 14.1/14.2: CRYSTAL23 stops a P-1
+    # label deck with "BANDE **** K-POINTS NOT CODIFIED", so its path
+    # (KPOINT_COORDINATES["triclinic"]) is written as coordinates.
 }
 
 
@@ -877,16 +878,15 @@ def validate_kpoint_labels_for_crystal23(labels: List[str], space_group: int, la
     """
     crystal_system = get_crystal_system_from_space_group(space_group, lattice_type)
 
-    if crystal_system not in CRYSTAL23_VALID_LABELS:
-        print(f"Warning: Crystal system '{crystal_system}' not in CRYSTAL23 validation table")
-        return True, labels  # Fall back to original behavior
-
     if crystal_system not in KPOINT_COORDINATES:
         print(f"Warning: Crystal system '{crystal_system}' coordinates not available")
         return True, labels
 
     # Check if all labels (except | and GAMMA) are valid
-    # Note: "G" kept for backwards compatibility with old configs
+    # Note: "G" kept for backwards compatibility with old configs.
+    # A lattice with no Table 14.1/14.2 entry (triclinic) has no valid
+    # label but Gamma.
+    valid = CRYSTAL23_VALID_LABELS.get(crystal_system, set())
     all_valid = True
     invalid_labels = []
 
@@ -894,7 +894,7 @@ def validate_kpoint_labels_for_crystal23(labels: List[str], space_group: int, la
         if label in ["|", "G", "GAMMA"]:
             continue  # Skip discontinuity markers and Gamma (both old "G" and new "GAMMA")
 
-        if label not in CRYSTAL23_VALID_LABELS[crystal_system]:
+        if label not in valid:
             all_valid = False
             invalid_labels.append(label)
 

@@ -1,0 +1,31 @@
+ Synthetic CRYSTAL23-style output excerpt (textbook LiH, rocksalt primitive
+ cell written in P -1) made for the MACE tests; not a research calculation.
+ lih_p1bar
+
+ CRYSTAL CALCULATION
+ (INPUT ACCORDING TO THE INTERNATIONAL TABLES FOR X-RAY CRYSTALLOGRAPHY)
+ CRYSTAL FAMILY                       :  TRICLINIC
+ CRYSTAL CLASS  (GROTH - 1921)        :  TRICLINIC PINACOIDAL
+
+ SPACE GROUP (CENTROSYMMETRIC)        :  P -1
+
+ LATTICE PARAMETERS  (ANGSTROMS AND DEGREES) - CONVENTIONAL CELL
+         A           B           C        ALPHA      BETA       GAMMA
+     2.88500     2.88500     2.88500    60.00000    60.00000    60.00000
+
+ GEOMETRY FOR WAVE FUNCTION - DIMENSIONALITY OF THE SYSTEM    3
+ *******************************************************************************
+ LATTICE PARAMETERS (ANGSTROMS AND DEGREES) - BOHR = 0.5291772083 ANGSTROM
+ PRIMITIVE CELL
+         A              B              C           ALPHA      BETA       GAMMA 
+     2.88500000     2.88500000     2.88500000    60.000000  60.000000  60.000000
+ *******************************************************************************
+ ATOMS IN THE ASYMMETRIC UNIT    2 - ATOMS IN THE UNIT CELL:    2
+     ATOM                 X/A                 Y/B                 Z/C    
+ *******************************************************************************
+      1 T   3 LI    0.000000000000E+00  0.000000000000E+00  0.000000000000E+00
+      2 T   1 H     5.000000000000E-01  5.000000000000E-01  5.000000000000E-01
+
+ NUMBER OF AO                 6  EXCHANGE OVERLAP TOL        (T3) 10**   -6
+ N. OF ELECTRONS PER CELL     4  EXCHANGE PSEUDO OVP (F(G))  (T4) 10**   -6
+ SHRINK. FACT.(MONKH.)    6  6  6  NUMBER OF K POINTS IN THE IBZ    112

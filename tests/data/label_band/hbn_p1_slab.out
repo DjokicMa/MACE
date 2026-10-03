@@ -1,0 +1,31 @@
+ Synthetic CRYSTAL23-style output excerpt (textbook hexagonal BN monolayer,
+ described in layer group 1) made for the MACE tests; not a research
+ calculation.
+ hbn_p1_slab
+
+ SLAB CALCULATION
+ SYSTEM AND LATTICE                   :  OBLIQUE     
+ TWO-SIDED PLANE GROUP N.  1          :  P 1             
+ CORRESPONDING SPACE GROUP N.   1
+
+ LATTICE PARAMETERS  (ANGSTROMS AND DEGREES) - CONVENTIONAL CELL
+           A              B            GAMMA
+        2.50000        2.50000      120.00000
+
+ GEOMETRY FOR WAVE FUNCTION - DIMENSIONALITY OF THE SYSTEM    2
+ (NON PERIODIC DIRECTION: LATTICE PARAMETER FORMALLY SET TO 500)
+ *******************************************************************************
+ LATTICE PARAMETERS (ANGSTROMS AND DEGREES) - BOHR = 0.5291772083 ANGSTROM
+ PRIMITIVE CELL
+         A              B              C           ALPHA      BETA       GAMMA 
+     2.50000000     2.50000000   500.00000000    90.000000  90.000000 120.000000
+ *******************************************************************************
+ ATOMS IN THE ASYMMETRIC UNIT    2 - ATOMS IN THE UNIT CELL:    2
+     ATOM                 X/A                 Y/B             Z(ANGSTROM)
+ *******************************************************************************
+      1 T   5 B     3.333333333333E-01  6.666666666667E-01  0.000000000000E+00
+      2 T   7 N     6.666666666667E-01  3.333333333333E-01  0.000000000000E+00
+
+ NUMBER OF AO                10  EXCHANGE OVERLAP TOL        (T3) 10**   -6
+ N. OF ELECTRONS PER CELL    12  EXCHANGE PSEUDO OVP (F(G))  (T4) 10**   -6
+ SHRINK. FACT.(MONKH.)    8  8  1  NUMBER OF K POINTS IN THE IBZ     40

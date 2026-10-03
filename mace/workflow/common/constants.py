@@ -164,7 +164,9 @@ def opt2d3_default_band_config():
     The workflow routes that choose a BAND configuration for the user (the
     engine default, the planner's Basic answer, quick-start / --progress)
     use this, so they write the deck the manual route writes. A fresh dict
-    is returned on every call.
+    is returned on every call. For a parent CRYSTAL23 reads no labels for
+    (triclinic, any slab) the writer puts the same path in integer
+    coordinates, the deck opt2d3's k-point vector format writes.
     """
     return {
         "calculation_type": "BAND",

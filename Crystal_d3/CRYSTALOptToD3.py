@@ -43,7 +43,8 @@ try:
     from Crystal_d3.d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
                            get_seekpath_full_kpath, get_literature_kpath_vectors, unicode_to_ascii_kpoint,
-                           validate_kpoint_labels_for_crystal23, in_plane_path, in_plane_labels)
+                           validate_kpoint_labels_for_crystal23, in_plane_path, in_plane_labels,
+                           get_crystal_system_from_space_group, CRYSTAL23_VALID_LABELS)
 except ImportError:
     # Fall back to relative import (for script usage)
     from d3_interactive import (configure_d3_calculation, get_band_info_from_output,
@@ -53,7 +54,8 @@ except ImportError:
     from d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
                            get_seekpath_full_kpath, get_literature_kpath_vectors, unicode_to_ascii_kpoint,
-                           validate_kpoint_labels_for_crystal23, in_plane_path, in_plane_labels)
+                           validate_kpoint_labels_for_crystal23, in_plane_path, in_plane_labels,
+                           get_crystal_system_from_space_group, CRYSTAL23_VALID_LABELS)
 from d3_config import (save_d3_config, load_d3_config, validate_d3_config,
                       print_d3_config_summary, save_d3_options_prompt,
                       list_available_d3_configs, select_d3_config_file)
@@ -468,11 +470,70 @@ class D3Generator:
             config["in_plane_labels"] = labels
         return config
 
-    def _write_band_d3(self, config: Dict[str, Any]) -> str:
-        """Write BAND calculation D3 file."""
+    def _label_path_as_coordinates(self, config: Dict[str, Any],
+                                   path: List[str]) -> Optional[Dict[str, Any]]:
+        """A label BAND configuration rewritten as opt2d3's k-point vector one.
+
+        The labels' Table 14.1/14.2 coordinates are scaled to integers in
+        units of 1/ISS, ISS from the parent's shrink -- the deck opt2d3's
+        format 2 writes for the same parent. None when a label has no
+        coordinates for this lattice.
+        """
+        space_group = self.structure_info.get('space_group', 1)
+        lattice_type = self.structure_info.get('lattice_type', 'P')
+        frac: List[List[float]] = []
+        run: List[str] = []
+        for label in list(path) + ["|"]:
+            if label != "|":
+                run.append(label)
+                continue
+            if len(run) >= 2:
+                segments = get_kpoint_coordinates_from_labels(run, space_group, lattice_type)
+                if not segments:
+                    return None
+                frac += segments
+            run = []
+        if not frac:
+            return None
+        out_file = str(self.input_file)
+        shrink = extract_and_process_shrink(out_file, Path(out_file).stem.split('_')[0],
+                                            Path(out_file).parent, {})
+        segments, shrink = scale_kpoint_segments(frac, shrink)
+        config = dict(config)
+        config.update(path_method="coordinates", segments=segments, shrink=shrink,
+                      path_labels=list(path))
+        return config
+
+    def _write_band_d3(self, config: Dict[str, Any]) -> Optional[str]:
+        """Write BAND calculation D3 file (None when no readable deck can be
+        written)."""
         lines = ["BAND"]
 
-        in_plane = self.structure_info.get('dimensionality', 3) == 2
+        dimensionality = self.structure_info.get('dimensionality', 3)
+        if config.get("path_method") == "labels":
+            space_group = self.structure_info.get('space_group', 1)
+            lattice_type = self.structure_info.get('lattice_type', 'P')
+            path = config.get("path")
+            if not path or path == "auto":
+                path = get_band_path_from_symmetry(space_group, lattice_type)
+            # CRYSTAL23 reads BAND labels (ISS = 0) only from its Tables
+            # 14.1/14.2 and only in 3D: a triclinic lattice has no table
+            # entry ("BANDE **** K-POINTS NOT CODIFIED") and a slab takes no
+            # label record at all ("BANDE **** FORMAT ERROR IN INPUT DECK"),
+            # both measured with CRYSTAL23. Write the same path as integer
+            # coordinates instead, as opt2d3's k-point vector format does.
+            if (dimensionality == 2
+                    or not validate_kpoint_labels_for_crystal23(path, space_group, lattice_type)[0]):
+                converted = self._label_path_as_coordinates(config, path)
+                if converted is None:
+                    ui.err("BAND: the k-point labels " + " ".join(path) + " cannot be written "
+                           "for this lattice (CRYSTAL23 does not recognise them as labels and "
+                           "MACE has no coordinates for them); no D3 file was written. Use "
+                           "k-point vectors or a manual path instead.")
+                    return None
+                config = converted
+
+        in_plane = dimensionality == 2
         if in_plane:
             config = self._in_plane_band_config(config)
 
@@ -591,106 +652,66 @@ class D3Generator:
             else:
                 path = config.get("path", ["GAMMA", "X", "M", "GAMMA"])
 
-            # Validate k-point labels for CRYSTAL23 compatibility
-            space_group = self.structure_info.get('space_group', 1)
-            lattice_type = self.structure_info.get('lattice_type', 'P')
-            labels_valid, validated_path = validate_kpoint_labels_for_crystal23(path, space_group, lattice_type)
+            # Every label left here is one CRYSTAL23 reads (the others
+            # were written as coordinates above)
+            validated_path = path
 
-            if not labels_valid:
-                # Switch to coordinate mode if any labels are invalid
-                ui.warn("Switching to coordinate mode due to invalid k-point labels")
-                # Convert to coordinate format
-                segments = []
-                current_segment = []
+            # Use original label format
+            # Count segments exactly as they are emitted below —
+            # consecutive pairs within runs between "|" discontinuities.
+            # The old counter also paired labels ACROSS each "|", so the
+            # NLINE header claimed one more segment than was written and
+            # CRYSTAL read END as a segment.
+            n_segments = 0
+            run_len = 0
+            for _label in validated_path:
+                if _label == "|":
+                    if run_len >= 2:
+                        n_segments += run_len - 1
+                    run_len = 0
+                else:
+                    run_len += 1
+            if run_len >= 2:
+                n_segments += run_len - 1
 
-                for item in validated_path:
-                    if item == "|":
-                        if len(current_segment) >= 2:
-                            for i in range(len(current_segment) - 1):
-                                segments.append(f"{current_segment[i]} {current_segment[i+1]}")
-                        current_segment = []
-                    else:
-                        current_segment.append(item)
+            shrink = 0
+            n_points = config.get("n_points", 1000)
 
-                # Handle final segment
-                if len(current_segment) >= 2:
-                    for i in range(len(current_segment) - 1):
-                        segments.append(f"{current_segment[i]} {current_segment[i+1]}")
+            # Use band range from config
+            first_band = config.get("first_band", 1)
+            last_band = config.get("last_band")
+            if last_band is None:
+                last_band = self.structure_info['n_ao'] if self.structure_info['n_ao'] > 0 else 100
 
-                # Use coordinate format
-                n_segments = len(segments)
-                shrink = config.get("shrink", 16)  # Use non-zero shrink for coordinates
-                n_points = config.get("n_points", 1000)
+            plot = 1 if config.get("plot", True) else 0
+            print_eig = 1 if config.get("print_eigenvalues", False) else 0
 
-                first_band = config.get("first_band", 1)
-                last_band = config.get("last_band")
-                if last_band is None:
-                    last_band = self.structure_info['n_ao'] if self.structure_info['n_ao'] > 0 else 100
+            lines.append(f"{n_segments} {shrink} {n_points} {first_band} {last_band} {plot} {print_eig}")
 
-                plot = 1 if config.get("plot", True) else 0
-                print_eig = 1 if config.get("print_eigenvalues", False) else 0
+            # Add path segments - handle discontinuous paths
+            current_segment = []
 
-                lines.append(f"{n_segments} {shrink} {n_points} {first_band} {last_band} {plot} {print_eig}")
+            def _crystal_label(lbl):
+                # CRYSTAL's BAND label records use the single-letter
+                # names from its Tables 14.1/14.2 — "GAMMA" is not a
+                # recognized label
+                return 'G' if lbl.upper() in ('GAMMA', 'Γ') else lbl
 
-                for segment in segments:
-                    lines.append(segment)
-            else:
-                # Use original label format
-                # Count segments exactly as they are emitted below —
-                # consecutive pairs within runs between "|" discontinuities.
-                # The old counter also paired labels ACROSS each "|", so the
-                # NLINE header claimed one more segment than was written and
-                # CRYSTAL read END as a segment.
-                n_segments = 0
-                run_len = 0
-                for _label in validated_path:
-                    if _label == "|":
-                        if run_len >= 2:
-                            n_segments += run_len - 1
-                        run_len = 0
-                    else:
-                        run_len += 1
-                if run_len >= 2:
-                    n_segments += run_len - 1
+            for label in validated_path:
+                if label == "|":
+                    # End current segment
+                    if len(current_segment) >= 2:
+                        # Create segments from consecutive points
+                        for i in range(len(current_segment) - 1):
+                            lines.append(f"{_crystal_label(current_segment[i])} {_crystal_label(current_segment[i+1])}")
+                    current_segment = []
+                else:
+                    current_segment.append(label)
 
-                shrink = 0
-                n_points = config.get("n_points", 1000)
-
-                # Use band range from config
-                first_band = config.get("first_band", 1)
-                last_band = config.get("last_band")
-                if last_band is None:
-                    last_band = self.structure_info['n_ao'] if self.structure_info['n_ao'] > 0 else 100
-
-                plot = 1 if config.get("plot", True) else 0
-                print_eig = 1 if config.get("print_eigenvalues", False) else 0
-
-                lines.append(f"{n_segments} {shrink} {n_points} {first_band} {last_band} {plot} {print_eig}")
-
-                # Add path segments - handle discontinuous paths
-                current_segment = []
-
-                def _crystal_label(lbl):
-                    # CRYSTAL's BAND label records use the single-letter
-                    # names from its Tables 14.1/14.2 — "GAMMA" is not a
-                    # recognized label
-                    return 'G' if lbl.upper() in ('GAMMA', 'Γ') else lbl
-
-                for label in validated_path:
-                    if label == "|":
-                        # End current segment
-                        if len(current_segment) >= 2:
-                            # Create segments from consecutive points
-                            for i in range(len(current_segment) - 1):
-                                lines.append(f"{_crystal_label(current_segment[i])} {_crystal_label(current_segment[i+1])}")
-                        current_segment = []
-                    else:
-                        current_segment.append(label)
-
-                # Handle final segment
-                if len(current_segment) >= 2:
-                    for i in range(len(current_segment) - 1):
-                        lines.append(f"{_crystal_label(current_segment[i])} {_crystal_label(current_segment[i+1])}")
+            # Handle final segment
+            if len(current_segment) >= 2:
+                for i in range(len(current_segment) - 1):
+                    lines.append(f"{_crystal_label(current_segment[i])} {_crystal_label(current_segment[i+1])}")
         
         elif config.get("path_method") == "manual":
             # Manual mixed path
@@ -1496,6 +1517,8 @@ class D3Generator:
         # Generate D3 content
         if self.calc_type == "BAND":
             d3_content = self._write_band_d3(config)
+            if d3_content is None:
+                return None
         elif self.calc_type == "DOSS":
             d3_content = self._write_doss_d3(config)
         elif self.calc_type == "TRANSPORT":

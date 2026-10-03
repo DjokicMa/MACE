@@ -61,17 +61,14 @@ def _title_edges(title):
 @pytest.mark.parametrize("name", ["graphene_lg37", "graphene_lg47", "graphene_lg80"])
 def test_slab_path_stays_in_plane(tmp_path, monkeypatch, name, route):
     title, iss, records = _band_deck(tmp_path, monkeypatch, name, **ROUTES[route])
-    if iss == 0:
-        # label mode: no label off the kz = 0 plane (Table 14.1: A, L, H of
-        # the hexagonal lattice; Table 14.2: Z, U, R, T of the orthorhombic)
-        off_plane = {"A", "L", "H", "Z", "U", "R", "T"}
-        assert not {lab for rec in records for lab in rec.split()} & off_plane, records
-    else:
-        for rec in records:
-            ints = [int(v) for v in rec.split()]
-            assert ints[2] == 0 and ints[5] == 0, rec
-        if "in-plane path" not in title:
-            assert len(_title_edges(title)) == len(records), title
+    # CRYSTAL23 reads no label record (ISS = 0) for a slab ("BANDE ****
+    # FORMAT ERROR IN INPUT DECK"), so every route writes coordinates
+    assert iss > 0, records
+    for rec in records:
+        ints = [int(v) for v in rec.split()]
+        assert ints[2] == 0 and ints[5] == 0, rec
+    if "in-plane path" not in title:
+        assert len(_title_edges(title)) == len(records), title
 
 
 def test_hexagonal_slab_seekpath_is_gamma_m_k_gamma(tmp_path, monkeypatch):
