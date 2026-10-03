@@ -494,3 +494,18 @@ def test_real_writer_hosts_keep_every_host_line(tmp_path, variant):
         assert "SLABCUT\n0 0 1\n1 3\nSUPERCEL\n2 0\n0 2\n" in decks["mgo_pris"].text
     if variant == "3c":
         assert "SPINLOCK\n1 30" in decks["mgo_q0"].text and "SPINLOCK" not in decks["mgo_qm1"].text
+
+
+def test_an_ecp_site_gives_the_parity_not_a_wrong_count():
+    """With a pristine Mulliken count (valence electrons only) and a site whose
+    basis has an ECP, N = count + delta_z mixed a valence count with a whole
+    atom's Z: off by the core. The parity (cores hold pairs) is still given."""
+    sro = mgo_host().replace("12 0.5 0.5 0.5", "38 0.5 0.5 0.5")
+    decks, msgs, _ = _build(sro, de.DefectSite("vacancy", "Sr", label=33), charges=(0, 1),
+                            pristine_n=512)
+    assert decks["mgo_pris"].n_electrons == 512
+    assert decks["mgo_q0"].n_electrons is None and decks["mgo_qp1"].n_electrons is None
+    assert decks["mgo_q0"].odd is False and decks["mgo_qp1"].odd is True
+    assert any("q=0: N even" in m for m in msgs) and any("q=+1: N odd" in m for m in msgs)
+    assert any("effective core potential" in m for m in msgs)
+    assert not any("N=4" in m for m in msgs)

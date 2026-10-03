@@ -929,6 +929,15 @@ def build_supercell_set(host: HostInfo, site: DefectSite, keyword: str, matrix, 
         msgs.append("note: ATOMINSE (Cartesian Angstrom, current = supercell frame, p.41) is untested on HPCC")
 
     n_def0 = electrons.shifted(site.delta_z)
+    involved = [z_old] + ([z_new] if site.kind == "substitution" else [])
+    if n_def0.exact is not None and any(has_ecp(host, z) for z in involved):
+        # The pristine count is the Mulliken one, valence electrons only, and
+        # delta_z counts the whole atom: N would be off by the ECP core (whose
+        # electrons come in pairs, so the parity is right).
+        n_def0 = ElectronCount(None, n_def0.parity, n_def0.source)
+        msgs.append("the defect site carries an effective core potential: N is given as its "
+                    "parity only (the pristine count is valence electrons, the site's core is "
+                    "not counted)")
     for q in opts.charges:
         if not float(q).is_integer():
             raise DefectError(f"charge states are integers; got {q}")
