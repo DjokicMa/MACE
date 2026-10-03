@@ -50,13 +50,23 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 - **`mace submit` reuses existing `<job>.sh` files.** Scripts generated
   before 1.1.3 lack the scratch guard and GUESSP staging; regenerate them
   with `mace submit --overwrite-sh` (MACE now warns when it reuses one).
+- **Job scripts and `workflow_scripts/` copies written by 1.1.3-1.1.4 are
+  reused without a warning** and lack this release's job-script changes:
+  two-component GUESSP handling (a 2c job's own `.f9` is no longer staged as
+  fort.20), keeping a hand-staged `fort.20`, staging `<job>.ext` as fort.34
+  (`mace phonopy` decks) and the `.mace_scratch` cleanup. For TWOCOMPON
+  GUESSP restarts, hand-staged densities and phonopy decks, regenerate them
+  with `mace submit --overwrite-sh`, or re-plan the workflow.
 - **GUESSP from a hand-staged density** can go next to the deck as
   `<job>.f20`, or into the scratch directory as `fort.20`.
 - **`<submit dir>/.mace_scratch` is now removed** after a run that ended
   normally. Do not keep files of your own there.
 - **Piped answer files must be regenerated.** opt2d12 now asks for the
-  integration grid, replaces the two basis menus with "Keep the basis set
-  from the original D12? [Y/n]", takes LEVSHIFT as one "LEVSHIFT ISHIFT
+  integration grid, asks "Keep the basis set from the original D12? [Y/n]"
+  before the basis menus when the parent deck has an external (EXTERNAL)
+  basis and the functional is not a 3c method (the menus follow only on
+  "n"; an internal-basis parent, a 3c functional and --shared-settings get
+  the basis menus as before, with no new question), takes LEVSHIFT as one "LEVSHIFT ISHIFT
   ILOCK" answer (was value, then cycles; a single value is now asked again),
   and asks for the MAXTRADIUS value and the HISTDIIS size. opt2d3 ECHG
   offers order 0-1 (was 0-2) and adds "Number of points along the B-A
@@ -72,6 +82,19 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 - **Planner and quick-start FREQ steps no longer write NUMDERIV 2.** New
   plans use CRYSTAL's default; plans saved before 1.1.2 keep 2. Set NUMDERIV
   2 to compare with older runs.
+- **FREQ children of a FREQ parent with IR/Raman intensities.** A piped
+  opt2d12 answer file for such a child (the parent's FREQCALC block has
+  intensity or spectrum settings) now meets "Select template (0-8) [0]": a
+  blank answer keeps the parent's settings (was Basic), "1" still picks
+  Basic, and the questions that followed the template are not asked after
+  "0". A parent with only NUMDERIV gets the menu as before. In the planner's
+  Advanced FREQ level, a blank "Select calculation type" now keeps the
+  parent's intensities ("1" is an explicit none).
+- **Planner phonon dispersion steps.** "Use Fourier interpolation
+  (INTERPHESS)?" now defaults to no (blank was yes), and a band structure
+  step stores opt2d12's automatic BANDS path. Plans saved before 1.1.5 keep
+  the INTERPHESS 2 2 2 and the deck with no BANDS path they stored; re-plan
+  such steps.
 - **opt2d12 templates saved by 1.1.1** do not record a "no" to MAXTRADIUS or
   SPINLOCK, so they now pick up the parent's values. Re-save the template
   if that is not wanted.
@@ -313,6 +336,11 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   TEMPLATE (phonopy's writer puts ENDGEOM before it).
 - The stuttgart library's description says which records are unverified (117
   of 119) and which CRYSTAL cannot read.
+- Tests: the bundled MgO defect outputs
+  `tests/data/supercell_parents/rg_q0.out.gz` and `rs_qm1.out.gz` are now
+  trimmed excerpts (about 500 lines each) with no MPI start-up lines,
+  process counts, run dates, timings or per-node CPU times;
+  `tests/test_supercell_parent_excerpts.py` keeps such lines out.
 
 ### Fixed
 
@@ -323,6 +351,46 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   leave the choice to opt2d12: Very tight after an OPT parent (as before, and
   as the manual opt2d12 route gives), the parent's own after a FREQ parent.
   Tolerances set in the plan still win.
+- **A FREQ child of a FREQ parent keeps the parent's IR/Raman
+  intensities** (INTENS, INTCPHF, INTRAMAN, IRSPEC/RAMSPEC) on every route,
+  when it runs in the parent's Gamma-point mode. opt2d12's interactive FREQ
+  template menu now defaults to "0: Keep the parent's FREQCALC settings"
+  when the parent has intensity or spectrum settings (it defaulted to "Basic
+  frequencies only", writing NOINTENS); a parent with only NUMDERIV gets the
+  usual questions, its NUMDERIV the default answer. The workflow's Basic and
+  quick-start FREQ steps no longer write "no intensities" into the plan, the
+  Advanced level's blank answer keeps the parent's, and a config that names
+  no intensity setting keeps the parent's when its FREQ mode is the
+  parent's. A config that names NUMDERIV alone therefore no longer drops the
+  parent's intensities, and a phonon dispersion config gets none (NOINTENS),
+  as opt2d12's phonon templates write.
+- **The workflow's phonon band structure step writes opt2d12's deck.** The
+  planner's Advanced FREQ phonon route (full dispersion, band structure) on
+  default answers wrote INTERPHESS 2 2 2 and no BANDS path. It now writes
+  what opt2d12's "6: Phonon band structure" template writes on default
+  answers: SCELPHONO 2x2x2, NOINTENS, DISPERSION and the automatic
+  high-symmetry BANDS label path, with no INTERPHESS (checked byte for byte
+  on the corpus AgCl FREQ parent). Deck change: BANDS records instead of
+  INTERPHESS, and the title names the path.
+- The planner's Expert FREQ fallback (used when the interactive opt2d12 run
+  fails) wrote IR + Raman intensities through CPHF while saying "using
+  advanced settings". It now writes what opt2d12's interactive FREQ route
+  gives on default answers (Gamma-point frequencies, no intensities, or a
+  FREQ parent's own) and says so.
+- **The default BAND deck for a triclinic parent or any slab** (opt2d3
+  Enter-through, and so the workflow default) is now integer k-point
+  coordinates, with ISS taken from the parent's shrink. This is the deck
+  opt2d3's k-point vector format writes. CRYSTAL23 rejects label input
+  there: triclinic stopped with "K-POINTS NOT CODIFIED" and slabs with
+  "FORMAT ERROR IN INPUT DECK". A label path that MACE cannot express for
+  the lattice now writes no deck, where it used to write placeholder
+  records.
+- The advanced electronic analysis in property extraction reads only the
+  output's own BAND.DAT / DOSS.DAT: `<stem>.BAND.DAT`, else the same
+  parent's `_band` / `_doss` run. It took the first such file in the
+  output's directory, which could belong to another calculation. Two equally
+  good matches are now skipped and named in `advanced_analysis_note`, not
+  guessed between.
 - **opt2d12 `--config-file` reads legacy functional spellings** ("HSEsol-3C",
   "PBEh-3C", "M06-2X", "HF", ...) as workflow plans do: the CRYSTAL23 keyword
   is written and a 3c method gets its basis. This covers the planner's Expert
