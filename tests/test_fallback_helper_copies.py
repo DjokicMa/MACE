@@ -310,7 +310,11 @@ def test_yes_no_prompt_planner(default, answers, expected, monkeypatch, capsys):
 
 def test_yes_no_prompt_input_based_eof(monkeypatch):
     from mace.workflow import planner
-    for fn in (_load_plotting_prompts().yes_no_prompt, planner.yes_no_prompt):
-        _input_script(monkeypatch, [EOFError()])
-        with pytest.raises(EOFError):
-            fn("Go?")
+    _input_script(monkeypatch, [EOFError()])
+    with pytest.raises(EOFError):
+        _load_plotting_prompts().yes_no_prompt("Go?")
+    # The planner's ends the run with a message instead of a traceback
+    # (test_planner_free_text_prompts_stop)
+    _input_script(monkeypatch, [EOFError()])
+    with pytest.raises(SystemExit, match="input ended"):
+        planner.yes_no_prompt("Go?")

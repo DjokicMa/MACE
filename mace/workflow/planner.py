@@ -53,7 +53,7 @@ except Exception:
 
 from mace.workflow.plan_functionals import normalize_plan_functionals
 from mace.workflow.common.constants import opt2d3_default_band_config
-from mace.utils.piped_answers import stop_if_out_of_step
+from mace.utils.piped_answers import read_answer, stop_if_out_of_step
 
 # Import MACE components
 try:
@@ -834,6 +834,7 @@ class WorkflowPlanner:
         ui.info("Type 'help' for workflow examples, 'list' to see available types again")
 
         sequence = []
+        invalid = 0
         while True:
             # Display current sequence
             if sequence:
@@ -841,7 +842,15 @@ class WorkflowPlanner:
             else:
                 ui.info("\nCurrent sequence: Empty")
 
-            user_input = input("\nNext calculation (or 'done'): ").strip().upper()
+            prompt = "\nNext calculation (or 'done'): "
+            user_input = read_answer(prompt).strip().upper()
+            # A blank answer or an unknown type, three in a row, stops a
+            # piped run (a blank lists the types again at a terminal)
+            if user_input == "" or (user_input not in self.calc_types
+                                    and user_input not in ("DONE", "HELP", "LIST")):
+                invalid += 1
+            else:
+                invalid = 0
 
             if user_input == "DONE":
                 break
@@ -871,6 +880,7 @@ class WorkflowPlanner:
                 ui.info(f"Unknown calculation type: {user_input}")
                 print("Available types:", ", ".join(self.calc_types.keys()))
                 ui.info("Type 'list' to see full descriptions")
+            stop_if_out_of_step(invalid, prompt, "a calculation type, 'done', 'help' or 'list'")
 
         if not sequence:
             ui.info("No calculations selected. Using basic optimization.")
@@ -1817,15 +1827,14 @@ class WorkflowPlanner:
                 # (opt2d3's "Custom labels" path).
                 ui.info("  Custom path: space-separated labels (e.g. G X M G);")
                 ui.info("  | starts a new, unconnected segment")
-                path_str = input("  Path [GAMMA X M GAMMA]: ").strip()
-                config["path"] = path_str.split() if path_str else ["GAMMA", "X", "M", "GAMMA"]
+                config["path"] = self._ask_band_labels("  Path [GAMMA X M GAMMA]: ",
+                                                       ["GAMMA", "X", "M", "GAMMA"])
                 config["path_method"] = "labels"
                 config["shrink"] = 0
                 config["kpath_source"] = "manual"
             
             # Band selection
-            use_all = input("\n  Use all bands? [Y/n]: ").strip().lower()
-            if use_all == 'n':
+            if not yes_no_prompt("\n  Use all bands?", "yes"):
                 # opt2d3's custom band range: first and last band (0: all)
                 config["first_band"] = self.get_safe_integer_input("  First band [1]: ", 1)
                 last = self.get_safe_integer_input("  Last band [all]: ", 0, min_val=0)
@@ -2576,7 +2585,7 @@ class WorkflowPlanner:
         valid = ", ".join(["0", *presets])
         invalid = 0
         while True:
-            answer = input(prompt).strip().lower() or "0"
+            answer = read_answer(prompt).strip().lower() or "0"
             if answer == "0" or answer in presets:
                 return answer
             if answer in ("y", "yes", "n", "no"):
@@ -2594,12 +2603,30 @@ class WorkflowPlanner:
         asked again (and stops a piped run after three in a row)."""
         invalid = 0
         while True:
-            answer = input(prompt).strip() or default
+            answer = read_answer(prompt).strip() or default
             if answer in valid:
                 return answer
             invalid += 1
             stop_if_out_of_step(invalid, prompt, f"one of {', '.join(valid)}")
             ui.info(f"      Please enter one of {', '.join(valid)} (blank for {default})")
+
+    @staticmethod
+    def _ask_band_labels(prompt: str, default: List[str]) -> List[str]:
+        """Ask for a k-path as space-separated labels ("|" breaks the path):
+        blank is ``default``; an answer that is not at least two labels is
+        asked again (and stops a piped run after three in a row)."""
+        invalid = 0
+        while True:
+            labels = read_answer(prompt).split()
+            if not labels:
+                return list(default)
+            if (sum(1 for l in labels if l != "|") >= 2
+                    and all(l == "|" or (l[0].isalpha() and l.replace("_", "").isalnum())
+                            for l in labels)):
+                return labels
+            invalid += 1
+            stop_if_out_of_step(invalid, prompt, "k-point labels such as G X M G")
+            ui.info("      Please enter k-point labels such as G X M G (| starts a new segment)")
 
     def _get_advanced_opt_config(self) -> Dict[str, Any]:
         """Get advanced optimization configuration"""
@@ -4007,9 +4034,9 @@ class WorkflowPlanner:
         invalid = 0
         while True:
             if default:
-                user_input = input(f"{prompt} [{default}]: ").strip() or default
+                user_input = read_answer(f"{prompt} [{default}]: ").strip() or default
             else:
-                user_input = input(f"{prompt}: ").strip()
+                user_input = read_answer(f"{prompt}: ").strip()
 
             if user_input in valid_choices:
                 return user_input
@@ -4025,7 +4052,7 @@ class WorkflowPlanner:
         """Get integer input with validation and re-prompting on error"""
         invalid = 0
         while True:
-            user_input = input(prompt).strip()
+            user_input = read_answer(prompt).strip()
             if not user_input:
                 return default
 
@@ -4051,7 +4078,7 @@ class WorkflowPlanner:
         """
         invalid = 0
         while True:
-            user_input = input(prompt).strip()
+            user_input = read_answer(prompt).strip()
             if not user_input and default is not None:
                 return default
             try:
@@ -4075,7 +4102,7 @@ class WorkflowPlanner:
         A blank answer returns ``default``."""
         invalid = 0
         while True:
-            user_input = input(prompt).strip()
+            user_input = read_answer(prompt).strip()
             if not user_input:
                 return default
             try:
@@ -4091,7 +4118,7 @@ class WorkflowPlanner:
 
         invalid = 0
         while True:
-            user_input = input(prompt).strip()
+            user_input = read_answer(prompt).strip()
             if not user_input:
                 return default
 
@@ -4117,7 +4144,7 @@ class WorkflowPlanner:
 
         invalid = 0
         while True:
-            user_input = input(prompt).strip()
+            user_input = read_answer(prompt).strip()
             if not user_input:
                 return default
 
@@ -4202,26 +4229,44 @@ class WorkflowPlanner:
             ui.info(f"          {key}: {option}")
         ui.info("          Enter: Finish")
 
+        # A directive is an sbatch option ("--constraint=amd20", "-C amd20");
+        # anything else (an answer meant for another question) is asked again
+        invalid = 0
         while True:
-            choice = input("        Select option or enter custom directive: ").strip()
+            prompt = "        Select option or enter custom directive: "
+            choice = read_answer(prompt).strip()
 
             if not choice:
                 break
             elif choice in common_options:
                 if choice == "6":
-                    custom = input("        Enter custom directive: ").strip()
+                    while True:
+                        prompt = "        Enter custom directive: "
+                        custom = read_answer(prompt).strip()
+                        if not custom or custom.startswith("-"):
+                            break
+                        invalid += 1
+                        stop_if_out_of_step(invalid, prompt, "an sbatch option starting with -")
+                        ui.warn("        A directive is an sbatch option, e.g. --constraint=amd20")
                     if custom:
                         customizations.append(
                             {"directive": custom, "description": "Custom"}
                         )
+                    invalid = 0
                 else:
                     directive = common_options[choice]
                     customizations.append(
                         {"directive": directive, "description": f"Common: {directive}"}
                     )
-            else:
+            elif choice.startswith("-"):
                 # Treat as custom directive
                 customizations.append({"directive": choice, "description": "Custom"})
+                invalid = 0
+            else:
+                invalid += 1
+                stop_if_out_of_step(invalid, prompt, "1-6 or an sbatch option starting with -")
+                ui.warn("        Enter 1-6, an sbatch option (e.g. --constraint=amd20), "
+                        "or press Enter to finish")
 
         return customizations
 
@@ -5048,7 +5093,7 @@ def yes_no_prompt(prompt: str, default: str = "yes") -> bool:
 
     invalid = 0
     while True:
-        response = input(f"{prompt} [{default_char}]: ").strip().lower()
+        response = read_answer(f"{prompt} [{default_char}]: ").strip().lower()
 
         if not response:
             return default.lower() == "yes"

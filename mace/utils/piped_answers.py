@@ -32,3 +32,17 @@ def stop_if_out_of_step(invalid, prompt, expected):
             f"Error: {invalid} answers in a row to '{str(prompt).strip()}' were not "
             f"{expected}, and stdin is not a terminal. The piped answers are "
             f"probably out of step with the questions, so the run stops here.")
+
+
+def read_answer(prompt=""):
+    """input(), but the end of the input stops the run with a message.
+
+    Answers piped from a file that runs out before the questions do raised
+    an EOFError traceback.
+    """
+    try:
+        return input(prompt)
+    except EOFError:
+        raise SystemExit(
+            f"\nError: the input ended at '{str(prompt).strip()}' before every "
+            f"question was answered, so the run stops here.") from None
