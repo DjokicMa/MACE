@@ -334,6 +334,11 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   (unverified), and the phonopy docs explain the phonopy/CRYSTAL mass offset
   (about 1 cm-1 at 540 cm-1 for Si) and why an internal-basis set has no
   TEMPLATE (phonopy's writer puts ENDGEOM before it).
+- INSTALLATION.md says to install the module-Python dependencies on a
+  development or compute node: an MSU HPCC gateway node refuses
+  `module load Python/3.11.3-GCCcore-12.3.0` (the module the job scripts
+  load), while the same load works on dev-amd20. Job scripts are unchanged;
+  they run on compute nodes.
 - The stuttgart library's description says which records are unverified (117
   of 119) and which CRYSTAL cannot read.
 - Tests: the bundled MgO defect outputs

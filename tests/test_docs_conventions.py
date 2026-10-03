@@ -5,6 +5,9 @@
 * DOCUMENTATION.md (phonopy): phonopy's standard masses against CRYSTAL's
   isotopic ones shift frequencies (about 1 cm-1 at 540 cm-1 for Si, measured);
   nothing mentioned masses.
+* INSTALLATION.md (HPC): the module install steps fail on a login gateway
+  ("module(s) could not be loaded: Python/3.11.3-GCCcore-12.3.0" on an MSU
+  gateway node, measured; the same load works on a development node).
 """
 from conftest import REPO_ROOT
 
@@ -36,3 +39,9 @@ def test_phonopy_docs_say_internal_basis_sets_have_no_template():
     text = _text("DOCUMENTATION.md")
     assert "An internal-basis (`BASISSET`) set has no `TEMPLATE`" in text
     assert "`BIPOSIZE`/`EXCHSIZE` 110000000" in text
+
+
+def test_installation_says_to_load_job_modules_off_the_gateway():
+    text = _text("INSTALLATION.md")
+    assert "Run these on a development or compute node" in text
+    assert "login gateway may not serve software modules" in text

@@ -71,7 +71,10 @@ progress workflows.
 
 Install with the SAME modules loaded that the job scripts use, using `--user`
 (lands in `~/.local`, which is on the shared home filesystem and therefore visible
-from every compute node):
+from every compute node). Run these on a development or compute node: a
+login gateway may not serve software modules (on MSU HPCC the gateway answers
+`module load Python/3.11.3-GCCcore-12.3.0` with "could not be loaded"; the same
+load works after `ssh dev-amd20`).
 
 ```bash
 # Match the modules the generated job scripts load (see mace/submission/submitcrystal23.sh)
