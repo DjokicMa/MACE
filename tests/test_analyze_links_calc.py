@@ -78,6 +78,10 @@ def test_relative_scan_links_rows_to_the_calculation(tmp_path, env):
     assert ids and set(ids) == {calc_id}, set(ids)
     assert "Materials processed: 1" in out, out
 
+    # a second extraction (the callback's, or analyze again) replaces them
+    _analyze(work, env)
+    assert len(_calc_ids(work / "materials.db")) == len(ids)
+
 
 def test_in_place_directory_links_by_output_name(tmp_path, env):
     """Several calculations share an in-place directory: the work_dir alone
