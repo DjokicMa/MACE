@@ -5,7 +5,8 @@ Query Input Settings from Materials Database
 Query and display input settings stored directly in the materials.db database.
 
 This script shows how to access D12/D3 input settings that are now stored
-directly in the calculations.settings_json field of the materials database.
+directly in the calculations.input_settings_json field of the materials database
+(databases from before that column kept them in settings_json; those are read too).
 
 Author: Marcus Djokic
 Institution: Michigan State University, Mendoza Group
@@ -30,18 +31,15 @@ sys.path.insert(0, str(script_dir))
 
 try:
     from ..materials import MaterialDatabase
-    # Try to import query_calculation_settings - this might be in utils
-    try:
-        from mace.utils.settings_extractor import query_calculation_settings
-    except ImportError:
-        # Fallback - define a simple version
-        def query_calculation_settings(calc_id, db_path):
-            db = MaterialDatabase(db_path)
-            calc = db.get_calculation(calc_id)
-            if calc and calc.get('settings_json'):
-                import json
-                return json.loads(calc['settings_json'])
-            return None
+    # settings_extractor imports mace.database, which imports this module:
+    # import it when these helpers are called, not at import time.
+    def query_calculation_settings(calc_id, db_path):
+        from mace.utils.settings_extractor import query_calculation_settings as q
+        return q(calc_id, db_path)
+
+    def stored_input_settings(input_settings_json, settings_json=None):
+        from mace.utils.settings_extractor import stored_input_settings as s
+        return s(input_settings_json, settings_json)
 except ImportError as e:
     print(f"Error importing required modules: {e}")
     sys.exit(1)
@@ -131,23 +129,23 @@ def query_material_input_settings(material_id: str, db_path: str = "materials.db
     # Get all calculations for this material with settings
     with db._get_connection() as conn:
         cursor = conn.execute("""
-            SELECT calc_id, calc_type, status, created_at, settings_json
+            SELECT calc_id, calc_type, status, created_at, input_settings_json, settings_json
             FROM calculations 
-            WHERE material_id = ? AND settings_json IS NOT NULL AND settings_json != '{}'
+            WHERE material_id = ?
             ORDER BY created_at
         """, (material_id,))
         
-        calculations = cursor.fetchall()
+        calculations = [(c[0], c[1], c[2], c[3], stored_input_settings(c[4], c[5]))
+                        for c in cursor.fetchall()]
+        calculations = [c for c in calculations if c[4]]
     
     if calculations:
         print(f"🔍 Found {len(calculations)} calculations with input settings:")
         
         for calc in calculations:
-            calc_id, calc_type, status, created_at, settings_json = calc
+            calc_id, calc_type, status, created_at, settings = calc
             
             try:
-                settings = json.loads(settings_json)
-                
                 print(f"\n📊 {calc_id} ({calc_type} - {status}):")
                 print(f"   📅 Created: {created_at[:19]}")
                 
@@ -188,13 +186,14 @@ def list_all_input_settings(db_path: str = "materials.db"):
     
     with db._get_connection() as conn:
         cursor = conn.execute("""
-            SELECT material_id, calc_id, calc_type, status, created_at, settings_json
+            SELECT material_id, calc_id, calc_type, status, created_at,
+                   input_settings_json, settings_json
             FROM calculations 
-            WHERE settings_json IS NOT NULL AND settings_json != '{}'
             ORDER BY created_at DESC
         """)
         
-        calculations = cursor.fetchall()
+        calculations = [c[:5] for c in cursor.fetchall()
+                        if stored_input_settings(c[5], c[6])]
     
     if calculations:
         print(f"📁 Found {len(calculations)} calculations with input settings:")
@@ -202,7 +201,7 @@ def list_all_input_settings(db_path: str = "materials.db"):
         print("-" * 85)
         
         for calc in calculations:
-            material_id, calc_id, calc_type, status, created_at, settings_json = calc
+            material_id, calc_id, calc_type, status, created_at = calc
             
             print(f"{material_id[:15]:15} | {calc_id[:25]:25} | {calc_type:8} | "
                   f"{status:12} | {created_at[:12]:12}")
@@ -220,13 +219,14 @@ def show_settings_summary(db_path: str = "materials.db"):
     
     with db._get_connection() as conn:
         cursor = conn.execute("""
-            SELECT material_id, calc_id, calc_type, settings_json
+            SELECT material_id, calc_id, calc_type, input_settings_json, settings_json
             FROM calculations 
-            WHERE settings_json IS NOT NULL AND settings_json != '{}'
             ORDER BY material_id, calc_type
         """)
         
-        calculations = cursor.fetchall()
+        calculations = [(c[0], c[1], c[2], stored_input_settings(c[3], c[4]))
+                        for c in cursor.fetchall()]
+        calculations = [c for c in calculations if c[3]]
     
     if calculations:
         print(f"🔍 Analyzing {len(calculations)} calculations with input settings:")
@@ -239,11 +239,9 @@ def show_settings_summary(db_path: str = "materials.db"):
         shrink_factors = set()
         
         for calc in calculations:
-            material_id, calc_id, calc_type, settings_json = calc
+            material_id, calc_id, calc_type, settings = calc
             
             try:
-                settings = json.loads(settings_json)
-                
                 # Collect keywords
                 if 'crystal_keywords' in settings:
                     all_keywords.update(settings['crystal_keywords'])

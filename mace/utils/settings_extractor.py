@@ -481,20 +481,44 @@ def extract_and_store_input_settings(calc_id: str, input_file: Path,
         return False
 
 
+def stored_input_settings(input_settings_json: Optional[str],
+                          settings_json: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Return the extracted input settings of one calculations row.
+
+    They live in ``input_settings_json``. ``settings_json`` holds the job's
+    own metadata (workflow_id, output_file, ...); databases written before
+    the input_settings_json column existed kept the extraction there, so it
+    is used when it has the extractor's shape (``crystal_keywords``).
+    """
+    for raw, legacy in ((input_settings_json, False), (settings_json, True)):
+        if not raw:
+            continue
+        try:
+            settings = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(settings, dict) or not settings:
+            continue
+        if legacy and 'crystal_keywords' not in settings:
+            continue
+        return settings
+    return None
+
+
 def query_calculation_settings(calc_id: str, db_path: str = "materials.db") -> Optional[Dict[str, Any]]:
-    """Query stored settings for a calculation."""
+    """Query the extracted input settings stored for a calculation."""
     try:
         db = MaterialDatabase(db_path)
         
         with db._get_connection() as conn:
             cursor = conn.execute(
-                "SELECT settings_json FROM calculations WHERE calc_id = ?",
+                "SELECT input_settings_json, settings_json FROM calculations WHERE calc_id = ?",
                 (calc_id,)
             )
             result = cursor.fetchone()
             
-            if result and result[0]:
-                return json.loads(result[0])
+            if result:
+                return stored_input_settings(result[0], result[1])
             else:
                 return None
                 

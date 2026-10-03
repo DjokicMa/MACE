@@ -850,6 +850,13 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   copies. Job scripts and `workflow_scripts/` copies written before 1.1.5
   are not pinned; regenerate them with `mace submit --overwrite-sh`, or
   re-plan the workflow.
+- The input-settings queries (`python -m mace.database.query.queries`) and
+  `settings_extractor.query_calculation_settings` read the extracted deck
+  settings from `input_settings_json`, where they are stored; they read
+  `settings_json` (the job's workflow metadata), so a stored extraction was
+  never shown and calculations with only workflow metadata were listed.
+  Databases from before that column still have theirs read from
+  `settings_json`.
 
 ## [1.1.4] - 2026-10-02
 
