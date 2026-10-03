@@ -960,14 +960,12 @@ fi'''
             with open(script_filename, 'r') as f:
                 script_content = f.read()
             
-            if 'echo \'#!/bin/bash --login\' >' in script_content or 'echo "#SBATCH' in script_content:
-                # This is a script generator template - run locally to generate actual script
+            from mace.submission.generator_run import is_script_generator, run_script_generator
+            if is_script_generator(script_content):
+                # A script generator: it writes <job_name>.sh, which is this
+                # very file, so it runs from a separate copy.
                 print(f"  Running script generator locally: {script_filename} with job name: {job_name}")
-                result = subprocess.run(
-                    ['bash', script_filename, job_name],
-                    capture_output=True,
-                    text=True
-                )
+                result = run_script_generator(script_filename, job_name, os.getcwd())
                 
                 if result.returncode == 0:
                     # Extract job ID from sbatch output (the template runs sbatch at the end)

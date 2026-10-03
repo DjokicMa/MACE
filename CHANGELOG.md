@@ -869,6 +869,13 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   said 3.6+ or 3.7+, which nothing tests.
 - `pytest.ini` no longer says the Crystal_d12 menu tests run separately;
   every test is under `tests/`.
+- **Automatic workflow steps after the first ran nothing.** The engine kept
+  a step's script generator as `<job>.sh` and ran `bash <job>.sh <job>`,
+  so the generator overwrote the file bash was reading. The submitted
+  script stopped after the module loads (no CRYSTAL run, no completion
+  callback) and each follow-up ended in seconds with no `.out`; the first
+  step of `mace workflow --execute` and quick-start did the same. The
+  generator now runs from a separate copy (broken since 1.1.2).
 
 ## [1.1.4] - 2026-10-02
 
