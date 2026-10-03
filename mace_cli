@@ -919,6 +919,9 @@ Options:
   --non-interactive     Skip all prompts (use defaults / provided options)
   --shared-settings     Apply the same settings to all files
   --save-options / --options-file FILE    Save/load options
+  --static-kpath        Without seekpath, write a 3D SeeK-path phonon
+                        dispersion from the static HPKOT tables instead of
+                        stopping (same as MACE_STATIC_KPATH=1)
 
 Examples:
   mace opt2d12 --out-file optimized.out
@@ -942,6 +945,9 @@ Options:
   --save-config         Save configuration after interactive setup
   --list-configs        List available D3 configuration files
   --output-dir, -o DIR  Output directory (default: same as input)
+  --static-kpath        Without seekpath, write a 3D SeeK-path BAND path from
+                        the static HPKOT tables instead of stopping (same as
+                        MACE_STATIC_KPATH=1)
 
 Examples:
   mace opt2d3 --input optimized.out --calc-type BAND

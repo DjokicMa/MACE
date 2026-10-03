@@ -1,9 +1,8 @@
 # Optional scientific dependencies, on top of requirements-test.txt, for the CI
 # job that runs the tests which otherwise skip without them: CIF reading and
-# symmetry (ase, spglib) and SeeK-path k-paths (seekpath). Pinned below the next
-# major release, like requirements-test.txt.
+# symmetry (ase, spglib). Pinned below the next major release, like
+# requirements-test.txt. seekpath is required and in requirements-test.txt.
 ase<4
 spglib<3
-seekpath<3
 # Finite-displacement phonons (`mace phonopy`); 4.7.2 tested. Needs spglib>=2.5.
 phonopy<5

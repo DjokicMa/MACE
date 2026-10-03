@@ -44,6 +44,7 @@ def _out(tmp_path, params, sg):
 
 def _static(monkeypatch, sg, lattice, out):
     monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", False)
+    monkeypatch.setenv("MACE_STATIC_KPATH", "1")  # the static route, asked for
     with contextlib.redirect_stdout(io.StringIO()) as printed:
         segments, info = d3_kpoints.get_seekpath_full_kpath(sg, lattice, str(out))
         labels = d3_kpoints.get_seekpath_labels(sg, lattice, str(out))
@@ -348,6 +349,7 @@ def test_corpus_static_route_writes_the_library_deck(monkeypatch):
             monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", True)
             lib, linfo = d3_kpoints.get_seekpath_full_kpath(sg, lattice, str(out))
             monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", False)
+            monkeypatch.setenv("MACE_STATIC_KPATH", "1")  # the static route, asked for
             sta, sinfo = d3_kpoints.get_seekpath_full_kpath(sg, lattice, str(out))
             lib_ints, _ = d3_kpoints.scale_kpoint_segments(lib, linfo["shrink_factor"])
             sta_ints, _ = d3_kpoints.scale_kpoint_segments(sta, sinfo["shrink_factor"])

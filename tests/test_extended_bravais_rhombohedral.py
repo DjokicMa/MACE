@@ -42,6 +42,7 @@ def test_agbr_output_is_hr1(monkeypatch):
     """AgBr R-3c (real CRYSTAL23 output): conventional a = 6.84, c = 18.46.
     SeeK-path itself gives hR1 for this output."""
     monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", False)
+    monkeypatch.setenv("MACE_STATIC_KPATH", "1")  # the static route, asked for
     _, info = get_seekpath_full_kpath(167, "R", str(DATA / "tqc_agbr.out"))
     assert info["extended_bravais"] == "hR1"
 
@@ -49,6 +50,7 @@ def test_agbr_output_is_hr1(monkeypatch):
 @pytest.mark.parametrize("a,b,c", HEX_CELLS)
 def test_static_route_reads_the_output(tmp_path, monkeypatch, a, b, c):
     monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", False)
+    monkeypatch.setenv("MACE_STATIC_KPATH", "1")  # the static route, asked for
     out = tmp_path / "r.out"
     out.write_text(TEMPLATE.format(a, b, c, 90, 90, 120))
     _, info = get_seekpath_full_kpath(166, "R", str(out))

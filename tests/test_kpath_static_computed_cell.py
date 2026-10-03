@@ -28,6 +28,7 @@ CORPUS = Path(__file__).resolve().parents[1] / "test"
 @pytest.fixture
 def static(monkeypatch):
     monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", False)
+    monkeypatch.setenv("MACE_STATIC_KPATH", "1")  # the static route, asked for
 
     def run(sg, lattice, out, **kw):
         with contextlib.redirect_stdout(io.StringIO()):
@@ -171,6 +172,7 @@ def test_static_supercell_path_equals_the_library_route(tmp_path, monkeypatch, e
         st = si.parse_crystal_structure(str(out))
     assert info["source"] == "seekpath_library" and st["supercell"] == "supercel"
     monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", False)
+    monkeypatch.setenv("MACE_STATIC_KPATH", "1")  # the static route, asked for
     with contextlib.redirect_stdout(io.StringIO()):
         static, _ = d3_kpoints.get_seekpath_full_kpath(227, "F", str(out))
     rotations = spglib.get_symmetry(DIAMOND, symprec=1e-5)["rotations"]
@@ -211,6 +213,7 @@ def test_corpus_supercel222_static_equals_library(monkeypatch):
         library, _ = d3_kpoints.get_seekpath_full_kpath(227, "F", str(DIA_SUPER))
         st = si.parse_crystal_structure(str(DIA_SUPER))
     monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", False)
+    monkeypatch.setenv("MACE_STATIC_KPATH", "1")  # the static route, asked for
     with contextlib.redirect_stdout(io.StringIO()):
         static, _ = d3_kpoints.get_seekpath_full_kpath(227, "F", str(DIA_SUPER))
     rotations = spglib.get_symmetry(DIAMOND, symprec=1e-5)["rotations"]
@@ -258,6 +261,7 @@ def test_opt2d12_dispersion_path_stays_primitive(monkeypatch):
     cell, so its phonon-dispersion path stays in the primitive basis."""
     d12_calc_freq = pytest.importorskip("d12_calc_freq")
     monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", False)
+    monkeypatch.setenv("MACE_STATIC_KPATH", "1")  # the static route, asked for
     with contextlib.redirect_stdout(io.StringIO()):
         path = d12_calc_freq.get_auto_phonon_path(
             space_group=227, shrink=8, format_type="seekpath", lattice_type="F",

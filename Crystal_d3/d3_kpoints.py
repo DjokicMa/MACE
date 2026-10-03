@@ -17,25 +17,108 @@ Based on:
 """
 
 from typing import Dict, List, Optional, Tuple, Any, Union
+import os
 import re
+import sys
 from pathlib import Path
 import numpy as np
 
 # Try to import the accurate seekpath interface module
 try:
     from .seekpath_interface import (
-        get_accurate_bandpath,
+        get_accurate_bandpath, SEEKPATH_TOO_OLD,
         SEEKPATH_AVAILABLE as SEEKPATH_LIBRARY_AVAILABLE
     )
 except ImportError:
     try:
         from seekpath_interface import (
-            get_accurate_bandpath,
+            get_accurate_bandpath, SEEKPATH_TOO_OLD,
             SEEKPATH_AVAILABLE as SEEKPATH_LIBRARY_AVAILABLE
         )
     except ImportError:
         SEEKPATH_LIBRARY_AVAILABLE = False
         get_accurate_bandpath = None
+        SEEKPATH_TOO_OLD = None
+
+# seekpath is a required dependency: a 3D cell's SeeK-path band path is
+# computed from the structure in CRYSTAL's basis (seekpath_interface). The
+# static HPKOT tables below hold SeeK-path's numbers in SeeK-path's own
+# standard cell, which for many lattices is not CRYSTAL's; they are written
+# for a 3D cell only when asked for (--static-kpath, or this variable).
+STATIC_KPATH_ENV = "MACE_STATIC_KPATH"
+
+
+class SeekpathRequired(RuntimeError):
+    """A 3D SeeK-path band path was asked for and seekpath is not installed."""
+
+
+def static_kpath_requested() -> bool:
+    """True when the static HPKOT path was asked for explicitly."""
+    return os.environ.get(STATIC_KPATH_ENV, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def request_static_kpath() -> None:
+    """Ask for the static HPKOT path (opt2d3/opt2d12 --static-kpath).
+
+    Set in the environment, so the scripts a run starts see it too.
+    """
+    os.environ[STATIC_KPATH_ENV] = "1"
+
+
+def seekpath_required_message() -> str:
+    """What to do when a 3D SeeK-path band path finds no seekpath."""
+    state = (f"is {SEEKPATH_TOO_OLD} here, older than the 2.1.0 MACE needs"
+             if SEEKPATH_TOO_OLD else "is not installed")
+    pip = "pip install --upgrade seekpath" if SEEKPATH_TOO_OLD else "pip install seekpath"
+    return (
+        f"seekpath is required for a 3D SeeK-path k-path and {state} for "
+        f"this Python ({sys.executable}). It computes the HPKOT path from the "
+        "structure, in CRYSTAL's reciprocal basis.\n"
+        f"  Install it:  {pip}\n"
+        "  On MSU HPCC, into the module Python the job scripts use (on a dev node, "
+        "e.g. ssh dev-amd20; see INSTALLATION.md):\n"
+        "    module load Python/3.11.3-GCCcore-12.3.0 Python-bundle-PyPI/2023.06-GCCcore-12.3.0\n"
+        f"    {pip.replace('install', 'install --user', 1)}\n"
+        "  Or write the static HPKOT table path instead (SeeK-path's standard cell, "
+        "which can differ from CRYSTAL's): rerun with --static-kpath, or set "
+        f"{STATIC_KPATH_ENV}=1. No deck was written for this structure."
+    )
+
+
+def output_dimensionality(out_file: Optional[str]) -> int:
+    """3, 2 (slab), 1 (polymer or helix) or 0 (molecule) for a CRYSTAL output,
+    read as CRYSTALOptToD3 reads it; 3 when the file cannot be read."""
+    if not out_file:
+        return 3
+    try:
+        content = Path(out_file).read_text(errors="ignore")
+    except (OSError, ValueError):
+        return 3
+    if 'SLAB CALCULATION' in content or 'SLAB GROUP' in content:
+        return 2
+    if 'POLYMER CALCULATION' in content or 'HELIX CALCULATION' in content:
+        return 1
+    if 'MOLECULAR CALCULATION' in content:
+        return 0
+    return 3
+
+
+def _seekpath_usable() -> bool:
+    return bool(SEEKPATH_LIBRARY_AVAILABLE) and get_accurate_bandpath is not None
+
+
+def require_seekpath_for(out_file: Optional[str]) -> None:
+    """Stop a 3D SeeK-path path that would need seekpath and cannot have it.
+
+    The library is used for a cell read from an output file. A slab never
+    uses it and a polymer's path is cut to its chain axis, so neither needs
+    it; without an output there is no structure to give it. Raises
+    SeekpathRequired for a 3D cell unless the static path was asked for.
+    """
+    if (out_file and not _seekpath_usable() and not static_kpath_requested()
+            and output_dimensionality(out_file) == 3):
+        raise SeekpathRequired(seekpath_required_message())
+
 
 # Lattice-dependent static points from the cell (numpy only)
 try:
@@ -2921,10 +3004,12 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
     These paths include extended Bravais lattice symbols and primed points for
     non-centrosymmetric groups.
 
-    When the seekpath Python library is installed and an output file is provided,
-    this function uses the accurate seekpath library which correctly handles
-    parametric k-points for non-cubic lattices. Otherwise, it falls back to the
-    static seekpath_data dictionary (accurate only for cubic systems).
+    With an output file of a 3D cell the path comes from the seekpath library
+    (a required dependency), which handles the lattice-dependent points in
+    CRYSTAL's basis; without seekpath this raises SeekpathRequired unless the
+    static path was asked for (static_kpath_requested). A slab, or a call
+    without an output file, takes the static seekpath_data path, and so does
+    a polymer without seekpath (its path is cut to the chain axis).
 
     Args:
         space_group: Space group number
@@ -2949,6 +3034,9 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
     # coordinates would not be in CRYSTAL's slab cell. The static path of the
     # corresponding space group is, and is cut to its kz = 0 segments.
     slab = is_slab_output(out_file)
+    # A 3D cell from an output needs seekpath unless the static path was asked for
+    require_seekpath_for(out_file)
+    three_d = output_dimensionality(out_file) == 3
 
     # Try to use the accurate seekpath library if available and output file provided
     if SEEKPATH_LIBRARY_AVAILABLE and out_file and get_accurate_bandpath is not None and not slab:
@@ -3044,8 +3132,12 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
     def in_cell(segments):
         return expand_segments(segments, expansion) if expansion is not None else segments
 
-    # Installing seekpath helps only where the library would be used
-    install_hint = not slab and not SEEKPATH_LIBRARY_AVAILABLE
+    # Installing seekpath matters only for a 3D cell (a slab never uses it,
+    # a polymer's path is cut to its chain axis)
+    install_hint = three_d and not _seekpath_usable()
+    if install_hint and out_file:
+        print(f"  Note: static HPKOT k-path used, as asked (--static-kpath / "
+              f"{STATIC_KPATH_ENV}=1); seekpath is not installed.")
 
     # Lattice-dependent points for this cell, where SeeK-path's formulas
     # apply to CRYSTAL's conventional cell (hpkot_static)
@@ -3165,10 +3257,10 @@ def get_seekpath_labels(space_group: int, lattice_type: str, out_file: Optional[
     Returns the high-symmetry point labels for the SeeK-path including
     discontinuity markers (|).
 
-    When the seekpath Python library is installed and an output file is provided,
-    this function uses the accurate seekpath library which correctly handles
-    parametric k-points and discontinuity markers. Otherwise, it falls back to
-    the static seekpath_data dictionary.
+    The labels come from where get_seekpath_full_kpath takes the path: the
+    seekpath library for a 3D cell read from an output file (SeekpathRequired
+    without it, unless the static path was asked for), the static
+    seekpath_data dictionary otherwise.
 
     Args:
         space_group: Space group number
@@ -3182,6 +3274,7 @@ def get_seekpath_labels(space_group: int, lattice_type: str, out_file: Optional[
     # A slab gets the static path cut to its plane, as in
     # get_seekpath_full_kpath, so the labels name the segments written.
     slab = is_slab_output(out_file)
+    require_seekpath_for(out_file)
 
     # Try to use the accurate seekpath library if available and output file provided
     if SEEKPATH_LIBRARY_AVAILABLE and out_file and get_accurate_bandpath is not None and not slab:

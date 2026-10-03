@@ -36,8 +36,9 @@ jobs:
 
   pytest-optional:
     # The same suite with the optional scientific packages installed, so the
-    # tests that importorskip ase/spglib/seekpath (CIF conversion, symmetry,
-    # SeeK-path k-paths) run in CI instead of skipping.
+    # tests that importorskip ase/spglib (CIF conversion, symmetry) run in CI
+    # instead of skipping. seekpath, a required dependency, is installed by
+    # requirements-test.txt in both jobs.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

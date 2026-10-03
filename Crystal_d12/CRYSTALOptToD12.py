@@ -2471,6 +2471,14 @@ def main():
         help="Optimization type for OPT calculations in non-interactive mode",
     )
     parser.add_argument(
+        "--static-kpath",
+        action="store_true",
+        help="Write the static HPKOT table path for a 3D SeeK-path phonon dispersion "
+             "when seekpath is not installed (SeeK-path's standard cell, which can "
+             "differ from CRYSTAL's); without it such a deck stops. Same as "
+             "MACE_STATIC_KPATH=1",
+    )
+    parser.add_argument(
         "--origin-setting",
         default="auto",
         help="Origin setting: 'auto', '0 0 1', '0 1 0', etc. (default: auto-detect)",
@@ -2491,6 +2499,9 @@ def main():
     charged.add_argument("--spinlock-cycles", type=int, help="SCF cycles the SPINLOCK holds")
 
     args = parser.parse_args()
+    if args.static_kpath:
+        from d3_kpoints import request_static_kpath
+        request_static_kpath()
     charge_options = {
         "ion_charges": args.ion_charges,
         "net_charge": (int(args.net_charge) if args.net_charge is not None

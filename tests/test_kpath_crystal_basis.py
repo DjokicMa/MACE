@@ -302,6 +302,7 @@ OUT_TEMPLATE = (" SPACE GROUP (NONCENTROSYMMETRIC)    :  A B A 2\n"
 def test_static_oa_path_is_seekpaths_points(name, tmp_path, monkeypatch):
     d3_kpoints = pytest.importorskip("d3_kpoints")
     monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", False)
+    monkeypatch.setenv("MACE_STATIC_KPATH", "1")  # the static route, asked for
     sg, centring, params = CASES[name]
     cell, pos, types = _crystal_structure(sg, centring, params)
     raw = si.get_seekpath_bandpath(cell, pos, types)
