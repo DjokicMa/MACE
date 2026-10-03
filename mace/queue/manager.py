@@ -2154,6 +2154,9 @@ class EnhancedCrystalQueueManager:
 
 def main():
     """Main function with command-line interface."""
+    # Follow-up jobs this run submits pin this install, as `mace` does.
+    from mace.utils.install_home import pin_install_home
+    pin_install_home()
     parser = argparse.ArgumentParser(
         description="Enhanced CRYSTAL Queue Manager with Material Tracking"
     )

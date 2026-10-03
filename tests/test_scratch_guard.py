@@ -48,7 +48,12 @@ def _run(tmp_path: Path, script: Path, env_extra: dict, drop=("SCRATCH", "TMPDIR
     mpirun = stubs / "mpirun"
     mpirun.write_text(MPIRUN_STUB)
     mpirun.chmod(mpirun.stat().st_mode | stat.S_IEXEC)
-    # A minimal PATH: no mace_cli / python queue manager gets picked up.
+    # The job pins this checkout's queue manager for its completion callback;
+    # a no-op `python` keeps the real one from running.
+    py = stubs / "python"
+    py.write_text("#!/bin/bash\nexit 0\n")
+    py.chmod(py.stat().st_mode | stat.S_IEXEC)
+    # A minimal PATH: no mace_cli gets picked up.
     env = {"PATH": f"{stubs}:/usr/bin:/bin", "HOME": str(tmp_path),
            "SLURM_SUBMIT_DIR": str(script.parent), "SLURM_NTASKS": "1",
            "EBROOTCRYSTAL": str(tmp_path)}

@@ -60,6 +60,11 @@ def _run(tmp_path: Path, deck: str, files=(), hand=HAND, f9_newer=False, empty=(
     mpirun = stubs / "mpirun"
     mpirun.write_text(MPIRUN_STUB)
     mpirun.chmod(mpirun.stat().st_mode | stat.S_IEXEC)
+    # The job pins this checkout's queue manager for its completion callback;
+    # a no-op `python` keeps the real one from running.
+    py = stubs / "python"
+    py.write_text("#!/bin/bash\nexit 0\n")
+    py.chmod(py.stat().st_mode | stat.S_IEXEC)
     env = {"PATH": f"{stubs}:/usr/bin:/bin", "HOME": str(tmp_path),
            "SLURM_SUBMIT_DIR": str(submit), "SLURM_NTASKS": "1",
            "EBROOTCRYSTAL": str(tmp_path), "SCRATCH": str(scratch), "USER": NO_HPCC_USER}

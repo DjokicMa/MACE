@@ -837,6 +837,19 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   corpus.
 - The opt2d12 tests that answer prompts through a runner import the
   checkout under test; they imported whichever `mace` PYTHONPATH named.
+- **A job's completion callback runs the MACE that submitted it.** Job
+  scripts run under `bash --login`, which re-reads `~/.bashrc`; an
+  `export MACE_HOME=...` there (with PYTHONPATH, as `setup_mace.py
+  --add-to-path` writes it) decided which install's queue manager and
+  `mace` package ran the job's follow-up and recovery steps, so a second
+  install (a side-by-side test, a shared group copy) had its callbacks run
+  by the one the dotfile names, silently. Job scripts now set MACE_HOME and
+  PYTHONPATH to the generating install after the login shell has started,
+  and say so in the job log when the login shell named another; `mace` and
+  the queue manager export their own install to the workflow's generator
+  copies. Job scripts and `workflow_scripts/` copies written before 1.1.5
+  are not pinned; regenerate them with `mace submit --overwrite-sh`, or
+  re-plan the workflow.
 
 ## [1.1.4] - 2026-10-02
 

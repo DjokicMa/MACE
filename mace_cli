@@ -26,6 +26,11 @@ from pathlib import Path
 # shadow it -- goes onto sys.path; use `mace.queue`, never bare `queue`.)
 from mace import __version__
 
+# Job scripts generated from here pin their completion callback to this
+# install; MACE_HOME is what the workflow's generator copies pin.
+from mace.utils.install_home import pin_install_home
+pin_install_home()
+
 # Add MACE package to Python path
 MACE_DIR = Path(__file__).parent / "mace"
 sys.path.insert(0, str(MACE_DIR))

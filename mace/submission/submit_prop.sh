@@ -29,6 +29,38 @@ module purge
 module load CRYSTAL/23-intel-2023a
 module load Python/3.11.3-GCCcore-12.3.0
 module load Python-bundle-PyPI/2023.06-GCCcore-12.3.0
+' >> $1.sh
+# MACE INSTALL PIN (evaluated when the job script is generated). The job runs
+# under bash --login, which re-reads ~/.bashrc; a MACE_HOME/PYTHONPATH exported
+# there would decide which MACE runs this job's completion callback (follow-up
+# steps, recovery). The job is pinned to the install that generates it: the
+# one this generator belongs to (<install>/mace/submission/), or - for a copy
+# of it, such as a workflow's workflow_scripts/ template - the MACE_HOME of
+# the MACE running the copy (MACE sets it to its own install).
+MACE_PIN=""
+MACE_GEN_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)
+if [ "${MACE_GEN_DIR##*/}" = "submission" ] && [ -f "$MACE_GEN_DIR/../queue/manager.py" ]; then
+  MACE_PIN=$(cd "$MACE_GEN_DIR/../.." && pwd)
+elif [ -n "$MACE_HOME" ] && [ -f "$MACE_HOME/mace/queue/manager.py" ]; then
+  MACE_PIN=$(cd "$MACE_HOME" && pwd)
+fi
+case "$MACE_PIN" in *"'"*|*$'\n'*) MACE_PIN="" ;; esac
+if [ -n "$MACE_PIN" ]; then
+  echo "MACE_SUBMIT_HOME='$MACE_PIN'" >> $1.sh
+  echo '# MACE INSTALL. bash --login has re-read ~/.bashrc, whose MACE_HOME and
+# PYTHONPATH may name another MACE install; the completion callback below
+# (follow-up steps, recovery) runs the install that generated this script.
+if [ -f "$MACE_SUBMIT_HOME/mace/queue/manager.py" ]; then
+  if [ -n "$MACE_HOME" ] && [ "$MACE_HOME" != "$MACE_SUBMIT_HOME" ]; then
+    echo "mace: running the submitting install $MACE_SUBMIT_HOME (the login shell set MACE_HOME=$MACE_HOME)"
+  fi
+  export MACE_HOME="$MACE_SUBMIT_HOME"
+  export PYTHONPATH="$MACE_SUBMIT_HOME${PYTHONPATH:+:$PYTHONPATH}"
+else
+  echo "mace: the submitting install $MACE_SUBMIT_HOME is not readable on $(hostname); the callback uses MACE_HOME=${MACE_HOME:-(unset)}"
+fi' >> $1.sh
+fi
+echo '
 # SCRATCH GUARD. $SCRATCH can be EMPTY inside a job, even under bash --login
 # (seen on agx-000). scratch then became /crys23, mkdir was refused, INPUT was
 # never written and CRYSTAL stopped with END OF DATA IN INPUT DECK. So the
