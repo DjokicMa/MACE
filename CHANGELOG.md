@@ -419,6 +419,11 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   cif2d12 (no output to read the corresponding space group from) and a
   polymer dispersion (not run). opt2d12 now refuses a dispersion as soon as
   the FREQ template is chosen, before the method, basis and SCF questions.
+- opt2d12's phonon FREQ templates (6: band structure, 7: DOS) no longer
+  carry one run's answers into the next run in the same process: the
+  template's BANDS settings were shared, so after a default label-path run
+  a later run lost the k-point density question and wrote the earlier
+  run's segment count. Each run now starts from the template itself.
 - The advanced electronic analysis in property extraction reads only the
   output's own BAND.DAT / DOSS.DAT: `<stem>.BAND.DAT`, else the same
   parent's `_band` / `_doss` run. It took the first such file in the

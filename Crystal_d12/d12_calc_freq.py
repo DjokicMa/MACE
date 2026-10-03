@@ -18,6 +18,7 @@ logic is separated into dedicated modules for better maintainability.
 
 from typing import Dict, Any, Tuple, Optional, List
 import contextlib
+import copy
 import functools
 import os
 import sys
@@ -325,7 +326,9 @@ def get_advanced_frequency_settings(parent_numderiv=None, parent_freq=None):
     if template_choice in template_map:
         # Use template as base
         template_name = template_map[template_choice]
-        freq_settings = FREQ_TEMPLATES[template_name].copy()
+        # A deep copy: the phonon templates' "bands" dict is filled in below
+        # and by the writer, and must not carry over to the next run.
+        freq_settings = copy.deepcopy(FREQ_TEMPLATES[template_name])
         
         print(f"\nUsing '{template_name}' template as base.")
         
