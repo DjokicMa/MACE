@@ -204,8 +204,6 @@ def test_primed_points_are_seekpaths_without_time_reversal():
 # --------------------------------------------------------------------------
 
 @pytest.mark.parametrize("sg,lattice,params,reason", [
-    # oF1 by MACE's lookup (a shortest), but SeeK-path takes oF3
-    (69, "F", (4.0, 5.0, 6.0, 90, 90, 90), "SeeK-path takes oF3 for this cell, not oF1"),
     # axes not in a < b < c
     (69, "F", (3.0, 8.0, 7.0, 90, 90, 90), "not in SeeK-path's order a < b < c"),
     # C2/m whose a-c mesh SeeK-path reduces
@@ -360,3 +358,19 @@ def test_corpus_static_route_writes_the_library_deck(monkeypatch):
             assert len(sta_ints) == len(lib_ints), out.name
         checked += 1
     assert checked >= 22
+
+
+@pytest.mark.parametrize("params,variant", [
+    ((4.0, 5.0, 6.0, 90, 90, 90), "oF3"),       # 1/a^2 < 1/b^2 + 1/c^2
+    ((3.0, 8.0, 9.0, 90, 90, 90), "oF1"),       # 1/a^2 > 1/b^2 + 1/c^2
+    ((8.0, 9.0, 3.0, 90, 90, 90), "oF1"),       # the same cell, axes in another order
+])
+def test_of_variant_is_seekpaths(tmp_path, monkeypatch, params, variant):
+    """The oF variant was chosen by the shortest axis alone, so every a < b < c
+    cell was oF1 - (4, 5, 6) included, which SeeK-path takes as oF3 (the
+    static route then wrote the oF1 path with a refusal warning)."""
+    assert d3_kpoints.determine_orthorhombic_f_variant(*params[:3]) == variant
+    assert hs.hpkot_variant("oF", dict(zip(("a", "b", "c", "alpha", "beta", "gamma"),
+                                           sorted(params[:3]) + [90, 90, 90]))) == variant
+    _, info, _, _ = _static(monkeypatch, 69, "F", _out(tmp_path, params, 69))
+    assert info["lookup_key"] == variant

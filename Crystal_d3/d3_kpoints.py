@@ -245,28 +245,25 @@ def determine_triclinic_variant(a: float, b: float, c: float,
 
 def determine_orthorhombic_f_variant(a: float, b: float, c: float) -> str:
     """
-    Determine which oF variant based on axis lengths.
-    
-    The variant depends on which axis is shortest after standardization.
-    
+    Determine which oF variant SeeK-path (HPKOT) takes for this cell.
+
+    HPKOT orders the axes a < b < c and takes oF1 when 1/a^2 > 1/b^2 + 1/c^2,
+    oF2 when 1/c^2 > 1/a^2 + 1/b^2, else oF3 (hpkot_static.hpkot_variant).
+    The variant used to follow the shortest axis alone, which for CRYSTAL's
+    a < b < c cells always gave oF1, the oF3 cells included.
+
     Args:
         a, b, c: Lattice parameters in Angstroms
-        
+
     Returns:
-        "oF1", "oF2", or "oF3" based on shortest axis
+        "oF1", "oF2", or "oF3"
     """
-    # Find which axis is shortest
-    axes = [(a, 'a'), (b, 'b'), (c, 'c')]
-    axes.sort(key=lambda x: x[0])
-    
-    shortest_axis = axes[0][1]
-    
-    if shortest_axis == 'a':
+    a, b, c = sorted((a, b, c))
+    if 1 / a ** 2 > 1 / b ** 2 + 1 / c ** 2:
         return "oF1"
-    elif shortest_axis == 'b':
+    if 1 / c ** 2 > 1 / a ** 2 + 1 / b ** 2:
         return "oF2"
-    else:  # c is shortest
-        return "oF3"
+    return "oF3"
 
 
 def determine_orthorhombic_i_variant(a: float, b: float, c: float) -> str:
@@ -1817,6 +1814,22 @@ seekpath_data = {
         "labels": ["GAMMA", "X", "U_2", "Y_0", "GAMMA", "LAMBDA_0", "G_2", "X", "|", "GAMMA", "R", "W", "S", "GAMMA", "T", "W", "|", "GAMMA", "X'", "U_2'", "Y_0'", "GAMMA", "LAMBDA_0'", "G_2'", "X'", "|", "GAMMA", "R'", "W'", "S'", "GAMMA", "T'", "W'"]
     },
     "oF2": {
+        # Face-centred orthorhombic oF2 (SeeK-path, with time reversal: no primed copy).
+        # Fdd2 and the like are oF2_noinv.
+        "segments": [
+            [0.0, 0.0, 0.0, 0.0, 0.5, 0.5],              # Γ → T
+            [0.0, 0.5, 0.5, 0.5, 0.5, 1.0],              # T → Z
+            [0.5, 0.5, 1.0, 0.5, 0.0, 0.5],              # Z → Y
+            [0.5, 0.0, 0.5, 0.0, 0.0, 0.0],              # Y → Γ
+            [0.0, 0.0, 0.0, 0.339041, 0.339041, 0.0],    # Γ → Λ₀
+            [0.660959, 0.660959, 1.0, 0.5, 0.5, 1.0],    # Q₀ → Z
+            [0.0, 0.5, 0.5, 0.195580, 0.695580, 0.5],    # T → G₀
+            [0.804420, 0.304420, 0.5, 0.5, 0.0, 0.5],    # H₀ → Y
+            [0.0, 0.0, 0.0, 0.5, 0.5, 0.5]               # Γ → L
+        ],
+        "labels": ["GAMMA", "T", "Z", "Y", "GAMMA", "LAMBDA_0", "|", "Q_0", "Z", "|", "T", "G_0", "|", "H_0", "Y", "|", "GAMMA", "L"]
+    },
+    "oF2_noinv": {
         # Face-centered orthorhombic without inversion (Fdd2)
         "segments": [
             [0.0, 0.0, 0.0, 0.0, 0.5, 0.5],              # Γ → T
