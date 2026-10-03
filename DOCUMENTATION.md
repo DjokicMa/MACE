@@ -87,6 +87,9 @@ mace submit --track my_calculation.d12           # also record in materials.db
 mace submit --progress full_electronic my_calculation.d12
 mace submit --progress interactive my_calculation.d12
 
+# Run decks on this dev node now, without SLURM (quick SP, BAND/DOSS/POTC, MATDUMP)
+mace run dia_sp.d12 dia_band.d3
+
 # Monitor calculations
 mace monitor
 mace manager --status
@@ -111,6 +114,67 @@ mace completion --remove-zombie-jobs      # Detect and cancel failed jobs still 
 mace completion --recursive --remove-zombie-jobs  # Full workflow zombie detection
 mace completion --organize                # Sort files by status into folders
 ```
+
+### Run on a dev node (`mace run`)
+
+For calculations that take seconds or minutes - a MATDUMP, BAND/DOSS/POTC
+properties, a small SP, a quick rerun - `mace run` runs the decks at once on
+the node you are logged in to (an HPCC development node), without SLURM:
+
+```bash
+ssh dev-amd20                                    # not the login gateway
+mace run dia_sp.d12                              # one SCF deck, 4 MPI ranks
+mace run dia_sp.d12 dia_band.d3 dia_doss.d3      # SCF first, then BAND and DOSS from its .f9
+mace run decks/ -n 8 --timeout 45m               # every .d12/.d3 in a directory
+mace run --serial dia_band.d3                    # the serial properties binary
+mace run --dry-run decks/                        # the order and .f9 hand-offs; runs nothing
+mace run --track dia_sp.d12                      # also record it in ./materials.db
+```
+
+Each deck runs through the job script `mace submit` would submit. It is
+written to `.mace_local/<job>.sh` beside the deck (a `<job>.sh` of your own is
+left alone) and run under `bash --login` with `SLURM_SUBMIT_DIR` and
+`SLURM_NTASKS` set. Staging, scratch and copy-back are therefore the SLURM
+job's: `INPUT`, `<job>.f20`/`.f9` as `fort.20`, `<job>.ext` as `fort.34`, the
+scratch directory `$SCRATCH/crys23/<job>` (`crys23/prop/<job>` for properties),
+and the results `<job>.out`, `<job>.f9`, `<job>.BAND.DAT`, `<job>.DOSS.DAT`,
+`<job>.f25`, ... beside the deck. `mace completion`, `mace analyze`, `opt2d3`
+and `opt2d12` read them as they read a SLURM job's. Two things differ: the job
+log is `<job>-local.o` (a SLURM job writes `<job>-<jobid>.o`), and no
+completion callback runs, so nothing is submitted afterwards.
+
+- **Order.** The `.d12` decks run first, one after another, then each `.d3`
+  after the SCF it was made from: the one named the way `opt2d3` names its
+  decks (`x_sp.d12` or `x.d12` feeds `x_band.d3`, `x_doss2.d3`,
+  `x_charge+potential.d3`). That SCF's new `.f9` is copied to `<d3>.f9`. A
+  `.d3` whose SCF is not in the same run uses its own `<d3>.f9`. A deck whose
+  SCF failed, or with two possible SCFs in the run, is skipped. A failed deck
+  does not stop the others.
+- **Limits.** `-n` is 1-16 MPI ranks (default 4); dev nodes are shared, so
+  4-8 is polite. `--timeout` (default 30m) applies to each deck, and is at most
+  1h55m: HPCC dev nodes stop any process after 2 hours of CPU time, and a run
+  never reaches that limit. OPT and FREQ decks rarely fit and get a warning.
+- **Stopping.** Ctrl-C, a lost connection or the timeout stops the running
+  deck and all its CRYSTAL processes; nothing is copied back, its scratch
+  directory is kept, and the decks after it are not run. Under `nohup` a lost
+  connection does not stop it. If `mace run` itself is killed, `<job>-local.o`
+  names the command that stops the job (`pkill -s <session>`).
+- **Refused,** with nothing written: on the login gateway (it says which dev
+  nodes to use), inside a SLURM job, where the `CRYSTAL/23-intel-2023a` module
+  cannot be loaded, for a deck path the job script cannot use (spaces and
+  other shell characters), and for a job name another `mace run` on this node
+  or a SLURM job of yours already has - they would share
+  `$SCRATCH/crys23/<job>`. (`mace submit` does not check the other way.)
+- **`--track`** records each run in `./materials.db` as `mace submit --track`
+  does, with no SLURM job id. A failure is stored as `local_<error>`, so error
+  recovery never resubmits it to SLURM; `--track` is refused inside a workflow
+  directory.
+- **Exit status:** 0 every deck completed, 1 a deck failed or was skipped, 2
+  refused, 124 a deck timed out, 128+signal when stopped (130 for Ctrl-C).
+
+Each deck reuses `$SCRATCH/crys23/<job>`, as SLURM jobs do: files a failed
+earlier run of the same job left there (a `fort.9`, a `BAND.DAT`) can be
+copied back after another failure, the same as under SLURM.
 
 ### One D12 Template for Many Structures (`mace opt2d12`)
 ```bash

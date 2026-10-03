@@ -788,3 +788,13 @@ def test_dry_run_with_track_writes_no_database(box):
     r = box.run("--track", "--dry-run", "t.d12")
     assert r.returncode == 0, r.text
     assert not (box.work / "materials.db").exists()
+
+
+def test_docs_describe_mace_run():
+    doc = " ".join((REPO_ROOT / "DOCUMENTATION.md").read_text().split())
+    assert "### Run on a dev node (`mace run`)" in doc
+    assert "HPCC dev nodes stop any process after 2 hours of CPU time" in doc
+    assert "the login gateway" in doc and "`<job>-local.o`" in doc
+    assert "mace run" in (REPO_ROOT / "README.md").read_text()
+    assert "`mace run` runs small decks there directly" in " ".join(
+        (REPO_ROOT / "INSTALLATION.md").read_text().split())

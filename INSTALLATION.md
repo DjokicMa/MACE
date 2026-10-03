@@ -91,6 +91,12 @@ python -c "import seekpath; print('seekpath OK -> library-computed band k-paths'
 python "$MACE_HOME/mace/queue/manager.py" --callback-mode status_check   # read-only sanity check
 ```
 
+On a development node (`ssh dev-amd20`, `dev-amd24` or `dev-intel18` from the
+gateway) the same module Python also runs `mace` itself, and `mace run` runs
+small decks there directly, without SLURM - see DOCUMENTATION.md, "Run on a dev
+node". The gateway has no CRYSTAL module and no `mpirun`, and `mace run` refuses
+to start there.
+
 Notes:
 - **seekpath** is optional. Without it, BAND generation still works — it falls back
   to the built-in extended-Bravais k-path tables. Installing it (into the module

@@ -135,6 +135,20 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 
 ### Added
 
+- **`mace run`: run decks on the node you are on, without SLURM.** For a
+  MATDUMP, BAND/DOSS/POTC, a small SP or a quick rerun on an HPCC dev node.
+  Each deck runs through the job script `mace submit` would submit (written to
+  `.mace_local/<job>.sh`, run under `bash --login`), so staging, the per-job
+  scratch directory and the copy-back names are a SLURM job's; the log is
+  `<job>-local.o` and no completion callback runs. `.d12` decks run first, then
+  each `.d3` after the SCF opt2d3 named it after, with that SCF's new `.f9`
+  copied in. `-n` ranks (default 4, at most 16), `--serial`, `--timeout`
+  (default 30m, below the dev nodes' 2 h CPU-time limit), `--dry-run` and
+  `--track`. Ctrl-C, a hang-up or the timeout stops every CRYSTAL process of
+  the run. Refused on the login gateway, inside a SLURM job, without a loadable
+  CRYSTAL module, and for a job name another run already has. Measured on
+  dev-amd20: the diamond SP energy matched the SLURM run's to 1e-12 Ha. See
+  DOCUMENTATION.md, "Run on a dev node".
 - **Opt-in TZVP-REV2 2022 update: `full.basis.triplezeta.rev2022`.** The
   bundled triplezeta set carries pob-TZVP 2018 for Rb-I and ERD small-core
   2017 for La-Lu. The new family replaces those with the newer sets from
@@ -351,6 +365,14 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 
 ### Fixed
 
+- **A job script run outside SLURM no longer runs in `/`.** `bash job.sh`
+  left `DIR` (`$SLURM_SUBMIT_DIR`) empty: the script copied from and to `/`,
+  never ran CRYSTAL, exited 0 and ran the completion callback from the home
+  directory. It now stops with exit 1 and says to use sbatch or `mace run`.
+- **`mace convert --help` works without ase.** It stopped with
+  ModuleNotFoundError before printing anything; a conversion without ase now
+  says to install it. The help now reads `usage: mace convert` and has
+  examples.
 - **A workflow FREQ step keeps a FREQ parent's SCF tolerances.** The
   planner's Basic, Advanced and Expert-fallback FREQ steps and the
   quick-start FREQ step wrote Very tight (9 9 9 11 38 / 11) into the plan as
