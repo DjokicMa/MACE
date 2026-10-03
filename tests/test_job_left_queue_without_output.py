@@ -48,7 +48,7 @@ def _make_db(tmp_path, with_output=False):
     db.create_material("MgO", "MgO")
     calc_id = db.create_calculation("MgO", "SP", input_file=str(work / "MgO_sp.d12"),
                                     work_dir=str(work))
-    db.update_calculation_status(calc_id, "submitted", slurm_job_id="18352263")
+    db.update_calculation_status(calc_id, "submitted", slurm_job_id="999001")
     return calc_id
 
 
