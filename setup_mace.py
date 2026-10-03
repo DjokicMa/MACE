@@ -237,15 +237,17 @@ echo "    - Legacy scripts (Check, Plotting, Post-Processing)"
         """Update SLURM script templates with detected paths"""
         templates_updated = 0
         
-        # List of SLURM script templates that might need updating
+        # The job-script templates MACE ships
         slurm_scripts = [
-            'code/Job_Scripts/submitcrystal23.sh',
-            'code/Job_Scripts/submit_prop.sh'
+            'mace/submission/submitcrystal23.sh',
+            'mace/submission/submit_prop.sh'
         ]
         
+        print("\nChecking SLURM templates...")
         for script_path in slurm_scripts:
             full_path = self.repo_root / script_path
             if not full_path.exists():
+                print(f"  ⚠️  {script_path} not found")
                 continue
             
             try:
@@ -268,6 +270,8 @@ echo "    - Legacy scripts (Check, Plotting, Post-Processing)"
                     
                     templates_updated += 1
                     print(f"  ✓ Updated {script_path}")
+                else:
+                    print(f"  ✓ {script_path} finds MACE_HOME at run time; nothing to update")
             except Exception as e:
                 print(f"  ⚠️  Could not update {script_path}: {e}")
         
@@ -432,16 +436,16 @@ def main():
         epilog="""
 Examples:
   # Basic setup
-  python setup_crystal_tools.py
+  python setup_mace.py
   
   # Add scripts to PATH
-  python setup_crystal_tools.py --add-to-path
+  python setup_mace.py --add-to-path
   
   # Update SLURM templates with current location
-  python setup_crystal_tools.py --update-templates
+  python setup_mace.py --update-templates
   
   # Force reconfiguration
-  python setup_crystal_tools.py --force
+  python setup_mace.py --force
 """
     )
     

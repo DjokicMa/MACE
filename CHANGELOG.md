@@ -860,6 +860,10 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 - Importing `mace.utils.show_properties` no longer opens (and creates) a
   `materials.db` in the current directory; the query runs only when the
   script is run.
+- `setup_mace.py --update-templates` checks the job-script templates in
+  `mace/submission/` and reports each one; it looked in the removed
+  `code/Job_Scripts/` and silently did nothing. Its `--help` examples name
+  `setup_mace.py` (they named `setup_crystal_tools.py`).
 
 ## [1.1.4] - 2026-10-02
 
