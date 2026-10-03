@@ -967,6 +967,10 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   'material_ids'"; it now writes the materials of the last query.
 - `mace manager` (a full_check cycle) printed its "Database Stats" line
   twice; it prints it once.
+- `d12_writer.write_optimization_block` stopped with ModuleNotFoundError: it
+  imported its OPTGEOM writer from `d12_calc_opt`, which does not exist. It
+  now uses the one in `d12_calc_basic`. No generator calls it, so no deck
+  changes.
 
 ## [1.1.4] - 2026-10-02
 

@@ -435,10 +435,12 @@ def test_write_frequency_block_delegates_to_the_freq_writer():
     assert _lines(write_frequency_block, {}) == ["FREQCALC", "NOINTENS", "ENDFREQ"]
 
 
-@pytest.mark.xfail(strict=True, raises=ModuleNotFoundError, reason=(
-    "write_optimization_block imports write_optimization_section from "
-    "d12_calc_opt, which does not exist (the function lives in d12_calc_basic)"))
 def test_write_optimization_block_writes_an_optgeom_block():
-    lines = _lines(write_optimization_block, {"type": "FULLOPTG"})
-    assert lines[0] == "OPTGEOM"
+    # It imported write_optimization_section from d12_calc_opt, which does
+    # not exist (ModuleNotFoundError); the function lives in d12_calc_basic.
+    from d12_calc_basic import write_optimization_section
+    settings = {"type": "FULLOPTG", "maxcycle": 800}
+    lines = _lines(write_optimization_block, settings)
+    assert lines[:2] == ["OPTGEOM", "FULLOPTG"]
+    assert lines == _lines(lambda f, s: write_optimization_section(f, "FULLOPTG", s), settings)
 

@@ -99,8 +99,8 @@ def write_optimization_block(f: TextIO, opt_settings: Dict[str, Any]) -> None:
         f: File handle to write to
         opt_settings: Optimization settings dictionary
     """
-    # Import from d12_calc_opt
-    from d12_calc_opt import write_optimization_section
+    # The OPTGEOM writer lives in d12_calc_basic (there is no d12_calc_opt)
+    from d12_calc_basic import write_optimization_section
     
     # Use the existing function
     optimization_type = opt_settings.get('type', 'FULLOPTG')
