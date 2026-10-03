@@ -385,6 +385,12 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   "FORMAT ERROR IN INPUT DECK". A label path that MACE cannot express for
   the lattice now writes no deck, where it used to write placeholder
   records.
+- **The phonon band structure deck for a triclinic (P-1/P1) parent**
+  (opt2d12's "6: Phonon band structure" on default answers, and so the
+  planner's phonon band structure step) writes its BANDS path as integer
+  coordinates (`BANDS / 16 100 / 9 / 8 8 0 0 8 0 ...`) instead of the
+  ISS 0 label records (`V Y`, `Y GAMMA`, ...) CRYSTAL23 does not codify for
+  a triclinic lattice. Deck change: regenerate triclinic phonon band decks.
 - **A polymer's BAND deck runs along the chain** (opt2d3 Enter-through, and
   so the workflow default): Gamma -> X, `1 2 NSUB ... / 0 0 0  1 0 0`,
   whatever space group the polymer's symbol maps to. A polymer whose
