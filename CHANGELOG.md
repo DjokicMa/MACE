@@ -876,6 +876,12 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   callback) and each follow-up ended in seconds with no `.out`; the first
   step of `mace workflow --execute` and quick-start did the same. The
   generator now runs from a separate copy (broken since 1.1.2).
+- A job that left the queue without writing its `.out` (cancelled while
+  pending, killed before CRYSTAL started) stayed `submitted` for good, so
+  its workflow could neither finish nor recover. Once sacct reports the
+  job ended, the record is marked failed with that reason (`no_output`).
+  `mace monitor --status` also counts submitted calculations, which it
+  left out of the totals.
 
 ## [1.1.4] - 2026-10-02
 

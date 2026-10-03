@@ -949,7 +949,7 @@ class EnhancedCrystalQueueManager:
                     continue
 
                 if own_job_id and str(slurm_job_id) == own_job_id:
-                    self.check_completed_or_failed_job(calc)
+                    self.check_completed_or_failed_job(calc, own_job=True)
                     continue
 
                 if slurm_job_id in queue_jobs:
@@ -1226,6 +1226,10 @@ class EnhancedCrystalQueueManager:
         # Try to find and read output file
         output_file = calc.get('output_file')
         if not output_file or not os.path.exists(output_file):
+            # check_completed_or_failed_job records which job ended without
+            # an .out; keep that rather than the bare default.
+            if calc.get('error_type') == 'no_output' and calc.get('error_message'):
+                return "no_output", calc['error_message']
             return "no_output", "No output file found"
             
         try:
@@ -1862,7 +1866,8 @@ class EnhancedCrystalQueueManager:
         print(f"TODO: Generate {next_calc_type} input from {completed_calc['calc_id']}")
         return None
         
-    def check_completed_or_failed_job(self, calc: Dict, slurm_state: Optional[str] = None):
+    def check_completed_or_failed_job(self, calc: Dict, slurm_state: Optional[str] = None,
+                                      own_job: bool = False):
         """Check if a job that's not in queue has completed or failed."""
         # Check for output files to determine completion status
         work_dir = Path(calc['work_dir'])
@@ -1908,7 +1913,28 @@ class EnhancedCrystalQueueManager:
 
             except Exception as e:
                 print(f"Error checking output file {output_file}: {e}")
-                
+        elif own_job or slurm_state in self._TERMINAL_SLURM_STATES:
+            # The job has ended and wrote no .out: cancelled while pending,
+            # killed before CRYSTAL started, or a job script that never
+            # reached CRYSTAL. Left 'submitted', the record blocked its
+            # workflow forever and no recovery ever looked at it. Without a
+            # definite end state (sacct unavailable) the record is kept:
+            # squeue alone transiently drops jobs that are still queued.
+            input_stem = Path(calc['input_file']).stem if calc.get('input_file') else calc['calc_id']
+            state = slurm_state or 'ENDED'
+            message = (f"Job {calc.get('slurm_job_id')} left the queue ({state}) "
+                       f"without writing {input_stem}.out in {work_dir}")
+            print(f"  {message}")
+            self.db.update_calculation_status(
+                calc['calc_id'], 'failed', slurm_state=slurm_state,
+                error_type='no_output', error_message=message)
+            self.handle_failed_calculation(calc['calc_id'], state)
+
+    # SLURM end states: the job will not write anything more.
+    _TERMINAL_SLURM_STATES = frozenset({
+        'COMPLETED', 'FAILED', 'CANCELLED', 'TIMEOUT', 'NODE_FAIL',
+        'OUT_OF_MEMORY', 'PREEMPTED', 'BOOT_FAIL', 'DEADLINE', 'REVOKED'})
+
     def process_new_d12_files(self):
         """Process new .d12 files in the directory for submission."""
         # Find .d12 files that haven't been submitted yet

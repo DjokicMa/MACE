@@ -1972,9 +1972,14 @@ More Help:
             # Show status distribution
             if status_dist and not summary:
                 ui.info(f"  Pending: {status_dist.get('pending', 0)}")
+                ui.info(f"  Submitted: {status_dist.get('submitted', 0)}")
                 ui.info(f"  Running: {status_dist.get('running', 0)}")
                 ui.info(f"  Completed: {status_dist.get('completed', 0)}")
                 ui.info(f"  Failed: {status_dist.get('failed', 0)}")
+                shown = {'pending', 'submitted', 'running', 'completed', 'failed'}
+                for other, count in sorted(status_dist.items()):
+                    if other not in shown and count:
+                        ui.info(f"  {str(other).capitalize()}: {count}")
 
             if detailed and not summary:
                 # Show calculation types
