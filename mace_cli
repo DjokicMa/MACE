@@ -2945,6 +2945,11 @@ More Help:
 
             except ImportError as e:
                 ui.err(f"Error: {e}")
+                if export_format == 'excel':
+                    # The CSV fallback below would write CSV text into the
+                    # .xlsx file, which Excel cannot open.
+                    ui.info("Install openpyxl (pip install openpyxl), or export with --format csv.")
+                    sys.exit(1)
                 ui.warn("\nFalling back to basic CSV export...")
                 # Fallback to basic export
                 if output_file:

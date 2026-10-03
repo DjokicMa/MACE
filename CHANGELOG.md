@@ -920,6 +920,9 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 - `mace database --action export` (CSV, JSON) left out every property
   unless `--include-property` named some; it now includes them all by
   default, as intended.
+- `mace database --action export --format excel` without openpyxl wrote
+  CSV text into the `.xlsx` file and reported success; it now stops with
+  the install hint and writes nothing.
 
 ## [1.1.4] - 2026-10-02
 
