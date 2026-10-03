@@ -2429,7 +2429,23 @@ def print_summary(options):
 def main():
     """Main function to run the script"""
     parser = argparse.ArgumentParser(
-        description="Convert CIF files to D12 input files for CRYSTAL23"
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="""\
+Convert CIF files to D12 input files for CRYSTAL23.
+
+The .cif files are read from a DIRECTORY (--cif_dir, default: the current
+directory), not individual file arguments. Functional, basis set and
+calculation settings are chosen interactively, or loaded from a saved
+options file with --batch.""",
+        epilog="""\
+Examples:
+  %(prog)s                                  # interactive, CIFs from ./
+  %(prog)s --cif_dir structures/
+  %(prog)s --cif_dir structures/ --output_dir d12s/
+  %(prog)s --cif_dir . --save_options --options_file myopts.json
+  %(prog)s --cif_dir . --batch --options_file myopts.json
+
+Running with no arguments starts the interactive converter.""",
     )
     parser.add_argument(
         "--cif_dir", type=str, default="./", help="Directory containing CIF files"

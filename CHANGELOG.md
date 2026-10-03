@@ -855,6 +855,13 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   completion) began `usage: CRYSTALOptToD3.py ...`, the script's file name;
   it now reads `usage: mace opt2d3 ...`, and opt2cif's examples say
   `mace opt2cif`. Run directly, a script keeps its own name.
+- **`mace convert|opt2d12|opt2d3|opt2cif|completion --help` show the
+  examples.** mace_cli held hand-written help for these commands that was
+  never printed, since `--help` goes to the script's own options; the
+  examples and notes in it (convert reads a directory, opt2d12/opt2d3 take
+  no positional file, completion's status categories) are now in the
+  scripts' help, and the unreachable copies are gone. A command now has
+  either mace_cli's help or the script's, never both.
 
 ## [1.1.4] - 2026-10-02
 

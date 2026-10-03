@@ -2403,7 +2403,20 @@ def print_template_plan(config_file, config_data, file_pairs, output_dir):
 def main():
     """Main function"""
     parser = argparse.ArgumentParser(
-        description="Convert CRYSTAL17/23 optimization output to new D12 input files"
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="""\
+Convert CRYSTAL17/23 optimization output to new D12 input files.
+
+The output is given with --out-file (or every file in --directory). There is
+no positional argument. The calculation type for --non-interactive comes
+from --calc-type {SP,OPT,FREQ}.""",
+        epilog="""\
+Examples:
+  %(prog)s --out-file optimized.out
+  %(prog)s --out-file optimized.out --calc-type SP --non-interactive
+  %(prog)s --directory . --calc-type FREQ --non-interactive
+  %(prog)s --directory opts --config-file sp_template.json --yes
+  %(prog)s --out-file opts/*.out --config-file sp_template.json --output-dir sp""",
     )
     parser.add_argument(
         "--out-file", nargs="+", metavar="OUT",
