@@ -2048,6 +2048,14 @@ More Help:
                 extractor_args = all_args[:idx] + ['--scan-directory', all_args[idx + 1]] + all_args[idx + 2:]
             else:
                 extractor_args = all_args[:idx] + all_args[idx + 1:]
+            if '--db-path' not in extractor_args:
+                # Store where `mace database` and `mace monitor` read: the
+                # workflow context's database when this directory has one.
+                from workflow.context import auto_activate_context
+                ctx = auto_activate_context()
+                if ctx is not None:
+                    ui.info(f"Using workflow context database: {ctx.db_path}")
+                    extractor_args += ['--db-path', str(ctx.db_path)]
             sys.argv = ['property_extractor.py'] + extractor_args
             extract_main()
         else:

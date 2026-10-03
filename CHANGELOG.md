@@ -908,6 +908,15 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   failed for D3 decks ("Failed to generate/find script") and submitted
   nothing, as the D12 path did before 1.1.5; the D3 path now resolves the
   directory first too.
+- `mace analyze --extract-properties` filed every property a second time
+  with no calculation id: it matched an output to its calculation by the
+  exact path string, and a scan passes relative paths where the database
+  holds resolved ones. It now compares the resolved paths and, in an
+  in-place directory with several calculations, picks the one whose deck
+  has the output's name. In a workflow directory it stores into the
+  context database `mace database` and `mace monitor` read (not
+  `./materials.db`), and "Materials processed" counts the materials (it
+  always printed 0).
 
 ## [1.1.4] - 2026-10-02
 

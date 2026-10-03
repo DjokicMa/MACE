@@ -1192,15 +1192,42 @@ class CrystalPropertyExtractor:
         """Find the calculation ID associated with this output file."""
         if not self.enable_tracking or self.db is None:
             return None  # offline / untracked extraction: no DB to consult
+        # The database holds the paths the submission recorded (resolved, as
+        # a rule); a scan passes them as found ('LiEC.out' for a scan of '.').
+        # Compare every spelling, or no row ever matched and each extraction
+        # filed its properties a second time with calc_id NULL.
+        output_file = Path(output_file)
+
+        def spellings(path):
+            forms = {str(path), os.path.abspath(str(path))}
+            try:
+                forms.add(str(path.resolve()))
+            except OSError:
+                pass
+            return sorted(forms)
+
+        outs, dirs = spellings(output_file), spellings(output_file.parent)
         try:
             with self.db._get_connection() as conn:
-                cursor = conn.execute(
-                    "SELECT calc_id FROM calculations WHERE output_file = ? OR work_dir = ?",
-                    (str(output_file), str(output_file.parent))
-                )
-                result = cursor.fetchone()
-                return result[0] if result else None
-        except:
+                marks = ",".join("?" * len(outs))
+                row = conn.execute(
+                    f"SELECT calc_id FROM calculations WHERE output_file IN ({marks}) "
+                    "ORDER BY created_at DESC LIMIT 1", outs).fetchone()
+                if row:
+                    return row[0]
+                # An in-place directory holds several calculations: pick the
+                # one whose input deck has this output's name, and use the
+                # directory alone only when it holds just one.
+                marks = ",".join("?" * len(dirs))
+                rows = conn.execute(
+                    f"SELECT calc_id, input_file FROM calculations WHERE work_dir IN ({marks}) "
+                    "ORDER BY created_at DESC", dirs).fetchall()
+                named = [r[0] for r in rows
+                         if r[1] and Path(r[1]).stem == output_file.stem]
+                if named:
+                    return named[0]
+                return rows[0][0] if len(rows) == 1 else None
+        except Exception:
             return None
     
     def save_properties_to_database(self, properties: Dict[str, Any]) -> int:
@@ -3586,10 +3613,9 @@ def main():
         
         if properties:
             # Extract material ID from properties if available
-            for prop in properties:
-                if 'material_id' in prop:
-                    materials_processed.add(prop['material_id'])
-                    break
+            material = (properties.get('_metadata') or {}).get('material_id')
+            if material:
+                materials_processed.add(material)
             
             saved_count = extractor.save_properties_to_database(properties)
             total_properties += saved_count
