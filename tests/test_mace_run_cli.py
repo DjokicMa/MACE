@@ -362,6 +362,23 @@ def test_existing_f9_is_replaced_not_written_through(box):
     assert "replaced the existing one" in r.stdout
 
 
+def test_f9_hand_off_that_cannot_be_written_skips_only_that_deck(box):
+    """A copy that fails (a full quota, here a directory in the way) skips
+    that properties deck; the run goes on and ends with its summary."""
+    box.deck("h.d12")
+    box.deck("h_band.d3", BAND)
+    box.deck("h_doss.d3", DOSS)
+    (box.work / "h_band.f9").mkdir()
+    (box.work / "h_band.f9" / "keep").write_text("in the way")
+    r = box.run(".", "-n", "1")
+    assert r.returncode == 1, r.text
+    assert "Traceback" not in r.text
+    assert "cannot copy h.f9 to h_band.f9" in r.stdout
+    assert (box.work / "h_doss.DOSS.DAT").read_text() == "doss of h_doss\n"
+    assert "1 skipped" in r.stdout
+    assert not list(box.work.glob("*.mace_tmp"))
+
+
 def test_failed_scf_skips_its_properties_deck(box):
     box.deck("f_sp.d12")
     box.deck("f_band.d3", BAND)

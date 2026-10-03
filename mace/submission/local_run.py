@@ -505,12 +505,20 @@ def hand_off(src: Path, dst: Path, stop: StopFlag) -> Optional[bool]:
     if os.path.lexists(tmp):
         os.unlink(tmp)
     replaced = os.path.lexists(dst)
-    shutil.copyfile(src, tmp)
-    shutil.copystat(src, tmp)
-    if stop.signum:
-        os.unlink(tmp)
-        return None
-    os.replace(tmp, dst)
+    try:
+        shutil.copyfile(src, tmp)
+        shutil.copystat(src, tmp)
+        if stop.signum:
+            os.unlink(tmp)
+            return None
+        os.replace(tmp, dst)
+    except OSError:
+        # A full quota, say: no half-copied temp file is left beside the deck.
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
     return replaced
 
 
@@ -525,7 +533,10 @@ def prop_ready(deck: Deck, stop: StopFlag) -> Optional[str]:
             return f"parent {parent.job} did not complete"
         if not parent.f9_fresh:
             return f"parent {parent.job} wrote no new {parent.job}.f9"
-        replaced = hand_off(parent.f9, deck.f9, stop)
+        try:
+            replaced = hand_off(parent.f9, deck.f9, stop)
+        except OSError as exc:
+            return f"cannot copy {parent.job}.f9 to {deck.job}.f9: {exc.strerror or exc}"
         if replaced is None:
             return "interrupted"
         say(f"      {parent.job}.f9 -> {deck.job}.f9"
