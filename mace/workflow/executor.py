@@ -615,7 +615,10 @@ class WorkflowExecutor:
             if workflow_id in self.active_workflows:
                 self.monitor_workflow_execution(workflow_id)
             else:
-                ui.info("Phase 3: Workflow monitoring skipped (workflow completed synchronously)")
+                # Only the first step has been submitted; each job's
+                # completion callback submits the steps after it.
+                ui.info("Phase 3: The first step is submitted; each job submits the next "
+                        "step when it completes. Follow them with `mace monitor --status`.")
             
         except Exception as e:
             ui.err(f"Workflow execution failed: '{workflow_id}'")

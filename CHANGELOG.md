@@ -929,6 +929,13 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   deck (projected by element and orbital type, all bands). The plan now
   carries opt2d3's Enter-through answers, so it says what the deck holds.
   Decks are unchanged.
+- Messages: the engine no longer warns that every shipped job-script
+  template "will cause submission issues", the queue manager no longer
+  says "Could not extract job ID" before submitting the generated script,
+  workflow execution no longer says the workflow "completed synchronously"
+  when only its first step is submitted, `mace database --action stats`
+  suggests `--action export --format csv --output FILE` (not
+  `--export-csv`), and `mace submit --help` lists `--walltime`.
 
 ## [1.1.4] - 2026-10-02
 

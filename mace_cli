@@ -668,6 +668,8 @@ Options:
   --interactive, -i     Interactively configure SLURM resources (cores, memory, walltime)
   --nosubmit           Generate SLURM scripts but do not submit jobs
   --overwrite-sh       Overwrite existing .sh files instead of using them
+  --walltime TIME      SLURM walltime for these jobs (e.g. 2:00:00 or 7-00:00:00),
+                       overriding the per-calc-type defaults
   --track              Record calculations in materials.db via the tracking queue
                        manager (in-place; default is no tracking). Enables
                        monitor/analysis/recovery on the submitted jobs.
@@ -2304,7 +2306,7 @@ More Help:
 
             # Add hint about other actions
             ui.info("\nUse --action query to list materials")
-            ui.info("Use --action export --export-csv FILE to export data")
+            ui.info("Use --action export --format csv --output FILE to export data")
                 
         elif action == 'query':
             # Parse filter options
@@ -2962,7 +2964,7 @@ More Help:
                             writer.writerows(materials)
                     ui.ok(f"Exported {len(materials)} materials to {output_file}")
                 else:
-                    ui.err("Please specify --export-csv FILE or --output FILE")
+                    ui.err("Please specify --output FILE")
             except Exception as e:
                 ui.err(f"Export error: {e}")
                 

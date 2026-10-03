@@ -579,11 +579,9 @@ class WorkflowEngine:
             if template_content is None:
                 raise FileNotFoundError(f"No SLURM template found for {calc_type}")
             
-        # Check if this is an old-style script generator (should be avoided)
-        if 'echo \'#!/bin/bash --login\' >' in template_content:
-            print(f"  WARNING: Template {template_script} appears to be a script generator, not a direct SLURM script")
-            print(f"  This will cause submission issues. Consider using a direct SLURM template.")
-        
+        # A generator template (all shipped ones are) is run at submission,
+        # from a separate copy: see _submit_calculation_to_slurm.
+
         print(f"  Template content starts with: {template_content[:100]}...")
         
         # Create individual script for this material  
