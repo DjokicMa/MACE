@@ -142,13 +142,13 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   scratch directory and the copy-back names are a SLURM job's; the log is
   `<job>-local.o` and no completion callback runs. `.d12` decks run first, then
   each `.d3` after the SCF opt2d3 named it after, with that SCF's new `.f9`
-  copied in. `-n` ranks (default 4, at most 16), `--serial`, `--timeout`
+  copied in. `-n` ranks (default 4, at most 16), `--timeout`
   (default 30m, below the dev nodes' 2 h CPU-time limit), `--dry-run` and
   `--track`. Ctrl-C, a hang-up or the timeout stops every CRYSTAL process of
   the run. Refused on the login gateway, inside a SLURM job, without a loadable
   CRYSTAL module, and for a job name another run already has. Measured on
-  dev-amd20: the diamond SP energy matched the SLURM run's to 1e-12 Ha. See
-  DOCUMENTATION.md, "Run on a dev node".
+  dev-amd20: the diamond SP energy matched the SLURM run's to every printed
+  digit. See DOCUMENTATION.md, "Run on a dev node".
 - **Opt-in TZVP-REV2 2022 update: `full.basis.triplezeta.rev2022`.** The
   bundled triplezeta set carries pob-TZVP 2018 for Rb-I and ERD small-core
   2017 for La-Lu. The new family replaces those with the newer sets from

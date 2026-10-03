@@ -312,13 +312,7 @@ if [ -f "$DIR/$JOB.ext" ]; then
 fi
 cd $scratch/$JOB
 
-# SERIAL (mace run --serial only, never inside a SLURM job): the serial binary,
-# which reads INPUT on stdin.
-if [ -n "$MACE_RUN_SERIAL" ] && [ -z "$SLURM_JOB_ID" ]; then
-  $EBROOTCRYSTAL/bin/crystal < INPUT >& $DIR/${JOB}.out
-else
 I_MPI_HYDRA_BOOTSTRAP="ssh" mpirun -n $SLURM_NTASKS $EBROOTCRYSTAL/bin/Pcrystal 2>&1 >& $DIR/${JOB}.out
-fi
 #srun Pcrystal 2>&1 >& $DIR/${JOB}.out
 cp fort.9 ${DIR}/${JOB}.f9 
 

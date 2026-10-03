@@ -1,16 +1,14 @@
 """Guards in the generated job scripts for running them outside SLURM.
 
 `mace run` runs the normal job script (from submitcrystal23.sh / submit_prop.sh)
-on the node it is on, with bash instead of sbatch. Three blocks in the
-generators make that safe, and none of them can fire inside a SLURM job:
+on the node it is on, with bash instead of sbatch. Two blocks in the
+generators make that safe, and neither can fire inside a SLURM job:
 
 * no submit directory: `bash job.sh` outside SLURM read and wrote `/`
   (DIR=$SLURM_SUBMIT_DIR was empty), exited 0 and ran the completion callback
   from $HOME (measured on an HPCC dev node). It now stops with exit 1.
 * LOCAL RUN: with MACE_LOCAL_RUN set (by `mace run` only) the script skips the
   completion callback, which would submit follow-up jobs from a dev node.
-* serial: with MACE_RUN_SERIAL set the serial crystal/properties binaries run
-  instead of mpirun + Pcrystal/Pproperties.
 
 The scripts are generated the way MACE generates them and run with bash, with
 stand-ins for mpirun, the CRYSTAL binaries and the callback's python.
@@ -170,31 +168,16 @@ def test_scratch_fallback_cleanup_still_runs_in_a_local_run(env, submit, local):
     assert not (submit / ".mace_scratch" / "crys23" / "dia").exists()
 
 
-# --- serial binaries ----------------------------------------------------------
+# --- no serial branch ----------------------------------------------------------
 
-@pytest.mark.parametrize("kind, job, binary", [("crystal", "dia", "crystal"),
-                                                ("prop", "dia_band", "properties")])
-def test_serial_run_uses_the_serial_binary_with_input_on_stdin(env, submit, kind, job, binary):
-    script = _generate(submit, kind, job)
-    r = _run(script, env, submit, SLURM_SUBMIT_DIR=str(submit), SLURM_NTASKS="1",
-             MACE_LOCAL_RUN="1", MACE_RUN_SERIAL="1")
-    assert r.returncode == 0, r.stdout + r.stderr
-    log = _log(env)
-    assert "mpirun" not in log
-    size = (submit / f"{job}{'.d12' if kind == 'crystal' else '.d3'}").stat().st_size
-    assert f"{binary} stdin={size}" in log
-    assert "TOTAL CPU TIME" in (submit / f"{job}.out").read_text()
-
-
-@pytest.mark.parametrize("kind, job, binary", [("crystal", "dia", "Pcrystal"),
-                                                ("prop", "dia_band", "Pproperties")])
-def test_serial_flag_inside_a_slurm_job_still_uses_mpirun(env, submit, kind, job, binary):
-    script = _generate(submit, kind, job)
-    r = _run(script, env, submit, SLURM_SUBMIT_DIR=str(submit), SLURM_NTASKS="4",
-             MACE_RUN_SERIAL="1", SLURM_JOB_ID="123")
-    assert r.returncode == 0, r.stdout + r.stderr
-    log = _log(env)
-    assert "mpirun -n 4" in log and f"{binary} stdin=" in log
+def test_scripts_always_run_crystal_through_mpirun():
+    """The serial crystal/properties binaries print no "TOTAL CPU TIME =" line,
+    which is how MACE tells a finished run (a serial BAND on dev-amd20 was read
+    as "ongoing"), so the job scripts have no serial branch."""
+    for path in TEMPLATES.values():
+        text = path.read_text()
+        assert "MACE_RUN_SERIAL" not in text
+        assert "bin/crystal <" not in text and "bin/properties <" not in text
 
 
 def test_new_blocks_have_no_text_the_workflow_rewrites_would_touch():
@@ -202,8 +185,7 @@ def test_new_blocks_have_no_text_the_workflow_rewrites_would_touch():
     no literal $1 (the engine replaces every $1 with the material name)."""
     for path in TEMPLATES.values():
         text = path.read_text()
-        for marker, end in (("# NO SUBMIT DIRECTORY", "fi\n"), ("# LOCAL RUN", "fi\n"),
-                            ("# SERIAL", "\nfi\n")):
+        for marker, end in (("# NO SUBMIT DIRECTORY", "fi\n"), ("# LOCAL RUN", "fi\n")):
             start = text.index(marker)
             block = text[start:text.index(end, start) + len(end)]
             assert "'" not in block and "$1" not in block, block

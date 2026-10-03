@@ -742,8 +742,6 @@ Arguments:
 Options:
   -n, --cores N         MPI ranks (default: 4, or fewer on a smaller machine;
                         1 to 16 - dev nodes are shared, 4-8 is polite)
-  --serial              Run the serial crystal/properties binaries instead of
-                        mpirun (a BAND or DOSS is often quickest this way)
   --timeout T           Wall time per deck: 90s, 30m, 1h or H:MM:SS
                         (default: 30m; at most 1h55m, as HPCC dev nodes stop
                         any process after 2 hours of CPU time)
@@ -777,7 +775,7 @@ Examples:
   mace run dia_sp.d12
   mace run dia/ -n 8
   mace run dia_sp.d12 dia_band.d3 dia_doss.d3
-  mace run --serial dia_band.d3
+  mace run -n 1 dia_band.d3
   mace run --dry-run dia/
   mace run --track dia_sp.d12
 """,

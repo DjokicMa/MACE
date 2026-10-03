@@ -204,7 +204,8 @@ def _session_of(log: Path) -> int:
 def test_help_lists_the_command_and_its_options(box):
     r = box.run("--help")
     assert r.returncode == 0, r.text
-    for text in ("Usage: mace run", "--cores", "--serial", "--timeout", "--dry-run",
+    assert "--serial" not in r.stdout
+    for text in ("Usage: mace run", "--cores", "--timeout", "--dry-run",
                  "mace run dia_sp.d12", "-local.o"):
         assert text in r.stdout, text
     general = subprocess.run([sys.executable, str(MACE_CLI), "--help"], env=box.env,
@@ -311,16 +312,6 @@ def test_properties_outputs_get_the_slurm_names(box):
     assert (box.work / "p_charge+potential_DENS.CUBE").read_text() == "dens of p_charge+potential\n"
     assert (box.scratch / "crys23" / "prop" / "p_band" / "INPUT").is_file()
     assert (box.stubdir / "p_band.fort.9").read_text() == "wavefunction"
-
-
-def test_serial_runs_the_serial_binary(box):
-    box.deck("s_band.d3", BAND)
-    (box.work / "s_band.f9").write_text("wavefunction")
-    r = box.run("--serial", "s_band.d3")
-    assert r.returncode == 0, r.text
-    assert "mpirun" not in box.stub_log()
-    assert f"properties job=s_band" in box.stub_log()
-    assert (box.work / "s_band.BAND.DAT").is_file()
 
 
 def test_failed_deck_is_reported_with_its_error(box):
@@ -437,7 +428,7 @@ def test_refused_inside_a_slurm_job(box):
     assert box.stub_log() == ""
 
 
-@pytest.mark.parametrize("args", [["-n", "0"], ["-n", "17"], ["--serial", "-n", "4"],
+@pytest.mark.parametrize("args", [["-n", "0"], ["-n", "17"], ["--serial"],
                                   ["--timeout", "3h"], ["--timeout", "soon"]])
 def test_bad_cores_or_timeout_are_refused(box, args):
     box.deck("x.d12")

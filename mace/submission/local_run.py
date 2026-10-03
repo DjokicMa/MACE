@@ -11,8 +11,7 @@ the staging (INPUT, fort.9/fort.20/fort.34), the per-job scratch directory
 ($SCRATCH/crys23/<job>, crys23/prop/<job>) and the copy-back names (.out, .f9,
 .BAND.DAT, .DOSS.DAT, .f25, ...) are the ones a SLURM job has; there is no
 second copy of them here. MACE_LOCAL_RUN=1 makes the script skip its completion
-callback (it would submit follow-up jobs from the dev node), and
-MACE_RUN_SERIAL=1 (--serial) runs crystal/properties instead of mpirun.
+callback (it would submit follow-up jobs from the dev node).
 
 What this module adds around the script:
 
@@ -50,8 +49,7 @@ GENERATORS = {"scf": SUBMISSION_DIR / "submitcrystal23.sh",
               "prop": SUBMISSION_DIR / "submit_prop.sh"}
 SCRATCH_SUBDIR = {"scf": "crys23", "prop": "crys23/prop"}
 CRYSTAL_MODULE = "CRYSTAL/23-intel-2023a"
-BINARIES = {("scf", False): "Pcrystal", ("scf", True): "crystal",
-            ("prop", False): "Pproperties", ("prop", True): "properties"}
+BINARIES = {"scf": "Pcrystal", "prop": "Pproperties"}
 LOCAL_MARKER = "# LOCAL RUN."
 
 DEFAULT_CORES = 4
@@ -372,15 +370,12 @@ def append_log(log: Path, text: str) -> None:
         pass
 
 
-def child_env(deck: Deck, ranks: int, serial: bool) -> dict:
+def child_env(deck: Deck, ranks: int) -> dict:
     env = {k: v for k, v in os.environ.items()
-           if not k.startswith("SLURM_") and k not in WORKFLOW_ENV
-           and k not in ("MACE_LOCAL_RUN", "MACE_RUN_SERIAL")}
+           if not k.startswith("SLURM_") and k not in WORKFLOW_ENV}
     env["SLURM_SUBMIT_DIR"] = str(deck.dir)
     env["SLURM_NTASKS"] = str(ranks)
     env["MACE_LOCAL_RUN"] = "1"
-    if serial:
-        env["MACE_RUN_SERIAL"] = "1"
     return env
 
 
@@ -442,7 +437,7 @@ def run_deck(deck: Deck, opts, stop: StopFlag, host: str) -> None:
     out_before = file_sig(deck.out)
     f9_before = file_sig(deck.f9)
     record_before = file_sig(deck.dir / f".{deck.job}.scratch")
-    how = "serial" if opts.serial else f"{opts.cores} ranks"
+    how = f"{opts.cores} ranks"
     start = time.monotonic()
     with open(deck.log, "w") as fh:
         fh.write(f"mace run: {deck.job} on {host} ({how}, timeout "
@@ -450,7 +445,7 @@ def run_deck(deck: Deck, opts, stop: StopFlag, host: str) -> None:
                  f"mace run: job script {script}\n")
     with open(deck.log, "ab") as logf:
         proc = subprocess.Popen(["bash", "--login", str(script)], cwd=str(deck.dir),
-                                env=child_env(deck, opts.cores, opts.serial),
+                                env=child_env(deck, opts.cores),
                                 stdin=subprocess.DEVNULL, stdout=logf, stderr=subprocess.STDOUT,
                                 start_new_session=True)
     sid = proc.pid
@@ -620,7 +615,7 @@ class Tracker:
             material_id=material_id, calc_type=calc_type, input_file=str(deck.path),
             work_dir=str(deck.dir),
             settings={"run_mode": "local", "host": self.host, "pid": os.getpid(),
-                      "ranks": "serial" if opts.serial else opts.cores})
+                      "ranks": opts.cores})
         self.db.update_calculation_status(calc_id, "running")
         return calc_id
 
@@ -658,8 +653,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-n", "--cores", type=int, default=None, metavar="N",
                    help=f"MPI ranks (default: {DEFAULT_CORES}, or fewer on a smaller machine; "
                         f"at most {MAX_CORES})")
-    p.add_argument("--serial", action="store_true",
-                   help="run the serial crystal/properties binaries instead of mpirun")
     p.add_argument("--timeout", default=None, metavar="T",
                    help="wall time per deck: 90s, 30m, 1h or H:MM:SS (default: 30m)")
     p.add_argument("--track", action="store_true",
@@ -673,11 +666,7 @@ def check_options(opts) -> List[str]:
     """Validate cores and timeout in place; returns warnings. Raises Refusal."""
     warnings = []
     cpus = available_cores()
-    if opts.serial:
-        if opts.cores is not None:
-            raise Refusal("--serial runs one process; leave out -n/--cores")
-        opts.cores = 1
-    elif opts.cores is None:
+    if opts.cores is None:
         opts.cores = min(DEFAULT_CORES, cpus)
     else:
         limit = min(MAX_CORES, cpus)
@@ -710,7 +699,7 @@ def check_options(opts) -> List[str]:
     return warnings
 
 
-def check_node(decks: List[Deck], serial: bool) -> str:
+def check_node(decks: List[Deck]) -> str:
     """Refuse where CRYSTAL cannot run as the job script would run it."""
     if os.environ.get("SLURM_JOB_ID"):
         raise Refusal(f"inside a SLURM job ({os.environ['SLURM_JOB_ID']}): use sbatch, or run "
@@ -728,12 +717,12 @@ def check_node(decks: List[Deck], serial: bool) -> str:
                           "mace run on a dev node (ssh dev-amd20)")
         raise Refusal(f"no CRYSTAL here: $EBROOTCRYSTAL is not set and there is no module "
                       f"command to load {CRYSTAL_MODULE}")
-    needed = sorted({BINARIES[(d.kind, serial)] for d in decks})
+    needed = sorted({BINARIES[d.kind] for d in decks})
     missing = [b for b in needed if not os.access(os.path.join(root, "bin", b), os.X_OK)]
     if missing:
         raise Refusal(f"{', '.join(missing)} not found in {root}/bin")
-    if not serial and source == "environment" and not shutil.which("mpirun"):
-        raise Refusal("no mpirun on PATH (use --serial for the serial binaries)")
+    if source == "environment" and not shutil.which("mpirun"):
+        raise Refusal("no mpirun on PATH")
     return host
 
 
@@ -808,7 +797,7 @@ def acquire_locks(decks: List[Deck], host: str) -> List[int]:
 
 
 def print_plan(decks: List[Deck], opts) -> None:
-    how = "serial" if opts.serial else f"{opts.cores} ranks"
+    how = f"{opts.cores} ranks"
     say(f"mace run: {len(decks)} deck(s), {how}, timeout {fmt_duration(opts.timeout)} each, "
         "in this order:")
     for i, d in enumerate(decks, 1):
@@ -848,7 +837,7 @@ def main(argv=None) -> int:
     try:
         decks = plan(collect_decks(opts.targets))
         warnings = check_options(opts)
-        host = check_node(decks, opts.serial)
+        host = check_node(decks)
         check_slurm_jobs(decks)
         if opts.track:
             tree = workflow_tree([Path(os.getcwd())] + [d.dir for d in decks])
@@ -915,7 +904,7 @@ def main(argv=None) -> int:
 
 def run_all(decks: List[Deck], opts, stop: StopFlag, host: str, tracker=None) -> None:
     n = len(decks)
-    how = "serial" if opts.serial else f"{opts.cores} ranks"
+    how = f"{opts.cores} ranks"
     for i, d in enumerate(decks, 1):
         if stop.signum:
             break

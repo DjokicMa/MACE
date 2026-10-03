@@ -126,7 +126,7 @@ ssh dev-amd20                                    # not the login gateway
 mace run dia_sp.d12                              # one SCF deck, 4 MPI ranks
 mace run dia_sp.d12 dia_band.d3 dia_doss.d3      # SCF first, then BAND and DOSS from its .f9
 mace run decks/ -n 8 --timeout 45m               # every .d12/.d3 in a directory
-mace run --serial dia_band.d3                    # the serial properties binary
+mace run -n 1 dia_band.d3                        # one rank is plenty for a BAND
 mace run --dry-run decks/                        # the order and .f9 hand-offs; runs nothing
 mace run --track dia_sp.d12                      # also record it in ./materials.db
 ```
