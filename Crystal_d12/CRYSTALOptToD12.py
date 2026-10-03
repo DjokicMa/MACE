@@ -1654,29 +1654,35 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                     elif "functional" in method_mods:
                         options["functional"] = method_mods["functional"]
                         ui.info(f"  Functional changed to: {method_mods['functional']}")
-                    
-                    # Check if the selected functional is a 3C method
-                    functional_name = method_mods.get("new_functional") or method_mods.get("functional")
-                    if functional_name:
-                        # If it's a 3C method, update basis set
-                        if functional_name in ["PBEH3C", "HSE3C", "B973C", "PBESOL03C", "HSESOL3C", "HF3C", "HFSOL3C"]:
-                            options["is_3c_method"] = True
-                            options["basis_set_type"] = "INTERNAL"
-                            # Get the basis set for this 3C method
-                            # FUNCTIONAL_CATEGORIES already imported from d12_constants
-                            for category in FUNCTIONAL_CATEGORIES.values():
-                                if "basis_requirements" in category:
-                                    if functional_name in category["basis_requirements"]:
-                                        options["basis_set"] = category["basis_requirements"][functional_name]
-                                        ui.info(f"  Basis set updated to: {options['basis_set']} (required for 3C method)")
-                            # For HSESOL3C, ensure XLGRID is set
-                            if functional_name == "HSESOL3C":
-                                options["dft_grid"] = "XLGRID"
-                                ui.info(f"  DFT grid set to: XLGRID (required for HSESOL3C)")
-                    if "keep_spin" in method_mods and not method_mods["keep_spin"]:
-                        options["spin_polarized"] = False
-                    if "keep_grid" in method_mods and not method_mods["keep_grid"]:
-                        options["dft_grid"] = None
+
+                # Check if the selected functional is a 3C method: named under
+                # method_modifications, or as the config's own "functional"
+                # when the config names no basis (it was left at the parent's,
+                # written "BASISSET / EXTERNAL (from original D12)")
+                method_mods = config_data.get("method_modifications") or {}
+                functional_name = method_mods.get("new_functional") or method_mods.get("functional")
+                if not functional_name and not config_data.get("basis_set"):
+                    functional_name = config_data.get("functional")
+                if functional_name:
+                    # If it's a 3C method, update basis set
+                    if functional_name in ["PBEH3C", "HSE3C", "B973C", "PBESOL03C", "HSESOL3C", "HF3C", "HFSOL3C"]:
+                        options["is_3c_method"] = True
+                        options["basis_set_type"] = "INTERNAL"
+                        # Get the basis set for this 3C method
+                        # FUNCTIONAL_CATEGORIES already imported from d12_constants
+                        for category in FUNCTIONAL_CATEGORIES.values():
+                            if "basis_requirements" in category:
+                                if functional_name in category["basis_requirements"]:
+                                    options["basis_set"] = category["basis_requirements"][functional_name]
+                                    ui.info(f"  Basis set updated to: {options['basis_set']} (required for 3C method)")
+                        # For HSESOL3C, ensure XLGRID is set
+                        if functional_name == "HSESOL3C":
+                            options["dft_grid"] = "XLGRID"
+                            ui.info(f"  DFT grid set to: XLGRID (required for HSESOL3C)")
+                if "keep_spin" in method_mods and not method_mods["keep_spin"]:
+                    options["spin_polarized"] = False
+                if "keep_grid" in method_mods and not method_mods["keep_grid"]:
+                    options["dft_grid"] = None
 
                 # A functional named by the config (a plan step, a saved
                 # config) is used exactly as written: it says itself whether it
