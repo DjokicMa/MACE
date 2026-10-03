@@ -349,13 +349,16 @@ def main():
     # Get target from command line or use current directory
     if len(sys.argv) > 1:
         target = sys.argv[1]
+        # Absolute: the loop below changes into data_folder and then looks
+        # for <data_folder>/<job>.sh, which a relative path would resolve
+        # against the wrong directory (as in crystal.py).
         if os.path.isfile(target) and target.endswith('.d3'):
             # Single file submission
-            data_folder = os.path.dirname(target) or os.getcwd()
+            data_folder = os.path.dirname(os.path.abspath(target))
             data_files = [os.path.basename(target)]
         elif os.path.isdir(target):
             # Directory submission
-            data_folder = target
+            data_folder = os.path.abspath(target)
             data_files = os.listdir(data_folder)
         else:
             print(f"Error: {target} is not a valid D3 file or directory")

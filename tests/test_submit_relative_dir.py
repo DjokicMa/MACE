@@ -50,3 +50,25 @@ def test_relative_target_is_submitted(tmp_path, env, target):
     assert "999002" in out, out
     assert (sub / "mat.sh").is_file()
     assert (tmp_path / "sbatch.log").read_text().split() == [str(sub), "mat.sh"]
+
+
+# The D3 path had the same bug (HPCC QA 2026-10-03: `mace submit BAND`,
+# `mace submit B/x_band.d3`, with and without --walltime, all printed
+# "Failed to generate/find script" and submitted nothing).
+D3 = "BAND\nMgO\n1 20 3 1 8 1 0\n0 0 0 1 1 1\nEND\n"
+
+
+@pytest.mark.parametrize("target", [["B"], ["B/"], ["B/x_band.d3"],
+                                    ["--walltime", "0:30:00", "B"],
+                                    ["--walltime", "0:30:00", "B/x_band.d3"]])
+def test_relative_d3_target_is_submitted(tmp_path, env, target):
+    sub = tmp_path / "B"
+    sub.mkdir()
+    (sub / "x_band.d3").write_text(D3)
+    proc = subprocess.run([sys.executable, str(MACE_CLI), "--no-banner", "submit", *target],
+                          cwd=tmp_path, env=env, capture_output=True, text=True, timeout=300)
+    out = proc.stdout + proc.stderr
+    assert "Failed to generate/find script" not in out, out
+    assert "999002" in out, out
+    assert (sub / "x_band.sh").is_file()
+    assert (tmp_path / "sbatch.log").read_text().split() == [str(sub), "x_band.sh"]

@@ -904,6 +904,10 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   Job scripts written before this release do not carry it; regenerate
   them, or run `mace manager --callback-mode status_check` from the
   database's directory to bring the records up to date.
+- `mace submit DIR` and `mace submit DIR/x.d3` with a relative path
+  failed for D3 decks ("Failed to generate/find script") and submitted
+  nothing, as the D12 path did before 1.1.5; the D3 path now resolves the
+  directory first too.
 
 ## [1.1.4] - 2026-10-02
 
