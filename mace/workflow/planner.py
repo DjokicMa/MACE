@@ -881,6 +881,7 @@ class WorkflowPlanner:
         """Modify an existing workflow sequence"""
         ui.info(f"\nModifying workflow: {' → '.join(sequence)}")
 
+        invalid = 0
         while True:
             ui.info("\nOptions:")
             ui.info("1: Add calculation")
@@ -995,6 +996,11 @@ class WorkflowPlanner:
                     ui.err("\nError: Cannot have empty workflow!")
                     continue
                 break
+            else:
+                invalid += 1
+                stop_if_out_of_step(invalid, "Select option", "one of 1-5")
+                continue
+            invalid = 0
 
         return sequence
 
@@ -1268,6 +1274,7 @@ class WorkflowPlanner:
         ui.info(f"         - Configure: All CRYSTAL keywords interactively")
         ui.info(f"         - Use case: Complex optimizations, constraints, special settings")
 
+        invalid = 0
         while True:
             try:
                 level = int(input("    Enter level (0-3): ").strip())
@@ -1276,6 +1283,8 @@ class WorkflowPlanner:
                 ui.info("    Please enter 0, 1, 2, or 3")
             except ValueError:
                 ui.info("    Please enter a valid number")
+            invalid += 1
+            stop_if_out_of_step(invalid, "Enter level (0-3)", "0, 1, 2 or 3")
 
         if level == 0:
             # Inherit the previous step's settings, OPTGEOM included: no
@@ -1343,6 +1352,7 @@ class WorkflowPlanner:
         ui.info("      3: Expert (full CRYSTALOptToD12.py integration)")
         ui.info("         - Best for: Complete control over all parameters")
 
+        invalid = 0
         while True:
             try:
                 level = int(input("    Enter level (0-3): ").strip())
@@ -1351,6 +1361,8 @@ class WorkflowPlanner:
                 ui.info("    Please enter 0, 1, 2, or 3")
             except ValueError:
                 ui.info("    Please enter a valid number")
+            invalid += 1
+            stop_if_out_of_step(invalid, "Enter level (0-3)", "0, 1, 2 or 3")
 
         config = {
             "calculation_type": "SP",
@@ -1500,10 +1512,13 @@ class WorkflowPlanner:
         ui.info("        6: STO-3G (minimal, very fast)")
         ui.info("        7: Custom basis set")
 
+        invalid = 0
         while True:
             basis_choice = input("      Choose basis set (1-7) [1]: ").strip() or "1"
             if basis_choice in ["1", "2", "3", "4", "5", "6", "7"]:
                 break
+            invalid += 1
+            stop_if_out_of_step(invalid, "Choose basis set (1-7)", "a number from 1 to 7")
             ui.info("      Please enter a number from 1 to 7")
 
         if basis_choice == "1":
@@ -1569,10 +1584,13 @@ class WorkflowPlanner:
         ui.info("        7: XXXLGRID - Ultra large (150,1454 points/atom) for high accuracy")
         ui.info("        8: HUGEGRID - Huge grid (300,1454 points/atom) for SCAN functional")
 
+        invalid = 0
         while True:
             grid_choice = input("      Choose grid (1-8) [1]: ").strip() or "1"
             if grid_choice in ["1", "2", "3", "4", "5", "6", "7", "8"]:
                 break
+            invalid += 1
+            stop_if_out_of_step(invalid, "Choose grid (1-8)", "a number from 1 to 8")
             ui.info("      Please enter a number from 1 to 8")
 
         if grid_choice != "1":
@@ -1607,6 +1625,7 @@ class WorkflowPlanner:
         ui.info("    2. Advanced (customize key parameters)")
         ui.info("    3. Expert (full CRYSTALOptToD3.py integration)")
         
+        invalid = 0
         while True:
             try:
                 level = int(input("\n  Select customization level (1-3): "))
@@ -1615,6 +1634,8 @@ class WorkflowPlanner:
                 ui.err("  Invalid choice. Please enter 1, 2, or 3.")
             except ValueError:
                 ui.err("  Invalid input. Please enter a number.")
+            invalid += 1
+            stop_if_out_of_step(invalid, "Select customization level (1-3)", "1, 2 or 3")
         
         if level == 1:
             # Basic - use default configurations
@@ -1764,7 +1785,7 @@ class WorkflowPlanner:
             ui.info("    1. Automatic (SeeK-path based on space group)")
             ui.info("    2. Custom path specification")
             
-            path_choice = input("  Select path option [1]: ").strip() or "1"
+            path_choice = self._ask_menu_choice("  Select path option [1]: ", ["1", "2"], "1")
             
             if path_choice == "1":
                 config["path"] = "auto"
@@ -1777,7 +1798,7 @@ class WorkflowPlanner:
                 ui.info("    3. Literature path with vectors (comprehensive)")
                 ui.info("    4. SeeK-path full paths (extended Bravais lattice notation)")
                 
-                format_choice = input("  Select format [1]: ").strip() or "1"
+                format_choice = self._ask_menu_choice("  Select format [1]: ", ["1", "2", "3", "4"], "1")
                 format_map = {
                     "1": "labels",
                     "2": "vectors",
@@ -1951,6 +1972,7 @@ class WorkflowPlanner:
         ui.info("    2. Advanced (customize key parameters)")
         ui.info("    3. Expert (full control)")
 
+        invalid = 0
         while True:
             try:
                 level = int(input("\n  Select customization level (1-3): "))
@@ -1959,6 +1981,8 @@ class WorkflowPlanner:
                 ui.err("  Invalid choice. Please enter 1, 2, or 3.")
             except ValueError:
                 ui.err("  Invalid input. Please enter a number.")
+            invalid += 1
+            stop_if_out_of_step(invalid, "Select customization level (1-3)", "1, 2 or 3")
 
         if level == 1:
             # Basic - use defaults
@@ -2704,10 +2728,13 @@ class WorkflowPlanner:
         ui.info("        6: M062X (meta-GGA, for kinetics)")
         ui.info("        7: Custom functional (select from full list)")
 
+        invalid = 0
         while True:
             func_choice = input("      Choose functional (1-7) [1]: ").strip() or "1"
             if func_choice in ["1", "2", "3", "4", "5", "6", "7"]:
                 break
+            invalid += 1
+            stop_if_out_of_step(invalid, "Choose functional (1-7)", "a number from 1 to 7")
             ui.info("      Please enter a number from 1 to 7")
 
         if func_choice == "1":
@@ -2760,10 +2787,13 @@ class WorkflowPlanner:
             "6": "3C",
         }
 
+        invalid = 0
         while True:
             cat_choice = input("      Choose category (1-6): ").strip()
             if cat_choice in category_map:
                 break
+            invalid += 1
+            stop_if_out_of_step(invalid, "Choose category (1-6)", "a number from 1 to 6")
             ui.info("      Please enter a number from 1 to 6")
 
         category = category_map[cat_choice]
@@ -2821,6 +2851,7 @@ class WorkflowPlanner:
                 desc = " - Slater exchange + VWN5 correlation"
             ui.info(f"        {i}: {func}{desc}")
 
+        invalid = 0
         while True:
             try:
                 func_idx = int(
@@ -2831,6 +2862,9 @@ class WorkflowPlanner:
                 ui.info(f"      Please enter a number from 1 to {len(func_list)}")
             except ValueError:
                 ui.info("      Please enter a valid number")
+            invalid += 1
+            stop_if_out_of_step(invalid, f"Choose functional (1-{len(func_list)})",
+                                f"a number from 1 to {len(func_list)}")
 
     def _get_custom_tolerances(self) -> Dict[str, Any]:
         """Get custom tolerance settings"""
@@ -3982,6 +4016,7 @@ class WorkflowPlanner:
         self, prompt: str, valid_choices: list, default: str = None
     ) -> str:
         """Get user choice with validation against a list of valid options"""
+        invalid = 0
         while True:
             if default:
                 user_input = input(f"{prompt} [{default}]: ").strip() or default
@@ -3991,6 +4026,8 @@ class WorkflowPlanner:
             if user_input in valid_choices:
                 return user_input
             else:
+                invalid += 1
+                stop_if_out_of_step(invalid, prompt, f"one of {', '.join(valid_choices)}")
                 ui.warn(f"⚠️  Invalid choice '{user_input}'. Valid options: {', '.join(valid_choices)}")
                 continue
 
@@ -3998,6 +4035,7 @@ class WorkflowPlanner:
         self, prompt: str, default: int, min_val: int = 1, max_val: int = None
     ) -> int:
         """Get integer input with validation and re-prompting on error"""
+        invalid = 0
         while True:
             user_input = input(prompt).strip()
             if not user_input:
@@ -4006,15 +4044,16 @@ class WorkflowPlanner:
             try:
                 value = int(user_input)
                 if value < min_val:
-                    ui.warn(f"          ⚠️  Value must be at least {min_val}. Please try again.")
-                    continue
-                if max_val and value > max_val:
-                    ui.warn(f"          ⚠️  Value must be at most {max_val}. Please try again.")
-                    continue
-                return value
+                    message = f"Value must be at least {min_val}. Please try again."
+                elif max_val and value > max_val:
+                    message = f"Value must be at most {max_val}. Please try again."
+                else:
+                    return value
             except ValueError:
-                ui.warn(f"          ⚠️  Invalid input '{user_input}'. Please enter a number.")
-                continue
+                message = f"Invalid input '{user_input}'. Please enter a number."
+            invalid += 1
+            stop_if_out_of_step(invalid, prompt, "a whole number in range")
+            ui.warn(f"          ⚠️  {message}")
 
     def get_safe_float_input(self, prompt: str, default=None, min_val=None, max_val=None):
         """Read a number, asking again on anything else.
@@ -4022,29 +4061,31 @@ class WorkflowPlanner:
         A blank answer returns ``default`` exactly as passed (an int default
         stays an int); with no default a blank answer is asked again.
         """
+        invalid = 0
         while True:
             user_input = input(prompt).strip()
-            if not user_input:
-                if default is not None:
-                    return default
-                ui.warn("          ⚠️  Please enter a number.")
-                continue
+            if not user_input and default is not None:
+                return default
             try:
                 value = float(user_input)
             except ValueError:
-                ui.warn(f"          ⚠️  Invalid input '{user_input}'. Please enter a number.")
-                continue
-            if min_val is not None and value < min_val:
-                ui.warn(f"          ⚠️  Value must be at least {min_val}. Please try again.")
-                continue
-            if max_val is not None and value > max_val:
-                ui.warn(f"          ⚠️  Value must be at most {max_val}. Please try again.")
-                continue
-            return value
+                message = (f"Invalid input '{user_input}'. Please enter a number." if user_input
+                           else "Please enter a number.")
+            else:
+                if min_val is not None and value < min_val:
+                    message = f"Value must be at least {min_val}. Please try again."
+                elif max_val is not None and value > max_val:
+                    message = f"Value must be at most {max_val}. Please try again."
+                else:
+                    return value
+            invalid += 1
+            stop_if_out_of_step(invalid, prompt, "a number in range")
+            ui.warn(f"          ⚠️  {message}")
 
     def get_safe_float_list_input(self, prompt: str, default: list) -> list:
         """Read space-separated numbers, asking again if any is not a number.
         A blank answer returns ``default``."""
+        invalid = 0
         while True:
             user_input = input(prompt).strip()
             if not user_input:
@@ -4052,12 +4093,15 @@ class WorkflowPlanner:
             try:
                 return [float(x) for x in user_input.split()]
             except ValueError:
+                invalid += 1
+                stop_if_out_of_step(invalid, prompt, "numbers separated by spaces")
                 ui.warn(f"          ⚠️  Invalid input '{user_input}'. Please enter numbers separated by spaces.")
 
     def get_safe_memory_input(self, prompt: str, default: str) -> str:
         """Get memory input with validation"""
         import re
 
+        invalid = 0
         while True:
             user_input = input(prompt).strip()
             if not user_input:
@@ -4072,6 +4116,8 @@ class WorkflowPlanner:
                     return f"{user_input}G"  # Default to GB if no unit
                 return user_input.upper()
             else:
+                invalid += 1
+                stop_if_out_of_step(invalid, prompt, "a memory size such as 5G or 4000M")
                 ui.warn(f"          ⚠️  Invalid memory format '{user_input}'.")
                 ui.info(f"          Valid formats: 4G, 4GB, 4000M, 4000MB")
                 ui.info(f"          Examples: 5G, 48G, 4000M")
@@ -4081,6 +4127,7 @@ class WorkflowPlanner:
         """Get walltime input with validation"""
         import re
 
+        invalid = 0
         while True:
             user_input = input(prompt).strip()
             if not user_input:
@@ -4096,6 +4143,8 @@ class WorkflowPlanner:
             if any(re.match(pattern, user_input) for pattern in patterns):
                 return user_input
             else:
+                invalid += 1
+                stop_if_out_of_step(invalid, prompt, "a walltime such as 24:00:00 or 3-00:00:00")
                 ui.warn(f"          ⚠️  Invalid walltime format '{user_input}'.")
                 ui.info(f"          Valid formats: HH:MM:SS, D-HH:MM:SS, or DD-HH:MM:SS")
                 ui.info(f"          Examples: 24:00:00, 3-00:00:00, 7-00:00:00")
