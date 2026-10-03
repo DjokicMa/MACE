@@ -30,6 +30,23 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 
 ### Upgrading from 1.1.1-1.1.4
 
+- **Install seekpath 2.1 or newer; it is now required** (`pip install -r
+  requirements.txt`, or `pip install --upgrade seekpath`). seekpath 2.0.x
+  lacked the rotation matrix the CRYSTAL-basis path needs and silently gave
+  the static path; it now counts as missing. Without it, a SeeK-path band path of a 3D cell
+  (opt2d3 format 4, a configuration or plan step with `seekpath_full`,
+  including Basic and quick-start BAND steps planned before 1.1.5 that stored
+  the SeeK-path format) and an opt2d12 SeeK-path phonon dispersion now stop
+  with the install command and no deck, where they used to write the static
+  HPKOT table path with a note. On MSU HPCC the workflow callback generates
+  decks with the module Python, so install it there: on a dev node (e.g.
+  `ssh dev-amd20`), `module load Python/3.11.3-GCCcore-12.3.0
+  Python-bundle-PyPI/2023.06-GCCcore-12.3.0`, then `pip install --user
+  seekpath` (INSTALLATION.md, "HPC / SLURM clusters"). To keep the static
+  path, pass `--static-kpath` to `mace opt2d3` / `mace opt2d12`, or set
+  `MACE_STATIC_KPATH=1` (for a workflow, in the environment its jobs
+  inherit). Slab and polymer paths, the default label path and the k-point
+  vector, literature and custom paths are unaffected.
 - **Workflows planned before 1.1.2 produce mixed decks.** The plan's SP
   basis, tolerance and functional overrides and its FREQ settings
   (tolerances, NUMDERIV, IR/Raman) now apply, but only to steps generated
@@ -282,6 +299,24 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   `<stem>.ext`, staging it as fort.34 the way the job script does.
 
 ### Changed
+
+- **seekpath is a required dependency** (`requirements.txt`, `seekpath>=2.1,<3`;
+  an older seekpath counts as missing, and `setup_mace.py` checks for it).
+  A SeeK-path band path of a 3D cell is
+  computed from the structure and written in CRYSTAL's reciprocal basis; the
+  static HPKOT tables hold SeeK-path's numbers in SeeK-path's standard cell,
+  which for many lattices is not CRYSTAL's (axis order, reduction, centring
+  vectors), so a deck written from them can visit or name other points.
+  - Without seekpath, a 3D SeeK-path BAND deck (opt2d3, workflow `seekpath_full`
+    configurations) or SeeK-path phonon dispersion (opt2d12) stops with the
+    install command, the MSU HPCC module-Python instructions and the opt-in;
+    opt2d3 and opt2d12 exit non-zero when no deck was written.
+  - `--static-kpath` (opt2d3, opt2d12) or `MACE_STATIC_KPATH=1` writes the
+    static path as before, with a note.
+  - Slabs and polymers do not need seekpath and print no install message (a
+    polymer printed "Install 'seekpath'"); label, k-point vector, literature
+    and custom paths do not use it. Importing the k-path modules stays silent.
+  - CI installs seekpath in every job (`requirements-test.txt`).
 
 - **The bundled external basis sets are one file per family.**
   - `Crystal_d12/basis_sets/full.basis.triplezeta/`, `full.basis.doublezeta/`

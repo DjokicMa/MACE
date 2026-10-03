@@ -272,10 +272,14 @@ python Crystal_d3/CRYSTALOptToD3.py --input optimized.out --calc-type BAND
 Core requirements:
 - Python 3.11 or newer (CI tests 3.11 and 3.12)
 - NumPy, Matplotlib, ASE, spglib
+- **seekpath** - the HPKOT band k-path of a 3D cell (SeeK-path format, and the
+  SeeK-path phonon dispersion), computed from the structure and written in
+  CRYSTAL's reciprocal basis. Without it such a deck stops with the install
+  command; `--static-kpath` (opt2d3, opt2d12) or `MACE_STATIC_KPATH=1` writes
+  the static HPKOT table path instead
 - PyYAML, pandas
 
 Optional (recommended):
-- **seekpath** - Accurate band structure k-path generation for all crystal systems
 - **rich** - Themed terminal UI (progress bars, dashboards, color themes); MACE
   falls back to plain text without it
 - **plotly + scipy + kaleido** - Interactive cube/FREQ plotting engines (`mace plotting`);
@@ -288,11 +292,8 @@ HPC requirements:
 
 Install all dependencies:
 ```bash
-# Core dependencies
-pip install numpy matplotlib ase spglib pyyaml pandas
-
-# Recommended: accurate band structure k-paths
-pip install seekpath
+# Core dependencies (seekpath: the band k-paths of 3D cells)
+pip install numpy matplotlib ase spglib seekpath pyyaml pandas
 
 # Recommended: themed terminal UI (MACE falls back to plain text without it)
 pip install rich
@@ -303,10 +304,11 @@ pip install plotly scipy kaleido==0.2.1 scikit-image
 
 > **On HPC/SLURM:** the job-completion callback runs under the compute node's
 > *module* Python, not your interactive env. Install deps (esp. `seekpath`) into
-> that Python with the job's modules loaded, e.g.
+> that Python with the job's modules loaded, on a dev node, e.g.
 > `module load Python/3.11.3-GCCcore-12.3.0 ... && pip install --user seekpath`.
-> See [INSTALLATION.md](INSTALLATION.md) ("HPC / SLURM clusters"). Without seekpath,
-> BAND k-paths fall back to built-in tables (still valid); `pyarrow` is not required.
+> See [INSTALLATION.md](INSTALLATION.md) ("HPC / SLURM clusters"). Without seekpath
+> a workflow's SeeK-path BAND step for a 3D cell stops with that message;
+> `pyarrow` is not required.
 
 ## Contributing
 

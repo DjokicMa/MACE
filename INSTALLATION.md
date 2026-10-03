@@ -43,11 +43,8 @@
 ### Step 1: Install Python Dependencies
 
 ```bash
-# Core dependencies (required)
-pip install numpy matplotlib ase spglib pyyaml pandas
-
-# Recommended: accurate band structure k-paths for all crystal systems
-pip install seekpath
+# Core dependencies (required; or: pip install -r requirements.txt)
+pip install numpy matplotlib ase spglib seekpath pyyaml pandas
 
 # Recommended: themed terminal UI (MACE falls back to plain text without it)
 pip install rich
@@ -56,8 +53,7 @@ pip install rich
 pip install plotly scipy kaleido==0.2.1 scikit-image
 
 # Verify installation
-python -c "import numpy, matplotlib, ase, spglib, yaml, pandas; print('All dependencies installed successfully')"
-python -c "import seekpath; print('seekpath available for accurate band paths')"
+python -c "import numpy, matplotlib, ase, spglib, seekpath, yaml, pandas; print('All dependencies installed successfully')"
 ```
 
 #### HPC / SLURM clusters (IMPORTANT: install into the *module* Python)
@@ -82,20 +78,29 @@ module purge
 module load CRYSTAL/23-intel-2023a Python/3.11.3-GCCcore-12.3.0 Python-bundle-PyPI/2023.06-GCCcore-12.3.0
 
 # Many sites' Python-bundle already ships numpy/scipy/pandas/ase/spglib/matplotlib/pyyaml.
-# Install whatever is missing into the module Python (e.g. seekpath):
+# Install whatever is missing into the module Python (seekpath is not in the bundle):
 pip install --user seekpath
 
 # Verify in this exact module env (and ideally on a compute node via: srun --pty bash):
-python -c "import numpy, scipy, pandas, ase, spglib, yaml; print('core OK')"
-python -c "import seekpath; print('seekpath OK -> library-computed band k-paths')"
+python -c "import numpy, scipy, pandas, ase, spglib, seekpath, yaml; print('core OK')"
 python "$MACE_HOME/mace/queue/manager.py" --callback-mode status_check   # read-only sanity check
 ```
 
 Notes:
-- **seekpath** is optional. Without it, BAND generation still works — it falls back
-  to the built-in extended-Bravais k-path tables. Installing it (into the module
-  Python) upgrades to live, geometry-computed paths; the SLURM callback picks it up
-  automatically.
+- **seekpath** (2.1 or newer) is required. It computes the HPKOT band k-path of a 3D cell from
+  its structure (Hinuma et al., Comp. Mat. Sci. 128, 140 (2017)) and MACE writes
+  it in CRYSTAL's reciprocal basis, with the lattice-dependent points of that
+  cell. The built-in tables hold SeeK-path's numbers in SeeK-path's standard cell,
+  which for many lattices is not CRYSTAL's (axis order, reduction, centring
+  vectors), so a path written from them can visit or name other points. Without
+  seekpath, a 3D SeeK-path BAND deck (opt2d3 format 4, a plan's SeeK-path BAND
+  step) or SeeK-path phonon dispersion (opt2d12) stops with the install command;
+  a workflow step fails the same way, since the SLURM callback generates its
+  decks with the module Python. To write the table path anyway, pass
+  `--static-kpath` to `mace opt2d3` / `mace opt2d12`, or set
+  `MACE_STATIC_KPATH=1` (in a job's environment, e.g. `~/.bashrc`, for a
+  workflow). Slabs and polymers do not need seekpath, and the label, k-point
+  vector, literature and custom paths do not use it.
 - **pyarrow** is NOT required (pandas runs without it); don't bother installing it.
 - `--user` installs are keyed to the Python X.Y version (e.g. `~/.local/lib/python3.11`),
   so reinstall if you switch the Python module's minor version.
