@@ -20,6 +20,15 @@ echo '#SBATCH --mem-per-cpu=5G' >> $1.sh
 echo 'export JOB='$1 >> $1.sh
 echo 'export DIR=$SLURM_SUBMIT_DIR
 export scratch=$SCRATCH/crys23
+# NO SUBMIT DIRECTORY. Everything below stages from and copies back to the
+# submit directory, which SLURM always sets. Run with plain bash, DIR was
+# empty: the job read and wrote /, still ended with exit 0 and ran the
+# completion callback from the home directory.
+if [ -z "$DIR" ]; then
+  echo "ERROR: SLURM_SUBMIT_DIR is not set - this script stages from and copies back to the"
+  echo "  submit directory. Submit it with sbatch, or run it on this node with: mace run $JOB.d12"
+  exit 1
+fi
 
 echo "submit directory: "
 echo $SLURM_SUBMIT_DIR
