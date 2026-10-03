@@ -52,6 +52,7 @@ except Exception:
     ui = _UIShim()
 
 from mace.workflow.plan_functionals import normalize_plan_functionals
+from mace.workflow.common.constants import opt2d3_default_band_config
 from mace.utils.piped_answers import stop_if_out_of_step
 
 # Import MACE components
@@ -1705,16 +1706,8 @@ class WorkflowPlanner:
     def _get_basic_d3_config(self, calc_type: str) -> Dict[str, Any]:
         """Get basic D3 configuration with sensible defaults"""
         configs = {
-            "BAND": {
-                "calculation_type": "BAND",
-                "path": "auto",
-                "bands": "auto", 
-                "shrink": "auto",
-                "labels": "auto",
-                "auto_path": True,
-                "n_points": 1000,
-                "path_method": "coordinates"
-            },
+            # opt2d3's answers when Enter is pressed through it
+            "BAND": opt2d3_default_band_config(),
             "DOSS": {
                 "calculation_type": "DOSS",
                 "n_points": 10000,
@@ -1752,9 +1745,9 @@ class WorkflowPlanner:
         ui.info(f"\n  Using basic {calc_type} configuration:")
         
         if calc_type == "BAND":
-            ui.info("    - Automatic k-path detection based on space group")
+            ui.info("    - Automatic k-path from the space group, as high-symmetry labels")
             ui.info("    - All available bands included")
-            ui.info("    - Automatic SHRINK factor from parent calculation")
+            ui.info("    - 1000 k points along the path (opt2d3's defaults)")
             
         elif calc_type == "DOSS":
             ui.info("    - Total DOS only (no projections)")

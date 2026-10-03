@@ -30,6 +30,13 @@ PARENTS = {
 }
 
 
+# A plan's k-point vector (opt2d3 format 2) BAND configuration, as the
+# engine default was before it became opt2d3's Enter-through answers
+VECTORS_CONFIG = {"calculation_type": "BAND", "path": "auto", "bands": "auto",
+                  "shrink": "auto", "labels": "auto", "auto_path": True,
+                  "n_points": 1000, "path_method": "coordinates"}
+
+
 def _env():
     env = dict(os.environ)
     for k in ("COLORTERM", "TERM", "NO_COLOR", "MACE_HOME"):
@@ -97,24 +104,21 @@ def test_manual_slab_path_uses_corresponding_space_group(tmp_path, parent):
     """opt2d3 read a slab as P1 (its "CORRESPONDING SPACE GROUP N. 191" line
     has no symbol) and wrote the triclinic path; the config route reads the
     space group the way CRYSTALOptToD3's structure parser does."""
-    from mace.workflow.engine import WorkflowEngine
     out = _stage(tmp_path, parent)
-    config = WorkflowEngine.__new__(WorkflowEngine)._get_default_d3_config("BAND")
     manual = _manual(out, tmp_path / "manual", ["1", "2", "", "1", "n"])
-    workflow = _workflow(out, tmp_path / "workflow", config)
+    workflow = _workflow(out, tmp_path / "workflow", dict(VECTORS_CONFIG))
     assert _records(manual)[2:] == _records(workflow)[2:]
 
 
 @pytest.mark.parametrize("parent", sorted(PARENTS))
-def test_default_vectors_deck_matches_opt2d3(tmp_path, parent):
-    """The engine's default BAND step (and the planner's Basic one) is
-    opt2d3's k-point vector format; the decks agree to the title, which on a
-    slab said "in-plane path" on the manual route only."""
-    from mace.workflow.engine import WorkflowEngine
+def test_vectors_deck_matches_opt2d3(tmp_path, parent):
+    """A plan's k-point vector BAND configuration is opt2d3's format 2; the
+    decks agree to the title, which on a slab said "in-plane path" on the
+    manual route only. (The default BAND step is opt2d3's Enter-through
+    deck: test_band_default_is_opt2d3_enter.)"""
     out = _stage(tmp_path, parent)
-    config = WorkflowEngine.__new__(WorkflowEngine)._get_default_d3_config("BAND")
     manual = _manual(out, tmp_path / "manual", ["1", "2", "", "1", "n"])
-    assert _workflow(out, tmp_path / "workflow", config) == manual
+    assert _workflow(out, tmp_path / "workflow", dict(VECTORS_CONFIG)) == manual
 
 
 @pytest.mark.parametrize("parent", sorted(PARENTS))

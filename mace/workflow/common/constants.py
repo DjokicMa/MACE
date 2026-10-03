@@ -155,3 +155,29 @@ DEFAULT_RECOVERY_WAIT_TIME = 60  # seconds
 DEFAULT_MAX_JOBS = 250
 DEFAULT_RESERVE_JOBS = 30
 DEFAULT_MAX_SUBMIT = 5
+
+def opt2d3_default_band_config():
+    """The BAND configuration opt2d3 builds when every question is answered
+    with Enter: the automatic path in high-symmetry label format (shrink 0),
+    1000 k points along the path, all bands, no eigenvalue print.
+
+    The workflow routes that choose a BAND configuration for the user (the
+    engine default, the planner's Basic answer, quick-start / --progress)
+    use this, so they write the deck the manual route writes. A fresh dict
+    is returned on every call.
+    """
+    return {
+        "calculation_type": "BAND",
+        "path_method": "labels",
+        "path": "auto",
+        "labels": "auto",
+        "auto_path": True,
+        "shrink": 0,
+        "n_points": 1000,
+        "bands": "auto",
+        "auto_bands": True,
+        "first_band": 1,
+        "last_band": None,
+        "plot": True,
+        "print_eigenvalues": False,
+    }
