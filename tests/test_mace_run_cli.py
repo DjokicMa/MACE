@@ -56,7 +56,7 @@ if [ -n "$STUB_SLEEP" ] && { [ -z "$STUB_SLEEP_JOB" ] || [ "$STUB_SLEEP_JOB" = "
 fi
 echo " EEEEEEEEEE STARTING  stub $name for $job"
 if [ "$STUB_FAIL_JOB" = "$job" ]; then
-  echo " ERROR **** STUB **** deliberate failure"
+  echo " ${STUB_FAIL_TEXT:-ERROR **** STUB **** deliberate failure}"
   exit 1
 fi
 case "$name" in
@@ -216,7 +216,7 @@ def test_help_lists_the_command_and_its_options(box):
 
 
 @pytest.mark.parametrize("flag", [["--progress", "x"], ["--walltime", "1:00:00"],
-                                  ["--track", "--nosubmit"]])
+                                  ["--track", "--nosubmit"], ["-i"]])
 def test_submit_only_options_are_refused(box, flag):
     box.deck("x.d12")
     r = box.run(*flag, "x.d12")
@@ -681,3 +681,110 @@ def test_an_out_this_run_did_not_write_is_no_verdict(tmp_path):
     deck = Deck(deck_path)
     assert verdict(deck, file_sig(out)) == (False, "no .out written")
     assert verdict(deck, None)[0] is True
+
+
+# --------------------------------------------------------------------------
+# --track
+# --------------------------------------------------------------------------
+
+def _calcs(box):
+    import sqlite3
+    db = box.work / "materials.db"
+    assert db.exists()
+    con = sqlite3.connect(str(db))
+    con.row_factory = sqlite3.Row
+    rows = [dict(r) for r in con.execute("SELECT * FROM calculations ORDER BY created_at")]
+    con.close()
+    return rows
+
+
+def test_track_records_a_completed_local_run(box):
+    import json
+    import socket
+    box.deck("t.d12")
+    r = box.run("--track", "-n", "1", "t.d12")
+    assert r.returncode == 0, r.text
+    (calc,) = _calcs(box)
+    assert calc["status"] == "completed"
+    assert calc["slurm_job_id"] is None and calc["job_script"] is None
+    assert Path(calc["output_file"]) == box.work / "t.out"
+    assert Path(calc["work_dir"]) == box.work
+    settings = json.loads(calc["settings_json"])
+    assert settings["run_mode"] == "local" and settings["host"] == socket.gethostname()
+    assert "python " not in box.stub_log() and "sbatch" not in box.stub_log()
+    assert not (box.work / "crystal_job_status.json").exists()
+
+
+def test_tracked_failure_is_never_recovered_through_slurm(box):
+    """A failed local run must not be picked up by the recovery sweep that any
+    later completion callback or `mace manager` runs over materials.db."""
+    box.deck("t.d12")
+    r = box.run("--track", "-n", "1", "t.d12", STUB_FAIL_JOB="t",
+                STUB_FAIL_TEXT="TOO MANY CYCLES")
+    assert r.returncode == 1, r.text
+    (calc,) = _calcs(box)
+    assert calc["status"] == "failed"
+    assert calc["error_type"] == "local_convergence_error"
+    from mace.recovery.recovery import ErrorRecoveryEngine
+    engine = ErrorRecoveryEngine(str(box.work / "materials.db"))
+    assert "convergence_error" in engine.config["error_recovery"]      # would be recoverable
+    assert engine.get_recoverable_calculations() == []
+    assert "sbatch" not in box.stub_log()
+
+
+def test_tracked_timeout_is_recorded_as_such(box):
+    box.deck("t.d12")
+    r = box.run("--track", "-n", "1", "--timeout", "2s", "t.d12", STUB_SLEEP="60")
+    assert r.returncode == 124, r.text
+    (calc,) = _calcs(box)
+    assert calc["status"] == "failed" and calc["error_type"] == "local_timeout"
+
+
+def test_track_ignores_a_workflow_in_the_environment(box):
+    """MACE_WORKFLOW_ID makes the completion handler progress a workflow and
+    submit its next step; a local run never does."""
+    box.deck("t.d12")
+    r = box.run("--track", "-n", "1", "t.d12", MACE_WORKFLOW_ID="workflow_20260101_000000",
+                MACE_CONTEXT_DIR=str(box.root / "ctx"))
+    assert r.returncode == 0, r.text
+    assert _calcs(box)[0]["status"] == "completed"
+    assert "sbatch" not in box.stub_log()
+    assert not (box.root / "ctx").exists()
+
+
+def test_track_is_refused_in_a_workflow_tree(box):
+    box.deck("t.d12")
+    (box.work / "workflow_outputs").mkdir()
+    r = box.run("--track", "t.d12")
+    assert r.returncode == 2, r.text
+    assert "mace workflow" in r.text
+    assert not (box.work / "materials.db").exists()
+    assert box.binary_runs() == []
+
+
+def test_track_marks_a_run_whose_runner_died_as_lost(box):
+    import json
+    import socket
+    from mace.database.materials import MaterialDatabase
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    db = MaterialDatabase(str(box.work / "materials.db"))
+    db.create_material(material_id="old", formula="C", source_type="d12",
+                       source_file="old.d12", metadata={})
+    calc_id = db.create_calculation(material_id="old", calc_type="SP", input_file="old.d12",
+                                    work_dir=str(box.work),
+                                    settings={"run_mode": "local", "host": socket.gethostname(),
+                                              "pid": dead.pid})
+    db.update_calculation_status(calc_id, "running")
+    box.deck("t.d12")
+    r = box.run("--track", "-n", "1", "t.d12")
+    assert r.returncode == 0, r.text
+    old = MaterialDatabase(str(box.work / "materials.db")).get_calculation(calc_id)
+    assert old["status"] == "failed" and old["error_type"] == "local_lost"
+
+
+def test_dry_run_with_track_writes_no_database(box):
+    box.deck("t.d12")
+    r = box.run("--track", "--dry-run", "t.d12")
+    assert r.returncode == 0, r.text
+    assert not (box.work / "materials.db").exists()

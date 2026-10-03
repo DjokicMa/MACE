@@ -183,6 +183,7 @@ class Deck:
         self.status = "not run"
         self.note = ""
         self.f9_fresh = False
+        self.out_fresh = False
 
     @property
     def out(self) -> Path:
@@ -487,6 +488,7 @@ def run_deck(deck: Deck, opts, stop: StopFlag, host: str) -> None:
         deck.elapsed = elapsed
         return
     deck.elapsed = elapsed
+    deck.out_fresh = rewritten(deck.out, out_before)
     ok, why = verdict(deck, out_before)
     deck.f9_fresh = rewritten(deck.f9, f9_before) and deck.f9.stat().st_size > 0
     deck.status = "completed" if ok else "failed"
@@ -546,6 +548,103 @@ def prop_ready(deck: Deck, stop: StopFlag) -> Optional[str]:
 
 
 # --------------------------------------------------------------------------
+# --track: the run recorded in ./materials.db
+# --------------------------------------------------------------------------
+
+WORKFLOW_MARKERS = ("workflow_scripts", "workflow_configs", "workflow_outputs", "workflow_inputs")
+
+
+def workflow_tree(dirs) -> Optional[Path]:
+    """The workflow directory above any of ``dirs`` (as the queue manager
+    detects one), or None."""
+    for d in dirs:
+        d = Path(d)
+        for candidate in [d, *list(d.parents)[:7]]:
+            if any((candidate / m).exists() for m in WORKFLOW_MARKERS):
+                return candidate
+    return None
+
+
+class Tracker:
+    """Records each local run in ./materials.db, as `mace submit --track` does,
+    without the SLURM parts: no job id (none is faked), no job script, no
+    error recovery (it would resubmit through sbatch), no workflow progression.
+    The verdict is this run's own, from this deck's own .out."""
+
+    def __init__(self, host: str):
+        import contextlib
+        import io
+        from mace.queue.manager import EnhancedCrystalQueueManager
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.manager = EnhancedCrystalQueueManager(
+                d12_dir=os.getcwd(), enable_tracking=True, organize_outputs=False,
+                enable_error_recovery=False, db_path=str(Path.cwd() / "materials.db"))
+        self.manager.auto_submit_followups = False
+        self.manager.workflow_enabled = False
+        self.db = self.manager.db
+        self.host = host
+        self.mark_lost()
+
+    def mark_lost(self) -> None:
+        """A run whose mace run was killed outright is left 'running', and the
+        queue manager, which goes by SLURM job ids, can never settle it."""
+        import json
+        for calc in self.db.get_calculations_by_status("running"):
+            try:
+                settings = json.loads(calc.get("settings_json") or "{}")
+                pid = int(settings.get("pid"))
+            except (TypeError, ValueError):
+                continue
+            if settings.get("run_mode") != "local" or settings.get("host") != self.host:
+                continue
+            try:
+                os.kill(pid, 0)
+                continue                                # still running
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                continue
+            self.db.update_calculation_status(
+                calc["calc_id"], "failed", error_type="local_lost",
+                error_message=f"mace run (pid {pid} on {self.host}) ended without recording a result")
+            say(f"mace run: marked {calc['calc_id']} failed (local_lost): its mace run is gone")
+
+    def start(self, deck: Deck, opts) -> str:
+        m = self.manager
+        material_id, formula, metadata = m.extract_material_info_from_d12(deck.path)
+        calc_type = m.determine_calc_type_from_file(deck.path)
+        if not self.db.get_material(material_id):
+            self.db.create_material(material_id=material_id, formula=formula, source_type="d12",
+                                    source_file=str(deck.path), metadata=metadata)
+        calc_id = self.db.create_calculation(
+            material_id=material_id, calc_type=calc_type, input_file=str(deck.path),
+            work_dir=str(deck.dir),
+            settings={"run_mode": "local", "host": self.host, "pid": os.getpid(),
+                      "ranks": "serial" if opts.serial else opts.cores})
+        self.db.update_calculation_status(calc_id, "running")
+        return calc_id
+
+    def finish(self, calc_id: str, deck: Deck) -> None:
+        if deck.status == "completed":
+            self.db.update_calculation_status(calc_id, "completed", output_file=str(deck.out))
+            self.manager.handle_completed_calculation(calc_id)
+            return
+        out = str(deck.out) if deck.out_fresh else None
+        if deck.status in ("timeout", "interrupted", "not run"):
+            error_type = "local_timeout" if deck.status == "timeout" else "local_interrupted"
+            message = deck.note or "interrupted before CRYSTAL started"
+        elif out:
+            self.db.update_calculation_status(calc_id, "failed", output_file=out)
+            analysed, message = self.manager.analyze_calculation_error(self.db.get_calculation(calc_id))
+            # Prefixed, so no recovery sweep ever takes it for a SLURM job to resubmit.
+            error_type = f"local_{analysed}"
+        else:
+            error_type, message = "local_no_output", deck.note or "no .out written"
+        self.db.update_calculation_status(calc_id, "failed", output_file=out,
+                                          error_type=error_type, error_message=message)
+
+
+# --------------------------------------------------------------------------
 # Command line
 # --------------------------------------------------------------------------
 
@@ -563,6 +662,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="run the serial crystal/properties binaries instead of mpirun")
     p.add_argument("--timeout", default=None, metavar="T",
                    help="wall time per deck: 90s, 30m, 1h or H:MM:SS (default: 30m)")
+    p.add_argument("--track", action="store_true",
+                   help="record the runs in ./materials.db (as mace submit --track)")
     p.add_argument("--dry-run", action="store_true",
                    help="print the order, scratch directories and .f9 hand-offs; run nothing")
     return p
@@ -749,6 +850,11 @@ def main(argv=None) -> int:
         warnings = check_options(opts)
         host = check_node(decks, opts.serial)
         check_slurm_jobs(decks)
+        if opts.track:
+            tree = workflow_tree([Path(os.getcwd())] + [d.dir for d in decks])
+            if tree:
+                raise Refusal(f"--track inside a workflow tree ({tree}): its calculations are "
+                              "recorded by the workflow - use mace workflow")
     except Refusal as exc:
         say(f"mace run: {exc}", err=True)
         return EXIT_REFUSED
@@ -772,6 +878,20 @@ def main(argv=None) -> int:
         say(f"mace run: cannot take the run lock: {exc}", err=True)
         return EXIT_REFUSED
 
+    tracker = None
+    if opts.track:
+        # A workflow context in the environment would send the records to its
+        # database and let a completion progress the workflow.
+        for key in WORKFLOW_ENV:
+            os.environ.pop(key, None)
+        try:
+            tracker = Tracker(host)
+        except Exception as exc:
+            for fd in locks:
+                os.close(fd)
+            say(f"mace run: --track: cannot open materials.db: {exc}", err=True)
+            return EXIT_REFUSED
+
     stop = StopFlag()
     previous = {signal.SIGINT: signal.signal(signal.SIGINT, stop),
                 signal.SIGTERM: signal.signal(signal.SIGTERM, stop)}
@@ -781,7 +901,7 @@ def main(argv=None) -> int:
         # Suspended, the runner would stop supervising the job and its timeout.
         previous[signal.SIGTSTP] = signal.signal(signal.SIGTSTP, signal.SIG_IGN)
     try:
-        run_all(decks, opts, stop, host)
+        run_all(decks, opts, stop, host, tracker)
     finally:
         for sig, handler in previous.items():
             try:
@@ -793,7 +913,7 @@ def main(argv=None) -> int:
     return summarize(decks, stop)
 
 
-def run_all(decks: List[Deck], opts, stop: StopFlag, host: str) -> None:
+def run_all(decks: List[Deck], opts, stop: StopFlag, host: str, tracker=None) -> None:
     n = len(decks)
     how = "serial" if opts.serial else f"{opts.cores} ranks"
     for i, d in enumerate(decks, 1):
@@ -809,8 +929,20 @@ def run_all(decks: List[Deck], opts, stop: StopFlag, host: str) -> None:
                 d.status, d.note = "skipped", why
                 report(d, i, n)
                 continue
+        calc_id = None
+        if tracker:
+            try:
+                calc_id = tracker.start(d, opts)
+            except Exception as exc:
+                say(f"mace run: warning: --track could not record {d.path.name}: {exc}", err=True)
         run_deck(d, opts, stop, host)
         report(d, i, n)
+        if tracker and calc_id:
+            try:
+                tracker.finish(calc_id, d)
+            except Exception as exc:
+                say(f"mace run: warning: --track could not record the result of "
+                    f"{d.path.name}: {exc}", err=True)
 
 
 def summarize(decks: List[Deck], stop: StopFlag) -> int:

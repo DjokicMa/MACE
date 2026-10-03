@@ -747,6 +747,8 @@ Options:
   --timeout T           Wall time per deck: 90s, 30m, 1h or H:MM:SS
                         (default: 30m; at most 1h55m, as HPCC dev nodes stop
                         any process after 2 hours of CPU time)
+  --track               Record the runs in ./materials.db, as mace submit --track
+                        (no SLURM job id; a failure is never resubmitted)
   --dry-run             Print the order, scratch directories and .f9 hand-offs;
                         run nothing
 
@@ -777,6 +779,7 @@ Examples:
   mace run dia_sp.d12 dia_band.d3 dia_doss.d3
   mace run --serial dia_band.d3
   mace run --dry-run dia/
+  mace run --track dia_sp.d12
 """,
         'preflight': """
 Usage: mace preflight [files/directories] [options]
