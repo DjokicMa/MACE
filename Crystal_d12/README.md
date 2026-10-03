@@ -714,7 +714,7 @@ pip install numpy matplotlib ase spglib
 ```
 
 ### Environment
-- Python 3.7+
+- Python 3.11 or newer (CI tests 3.11 and 3.12)
 - CRYSTAL17/23 installation
 - Access to basis set files
 - For workflows: SLURM cluster environment

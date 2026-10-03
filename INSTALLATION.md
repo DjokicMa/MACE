@@ -36,7 +36,7 @@
 
 ### Prerequisites
 
-- Python 3.7 or higher
+- Python 3.11 or newer (CI tests 3.11 and 3.12; the MSU HPCC module Python is 3.11)
 - SLURM workload manager (for HPC environments)
 - CRYSTAL17/23 quantum chemistry software
 
@@ -175,7 +175,7 @@ This sets up the environment for the current session only.
 
 2. **"Module not found" errors**
    - Install missing dependencies: `pip install [module_name]`
-   - Check Python version: `python --version` (needs 3.7+)
+   - Check Python version: `python --version` (needs 3.11 or newer)
 
 3. **Scripts not found in PATH**
    - Ensure you used `--add-to-path` during setup

@@ -193,7 +193,7 @@ These scripts are fully integrated with the CRYSTAL workflow management system:
 
 ## Requirements
 
-- Python 3.6+
+- Python 3.11 or newer (CI tests 3.11 and 3.12)
 - NumPy (for numerical operations)
 - Standard Python libraries: `os`, `sys`, `re`, `pathlib`, `json`
 

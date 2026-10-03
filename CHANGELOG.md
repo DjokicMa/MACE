@@ -864,6 +864,9 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   `mace/submission/` and reports each one; it looked in the removed
   `code/Job_Scripts/` and silently did nothing. Its `--help` examples name
   `setup_mace.py` (they named `setup_crystal_tools.py`).
+- The install docs (README, INSTALLATION, the Crystal_d12 and Crystal_d3
+  READMEs) require Python 3.11 or newer, the oldest version CI tests; they
+  said 3.6+ or 3.7+, which nothing tests.
 
 ## [1.1.4] - 2026-10-02
 

@@ -270,7 +270,7 @@ python Crystal_d3/CRYSTALOptToD3.py --input optimized.out --calc-type BAND
 ## Dependencies
 
 Core requirements:
-- Python 3.7+
+- Python 3.11 or newer (CI tests 3.11 and 3.12)
 - NumPy, Matplotlib, ASE, spglib
 - PyYAML, pandas
 
