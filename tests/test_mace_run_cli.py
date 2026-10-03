@@ -529,6 +529,20 @@ def test_held_lock_refuses_and_properties_have_their_own(box):
         assert ok.returncode == 0, ok.text
 
 
+def test_lock_directory_others_can_write_is_refused(box):
+    """Without $XDG_RUNTIME_DIR the locks live in /tmp/mace-run-<uid>, a name
+    anyone could create first; a lock directory that is not private is not
+    used."""
+    box.deck("x.d12")
+    locks = _lock_path(box, "scf", "x").parent
+    locks.mkdir()
+    locks.chmod(0o777)
+    r = box.run("-n", "1", "x.d12")
+    assert r.returncode == 2, r.text
+    assert "not private" in r.text
+    assert box.binary_runs() == []
+
+
 def test_same_named_slurm_job_is_refused(box):
     box.deck("x.d12")
     r = box.run("-n", "1", "x.d12", STUB_SQUEUE="x 777 RUNNING\nother 778 PENDING")

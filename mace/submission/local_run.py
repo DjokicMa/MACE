@@ -758,9 +758,17 @@ def check_slurm_jobs(decks: List[Deck]) -> None:
 
 
 def lock_dir() -> Path:
+    """$XDG_RUNTIME_DIR/mace-run-<uid> (/tmp/mace-run-<uid> without it), and
+    only when it is this user's alone: in /tmp anyone could create it first."""
+    import stat
     base = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
     d = Path(base) / f"mace-run-{os.getuid()}"
     d.mkdir(mode=0o700, exist_ok=True)
+    st = os.lstat(d)
+    if (not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid()
+            or st.st_mode & (stat.S_IWGRP | stat.S_IWOTH)):
+        raise Refusal(f"the lock directory {d} is not private to you (owner and mode); "
+                      "remove it, or set XDG_RUNTIME_DIR to a directory of your own")
     return d
 
 
