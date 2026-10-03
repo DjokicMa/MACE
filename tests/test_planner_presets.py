@@ -48,8 +48,10 @@ def test_quick_start_cif_config_is_standard(tmp_path):
     plan = run_mace.create_quick_workflow_plan(tmp_path, [tmp_path / "a.cif"], "cif",
                                                ["OPT", "SP", "FREQ"], args)
     assert plan["cif_conversion_config"]["optimization_settings"] == opt_convergence("1", upper=True)
+    # FREQ names no tolerances: opt2d12's FREQ default applies
+    # (test_workflow_freq_keeps_parent_tolerances)
     freq = plan["step_configurations"]["FREQ_3"]["frequency_settings"]
-    assert freq["custom_tolerances"] == scf_tolerances("3")
+    assert "custom_tolerances" not in freq
 
 
 def test_level0_opt_step_inherits_the_previous_opt(planner, monkeypatch):

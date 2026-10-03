@@ -311,7 +311,7 @@ def _get_basic_d3_config_for_quick_start(calc_type: str) -> Dict[str, Any]:
 def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, args):
     """Create a quick workflow plan with default settings"""
     from datetime import datetime
-    from d12_constants import opt_convergence, scf_tolerances, FREQ_SCF_LEVEL
+    from d12_constants import opt_convergence, scf_tolerances
     
     # Default CIF conversion config (adapt to first calculation type)
     first_calc_type = sequence[0] if sequence else "OPT"
@@ -375,7 +375,8 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
                     "mode": "GAMMA",
                     "intensities": False,
                     "temperatures": [298.15],
-                    "custom_tolerances": scf_tolerances(FREQ_SCF_LEVEL)
+                    # No tolerances: opt2d12's FREQ default applies (Very
+                    # tight, or a FREQ parent's own)
                 }
             }
         

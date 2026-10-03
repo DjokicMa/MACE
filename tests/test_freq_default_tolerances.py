@@ -5,7 +5,8 @@ parent": frequencies need tighter SCF convergence than the optimization they
 follow. It holds on every path that writes a FREQ deck with no tolerances
 named - the opt2d12 menu, --config-file (the engine's no-plan FREQ step),
 --non-interactive, "Use these exact settings", and the planner's FREQ presets
-(including the expert fallback, which used 12 12 12 12 24 / 12). Explicit
+(including the expert fallback, which used 12 12 12 12 24 / 12), which name
+no tolerances so that this rule applies to their steps too. Explicit
 tolerances from the user, plan or config still win, and a parent that is
 itself a FREQ calculation keeps its own.
 
@@ -130,18 +131,18 @@ def test_freq_parent_keeps_its_own_tolerances_on_blank_answers(tmp_path):
     assert _scf(child) == ("8 8 8 9 24".split(), "9")
 
 
-def test_planner_expert_fallback_is_very_tight(tmp_path, monkeypatch):
+def test_planner_expert_fallback_leaves_tolerances_to_opt2d12(tmp_path, monkeypatch):
     planner = WorkflowPlanner(work_dir=tmp_path)
     monkeypatch.setattr(planner, "_copy_required_scripts_for_expert_mode", lambda: None)
     monkeypatch.setattr(planner, "_run_interactive_crystal_opt_config", lambda *a, **k: None)
     replies = iter(["3", "2"])                       # Expert, batch uniform
     monkeypatch.setattr("builtins.input", lambda prompt="": next(replies, ""))
     cfg = planner.configure_frequency_step("FREQ", 3)
-    assert cfg["frequency_settings"]["custom_tolerances"] == scf_tolerances("3")
+    assert "custom_tolerances" not in cfg["frequency_settings"]
 
 
-def test_planner_basic_freq_is_very_tight(tmp_path, monkeypatch):
+def test_planner_basic_freq_leaves_tolerances_to_opt2d12(tmp_path, monkeypatch):
     planner = WorkflowPlanner(work_dir=tmp_path)
     monkeypatch.setattr("builtins.input", lambda prompt="": "1")
     cfg = planner.configure_frequency_step("FREQ", 3)
-    assert cfg["frequency_settings"]["custom_tolerances"] == scf_tolerances("3")
+    assert "custom_tolerances" not in cfg["frequency_settings"]

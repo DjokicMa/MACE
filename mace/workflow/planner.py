@@ -1983,9 +1983,8 @@ class WorkflowPlanner:
             ui.info("    - Mode: FREQCALC (gamma point vibrational analysis)")
             ui.info("    - IR intensities: No (faster calculation)")
             ui.info("    - Raman intensities: No")
-            ui.info("    - High accuracy tolerances for frequencies:")
-            ui.info("      - TOLINTEG: 9 9 9 11 38")
-            ui.info("      - TOLDEE: 11 (SCF convergence 10^-11 Ha)")
+            ui.info("    - SCF tolerances: opt2d12's FREQ default (TOLINTEG 9 9 9 11 38,")
+            ui.info("      TOLDEE 11), or the parent's own when it is a FREQ calculation")
             ui.info("\n  📊 Resource estimate:")
             ui.info("    - Time: ~1-3x optimization time")
             ui.info("    - Memory: Similar to optimization")
@@ -2001,7 +2000,6 @@ class WorkflowPlanner:
                     "mode": "GAMMA",
                     "intensities": False,
                     "temperatures": [298.15],
-                    "custom_tolerances": scf_tolerances(FREQ_SCF_LEVEL),
                 },
             }
 
@@ -2439,11 +2437,9 @@ class WorkflowPlanner:
                     "\n  Temperatures (K) space-separated [298.15]: ", [298.15]
                 )
 
-            # Always use high accuracy tolerances for FREQ
-            ui.info("\n  Using high accuracy tolerances for frequency calculations:")
-            ui.info("    TOLINTEG: 9 9 9 11 38")
-            ui.info("    TOLDEE: 11")
-            config["frequency_settings"]["custom_tolerances"] = scf_tolerances(FREQ_SCF_LEVEL)
+            # No tolerances in the plan: opt2d12's FREQ default applies
+            ui.info("\n  SCF tolerances: opt2d12's FREQ default (TOLINTEG 9 9 9 11 38, TOLDEE 11),")
+            ui.info("  or the parent's own when it is a FREQ calculation")
 
         else:
             # Expert - run CRYSTALOptToD12.py interactively
@@ -2513,7 +2509,6 @@ class WorkflowPlanner:
                         "cphf_max_iter": 30,
                         "cphf_tolerance": 6,
                         "temperatures": [298.15],
-                        "custom_tolerances": scf_tolerances(FREQ_SCF_LEVEL),
                     },
                 }
                 return config
