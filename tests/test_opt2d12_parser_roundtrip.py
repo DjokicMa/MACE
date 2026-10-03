@@ -254,6 +254,9 @@ def _opt2d12(tmp_path, name, answers, extra=()):
                     return reply
             return ""
         builtins.input = fake_input
+        # `python mace_cli` puts the checkout first on sys.path; runpy
+        # does not, and a PYTHONPATH install would be imported instead.
+        sys.path.insert(0, {str(MACE_CLI.parent)!r})
         sys.argv = [{str(MACE_CLI)!r}] + {args!r}
         runpy.run_path({str(MACE_CLI)!r}, run_name="__main__")
     """))

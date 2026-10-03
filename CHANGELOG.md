@@ -835,6 +835,8 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   job directory.
 - The test suite writes no bytecode, so it never writes into the test
   corpus.
+- The opt2d12 tests that answer prompts through a runner import the
+  checkout under test; they imported whichever `mace` PYTHONPATH named.
 
 ## [1.1.4] - 2026-10-02
 
