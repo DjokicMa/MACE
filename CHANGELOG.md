@@ -862,6 +862,11 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   no positional file, completion's status categories) are now in the
   scripts' help, and the unreachable copies are gone. A command now has
   either mace_cli's help or the script's, never both.
+- **`mace ions --help` has examples**, as `mace phonopy` and `mace defects`
+  do: an ion cluster from cif2d12 decks with `--ion-charges auto -o DIR`, an
+  explicit `--net-charge`, `--site-states`, and `--parent-out` to check the
+  shell counts, plus a pointer to "Charged systems and ion clusters" in
+  `Crystal_d12/README.md`.
 
 ## [1.1.4] - 2026-10-02
 
