@@ -40,3 +40,12 @@ def test_convert_without_ase_says_what_is_missing(tmp_path):
     assert rc == 1, text
     assert "needs ase" in text and "pip install ase" in text
     assert "Traceback" not in text
+
+
+def test_convert_help_names_the_mace_command_and_gives_examples(tmp_path):
+    rc, text = _mace(tmp_path, "--help")
+    assert rc == 0, text
+    assert text.startswith("usage: mace convert"), text
+    assert "Examples:" in text
+    assert "mace convert --cif_dir cifs/ --save_options" in text
+    assert "mace convert --cif_dir more_cifs/ --batch" in text

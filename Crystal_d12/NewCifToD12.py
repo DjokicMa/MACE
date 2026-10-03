@@ -2436,7 +2436,15 @@ def print_summary(options):
 def main():
     """Main function to run the script"""
     parser = argparse.ArgumentParser(
-        description="Convert CIF files to D12 input files for CRYSTAL23"
+        prog="mace convert",
+        description="Convert CIF files to D12 input files for CRYSTAL23",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Examples:
+  mace convert                                    # the CIF files here, asking for the settings
+  mace convert --cif_dir cifs/ --output_dir decks/
+  mace convert --cif_dir cifs/ --save_options     # also save the answers (cif2d12_options.json)
+  mace convert --cif_dir more_cifs/ --batch       # convert with the saved answers, no questions
+""",
     )
     parser.add_argument(
         "--cif_dir", type=str, default="./", help="Directory containing CIF files"
