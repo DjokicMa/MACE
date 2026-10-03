@@ -188,21 +188,70 @@ FREQ_TEMPLATES = {
 }
 
 
-def get_advanced_frequency_settings(parent_numderiv=None):
+# FREQCALC settings that ask for IR/Raman intensities or spectra (the keys
+# d12_parsers reads them into and the FREQ writer writes them from). A FREQ
+# child keeps a FREQ parent's unless the user or a config names one.
+INTENSITY_SETTINGS = frozenset({
+    "intensities", "ir_method", "relocalize_wannier", "cphf_settings",
+    "cphf_max_iter", "cphf_tolerance", "born_tensor_norm", "dielectric_tensor",
+    "dielectric_constant", "raman", "ramanexp", "norenorm", "tensonly",
+    "chi2tensor", "irspec", "ramspec", "minimal_ir", "minimal_raman",
+    "spec_range", "spec_step", "spec_dampfac", "spec_angle", "spec_gaussian",
+    "spec_refrind", "spec_dielfun", "spec_voigt", "raman_dampfac", "raman_voigt",
+})
+
+
+def _kept_freq_summary(kept: dict) -> str:
+    """The parent's FREQCALC settings in a few words, for the keep option."""
+    parts = []
+    if kept.get("intensities"):
+        method = kept.get("ir_method")
+        parts.append(f"IR intensities ({method})" if method else "IR intensities")
+    if kept.get("raman"):
+        parts.append("Raman activities")
+    spectra = [name for key, name in (("irspec", "IRSPEC"), ("ramspec", "RAMSPEC"))
+               if kept.get(key)]
+    if spectra:
+        parts.append("/".join(spectra))
+    if kept.get("numderiv"):
+        parts.append(f"NUMDERIV {kept['numderiv']}")
+    if kept.get("dispersion"):
+        parts.append("phonon dispersion")
+    if kept.get("temprange"):
+        parts.append("TEMPERAT")
+    others = len(set(kept) - INTENSITY_SETTINGS
+                 - {"numderiv", "dispersion", "temprange"})
+    if others and not parts:
+        parts.append(f"{others} setting{'s' if others > 1 else ''}")
+    elif others:
+        parts.append("...")
+    return ", ".join(parts)
+
+
+def get_advanced_frequency_settings(parent_numderiv=None, parent_freq=None):
     """Get advanced frequency calculation settings from user.
 
     parent_numderiv: NUMDERIV of a parent FREQ deck, the default answer at
     the NUMDERIV prompt (None: no keyword).
+    parent_freq: a FREQ parent's FREQCALC settings. When there are any, the
+    template menu offers "0: Keep the parent's FREQCALC settings" as its
+    default, so a FREQ child keeps the parent's intensities and spectra
+    unless the user picks something else. RESTART is never kept: it
+    restarts the parent's own run (manual sec. 8.2, p. 219).
     """
     numderiv_default = str(parent_numderiv) if parent_numderiv in (1, 2) else "0"
     from d12_constants import yes_no_prompt, get_user_input
     
     freq_settings = {}
+    kept = {k: v for k, v in (parent_freq or {}).items() if k != "restart"}
     
     print("\n=== FREQUENCY CALCULATION SETTINGS ===")
     
     # First, ask if they want to use a template
     print("\nFrequency calculation templates:")
+    if kept:
+        print("0: Keep the parent's FREQCALC settings (default)")
+        print(f"   - {_kept_freq_summary(kept)}")
     print("1: Basic frequencies only")
     print("   - Gamma point frequencies, no intensities")
     print("   - Use for: ZPE, thermal corrections, stability check")
@@ -234,7 +283,14 @@ def get_advanced_frequency_settings(parent_numderiv=None):
     print("8: Custom settings")
     print("   - Full control over all parameters")
     
-    template_choice = _read_choice("Select template (1-8) [1]: ", ("1", "2", "3", "4", "5", "6", "7", "8"), "1")
+    if kept:
+        template_choice = _read_choice("Select template (0-8) [0]: ",
+                                       ("0", "1", "2", "3", "4", "5", "6", "7", "8"), "0")
+        if template_choice == "0":
+            print("\nKeeping the parent's FREQCALC settings.")
+            return dict(kept)
+    else:
+        template_choice = _read_choice("Select template (1-8) [1]: ", ("1", "2", "3", "4", "5", "6", "7", "8"), "1")
     
     template_map = {
         "1": "basic",
@@ -1364,17 +1420,17 @@ def _get_frequency_configuration_impl(current_settings: Optional[Dict[str, Any]]
         # FREQCALC calculation (default)
         freq_config["freq_mode"] = "FREQCALC"
         parent_freq = (current_settings or {}).get("freq_settings") or {}
-        freq_config.update(_get_freqcalc_configuration(parent_freq.get("numderiv")))
+        freq_config.update(_get_freqcalc_configuration(parent_freq.get("numderiv"), parent_freq))
     
     return freq_config
 
 
-def _get_freqcalc_configuration(parent_numderiv=None) -> Dict[str, Any]:
+def _get_freqcalc_configuration(parent_numderiv=None, parent_freq=None) -> Dict[str, Any]:
     """Get FREQCALC (harmonic frequency) configuration"""
     from d12_constants import yes_no_prompt
     
     # Get the advanced frequency settings directly
-    freq_settings = get_advanced_frequency_settings(parent_numderiv)
+    freq_settings = get_advanced_frequency_settings(parent_numderiv, parent_freq)
     
     # Build the configuration with settings at the top level
     freq_config = {

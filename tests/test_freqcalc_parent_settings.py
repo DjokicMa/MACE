@@ -155,10 +155,18 @@ def test_freq_child_keeps_the_parents_spectra_but_not_its_restart(tmp_path):
 
 
 def test_freq_settings_of_a_config_file_still_replace_the_parents(tmp_path):
-    (tmp_path / "c.json").write_text('{"calculation_type": "FREQ", "freq_settings": {"numderiv": 2}}')
+    (tmp_path / "c.json").write_text(
+        '{"calculation_type": "FREQ", "freq_settings": {"numderiv": 2, "intensities": false}}')
     child = _freq_child(tmp_path, "FREQCALC\nINTENS\nINTCPHF\nENDCPHF\nENDFREQ",
                         "--config-file", "c.json")
     assert child == ["FREQCALC", "NUMDERIV", "2", "NOINTENS", "ENDFREQ"]
+
+
+def test_a_config_naming_no_intensity_setting_keeps_the_parents(tmp_path):
+    (tmp_path / "c.json").write_text('{"calculation_type": "FREQ", "freq_settings": {"numderiv": 2}}')
+    child = _freq_child(tmp_path, "FREQCALC\nINTENS\nINTCPHF\nENDCPHF\nENDFREQ",
+                        "--config-file", "c.json")
+    assert child == ["FREQCALC", "NUMDERIV", "2", "INTENS", "INTCPHF", "ENDCPHF", "ENDFREQ"]
 
 
 def test_a_config_file_without_freq_settings_keeps_the_parents(tmp_path):

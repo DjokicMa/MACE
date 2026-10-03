@@ -71,7 +71,7 @@ from d12_parsers import (
 )
 from d12_config import unwrap_d12_config
 from d12_calc_freq import (
-    get_advanced_frequency_settings, write_frequency_section,
+    get_advanced_frequency_settings, write_frequency_section, INTENSITY_SETTINGS,
     phonon_dispersion_refusal,
 )
 from d12_calc_basic import write_optimization_section, configure_single_point
@@ -1618,6 +1618,14 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                         options["freq_settings"] = dict(options["freq_settings"],
                                                         numderiv=parent_numderiv)
                         ui.info(f"  NUMDERIV {parent_numderiv}: kept from the parent")
+                    # So do its IR/Raman intensity and spectrum settings
+                    # when the config names none of them (the planner's
+                    # default FREQ steps name none).
+                    parent_intens = {k: v for k, v in (settings.get("freq_settings") or {}).items()
+                                     if k in INTENSITY_SETTINGS}
+                    if parent_intens and not INTENSITY_SETTINGS & set(options["freq_settings"]):
+                        options["freq_settings"] = dict(options["freq_settings"], **parent_intens)
+                        ui.info("  IR/Raman intensity settings: kept from the parent")
                     
                     # Convert temprange from dict to tuple if needed
                     if "temprange" in options["freq_settings"] and isinstance(options["freq_settings"]["temprange"], dict):

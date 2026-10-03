@@ -373,10 +373,9 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
                 "inherit_base_settings": True,
                 "frequency_settings": {
                     "mode": "GAMMA",
-                    "intensities": False,
                     "temperatures": [298.15],
-                    # No tolerances: opt2d12's FREQ default applies (Very
-                    # tight, or a FREQ parent's own)
+                    # No tolerances or intensities: opt2d12's FREQ defaults
+                    # apply (Very tight and none, or a FREQ parent's own)
                 }
             }
         

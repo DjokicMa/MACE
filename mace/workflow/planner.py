@@ -1990,8 +1990,8 @@ class WorkflowPlanner:
             # Basic - use defaults
             ui.info("\n  Using simple frequency calculation defaults:")
             ui.info("    - Mode: FREQCALC (gamma point vibrational analysis)")
-            ui.info("    - IR intensities: No (faster calculation)")
-            ui.info("    - Raman intensities: No")
+            ui.info("    - IR/Raman intensities: No (faster calculation), or the parent's")
+            ui.info("      own when it is a FREQ calculation")
             ui.info("    - SCF tolerances: opt2d12's FREQ default (TOLINTEG 9 9 9 11 38,")
             ui.info("      TOLDEE 11), or the parent's own when it is a FREQ calculation")
             ui.info("\n  📊 Resource estimate:")
@@ -2007,7 +2007,6 @@ class WorkflowPlanner:
                 "inherit_base_settings": True,
                 "frequency_settings": {
                     "mode": "GAMMA",
-                    "intensities": False,
                     "temperatures": [298.15],
                 },
             }
@@ -2193,9 +2192,13 @@ class WorkflowPlanner:
                 ui.info("       - Complete vibrational spectroscopy")
                 ui.info("       - Most expensive option")
                 
-                gamma_type = input("\n  Select calculation type [1]: ").strip() or "1"
+                # Blank keeps a FREQ parent's intensity settings (none
+                # otherwise), as opt2d12 does; 1 is an explicit "none".
+                gamma_type = input("\n  Select calculation type [parent's, else 1]: ").strip()
                 
-                if gamma_type == "1":
+                if not gamma_type:
+                    ui.ok("\n  ✓ Intensities: the parent's when it is a FREQ calculation, else none")
+                elif gamma_type == "1":
                     # Pure frequencies - no intensities
                     config["frequency_settings"]["intensities"] = False
                     config["frequency_settings"]["raman"] = False
