@@ -624,6 +624,12 @@ def _image_charge(pris_text: Optional[str], dielectric: Optional[dict], report: 
                E_MP_q1_ev=ic.makov_payne(1, eps, v_m) * HARTREE_TO_EV)
     if dielectric.get("warning"):
         report["notes"].append(dielectric["warning"])
+    ratio = ic.cubicity(geom.lattice)
+    if ratio < ic.NEAR_CUBIC_MIN_RATIO:
+        report["notes"].append(
+            f"WARNING: the supercell is far from cubic (shortest image distance / V^(1/3) = "
+            f"{ratio:.2f}); the Makov-Payne / Lany-Zunger term assumes a near-cubic cell and "
+            "an isotropic dielectric, so treat the image-charge correction as approximate")
     if dielectric["kind"] == "eps_0":
         report["notes"].append("eps_0 screens relaxed defects; these results are unrelaxed, for which "
                                "eps_inf is the measured choice")

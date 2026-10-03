@@ -19,6 +19,7 @@ MgO oxygen vacancy, this term with eps_inf puts eps(+/0) of the 53, 63, 127
 and 249 atom cells at 2.85-2.88 eV (3.30-3.57 eV without it).
 """
 
+import itertools
 import math
 from typing import Sequence
 
@@ -78,3 +79,18 @@ def makov_payne(q: float, eps: float, v_m: float) -> float:
     if eps <= 0:
         raise DefectError(f"dielectric constant {eps} must be positive")
     return -lany_zunger_factor(eps) * q * q * v_m / (2.0 * eps)
+
+
+#: Below this ratio of the shortest image distance to V^(1/3) a supercell is
+#: called far from cubic (1 for simple cubic, 1.12 fcc-shaped, 1.09
+#: bcc-shaped; 0.79 for a 1x1x2 stack of cubes, 0.69 for 1x1x3).
+NEAR_CUBIC_MIN_RATIO = 0.85
+
+
+def cubicity(lattice: Sequence[Sequence[float]]) -> float:
+    """Shortest lattice translation over V^(1/3) (any length unit)."""
+    a = np.asarray(lattice, float)
+    shortest = min(float(np.linalg.norm(np.array(n) @ a))
+                   for n in itertools.product((-1, 0, 1), repeat=3) if any(n))
+    return shortest / abs(float(np.linalg.det(a))) ** (1.0 / 3.0)
+

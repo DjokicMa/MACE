@@ -500,3 +500,22 @@ def test_2d_neutral_formation_energy_includes_the_dispersion_and_gcp_difference(
         pytest.approx(DELTA_TERMS * HARTREE_TO_EV)
     for name in ("+1/0", "0/-1"):
         assert _level(r, name) == pytest.approx(_level(plain, name), abs=1e-6)
+
+
+def test_a_far_from_cubic_supercell_is_warned_about():
+    """Lany-Zunger / Makov-Payne assume a near-cubic supercell and an isotropic
+    dielectric; only dielectric anisotropy was warned about. A 1x1x3-shaped
+    cell (the MgO lattice with c tripled) now gets a warning; the measured
+    conventional 2x2x2 (cubic) does not."""
+    from mace.defects import image_charge as ic
+    assert ic.cubicity([[1, 0, 0], [0, 1, 0], [0, 0, 1]]) == pytest.approx(1.0)
+    assert ic.cubicity([[0, .5, .5], [.5, 0, .5], [.5, .5, 0]]) == pytest.approx(1.1225, abs=1e-4)
+    assert ic.cubicity([[1, 0, 0], [0, 1, 0], [0, 0, 3]]) == pytest.approx(3 ** (-1 / 3))
+    cubic = _report(_with_lattice(_mgo_set()), dielectric=an.dielectric_choice(value=EPS_INF))
+    assert not any("far from cubic" in n for n in cubic["notes"])
+    d = _with_lattice(_mgo_set())
+    d[1]["mgo_pris"] = d[1]["mgo_pris"].replace(
+        "   0.000000000000E+00   0.000000000000E+00   0.842400000000E+01",
+        "   0.000000000000E+00   0.000000000000E+00   0.252720000000E+02")
+    long = _report(d, dielectric=an.dielectric_choice(value=EPS_INF))
+    assert any("far from cubic" in n and "0.69" in n for n in long["notes"])
