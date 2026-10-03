@@ -51,6 +51,7 @@ from d12_constants import (
     ELEMENT_SYMBOLS, SPACEGROUP_SYMBOLS, DEFAULT_SETTINGS,
     DEFAULT_OPT_SETTINGS, DEFAULT_TOLERANCES, DEFAULT_FREQ_SETTINGS,
     freq_default_tolerances,
+    normalize_config_functionals,
     FUNCTIONAL_CATEGORIES, COMMON_FUNCTIONALS, D3_FUNCTIONALS,
     DFT_GRID_OPTIONS, DISPERSION_OPTIONS, SMEARING_OPTIONS,
     PRINT_OPTIONS, MULTI_ORIGIN_SPACEGROUPS, ATOMIC_NUMBER_TO_SYMBOL,
@@ -1446,6 +1447,17 @@ def process_files(output_file, input_file=None, shared_settings=None, config_fil
                 # settings in {"version", "type", "configuration"}
                 config_data = unwrap_d12_config(json.load(f))
 
+            # Legacy functional spellings ("HSEsol-3C", "M06-2X", "HF") become
+            # the CRYSTAL23 keyword, as a workflow plan's are when it is
+            # loaded; an unknown name writes nothing.
+            fn_msgs, fn_errs = normalize_config_functionals(config_data)
+            if fn_errs:
+                _fail(fn_errs[0], "The config file names a functional CRYSTAL23 does not "
+                                  "accept; nothing written: " + "; ".join(fn_errs))
+                return False, None
+            for msg in fn_msgs:
+                ui.warn(f"  Config: {msg}")
+
             # Show config summary
             print()
             ui.rule("CONFIG FILE SETTINGS")
@@ -2584,6 +2596,9 @@ def main():
                     config_data = unwrap_d12_config(json.load(f))
                 if not isinstance(config_data, dict):
                     raise ValueError("not a JSON object of settings")
+                fn_errs = normalize_config_functionals(config_data)[1]
+                if fn_errs:
+                    raise ValueError("; ".join(fn_errs))
             except Exception as e:
                 ui.err(f"Cannot use config file {args.config_file}: {e}")
                 sys.exit(1)

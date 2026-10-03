@@ -1107,6 +1107,113 @@ def mace_functional_name(name: str):
                 return func + suffix
     return None
 
+
+# Prose spellings the 1.1.1 planner menus offered -> CRYSTAL23 keyword.
+LEGACY_FUNCTIONAL_SPELLINGS = {
+    "HF": "RHF",
+    "HF-3C": "HF3C",
+    "HFSOL-3C": "HFSOL3C",
+    "PBEH-3C": "PBEH3C",
+    "HSE-3C": "HSE3C",
+    "B97-3C": "B973C",
+    "PBESOL0-3C": "PBESOL03C",
+    "HSESOL-3C": "HSESOL3C",
+    "M06-2X": "M062X",
+    "M06-L": "M06L",
+    "M06-HF": "M06HF",
+}
+
+
+class UnknownFunctionalError(ValueError):
+    """A plan or config names a functional CRYSTAL23 does not accept."""
+
+
+def _functional_base_name(name: str) -> Optional[str]:
+    """The name MACE or CRYSTAL23 uses for ``name`` (no -D3), else None."""
+    return (mace_functional_name(name)
+            or crystal23_functional_keyword(name, allow_hf=True))
+
+
+def _functional_d3_ok(base: str) -> bool:
+    return base in D3_FUNCTIONALS or crystal23_functional_keyword(f"{base}-D3") is not None
+
+
+def _functional_is_valid(name: str) -> bool:
+    if name.upper().endswith("-D3"):
+        if crystal23_functional_keyword(name) is not None:
+            return True
+        base = _functional_base_name(name[:-3])
+        return base is not None and _functional_d3_ok(base)
+    return _functional_base_name(name) is not None
+
+
+def normalize_functional(name: Any, hint: str = "re-plan this step with a functional "
+                                                 "from the planner's menu") -> Tuple[Any, Optional[str]]:
+    """Return ``(name CRYSTAL23 accepts, message or None)``.
+
+    A valid name comes back unchanged; a legacy spelling ("HSEsol-3C",
+    "M06-2X", "HF", ...) becomes the CRYSTAL23 keyword, and a "-D3" suffix
+    CRYSTAL23 has no parameters for is dropped. Raises UnknownFunctionalError
+    for a name that is neither valid nor a known legacy spelling.
+    """
+    if not isinstance(name, str) or not name.strip():
+        return name, None
+    raw = name.strip()
+    if _functional_is_valid(raw):
+        return name, None
+    base, d3 = raw, False
+    if base.upper().endswith("-D3"):
+        base, d3 = base[:-3], True
+    base = LEGACY_FUNCTIONAL_SPELLINGS.get(base.upper(), base)
+    keyword = _functional_base_name(base)
+    if keyword is None:
+        raise UnknownFunctionalError(
+            f"functional '{name}' is not a CRYSTAL23 keyword MACE knows; {hint}")
+    if d3 and _functional_d3_ok(keyword):
+        return f"{keyword}-D3", f"functional '{name}' written as '{keyword}-D3'"
+    if d3:
+        why = ("a 3c method carries its own dispersion correction"
+               if keyword.upper().endswith("3C")
+               else f"CRYSTAL23 has no -D3 parameters for {keyword}")
+        return keyword, (f"functional '{name}': {why}, so the -D3 suffix is "
+                         f"dropped and '{keyword}' is written")
+    return keyword, f"functional '{name}' written as '{keyword}'"
+
+
+def normalize_config_functionals(config: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+    """Normalise the functional names of an opt2d12 configuration in place,
+    as a workflow plan's steps are; return (messages, errors).
+
+    The names are the config's own "functional" and "hf_method" and the
+    "new_functional" / "functional" / "custom_functional" of its
+    method_modifications or method_settings. (A top-level "custom_functional"
+    holds a parent's EXCHANGE/CORRELAT records, not a name.) An unknown name
+    is left as written and reported in ``errors``.
+    """
+    messages: List[str] = []
+    errors: List[str] = []
+    if not isinstance(config, dict):
+        return messages, errors
+    places = [(config, ("functional", "hf_method"))]
+    for section in ("method_modifications", "method_settings"):
+        if isinstance(config.get(section), dict):
+            places.append((config[section], ("new_functional", "functional", "custom_functional")))
+    for holder, keys in places:
+        for key in keys:
+            value = holder.get(key)
+            if key not in holder or value == CUSTOM_FUNCTIONAL:
+                continue
+            try:
+                new, msg = normalize_functional(
+                    value, hint="name a functional from opt2d12's menu")
+            except UnknownFunctionalError as exc:
+                errors.append(str(exc))
+                continue
+            holder[key] = new
+            if msg:
+                messages.append(msg)
+    return messages, errors
+
 # Functional keyword mapping for CRYSTAL
 
 # ============================================================
