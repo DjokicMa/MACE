@@ -278,6 +278,20 @@ class ErrorRecoveryEngine:
                     "max_retries": 2,
                     "resubmit_delay": 300
                 },
+                # OPTGEOM MAXCYCLE reached (OPT END - FAILED): a fresh
+                # optimization from the best point reached.
+                "opt_unconverged_error": {
+                    "handler": "opt_fresh_start_handler",
+                    "max_retries": 2,
+                    "resubmit_delay": 300
+                },
+                # FINALRUN re-start loop: as above, with TOLINTEG one
+                # preset level up.
+                "finalrun_loop": {
+                    "handler": "finalrun_loop_handler",
+                    "max_retries": 2,
+                    "resubmit_delay": 300
+                },
                 "disk_space_error": {
                     "handler": "cleanup_handler",
                     "cleanup_scratch": True,
@@ -1067,6 +1081,56 @@ class ErrorRecoveryEngine:
         if self._fresh_opt_from_best(input_file, d12_text, out_path) != 'fresh':
             print("Not resubmitting: the same deck would stop the same way")
             return None
+        return (input_file, _resolve_job_script(calc))
+
+    def finalrun_loop_handler(self, calc: Dict, config: Dict):
+        """Handler for an optimization caught in a FINALRUN re-start loop.
+
+        Measured on CRYSTAL23: the energy jumps alternately down and up by
+        the same amount at every FINALRUN re-start, the reference geometry
+        moving between two states, until MAXCYCLE or the walltime; raising
+        TOLINTEG from 7 7 7 7 14 to 8 8 8 9 24 converged it in four points.
+        So the optimization starts afresh from the best geometry reached
+        (as opt_fresh_start_handler does) with TOLINTEG one preset level up
+        (opt_restart.raise_tolinteg) - the one change to the deck besides
+        its geometry and RESTART; SPIN and every other setting stay. Nothing
+        is lowered; a deck already at the highest level is not resubmitted.
+
+        The looping .out is kept as <JOB>.out.finalrunloop<N>, the deck as
+        it was as <JOB>.d12.orig (then .orig2, ...); the job script that ran
+        is resubmitted as it is.
+        """
+        print(f"Restarting the looping optimization of {calc['calc_id']} with a tighter TOLINTEG")
+        input_file = Path(calc.get('input_file') or '')
+        if not input_file.is_file():
+            print(f"Input file not found: {input_file}")
+            return None
+        d12_text = input_file.read_text(errors='ignore')
+        if not opt_restart.has_optgeom(d12_text):
+            print(f"{input_file.name} is not a geometry optimization")
+            return None
+        _, old, raised = opt_restart.raise_tolinteg(d12_text)
+        if raised is None:
+            print(f"Not resubmitting: {input_file.name} has no higher TOLINTEG level to go to "
+                  f"(TOLINTEG {old or 'unreadable'})")
+            return None
+        out_path = self._output_path(calc, input_file)
+        kept = opt_restart.keep_output(out_path, opt_restart.LOOP_TAG)
+        if kept:
+            print(f"Kept the looping output as {kept.name}")
+        backups = set(input_file.parent.glob(input_file.name + '.orig*'))
+        if self._fresh_opt_from_best(input_file, d12_text, out_path) != 'fresh':
+            # The deck's own geometry, without RESTART: the tighter TOLINTEG
+            # is the change that matters.
+            input_file.write_text(opt_restart.remove_optgeom_restart(d12_text)[0])
+            print(f"{input_file.name}: fresh optimization from its own geometry")
+        if set(input_file.parent.glob(input_file.name + '.orig*')) == backups:
+            kept_deck = opt_restart.backup_deck(input_file, text=d12_text)
+            print(f"Kept the deck as it was in {kept_deck.name}")
+        new_text, old, raised = opt_restart.raise_tolinteg(input_file.read_text(errors='ignore'))
+        input_file.write_text(new_text)
+        print(f"{input_file.name}: TOLINTEG {old or '6 6 6 6 12 (CRYSTAL default)'} -> {raised} "
+              f"(FINALRUN loop); every other setting kept")
         return (input_file, _resolve_job_script(calc))
 
     def cleanup_handler(self, calc: Dict, config: Dict) -> Optional[Path]:

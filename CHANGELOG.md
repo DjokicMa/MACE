@@ -941,6 +941,27 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   completion callback: the engine replaced the template's callback section
   from `# ADDED` up to the `fi` in the word "file" of a comment. A template
   that already carries the current callback is now left as it is.
+- **An optimization FINALRUN keeps re-starting is recognised and
+  recovered.** Measured on CRYSTAL23 (Si, B3LYP-D3, TOLINTEG 7 7 7 7 14):
+  after each FINALRUN re-start the energy jumped alternately down and up by
+  about 2.2E-4 Ha and the run converged to the other of two states, forever
+  within one job (SPIN plays no part; FINALRUN 3 loops too, FINALRUN 0/2
+  converge falsely). Three or more such alternating re-starts are now a
+  `finalrun_loop` error, whether the job reached MAXCYCLE, was killed at its
+  walltime (it is not sent to the timeout recovery: more time only loops
+  longer) or is still running. The recovery starts a fresh optimization from
+  the lowest-energy geometry reached with TOLINTEG one preset level up
+  (Standard 7 7 7 7 14 -> Tight 8 8 8 9 24 -> Very tight 9 9 9 11 38; no
+  value is ever lowered) and every other setting kept; the deck is kept as
+  `<JOB>.d12.orig`, the output as `<JOB>.out.finalrunloop<N>`
+  (`recovery_config.yaml`: `finalrun_loop`, max_retries 2). A deck already at
+  Very tight is not resubmitted.
+- **"* OPT END - FAILED *" is an unconverged optimization**, not a
+  segmentation fault/runtime error. `mace completion` sorted an optimization that
+  reached its OPTGEOM MAXCYCLE into `potential` because of the MPI_Abort that
+  follows; it now has its own `opt_unconverged` category, and the queue
+  manager recovers it (`opt_unconverged_error`) with a fresh optimization
+  from the best geometry reached instead of leaving it as an unknown error.
 
 ## [1.1.4] - 2026-10-02
 

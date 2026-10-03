@@ -1209,8 +1209,10 @@ class EnhancedCrystalQueueManager:
         # classified every timeout as unknown_error and the timeout recovery
         # never ran. SLURM's verdict wins over whatever the truncated .out
         # happens to contain.
+        # Except for an optimization caught in a FINALRUN loop: more walltime
+        # would only let it loop longer.
         timed_out = self._walltime_kill_evidence(calc, slurm_state)
-        if timed_out:
+        if timed_out and error_type != 'finalrun_loop':
             error_type, error_message = 'timeout_error', timed_out
         
         # Update database with error information
@@ -1286,6 +1288,15 @@ class EnhancedCrystalQueueManager:
             if not opt_restart.ended_normally(content):
                 fort87 = self._scratch_error_text(calc)
 
+            # An optimization FINALRUN keeps re-starting between two reference
+            # geometries (measured on CRYSTAL23 with TOLINTEG 7 7 7 7 14):
+            # recovered by a fresh optimization from the best geometry with
+            # TOLINTEG one level up. Decided first - the run ends in OPT END -
+            # FAILED and MPI_Abort at MAXCYCLE, or is cut off by the walltime.
+            loop = opt_restart.finalrun_loop(content)
+            if loop:
+                return "finalrun_loop", loop
+
             # An optimization whose step size collapsed (a RESTART rerun that
             # re-evaluated its best point): recovered by a fresh optimization
             # from the best geometry, not by the generic patterns below.
@@ -1301,6 +1312,14 @@ class EnhancedCrystalQueueManager:
             hse_odd = screened_hybrid.odd_electron_crash(content)
             if hse_odd:
                 return screened_hybrid.ERROR_TYPE, hse_odd
+
+            # OPTGEOM MAXCYCLE reached ("* OPT END - FAILED * E(AU): ... POINTS
+            # n", then MPI_Abort): an unconverged optimization, continued from
+            # its best geometry - not the runtime error the abort suggests.
+            failed_end = next((l.strip() for l in content.splitlines()
+                               if 'OPT END - FAILED' in l), None)
+            if failed_end:
+                return "opt_unconverged_error", failed_end
 
             # Common CRYSTAL error patterns (from updatelists2.py logic)
             error_patterns = {
@@ -1443,7 +1462,8 @@ class EnhancedCrystalQueueManager:
         # here, so the advertised disk-space recovery was unreachable.
         recoverable_errors = ['shrink_error', 'memory_error', 'convergence_error',
                               'timeout_error', 'scf_error', 'disk_space_error',
-                              'opt_trust_radius_error']
+                              'opt_trust_radius_error', 'finalrun_loop',
+                              'opt_unconverged_error']
         if error_type not in recoverable_errors:
             print(f"⚠️  Error type '{error_type}' is not recoverable for {calc_id}")
             return False

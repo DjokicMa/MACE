@@ -43,6 +43,11 @@ BEFORE = {
                       "enable_restart": True},   # was the timeout_handler's own default
     "opt_trust_radius_error": {"handler": "opt_fresh_start_handler", "max_retries": 2,
                                "resubmit_delay": 300},
+    # Recovered since 1.1.5: OPT END - FAILED, and the FINALRUN re-start loop.
+    "opt_unconverged_error": {"handler": "opt_fresh_start_handler", "max_retries": 2,
+                              "resubmit_delay": 300},
+    "finalrun_loop": {"handler": "finalrun_loop_handler", "max_retries": 2,
+                      "resubmit_delay": 300},
     "disk_space_error": {"handler": "cleanup_handler", "cleanup_scratch": True,
                          "max_retries": 1, "resubmit_delay": 1800},
 }

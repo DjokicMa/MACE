@@ -17,7 +17,7 @@
 #
 # The values below ARE the built-in defaults; only the keys listed are read.
 # Handlers that exist: fixk_handler, memory_handler, convergence_handler,
-# timeout_handler, opt_fresh_start_handler, cleanup_handler.
+# timeout_handler, opt_fresh_start_handler, finalrun_loop_handler, cleanup_handler.
 # Setting max_retries: 0 switches automatic recovery off for that error type.
 #
 # Not recovered automatically - these need a person, and have no entry here:
@@ -73,6 +73,25 @@ error_recovery:
     max_retries: 2                       # Fresh optimization from the best point reached
     resubmit_delay: 300
     description: "Removes RESTART and starts a fresh optimization from the lowest-energy geometry reached so far; the original deck is kept as <JOB>.d12.orig"
+
+  # Geometry optimization that reached its OPTGEOM MAXCYCLE without converging
+  # ("* OPT END - FAILED *", then MPI_Abort).
+  opt_unconverged_error:
+    handler: "opt_fresh_start_handler"
+    max_retries: 2                       # Fresh optimization from the best point reached
+    resubmit_delay: 300
+    description: "Starts a fresh optimization from the lowest-energy geometry reached; the original deck is kept as <JOB>.d12.orig"
+
+  # Geometry optimization caught in a FINALRUN re-start loop: after each re-start the
+  # energy jumps alternately down and up by the same amount and it converges to the
+  # other of two states, until MAXCYCLE or the walltime (measured on CRYSTAL23 with
+  # TOLINTEG 7 7 7 7 14; 8 8 8 9 24 converged). Checked before the walltime: more
+  # time would only loop longer.
+  finalrun_loop:
+    handler: "finalrun_loop_handler"
+    max_retries: 2                       # Each retry goes one TOLINTEG level up
+    resubmit_delay: 300
+    description: "Fresh optimization from the lowest-energy geometry reached with TOLINTEG one preset level up (7 7 7 7 14 -> 8 8 8 9 24 -> 9 9 9 11 38, never lowered); every other setting kept; the original deck is kept as <JOB>.d12.orig"
 
   # Disk space errors - quota or scratch full
   disk_space_error:

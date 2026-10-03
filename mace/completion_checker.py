@@ -42,6 +42,10 @@ ERROR_PATTERNS = {
     'linear_basis': ["BASIS SET LINEARLY DEPENDENT"],
     # The job script's scratch guard stopped the job before CRYSTAL ran
     'scratch': ["no writable scratch directory"],
+    # OPTGEOM MAXCYCLE reached: CRYSTAL prints this, then stops with
+    # MPI_Abort - which is no runtime error. Matched first because its line
+    # comes before the abort lines.
+    'opt_unconverged': ["OPT END - FAILED"],
     'potential': [
         "segmentation fault",
         "=   bad termination of",
@@ -62,6 +66,7 @@ ERROR_DESCRIPTIONS = {
     'geometry_small_dist': "Geometry error (atoms too close)",
     'shrink_error': "SHRINK parameter error",
     'linear_basis': "Linear dependency in basis set",
+    'opt_unconverged': "Geometry optimization not converged (OPT END - FAILED)",
     'potential': "Segmentation fault/runtime error",
     'scratch': "No writable scratch directory (CRYSTAL not run)",
 }

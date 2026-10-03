@@ -27,8 +27,9 @@ What the output shows (checked against the real OPT corpus):
 import os
 import re
 import shutil
+import sys
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 _POINT_RE = re.compile(r'OPTIMIZATION - POINT\s+(\d+)')
 _OPTINFO_STORED = 'GEOMETRY OPTIMIZATION INFORMATION STORED IN OPTINFO.DAT'
@@ -225,7 +226,7 @@ def kept_outputs(out_path: Path) -> list:
     """Earlier runs of this job kept by keep_output, oldest name first."""
     out_path = Path(out_path)
     found = []
-    for reason in (TIMEOUT_TAG, ABORT_TAG):
+    for reason in (TIMEOUT_TAG, ABORT_TAG, LOOP_TAG):
         found.extend(sorted(out_path.parent.glob(f"{out_path.name}.{reason}[0-9]*"),
                             key=lambda p: int(re.sub(r'\D', '', p.name[len(out_path.name):]) or 0)))
     return found
@@ -246,19 +247,20 @@ def remove_optgeom_restart(d12_text: str) -> Tuple[str, bool]:
     return ''.join(kept), True
 
 
-def backup_deck(input_file: Path) -> Path:
+def backup_deck(input_file: Path, text: Optional[str] = None) -> Path:
     """Keep the deck as it is now before its geometry is rewritten:
     <JOB>.d12.orig the first time, then <JOB>.d12.orig2, .orig3 ... An
     existing backup is never overwritten, so <JOB>.d12.orig always holds the
     geometry the job started from. (None of these end in .d12, so nothing
-    picks them up as a new job.)"""
+    picks them up as a new job.) `text`: what to keep, when the deck has
+    already been changed."""
     input_file = Path(input_file)
     n = 1
     while True:
         dest = input_file.with_name(input_file.name + ('.orig' if n == 1 else f'.orig{n}'))
         try:
             with open(dest, 'x') as f:
-                f.write(input_file.read_text())
+                f.write(input_file.read_text() if text is None else text)
             shutil.copystat(input_file, dest)
             return dest
         except FileExistsError:
@@ -269,6 +271,7 @@ def backup_deck(input_file: Path) -> Path:
 
 TIMEOUT_TAG = 'timeout'
 ABORT_TAG = 'optabort'
+LOOP_TAG = 'finalrunloop'
 
 # A run CRYSTAL completes prints this line (702 of the 707 corpus outputs; the
 # other five were MPI_Abort'ed on an error, SIGKILLed, or still running).
@@ -351,6 +354,126 @@ def trust_radius_abort(out_text: str, fort87_text: Optional[str] = None) -> Opti
     if _TRUST_ZERO_RE.search(tail) or _TOO_SMALL_TRUST in tail:
         return f"optimization step collapsed{after} (trust radius 0, then MPI_Abort)"
     return None
+
+
+# ------------------------------------------- the FINALRUN re-start loop
+
+_FINALRUN_RESTART = 'FINALRUN OPTION: RE-STARTING OPTIMIZATION'
+_DE_RE = re.compile(r'TOTAL ENERGY\([^)]*\)\(AU\)\(\s*\d+\)\s*-?\d+\.\d+E[+-]\d+'
+                    r'\s+DE \(AU\)\s+(-?\d+\.\d+E[+-]\d+)')
+_OPT_CONVERGED = 'OPT END - CONVERGED'
+#: Re-starts in a row whose energy jumps alternate before it counts as a loop.
+FINALRUN_LOOP_MIN_RESTARTS = 3
+#: Two jumps are "of similar magnitude" within this factor of each other.
+_SIMILAR_JUMPS = 2.0
+
+
+def finalrun_restart_jumps(out_text: str) -> List[float]:
+    """The energy change (DE) of the first point after each FINALRUN
+    re-start, in order; a re-start with no point after it yet is left out."""
+    text = out_text or ''
+    starts = [m.end() for m in re.finditer(re.escape(_FINALRUN_RESTART), text)]
+    jumps = []
+    for k, at in enumerate(starts):
+        stop = starts[k + 1] if k + 1 < len(starts) else len(text)
+        m = _DE_RE.search(text, at, stop)
+        if m:
+            jumps.append(float(m.group(1)))
+    return jumps
+
+
+def finalrun_loop(out_text: str) -> Optional[str]:
+    """Why this optimization counts as caught in a FINALRUN re-start loop,
+    or None.
+
+    Measured on CRYSTAL23 (Si, B3LYP-D3, TOLINTEG 7 7 7 7 14): the
+    optimization converges, FINALRUN 4 (the default) re-starts it and
+    changes the reference geometry, the energy jumps by about 2.2E-4 Ha and
+    the run converges to a second state; the next re-start jumps back by the
+    same amount, and so on until MAXCYCLE or the walltime ends the job
+    (FINALRUN 3 loops too). The integral screening fixed at each reference
+    geometry is what moves: TOLINTEG 8 8 8 9 24 converges in four points.
+
+    It is a loop when the last FINALRUN_LOOP_MIN_RESTARTS or more re-starts
+    jumped alternately down and up by similar amounts - whether the run then
+    reached MAXCYCLE, was killed, or is still running. A run that converged
+    after all is not.
+    """
+    if not out_text or _OPT_CONVERGED in out_text:
+        return None
+    jumps = finalrun_restart_jumps(out_text)
+    if len(jumps) < FINALRUN_LOOP_MIN_RESTARTS:
+        return None
+    streak = 1
+    for a, b in zip(reversed(jumps[:-1]), reversed(jumps[1:])):
+        small, large = sorted((abs(a), abs(b)))
+        if a * b < 0 and large <= _SIMILAR_JUMPS * small:
+            streak += 1
+        else:
+            break
+    if streak < FINALRUN_LOOP_MIN_RESTARTS:
+        return None
+    shown = ', '.join(f'{d:+.2E}' for d in jumps[-min(streak, 4):])
+    return (f"{len(jumps)} FINALRUN re-starts, the last {streak} jumping alternately "
+            f"by {shown}{' ...' if streak > 4 else ''} Ha: the optimization oscillates between two reference geometries")
+
+
+# ----------------------------------------------- TOLINTEG one level up
+
+#: CRYSTAL's TOLINTEG when the deck sets none (CRYSTAL23 manual).
+CRYSTAL_DEFAULT_TOLINTEG = (6, 6, 6, 6, 12)
+
+
+def _scf_tolinteg_levels() -> List[Tuple[str, Tuple[int, ...]]]:
+    """(name, values) of opt2d12's SCF tolerance presets, loosest first."""
+    root = Path(__file__).resolve().parents[2] / 'Crystal_d12'
+    if root.is_dir() and str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from d12_constants import SCF_TOLERANCE_PRESETS
+    return [(p['name'], tuple(int(v) for v in p['TOLINTEG'].split()))
+            for _, p in sorted(SCF_TOLERANCE_PRESETS.items())]
+
+
+def raise_tolinteg(d12_text: str) -> Tuple[str, Optional[str], Optional[str]]:
+    """TOLINTEG raised one preset level (Standard 7 7 7 7 14 -> Tight
+    8 8 8 9 24 -> Very tight 9 9 9 11 38). Returns (text, old, new); old is
+    None when the deck sets no TOLINTEG (CRYSTAL's default 6 6 6 6 12 is
+    taken), new is None when there is no higher level.
+
+    The deck's level is the highest preset all its values reach; the next
+    preset is laid over it value by value, so no value ever goes down
+    (7 7 7 7 30 -> 8 8 8 9 30). Only that record changes; a deck without one
+    gets it just before its final END.
+    """
+    lines = d12_text.splitlines(keepends=True)
+    at = next((i for i, l in enumerate(lines) if l.strip().upper() == 'TOLINTEG'), None)
+    current = CRYSTAL_DEFAULT_TOLINTEG
+    old = None
+    if at is not None:
+        try:
+            values = tuple(int(v) for v in lines[at + 1].split()[:5])
+        except (IndexError, ValueError):
+            return d12_text, None, None
+        if len(values) != 5:
+            return d12_text, None, None
+        current, old = values, ' '.join(map(str, values))
+    levels = [v for _, v in _scf_tolinteg_levels()]
+    reached = [k for k, v in enumerate(levels) if all(c >= p for c, p in zip(current, v))]
+    nxt = (max(reached) + 1) if reached else 0
+    if nxt >= len(levels):
+        return d12_text, old, None
+    raised = ' '.join(str(max(c, p)) for c, p in zip(current, levels[nxt]))
+    if at is not None:
+        eol = lines[at + 1][len(lines[at + 1].rstrip('\r\n')):] or '\n'
+        lines[at + 1] = raised + eol
+        return ''.join(lines), old, raised
+    end = next((i for i in range(len(lines) - 1, -1, -1) if lines[i].strip().upper() == 'END'),
+               None)
+    if end is None:
+        return d12_text, old, None
+    eol = lines[end][len(lines[end].rstrip('\r\n')):] or '\n'
+    lines[end:end] = ['TOLINTEG' + eol, raised + eol]
+    return ''.join(lines), old, raised
 
 
 # ------------------------------------ the job script's RESTART staging

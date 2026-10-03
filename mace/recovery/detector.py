@@ -37,7 +37,7 @@ pd = get_pandas() if PANDAS_AVAILABLE else None
 from mace.database.materials import MaterialDatabase
 from mace.utils.file_manager import CrystalFileManager
 from mace.completion_checker import determine_completed_subtype
-from mace.recovery import screened_hybrid
+from mace.recovery import opt_restart, screened_hybrid
 
 
 class CrystalErrorDetector:
@@ -147,6 +147,33 @@ class CrystalErrorDetector:
                     'Try different optimization algorithm',
                     'Manually adjust problematic atoms',
                     'Use constraints for problematic coordinates'
+                ]
+            },
+            # Found by opt_restart.finalrun_loop, not by a line: FINALRUN keeps
+            # re-starting a converged optimization, the energy jumping alternately
+            # down and up between two reference geometries (seen in a running,
+            # killed or MAXCYCLE-ended run alike).
+            'finalrun_loop': {
+                'patterns': [],
+                'severity': 'medium',
+                'recoverable': True,
+                'description': 'Geometry optimization caught in a FINALRUN re-start loop',
+                'recovery_hints': [
+                    'Raise TOLINTEG one level (7 7 7 7 14 -> 8 8 8 9 24) and start a fresh '
+                    'optimization from the best geometry reached',
+                    'More walltime or optimization cycles only loop longer'
+                ]
+            },
+            # OPTGEOM MAXCYCLE reached. Listed before system_error: the run then
+            # stops with MPI_Abort, which is not a runtime error.
+            'opt_unconverged_error': {
+                'patterns': ["OPT END - FAILED"],
+                'severity': 'medium',
+                'recoverable': True,
+                'description': 'Geometry optimization not converged within MAXCYCLE',
+                'recovery_hints': [
+                    'Continue with a fresh optimization from the best geometry reached',
+                    'Check whether the energy oscillates (FINALRUN re-starts)'
                 ]
             },
             'basis_linear_dependence': {
@@ -312,7 +339,20 @@ class CrystalErrorDetector:
         # The HSE-type odd-electron crash ends in the signal lines of an OOM
         # crash; it is not one (see mace.recovery.screened_hybrid).
         hse_odd = screened_hybrid.odd_electron_crash(content)
-        if hse_odd:
+        loop = opt_restart.finalrun_loop(content)
+        if loop:
+            # Before the line patterns: a loop that reached MAXCYCLE ends in
+            # OPT END - FAILED and MPI_Abort, one still running in nothing.
+            info = self.error_patterns['finalrun_loop']
+            result['status'] = 'error'
+            result['error_type'] = 'finalrun_loop'
+            result['error_details'].append({
+                'pattern': 'FINALRUN OPTION: RE-STARTING OPTIMIZATION', 'line': loop,
+                'severity': info['severity'], 'description': info['description']})
+            result['recoverable'] = info['recoverable']
+            result['recovery_hints'] = info['recovery_hints']
+            error_found = True
+        elif hse_odd:
             result['status'] = 'error'
             result['error_type'] = screened_hybrid.ERROR_TYPE
             result['error_details'].append({
