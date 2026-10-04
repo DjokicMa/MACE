@@ -89,6 +89,9 @@ CALC_TYPE_TO_BUCKET = {
     'DOSS': 'completedoss',
     'TRANSPORT': 'completetransport',
     'CHARGE+POTENTIAL': 'completecharge_potential',
+    # A properties run whose .d3 drives none of the types above (a matrix
+    # dump - BASISSET with print codes 60/64 - for one)
+    'PROPERTIES': 'completeproperties',
 }
 
 COMPLETED_BUCKETS = list(CALC_TYPE_TO_BUCKET.values())
@@ -101,6 +104,7 @@ COMPLETED_BUCKET_DESCRIPTIONS = {
     'completedoss': "Density of states (D3 DOSS)",
     'completetransport': "Transport properties (D3 TRANSPORT)",
     'completecharge_potential': "Charge density + potential (D3)",
+    'completeproperties': "Other properties (D3)",
 }
 
 # === Default extensions for organizing files === #
@@ -143,7 +147,8 @@ def determine_completed_subtype(file_path: Path, lines, has_opt_end: bool = Fals
     Decide which calc type a successfully-completed .out file came from.
 
     Resolution order (first match wins):
-      1. Sibling .d3 file's records (BAND/DOSS/BOLTZTRA/ECH3/POT3/ECHG/POTC)
+      1. Sibling .d3 file's records (BAND/DOSS/BOLTZTRA/ECH3/POT3/ECHG/POTC;
+         PROPERTIES for a .d3 with none of them)
       2. Lines CRYSTAL prints: TRANSPORT, FREQ, OPT (has_opt_end or the
          optimization lines), then the CHARGE+POTENTIAL, DOSS and BAND
          properties lines. Content goes before the file name because MACE
@@ -163,9 +168,10 @@ def determine_completed_subtype(file_path: Path, lines, has_opt_end: bool = Fals
             d3_type = _detect_calc_type_from_d3(d3_candidate)
             if d3_type:
                 return d3_type
-            # .d3 exists but unrecognized — still definitely a properties calc
+            # .d3 exists but drives no type we know: still a properties run,
+            # not a BAND unless its name says so
             name_type = calc_type_from_filename(file_path.name)
-            return name_type if name_type in PROPERTY_CALC_TYPES else 'BAND'
+            return name_type if name_type in PROPERTY_CALC_TYPES else 'PROPERTIES'
 
     # From lines CRYSTAL prints, so an echoed title cannot supply the keyword
     content = ''.join(lines)

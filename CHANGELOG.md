@@ -1062,6 +1062,14 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   segments given are now written, as the mixed route writes them, and a shrink
   raised to reach a point (1/4 needs a multiple of 4) is the shrink of every
   segment and of the BAND line.
+- **`mace completion` no longer lists every properties run it cannot type as
+  a band structure.** A finished run whose `.d3` drives none of BAND, DOSS,
+  TRANSPORT or CHARGE+POTENTIAL (a matrix dump, BASISSET with print codes
+  60/64, for one) was listed as "Band structure (D3 BAND)" and organized into
+  `completeband/`; it is now "Other properties (D3)", in
+  `completeproperties/`, and the queue manager's scan of finished outputs
+  records its type as PROPERTIES. A `.d3` whose file name names a properties
+  type keeps that type.
 
 ## [1.1.4] - 2026-10-02
 
