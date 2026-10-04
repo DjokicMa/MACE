@@ -1095,6 +1095,11 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   from the `.out` when there is no `.d12`, giving the same deck; only when
   neither has one is the default used, and opt2d3 says so. Decks made with
   the `.d12` present do not change.
+- **opt2d3 copies the wavefunction only for a deck it writes.** A run that
+  ended without a deck (`< /dev/null`, "The input ended before every question
+  was answered") still left `<base>_band.f9` / `<base>_doss.f9`, a full copy
+  of the `.f9`, in the directory. The copy is now made after the deck is
+  written.
 
 ## [1.1.4] - 2026-10-02
 

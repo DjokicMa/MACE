@@ -311,7 +311,13 @@ class D3Generator:
         return info
     
     def _copy_wavefunction(self) -> bool:
-        """Copy fort.9 or fort.98 file to match D3 filename."""
+        """Find the fort.9/fort.98 to copy to the D3 file's name.
+
+        The copy itself is made by _place_wavefunction once the deck is
+        written: a run that ends without a deck (input ran out, a path it
+        cannot write) used to leave a full <base>_<type>.f9 behind.
+        """
+        self._pending_wavefunction = None
         # Look for wavefunction files - try various naming patterns
         wf_files = [
             'fort.9', 'fort.98', 
@@ -362,16 +368,20 @@ class D3Generator:
         d3_name = f"{self.base_name}_{self.calc_type.lower()}"
         target_wf = self.output_dir / f"{d3_name}.f9"
         
-        # Create output directory if it doesn't exist
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Copy if needed
         if source_wf != target_wf:
-            print()
-            ui.info(f"Copying wavefunction: {source_wf.name} -> {target_wf.name}")
-            shutil.copy2(source_wf, target_wf)
-        
+            self._pending_wavefunction = (source_wf, target_wf)
         return True
+
+    def _place_wavefunction(self):
+        """Copy the wavefunction _copy_wavefunction found, now the deck exists."""
+        pending = getattr(self, '_pending_wavefunction', None)
+        self._pending_wavefunction = None
+        if not pending:
+            return
+        source_wf, target_wf = pending
+        print()
+        ui.info(f"Copying wavefunction: {source_wf.name} -> {target_wf.name}")
+        shutil.copy2(source_wf, target_wf)
     
     def _parse_manual_projection(self, spec: str, total_shells: Dict, atom_elements: List[str]) -> Optional[str]:
         """Parse manual projection specification and convert to DOSS format.
@@ -1611,12 +1621,14 @@ class D3Generator:
         # Write D3 file
         d3_filename = f"{self.base_name}_{self.calc_type.lower()}.d3"
         d3_path = self.output_dir / d3_filename
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         
         with open(d3_path, 'w') as f:
             f.write(d3_content)
         
         print()
         ui.ok(f"D3 file written: {d3_path}")
+        self._place_wavefunction()
 
         # Additional instructions
         print()
@@ -1838,8 +1850,8 @@ Examples:
             first_file = str(out_files[0])
             # Shared-settings config is gathered BEFORE any per-file mkdir/copy, so it is
             # safe to run under the back controller ("press b to go back"). Per-file mode
-            # (generate_d3, line ~1173) runs AFTER _copy_wavefunction's mkdir+copy, so it is
-            # intentionally left unwrapped to avoid replaying filesystem mutations.
+            # (generate_d3) is left unwrapped: its writers' questions come after
+            # _copy_wavefunction's checks, which must not be replayed.
             try:
                 shared_config = _run_with_back(lambda: configure_d3_calculation(calc_type, first_file))
             except RuntimeError as e:
