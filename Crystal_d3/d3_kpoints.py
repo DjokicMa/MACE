@@ -85,6 +85,47 @@ def seekpath_required_message() -> str:
     )
 
 
+def seekpath_failed_message(error: Exception) -> str:
+    """What to do when seekpath is installed but fails for a 3D cell."""
+    return (
+        f"seekpath could not compute the 3D SeeK-path k-path for this structure "
+        f"({error}). The static HPKOT tables are SeeK-path's numbers in SeeK-path's "
+        "standard cell, which can differ from CRYSTAL's, so they are not written in "
+        "its place without being asked for.\n"
+        "  Write the static HPKOT table path instead: rerun with --static-kpath, or set "
+        f"{STATIC_KPATH_ENV}=1; or choose a path that does not use seekpath (labels, "
+        "k-point vectors, literature, custom). No deck was written for this structure."
+    )
+
+
+def _seekpath_library_failed(out_file: Optional[str], error: Exception) -> None:
+    """Stop a 3D cell's path when the seekpath library failed for it.
+
+    Raises SeekpathRequired unless the static path was asked for; a slab or
+    polymer (which do not need seekpath) and an opt-in fall back, with a
+    warning that says why.
+    """
+    if output_dimensionality(out_file) == 3 and not static_kpath_requested():
+        raise SeekpathRequired(seekpath_failed_message(error)) from error
+    print(f"  Warning: seekpath library failed ({error}), falling back to static data")
+
+
+def check_seekpath_path(out_file: Optional[str]) -> None:
+    """Raise SeekpathRequired when a 3D SeeK-path path cannot be computed:
+    seekpath is missing, or it fails for this cell (and the static path was
+    not asked for). For a check made before a deck is written."""
+    require_seekpath_for(out_file)
+    if (out_file and _seekpath_usable() and not static_kpath_requested()
+            and output_dimensionality(out_file) == 3):
+        import contextlib
+        import io
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                get_accurate_bandpath(out_file)
+        except Exception as e:
+            raise SeekpathRequired(seekpath_failed_message(e)) from e
+
+
 def output_dimensionality(out_file: Optional[str]) -> int:
     """3, 2 (slab), 1 (polymer or helix) or 0 (molecule) for a CRYSTAL output,
     read as CRYSTALOptToD3 reads it; 3 when the file cannot be read."""
@@ -3066,7 +3107,7 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
             return fractional_segments, kpath_info
 
         except Exception as e:
-            print(f"  Warning: seekpath library failed ({e}), falling back to static data")
+            _seekpath_library_failed(out_file, e)
 
     # Fallback to static seekpath_data dictionary
     # (Note: This is only accurate for cubic lattices; non-cubic have parametric k-points)
@@ -3285,7 +3326,7 @@ def get_seekpath_labels(space_group: int, lattice_type: str, out_file: Optional[
             print(f"  Using seekpath library labels: {n_labels} labels with {n_discontinuities} discontinuities")
             return labels
         except Exception as e:
-            print(f"  Warning: seekpath library failed ({e}), falling back to static data")
+            _seekpath_library_failed(out_file, e)
 
     # Fallback to static seekpath_data dictionary
 

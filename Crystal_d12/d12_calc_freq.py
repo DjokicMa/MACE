@@ -74,10 +74,10 @@ try:
     from d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
                            get_seekpath_full_kpath, get_literature_kpath_vectors, validate_kpoint_labels_for_crystal23,
-                           get_crystal_system_from_space_group, require_seekpath_for)
+                           get_crystal_system_from_space_group, check_seekpath_path)
 except ImportError:
     print("Warning: Could not import d3_kpoints module - some k-path features may be unavailable")
-    require_seekpath_for = None
+    check_seekpath_path = None
     get_band_path_from_symmetry = None
     get_kpoint_coordinates_from_labels = None
     extract_and_process_shrink = None
@@ -1732,18 +1732,19 @@ def slab_corresponding_group(output_text) -> Optional[Tuple[int, str]]:
 
 
 def _seekpath_refusal(freq_settings, parent_output) -> Optional[str]:
-    """The install message when a 3D SeeK-path phonon path needs seekpath.
+    """Why a 3D SeeK-path phonon path cannot be written: seekpath is missing
+    (the install message), or it fails for this cell (the reason).
 
     The path is computed from the parent's output (parent_output, its text),
     so without one seekpath is not used; nor with --static-kpath.
     """
     bands = freq_settings.get("bands")
-    if (not parent_output or require_seekpath_for is None or not isinstance(bands, dict)
+    if (not parent_output or check_seekpath_path is None or not isinstance(bands, dict)
             or not (bands.get("seekpath_full") or bands.get("format") == "seekpath")):
         return None
     with _output_as_file(parent_output) as out_file:
         try:
-            require_seekpath_for(out_file)
+            check_seekpath_path(out_file)
         except RuntimeError as e:  # d3_kpoints.SeekpathRequired
             return str(e)
     return None

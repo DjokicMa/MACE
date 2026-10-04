@@ -331,6 +331,12 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
     opt2d3 and opt2d12 exit non-zero when no deck was written.
   - `--static-kpath` (opt2d3, opt2d12) or `MACE_STATIC_KPATH=1` writes the
     static path as before, with a note.
+  - With seekpath installed, a library error for a 3D cell stops that deck
+    the same way, with the error and the opt-in, and opt2d12 checks before
+    writing; it used to print "seekpath library failed (...), falling back to
+    static data" and write the static path. With the opt-in it still falls
+    back (with that warning), and a polymer's path, which does not need
+    seekpath, still falls back.
   - Slabs and polymers do not need seekpath and print no install message (a
     polymer printed "Install 'seekpath'"); label, k-point vector, literature
     and custom paths do not use it. Importing the k-path modules stays silent.
