@@ -548,7 +548,7 @@ def table(
         t = _Table(
             title=f"[bold {p.accent}]{_escape(title)}[/]" if title else None,
             header_style=f"bold {p.accent}",
-            border_style="grey37",
+            border_style="gray37",
             padding=(0, 1),
         )
         for col in columns:
@@ -663,7 +663,7 @@ def _gen_decode(grad, block=None):
                 return None
             # scramble color derives from the ACTIVE palette (never hardcoded) so
             # mono never flashes a crystal color; locked cells use the row gradient.
-            return grad[r] if f >= lock[c] else random.choice([grad[1], grad[4], "grey50"])
+            return grad[r] if f >= lock[c] else random.choice([grad[1], grad[4], "gray50"])
 
         yield _wm_compose(grad, sf, cf, block=block)
 
@@ -1111,7 +1111,7 @@ def badge(state: str) -> str:
     st = str(state).upper()
     if _CAPS.color_ok:
         p = _CAPS.palette
-        colors = {"OK": p.ok, "WARN": p.warn, "ERROR": p.err, "IDLE": "grey50"}
+        colors = {"OK": p.ok, "WARN": p.warn, "ERROR": p.err, "IDLE": "gray50"}
         color = colors.get(st, p.accent)
         return f"[bold {color}]● {_escape(st)}[/]"
     return st
@@ -1142,7 +1142,7 @@ def build_status_dashboard(
     console = _CAPS.console()
     if console is not None and _CAPS.color_ok:
         p = _CAPS.palette
-        t = _Table(expand=True, border_style="grey37",
+        t = _Table(expand=True, border_style="gray37",
                    header_style=f"bold {p.accent}", padding=(0, 1))
         t.add_column("Subsystem", style="bold", no_wrap=True)
         t.add_column("Status", no_wrap=True)
