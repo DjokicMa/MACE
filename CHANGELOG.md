@@ -971,6 +971,23 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   imported its OPTGEOM writer from `d12_calc_opt`, which does not exist. It
   now uses the one in `d12_calc_basic`. No generator calls it, so no deck
   changes.
+- **`mace opt2d3 --help` names `mace opt2d3`.** The help of the commands
+  handed to a script's own options (convert, opt2d12, opt2d3, opt2cif,
+  completion) began `usage: CRYSTALOptToD3.py ...`, the script's file name;
+  it now reads `usage: mace opt2d3 ...`, and opt2cif's examples say
+  `mace opt2cif`. Run directly, a script keeps its own name.
+- **`mace convert|opt2d12|opt2d3|opt2cif|completion --help` show the
+  examples.** mace_cli held hand-written help for these commands that was
+  never printed, since `--help` goes to the script's own options; the
+  examples and notes in it (convert reads a directory, opt2d12/opt2d3 take
+  no positional file, completion's status categories) are now in the
+  scripts' help, and the unreachable copies are gone. A command now has
+  either mace_cli's help or the script's, never both.
+- **`mace ions --help` has examples**, as `mace phonopy` and `mace defects`
+  do: an ion cluster from cif2d12 decks with `--ion-charges auto -o DIR`, an
+  explicit `--net-charge`, `--site-states`, and `--parent-out` to check the
+  shell counts, plus a pointer to "Charged systems and ion clusters" in
+  `Crystal_d12/README.md`.
 
 ## [1.1.4] - 2026-10-02
 

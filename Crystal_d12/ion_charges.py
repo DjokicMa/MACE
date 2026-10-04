@@ -933,9 +933,30 @@ def main(argv=None) -> int:
 
     parser = argparse.ArgumentParser(
         prog="mace ions",
-        description="Add CHEMOD / DOPING / CHARGED (and SPIN + SPINLOCK for an odd electron count) "
-                    "to CRYSTAL decks of ion clusters or charged cells. Ions are found by "
-                    "connectivity, so atom order does not matter.")
+        description="Add CHEMOD / DOPING / CHARGED (and SPIN + SPINLOCK for an odd electron\n"
+                    "count) to CRYSTAL decks of ion clusters or charged cells. Ions are found\n"
+                    "by connectivity, so atom order does not matter.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+Examples:
+  # ion clusters written by `mace convert` (cif2d12): find the ions, give them
+  # their formal charges; the net charge is their sum
+  mace ions d12s/li_ec2.d12 d12s/li_fsi_ec.d12 --ion-charges auto -o charged/
+
+  # a charged cell: set the net charge yourself (ions found as above if you
+  # also give --ion-charges auto)
+  mace ions cell.d12 --net-charge -1 -o charged/
+
+  # per-atom shell charges (atom 1 = Li, one charge per shell of its basis);
+  # --site-states needs --net-charge
+  mace ions li_ec2.d12 --net-charge 1 --site-states '[{"atom": 1, "shell_charges": [2, 0, 0, 0, 0]}]' -o charged/
+
+  # the same, with the shell counts checked against an output of the same basis
+  mace ions li_ec2.d12 --net-charge 1 --site-states states.json --parent-out li_ec2_sp.out -o charged/
+
+Which records are written (CHEMOD, CHARGED or DOPING, by basis and charge) and
+what CRYSTAL23 does with them: Crystal_d12/README.md, "Charged systems and ion
+clusters".""")
     parser.add_argument("decks", nargs="+", help=".d12 files")
     parser.add_argument("--ion-charges", choices=["auto"], help="find known ions (Li+, FSI-, ...) "
                         "and give them their formal charges")

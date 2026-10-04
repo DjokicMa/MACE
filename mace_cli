@@ -626,10 +626,17 @@ Write the default error-recovery configuration file (equivalent to
         ui.err(f"No specific help available for action: {action}")
         ui.info(f"Available actions: {', '.join(sorted(action_help.keys()))}")
 
-def show_command_help(command):
-    """Show help for a specific command"""
-    help_text = {
-        'workflow': """
+
+# Commands handed straight to a script's own argparse: `mace X --help` is
+# that script's help (examples included), named `mace X` by argv[0].
+PASSTHROUGH_COMMANDS = ('convert', 'opt2d12', 'opt2d3', 'opt2cif', 'completion', 'ions')
+
+# Curated help for the commands whose `--help` mace_cli answers itself. A
+# command forwarded to a script's own argparse (PASSTHROUGH_COMMANDS) must
+# not have an entry here: its `mace X --help` is the script's help, so an
+# entry would never be shown and would drift (tests/test_command_help_coverage.py).
+COMMAND_HELP = {
+    'workflow': """
 Usage: mace workflow [options]
 
 Run the MACE workflow planning and execution system.
@@ -656,7 +663,7 @@ Examples:
   mace workflow --status
   mace workflow --show-templates
 """,
-        'submit': """
+    'submit': """
 Usage: mace submit [file_or_directory] [options]
 
 Submit CRYSTAL calculations to the queue.
@@ -720,7 +727,7 @@ the workflow interactive mode, with defaults optimized for each calculation type
 By default, existing .sh files are reused; use --overwrite-sh to regenerate them.
 For directories with mixed file types, you'll be prompted to choose.
 """,
-        'preflight': """
+    'preflight': """
 Usage: mace preflight [files/directories] [options]
 
 Validate D12 decks by letting CRYSTAL read them, before you spend a job on it.
@@ -754,7 +761,7 @@ Note: needs the serial `crystal` binary (not Pcrystal). It is found from
 loading the CRYSTAL/23-intel-2023a module. Run it on a compute node, or on a
 login node only for a handful of decks.
 """,
-        'defects': """
+    'defects': """
 Usage: mace defects {build,potc,analyze} [options]
 
 Point defects in a periodic cell: a pristine supercell plus one single-point
@@ -777,7 +784,7 @@ they are labelled uncorrected for image charges). The --calibrate decks are an
 optional cross-check; POTC alignment is opt-in. See docs/defects/README.md, and
 `mace defects analyze --help`.
 """,
-        'phonopy': """
+    'phonopy': """
 Usage: mace phonopy generate PARENT.out --dim "N N N" [options]
        mace phonopy collect DIR [options]
 
@@ -816,7 +823,7 @@ Workflow:
 
 Run `mace phonopy generate --help` or `mace phonopy collect --help` for details.
 """,
-        'monitor': """
+    'monitor': """
 Usage: mace monitor [options]
 
 Monitor running calculations and view system status.
@@ -842,7 +849,7 @@ Examples:
 Note: --material-id is currently NOT honored in --status mode.
 For action-specific options, use: mace monitor --action <ACTION> --help
 """,
-        'analyze': """
+    'analyze': """
 Usage: mace analyze --extract-properties <directory> [options]
 
 Extract properties from CRYSTAL output files.
@@ -871,99 +878,7 @@ Examples:
 Note: This command extracts properties and stores them in the materials database.
 Filters help process only specific materials or calculation types.
 """,
-        'convert': """
-Usage: mace convert [--cif_dir DIR] [--output_dir DIR] [options]
-
-Convert CIF files to CRYSTAL D12 input format (wraps NewCifToD12.py). Input is
-read from a DIRECTORY (--cif_dir, default: current directory), NOT individual
-file arguments. Functional / basis / calculation settings are chosen
-INTERACTIVELY (or loaded from a saved options file in batch mode).
-
-Options:
-  --cif_dir DIR         Directory containing the .cif files (default: ./)
-  --output_dir DIR      Output directory for .d12 files (default: same as --cif_dir)
-  --batch               Run non-interactively using a saved options file
-  --save_options        Save the chosen options for later batch reuse
-  --options_file FILE   File to save/load options for batch mode
-
-Examples:
-  mace convert                                  # interactive, CIFs from ./
-  mace convert --cif_dir structures/
-  mace convert --cif_dir structures/ --output_dir d12s/
-  mace convert --cif_dir . --save_options --options_file myopts.json
-  mace convert --cif_dir . --batch --options_file myopts.json
-
-Running with no arguments starts the interactive converter.
-""",
-        'opt2d12': """
-Usage: mace opt2d12 [--out-file FILE | --directory DIR] [options]
-
-Generate new D12 input files from optimized CRYSTAL output (wraps
-CRYSTALOptToD12.py). The output file is given via --out-file (there is NO
-positional argument); calculation type via --calc-type {SP,OPT,FREQ}.
-
-Options:
-  --out-file FILE...    CRYSTAL output(s) (.out) to convert; several (or a
-                        glob such as opts/*.out) run as one batch, each .out
-                        with the .d12 of the same name beside it
-  --d12-file FILE       Original .d12 (for settings reference; one --out-file)
-  --directory DIR       Process all files in DIR (default: current directory)
-  --output-dir DIR      Output directory (default: same as input)
-  --calc-type {SP,OPT,FREQ}        Calculation type (for --non-interactive)
-  --opt-type {FULLOPTG,ATOMONLY,CELLONLY,ITATOCEL,CVOLOPT,INTREDUN}
-  --config-file FILE    JSON config, e.g. saved with --save-options, applied to
-                        every file (each keeps its own geometry, symmetry and,
-                        for a template from an external-basis parent, its basis)
-  -y, --yes             Apply --config-file without asking (a batch otherwise
-                        asks once, and only at a terminal)
-  --non-interactive     Skip all prompts (use defaults / provided options)
-  --shared-settings     Apply the same settings to all files
-  --save-options / --options-file FILE    Save/load options
-
-Examples:
-  mace opt2d12 --out-file optimized.out
-  mace opt2d12 --out-file optimized.out --calc-type SP --non-interactive
-  mace opt2d12 --directory . --calc-type FREQ --non-interactive
-  mace opt2d12 --directory opts --config-file sp_template.json --yes
-  mace opt2d12 --out-file opts/*.out --config-file sp_template.json --output-dir sp
-""",
-        'opt2d3': """
-Usage: mace opt2d3 --input FILE --calc-type TYPE [options]
-
-Generate D3 property input files from CRYSTAL output (wraps CRYSTALOptToD3.py).
-The output file is given via --input/-i (there is NO positional argument).
-
-Options:
-  --input, -i FILE      CRYSTAL output (.out/.log)
-  --calc-type, -t TYPE  One of: BAND, DOSS, TRANSPORT, CHARGE, POTENTIAL,
-                        CHARGE+POTENTIAL
-  --batch, -b           Process all .out files in the current directory
-  --config-file, -c FILE   Load D3 configuration from JSON
-  --save-config         Save configuration after interactive setup
-  --list-configs        List available D3 configuration files
-  --output-dir, -o DIR  Output directory (default: same as input)
-
-Examples:
-  mace opt2d3 --input optimized.out --calc-type BAND
-  mace opt2d3 -i optimized.out -t DOSS
-  mace opt2d3 --batch --calc-type BAND
-""",
-        'opt2cif': """
-Usage: mace opt2cif [files/directory] [options]
-
-Convert CRYSTAL output files to CIF format.
-Supports all dimensionalities (3D, 2D, 1D, 0D) and calculation types (OPT, SP, FREQ).
-
-Examples:
-  mace opt2cif material.out
-  mace opt2cif .
-  mace opt2cif /path/to/calculations/
-  mace opt2cif . --output-dir cifs/ --include-metadata
-
-Accepts files or directories as positional targets (e.g. `.` for the current
-directory). For the full option list run `mace opt2cif --help`.
-""",
-        'manager': """
+    'manager': """
 Usage: mace manager [options]
 
 Enhanced CRYSTAL Queue Manager with material tracking and workflow automation.
@@ -990,13 +905,13 @@ Examples:
 
 Note: This runs the Enhanced Queue Manager (queue/manager.py) which requires SLURM.
 """,
-        'queue': """
+    'queue': """
 Usage: mace queue [options]
 
 Deprecated: Use 'mace manager' instead.
 This command will be removed in a future version.
 """,
-        'recover': """
+    'recover': """
 Usage: mace recover [options]
 
 Automated error recovery for failed CRYSTAL calculations.
@@ -1017,7 +932,7 @@ Examples:
 
 For action-specific options, use: mace recover --action <ACTION> --help
 """,
-        'database': """
+    'database': """
 Usage: mace database [options]
 
 Database management and queries for material tracking.
@@ -1077,7 +992,7 @@ QUICK EXAMPLES:
   mace database --action history --material-id 1_dia # View property history
   mace database --action history --operation recent  # Recent changes
 """,
-        'engine': """
+    'engine': """
 Usage: mace engine [options]
 
 Workflow automation engine for managing calculation progressions.
@@ -1098,7 +1013,7 @@ For action-specific options, use: mace engine --action <ACTION> --help
 
 Note: --action status requires --material-id. There is no --dry-run/--max-submit.
 """,
-        'plotting': """
+    'plotting': """
 Usage: mace plotting [options]
 
 Plot CRYSTAL calculation outputs (band structures, DOS, structures,
@@ -1182,34 +1097,7 @@ Output Formats:
   - PNG / SVG / PDF static export via kaleido (--format)
   - PNG (600 DPI) / SVG for band/DOS/structure publications
 """,
-        'completion': """
-Usage: mace completion [options]
-
-Check CRYSTAL calculation completion status and optionally organize files.
-
-Options:
-  --directory, -d DIR   Directory to scan for .out files (default: current)
-  --detailed            Show detailed file listings for each category
-  --move-completed      Move completed files to a "completed" folder
-  --organize            Organize all files into categorized folders
-  --output-dir DIR      Output directory for organized files (default: "completed" or "sorted")
-  --extensions EXT...   File extensions to move (default: .sh .out .d12 .d3 .f9)
-
-Examples:
-  mace completion                      # Check status in current directory
-  mace completion --detailed           # Show detailed file listings
-  mace completion --move-completed     # Move completed files to 'completed' folder
-  mace completion --organize           # Organize all files by status
-  mace completion --organize --output-dir results
-  mace completion -d /path/to/calculations --detailed
-
-Status Categories:
-  Complete:      Successfully finished calculations (OPT END or TOTAL CPU TIME)
-  Errors:        Failed calculations categorized by error type
-  Ongoing:       Incomplete calculations still running or pending
-  Unknown:       Files with unrecognized error patterns
-""",
-        'status': """
+    'status': """
 Usage: mace status [options]
 
 Backward-compatibility alias for 'mace monitor --status'. All arguments are
@@ -1219,24 +1107,27 @@ Examples:
   mace status
   mace status --detailed
 """,
-        'credits': """
+    'credits': """
 Usage: mace credits
 
 Show the MACE development team and acknowledgements. Equivalent to the global
 'mace --credits' flag.
 """,
-        'version': """
+    'version': """
 Usage: mace version
 
 Show the MACE version (single-sourced from mace/__init__.py). Equivalent to the
 global 'mace --version' flag.
 """
-    }
-    
-    if command in help_text:
+}
+
+
+def show_command_help(command):
+    """Show help for a specific command"""
+    if command in COMMAND_HELP:
         # Verbatim help text: print() directly (it contains [option]-style
         # placeholders that ui's markup stripper would remove).
-        print(help_text[command])
+        print(COMMAND_HELP[command])
     else:
         ui.err(f"No help available for command: {command}")
 
@@ -1356,11 +1247,8 @@ def main():
         from mace.defects.cli import main as defects_main
         sys.exit(defects_main([a for a in sys.argv[2:] if a != '--no-banner']))
 
-    # Special handling for commands that should pass through directly
-    passthrough_commands = ['convert', 'opt2d12', 'opt2d3', 'opt2cif', 'completion', 'ions']
-    
-    # Check if we have a passthrough command
-    if len(sys.argv) >= 2 and sys.argv[1] in passthrough_commands:
+    # Commands that pass straight through to their script
+    if len(sys.argv) >= 2 and sys.argv[1] in PASSTHROUGH_COMMANDS:
         # For passthrough commands, skip our argument parsing and go directly to the command
         command = sys.argv[1]
         
@@ -1377,31 +1265,33 @@ def main():
         if not suppress_banner:
             show_banner()
         
-        # Execute the command
+        # Execute the command. argv[0] is the mace command, not the script
+        # file: argparse names its prog after it, so `mace opt2d3 --help`
+        # reads `usage: mace opt2d3 ...` (and %(prog)s examples match).
         if command == 'convert':
             sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
             from NewCifToD12 import main as cif_main
-            sys.argv = ['NewCifToD12.py'] + sys.argv[2:]
+            sys.argv = ['mace convert'] + sys.argv[2:]
             cif_main()
         elif command == 'opt2d12':
             sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
             from CRYSTALOptToD12 import main as opt2d12_main
-            sys.argv = ['CRYSTALOptToD12.py'] + sys.argv[2:]
+            sys.argv = ['mace opt2d12'] + sys.argv[2:]
             opt2d12_main()
         elif command == 'opt2d3':
             sys.path.insert(0, str(Path(__file__).parent / "Crystal_d3"))
             from CRYSTALOptToD3 import main as opt2d3_main
-            sys.argv = ['CRYSTALOptToD3.py'] + sys.argv[2:]
+            sys.argv = ['mace opt2d3'] + sys.argv[2:]
             opt2d3_main()
         elif command == 'opt2cif':
             sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
             from CrystalOutToCif import main as opt2cif_main
-            sys.argv = ['CrystalOutToCif.py'] + sys.argv[2:]
+            sys.argv = ['mace opt2cif'] + sys.argv[2:]
             opt2cif_main()
         elif command == 'completion':
             sys.path.insert(0, str(Path(__file__).parent / "mace"))
             from completion_checker import main as completion_main
-            sys.argv = ['completion_checker.py'] + sys.argv[2:]
+            sys.argv = ['mace completion'] + sys.argv[2:]
             completion_main()
         elif command == 'ions':
             sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
@@ -1421,7 +1311,7 @@ def main():
     # (`mace preflight x -h`); otherwise the top-level parser answers -h
     # with the general help.
     if (len(sys.argv) >= 3 and any(a in ('-h', '--help') for a in sys.argv[2:])
-            and sys.argv[1] in ['workflow', 'submit', 'preflight', 'defects', 'phonopy', 'monitor', 'analyze', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version']):
+            and sys.argv[1] in COMMAND_HELP):
         # Show command-specific help
         show_command_help(sys.argv[1])
         sys.exit(0)

@@ -1006,7 +1006,9 @@ class CrystalOutToCifConverter:
 def main():
     """Main function"""
     parser = argparse.ArgumentParser(
-        description="Convert CRYSTAL17/23 output files to CIF format",
+        description="Convert CRYSTAL17/23 output files to CIF format.\n\n"
+                    "Supports 3D, 2D, 1D and 0D structures and OPT, SP and FREQ outputs.\n"
+                    "Targets are files or directories (e.g. . for the current directory).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

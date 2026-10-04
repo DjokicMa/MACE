@@ -685,6 +685,13 @@ Examples:
 
   # Specify directory to check
   mace completion --directory /path/to/calculations
+
+Status categories:
+  Complete   finished (OPT END or TOTAL CPU TIME), sorted by calculation type
+             (OPT, SP, FREQ, BAND, DOSS, TRANSPORT, CHARGE+POTENTIAL)
+  Errors     failed, sorted by the error found (time limit, SCF, memory, ...)
+  Ongoing    no completion line and no error yet: still running or pending
+  Unknown    an error line that matches no known pattern
         """
     )
 

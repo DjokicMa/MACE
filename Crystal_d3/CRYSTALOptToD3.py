@@ -1636,7 +1636,17 @@ class D3Generator:
 def main():
     """Main entry point for the script."""
     parser = argparse.ArgumentParser(
-        description="Generate CRYSTAL D3 property calculation input files"
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="""\
+Generate CRYSTAL D3 property calculation input files.
+
+The CRYSTAL output is given with --input/-i (or every .out in the current
+directory with --batch). There is no positional argument.""",
+        epilog="""\
+Examples:
+  %(prog)s --input optimized.out --calc-type BAND
+  %(prog)s -i optimized.out -t DOSS
+  %(prog)s --batch --calc-type BAND""",
     )
     
     parser.add_argument(
