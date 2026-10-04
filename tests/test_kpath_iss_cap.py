@@ -35,6 +35,7 @@ def test_static_route_caps_iss(tmp_path, monkeypatch):
     out = tmp_path / "long_mc1.out"
     out.write_text(cot.echo("X", LONG_MC1, centro=True))
     monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", False)
+    monkeypatch.setenv("MACE_STATIC_KPATH", "1")  # the static route, asked for
     with contextlib.redirect_stdout(io.StringIO()) as printed:
         segments, info = d3_kpoints.get_seekpath_full_kpath(12, "C", str(out))
     assert info["source"] == "seekpath_data_parametric", printed.getvalue()

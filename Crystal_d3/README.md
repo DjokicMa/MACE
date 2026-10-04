@@ -115,19 +115,16 @@ python CRYSTALOptToD3.py --list-configs
 
 **SeeKPath Library Integration**:
 
-For accurate band structure k-paths, install the `seekpath` library:
-```bash
-pip install seekpath
-```
+The `seekpath` library is a required dependency (`requirements.txt`): it computes the HPKOT path of a 3D cell from its structure, and MACE writes it in CRYSTAL's reciprocal basis. Install it with `pip install seekpath` (on MSU HPCC, into the module Python the jobs use: INSTALLATION.md, "HPC / SLURM clusters").
 
-When seekpath is installed and you select "SeeK-path full paths" (option 4) during BAND configuration:
+When you select "SeeK-path full paths" (option 4) during BAND configuration for a 3D cell:
 - K-point coordinates are calculated from actual lattice parameters (not static tables)
 - Parametric k-points (monoclinic, orthorhombic, rhombohedral, etc.) are handled correctly
 - SHRINK factor is automatically adjusted for exact integer representation
 - Discontinuities in the path are detected and marked with "|" (`seekpath_interface.convert_to_mace_format` inserts one wherever a segment does not start at the previous segment's end)
 - Inversion symmetry comes from seekpath's own symmetry analysis of the structure (`has_inversion_symmetry`). The path is requested with time-reversal symmetry (`seekpath_interface.get_accurate_bandpath`, `with_time_reversal=True`), so it has no primed k-points even for a non-centrosymmetric structure
 
-Without seekpath, the code falls back to static dictionaries (`d3_kpoints.seekpath_data`). Their lattice-dependent points are computed for the output's cell for tI1, tI2, hR1, hR2, oF1 and C-centred monoclinic (mC1) lattices (`hpkot_static.py`, SeeK-path's HPKOT formulas, in CRYSTAL's reciprocal basis and with the library's ISS rule), when CRYSTAL's conventional cell is in SeeK-path's setting; other non-cubic lattices (and cells outside that setting, with the reason) get a warning.
+Without seekpath, a 3D SeeK-path path stops that deck (`d3_kpoints.SeekpathRequired`, printed with the install command), unless the static path is asked for: `--static-kpath` on `mace opt2d3` / `mace opt2d12`, or `MACE_STATIC_KPATH=1`. Slabs and polymers do not need it (a slab never uses the library, a polymer's path is cut to its chain axis) and get no message, and the label, k-point vector, literature and custom paths do not use it. The static path comes from dictionaries (`d3_kpoints.seekpath_data`): SeeK-path's numbers in SeeK-path's standard cell, which for many lattices is not CRYSTAL's. Their lattice-dependent points are computed for the output's cell for tI1, tI2, hR1, hR2, oF1 and C-centred monoclinic (mC1) lattices (`hpkot_static.py`, SeeK-path's HPKOT formulas, in CRYSTAL's reciprocal basis and with the library's ISS rule), when CRYSTAL's conventional cell is in SeeK-path's setting; other non-cubic lattices (and cells outside that setting, with the reason) get a warning.
 
 Both routes take the computed geometry of the output: the final optimised geometry after an optimisation, otherwise the first computed geometry, so a SUPERCEL output's path is in the supercell's reciprocal basis (f_super = E f_prim).
 

@@ -74,9 +74,10 @@ try:
     from d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
                            get_seekpath_full_kpath, get_literature_kpath_vectors, validate_kpoint_labels_for_crystal23,
-                           get_crystal_system_from_space_group)
+                           get_crystal_system_from_space_group, require_seekpath_for)
 except ImportError:
     print("Warning: Could not import d3_kpoints module - some k-path features may be unavailable")
+    require_seekpath_for = None
     get_band_path_from_symmetry = None
     get_kpoint_coordinates_from_labels = None
     extract_and_process_shrink = None
@@ -1730,6 +1731,24 @@ def slab_corresponding_group(output_text) -> Optional[Tuple[int, str]]:
     return int(m.group(1)), (lat.group(1) if lat else "P")
 
 
+def _seekpath_refusal(freq_settings, parent_output) -> Optional[str]:
+    """The install message when a 3D SeeK-path phonon path needs seekpath.
+
+    The path is computed from the parent's output (parent_output, its text),
+    so without one seekpath is not used; nor with --static-kpath.
+    """
+    bands = freq_settings.get("bands")
+    if (not parent_output or require_seekpath_for is None or not isinstance(bands, dict)
+            or not (bands.get("seekpath_full") or bands.get("format") == "seekpath")):
+        return None
+    with _output_as_file(parent_output) as out_file:
+        try:
+            require_seekpath_for(out_file)
+        except RuntimeError as e:  # d3_kpoints.SeekpathRequired
+            return str(e)
+    return None
+
+
 def phonon_dispersion_refusal(dimensionality, freq_settings, parent_output="") -> Optional[str]:
     """Why a phonon-dispersion FREQCALC cannot be written, or None if it can.
 
@@ -1744,7 +1763,7 @@ def phonon_dispersion_refusal(dimensionality, freq_settings, parent_output="") -
         return None
     dim = str(dimensionality or "CRYSTAL").upper()
     if dim == "CRYSTAL":
-        return None
+        return _seekpath_refusal(freq_settings, parent_output)
     if dim == "MOLECULE":
         return ("phonon dispersion needs a periodic supercell, and CRYSTAL23 "
                 "stops a MOLECULE at SCELPHONO (SUPERCELL OPTION NOT ALLOWED "

@@ -5,7 +5,11 @@ pytest<9
 pyyaml
 numpy<3
 # Core runtime features under test: the terminal UI layer is rich-based and the
-# spectra/plot renderers are matplotlib-based. plotly/ase/spglib/scipy stay
-# optional — tests needing them skip via pytest.importorskip.
+# spectra/plot renderers are matplotlib-based. plotly/ase/scipy stay optional
+# — tests needing them skip via pytest.importorskip (spglib comes with seekpath).
 rich<15
 matplotlib<4
+# Required by MACE (requirements.txt): the band k-paths of 3D cells. Brings
+# spglib. 2.2.0 and 2.2.1 cannot be imported without scipy, which this set
+# does not install.
+seekpath>=2.1,<3,!=2.2.0,!=2.2.1

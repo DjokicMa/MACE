@@ -3,7 +3,8 @@
 The seekpath library is skipped for a slab on purpose (it would standardise
 the vacuum axis into the cell; BAND takes the slab's third coordinates as
 zero, manual p.310 note 3), so "Install seekpath" was advice that changed
-nothing. The hint stays for a 3D cell when the library is missing.
+nothing. A 3D cell without the library stops (seekpath is required) unless
+the static path was asked for, and then keeps the hint.
 """
 import pytest
 
@@ -37,8 +38,16 @@ def test_slab_without_seekpath_gets_no_install_hint(tmp_path, capsys, monkeypatc
     assert "slab" in out
 
 
-def test_bulk_without_seekpath_still_gets_the_install_hint(tmp_path, capsys, monkeypatch):
+def test_bulk_without_seekpath_stops(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", False)
+    monkeypatch.delenv("MACE_STATIC_KPATH", raising=False)
+    with pytest.raises(d3_kpoints.SeekpathRequired, match="pip install seekpath"):
+        _path(tmp_path, capsys, slab=False)
+
+
+def test_bulk_static_path_asked_for_still_gets_the_install_hint(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", False)
+    monkeypatch.setenv("MACE_STATIC_KPATH", "1")  # the static route, asked for
     _, _, out = _path(tmp_path, capsys, slab=False)
     assert "Install 'seekpath' library for accurate parametric k-points." in out
     assert "Install the 'seekpath' library for a path in CRYSTAL's cell." in out

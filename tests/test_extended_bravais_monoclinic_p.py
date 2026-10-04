@@ -39,6 +39,7 @@ def test_c_centred_monoclinic_is_unchanged(sg):
 def test_p21c_path_from_an_output_is_mp1(tmp_path, monkeypatch):
     # the static table's route, as without the seekpath library
     monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", False)
+    monkeypatch.setenv("MACE_STATIC_KPATH", "1")  # the static route, asked for
     out = tmp_path / "p21c.out"
     out.write_text(OUTPUT)
     segments, info = get_seekpath_full_kpath(14, "P", str(out))

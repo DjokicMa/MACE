@@ -282,7 +282,8 @@ echo "    - Legacy scripts (Check, Plotting, Post-Processing)"
     
     def check_dependencies(self):
         """Check if required Python packages are installed"""
-        required = ['numpy', 'matplotlib', 'ase', 'spglib', 'yaml', 'pandas']
+        # seekpath: the HPKOT band k-paths of 3D cells, in CRYSTAL's basis
+        required = ['numpy', 'matplotlib', 'ase', 'spglib', 'seekpath', 'yaml', 'pandas']
         missing = []
         
         print("\nChecking Python dependencies...")

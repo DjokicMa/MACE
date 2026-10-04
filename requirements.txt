@@ -11,6 +11,17 @@ ase>=3.22.0
 # Symmetry analysis
 spglib>=1.16.0
 
+# Band structure k-paths: the HPKOT path of a 3D cell, computed from the
+# structure (Hinuma et al., Comp. Mat. Sci. 128, 140 (2017)) and written in
+# CRYSTAL's reciprocal basis. Required: without it a 3D SeeK-path BAND deck or
+# phonon dispersion stops (--static-kpath / MACE_STATIC_KPATH=1 writes the
+# static table path instead). 2.1.0 is the first to return the rotation
+# matrix MACE needs (older versions count as missing). Needs spglib>=1.14.1,
+# which the pin above satisfies; 2.1.0, 2.2.1 and 2.2.2 tested with spglib
+# 2.6-2.7. 2.2.0 and 2.2.1 also need scipy and packaging, which
+# scipy/matplotlib below bring.
+seekpath>=2.1,<3
+
 # Themed terminal UI (optional but recommended: mace degrades to plain
 # text without it; NO_COLOR / TERM=dumb are honored either way)
 rich>=13.0
@@ -27,8 +38,3 @@ pandas>=1.3.0
 plotly>=5.0.0
 scipy>=1.10.0
 kaleido==0.2.1
-
-# Optional but recommended: Accurate band structure k-path generation
-# Implements HPKOT methodology (Hinuma et al., Comp. Mat. Sci. 128, 140 (2017))
-# Uncomment the line below to include seekpath
-# seekpath

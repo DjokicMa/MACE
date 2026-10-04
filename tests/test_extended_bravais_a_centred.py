@@ -37,6 +37,7 @@ def test_a_centred_without_cell_is_oa(sg):
 @pytest.mark.parametrize("a,b,c", CELLS)
 def test_amm2_static_path_from_output(tmp_path, monkeypatch, a, b, c):
     monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", False)
+    monkeypatch.setenv("MACE_STATIC_KPATH", "1")  # the static route, asked for
     out = tmp_path / "amm2.out"
     out.write_text(TEMPLATE.format(a, b, c, 90, 90, 90))
     segments, info = get_seekpath_full_kpath(38, "A", str(out))

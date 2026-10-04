@@ -41,6 +41,7 @@ try:
                                generate_orbital_indices, create_doss_projections,
                                extract_shrink_from_d12, ghost_atom_labels, GHOST_SUFFIX)
     from Crystal_d3.d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
+                           request_static_kpath,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
                            get_seekpath_full_kpath, get_literature_kpath_vectors, unicode_to_ascii_kpoint,
                            validate_kpoint_labels_for_crystal23, in_plane_path, in_plane_labels,
@@ -53,6 +54,7 @@ except ImportError:
                                generate_orbital_indices, create_doss_projections,
                                extract_shrink_from_d12, ghost_atom_labels, GHOST_SUFFIX)
     from d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
+                           request_static_kpath,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
                            get_seekpath_full_kpath, get_literature_kpath_vectors, unicode_to_ascii_kpoint,
                            validate_kpoint_labels_for_crystal23, in_plane_path, in_plane_labels,
@@ -1338,6 +1340,14 @@ class D3Generator:
             ui.err("The input ended before every question was answered "
                    "(end of input); no D3 file was written.")
             return None
+        except RuntimeError as e:
+            # A 3D SeeK-path path without seekpath (d3_kpoints.SeekpathRequired,
+            # matched by name: the module can be imported under two names)
+            if type(e).__name__ != "SeekpathRequired":
+                raise
+            print()
+            ui.err(str(e))
+            return None
         finally:
             self._answers_on_stdin = False
 
@@ -1693,8 +1703,17 @@ Examples:
         "--output-dir", "-o",
         help="Output directory for generated D3 files (default: same as input file)"
     )
+    parser.add_argument(
+        "--static-kpath",
+        action="store_true",
+        help="Write the static HPKOT table path for a 3D SeeK-path BAND path when "
+             "seekpath is not installed (SeeK-path's standard cell, which can differ "
+             "from CRYSTAL's); without it such a deck stops. Same as MACE_STATIC_KPATH=1"
+    )
     
     args = parser.parse_args()
+    if args.static_kpath:
+        request_static_kpath()
     
     # Handle --list-configs
     if args.list_configs:
@@ -1817,7 +1836,14 @@ Examples:
             # safe to run under the back controller ("press b to go back"). Per-file mode
             # (generate_d3, line ~1173) runs AFTER _copy_wavefunction's mkdir+copy, so it is
             # intentionally left unwrapped to avoid replaying filesystem mutations.
-            shared_config = _run_with_back(lambda: configure_d3_calculation(calc_type, first_file))
+            try:
+                shared_config = _run_with_back(lambda: configure_d3_calculation(calc_type, first_file))
+            except RuntimeError as e:
+                if type(e).__name__ != "SeekpathRequired":
+                    raise
+                print()
+                ui.err(str(e))
+                sys.exit(1)
             print()
             ui.ok("Shared settings configured")
 

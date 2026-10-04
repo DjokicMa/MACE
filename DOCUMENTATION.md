@@ -308,7 +308,7 @@ python mace/run_workflow.py --show-templates
 #### Core Dependencies (Required)
 ```bash
 # Scientific computing stack
-pip install numpy>=1.21.0 matplotlib>=3.5.0 ase>=3.22.0 spglib>=1.16.0
+pip install numpy>=1.21.0 matplotlib>=3.5.0 ase>=3.22.0 spglib>=1.16.0 'seekpath>=2.1,<3'
 
 # Material tracking system dependencies (Phase 2)
 pip install pyyaml>=6.0 pandas>=1.3.0
@@ -316,7 +316,7 @@ pip install pyyaml>=6.0 pandas>=1.3.0
 
 #### One-Line Installation
 ```bash
-pip install numpy matplotlib ase spglib pyyaml pandas
+pip install numpy matplotlib ase spglib seekpath pyyaml pandas
 ```
 
 #### Package Purposes
@@ -326,6 +326,7 @@ pip install numpy matplotlib ase spglib pyyaml pandas
 - **spglib**: Space group operations and symmetry analysis
 - **pyyaml**: YAML configuration file handling for workflow automation
 - **pandas**: Data analysis and CSV processing
+- **seekpath**: The HPKOT band k-path of a 3D cell (Hinuma et al., Comp. Mat. Sci. 128, 140 (2017)), computed from the structure; MACE writes it in CRYSTAL's reciprocal basis, with the lattice-dependent points of that cell and its discontinuities. The static tables (`d3_kpoints.seekpath_data`) hold SeeK-path's numbers in SeeK-path's standard cell, which for many lattices is not CRYSTAL's. Without seekpath a 3D SeeK-path BAND deck or SeeK-path phonon dispersion stops with the install command; `--static-kpath` (opt2d3, opt2d12) or `MACE_STATIC_KPATH=1` writes the static path instead. On MSU HPCC install it into the module Python the jobs use (see INSTALLATION.md, "HPC / SLURM clusters")
 
 #### Optional Dependencies
 ```bash
@@ -334,9 +335,6 @@ pip install rich
 
 # Interactive cube/FREQ plotting engines (mace plotting --cube / --freq)
 pip install plotly scipy kaleido==0.2.1 scikit-image
-
-# For accurate band structure k-paths (highly recommended)
-pip install seekpath>=2.0.0
 
 # Finite-displacement phonons (mace phonopy)
 pip install 'phonopy<5'
@@ -347,14 +345,10 @@ pip install 'phonopy<5'
 - **plotly / scipy / kaleido**: Cube and FREQ plot rendering — HTML output needs only plotly; kaleido adds static PNG/SVG/PDF export; scipy interpolates non-orthogonal cube grids
 - **scikit-image**: Isosurface extraction for cube plots
 - **phonopy**: `mace phonopy generate/collect` (finite-displacement phonons, NAC); 4.7.2 tested
-- **seekpath**: Accurate band structure k-path generation using the HPKOT methodology (Hinuma et al., Comp. Mat. Sci. 128, 140 (2017)). Provides correct parametric k-points for non-cubic lattices and proper discontinuity detection. Without seekpath, band paths fall back to static dictionaries which are only accurate for cubic systems.
 
 #### Installation Verification
 ```bash
-python -c "import numpy, matplotlib, ase, spglib, yaml, pandas; print('All dependencies installed successfully')"
-
-# Verify seekpath (optional but recommended)
-python -c "import seekpath; print('seekpath available for accurate band paths')"
+python -c "import numpy, matplotlib, ase, spglib, seekpath, yaml, pandas; print('All dependencies installed successfully')"
 ```
 
 ## Architecture Overview

@@ -22,13 +22,26 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 from fractions import Fraction
 
-# Check if seekpath is available
+# seekpath is a required dependency (requirements.txt). Its absence is not
+# reported here, on every import (a slab or a polymer never uses it), but
+# where a 3D path needs it: d3_kpoints.require_seekpath_for stops that deck
+# with the install instructions unless the static path was asked for.
+# seekpath before 2.1.0 returns no 'rotation_matrix', which putting the path
+# in CRYSTAL's basis needs: such a version counts as missing.
+SEEKPATH_MIN_VERSION = (2, 1, 0)
+SEEKPATH_TOO_OLD = None  # the installed version, when it is older than that
 try:
     import seekpath
     SEEKPATH_AVAILABLE = True
+    try:
+        _version = tuple(int(x) for x in
+                         re.findall(r"\d+", str(getattr(seekpath, "__version__", "")))[:3])
+    except ValueError:
+        _version = ()
+    if _version and _version < SEEKPATH_MIN_VERSION:
+        SEEKPATH_AVAILABLE = False
+        SEEKPATH_TOO_OLD = seekpath.__version__
 except ImportError:
-    # Said where it matters (the static k-path route names the library when
-    # it would be used), not on every import: a slab never uses it.
     SEEKPATH_AVAILABLE = False
 
 
