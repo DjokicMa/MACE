@@ -139,6 +139,10 @@ class _StatsDB:
     def get_database_stats(self):
         return {"total_materials": 0, "calculations_by_status": {}}
 
+    def get_calculations_by_status(self, status):
+        # the callback's FINALRUN-loop check of running jobs finds none
+        return []
+
 
 def _manager_without_init():
     from mace.queue.manager import EnhancedCrystalQueueManager
