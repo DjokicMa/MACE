@@ -112,11 +112,18 @@ def extract_formula_from_d12(d12_file: Path) -> Optional[str]:
                 if element:
                     atoms.append(element)
 
-    # Fallback: scan only the geometry block (everything before the first END,
-    # which precedes the basis-set section) so basis rows are never mistaken for
-    # atoms.
+    # Fallback: scan only the geometry block - from the CRYSTAL/SLAB/POLYMER/
+    # MOLECULE record to the first END after it - so basis rows are never
+    # mistaken for atoms. A deck with no geometry record (a properties .d3, an
+    # EXTERNAL deck) has no atoms to give: its BAND/DOSS header lines
+    # ("4 0 1000 1 37 1 0") read as an atomic number plus three coordinates,
+    # which turned every .d3 into 'Be' or 'NeBO'.
     if not atoms:
-        geometry_block = re.split(r'\n\s*END\b', content, maxsplit=1)[0]
+        start = re.search(r'^[ \t]*(?:CRYSTAL|SLAB|POLYMER|MOLECULE)[ \t]*$',
+                          content, re.MULTILINE | re.IGNORECASE)
+        geometry_block = ''
+        if start:
+            geometry_block = re.split(r'\n\s*END\b', content[start.end():], maxsplit=1)[0]
         for atomic_num_str in re.findall(atom_pattern, geometry_block, re.MULTILINE):
             element = _symbol(int(atomic_num_str))
             if element:
@@ -380,12 +387,12 @@ def update_materials_table_info(db, material_id: str, d12_file: Path = None,
         pass
     
     # Only update formula if:
-    # 1. No existing formula, OR
-    # 2. This is an OPT d12 file (not SP/BAND/DOSS), OR  
-    # 3. Current formula is clearly wrong (single letter or very short)
+    # 1. No existing formula (or the 'Unknown' placeholder), OR
+    # 2. This is an OPT d12 file (not SP/BAND/DOSS)
     should_update_formula = False
     if formula:
-        if not existing_material or not existing_material.get('formula'):
+        if (not existing_material or not existing_material.get('formula')
+                or existing_material['formula'] == 'Unknown'):
             should_update_formula = True
         elif d12_file and d12_file.exists():
             # Check if this is an OPT calculation (contains OPTGEOM) and not a property calculation
@@ -393,10 +400,10 @@ def update_materials_table_info(db, material_id: str, d12_file: Path = None,
                 with open(d12_file, 'r') as f:
                     content = f.read()
 
+                # An OPT replaces the formula (its geometry is the one that
+                # stands). A short formula is no sign of a wrong one: Si, C2 and
+                # Cu are real, and replacing them let any later deck overwrite.
                 if _updates_formula_as_opt_deck(d12_file, content):
-                    should_update_formula = True
-                elif existing_material.get('formula') and len(existing_material['formula']) <= 2:
-                    # Current formula is suspiciously short - likely wrong
                     should_update_formula = True
             except Exception:
                 pass

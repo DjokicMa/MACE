@@ -1070,6 +1070,16 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   `completeproperties/`, and the queue manager's scan of finished outputs
   records its type as PROPERTIES. A `.d3` whose file name names a properties
   type keeps that type.
+- **A BAND or DOSS run no longer rewrites the material's formula.** Its
+  completion read the `.d3` as a geometry: a BAND header such as
+  `4 0 1000 1 37 1 0` read as atomic number 4 plus three coordinates, so the
+  formula became `Be` (`NeBO` for a DOSS deck), and any formula of one or two
+  characters (Si, C2, Cu) set by the OPT or SP was replaced by it, on
+  `mace submit --progress` and `mace run --track` alike. A formula is now
+  read only from a deck's CRYSTAL/SLAB/POLYMER/MOLECULE geometry block, a
+  short formula is no longer taken as a wrong one, and a material first
+  recorded by a properties run (formula `Unknown`) gets its formula from the
+  next SCF deck.
 
 ## [1.1.4] - 2026-10-02
 

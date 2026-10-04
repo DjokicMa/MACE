@@ -965,3 +965,32 @@ def test_docs_describe_mace_run():
     assert "mace run" in (REPO_ROOT / "README.md").read_text()
     assert "`mace run` runs small decks there directly" in " ".join(
         (REPO_ROOT / "INSTALLATION.md").read_text().split())
+
+
+def _materials(box):
+    import sqlite3
+    con = sqlite3.connect(str(box.work / "materials.db"))
+    rows = dict(con.execute("SELECT material_id, formula FROM materials"))
+    con.close()
+    return rows
+
+
+def test_tracked_band_and_doss_keep_a_short_formula(box):
+    """A .d3 deck has no geometry: its BAND/DOSS header lines ('4 0 1000 1 37 1 0')
+    read as an atomic number and three coordinates, which used to overwrite a
+    one- or two-character formula (C, Si, Cu) with 'Be' or 'NeBO'."""
+    box.deck("dia.d12")
+    box.deck("dia_band.d3", "BAND\ndia\n4 0 1000 1 37 1 0\n0 0 0 2 0 2\nEND\n")
+    box.deck("dia_doss.d3", "NEWK\n10 20\n1 0\nDOSS\n0 1000 4 37 1 14 0\nEND\n")
+    r = box.run("--track", "-n", "1", "dia.d12", "dia_band.d3", "dia_doss.d3")
+    assert r.returncode == 0, r.text
+    assert _materials(box) == {"dia": "C"}, r.text
+    assert "formula=Be" not in r.text and "formula=NeBO" not in r.text
+
+
+def test_tracked_band_alone_gives_no_formula_from_its_header(box):
+    box.deck("solo_band.d3", "BAND\nsolo\n4 0 1000 1 37 1 0\n0 0 0 2 0 2\nEND\n")
+    (box.work / "solo_band.f9").write_text("f9")
+    r = box.run("--track", "-n", "1", "solo_band.d3")
+    assert r.returncode == 0, r.text
+    assert set(_materials(box).values()) <= {None, "", "Unknown"}, (_materials(box), r.text)
