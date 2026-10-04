@@ -1052,7 +1052,11 @@ class EnhancedCrystalQueueManager:
         """Check for jobs that are failing early and cancel them if needed."""
         if not self.enable_tracking:
             return
-            
+
+        # An optimization caught in a FINALRUN loop is not a crash: it is
+        # recovered (tighter TOLINTEG), not just cancelled.
+        self.recover_running_finalrun_loops()
+
         # Get jobs that have been running for a while
         cutoff_time = datetime.now() - timedelta(seconds=self.min_job_runtime)
         
@@ -1071,6 +1075,64 @@ class EnhancedCrystalQueueManager:
                 print(f"Detected early failure for {calc['calc_id']}, cancelling job")
                 self.cancel_job(calc['slurm_job_id'], calc['calc_id'])
                 
+    def recover_running_finalrun_loops(self):
+        """Cancel and recover running optimizations caught in a FINALRUN loop.
+
+        The loop shows within minutes (alternating ~2.2E-4 Ha jumps after each
+        FINALRUN re-start) but the job itself never ends it: it loops to
+        MAXCYCLE or its walltime, and a walltime kill runs no completion
+        callback. So every check of running jobs looks for it, cancels the
+        job and hands it to the finalrun_loop recovery at once.
+        """
+        if not self.enable_tracking:
+            return
+        own_job_id = os.environ.get('SLURM_JOB_ID')
+        for calc in self.db.get_calculations_by_status('running'):
+            job_id = calc.get('slurm_job_id')
+            if not job_id or (own_job_id and str(job_id) == own_job_id):
+                continue
+            if not str(calc.get('calc_type') or '').upper().startswith('OPT'):
+                continue
+            output_file = self._live_output_file(calc)
+            if not output_file:
+                continue
+            try:
+                with open(output_file, 'r', errors='replace') as f:
+                    loop = opt_restart.finalrun_loop(f.read())
+            except OSError:
+                continue
+            if not loop:
+                continue
+            print(f"FINALRUN loop in running job {job_id} ({calc['calc_id']}): {loop}")
+            try:
+                result = subprocess.run(['scancel', str(job_id)],
+                                        capture_output=True, text=True)
+            except Exception as e:
+                print(f"  Could not cancel job {job_id}: {e}")
+                continue
+            if result.returncode != 0:
+                print(f"  Could not cancel job {job_id}: {result.stderr.strip()}")
+                continue
+            print(f"  Cancelled job {job_id}; recovering it now")
+            self.db.update_calculation_status(calc['calc_id'], 'failed',
+                                              slurm_state='CANCELLED',
+                                              output_file=output_file)
+            self.handle_failed_calculation(calc['calc_id'], 'CANCELLED')
+
+    def _live_output_file(self, calc: Dict) -> Optional[str]:
+        """The .out a submitted or running calculation is writing, or None."""
+        output_file = calc.get('output_file')
+        if output_file and os.path.exists(output_file):
+            return output_file
+        work_dir = Path(calc['work_dir'])
+        possible_outputs = [work_dir / f"{calc['material_id']}_{calc['calc_type'].lower()}.out"]
+        if calc.get('input_file'):
+            possible_outputs.append(work_dir / f"{Path(calc['input_file']).stem}.out")
+        for possible_output in possible_outputs:
+            if possible_output.exists():
+                return str(possible_output)
+        return None
+
     def is_job_failing_early(self, calc: Dict) -> bool:
         """
         Check if a job is failing early by examining output files.
@@ -2086,6 +2148,10 @@ class EnhancedCrystalQueueManager:
                 self._populate_completed_jobs_from_outputs()
             
             self.check_queue_status()
+
+            # Another job's optimization may be looping on FINALRUN: the
+            # completion callbacks are what runs in an unattended workflow.
+            self.recover_running_finalrun_loops()
             
             # In workflow context, use workflow engine for progression instead of basic D12 processing
             if self.is_workflow_context and self.workflow_enabled:
@@ -2107,6 +2173,7 @@ class EnhancedCrystalQueueManager:
         elif mode == 'status_check':
             # General status check
             self.check_queue_status()
+            self.recover_running_finalrun_loops()
             
         elif mode == 'submit_new':
             # Submit new jobs if capacity available

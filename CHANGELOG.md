@@ -1022,6 +1022,12 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   `<JOB>.d12.orig`, the output as `<JOB>.out.finalrunloop<N>`
   (`recovery_config.yaml`: `finalrun_loop`, max_retries 2). A deck already at
   Very tight is not resubmitted.
+  A job still running in such a loop is cancelled and recovered at once by
+  the next check of running jobs: a `mace manager` cycle, a status or
+  early-failure check, or the completion callback of any other job in the
+  database. A lone job has no such check while it runs; killed at its
+  walltime it runs no completion callback, and the next `mace manager` or
+  callback recovers it.
 - **"* OPT END - FAILED *" is an unconverged optimization**, not a
   segmentation fault/runtime error. `mace completion` sorted an optimization that
   reached its OPTGEOM MAXCYCLE into `potential` because of the MPI_Abort that
