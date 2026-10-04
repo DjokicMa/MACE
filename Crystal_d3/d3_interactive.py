@@ -641,7 +641,6 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
             # Extract space group from output file using robust detection
             import re
             import sys
-            from pathlib import Path
 
             # Import space group symbol mappings
             sys.path.insert(0, str(Path(__file__).parent.parent / "Crystal_d12"))
@@ -982,21 +981,26 @@ def configure_band_calculation(out_file: Optional[str] = None) -> Dict[str, Any]
                 band_config["shrink"] = shrink
                 
                 print("\nEnter segments as fractional coordinates (will be scaled by shrink factor):")
+                frac_segments = []
                 for i in range(n_segments):
                     segment_str = input(f"Segment {i+1}: ").strip()
                     try:
                         coords = [float(x) for x in segment_str.split()]
                         if len(coords) == 6:
-                            # Scale fractional to integer using unified function
-                            # Convert to segment format for scaling function
-                            scaled_segments, _ = scale_kpoint_segments([coords], shrink)
-                            segments.append(scaled_segments[0])
+                            frac_segments.append(coords)
                         else:
                             print("Warning: Expected 6 numbers, skipping segment")
                     except ValueError:
                         print("Warning: Invalid input, skipping segment")
-                
-            band_config["segments"] = segments
+                # Scaled together: a shrink the scaling has to raise for one
+                # point is the shrink of every segment (and of the header).
+                if frac_segments:
+                    scaled, band_config["shrink"] = scale_kpoint_segments(frac_segments, shrink)
+                    segments = [" ".join(str(v) for v in seg) for seg in scaled]
+
+            # The BAND writer reads a manual path's segments as lines, as the
+            # mixed route stores them.
+            band_config["manual_segments"] = segments
     
     # Number of k-points
     n_points = _nav_int("\nTotal number of k-points along path [1000]: ", default=1000)

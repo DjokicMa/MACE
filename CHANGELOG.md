@@ -1048,6 +1048,14 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   explicit `--net-charge`, `--site-states`, and `--parent-out` to check the
   shell counts, plus a pointer to "Charged systems and ion clusters" in
   `Crystal_d12/README.md`.
+- **opt2d3 BAND path method 4 with all segments of one kind writes the
+  path.** "Fractional coordinates", not mixed, all coordinates stopped with
+  UnboundLocalError ('Path') before asking for the segments; all coordinates
+  and all labels both stored their segments where the writer of a manual path
+  does not read, so the deck would have been an empty BAND (0 segments). The
+  segments given are now written, as the mixed route writes them, and a shrink
+  raised to reach a point (1/4 needs a multiple of 4) is the shrink of every
+  segment and of the BAND line.
 
 ## [1.1.4] - 2026-10-02
 
