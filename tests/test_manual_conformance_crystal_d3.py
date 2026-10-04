@@ -153,6 +153,10 @@ def test_seekpath_fallback_scales_segments_by_shrink(tmp_path, monkeypatch):
     out_file = find_data("BAND/1_dia*_band.out")
     monkeypatch.setattr(d3_kpoints, "get_seekpath_full_kpath", lambda *a, **k: None)
     monkeypatch.setattr(d3_kpoints, "get_literature_kpath_vectors", lambda *a, **k: [])
+    # Since 1.1.5 the static path of a 3D cell is written only when asked for
+    # (a missing seekpath, or one that cannot read this properties output's
+    # cell, stops the deck otherwise).
+    monkeypatch.setenv("MACE_STATIC_KPATH", "1")
 
     gen = _generator(out_file, "BAND", tmp_path, monkeypatch)
     used = gen.generate_d3(shared_config={"path_method": "coordinates",
