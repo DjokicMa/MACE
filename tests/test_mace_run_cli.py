@@ -571,6 +571,90 @@ def test_same_named_slurm_job_is_refused(box):
     assert ok.returncode == 0, ok.text
 
 
+# A job name is one scratch directory, $SCRATCH/crys23/<job>, and $SCRATCH is
+# shared by every node: a run of the same name on another dev node is refused
+# through a claim file there, which the holder keeps fresh while it runs.
+
+def _claim_path(box, kind, job):
+    return box.scratch / ".mace_run" / f"{kind}-{job}.claim"
+
+
+def _write_claim(box, job, owner, age=0.0):
+    claim = _claim_path(box, "scf", job)
+    claim.parent.mkdir(parents=True, exist_ok=True)
+    claim.write_text(owner)
+    if age:
+        t = time.time() - age
+        os.utime(claim, (t, t))
+    return claim
+
+
+def test_job_name_a_run_on_another_node_has_is_refused(box):
+    """Seen on HPCC: the same job name run on dev-amd20 and dev-intel18 at once
+    from different folders shared $SCRATCH/crys23/<job>, and one run died."""
+    box.deck("x.d12", where=box.work / "two")
+    claim = _write_claim(box, "x", "pid 4242 on dev-other-node: /elsewhere/one/x.d12\n")
+    r = box.run("-n", "1", "two/x.d12")
+    assert r.returncode == 2, r.text
+    assert "another mace run has x" in r.text
+    assert "pid 4242 on dev-other-node" in r.text
+    assert box.binary_runs() == []
+    assert not (box.work / "two" / ".mace_local").exists()
+    assert claim.read_text() == "pid 4242 on dev-other-node: /elsewhere/one/x.d12\n"
+
+
+def test_claim_left_by_a_run_that_stopped_refreshing_it_is_taken_over(box):
+    box.deck("x.d12")
+    _write_claim(box, "x", "pid 4242 on dev-other-node: /elsewhere/x.d12\n", age=600)
+    r = box.run("-n", "1", "x.d12")
+    assert r.returncode == 0, r.text
+    assert "dev-other-node" in r.text and "stale" in r.text
+    assert not _claim_path(box, "scf", "x").exists()        # released after the run
+
+
+def test_claim_of_a_dead_run_on_this_node_is_taken_over(box):
+    """mace run killed with SIGKILL leaves its claim; on this node a dead pid
+    frees it at once."""
+    import socket
+    box.deck("x.d12")
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    _write_claim(box, "x", f"pid {dead.pid} on {socket.gethostname()}: /elsewhere/x.d12\n")
+    r = box.run("-n", "1", "x.d12")
+    assert r.returncode == 0, r.text
+    assert not _claim_path(box, "scf", "x").exists()
+
+
+def test_running_deck_holds_a_claim_it_keeps_fresh(box):
+    import socket
+    box.deck("x.d12")
+    p = box.start("-n", "1", "x.d12", STUB_SLEEP="40")
+    try:
+        box.wait_for(box.stubdir / "x.sleeping")
+        claim = _claim_path(box, "scf", "x")
+        assert claim.read_text().startswith(f"pid {p.pid} on {socket.gethostname()}: ")
+        old = time.time() - 600
+        os.utime(claim, (old, old))
+        end = time.monotonic() + 30
+        while claim.stat().st_mtime < time.time() - 60 and time.monotonic() < end:
+            time.sleep(0.5)
+        assert claim.stat().st_mtime > time.time() - 60, "claim never refreshed"
+        other = box.run("-n", "1", "x.d12")            # same node: the node lock refuses
+        assert other.returncode == 2, other.text
+    finally:
+        p.send_signal(signal.SIGINT)
+        p.communicate(timeout=40)
+    assert not _claim_path(box, "scf", "x").exists()
+
+
+def test_properties_deck_has_its_own_claim(box):
+    box.deck("x_band.d3", BAND)
+    (box.work / "x_band.f9").write_text("wavefunction")
+    _write_claim(box, "x_band", "pid 4242 on dev-other-node: /elsewhere/x_band.d12\n")
+    r = box.run("-n", "1", "x_band.d3")                 # crys23/prop/x_band: no clash
+    assert r.returncode == 0, r.text
+
+
 def test_opt_deck_gets_a_warning(box):
     box.deck("o.d12", DECK.replace("END\n6 0", "OPTGEOM\nENDOPT\nEND\n6 0", 1))
     r = box.run("--dry-run", "o.d12")

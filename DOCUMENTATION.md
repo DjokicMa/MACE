@@ -162,9 +162,13 @@ completion callback runs, so nothing is submitted afterwards.
 - **Refused,** with nothing written: on the login gateway (it says which dev
   nodes to use), inside a SLURM job, where the `CRYSTAL/23-intel-2023a` module
   cannot be loaded, for a deck path the job script cannot use (spaces and
-  other shell characters), and for a job name another `mace run` on this node
-  or a SLURM job of yours already has - they would share
-  `$SCRATCH/crys23/<job>`. (`mace submit` does not check the other way.)
+  other shell characters), and for a job name another `mace run` (on this
+  node or any other) or a SLURM job of yours already has - they would share
+  `$SCRATCH/crys23/<job>`. (`mace submit` does not check the other way.) A run
+  on another node is seen through a claim file in `$SCRATCH/.mace_run/`, which
+  the run refreshes every 15 s and removes when it ends; the claim of a run
+  that was killed is taken over once it is 2 minutes old (at once on the node
+  it ran on).
 - **`--track`** records each run in `./materials.db` as `mace submit --track`
   does, with no SLURM job id. A failure is stored as `local_<error>`, so error
   recovery never resubmits it to SLURM; `--track` is refused inside a workflow

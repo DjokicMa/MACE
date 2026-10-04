@@ -146,7 +146,10 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   (default 30m, below the dev nodes' 2 h CPU-time limit), `--dry-run` and
   `--track`. Ctrl-C, a hang-up or the timeout stops every CRYSTAL process of
   the run. Refused on the login gateway, inside a SLURM job, without a loadable
-  CRYSTAL module, and for a job name another run already has. Measured on
+  CRYSTAL module, and for a job name another run already has - on any node,
+  through a claim file in `$SCRATCH/.mace_run/` (on HPCC the same name started
+  on dev-amd20 and dev-intel18 shared one scratch directory, and one run
+  died). Measured on
   dev-amd20: the diamond SP energy matched the SLURM run's to every printed
   digit. See DOCUMENTATION.md, "Run on a dev node".
 - **Opt-in TZVP-REV2 2022 update: `full.basis.triplezeta.rev2022`.** The

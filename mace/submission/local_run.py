@@ -39,6 +39,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -59,6 +60,8 @@ DEFAULT_TIMEOUT = 30 * 60
 MAX_TIMEOUT = 115 * 60          # HPCC dev nodes stop a process at 2 h of CPU time
 CPU_LIMIT_MARGIN = 5 * 60
 KILL_GRACE = 15                 # seconds between SIGTERM and SIGKILL
+CLAIM_REFRESH = 15              # a running mace run touches its claims this often
+CLAIM_STALE = 120               # a claim not touched for this long is a dead run's
 
 # What the job script can take: it uses $DIR/$JOB unquoted, as under SLURM.
 # '+' is in MACE's own names (<base>_charge+potential.d3).
@@ -815,6 +818,137 @@ def acquire_locks(decks: List[Deck], host: str) -> List[int]:
     return held
 
 
+def claim_dir() -> Optional[Path]:
+    """<scratch>/.mace_run: on the file system the scratch directories are on,
+    which every node sees ($SCRATCH, or /mnt/scratch/$USER where the job script
+    falls back to it)."""
+    scratch = os.environ.get("SCRATCH")
+    if scratch:
+        return Path(scratch) / ".mace_run"
+    user = os.environ.get("USER") or os.environ.get("LOGNAME")
+    if user and os.path.isdir(f"/mnt/scratch/{user}"):
+        return Path(f"/mnt/scratch/{user}") / ".mace_run"
+    return None
+
+
+class Claims:
+    """One claim file per scratch directory on the shared scratch file system,
+    so that a run of the same job name on another node is refused too (the node
+    locks cannot see it). A claim names its run ("pid N on HOST: deck") and is
+    touched every CLAIM_REFRESH seconds while the run lasts; one that is not
+    touched for CLAIM_STALE seconds, or whose pid is gone on this node, is a
+    dead run's and is taken over."""
+
+    def __init__(self, host: str):
+        self.host = host
+        self.held = {}            # path -> the text written
+        self._stop = None
+        self._thread = None
+
+    def _live(self, path: Path, text: str) -> bool:
+        try:
+            age = time.time() - path.stat().st_mtime
+        except FileNotFoundError:
+            return False
+        if age > CLAIM_STALE:
+            return False
+        m = re.match(r"pid (\d+) on (\S+):", text)
+        if m and m.group(2) == self.host:
+            # On this node, where we hold the node lock: only a live other pid counts
+            pid = int(m.group(1))
+            if pid == os.getpid():
+                return False
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return False
+            except PermissionError:
+                pass
+        return True
+
+    def take(self, decks: List[Deck]) -> None:
+        d = claim_dir()
+        if d is None:
+            return
+        try:
+            d.mkdir(mode=0o700, parents=True, exist_ok=True)
+        except OSError as exc:
+            say(f"mace run: warning: cannot write claims to {d} ({exc}); a run of the same "
+                "job name on another node would not be noticed", err=True)
+            return
+        try:
+            for deck in decks:
+                self._take_one(d / f"{deck.kind}-{deck.job}.claim", deck)
+        except BaseException:
+            self.release()
+            raise
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._refresh, daemon=True)
+        self._thread.start()
+
+    def _take_one(self, path: Path, deck: Deck) -> None:
+        text = f"pid {os.getpid()} on {self.host}: {deck.path}\n"
+        for _ in range(3):
+            try:
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                pass
+            else:
+                with os.fdopen(fd, "w") as fh:
+                    fh.write(text)
+                self.held[path] = text
+                return
+            try:
+                owner = path.read_text(errors="replace")
+            except FileNotFoundError:
+                continue
+            if self._live(path, owner):
+                raise Refusal(f"another mace run has {deck.job} ($SCRATCH/"
+                              f"{SCRATCH_SUBDIR[deck.kind]}/{deck.job}) - {owner.strip()}; "
+                              "wait for it to finish")
+            # A dead run's claim: move it aside, and give it back if what was
+            # moved is not the file just read (another run took it over first).
+            aside = path.with_name(f"{path.name}.stale-{self.host}-{os.getpid()}")
+            try:
+                os.rename(path, aside)
+            except FileNotFoundError:
+                continue
+            try:
+                moved = aside.read_text(errors="replace")
+            except OSError:
+                moved = owner
+            if moved != owner:
+                try:
+                    os.link(aside, path)
+                except OSError:
+                    pass
+                aside.unlink(missing_ok=True)
+                continue
+            aside.unlink(missing_ok=True)
+            say(f"mace run: took over the stale claim on {deck.job} ({owner.strip()}; not "
+                f"refreshed for over {CLAIM_STALE}s or its process is gone)", err=True)
+        raise Refusal(f"could not claim {deck.job} in {path.parent}: other runs keep taking it")
+
+    def _refresh(self) -> None:
+        while not self._stop.wait(CLAIM_REFRESH):
+            for path in list(self.held):
+                try:
+                    os.utime(path)
+                except OSError:
+                    pass
+
+    def release(self) -> None:
+        if self._stop:
+            self._stop.set()
+        for path, text in list(self.held.items()):
+            try:
+                if path.read_text(errors="replace") == text:
+                    path.unlink()
+            except OSError:
+                pass
+        self.held.clear()
+
+
 def print_plan(decks: List[Deck], opts) -> None:
     how = f"{opts.cores} ranks"
     say(f"mace run: {len(decks)} deck(s), {how}, timeout {fmt_duration(opts.timeout)} each, "
@@ -897,6 +1031,14 @@ def _main(argv, started) -> int:
     except OSError as exc:
         say(f"mace run: cannot take the run lock: {exc}", err=True)
         return EXIT_REFUSED
+    claims = Claims(host)
+    try:
+        claims.take(decks)
+    except Refusal as exc:
+        for fd in locks:
+            os.close(fd)
+        say(f"mace run: {exc}", err=True)
+        return EXIT_REFUSED
 
     tracker = None
     if opts.track:
@@ -907,6 +1049,7 @@ def _main(argv, started) -> int:
         try:
             tracker = Tracker(host)
         except Exception as exc:
+            claims.release()
             for fd in locks:
                 os.close(fd)
             say(f"mace run: --track: cannot open materials.db: {exc}", err=True)
@@ -929,6 +1072,7 @@ def _main(argv, started) -> int:
                 signal.signal(sig, handler)
             except (OSError, ValueError, TypeError):
                 pass
+        claims.release()
         for fd in locks:
             os.close(fd)
     return summarize(decks, stop)
