@@ -63,7 +63,7 @@ def test_error_detector_does_not_suggest_more_memory(tmp_path, name):
 
 
 def test_a_real_oom_kill_is_still_a_memory_error(mgr):
-    """Closed-shell B3LYP OPT killed by the OOM killer (job 12091685)."""
+    """Closed-shell B3LYP OPT killed by the OOM killer (job 999002)."""
     out = find_data("FAILED_QA/3_dia3_opt_killed_signal9_oom.out")
     assert mgr.analyze_calculation_error({"output_file": str(out)})[0] == "memory_error"
 
@@ -135,7 +135,7 @@ def _sweep_with_squeue_completed(monkeypatch, tmp_path, out_file):
 
 def test_squeue_completed_with_a_crashed_out_is_failed(monkeypatch, tmp_path):
     """SLURM records a job whose ranks were killed as COMPLETED (measured:
-    job 12091685); while squeue still lists it, the record was marked
+    job 999002); while squeue still lists it, the record was marked
     completed and its properties extracted without the .out being read."""
     calc, completed, submitted = _sweep_with_squeue_completed(
         monkeypatch, tmp_path, DATA / "odd_hsesol3c_0d_crash.out")
