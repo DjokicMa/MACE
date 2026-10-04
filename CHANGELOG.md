@@ -408,6 +408,15 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   the rod group 4 polymer parent `tests/data/low_dim_groups/polyyne_rg4.out`
   (now without its SCF cycles and timings, about 410 lines).
 
+- **MACE uses American spelling throughout**: messages, prompts, help text,
+  comments, docstrings and documentation now read "optimization", "canceled",
+  "centered", "neighbors", "behavior" and so on, and a test keeps British
+  spellings from coming back. Unchanged on purpose: the stored job status
+  `cancelled`, the saved-config keys `unrecognised_functional` and
+  `unrecognised_functional_source`, CRYSTAL and SLURM text (`CANCELLED`), and
+  the UniTO basis-set URLs named after British element names. Decks are
+  byte-identical.
+
 ### Fixed
 
 - **A job script run outside SLURM no longer runs in `/`.** `bash job.sh`
