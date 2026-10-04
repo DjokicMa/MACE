@@ -1992,7 +1992,7 @@ fi'''
                     if calc_type == "OPT2":
                         self._fix_opt2_naming(output_dir, Path(output_file).stem)
                 else:
-                    ui.err(f"      Interactive {calc_type} generation failed or was cancelled")
+                    ui.err(f"      Interactive {calc_type} generation failed or was canceled")
             except Exception as e:
                 ui.err(f"      Error running interactive mode: {e}")
             return
@@ -2376,7 +2376,7 @@ fi'''
                     if material_config_file.exists():
                         ui.ok(f"      Saved configuration to {material_config_file}")
                 else:
-                    ui.err(f"      Interactive {calc_type} generation failed or was cancelled")
+                    ui.err(f"      Interactive {calc_type} generation failed or was canceled")
             except Exception as e:
                 ui.err(f"      Error running interactive mode: {e}")
                 

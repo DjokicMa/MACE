@@ -721,7 +721,7 @@ def out_charge_signs(out_text: str) -> List[str]:
     for value in re.findall(r"CHARGE NORMALIZATION FACTOR\s+([-\d.]+)", text):
         try:
             if abs(float(value) - 1.0) > 1e-6:
-                signs.append("a renormalised guess")
+                signs.append("a renormalized guess")
                 break
         except ValueError:
             continue

@@ -1759,7 +1759,7 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
                     ui.err(
                         f"Aborting D12 file creation: cannot verify that the "
                         f"symmetry elements of {dimensionality} group {group} "
-                        f"sit on the origin, because spglib did not analyse "
+                        f"sit on the origin, because spglib did not analyze "
                         f"this structure. Install spglib, set options['{key}'] "
                         f"explicitly to assert the group yourself, or write "
                         f"the structure in P1."

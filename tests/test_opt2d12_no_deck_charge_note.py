@@ -31,7 +31,7 @@ SIGNS = {
               "   1(  3)   2.0   0.0   0.0   0.0   0.0\n",
     "charged": " INFORMATION **** CHARGED ****  CHARGED CELL - NO TOTAL ENERGY\n",
     "not_neutral": " WARNING **** INPBAS **** UNIT CELL NOT NEUTRAL\n",
-    "renormalised": " CHARGE NORMALIZATION FACTOR   0.91666667\n",
+    "renormalized": " CHARGE NORMALIZATION FACTOR   0.91666667\n",
 }
 
 

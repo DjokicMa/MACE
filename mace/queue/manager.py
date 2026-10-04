@@ -1072,7 +1072,7 @@ class EnhancedCrystalQueueManager:
                 
             # Check if output file shows signs of early failure
             if self.is_job_failing_early(calc):
-                print(f"Detected early failure for {calc['calc_id']}, cancelling job")
+                print(f"Detected early failure for {calc['calc_id']}, canceling job")
                 self.cancel_job(calc['slurm_job_id'], calc['calc_id'])
                 
     def recover_running_finalrun_loops(self):
@@ -1113,7 +1113,7 @@ class EnhancedCrystalQueueManager:
             if result.returncode != 0:
                 print(f"  Could not cancel job {job_id}: {result.stderr.strip()}")
                 continue
-            print(f"  Cancelled job {job_id}; recovering it now")
+            print(f"  Canceled job {job_id}; recovering it now")
             self.db.update_calculation_status(calc['calc_id'], 'failed',
                                               slurm_state='CANCELLED',
                                               output_file=output_file)
@@ -1201,18 +1201,18 @@ class EnhancedCrystalQueueManager:
                                   capture_output=True, text=True)
             
             if result.returncode == 0:
-                print(f"Cancelled job {slurm_job_id}")
+                print(f"Canceled job {slurm_job_id}")
                 if self.enable_tracking:
                     self.db.update_calculation_status(
                         calc_id, STATUS_CANCELED_DB,
                         error_type='early_failure',
-                        error_message='Job cancelled due to early failure detection'
+                        error_message='Job canceled due to early failure detection'
                     )
             else:
-                print(f"Error cancelling job {slurm_job_id}: {result.stderr}")
+                print(f"Error canceling job {slurm_job_id}: {result.stderr}")
                 
         except Exception as e:
-            print(f"Error cancelling job {slurm_job_id}: {e}")
+            print(f"Error canceling job {slurm_job_id}: {e}")
             
     def handle_completed_calculation(self, calc_id: str):
         """Handle a completed calculation - extract properties and plan next steps."""

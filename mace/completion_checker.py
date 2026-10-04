@@ -636,13 +636,13 @@ def remove_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]):
             )
 
             if result.returncode == 0:
-                print(f"\n✓ Cancelled {len(definite_ids)} zombie job(s):")
+                print(f"\n✓ Canceled {len(definite_ids)} zombie job(s):")
                 for jid in definite_ids:
                     print(f"  scancel {jid}")
             else:
-                print(f"\n✗ Error cancelling jobs: {result.stderr}")
+                print(f"\n✗ Error canceling jobs: {result.stderr}")
         else:
-            print("\nNo zombie jobs cancelled.")
+            print("\nNo zombie jobs canceled.")
             if definite_ids:
                 print("To cancel manually:")
                 for jid in definite_ids:
@@ -661,13 +661,13 @@ def remove_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]):
             )
 
             if result.returncode == 0:
-                print(f"\n✓ Cancelled {len(ongoing_ids)} ongoing job(s):")
+                print(f"\n✓ Canceled {len(ongoing_ids)} ongoing job(s):")
                 for jid in ongoing_ids:
                     print(f"  scancel {jid}")
             else:
-                print(f"\n✗ Error cancelling jobs: {result.stderr}")
+                print(f"\n✗ Error canceling jobs: {result.stderr}")
         else:
-            print("\nNo ongoing jobs cancelled.")
+            print("\nNo ongoing jobs canceled.")
 
 # === Main function === #
 def main():

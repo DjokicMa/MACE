@@ -190,12 +190,12 @@ def stdin_is_terminal() -> bool:
 # An optimisation CRYSTAL never finished (killed, out of time, out of memory)
 # has no "OPT END" line; its .out still parses, but only the starting geometry
 # is there to convert.
-UNFINISHED_OPT_NOTE = ("unfinished optimisation (no OPT END in the .out), so the deck "
+UNFINISHED_OPT_NOTE = ("unfinished optimization (no OPT END in the .out), so the deck "
                        "has its starting geometry")
 # One stopped at the cycle limit ends "OPT END - FAILED" and prints no final
 # geometry (MSUCOF-4-FeCp_H2 on HPCC, 800 points), so the parser falls back to
 # the first geometry too: the input cell, not the last point's.
-FAILED_OPT_NOTE = ("optimisation did not converge (OPT END - FAILED), so the deck has "
+FAILED_OPT_NOTE = ("optimization did not converge (OPT END - FAILED), so the deck has "
                    "its starting geometry, not the last point's")
 
 try:
@@ -2287,7 +2287,7 @@ def recompute_ion_charges(child_text, parent_text, requested, interactive=False)
                 return sorted((f["formula"], f["ion"] or "") for f in frags)
             before, after = kinds(parent_text), kinds(stripped)
             if before != after:
-                notes.append("WARNING: the fragments changed during the optimisation (parent: "
+                notes.append("WARNING: the fragments changed during the optimization (parent: "
                              + ", ".join(f for f, _ in before) + "; now: "
                              + ", ".join(f for f, _ in after) + ") - check the charges")
         except Exception:
@@ -2673,7 +2673,7 @@ Examples:
                 print_template_plan(args.config_file, config_data, file_pairs, args.output_dir)
                 ask = not (args.yes or args.non_interactive) and stdin_is_terminal()
                 if ask and not yes_no_prompt(f"\nApply to all {len(file_pairs)} files?", default="yes"):
-                    ui.warn("Cancelled: nothing written.")
+                    ui.warn("Canceled: nothing written.")
                     sys.exit(1)
 
         # Ask about shared settings mode if multiple files and not specified.
@@ -2847,7 +2847,7 @@ Examples:
         unfinished = [(name, note) for name, _, notes in written for note in notes
                       if note in (UNFINISHED_OPT_NOTE, FAILED_OPT_NOTE)]
         summary = (f"{len(written)} written"
-                   + (f" ({len(unfinished)} from unfinished or failed optimisations)"
+                   + (f" ({len(unfinished)} from unfinished or failed optimizations)"
                       if unfinished else "")
                    + f", {len(failed)} failed (of {total} files)")
         if failed:
@@ -2859,7 +2859,7 @@ Examples:
         else:
             ui.ok(summary)
         if unfinished:
-            ui.warn("Written from the starting geometry of an optimisation that did not "
+            ui.warn("Written from the starting geometry of an optimization that did not "
                     "finish or did not converge:")
             for name, note in unfinished:
                 ui.warn(f"  {name}: {'no OPT END' if note == UNFINISHED_OPT_NOTE else 'OPT END - FAILED'}")

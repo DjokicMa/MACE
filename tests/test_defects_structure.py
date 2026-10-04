@@ -44,7 +44,7 @@ def test_fractional_site_of_the_host_cell_maps_to_the_supercell_label():
 
 def test_fractional_site_needs_supercon_on_a_centered_host():
     g = st.parse_geometry(TEXT)
-    with pytest.raises(DefectError, match="centred host"):
+    with pytest.raises(DefectError, match="centered host"):
         st.resolve_site(_host(), g, "O", frac=(1, 1, 1), keyword="SUPERCEL", matrix=MGO_222)
 
 

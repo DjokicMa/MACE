@@ -50,7 +50,7 @@ def test_a_doped_run_gets_its_count_and_fragment_charges():
     assert by_ion["Li+"]["mulliken_charge"] == pytest.approx(0.9)
     assert by_ion["FSI-"]["mulliken_charge"] == pytest.approx(0.0)
     # FSI- holding none of its extra electron: flagged (heuristic, > 0.5 e)
-    assert "electron delocalised from FSI-" in by_ion["FSI-"]["flag"]
+    assert "electron delocalized from FSI-" in by_ion["FSI-"]["flag"]
     assert by_ion["Li+"]["flag"] is None
 
 

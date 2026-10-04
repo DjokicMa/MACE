@@ -569,7 +569,7 @@ class D3Generator:
                 converted = self._label_path_as_coordinates(config, path)
                 if converted is None:
                     ui.err("BAND: the k-point labels " + " ".join(path) + " cannot be written "
-                           "for this lattice (CRYSTAL23 does not recognise them as labels and "
+                           "for this lattice (CRYSTAL23 does not recognize them as labels and "
                            "MACE has no coordinates for them); no D3 file was written. Use "
                            "k-point vectors or a manual path instead.")
                     return None

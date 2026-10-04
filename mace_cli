@@ -839,7 +839,7 @@ and tolerances are kept byte for byte).
 Results are for unrelaxed defects. 3D charged states get the charged-cell offset
 q*(C(q)+C(0))/2 with C = 2*E_sph/N (EXT EL-SPHEROPOLE), and the Lany-Zunger-scaled
 Makov-Payne image-charge term when a dielectric constant is given (otherwise
-they are labelled uncorrected for image charges). The --calibrate decks are an
+they are labeled uncorrected for image charges). The --calibrate decks are an
 optional cross-check; POTC alignment is opt-in. See docs/defects/README.md, and
 `mace defects analyze --help`.
 """,
@@ -1169,7 +1169,7 @@ Examples:
     'credits': """
 Usage: mace credits
 
-Show the MACE development team and acknowledgements. Equivalent to the global
+Show the MACE development team and acknowledgments. Equivalent to the global
 'mace --credits' flag.
 """,
     'version': """

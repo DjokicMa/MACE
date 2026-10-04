@@ -3166,7 +3166,7 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
     }
     if slab:
         kpath_info["in_plane"] = True
-        print("  SeeK-path is not used for a slab (it would standardise the vacuum axis; "
+        print("  SeeK-path is not used for a slab (it would standardize the vacuum axis; "
               "manual p.310 note 3): the static in-plane path is used.")
     if expansion is not None:
         if cell == "primitive":
@@ -3212,7 +3212,7 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
     if converted is None and lookup_key[:2] in ('aP', 'mP', 'mS', 'mC', 'oP', 'oS', 'oC', 'oF', 'oI'):
         print(f"  WARNING: the static {lookup_key} path is given in SeeK-path's standard cell, "
               f"which can differ from CRYSTAL's primitive cell for this lattice (axis order, "
-              f"reduction, centring vectors); its labels may then name other points."
+              f"reduction, centering vectors); its labels may then name other points."
               + (" Install the 'seekpath' library for a path in CRYSTAL's cell."
                  if install_hint else ""))
     if refusal:

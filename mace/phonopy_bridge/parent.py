@@ -353,7 +353,7 @@ def refusal_reasons(deck: ParentDeck, out_text: str) -> List[Tuple[str, str]]:
         reasons.append((REFUSE_SCF_NOT_CONVERGED, "parent's last SCF did not converge"))
     if is_opt_parent(deck, out_text) and "OPT END - CONVERGED" not in out_text:
         reasons.append((REFUSE_OPT_NOT_CONVERGED,
-                        "parent is an optimisation without 'OPT END - CONVERGED': its last "
+                        "parent is an optimization without 'OPT END - CONVERGED': its last "
                         "geometry is not a minimum and would give spurious imaginary modes"))
     if is_freq_parent(deck, out_text):
         reasons.append((REFUSE_FREQ_GEOMETRY,

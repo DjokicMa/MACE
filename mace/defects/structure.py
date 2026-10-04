@@ -246,7 +246,7 @@ def host_cell(host: HostInfo, keyword: str, matrix, geom: Geometry) -> np.ndarra
             except ValueError:
                 centered = False
         if centered:
-            raise DefectError("--site-frac / fractional --insert with SUPERCEL on a centred host: "
+            raise DefectError("--site-frac / fractional --insert with SUPERCEL on a centered host: "
                               "SUPERCEL expands the primitive cell, not the host's crystallographic "
                               "cell; use SUPERCON (3D), --site-label, or --cart")
     if host.dimensionality == 2:

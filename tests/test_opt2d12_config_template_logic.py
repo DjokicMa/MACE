@@ -410,8 +410,8 @@ def test_an_unfinished_optimization_is_written_and_flagged(batch, tmp_path, caps
     status, _ = batch("--directory", ".", "--config-file", "t.json", "--output-dir", "sp")
     out = capsys.readouterr()
     assert status == 0
-    assert "2 written (1 from unfinished or failed optimisations), 0 failed (of 2 files)" in out.err
-    assert "nacl.out: wrote sp/nacl_sp_PBE0_optimized.d12 - WARNING: unfinished optimisation" in out.err
+    assert "2 written (1 from unfinished or failed optimizations), 0 failed (of 2 files)" in out.err
+    assert "nacl.out: wrote sp/nacl_sp_PBE0_optimized.d12 - WARNING: unfinished optimization" in out.err
     assert "agbr.out: wrote sp/agbr_sp_PBE0_optimized.d12\n" in out.out
 
 
@@ -425,8 +425,8 @@ def test_a_failed_optimization_is_written_and_flagged(batch, tmp_path, capsys):
     status, _ = batch("--directory", ".", "--config-file", "t.json", "--output-dir", "sp")
     err = capsys.readouterr().err
     assert status == 0
-    assert "2 written (2 from unfinished or failed optimisations), 0 failed (of 2 files)" in err
-    assert ("nacl.out: wrote sp/nacl_sp_PBE0_optimized.d12 - WARNING: optimisation did not "
+    assert "2 written (2 from unfinished or failed optimizations), 0 failed (of 2 files)" in err
+    assert ("nacl.out: wrote sp/nacl_sp_PBE0_optimized.d12 - WARNING: optimization did not "
             "converge (OPT END - FAILED), so the deck has its starting geometry, not the "
             "last point's") in err
-    assert "agbr.out: wrote sp/agbr_sp_PBE0_optimized.d12 - WARNING: unfinished optimisation" in err
+    assert "agbr.out: wrote sp/agbr_sp_PBE0_optimized.d12 - WARNING: unfinished optimization" in err

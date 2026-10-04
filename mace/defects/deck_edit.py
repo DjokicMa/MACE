@@ -71,9 +71,9 @@ _BLOCK1_TERMINATORS = {"END", "ENDG", "ENDGEOM", "BASISSET", "OPTGEOM"}
 #: Calculations other than a single point. The defect set is pristine SP + one
 #: SP per charge state; anything else is refused with the reason.
 _REFUSED_CALCS = {
-    "OPTGEOM": "the host is a geometry optimisation; its deck holds the INITIAL geometry, "
+    "OPTGEOM": "the host is a geometry optimization; its deck holds the INITIAL geometry, "
                "and a charged supercell must not relax its cell. Build from an SP of the "
-               "optimised geometry: mace opt2d12 --calc-type SP",
+               "optimized geometry: mace opt2d12 --calc-type SP",
     "FREQCALC": "the host is a frequency calculation; build from an SP deck "
                 "(mace opt2d12 --calc-type SP)",
     "ELASTCON": "the host is an elastic-constant calculation; build from an SP deck",

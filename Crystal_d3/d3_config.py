@@ -146,7 +146,7 @@ def save_d3_config(config: Dict[str, Any], filename: str, overwrite: bool = True
         if os.path.exists(filename) and not overwrite:
             response = input(f"{filename} exists. Overwrite? [y/N]: ").strip().lower()
             if response != 'y':
-                print("Save cancelled.")
+                print("Save canceled.")
                 return False
         
         # Clean configuration before saving

@@ -835,9 +835,9 @@ def test_lattice_tolerances_are_pinned_by_a_nonoblique_group():
     # which is what the angle tolerance exists to absorb.
     assert check_layer_group_cell(HEX, 2.47, 2.47, 120.003561) is None
     assert LAYER_GROUP_ANGLE_TOL_DEG >= 0.005, (
-        "angle tolerance too tight to absorb real optimised slab cells")
+        "angle tolerance too tight to absorb real optimized slab cells")
     assert LAYER_GROUP_LENGTH_RTOL >= 1e-4, (
-        "length tolerance too tight to absorb real optimised slab cells")
+        "length tolerance too tight to absorb real optimized slab cells")
 
     # Genuinely wrong lattices must still be refused, or the guard is inert.
     for a, b, gamma, why in [

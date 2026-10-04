@@ -284,7 +284,7 @@ def calibrate(jobs: Sequence[JobResult], on: str) -> List[dict]:
             elif explicit:
                 points[d_end] = (explicit[0], "restricted endpoint deck")
             elif cands:
-                notes.append(f"d={d_end:+.1f}: {cands[0].name} is spin-polarised (|spin| >= "
+                notes.append(f"d={d_end:+.1f}: {cands[0].name} is spin-polarized (|spin| >= "
                              f"{CLOSED_SHELL_SPIN}) and there is no restricted endpoint deck; not used")
         ds = sorted(points)
         pts = [(d, points[d][0]) for d in ds]
@@ -301,7 +301,7 @@ def calibrate(jobs: Sequence[JobResult], on: str) -> List[dict]:
             values.append({"at": j1.name, "doping": d1, "C": c, "slope": slope, "level": level,
                            "spheropole_crosscheck": (2 * sph / j1.summary.electrons) if sph else None})
         if not values:
-            notes.append("no interior point with neighbours on both sides: no calibration")
+            notes.append("no interior point with neighbors on both sides: no calibration")
             results.append({"side": "removal" if sign < 0 else "addition", "C": None, "values": [],
                             "notes": notes})
             continue
@@ -712,7 +712,7 @@ def _analyze_3d(manifest, texts, jobs, report, mu_term, vbm_override, potc, appl
                 dielectric=None, offset="spheropole"):
     pris_job = next((j for j in jobs if j.role == "pristine"), None)
     if pris_job is None or not pris_job.ok:
-        report["notes"].append("the pristine job has no converged output: nothing to analyse")
+        report["notes"].append("the pristine job has no converged output: nothing to analyze")
         return
     vbm, gap = _vbm_info(pris_job.summary, vbm_override, report)
     if vbm is None:

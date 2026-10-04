@@ -556,7 +556,7 @@ class NodeExclusionManager:
             print(f"\nExclude string: {exclude_str}")
             return exclude_str
         else:
-            print("Exclusion cancelled.")
+            print("Exclusion canceled.")
             return None
 
     def _exclude_all_amd_nodes(self) -> Optional[str]:
@@ -582,7 +582,7 @@ class NodeExclusionManager:
             print(f"\nExclude string: {exclude_str}")
             return exclude_str
         else:
-            print("Exclusion cancelled.")
+            print("Exclusion canceled.")
             return None
 
     def _exclude_all_intel_nodes(self) -> Optional[str]:
@@ -608,7 +608,7 @@ class NodeExclusionManager:
             print(f"\nExclude string: {exclude_str}")
             return exclude_str
         else:
-            print("Exclusion cancelled.")
+            print("Exclusion canceled.")
             return None
 
     def _custom_selection(self) -> Optional[str]:
@@ -704,7 +704,7 @@ class NodeExclusionManager:
             print(f"\nExclude string: {exclude_str}")
             return exclude_str
         else:
-            print("Exclusion cancelled.")
+            print("Exclusion canceled.")
             return None
 
     def _exclude_by_type(self) -> Optional[str]:
@@ -772,7 +772,7 @@ class NodeExclusionManager:
             print(f"\nExclude string: {exclude_str}")
             return exclude_str
         else:
-            print("Exclusion cancelled.")
+            print("Exclusion canceled.")
             return None
 
     def _custom_exclusion(self) -> Optional[str]:

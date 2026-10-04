@@ -72,7 +72,7 @@ def _as_saved_before(template, stem):
     data["external_basis_data"] = in_data.get("external_basis_data", [])
     data["k_points"] = in_data.get("k_points")
     data["primitive_coordinates"] = [{"atom_number": "247", "x": "0", "y": "0", "z": "0"}]
-    data["optimization_content"] = "the parent's optimisation log"
+    data["optimization_content"] = "the parent's optimization log"
     old = template.with_name("old_" + template.name)
     old.write_text(json.dumps(data))
     return old

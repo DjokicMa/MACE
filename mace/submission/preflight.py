@@ -511,7 +511,7 @@ def preflight_deck(deck, *, runner, keep_dir=None) -> PreflightResult:
     if len(terminators) > 1:
         return PreflightResult(
             deck, ERROR, "mixed line terminators",
-            "CR, LF and CRLF are mixed in this deck; refusing to normalise it, "
+            "CR, LF and CRLF are mixed in this deck; refusing to normalize it, "
             "because the copy CRYSTAL saw would then differ from the file you submit")
 
     # These are all "the harness cannot check this deck", never "this deck is

@@ -349,8 +349,8 @@ def test_an_unfinished_optimization_is_flagged(tmp_path, ext_template):
                    "--output-dir", "sp"], parents)
     out = result.stdout + result.stderr
     assert result.returncode == 0, out[-3000:]
-    assert "2 written (1 from unfinished or failed optimisations), 0 failed (of 2 files)" in out
-    assert f"{KILLED.name}: wrote " in out and "WARNING: unfinished optimisation" in out
+    assert "2 written (1 from unfinished or failed optimizations), 0 failed (of 2 files)" in out
+    assert f"{KILLED.name}: wrote " in out and "WARNING: unfinished optimization" in out
     assert f"{DIA}.out: wrote sp/{DIA}_sp_B3LYP-D3_optimized.d12\n" in result.stdout
 
 
@@ -373,9 +373,9 @@ def test_a_failed_optimization_is_flagged_and_gets_its_starting_geometry(tmp_pat
                    "--output-dir", "sp"], parents)
     out = result.stdout + result.stderr
     assert result.returncode == 0, out[-3000:]
-    assert "2 written (1 from unfinished or failed optimisations), 0 failed (of 2 files)" in out
+    assert "2 written (1 from unfinished or failed optimizations), 0 failed (of 2 files)" in out
     assert (f"{failed}.out: wrote sp/{failed}_sp_B3LYP-D3_optimized.d12 - WARNING: "
-            "optimisation did not converge (OPT END - FAILED)") in out
+            "optimization did not converge (OPT END - FAILED)") in out
     # The starting cell, not the last point's: the deck's cell line is the
     # first one the .out prints.
     deck = _deck(parents / "sp", failed).read_text().splitlines()

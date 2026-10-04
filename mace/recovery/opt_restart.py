@@ -575,7 +575,7 @@ def refresh_restart_staging(script_text: str, template_text: Optional[str] = Non
     guessp_ifs = sum(l.strip() == _OLD_GUESSP_IF for l in code)
     fort20 = [l for l in code if 'fort.20' in l]
     if fort20 and guessp_ifs != 1:
-        return script_text, 'unrecognised fort.20 handling in the script; script unchanged'
+        return script_text, 'unrecognized fort.20 handling in the script; script unchanged'
     at = copies[0].end()                  # end of the copy line, before its newline
     text = script_text[:at] + '\n' + block.rstrip('\n') + script_text[at:]
     if guessp_ifs == 1:

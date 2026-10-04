@@ -648,7 +648,7 @@ def plan_charge_setup(symbols: Sequence[str], z_labels: Sequence[int], xyz, *, c
             setup.warnings.append(
                 f"WARNING: {fmt_n(electrons)} electrons per cell is odd and no spin state was "
                 "given, so the deck stays closed shell (a half-filled band); set spinlock for a "
-                "localised open-shell state")
+                "localized open-shell state")
         else:
             if method.method == "HF" and method.hf_method != "UHF":
                 raise IonChargeError(f"{method.hf_method} is closed shell and cannot hold an odd "

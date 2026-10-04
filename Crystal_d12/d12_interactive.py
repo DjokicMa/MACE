@@ -166,7 +166,7 @@ def display_current_settings(settings: Dict[str, Any], extracted: bool = False, 
     print(f"\n### METHOD AND BASIS SET ###")
     if not settings.get("functional") and settings.get("unrecognised_functional"):
         print(f"Method: DFT")
-        print(f"Functional: {settings['unrecognised_functional']} (not recognised)")
+        print(f"Functional: {settings['unrecognised_functional']} (not recognized)")
     elif settings.get("functional"):
         func = settings["functional"]
         # Determine if this is a Hartree-Fock method or DFT

@@ -681,7 +681,7 @@ def fragment_charges(text: str, force: bool = False) -> Dict[str, object]:
         dev = q - f["charge"]
         flag = None
         if f["ion"] and abs(dev) > FRAGMENT_DEVIATION_FLAG:
-            flag = f"electron delocalised from {f['ion']} (Mulliken {q:+.2f} vs formal {f['charge']:+d})"
+            flag = f"electron delocalized from {f['ion']} (Mulliken {q:+.2f} vs formal {f['charge']:+d})"
         elif not f["ion"] and abs(q) > FRAGMENT_DEVIATION_FLAG:
             flag = f"neutral fragment carries {q:+.2f} e"
         entries.append({"formula": f["formula"], "atoms": [i + 1 for i in f["atoms"]], "ion": f["ion"],

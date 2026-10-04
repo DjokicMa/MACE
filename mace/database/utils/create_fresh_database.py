@@ -872,7 +872,7 @@ def main():
     if Path(args.db_path).exists() and not args.force:
         response = input(f"Database {args.db_path} already exists. Overwrite? (y/N): ")
         if response.lower() != 'y':
-            print("Cancelled.")
+            print("Canceled.")
             return
     
     # Create fresh database with options

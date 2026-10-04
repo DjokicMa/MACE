@@ -769,7 +769,7 @@ class WorkflowPlanner:
                 ui.ok("Successfully loaded configuration from NewCifToD12.py")
                 return cif_config
             else:
-                ui.err("NewCifToD12.py configuration failed or was cancelled.")
+                ui.err("NewCifToD12.py configuration failed or was canceled.")
                 ui.info("Using default configuration...")
                 return self.get_default_cif_config(first_calc_type)
 
@@ -3071,7 +3071,7 @@ class WorkflowPlanner:
                     }
                     ui.ok(f"      ✅ {material_name}: {calc_type} configuration saved")
                 else:
-                    ui.err(f"      ❌ {material_name}: Configuration failed or cancelled")
+                    ui.err(f"      ❌ {material_name}: Configuration failed or canceled")
                     
             except Exception as e:
                 ui.err(f"      ❌ Error configuring {material_name}: {e}")
@@ -3785,7 +3785,7 @@ class WorkflowPlanner:
 
                 return expert_config
             else:
-                ui.err(f"      CRYSTALOptToD12.py configuration failed or was cancelled")
+                ui.err(f"      CRYSTALOptToD12.py configuration failed or was canceled")
                 return None
 
         except Exception as e:
@@ -4381,7 +4381,7 @@ class WorkflowPlanner:
             ui.info(f"        Exclude string: {exclude_str}")
             return exclude_str
         else:
-            ui.info("        Exclusion cancelled.")
+            ui.info("        Exclusion canceled.")
             return None
 
     def _custom_exclusion_prompt(self) -> Optional[str]:
@@ -4665,7 +4665,7 @@ class WorkflowPlanner:
 
         proceed = yes_no_prompt("Proceed with workflow execution?", "yes")
         if not proceed:
-            ui.info("Workflow execution cancelled.")
+            ui.info("Workflow execution canceled.")
             return
 
         # Use WorkflowExecutor for proper isolation support

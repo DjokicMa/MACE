@@ -275,7 +275,7 @@ def test_canceling_zombies_asks_twice_and_cancels_what_was_agreed(zombies, monke
     assert "Also cancel 1 ongoing job(s)" in prompts[1]
     cancels = [c for c in fake.calls if c[0] == "scancel"]
     assert cancels == [["scancel", "101", "102"]]
-    assert "No ongoing jobs cancelled." in capsys.readouterr().out
+    assert "No ongoing jobs canceled." in capsys.readouterr().out
 
 
 def test_declining_cancels_nothing(zombies, monkeypatch):
