@@ -34,7 +34,11 @@ def _source(crystal_system, output):
     return settings["bands"]["kpath_source"]
 
 
-def test_phonon_path_takes_inversion_from_the_output():
+def test_phonon_path_takes_inversion_from_the_output(monkeypatch):
+    # The snippet holds no atoms, so seekpath cannot take this cell, and an
+    # installed seekpath that fails stops a 3D path unless the static path is
+    # asked for: ask, as this is the static route's inversion detection.
+    monkeypatch.setenv("MACE_STATIC_KPATH", "1")
     assert _source("cubic", OUTPUT) == "seekpath_inv"
     assert _source("cubic-F", None) == "seekpath_noinv"
 

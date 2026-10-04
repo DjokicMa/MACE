@@ -102,12 +102,18 @@ def _seekpath_library_failed(out_file: Optional[str], error: Exception) -> None:
     """Stop a 3D cell's path when the seekpath library failed for it.
 
     Raises SeekpathRequired unless the static path was asked for; a slab or
-    polymer (which do not need seekpath) and an opt-in fall back, with a
-    warning that says why.
+    polymer (which do not need seekpath), an opt-in, and a path that names no
+    readable output (no cell was given to seekpath) fall back, with a warning
+    that says why.
     """
-    if output_dimensionality(out_file) == 3 and not static_kpath_requested():
+    if (_readable_3d_output(out_file) and not static_kpath_requested()):
         raise SeekpathRequired(seekpath_failed_message(error)) from error
     print(f"  Warning: seekpath library failed ({error}), falling back to static data")
+
+
+def _readable_3d_output(out_file: Optional[str]) -> bool:
+    """True for an output file that exists and is of a 3D cell."""
+    return bool(out_file) and Path(out_file).is_file() and output_dimensionality(out_file) == 3
 
 
 def check_seekpath_path(out_file: Optional[str]) -> None:
@@ -115,8 +121,8 @@ def check_seekpath_path(out_file: Optional[str]) -> None:
     seekpath is missing, or it fails for this cell (and the static path was
     not asked for). For a check made before a deck is written."""
     require_seekpath_for(out_file)
-    if (out_file and _seekpath_usable() and not static_kpath_requested()
-            and output_dimensionality(out_file) == 3):
+    if (_seekpath_usable() and not static_kpath_requested()
+            and _readable_3d_output(out_file)):
         import contextlib
         import io
         try:

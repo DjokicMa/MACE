@@ -29,6 +29,14 @@ PTO_OUTPUT = """\
 """
 
 
+def _static_path(monkeypatch):
+    # The snippet holds no atoms, so seekpath cannot take this cell, and an
+    # installed seekpath that fails stops a 3D path unless the static path is
+    # asked for (tests/test_seekpath_library_failure.py). These tests are about
+    # the text reaching the helpers as a file, so they ask for it.
+    monkeypatch.setenv("MACE_STATIC_KPATH", "1")
+
+
 def _seekpath_bands():
     return {
         "dispersion": True,
@@ -43,8 +51,9 @@ def _seekpath_bands():
     }
 
 
-def test_seekpath_phonon_path_from_output_text(tmp_path):
+def test_seekpath_phonon_path_from_output_text(tmp_path, monkeypatch):
     """The deck is written, with the path the same output gives as a file."""
+    _static_path(monkeypatch)
     buf = io.StringIO()
     write_frequency_section(buf, _seekpath_bands(), "cubic", 221, PTO_OUTPUT)
     lines = buf.getvalue().splitlines()
@@ -61,8 +70,9 @@ def test_seekpath_phonon_path_from_output_text(tmp_path):
     assert written == expected
 
 
-def test_seekpath_auto_phonon_path_from_output_text():
+def test_seekpath_auto_phonon_path_from_output_text(monkeypatch):
     """get_auto_phonon_path takes the same text and must not crash on it."""
+    _static_path(monkeypatch)
     segments = d12_calc_freq.get_auto_phonon_path(
         "cubic", 221, shrink=16, format_type="seekpath",
         lattice_type="P", optimization_section=PTO_OUTPUT)
