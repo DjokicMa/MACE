@@ -744,7 +744,7 @@ def deck_origin_choice(spacegroup, positions, origin_setting="AUTO"):
 
 
 def expand_to_p1(cif_data, options):
-    """cif_data with every atom of the cell the symmetrised deck describes.
+    """cif_data with every atom of the cell the symmetrized deck describes.
 
     ASE expands the CIF's atom records with the CIF's own operators when it
     lists them, and otherwise with origin choice 1 of the space group. For a
@@ -798,7 +798,7 @@ def reduce_in_spglib_setting(cif_data, cell, tolerance, number):
     Declaring spglib's group while keeping the CIF's cell and atoms makes
     CRYSTAL apply that group's standard operators to a cell in another
     setting (a primitive rhombohedral cell of rock salt written as Fm-3m
-    becomes a quarter-volume cube). The standardised conventional cell,
+    becomes a quarter-volume cube). The standardized conventional cell,
     its asymmetric unit and its lattice parameters are taken instead.
 
     For a group with two origins the origin is the one the deck will
@@ -1323,7 +1323,7 @@ def slab_cartesian_z(z_fractions, c, z_reversing):
 
     Under a layer group with a z-reversing operation, z is measured from that
     operation's plane (manual page 21), which in the cell sits at fractional
-    z = 0 or 1/2 - whichever the layer is centred on. The atoms given may be
+    z = 0 or 1/2 - whichever the layer is centered on. The atoms given may be
     only the asymmetric unit, so their mirror images -z are included when
     locating the layer. Without such an operation the origin is free and the
     layer keeps its c * z height, shifted only by a whole cell when it
@@ -2057,8 +2057,8 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
             write_optimization_section(f, optimization_type, optimization_settings)
         elif calculation_type == "FREQ":
             # For frequency calculation - FREQCALC block comes directly after coordinates
-            # Crystal system with the lattice centring ("cubic-F"): there is no
-            # CRYSTAL output here to read the centring from, and without it
+            # Crystal system with the lattice centering ("cubic-F"): there is no
+            # CRYSTAL output here to read the centering from, and without it
             # the automatic phonon path was the primitive one for every group
             # (Fd-3m got simple-cubic M-G-R-X-G; opt2d12 gives X-G-L-W-G)
             crystal_system = crystal_system_with_lattice(spacegroup)
@@ -2307,7 +2307,7 @@ def process_cifs(cif_directory, options, output_directory=None, interactive=None
             # Apply symmetry handling
             if options["symmetry_handling"] == "P1":
                 # If P1 symmetry requested, write every atom of the cell the
-                # symmetrised deck would describe, then override the spacegroup
+                # symmetrized deck would describe, then override the spacegroup
                 cif_data = expand_to_p1(cif_data, options)
                 cif_data["spacegroup"] = 1
                 ui.print("Using P1 symmetry (no symmetry operations, all atoms explicit)")

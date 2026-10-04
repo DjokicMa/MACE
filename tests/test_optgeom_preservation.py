@@ -5,7 +5,7 @@
   also dropped the parent's MAXTRADIUS.
 * With no plan, a parent OPTGEOM that set no TOLDEG/TOLDEX/TOLDEE (CRYSTAL's
   defaults, 0.0003/0.0012/7) came out with the writer's tight fallbacks
-  0.00003/0.00012/7, a tenfold tighter optimisation the parent never ran.
+  0.00003/0.00012/7, a tenfold tighter optimization the parent never ran.
 """
 import io
 

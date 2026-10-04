@@ -8,7 +8,7 @@ group to the wrong table.
 
 It used to be checked against a second, independent implementation,
 Crystal_d12/d12_constants.py SPACEGROUP_TO_PATH. That table ignored the
-lattice centring, its only reader was a fallback in
+lattice centering, its only reader was a fallback in
 d12_calc_freq.get_auto_phonon_path, and it has been removed
 (tests/test_auto_phonon_path_centring.py).
 """

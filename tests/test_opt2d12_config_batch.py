@@ -339,7 +339,7 @@ def test_an_old_template_keeps_each_parents_mesh(tmp_path):
 
 
 def test_an_unfinished_optimization_is_flagged(tmp_path, ext_template):
-    """A killed optimisation (no OPT END) still converts, from its starting
+    """A killed optimization (no OPT END) still converts, from its starting
     geometry, and the file line and the summary say so."""
     parents = _copy([DIA], tmp_path / "opts")
     if not KILLED.exists():

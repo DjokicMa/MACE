@@ -1,4 +1,4 @@
-"""get_auto_phonon_path's coordinate paths follow the lattice centring.
+"""get_auto_phonon_path's coordinate paths follow the lattice centering.
 
 A coordinate format other than "vectors" (e.g. "coordinates") fell through to
 d12_constants.SPACEGROUP_TO_PATH / HIGH_SYMMETRY_PATHS, which map a space-group
@@ -6,7 +6,7 @@ number to one path per crystal system: C2/m got the primitive monoclinic
 path, Fmmm and Immm the primitive orthorhombic one, I4/mmm the primitive
 tetragonal one and R-3m the hexagonal one. That was the tables' only reader
 (get_auto_phonon_path itself has no caller in MACE), so they are removed and
-every coordinate format takes the centring-aware path the "vectors" format
+every coordinate format takes the centering-aware path the "vectors" format
 already used (d3_kpoints.get_band_path_from_symmetry).
 """
 import pytest

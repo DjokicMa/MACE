@@ -48,7 +48,7 @@ def _extract(tmp_path, out_name, dats):
 
 
 def test_another_materials_dat_files_are_not_used(tmp_path, seen):
-    """Before: mat.out analysed with other_band.BAND.DAT / other_doss.DOSS.DAT."""
+    """Before: mat.out analyzed with other_band.BAND.DAT / other_doss.DOSS.DAT."""
     props = _extract(tmp_path, "mat.out", ["other_band.BAND.DAT", "other_doss.DOSS.DAT"])
     assert seen == []
     assert props["advanced_analysis_available"] is False

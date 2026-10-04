@@ -1,7 +1,7 @@
-"""Face- and body-centred cubic groups get SeeK-path's variants.
+"""Face- and body-centered cubic groups get SeeK-path's variants.
 
 SeeK-path (HPKOT, Hinuma et al. 2017; seekpath 2.2.2) splits the
-face-centred cubic groups like the primitive ones: cF1 for 196, 202 and 203
+face-centered cubic groups like the primitive ones: cF1 for 196, 202 and 203
 (groups below 207), cF2 for 209, 210, 216, 219 and 225-228. The static
 lookup had the list the other way round for 202, 203 and 225-228, so
 Fm-3m, Fd-3m (diamond, Si) and the rest got the cF1 path with its extra
@@ -38,7 +38,7 @@ def test_cf_variant_matches_seekpath(sg, seekpath_path):
     assert get_extended_bravais(sg, "F") == result["bravais_lattice_extended"]
 
 
-# SeeK-path has a single body-centred cubic variant, cI1. The static lookup
+# SeeK-path has a single body-centered cubic variant, cI1. The static lookup
 # called 199, 204, 206, 211, 214, 217 and 220 "cI2", a lattice HPKOT does not
 # define, backed by table entries that copied cI1's.
 CI = [197, 199, 204, 206, 211, 214, 217, 220, 229, 230]

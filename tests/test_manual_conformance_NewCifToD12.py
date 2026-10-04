@@ -22,7 +22,7 @@ reproduced as a real defect before these tests existed:
    reasonable orbital occupancy".  ROHF is not an escape hatch - L9867 "ROHF
    solution is not supported by CRYSTAL any more".  Every DFT arm emits SPIN
    when spin-polarized, but on the HF path only UHF is open shell, so RHF /
-   HF3C / HFSOL3C decks carried a SPINLOCK no Hamiltonian could honour.
+   HF3C / HFSOL3C decks carried a SPINLOCK no Hamiltonian could honor.
 
 3. A refused deck must not be reported as created.  This is a workflow
    contract rather than a manual one, and it mirrors

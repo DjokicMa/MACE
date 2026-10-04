@@ -48,7 +48,7 @@ C2V_OPS = """\
 """
 
 # C2h: identity, 2-fold along z, inversion, mirror perpendicular to z. The
-# inversion carries a translator (an inversion centre away from the origin)
+# inversion carries a translator (an inversion center away from the origin)
 # and prints "-0.00", as tests/data/opt_restart/tqc_agbr.out does.
 C2H_OPS = """\
    1   1  1.00  0.00  0.00  0.00  1.00  0.00  0.00  0.00  1.00  0.00  0.00  0.00

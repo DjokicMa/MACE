@@ -312,7 +312,7 @@ RHOMBOHEDRAL_SPACEGROUPS = [146, 148, 155, 160, 161, 166, 167]
 # first setting in the I. T." A.3 repeats that sentence and adds that "the
 # symmetry operators are generated for the space groups (principal axis z) and
 # then rotated by 90 degrees through y, to have the polymer axis along x
-# (CRYSTAL convention)" - a relabelling of axes, which leaves the
+# (CRYSTAL convention)" - a relabeling of axes, which leaves the
 # International Tables NUMBER unchanged.
 #
 # The reverse lookup is NOT one-to-one and the parentheses alone do not make it
@@ -584,7 +584,7 @@ ROD_GROUP_FROM_SPACEGROUP, ROD_GROUP_CANDIDATES = _appendix_a_maps(ROD_GROUP_ROW
 # L1021-1022, and again at L29023-29024) - z is a Cartesian, NON-periodic
 # coordinate measured from the layer group's own origin, unlike the fractional
 # z of a 3D deck which is only defined modulo the c translation. Every layer
-# group containing an operation that maps z to -z (an inversion centre, a
+# group containing an operation that maps z to -z (an inversion center, a
 # mirror or glide perpendicular to z, a 2-fold axis lying in the plane, S4,
 # sigma_h) pins that origin at z = 0 and CRYSTAL builds the other half of the
 # slab from it: the manual's own diamond (100) deck (L29193-29207) lists five
@@ -600,7 +600,7 @@ ROD_GROUP_FROM_SPACEGROUP, ROD_GROUP_CANDIDATES = _appendix_a_maps(ROD_GROUP_ROW
 # For the rest, the offset cannot be recovered from the coordinates either: the
 # atoms handed to a converter are an ASYMMETRIC UNIT, which sits on one side of
 # the mirror rather than straddling it (diamond's five atoms are all at z > 0,
-# and so are corundum's six under layer group 7). A "is it centred on zero"
+# and so are corundum's six under layer group 7). A "is it centered on zero"
 # test would therefore reject correct input as often as wrong input. The only
 # safe automatic answer is to map a 3D space group to a layer group in this set
 # and refuse otherwise, leaving the two-sided groups to an explicit request in
@@ -614,7 +614,7 @@ LAYER_GROUPS_POLAR_IN_Z = frozenset(
 # A POLYMER atom record gives "y,z in Angstrom, x in fractional units" (manual
 # L1019-1020): y and z are Cartesian distances from the ROD AXIS. Every rod
 # group this converter can auto-map - i.e. every unparenthesised A.3 row other
-# than P1, starting with the inversion centre at IGR 2 - has at least one
+# than P1, starting with the inversion center at IGR 2 - has at least one
 # operation that fixes the axis at y = z = 0, so the manual's polymer decks
 # carry signed coordinates about it - (SN)x "16 0.0 -0.844969 0.0" (L29220),
 # the water polymer "1 0.032558 0.836088 -0.400375" and "8 0.5 -1.370589 0."
@@ -1070,7 +1070,7 @@ def crystal23_functional_keyword(name: str, allow_hf: bool = False):
     """Return the CRYSTAL23 spelling of a functional keyword, or None.
 
     Matching ignores case, as CRYSTAL does. A "-D3" suffix is valid only on
-    the manual's D3-parametrised functionals. With ``allow_hf`` the HF
+    the manual's D3-parametrized functionals. With ``allow_hf`` the HF
     methods (RHF, UHF, HF3C, HFSOL3C) are accepted too.
     """
     if not name:
@@ -1181,7 +1181,7 @@ def normalize_functional(name: Any, hint: str = "re-plan this step with a functi
 
 
 def normalize_config_functionals(config: Dict[str, Any]) -> Tuple[List[str], List[str]]:
-    """Normalise the functional names of an opt2d12 configuration in place,
+    """Normalize the functional names of an opt2d12 configuration in place,
     as a workflow plan's steps are; return (messages, errors).
 
     The names are the config's own "functional" and "hf_method" and the
@@ -2669,7 +2669,7 @@ def generate_k_points(a: float, b: float, c: float, dimensionality: str, spacegr
     return ka, kb, kc
 
 
-# Centred-rectangular layer groups: the "C" rows of manual Appendix A.2,
+# Centered-rectangular layer groups: the "C" rows of manual Appendix A.2,
 # 10, 13, 16, 22, 26, 35, 36, 47, 48. CRYSTAL23 numbers them so (its output
 # names group 16 "C 2/M 1 1" and 18 "P 21/B 1 1", measured by running all 80
 # layer groups on HPCC), which is not the International Tables order (there
@@ -2686,12 +2686,12 @@ def slab_k_points(k_points: Tuple[int, int, int], layer_group: Any,
     CRYSTAL applies the SHRINK factors along the PRIMITIVE reciprocal vectors
     and stops with "ERROR **** CAPPA **** SHRINK BREAKS SYMMETRY" when two
     directions the layer group makes equivalent get different factors. That
-    happens in the square and hexagonal groups (a = b) and in the centred
+    happens in the square and hexagonal groups (a = b) and in the centered
     rectangular ones, whose primitive vectors (a/2, -b/2) and (a/2, b/2) are
     mirror images of each other - a mesh generated from the conventional a and
     b (graphene in layer group 47: 18 10) is refused there. Those groups get
     one factor for both in-plane directions: the larger of the two, or, for a
-    centred cell whose primitive vector is the shortest, the factor
+    centered cell whose primitive vector is the shortest, the factor
     generate_k_points gives that primitive length. Oblique and primitive
     rectangular groups relate no two directions and are returned unchanged,
     as is anything that is not a layer group number.
@@ -2797,7 +2797,7 @@ def check_basis_set_compatibility(basis_set, atomic_numbers, basis_set_type="INT
 def _internal_basis_elements(basis_set):
     """Elements an internal basis set actually supports, or None if unknown.
 
-    Returning None (rather than an empty set) keeps an unrecognised basis name
+    Returning None (rather than an empty set) keeps an unrecognized basis name
     from being reported as "every element is missing"; the caller treats None
     as "cannot verify" and passes the deck through.
     """

@@ -82,7 +82,7 @@ def test_3c_basis_sets_are_no_longer_a_free_pass(basis):
 
 
 def test_unknown_basis_is_permitted_not_rejected():
-    """An unrecognised name means 'cannot verify', not 'everything missing' --
+    """An unrecognized name means 'cannot verify', not 'everything missing' --
     users may supply custom basis sets we have not mapped."""
     ok, missing = check_basis_set_compatibility("SOME-CUSTOM-SET", [82, 6])
     assert ok and missing == []

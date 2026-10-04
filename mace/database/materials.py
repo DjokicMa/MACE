@@ -373,7 +373,7 @@ class MaterialDatabase:
         
         Args:
             calc_id: Calculation to update
-            status: New status (pending, submitted, running, completed, failed, cancelled)
+            status: New status (pending, submitted, running, completed, failed, canceled)
             slurm_job_id: SLURM job ID
             slurm_state: SLURM job state
             output_file: Path to output file
@@ -647,7 +647,7 @@ class MaterialDatabase:
             return None  # Workflow complete
             
     def cleanup_old_records(self, days_old: int = 30):
-        """Clean up old failed/cancelled calculations to prevent database bloat."""
+        """Clean up old failed/canceled calculations to prevent database bloat."""
         # Use timedelta, not replace(day=...): subtracting days_old from the
         # current day-of-month gives a non-positive day for most of the month
         # (e.g. the 13th - 30 = -17) and raised ValueError on nearly every call.

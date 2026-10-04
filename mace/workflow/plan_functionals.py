@@ -35,7 +35,7 @@ METHOD_SECTIONS = ("method_modifications", "method_settings")
 
 
 def normalize_step_functionals(step: Dict[str, Any]) -> Tuple[List[str], List[str]]:
-    """Normalise one step config in place; return (messages, errors).
+    """Normalize one step config in place; return (messages, errors).
 
     An unknown name is left as written and reported in ``errors``.
     """
@@ -62,7 +62,7 @@ def normalize_step_functionals(step: Dict[str, Any]) -> Tuple[List[str], List[st
 
 
 def normalize_plan_functionals(plan: Dict[str, Any]) -> Tuple[List[str], List[str]]:
-    """Normalise every step of a workflow plan in place; return (messages, errors)."""
+    """Normalize every step of a workflow plan in place; return (messages, errors)."""
     messages: List[str] = []
     errors: List[str] = []
     if not isinstance(plan, dict):

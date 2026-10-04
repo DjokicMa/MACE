@@ -230,7 +230,7 @@ class HostInfo:
 
 def _geometry_atom_count(lines: List[str]) -> Optional[int]:
     """Number of atoms in a deck's geometry block (local copy of the
-    charge_records helper, honouring the IFSO > 1 origin-shift record)."""
+    charge_records helper, honoring the IFSO > 1 origin-shift record)."""
     dims = {"CRYSTAL": 3, "SLAB": 2, "POLYMER": 2, "MOLECULE": 2}
     for i, line in enumerate(lines[1:], start=1):
         key = line.strip().upper()

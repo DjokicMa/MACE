@@ -3,7 +3,7 @@
 The fallback was (header "N. OF ELECTRONS PER CELL") // 2. DOPING does not
 change that header (measured on CRYSTAL23: it still shows the count before doping; the real
 count is the Mulliken "NO. OF ELECTRONS" line), so a doped parent gave the
-wrong HOMO index and a wrong gap. A spin-polarised run prints two Mulliken
+wrong HOMO index and a wrong gap. A spin-polarized run prints two Mulliken
 blocks, ALPHA+BETA then ALPHA-BETA: the last line is the spin, not the count.
 An odd count has no closed-shell HOMO index, so the count is left unset.
 """
@@ -78,7 +78,7 @@ def test_mulliken_electron_count_reads_alpha_plus_beta_or_unlabeled():
     assert mulliken_electron_count(spin) == pytest.approx(14.0)
     assert mulliken_electron_count(mulliken_block(ATOMS, [2.0, 9.0, 3.0], 14.0)) == pytest.approx(14.0)
     assert mulliken_electron_count(BAND_HEADER) is None
-    # Several SCF prints (an optimisation): the last one counts
+    # Several SCF prints (an optimization): the last one counts
     two = mulliken_block(ATOMS, [2.0, 9.0, 3.0], 13.0) + mulliken_block(ATOMS, [2.0, 9.0, 3.0], 14.0)
     assert mulliken_electron_count(two) == pytest.approx(14.0)
 

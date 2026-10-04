@@ -6,7 +6,7 @@ The Makov-Payne monopole term with the Lany-Zunger scaling:
 
 v_M is the Ewald Madelung potential of the actual supercell lattice: the
 potential (atomic units, per unit charge) at a point charge from all its
-periodic images plus the neutralising background, self term removed. For a
+periodic images plus the neutralizing background, self term removed. For a
 simple cubic lattice of edge L it is -2.837297/L. E_MP is added to the
 formation energy of the charge state. For near-cubic cells v_M < 0 and E_MP is
 positive (= f q^2 |v_M| / 2 eps); a cell elongated or flattened by a factor

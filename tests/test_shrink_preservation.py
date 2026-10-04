@@ -114,7 +114,7 @@ def _write(k_points, dimensionality="CRYSTAL", spacegroup=225, **kw):
 
 def test_writer_default_still_makes_non_p1_mesh_uniform():
     # A mesh not taken from the parent (config from another material, or
-    # generated) keeps the old behaviour.
+    # generated) keeps the old behavior.
     assert _write((30, 30, 10)) == ["30 60"]
 
 

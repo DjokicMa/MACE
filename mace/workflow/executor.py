@@ -286,7 +286,7 @@ class WorkflowExecutor:
         # every script from that plan at execution time and used to drop it:
         # the template ships the directive commented out, and nothing in the
         # resource mapping above matches --exclude. Workflow jobs therefore
-        # ran with no exclusion at all while `mace submit`, which honours the
+        # ran with no exclusion at all while `mace submit`, which honors the
         # same setting, kept it - so the choice silently applied to one path
         # and not the other.
         #

@@ -168,7 +168,7 @@ def cluster(*parts, spacing=6.0):
 
 
 def li_near(atoms, index, distance=1.95):
-    """A Li placed ``distance`` A from atom ``index`` of ``atoms``, away from the molecule's centre."""
+    """A Li placed ``distance`` A from atom ``index`` of ``atoms``, away from the molecule's center."""
     center = tuple(sum(p[i] for _, p in atoms) / len(atoms) for i in range(3))
     p = atoms[index][1]
     d = _unit(_add(p, center, -1.0))
@@ -195,7 +195,7 @@ def molecule_deck(atoms, title="cluster", basis="BASISSET\nSOLDEF2MSVP\n", dft="
 
 
 def molecule_cif(atoms, box=30.0, name="cluster"):
-    """A P1 box CIF holding ``atoms`` (Cartesian A) around the box centre."""
+    """A P1 box CIF holding ``atoms`` (Cartesian A) around the box center."""
     lines = [f"data_{name}", f"_cell_length_a {box:.6f}", f"_cell_length_b {box:.6f}",
              f"_cell_length_c {box:.6f}", "_cell_angle_alpha 90.000000", "_cell_angle_beta 90.000000",
              "_cell_angle_gamma 90.000000", "_symmetry_space_group_name_H-M 'P 1'",

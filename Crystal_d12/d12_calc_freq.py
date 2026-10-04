@@ -26,7 +26,7 @@ import tempfile
 from pathlib import Path
 
 # Opt-in "press b to go back" navigation + crash-safe back-aware readers
-# (fall back to plain input() behaviour if menu_nav is unavailable).
+# (fall back to plain input() behavior if menu_nav is unavailable).
 try:
     from menu_nav import (run_with_back as _run_with_back, nav_read as _nav_read,
                           nav_int as _nav_int, nav_float as _nav_float)
@@ -1867,7 +1867,7 @@ def slab_phonon_band_path(band_settings, optimization_section):
 def crystal_system_with_lattice(space_group) -> Optional[str]:
     """``"cubic-F"`` style crystal system for a 3D space group number.
 
-    write_frequency_section reads the lattice centring from the part after
+    write_frequency_section reads the lattice centering from the part after
     the dash when there is no CRYSTAL output to read it from (a deck made
     from a CIF); without it every group got the primitive (P) phonon path.
     The letter is the first one of the group's standard Hermann-Mauguin

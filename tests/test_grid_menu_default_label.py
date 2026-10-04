@@ -1,6 +1,6 @@
 """The opt2d12 grid menu marks the parent's grid as the default, not XLGRID.
 
-The menu always labelled "4: XLGRID - Extra large grid (default)", while a
+The menu always labeled "4: XLGRID - Extra large grid (default)", while a
 blank answer keeps the parent's grid (DEFAULT, LGRID, ...). The label now
 sits on the grid a blank answer gives; cif2d12's default stays XLGRID.
 """

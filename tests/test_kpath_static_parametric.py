@@ -3,8 +3,8 @@
 Without the seekpath library, the static ``seekpath_data`` entries of the
 lattices whose SeeK-path (HPKOT) points depend on the cell held the values
 of one cell: tI1 Z = (0.341718, 0.341718, -0.341718) for every
-body-centred tetragonal crystal with c < a, hR1 H_2 at 0.744565, and so on.
-For tI1, tI2, hR1, hR2, oF1 and the C-centred monoclinic entry (mS1 =
+body-centered tetragonal crystal with c < a, hR1 H_2 at 0.744565, and so on.
+For tI1, tI2, hR1, hR2, oF1 and the C-centered monoclinic entry (mS1 =
 SeeK-path's mC1 with its primed copy) the points are now evaluated for the
 cell CRYSTAL prints (hpkot_static) and given in CRYSTAL's reciprocal basis,
 with the ISS the library route takes, so both routes write the same deck.
@@ -162,7 +162,7 @@ def test_static_equals_the_library_route(tmp_path, monkeypatch, sg, centering, p
 @pytest.mark.parametrize("sg,centering,params", CELLS)
 def test_points_within_1e6_of_seekpaths(sg, centering, params):
     """Before the ISS choice, each point is SeeK-path's point in CRYSTAL's
-    basis to 1e-6 - or, where SeeK-path standardised to a cell related to
+    basis to 1e-6 - or, where SeeK-path standardized to a cell related to
     CRYSTAL's by a symmetry operation, an image of it under that symmetry."""
     pytest.importorskip("seekpath")
     spglib = pytest.importorskip("spglib")
@@ -310,7 +310,7 @@ def test_optimized_supercell_maps_the_host_path(tmp_path, monkeypatch):
 
 @pytest.mark.skipif(not CORPUS.is_dir(), reason="test/ corpus not present")
 def test_table_a1_is_the_printed_w():
-    """Every centred corpus output prints Table A.1's W for its centring."""
+    """Every centered corpus output prints Table A.1's W for its centering."""
     si = pytest.importorskip("seekpath_interface")
     import re
     seen = set()
@@ -328,7 +328,7 @@ def test_table_a1_is_the_printed_w():
 
 @pytest.mark.skipif(not CORPUS.is_dir(), reason="test/ corpus not present")
 def test_corpus_static_route_writes_the_library_deck(monkeypatch):
-    """Centred corpus outputs of the converted lattices: the static deck is
+    """Centered corpus outputs of the converted lattices: the static deck is
     the library deck (same ISS and integers). A group without inversion may
     add the primed copy after it; a centrosymmetric one writes exactly the
     library's path (C 2/M did not, before mS1 stopped being the Cc path;

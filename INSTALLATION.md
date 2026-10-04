@@ -97,7 +97,7 @@ Notes:
   its structure (Hinuma et al., Comp. Mat. Sci. 128, 140 (2017)) and MACE writes
   it in CRYSTAL's reciprocal basis, with the lattice-dependent points of that
   cell. The built-in tables hold SeeK-path's numbers in SeeK-path's standard cell,
-  which for many lattices is not CRYSTAL's (axis order, reduction, centring
+  which for many lattices is not CRYSTAL's (axis order, reduction, centering
   vectors), so a path written from them can visit or name other points. Without
   seekpath, a 3D SeeK-path BAND deck (opt2d3 format 4, a plan's SeeK-path BAND
   step) or SeeK-path phonon dispersion (opt2d12) stops with the install command;

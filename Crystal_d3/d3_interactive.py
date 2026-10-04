@@ -40,7 +40,7 @@ from d3_kpoints import (
 sys.path.insert(0, str(Path(__file__).parent.parent / "Crystal_d12"))
 
 # Opt-in "press b to go back" navigation + crash-safe back-aware readers
-# (fall back to plain input() behaviour if menu_nav is unavailable).
+# (fall back to plain input() behavior if menu_nav is unavailable).
 try:
     from menu_nav import (nav_read as _nav_read, nav_int as _nav_int,
                           nav_float as _nav_float)
@@ -105,7 +105,7 @@ def generate_k_points(system: str, n_points: int = 30) -> List[Tuple[str, List[f
 
 
 def crystal_family_and_centring(out_file: str) -> Tuple[str, str]:
-    """(crystal family, centring letter) of a CRYSTAL output's space group,
+    """(crystal family, centering letter) of a CRYSTAL output's space group,
     e.g. ("TRIGONAL", "R") for R -3 C, as get_crystal_supported_labels takes
     them; ("CUBIC", "P") when the group cannot be read."""
     try:

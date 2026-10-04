@@ -351,7 +351,7 @@ def test_real_slab_deck_round_trips(tmp_path):
 def test_real_external_ecp_decks_round_trip_after_the_title(tmp_path, deck):
     """Decks opt2d12 wrote and CRYSTAL ran: EXTERNAL basis read verbatim from
     full.basis.triplezeta (its own spacing), Pb and Ag as ECP atoms 282/247
-    labelled X. Their title is "./<name>" (see the module docstring).
+    labeled X. Their title is "./<name>" (see the module docstring).
     (tests/data/opt_restart holds the same kind of deck with a RESTART that
     mace/recovery put into OPTGEOM, a record the deck writer has no input for.)"""
     original = deck.read_text().split("\n")

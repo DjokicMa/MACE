@@ -1,9 +1,9 @@
-"""A P1 deck from a CIF holds the cell the symmetrised deck describes.
+"""A P1 deck from a CIF holds the cell the symmetrized deck describes.
 
 A CIF without a symmetry-operator loop names its group by number only, and
 ASE then expands the atom records in origin choice 1. Diamond given in origin
 choice 2, C at (1/8, 1/8, 1/8) - CRYSTAL's own diamond example (manual p. 373,
-"0 0 0" deck) and what the symmetrised deck declares - became 16 atoms at
+"0 0 0" deck) and what the symmetrized deck declares - became 16 atoms at
 Fd-3m 16c, a different structure with C-C contacts of 1.26 A instead of
 diamond's 8 atoms at 1.545 A.
 """

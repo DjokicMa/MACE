@@ -575,7 +575,7 @@ def remove_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]):
     print("\nZombie jobs are calculations that have FINISHED (completed or failed)")
     print("but are STILL RUNNING in SLURM, wasting CPU hours.\n")
 
-    # Show completed zombies first (these should definitely be cancelled)
+    # Show completed zombies first (these should definitely be canceled)
     if completed_zombies:
         print(f"Found {len(completed_zombies)} COMPLETED job(s) still running in SLURM:\n")
 
@@ -611,7 +611,7 @@ def remove_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]):
     # Confirm cancellation
     print(f"{'='*70}")
 
-    # Combine completed and error zombies - both should be cancelled
+    # Combine completed and error zombies - both should be canceled
     definite_zombies = completed_zombies + error_zombies
 
     if definite_zombies:

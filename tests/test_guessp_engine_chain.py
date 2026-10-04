@@ -55,7 +55,7 @@ OPTGEOM = "OPTGEOM\nFULLOPTG\nMAXCYCLE\n800\nENDOPT\n"
 FREQCALC = "FREQCALC\nNUMDERIV\n2\nEND\n"
 
 OPT_DECK = "pto_opt\n" + _geom(block=OPTGEOM) + EXT_BASIS + HAM + SCF
-# What opt2d12 writes for the follow-ups: the optimised lattice parameter,
+# What opt2d12 writes for the follow-ups: the optimized lattice parameter,
 # the same symmetry, atoms and basis.
 SP_DECK = "pto_sp\n" + _geom(a="3.95012345") + EXT_BASIS + HAM + SCF
 FREQ_DECK = "pto_freq\n" + _geom(a="3.95012345", block=FREQCALC) + EXT_BASIS + HAM + SCF
@@ -159,7 +159,7 @@ def test_without_the_option_the_deck_is_untouched_and_nothing_is_staged(
 # On: the same-geometry, same-basis follow-ups restart from the matrix
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("source_type,target,deck", [
-    ("OPT", "SP", SP_DECK),       # SP at the optimised geometry
+    ("OPT", "SP", SP_DECK),       # SP at the optimized geometry
     ("OPT", "FREQ", FREQ_DECK),   # FREQCALC's reference point is that geometry
     ("OPT", "OPT2", OPT2_DECK),   # OPT2 starts where OPT ended
     ("SP", "SP2", SP_DECK),

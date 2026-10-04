@@ -603,7 +603,7 @@ class WorkflowDatabaseCreator:
                 # Don't assume DFT settings for D3 files - they inherit from previous SP
                 lines = content.strip().split('\n')
                 # From the records, not line 1: DOSS and BOLTZTRA decks open
-                # with NEWK and ECH3/POT3 decks were not recognised at all.
+                # with NEWK and ECH3/POT3 decks were not recognized at all.
                 property_type = d3_calc_type(deck_records(content, is_d3=True))
                 if property_type:
                     settings['property_type'] = property_type

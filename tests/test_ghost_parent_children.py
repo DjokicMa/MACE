@@ -8,7 +8,7 @@ gzipped excerpt.
 
 * opt2d12 keeps the record (tests/test_opt2d12_supercell_parent.py).
 * opt2d3 DOSS: CRYSTAL lists the ghost's functions under its element ("1 O"
-  in LOCAL ATOMIC FUNCTIONS; "1 XX" only in the neighbour table), so the
+  in LOCAL ATOMIC FUNCTIONS; "1 XX" only in the neighbor table), so the
   element projection "#O" took in the ghost's empty functions. The ghost is
   now projected on its own ("#O_GHOST") and "#O" holds the 31 real O atoms.
 """

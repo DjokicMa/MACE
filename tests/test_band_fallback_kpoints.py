@@ -56,7 +56,7 @@ L=(1/2,1/2,1/2), W=(1/2,1/4,3/4) - a second confirmation of the MgO triples.)
 _TRICLINIC_DEFAULT HAS NO MANUAL ORACLE - it is MACE-internal, pinned as
 today's output only. This is a real gap, not an oversight: Tables 14.1 and 14.2
 were read in full (24366-24455, 24459-24539) and contain NO triclinic lattice
-row at all. The recognised labels are M,R,X,L,W,H,P,N,K,A,T,F,B,C,D,E,Y,Z,S,U
+row at all. The recognized labels are M,R,X,L,W,H,P,N,K,A,T,F,B,C,D,E,Y,Z,S,U
 across P/FC/BC cubic, hexagonal, P trigonal, rhombohedral, P/AC monoclinic,
 P/FC/AC/BC orthorhombic and P/BC tetragonal. MACE's triclinic path even opens
 on label 'V', which appears nowhere in either table - and manual 24315-24316
@@ -114,7 +114,7 @@ OPEN QUESTIONS FOR A HUMAN (deliberately not resolved in code here)
    tests/test_manual_conformance_crystal_d3.py are kept, not replaced.
 4. The generator's literature fallback (CRYSTALOptToD3.py:1171-1183) never
    resets ``config["kpath_source"]``, which :1157 already set to "literature",
-   so a deck built from the *standard* label path is still labelled
+   so a deck built from the *standard* label path is still labeled
    "Literature". Cosmetic today (the field only reaches the title), recorded so
    it is not mistaken for verified-correct.
 5. MEASURED, NOT ASSERTED: the SeeK-path fallback deck's title contradicts its
@@ -311,7 +311,7 @@ def _fractional_endpoints(deck):
 
 # Space group 225 (Fm-3m) with centering 'F' -> get_crystal_system_from_space_group
 # resolves "cubic_fc"; 221 (Pm-3m) with 'P' -> "cubic_simple". 221 is used for the
-# literature-fallback cases rather than 225 because 225 IS F-centred: MACE takes
+# literature-fallback cases rather than 225 because 225 IS F-centered: MACE takes
 # the centering letter from the first character of the space-group symbol, so
 # (225, 'P') can never come out of its own parser. The tests below drive the
 # GENERATOR, whose parser does this at CRYSTALOptToD3.py:178
@@ -364,7 +364,7 @@ def test_generator_seekpath_fallback_writes_iss_scaled_integers(
         tmp_path, monkeypatch, shrink_in, shrink_out):
     """CRYSTALOptToD3.py:1140-1153 - SeeK-path AND literature both unavailable.
 
-    Fails against the old behaviour, passes against the new: the pre-fix body
+    Fails against the old behavior, passes against the new: the pre-fix body
     was ``coord_segments = get_kpoint_coordinates_from_labels(...)`` with no
     scaling and no ``config["shrink"]``, so the deck carried "0.5 0.0 0.5 ..."
     against the writer's default ISS=16. CRYSTAL reads those fields as integers
@@ -402,7 +402,7 @@ def test_generator_seekpath_fallback_writes_iss_scaled_integers(
 def test_generator_seekpath_fallback_deck_records_are_exact(tmp_path, monkeypatch):
     """The written deck, not just the config, carries the ISS-unit integers.
 
-    Fails against the old behaviour (records were fractional), passes now.
+    Fails against the old behavior (records were fractional), passes now.
     """
     _patch_kpoints(monkeypatch, "get_seekpath_full_kpath", lambda *a, **k: None)
     _patch_kpoints(monkeypatch, "get_literature_kpath_vectors", lambda *a, **k: [])
@@ -426,7 +426,7 @@ def test_generator_literature_fallback_writes_iss_scaled_integers(
         tmp_path, monkeypatch, shrink_in, shrink_out):
     """CRYSTALOptToD3.py:1171-1183 - literature table has no entry.
 
-    Fails against the old behaviour, passes against the new: the pre-fix body
+    Fails against the old behavior, passes against the new: the pre-fix body
     stored the fractional vectors and never touched ``config["shrink"]``.
     """
     _patch_kpoints(monkeypatch, "get_literature_kpath_vectors", lambda *a, **k: [])
@@ -450,7 +450,7 @@ def test_interactive_literature_fallback_writes_iss_scaled_integers(
         tmp_path, monkeypatch, shrink_in, shrink_out):
     """d3_interactive.py:705-713 - menu format 3, literature table empty.
 
-    Fails against the old behaviour, passes against the new: the pre-fix body
+    Fails against the old behavior, passes against the new: the pre-fix body
     handed CRYSTALOptToD3 a config whose "segments" were fractional while
     "shrink" kept the value set at :688-689.
     """
@@ -469,7 +469,7 @@ def test_interactive_seekpath_fallback_writes_iss_scaled_integers(
         tmp_path, monkeypatch, shrink_in, shrink_out):
     """d3_interactive.py:744-752 - menu format 4, SeeK-path unavailable.
 
-    Fails against the old behaviour, passes against the new: same unscaled
+    Fails against the old behavior, passes against the new: same unscaled
     fractional storage as format 3.
     """
     monkeypatch.setattr(d3int, "get_seekpath_full_kpath", lambda *a, **k: None)
@@ -492,7 +492,7 @@ def test_seekpath_fallback_reproduces_the_manuals_mgo_fcc_points(tmp_path, monke
     Pairing them fixes X=(6,0,6) and W=(6,3,9) in units of 1/12. Driving the
     fallback at the same ISS must reproduce both triples.
 
-    Fails against the old behaviour (which emitted 0.5/0.25/0.75 floats),
+    Fails against the old behavior (which emitted 0.5/0.25/0.75 floats),
     passes against the new. This validates the ORACLE the tests above use; it
     does not by itself prove which branch produced the values.
     """
@@ -521,7 +521,7 @@ def test_literature_fallback_reproduces_table_14_1_simple_cubic_points(
     makes _SIMPLE_CUBIC_DEFAULT[16] a manual-anchored expectation rather than a
     self-referential snapshot.
 
-    Fails against the old behaviour (which stored 0.5 floats, so no integer
+    Fails against the old behavior (which stored 0.5 floats, so no integer
     triple matched), passes against the new.
     """
     _patch_kpoints(monkeypatch, "get_literature_kpath_vectors", lambda *a, **k: [])
@@ -547,7 +547,7 @@ def test_fallback_x_point_matches_the_shipped_reference_band_deck(tmp_path, monk
     (6,0,6) at ISS=12, which is the same fractional point. Skips (does not
     fail) when the gitignored corpus is absent.
 
-    Fails against the old behaviour: the fallback's endpoints were already
+    Fails against the old behavior: the fallback's endpoints were already
     fractional, so dividing them by ISS again gave (0.03125,0,0.03125).
     """
     reference = find_data("BAND/1_dia*_band.d3", must_contain="BAND")
@@ -569,7 +569,7 @@ def test_fallback_x_point_matches_the_shipped_reference_band_deck(tmp_path, monk
 # that disables the upstream lookup, and asserts the result differs from the
 # fallback expectation. Without these, a fallback that was never entered (or an
 # upstream table that happened to agree) would look covered. Note these do NOT
-# discriminate old from new behaviour - the fallback is not taken either way -
+# discriminate old from new behavior - the fallback is not taken either way -
 # so they are guards for the tests above, not regression tests in their own
 # right. Only inequality is asserted: the unpatched values depend on whether the
 # optional seekpath library is installed, and pinning them here would make the

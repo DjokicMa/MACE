@@ -40,7 +40,7 @@ def test_madelung_of_simple_cubic_and_its_scaling():
 
 
 def test_madelung_of_fcc_and_bcc_point_lattices():
-    """Per V^(1/3): fcc 2.8883, bcc 2.8885 (point charges in a neutralising background)."""
+    """Per V^(1/3): fcc 2.8883, bcc 2.8885 (point charges in a neutralizing background)."""
     for lat, ref in ((FCC, 2.88828), (BCC, 2.88846)):
         v = ic.madelung(lat)
         assert v * abs(np.linalg.det(lat)) ** (1 / 3) == pytest.approx(-ref, abs=1e-5)

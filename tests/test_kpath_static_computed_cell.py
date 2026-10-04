@@ -1,11 +1,11 @@
 """Without the seekpath library, the static path uses the computed cell too.
 
 extract_lattice_parameters_from_output returned the conventional cell of
-the input echo: an optimisation's starting cell (the lattice variant, tI1
+the input echo: an optimization's starting cell (the lattice variant, tI1
 or tI2, came from it), and for a SUPERCEL output the input cell, while
 fort.9 holds the supercell, so the static path was in the reciprocal basis
 of the primitive cell. It now takes the CRYSTALLOGRAPHIC CELL printed with
-the final optimised geometry, and a SUPERCEL output's static points are
+the final optimized geometry, and a SUPERCEL output's static points are
 mapped to the supercell basis, f_super = E f_prim, as the library route
 gives them. A cell echoed in rhombohedral axes is read in hexagonal axes.
 """

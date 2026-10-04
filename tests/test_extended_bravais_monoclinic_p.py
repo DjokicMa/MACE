@@ -2,10 +2,10 @@
 
 get_extended_bravais hands a P monoclinic group with cell parameters to
 determine_monoclinic_variant, which split P from C at space group 11. P2/c
-(13) and P2_1/c (14) are primitive, but got the C-centred mS1 path - points
+(13) and P2_1/c (14) are primitive, but got the C-centered mS1 path - points
 of another Brillouin zone - whenever the band or phonon path was built from
 a CRYSTAL output without the seekpath library. SeeK-path (HPKOT) gives every
-primitive monoclinic lattice mP1; the C-centred groups are 5, 8, 9, 12, 15.
+primitive monoclinic lattice mP1; the C-centered groups are 5, 8, 9, 12, 15.
 """
 import pytest
 

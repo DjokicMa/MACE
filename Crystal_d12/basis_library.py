@@ -282,7 +282,7 @@ def _library(match):
 def bundled_family_for(path):
     """The bundled family a basis path names, or None.
 
-    Only an exact match counts: the path, normalised (~ expanded, made
+    Only an exact match counts: the path, normalized (~ expanded, made
     absolute, trailing slash dropped; symlinks resolved as a second try),
     must be <basis_sets>/<family> for one of FAMILIES - in this checkout, in
     $MACE_HOME, or any directory-less <family> path with <family>.lib beside

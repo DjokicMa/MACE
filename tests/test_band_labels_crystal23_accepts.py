@@ -3,7 +3,7 @@
 opt2d3's Enter-through BAND answer (and so the workflow default) is the
 high-symmetry label format: ISS = 0 and label records like "V Y". CRYSTAL23
 takes those labels only from its Tables 14.1/14.2 (manual note 6: only the
-labels in those tables are recognised), and only for 3D systems:
+labels in those tables are recognized), and only for 3D systems:
 
 * Triclinic (SG 1-2) has no table entry. A P-1 LiH label deck stopped in
   Pproperties with "BANDE **** K-POINTS NOT CODIFIED", a minimal "G X" deck

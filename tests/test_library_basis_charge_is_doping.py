@@ -1,7 +1,7 @@
 """With an internal BASISSET library the net charge is always DOPING; CHEMOD only shapes the guess.
 
 Measured on CRYSTAL23 (HPCC): after a library name CHEMOD changes the
-starting guess only, never the electron count (the guess is renormalised),
+starting guess only, never the electron count (the guess is renormalized),
 so the count has to come from DOPING (the group's 37 HSEsol-3c OPTs and 62
 FREQs do exactly that). CHARGED is never needed with a library basis. This
 pins the planner's answer for every way of asking: auto ions, a plain net

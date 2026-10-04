@@ -5,7 +5,7 @@ for every parent .out without a Mulliken print - every neutral FREQ parent
 among them. Most such parents are neutral. It is now a WARNING only when the
 .out shows a sign of a charged or ionic run: CHEMOD ("ELECTRONIC
 CONFIGURATION MODIFIED IN n ATOMS"), CHARGED ("CHARGED CELL"), "UNIT CELL
-NOT NEUTRAL", or a renormalised guess (CHARGE NORMALIZATION FACTOR other
+NOT NEUTRAL", or a renormalized guess (CHARGE NORMALIZATION FACTOR other
 than 1). Otherwise it is an informational note: DOPING prints nothing
 (measured on CRYSTAL23), so the note still says to add it by hand if the
 parent had one.

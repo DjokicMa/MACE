@@ -19,7 +19,7 @@ from d12_constants import (OPT_CONVERGENCE_PRESETS, opt_convergence, scf_toleran
                            describe_opt_preset, describe_scf_preset)
 
 # Opt-in "press b to go back" navigation + crash-safe back-aware readers. Falls back to
-# plain input() behaviour if menu_nav is unavailable.
+# plain input() behavior if menu_nav is unavailable.
 try:
     from menu_nav import (run_with_back as _run_with_back, nav_read as _nav_read,
                           nav_int as _nav_int, nav_float as _nav_float)

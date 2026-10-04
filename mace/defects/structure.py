@@ -26,7 +26,7 @@ from mace.defects.deck_edit import HostInfo, element_number, element_symbol
 SITE_MATCH_TOL = 0.3
 #: Closest an inserted atom may come to an existing one (Angstrom).
 MIN_INSERT_DISTANCE = 0.8
-#: Layer groups with a centred (c) rectangular lattice.
+#: Layer groups with a centered (c) rectangular lattice.
 _CENTRED_LAYER_GROUPS = {10, 13, 18, 22, 26, 35, 36, 47, 48}
 
 _LATTICE = "DIRECT LATTICE VECTORS CARTESIAN COMPONENTS (ANGSTROM)"

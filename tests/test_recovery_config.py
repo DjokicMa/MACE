@@ -4,7 +4,7 @@ Before: ErrorRecoveryEngine looked only for a RELATIVE recovery_config.yaml
 (the job directory), so the shipped mace/config/recovery_config.yaml was never
 read; and a file that was read REPLACED the whole error_recovery section
 (shallow dict.update), so a partial file dropped every recovery it did not
-mention. Merging must still honour what a file says: an older copy of the
+mention. Merging must still honor what a file says: an older copy of the
 shipped file (legacy copy_dependencies put one in work directories) sends
 disk_space_error to a handler that does not exist with max_retries 0, and that
 must keep the recovery - which deletes large files - off.

@@ -8,8 +8,8 @@ catch the failure that motivated this module: a hexagonal SLAB deck carrying the
 right after the title and writes NO fort.87, so MACE's fort.87-based error
 classification sees nothing at all.
 
-Every test here fails against the behaviour that was specified before review and
-passes against what shipped. The specific earlier behaviour each one rejects is
+Every test here fails against the behavior that was specified before review and
+passes against what shipped. The specific earlier behavior each one rejects is
 named in its own docstring; the recurring ones are:
 
 * the verdict helper searched a 160-character, whitespace-collapsed prefix of
@@ -17,7 +17,7 @@ named in its own docstring; the recurring ones are:
   because it opens with an asterisk banner, so NO deck could ever pass;
 * it also joined the whole file into one string, letting the marker match across
   a line boundary;
-* any occurrence of "TESTPDIM" in a failure's tail relabelled that failure a
+* any occurrence of "TESTPDIM" in a failure's tail relabeled that failure a
   harness error, which would excuse the very decks this module exists to catch;
 * a deck that merely cannot be pre-flighted (already stops early, no final END,
   needs fort.34/fort.20) was reported FAIL - i.e. as a bad deck;
@@ -93,7 +93,7 @@ def test_insert_testpdim_is_byte_exact_on_every_corpus_deck():
 
     Deleting the inserted line from the result must reproduce the original text
     byte for byte. Measured over the corpus: 401 decks, all reproduce exactly.
-    Rejects both terminator normalisation and ``errors="ignore"`` (which
+    Rejects both terminator normalization and ``errors="ignore"`` (which
     silently deletes undecodable bytes before they are ever validated).
     """
     decks = _corpus_decks()
@@ -126,7 +126,7 @@ def test_crlf_deck_stays_crlf():
     """A CRLF deck must come back CRLF, including the inserted record.
 
     test/OPT/1_dia_opt_BULK_OPTGEOM.d12 is one of the three real CRLF decks in
-    the corpus. The earlier design normalised to a single terminator, which is
+    the corpus. The earlier design normalized to a single terminator, which is
     exactly the "silently repaired by the validator, reappears at submission"
     failure this module exists to prevent.
     """
@@ -183,7 +183,7 @@ def test_early_stop_records_are_detected(record):
 def test_success_marker_is_found_far_past_the_first_160_characters():
     """The marker must be found wherever it is in the file.
 
-    THE regression test for this module. The reviewed spec normalised out.txt
+    THE regression test for this module. The reviewed spec normalized out.txt
     with ``" ".join(s.split())[:160]`` before searching, and a real CRYSTAL
     output opens with an asterisk banner - so the marker could never be found
     and every single deck, good or bad, was reported FAIL.
@@ -258,7 +258,7 @@ def test_informational_line_naming_testpdim_does_not_excuse_a_bad_deck():
     """CRYSTAL echoes keyword names in ordinary informational lines - the real
     corpus has " INFORMATION **** PPAN **** MULLIKEN POPULATION ANALYSIS ...".
 
-    The earlier spec relabelled any failure whose tail merely CONTAINED the
+    The earlier spec relabeled any failure whose tail merely CONTAINED the
     string "TESTPDIM" as a harness error, which would have quietly excused the
     bad decks this module was built to catch. Only an ERROR-shaped line that
     names TESTPDIM counts.

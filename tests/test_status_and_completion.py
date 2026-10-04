@@ -62,7 +62,7 @@ def calc_dir(tmp_path):
     return d
 
 
-# ------------------------------------------------------------ categorising
+# ------------------------------------------------------------ categorizing
 
 @pytest.mark.parametrize("name, expected", [
     ("graphene_lg37.out", "completesp"),
@@ -161,7 +161,7 @@ def test_summary_counts(calc_dir, capsys):
     assert "• tqb_pto" in out                       # the detailed listing
 
 
-# ------------------------------------------------------------ organising
+# ------------------------------------------------------------ organizing
 
 def test_move_completed_takes_only_finished_runs_and_their_files(calc_dir, monkeypatch):
     monkeypatch.chdir(calc_dir)

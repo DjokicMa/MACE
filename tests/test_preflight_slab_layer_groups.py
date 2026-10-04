@@ -13,7 +13,7 @@ number into both, which fails in two different ways:
   silently builds a different chain. Nothing fails; the answer is just wrong.
 
 Every test below fails against the old code and passes against the new one,
-except those marked COMPATIBILITY GUARD, which pin behaviour that must NOT
+except those marked COMPATIBILITY GUARD, which pin behavior that must NOT
 change (the production P1 slab decks under ``test/``, and 3D decks, which the
 new resolution block must leave alone).
 
@@ -276,7 +276,7 @@ def test_two_sided_layer_groups_are_not_auto_mapped():
     ]
     assert len(auto - LAYER_GROUPS_POLAR_IN_Z) == 34
     # Only P1 leaves the rod axis free: rod group 2 already has an inversion
-    # centre on it.
+    # center on it.
     assert ROD_GROUPS_FREE_OF_AXIS_OPERATIONS == frozenset({1})
 
 
@@ -329,7 +329,7 @@ def graphene_cif(**overrides):
 
 
 def test_slab_writes_a_layer_group_not_the_space_group(writer, tmp_path):
-    """Old behaviour: "SLAB / 191 / 2.47000000 2.47000000 120.000000".
+    """Old behavior: "SLAB / 191 / 2.47000000 2.47000000 120.000000".
 
     191 is not a layer group, and the three-value cell line is the oblique
     form. With the layer group named explicitly (the caller thereby also
@@ -349,7 +349,7 @@ def test_slab_writes_a_layer_group_not_the_space_group(writer, tmp_path):
 def test_hexagonal_slab_from_a_space_group_is_refused_not_mirrored(writer, tmp_path):
     """THE headline case, and the reason this is not a plain "write 80" fix.
 
-    Old behaviour wrote "191" and CRYSTAL aborted with no output. Simply
+    Old behavior wrote "191" and CRYSTAL aborted with no output. Simply
     substituting 80 would be worse: layer group 80 has sigma_h, so a slab
     sitting at fractional z ~ 0.5 (what a pymatgen/VASP slab CIF carries) is
     mirrored to -c/2 and the deck silently describes a bilayer separated by c.
@@ -496,7 +496,7 @@ def polymer_cif(**overrides):
 
 
 def test_polymer_writes_a_rod_group_not_the_space_group(writer, tmp_path):
-    """Old behaviour wrote the space group, here 75.
+    """Old behavior wrote the space group, here 75.
 
     75 is inside 1-99, so CRYSTAL accepts it as rod group 75 (P6_5) and
     silently builds a completely different chain - nothing fails. A.3 row 32 is

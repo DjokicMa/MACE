@@ -82,7 +82,7 @@ def test_seekpath_auto_phonon_path_from_output_text(monkeypatch):
 def test_auto_phonon_path_rounds_fractional_coordinates():
     """k-point coordinates are rounded to the nearest 1/shrink, not truncated.
 
-    The static SeeK-path for body-centred tetragonal (tI) has parametric
+    The static SeeK-path for body-centered tetragonal (tI) has parametric
     points such as 0.683436: 0.683436 * 16 = 10.93 is 11, truncation wrote 10.
     scale_kpoint_segments (d3_kpoints) already rounds.
     """

@@ -487,7 +487,7 @@ def determine_cubic_f_variant(sg: int) -> str:
     Returns:
         "cF1" or "cF2" based on space group
     """
-    # SeeK-path (HPKOT): cF1 for the face-centred groups below 207 (196, 202,
+    # SeeK-path (HPKOT): cF1 for the face-centered groups below 207 (196, 202,
     # 203), cF2 for 207-230 (209, 210, 216, 219, 225-228), as for cP1/cP2
     return "cF1" if sg <= 206 else "cF2"
 
@@ -500,9 +500,9 @@ def determine_cubic_i_variant(sg: int) -> str:
         sg: Space group number
         
     Returns:
-        "cI1" (every body-centred cubic group)
+        "cI1" (every body-centered cubic group)
     """
-    # SeeK-path (HPKOT) has a single body-centred cubic variant
+    # SeeK-path (HPKOT) has a single body-centered cubic variant
     return "cI1"
 
 
@@ -639,7 +639,7 @@ def extract_and_process_shrink(out_file: str, base_name: str,
             content = f.read()
         
         # The cell fort.9 holds (the computed geometry block: a SUPERCEL
-        # supercell, an optimised cell), not the first one printed (the
+        # supercell, an optimized cell), not the first one printed (the
         # input's); the first lattice parameters only when there is none
         computed = None
         if _geometry_blocks is not None:
@@ -1368,7 +1368,7 @@ def get_extended_bravais(sg: int, lat: str,
             else:
                 return "oI1"
         elif lat == "A":
-            # A-centred (Amm2, Aem2, Ama2, Aea2): SeeK-path (HPKOT) takes oA1
+            # A-centered (Amm2, Aem2, Ama2, Aea2): SeeK-path (HPKOT) takes oA1
             # for b < c and oA2 for b > c
             if b is not None and c is not None:
                 return "oA1" if b < c else "oA2"
@@ -1498,7 +1498,7 @@ seekpath_data = {
         "labels": ["GAMMA", "L", "T", "P_0", "|", "P_2", "GAMMA", "F"]
     },
     "aP1": {
-        # Default fallback when no other lattice is recognised (never chosen
+        # Default fallback when no other lattice is recognized (never chosen
         # for a triclinic group, which is aP2 or aP3)
         "segments": [
             [0.0, 0.0, 0.0, 0.5, 0.0, 0.0],    # Γ → X
@@ -1512,7 +1512,7 @@ seekpath_data = {
         "labels": ["GAMMA", "X", "|", "Y", "GAMMA", "Z", "|", "R", "GAMMA", "T", "|", "U", "GAMMA", "V"]
     },
     "mS1": {
-        # Monoclinic C-centred with inversion (SeeK-path mC1, with time
+        # Monoclinic C-centered with inversion (SeeK-path mC1, with time
         # reversal: no primed copy). Cc is mS1_noinv.
         "segments": [
             [0.0, 0.0, 0.0, 0.386966, 0.386966, 0.0],     # Γ → C (scaled)
@@ -1528,7 +1528,7 @@ seekpath_data = {
         "labels": ["GAMMA", "C", "|", "C_2", "Y_2", "GAMMA", "M_2", "D", "|", "D_2", "A", "GAMMA", "|", "L_2", "GAMMA", "V_2"]
     },
     "oS1": {
-        # Orthorhombic C-centred with inversion (SeeK-path oC1, with time
+        # Orthorhombic C-centered with inversion (SeeK-path oC1, with time
         # reversal: no primed copy). Cmc2_1 and the like are oS1_noinv.
         "segments": [
             [0.0, 0.0, 0.0, -0.5, 0.5, 0.0],             # Γ → Y
@@ -1944,7 +1944,7 @@ seekpath_data = {
         "labels": ["GAMMA", "X", "U_2", "Y_0", "GAMMA", "LAMBDA_0", "G_2", "X", "|", "GAMMA", "R", "W", "S", "GAMMA", "T", "W", "|", "GAMMA", "X'", "U_2'", "Y_0'", "GAMMA", "LAMBDA_0'", "G_2'", "X'", "|", "GAMMA", "R'", "W'", "S'", "GAMMA", "T'", "W'"]
     },
     "oF2": {
-        # Face-centred orthorhombic oF2 (SeeK-path, with time reversal: no primed copy).
+        # Face-centered orthorhombic oF2 (SeeK-path, with time reversal: no primed copy).
         # Fdd2 and the like are oF2_noinv.
         "segments": [
             [0.0, 0.0, 0.0, 0.0, 0.5, 0.5],              # Γ → T
@@ -2615,7 +2615,7 @@ seekpath_data = {
 
 
 # The static oA entries are SeeK-path's numbers: fractions of the reciprocal
-# vectors of SeeK-path's A-centred primitive cell (0, b/2, -c/2),
+# vectors of SeeK-path's A-centered primitive cell (0, b/2, -c/2),
 # (0, b/2, c/2), (a, 0, 0). BAND reads them as fractions of the reciprocal
 # vectors of CRYSTAL's primitive cell, a, (0, b/2, c/2), (0, -b/2, c/2)
 # (CRYSTAL23 manual p.309 and Appendix A.5). SeeK-path's cell is N times
@@ -2807,7 +2807,7 @@ def in_plane_labels(labels: List[str], space_group: int, lattice_type: str) -> L
 def extract_lattice_parameters_from_output(out_file: str) -> Optional[Dict[str, Any]]:
     """Extract lattice parameters from CRYSTAL output file.
 
-    The conventional cell: after a 3D optimisation the CRYSTALLOGRAPHIC
+    The conventional cell: after a 3D optimization the CRYSTALLOGRAPHIC
     CELL printed with the last FINAL OPTIMIZED GEOMETRY (its primitive
     cell for a primitive lattice, which prints none), otherwise the
     conventional cell of the input echo, as before. The printed
@@ -2836,7 +2836,7 @@ def extract_lattice_parameters_from_output(out_file: str) -> Optional[Dict[str, 
     if _geometry_blocks is not None:
         lines = content.split('\n')
         block, which = select_geometry_block(_geometry_blocks(lines), lines)
-        # An optimised SUPERCEL cell (a defect supercell, say) has no
+        # An optimized SUPERCEL cell (a defect supercell, say) has no
         # crystallographic cell of its own: its final block is the
         # supercell, with the input echo's space group. The path is the
         # host's, given in the supercell's basis by its expansion, as for
@@ -2885,7 +2885,7 @@ def extract_lattice_parameters_from_output(out_file: str) -> Optional[Dict[str, 
 
 def _final_dimensionality(lines: List[str], block_line: int) -> Optional[int]:
     """Dimensionality on the FINAL OPTIMIZED GEOMETRY line heading a block;
-    for an optimisation step's block (no such line), the run's own, on its
+    for an optimization step's block (no such line), the run's own, on its
     GEOMETRY FOR WAVE FUNCTION line."""
     for j in range(block_line - 1, max(-1, block_line - 7), -1):
         if 'FINAL OPTIMIZED GEOMETRY' in lines[j]:
@@ -3076,7 +3076,7 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
 
     # A slab's path stays in its plane (manual p.310, BAND note 3: I3, J3 are
     # zero in 2D). The seekpath library is not used for a slab: it
-    # standardises the slab's 3D box and can turn the vacuum axis into a or b
+    # standardizes the slab's 3D box and can turn the vacuum axis into a or b
     # (an oblique slab becomes mP with b along the normal), so its
     # coordinates would not be in CRYSTAL's slab cell. The static path of the
     # corresponding space group is, and is cut to its kz = 0 segments.
@@ -3206,7 +3206,7 @@ def get_seekpath_full_kpath(space_group: int, lattice_type: str, out_file: Optio
     # The static entries are SeeK-path's numbers, in the reciprocal basis of
     # SeeK-path's standard cell. For these lattices that cell is not fixed by
     # CRYSTAL's (SeeK-path reorders or reduces the axes, or picks other
-    # centring vectors), so the points can carry other points' names or sit
+    # centering vectors), so the points can carry other points' names or sit
     # off the special points. The oA entries are moved to CRYSTAL's basis
     # (static_oa_segments); the others cannot be without the structure.
     if converted is None and lookup_key[:2] in ('aP', 'mP', 'mS', 'mC', 'oP', 'oS', 'oC', 'oF', 'oI'):

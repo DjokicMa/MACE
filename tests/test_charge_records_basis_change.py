@@ -7,7 +7,7 @@ Three bugs in carrying CHEMOD / CHARGED / DOPING into a child deck
   (measured on HPCC: with an explicit basis a non-neutral CHEMOD sets the
   electron count). A child loading an internal BASISSET got the same CHEMOD +
   CHARGED, which with an internal library only reshape the guess (measured:
-  the guess is renormalised and the run stays neutral), so the child silently
+  the guess is renormalized and the run stays neutral), so the child silently
   ran neutral. The charge becomes DOPING.
 * E5: CHEMOD was copied whenever both decks listed the same number of atoms,
   although its shell charges belong to the parent's basis (CRYSTAL wants one

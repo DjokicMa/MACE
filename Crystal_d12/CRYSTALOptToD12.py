@@ -187,7 +187,7 @@ def stdin_is_terminal() -> bool:
         return False
 
 
-# An optimisation CRYSTAL never finished (killed, out of time, out of memory)
+# An optimization CRYSTAL never finished (killed, out of time, out of memory)
 # has no "OPT END" line; its .out still parses, but only the starting geometry
 # is there to convert.
 UNFINISHED_OPT_NOTE = ("unfinished optimization (no OPT END in the .out), so the deck "
@@ -208,7 +208,7 @@ except Exception:  # standalone run without mace importable
 
 
 def optimization_problem(out_file):
-    """What to tell the user about the optimisation an .out holds: the note
+    """What to tell the user about the optimization an .out holds: the note
     for one without CRYSTAL's OPT END (unfinished), for one that ended
     "OPT END - FAILED" (not converged), or None."""
     try:
@@ -235,7 +235,7 @@ TEMPLATE_BASIS_KEYS = (
 )
 
 # Keys --save-options wrote that hold one structure's data, not a setting:
-# its atoms, its optimisation log, its basis records. They are never applied
+# its atoms, its optimization log, its basis records. They are never applied
 # to another structure, so a template no longer stores them (the Ag1Br1
 # template was 90 KB, almost all of it these).
 TEMPLATE_STRUCTURE_DATA_KEYS = (
@@ -339,7 +339,7 @@ def prefer_deck_unrecognised_functional(settings: dict, in_data: dict) -> None:
     functional the output parser read from CRYSTAL's printed exchange and
     correlation names (a substring guess: the same line is printed for BLYP
     and B3LYP, PBE and PBE0-13, ...) used to be taken silently. Drop it, so
-    the unrecognised-functional prompt (or its warning) handles the parent.
+    the unrecognized-functional prompt (or its warning) handles the parent.
     """
     if (in_data.get("unrecognised_functional") and not in_data.get("functional")
             and settings.get("functional")):
@@ -1748,7 +1748,7 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
                                        or (config_data.get("method_modifications") or {}).get("functional")
                                        or config_data.get("functional"))
 
-                # "method": "HF" asks for a Hartree-Fock deck. Its flavour is
+                # "method": "HF" asks for a Hartree-Fock deck. Its flavor is
                 # "hf_method" or "functional", RHF when neither names one - the
                 # way cif2d12 reads the same file (d12_config.config_to_cif_options).
                 # A null functional reached the filename code and stopped the
@@ -1785,7 +1785,7 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
                 
                 # Handle tolerance_modifications if present. The planner's
                 # FREQ steps nest their tolerances in the frequency settings
-                # instead; honour those when no explicit override is given.
+                # instead; honor those when no explicit override is given.
                 # Either way the override is laid over the parent's values,
                 # so a plan that sets only TOLDEE keeps the parent's TOLINTEG.
                 custom_tol = None
@@ -2260,7 +2260,7 @@ def recompute_ion_charges(child_text, parent_text, requested, interactive=False)
     The carried records are replaced (ion_charges.plan_for_deck on the new
     deck). When the parent deck's fragments differ in composition from the
     child's, a warning says so (a proton or an anion moved between molecules
-    during the optimisation changes which ions there are).
+    during the optimization changes which ions there are).
     """
     import ion_charges as ic
 

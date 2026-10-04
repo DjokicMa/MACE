@@ -202,7 +202,7 @@ def keep_output(out_path: Path, reason: str) -> Optional[Path]:
 
     A copy, not a move: the resubmitted job overwrites <JOB>.out anyway, and
     until it starts the failed record still points at that file - moving it
-    would leave a failed resubmission with "no output" to analyse on retry.
+    would leave a failed resubmission with "no output" to analyze on retry.
     """
     out_path = Path(out_path)
     if not out_path.is_file():

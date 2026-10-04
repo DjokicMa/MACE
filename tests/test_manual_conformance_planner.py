@@ -213,7 +213,7 @@ def test_hf_category_offers_rhf_not_bare_hf(planner, monkeypatch):
 
     CRYSTALOptToD12 routes only RHF/UHF/HF3C/HFSOL3C down the HF branch, so
     "HF" fell through to the DFT branch and was emitted as
-    `DFT / HF / ENDDFT` -- a rejected deck for a menu entry labelled
+    `DFT / HF / ENDDFT` -- a rejected deck for a menu entry labeled
     "Hartree-Fock methods".
     """
     assert _choose_custom_functional(planner, monkeypatch, "1", 1) == "RHF"
@@ -272,7 +272,7 @@ def test_d3_gate_uses_the_shared_constant():
     """The gate must read d12_constants.D3_FUNCTIONALS, not a fourth copy.
 
     Prevents drift between the planner's dispersion offers and the list
-    d12_writer.write_dft_section actually honours when appending "-D3".
+    d12_writer.write_dft_section actually honors when appending "-D3".
     """
     assert set(planner_mod.D3_FUNCTIONALS) == {
         "BLYP", "PBE", "B97", "B3LYP", "PBE0",

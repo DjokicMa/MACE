@@ -8,7 +8,7 @@ What the records do (CRYSTAL23 manual, with what was measured on HPCC):
             checked with the new configuration and CRYSTAL stops if it would be
             lowered ("No automatic reduction of the symmetry is allowed").
     CHARGED (basis-set input, p.80)  allow a non-neutral cell; a uniform
-            background neutralises it. "Do not use for total energy comparison."
+            background neutralizes it. "Do not use for total energy comparison."
     DOPING  (SCF input, p.103)       add (positive) or remove (negative)
             electrons; a compensating background is added when needed.
 
@@ -16,7 +16,7 @@ Measured (CRYSTAL/23-intel-2023a, see the README section "Charged systems and
 ion clusters"):
 
 * With an internal BASISSET library, CHEMOD (+ CHARGED) changes nothing in the
-  electron count: the guess is renormalised ("CHARGE NORMALIZATION FACTOR"),
+  electron count: the guess is renormalized ("CHARGE NORMALIZATION FACTOR"),
   so the count comes from DOPING and CHEMOD only shapes the guess.
 * With an explicit basis, a non-neutral CHEMOD does set the count (with
   CHARGED it matches DOPING to 1e-9 Ha); CHEMOD + DOPING then counts the

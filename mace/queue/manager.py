@@ -1054,7 +1054,7 @@ class EnhancedCrystalQueueManager:
             return
 
         # An optimization caught in a FINALRUN loop is not a crash: it is
-        # recovered (tighter TOLINTEG), not just cancelled.
+        # recovered (tighter TOLINTEG), not just canceled.
         self.recover_running_finalrun_loops()
 
         # Get jobs that have been running for a while
@@ -2027,7 +2027,7 @@ class EnhancedCrystalQueueManager:
             except Exception as e:
                 print(f"Error checking output file {output_file}: {e}")
         elif own_job or slurm_state in self._TERMINAL_SLURM_STATES:
-            # The job has ended and wrote no .out: cancelled while pending,
+            # The job has ended and wrote no .out: canceled while pending,
             # killed before CRYSTAL started, or a job script that never
             # reached CRYSTAL. Left 'submitted', the record blocked its
             # workflow forever and no recovery ever looked at it. Without a

@@ -148,7 +148,7 @@ def _planless_sp(tmp_path):
 
 def _basis(lines):
     """The EXTERNAL basis records: from the first line after the geometry's
-    closing END/ENDOPT up to '99 0', whitespace-normalised."""
+    closing END/ENDOPT up to '99 0', whitespace-normalized."""
     end = lines.index("99 0")
     start = max(k for k in range(end) if lines[k].strip() in ("END", "ENDOPT"))
     return [ln.split() for ln in lines[start + 1:end + 1]]

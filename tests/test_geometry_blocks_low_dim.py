@@ -3,7 +3,7 @@
 A 3D output heads each computed block with "PRIMITIVE CELL - CENTRING CODE";
 a SLAB or POLYMER output prints a plain "PRIMITIVE CELL" there (measured:
 the graphene and polyyne CRYSTAL23 outputs in tests/data). Only the 3D form
-was recognised, so a 2D or 1D caller got "no computed geometry block" and
+was recognized, so a 2D or 1D caller got "no computed geometry block" and
 the legacy reader.
 """
 import contextlib

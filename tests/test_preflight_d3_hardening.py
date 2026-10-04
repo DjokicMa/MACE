@@ -151,7 +151,7 @@ def test_potc_plane_average_unaffected(tmp_path, monkeypatch):
 def test_missing_wavefunction_without_a_terminal_returns_false(tmp_path, monkeypatch):
     """No fort.9 and no terminal raised EOFError out of the yes/no prompt.
 
-    Fails against the old behaviour (EOFError from yes_no_prompt), passes after:
+    Fails against the old behavior (EOFError from yes_no_prompt), passes after:
     the guard reports and returns False, matching the D12 precedent at
     Crystal_d12/NewCifToD12.py:957-965.
     """
@@ -168,7 +168,7 @@ def test_missing_wavefunction_without_a_terminal_returns_false(tmp_path, monkeyp
 def test_single_file_run_exits_nonzero_when_no_deck_is_written(tmp_path, monkeypatch, capsys):
     """main() discarded generate_d3()'s return and exited 0 with no .d3 file.
 
-    Fails against the old behaviour (EOFError propagated out of main), passes
+    Fails against the old behavior (EOFError propagated out of main), passes
     after: the single-file path exits 1, which is the only signal the workflow
     executor gates on. With no settings given, "Continue anyway?" is asked on
     stdin even without a terminal (answers may be piped, as in 1.1.1); here
@@ -198,7 +198,7 @@ def test_single_file_run_exits_nonzero_when_no_deck_is_written(tmp_path, monkeyp
 def test_batch_run_exits_nonzero_when_every_file_fails(tmp_path, monkeypatch):
     """The batch loop discarded every return value and always exited 0.
 
-    Fails against the old behaviour (EOFError out of the first file's prompt),
+    Fails against the old behavior (EOFError out of the first file's prompt),
     passes after: with no wavefunction anywhere, nothing is written and the run
     exits 1 instead of reporting a silent success.
     """
@@ -238,7 +238,7 @@ _PLANE = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
 def test_echg_map_points_in_the_config_emit_the_mapnet_block(tmp_path, monkeypatch, capsys):
     """A config carrying map_points but not need_map_points dropped MAPNET.
 
-    Fails against the old behaviour (deck was "ECHG / 0 / END"), passes after.
+    Fails against the old behavior (deck was "ECHG / 0 / END"), passes after.
     The MAPNET records are unconditional for ECHG (manual 25573), so the old
     deck made CRYSTAL read END as the integer NPY and abort.
     """
@@ -258,7 +258,7 @@ def test_echg_map_points_in_the_config_emit_the_mapnet_block(tmp_path, monkeypat
 def test_echg_config_plane_in_angstrom_writes_no_unit_keyword(tmp_path, monkeypatch):
     """ANGSTROM is MAPNET's default (manual 26810), so it needs no keyword.
 
-    Fails against the old behaviour (the plane was ignored entirely), passes
+    Fails against the old behavior (the plane was ignored entirely), passes
     after.
     """
     _no_terminal(monkeypatch)
@@ -277,7 +277,7 @@ def test_echg_config_plane_in_angstrom_writes_no_unit_keyword(tmp_path, monkeypa
 def test_echg_map_points_without_a_coord_type_are_refused(tmp_path, monkeypatch, capsys):
     """A plane with no unit is a silent lattice-parameter-sized error.
 
-    Fails against the old behaviour (no such concept; the writer prompted or
+    Fails against the old behavior (no such concept; the writer prompted or
     ignored the points), passes after: the writer refuses and names both units.
     FRACTION and ANGSTROM differ by the lattice parameter and CRYSTAL cannot
     detect the mistake (manual 3404-3405, 26810-26812).
@@ -326,7 +326,7 @@ def test_echg_wrong_number_of_map_points_is_refused(tmp_path, monkeypatch, capsy
 def test_echg_without_points_or_terminal_writes_no_deck(tmp_path, monkeypatch, capsys):
     """ECHG with no plane and no terminal crashed with EOFError mid-deck.
 
-    Fails against the old behaviour (EOFError at the "Coordinate type" prompt),
+    Fails against the old behavior (EOFError at the "Coordinate type" prompt),
     passes after: generate_d3 reports, returns None and leaves no .d3 behind -
     a half-written deck is worse than none because the caller gates on the file.
     """
@@ -346,7 +346,7 @@ def test_echg_without_points_or_terminal_writes_no_deck(tmp_path, monkeypatch, c
 def test_typed_fractional_word_selects_the_fraction_keyword(tmp_path, monkeypatch):
     """Typing "Fractional" used to produce an ANGSTROM plane.
 
-    Fails against the old behaviour (exact `== "F"` test, so anything longer
+    Fails against the old behavior (exact `== "F"` test, so anything longer
     than a bare F fell through to the Angstrom default and the map plane was
     built in the wrong unit), passes after: the answer is matched against a word
     set.
@@ -366,9 +366,9 @@ def test_typed_fractional_word_selects_the_fraction_keyword(tmp_path, monkeypatc
 
 
 def test_typed_coordinate_type_typo_is_refused(tmp_path, monkeypatch, capsys):
-    """An unrecognised typed unit silently meant Angstrom.
+    """An unrecognized typed unit silently meant Angstrom.
 
-    Fails against the old behaviour (any non-"F" answer produced an Angstrom
+    Fails against the old behavior (any non-"F" answer produced an Angstrom
     plane), passes after: the writer refuses rather than guessing the unit.
     """
     _terminal(monkeypatch)
@@ -391,7 +391,7 @@ def test_typed_coordinate_type_typo_is_refused(tmp_path, monkeypatch, capsys):
 def test_potc_points_from_config_are_written(tmp_path, monkeypatch):
     """A config carrying the coordinates implies custom points.
 
-    Fails against the old behaviour (custom_points defaults to False, so the
+    Fails against the old behavior (custom_points defaults to False, so the
     header promised NPU records and none followed - CRYSTAL then read the deck's
     END as an X,Y,Z triple), passes after.  Manual 27382-27385: "if NPU > 0
     insert NPU records" of cartesian bohr coordinates.
@@ -411,7 +411,7 @@ def test_potc_points_from_config_are_written(tmp_path, monkeypatch):
 def test_potc_point_count_must_match_npu(tmp_path, monkeypatch, capsys):
     """A header/record disagreement is fatal and must not be guessed away.
 
-    Fails against the old behaviour (points were unreachable from a config),
+    Fails against the old behavior (points were unreachable from a config),
     passes after: the writer refuses and names both counts, because CRYSTAL
     reads exactly NPU records (manual 27382).
     """
@@ -430,7 +430,7 @@ def test_potc_point_count_must_match_npu(tmp_path, monkeypatch, capsys):
 def test_potc_custom_points_without_a_terminal_write_no_deck(tmp_path, monkeypatch, capsys):
     """custom_points with no terminal crashed with EOFError.
 
-    Fails against the old behaviour (EOFError at "Point 1 (x y z)"), passes
+    Fails against the old behavior (EOFError at "Point 1 (x y z)"), passes
     after: reported, no deck written.
     """
     _no_terminal(monkeypatch)
@@ -451,7 +451,7 @@ def test_potc_custom_points_without_a_terminal_write_no_deck(tmp_path, monkeypat
 def test_range_from_config_needs_no_terminal(tmp_path, monkeypatch):
     """RANGE was unreachable without a terminal - it always prompted.
 
-    Fails against the old behaviour (EOFError at "X min (bohr)"), passes after.
+    Fails against the old behavior (EOFError at "X min (bohr)"), passes after.
     Manual 25498-25500: 0D takes XMIN,YMIN,ZMIN then XMAX,YMAX,ZMAX in bohr.
     """
     _no_terminal(monkeypatch)
@@ -470,7 +470,7 @@ def test_range_from_config_needs_no_terminal(tmp_path, monkeypatch):
 def test_range_arity_must_match_dimensionality(tmp_path, monkeypatch, capsys):
     """A 2D slab takes ZMIN/ZMAX only (manual 25494-25495).
 
-    Fails against the old behaviour (RANGE could not be configured at all),
+    Fails against the old behavior (RANGE could not be configured at all),
     passes after: three values for a slab are refused instead of being written
     as a record CRYSTAL would misread.
     """
@@ -490,7 +490,7 @@ def test_range_arity_must_match_dimensionality(tmp_path, monkeypatch, capsys):
 def test_range_without_a_terminal_writes_no_deck(tmp_path, monkeypatch, capsys):
     """use_range with no boundaries and no terminal crashed with EOFError.
 
-    Fails against the old behaviour, passes after: reported, no deck written.
+    Fails against the old behavior, passes after: reported, no deck written.
     """
     _no_terminal(monkeypatch)
     _no_input(monkeypatch)
@@ -509,7 +509,7 @@ def test_range_without_a_terminal_writes_no_deck(tmp_path, monkeypatch, capsys):
 def test_saved_echg_config_survives_reload_validation(monkeypatch):
     """A saved ECHG configuration could never be loaded again.
 
-    Fails against the old behaviour: configure_charge_density_calculation's ECHG
+    Fails against the old behavior: configure_charge_density_calculation's ECHG
     branch never set n_points, and validate_d3_config requires it for CHARGE
     (d3_config.py:257), so `--config-file` on a saved ECHG config exited 1.
     n_points is MAPNET's NPY, "number of points on the B-A segment"

@@ -251,7 +251,7 @@ fi
 # with the SYMMETRY INCOMPATIBILITY above). It takes this branch as well, so a
 # rerun of such a deck no longer gets its own 2c $JOB.f9 as fort.20. With a
 # staged 1c $JOB.f20 that run read the guess, reached the cold-start energy by
-# cycle 5 and then diverged (FMIXING 50, cancelled at cycle 135) where the cold
+# cycle 5 and then diverged (FMIXING 50, canceled at cycle 135) where the cold
 # start converged in 12 cycles, so staging one is warned about.
 MACE_GUESS1C=$(sed -n -E "/^[[:space:]]*TWOCOMPON[[:space:]]*$/I,/^[[:space:]]*END(TWO)?[[:space:]]*$/I{=;p}" "$scratch/$JOB/INPUT" 2>/dev/null | paste - - | grep -iE "^[0-9]+[[:space:]]+(GUESSP|GUESSPNOSO|2NDVARIAT)[[:space:]]*$" | head -n 1)
 MACE_GUESS1C_TOP=

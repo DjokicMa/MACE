@@ -2,7 +2,7 @@
 
 parse_crystal_structure took the cell from the first "PRIMITIVE CELL"
 lattice parameters and the atoms from the first atom list. In an
-optimisation output those are the initial geometry, not the optimised one;
+optimization output those are the initial geometry, not the optimized one;
 after SUPERCEL the cell was the input primitive cell (FREQ
 1_dia..._supercel222.out: a = 2.50656) while the atoms were the 16 of the
 supercell (a = 5.01312). Cell and atoms now come from one computed block:
@@ -87,7 +87,7 @@ def _ti_prim(a, c):
 
 
 def _opt_output(final=True):
-    # an optimisation from c < a (tI1) to c > a (tI2)
+    # an optimization from c < a (tI1) to c > a (tI2)
     first, last = (4.0, 3.0), (3.89, 6.38)
     text = cot.echo("I 4/M M M", (first[0], first[0], first[1], 90, 90, 90), _ti_prim(*first))
     text += cot.block(_ti_prim(*first), _ti_atoms(0.4), w=TI_W,
@@ -152,7 +152,7 @@ def test_no_block_falls_back_with_a_warning(tmp_path):
 @pytest.mark.parametrize("w,expected", [
     # dia (F): the printed matrix is symmetric, the inverse of F's primitive one
     (F_W, None),
-    # C-centred: printed "1 1 0 -1 1 0 0 0 1"; CRYSTAL's primitive vectors
+    # C-centered: printed "1 1 0 -1 1 0 0 0 1"; CRYSTAL's primitive vectors
     # are (a/2, b/2, 0), (-a/2, b/2, 0), c (DIRECT LATTICE VECTORS of
     # Ag1Cl5 C m), so a = p1 - p2: the conventional vectors are W's columns
     (((1, 1, 0), (-1, 1, 0), (0, 0, 1)), ((0.5, 0.5, 0), (-0.5, 0.5, 0), (0, 0, 1))),
@@ -179,7 +179,7 @@ def _direct_vectors(lines, start):
 
 @pytest.mark.skipif(not CORPUS.is_dir(), reason="test/ corpus not present")
 def test_w_direction_against_printed_vectors():
-    """Every centred corpus output: W^T times the printed primitive vectors
+    """Every centered corpus output: W^T times the printed primitive vectors
     is a cell with the printed crystallographic cell's parameters."""
     checked = 0
     for out in sorted(CORPUS.glob("*/*.out")):
@@ -219,7 +219,7 @@ def test_corpus_optimization_final_cell():
 
 
 def test_library_route_takes_the_final_cell(tmp_path):
-    """tI1 initial cell, tI2 optimised: SeeK-path sees the optimised one."""
+    """tI1 initial cell, tI2 optimized: SeeK-path sees the optimized one."""
     pytest.importorskip("seekpath")
     out = tmp_path / "opt.out"
     out.write_text(_opt_output())

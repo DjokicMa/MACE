@@ -21,7 +21,7 @@ pytest.importorskip("ase", reason="CIF parsing needs ase (absent in CI)")
 MACE_CLI = REPO_ROOT / "mace_cli"
 CIF = Path(__file__).parent / "data" / "1_dia_opt_BULK_OPTGEOM_symm.cif"
 # 'n' to the defaults, then Enter for: symmetry defaults, dimensionality,
-# calculation type, optimisation type, convergence level, MAXTRADIUS, method
+# calculation type, optimization type, convergence level, MAXTRADIUS, method
 BEFORE_CATEGORY = ["n"] + [""] * 7
 
 

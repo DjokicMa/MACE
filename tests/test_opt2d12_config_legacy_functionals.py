@@ -1,6 +1,6 @@
 """opt2d12 --config-file reads legacy functional spellings as plan steps do.
 
-Workflow plans have their functional names normalised when they are loaded
+Workflow plans have their functional names normalized when they are loaded
 (mace/workflow/plan_functionals.py): "HSEsol-3C" becomes HSESOL3C, "M06-2X"
 M062X, "HF" RHF, and an unknown name is refused. An opt2d12 config file -
 written by hand, by --save-options, or saved by the planner's Expert mode

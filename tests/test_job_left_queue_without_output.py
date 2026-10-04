@@ -5,7 +5,7 @@ HPCC QA (2026-10-03): two follow-up jobs ended in seconds with no .out
 (sacct COMPLETED). The completion callback and `mace manager --callback-mode
 status_check` left both records 'submitted', so the workflow could neither
 finish nor recover, and `mace monitor --status` counted them nowhere. The same
-applies to a job cancelled while pending or killed before CRYSTAL starts.
+applies to a job canceled while pending or killed before CRYSTAL starts.
 """
 import os
 import sqlite3

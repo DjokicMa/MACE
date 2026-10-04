@@ -233,7 +233,7 @@ def test_ensure_known_functional_leaves_a_known_functional_alone(capsys):
 
 @pytest.fixture
 def b2plyp_parent(tmp_path):
-    """The diamond B3LYP-D3 corpus parent, re-labelled B2PLYP.
+    """The diamond B3LYP-D3 corpus parent, re-labeled B2PLYP.
 
     The deck's functional line becomes B2PLYP (no -D3), and the output's
     functional line is removed so nothing identifies the functional.

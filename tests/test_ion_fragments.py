@@ -115,7 +115,7 @@ def test_report_lists_each_kind_once():
 def test_fsi_across_a_cell_boundary_is_one_ion():
     a = 12.0
     cell = cell_matrix(a, a, a, 90, 90, 90)
-    # centre the anion on the x = 0 face: half its atoms wrap to x ~ 12
+    # center the anion on the x = 0 face: half its atoms wrap to x ~ 12
     atoms = [(s, ((p[0]) % a, p[1] + 6.0, p[2] + 6.0)) for s, p in fsi()]
     syms, xyz = _split(atoms)
     assert any(x > 10 for x, _, _ in xyz) and any(x < 2 for x, _, _ in xyz)

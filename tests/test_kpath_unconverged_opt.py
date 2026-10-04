@@ -1,4 +1,4 @@
-"""An optimisation that ended unconverged: the k-path is for the cell fort.9 holds.
+"""An optimization that ended unconverged: the k-path is for the cell fort.9 holds.
 
 "OPT END - FAILED" prints no FINAL OPTIMIZED GEOMETRY; the run's fort.9 is
 the last point's SCF, whose geometry is the last block printed (measured on

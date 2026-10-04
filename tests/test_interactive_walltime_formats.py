@@ -27,7 +27,7 @@ def _env():
 @pytest.mark.parametrize("walltime", ["12:00:00", "2:00:00", "12:00", "1-12:00:00"])
 def test_submit_interactive_takes_the_walltime(tmp_path, deck, text, walltime):
     (tmp_path / deck).write_text(text)
-    # customise, cores, memory, walltime, account, node exclusion
+    # customize, cores, memory, walltime, account, node exclusion
     r = subprocess.run([sys.executable, str(MACE_CLI), "submit", deck, "--interactive",
                         "--nosubmit"], cwd=tmp_path,
                        input=f"y\n\n\n{walltime}\n\nn\n" + "\n" * 5,

@@ -8,7 +8,7 @@ DE -1.7E-08, set the trust radius to 0.000E+00 and died in MPI_Abort. The
 .out ends there; "ERROR **** BFGS_ **** PXK TOO SMALL" is only in the scratch
 fort.87, and sacct says COMPLETED - so it was classified unknown_error and the
 deck kept RESTART forever. tqc_agbr (Ag2Br3, R -3 c in hexagonal axes)
-supplies a centred-cell RESTART run whose best point is in the EARLIER run.
+supplies a centered-cell RESTART run whose best point is in the EARLIER run.
 
 The geometry transfer is also checked against every 3D OPT pair of the real
 corpus and against the SP decks MACE's CRYSTALOptToD12 made from them.
@@ -191,7 +191,7 @@ def test_every_real_3d_opt_transfers_its_last_point_exactly():
 def test_transferred_geometry_matches_maces_own_sp_decks():
     """CRYSTALOptToD12 wrote an SP deck from the final geometry of many corpus
     OPTs; carrying the last point into the OPT deck gives the same cell and
-    atoms (up to lattice/centring images)."""
+    atoms (up to lattice/centering images)."""
     compared = 0
     for out, deck, text in opt_pairs():
         sps = sorted((TEST_DATA / "SP").glob(out.stem + "_sp_*.d12"))

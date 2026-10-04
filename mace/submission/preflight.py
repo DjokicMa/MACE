@@ -11,7 +11,7 @@ The cheap way to run CRYSTAL without running the calculation is TESTPDIM
 four input blocks) and performing symmetry analysis. The size of the Fock/KS
 and density matrices in direct space is printed. No input data are required.").
 It is a block-3 keyword (manual keyword index: "TESTPDIM / stop after symmetry
-analysis"), and the manual's own advice for a full neighbourhood analysis is
+analysis"), and the manual's own advice for a full neighborhood analysis is
 "a complete input deck must be read in (blocks 1-3), and the keyword TESTPDIM
 inserted in block 3, to stop execution after the symmetry analysis."
 
@@ -30,7 +30,7 @@ Design rules this module holds to:
   marker is actually present in out.txt. Anything else is a FAIL or an ERROR.
 * "This deck is bad" (FAIL) and "this deck could not be checked" (ERROR) are
   different answers with different exit codes, and are never conflated.
-* A structure-only run never reports PASS. It reports SKIPPED, labelled
+* A structure-only run never reports PASS. It reports SKIPPED, labeled
   "structural check only - CRYSTAL was not run", so it cannot read as
   reassurance about a deck CRYSTAL never saw.
 """
@@ -132,7 +132,7 @@ class PreflightResult:
 
 
 # --------------------------------------------------------------------------
-# Text surgery - exact, never normalising
+# Text surgery - exact, never normalizing
 # --------------------------------------------------------------------------
 def split_lines(text: str) -> List[str]:
     """Split ``text`` into lines that each keep their OWN terminator.
@@ -701,7 +701,7 @@ def summarize(results: Sequence[PreflightResult]) -> None:
             _say("info", f"kept {r.deck.name} run directory: {r.kept}")
 
     # The summary goes to stderr (ui.ok/warn/err); flush the tables first so a
-    # piped/logged run does not show the verdict above the table it summarises.
+    # piped/logged run does not show the verdict above the table it summarizes.
     sys.stdout.flush()
     total = len(results)
     n_pass, n_fail = len(counts[PASS]), len(counts[FAIL])

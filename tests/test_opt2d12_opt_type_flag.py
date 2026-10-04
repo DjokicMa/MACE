@@ -1,6 +1,6 @@
 """An explicit --opt-type is the optimization type, whatever stdin answers.
 
---opt-type was honoured only by --non-interactive without --calc-type. When
+--opt-type was honored only by --non-interactive without --calc-type. When
 the settings prompts were answered from stdin (the workflow engine's form,
 and any scripted run), the parent's type or the prompt's default was
 written instead.

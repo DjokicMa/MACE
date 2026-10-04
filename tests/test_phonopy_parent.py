@@ -486,7 +486,7 @@ def test_unlocked_magnetic_parent_refused():
     reasons = dict(P.refusal_reasons(P.split_parent_deck(internal()), out))
     assert P.REFUSE_UNLOCKED_MAGNETISM in reasons
     assert "atom 2" in reasons[P.REFUSE_UNLOCKED_MAGNETISM]
-    # A closed-shell spin-polarised run (all spins ~0) is fine.
+    # A closed-shell spin-polarized run (all spins ~0) is fine.
     out = GOOD_OUT + MULLIKEN.format(total="0.000000", s1="0.000", s2="-0.000")
     assert _codes(internal(), out) == []
 

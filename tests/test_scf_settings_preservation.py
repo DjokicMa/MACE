@@ -197,7 +197,7 @@ def _after(lines, key):
 
 
 def _scf_tail(lines):
-    """The deck from TOLINTEG to the end, whitespace-normalised."""
+    """The deck from TOLINTEG to the end, whitespace-normalized."""
     return [" ".join(l.split()) for l in lines[lines.index("TOLINTEG"):]]
 
 

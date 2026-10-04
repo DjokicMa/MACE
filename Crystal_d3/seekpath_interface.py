@@ -90,16 +90,16 @@ def cell_params_to_vectors(a: float, b: float, c: float,
 # CRYSTAL Output Parsing
 # =============================================================================
 
-# A computed geometry block - "GEOMETRY FOR WAVE FUNCTION", each optimisation
+# A computed geometry block - "GEOMETRY FOR WAVE FUNCTION", each optimization
 # step, "FINAL OPTIMIZED GEOMETRY" - starts with this line, then the cell
 # (A B C ALPHA BETA GAMMA), "ATOMS IN THE ASYMMETRIC UNIT n - ATOMS IN THE
-# UNIT CELL: m" and the m atoms (T/F rows). A centred lattice adds the
+# UNIT CELL: m" and the m atoms (T/F rows). A centered lattice adds the
 # "TRANSFORMATION MATRIX PRIMITIVE-CRYSTALLOGRAPHIC CELL" W and the
 # "CRYSTALLOGRAPHIC CELL" parameters. The input echo before it ("LATTICE
 # PARAMETERS ... - PRIMITIVE CELL") is the cell given in input, which is not
 # the computed one after SUPERCEL or other geometry editing, nor the
-# optimised one. A SLAB or POLYMER output prints a plain "PRIMITIVE CELL"
-# line there (no centring code).
+# optimized one. A SLAB or POLYMER output prints a plain "PRIMITIVE CELL"
+# line there (no centering code).
 _BLOCK_START = re.compile(r'^\s*PRIMITIVE CELL(?:\s+- CENTRING CODE|\s*$)')
 _UNIT_CELL_ATOMS = re.compile(r'ATOMS IN THE UNIT CELL:\s*(\d+)')
 
@@ -142,7 +142,7 @@ def _geometry_blocks(lines: List[str]) -> List[Dict[str, Any]]:
     ('params'), the atom count CRYSTAL prints ('n_atoms') and the atoms read
     ('numbers', 'positions'), W when printed ('W', with the conventional
     vectors a, b, c = the columns of W in terms of the primitive ones: rows
-    A_conv = W^T A_prim, as the DIRECT LATTICE VECTORS of C- and R-centred
+    A_conv = W^T A_prim, as the DIRECT LATTICE VECTORS of C- and R-centered
     outputs show), the CRYSTALLOGRAPHIC CELL parameters when printed
     ('conventional') and whether FINAL OPTIMIZED GEOMETRY heads it ('final').
     """
@@ -201,8 +201,8 @@ def select_geometry_block(blocks: List[Dict[str, Any]],
     """The block BAND's fort.9 holds, and which one it is ('final', 'last'
     or 'first').
 
-    After an optimisation that is the block after the last FINAL OPTIMIZED
-    GEOMETRY. An optimisation that ended without converging ("OPT END -
+    After an optimization that is the block after the last FINAL OPTIMIZED
+    GEOMETRY. An optimization that ended without converging ("OPT END -
     FAILED", given the output's ``lines``) prints no final block; its fort.9
     holds the last point's SCF, whose geometry is the last block printed
     (measured on HPCC: point 800 of 800, its energy the one OPT END reports)
@@ -262,7 +262,7 @@ def parse_crystal_structure(output_file: str) -> Optional[Dict[str, Any]]:
     Extract full crystal structure from CRYSTAL output file.
 
     The cell and the atoms are read from one computed geometry block: the
-    final optimised geometry after an optimisation, otherwise the first
+    final optimized geometry after an optimization, otherwise the first
     computed geometry (the cell fort.9 holds; a SUPERCEL supercell, say).
     When the output has no such block, or its atom count does not match the
     atoms read, the earlier parser is used with a warning.
@@ -539,13 +539,13 @@ def get_seekpath_bandpath(cell: np.ndarray, positions: np.ndarray, numbers: List
 # =============================================================================
 #
 # SeeK-path gives its points as fractions of the reciprocal vectors of ITS
-# standardised primitive cell (HPKOT). BAND reads a segment end as fractions
+# standardized primitive cell (HPKOT). BAND reads a segment end as fractions
 # of the reciprocal vectors of CRYSTAL's own primitive cell (CRYSTAL23 manual
 # p.309: I1/ISS b1 + I2/ISS b2 + I3/ISS b3), which is the cell given in input
 # reduced by CRYSTAL's matrices (Appendix A.5). The two cells describe the
-# same lattice but are not the same cell: a C-centred orthorhombic cell is
+# same lattice but are not the same cell: a C-centered orthorhombic cell is
 # (a/2, b/2, 0), (-a/2, b/2, 0), c in CRYSTAL and (a/2, -b/2, 0),
-# (a/2, b/2, 0), c in SeeK-path; an A-centred one, a triclinic one or a
+# (a/2, b/2, 0), c in SeeK-path; an A-centered one, a triclinic one or a
 # primitive orthorhombic one not in a < b < c order also differ.
 #
 # With the rows of A the CRYSTAL primitive vectors and of A_sp SeeK-path's,

@@ -163,7 +163,7 @@ E_4 Z -Z 1-H
     },
 }
 
-# MACE's static lookup names every C-centred monoclinic lattice "mS1"; its
+# MACE's static lookup names every C-centered monoclinic lattice "mS1"; its
 # entry is SeeK-path's mC1 path with the primed copy SeeK-path appends
 # without time reversal.
 ALIASES = {"mS1": "mC1"}
@@ -180,7 +180,7 @@ HPKOT_P = {
 }
 
 # CRYSTAL's "TRANSFORMATION MATRIX PRIMITIVE-CRYSTALLOGRAPHIC CELL" W as its
-# outputs print it, by centring (CRYSTAL23 manual, Appendix A, Table A.1
+# outputs print it, by centering (CRYSTAL23 manual, Appendix A, Table A.1
 # p.426, the "-> P" matrices; R is the hexagonal-axes cell): the
 # conventional vectors are the columns of W in terms of the primitive ones,
 # so as rows A_conv = W^T A_prim and A_prim = (W^T)^-1 A_conv.
@@ -193,7 +193,7 @@ CRYSTAL_W = {
     "R": np.array([[1, 0, 1], [-1, 1, 1], [0, -1, 1]]),
 }
 
-# The centring each lattice family's conventional cell has in CRYSTAL
+# The centering each lattice family's conventional cell has in CRYSTAL
 FAMILY_CENTRING = {"tI": "I", "oF": "F", "hR": "R", "oC": "C", "mC": "C"}
 
 
@@ -243,9 +243,9 @@ def hpkot_variant(family: str, params: Dict[str, float]) -> str:
 
 
 def check_setting(family: str, params: Dict[str, float]) -> None:
-    """Raise NotInHpkotSetting unless the cell is in the setting SeeK-path standardises to.
+    """Raise NotInHpkotSetting unless the cell is in the setting SeeK-path standardizes to.
 
-    SeeK-path evaluates its formulas in spglib's standardised conventional
+    SeeK-path evaluates its formulas in spglib's standardized conventional
     cell. CRYSTAL's conventional cell is the same cell when: tI a = b and
     right angles; hR hexagonal axes (a = b, gamma = 120); oF a < b < c (spglib
     orders the axes of these groups so); oC right angles; mC b unique,

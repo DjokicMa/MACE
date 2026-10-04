@@ -184,7 +184,7 @@ def get_default_d12_configs() -> Dict[str, Dict[str, Any]]:
             "description": "Fast screening calculations with minimal basis",
             "calculation_type": "SP",
             "method": "HF",
-            # opt2d12 names the HF flavour here (RHF/UHF/HF3C/HFSOL3C)
+            # opt2d12 names the HF flavor here (RHF/UHF/HF3C/HFSOL3C)
             "functional": "RHF",
             "dispersion": False,
             "basis_set": "STO-3G",

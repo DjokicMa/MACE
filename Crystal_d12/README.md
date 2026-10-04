@@ -189,11 +189,11 @@ same mesh on purpose, add it by hand: `"k_points_for_all_files": "8 16"` (or
 Nothing is asked per file: a file that would need an answer (a basis set that
 lacks one of its elements) fails with the reason instead, at a terminal or
 not. The run ends with "N written, M failed" and each failure's reason, and
-exits non-zero if any file failed or none was written. A parent optimisation
+exits non-zero if any file failed or none was written. A parent optimization
 without CRYSTAL's OPT END (killed, out of time), or one that ended "OPT END -
 FAILED" at the cycle limit (CRYSTAL then prints no final geometry), is still
 converted, from its starting geometry, and counted in the summary as "K from
-unfinished or failed optimisations". Two `.out` files of the same name sent to one `--output-dir`
+unfinished or failed optimizations". Two `.out` files of the same name sent to one `--output-dir`
 would write the same deck; neither is written.
 
 **Unified Interface:**
@@ -349,7 +349,7 @@ mace ions cluster.d12 --ion-charges auto -o charged/
 mace ions cell.d12 --net-charge -1 --in-place
 
 # derived decks: the parent's records are carried (see below), or worked out
-# again from the optimised geometry
+# again from the optimized geometry
 mace opt2d12 --out-file cluster_opt.out --calc-type SP --non-interactive --ion-charges auto
 ```
 
@@ -382,7 +382,7 @@ CRYSTAL/23-intel-2023a (2026-10-01); **[untested]** not run.
   a doped run does show the doped count [measured: MgO DOPING -2, SCF header
   20, properties header 18; that SCF had not converged, the count is the point].
 - With an internal BASISSET, `CHEMOD` (+ `CHARGED`) does not change the count:
-  the guess is renormalised ("CHARGE NORMALIZATION FACTOR") [measured].
+  the guess is renormalized ("CHARGE NORMALIZATION FACTOR") [measured].
 - After `BASISSET <library>` there is no basis-set block: the lines after the
   library name are already block 3, and `CHEMOD` is accepted there ("ELECTRONIC
   CONFIGURATION MODIFIED IN n ATOMS") [measured]. Do not close it with `END`:
@@ -493,7 +493,7 @@ charge it carried (an explicit basis) becomes `DOPING`, from the parent's
 Mulliken count when the .out is there. Without a parent deck the .out's
 Mulliken count minus the valence charges gives `DOPING`; without a Mulliken
 print (a FREQ parent, often) MACE warns only when the .out shows a sign of a
-charged run (CHEMOD, CHARGED, "UNIT CELL NOT NEUTRAL", a renormalised guess),
+charged run (CHEMOD, CHARGED, "UNIT CELL NOT NEUTRAL", a renormalized guess),
 since `DOPING` itself leaves no trace in the .out [measured]. An odd count gets the
 parent's `SPIN`/`SPINLOCK`, or a molecule's deck is refused (a periodic one is
 written with a warning). Measured through a

@@ -1,10 +1,10 @@
-"""A-centred orthorhombic groups get SeeK-path's oA1/oA2 paths.
+"""A-centered orthorhombic groups get SeeK-path's oA1/oA2 paths.
 
-Amm2, Aem2, Ama2 and Aea2 (38-41) are A-centred; SeeK-path (HPKOT) gives
+Amm2, Aem2, Ama2 and Aea2 (38-41) are A-centered; SeeK-path (HPKOT) gives
 them oA1 when b < c and oA2 when b > c (conventional axes, standard
 setting). The static lookup had no branch for an "A" lattice and fell
 through to the primitive oP1 path, whose X, Y, S, U, ... are not the
-special points of the A-centred zone.
+special points of the A-centered zone.
 """
 import itertools
 

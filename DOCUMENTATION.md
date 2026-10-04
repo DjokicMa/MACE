@@ -235,7 +235,7 @@ mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
   keeps the parent's SHRINK with a warning; `--keep-shrink` keeps it always.
 - **Refused parents** (each with its reason): not 3D (use CRYSTAL's FREQCALC +
   SCELPHONO + DISPERSI, manual pp.73, 232); not terminated normally; SCF not converged;
-  an optimisation without `OPT END - CONVERGED`; a FREQCALC output as the geometry
+  an optimization without `OPT END - CONVERGED`; a FREQCALC output as the geometry
   source; CHEMOD/CHARGED/DOPING, ATOMSPIN/SPINLOCK/BETALOCK or GHOSTS (atom labels and
   electron counts do not carry over to a supercell yet); a magnetic parent (Mulliken
   spin above 0.1 on an atom) with no spin lock; an SCF block with a second END before

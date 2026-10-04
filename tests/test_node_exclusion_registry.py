@@ -2,7 +2,7 @@
 
 tests/test_node_exclusion_menus.py pins what each answer returns; this pins
 the shared definitions those menus are now built from, so a choice cannot be
-renumbered or relabelled in one menu without the change being deliberate.
+renumbered or relabeled in one menu without the change being deliberate.
 """
 import sys
 

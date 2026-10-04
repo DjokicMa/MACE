@@ -11,7 +11,7 @@ charge (otherwise an informational note).
 E4c (a pin, it passed before): a template that sets other settings keeps the
 records.
 E1: --ion-charges / --net-charge (or the same config keys) work the records
-out again from the optimised geometry instead of carrying them.
+out again from the optimized geometry instead of carrying them.
 """
 import builtins
 import json

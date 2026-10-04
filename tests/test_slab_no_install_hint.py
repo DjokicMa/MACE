@@ -1,6 +1,6 @@
 """A slab's band path does not tell the user to install seekpath.
 
-The seekpath library is skipped for a slab on purpose (it would standardise
+The seekpath library is skipped for a slab on purpose (it would standardize
 the vacuum axis into the cell; BAND takes the slab's third coordinates as
 zero, manual p.310 note 3), so "Install seekpath" was advice that changed
 nothing. A 3D cell without the library stops (seekpath is required) unless

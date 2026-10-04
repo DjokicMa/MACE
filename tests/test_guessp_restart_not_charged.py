@@ -1,8 +1,8 @@
 """A neutral run restarted from another density matrix is not a charged run.
 
-After "RESTART FROM A PREVIOUS DENSITY MATRIX" (GUESSP) CRYSTAL renormalises
+After "RESTART FROM A PREVIOUS DENSITY MATRIX" (GUESSP) CRYSTAL renormalizes
 the projected density every cycle (e.g. CHARGE NORMALIZATION FACTOR
-0.99987300 in a 216-electron carbon reoptimisation). 1.1.5 took any factor
+0.99987300 in a 216-electron carbon reoptimization). 1.1.5 took any factor
 other than 1 as a charged-run signal, so such runs got electron_count /
 fragment_charges rows and a "Fragments" section. CHEMOD is not read under
 GUESSP, so after a restart only the net charge and "UNIT CELL NOT NEUTRAL"

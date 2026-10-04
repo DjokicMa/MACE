@@ -543,7 +543,7 @@ def configure_dft_grid_with_defaults(functional: str, current_grid: str = "XLGRI
     # Get the default choice based on current grid
     default_choice = grid_map.get(current_grid, "4")
     
-    # Ask, with the parent's grid as the default (and labelled as such in
+    # Ask, with the parent's grid as the default (and labeled as such in
     # the menu). This used to return the default without asking, so the grid
     # could not be changed here.
     return configure_dft_grid(functional, shared_mode, default=default_choice)
@@ -1018,7 +1018,7 @@ def _ask_for_replacement_functional(options: Dict[str, Any]) -> Optional[str]:
 
 
 def _apply_replacement_functional(options: Dict[str, Any], chosen: str) -> None:
-    """Set the functional typed at the unrecognised-functional prompt."""
+    """Set the functional typed at the unrecognized-functional prompt."""
     parent_d3 = bool(options.get("dispersion"))
     base = chosen[:-3] if chosen.upper().endswith("-D3") else chosen
     if chosen in FUNCTIONAL_CATEGORIES["HF"]["functionals"]:
@@ -1075,7 +1075,7 @@ def configure_method(options: Dict[str, Any], from_parent: bool = True) -> Dict[
     
     # Determine default based on current settings
     current_method = options.get("method_type", options.get("method", "DFT"))
-    # The key can be present as None when the parent's functional was not recognised.
+    # The key can be present as None when the parent's functional was not recognized.
     current_functional = options.get("functional") or ""
     
     # Set default based on current method

@@ -3,8 +3,8 @@
 CRYSTAL applies SHRINK along the primitive reciprocal vectors and stops with
 "ERROR **** CAPPA **** SHRINK BREAKS SYMMETRY" when two directions the layer
 group relates get different factors. opt2d12 (from a .out alone) and cif2d12
-generate the mesh from the conventional a and b, and only equalised it for 3D
-decks, so graphene in the centred-rectangular layer group 47 (a 2.46, b 4.26)
+generate the mesh from the conventional a and b, and only equalized it for 3D
+decks, so graphene in the centered-rectangular layer group 47 (a 2.46, b 4.26)
 got SHRINK 18 10 1 and CRYSTAL refused it.
 
 Measured with CRYSTAL/23-intel-2023a on HPCC (SCF runs, not preflight):
@@ -45,7 +45,7 @@ def test_centered_rectangular_groups_are_the_appendix_c_rows():
 
 
 @pytest.mark.parametrize("group,mesh,cell,expected", [
-    # centred rectangular: one factor for both in-plane directions
+    # centered rectangular: one factor for both in-plane directions
     (47, (18, 10, 1), [2.4612, 4.26292264], (18, 18, 1)),
     (10, (10, 18, 1), None, (18, 18, 1)),
     # ...raised to what the (shorter) primitive vector needs: a 3, b 4 gives

@@ -9,7 +9,7 @@ basis set, grids, tolerances and every other host line are kept byte for byte;
 only the supercell, defect, charge and spin records are added. A defect set
 therefore always runs exactly the host's method.
 
-Where this page says *measured*, the behaviour was run with CRYSTAL23
+Where this page says *measured*, the behavior was run with CRYSTAL23
 (23-intel-2023a) on HPCC; *from the manual* cites the CRYSTAL23 user's manual;
 *untested* means neither.
 
@@ -17,7 +17,7 @@ Where this page says *measured*, the behaviour was run with CRYSTAL23
 
 ```bash
 # 1. a single-point host deck (an OPT deck holds the initial geometry: make an SP
-#    of the optimised structure first)
+#    of the optimized structure first)
 mace opt2d12 --calc-type SP ...            # -> mgo_sp.d12
 
 # 2. the deck set (--calibrate adds the optional fractional-DOPING cross-check decks)
@@ -168,7 +168,7 @@ negative E_MP. eps is
 eps_inf is the choice for these unrelaxed (vertical) defects; eps_0 is for
 relaxed ones and gets a note. Measured MgO: eps_inf 2.865, eps_0 9.34. Without
 a dielectric constant the charged states are reported with the offset only and
-labelled **"uncorrected for image charges"**; their levels then still depend on
+labeled **"uncorrected for image charges"**; their levels then still depend on
 the cell size.
 
 Measured, MgO V_O (unrelaxed, PBE0/POB-TZVP-REV2, eps_inf 2.865):
@@ -198,7 +198,7 @@ some cases several times larger than for the neutral cell" (p.103). SMEAR
 hosts are refused (free energies, smeared occupations); LEVSHIFT hosts are
 warned.
 
-At each interior point i of the ladder, with its neighbours i-1 and i+1:
+At each interior point i of the ladder, with its neighbors i-1 and i+1:
 
     C_i = (E_{i+1} - E_{i-1}) / (N_{i+1} - N_{i-1}) - EFERMI_i
 
@@ -299,7 +299,7 @@ dV on a case with a known answer.
 | a new element missing from an explicit basis | add its basis block to the host (no appending in this version) |
 | a new element missing from the internal library | measured library coverage (d12_constants) |
 | an element given alone that has several sites in the host | choose with `--site-frac` or `--site-label` (the sites are listed) |
-| `--site-frac` with SUPERCEL on a centred host | SUPERCEL expands the primitive cell; use SUPERCON or a label |
+| `--site-frac` with SUPERCEL on a centered host | SUPERCEL expands the primitive cell; use SUPERCON or a label |
 | an inserted atom closer than 0.8 A to an atom | |
 | odd ghost states with an internal basis; GHOSTS on an ECP atom | see Ghost vacancies |
 | `--calibrate` on a SMEAR host or a 2D host | see above |
@@ -316,7 +316,7 @@ dV on a case with a known answer.
   SPINLOCK 1 30 converged in 15 cycles, still locked, and its final Mulliken
   spin was 0.84, not 1.
 * Unconverged SCFs (`TOO MANY CYCLES`) are excluded with the reason.
-* Site report: Mulliken charges (and spins) of the defect's neighbours (within
+* Site report: Mulliken charges (and spins) of the defect's neighbors (within
   1.2 x the shortest distance), the ghost's XX row, or the substituted /
   inserted atom, against the same atoms of the pristine cell (matched by
   position after ATOMREMO renumbering).

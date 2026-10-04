@@ -8,7 +8,7 @@ Those copies are removed.
 
 aP1, mS1 and oS1 were each written twice as well, the later copy being the
 path without inversion (primed points), so it won: on the static route (no
-seekpath library) C2/m, Cmcm and every other centrosymmetric C-centred group
+seekpath library) C2/m, Cmcm and every other centrosymmetric C-centered group
 got the primed Cc / Cmc2_1 path, 18 and 22 segments, where the library route
 writes SeeK-path's 9 and 11. Those copies are now mS1_noinv and oS1_noinv,
 which the lookup takes for groups without inversion, as for every other

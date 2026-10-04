@@ -4,7 +4,7 @@ The 1.1.1 planner stored its menus' prose spellings ("HSEsol-3C", "HF-3C",
 "M06-2X", "HF", ...) and offered "-D3" on any non-3c choice. 1.1.1 never read
 an SP step's custom_functional, so the step ran with the parent's method;
 since 1.1.2 the engine writes the name into the deck verbatim and CRYSTAL23
-rejects it. A plan is now normalised when it is loaded: legacy spellings
+rejects it. A plan is now normalized when it is loaded: legacy spellings
 become the CRYSTAL23 keyword, a -D3 suffix CRYSTAL23 has no parameters for is
 dropped with a warning, an unknown name stops that step before a deck is
 written, and a valid name is never changed.

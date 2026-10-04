@@ -4,7 +4,7 @@ The CHANGELOG gave the form `mace analyze --fragments`, which only prints the
 usage line: `mace analyze` needs --extract-properties. The working form
 computes the per-fragment Mulliken charges for a neutral run too (a charged
 run gets them anyway). The output is a synthetic excerpt in CRYSTAL23 format,
-modelled on a real HSEsol-3c/SOLDEF2MSVP run: a hand-built, neutral Li+ FSI-
+modeled on a real HSEsol-3c/SOLDEF2MSVP run: a hand-built, neutral Li+ FSI-
 ethylene carbonate molecule (20 atoms, 138 electrons; Mulliken Li +0.80,
 FSI -0.80, EC 0.00).
 """

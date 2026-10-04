@@ -3,7 +3,7 @@
 The layout is copied from real CRYSTAL23 outputs: the input echo
 ("LATTICE PARAMETERS ... - CONVENTIONAL CELL" / "- PRIMITIVE CELL"), the
 SUPERCEL banner with its "EXPANSION MATRIX OF PRIMITIVE CELL", and the
-computed geometry blocks ("GEOMETRY FOR WAVE FUNCTION", optimisation steps,
+computed geometry blocks ("GEOMETRY FOR WAVE FUNCTION", optimization steps,
 "FINAL OPTIMIZED GEOMETRY") with their cell, atoms, transformation matrix
 and crystallographic cell.
 """

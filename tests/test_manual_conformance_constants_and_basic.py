@@ -73,7 +73,7 @@ def test_opt_types_are_real_crystal_keywords():
     """Slot 3 wrote INTONLY (d12_constants) / ITATOCELL (d12_calc_basic).
 
     Neither string appears in the CRYSTAL23 manual. CRYSTAL stops on the
-    unrecognised keyword inside OPTGEOM, so every "optimize internal
+    unrecognized keyword inside OPTGEOM, so every "optimize internal
     coordinates only" deck the menu produced was dead on arrival.
     """
     assert d12_constants.OPT_TYPES == EXPECTED_OPT_TYPES
@@ -125,7 +125,7 @@ def test_no_phantom_optimization_keywords_remain():
 def test_slot3_keyword_survives_a_deck_round_trip(tmp_path):
     """OPT -> OPT2/SP progression re-reads the deck it just wrote.
 
-    d12_parsers only recognises FULLOPTG/CVOLOPT/CELLONLY/ATOMONLY, so a slot-3
+    d12_parsers only recognizes FULLOPTG/CVOLOPT/CELLONLY/ATOMONLY, so a slot-3
     deck written with INTONLY/ITATOCELL (or INTREDUN) is silently dropped on the
     next step of the chain and falls back to a full optimization -- the cell
     moves in a step the user pinned it for.

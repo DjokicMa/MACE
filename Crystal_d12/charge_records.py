@@ -706,7 +706,7 @@ def out_charge_signs(out_text: str) -> List[str]:
     """What in a .out shows a charged or ionic run, without a Mulliken print.
 
     CHEMOD ("ELECTRONIC CONFIGURATION MODIFIED IN n ATOMS"), CHARGED
-    ("CHARGED CELL"), "UNIT CELL NOT NEUTRAL" and a renormalised guess (a
+    ("CHARGED CELL"), "UNIT CELL NOT NEUTRAL" and a renormalized guess (a
     CHARGE NORMALIZATION FACTOR other than 1). DOPING prints nothing
     (measured on CRYSTAL23), so a doped run with none of these shows no sign.
     """

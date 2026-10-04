@@ -235,7 +235,7 @@ def _rebuild(tmp_path, parsed):
 def test_every_corpus_geometry_deck_rebuilds_from_the_parse(tmp_path):
     """Acceptance: for each of the corpus' CRYSTAL and SLAB decks, the parse
     holds everything the geometry input needs - the writer rebuilds the same
-    records (whitespace and float formatting normalised)."""
+    records (whitespace and float formatting normalized)."""
     counts = {"CRYSTAL": 0, "SLAB": 0, "POLYMER": 0}
     failures = []
     for deck in _corpus_decks():

@@ -22,7 +22,7 @@ si = pytest.importorskip("seekpath_interface")
 
 import crystal_out_text as cot  # noqa: E402
 
-# a long-c C-centred monoclinic cell (synthetic numbers)
+# a long-c C-centered monoclinic cell (synthetic numbers)
 LONG_MC1 = (9.668, 3.749, 20.767, 90.0, 91.689, 90.0)
 
 

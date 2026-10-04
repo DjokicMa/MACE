@@ -1,6 +1,6 @@
 """Two production failures reported against a 576-structure campaign.
 
-Both were found by reading real artefacts, not by reasoning about the code:
+Both were found by reading real artifacts, not by reasoning about the code:
 the basis truncation was measured over the 106 EXTERNAL decks in ``test/``,
 and the missing ``--exclude`` was reproduced by running the executor's own
 script regeneration over the shipped template.
@@ -115,7 +115,7 @@ def test_every_real_external_deck_round_trips_its_basis_block():
 
 
 # ============================================================
-# The workflow executor must honour a configured node exclusion
+# The workflow executor must honor a configured node exclusion
 # ============================================================
 
 TEMPLATE = REPO_ROOT / "mace" / "submission" / "submitcrystal23.sh"

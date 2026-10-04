@@ -5,7 +5,7 @@ EOFError at the first settings prompt: --non-interactive combined with
 --calc-type still walks the interactive settings flow, because the workflow
 engine drives that flow by piping scripted answers to stdin. The fix keeps the
 extracted settings once the answers run out. These tests pin both halves:
-the bare command succeeds, and answers that ARE supplied are still honoured, so
+the bare command succeeds, and answers that ARE supplied are still honored, so
 the fallback cannot quietly change what the engine generates.
 """
 import shutil

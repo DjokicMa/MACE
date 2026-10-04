@@ -18,7 +18,7 @@ Modules:
 
 
 class DefectError(Exception):
-    """A deck set cannot be built (or analysed) as asked; the message says why."""
+    """A deck set cannot be built (or analyzed) as asked; the message says why."""
 
 
 class NeedsPristineOutput(DefectError):

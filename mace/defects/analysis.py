@@ -15,7 +15,7 @@ neutral defect in the same cell:
 (E_raw + q*C(q) alone leaves 0.13 eV at q=2 on MgO V_O). With a dielectric
 constant (--eps, or a CPHF / FREQCALC INTCPHF output) the Lany-Zunger-scaled
 Makov-Payne image-charge term of mace.defects.image_charge is added to
-E_f(q); without one, results are labelled "uncorrected for image charges".
+E_f(q); without one, results are labeled "uncorrected for image charges".
 For MgO V_O with eps_inf = 2.865 this gives eps(+/0) = 2.85-2.88 eV and
 eps(2+/+) = -0.09 to -0.19 eV over four cell sizes.
 
@@ -414,7 +414,7 @@ def site_report(manifest: dict, pris_text: str, pris_sum: out.OutputSummary,
     kind = manifest["defect"]["kind"]
     if _wrong_site(manifest, pris_text):
         return []
-    # an inserted atom has no pristine label: the report centres on its position
+    # an inserted atom has no pristine label: the report centers on its position
     if geom_p is None or pris_sum.mulliken is None or (label is None and kind != "interstitial"):
         return []
     if kind == "interstitial":

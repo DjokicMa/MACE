@@ -11,7 +11,7 @@ Why the .out and not the optc<N> / fort.34 files in scratch:
   * the .out sits in the job's own directory; scratch can be invisible from
     where the recovery runs ($SCRATCH empty on some nodes) and is purged;
   * every optimization point prints its geometry in exactly the frame the
-    deck uses - for a centred lattice CRYSTAL adds the
+    deck uses - for a centered lattice CRYSTAL adds the
     "CRYSTALLOGRAPHIC CELL" and "COORDINATES IN THE CRYSTALLOGRAPHIC CELL"
     after the primitive cell - followed by that point's energy, so geometry
     and energy come from the same place;
@@ -120,8 +120,8 @@ def _cell_after(lines: Sequence[str], i: int) -> Optional[Tuple[float, ...]]:
 def read_geometry(lines: Sequence[str], start: int, stop: int) -> Optional[Geometry]:
     """The geometry printed in lines[start:stop], in the crystallographic frame.
 
-    A primitive (centring code 1) cell is its own crystallographic cell; for a
-    centred one the crystallographic block must be there, or None.
+    A primitive (centering code 1) cell is its own crystallographic cell; for a
+    centered one the crystallographic block must be there, or None.
     """
     centering = None
     prim_cell = prim_atoms = cryst_cell = cryst_atoms = None
@@ -282,7 +282,7 @@ def _cell_reading(deck: DeckGeometry, header: Geometry) -> Tuple[int, ...]:
         f'the output header cell {header.cell} does not reproduce the deck cell {deck.cell}')
 
 
-# Translations that map a centred lattice onto itself (crystallographic
+# Translations that map a centered lattice onto itself (crystallographic
 # frame, International Tables). CRYSTAL prints each atom as any one of these
 # images - the corpus has C 2/m and F m-3 decks whose atoms come back shifted
 # by (1/2,1/2,0) or (1/2,0,1/2) - so they are all "the same atom".
@@ -298,7 +298,7 @@ _CENTRING_TRANSLATIONS = {
 
 
 def _nearest_image(pos, target, translations):
-    """The image of `pos` under the lattice (and centring) translations that
+    """The image of `pos` under the lattice (and centering) translations that
     lies closest to `target`, and its largest fractional distance from it."""
     best, best_d = None, None
     for t in translations:
@@ -312,7 +312,7 @@ def _nearest_image(pos, target, translations):
 
 def _origin_shift(deck: DeckGeometry, header: Geometry) -> Tuple[float, float, float]:
     """The one translation taking the output's frame to the deck's: every
-    header atom plus it must be a lattice/centring image of its deck atom,
+    header atom plus it must be a lattice/centering image of its deck atom,
     or the frames do not agree."""
     if [a[0] for a in deck.atoms] != [a[0] for a in header.atoms]:
         raise GeometryTransferError(
@@ -367,7 +367,7 @@ def rewrite_geometry(d12_text: str, header: Geometry, point: Geometry) -> str:
 
     new_atoms = []
     for (z, *xyz), (_, *dxyz) in zip(point.atoms, deck.atoms):
-        # CRYSTAL may print another lattice/centring image of the atom than
+        # CRYSTAL may print another lattice/centering image of the atom than
         # the deck has ((-.5,-.5,-.5) then (.5,.5,.5) at a later point): take
         # the image next to the deck's atom, so the deck keeps its convention.
         moved, dist = _nearest_image([xyz[c] + shift[c] for c in range(3)], dxyz, translations)

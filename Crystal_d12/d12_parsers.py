@@ -47,7 +47,7 @@ DECK_GEOMETRY_KEYS = (
 # CrystalInputParser keys about the deck's own records rather than settings:
 # records exactly as the deck spells them, for writing the same deck back, and
 # the FREQCALC records it could not read. opt2d12 never merges these either: a
-# derived deck carries the normalised forms ("external_basis_data"), as it
+# derived deck carries the normalized forms ("external_basis_data"), as it
 # always has.
 DECK_TEXT_KEYS = ("title", "external_basis_text", "freq_unparsed")
 
@@ -1850,7 +1850,7 @@ class CrystalInputParser:
                     continue
 
                 # Standalone exchange+correlation keywords. These are what the
-                # writer actually emits for PBESOL/SOGGA, so recognising only the
+                # writer actually emits for PBESOL/SOGGA, so recognizing only the
                 # bare names meant those decks never round-tripped.
                 if stripped in STANDALONE_XC_TO_FUNCTIONAL:
                     self.data["functional"] = STANDALONE_XC_TO_FUNCTIONAL[stripped]

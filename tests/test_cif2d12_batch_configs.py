@@ -37,7 +37,7 @@ MACE_CLI = REPO_ROOT / "mace_cli"
 EXAMPLES = sorted((REPO_ROOT / "Crystal_d12" / "example_configs").glob("*.json"))
 CIFS = TEST_DATA / "CIFs"
 
-# Real corpus CIFs: a centred cubic cell (225, 8 atoms -> 2 unique), a P1
+# Real corpus CIFs: a centered cubic cell (225, 8 atoms -> 2 unique), a P1
 # molecule box (every atom its own orbit - the prompt that used to EOF), and
 # one whose CIF group (167) spglib does not reproduce (158)
 ROCKSALT = "AgCl_mp-22922_sg225_sym_CRYSTAL_OPT_symm_PBE-D3_full.basis.triplezeta_opt_B3LYP-D3-D3_optimized.cif"
@@ -151,7 +151,7 @@ def test_a_3c_method_with_another_basis_is_written_as_asked(capsys):
                                               ("hsesol3c", "soldef2msvp")])
 def test_a_flat_file_basis_is_written_as_spelled(capsys, functional, basis):
     """The spelling is the deck's BASISSET line and part of the file name;
-    it is only normalised to compare it with the table."""
+    it is only normalized to compare it with the table."""
     opts = config_to_cif_options({"calculation_type": "OPT", "method": "DFT",
                                   "dimensionality": "CRYSTAL",
                                   "dft_functional": functional,
@@ -491,7 +491,7 @@ def test_opt2d12_refuses_phonon_dispersion_off_a_3d_crystal(tmp_path, parent, ex
 
 def test_cif2d12_phonon_path_follows_the_lattice_centering(tmp_path):
     """Fd-3m from a CIF got the simple-cubic path (M-G-R-X-G); it now gets
-    the face-centred one opt2d12 writes for the same structure."""
+    the face-centered one opt2d12 writes for the same structure."""
     pytest.importorskip("ase")
     _need_corpus(DIAMOND)
     decks, log = _convert(tmp_path, PHONON_BANDS, DIAMOND)

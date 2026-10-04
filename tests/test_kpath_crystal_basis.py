@@ -2,9 +2,9 @@
 
 BAND reads a segment end as I1/ISS b1 + I2/ISS b2 + I3/ISS b3, with b the
 reciprocal vectors of CRYSTAL's primitive cell (CRYSTAL23 manual p.309).
-SeeK-path gives its points in the reciprocal basis of its own standardised
+SeeK-path gives its points in the reciprocal basis of its own standardized
 primitive cell. Until this was fixed the numbers were copied across, which
-put C- and A-centred orthorhombic points off the special points and named
+put C- and A-centered orthorhombic points off the special points and named
 the wrong points in triclinic, monoclinic and other cells whose axes
 SeeK-path reorders.
 
@@ -93,10 +93,10 @@ def _segment_equivalent(ends, targets, rotations, tol):
 
 
 CASES = {
-    # C-centred orthorhombic, Cmce, a > b (oC2) and a < b (oC1)
+    # C-centered orthorhombic, Cmce, a > b (oC2) and a < b (oC1)
     "oC2_Cmce": (64, "C", (11.49, 10.08, 13.89, 90, 90, 90)),
     "oC1_Cmce": (64, "C", (5.1, 7.4, 3.0, 90, 90, 90)),
-    # A-centred orthorhombic, Aea2 and Amm2, in each axis order
+    # A-centered orthorhombic, Aea2 and Amm2, in each axis order
     **{f"oA_Aea2_{i}": (41, "A", abc + (90, 90, 90))
        for i, abc in enumerate(itertools.permutations((13.8, 6.39, 4.95)))},
     **{f"oA_Amm2_{i}": (38, "A", abc + (90, 90, 90))

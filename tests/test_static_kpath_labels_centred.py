@@ -1,9 +1,9 @@
-"""Static SeeK-path labels of the centred lattices name their segments.
+"""Static SeeK-path labels of the centered lattices name their segments.
 
 Continues test_static_kpath_labels.py for the entries the static lookup
 (get_extended_bravais + "_noinv") reaches for the non-centrosymmetric
-rhombohedral, body-centred tetragonal and face-centred orthorhombic groups,
-the body-centred orthorhombic groups and the C-centred orthorhombic groups
+rhombohedral, body-centered tetragonal and face-centered orthorhombic groups,
+the body-centered orthorhombic groups and the C-centered orthorhombic groups
 (oS1). Their labels ran on where SeeK-path's path jumps (H_2-H_0, Z-Z_0,
 SIGMA_0-U_0, F_2-SIGMA_0, C_0-SIGMA_0, ...), so the BAND title had more edges
 than the deck had segments and the band-plot nodes were misnamed. Expected

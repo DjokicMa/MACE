@@ -239,7 +239,7 @@ def nav_read(prompt="", valid_set=None):
         a flow is wrapped, AND valid_set is provided, AND valid_set excludes 'b'/'back'.
     For free-text prompts pass valid_set=None (or just use input()): 'b' is never stolen.
 
-    When no flow is wrapped this is exactly input(prompt) => zero behaviour change.
+    When no flow is wrapped this is exactly input(prompt) => zero behavior change.
     """
     session = _active_session.get()
     if session is None:

@@ -375,7 +375,7 @@ def test_alignment_sign_and_application():
 
 
 def test_interstitial_site_report_has_no_label_to_wait_for():
-    """An inserted atom has no pristine label; the report centres on its position."""
+    """An inserted atom has no pristine label; the report centers on its position."""
     from _defects_fixtures import DATA
     geom = (DATA / "mgo_pris_geometry.out").read_text()
     with_atom = (geom.replace("ATOMS IN THE UNIT CELL:   64", "ATOMS IN THE UNIT CELL:   65")
@@ -394,7 +394,7 @@ def test_interstitial_site_report_has_no_label_to_wait_for():
     r = an.analyze(manifest, {"mgo_pris": pris, "mgo_q0": dfc})
     (row,) = r["site_report"]
     labels = {a["label"] for a in row["atoms"]}
-    assert 65 in labels and 1 in labels           # the inserted atom and its O neighbour at 1.82 A
+    assert 65 in labels and 1 in labels           # the inserted atom and its O neighbor at 1.82 A
     new = next(a for a in row["atoms"] if a["label"] == 65)
     assert new["pristine_label"] is None and new["charge"] == pytest.approx(-0.7)
 

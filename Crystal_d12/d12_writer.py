@@ -468,7 +468,7 @@ def write_scf_section(f: TextIO, tolerances: Dict[str, Any], k_points: Any,
         spacegroup: Space group number
         spinlock: Fixed spin state (nalpha-nbeta) to lock during SCF. A value of
             0 or None means "automatic spin optimization" and writes no SPINLOCK
-            (preserving the prior behaviour exactly). The caller must only pass a
+            (preserving the prior behavior exactly). The caller must only pass a
             non-zero value for spin-polarized systems, since SPINLOCK requires
             SPIN/UHF to be active.
         spinlock_cycles: Number of SCF cycles to hold the lock (see

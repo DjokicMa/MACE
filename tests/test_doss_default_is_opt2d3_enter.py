@@ -2,7 +2,7 @@
 
 HPCC QA (2026-10-03): the quick-start plan's DOSS step read
 {projection_type: 0 '# Total DOS only', energy_range: [-20, 20]}, but the
-deck had 8 orbital projections over all bands. The D3 writer honours
+deck had 8 orbital projections over all bands. The D3 writer honors
 projection_type 1-4 and the key energy_window, so 0 fell through to its
 default (by element and orbital type, with totals) and energy_range was
 never read. The deck was opt2d3's Enter-through deck, which is right; the

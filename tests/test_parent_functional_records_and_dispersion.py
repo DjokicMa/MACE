@@ -11,7 +11,7 @@ Each case here was a child deck that differed from its parent:
   DFTD3 ... END") was dropped on every path, and a GRIMME record renamed the
   functional "<name>-D3".
 * A menu mPW1PW91 with D3 was written "mPW1PW91-D3", which CRYSTAL23 does
-  not recognise; its D3 keyword is PW1PW-D3.
+  not recognize; its D3 keyword is PW1PW-D3.
 """
 import io
 import subprocess

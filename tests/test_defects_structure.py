@@ -31,7 +31,7 @@ def test_tables_are_read():
 
 def test_fractional_site_of_the_host_cell_maps_to_the_supercell_label():
     g = st.parse_geometry(TEXT)
-    # (1,1,1) of the host's conventional cell is the O at the supercell's body centre
+    # (1,1,1) of the host's conventional cell is the O at the supercell's body center
     label, src, notes = st.resolve_site(_host(), g, "O", frac=(1, 1, 1), keyword="SUPERCON", matrix=MGO_222)
     assert label == 22 and src == "fractional"
     assert g.atom(22).cart.tolist() == pytest.approx([4.212, 4.212, 4.212])

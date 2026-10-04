@@ -150,7 +150,7 @@ def test_bi2_full_cell_writes_one_bi_at_its_own_z(writer, tmp_path):
 
 def test_bi2_inversion_image_first_is_written_below_the_layer(writer, tmp_path):
     """The image atom alone is a valid asymmetric unit - but its z is
-    -0.898 A, not 19.10 A: the layer's inversion centre is at z = 0."""
+    -0.898 A, not 19.10 A: the layer's inversion center is at z = 0."""
     data, rows = write(writer, tmp_path, BI2_CIF, "bi2img", layer_group=72)
     image = dict(
         data,
@@ -206,7 +206,7 @@ def test_named_group_of_a_different_order_is_not_reduced(writer, tmp_path, capsy
 
 
 # The layer's z records move by ONE offset for the whole layer. Rounding each
-# fractional z to its own nearest integer cut a layer centred on z = 1/2 in
+# fractional z to its own nearest integer cut a layer centered on z = 1/2 in
 # two - atoms at 0.45 and 0.55 went to -0.05 c and +0.45 c... and to +0.45 c
 # and -0.45 c when the plane was taken at 0 - putting half the layer on the far
 # side of the vacuum.
@@ -220,14 +220,14 @@ def min_image_dz(z1, z2, c):
 @pytest.mark.parametrize(
     "zs, expected",
     [
-        ([0.45, 0.55], [-0.05, 0.05]),        # centred on 1/2
+        ([0.45, 0.55], [-0.05, 0.05]),        # centered on 1/2
         ([0.55, 0.45], [0.05, -0.05]),
         ([0.97, 0.03], [-0.03, 0.03]),        # straddling 0/1
         ([0.03, 0.97, 0.0], [0.03, -0.03, 0.0]),
         ([0.044917764], [0.044917764]),       # Bi2 asymmetric unit
         ([1 - 0.044917764], [-0.044917764]),  # its inversion image
-        ([0.40], [-0.10]),                    # half a layer centred on 1/2
-        ([0.10, 0.12], [0.10, 0.12]),         # half a layer centred on 0
+        ([0.40], [-0.10]),                    # half a layer centered on 1/2
+        ([0.10, 0.12], [0.10, 0.12]),         # half a layer centered on 0
     ],
 )
 def test_z_reversing_layer_is_measured_from_its_symmetry_plane(writer, zs, expected):
@@ -265,7 +265,7 @@ def two_element_layer(data, z_bi, z_sb):
 @pytest.mark.parametrize(
     "z_bi, z_sb, want_bi, want_sb",
     [
-        (0.45, 0.50, -0.05, 0.0),    # layer centred on z = 1/2
+        (0.45, 0.50, -0.05, 0.0),    # layer centered on z = 1/2
         (0.55, 0.47, 0.05, -0.03),
         (0.97, 0.02, -0.03, 0.02),   # layer straddling z = 0/1
     ],

@@ -15,7 +15,7 @@ charges), `mace defects` (defect deck sets and formation energies, with the 3D
 charged-cell offset and image-charge corrections measured on CRYSTAL23),
 `mace phonopy` (finite-displacement phonons through phonopy 4.x), and one basis
 file per family with an opt-in TZVP-REV2 2022 update and the SOC basis records.
-**Band paths from an OPT parent now use the optimised cell** (they used the
+**Band paths from an OPT parent now use the optimized cell** (they used the
 initial cell), static band paths compute their lattice-dependent points for the
 cell, and long-axis cells keep the band-path ISS at most 999; regenerate BAND
 decks made from OPT parents. Also fixed: the bundled Pu basis record, the BAND
@@ -115,7 +115,7 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 - **opt2d12 templates saved by 1.1.1** do not record a "no" to MAXTRADIUS or
   SPINLOCK, so they now pick up the parent's values. Re-save the template
   if that is not wanted.
-- **Re-organising sorts previously misfiled SP/FREQ outputs** into
+- **Re-organizing sorts previously misfiled SP/FREQ outputs** into
   `completesp/` and `completefreq/` (1.1.1 put them in `complete/`).
   The same scan corrects the `calc_type` of a record an older MACE typed
   from its file name (an SP named `*_OPT_*` recorded as OPT); workflow types
@@ -123,7 +123,7 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 - **`mace/database/utils/populate_completed_jobs.py` was removed.** Use
   `mace/database/populate_completed_jobs.py`.
 - **Stale property rows.** Re-extracting a calculation now removes the rows
-  it no longer produces (1.1.1's band fields on DOSS runs, optimisation rows
+  it no longer produces (1.1.1's band fields on DOSS runs, optimization rows
   on OPTGEOM-titled SP runs, doped BAND gaps). Rows stored without a
   calc_id cannot be attributed to one output: `mace analyze
   --extract-properties` removes those of a material when it re-extracted
@@ -207,7 +207,7 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   clusters" in `Crystal_d12/README.md`). `cif2d12` (`--ion-charges auto`,
   `--net-charge`, `--site-states`, `--chemod`, `--fragment-bond-scale`,
   `--spinlock`, `--spinlock-cycles`, or the same keys in an options/config
-  file), `opt2d12` (the same flags, recomputed from the optimised geometry)
+  file), `opt2d12` (the same flags, recomputed from the optimized geometry)
   and a new `mace ions` command for existing decks write `CHEMOD` (starting
   shell charges), `DOPING` (the net charge), `CHARGED` and, for an odd
   electron count, `SPIN` + `SPINLOCK`. Ions are found by connectivity
@@ -240,7 +240,7 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   `electron_count` and `fragment_charges` (each molecule/ion's charge, spin,
   formal charge and deviation, an ion more than 0.5 e from its formal charge
   flagged) when a run was charged (Mulliken count different from the sum of
-  valence charges, a renormalised guess other than after a GUESSP restart,
+  valence charges, a renormalized guess other than after a GUESSP restart,
   or "UNIT CELL NOT NEUTRAL"), and the
   extractor prints them as a Fragments section;
   `mace analyze --extract-properties <dir> --fragments` (or
@@ -275,7 +275,7 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   term with the Ewald Madelung potential of the actual supercell. On the
   measured MgO V_O runs (53 to 249 atoms, eps_inf 2.865) this gives eps(+/0)
   2.85-2.88 eV and eps(2+/+) -0.09 to -0.19 eV. Without a dielectric constant
-  charged states are labelled "uncorrected for image charges"; every report
+  charged states are labeled "uncorrected for image charges"; every report
   names the corrections it applied. `--calibrate` adds restricted
   fractional-DOPING decks as an optional cross-check (`analyze --offset
   calibration` uses them instead). 2D sets use an A + B/L fit over the sizes.
@@ -323,7 +323,7 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   A SeeK-path band path of a 3D cell is
   computed from the structure and written in CRYSTAL's reciprocal basis; the
   static HPKOT tables hold SeeK-path's numbers in SeeK-path's standard cell,
-  which for many lattices is not CRYSTAL's (axis order, reduction, centring
+  which for many lattices is not CRYSTAL's (axis order, reduction, centering
   vectors), so a deck written from them can visit or name other points.
   - Without seekpath, a 3D SeeK-path BAND deck (opt2d3, workflow `seekpath_full`
     configurations) or SeeK-path phonon dispersion (opt2d12) stops with the
@@ -542,7 +542,7 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   0-4); absolute chemical potentials have no default and are asked again
   when left blank.
 - Band and phonon paths for a slab no longer print "Install 'seekpath'":
-  the library is not used for a slab on purpose (it would standardise the
+  the library is not used for a slab on purpose (it would standardize the
   vacuum axis; manual p.310 note 3), so the advice changed nothing. A slab
   now gets one line saying the static in-plane path is used; a 3D cell
   without the library still gets the install hint. The path is unchanged.
@@ -585,8 +585,8 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   `.../Crystal_d3/example_configs/<name>` written against another working
   directory, and prints the file it loaded. A configuration that cannot be
   loaded now ends opt2d3 with exit status 1 instead of 0 with no deck.
-- **SeeK-path band paths use the computed geometry: the optimised cell after
-  an optimisation, the supercell after SUPERCEL.** With the seekpath library,
+- **SeeK-path band paths use the computed geometry: the optimized cell after
+  an optimization, the supercell after SUPERCEL.** With the seekpath library,
   `opt2d3` (and the workflow BAND step, and `opt2d12` phonon-dispersion paths)
   read the cell from the first "PRIMITIVE CELL" lattice parameters and the
   atoms from the first atom list of the parent output. For an OPT parent that
@@ -602,14 +602,14 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   Outputs whose geometry input edits the cell (SUPERCEL, ATOMSUBS, ATOMREMO,
   ELASTIC, ...) change the same way. An atom count that does not match the
   one CRYSTAL prints, or an output without such a block, is read as before
-  with a warning. An optimisation that ended unconverged (OPT END - FAILED)
+  with a warning. An optimization that ended unconverged (OPT END - FAILED)
   prints no final geometry; its last printed point is used, the geometry its
   fort.9 holds (a killed run keeps the first).
 - **Static band paths (without the seekpath library) use the computed cell
   too.** The static route took the conventional cell of the input echo: an
-  optimisation's starting cell chose the lattice variant (tI1 or tI2, oF1 or
+  optimization's starting cell chose the lattice variant (tI1 or tI2, oF1 or
   oF3, hR1 or hR2) and the oA parameter. It now takes the CRYSTALLOGRAPHIC
-  CELL printed with the final optimised geometry. A SUPERCEL output's static
+  CELL printed with the final optimized geometry. A SUPERCEL output's static
   path is mapped to the supercell's reciprocal basis, f_super = E f_prim with
   E the printed EXPANSION MATRIX OF PRIMITIVE CELL (rows), as the library
   route gives it; before, it was written in the primitive cell's basis while
@@ -619,19 +619,19 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   (below), and its phonon-dispersion path is that cell's own. Single-point
   outputs without SUPERCEL or geometry editing are unchanged.
 - **Static band paths compute their lattice-dependent points for the cell.**
-  Without the seekpath library the static paths of body-centred tetragonal
-  (tI1, tI2), rhombohedral (hR1, hR2), face-centred orthorhombic (oF1) and
-  C-centred monoclinic (mS1, SeeK-path's mC1) lattices held the
+  Without the seekpath library the static paths of body-centered tetragonal
+  (tI1, tI2), rhombohedral (hR1, hR2), face-centered orthorhombic (oF1) and
+  C-centered monoclinic (mS1, SeeK-path's mC1) lattices held the
   lattice-dependent points of one particular cell (tI1's Z at 0.341718 for
   every crystal), so their segments ended off the special points of any
   other cell. Those points are now evaluated for the cell CRYSTAL prints
   with SeeK-path's HPKOT formulas (new `Crystal_d3/hpkot_static.py`, numpy
   only; transcribed from SeeK-path, MIT, Hinuma et al. 2017) and given in
   CRYSTAL's reciprocal basis, with the ISS the library route chooses: the
-  static and library routes write the same BAND path for the 30 centred
+  static and library routes write the same BAND path for the 30 centered
   corpus outputs; for about 1% of random cells the ISS chosen can differ.
   The warning and the "install seekpath" note are gone for these paths.
-  Cells not in SeeK-path's setting (oF axes not in a < b < c, a C-centred
+  Cells not in SeeK-path's setting (oF axes not in a < b < c, a C-centered
   monoclinic cell whose a-c mesh SeeK-path reduces) or of another variant
   (oF2/oF3, mC2/mC3) keep the old entry with a warning that gives the
   reason; aP, mP, oP, oI, oS and oC paths still warn as before. Paths
@@ -689,7 +689,7 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   no parent deck at all**, a charged parent's `DOPING` is recovered from the
   .out's Mulliken count; without a Mulliken print a warning says the charge
   state cannot be recovered when the .out shows a sign of a charged run
-  (CHEMOD, CHARGED, "UNIT CELL NOT NEUTRAL", a renormalised guess), and an
+  (CHEMOD, CHARGED, "UNIT CELL NOT NEUTRAL", a renormalized guess), and an
   informational note says so otherwise (a neutral FREQ parent is not warned
   about). Deck change for such children.
 - **A failed run's message says what CRYSTAL printed.** The queue manager
@@ -791,7 +791,7 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   instead of asking for it first; with none anywhere it exits 1 naming
   `--calc-type`.
 - opt2d12's grid menu marks the parent's grid as the default instead of
-  always labelling XLGRID. The default itself is unchanged.
+  always labeling XLGRID. The default itself is unchanged.
 - **The HSE-type odd-electron crash is no longer resubmitted with more
   memory.** A DIIS NaN at SCF cycle 1-3, then ranks killed by signal 11/6/9,
   on an odd-electron open-shell run with HSEsol-3c, HSE06 or HSEsol is
@@ -806,7 +806,7 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   1.1.1's band fields of DOSS runs), when the run re-extracts every output
   of that material it can see; a database rebuild is no longer needed for
   that.
-- Re-organising (the populate scan) corrects the calc type of a record an
+- Re-organizing (the populate scan) corrects the calc type of a record an
   older MACE typed from its file name (e.g. an SP named `*_OPT_*` recorded
   as OPT); workflow-numbered types are left as they are.
 - **Workflow BAND steps write the deck opt2d3 writes for the same choices.**
@@ -844,7 +844,7 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 - opt2d12 `--calc-type` (and `--opt-type`) win over a `--config-file`: a
   config without `calculation_type` no longer turns `--calc-type SP` into an
   OPT deck.
-- Without the seekpath library, centrosymmetric C-centred groups (C2/m,
+- Without the seekpath library, centrosymmetric C-centered groups (C2/m,
   C2/c, Cmcm, ...) get SeeK-path's path (9 and 11 segments) instead of the
   primed Cc / Cmc2_1 path (18 and 22); the static k-path table has no
   duplicate keys, and aP1's labels name its segments. An orthorhombic F cell
@@ -868,12 +868,12 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   a one-component matrix. Refreshed old job scripts get the same staging.
 - CHEMOD records with the label on its own line and integer charges are read
   correctly (labels, and the charge an explicit-basis CHEMOD sets).
-- The static k-path of an optimised SUPERCEL cell is the host's path in the
+- The static k-path of an optimized SUPERCEL cell is the host's path in the
   supercell basis, as for its SP.
 - The custom-labels BAND menu lists the labels for the output's own lattice
   (it always showed cubic P), and the shrink fallback (no SHRINK in deck or
   output) uses the computed cell.
-- Computed geometry blocks of SLAB and POLYMER outputs are recognised.
+- Computed geometry blocks of SLAB and POLYMER outputs are recognized.
 - opt2d3 no longer overwrites X_sp's deck with X_opt's when both are in one
   directory: they are written as `X_sp_<type>.d3` and `X_opt_<type>.d3`; a
   lone output keeps the short name.
@@ -942,7 +942,7 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   callback) and each follow-up ended in seconds with no `.out`; the first
   step of `mace workflow --execute` and quick-start did the same. The
   generator now runs from a separate copy (broken since 1.1.2).
-- A job that left the queue without writing its `.out` (cancelled while
+- A job that left the queue without writing its `.out` (canceled while
   pending, killed before CRYSTAL started) stayed `submitted` for good, so
   its workflow could neither finish nor recover. Once sacct reports the
   job ended, the record is marked failed with that reason (`no_output`).
@@ -1007,7 +1007,7 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   completion callback: the engine replaced the template's callback section
   from `# ADDED` up to the `fi` in the word "file" of a comment. A template
   that already carries the current callback is now left as it is.
-- **An optimization FINALRUN keeps re-starting is recognised and
+- **An optimization FINALRUN keeps re-starting is recognized and
   recovered.** Measured on CRYSTAL23 (Si, B3LYP-D3, TOLINTEG 7 7 7 7 14):
   after each FINALRUN re-start the energy jumped alternately down and up by
   about 2.2E-4 Ha and the run converged to the other of two states, forever
@@ -1022,7 +1022,7 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   `<JOB>.d12.orig`, the output as `<JOB>.out.finalrunloop<N>`
   (`recovery_config.yaml`: `finalrun_loop`, max_retries 2). A deck already at
   Very tight is not resubmitted.
-  A job still running in such a loop is cancelled and recovered at once by
+  A job still running in such a loop is canceled and recovered at once by
   the next check of running jobs: a `mace manager` cycle, a status or
   early-failure check, or the completion callback of any other job in the
   database. A lone job has no such check while it runs; killed at its
@@ -1105,7 +1105,7 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 
 Everything since 1.1.3. **Band and phonon-dispersion paths made with the SeeK-path
 library were written in SeeK-path's cell, not CRYSTAL's, since 1.0.0:**
-C-centred (oC) and A-centred (oA) orthorhombic paths went through wrong
+C-centered (oC) and A-centered (oA) orthorhombic paths went through wrong
 k-points, and triclinic, some monoclinic and non-standard orthorhombic paths had
 wrong labels or segments. They are now converted to CRYSTAL's reciprocal basis;
 regenerate affected BAND and phonon paths. Decks derived from a charged or
@@ -1123,18 +1123,18 @@ see Fixed below.
   decks from `opt2d3`, phonon-dispersion paths in FREQ `.d12` decks from
   `opt2d12`, and the workflow steps that run them) copied SeeK-path's point
   coordinates unchanged. Those are fractions of the reciprocal vectors of
-  SeeK-path's standardised primitive cell; BAND reads them as fractions of
+  SeeK-path's standardized primitive cell; BAND reads them as fractions of
   the reciprocal vectors of CRYSTAL's primitive cell (manual p.309), which is
   often a different cell. The points are now converted (f = N^-1 f_SeeK-path,
   with SeeK-path's cell = N times CRYSTAL's), keeping their labels and
   Cartesian positions; SeeK-path's own numbers are kept where every segment
   is already a symmetry image of the right one, so those decks are
-  unchanged. Affected: **C-centred orthorhombic (oC)** and **A-centred
+  unchanged. Affected: **C-centered orthorhombic (oC)** and **A-centered
   orthorhombic (oA, groups 38-41)** cells, whose points and segments were
   wrong; **triclinic (aP)** cells, whose labels named other points;
   **primitive orthorhombic (oP)** cells of groups whose setting does not fix
   the axes (Pmmm, for one) when not given in a < b < c order; and any other
-  cell CRYSTAL holds in a setting SeeK-path standardises differently (in the
+  cell CRYSTAL holds in a setting SeeK-path standardizes differently (in the
   test corpus a cubic cF1 cell given in a non-standard primitive cell, and
   two P2/m and P2_1/m cells whose Gamma-A and E-Z segments ran to another
   copy of A and E). Without the library, the static oA paths (added in this
@@ -1192,23 +1192,23 @@ see Fixed below.
   groups (P321, P-3m1, P6_3/mmc, P6/mmm, ...) now get the hP2 path, one
   segment shorter. 143-145, 147, 149, 151, 153, 157, 159, 162 and 163 keep
   hP1.
-- **The static face-centred cubic SeeK-path paths are SeeK-path's.** Without
+- **The static face-centered cubic SeeK-path paths are SeeK-path's.** Without
   the seekpath library, the cF1 entry held Setyawan-Curtarolo's 9-segment
   path (Gamma-X-W-K-Gamma-L-U-W|L-K|U-X) and the cF2 entry a 9-segment path
   with a primed K' in a centrosymmetric group, both titled "SeeKPath". They
   now hold SeeK-path's cF1 (Gamma-X-U|K-Gamma-L-W-X-W_2, 7 segments) and cF2
   (Gamma-X-U|K-Gamma-L-W-X, 6 segments), and the cF1_noinv title gets the
   "|" between U and K that its segments already had.
-- **Face-centred cubic groups get SeeK-path's cF1/cF2 split.** Without the
+- **Face-centered cubic groups get SeeK-path's cF1/cF2 split.** Without the
   seekpath library the split was reversed for 202, 203 and 225-228: Fm-3m,
   Fm-3c, Fd-3m (diamond, Si) and Fd-3c got cF1, and Fm-3 and Fd-3 got cF2.
   SeeK-path uses cF1 below 207 (196, 202, 203) and cF2 from 207 (209, 210,
   216, 219, 225-228), so Fm-3m and Fd-3m decks lose the X-W_2 segment and
   F23 decks gain it.
-- **Body-centred cubic groups are all cI1.** The static lookup called 199,
+- **Body-centered cubic groups are all cI1.** The static lookup called 199,
   204, 206, 211, 214, 217 and 220 "cI2", a lattice SeeK-path (HPKOT) does not
   have, backed by table entries copied from cI1's. Those entries are removed
-  and every body-centred cubic group is cI1. The decks are unchanged (the
+  and every body-centered cubic group is cI1. The decks are unchanged (the
   paths were identical).
 - **The static rhombohedral SeeK-path paths are SeeK-path's.** Without the
   seekpath library, R-3, R-3m and R-3c (148, 166, 167) got Setyawan-
@@ -1226,7 +1226,7 @@ see Fixed below.
   hR2 otherwise; a cell given in rhombohedral axes is now read by its angle.
   Rhombohedral decks from outputs with c/a above sqrt(6) or below sqrt(3/2)
   change path.
-- **A-centred orthorhombic groups get SeeK-path's oA paths.** Without the
+- **A-centered orthorhombic groups get SeeK-path's oA paths.** Without the
   seekpath library, Amm2, Aem2, Ama2 and Aea2 (38-41) fell through to the
   primitive orthorhombic oP1 path. They now get SeeK-path's oA1 (b < c) or
   oA2 (b > c) path with its primed copy, and the title marks the jumps
@@ -1246,10 +1246,10 @@ see Fixed below.
   corresponding space group is now cut to its segments in the kz = 0 plane
   (graphene: Gamma-M-K-Gamma), in coordinate and label mode, and the title
   names the segments kept. For a slab the seekpath library is not used:
-  it standardises the 3D box and can turn the vacuum axis into a or b (an
+  it standardizes the 3D box and can turn the vacuum axis into a or b (an
   oblique slab becomes mP with b along the normal), so its coordinates would
   not be in CRYSTAL's slab cell; the static path is. If no segment of a path
-  lies in the plane (the literature path of a C-centred rectangular slab),
+  lies in the plane (the literature path of a C-centered rectangular slab),
   the in-plane SeeK-path path is written instead. The `opt2d12` SeeK-path
   phonon band path of a slab is cut the same way. Polymers (1D) are not
   changed. Untested on CRYSTAL.
@@ -1279,7 +1279,7 @@ see Fixed below.
 ## [1.1.3] - 2026-10-01
 
 Everything since 1.1.2. Band paths are written with exact high-symmetry points
-and follow SeeK-path for more lattices (cubic, hexagonal, monoclinic, centred);
+and follow SeeK-path for more lattices (cubic, hexagonal, monoclinic, centered);
 `opt2d12` FREQ decks repeat their FREQ parent's FREQCALC settings and
 Hartree-Fock parents stay Hartree-Fock; the DOSS example configs now give decks
 CRYSTAL runs; a P1 deck from a CIF without symmetry operators holds the right
@@ -1317,29 +1317,29 @@ generated decks - see Fixed below.
 - **`opt2d12 --config-file` writes Hartree-Fock decks from an HF config.** A
   config with `"method": "HF"` and a null functional (the form
   `quick_screen.json` had) stopped every file with `argument of type
-  'NoneType' is not iterable`, and one naming only the method, or its flavour
+  'NoneType' is not iterable`, and one naming only the method, or its flavor
   as `hf_method`, kept the parent's DFT functional. opt2d12 now reads the
-  flavour from `hf_method` or `functional`, RHF when neither names one, as
+  flavor from `hf_method` or `functional`, RHF when neither names one, as
   cif2d12 does, and refuses an HF config that names a DFT functional.
 - **"Proceed with spglib space group" writes spglib's cell with spglib's
   group.** When a CIF's group and spglib's disagree, option 2 declared
   spglib's group number but kept the CIF's cell and atoms, so CRYSTAL applied
   the group's standard operators to a cell in another setting: rock salt given
   as its 60-degree primitive cell became an Fm-3m cube with a = 3.99 A instead
-  of 5.64 A. The deck now carries spglib's standardised conventional cell and
+  of 5.64 A. The deck now carries spglib's standardized conventional cell and
   its asymmetric unit, in the origin the deck declares for two-origin groups.
 - **A P1 deck from an Fd-3m CIF holds the structure the CIF describes.** A
   CIF with no symmetry-operator loop is expanded by ASE in origin choice 1, but
   the converter reads Fd-3m atoms at (1/8, 1/8, 1/8) as origin choice 2 - as
-  the symmetrised deck ("0 0 0") and CRYSTAL's own diamond example do. The
+  the symmetrized deck ("0 0 0") and CRYSTAL's own diamond example do. The
   P1 deck of such a diamond CIF therefore held 16 atoms 1.26 A apart instead
-  of diamond's 8. The P1 expansion now uses the origin the symmetrised deck
+  of diamond's 8. The P1 expansion now uses the origin the symmetrized deck
   declares for Fd-3m, and for any two-origin group when origin_setting is
   STANDARD. CIFs that list their operators are expanded as before.
 - **P2/c and P2_1/c keep the primitive monoclinic SeeK-path.** Without the
   seekpath library, a band or phonon path built from a CRYSTAL output reads
   the cell parameters, and with them space groups 13 and 14 were sent to the
-  C-centred monoclinic path (mS1), whose points belong to another Brillouin
+  C-centered monoclinic path (mS1), whose points belong to another Brillouin
   zone; the split between P and C was taken at group 11. They now get mP1,
   as SeeK-path does and as they already did without cell parameters.
 - **Simple cubic groups 207-230 get SeeK-path's cP2 path.** Without the
@@ -1348,7 +1348,7 @@ generated decks - see Fixed below.
   other groups 207-230 now take cP2 (cP2_noinv when non-centrosymmetric), as
   SeeK-path does.
 - **Static SeeK-path titles name the segments the deck writes.** Without the
-  seekpath library, the title labels of the P-1 (aP3), C-centred monoclinic
+  seekpath library, the title labels of the P-1 (aP3), C-centered monoclinic
   (mS1: C2, Cm, C2/m, ...), F-orthorhombic (oF1-oF3: Fmmm, Fddd), I-tetragonal
   (tI1/tI2: I4/m, I4/mmm, ...) and non-centrosymmetric F-cubic (F-43m, F23, ...)
   paths ran on where SeeK-path's path jumps, so the title had more edges than
@@ -1356,13 +1356,13 @@ generated decks - see Fixed below.
   SeeK-path's path, with a "|" at each jump. The P-1 aP2 path also called
   (1/2, 1/2, 0) and (1/2, 0, 1/2) N and M; SeeK-path names them V and U. The
   coordinates are unchanged.
-- **Static SeeK-path titles of the other centred lattices name their
+- **Static SeeK-path titles of the other centered lattices name their
   segments too.** The same run-on labels were in the paths used for the
   non-centrosymmetric rhombohedral groups (R3, R32, R3m, R3c: hR1/hR2),
-  body-centred tetragonal groups (I4, I-4, I422, I4mm, I-42d, ...: tI1/tI2)
-  and face-centred orthorhombic groups (F222, Fmm2, Fdd2: oF1/oF3), and for
-  every body-centred orthorhombic group (Immm, Imm2, I222, ...: oI1) and
-  every C-centred orthorhombic group (Cmcm, Cmc2_1, Cmmm, ...: oS1). They
+  body-centered tetragonal groups (I4, I-4, I422, I4mm, I-42d, ...: tI1/tI2)
+  and face-centered orthorhombic groups (F222, Fmm2, Fdd2: oF1/oF3), and for
+  every body-centered orthorhombic group (Immm, Imm2, I222, ...: oI1) and
+  every C-centered orthorhombic group (Cmcm, Cmc2_1, Cmmm, ...: oS1). They
   now follow SeeK-path's path with a "|" at each jump; the tI2 path without
   inversion also named its point G as Gamma. The coordinates are unchanged.
 - **Hexagonal K and H points are written exactly in BAND and phonon paths.**
@@ -1439,7 +1439,7 @@ generated decks - see Fixed below.
   warning). For a layer group with an operation that reverses z, the whole
   layer is moved by one offset so that the operation's plane - at
   fractional z = 0 or 1/2 in the cell - is at z = 0; the layer stays in one
-  piece, even when it is centred on z = 1/2 or straddles z = 0/1, and every
+  piece, even when it is centered on z = 1/2 or straddles z = 0/1, and every
   z distance in it is the cell's own. A polar-layer-group slab keeps its
   c times z heights; when it straddles z = 0/1, the atoms just below z = 1
   are written one cell lower, next to the rest of the layer.
@@ -1463,7 +1463,7 @@ generated decks - see Fixed below.
 - **The static SeeK-path band paths go through the zone-boundary points.**
   Without the seekpath library, band and phonon paths come from a table in
   `d3_kpoints` that defines several lattices twice; the definitions that
-  win had every coordinate doubled (body-centred cubic x4, hexagonal x6), so
+  win had every coordinate doubled (body-centered cubic x4, hexagonal x6), so
   simple cubic X was (0, 1, 0) - a reciprocal lattice vector, the same point
   as Gamma - where SeeK-path and CRYSTAL23 (manual Tables 14.1-14.2,
   pp. 311-312) have (0, 1/2, 0). The paths for aP, cP, cI, hP, mP, oP, tP,
@@ -1491,7 +1491,7 @@ generated decks - see Fixed below.
   interactive `opt2d3` setup, an answer other than y/yes/n/no (or Enter)
   counted as "no", even where the default was "yes", and the question moved
   on. It now prints "Please respond with 'yes' or 'no' (or 'y' or 'n')." and
-  asks again, as the D12 tools do. Every recognised answer, and end of input,
+  asks again, as the D12 tools do. Every recognized answer, and end of input,
   behave as before.
 - **An `opt2d12` FREQ deck repeats its FREQ parent's FREQCALC settings.** Only
   NUMDERIV was read from the parent's FREQCALC block, so the child of a parent
@@ -1539,11 +1539,11 @@ generated decks - see Fixed below.
   and `mace/utils/analyze_script_dependencies.py`.
 - The phonon fallback k-path tables `SPACEGROUP_TO_PATH` and
   `HIGH_SYMMETRY_PATHS` (`Crystal_d12/d12_constants.py`). They gave one path
-  per crystal system whatever the lattice centring (C2/m the primitive
+  per crystal system whatever the lattice centering (C2/m the primitive
   monoclinic path, Fmmm and Immm the primitive orthorhombic one, I4/mmm the
   primitive tetragonal one, R-3m the hexagonal one), and their only reader was
   a fallback in `d12_calc_freq.get_auto_phonon_path`, a function nothing in
-  MACE calls. Its coordinate paths now all come from the centring-aware
+  MACE calls. Its coordinate paths now all come from the centering-aware
   band-path code that its "vectors" format already used. No deck changes.
 
 ### Testing
@@ -1581,7 +1581,7 @@ decks - see Fixed and Changed below.
 Conformance work traced from a user report: every hybrid lead perovskite died
 with `ERROR **** LoadBa **** UNIT CELL NOT NEUTRAL` under HSE-3c, on cells that
 are neutral. Auditing that one bug against the CRYSTAL23 manual turned up a
-family of others. Every behavioural change below was run through
+family of others. Every behavioral change below was run through
 CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
 
 ### Fixed
@@ -1600,11 +1600,11 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   range is refused before any deck is written.
 - **A SLAB deck's k-point mesh keeps its layer group's symmetry.** A mesh
   `opt2d12` generates (a child made from the `.out` alone) or `cif2d12` writes
-  comes from the conventional a and b, and was only equalised for 3D decks. In
-  a centred-rectangular layer group the two primitive directions are
+  comes from the conventional a and b, and was only equalized for 3D decks. In
+  a centered-rectangular layer group the two primitive directions are
   equivalent, so graphene in layer group 47 got `SHRINK 0 36 / 18 10 1` and
   CRYSTAL stopped with "SHRINK BREAKS SYMMETRY". Square, hexagonal and
-  centred-rectangular layer groups (CRYSTAL numbers the last 10, 13, 16, 22,
+  centered-rectangular layer groups (CRYSTAL numbers the last 10, 13, 16, 22,
   26, 35, 36, 47, 48) now get one factor for both in-plane directions; oblique
   and primitive rectangular groups and POLYMER meshes are unchanged, and a
   child made with the parent `.d12` still takes the parent's own SHRINK.
@@ -1639,10 +1639,10 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   (`FORMAT ERROR IN FREQCALC INPUT DECK`).
 - **`mace opt2d12 --config-file` reads the example configs too.** It also
   took the wrapper for the settings and crashed. `quick_screen.json` now names
-  its HF flavour (`"functional": "RHF"`) so both converters read it the same
+  its HF flavor (`"functional": "RHF"`) so both converters read it the same
   way.
 - **`d12_from_config.py` runs.** It passed the input file as an argument
-  neither converter accepts, and did not recognise a CRYSTAL output that
+  neither converter accepts, and did not recognize a CRYSTAL output that
   starts with MPI start-up lines. It also reports a file for which no deck
   was written as a failure (and exits non-zero) instead of "Successfully".
 - **`mace convert --batch` exits non-zero when it writes nothing.** A refused
@@ -1653,8 +1653,8 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   is defined on, instead of MINIX (HF-3c's). The basis now comes from the
   `basis_requirements` table rather than a second copy; a configuration that
   names a 3c method and no basis gets that basis.
-- **cif2d12 FREQ decks follow the lattice centring for the phonon path.** The
-  automatic phonon-dispersion path read the centring only from a CRYSTAL
+- **cif2d12 FREQ decks follow the lattice centering for the phonon path.** The
+  automatic phonon-dispersion path read the centering only from a CRYSTAL
   output, so every deck made from a CIF got the primitive path: Fd-3m
   diamond got the simple-cubic M-G-R-X-G where opt2d12 writes X-G-L-W-G for
   the same structure. cif2d12 now takes the letter from the space group
@@ -1697,7 +1697,7 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   best geometry reached.** Measured on HPCC: the rerun re-evaluates the
   lowest-energy point, sees almost no energy change, shrinks the trust radius
   to zero and dies in `MPI_Abort` (`ERROR **** BFGS_ **** PXK TOO SMALL` only
-  in the scratch `fort.87`; SLURM says COMPLETED). This is now recognised
+  in the scratch `fort.87`; SLURM says COMPLETED). This is now recognized
   (error type `opt_trust_radius_error`, up to `max_retries` 2) and the same
   deck is resubmitted without `RESTART`, starting from the lowest-energy
   point reached by the runs of that deck (energies from runs that started
@@ -1736,7 +1736,7 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   (an SP or FREQ, an OPT killed in its first SCF) would time out again, so it
   is not resubmitted and the log says so. `max_walltime` is used only when
   SLURM cannot be reached.
-- **Timeouts are recognised at all.** SLURM writes the time-limit notice to
+- **Timeouts are recognized at all.** SLURM writes the time-limit notice to
   the job's `-o` log and leaves the `.out` cut off mid-line, so a timed-out job
   was classified as an unknown error and never recovered. SLURM's TIMEOUT
   state, or that notice in the job's log, now marks it as a timeout.
@@ -1759,7 +1759,7 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   - the functional was guessed by substring, so PBE0, PBEsol, PBESOL0, PBEh-3c
     and LC-wPBE parents became PBE, UHF became RHF, and the no-plan SP path
     turned HF parents into HSE06-D3;
-  - an HSEsol-3c SP parent produced FREQ/SP/OPT2 decks labelled `HSESOL3C-D3`
+  - an HSEsol-3c SP parent produced FREQ/SP/OPT2 decks labeled `HSESOL3C-D3`
     (3c methods already contain D3 and gCP), or crashed before writing one;
   - the two-number `SHRINK IS ISP` form, the most common in practice, was
     regenerated from the cell (`5 10` became `7 14`, some meshes coarser), and
@@ -1862,7 +1862,7 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   and writes it into the scripts it generates, but Phase 0 regenerates every
   script from the plan at execution time and discarded it - nothing in the
   resource mapping matched `--exclude`. Workflow jobs therefore ran with no
-  exclusion while `mace submit`, which honours the same setting, kept it. Only an
+  exclusion while `mace submit`, which honors the same setting, kept it. Only an
   explicitly configured exclusion is written; with none, the template is
   unchanged.
 - **Unattended runs no longer die on a prompt.** Three `stdin.isatty()` sites
@@ -1970,7 +1970,7 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   parse as `geometry_unparsed` instead of silently leaving the geometry out.
 - **`mace preflight`** - runs CRYSTAL over a copy of a deck with a TESTPDIM
   record inserted. TESTPDIM stops after the whole input is read and symmetry
-  analysed, which is late enough to catch a bad group, a bad lattice record, or a
+  analyzed, which is late enough to catch a bad group, a bad lattice record, or a
   basis set with no functions for one of the elements. Measured at about a second
   per deck, against a queue wait to learn the same thing. A run that produced no
   `fort.87` *and* no success marker counts as a failure, because that is exactly
@@ -1990,11 +1990,11 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   elements) fails that file instead. A path given twice is converted once,
   and two inputs whose decks would have the same name in the same directory
   (`dupA/X.out` and `dupB/X.out` with one `--output-dir`) both fail rather
-  than one overwriting the other. A parent optimisation CRYSTAL never finished
+  than one overwriting the other. A parent optimization CRYSTAL never finished
   (no OPT END: killed, out of time) or stopped unconverged at the cycle limit
   ("OPT END - FAILED", which prints no final geometry) is still converted, from
   its starting geometry, and flagged on its line and in the summary: "N
-  written (K from unfinished or failed optimisations), M failed". On the 118 `test/OPT` parents the batch
+  written (K from unfinished or failed optimizations), M failed". On the 118 `test/OPT` parents the batch
   decks are byte-identical to the single-file config path run once per file,
   for templates saved from an internal-basis, an external-basis and an
   HSESOL3C parent.
@@ -2049,7 +2049,7 @@ CRYSTAL/23-intel-2023a on real hardware, not just reasoned from the manual.
   would have been silent - LC-wPBE and LC-BLYP, both range-separated hybrids,
   were mapped onto Wu-Cohen exchange records.
 - **`opt2d12 --save-options` stores settings, not a structure.** The template
-  no longer holds the parent's atoms, optimisation log, external basis records
+  no longer holds the parent's atoms, optimization log, external basis records
   or k-point mesh (the report's template drops from 90 KB to about 1 KB). No
   opt2d12 question sets the mesh, so the stored one was always the parent's,
   and it made every other structure's mesh be regenerated from its cell
@@ -2111,7 +2111,7 @@ OPT → SP → BAND + DOSS to completion inside its own plan directory.
   answers) and crashed at the first prompt. When no answers are available it
   now keeps the settings extracted from the source calculation. The engine's
   generated decks are byte-identical before and after.
-- **`mace opt2d12 --output-dir` is honoured.** It was parsed and the directory
+- **`mace opt2d12 --output-dir` is honored.** It was parsed and the directory
   created, but the path never reached the writer, so decks always landed in the
   current directory. The deck's CRYSTAL title line still carries only the file
   name.

@@ -306,7 +306,7 @@ def test_odd_ghost_with_an_explicit_basis_reproduces_g1x():
     from mace.defects import structure as st
     geom = st.parse_geometry((DATA / "mgo_pris_geometry.out").read_text())
     far = st.far_atom(geom, 1, "O")
-    assert far == 22                                  # the O at the supercell's body centre
+    assert far == 22                                  # the O at the supercell's body center
     host, _ = de.classify_host(_explicit_host())
     site = de.DefectSite("ghost", "O", label=1, far_label=far)
     decks, msgs, _ = _build(_explicit_host(), site, charges=(1,), pristine_n=640,
@@ -432,7 +432,7 @@ Mg1 Mg 0.5 0.5 0.5 1
 
 
 def _convert(tmp_path, **changes):
-    """A host deck from `mace convert --batch` (NewCifToD12), spin-polarised SP as MACE writes it."""
+    """A host deck from `mace convert --batch` (NewCifToD12), spin-polarized SP as MACE writes it."""
     pytest.importorskip("ase")
     from d12_constants import scf_tolerances
     opts = {"symmetry_handling": "CIF", "write_only_unique": True, "dimensionality": "CRYSTAL",

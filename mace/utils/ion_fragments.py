@@ -7,7 +7,7 @@ uses the same code.
 Fragments are found by connectivity, not atom order: two atoms are bonded when
 their distance is below ``scale`` x the sum of their covalent radii (Cordero et
 al., Dalton Trans. 2008, 2832 - the table ase uses). In a periodic cell the
-neighbour search runs over image shifts along the periodic directions only,
+neighbor search runs over image shifts along the periodic directions only,
 and a union-find that carries each atom's integer image offset marks a
 fragment "extended" when it is bonded to its own image (a framework or chain,
 not a molecule).
@@ -55,7 +55,7 @@ NON_METALS = {"H", "He", "B", "C", "N", "O", "F", "Ne", "Si", "P", "S", "Cl", "A
 NOBLE_GASES = {"He", "Ne", "Ar", "Kr", "Xe", "Rn"}
 
 # Known ions. Cations: one atom, charge removed from the valence s shell.
-# Anions: exact formula, the coordination ("degrees") of the named centre
+# Anions: exact formula, the coordination ("degrees") of the named center
 # atoms, and the terminal atoms - (element, bonded-to element, count), each
 # with exactly one bond - over which the extra electron(s) are spread on the
 # valence p shell (the group's FSI- recipe: +0.25 e on each sulfonyl O).
@@ -156,7 +156,7 @@ def find_fragments(symbols: Sequence[str], xyz: Sequence[Sequence[float]], cell=
 
     Returns fragments ordered by their first atom, each
     {"atoms": [0-based indices], "formula": str, "extended": bool,
-     "neighbours": {i: [j, ...]}} (neighbours by bond, images included).
+     "neighbors": {i: [j, ...]}} (neighbors by bond, images included).
     """
     syms = [element_symbol(s) for s in symbols]
     n = len(syms)
@@ -294,7 +294,7 @@ def free_valence(fragment: dict, symbols: Sequence[str]) -> Optional[int]:
     closed-shell neutral molecule (EC, water, SO2F2, DMSO, benzene); more
     means it cannot be one - an anion such as CO3 2- (2), OH- or a
     carboxylate (1) - or a radical. None: an element without a VALENCES entry,
-    an atom with more bonds than its largest valence (a bond-length artefact),
+    an atom with more bonds than its largest valence (a bond-length artifact),
     an extended fragment, or the search budget ran out.
     """
     if fragment.get("extended"):
@@ -518,7 +518,7 @@ def mulliken_atoms(text: str) -> Tuple[List[dict], List[dict]]:
 
     Each list holds {"atom": label, "element": symbol, "z": Z column,
     "value": CHARGE column} - the electron population for the ALPHA+BETA (or
-    unlabelled) print, the spin population for the ALPHA-BETA print (empty
+    unlabeled) print, the spin population for the ALPHA-BETA print (empty
     for closed-shell runs).
     """
     pops: List[dict] = []
@@ -627,11 +627,11 @@ def fragment_charges(text: str, force: bool = False) -> Dict[str, object]:
 
     Computed when the Mulliken count differs from the sum of valence charges,
     a CHARGE NORMALIZATION FACTOR other than 1 was printed (a CHEMOD guess was
-    renormalised; ignored after a GUESSP density-matrix restart), CRYSTAL warned "UNIT CELL NOT NEUTRAL", or force=True;
+    renormalized; ignored after a GUESSP density-matrix restart), CRYSTAL warned "UNIT CELL NOT NEUTRAL", or force=True;
     otherwise {}. Returns {"electron_count": {...}, "fragment_charges": [...]}.
     A fragment's charge is the sum over its atoms of (valence charge -
     Mulliken population); a deviation of more than FRAGMENT_DEVIATION_FLAG
-    from the formal charge of a known ion is flagged (electron delocalised).
+    from the formal charge of a known ion is flagged (electron delocalized).
     """
     count = mulliken_electron_count(text)
     if count is None:
@@ -644,7 +644,7 @@ def fragment_charges(text: str, force: bool = False) -> Dict[str, object]:
     unknown = [f"{a['element']} (atom {a['atom']})" for a, r in zip(pops, ref) if r is None]
     zsum = None if unknown else sum(ref)
     factors = [float(x) for x in re.findall(r"CHARGE NORMALIZATION FACTOR\s+([-\d.]+)", text)]
-    # After a density-matrix restart (GUESSP) CRYSTAL renormalises the
+    # After a density-matrix restart (GUESSP) CRYSTAL renormalizes the
     # projected density every cycle and does not read CHEMOD, so the factor
     # says nothing about charge; net charge and UNIT CELL NOT NEUTRAL still do.
     if "RESTART FROM A PREVIOUS DENSITY MATRIX" in text:
