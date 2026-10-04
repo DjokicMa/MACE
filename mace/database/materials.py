@@ -373,7 +373,8 @@ class MaterialDatabase:
         
         Args:
             calc_id: Calculation to update
-            status: New status (pending, submitted, running, completed, failed, canceled)
+            status: New status (pending, submitted, running, completed, failed, or
+                STATUS_CANCELED_DB for a canceled job)
             slurm_job_id: SLURM job ID
             slurm_state: SLURM job state
             output_file: Path to output file
