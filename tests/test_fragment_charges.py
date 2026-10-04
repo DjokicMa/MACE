@@ -80,7 +80,7 @@ def test_spin_is_summed_per_fragment():
 
 @pytest.mark.parametrize("extra", [" CHARGE NORMALIZATION FACTOR   1.00317460\n",
                                    " WARNING **** INPBAS **** UNIT CELL NOT NEUTRAL\n"])
-def test_renormalised_guess_or_charged_cell_triggers_it(extra):
+def test_renormalized_guess_or_charged_cell_triggers_it(extra):
     atoms = li_fsi_ec()
     text = _out(atoms, _neutral_pops(atoms), 138.0, extra=extra)
     assert "fragment_charges" in fragment_charges(text)

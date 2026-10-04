@@ -35,7 +35,7 @@ MACE_CLI = REPO_ROOT / "mace_cli"
 LOW_DIM_DATA = REPO_ROOT / "tests" / "data" / "low_dim_groups"
 
 
-def test_centred_rectangular_groups_are_the_appendix_c_rows():
+def test_centered_rectangular_groups_are_the_appendix_c_rows():
     # CRYSTAL23's own numbering, measured: its output names these nine groups
     # (and no others of the 80) with a C lattice symbol - 16 is "C 2/M 1 1",
     # 18 is "P 21/B 1 1", unlike the International Tables order.
@@ -131,7 +131,7 @@ C4 C 0.5 0.166667 0.0 1.0
 """
 
 
-def test_cif2d12_centred_rectangular_slab_mesh(tmp_path):
+def test_cif2d12_centered_rectangular_slab_mesh(tmp_path):
     """cif2d12 wrote 18 9 1 for this layer group 47 slab (refused by CRYSTAL)."""
     pytest.importorskip("ase", reason="NewCifToD12 imports ase.io")
     import NewCifToD12 as writer

@@ -30,7 +30,7 @@ import threading
 
 # Import MACE components
 try:
-    from mace.database.materials import MaterialDatabase
+    from mace.database.materials import STATUS_CANCELED_DB, MaterialDatabase
     from mace.queue.manager import EnhancedCrystalQueueManager
     from mace.workflow.context import WorkflowContext, workflow_context, get_current_context
     from mace.workflow.plan_functionals import normalize_plan_functionals
@@ -1804,7 +1804,7 @@ fi'''
                 status = calc.get('status', 'unknown')
                 if status == 'completed':
                     completed_jobs += 1
-                elif status in ['failed', 'cancelled']:
+                elif status in ['failed', STATUS_CANCELED_DB]:
                     failed_jobs += 1
                     
         total_jobs = len(job_ids)

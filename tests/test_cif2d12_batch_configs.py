@@ -421,7 +421,7 @@ def test_phonon_dispersion_is_refused_where_it_cannot_be_written():
     assert "not written for a POLYMER" in phonon_dispersion_refusal("POLYMER", disp)
 
 
-def test_crystal_system_carries_the_lattice_centring():
+def test_crystal_system_carries_the_lattice_centering():
     from d12_calc_freq import crystal_system_with_lattice
     assert crystal_system_with_lattice(227) == "cubic-F"
     assert crystal_system_with_lattice(229) == "cubic-I"
@@ -489,7 +489,7 @@ def test_opt2d12_refuses_phonon_dispersion_off_a_3d_crystal(tmp_path, parent, ex
     assert sorted(p.suffix for p in par.iterdir()) == [".d12", ".out"]
 
 
-def test_cif2d12_phonon_path_follows_the_lattice_centring(tmp_path):
+def test_cif2d12_phonon_path_follows_the_lattice_centering(tmp_path):
     """Fd-3m from a CIF got the simple-cubic path (M-G-R-X-G); it now gets
     the face-centred one opt2d12 writes for the same structure."""
     pytest.importorskip("ase")

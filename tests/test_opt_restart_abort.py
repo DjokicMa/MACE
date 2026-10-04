@@ -58,7 +58,7 @@ def opt_pairs():
 
 # ---------------------------------------------------------------- detection
 
-def test_restart_abort_is_recognised_from_the_output_alone():
+def test_restart_abort_is_recognized_from_the_output_alone():
     msg = opt_restart.trust_radius_abort(data("tqb_pto.out"))
     assert msg and "RESTART" in msg and "trust radius 0" in msg
 
@@ -259,7 +259,7 @@ def test_fallback_deck_restarts_fresh_from_the_best_point(engine, tmp_path):
     assert (tmp_path / "tqb_pto.out.optabort1").read_text() == data("tqb_pto.out")
 
 
-def test_centred_cell_takes_the_earlier_runs_best_point(engine, tmp_path):
+def test_centered_cell_takes_the_earlier_runs_best_point(engine, tmp_path):
     d12, script = _aborted_job(tmp_path, "tqc_agbr", ["tqc_agbr.out", "tqc_agbr.out.timeout1"])
     original = d12.read_text()
     (tmp_path / "tqc_agbr.out").write_text(data("tqc_agbr.out") +
@@ -402,7 +402,7 @@ def test_visible_scratch_without_the_job_dir_is_absent(monkeypatch, tmp_path):
 
 # ------------------------------------------------ the per-error retry cap
 
-def test_per_error_max_retries_is_honoured(mgr, capsys):
+def test_per_error_max_retries_is_honored(mgr, capsys):
     db = mgr.db
     db.create_material(material_id="m", formula="C")
     for i in range(2):

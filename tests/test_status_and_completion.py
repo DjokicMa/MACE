@@ -177,7 +177,7 @@ def test_move_completed_takes_only_finished_runs_and_their_files(calc_dir, monke
         assert (calc_dir / name).is_file()
 
 
-def test_organize_sorts_everything_and_honours_extensions(calc_dir, monkeypatch):
+def test_organize_sorts_everything_and_honors_extensions(calc_dir, monkeypatch):
     monkeypatch.chdir(calc_dir)
     buckets, _ = cc.scan_directory(".")
     cc.organize_files(buckets, "sorted", extensions=[".out"])
@@ -264,7 +264,7 @@ def test_squeue_missing_means_no_zombies(calc_dir, monkeypatch, capsys):
     assert "Could not query squeue" in capsys.readouterr().out
 
 
-def test_cancelling_zombies_asks_twice_and_cancels_what_was_agreed(zombies, monkeypatch, capsys):
+def test_canceling_zombies_asks_twice_and_cancels_what_was_agreed(zombies, monkeypatch, capsys):
     buckets, paths, fake = zombies
     answers = iter(["y", "n"])
     prompts = []

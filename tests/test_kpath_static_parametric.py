@@ -105,12 +105,12 @@ CELLS = [
 ]
 
 
-def _structure(sg, centring, params):
+def _structure(sg, centering, params):
     spglib = pytest.importorskip("spglib")
     si = pytest.importorskip("seekpath_interface")
     first_hall = next(h for h in range(1, 531) if spglib.get_spacegroup_type(h).number == sg)
     sym = spglib.get_symmetry_from_database(first_hall)
-    p = CRYSTAL_PRIMITIVE[centring]
+    p = CRYSTAL_PRIMITIVE[centering]
     cell = p @ si.cell_params_to_vectors(*params)
     to_prim = np.linalg.inv(p)
     pos, types = [], []
@@ -124,16 +124,16 @@ def _structure(sg, centring, params):
     return cell, np.array(pos), types
 
 
-@pytest.mark.parametrize("sg,centring,params", CELLS)
-def test_static_equals_the_library_route(tmp_path, monkeypatch, sg, centring, params):
+@pytest.mark.parametrize("sg,centering,params", CELLS)
+def test_static_equals_the_library_route(tmp_path, monkeypatch, sg, centering, params):
     """Same ISS and the same integers as the library route, or segment by
     segment a symmetry image of its segments (where the library keeps
     SeeK-path's own numbers)."""
     pytest.importorskip("seekpath")
     spglib = pytest.importorskip("spglib")
     si = pytest.importorskip("seekpath_interface")
-    cell, pos, types = _structure(sg, centring, params)
-    segments, info, labels, printed = _static(monkeypatch, sg, centring, _out(tmp_path, params, sg))
+    cell, pos, types = _structure(sg, centering, params)
+    segments, info, labels, printed = _static(monkeypatch, sg, centering, _out(tmp_path, params, sg))
     assert info["source"] == "seekpath_data_parametric", printed
     assert "WARNING" not in printed.replace("WARNING: Non-centrosymmetric path not available", "")
     assert "Install 'seekpath'" not in printed
@@ -159,15 +159,15 @@ def test_static_equals_the_library_route(tmp_path, monkeypatch, sg, centring, pa
     assert si._same_path_by_symmetry(original, moved_pts, edges, rotations, True)
 
 
-@pytest.mark.parametrize("sg,centring,params", CELLS)
-def test_points_within_1e6_of_seekpaths(sg, centring, params):
+@pytest.mark.parametrize("sg,centering,params", CELLS)
+def test_points_within_1e6_of_seekpaths(sg, centering, params):
     """Before the ISS choice, each point is SeeK-path's point in CRYSTAL's
     basis to 1e-6 - or, where SeeK-path standardised to a cell related to
     CRYSTAL's by a symmetry operation, an image of it under that symmetry."""
     pytest.importorskip("seekpath")
     spglib = pytest.importorskip("spglib")
     si = pytest.importorskip("seekpath_interface")
-    cell, pos, types = _structure(sg, centring, params)
+    cell, pos, types = _structure(sg, centering, params)
     raw = si.get_seekpath_bandpath(cell, pos, types)
     m = np.linalg.inv(si.crystal_cell_matrix(raw, cell))
     lookup = raw["bravais_lattice_extended"]
@@ -276,7 +276,7 @@ def test_supercell_maps_the_converted_points(tmp_path, monkeypatch):
     e = [[2, 0, 0], [0, 1, 0], [0, 0, 1]]
     out = tmp_path / "super.out"
     out.write_text(cot.echo("I 4/M M M", (4.0, 4.0, 3.0, 90, 90, 90)) + cot.supercel(e)
-                   + cot.block((4.0, 4.0, 3.0, 90, 90, 90), [(20, "CA", 0, 0, 0)], centring="1/1"))
+                   + cot.block((4.0, 4.0, 3.0, 90, 90, 90), [(20, "CA", 0, 0, 0)], centering="1/1"))
     plain = _out(tmp_path, (4.0, 4.0, 3.0, 90, 90, 90), 139)
     segments, info, _, _ = _static(monkeypatch, 139, "I", out)
     base, _, _, _ = _static(monkeypatch, 139, "I", plain)
@@ -284,7 +284,7 @@ def test_supercell_maps_the_converted_points(tmp_path, monkeypatch):
     np.testing.assert_allclose(segments, d3_kpoints.expand_segments(base, e), atol=1e-12)
 
 
-def test_optimised_supercell_maps_the_host_path(tmp_path, monkeypatch):
+def test_optimized_supercell_maps_the_host_path(tmp_path, monkeypatch):
     """An OPT of a SUPERCEL-built cell (the defect-supercell case): the final
     block is the supercell, so its cell is not the host's conventional cell.
     The path is the host's, expanded to the supercell's basis, as for the
@@ -294,11 +294,11 @@ def test_optimised_supercell_maps_the_host_path(tmp_path, monkeypatch):
     head = cot.echo("I 4/M M M", (4.0, 4.0, 3.0, 90, 90, 90)) + cot.supercel(e)
     super_params = (5.0, 3.2, 3.2, 100.0, 110.0, 120.0)   # the supercell's own cell
     sp = tmp_path / "super_sp.out"
-    sp.write_text(head + cot.block(super_params, [(20, "CA", 0, 0, 0)], centring="1/1"))
+    sp.write_text(head + cot.block(super_params, [(20, "CA", 0, 0, 0)], centering="1/1"))
     opt = tmp_path / "super_opt.out"
-    opt.write_text(head + cot.block(super_params, [(20, "CA", 0, 0, 0)], centring="1/1")
-                   + cot.opt_step(super_params, [(20, "CA", 0, 0, 0)], centring="1/1")
-                   + cot.final_block(super_params, [(20, "CA", 0, 0, 0)], centring="1/1"))
+    opt.write_text(head + cot.block(super_params, [(20, "CA", 0, 0, 0)], centering="1/1")
+                   + cot.opt_step(super_params, [(20, "CA", 0, 0, 0)], centering="1/1")
+                   + cot.final_block(super_params, [(20, "CA", 0, 0, 0)], centering="1/1"))
     params = d3_kpoints.extract_lattice_parameters_from_output(str(opt))
     assert params["expansion"] == e
     assert (params["a"], params["c"]) == (4.0, 3.0)

@@ -85,7 +85,7 @@ def test_unknown_functional_is_refused(tmp_path):
     assert "functional 'B2PLYP' is not a CRYSTAL23 keyword" in log, log[-3000:]
 
 
-def test_engine_expert_config_is_normalised(tmp_path):
+def test_engine_expert_config_is_normalized(tmp_path):
     """A planner Expert FREQ config saved with a legacy spelling."""
     pytest.importorskip("numpy")
     eng = base._engine(tmp_path, PARENT.with_suffix(".d12").read_text(),

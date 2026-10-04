@@ -42,7 +42,7 @@ def test_fractional_site_of_the_host_cell_maps_to_the_supercell_label():
         st.resolve_site(_host(), g, "O", frac=(0.5, 0.5, 0.5), keyword="SUPERCON", matrix=MGO_222)
 
 
-def test_fractional_site_needs_supercon_on_a_centred_host():
+def test_fractional_site_needs_supercon_on_a_centered_host():
     g = st.parse_geometry(TEXT)
     with pytest.raises(DefectError, match="centred host"):
         st.resolve_site(_host(), g, "O", frac=(1, 1, 1), keyword="SUPERCEL", matrix=MGO_222)
@@ -76,7 +76,7 @@ def test_pbc_matching_after_atomremo_renumbering():
                                       for a in g.atoms[1:]], 3)
     m = st.match_atoms(removed, g)
     assert len(m) == 63 and all(p == d + 1 for d, p in m.items())
-    near = st.neighbours(g, g.atom(1).cart, 2.2, exclude=(1,))
+    near = st.neighbors(g, g.atom(1).cart, 2.2, exclude=(1,))
     assert len(near) == 6 and all(abs(d - 2.106) < 1e-6 for _, d in near)
     assert st.far_atom(g, 1, "O") == 22
 

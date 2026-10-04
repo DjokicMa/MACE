@@ -173,7 +173,7 @@ def unconverged_output():
 # ------------------------------------------------------------ detection
 
 @pytest.mark.parametrize("end", ["maxcycle", "running", "killed"])
-def test_loop_is_recognised_however_the_run_ended(end):
+def test_loop_is_recognized_however_the_run_ended(end):
     why = opt_restart.finalrun_loop(loop_output(end=end))
     assert why and "5 FINALRUN re-starts" in why
 

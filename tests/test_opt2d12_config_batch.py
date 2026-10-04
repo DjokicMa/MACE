@@ -338,7 +338,7 @@ def test_an_old_template_keeps_each_parents_mesh(tmp_path):
     assert lines[lines.index("SHRINK") + 1] == "8 16"
 
 
-def test_an_unfinished_optimisation_is_flagged(tmp_path, ext_template):
+def test_an_unfinished_optimization_is_flagged(tmp_path, ext_template):
     """A killed optimisation (no OPT END) still converts, from its starting
     geometry, and the file line and the summary say so."""
     parents = _copy([DIA], tmp_path / "opts")
@@ -354,7 +354,7 @@ def test_an_unfinished_optimisation_is_flagged(tmp_path, ext_template):
     assert f"{DIA}.out: wrote sp/{DIA}_sp_B3LYP-D3_optimized.d12\n" in result.stdout
 
 
-def test_a_failed_optimisation_is_flagged_and_gets_its_starting_geometry(tmp_path, ext_template):
+def test_a_failed_optimization_is_flagged_and_gets_its_starting_geometry(tmp_path, ext_template):
     """A real OPT .out cut at its OPT END with CONVERGED changed to FAILED, as a
     run stopped at the cycle limit ends (MSUCOF-4-FeCp_H2 on HPCC: OPT END -
     FAILED after 800 points, no final geometry printed). The deck is written,

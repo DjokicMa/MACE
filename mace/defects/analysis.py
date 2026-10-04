@@ -61,7 +61,7 @@ from mace.defects import DefectError
 from mace.defects import image_charge as ic
 from mace.defects import outputs as out
 from mace.defects.deck_edit import element_number, fmt_q
-from mace.defects.structure import Geometry, match_atoms, neighbours, parse_geometry, pbc_distance
+from mace.defects.structure import Geometry, match_atoms, neighbors, parse_geometry, pbc_distance
 
 #: |Delta N_e + q| above this excludes a job ("DOPING not applied").
 ELECTRON_TOL = 1e-4
@@ -157,11 +157,11 @@ def check_jobs(manifest: dict, texts: Dict[str, str]) -> List[JobResult]:
     for sc_index, sc in enumerate(manifest["supercells"]):
         pris_name = sc.get("pristine_job")
         pris_text = texts.get(pris_name)
-        pris = out.summarise(pris_name, pris_text) if pris_text else None
+        pris = out.summarize(pris_name, pris_text) if pris_text else None
         wrong_site = _wrong_site(manifest, pris_text)
         for job in sc.get("jobs", []):
             text = texts.get(job["name"])
-            summary = out.summarise(job["name"], text) if text is not None else None
+            summary = out.summarize(job["name"], text) if text is not None else None
             res = JobResult(job["name"], job["role"], job["q"], job["doping"], job.get("nspin"),
                             job.get("restricted", False), sc_index, summary)
             warns = []
@@ -425,11 +425,11 @@ def site_report(manifest: dict, pris_text: str, pris_sum: out.OutputSummary,
     else:
         center = geom_p.atom(label).cart
         exclude = (label,)
-    nn = neighbours(geom_p, center, 1e9, exclude=exclude)
+    nn = neighbors(geom_p, center, 1e9, exclude=exclude)
     if not nn:
         return []
     cutoff = 1.2 * nn[0][1]
-    shell = [lab for lab, _ in neighbours(geom_p, center, cutoff, exclude=exclude)]
+    shell = [lab for lab, _ in neighbors(geom_p, center, cutoff, exclude=exclude)]
     rows = []
     for job in jobs:
         if job.role != "defect" or not job.ok or job.summary.mulliken is None:

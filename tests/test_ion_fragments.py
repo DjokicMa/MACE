@@ -71,7 +71,7 @@ def test_li_never_merges_with_the_oxygen_it_sits_on():
 
 
 @pytest.mark.parametrize("name", sorted(IONS))
-def test_every_table_anion_is_recognised(name):
+def test_every_table_anion_is_recognized(name):
     syms, xyz = _split(shuffled(IONS[name]() + [("Li", (9.0, 9.0, 9.0))]))
     frags = classify(syms, xyz)
     anion = next(f for f in frags if f["ion"] != "Li+")
@@ -82,7 +82,7 @@ def test_every_table_anion_is_recognised(name):
 
 
 @pytest.mark.parametrize("cation", ["Li", "Na", "K", "Mg", "Ca", "Zn"])
-def test_every_table_cation_is_recognised(cation):
+def test_every_table_cation_is_recognized(cation):
     syms, xyz = _split(water() + [(cation, (0.0, -2.1, 0.0))])
     frags = classify(syms, xyz)
     assert [f["ion"] for f in frags if f["formula"] != "H2O"] == [f"{cation}{'+' if cation in ('Li', 'Na', 'K') else '2+'}"]

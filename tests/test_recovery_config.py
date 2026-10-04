@@ -98,7 +98,7 @@ def test_the_shipped_file_is_found_from_any_directory(tmp_path, in_tmp):
     assert rec.PACKAGED_RECOVERY_CONFIG == REPO / "mace" / "config" / "recovery_config.yaml"
 
 
-def test_behaviour_is_unchanged_for_every_error_type_recovered_today(tmp_path, in_tmp, capsys):
+def test_behavior_is_unchanged_for_every_error_type_recovered_today(tmp_path, in_tmp, capsys):
     eng = _engine(tmp_path)
     assert _read(eng.config) == BEFORE
     # ... and the shipped file itself is clean: no ignored entries.

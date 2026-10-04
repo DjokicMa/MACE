@@ -295,7 +295,7 @@ def test_echg_map_points_without_a_coord_type_are_refused(tmp_path, monkeypatch,
     assert "FRACTION" in messages and "ANGSTROM" in messages
 
 
-def test_echg_unrecognised_coord_type_is_refused(tmp_path, monkeypatch, capsys):
+def test_echg_unrecognized_coord_type_is_refused(tmp_path, monkeypatch, capsys):
     """A typo must not silently fall back to one of the two units."""
     _no_terminal(monkeypatch)
     _no_input(monkeypatch)

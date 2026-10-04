@@ -214,7 +214,7 @@ def load_family(family):
     return parsed
 
 
-def _normalise(path):
+def _normalize(path):
     return os.path.abspath(os.path.expanduser(str(path))).rstrip("/")
 
 
@@ -244,11 +244,11 @@ def _match(path):
     """(family, library file) that serves a basis path, or None."""
     if not path:
         return None
-    norm = _normalise(path)
+    norm = _normalize(path)
     real = os.path.realpath(norm)
     for family in FAMILIES:
         for root in _bundled_roots():
-            candidate = _normalise(os.path.join(root, family))
+            candidate = _normalize(os.path.join(root, family))
             if norm == candidate or real == os.path.realpath(candidate):
                 # Serve the library beside the matched root: $MACE_HOME's for
                 # a $MACE_HOME path. This module's own basis_sets/ is only the
@@ -271,7 +271,7 @@ def _load_library_file(path):
 
 def _library(match):
     family, path = match
-    if _normalise(path) == _normalise(library_file(family)):
+    if _normalize(path) == _normalize(library_file(family)):
         return load_family(family)
     lib = _load_library_file(path)
     if lib.name != family:

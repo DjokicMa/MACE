@@ -652,9 +652,9 @@ class Tracker:
             message = deck.note or "interrupted before CRYSTAL started"
         elif out:
             self.db.update_calculation_status(calc_id, "failed", output_file=out)
-            analysed, message = self.manager.analyze_calculation_error(self.db.get_calculation(calc_id))
+            analyzed, message = self.manager.analyze_calculation_error(self.db.get_calculation(calc_id))
             # Prefixed, so no recovery sweep ever takes it for a SLURM job to resubmit.
-            error_type = f"local_{analysed}"
+            error_type = f"local_{analyzed}"
         else:
             error_type, message = "local_no_output", deck.note or "no .out written"
         self.db.update_calculation_status(calc_id, "failed", output_file=out,

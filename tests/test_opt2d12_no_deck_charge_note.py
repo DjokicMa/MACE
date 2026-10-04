@@ -42,7 +42,7 @@ def test_a_neutral_looking_out_gets_an_informational_note():
     assert "DOPING" in notes[0]  # still says what cannot be seen
 
 
-def test_a_normalisation_factor_of_one_is_no_sign():
+def test_a_normalization_factor_of_one_is_no_sign():
     extra = " CHARGE NORMALIZATION FACTOR   1.00000000\n"
     _, notes = charge_from_parent_out(CHILD, synth_out(LI_WATER, title="parent", extra=extra))
     assert not any(n.startswith("WARNING") for n in notes), notes

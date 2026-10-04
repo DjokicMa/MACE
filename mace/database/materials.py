@@ -19,6 +19,10 @@ from typing import Dict, List, Optional, Tuple, Any
 import tempfile
 import shutil
 
+# The status stored in the database for a canceled job. The value keeps its
+# original spelling because existing databases already hold it.
+STATUS_CANCELED_DB = "cancelled"  # british-ok: stored database value
+
 # ASE integration for structure storage
 try:
     from ase.db import connect as ase_connect
@@ -385,7 +389,7 @@ class MaterialDatabase:
             timestamp_updates.append(('submitted_at', now))
         elif status == 'running':
             timestamp_updates.append(('started_at', now))
-        elif status in ['completed', 'failed', 'cancelled']:
+        elif status in ['completed', 'failed', STATUS_CANCELED_DB]:
             timestamp_updates.append(('completed_at', now))
             
         with self._get_connection() as conn:
@@ -653,8 +657,8 @@ class MaterialDatabase:
             # Remove old failed calculations
             conn.execute("""
                 DELETE FROM calculations 
-                WHERE status IN ('failed', 'cancelled') AND created_at < ?
-            """, (cutoff_date,))
+                WHERE status IN ('failed', ?) AND created_at < ?
+            """, (STATUS_CANCELED_DB, cutoff_date))
             
             # Remove orphaned file records
             conn.execute("""

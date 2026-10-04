@@ -56,7 +56,7 @@ def test_non_d3_parent_stays_without_d3(monkeypatch, fx):
 
 
 
-def test_unrecognised_parent_functional_does_not_crash(monkeypatch):
+def test_unrecognized_parent_functional_does_not_crash(monkeypatch):
     """The parsers leave functional=None for a functional they don't know
     (e.g. B2PLYP). A blank answer to the replacement prompt gives HSE06, and
     the D3 default is the parent's (no D3) - no .upper() on None."""

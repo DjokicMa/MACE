@@ -86,7 +86,7 @@ def test_odd_multiplicity_without_pristine_output_waits_for_it():
     assert same_but_title(decks["hbn4_q0"].text, deck("hbn4_q0"))
 
 
-def test_supercon_multiplicity_counts_the_centring():
+def test_supercon_multiplicity_counts_the_centering():
     host, _ = de.classify_host(mgo_host())
     assert de.supercell_multiplicity(host, "SUPERCON", MGO_222) == 32   # F: 4 per cell
     assert de.supercell_multiplicity(host, "SUPERCEL", MGO_222) == 8

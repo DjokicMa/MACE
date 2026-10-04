@@ -323,7 +323,7 @@ def _real_child(tmp_path, name, calc_type):
 
 @pytest.mark.parametrize("name", ["graphene_lg80", "graphene_lg47", "polyyne_rg51"])
 @pytest.mark.parametrize("calc_type", ["SP", "FREQ"])
-def test_real_follow_up_decks_are_recognised_as_the_same_system(tmp_path, name, calc_type):
+def test_real_follow_up_decks_are_recognized_as_the_same_system(tmp_path, name, calc_type):
     parent = (LOW_DIM / f"{name}.d12").read_text()
     child = _real_child(tmp_path, name, calc_type)
     assert guessp_chain.refusal(parent, child) is None

@@ -41,12 +41,12 @@ def _lattice(a, b, c, al, be, ga):
     return si.cell_params_to_vectors(a, b, c, al, be, ga)
 
 
-def _crystal_structure(sg, centring, params):
+def _crystal_structure(sg, centering, params):
     """Structure of group ``sg`` (standard setting) in CRYSTAL's primitive cell."""
     first_hall = next(h for h in range(1, 531) if spglib.get_spacegroup_type(h).number == sg)
     sym = spglib.get_symmetry_from_database(first_hall)
     conv = _lattice(*params)
-    p = CRYSTAL_PRIMITIVE[centring]
+    p = CRYSTAL_PRIMITIVE[centering]
     cell = p @ conv
     to_prim = np.linalg.inv(p)
     pos, types = [], []
@@ -124,8 +124,8 @@ CASES = {
 
 @pytest.mark.parametrize("name", sorted(CASES))
 def test_written_points_are_seekpaths_points(name):
-    sg, centring, params = CASES[name]
-    cell, pos, types = _crystal_structure(sg, centring, params)
+    sg, centering, params = CASES[name]
+    cell, pos, types = _crystal_structure(sg, centering, params)
     raw, moved, written, info = _written_points(cell, pos, types)
     b_cr = 2 * np.pi * np.linalg.inv(cell).T
     # a lattice-dependent point may move to the nearest k/ISS, by at most this
@@ -146,8 +146,8 @@ def test_written_points_are_seekpaths_points(name):
 @pytest.mark.parametrize("name", ["oC2_Cmce", "oA_Aea2_0", "aP_1"])
 def test_old_copy_was_wrong(name):
     """The numbers SeeK-path gives, read in CRYSTAL's basis, miss its points here."""
-    sg, centring, params = CASES[name]
-    cell, pos, types = _crystal_structure(sg, centring, params)
+    sg, centering, params = CASES[name]
+    cell, pos, types = _crystal_structure(sg, centering, params)
     raw = si.get_seekpath_bandpath(cell, pos, types)
     b_cr = 2 * np.pi * np.linalg.inv(cell).T
     rotations = spglib.get_symmetry((cell, pos, types), symprec=1e-5)["rotations"]
@@ -303,8 +303,8 @@ def test_static_oa_path_is_seekpaths_points(name, tmp_path, monkeypatch):
     d3_kpoints = pytest.importorskip("d3_kpoints")
     monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", False)
     monkeypatch.setenv("MACE_STATIC_KPATH", "1")  # the static route, asked for
-    sg, centring, params = CASES[name]
-    cell, pos, types = _crystal_structure(sg, centring, params)
+    sg, centering, params = CASES[name]
+    cell, pos, types = _crystal_structure(sg, centering, params)
     raw = si.get_seekpath_bandpath(cell, pos, types)
     out = tmp_path / "oa.out"
     out.write_text(OUT_TEMPLATE.format(*params))

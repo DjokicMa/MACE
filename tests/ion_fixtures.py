@@ -23,8 +23,8 @@ def _unit(v):
     return tuple(x / n for x in v)
 
 
-def _star(centre, ligand, dirs, r):
-    return [(centre, (0.0, 0.0, 0.0))] + [(ligand, tuple(r * x for x in _unit(d))) for d in dirs]
+def _star(center, ligand, dirs, r):
+    return [(center, (0.0, 0.0, 0.0))] + [(ligand, tuple(r * x for x in _unit(d))) for d in dirs]
 
 
 def _sulfonyl(s, sign, tail):
@@ -169,9 +169,9 @@ def cluster(*parts, spacing=6.0):
 
 def li_near(atoms, index, distance=1.95):
     """A Li placed ``distance`` A from atom ``index`` of ``atoms``, away from the molecule's centre."""
-    centre = tuple(sum(p[i] for _, p in atoms) / len(atoms) for i in range(3))
+    center = tuple(sum(p[i] for _, p in atoms) / len(atoms) for i in range(3))
     p = atoms[index][1]
-    d = _unit(_add(p, centre, -1.0))
+    d = _unit(_add(p, center, -1.0))
     return ("Li", _add(p, d, distance))
 
 

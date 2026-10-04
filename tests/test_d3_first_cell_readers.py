@@ -28,7 +28,7 @@ d3k = pytest.importorskip("d3_kpoints")
     (REPO_ROOT / "tests/data/opt_restart/tqc_agbr.out", ("TRIGONAL", "R")),
     (REPO_ROOT / "tests/fixtures/phonopy_crystal/Si/parent.out", ("CUBIC", "F")),
 ])
-def test_family_and_centring_from_the_output(out, expected):
+def test_family_and_centering_from_the_output(out, expected):
     assert d3i.crystal_family_and_centring(str(out)) == expected
     labels = d3k.get_crystal_supported_labels(*expected)
     assert labels == d3k.CRYSTAL_KPOINT_LABELS[
@@ -53,7 +53,7 @@ def test_fallback_shrink_uses_the_computed_cell(tmp_path):
     big = (20.0, 20.0, 20.0, 90.0, 90.0, 90.0)
     out.write_text(cot.echo("P M 3 M", (2.0, 2.0, 2.0, 90, 90, 90))
                    + cot.supercel([[10, 0, 0], [0, 10, 0], [0, 0, 10]])
-                   + cot.block(big, [(20, "CA", 0, 0, 0)], centring="1/1"))
+                   + cot.block(big, [(20, "CA", 0, 0, 0)], centering="1/1"))
     with contextlib.redirect_stdout(io.StringIO()):
         shrink = d3k.extract_and_process_shrink(str(out), "super", tmp_path, {})
     assert shrink == 4          # 60 / 20 -> 3, made even; the 2 A input cell gave 30

@@ -162,7 +162,7 @@ def pbc_distance(geom: Geometry, a: Sequence[float], b: Sequence[float]) -> floa
     return float(np.linalg.norm(min_image(np.asarray(b) - np.asarray(a), geom.lattice, geom.dimensionality)))
 
 
-def neighbours(geom: Geometry, center: Sequence[float], cutoff: float,
+def neighbors(geom: Geometry, center: Sequence[float], cutoff: float,
                exclude: Sequence[int] = ()) -> List[Tuple[int, float]]:
     out = []
     for a in geom.atoms:
@@ -236,16 +236,16 @@ def host_cell(host: HostInfo, keyword: str, matrix, geom: Geometry) -> np.ndarra
     """
     D = geom.lattice
     if keyword.upper() == "SUPERCEL":
-        centred = False
+        centered = False
         if host.geometry_kind == "CRYSTAL":
             from mace.defects.deck_edit import centring_multiplicity
-            centred = centring_multiplicity(host) != 1
+            centered = centring_multiplicity(host) != 1
         else:
             try:
-                centred = int(host.spacegroup.split()[0]) in _CENTRED_LAYER_GROUPS
+                centered = int(host.spacegroup.split()[0]) in _CENTRED_LAYER_GROUPS
             except ValueError:
-                centred = False
-        if centred:
+                centered = False
+        if centered:
             raise DefectError("--site-frac / fractional --insert with SUPERCEL on a centred host: "
                               "SUPERCEL expands the primitive cell, not the host's crystallographic "
                               "cell; use SUPERCON (3D), --site-label, or --cart")

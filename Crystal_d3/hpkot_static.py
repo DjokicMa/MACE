@@ -305,9 +305,9 @@ def parametric_names(entry_key: str) -> set:
     return names
 
 
-def crystal_reciprocal(conv_params: Dict[str, float], centring: str, w=None) -> np.ndarray:
+def crystal_reciprocal(conv_params: Dict[str, float], centering: str, w=None) -> np.ndarray:
     """Reciprocal vectors (rows, 2 pi included) of CRYSTAL's primitive cell."""
-    return 2 * np.pi * np.linalg.inv(crystal_primitive(conv_params, centring, w)).T
+    return 2 * np.pi * np.linalg.inv(crystal_primitive(conv_params, centering, w)).T
 
 
 def hpkot_standard_primitive(key: str, conv_params: Dict[str, float]) -> np.ndarray:
@@ -316,9 +316,9 @@ def hpkot_standard_primitive(key: str, conv_params: Dict[str, float]) -> np.ndar
     return family.T @ conventional_vectors(conv_params)
 
 
-def crystal_primitive(conv_params: Dict[str, float], centring: str, w=None) -> np.ndarray:
+def crystal_primitive(conv_params: Dict[str, float], centering: str, w=None) -> np.ndarray:
     """CRYSTAL's primitive vectors (rows): (W^T)^-1 A_conv, W printed or Table A.1."""
-    w = CRYSTAL_W[centring] if w is None else np.array(w, dtype=float)
+    w = CRYSTAL_W[centering] if w is None else np.array(w, dtype=float)
     return np.linalg.inv(np.array(w, dtype=float).T) @ conventional_vectors(conv_params)
 
 

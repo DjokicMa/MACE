@@ -208,7 +208,7 @@ def find_fragments(symbols: Sequence[str], xyz: Sequence[Sequence[float]], cell=
         offset[i] = total
         return root, total
 
-    neighbours: Dict[int, List[int]] = {i: [] for i in range(n)}
+    neighbors: Dict[int, List[int]] = {i: [] for i in range(n)}
     for i in range(n):
         if exclude_metals and syms[i] in TABLE_METALS:
             continue
@@ -224,9 +224,9 @@ def find_fragments(symbols: Sequence[str], xyz: Sequence[Sequence[float]], cell=
                 d2 = sum((pts[j][k] + v[k] - pts[i][k]) ** 2 for k in range(3))
                 if d2 > cut2 or d2 < 1e-8:
                     continue
-                neighbours[i].append(j)
+                neighbors[i].append(j)
                 if i != j:
-                    neighbours[j].append(i)
+                    neighbors[j].append(i)
                 # j at image s is bonded to i at image 0
                 ri, oi = find(i)
                 rj, oj = find(j)
@@ -247,7 +247,7 @@ def find_fragments(symbols: Sequence[str], xyz: Sequence[Sequence[float]], cell=
         counts = Counter(syms[i] for i in atoms)
         frags.append({"atoms": sorted(atoms), "formula": formula_string(counts),
                       "extended": root in extended_roots,
-                      "neighbours": {i: neighbours[i] for i in atoms}})
+                      "neighbors": {i: neighbors[i] for i in atoms}})
     frags.sort(key=lambda f: f["atoms"][0])
     return frags
 
@@ -261,7 +261,7 @@ def classify_fragment(fragment: dict, symbols: Sequence[str]) -> Optional[str]:
     syms = [element_symbol(s) for s in symbols]
     atoms = fragment["atoms"]
     counts = Counter(syms[i] for i in atoms)
-    nb = fragment["neighbours"]
+    nb = fragment["neighbors"]
     for name, ion in ION_TABLE.items():
         if dict(counts) != ion["formula"]:
             continue
@@ -301,7 +301,7 @@ def free_valence(fragment: dict, symbols: Sequence[str]) -> Optional[int]:
         return None
     syms = [element_symbol(s) for s in symbols]
     atoms = fragment["atoms"]
-    nb = fragment["neighbours"]
+    nb = fragment["neighbors"]
     residues = {}  # atom -> sorted allowed (valence - bonds)
     for i in atoms:
         opts = VALENCES.get(syms[i])
@@ -384,7 +384,7 @@ def terminal_atoms(fragment: dict, symbols: Sequence[str], ion: str) -> List[int
     if "terminal" not in spec:
         return list(fragment["atoms"])
     el, to, _ = spec["terminal"]
-    nb = fragment["neighbours"]
+    nb = fragment["neighbors"]
     return [i for i in fragment["atoms"] if syms[i] == el and len(nb[i]) == 1 and syms[nb[i][0]] == to]
 
 
@@ -415,7 +415,7 @@ def classify(symbols: Sequence[str], xyz, cell=None, periodic_dirs: Sequence[int
             touch = find_fragments(syms, xyz, cell, periodic_dirs, scale, exclude_metals=False)
             for f in touch:
                 for i in f["atoms"]:
-                    if syms[i] in TABLE_METALS and any(j in bare_or_ext for j in f["neighbours"][i]):
+                    if syms[i] in TABLE_METALS and any(j in bare_or_ext for j in f["neighbors"][i]):
                         raise IonChargeError(f"{AUTO_SOLID_MESSAGE}: {syms[i]} (atom {i + 1}) is bonded "
                                              "to an extended framework")
     for f in frags:
@@ -649,10 +649,10 @@ def fragment_charges(text: str, force: bool = False) -> Dict[str, object]:
     # says nothing about charge; net charge and UNIT CELL NOT NEUTRAL still do.
     if "RESTART FROM A PREVIOUS DENSITY MATRIX" in text:
         factors = []
-    renormalised = any(abs(f - 1.0) > 1e-6 for f in factors)
+    renormalized = any(abs(f - 1.0) > 1e-6 for f in factors)
     not_neutral = "UNIT CELL NOT NEUTRAL" in text
     net = None if zsum is None else round(zsum - count, 6)
-    if not (force or (net is not None and abs(net) > 1e-3) or renormalised or not_neutral):
+    if not (force or (net is not None and abs(net) > 1e-3) or renormalized or not_neutral):
         return {}
     result: Dict[str, object] = {"electron_count": {
         "mulliken": count, "valence_sum": zsum, "net_charge": net,

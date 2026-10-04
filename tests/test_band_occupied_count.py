@@ -71,7 +71,7 @@ def test_an_odd_header_leaves_it_unset(extractor, tmp_path, monkeypatch):
     assert _num_occ(extractor, tmp_path, monkeypatch, text) is None
 
 
-def test_mulliken_electron_count_reads_alpha_plus_beta_or_unlabelled():
+def test_mulliken_electron_count_reads_alpha_plus_beta_or_unlabeled():
     from mace.utils.property_extractor import mulliken_electron_count
     spin = (mulliken_block(ATOMS, [2.0, 9.0, 3.0], 14.0, "ALPHA+BETA ELECTRONS")
             + mulliken_block(ATOMS, [0.0, 1.0, 0.0], 1.0, "ALPHA-BETA ELECTRONS"))

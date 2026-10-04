@@ -18,7 +18,7 @@ def test_electron_count_is_the_mulliken_line_not_the_pre_doping_header():
     text = fake_output(energy=-8735.8147109285, header=632, electrons=631.0, spin=1.0)
     assert out.electron_count(text) == 631.0
     assert out.header_electrons(text) == 632
-    s = out.summarise("v1", text)
+    s = out.summarize("v1", text)
     assert s.electrons == 631.0 and s.header_electrons == 632 and s.spin == 1.0
 
 
@@ -103,22 +103,22 @@ def test_dispersion_and_gcp_terms_are_added_to_the_scf_energy():
     # The '== SCF ENDED' E(AU) leaves out D3 and gCP (corpus: SCF + D3 + gCP equals CRYSTAL's
     # 'TOTAL ENERGY + DISP + GCP' line in all 340 dispersion outputs checked). Synthetic numbers.
     text = fake_output(energy=-1000.25, d3=-0.0125, gcp=0.0875, electrons=100.0)
-    s = out.summarise("c3", text)
+    s = out.summarize("c3", text)
     assert s.scf_energy == pytest.approx(-1000.25)
     assert s.d3 == pytest.approx(-0.0125) and s.gcp == pytest.approx(0.0875)
     assert s.energy == pytest.approx(-1000.25 - 0.0125 + 0.0875)
     assert s.energy_terms == "SCF + D3 + gCP"
-    d3_only = out.summarise("d3", fake_output(energy=-10.0, d3=-0.5))
+    d3_only = out.summarize("d3", fake_output(energy=-10.0, d3=-0.5))
     assert d3_only.energy == pytest.approx(-10.5) and d3_only.gcp is None
     assert d3_only.energy_terms == "SCF + D3"
-    plain = out.summarise("p", fake_output(energy=-10.0))
+    plain = out.summarize("p", fake_output(energy=-10.0))
     assert plain.energy == pytest.approx(-10.0) and plain.energy_terms == "SCF"
 
 
 def test_dispersion_terms_must_belong_to_the_last_scf():
     # terms printed after an earlier SCF only: the final total is unknown, not the bare SCF value
     text = fake_output(energy=-10.0, d3=-0.5) + fake_output(energy=-10.2)
-    s = out.summarise("x", text)
+    s = out.summarize("x", text)
     assert s.energy is None and "D3/gCP" in s.reason
     assert out.dispersion_terms(fake_output(energy=-10.0) + fake_output(energy=-10.2, d3=-0.5)) \
         == (pytest.approx(-0.5), None)

@@ -187,7 +187,7 @@ def test_a_net_charge_lets_the_salt_through_with_a_warning():
                for w in setup.warnings)
 
 
-def test_an_unrecognised_anion_next_to_a_table_salt_is_refused_too():
+def test_an_unrecognized_anion_next_to_a_table_salt_is_refused_too():
     # LiFSI (auto net 0) with a stray carbonate: the real charge is -2
     lifsi = li_with(1, 0)
     co3 = [(s, (x, y - 9.0, z)) for s, (x, y, z) in carbonate()]

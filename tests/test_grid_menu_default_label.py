@@ -19,21 +19,21 @@ def _menu(monkeypatch, capsys, ask):
     monkeypatch.setattr(menu_nav, "_REAL_INPUT", lambda prompt="": "")
     grid = ask()
     out = capsys.readouterr().out
-    labelled = [l for l in out.splitlines() if re.match(r"\d: \w+GRID|\d: DEFAULT", l)
+    labeled = [l for l in out.splitlines() if re.match(r"\d: \w+GRID|\d: DEFAULT", l)
                 and "(default)" in l]
-    return grid, labelled
+    return grid, labeled
 
 
 @pytest.mark.parametrize("parent, label", [("DEFAULT", "2: DEFAULT"), ("LGRID", "3: LGRID"),
                                            ("XXLGRID", "5: XXLGRID")])
 def test_opt2d12_labels_the_parents_grid(monkeypatch, capsys, parent, label):
-    grid, labelled = _menu(monkeypatch, capsys,
+    grid, labeled = _menu(monkeypatch, capsys,
                            lambda: d12_interactive.configure_dft_grid_with_defaults("PBE0", parent))
     assert grid == parent
-    assert len(labelled) == 1 and labelled[0].startswith(label), labelled
+    assert len(labeled) == 1 and labeled[0].startswith(label), labeled
 
 
 def test_cif2d12_default_is_still_xlgrid(monkeypatch, capsys):
-    grid, labelled = _menu(monkeypatch, capsys, lambda: d12_constants.configure_dft_grid("PBE0"))
+    grid, labeled = _menu(monkeypatch, capsys, lambda: d12_constants.configure_dft_grid("PBE0"))
     assert grid == "XLGRID"
-    assert len(labelled) == 1 and labelled[0].startswith("4: XLGRID"), labelled
+    assert len(labeled) == 1 and labeled[0].startswith("4: XLGRID"), labeled

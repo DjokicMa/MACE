@@ -67,7 +67,7 @@ def _mace_cli_fallback_ui():
 # ------------------------------------------------------------ ui fallback ---
 
 @pytest.mark.parametrize("rel", SUBTOOL_SHIM_FILES)
-def test_subtool_ui_fallback_behaviour(rel, capsys):
+def test_subtool_ui_fallback_behavior(rel, capsys):
     ui = _fallback_ui(rel)
 
     ui.ok("[bold]Done[/bold] [OK]")
@@ -95,7 +95,7 @@ def test_subtool_ui_fallback_behaviour(rel, capsys):
     assert ui.badge(3) == "3"
 
 
-def test_mace_cli_ui_fallback_behaviour(capsys):
+def test_mace_cli_ui_fallback_behavior(capsys):
     ui = _mace_cli_fallback_ui()
 
     ui.ok("[bold]Done[/bold] [OK]")

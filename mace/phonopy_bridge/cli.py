@@ -153,7 +153,7 @@ def cmd_generate(a) -> int:
             print(f"Error: {f} not found", file=sys.stderr)
             return 1
     try:
-        dim = S.normalise_dim(" ".join(a.dim).split())
+        dim = S.normalize_dim(" ".join(a.dim).split())
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

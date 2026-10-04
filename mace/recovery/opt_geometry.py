@@ -123,14 +123,14 @@ def read_geometry(lines: Sequence[str], start: int, stop: int) -> Optional[Geome
     A primitive (centring code 1) cell is its own crystallographic cell; for a
     centred one the crystallographic block must be there, or None.
     """
-    centring = None
+    centering = None
     prim_cell = prim_atoms = cryst_cell = cryst_atoms = None
     i = start
     while i < stop:
         line = lines[i]
         m = _CENTRING_RE.search(line)
         if m and prim_cell is None:
-            centring = int(m.group(1))
+            centering = int(m.group(1))
             prim_cell = _cell_after(lines, i)
         elif 'ATOMS IN THE ASYMMETRIC UNIT' in line and prim_atoms is None:
             prim_atoms, i = _read_atoms(lines, i + 1)
@@ -146,7 +146,7 @@ def read_geometry(lines: Sequence[str], start: int, stop: int) -> Optional[Geome
         i += 1
     if cryst_cell and cryst_atoms:
         return Geometry(cryst_cell, cryst_atoms)
-    if centring == 1 and prim_cell and prim_atoms:
+    if centering == 1 and prim_cell and prim_atoms:
         return Geometry(prim_cell, prim_atoms)
     return None
 

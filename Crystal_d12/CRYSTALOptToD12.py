@@ -207,7 +207,7 @@ except Exception:  # standalone run without mace importable
                               content, re.MULTILINE))
 
 
-def optimisation_problem(out_file):
+def optimization_problem(out_file):
     """What to tell the user about the optimisation an .out holds: the note
     for one without CRYSTAL's OPT END (unfinished), for one that ended
     "OPT END - FAILED" (not converged), or None."""
@@ -1365,7 +1365,7 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
         _fail(f"could not parse the output file: {e}", f"Error parsing output file: {e}")
         return False, None
 
-    opt_problem = optimisation_problem(output_file)
+    opt_problem = optimization_problem(output_file)
     if opt_problem:
         ui.warn(f"Warning: {os.path.basename(output_file)}: {opt_problem}")
     has_parent_deck = bool(input_file and os.path.exists(input_file))

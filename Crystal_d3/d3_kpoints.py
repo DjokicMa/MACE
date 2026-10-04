@@ -2692,7 +2692,7 @@ def parametric_static_segments(lookup_key: str, params: Dict[str, Any]
             from .seekpath_interface import choose_band_iss
         except ImportError:
             from seekpath_interface import choose_band_iss
-        centring = FAMILY_CENTRING[key[:2]]
+        centering = FAMILY_CENTRING[key[:2]]
         # The library route takes time reversal and has no primed copy; the
         # ISS is chosen on the same path (a primed point is -X and lands on
         # k/ISS with X).
@@ -2701,7 +2701,7 @@ def parametric_static_segments(lookup_key: str, params: Dict[str, Any]
             'point_coords': {label: points[label] for edge in unprimed for label in edge},
             'path': unprimed,
             'bravais_lattice_extended': key,
-            'reciprocal_primitive_lattice': crystal_reciprocal(params, centring, params.get('W')),
+            'reciprocal_primitive_lattice': crystal_reciprocal(params, centering, params.get('W')),
         }
         iss, shift = choose_band_iss(path_result, parametric_names(key))
         info = {'shrink_factor': int(iss), 'max_point_shift': shift}

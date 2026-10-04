@@ -43,7 +43,7 @@ def _warned(setup):
 
 
 @pytest.mark.parametrize("name", ["HSESOL3C", "HSE06", "HSESOL", "HSEsol-3c", "HSE06-D3", "hse06"])
-def test_the_screened_hybrids_are_recognised(name):
+def test_the_screened_hybrids_are_recognized(name):
     assert screened_hybrid(name)
 
 

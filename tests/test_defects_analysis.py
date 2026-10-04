@@ -185,7 +185,7 @@ def test_spheropole_offset_is_the_default():
 def test_electron_count_is_the_header_plus_doping():
     """The header is printed before DOPING: q=+1 header 632, DOPING -1 -> N = 631."""
     from mace.defects import outputs as out
-    summary = out.summarise("qp1", _mgo_out("qp1", electrons=None))
+    summary = out.summarize("qp1", _mgo_out("qp1", electrons=None))
     job = an.JobResult("mgo_qp1", "defect", 1, -1.0, 1, False, 0, summary)
     c, n, why = an.spheropole_offset(job)
     assert n == 631 and c == pytest.approx(2 * MGO["qp1"][7] / 631) and not why
@@ -283,7 +283,7 @@ def test_charges_outside_the_calibrated_range_are_not_reported():
     assert all("+3" not in x["transition"] for x in r["levels"])
 
 
-def test_spin_polarised_endpoints_fall_back_to_the_single_central_value():
+def test_spin_polarized_endpoints_fall_back_to_the_single_central_value():
     spin_host = mgo_host().replace("DFT\nPBE0", "DFT\nSPIN\nPBE0")
     outs = {"q0": _mgo_out("q0", spin=0.5), "qp2": _mgo_out("qp2", spin=0.5)}
     d = _mgo_set(calibrate=True, host_text=spin_host, outs=outs)

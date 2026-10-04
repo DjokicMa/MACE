@@ -17,7 +17,7 @@ import d12_constants
 
 @pytest.mark.parametrize("space_group, lattice", [(12, "C"), (38, "A"), (69, "F"), (71, "I"),
                                                   (139, "I"), (166, "R"), (225, "F")])
-def test_coordinate_path_is_the_centring_aware_path(space_group, lattice):
+def test_coordinate_path_is_the_centering_aware_path(space_group, lattice):
     vectors = d12_calc_freq.get_auto_phonon_path(
         None, space_group, shrink=16, format_type="vectors", lattice_type=lattice)
     other = d12_calc_freq.get_auto_phonon_path(
@@ -25,6 +25,6 @@ def test_coordinate_path_is_the_centring_aware_path(space_group, lattice):
     assert other == vectors
 
 
-def test_the_centring_blind_tables_are_gone():
+def test_the_centering_blind_tables_are_gone():
     assert not hasattr(d12_constants, "SPACEGROUP_TO_PATH")
     assert not hasattr(d12_constants, "HIGH_SYMMETRY_PATHS")

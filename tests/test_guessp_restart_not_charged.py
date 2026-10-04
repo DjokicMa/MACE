@@ -55,6 +55,6 @@ def test_restart_does_not_hide_a_cell_crystal_called_not_neutral():
     assert "fragment_charges" in fragment_charges(text)
 
 
-def test_renormalised_chemod_guess_without_restart_still_counts():
+def test_renormalized_chemod_guess_without_restart_still_counts():
     text = OUT.read_text().replace(FACTOR, " CHARGE NORMALIZATION FACTOR   1.00317460", 1)
     assert "fragment_charges" in fragment_charges(text)

@@ -54,7 +54,7 @@ def _static(monkeypatch, sg, lattice):
     (9, "C", "mS1_noinv", 18),    # Cc keeps its primed copy
     (36, "C", "oS1_noinv", 22),   # Cmc2_1 keeps its primed copy
 ])
-def test_centred_groups_take_the_path_for_their_inversion(monkeypatch, sg, lattice, key, n):
+def test_centered_groups_take_the_path_for_their_inversion(monkeypatch, sg, lattice, key, n):
     segments, info = _static(monkeypatch, sg, lattice)
     assert info["lookup_key"] == key
     assert len(segments) == n

@@ -23,9 +23,9 @@ ATOMS = [(20, "CA", 0, 0, 0)]
 
 def _out(tmp_path, ended):
     text = (cot.echo("P 4/M M M", START)
-            + cot.block(START, ATOMS, centring="1/0")
+            + cot.block(START, ATOMS, centering="1/0")
             + cot.block(STEP, ATOMS, header="COORDINATE AND CELL OPTIMIZATION - POINT    2",
-                        centring="1/0"))
+                        centering="1/0"))
     if ended:
         text += (" CONVERGENCE TESTS UNSATISFIED AFTER 2 ENERGY AND GRADIENT CALCULATIONS\n\n"
                  " ******************************************************************\n"

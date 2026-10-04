@@ -12,7 +12,7 @@ import numpy as np
 WARN_FOLDED = "FOLDED_BANDS"
 
 
-def normalise_dim(dim: Sequence[int]) -> np.ndarray:
+def normalize_dim(dim: Sequence[int]) -> np.ndarray:
     """3 ints -> diag(3x3); 9 ints -> 3x3 (row-major, phonopy's DIM order)."""
     vals = [int(v) for v in dim]
     if len(vals) == 3:

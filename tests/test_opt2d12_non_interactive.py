@@ -57,7 +57,7 @@ def test_documented_command_succeeds_with_nothing_on_stdin(parent, calc_type, bl
         assert other not in body, f"{calc_type} deck carries a stray {other}"
 
 
-def test_supplied_answers_are_still_honoured(parent):
+def test_supplied_answers_are_still_honored(parent):
     """The fallback fires only at end-of-file, so scripted answers - the
     workflow engine's mechanism - are consumed exactly as before."""
     engine_answers = "n\n" + "\n" * 19               # mace/workflow/engine.py
@@ -67,7 +67,7 @@ def test_supplied_answers_are_still_honoured(parent):
     assert "No answers on stdin" not in combined
 
 
-def test_output_dir_is_honoured_and_stays_out_of_the_title(parent):
+def test_output_dir_is_honored_and_stays_out_of_the_title(parent):
     """--output-dir was parsed and the directory created, but the path never
     reached the writer, so the deck landed in the current directory. The
     directory must also not leak into the CRYSTAL title line."""

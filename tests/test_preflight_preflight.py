@@ -352,7 +352,7 @@ def test_guessp_deck_from_the_corpus_is_error():
     assert runner.inputs == []
 
 
-def test_mixed_terminator_deck_is_refused_not_normalised(tmp_path):
+def test_mixed_terminator_deck_is_refused_not_normalized(tmp_path):
     deck = tmp_path / "mixed.d12"
     deck.write_bytes(b"title\r\nCRYSTAL\n0 0 0\r\nPPAN\nEND\n")
     result = pf.preflight_deck(deck, runner=FakeRunner(out=GOOD_OUT))

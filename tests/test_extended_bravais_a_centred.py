@@ -25,12 +25,12 @@ TEMPLATE = """ LATTICE PARAMETERS  (ANGSTROMS AND DEGREES) - CONVENTIONAL CELL
 
 @pytest.mark.parametrize("sg", A_GROUPS)
 @pytest.mark.parametrize("a,b,c", CELLS)
-def test_a_centred_variant(sg, a, b, c):
+def test_a_centered_variant(sg, a, b, c):
     assert get_extended_bravais(sg, "A", a, b, c, 90, 90, 90) == ("oA1" if b < c else "oA2")
 
 
 @pytest.mark.parametrize("sg", A_GROUPS)
-def test_a_centred_without_cell_is_oa(sg):
+def test_a_centered_without_cell_is_oa(sg):
     assert get_extended_bravais(sg, "A") == "oA1"
 
 

@@ -302,7 +302,7 @@ class OutputSummary:
                           + (["gCP"] if self.gcp is not None else []))
 
 
-def summarise(name: str, text: str) -> OutputSummary:
+def summarize(name: str, text: str) -> OutputSummary:
     e, reason, d3, gcp = total_energy(text)
     mul = mulliken(text)
     spin = mulliken_spin(text)

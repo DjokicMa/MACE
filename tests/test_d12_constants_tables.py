@@ -249,7 +249,7 @@ def test_describe_custom_functional_pairs_records_with_their_values():
     assert C.describe_custom_functional(None) == "custom: "
 
 
-def test_unrecognised_functional_fallback_is_a_keyword():
+def test_unrecognized_functional_fallback_is_a_keyword():
     fb = C.UNRECOGNISED_FUNCTIONAL_FALLBACK
     assert C.crystal23_functional_keyword(fb) == fb
     assert C.mace_functional_name(fb) == fb
@@ -312,7 +312,7 @@ def test_alternatives_never_contradict_the_canonical_symbol():
     assert clashes == {}
 
 
-def test_rhombohedral_groups_are_the_r_centred_groups():
+def test_rhombohedral_groups_are_the_r_centered_groups():
     r_groups = sorted(n for n, s in C.SPACEGROUP_SYMBOLS.items() if s.startswith("R"))
     assert C.RHOMBOHEDRAL_SPACEGROUPS == r_groups
 

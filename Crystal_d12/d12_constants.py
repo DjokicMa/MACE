@@ -2706,11 +2706,11 @@ def slab_k_points(k_points: Tuple[int, int, int], layer_group: Any,
     if isinstance(layer_group, bool) or not 1 <= group <= 80 or ka == kb:
         return k_points
     lattice = layer_group_lattice(group)
-    centred = group in CENTRED_RECTANGULAR_LAYER_GROUPS
-    if lattice not in ("square", "hexagonal") and not centred:
+    centered = group in CENTRED_RECTANGULAR_LAYER_GROUPS
+    if lattice not in ("square", "hexagonal") and not centered:
         return k_points
     k = max(ka, kb)
-    if centred and cell:
+    if centered and cell:
         try:
             a, b = float(cell[0]), float(cell[1])
         except (TypeError, ValueError, IndexError):

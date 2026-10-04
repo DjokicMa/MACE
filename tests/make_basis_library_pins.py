@@ -70,7 +70,7 @@ def element_of_key(key):
     return n - 200 if n > 200 else n
 
 
-def _normalise(text, family):
+def _normalize(text, family):
     """Replace the absolute basis path in a message with a placeholder so the
     pin does not depend on where the checkout lives."""
     return text.replace(family_path(family), "<BASIS>/").replace(
@@ -96,7 +96,7 @@ def pin_read_basis_file():
                 out[f"{fam}/{z}/{kind}"] = {
                     "sha256": sha(text),
                     "empty": text == "",
-                    "warning": _normalise(buf.getvalue(), fam),
+                    "warning": _normalize(buf.getvalue(), fam),
                 }
     return out
 

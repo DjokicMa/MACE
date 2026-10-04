@@ -399,7 +399,7 @@ def test_a_bad_k_points_for_all_files_fails_the_files(batch, tmp_path, capsys):
     assert "0 written, 2 failed" in capsys.readouterr().err
 
 
-def test_an_unfinished_optimisation_is_written_and_flagged(batch, tmp_path, capsys):
+def test_an_unfinished_optimization_is_written_and_flagged(batch, tmp_path, capsys):
     """A killed OPT (no OPT END) still converts, from its starting geometry;
     the file line and the summary say so."""
     (tmp_path / "nacl.out").write_text(
@@ -415,7 +415,7 @@ def test_an_unfinished_optimisation_is_written_and_flagged(batch, tmp_path, caps
     assert "agbr.out: wrote sp/agbr_sp_PBE0_optimized.d12\n" in out.out
 
 
-def test_a_failed_optimisation_is_written_and_flagged(batch, tmp_path, capsys):
+def test_a_failed_optimization_is_written_and_flagged(batch, tmp_path, capsys):
     """OPT END - FAILED (the cycle limit): CRYSTAL prints no final geometry, so
     the deck has the starting one, and the file line and the summary say so."""
     (tmp_path / "nacl.out").write_text(

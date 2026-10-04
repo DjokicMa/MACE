@@ -74,7 +74,7 @@ def test_ecp_coefficients_are_not_mistaken_for_the_terminator(tmp_path):
     assert "99 0" not in basis
 
 
-def test_terminator_still_recognised_when_it_is_the_whole_record(tmp_path):
+def test_terminator_still_recognized_when_it_is_the_whole_record(tmp_path):
     """The fix must not stop finding a legitimate terminator."""
     data = _basis_of(_PB_DECK, tmp_path)
     assert data["basis_set_type"] == "EXTERNAL"

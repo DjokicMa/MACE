@@ -43,7 +43,7 @@ def _dia_supercell_atoms():
 def _supercell_output(scelphono=False):
     return (cot.echo("F D 3 M", (3.54481, 3.54481, 3.54481, 90, 90, 90), DIA_PRIM)
             + cot.supercel(((2, 0, 0), (0, 2, 0), (0, 0, 2)), scelphono)
-            + cot.block(DIA_SUPER_CELL, _dia_supercell_atoms(), centring="1/1"))
+            + cot.block(DIA_SUPER_CELL, _dia_supercell_atoms(), centering="1/1"))
 
 
 def _parse(path):
@@ -91,17 +91,17 @@ def _opt_output(final=True):
     first, last = (4.0, 3.0), (3.89, 6.38)
     text = cot.echo("I 4/M M M", (first[0], first[0], first[1], 90, 90, 90), _ti_prim(*first))
     text += cot.block(_ti_prim(*first), _ti_atoms(0.4), w=TI_W,
-                      conventional=(first[0], first[0], first[1], 90, 90, 90), centring="6/0")
+                      conventional=(first[0], first[0], first[1], 90, 90, 90), centering="6/0")
     text += cot.opt_step(_ti_prim(3.97, 3.6), _ti_atoms(0.4), w=TI_W,
-                         conventional=(3.97, 3.97, 3.6, 90, 90, 90), centring="6/0")
+                         conventional=(3.97, 3.97, 3.6, 90, 90, 90), centering="6/0")
     if final:
         text += cot.final_block(_ti_prim(*last), _ti_atoms(0.4), w=TI_W,
                                 conventional=(last[0], last[0], last[1], 90, 90, 90),
-                                centring="6/0")
+                                centering="6/0")
     return text
 
 
-def test_optimisation_reads_the_final_geometry(tmp_path):
+def test_optimization_reads_the_final_geometry(tmp_path):
     out = tmp_path / "opt.out"
     out.write_text(_opt_output())
     st, _ = _parse(out)
@@ -112,7 +112,7 @@ def test_optimisation_reads_the_final_geometry(tmp_path):
     assert st["supercell"] == "none" and st["expansion"] is None
 
 
-def test_unconverged_optimisation_keeps_the_first_geometry(tmp_path):
+def test_unconverged_optimization_keeps_the_first_geometry(tmp_path):
     """No FINAL OPTIMIZED GEOMETRY: the first block, as before (fort.9 would
     hold the last step - a known limitation)."""
     out = tmp_path / "opt_unconverged.out"
@@ -211,7 +211,7 @@ def test_corpus_supercel222():
 
 @pytest.mark.skipif(not (CORPUS / "OPT" / "1_dia_opt_rev1.out").is_file(),
                     reason="test/ corpus not present")
-def test_corpus_optimisation_final_cell():
+def test_corpus_optimization_final_cell():
     """1_dia_opt_rev1: the first block has V = 11.248833, the final 11.135747."""
     st, _ = _parse(CORPUS / "OPT" / "1_dia_opt_rev1.out")
     assert st["geometry"] == "final"

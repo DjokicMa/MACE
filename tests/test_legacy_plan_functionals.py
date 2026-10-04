@@ -45,7 +45,7 @@ def test_legacy_custom_functional_is_written_as_the_crystal23_keyword(tmp_path, 
     ("M06-L-D3", "M06L"), ("CAM-B3LYP-D3", "CAM-B3LYP"), ("r2SCAN-D3", "r2SCAN"),
     ("PBESOL-D3", "PBESOL"), ("HSEsol-3C-D3", "HSESOL3C"),
 ])
-def test_unparametrised_d3_suffix_is_dropped_with_a_warning(tmp_path, capsys, legacy, written):
+def test_unparametrized_d3_suffix_is_dropped_with_a_warning(tmp_path, capsys, legacy, written):
     cfg = _cfg(tmp_path, {"custom_functional": legacy})
     assert cfg["method_modifications"] == {"functional": written}
     assert "-D3 suffix is dropped" in capsys.readouterr().out
@@ -58,7 +58,7 @@ def test_valid_functional_is_never_changed(tmp_path, valid):
         "functional": valid}
 
 
-def test_legacy_new_functional_is_normalised(tmp_path):
+def test_legacy_new_functional_is_normalized(tmp_path):
     # the 1.1.1 SP menu's option 6 stored new_functional "M06-2X"
     assert _cfg(tmp_path, {"new_functional": "M06-2X"})["functional"] == "M062X"
 
@@ -80,7 +80,7 @@ def test_planner_saves_plans_with_crystal23_spellings(tmp_path):
         "custom_functional"] == "HSESOL3C"
 
 
-def test_normalise_plan_reports_unknown_and_leaves_it_as_written():
+def test_normalize_plan_reports_unknown_and_leaves_it_as_written():
     plan = {"step_configurations": _sp({"custom_functional": "B2PLYP"})}
     messages, errors = normalize_plan_functionals(plan)
     assert errors and "B2PLYP" in errors[0]

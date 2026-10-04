@@ -42,7 +42,7 @@ def test_flag_wins_over_an_sp_parent(tmp_path, calc_type, block):
     assert body[body.index("TOLDEE") + 1].strip() == "9"
 
 
-def test_opt_type_flag_is_honoured_with_a_config(tmp_path):
+def test_opt_type_flag_is_honored_with_a_config(tmp_path):
     for suffix in (".out", ".d12"):
         shutil.copy(LOW_DIM / f"graphene_lg80{suffix}", tmp_path)
     body = _run(tmp_path, "graphene_lg80", "OPT", ("--opt-type", "ATOMONLY"))

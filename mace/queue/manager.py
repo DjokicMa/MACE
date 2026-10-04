@@ -34,7 +34,7 @@ from typing import Dict, List, Optional, Tuple
 import threading
 
 # Import MACE components
-from mace.database.materials import MaterialDatabase, create_material_id_from_file, extract_formula_from_d12, find_material_by_similarity
+from mace.database.materials import STATUS_CANCELED_DB, MaterialDatabase, create_material_id_from_file, extract_formula_from_d12, find_material_by_similarity
 from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.workflow.context import get_current_context
 from mace.recovery import opt_restart, screened_hybrid
@@ -1204,7 +1204,7 @@ class EnhancedCrystalQueueManager:
                 print(f"Cancelled job {slurm_job_id}")
                 if self.enable_tracking:
                     self.db.update_calculation_status(
-                        calc_id, 'cancelled', 
+                        calc_id, STATUS_CANCELED_DB,
                         error_type='early_failure',
                         error_message='Job cancelled due to early failure detection'
                     )

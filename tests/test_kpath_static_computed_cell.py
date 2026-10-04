@@ -38,7 +38,7 @@ def static(monkeypatch):
     return run
 
 
-def test_optimisation_takes_the_final_cell(tmp_path, static):
+def test_optimization_takes_the_final_cell(tmp_path, static):
     out = tmp_path / "opt.out"
     out.write_text(_opt_output())
     params = d3_kpoints.extract_lattice_parameters_from_output(str(out))
@@ -49,7 +49,7 @@ def test_optimisation_takes_the_final_cell(tmp_path, static):
     assert labels == d3_kpoints.seekpath_data["tI2"]["labels"]
 
 
-def test_unconverged_optimisation_keeps_the_input_cell(tmp_path, static):
+def test_unconverged_optimization_keeps_the_input_cell(tmp_path, static):
     out = tmp_path / "opt.out"
     out.write_text(_opt_output(final=False))
     params = d3_kpoints.extract_lattice_parameters_from_output(str(out))
@@ -128,7 +128,7 @@ def _supercell_text(e, a=3.54481):
     params = (*lengths, angle(1, 2), angle(0, 2), angle(0, 1))
     prim = (a / np.sqrt(2),) * 3 + (60.0,) * 3
     return (cot.echo("F D 3 M", (a, a, a, 90, 90, 90), prim) + cot.supercel(e)
-            + cot.block(params, atoms, centring="1/1"))
+            + cot.block(params, atoms, centering="1/1"))
 
 
 def _segment_equivalent(ends, targets, rotations, tol, expansion=None):

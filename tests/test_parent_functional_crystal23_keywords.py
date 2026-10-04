@@ -54,7 +54,7 @@ REJECTED_D3 = ["SCAN-D3", "PBESOL-D3", "PBESOL0-D3", "r2SCAN-D3", "CAM-B3LYP-D3"
 
 
 @pytest.mark.parametrize("name", REJECTED_D3)
-def test_d3_names_crystal23_rejects_are_unrecognised(tmp_path, name):
+def test_d3_names_crystal23_rejects_are_unrecognized(tmp_path, name):
     data = _parse(tmp_path, [name])
     assert data.get("functional") is None
     assert data["unrecognised_functional"] == name and data["dispersion"] is True

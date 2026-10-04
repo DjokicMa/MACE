@@ -31,7 +31,7 @@ def test_primitive_monoclinic_is_mp1(sg):
 
 
 @pytest.mark.parametrize("sg", [5, 8, 9, 12, 15])
-def test_c_centred_monoclinic_is_unchanged(sg):
+def test_c_centered_monoclinic_is_unchanged(sg):
     assert get_extended_bravais(sg, "C", *CELL) == "mS1"
     assert get_extended_bravais(sg, "C") == "mS1"
 

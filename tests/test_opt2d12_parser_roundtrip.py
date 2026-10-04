@@ -182,7 +182,7 @@ def test_every_menu_type_is_read_back():
     assert set(d12_calc_basic.OPT_TYPES.values()) <= set(OPTGEOM_TYPE_KEYWORDS)
 
 
-def test_non_interactive_keeps_the_parent_type_and_honours_opt_type():
+def test_non_interactive_keeps_the_parent_type_and_honors_opt_type():
     from CRYSTALOptToD12 import _keep_extracted_settings
 
     parent = {"optimization_settings": {"type": "ITATOCEL", "MAXCYCLE": 800},

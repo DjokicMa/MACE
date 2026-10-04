@@ -16,7 +16,7 @@ CF2 = [209, 210, 216, 219, 225, 226, 227, 228]
 
 
 @pytest.mark.parametrize("sg", CF1 + CF2)
-def test_face_centred_variant_follows_hpkot(sg):
+def test_face_centered_variant_follows_hpkot(sg):
     assert get_extended_bravais(sg, "F") == ("cF1" if sg in CF1 else "cF2")
 
 
@@ -45,7 +45,7 @@ CI = [197, 199, 204, 206, 211, 214, 217, 220, 229, 230]
 
 
 @pytest.mark.parametrize("sg", CI)
-def test_body_centred_cubic_is_ci1(sg):
+def test_body_centered_cubic_is_ci1(sg):
     assert get_extended_bravais(sg, "I") == "cI1"
     segments, info = get_seekpath_full_kpath(sg, "I")
     assert info["extended_bravais"] == "cI1"

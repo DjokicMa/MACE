@@ -429,7 +429,7 @@ def _check_unrecognised_anions(frags, syms, xyz, cell, periodic_dirs, scale, q_a
             "left neutral and net_charge sets the electron count")
     if unknown and q_auto and net_charge is None:
         touch = frag.find_fragments(syms, xyz, cell, periodic_dirs, scale, exclude_metals=False)
-        nb = {i: js for t in touch for i, js in t["neighbours"].items()}
+        nb = {i: js for t in touch for i, js in t["neighbors"].items()}
         for f in unknown:
             atoms = set(f["atoms"])
             if any(syms[j] in frag.TABLE_METALS for i in atoms for j in nb.get(i, ())):
