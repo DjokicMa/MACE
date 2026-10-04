@@ -51,6 +51,7 @@ cp INPUT "$STUB_DIR/$job.INPUT"
 for f in fort.9 fort.20 fort.34; do [ -f "$f" ] && cp "$f" "$STUB_DIR/$job.$f"; done
 if [ -n "$STUB_SLEEP" ] && { [ -z "$STUB_SLEEP_JOB" ] || [ "$STUB_SLEEP_JOB" = "$job" ]; }; then
   [ -n "$STUB_IGNORE_TERM" ] && trap '' TERM
+  [ -n "$STUB_TERM_TEXT" ] && trap 'echo "$STUB_TERM_TEXT"; exit 143' TERM
   echo "sleeping" >> "$STUB_DIR/$job.sleeping"
   sleep "$STUB_SLEEP"
 fi
@@ -743,6 +744,43 @@ def test_ctrl_c_before_a_deck_starts_ends_quietly(box):
     assert "nothing was run" in out
     assert box.binary_runs() == []
     assert not (box.work / ".mace_local").exists()
+
+
+# `mace completion` reads only the .out. mpirun prints "BAD TERMINATION" there
+# when a stopped run's ranks get SIGTERM, which read as a segmentation fault;
+# the run says in the .out why it stopped.
+
+MPI_BANNER = "=   BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES"
+
+
+def _completion(box):
+    r = subprocess.run([sys.executable, str(MACE_CLI), "completion", "--detailed"],
+                       cwd=str(box.work), env=box.env, capture_output=True, text=True,
+                       timeout=120, stdin=subprocess.DEVNULL)
+    return r.stdout + r.stderr
+
+
+def test_timed_out_deck_reads_as_time_limit_in_completion(box):
+    box.deck("x.d12")
+    r = box.run("--timeout", "2s", "-n", "1", "x.d12", STUB_SLEEP="60",
+                STUB_TERM_TEXT=MPI_BANNER)
+    assert r.returncode == 124, r.text
+    out = (box.work / "x.out").read_text()
+    assert MPI_BANNER in out
+    assert "mace run: STOPPED DUE TO TIME LIMIT" in out
+    report = _completion(box)
+    assert "Time limit exceeded: 1" in report, report
+    assert "Segmentation fault" not in report, report
+
+
+def test_interrupted_deck_reads_as_stopped_in_completion(box):
+    rc, _ = _interrupt(box, signal.SIGINT, STUB_TERM_TEXT=MPI_BANNER)
+    assert rc == 130
+    out = (box.work / "x.out").read_text()
+    assert "mace run: STOPPED (interrupted, SIGINT)" in out
+    report = _completion(box)
+    assert "Stopped by mace run before it finished: 1" in report, report
+    assert "Segmentation fault" not in report, report
 
 
 def test_second_ctrl_c_kills_a_job_that_ignores_sigterm(box):

@@ -156,7 +156,10 @@ completion callback runs, so nothing is submitted afterwards.
   never reaches that limit. OPT and FREQ decks rarely fit and get a warning.
 - **Stopping.** Ctrl-C, a lost connection or the timeout stops the running
   deck and all its CRYSTAL processes; nothing is copied back, its scratch
-  directory is kept, and the decks after it are not run. Under `nohup` a lost
+  directory is kept, and the decks after it are not run. A line `mace run:
+  STOPPED ...` at the end of its `<job>.out` says why, and `mace completion`
+  lists the deck as "Time limit exceeded" or "Stopped by mace run before it
+  finished", not as the crash that mpirun's "BAD TERMINATION" banner suggests. Under `nohup` a lost
   connection does not stop it. If `mace run` itself is killed, `<job>-local.o`
   names the command that stops the job (`pkill -s <session>`).
 - **Refused,** with nothing written: on the login gateway (it says which dev

@@ -149,7 +149,8 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   CRYSTAL module, and for a job name another run already has - on any node,
   through a claim file in `$SCRATCH/.mace_run/` (on HPCC the same name started
   on dev-amd20 and dev-intel18 shared one scratch directory, and one run
-  died). Measured on
+  died). A stopped deck's `.out` ends with a `mace run: STOPPED` line, so
+  `mace completion` lists it as timed out or stopped, not as a crash. Measured on
   dev-amd20: the diamond SP energy matched the SLURM run's to every printed
   digit. See DOCUMENTATION.md, "Run on a dev node".
 - **Opt-in TZVP-REV2 2022 update: `full.basis.triplezeta.rev2022`.** The

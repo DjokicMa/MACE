@@ -62,6 +62,7 @@ CPU_LIMIT_MARGIN = 5 * 60
 KILL_GRACE = 15                 # seconds between SIGTERM and SIGKILL
 CLAIM_REFRESH = 15              # a running mace run touches its claims this often
 CLAIM_STALE = 120               # a claim not touched for this long is a dead run's
+STOP_MARK = "mace run: STOPPED"     # completion_checker reads this line in the .out
 
 # What the job script can take: it uses $DIR/$JOB unquoted, as under SLURM.
 # '+' is in MACE's own names (<base>_charge+potential.d3).
@@ -481,6 +482,13 @@ def run_deck(deck: Deck, opts, stop: StopFlag, host: str) -> None:
         if left:
             note += f"; still running: {' '.join(map(str, left))}"
         append_log(deck.log, note)
+        if rewritten(deck.out, out_before):
+            # mpirun's "BAD TERMINATION" banner in the .out would read as a crash
+            mark = ("DUE TO TIME LIMIT (mace run --timeout " + fmt_duration(opts.timeout) + ")"
+                    if reason == "timeout"
+                    else f"(interrupted, {signal.Signals(stop.signum).name})")
+            append_log(deck.out, f"{STOP_MARK} {mark} on {host} after "
+                                 f"{fmt_duration(elapsed)}; the calculation did not finish")
         deck.status = reason
         deck.note = why + (f"; still running: {' '.join(map(str, left))}" if left else "")
         deck.elapsed = elapsed
