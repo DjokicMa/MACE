@@ -1080,6 +1080,15 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   short formula is no longer taken as a wrong one, and a material first
   recorded by a properties run (formula `Unknown`) gets its formula from the
   next SCF deck.
+- **opt2d3 DOSS and TRANSPORT keep the parent's k-mesh without its
+  `.d12`.** With only the `.out` and `.f9` in the directory, the NEWK line
+  fell back to `8 16` (`12 24` for slabs and polymers) without a word, though
+  the `.out` prints the SCF mesh (`SHRINK. FACT.(MONKH.) 10 10 10`, Gilat
+  20): an SP on SHRINK 10 20 got a DOSS deck on 8 16, where the deck with the
+  `.d12` beside it, and the workflow's, had `10 20`. The mesh is now read
+  from the `.out` when there is no `.d12`, giving the same deck; only when
+  neither has one is the default used, and opt2d3 says so. Decks made with
+  the `.d12` present do not change.
 
 ## [1.1.4] - 2026-10-02
 

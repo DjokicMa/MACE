@@ -317,7 +317,44 @@ def extract_shrink_from_d12(d12_file: str, for_doss: bool = False, dimensionalit
                 
     if not shrink_lines:
         return ["48 48"]  # Default fallback
-    
+
+    return _newk_from_shrink_lines(shrink_lines, for_doss, dimensionality)
+
+
+def extract_shrink_from_out(out_file: str, for_doss: bool = False,
+                            dimensionality: Optional[int] = None) -> Optional[List[str]]:
+    """The NEWK lines extract_shrink_from_d12 would give, read from a .out.
+
+    For a parent whose .d12 is not beside its .out. CRYSTAL prints the mesh as
+    "SHRINK. FACT.(MONKH.)   10 10 10" and, when the Gilat net differs from
+    it, "SHRINKING FACTOR(GILAT NET)   20". An equal mesh in the periodic
+    directions reads as "SHRINK IS IPMG", an unequal one as "SHRINK 0 IPMG"
+    plus the three factors, as the .d12 would have written it. None when the
+    .out prints no mesh (a molecule, or no .out).
+    """
+    try:
+        with open(out_file, 'r', errors='replace') as f:
+            text = f.read()
+    except OSError:
+        return None
+    m = re.search(r'SHRINK\.\s*FACT\.\(MONKH\.\)\s*(\d+)\s+(\d+)\s+(\d+)', text)
+    if not m:
+        return None
+    k = [int(m.group(i)) for i in (1, 2, 3)]
+    g = re.search(r'SHRINKING FACTOR\(GILAT NET\)\s*(\d+)', text[m.start():])
+    periodic = k[:dimensionality] if dimensionality in (1, 2, 3) else [x for x in k if x > 1] or k
+    is_val = max(k)
+    gilat = int(g.group(1)) if g else is_val
+    if len(set(periodic)) == 1:
+        shrink_lines = [f"{is_val} {gilat}"]
+    else:
+        shrink_lines = [f"0 {gilat}", f"{k[0]} {k[1]} {k[2]}"]
+    return _newk_from_shrink_lines(shrink_lines, for_doss, dimensionality)
+
+
+def _newk_from_shrink_lines(shrink_lines: List[str], for_doss: bool,
+                            dimensionality: Optional[int]) -> List[str]:
+    """NEWK lines from the lines that follow a SHRINK record."""
     # Parse the SHRINK format
     first_line = shrink_lines[0].split()
     

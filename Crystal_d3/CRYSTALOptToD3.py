@@ -39,7 +39,8 @@ try:
     from Crystal_d3.d3_interactive import (configure_d3_calculation, get_band_info_from_output,
                                parse_basis_set_info, get_atoms_and_shells,
                                generate_orbital_indices, create_doss_projections,
-                               extract_shrink_from_d12, ghost_atom_labels, GHOST_SUFFIX)
+                               extract_shrink_from_d12, extract_shrink_from_out,
+                               ghost_atom_labels, GHOST_SUFFIX)
     from Crystal_d3.d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
                            request_static_kpath,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
@@ -52,7 +53,8 @@ except ImportError:
     from d3_interactive import (configure_d3_calculation, get_band_info_from_output,
                                parse_basis_set_info, get_atoms_and_shells,
                                generate_orbital_indices, create_doss_projections,
-                               extract_shrink_from_d12, ghost_atom_labels, GHOST_SUFFIX)
+                               extract_shrink_from_d12, extract_shrink_from_out,
+                               ghost_atom_labels, GHOST_SUFFIX)
     from d3_kpoints import (get_band_path_from_symmetry, get_kpoint_coordinates_from_labels,
                            request_static_kpath,
                            extract_and_process_shrink, scale_kpoint_segments, get_seekpath_labels,
@@ -788,6 +790,28 @@ class D3Generator:
         lines.append("END")
         return '\n'.join(lines)
     
+    def _newk_mesh(self, d12_file: Path) -> List[str]:
+        """The NEWK mesh line(s) for DOSS/TRANSPORT: the parent's SHRINK.
+
+        From the parent .d12 when it is there, else from the mesh its .out
+        prints (the same lines), so an .out plus .f9 alone gives the deck the
+        .d12 would. Only when neither has a mesh is the dimensionality default
+        used, and then it is said.
+        """
+        dimensionality = self.structure_info.get('dimensionality', 3)
+        if d12_file.exists():
+            # for_doss=True ensures ISP >= 2*IS
+            return [l.strip() for l in extract_shrink_from_d12(
+                str(d12_file), for_doss=True, dimensionality=dimensionality)]
+        from_out = extract_shrink_from_out(str(self.input_file), for_doss=True,
+                                           dimensionality=dimensionality)
+        if from_out:
+            return [l.strip() for l in from_out]
+        is_val = 8 if dimensionality == 3 else 12
+        ui.warn(f"Found no .d12 and no SHRINK in {self.input_file.name}; "
+                   f"NEWK uses {is_val} {2 * is_val}")
+        return [f"{is_val} {2 * is_val}"]
+
     def _write_doss_d3(self, config: Dict[str, Any]) -> str:
         """Write DOSS calculation D3 file with NEWK and orbital projections."""
         lines = []
@@ -803,18 +827,7 @@ class D3Generator:
             if d12_files:
                 d12_file = d12_files[0]
         
-        if d12_file.exists():
-            # Use for_doss=True to ensure ISP >= 2*IS
-            dimensionality = self.structure_info.get('dimensionality', 3)
-            shrink_lines = extract_shrink_from_d12(str(d12_file), for_doss=True, dimensionality=dimensionality)
-            for line in shrink_lines:
-                lines.append(line.strip())
-        else:
-            # Default fallback based on dimensionality
-            dimensionality = self.structure_info.get('dimensionality', 3)
-            is_val = 8 if dimensionality == 3 else 12
-            isp = 2 * is_val
-            lines.append(f"{is_val} {isp}")
+        lines.extend(self._newk_mesh(d12_file))
         
         lines.append("1 0")  # IFE=1, IPLO=0
         
@@ -1020,16 +1033,7 @@ class D3Generator:
             d12_files = list(self.input_dir.glob(f"{self.base_name}*.d12"))
             if d12_files:
                 d12_file = d12_files[0]
-        if d12_file.exists():
-            dimensionality = self.structure_info.get('dimensionality', 3)
-            shrink_lines = extract_shrink_from_d12(
-                str(d12_file), for_doss=True, dimensionality=dimensionality)
-            for line in shrink_lines:
-                lines.append(line.strip())
-        else:
-            dimensionality = self.structure_info.get('dimensionality', 3)
-            is_val = 8 if dimensionality == 3 else 12
-            lines.append(f"{is_val} {2 * is_val}")
+        lines.extend(self._newk_mesh(d12_file))
         lines.append("1 0")  # IFE=1 (Fermi recomputed), IPLO=0
 
         lines.append("BOLTZTRA")
