@@ -317,15 +317,15 @@ RHOMBOHEDRAL_SPACEGROUPS = [146, 148, 155, 160, 161, 166, 167]
 #
 # The reverse lookup is NOT one-to-one and the parentheses alone do not make it
 # one. A space group can appear on several rows, at most one of them
-# unparenthesised, and those rows are the same group type in different
+# unparenthesized, and those rows are the same group type in different
 # orientations: A.2 rows 23 and 27 are both C2v^1 with N = 25 and N = (25) -
 # Pmm2 has its 2-fold along the surface normal, P2mm in the plane - and a space
 # group number cannot tell them apart. The same holds for A.2 25/(25) siblings
 # at N = 28 and N = 51, and for A.3 N = 25 (rows 20, 24, 26) and N = 26 (rows
 # 21, 22). So the map keeps a space group only when the appendix lists exactly
-# ONE row for it AND that row is unparenthesised.
+# ONE row for it AND that row is unparenthesized.
 #
-# Even then the map is only a NECESSARY condition. Being unparenthesised is a
+# Even then the map is only a NECESSARY condition. Being unparenthesized is a
 # property of CRYSTAL's table, not of the caller's structure: it says the
 # table's operators are in the International Tables first setting, and the
 # lookup is therefore correct only if the incoming cell is in that setting too,
@@ -550,7 +550,7 @@ def _appendix_a_maps(rows):
     whose number the manual prints WITHOUT parentheses. Both conditions are
     needed. Parentheses mean "the orientation of the symmetry operators does
     not correspond to the first setting in the I. T." (A.2/A.3 header), so a
-    parenthesised row cannot be inverted; and a space group with several rows
+    parenthesized row cannot be inverted; and a space group with several rows
     has several orientations of the same group type, which its number cannot
     distinguish (A.2 N = 25 is C2v^1 as both Pmm2 and P2mm).
     """
@@ -613,7 +613,7 @@ LAYER_GROUPS_POLAR_IN_Z = frozenset(
 #
 # A POLYMER atom record gives "y,z in Angstrom, x in fractional units" (manual
 # L1019-1020): y and z are Cartesian distances from the ROD AXIS. Every rod
-# group this converter can auto-map - i.e. every unparenthesised A.3 row other
+# group this converter can auto-map - i.e. every unparenthesized A.3 row other
 # than P1, starting with the inversion center at IGR 2 - has at least one
 # operation that fixes the axis at y = z = 0, so the manual's polymer decks
 # carry signed coordinates about it - (SN)x "16 0.0 -0.844969 0.0" (L29220),

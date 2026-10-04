@@ -97,7 +97,7 @@ def so2f2():
 
 
 def ec():
-    """Ethylene carbonate, C3H4O3 (planar ring, idealised)."""
+    """Ethylene carbonate, C3H4O3 (planar ring, idealized)."""
     return [("C", (0.0, 0.0, 0.0)), ("O", (0.0, 1.195, 0.0)),
             ("O", (1.111, -0.746, 0.0)), ("O", (-1.111, -0.746, 0.0)),
             ("C", (0.766, -2.145, 0.0)), ("C", (-0.766, -2.145, 0.0)),

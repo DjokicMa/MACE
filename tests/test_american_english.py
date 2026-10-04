@@ -27,21 +27,31 @@ ROOT = Path(__file__).resolve().parent.parent
 _STEMS = (r"optimis|normalis|initialis|minimis|maximis|organis|recognis|summaris|standardis|"
           r"symmetris|polaris|localis|delocalis|parametris|characteris|visualis|serialis|"
           r"customis|prioritis|specialis|utilis|equalis|stabilis|neutralis|categoris|finalis|realis|"
-          r"randomis|synchronis|generalis|discretis|regularis|harmonis|crystallis|ionis")
+          r"randomis|synchronis|generalis|discretis|regularis|harmonis|crystallis|ionis|"
+          r"parenthesis|idealis|emphasis|apologis|criticis|itemis|hypothesis|vectoris|tokenis|"
+          r"sanitis|capitalis|memoris|authoris|digitis|mobilis|economis|rationalis|personalis|"
+          r"sensitis|scrutinis|energis|magnetis|metallis|oxidis|polymeris|hybridis|modernis|"
+          r"centralis|materialis|vaporis|theoris|fertilis|sterilis|homogenis|legitimis|"
+          r"internationalis|compartmentalis|amortis")
 BRITISH = re.compile(
     r"(?<![A-Za-z0-9_])(?:"
     r"(?:un|re|de|non|pre)?(?:" + _STEMS + r")(?:e|ed|es|ing|ation|ations|er|ers|able)"
-    r"|(?:re)?analys(?:e|ed|ing|er|ers)"
-    r"|(?:un)?(?:colour|behaviour|neighbour|favour|honour|flavour)[a-z]*"
+    r"|(?:re)?(?:analys|catalys|paralys|hydrolys|electrolys|dialys)(?:e|ed|ing|er|ers)"
+    r"|(?:un)?(?:colour|behaviour|neighbour|favour|honour|flavour|harbour|humour|labour|vapour|"
+    r"rumour|endeavour|armour|odour|vigour|tumour|fervour|savour|parlour)[a-z]*"
+    r"|(?:kilo|centi|milli|micro|nano|pico)?(?:metre|litre)s?|fibres?|theatres?|lustre"
     r"|centre|centres|centred|centring|off-centre"
     r"|(?:un|re|mis)?(?:labelled|labelling)|modelling|modelled|cancelled|cancelling"
-    r"|travelled|travelling|signalling|levelled|levelling"
+    r"|travelled|travelling|signalling|signalled|levelled|levelling|tunnelled|tunnelling"
+    r"|fuelled|fuelling|channelled|channelling|totalled|totalling|dialled|dialling|counselled"
     r"|grey|greys|greyed|greyscale|whilst|amongst|artefacts?|catalogues?|judgements?|licences?"
+    r"|acknowledgements?|programmes?|defence|ageing|learnt|fulfil|fulfils|sulphur[a-z]*|caesium"
+    r"|aluminium|sceptical|speciality|manoeuvr[a-z]*|cheques?"
     r")(?![A-Za-z0-9_])",
     re.IGNORECASE)
 
 PROSE_SUFFIXES = {".md", ".sh", ".yaml", ".yml", ".cff", ".json", ".txt"}
-SCAN_ROOTS = ["mace", "Crystal_d12", "Crystal_d3", "Plotting", "code", "docs", "tests"]
+SCAN_ROOTS = ["mace", "Crystal_d12", "Crystal_d3", "Plotting", "code", "docs", "tests", ".github"]
 TOP_FILES = ["README.md", "INSTALLATION.md", "DOCUMENTATION.md", "CHANGELOG.md", "AUTHORSHIP.md",
              "CITATION.cff", "mace_cli", "mace_config.py", "setup_mace.py", "mace_examples.sh",
              "activate_mace.sh"]
@@ -135,6 +145,17 @@ def test_scanner_finds_british_words_in_strings_f_strings_and_comments():
 def test_scanner_reads_prose_files_whole_and_leaves_analyses_alone():
     hits = scan_source("Two analyses, one behaviour.\nCentred.\n", "t.md", python=False)
     assert hits == ["t.md:1: behaviour", "t.md:2: Centred"]
+
+
+def test_scanner_covers_less_common_british_forms():
+    src = ("an unparenthesised row, idealised ring, vapour, 5 nanometres,\n"
+           "acknowledgements, catalysed, tunnelling, caesium\n")
+    hits = [h.split(": ")[1] for h in scan_source(src, "t.md", python=False)]
+    assert hits == ["unparenthesised", "idealised", "vapour", "nanometres",
+                    "acknowledgements", "catalysed", "tunnelling", "caesium"]
+    # American and neutral words stay quiet
+    assert scan_source("parenthesis, parameters, analyses, ideal, program, parenthesized\n",
+                       "t.md", python=False) == []
 
 
 def test_mace_prose_uses_american_spelling():

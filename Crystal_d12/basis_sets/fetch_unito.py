@@ -46,8 +46,8 @@ SITE_LABEL = "CRYSTAL basis set library (crystal.unito.it)"
 ELEMENT_PAGES = {
     1: ["hydrogen"], 2: ["helium"], 3: ["lithium"], 4: ["beryllium"], 5: ["boron"],
     6: ["carbon"], 7: ["nitrogen"], 8: ["oxygen"], 9: ["fluorine"], 10: ["neon"],
-    11: ["sodium"], 12: ["magnesium"], 13: ["aluminium", "aluminum"], 14: ["silicon"],
-    15: ["phosphorus"], 16: ["sulphur", "sulfur"], 17: ["chlorine"], 18: ["argon"],
+    11: ["sodium"], 12: ["magnesium"], 13: ["aluminium", "aluminum"], 14: ["silicon"],  # british-ok: UniTO page name
+    15: ["phosphorus"], 16: ["sulphur", "sulfur"], 17: ["chlorine"], 18: ["argon"],  # british-ok: UniTO page name
     19: ["potassium"], 20: ["calcium"], 21: ["scandium"], 22: ["titanium"],
     23: ["vanadium"], 24: ["chromium"], 25: ["manganese"], 26: ["iron"], 27: ["cobalt"],
     28: ["nickel"], 29: ["copper"], 30: ["zinc"], 31: ["gallium"], 32: ["germanium"],
@@ -56,7 +56,7 @@ ELEMENT_PAGES = {
     41: ["niobium"], 42: ["molibdenum", "molybdenum"], 43: ["technecium", "technetium"],
     44: ["ruthenium"], 45: ["rhodium"], 46: ["palladium"], 47: ["silver"],
     48: ["cadmium"], 49: ["indium"], 50: ["tin"], 51: ["antimony"], 52: ["tellurium"],
-    53: ["iodine"], 54: ["xenon"], 55: ["caesium", "cesium"], 56: ["barium"],
+    53: ["iodine"], 54: ["xenon"], 55: ["caesium", "cesium"], 56: ["barium"],  # british-ok: UniTO page name
     57: ["lanthanum"], 58: ["cerium"], 59: ["praseodymium"], 60: ["neodymium"],
     61: ["promethium"], 62: ["samarium"], 63: ["europium"], 64: ["gadolinium"],
     65: ["terbium"], 66: ["dysprosium"], 67: ["holmium"], 68: ["erbium"],

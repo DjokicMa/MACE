@@ -388,12 +388,12 @@ def test_page_names_fall_back_and_record_which_url_answered(tmp_path):
 
     def opener(url, timeout=None):
         tried.append(url)
-        if url.endswith("caesium.html"):
+        if url.endswith("caesium.html"):  # british-ok: UniTO page name
             raise urllib.error.HTTPError(url, 404, "Not Found", None, None)
         return Resp(PAGE.encode())
 
     page = F.fetch_page(55, str(tmp_path), opener=opener)
-    assert tried == [F.BASE_URL + "caesium.html", F.BASE_URL + "cesium.html"]
+    assert tried == [F.BASE_URL + "caesium.html", F.BASE_URL + "cesium.html"]  # british-ok: UniTO page name
     assert page.url == F.BASE_URL + "cesium.html"
     assert (tmp_path / "cesium.html").is_file()
     again = F.fetch_page(55, str(tmp_path), opener=lambda *a, **k: pytest.fail("not cached"))

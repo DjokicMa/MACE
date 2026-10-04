@@ -38,15 +38,15 @@ SYMBOLS = (
 
 PAGES = {
     1: "hydrogen", 3: "lithium", 4: "beryllium", 5: "boron", 6: "carbon", 7: "nitrogen",
-    8: "oxygen", 9: "fluorine", 11: "sodium", 12: "magnesium", 13: "aluminium",
-    14: "silicon", 15: "phosphorus", 16: "sulphur", 17: "chlorine", 19: "potassium",
+    8: "oxygen", 9: "fluorine", 11: "sodium", 12: "magnesium", 13: "aluminium",  # british-ok: UniTO page name
+    14: "silicon", 15: "phosphorus", 16: "sulphur", 17: "chlorine", 19: "potassium",  # british-ok: UniTO page name
     20: "calcium", 21: "scandium", 22: "titanium", 23: "vanadium", 24: "chromium",
     25: "manganese", 26: "iron", 27: "cobalt", 28: "nickel", 29: "copper", 30: "zinc",
     31: "gallium", 32: "germanium", 33: "arsenic", 34: "selenium", 35: "bromine",
     37: "rubidium", 38: "strontium", 39: "yttrium", 40: "zirconium", 41: "niobium",
     42: "molibdenum", 43: "technecium", 44: "ruthenium", 45: "rhodium", 46: "palladium",
     47: "silver", 48: "cadmium", 49: "indium", 50: "tin", 51: "antimony", 52: "tellurium",
-    53: "iodine", 55: "caesium", 56: "barium", 57: "lanthanum", 58: "cerium",
+    53: "iodine", 55: "caesium", 56: "barium", 57: "lanthanum", 58: "cerium",  # british-ok: UniTO page name
     59: "praseodymium", 60: "neodymium", 61: "promethium", 62: "samarium", 63: "europium",
     64: "gadolinium", 65: "terbium", 66: "dysprosium", 67: "holmium", 68: "erbium",
     69: "thulium", 70: "ytterbium", 71: "lutetium", 72: "hafnium", 73: "tantalum",
@@ -65,7 +65,7 @@ DOI_2018 = "10.1002/jcc.25195"               # rubidium.html, Rb_POB_TZVP_2018
 REF_REV2_6TH = ("J. Laun, T. Bredow, J. Comput. Chem. (2021), \"BSSE-corrected consistent "
                 "Gaussian basis sets of triple-zeta valence with polarization quality of the "
                 "sixth period for solid-state calculations\"")
-DOI_REV2_6TH = "10.1002/jcc.26521"           # caesium.html / hafnium.html
+DOI_REV2_6TH = "10.1002/jcc.26521"           # caesium.html / hafnium.html  # british-ok: UniTO page name
 REF_ERD = ("Kh. E. El-Kelany, C. Ravoux, J. K. Desmarais, Y. Pan, J. S. Tse, R. Dovesi, "
            "A. Erba (in preparation); J. K. Desmarais, A. Erba, R. Dovesi, Theor. Chem. Acc. "
            "(2018) (as printed on the site, no DOI given)")

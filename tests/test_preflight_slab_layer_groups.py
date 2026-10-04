@@ -72,7 +72,7 @@ def test_appendix_row_counts_match_the_manual():
     groups are available (Appendix A)".
 
     A.3 in particular runs to 99 - pages 423-424 carry IGR 32-99, all of them
-    unparenthesised. Stopping at 31 (where page 422 breaks) would give
+    unparenthesized. Stopping at 31 (where page 422 breaks) would give
     confidently wrong answers for every space group from 75 to 194.
     """
     assert [row[0] for row in LAYER_GROUP_ROWS] == list(range(1, 81))
@@ -84,14 +84,14 @@ def test_a_mapped_space_group_has_exactly_one_unparenthesised_appendix_row():
 
     A.2/A.3 header: "The number of the space group is written in parentheses
     when the orientation of the symmetry operators does not correspond to the
-    first setting in the I. T." So a parenthesised row cannot be inverted. But
-    being unparenthesised is not on its own enough: the appendix may print
+    first setting in the I. T." So a parenthesized row cannot be inverted. But
+    being unparenthesized is not on its own enough: the appendix may print
     several rows for one number, and a mapped space group must have exactly
-    ONE candidate row in total, that one unparenthesised.
+    ONE candidate row in total, that one unparenthesized.
 
-    Checking only "no space group has two unparenthesised rows" is the wrong
+    Checking only "no space group has two unparenthesized rows" is the wrong
     invariant - it is true of the appendix as printed and would keep passing
-    while the real ambiguity (one unparenthesised row plus parenthesised
+    while the real ambiguity (one unparenthesized row plus parenthesized
     siblings) went unnoticed.
     """
     for rows, table, candidates in [
@@ -133,7 +133,7 @@ def test_same_type_different_orientation_siblings_are_refused():
 
     A.2 rows 23 and 27 are both C2v^1, printed "25" and "(25)": Pmm2 has its
     2-fold along the surface normal, P2mm in the plane, and a symmetric
-    two-sided slab is the second. Taking the unparenthesised row would silently
+    two-sided slab is the second. Taking the unparenthesized row would silently
     pick Pmm2. Same shape at N = 28 (rows 24 Pma2 / 30 P2mb, both C2v^4) and
     N = 51 (rows 39 Pmma / 38 Pmam, both D2h^5); A.3 has it at N = 25 (rows 20,
     24, 26, all C2v^1) and N = 26 (rows 21, 22, both C2v^2).
@@ -158,7 +158,7 @@ def test_same_type_different_orientation_siblings_are_refused():
 def test_the_measured_hexagonal_case_maps_to_layer_group_80():
     """The deck that MPI_Aborted: space group 191 (P6/mmm).
 
-    A.2 row 80 is "P6/mmm D6h^1 191", unparenthesised. 191 is not a legal layer
+    A.2 row 80 is "P6/mmm D6h^1 191", unparenthesized. 191 is not a legal layer
     group number at all, which is why CRYSTAL died before writing anything.
     """
     assert LAYER_GROUP_FROM_SPACEGROUP[191] == 80
@@ -615,7 +615,7 @@ def test_sibling_ambiguity_is_refused_with_the_siblings_named(
 ):
     """Space group 25 is A.2 rows 23 (Pmm2) and 27 (P2mm), both C2v^1.
 
-    The unparenthesised row is Pmm2 - 2-fold along the surface normal - but a
+    The unparenthesized row is Pmm2 - 2-fold along the surface normal - but a
     symmetric two-sided slab is P2mm, and the number cannot say which. The
     refusal has to name both, otherwise the user has nothing to act on.
     """

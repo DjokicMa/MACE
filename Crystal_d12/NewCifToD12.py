@@ -1601,7 +1601,7 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
     #
     # The appendices settle the reverse lookup only for a space group that
     # appears on exactly ONE row and is printed there WITHOUT parentheses. A
-    # parenthesised number means the operators are not in the International
+    # parenthesized number means the operators are not in the International
     # Tables first setting; several rows for the same number mean several
     # orientations of the same group type, which the number cannot tell apart
     # (A.2 has C2v^1 as both Pmm2, N = 25, and P2mm, N = (25)).
