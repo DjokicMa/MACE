@@ -30,8 +30,9 @@ def _env():
 
 
 def _needs(command):
-    if command == "convert":
-        pytest.importorskip("ase", reason="NewCifToD12 imports ase (absent in CI)")
+    # Every forwarded --help answers on a python without ase (CI included);
+    # tests/test_convert_without_ase.py hides ase to check convert's.
+    return None
 
 
 def _run(argv):

@@ -20,6 +20,15 @@ echo '#SBATCH --mem-per-cpu=5G' >> $1.sh
 echo 'export JOB='$1 >> $1.sh
 echo 'export DIR=$SLURM_SUBMIT_DIR
 export scratch=$SCRATCH/crys23
+# NO SUBMIT DIRECTORY. Everything below stages from and copies back to the
+# submit directory, which SLURM always sets. Run with plain bash, DIR was
+# empty: the job read and wrote /, still ended with exit 0 and ran the
+# completion callback from the home directory.
+if [ -z "$DIR" ]; then
+  echo "ERROR: SLURM_SUBMIT_DIR is not set - this script stages from and copies back to the"
+  echo "  submit directory. Submit it with sbatch, or run it on this node with: mace run $JOB.d12"
+  exit 1
+fi
 
 echo "submit directory: "
 echo $SLURM_SUBMIT_DIR
@@ -335,6 +344,15 @@ if [ "$scratch" != "$MACE_SCRATCH_WANTED" ]; then
   echo "$MACE_NOTE" >> "$DIR/$JOB.out"
 fi
 # END SCRATCH FALLBACK CLEANUP
+
+# LOCAL RUN. mace run runs this script on the node it is on, without SLURM,
+# and records the result itself. No completion callback: it would submit the
+# follow-up jobs from that node. Never inside a SLURM job (sbatch exports the
+# environment, and a MACE_LOCAL_RUN in it must not cost a job its callback).
+if [ -n "$MACE_LOCAL_RUN" ] && [ -z "$SLURM_JOB_ID" ]; then
+  echo "mace run: no completion callback (local run on $(hostname))"
+  exit 0
+fi
 
 # First check if MACE_HOME is set and use it
 if [ ! -z "$MACE_HOME" ]; then

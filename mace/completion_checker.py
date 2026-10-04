@@ -46,6 +46,8 @@ ERROR_PATTERNS = {
     # MPI_Abort - which is no runtime error. Matched first because its line
     # comes before the abort lines.
     'opt_unconverged': ["OPT END - FAILED"],
+    # `mace run` stopped it (Ctrl-C, hang-up); its timeout is 'time' below
+    'stopped': ["mace run: STOPPED (interrupted"],
     'potential': [
         "segmentation fault",
         "=   bad termination of",
@@ -69,7 +71,13 @@ ERROR_DESCRIPTIONS = {
     'opt_unconverged': "Geometry optimization not converged (OPT END - FAILED)",
     'potential': "Segmentation fault/runtime error",
     'scratch': "No writable scratch directory (CRYSTAL not run)",
+    'stopped': "Stopped by mace run before it finished",
 }
+
+# The line `mace run` appends to the .out of a deck it stopped. It says why the
+# run ended, so it goes before the first error line - mpirun's "BAD
+# TERMINATION" banner that the stop itself caused.
+MACE_RUN_STOP_MARK = "mace run: STOPPED"
 
 # === Completed-calc subtype handling === #
 # Maps detected calc subtype to bucket name used for organizing files
@@ -210,6 +218,10 @@ def categorize_output_file(file_path):
     except Exception as e:
         print(f"  Warning: Could not read {file_path}: {e}")
         return 'unknown', base_name
+
+    for line in lines:
+        if line.startswith(MACE_RUN_STOP_MARK):
+            return ('time' if "DUE TO TIME LIMIT" in line else 'stopped'), base_name
 
     # === Error pattern matching FIRST === #
     for line in lines:

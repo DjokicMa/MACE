@@ -86,6 +86,12 @@ python -c "import numpy, scipy, pandas, ase, spglib, seekpath, yaml; print('core
 python "$MACE_HOME/mace/queue/manager.py" --callback-mode status_check   # read-only sanity check
 ```
 
+On a development node (`ssh dev-amd20`, `dev-amd24` or `dev-intel18` from the
+gateway) the same module Python also runs `mace` itself, and `mace run` runs
+small decks there directly, without SLURM - see DOCUMENTATION.md, "Run on a dev
+node". The gateway has no CRYSTAL module and no `mpirun`, and `mace run` refuses
+to start there.
+
 Notes:
 - **seekpath** (2.1 or newer) is required. It computes the HPKOT band k-path of a 3D cell from
   its structure (Hinuma et al., Comp. Mat. Sci. 128, 140 (2017)) and MACE writes

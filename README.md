@@ -216,6 +216,12 @@ mace workflow --interactive
 mace workflow --quick-start --cif-dir ./cifs --workflow full_electronic
 ```
 
+#### Quick runs on a dev node (no SLURM)
+```bash
+# MATDUMP, BAND/DOSS/POTC, small SPs: run them now, staged exactly like a SLURM job
+mace run dia_sp.d12 dia_band.d3
+```
+
 #### Plotting
 ```bash
 # Interactive menu over everything plottable in the current directory

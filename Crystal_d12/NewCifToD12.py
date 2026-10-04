@@ -67,7 +67,6 @@ import sys
 import glob
 import argparse
 import numpy as np
-from ase.io import read
 import json
 
 # Import from new modular structure
@@ -223,6 +222,14 @@ except Exception:
             return str(s).upper()
 
     ui = _UIShim()
+
+def read(*args, **kwargs):
+    """ase.io.read, imported when a CIF is read: without ase, `mace convert
+    --help` still answers (main() says what is missing before converting)."""
+    from ase.io import read as ase_read
+
+    return ase_read(*args, **kwargs)
+
 
 # Try to import spglib for symmetry operations
 try:
@@ -2439,9 +2446,10 @@ calculation settings are chosen interactively, or loaded from a saved
 options file with --batch.""",
         epilog="""\
 Examples:
-  %(prog)s                                  # interactive, CIFs from ./
-  %(prog)s --cif_dir structures/
-  %(prog)s --cif_dir structures/ --output_dir d12s/
+  %(prog)s                                    # the CIF files here, asking for the settings
+  %(prog)s --cif_dir cifs/ --output_dir decks/
+  %(prog)s --cif_dir cifs/ --save_options     # also save the answers (cif2d12_options.json)
+  %(prog)s --cif_dir more_cifs/ --batch       # convert with the saved answers, no questions
   %(prog)s --cif_dir . --save_options --options_file myopts.json
   %(prog)s --cif_dir . --batch --options_file myopts.json
 
@@ -2488,6 +2496,13 @@ Running with no arguments starts the interactive converter.""",
     charged.add_argument("--spinlock-cycles", type=int, help="SCF cycles the SPINLOCK holds")
 
     args = parser.parse_args()
+
+    try:
+        import ase.io  # noqa: F401  (reads the CIF files)
+    except ImportError:
+        ui.err("mace convert needs ase to read CIF files: pip install ase "
+               "(or conda install -c conda-forge ase)")
+        sys.exit(1)
 
     if args.batch:
         # Load options from file
