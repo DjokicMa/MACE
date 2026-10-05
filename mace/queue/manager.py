@@ -2376,7 +2376,17 @@ class EnhancedCrystalQueueManager:
             output_files = [own] if own else []
         else:
             output_files = list(work_dir.glob("*.out"))
-        
+            own_stem = Path(calc['input_file']).stem if calc.get('input_file') else None
+            if own_stem and not any(f.stem == own_stem for f in output_files):
+                # No output of this deck. An output next to a deck of its own
+                # (X.out beside X.d12/X.d3) belongs to that deck, never to
+                # this calculation: in a directory shared by many decks (mace
+                # submit DIR --array, where a task's recovery resubmission is
+                # a normal job) it was taken as this one's result.
+                output_files = [f for f in output_files
+                                if not (f.with_suffix('.d12').exists()
+                                        or f.with_suffix('.d3').exists())]
+
         if output_files:
             # Prefer the output matching this calculation's input file name
             input_stem = Path(calc['input_file']).stem if calc.get('input_file') else None

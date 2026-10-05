@@ -266,3 +266,26 @@ def test_many_task_callbacks_at_once(tmp_path, hold_seconds, scale, expect_fallb
     assert p.returncode == 0, p.stdout + p.stderr
     r = rows(db_path)
     assert all(json.loads(r[i]["settings_json"]).get("workflow_processed") for i in ids)
+
+
+def test_resubmitted_task_never_takes_a_siblings_output(shared):
+    """A task's recovery resubmission is a normal job in the array's shared
+    directory. Canceled while pending (it never ran, it wrote no .out), it
+    was recorded as completed with a sibling's output and that sibling's
+    properties (found on HPCC: a timeout restart of one task took
+    LiF_sp.out)."""
+    tmp_path, d, fake, db, ids = shared
+    for t in range(3):
+        (d / f"mat{t}.out").write_text(SP_DONE)
+    restart = db.create_calculation(material_id="mat3", calc_type="SP",
+                                    input_file=str(d / "mat3.d12"), work_dir=str(d))
+    db.update_calculation_status(restart, "submitted", slurm_job_id="5151")
+    fake.update(sacct={**{f"4242_{t}": "COMPLETED" for t in range(3)},
+                       "5151": "CANCELLED by 0"},
+                sacct_array={"4242": [[f"4242_{t}", "COMPLETED"] for t in range(3)]})
+    p = callback(fake.env, d, tmp_path / "materials.db")
+    assert p.returncode == 0, p.stdout + p.stderr
+    r = rows(tmp_path / "materials.db")[restart]
+    assert r["status"] == "failed", p.stdout
+    assert r["error_type"] == "no_output"
+    assert r["output_file"] is None, "never a sibling's output"

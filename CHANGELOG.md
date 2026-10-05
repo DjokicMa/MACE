@@ -477,6 +477,14 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   `mace completion --remove-zombie-jobs` took `X-<array>_<task>.o` for job
   `<task>` when the task number had six digits; it now reads `<array>_<task>`,
   and the scan of finished outputs records it too.
+- **A job that wrote no output never takes another deck's.** When a tracked
+  job left the queue without its own `.out`, the check took the first `.out`
+  of its directory, so in a folder of many decks (`mace submit DIR --array`,
+  whose recovery resubmissions are normal jobs, or `--track DIR`) a restart
+  canceled while pending was recorded as completed with another material's
+  output and properties (found in the HPCC array test). An output that has a
+  deck of its own next to it (`X.out` beside `X.d12`/`X.d3`) is now never
+  used for another calculation; the job is recorded as ended without output.
 - **The planner's `--array=1-10` directive preset is gone** (see Upgrading).
   It turned every job of the step into ten copies of one material sharing a
   scratch directory, on the `mace submit --progress interactive` route.
