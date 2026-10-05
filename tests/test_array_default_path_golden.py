@@ -240,12 +240,30 @@ def _canonical_calls(calls):
     return sorted(json.dumps(c, sort_keys=True) for c in calls)
 
 
+def _canonical_plans(plans):
+    # A plan lists its input decks in directory order, which is the
+    # filesystem's (tmpfs and ext4 differ); the order itself is not pinned.
+    plans = json.loads(json.dumps(plans))
+    for plan in plans.values():
+        for kind, names in (plan.get("input_files") or {}).items():
+            plan["input_files"][kind] = sorted(names)
+    return plans
+
+
+def _canonical_rows(rows):
+    # Decks go in in directory order, so which deck gets which (fake) job id
+    # depends on the filesystem; every other field and the set of ids are pinned.
+    masked = sorted(json.dumps(dict(r, slurm_job_id="<JOB>"), sort_keys=True)
+                    for r in rows)
+    return masked, sorted(str(r.get("slurm_job_id")) for r in rows)
+
+
 def compare(snapshot, golden):
     assert [c["tool"] for c in snapshot["calls"]] == [c["tool"] for c in golden["calls"]]
     assert _canonical_calls(snapshot["calls"]) == _canonical_calls(golden["calls"])
     assert snapshot["files"] == golden["files"]
-    assert snapshot["plans"] == golden["plans"]
-    assert snapshot["rows"] == golden["rows"]
+    assert _canonical_plans(snapshot["plans"]) == _canonical_plans(golden["plans"])
+    assert _canonical_rows(snapshot["rows"]) == _canonical_rows(golden["rows"])
 
 
 @pytest.mark.parametrize("name", sorted(SCENARIOS))
