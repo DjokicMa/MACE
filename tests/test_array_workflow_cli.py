@@ -162,3 +162,53 @@ def test_each_task_chains_its_own_next_step(tmp_path):
     assert not fake.calls("scancel")
     assert by_job["4242_1"]["calc_id"] in r and r[by_job["4242_1"]["calc_id"]]["status"] in (
         "submitted", "running")
+
+
+READY_MADE = """#!/bin/bash --login
+#SBATCH -J job
+#SBATCH -o job-%J.o
+#SBATCH --ntasks=4
+#SBATCH -t 1:00:00
+touch "{marker}"
+echo ran-the-job-body
+"""
+
+
+@pytest.mark.parametrize("array", [False, True])
+def test_ready_made_source_script_is_never_run_here(tmp_path, array):
+    """A plan's source_script can be a finished SLURM script rather than a
+    generator: the default route hands it to sbatch as it is, and so must
+    the array route (it is the task's script itself, never run locally)."""
+    fake, env, d = _setup(tmp_path, ["m0", "m1"])
+    _ok(_mace(tmp_path, env, "workflow", "--quick-start", "--d12-dir", "decks",
+              "--workflow", "basic_opt"))
+    plan = _plan(tmp_path)
+    plan.pop("workflow_id", None)
+    other = tmp_path / "again"
+    other.mkdir()
+    shutil.copytree(d, other / "decks")
+    marker = other / "JOB_BODY_RAN_HERE"
+    ready = other / "ready.sh"
+    ready.write_text(READY_MADE.format(marker=marker))
+    scripts = plan["step_configurations"]["OPT_1"]["slurm_config"]["scripts"]
+    (name,) = [k for k in scripts if k.startswith("submitcrystal23")]
+    scripts[name]["source_script"] = str(ready)
+    (other / "plan.json").write_text(json.dumps(plan))
+    before = len(fake.calls("sbatch"))
+    _ok(_mace(other, env, "workflow", "--execute", "plan.json", *(["--array"] if array else [])))
+    assert not marker.exists()
+    calls = fake.calls("sbatch")[before:]
+    if not array:
+        assert sorted(c["argv"] for c in calls) == [["sbatch", "m0.sh"], ["sbatch", "m1.sh"]]
+        return
+    (c,) = calls
+    assert c["argv"][:2] == ["sbatch", "--hold"]
+    (w,) = other.rglob(".mace_arrays/arr_*/arr_*.sh")
+    by_job = {x["slurm_job_id"]: x for x in rows(_context_db(other)).values()}
+    assert sorted(by_job) == ["4242_0", "4242_1"]
+    from mace.submission.job_array import resource_key
+    for x in by_job.values():
+        task_script = Path(x["job_script"]).read_text()
+        assert "ran-the-job-body" in task_script
+        assert resource_key(w.read_text().replace("#SBATCH --array=0-1\n", "")) == \
+            resource_key(task_script)

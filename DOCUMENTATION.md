@@ -235,6 +235,9 @@ mace workflow --execute workflow_plan_<id>.json --array
 - **Workflows.** `--array` (or the plan's `"job_arrays": {"first_step": true,
   "max_running": N}`) covers the first wave only. Each task's own completion
   callback then submits that material's next step as a normal job, as always.
+  A plan whose step script is a finished SLURM script rather than a script
+  generator has that script run as the task, as the default route submits it;
+  it is never run on the submitting host.
   The callbacks of tasks that end together wait up to 15 minutes for the queue
   lock (inside the task's walltime) instead of 60 seconds; a task that cannot
   get it records its own result, and the next callback (or `mace manager

@@ -834,7 +834,7 @@ class WorkflowExecutor:
         execute_step submits it.
         """
         from mace.submission import job_array
-        from mace.submission.generator_run import run_script_generator
+        from mace.submission.generator_run import is_script_generator, run_script_generator
         submitted_jobs: List[str] = []
         existing_materials: List[str] = []
         members, singles_pre = [], []
@@ -854,13 +854,26 @@ class WorkflowExecutor:
             ui.info(f"  Preparing {material_id} for a job array...")
             calc_id, script_file = self._create_workflow_calculation(
                 calc_d12_file, calc_type, material_id, workflow_id, step_num, calc_dir)
+            prep = (calc_id, material_id, calc_dir, calc_d12_file)
+            try:
+                script_content = script_file.read_text(errors='replace')
+            except OSError:
+                singles_pre.append(prep)
+                continue
+            if not is_script_generator(script_content):
+                # A ready-made SLURM script (a plan's source_script can be
+                # one): submit_slurm_job hands it to sbatch as it is, so it is
+                # never run here either; it is the task's script itself.
+                members.append(job_array.ArrayMember(dir=calc_dir, job=script_file.stem,
+                                                     script=script_file, calc_id=calc_id,
+                                                     data={'prep': prep}))
+                continue
             env, marker = job_array.sbatch_shim()
             try:
                 result = run_script_generator(script_file, script_file.stem, calc_dir, env=env)
                 kind, value = job_array.generator_outcome(result, marker)
             finally:
                 job_array.cleanup_shim(marker)
-            prep = (calc_id, material_id, calc_dir, calc_d12_file)
             if kind == 'submitted':
                 self.db.update_calculation_status(calc_id, 'submitted', slurm_job_id=value,
                                                   output_file=str(calc_dir / f"{material_id}.out"))
