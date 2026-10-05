@@ -28,10 +28,10 @@ from mace.queue.slurm_ids import (
 # Plain squeue lines in the formats MACE asks for (-o %i,%T,%S and %i,%T,%S,%j).
 PLAIN_LINES = [
     "JOBID,STATE,START_TIME",
-    "12345678,RUNNING,2026-10-04T22:32:58",
+    "12345678,RUNNING,2026-01-01T12:00:00",
     "12345679,PENDING,N/A",
-    "12345680,CONFIGURING,2026-10-04T22:40:00",
-    "12345681,COMPLETING,2026-10-04T21:00:00",
+    "12345680,CONFIGURING,2026-01-01T12:05:00",
+    "12345681,COMPLETING,2026-01-01T11:00:00",
 ]
 
 
@@ -63,7 +63,7 @@ def test_split_keeps_a_job_name_with_commas_whole():
     ("4242_[2-3%2]", ["4242_2", "4242_3"]),
     ("4242_[123]", ["4242_123"]),
     ("4242_[1,4-6%3]", ["4242_1", "4242_4", "4242_5", "4242_6"]),
-    ("18417197_[2,4-5%2]", ["18417197_2", "18417197_4", "18417197_5"]),
+    ("87654321_[2,4-5%2]", ["87654321_2", "87654321_4", "87654321_5"]),
     ("4242_[0-6:2]", ["4242_0", "4242_2", "4242_4", "4242_6"]),
     ("4242_7", ["4242_7"]),
     ("12345678", ["12345678"]),
@@ -72,7 +72,7 @@ def test_expand_queue_id(token, expected):
     assert expand_queue_id(token) == expected
 
 
-@pytest.mark.parametrize("token", ["4242_[1,3,5,...", "4242_[1,3,5,7,9,11...]", "18417197_[2+",
+@pytest.mark.parametrize("token", ["4242_[1,3,5,...", "4242_[1,3,5,7,9,11...]", "87654321_[2+",
                                    "4242_[1,3", "4242_[x-y]"])
 def test_expand_truncated_gives_marker(token):
     assert expand_queue_id(token) == Truncated(re.match(r"\d+", token).group(0))
