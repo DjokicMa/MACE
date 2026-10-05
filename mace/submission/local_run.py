@@ -778,6 +778,45 @@ def check_slurm_jobs(decks: List[Deck]) -> None:
             job_id, state = jobs[d.job]
             raise Refusal(f"{d.job} is also SLURM job {job_id} ({state}): it uses the same "
                           f"scratch directory and output names - wait for it or scancel it")
+    # A task of a MACE job array runs under the array's name (mace_arr_...):
+    # its deck is found through the array's manifest, next to its wrapper.
+    if any(name.startswith("mace_arr") for name in jobs):
+        tasks = array_tasks_by_job(squeue, user)
+        for d in decks:
+            if d.job in tasks:
+                task_id, state = tasks[d.job]
+                raise Refusal(f"{d.job} is SLURM array task {task_id} ({state}): it uses the "
+                              f"same scratch directory and output names - wait for it or "
+                              f"scancel {task_id}")
+
+
+def array_tasks_by_job(squeue: str, user: str) -> dict:
+    """{job name: (A_T, state)} for every task of this user's MACE job arrays."""
+    try:
+        r = subprocess.run([squeue, "-h", "-u", user, "-r", "-o", "%j|%i|%T|%o"],
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60,
+                           env=dict(os.environ, SLURM_BITSTR_LEN="0"))
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    if r.returncode != 0:
+        return {}
+    tasks, manifests = {}, {}
+    for line in r.stdout.splitlines():
+        parts = line.split("|", 3)
+        if len(parts) < 4 or not parts[0].startswith("mace_arr") or "_" not in parts[1]:
+            continue
+        task_id, state, command = parts[1].strip(), parts[2].strip(), parts[3].strip()
+        manifest = Path(command).parent / "manifest.tsv"
+        if manifest not in manifests:
+            try:
+                from mace.submission.job_array import read_manifest
+                manifests[manifest] = {m["task"]: m["job"] for m in read_manifest(manifest)}
+            except (OSError, ImportError):
+                manifests[manifest] = {}
+        job = manifests[manifest].get(task_id.rsplit("_", 1)[1])
+        if job:
+            tasks.setdefault(job, (task_id, state))
+    return tasks
 
 
 def lock_dir() -> Path:
@@ -1006,6 +1045,12 @@ def main(argv=None) -> int:
 
 
 def _main(argv, started) -> int:
+    given = list(sys.argv[1:] if argv is None else argv)
+    if any(a in ("--array", "--max-running") or a.startswith(("--array=", "--max-running="))
+           for a in given):
+        say("mace run: mace run runs decks one after another on this node; job arrays are "
+            "for `mace submit --array`", err=True)
+        return EXIT_REFUSED
     parser = build_parser()
     opts = parser.parse_args(argv)
     try:
