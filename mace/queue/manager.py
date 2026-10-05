@@ -38,6 +38,9 @@ from mace.database.materials import STATUS_CANCELED_DB, MaterialDatabase, create
 from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.workflow.context import get_current_context
 from mace.recovery import opt_restart, screened_hybrid
+from mace.queue.slurm_ids import (
+    Truncated, expand_queue_id, is_array_task_id, own_job_ids, safe_scancel,
+    slurm_env, split_squeue_line)
 from mace.utils.calc_detection import (
     PROPERTY_CALC_TYPES, calc_type_from_filename, d12_calc_type, d3_calc_type,
     deck_records)
@@ -54,6 +57,20 @@ except ImportError:
     except ImportError:
         LOCKING_AVAILABLE = False
         print("Warning: Queue locking not available - race conditions possible with simultaneous callbacks")
+
+
+def _array_search_dirs(manager, calc: Optional[Dict] = None) -> List[str]:
+    """Where a job array MACE submitted may have left its submitted.json
+    (looked at before a bare job id is canceled)."""
+    dirs = []
+    db_path = getattr(manager, 'db_path', None)
+    if db_path:
+        dirs.append(str(Path(db_path).resolve().parent))
+    if getattr(manager, 'd12_dir', None):
+        dirs.append(str(manager.d12_dir))
+    if calc and calc.get('work_dir'):
+        dirs.append(str(calc['work_dir']))
+    return dirs
 
 
 class EnhancedCrystalQueueManager:
@@ -904,25 +921,30 @@ class EnhancedCrystalQueueManager:
         try:
             result = subprocess.run(
                 ['squeue', '-u', os.environ.get('USER', 'unknown'), '-o', '%i,%T,%S'],
-                capture_output=True, text=True, check=False
+                capture_output=True, text=True, check=False, env=slurm_env()
             )
             
             if result.returncode != 0:
                 raise Exception(f"squeue error: {result.stderr}")
                 
-            # Count jobs by state
+            # Count jobs by state. A job array's pending tasks come as one
+            # token (A_[2-3%2], A_[1,4-6%3]): each task counts, the way SLURM
+            # counts them against the submit limit. A token cut short counts
+            # as one line, as before.
             running = 0
             pending = 0
             
             for line in result.stdout.strip().split('\n')[1:]:  # Skip header
                 if line.strip():
-                    parts = line.strip().split(',')
+                    parts = split_squeue_line(line.strip(), 3)
                     if len(parts) >= 2:
                         state = parts[1]
+                        ids = expand_queue_id(parts[0])
+                        n = 1 if isinstance(ids, Truncated) else max(len(ids), 1)
                         if state == 'RUNNING':
-                            running += 1
+                            running += n
                         elif state in ['PENDING', 'CONFIGURING']:
-                            pending += 1
+                            pending += n
                             
             return running, pending
             
@@ -937,21 +959,31 @@ class EnhancedCrystalQueueManager:
         try:
             result = subprocess.run(
                 ['squeue', '-u', os.environ.get('USER', 'unknown'), '-o', '%i,%T,%S'],
-                capture_output=True, text=True
+                capture_output=True, text=True, env=slurm_env()
             )
             
             if result.returncode != 0:
                 print(f"Error checking queue: {result.stderr}")
                 return
                 
-            # Parse squeue output
+            # Parse squeue output. The pending tasks of a job array come as
+            # one token with commas inside its brackets (A_[1,4-6%3]): the
+            # line is split outside the brackets and the token expanded to
+            # A_1, A_4, ... An array whose token SLURM cut short is
+            # "unknown": none of its rows is judged in this sweep.
             queue_jobs = {}
+            unknown_arrays = set()
             for line in result.stdout.strip().split('\n')[1:]:  # Skip header
                 if line.strip():
-                    parts = line.strip().split(',')
+                    parts = split_squeue_line(line.strip(), 3)
                     if len(parts) >= 2:
                         job_id, state = parts[0], parts[1]
-                        queue_jobs[job_id] = state
+                        ids = expand_queue_id(job_id)
+                        if isinstance(ids, Truncated):
+                            unknown_arrays.add(ids.array_id)
+                            continue
+                        for jid in ids:
+                            queue_jobs[jid] = state
                         
         except FileNotFoundError:
             # SLURM not available
@@ -969,7 +1001,9 @@ class EnhancedCrystalQueueManager:
             # though its CRYSTAL run has finished. Classify that calc from its
             # output file instead of queue state — a lone manual job has no
             # later callback to sweep it up and would stay 'running' forever.
-            own_job_id = os.environ.get('SLURM_JOB_ID')
+            # Inside a job array task that is the task's A_T, never its raw
+            # SLURM_JOB_ID (see mace.queue.slurm_ids).
+            own_ids = own_job_ids()
 
             running_calcs = self.db.get_calculations_by_status('submitted') + \
                            self.db.get_calculations_by_status('running')
@@ -979,7 +1013,7 @@ class EnhancedCrystalQueueManager:
                 if not slurm_job_id:
                     continue
 
-                if own_job_id and str(slurm_job_id) == own_job_id:
+                if str(slurm_job_id) in own_ids:
                     self.check_completed_or_failed_job(calc, own_job=True)
                     continue
 
@@ -1038,7 +1072,7 @@ class EnhancedCrystalQueueManager:
         try:
             result = subprocess.run(
                 ['sacct', '-j', str(job_id), '--format=State', '-n', '-X'],
-                capture_output=True, text=True, timeout=30
+                capture_output=True, text=True, timeout=30, env=slurm_env()
             )
             if result.returncode != 0:
                 return None
@@ -1086,10 +1120,10 @@ class EnhancedCrystalQueueManager:
         """
         if not self.enable_tracking:
             return
-        own_job_id = os.environ.get('SLURM_JOB_ID')
+        own_ids = own_job_ids()
         for calc in self.db.get_calculations_by_status('running'):
             job_id = calc.get('slurm_job_id')
-            if not job_id or (own_job_id and str(job_id) == own_job_id):
+            if not job_id or str(job_id) in own_ids:
                 continue
             if not str(calc.get('calc_type') or '').upper().startswith('OPT'):
                 continue
@@ -1105,8 +1139,9 @@ class EnhancedCrystalQueueManager:
                 continue
             print(f"FINALRUN loop in running job {job_id} ({calc['calc_id']}): {loop}")
             try:
-                result = subprocess.run(['scancel', str(job_id)],
-                                        capture_output=True, text=True)
+                # A_T for a job array task: never the bare array id.
+                result = safe_scancel(job_id, db=self.db,
+                                      search_dirs=self._array_search_dirs(calc))
             except Exception as e:
                 print(f"  Could not cancel job {job_id}: {e}")
                 continue
@@ -1194,11 +1229,21 @@ class EnhancedCrystalQueueManager:
             
         return False
         
+    def _array_search_dirs(self, calc: Optional[Dict] = None) -> List[str]:
+        return _array_search_dirs(self, calc)
+
     def cancel_job(self, slurm_job_id: str, calc_id: str):
         """Cancel a SLURM job and update tracking."""
         try:
-            result = subprocess.run(['scancel', slurm_job_id], 
-                                  capture_output=True, text=True)
+            db = self.db if getattr(self, 'enable_tracking', False) else None
+            try:
+                calc = db.get_calculation(calc_id) if db is not None else None
+            except Exception:
+                calc = None
+            # A job array task is canceled as A_T; a bare array id is refused
+            # (scancel A would cancel every task).
+            result = safe_scancel(slurm_job_id, db=db,
+                                  search_dirs=_array_search_dirs(self, calc))
             
             if result.returncode == 0:
                 print(f"Canceled job {slurm_job_id}")

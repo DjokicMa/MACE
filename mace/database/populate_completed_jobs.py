@@ -5,6 +5,7 @@ This is crucial for workflow progression in isolated context mode.
 """
 
 import os
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 import json
@@ -85,8 +86,17 @@ def scan_for_completed_calculations(base_dir: Path) -> List[Dict]:
                 'has_termination': True
             }
             
-            # Try to find SLURM job ID from .o files
-            for o_file in out_file.parent.glob(f"{out_file.stem}*.o*"):
+            # Try to find SLURM job ID from .o files. A MACE job array task
+            # leaves <name>-<A>_<T>.o; then the id is A_T, and the newest log
+            # wins (the rule of completion_checker.find_slurm_job_id).
+            o_files = list(out_file.parent.glob(f"{out_file.stem}*.o*"))
+            if any(re.search(r'-\d+_\d+\.o$', f.name) for f in o_files):
+                from mace.completion_checker import find_slurm_job_id
+                job_id = find_slurm_job_id(out_file)
+                if job_id:
+                    calc_info['slurm_job_id'] = job_id
+                o_files = []
+            for o_file in o_files:
                 try:
                     # Extract job ID from filename like material-12345.o
                     parts = o_file.stem.split('-')

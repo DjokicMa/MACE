@@ -187,21 +187,31 @@ class MaterialMonitor:
         
         try:
             # Get SLURM queue information
+            from mace.queue.slurm_ids import Truncated, expand_queue_id, slurm_env, split_squeue_line
             result = subprocess.run(
                 ['squeue', '-u', os.environ.get('USER', 'unknown'), '-o', '%i,%T,%S,%j'],
-                capture_output=True, text=True, timeout=30
+                capture_output=True, text=True, timeout=30, env=slurm_env()
             )
             
             if result.returncode == 0:
                 lines = result.stdout.strip().split('\n')[1:]  # Skip header
-                queue['total_jobs'] = len(lines)
                 
+                # A job array's pending tasks are one line (A_[2-3%2]): each
+                # task counts, as SLURM counts it. The job name (last field)
+                # stays whole, commas included.
                 status_counts = Counter()
+                total = 0
                 for line in lines:
                     if line.strip():
-                        parts = line.split(',')
+                        parts = split_squeue_line(line, 4)
+                        ids = expand_queue_id(parts[0])
+                        n = 1 if isinstance(ids, Truncated) else max(len(ids), 1)
+                        total += n
                         if len(parts) >= 2:
-                            status_counts[parts[1]] += 1
+                            status_counts[parts[1]] += n
+                    else:
+                        total += 1
+                queue['total_jobs'] = total
                             
                 queue['by_status'] = dict(status_counts)
                 
@@ -927,13 +937,20 @@ class MaterialMonitor:
             
         try:
             # Quick queue check
+            from mace.queue.slurm_ids import Truncated, expand_queue_id, slurm_env
             result = subprocess.run(
                 ['squeue', '-u', os.environ.get('USER', 'unknown')],
-                capture_output=True, text=True, timeout=10
+                capture_output=True, text=True, timeout=10, env=slurm_env()
             )
             if result.returncode == 0:
                 lines = result.stdout.strip().split('\n')[1:]  # Skip header
-                stats['queue_jobs'] = len(lines)
+                # Each pending task of a job array counts (A_[2-3%2] is 2).
+                count = 0
+                for line in lines:
+                    fields = line.split()
+                    ids = expand_queue_id(fields[0]) if fields else []
+                    count += 1 if isinstance(ids, Truncated) else max(len(ids), 1)
+                stats['queue_jobs'] = count
             else:
                 stats['queue_jobs'] = 'N/A'
         except:

@@ -454,6 +454,15 @@ def find_slurm_job_id(out_file_path: Path) -> Optional[str]:
     base = out_file_path.stem
     parent = out_file_path.parent
 
+    # A MACE job array task leaves <name>-<A>_<T>.o (a link to the array's
+    # per-task log): its id is A_T. Read first, and when such a file is
+    # present the newest log wins: an older plain <name>-<id>.o must not
+    # shadow a newer task, nor an older task the newer single job a restart
+    # submitted. Without one, the order below is unchanged.
+    array_logs = [f for f in parent.glob(f"*{base}*.o") if _ARRAY_LOG_RE.search(f.name)]
+    if array_logs:
+        return _newest_job_id(parent, base)
+
     # Pattern 1: name-jobid.o (e.g., 4^2T37-CA_SCF_opt-62676309.o)
     for f in parent.glob(f"{base}-*.o"):
         match = re.search(r'-(\d+)\.o$', f.name)
@@ -475,6 +484,45 @@ def find_slurm_job_id(out_file_path: Path) -> Optional[str]:
 
     return None
 
+
+# <name>-<array id>_<task>.o: the per-task log of a MACE job array task.
+_ARRAY_LOG_RE = re.compile(r'-(\d+_\d+)\.o$')
+
+
+def _log_mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:  # a link whose log is gone
+        try:
+            return path.lstat().st_mtime
+        except OSError:
+            return 0.0
+
+
+def _newest_job_id(parent: Path, base: str) -> Optional[str]:
+    """The job id of the newest SLURM log of ``base`` in ``parent``, array
+    task logs (``A_T``) and plain ones alike. A name that ends in ``_<n>.o``
+    after an array id never yields the task number as a job id."""
+    candidates = []
+    for f in parent.glob(f"*{base}*.o"):
+        m = _ARRAY_LOG_RE.search(f.name)
+        if m and f.name.startswith(f"{base}-"):
+            candidates.append((_log_mtime(f), m.group(1)))
+            continue
+        if m:
+            continue
+        m = re.search(r'-(\d+)\.o$', f.name) if f.name.startswith(f"{base}-") else None
+        m = m or re.search(r'[-_](\d{6,})\.o$', f.name)
+        if m:
+            candidates.append((_log_mtime(f), m.group(1)))
+    for f in parent.glob(f"{base}.o*"):
+        m = re.search(r'\.o(\d+)$', f.name)
+        if m:
+            candidates.append((_log_mtime(f), m.group(1)))
+    if not candidates:
+        return None
+    return max(candidates)[1]
+
 def get_running_jobs() -> Set[str]:
     """
     Get set of currently running job IDs from squeue.
@@ -483,13 +531,24 @@ def get_running_jobs() -> Set[str]:
         Set of job ID strings that are currently running
     """
     try:
+        from mace.queue.slurm_ids import expand_queue_id, slurm_env
         user = os.environ.get('USER', '')
         result = subprocess.run(
             ['squeue', '-u', user, '-h', '-o', '%i'],
-            capture_output=True, text=True, timeout=30
+            capture_output=True, text=True, timeout=30, env=slurm_env()
         )
         if result.returncode == 0 and result.stdout.strip():
-            return set(result.stdout.strip().split('\n'))
+            # The pending tasks of a job array come as one token
+            # (A_[2-3%2]): expanded to A_2, A_3. A token cut short is kept
+            # as it is (it matches nothing).
+            jobs = set()
+            for token in result.stdout.strip().split('\n'):
+                ids = expand_queue_id(token)
+                if isinstance(ids, list):
+                    jobs.update(ids)
+                else:
+                    jobs.add(token)
+            return jobs
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
         print(f"  Warning: Could not query squeue: {e}")
 
@@ -630,16 +689,20 @@ def remove_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]):
         response = input(prompt).strip().lower()
 
         if response == 'y':
-            result = subprocess.run(
-                ['scancel'] + definite_ids,
-                capture_output=True, text=True
-            )
+            # Task ids (A_T) of a job array are canceled one task at a
+            # time; a bare array id would cancel every task and is refused.
+            from mace.queue.slurm_ids import safe_scancel_many
+            result, refused = safe_scancel_many(
+                definite_ids, search_dirs=[z['path'].parent for z in definite_zombies])
+            for jid, reason in refused:
+                print(f"\n✗ Not canceled {jid}: {reason}")
+            canceled = [j for j in definite_ids if j not in {r[0] for r in refused}]
 
-            if result.returncode == 0:
-                print(f"\n✓ Canceled {len(definite_ids)} zombie job(s):")
-                for jid in definite_ids:
+            if result is not None and result.returncode == 0:
+                print(f"\n✓ Canceled {len(canceled)} zombie job(s):")
+                for jid in canceled:
                     print(f"  scancel {jid}")
-            else:
+            elif result is not None:
                 print(f"\n✗ Error canceling jobs: {result.stderr}")
         else:
             print("\nNo zombie jobs canceled.")
@@ -655,16 +718,18 @@ def remove_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]):
         response = input(f"Also cancel {len(ongoing_zombies)} ongoing job(s) that may be stuck? [y/N]: ").strip().lower()
 
         if response == 'y':
-            result = subprocess.run(
-                ['scancel'] + ongoing_ids,
-                capture_output=True, text=True
-            )
+            from mace.queue.slurm_ids import safe_scancel_many
+            result, refused = safe_scancel_many(
+                ongoing_ids, search_dirs=[z['path'].parent for z in ongoing_zombies])
+            for jid, reason in refused:
+                print(f"\n✗ Not canceled {jid}: {reason}")
+            canceled = [j for j in ongoing_ids if j not in {r[0] for r in refused}]
 
-            if result.returncode == 0:
-                print(f"\n✓ Canceled {len(ongoing_ids)} ongoing job(s):")
-                for jid in ongoing_ids:
+            if result is not None and result.returncode == 0:
+                print(f"\n✓ Canceled {len(canceled)} ongoing job(s):")
+                for jid in canceled:
                     print(f"  scancel {jid}")
-            else:
+            elif result is not None:
                 print(f"\n✗ Error canceling jobs: {result.stderr}")
         else:
             print("\nNo ongoing jobs canceled.")

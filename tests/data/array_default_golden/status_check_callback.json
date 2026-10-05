@@ -42,7 +42,9 @@
     "%i,%T,%S"
    ],
    "cwd": "<TMP>/decks",
-   "env": {},
+   "env": {
+    "SLURM_BITSTR_LEN": "0"
+   },
    "tool": "squeue"
   },
   {
@@ -55,7 +57,9 @@
     "-X"
    ],
    "cwd": "<TMP>/decks",
-   "env": {},
+   "env": {
+    "SLURM_BITSTR_LEN": "0"
+   },
    "tool": "sacct"
   },
   {
@@ -68,7 +72,9 @@
     "-X"
    ],
    "cwd": "<TMP>/decks",
-   "env": {},
+   "env": {
+    "SLURM_BITSTR_LEN": "0"
+   },
    "tool": "sacct"
   }
  ],

@@ -759,7 +759,8 @@ def check_slurm_jobs(decks: List[Deck]) -> None:
     user = os.environ.get("USER") or os.environ.get("LOGNAME") or str(os.getuid())
     try:
         r = subprocess.run([squeue, "-h", "-u", user, "-o", "%j %i %T"],
-                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60,
+                           env=dict(os.environ, SLURM_BITSTR_LEN="0"))
     except (OSError, subprocess.SubprocessError) as exc:
         say(f"mace run: warning: could not ask squeue for running jobs ({exc})", err=True)
         return
