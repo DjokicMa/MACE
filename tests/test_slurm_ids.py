@@ -338,3 +338,34 @@ def test_populate_scan_reads_task_ids(tmp_path, logs, expected):
         (tmp_path / name).write_text("")
     (calc,) = scan_for_completed_calculations(tmp_path)
     assert calc["slurm_job_id"] == expected
+
+
+def _time_left_run(seen):
+    def fake_run(cmd, **kw):
+        seen.append(cmd)
+        job = cmd[cmd.index("-j") + 1]
+        # squeue -j A lists every task of A; its first line is a pending task
+        out = "7-00:00:00\n0:02:00\n" if job == "4242" else "0:02:00\n"
+        return subprocess.CompletedProcess(cmd, 0, out, "")
+    return fake_run
+
+
+def test_time_left_of_the_last_task_names_the_task(monkeypatch):
+    """The last task of an array to start has the array id as its raw
+    SLURM_JOB_ID; squeue -j A would list the whole array."""
+    seen = []
+    monkeypatch.setattr(slurm_ids.subprocess, "run", _time_left_run(seen))
+    env = dict(TASK_ENV, SLURM_JOB_ID="4242", MACE_ARRAY_RAW_ID="4242",
+               SLURM_ARRAY_TASK_ID="3", MACE_ARRAY_TASK="4242_3")
+    assert slurm_ids.remaining_walltime_seconds(env) == 120
+    assert seen[0][seen[0].index("-j") + 1] == "4242_3"
+
+
+def test_time_left_of_a_plain_job_and_of_a_child_job(monkeypatch):
+    seen = []
+    monkeypatch.setattr(slurm_ids.subprocess, "run", _time_left_run(seen))
+    assert slurm_ids.remaining_walltime_seconds({"SLURM_JOB_ID": "5000"}) == 120
+    child = dict(TASK_ENV, SLURM_JOB_ID="10001")
+    assert slurm_ids.remaining_walltime_seconds(child) == 120
+    assert [c[c.index("-j") + 1] for c in seen] == ["5000", "10001"]
+    assert slurm_ids.remaining_walltime_seconds({}) is None

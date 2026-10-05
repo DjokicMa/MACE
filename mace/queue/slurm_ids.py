@@ -341,9 +341,14 @@ def parse_time_left(text: str) -> Optional[int]:
 
 
 def remaining_walltime_seconds(env: Optional[Dict[str, str]] = None) -> Optional[int]:
-    """Time left of the job this process runs in (squeue %L), or None."""
+    """Time left of the job this process runs in (squeue %L), or None.
+
+    Inside a MACE array task the query names the task, ``A_T``: the last
+    task of an array to start has the array id A as its raw SLURM_JOB_ID,
+    and ``squeue -j A`` lists every task of the array, so its first line can
+    be another task's time left."""
     env = os.environ if env is None else env
-    job = (env.get("SLURM_JOB_ID") or "").strip()
+    job = verified_array_task(env) or (env.get("SLURM_JOB_ID") or "").strip()
     if not job:
         return None
     try:
