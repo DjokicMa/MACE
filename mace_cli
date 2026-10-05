@@ -2034,13 +2034,18 @@ More Help:
                     ui.info("\nCalculation Types:")
                     for calc_type, count in calc_types.items():
                         ui.info(f"  {calc_type}: {count}")
+                from mace.queue.slurm_ids import array_label, array_summary
+                arrays = array_summary(db)
+                if arrays:
+                    ui.info(f"\nJob arrays: {arrays[0]} arrays, {arrays[1]} tasks")
 
                 # Show recent activity
                 recent_calcs = db.get_recent_calculations(limit=10)
                 if recent_calcs:
                     ui.info("\nRecent Activity:")
                     for calc in recent_calcs:
-                        ui.info(f"  {calc['calc_id']} ({calc['material_id']}): {calc['status']}")
+                        ui.info(f"  {calc['calc_id']} ({calc['material_id']}): {calc['status']}"
+                                f"{array_label(calc.get('slurm_job_id'))}")
                         if calc.get('error_message'):
                             ui.info(f"    Error: {calc['error_message']}")
 
@@ -2048,9 +2053,11 @@ More Help:
                 # Standard view - show last 5 calculations
                 recent_calcs = db.get_recent_calculations(limit=5)
                 if recent_calcs:
+                    from mace.queue.slurm_ids import array_label
                     ui.info("\nRecent Activity:")
                     for calc in recent_calcs:
-                        ui.info(f"  {calc['calc_id']} ({calc['material_id']}): {calc['status']}")
+                        ui.info(f"  {calc['calc_id']} ({calc['material_id']}): {calc['status']}"
+                                f"{array_label(calc.get('slurm_job_id'))}")
             
         else:
             # Run normal monitor dashboard

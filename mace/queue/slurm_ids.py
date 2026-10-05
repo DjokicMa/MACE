@@ -63,6 +63,27 @@ def is_array_task_id(job_id) -> bool:
     return bool(ARRAY_TASK_RE.match(str(job_id or "").strip()))
 
 
+def array_label(job_id) -> str:
+    """'  [array A, task T]' for a job array task id, '' for anything else."""
+    arr, task = split_job_id(job_id)
+    return f"  [array {arr}, task {task}]" if task is not None else ""
+
+
+def array_summary(db) -> Optional[Tuple[int, int]]:
+    """(arrays, tasks) recorded in the database, or None when there are none."""
+    try:
+        with db._get_connection() as conn:
+            ids = [r[0] for r in conn.execute(
+                "SELECT slurm_job_id FROM calculations WHERE slurm_job_id LIKE '%\\_%' "
+                "ESCAPE '\\'")]
+    except Exception:
+        return None
+    tasks = [i for i in ids if is_array_task_id(i)]
+    if not tasks:
+        return None
+    return len({split_job_id(t)[0] for t in tasks}), len(tasks)
+
+
 def split_squeue_line(line: str, nfields: int) -> List[str]:
     """Split one squeue line on the commas that are outside ``[...]``, at most
     ``nfields - 1`` times (the last field keeps any commas of its own, e.g. a
