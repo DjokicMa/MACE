@@ -354,6 +354,8 @@ def test_timeout_of_one_task_restarts_that_task_alone(tmp_path):
         real[0]["script_text"][:400]
     assert not fake.calls("scancel")
     assert [r[f"4242_{t}"]["status"] for t in (0, 2)] == ["running", "running"]
+    # the restart is an ordinary job: it carries no array settings
+    assert "slurm_array" not in json.loads(r["5000"]["settings_json"] or "{}")
 
 
 def test_early_failure_cancel_and_bare_array_id(tmp_path, monkeypatch):
