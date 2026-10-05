@@ -205,6 +205,9 @@ mace workflow --execute workflow_plan_<id>.json --array
   `#SBATCH` lines at the top of the script, job name and output file aside)
   share one array, one task per deck. Requests are compared as written:
   nothing is rounded, and `--mem=5G` and `--mem=5120M` are different requests.
+  The wrapper asks for that same request: a line that names the job and asks
+  for resources at once (`#SBATCH -J x -t 2-00:00:00 --mem=40G`) keeps its
+  resources there (`#SBATCH --time=2-00:00:00 --mem=40G`).
   A deck whose request no other deck has, or whose script sets its own
   `--chdir` or `--dependency`, is submitted as a normal job, and the summary
   says which and why.

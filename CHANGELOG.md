@@ -179,7 +179,8 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   deck keeps the job script the default path writes; decks whose scripts ask
   for exactly the same resources share one array (one task per deck), and a
   deck with a request of its own goes in as a normal job (nothing is rounded
-  up or down). `--max-running N` limits the running tasks of each array
+  up or down; a `#SBATCH` line that also names the job keeps its resources in
+  the array's request). `--max-running N` limits the running tasks of each array
   (`--array=0-M%N`). Works with `--track`, `--progress`, `--walltime`, `-i`,
   `--nosubmit` (writes the array and prints its sbatch line) and mixed
   .d12/.d3 folders. `mace workflow --quick-start/--execute/--interactive

@@ -111,7 +111,7 @@ class ArrayMember:
 class ArrayGroup:
     key: Tuple
     members: List[ArrayMember]
-    directive_lines: List[str]      # the request, verbatim, minus -J/-o/-e
+    directive_lines: List[str]      # the request, verbatim, minus -J/-o/-e options
     separate_stderr: bool
 
 
@@ -232,6 +232,27 @@ def _shell_var(script_text: str, name: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+_PLAIN_VALUE_RE = re.compile(r"^[\w@%+=:,./-]*$")
+
+
+def _render_option(name: str, value: Optional[str]) -> str:
+    if value is None:
+        return name
+    return f"{name}={value if _PLAIN_VALUE_RE.match(value) else shlex.quote(value)}"
+
+
+def request_line(line: str) -> Optional[str]:
+    """A directive line as the array wrapper carries it: the line itself when
+    it holds no job name or output file, else the line rebuilt without those
+    (``#SBATCH -J x -t 2-00:00:00 --mem=40G`` -> ``#SBATCH --time=2-00:00:00
+    --mem=40G``), so no request on it is lost; None when nothing is left."""
+    options = parse_directive(line)
+    if not any(n in _NOT_REQUEST for n, _ in options):
+        return line.strip()
+    kept = [_render_option(n, v) for n, v in options if n not in _NOT_REQUEST]
+    return "#SBATCH " + " ".join(kept) if kept else None
+
+
 # --------------------------------------------------------------------------
 # grouping
 
@@ -275,8 +296,7 @@ def plan_groups(members: Sequence[ArrayMember]
             continue
         key = resource_key(text)
         if key not in groups:
-            lines = [l for l in sbatch_directives(text)
-                     if not any(n in _NOT_REQUEST for n, _ in parse_directive(l))]
+            lines = [r for r in (request_line(l) for l in sbatch_directives(text)) if r]
             groups[key] = ArrayGroup(key, [], lines, "--error" in req)
             order.append(key)
         groups[key].members.append(m)

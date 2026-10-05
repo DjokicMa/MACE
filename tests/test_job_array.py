@@ -359,3 +359,23 @@ def test_submit_slots_are_the_users_own_association(account, expected):
     the account line (more in use than its limit) and other users' lines
     are not this user's limit."""
     assert ja.parse_submit_slots(ASSOC, "tester", account) == expected
+
+
+def test_combined_name_line_keeps_its_request(tmp_path):
+    """sbatch reads every option of a line: one that names the job and asks
+    for resources loses only the name in the wrapper, never the request."""
+    combined = ["-J {job} -t 2-00:00:00 --mem=40G", "-o {job}-%J.o -e {job}.e",
+                "--ntasks=32", "--constraint='a|b'"]
+    ms = [member(tmp_path, f"m{i}", combined) for i in range(2)]
+    arrays, singles = plan_groups(ms)
+    assert len(arrays) == 1 and not singles
+    assert dict(arrays[0].key)["--time"] == "2-00:00:00"
+    (p,) = prepare_arrays(arrays, tmp_path, "sp", max_tasks=10)
+    text = p.wrapper.read_text()
+    assert "#SBATCH --time=2-00:00:00 --mem=40G\n" in text
+    assert "#SBATCH --ntasks=32\n" in text and "#SBATCH --constraint='a|b'\n" in text
+    assert "-J m0" not in text and "m0-%J.o" not in text and "m0.e" not in text
+    # the wrapper asks for exactly what the grouping compared
+    assert resource_key(text.replace("#SBATCH --array=0-1\n", "")) == arrays[0].key
+    assert "--time=2-00:00:00" in ja.describe_request(p.group)
+
