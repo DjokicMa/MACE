@@ -336,3 +336,26 @@ def test_real_job_script_in_a_task_falls_back_to_its_own_scratch(tmp_path):
     assert (decks / ".matB.scratch").read_text().strip() == want
     assert f"CRYSTAL ran in {want}" in (decks / "matB.out").read_text()
     assert not (decks / "matA.out").exists()
+
+
+ASSOC = """ClusterName=c Account=acct UserName= Partition= Priority=0 ID=1
+    ParentAccount=root(1) Lineage=/acct/ DefAssoc=No
+    MaxJobs=520(98) MaxJobsAccrue= MaxSubmitJobs=1000(4362) MaxWallPJ=
+ClusterName=c Account=acct UserName=tester(5) Partition= Priority=0 ID=2
+    ParentAccount= Lineage=/acct/0-tester/ DefAssoc=Yes
+    MaxJobs=520(49) MaxJobsAccrue= MaxSubmitJobs=1000(33) MaxWallPJ=
+ClusterName=c Account=other UserName=tester(5) Partition= Priority=0 ID=3
+    ParentAccount= Lineage=/other/0-tester/ DefAssoc=No
+    MaxJobs=520(0) MaxJobsAccrue= MaxSubmitJobs=1000(990) MaxWallPJ=
+ClusterName=c Account=acct UserName=someone(6) Partition= Priority=0 ID=4
+    MaxJobs=520(0) MaxJobsAccrue= MaxSubmitJobs=0(0) MaxWallPJ=
+"""
+
+
+@pytest.mark.parametrize("account,expected", [("acct", (1000, 33)), (None, (1000, 33)),
+                                              ("other", (1000, 990)), ("none", None)])
+def test_submit_slots_are_the_users_own_association(account, expected):
+    """The layout of `scontrol show assoc_mgr ... flags=assoc` (SLURM 26.05):
+    the account line (more in use than its limit) and other users' lines
+    are not this user's limit."""
+    assert ja.parse_submit_slots(ASSOC, "tester", account) == expected

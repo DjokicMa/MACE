@@ -319,9 +319,38 @@ def max_tasks_per_array() -> int:
     return max(min(limits), 1)
 
 
+def parse_submit_slots(text: str, user: str, account: Optional[str]
+                       ) -> Optional[Tuple[int, int]]:
+    """(limit, used) of MaxSubmitJobs from `scontrol show assoc_mgr ...
+    flags=assoc` output: the user's own association for ``account`` (its
+    default association, DefAssoc=Yes, when no account is given), the
+    tightest when there are several. The account-level and other users'
+    associations in the same output are not this user's limit (measured: an
+    account line can show more jobs in use than its MaxSubmitJobs)."""
+    blocks = re.split(r"(?=ClusterName=)", text) if "ClusterName=" in text else [text]
+    best = None
+    for block in blocks:
+        u = re.search(r"\bUserName=([^\s(]*)", block)
+        if not u or u.group(1) != user:
+            continue
+        a = re.search(r"\bAccount=(\S+)", block)
+        if account:
+            if not a or a.group(1) != account:
+                continue
+        elif "DefAssoc=Yes" not in block:
+            continue
+        m = re.search(r"MaxSubmitJobs=(\d+)\((\d+)\)", block)
+        if not m:
+            continue
+        limit, used = int(m.group(1)), int(m.group(2))
+        if best is None or limit - used < best[0] - best[1]:
+            best = (limit, used)
+    return best
+
+
 def free_submit_slots(account: Optional[str]) -> Optional[Tuple[int, int]]:
-    """(limit, used) of MaxSubmitJobs for this user and account, the
-    tightest association that sets one, or None when it cannot be read."""
+    """(limit, used) of MaxSubmitJobs for this user and account, or None
+    when it cannot be read."""
     user = os.environ.get("USER") or os.environ.get("LOGNAME")
     if not user:
         return None
@@ -331,12 +360,7 @@ def free_submit_slots(account: Optional[str]) -> Optional[Tuple[int, int]]:
     res = _run(cmd)
     if res is None or res.returncode != 0:
         return None
-    best = None
-    for limit, used in re.findall(r"MaxSubmitJobs=(\d+)\((\d+)\)", res.stdout):
-        limit, used = int(limit), int(used)
-        if best is None or limit - used < best[0] - best[1]:
-            best = (limit, used)
-    return best
+    return parse_submit_slots(res.stdout, user, account)
 
 
 def check_submit_limits(prepared: Sequence[PreparedArray]) -> None:
