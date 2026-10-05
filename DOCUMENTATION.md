@@ -87,6 +87,9 @@ mace submit --track my_calculation.d12           # also record in materials.db
 mace submit --progress full_electronic my_calculation.d12
 mace submit --progress interactive my_calculation.d12
 
+# Many decks at once as SLURM job arrays (see "Job arrays" below)
+mace submit --array --max-running 10 my_calculations/
+
 # Run decks on this dev node now, without SLURM (quick SP, BAND/DOSS/POTC, MATDUMP)
 mace run dia_sp.d12 dia_band.d3
 
@@ -182,6 +185,70 @@ completion callback runs, so nothing is submitted afterwards.
 Each deck reuses `$SCRATCH/crys23/<job>`, as SLURM jobs do: files a failed
 earlier run of the same job left there (a `fort.9`, a `BAND.DAT`) can be
 copied back after another failure, the same as under SLURM.
+
+### Job arrays (`mace submit --array`)
+
+Submitting many decks at once can go to SLURM as job arrays instead of one
+job per deck. It is opt-in; without `--array` nothing changes.
+
+```bash
+mace submit --array my_calculations/                    # one array per resource request
+mace submit --array --max-running 10 my_calculations/   # at most 10 tasks of each array at once
+mace submit --array --track my_calculations/            # also record the tasks in materials.db
+mace submit --array --progress opt_sp my_calculations/  # first wave as arrays, later steps per material
+mace workflow --quick-start --d12-dir ./decks --workflow opt_sp --array --max-running 10
+mace workflow --execute workflow_plan_<id>.json --array
+```
+
+- **What shares an array.** Every deck still gets the job script `mace submit`
+  writes for it. Decks whose scripts ask for exactly the same resources (the
+  `#SBATCH` lines at the top of the script, job name and output file aside)
+  share one array, one task per deck. Requests are compared as written:
+  nothing is rounded, and `--mem=5G` and `--mem=5120M` are different requests.
+  A deck whose request no other deck has, or whose script sets its own
+  `--chdir` or `--dependency`, is submitted as a normal job, and the summary
+  says which and why.
+- **Ids.** A task is `<array id>_<task>`, e.g. `12345678_7`; squeue shows the
+  pending tasks of an array as one line, `12345678_[3-49%10]`.
+  `scancel 12345678_7` cancels that task; `scancel 12345678` cancels every task
+  of the array. MACE itself only ever cancels or restarts single tasks.
+- **Files.** Each array has a folder `.mace_arrays/arr_<date>_<time>_<k>/` next
+  to the decks (for a workflow, in `step_001_<TYPE>/`): `manifest.tsv` (task,
+  directory, job, script, calculation), the wrapper script that runs the
+  deck's own script for its task, `submitted.json`, and `logs/` with one SLURM
+  log per task. The log is also linked into the deck's folder as
+  `<job>-<array id>_<task>.o`, where MACE reads job ids and walltime kills.
+  Each task runs its deck's script in that deck's folder, with its own scratch
+  directory, exactly as a normal job does.
+- **Throttle.** `--max-running N` is per array (`--array=0-M%N`): two resource
+  requests give two arrays, up to `2N` tasks at once. Change it for a running
+  array with `scontrol update JobId=<array id> ArrayTaskThrottle=N`. Recovery
+  resubmissions (timeout, memory, FINALRUN loop) are normal jobs and are not
+  limited.
+- **Limits.** Every task counts against SLURM's MaxSubmitJobs. When the
+  cluster reports the limit, a submission whose tasks do not fit in the free
+  slots is refused before anything is submitted. Arrays larger than the
+  cluster's `max_array_tasks` are split. The arrays of one submission are
+  submitted held and released once their rows are recorded; if SLURM refuses
+  any of them, the ones already submitted are removed, so nothing is left half
+  submitted.
+- **Workflows.** `--array` (or the plan's `"job_arrays": {"first_step": true,
+  "max_running": N}`) covers the first wave only. Each task's own completion
+  callback then submits that material's next step as a normal job, as always.
+  The callbacks of tasks that end together wait up to 15 minutes for the queue
+  lock (inside the task's walltime) instead of 60 seconds; a task that cannot
+  get it records its own result, and the next callback (or `mace manager
+  --callback-mode completion`) submits its next step.
+- **Status.** `mace monitor --status` lists task rows with `[array A, task T]`.
+  A task is recorded as finished only from its own output or a SLURM record of
+  that task. SLURM keeps no record at all of a task canceled while it was
+  pending, so such a task is marked canceled only after about 10 minutes in
+  which neither the queue, the accounting nor its own output shows it, seen by
+  two status checks (any job callback, or `mace manager --callback-mode
+  status_check`).
+- `mace run` has no `--array` (it runs decks one after another on the node it
+  is on), and it refuses a deck that is currently a queued or running array
+  task.
 
 ### One D12 Template for Many Structures (`mace opt2d12`)
 ```bash

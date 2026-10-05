@@ -135,6 +135,17 @@ mace submit --progress full_electronic mat_opt.d12
 mace submit --progress interactive mat_sp.d12
 ```
 
+Many decks at once can go in as SLURM job arrays (opt-in): decks whose job
+scripts ask for the same resources share one array, one task per deck, and
+`--max-running N` limits how many tasks of each array run at once. Tasks are
+`<array id>_<task>`; `scancel <array id>` cancels every task of the array.
+See DOCUMENTATION.md, "Job arrays".
+
+```bash
+mace submit --array --max-running 10 my_calculations/
+mace workflow --quick-start --d12-dir ./decks --workflow opt_sp --array
+```
+
 `--progress` writes a real workflow plan (into `workflow_configs/`) before
 submitting and tags each job with its workflow ID, so progression follows that
 plan rather than built-in defaults. It implies `--track`. The deck you submit

@@ -216,6 +216,14 @@ mace workflow --interactive
 mace workflow --quick-start --cif-dir ./cifs --workflow full_electronic
 ```
 
+#### Many decks at once (SLURM job arrays)
+```bash
+# One array per resource request, at most 10 tasks of each running at once
+mace submit --array --max-running 10 my_calculations/
+```
+Opt-in; tasks are `<array id>_<task>`, and `scancel <array id>` cancels every
+task. See DOCUMENTATION.md, "Job arrays".
+
 #### Quick runs on a dev node (no SLURM)
 ```bash
 # MATDUMP, BAND/DOSS/POTC, small SPs: run them now, staged exactly like a SLURM job

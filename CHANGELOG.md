@@ -13,8 +13,10 @@ Everything since 1.1.4. New: charged systems and ion clusters (fragments found
 by connectivity, CHEMOD/DOPING/spin planned for you, per-fragment Mulliken
 charges), `mace defects` (defect deck sets and formation energies, with the 3D
 charged-cell offset and image-charge corrections measured on CRYSTAL23),
-`mace phonopy` (finite-displacement phonons through phonopy 4.x), and one basis
-file per family with an opt-in TZVP-REV2 2022 update and the SOC basis records.
+`mace phonopy` (finite-displacement phonons through phonopy 4.x), SLURM job
+arrays for many decks at once (`mace submit --array`, `mace workflow --array`),
+and one basis file per family with an opt-in TZVP-REV2 2022 update and the SOC
+basis records.
 **Band paths from an OPT parent now use the optimized cell** (they used the
 initial cell), static band paths compute their lattice-dependent points for the
 cell, and long-axis cells keep the band-path ISS at most 999; regenerate BAND
@@ -149,9 +151,53 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 - **Basis sets are one file per family.** Old `basis_sets/<family>/` paths
   still work, including at the custom-path prompt. Outside tools that read
   the per-element files must use `basis_library.read_record`.
+- **Job arrays change nothing unless you ask for them** (`--array`, or a
+  plan's `job_arrays` key): without them the job scripts, the sbatch calls and
+  the database rows are what 1.1.4 wrote. What does change for everyone:
+  - The planner's custom SLURM directive menu no longer has option 5
+    (`--array=1-10`), and an `--array`/`-a` directive is refused; the other
+    options keep their numbers. A piped answer stream that chose 5 now stops
+    as out of step. A plan that holds an `--array` directive has it dropped
+    with a warning: it made every job of that step ten copies of one
+    material in one scratch directory.
+  - Queue counts (`mace manager --status`, the monitor's queue health) count
+    each pending task of any job array, yours from other tools included, as
+    SLURM counts them against MaxSubmitJobs, so they can be higher than
+    before.
+  - MACE's own squeue and sacct calls set `SLURM_BITSTR_LEN=0` (in their own
+    environment only) so array task lists print in full.
+  - `mace run` also refuses a deck that is a queued or running task of a MACE
+    job array, as it refuses a same-named job.
+  - A database written by 1.1.5 with job array rows (`A_T` job ids) should be
+    read by 1.1.5: an older MACE does not expand the pending task lists of
+    squeue and keeps such rows as they are.
 
 ### Added
 
+- **SLURM job arrays (opt-in): `mace submit --array [--max-running N]`.**
+  Many decks at once go to SLURM as job arrays instead of one job each. Every
+  deck keeps the job script the default path writes; decks whose scripts ask
+  for exactly the same resources share one array (one task per deck), and a
+  deck with a request of its own goes in as a normal job (nothing is rounded
+  up or down). `--max-running N` limits the running tasks of each array
+  (`--array=0-M%N`). Works with `--track`, `--progress`, `--walltime`, `-i`,
+  `--nosubmit` (writes the array and prints its sbatch line) and mixed
+  .d12/.d3 folders. `mace workflow --quick-start/--execute/--interactive
+  --array [--max-running N]` and `mace submit --progress ... --array` write
+  `"job_arrays": {"first_step": true, "max_running": N}` into the plan: the
+  first wave goes in as arrays and each task's own callback chains that
+  material's later steps as normal jobs. Tasks are `<array id>_<task>`;
+  status, completion, timeout restart, FINALRUN-loop recovery, early-failure
+  cancel, zombie removal and the database all address the single task, and a
+  bare array id is never canceled. The arrays of a submission are submitted
+  held and released after their rows are written; a refused array removes the
+  rest; a submission larger than the free MaxSubmitJobs slots is refused up
+  front. A task canceled while pending (SLURM keeps no record of it) is marked
+  canceled after about 10 minutes of finding nothing of it on two status
+  checks. Each array's manifest, wrapper and per-task logs are in
+  `.mace_arrays/`. Callbacks of array tasks wait up to 15 minutes (inside their
+  walltime) for the queue lock, and record their own result if they cannot get
+  it. See DOCUMENTATION.md, "Job arrays".
 - **`mace run`: run decks on the node you are on, without SLURM.** For a
   MATDUMP, BAND/DOSS/POTC, a small SP or a quick rerun on an HPCC dev node.
   Each deck runs through the job script `mace submit` would submit (written to
@@ -419,6 +465,20 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 
 ### Fixed
 
+- **squeue lines of job arrays are read whole.** squeue folds an array's
+  pending tasks into one token, and once the pending set has a gap the
+  brackets hold commas (`A_[2,4-5%2]`, measured). Every queue check split the
+  line on each comma, so the token was cut in two and the state read from the
+  wrong field; such lines (from any array in your queue) were miscounted.
+  They are split outside the brackets now, and a task list SLURM printed cut
+  short changes nothing.
+- **A task number is no longer read as a job id.** The `.o` lookup of
+  `mace completion --remove-zombie-jobs` took `X-<array>_<task>.o` for job
+  `<task>` when the task number had six digits; it now reads `<array>_<task>`,
+  and the scan of finished outputs records it too.
+- **The planner's `--array=1-10` directive preset is gone** (see Upgrading).
+  It turned every job of the step into ten copies of one material sharing a
+  scratch directory, on the `mace submit --progress interactive` route.
 - **A job script run outside SLURM no longer runs in `/`.** `bash job.sh`
   left `DIR` (`$SLURM_SUBMIT_DIR`) empty: the script copied from and to `/`,
   never ran CRYSTAL, exited 0 and ran the completion callback from the home
