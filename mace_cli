@@ -655,6 +655,13 @@ Options:
   --work-dir DIR        Working directory (default: current directory)
   --db-path PATH        Database path (default: materials.db)
   --max-jobs N          Maximum concurrent jobs (default: 200)
+  --array               Submit the first step as SLURM job arrays: materials
+                        whose job scripts ask for exactly the same resources
+                        share one array, one task per material. Later steps are
+                        submitted per material as each job completes, as always.
+  --max-running N       With --array: at most N tasks of each array run at once
+                        (--array=0-M%N). The limit is per array; recovery
+                        resubmissions are normal jobs and are not limited.
 
 Examples:
   mace workflow --interactive
@@ -662,6 +669,7 @@ Examples:
   mace workflow --execute workflow_plan_20250618_145837.json
   mace workflow --status
   mace workflow --show-templates
+  mace workflow --quick-start --d12-dir ./decks --workflow opt_sp --array --max-running 10
 """,
     'submit': """
 Usage: mace submit [file_or_directory] [options]
@@ -1694,7 +1702,9 @@ More Help:
                     plan_file, workflow_id, sequence = build_progress_plan(
                         work_dir=Path(base_dir).resolve(), db_path='materials.db',
                         input_files=[Path(f) for f in selected], progress=progress,
-                        walltime=walltime)
+                        walltime=walltime,
+                        job_arrays=({"first_step": True, "max_running": max_running}
+                                    if array_mode else None))
                 except ValueError as e:
                     ui.err(f"Error: {e}")
                     sys.exit(1)

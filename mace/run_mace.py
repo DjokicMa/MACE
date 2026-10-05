@@ -73,6 +73,9 @@ Examples:
   # Show available workflow templates
   python run_mace.py --show-templates
 
+  # First step as SLURM job arrays, at most 10 tasks of each running at once
+  python run_mace.py --quick-start --d12-dir ./decks --workflow opt_sp --array --max-running 10
+
 Workflow Templates:
   basic_opt         : OPT
   opt_sp           : OPT → SP
@@ -111,8 +114,18 @@ Workflow Templates:
     parser.add_argument("--work-dir", "-W", default=".", help="Working directory")
     parser.add_argument("--db-path", "-D", default="materials.db", help="Database path")
     parser.add_argument("--max-jobs", "-j", type=int, default=200, help="Maximum concurrent jobs")
+    parser.add_argument("--array", action="store_true",
+                        help="Submit the first step as SLURM job arrays: materials whose job scripts ask for exactly the same resources share one array, one task per material. Later steps are submitted per material as each job completes, as always.")
+    parser.add_argument("--max-running", metavar="N", type=int,
+                        help="With --array: at most N tasks of each array run at once (--array=0-M%%N). The limit is per array; recovery resubmissions are normal jobs and are not limited.")
     
     args = parser.parse_args()
+    if args.max_running is not None and not args.array:
+        parser.error("--max-running limits the tasks of a job array; use it with --array")
+    if args.max_running is not None and args.max_running < 1:
+        parser.error("--max-running needs a number of 1 or more")
+    if args.array and not (args.interactive or args.execute or args.quick_start):
+        parser.error("--array goes with --interactive, --quick-start or --execute")
     
     if args.interactive:
         run_interactive_mode(args)
@@ -133,6 +146,9 @@ def run_interactive_mode(args):
     print("=" * 60)
     
     planner = WorkflowPlanner(args.work_dir, args.db_path)
+    # --array: written into the plan this session saves (no new prompt, so
+    # piped answers stay as they are)
+    planner.job_arrays = job_arrays_setting(args)
     planner.main_interactive_workflow()
 
 
@@ -148,7 +164,16 @@ def run_execute_mode(args):
     print("=" * 60)
     
     executor = WorkflowExecutor(args.work_dir, args.db_path)
+    if getattr(args, "array", False):
+        executor.job_arrays_override = job_arrays_setting(args)
     executor.execute_workflow_plan(plan_file)
+
+
+def job_arrays_setting(args):
+    """The plan's job_arrays setting for --array [--max-running N], or None."""
+    if not getattr(args, "array", False):
+        return None
+    return {"first_step": True, "max_running": getattr(args, "max_running", None)}
 
 
 def run_quick_start_mode(args):
@@ -396,6 +421,9 @@ def create_quick_workflow_plan(input_dir, input_files, input_type, sequence, arg
             "auto_progression": True
         }
     }
+    job_arrays = job_arrays_setting(args)
+    if job_arrays:
+        plan["job_arrays"] = job_arrays
     
     return plan
 

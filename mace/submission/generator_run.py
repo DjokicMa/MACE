@@ -20,7 +20,8 @@ def is_script_generator(content: str) -> bool:
     return "echo '#!/bin/bash --login' >" in content or 'echo "#SBATCH' in content
 
 
-def run_script_generator(script_path, job_name: str, cwd) -> subprocess.CompletedProcess:
+def run_script_generator(script_path, job_name: str, cwd,
+                         env=None) -> subprocess.CompletedProcess:
     """Run ``bash <script_path> <job_name>`` in ``cwd`` from a separate copy.
 
     The generator runs from a temporary copy in ``cwd`` (so a generator that
@@ -35,7 +36,7 @@ def run_script_generator(script_path, job_name: str, cwd) -> subprocess.Complete
         with os.fdopen(fd, "w") as fh:
             fh.write(content)
         return subprocess.run(["bash", tmp_name, job_name], cwd=str(cwd),
-                              capture_output=True, text=True)
+                              capture_output=True, text=True, env=env)
     finally:
         try:
             os.unlink(tmp_name)

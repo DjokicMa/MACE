@@ -330,6 +330,18 @@ class WorkflowExecutor:
         except Exception as e:
             ui.warn(f"Could not persist plan into {self.configs_dir}: {e}")
 
+    def _persist_job_arrays_setting(self, plan: Dict[str, Any], workflow_id: str):
+        """Write plan['job_arrays'] into the persisted plan copy as well (it
+        is only written by _persist_plan_for_callbacks when new)."""
+        dest = self.configs_dir / f"workflow_plan_{workflow_id.replace('workflow_', '')}.json"
+        try:
+            data = json.loads(dest.read_text())
+            if data.get('job_arrays') != plan.get('job_arrays'):
+                data['job_arrays'] = plan.get('job_arrays')
+                dest.write_text(json.dumps(data, indent=2))
+        except (OSError, ValueError) as e:
+            ui.warn(f"Could not record the job array setting in {dest}: {e}")
+
     def copy_config_files(self, plan: Dict[str, Any], workflow_id: str):
         """Copy configuration files from temp to workflow_configs directory"""
         # Only copy if there are config files to copy
@@ -374,6 +386,12 @@ class WorkflowExecutor:
         plan['workflow_id'] = workflow_id
         ui.info(f"Using workflow_id: {workflow_id}")
 
+        # `mace workflow --execute plan.json --array`: the flag decides, and
+        # the plan copy the callbacks read says so too.
+        job_arrays_override = getattr(self, 'job_arrays_override', None)
+        if job_arrays_override is not None:
+            plan['job_arrays'] = job_arrays_override
+
         # Persist the plan into THIS work dir's workflow_configs: job
         # callbacks locate the plan by searching workflow_configs/ upward
         # from their job dirs, so executing a plan FILE that lives in some
@@ -381,6 +399,8 @@ class WorkflowExecutor:
         # template defaults (wrong SP functional, 10000-pt BAND, band-index
         # DOSS, and no FREQ/CHARGE+POTENTIAL/OPT2 steps at all).
         self._persist_plan_for_callbacks(plan, workflow_id)
+        if job_arrays_override is not None:
+            self._persist_job_arrays_setting(plan, workflow_id)
 
         # Get isolation mode from plan (default to 'isolated' if not specified)
         isolation_mode = plan.get('isolation_mode', 'isolated')
@@ -748,6 +768,14 @@ class WorkflowExecutor:
     def execute_step(self, plan: Dict[str, Any], workflow_id: str, calc_type: str, 
                     step_num: int, d12_files: List[Path], step_dir: Path) -> List[str]:
         """Execute a single workflow step with individual calculation folders and database tracking"""
+        # The plan's job_arrays setting covers the first wave only; every
+        # later step is chained per material by its job's own callback.
+        job_arrays = plan.get('job_arrays') or {}
+        if step_num == 1 and isinstance(job_arrays, dict) and job_arrays.get('first_step'):
+            return self._execute_step_as_arrays(plan, workflow_id, calc_type, step_num,
+                                                d12_files, step_dir,
+                                                job_arrays.get('max_running'))
+
         submitted_jobs = []
         existing_materials = []  # Track material IDs already used in this workflow
         
@@ -792,6 +820,168 @@ class WorkflowExecutor:
                 
         return submitted_jobs
         
+    def _execute_step_as_arrays(self, plan: Dict[str, Any], workflow_id: str, calc_type: str,
+                                step_num: int, d12_files: List[Path], step_dir: Path,
+                                max_running: Optional[int] = None) -> List[str]:
+        """execute_step for the first wave of a plan with job_arrays set.
+
+        Every material gets the folder, database row, metadata file and job
+        script execute_step gives it; the scripts are then submitted as
+        SLURM job arrays (one per resource request, see
+        mace/submission/job_array.py): held, the rows written in one
+        transaction, then released. A material whose request no other has,
+        or whose generator submits its own script, is submitted exactly as
+        execute_step submits it.
+        """
+        from mace.submission import job_array
+        from mace.submission.generator_run import run_script_generator
+        submitted_jobs: List[str] = []
+        existing_materials: List[str] = []
+        members, singles_pre = [], []
+        for d12_file in d12_files:
+            base_material_id = self.create_material_id_from_file(d12_file)
+            material_id = self.make_unique_material_id(base_material_id, d12_file,
+                                                       existing_materials)
+            existing_materials.append(material_id)
+            if material_id != base_material_id:
+                ui.info(f"  Note: Using unique ID '{material_id}' for duplicate material "
+                        f"'{base_material_id}'")
+            calc_dir = step_dir / material_id
+            calc_dir.mkdir(exist_ok=True)
+            calc_d12_file = calc_dir / f"{material_id}.d12"
+            if not calc_d12_file.exists():
+                shutil.copy2(str(d12_file), str(calc_d12_file))
+            ui.info(f"  Preparing {material_id} for a job array...")
+            calc_id, script_file = self._create_workflow_calculation(
+                calc_d12_file, calc_type, material_id, workflow_id, step_num, calc_dir)
+            env, marker = job_array.sbatch_shim()
+            try:
+                result = run_script_generator(script_file, script_file.stem, calc_dir, env=env)
+                kind, value = job_array.generator_outcome(result, marker)
+            finally:
+                job_array.cleanup_shim(marker)
+            prep = (calc_id, material_id, calc_dir, calc_d12_file)
+            if kind == 'submitted':
+                self.db.update_calculation_status(calc_id, 'submitted', slurm_job_id=value,
+                                                  output_file=str(calc_dir / f"{material_id}.out"))
+                submitted_jobs.append(value)
+                ui.ok(f"  Submitted {material_id}: Job ID {value} (its job script generator "
+                      f"submitted it itself)")
+            elif kind == 'generated' and result.returncode == 0 and script_file.exists():
+                members.append(job_array.ArrayMember(dir=calc_dir, job=script_file.stem,
+                                                     script=script_file, calc_id=calc_id,
+                                                     data={'prep': prep}))
+            else:
+                singles_pre.append(prep)
+
+        def fail(preps, why):
+            for calc_id, material_id, _, _ in preps:
+                self.db.update_calculation_status(calc_id, 'failed',
+                                                  error_message=f"SLURM submission failed: {why}")
+                ui.err(f"  Failed to submit {material_id}")
+
+        try:
+            arrays, singles = job_array.plan_groups(members)
+            prepared = job_array.prepare_arrays(arrays, step_dir, calc_type.lower(),
+                                                max_running) if arrays else []
+        except job_array.ArrayRefusal as e:
+            ui.err(f"Error: {e}")
+            fail([m.data['prep'] for m in members] + singles_pre, str(e))
+            return submitted_jobs
+
+        def record_rows(subs):
+            rows = []
+            for p in subs:
+                for i, m in enumerate(p.members):
+                    calc_id, material_id, calc_dir, _ = m.data['prep']
+                    rows.append({'calc_id': calc_id, 'slurm_job_id': p.task_id(i),
+                                 'job_script': str(m.script),
+                                 'output_file': str(calc_dir / f"{material_id}.out"),
+                                 'slurm_array': {'array_job_id': p.array_job_id, 'task': i,
+                                                 'tag': p.tag,
+                                                 'array_dir': str(p.array_dir.resolve())}})
+            self.db.update_array_rows(rows)
+
+        try:
+            subs = job_array.submit_prepared(prepared, record_rows) if prepared else []
+        except (job_array.ArrayRefusal, job_array.ArraySubmitError) as e:
+            ui.err(f"Error: {e}")
+            fail([m.data['prep'] for m in members] + singles_pre, str(e))
+            return submitted_jobs
+        for p in subs:
+            for i, m in enumerate(p.members):
+                submitted_jobs.append(p.task_id(i))
+                ui.ok(f"  Submitted {m.data['prep'][1]}: Job ID {p.task_id(i)}")
+        for m, reason in singles:
+            calc_id, material_id, calc_dir, _ = m.data['prep']
+            ui.info(f"  {material_id}: {reason}")
+            job_id = self._sbatch_in(calc_dir, m.script.name)
+            if job_id:
+                self.db.update_calculation_status(calc_id, 'submitted', slurm_job_id=job_id,
+                                                  output_file=str(calc_dir / f"{material_id}.out"))
+                submitted_jobs.append(job_id)
+                ui.ok(f"  Submitted {material_id}: Job ID {job_id}")
+            else:
+                fail([m.data['prep']], "sbatch refused it")
+        for calc_id, material_id, calc_dir, calc_d12_file in singles_pre:
+            # exactly as execute_step submits it: the generator again, then sbatch
+            script_file = self.generate_individual_slurm_script(
+                calc_d12_file, calc_type, material_id, calc_dir, workflow_id, step_num)
+            job_id = self.submit_slurm_job(script_file, calc_dir)
+            if job_id:
+                self.db.update_calculation_status(calc_id, 'submitted', slurm_job_id=job_id,
+                                                  output_file=str(calc_dir / f"{material_id}.out"))
+                submitted_jobs.append(job_id)
+                ui.ok(f"  Submitted {material_id}: Job ID {job_id}")
+            else:
+                fail([(calc_id, material_id, calc_dir, calc_d12_file)], "sbatch refused it")
+        job_array.summarize(subs, singles, max_running, say=ui.info)
+        return submitted_jobs
+
+    def _sbatch_in(self, calc_dir: Path, script_name: str) -> Optional[str]:
+        """sbatch <script> from its directory, as submit_slurm_job does."""
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(calc_dir)
+            result = subprocess.run(['sbatch', script_name], capture_output=True, text=True)
+            if result.returncode == 0:
+                for line in result.stdout.strip().split('\n'):
+                    if 'Submitted batch job' in line:
+                        return line.split()[-1]
+            else:
+                ui.err(f"SLURM submission failed: {result.stderr}")
+        finally:
+            os.chdir(original_cwd)
+        return None
+
+    def _create_workflow_calculation(self, d12_file: Path, calc_type: str, material_id: str,
+                                     workflow_id: str, step_num: int, calc_dir: Path):
+        """The database row, metadata file and job script generator of
+        submit_workflow_calculation, without the submission.
+        Returns (calc_id, script_file)."""
+        if self.db is None:
+            if hasattr(self, 'isolation_mode') and self.isolation_mode == 'isolated':
+                context_dir = self.work_dir / f".mace_context_{workflow_id}"
+                if context_dir.exists():
+                    self.db_path = str(context_dir / "materials.db")
+                    self.db = MaterialDatabase(self.db_path, auto_initialize=True)
+                else:
+                    raise RuntimeError(f"Context directory not found: {context_dir}")
+            else:
+                self.db = MaterialDatabase(self.db_path, auto_initialize=True)
+        calc_id = self.db.create_calculation(
+            material_id=material_id, calc_type=calc_type, calc_subtype=None,
+            input_file=str(d12_file), work_dir=str(calc_dir),
+            settings={"workflow_id": workflow_id, "workflow_step": step_num,
+                      "workflow_calc_type": calc_type})
+        metadata = {'workflow_id': workflow_id, 'step_num': step_num, 'calc_type': calc_type,
+                    'material_id': material_id, 'calc_id': calc_id}
+        with open(calc_dir / '.workflow_metadata.json', 'w') as f:
+            json.dump(metadata, f, indent=2)
+        script_file = self.generate_individual_slurm_script(
+            d12_file, calc_type, material_id, calc_dir, workflow_id, step_num)
+        return calc_id, script_file
+
     def submit_workflow_calculation(self, d12_file: Path, calc_type: str, material_id: str,
                                    workflow_id: str, step_num: int, calc_dir: Path) -> str:
         """Submit calculation using workflow-specific directory structure and database tracking"""

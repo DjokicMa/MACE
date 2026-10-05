@@ -4629,6 +4629,10 @@ class WorkflowPlanner:
         )
         timestamp = workflow_id.replace("workflow_", "")
         plan_file = self.configs_dir / f"workflow_plan_{timestamp}.json"
+        # `mace workflow --interactive --array`: the first step goes in as
+        # SLURM job arrays (the executor reads this key)
+        if getattr(self, "job_arrays", None):
+            workflow_plan["job_arrays"] = self.job_arrays
 
         _report_plan_functionals(workflow_plan)
         with open(plan_file, "w") as f:

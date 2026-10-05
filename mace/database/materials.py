@@ -482,9 +482,10 @@ class MaterialDatabase:
                 conn.execute(
                     "UPDATE calculations SET status = ?, "
                     "slurm_job_id = COALESCE(slurm_job_id, ?), job_script = ?, "
-                    "settings_json = ?, submitted_at = ? WHERE calc_id = ?",
+                    "settings_json = ?, submitted_at = ?, "
+                    "output_file = COALESCE(?, output_file) WHERE calc_id = ?",
                     (status, r['slurm_job_id'], r.get('job_script'), json.dumps(settings),
-                     now, r['calc_id']))
+                     now, r.get('output_file'), r['calc_id']))
 
     def get_calculation_by_slurm_id(self, slurm_job_id: str) -> Optional[Dict]:
         """Get calculation record by SLURM job ID."""

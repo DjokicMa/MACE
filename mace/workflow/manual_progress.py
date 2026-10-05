@@ -130,6 +130,7 @@ def _apply_walltime(step_configs: Dict[str, Any], walltime: str) -> None:
 def build_progress_plan(work_dir: Path, db_path: str, input_files: List[Path],
                         progress: str, max_jobs: int = 200,
                         walltime: Optional[str] = None,
+                        job_arrays: Optional[Dict[str, Any]] = None,
                         ) -> Tuple[Path, str, List[str]]:
     """Write a workflow plan covering ``input_files`` and what follows them.
 
@@ -140,6 +141,8 @@ def build_progress_plan(work_dir: Path, db_path: str, input_files: List[Path],
         input_files: the decks about to be submitted.
         progress: a template name, or ``"interactive"``.
         max_jobs: concurrent-job ceiling recorded in the plan.
+        job_arrays: the plan's job_arrays setting (`mace submit --array`), the
+            same key `mace workflow --array` writes.
 
     Returns:
         ``(plan_file, workflow_id, sequence)``.
@@ -177,6 +180,8 @@ def build_progress_plan(work_dir: Path, db_path: str, input_files: List[Path],
     # path — the submissions themselves must be stamped with the same id the
     # plan is filed under, or the completion callback cannot find the plan.
     plan["workflow_id"] = workflow_id
+    if job_arrays:
+        plan["job_arrays"] = job_arrays
     plan_file = planner.save_workflow_plan(plan)
     return plan_file, workflow_id, sequence
 
