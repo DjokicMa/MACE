@@ -431,3 +431,29 @@ def test_self_submitting_generator_is_submitted_once(tmp_path, monkeypatch, temp
     by_job = {x["slurm_job_id"]: x for x in rows(tmp_path / "materials.db").values()}
     assert sorted(j for j in by_job if j.startswith("4242_")) == ["4242_0", "4242_1", "4242_2"]
     assert any(not j.startswith("4242") for j in by_job)
+
+
+@pytest.mark.parametrize("track", [False, True])
+def test_a_space_in_the_path_keeps_the_wrapper_directives_whole(tmp_path, track):
+    """sbatch splits #SBATCH lines on whitespace, so no directive of the
+    wrapper may carry the (absolute) path of a folder with a space in it."""
+    root = tmp_path / "probe space root"
+    fake, env, _ = _setup(root, [])
+    d = root / "my decks"
+    d.mkdir()
+    for n in ("m0", "m1"):
+        (d / f"{n}.d12").write_text(SP_D12)
+    p = _ok(_mace(root, env, "submit", "--array", *(["--track"] if track else []), "my decks"))
+    (w,) = _wrappers(d)
+    (sb,) = fake.calls("sbatch")
+    assert sb["argv"] == ["sbatch", "--hold", w.name] and sb["cwd"] == str(w.parent)
+    for line in w.read_text().splitlines():
+        if line.startswith("#SBATCH"):
+            assert "space" not in line and "my decks" not in line, line
+    (o,) = [l for l in w.read_text().splitlines() if l.startswith("#SBATCH -o ")]
+    assert (Path(sb["cwd"]) / o.split()[2]).parent == w.parent / "logs"
+    assert (w.parent / "logs").is_dir()
+    assert "4242_0" in p.stdout and "4242_1" in p.stdout
+    if track:
+        assert sorted(x["slurm_job_id"] for x in rows(root / "materials.db").values()) == [
+            "4242_0", "4242_1"]

@@ -379,3 +379,33 @@ def test_combined_name_line_keeps_its_request(tmp_path):
     assert resource_key(text.replace("#SBATCH --array=0-1\n", "")) == arrays[0].key
     assert "--time=2-00:00:00" in ja.describe_request(p.group)
 
+
+def test_wrapper_logs_are_relative_to_the_array_dir(tmp_path):
+    """sbatch splits #SBATCH lines on whitespace: the log directives name the
+    log relative to the array directory (where the wrapper is submitted), so
+    a space in the path cannot break them; the links in the material
+    directories still work."""
+    base = tmp_path / "my decks"
+    stub = "#!/bin/bash\necho ran in $(pwd)\n"
+    ms = []
+    for i in range(2):
+        d = base / f"mat {i}"
+        d.mkdir(parents=True)
+        p = d / f"mat{i}.sh"
+        p.write_text("#!/bin/bash --login\n#SBATCH -J x\n#SBATCH -o x-%J.o\n#SBATCH -e x.e\n"
+                     f"#SBATCH --ntasks=1\nexport JOB=mat{i}\nexport scratch=$SCRATCH/crys23\n"
+                     + stub)
+        ms.append(ArrayMember(dir=d, job=f"mat{i}", script=p))
+    arrays, _ = plan_groups(ms)
+    (p,) = prepare_arrays(arrays, base, "sp", max_tasks=10)
+    text = p.wrapper.read_text()
+    for flag, ext in (("-o", "o"), ("-e", "e")):
+        (line,) = [l for l in text.splitlines() if l.startswith(f"#SBATCH {flag} ")]
+        assert line == f"#SBATCH {flag} logs/{p.tag}-%A_%a.{ext}"
+    assert (p.array_dir / "logs").is_dir()
+    res = subprocess.run(["bash", str(p.wrapper)], env=_wrapper_env(tmp_path, 1),
+                         capture_output=True, text=True, cwd=str(p.array_dir))
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert f"ran in {(base / 'mat 1').resolve()}" in res.stdout
+    link = base / "mat 1" / "mat1-4242_1.o"
+    assert os.readlink(link) == str(p.array_dir.resolve() / "logs" / f"{p.tag}-4242_1.o")

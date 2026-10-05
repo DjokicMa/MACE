@@ -445,13 +445,16 @@ def throttle_spec(n_tasks: int, max_running: Optional[int]) -> str:
 def wrapper_text(tag: str, array_dir: Path, manifest: Path, group: ArrayGroup,
                  job_name: str, array_spec: str) -> str:
     logs = Path(array_dir).resolve() / "logs"
+    # The log directives are relative to the array directory, where the
+    # wrapper is always submitted: sbatch splits #SBATCH lines on whitespace,
+    # so an absolute path with a space in it would break the directive.
     out = [
         "#!/bin/bash --login",
         f"#SBATCH -J {job_name}",
-        f"#SBATCH -o {logs}/{tag}-%A_%a.o",
+        f"#SBATCH -o logs/{tag}-%A_%a.o",
     ]
     if group.separate_stderr:
-        out.append(f"#SBATCH -e {logs}/{tag}-%A_%a.e")
+        out.append(f"#SBATCH -e logs/{tag}-%A_%a.e")
     out.extend(l.strip() for l in group.directive_lines)
     out.append(f"#SBATCH --array={array_spec}")
     ln_e = ""
@@ -708,7 +711,7 @@ def submit_untracked_arrays(names: Sequence[str], data_folder, generate: Callabl
             for p in prepared:
                 say(f"  Job array {p.tag}: {len(p.members)} task(s), each "
                     f"{describe_request(p.group)}")
-                say(f"    to submit it: cd {p.array_dir} && sbatch {p.wrapper.name}")
+                say(f"    to submit it: cd {shlex.quote(str(p.array_dir))} && sbatch {p.wrapper.name}")
             for m, reason in singles:
                 say(f"  {m.job}: {reason} (not submitted: --nosubmit)")
             for name, reason in regenerate:

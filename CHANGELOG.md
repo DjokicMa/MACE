@@ -196,7 +196,7 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   front. A task canceled while pending (SLURM keeps no record of it) is marked
   canceled after about 10 minutes of finding nothing of it on two status
   checks. Each array's manifest, wrapper and per-task logs are in
-  `.mace_arrays/`. Callbacks of array tasks wait up to 15 minutes (inside their
+  `.mace_arrays/` (folder names with spaces work). Callbacks of array tasks wait up to 15 minutes (inside their
   walltime) for the queue lock, and record their own result if they cannot get
   it. See DOCUMENTATION.md, "Job arrays".
 - **`mace run`: run decks on the node you are on, without SLURM.** For a
