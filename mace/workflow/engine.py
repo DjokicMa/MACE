@@ -643,6 +643,10 @@ class WorkflowEngine:
             if not source.is_file():
                 return None
             script_config['workflow_id'] = (plan or {}).get('workflow_id') or workflow_id
+            # A plan from before 1.1.5 may hold the old "--array=1-10" preset
+            from mace.submission.job_array import drop_array_directives
+            script_config['customizations'] = drop_array_directives(
+                script_config.get('customizations'), template_script.name)
             from mace.workflow.executor import WorkflowExecutor
             stub = SimpleNamespace(work_dir=Path(self.base_work_dir), isolation_mode='isolated')
             content = WorkflowExecutor.apply_script_customizations(

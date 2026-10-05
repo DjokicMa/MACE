@@ -4228,14 +4228,17 @@ class WorkflowPlanner:
         ui.info(f"        Additional SLURM directives for {calc_type}:")
         ui.info("        Enter SLURM directives (without #SBATCH). Press Enter when done.")
 
+        # (5 was "--array=1-10": a 10-task array of copies of ONE material in
+        # one scratch directory. Job arrays of many materials are `--array`
+        # of mace submit / mace workflow; the other keys keep their numbers.)
         common_options = {
             "1": "--constraint=intel18",
             "2": "--exclude=node1,node2",
             "3": "--partition=gpu",
             "4": "--gres=gpu:1",
-            "5": "--array=1-10",
             "6": "Custom directive",
         }
+        from mace.submission.job_array import ARRAY_DIRECTIVE_MESSAGE, is_array_directive
 
         ui.info("        Common options:")
         for key, option in common_options.items():
@@ -4251,11 +4254,22 @@ class WorkflowPlanner:
 
             if not choice:
                 break
+            elif choice == "5" or is_array_directive(choice):
+                # the old --array=1-10 preset, or a directive making one
+                invalid += 1
+                stop_if_out_of_step(invalid, prompt, "1-4, 6 or an sbatch option starting with -")
+                ui.warn(f"        {ARRAY_DIRECTIVE_MESSAGE}")
             elif choice in common_options:
                 if choice == "6":
                     while True:
                         prompt = "        Enter custom directive: "
                         custom = read_answer(prompt).strip()
+                        if is_array_directive(custom):
+                            invalid += 1
+                            stop_if_out_of_step(invalid, prompt,
+                                                "an sbatch option other than --array")
+                            ui.warn(f"        {ARRAY_DIRECTIVE_MESSAGE}")
+                            continue
                         if not custom or custom.startswith("-"):
                             break
                         invalid += 1
@@ -4479,7 +4493,10 @@ class WorkflowPlanner:
         """Apply resource and directive customizations to script content"""
 
         resources = script_config["resources"]
-        customizations = script_config.get("customizations", [])
+        # A plan from before 1.1.5 may hold the old "--array=1-10" preset
+        from mace.submission.job_array import drop_array_directives
+        customizations = drop_array_directives(script_config.get("customizations", []),
+                                               script_config.get("step_specific_name") or "")
 
         lines = content.split("\n")
         modified_lines = []

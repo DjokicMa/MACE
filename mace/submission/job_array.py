@@ -61,6 +61,33 @@ _FLAGS = {"--hold", "--no-kill", "--overcommit", "--quiet", "--oversubscribe",
 _NOT_REQUEST = {"--job-name", "--output", "--error"}
 
 
+ARRAY_DIRECTIVE_MESSAGE = ("Job arrays run one material per task; use `--array` "
+                           "(mace submit / mace workflow)")
+_ARRAY_DIRECTIVE_RE = re.compile(r"^\s*(?:--array(?:=|\s|$)|-a(?:=|\s|\d|$))")
+
+
+def is_array_directive(directive: str) -> bool:
+    """True for an sbatch option that makes a job a job array
+    ('--array=1-10', '--array 0-3', '-a 1-10', '-a1-10')."""
+    return bool(_ARRAY_DIRECTIVE_RE.match(str(directive or "")))
+
+
+def drop_array_directives(customizations, where: str = ""):
+    """A plan's custom SLURM directives without any --array/-a one (with a
+    warning). Such a directive turned every job built from the template into
+    an array of copies of one material, running in one scratch directory."""
+    kept = []
+    for c in customizations or []:
+        directive = c.get("directive") if isinstance(c, dict) else None
+        if directive and is_array_directive(directive):
+            print(f"  Warning: dropped the custom SLURM directive '{directive}'"
+                  f"{' of ' + where if where else ''}: it ran copies of one material as "
+                  f"an array. {ARRAY_DIRECTIVE_MESSAGE}.")
+            continue
+        kept.append(c)
+    return kept
+
+
 class ArrayRefusal(Exception):
     """The submission cannot be made as job arrays; nothing was submitted."""
 
