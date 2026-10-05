@@ -459,6 +459,33 @@ class MaterialDatabase:
                 (settings_json, calc_id)
             )
             
+    def update_array_rows(self, rows: List[Dict[str, Any]]):
+        """Record the tasks of a job array submission, all rows in one
+        transaction: slurm_job_id (A_T, only where none is set yet),
+        job_script, settings.slurm_array, submitted_at, and status
+        'submitted' unless the row has already moved on."""
+        now = datetime.now().isoformat()
+        with self._get_connection() as conn:
+            for r in rows:
+                cur = conn.execute(
+                    "SELECT status, settings_json FROM calculations WHERE calc_id = ?",
+                    (r['calc_id'],)).fetchone()
+                if cur is None:
+                    raise KeyError(f"no calculation {r['calc_id']}")
+                try:
+                    settings = json.loads(cur['settings_json'] or '{}')
+                except (json.JSONDecodeError, TypeError):
+                    settings = {}
+                settings['slurm_array'] = r['slurm_array']
+                status = cur['status'] if cur['status'] not in (None, '', 'pending') \
+                    else 'submitted'
+                conn.execute(
+                    "UPDATE calculations SET status = ?, "
+                    "slurm_job_id = COALESCE(slurm_job_id, ?), job_script = ?, "
+                    "settings_json = ?, submitted_at = ? WHERE calc_id = ?",
+                    (status, r['slurm_job_id'], r.get('job_script'), json.dumps(settings),
+                     now, r['calc_id']))
+
     def get_calculation_by_slurm_id(self, slurm_job_id: str) -> Optional[Dict]:
         """Get calculation record by SLURM job ID."""
         with self._get_connection() as conn:

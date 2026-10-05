@@ -623,6 +623,21 @@ class EnhancedCrystalQueueManager:
         Returns:
             calc_id if successful, None if failed
         """
+        material_id, calc_type, calc_dir, calc_input_file, calc_id = self._prepare_calculation(
+            d12_file, calc_type, material_id, prerequisite_calc_id)
+
+        # Submit to SLURM
+        slurm_job_id = self.submit_to_slurm(calc_input_file, calc_dir, calc_type,
+                                            submit_script_override=job_script_override)
+
+        return self._record_submission(calc_id, calc_input_file, calc_dir, material_id,
+                                       calc_type, slurm_job_id, job_script_override)
+
+    def _prepare_calculation(self, d12_file: Path, calc_type: str = None,
+                             material_id: str = None, prerequisite_calc_id: str = None):
+        """Material row, calculation folder, input copy and calculation row of
+        one submission: everything submit_calculation does before sbatch.
+        Returns (material_id, calc_type, calc_dir, calc_input_file, calc_id)."""
         # Extract material information
         if material_id is None:
             material_id, formula, metadata = self.extract_material_info_from_d12(d12_file)
@@ -680,11 +695,13 @@ class EnhancedCrystalQueueManager:
                 prerequisite_calc_id=prerequisite_calc_id
             )
             print(f"    Enhanced QM: created calc_id='{calc_id}'")
-            
-        # Submit to SLURM
-        slurm_job_id = self.submit_to_slurm(calc_input_file, calc_dir, calc_type,
-                                            submit_script_override=job_script_override)
-        
+        return material_id, calc_type, calc_dir, calc_input_file, calc_id
+
+    def _record_submission(self, calc_id, calc_input_file: Path, calc_dir: Path,
+                           material_id: str, calc_type: str, slurm_job_id,
+                           job_script_override: Path = None) -> Optional[str]:
+        """Record one submitted job (or its failure): everything
+        submit_calculation does after sbatch."""
         if slurm_job_id:
             # Update tracking database
             if self.enable_tracking and calc_id:
@@ -730,6 +747,180 @@ class EnhancedCrystalQueueManager:
             print(f"Failed to submit calculation for {material_id}")
             return None
             
+    def _generate_batch_script(self, input_file: Path, work_dir: Path,
+                               calc_type: str) -> Tuple[str, Optional[object]]:
+        """Write <job>.sh for a job array member without submitting it.
+
+        The generator branch of submit_to_slurm (walltime template, generator
+        run, database path export) without its sbatch, and with an sbatch on
+        PATH that refuses to submit. Returns ('generated', <job>.sh),
+        ('submitted', job_id) when the generator submitted the job itself all
+        the same, or ('single', None) when the job goes through
+        submit_to_slurm as an ordinary job (not a generator, or a generator
+        that submits its own script).
+        """
+        from mace.submission import job_array
+        submit_script = self._get_submit_script_for_calc_type(calc_type)
+        if not submit_script or not Path(submit_script).exists():
+            return 'single', None
+        try:
+            content = Path(submit_script).read_text()
+        except OSError:
+            return 'single', None
+        if not ('echo \'#!/bin/bash --login\' >' in content or 'echo "#SBATCH' in content):
+            return 'single', None
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(work_dir)
+            job_name = input_file.stem
+            script_path = Path(submit_script)
+            print(f"  Running script generator: {script_path.name}")
+            script_path = self._template_with_walltime(script_path, work_dir) or script_path
+            env, marker = job_array.sbatch_shim()
+            try:
+                result = subprocess.run(['bash', str(script_path), job_name],
+                                        capture_output=True, text=True, env=env)
+                kind, value = job_array.generator_outcome(result, marker)
+            finally:
+                job_array.cleanup_shim(marker)
+            if kind == 'submitted':
+                return kind, value
+            if kind == 'shim':
+                print(f"  {script_path.name} submits its job itself: submitted as a normal job")
+                return 'single', None
+            if result.returncode != 0:
+                return 'single', None
+            generated_script = work_dir / f"{job_name}.sh"
+            if not generated_script.exists():
+                return 'single', None
+            print(f"  Found generated script: {generated_script}")
+            self._export_db_path(generated_script)
+            return 'generated', generated_script
+        finally:
+            os.chdir(original_cwd)
+
+    def _sbatch_generated(self, script: Path, work_dir: Path) -> Optional[str]:
+        """sbatch <job>.sh from its directory, as submit_to_slurm does."""
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(work_dir)
+            result = subprocess.run(['sbatch', str(script)], capture_output=True, text=True)
+            if result.returncode == 0:
+                m = re.search(r'Submitted batch job (\d+)', result.stdout)
+                if m:
+                    return m.group(1)
+            else:
+                print(f"Error submitting batch file: {result.stderr}")
+            return None
+        finally:
+            os.chdir(original_cwd)
+
+    def submit_calculations_as_arrays(self, files: List[Path], max_running: Optional[int] = None,
+                                      stamp=None) -> List[Tuple[Optional[str], Optional[str]]]:
+        """`mace submit --array --track`: submit_calculation for many decks,
+        with the job scripts of identical requests submitted as job arrays.
+
+        Every deck gets the row, folder, input copy and job script
+        submit_calculation gives it. Then the scripts are grouped by request
+        (mace.submission.job_array): the arrays are submitted held, every
+        row of the wave is written in one transaction (slurm_job_id A_T,
+        job_script = the deck's own script, settings.slurm_array), and the
+        arrays are released. A deck with a request of its own, or whose
+        generator submits by itself, goes in as an ordinary job. If any array
+        is refused, the held ones are removed and no row gets a job id (as a
+        failed single submission leaves it). ``stamp(calc_id, calc_type)``
+        writes the workflow settings first (--progress).
+        Returns [(calc_id, job_id or None)].
+        """
+        from mace.submission import job_array
+        results: List[Tuple[Optional[str], Optional[str]]] = []
+        members, deferred, pending = [], [], []
+        for f in files:
+            try:
+                prep = self._prepare_calculation(Path(f))
+            except Exception as e:
+                print(f"  Failed to prepare {Path(f).name}: {e}")
+                results.append((None, None))
+                continue
+            material_id, calc_type, calc_dir, calc_input_file, calc_id = prep
+            if stamp and calc_id:
+                stamp(calc_id, calc_type)
+            kind, value = self._generate_batch_script(calc_input_file, calc_dir, calc_type)
+            if kind == 'generated':
+                members.append(job_array.ArrayMember(
+                    dir=Path(calc_dir), job=calc_input_file.stem, script=Path(value),
+                    calc_id=calc_id, kind='d3' if calc_input_file.suffix == '.d3' else 'd12',
+                    data={'prep': prep}))
+            elif kind == 'submitted':
+                print(f"  {calc_input_file.name}: its job script generator submitted the job "
+                      f"itself (job {value}); not part of an array")
+                results.append((calc_id, self._record_submission(
+                    calc_id, calc_input_file, calc_dir, material_id, calc_type, value) and value))
+            else:
+                deferred.append(prep)
+
+        try:
+            arrays, singles = job_array.plan_groups(members)
+        except job_array.ArrayRefusal as e:
+            print(f"Error: {e}")
+            return results + [(m.calc_id, None) for m in members] + \
+                [(p[4], None) for p in deferred]
+        types = {m.data['prep'][1].lower() for g in arrays for m in g.members}
+        label = types.pop() if len(types) == 1 else 'mixed'
+        try:
+            prepared = job_array.prepare_arrays(arrays, self.d12_dir, label, max_running) \
+                if arrays else []
+        except Exception as e:
+            print(f"Error: could not write the job arrays: {e}")
+            return results + [(m.calc_id, None) for m in members] + \
+                [(p[4], None) for p in deferred]
+
+        def record_rows(subs):
+            rows = []
+            for p in subs:
+                for i, m in enumerate(p.members):
+                    rows.append({'calc_id': m.calc_id, 'slurm_job_id': p.task_id(i),
+                                 'job_script': str(m.script),
+                                 'slurm_array': {'array_job_id': p.array_job_id, 'task': i,
+                                                 'tag': p.tag,
+                                                 'array_dir': str(p.array_dir.resolve())}})
+            if self.enable_tracking:
+                self.db.update_array_rows(rows)
+            for p in subs:
+                for i, m in enumerate(p.members):
+                    material_id, calc_type, calc_dir, calc_input_file, calc_id = m.data['prep']
+                    self.legacy_job_status["submitted"][p.task_id(i)] = {
+                        "file": str(calc_input_file), "calc_id": calc_id,
+                        "material_id": material_id, "calc_type": calc_type,
+                        "submitted_time": datetime.now().isoformat()}
+            self.save_legacy_status()
+
+        try:
+            subs = job_array.submit_prepared(prepared, record_rows) if prepared else []
+        except (job_array.ArrayRefusal, job_array.ArraySubmitError) as e:
+            print(f"Error: {e}")
+            print("  Nothing of this submission was left in the queue; the calculations "
+                  "are recorded without a job id.")
+            return results + [(m.calc_id, None) for m in members] + \
+                [(p[4], None) for p in deferred]
+        for p in subs:
+            for i, m in enumerate(p.members):
+                material_id, calc_type = m.data['prep'][0], m.data['prep'][1]
+                print(f"Submitted {calc_type} calculation for {material_id}: Job {p.task_id(i)}")
+                results.append((m.calc_id, p.task_id(i)))
+        for m, reason in singles:
+            material_id, calc_type, calc_dir, calc_input_file, calc_id = m.data['prep']
+            print(f"  {calc_input_file.name}: {reason}")
+            job_id = self._sbatch_generated(Path(m.script), Path(calc_dir))
+            results.append((calc_id, job_id if self._record_submission(
+                calc_id, calc_input_file, calc_dir, material_id, calc_type, job_id) else None))
+        for material_id, calc_type, calc_dir, calc_input_file, calc_id in deferred:
+            job_id = self.submit_to_slurm(calc_input_file, calc_dir, calc_type)
+            results.append((calc_id, job_id if self._record_submission(
+                calc_id, calc_input_file, calc_dir, material_id, calc_type, job_id) else None))
+        job_array.summarize(subs, singles, max_running)
+        return results
+
     def _template_with_walltime(self, script_path: Path, work_dir: Path) -> Optional[Path]:
         """A copy of the generator template with ``-t`` set to the override.
 

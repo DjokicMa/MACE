@@ -249,7 +249,7 @@ def test_abort_leaves_an_array_that_has_started(tmp_path, monkeypatch):
 
 
 def test_sbatch_shim(tmp_path):
-    env, marker = ja.sbatch_shim(tmp_path)
+    env, marker = ja.sbatch_shim()
     gen = tmp_path / "gen.sh"
     gen.write_text("echo '#!/bin/bash' > $1.sh\nsbatch $1.sh\n")
     res = subprocess.run(["bash", str(gen), "x"], cwd=tmp_path, env=env,
@@ -262,8 +262,9 @@ def test_sbatch_shim(tmp_path):
     assert ja.generator_outcome(res, marker) == ("generated", None)
     res = subprocess.CompletedProcess([], 0, "Submitted batch job 777\n", "")
     assert ja.generator_outcome(res, marker) == ("submitted", "777")
-    ja.cleanup_shim(tmp_path)
-    assert not (tmp_path / ".mace_array_shim").exists()
+    ja.cleanup_shim(marker)
+    assert not marker.parent.exists()
+    assert not list(tmp_path.glob(".mace_array_shim*"))
 
 
 # --- the wrapper under bash ---------------------------------------------------

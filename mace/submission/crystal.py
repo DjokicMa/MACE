@@ -259,8 +259,13 @@ def _warn_if_pre_guard(script_path):
         print(reused_script_warning(Path(script_path).name))
 
 
-def generate_or_use_script(script_to_use, submit_name, data_folder, overwrite_sh):
-    """Generate .sh file or use existing one based on flags"""
+def generate_or_use_script(script_to_use, submit_name, data_folder, overwrite_sh,
+                           env=None, outcome=None):
+    """Generate .sh file or use existing one based on flags.
+
+    env: the generator's environment (job arrays run it with an sbatch that
+    refuses to submit); outcome: a dict that receives the generator's result.
+    """
     existing_sh = check_existing_sh_file(data_folder, submit_name)
 
     if existing_sh.exists() and not overwrite_sh:
@@ -276,8 +281,10 @@ def generate_or_use_script(script_to_use, submit_name, data_folder, overwrite_sh
         # main() (the trailing sbatch in the template is commented out).
         result = subprocess.run(
             ['bash', str(script_to_use), submit_name, '100'],
-            capture_output=True, text=True
+            capture_output=True, text=True, env=env
         )
+        if outcome is not None:
+            outcome['result'] = result
 
         if result.returncode == 0 and existing_sh.exists():
             return existing_sh, True  # (script_path, was_generated)
@@ -317,6 +324,19 @@ def main():
         idx = sys.argv.index('--walltime')
         if idx + 1 < len(sys.argv):
             walltime_override = sys.argv[idx + 1]
+            sys.argv.pop(idx)
+            sys.argv.pop(idx)
+
+    # Job arrays (mace submit --array [--max-running N]): the decks' job
+    # scripts are written as always, then submitted as SLURM job arrays.
+    array_mode = '--array' in sys.argv
+    if array_mode:
+        sys.argv.remove('--array')
+    max_running = None
+    if '--max-running' in sys.argv:
+        idx = sys.argv.index('--max-running')
+        if idx + 1 < len(sys.argv):
+            max_running = int(sys.argv[idx + 1])
             sys.argv.pop(idx)
             sys.argv.pop(idx)
 
@@ -384,6 +404,28 @@ def main():
         print(f"Found {len(d12_files)} D12 file(s) to generate scripts for")
     else:
         print(f"Found {len(d12_files)} D12 file(s) to submit")
+
+    if array_mode:
+        from mace.submission.job_array import submit_untracked_arrays
+        try:
+            ids = submit_untracked_arrays(
+                [f.split(".d12")[0] for f in d12_files], data_folder,
+                lambda name, env=None, outcome=None: generate_or_use_script(
+                    script_to_use, name, data_folder, overwrite_sh, env=env, outcome=outcome),
+                nosubmit=nosubmit_mode, max_running=max_running, label="d12")
+        finally:
+            if custom_script and custom_script.exists():
+                try:
+                    custom_script.unlink()
+                except Exception as e:
+                    print(f"Warning: Could not remove temporary script {custom_script}: {e}")
+        if ids:
+            print(f"\nSubmitted {len(ids)} job(s): {', '.join(ids)}")
+        if nosubmit_mode:
+            print(f"\nScript generation complete. Scripts are ready for submission.")
+        else:
+            print(f"\nSubmission complete. Use 'mace monitor' to track job status.")
+        return
 
     submitted_job_ids = []
     try:

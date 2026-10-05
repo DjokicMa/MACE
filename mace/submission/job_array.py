@@ -534,16 +534,14 @@ def submit_prepared(prepared: Sequence[PreparedArray],
 # --------------------------------------------------------------------------
 # generators
 
-def sbatch_shim(directory: Path) -> Tuple[Dict[str, str], Path]:
+def sbatch_shim() -> Tuple[Dict[str, str], Path]:
     """An environment whose ``sbatch`` refuses to submit (prints
     MACE_ARRAY_SBATCH_SHIM, leaves a marker file, exits 1), for running a job
     script generator in array mode: a generator that submits its own script
-    must not do so here. Returns (env, marker)."""
-    shim_dir = Path(directory) / ".mace_array_shim"
-    shim_dir.mkdir(parents=True, exist_ok=True)
+    must not do so here. Returns (env, marker); remove it with cleanup_shim."""
+    import tempfile
+    shim_dir = Path(tempfile.mkdtemp(prefix="mace_array_shim_"))
     marker = shim_dir / "hit"
-    if marker.exists():
-        marker.unlink()
     shim = shim_dir / "sbatch"
     shim.write_text("#!/bin/sh\n"
                     f"echo {SHIM_MESSAGE}\n"
@@ -568,17 +566,105 @@ def generator_outcome(result, marker: Path) -> Tuple[str, Optional[str]]:
     return "generated", None
 
 
-def cleanup_shim(directory: Path) -> None:
-    shim_dir = Path(directory) / ".mace_array_shim"
-    for f in ("hit", "sbatch"):
-        try:
-            (shim_dir / f).unlink()
-        except OSError:
-            pass
+def cleanup_shim(marker: Path) -> None:
+    import shutil
+    shutil.rmtree(Path(marker).parent, ignore_errors=True)
+
+
+def submit_untracked_arrays(names: Sequence[str], data_folder, generate: Callable,
+                            nosubmit: bool, max_running: Optional[int], label: str,
+                            sbatch_single: Optional[Callable] = None,
+                            say: Callable[[str], None] = print) -> List[str]:
+    """`mace submit --array` without --track, for the decks of one folder.
+
+    ``generate(name, env=None, outcome=None)`` is the submit module's own
+    generate_or_use_script (it writes or reuses <name>.sh in data_folder and
+    puts the generator's result in ``outcome['result']``). Returns the job
+    ids submitted (A_T for array tasks)."""
+    data_folder = Path(data_folder).resolve()
+    original = os.getcwd()
+    members: List[ArrayMember] = []
+    regenerate: List[Tuple[str, str]] = []
+    job_ids: List[str] = []
+
+    def single(script_name: str) -> Optional[str]:
+        res = _run(["sbatch", script_name], cwd=str(data_folder))
+        if res is None or res.returncode != 0:
+            say(f"  Warning: Failed to submit {script_name}")
+            if res is not None and res.stderr:
+                say(f"    {res.stderr.strip()}")
+            return None
+        m = SUBMITTED_RE.search(res.stdout)
+        if m:
+            say(f"  ✓ Submitted {script_name} as a normal job (job {m.group(1)})")
+            return m.group(1)
+        say(f"  ✓ Submitted {script_name} as a normal job")
+        return None
+
+    sbatch_single = sbatch_single or single
     try:
-        shim_dir.rmdir()
-    except OSError:
-        pass
+        os.chdir(data_folder)
+        for name in names:
+            say(f"Preparing: {name}")
+            env, marker = sbatch_shim()
+            outcome: Dict = {}
+            try:
+                script, _ = generate(name, env=env, outcome=outcome)
+                kind, value = (generator_outcome(outcome["result"], marker)
+                               if outcome.get("result") is not None else ("generated", None))
+            finally:
+                cleanup_shim(marker)
+            if kind == "submitted":
+                job_ids.append(value)
+                say(f"  {name}: its job script generator submitted the job itself "
+                    f"(job {value}); not part of an array")
+                continue
+            if kind == "shim":
+                regenerate.append((name, "its job script generator submits the job itself"))
+                continue
+            if not script:
+                say(f"  Error: Failed to generate/find script for {name}")
+                continue
+            members.append(ArrayMember(dir=data_folder, job=name, script=Path(script)))
+
+        try:
+            arrays, singles = plan_groups(members)
+            prepared = prepare_arrays(arrays, data_folder, label, max_running) if arrays else []
+        except ArrayRefusal as e:
+            say(f"Error: {e}")
+            raise SystemExit(1)
+        if nosubmit:
+            for p in prepared:
+                say(f"  Job array {p.tag}: {len(p.members)} task(s), each "
+                    f"{describe_request(p.group)}")
+                say(f"    to submit it: cd {p.array_dir} && sbatch {p.wrapper.name}")
+            for m, reason in singles:
+                say(f"  {m.job}: {reason} (not submitted: --nosubmit)")
+            for name, reason in regenerate:
+                say(f"  {name}: {reason} (not submitted: --nosubmit)")
+            return []
+        try:
+            subs = submit_prepared(prepared) if prepared else []
+        except (ArrayRefusal, ArraySubmitError) as e:
+            say(f"Error: {e}")
+            raise SystemExit(1)
+        for p in subs:
+            job_ids.extend(p.task_id(i) for i in range(len(p.members)))
+        for m, _ in singles:
+            jid = sbatch_single(Path(m.script).name)
+            if jid:
+                job_ids.append(jid)
+        for name, _ in regenerate:
+            script, _ = generate(name)
+            if script:
+                jid = sbatch_single(Path(script).name)
+                if jid:
+                    job_ids.append(jid)
+        summarize(subs, singles + [(ArrayMember(data_folder, n, data_folder / f"{n}.sh"), r)
+                                   for n, r in regenerate], max_running, say)
+        return job_ids
+    finally:
+        os.chdir(original)
 
 
 # --------------------------------------------------------------------------

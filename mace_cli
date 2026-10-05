@@ -686,6 +686,13 @@ Options:
                        configure every step yourself. Implies --track.
                        Without it, a manual submission runs exactly what you
                        submitted and nothing else.
+  --array              Submit the decks as SLURM job arrays: decks whose job
+                       scripts ask for exactly the same resources share one
+                       array, one task per deck. A deck whose request no other
+                       deck has is submitted as a normal job.
+  --max-running N      With --array: at most N tasks of each array run at once
+                       (--array=0-M%N). The limit is per array; recovery
+                       resubmissions are normal jobs and are not limited.
 
 Node Exclusion Options (mutually exclusive):
   --exclude-amd20      Exclude all AMD20 nodes (amr + nvf types) [RECOMMENDED]
@@ -720,12 +727,19 @@ Examples:
   mace submit --progress full_electronic mat_opt.d12
   mace submit --progress interactive mat_sp.d12
 
+  # Many decks as SLURM job arrays, at most 10 tasks of each running at once
+  mace submit --array --max-running 10 my_calculations/
+  mace submit --array --progress opt_sp my_calculations/
+
 Note: This command submits files using the appropriate submission script
 (submitcrystal23.sh for D12 files, submit_prop.sh for D3 files).
 The --interactive flag allows you to customize SLURM resources similar to
 the workflow interactive mode, with defaults optimized for each calculation type.
 By default, existing .sh files are reused; use --overwrite-sh to regenerate them.
 For directories with mixed file types, you'll be prompted to choose.
+With --array, each task is shown as <array id>_<task> (e.g. 12345678_7):
+scancel 12345678_7 cancels that task, scancel 12345678 cancels every task.
+The array's files (manifest, wrapper, per-task logs) are in .mace_arrays/.
 To run decks on the node you are on (a dev node, no SLURM), use: mace run
 """,
     'run': """
@@ -1520,6 +1534,15 @@ More Help:
                                       '`mace workflow --show-templates`) or "interactive" to '
                                       'configure every step yourself. Implies --track. Without '
                                       'this flag a manual submission never progresses on its own.')
+        submit_parser.add_argument('--array', action='store_true',
+                                 help='Submit the decks as SLURM job arrays: decks whose job '
+                                      'scripts ask for exactly the same resources share one '
+                                      'array, one task per deck. A deck whose request no other '
+                                      'deck has is submitted as a normal job.')
+        submit_parser.add_argument('--max-running', metavar='N', type=int,
+                                 help='With --array: at most N tasks of each array run at once '
+                                      '(--array=0-M%%N). The limit is per array; recovery '
+                                      'resubmissions are normal jobs and are not limited.')
 
         # Node exclusion options
         exclusion_group = submit_parser.add_mutually_exclusive_group()
@@ -1546,6 +1569,17 @@ More Help:
         # Progression is recorded and driven through the database, so the
         # tracking path is the only one that can carry it.
         track = submit_args.track or bool(progress)
+        array_mode = submit_args.array
+        max_running = submit_args.max_running
+        if max_running is not None and not array_mode:
+            ui.err("Error: --max-running limits the tasks of a job array; use it with --array.")
+            sys.exit(1)
+        if max_running is not None and max_running < 1:
+            ui.err("Error: --max-running needs a number of 1 or more.")
+            sys.exit(1)
+        # passed on to the submission scripts (empty without --array)
+        array_argv = (['--array'] + (['--max-running', str(max_running)] if max_running else [])
+                      if array_mode else [])
 
         # Process node exclusion flags
         exclude_string = None
@@ -1684,6 +1718,27 @@ More Help:
             ui.info(f"\nTracking enabled: recording {len(selected)} calculation(s) in "
                     f"{manager_db} (in-place)")
             submitted = 0
+
+            if array_mode:
+                # Job arrays: the same rows and job scripts as below, submitted
+                # as one array per resource request (mace/submission/job_array.py).
+                def stamp_workflow(calc_id, calc_type):
+                    manager.db.update_calculation_settings(calc_id, {
+                        "workflow_id": workflow_id,
+                        "workflow_step": position_in_sequence(calc_type, sequence) or 1,
+                        "workflow_calc_type": calc_type,
+                    })
+
+                results = manager.submit_calculations_as_arrays(
+                    [Path(f) for f in selected], max_running=max_running,
+                    stamp=stamp_workflow if workflow_id else None)
+                submitted = sum(1 for _, job_id in results if job_id)
+                ui.ok(f"\nSubmitted {submitted}/{len(selected)} tracked calculation(s)")
+                tracked_ids = [job_id for _, job_id in results if job_id]
+                if tracked_ids:
+                    ui.info(f"Job ID(s): {', '.join(str(j) for j in tracked_ids)}")
+                sys.exit(0 if submitted == len(selected) else 1)
+
             for f in ui.progress(selected, total=len(selected), description="Submitting"):
                 try:
                     calc_id = manager.submit_calculation(Path(f))
@@ -1722,6 +1777,7 @@ More Help:
                 sys.argv.extend(['--exclude-nodes', exclude_string])
             if walltime:
                 sys.argv.extend(['--walltime', walltime])
+            sys.argv.extend(array_argv)
 
             if target.endswith('.d3'):
                 from submission.properties import main as submit_properties
@@ -1768,6 +1824,7 @@ More Help:
                         sys.argv.extend(['--exclude-nodes', exclude_string])
                     if walltime:
                         sys.argv.extend(['--walltime', walltime])
+                    sys.argv.extend(array_argv)
                     from submission.crystal import main as submit_crystal
                     submit_crystal()
                 elif choice == '2':
@@ -1783,6 +1840,7 @@ More Help:
                         sys.argv.extend(['--exclude-nodes', exclude_string])
                     if walltime:
                         sys.argv.extend(['--walltime', walltime])
+                    sys.argv.extend(array_argv)
                     from submission.properties import main as submit_properties
                     submit_properties()
                 elif choice == '3':
@@ -1799,6 +1857,7 @@ More Help:
                         sys.argv.extend(['--exclude-nodes', exclude_string])
                     if walltime:
                         sys.argv.extend(['--walltime', walltime])
+                    sys.argv.extend(array_argv)
                     from submission.crystal import main as submit_crystal
                     submit_crystal()
 
@@ -1814,6 +1873,7 @@ More Help:
                         sys.argv.extend(['--exclude-nodes', exclude_string])
                     if walltime:
                         sys.argv.extend(['--walltime', walltime])
+                    sys.argv.extend(array_argv)
                     from submission.properties import main as submit_properties
                     submit_properties()
                 else:
@@ -1833,6 +1893,7 @@ More Help:
                     sys.argv.extend(['--exclude-nodes', exclude_string])
                 if walltime:
                     sys.argv.extend(['--walltime', walltime])
+                sys.argv.extend(array_argv)
                 from submission.crystal import main as submit_crystal
                 submit_crystal()
 
@@ -1849,6 +1910,7 @@ More Help:
                     sys.argv.extend(['--exclude-nodes', exclude_string])
                 if walltime:
                     sys.argv.extend(['--walltime', walltime])
+                sys.argv.extend(array_argv)
                 from submission.properties import main as submit_properties
                 submit_properties()
 
