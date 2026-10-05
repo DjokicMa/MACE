@@ -80,6 +80,13 @@ def split_squeue_line(line: str, nfields: int) -> List[str]:
             continue
         cur.append(ch)
     parts.append("".join(cur))
+    if depth > 0 and nfields > 1:
+        # A task list SLURM cut short ("A_[1,3,5,...") never closes its
+        # bracket: the token ends at the cut mark.
+        cut = line.find("...")
+        if cut >= 0 and line[cut + 3:cut + 4] == ",":
+            return [line[:cut + 3]] + line[cut + 4:].split(",", nfields - 2)
+        return line.rsplit(",", nfields - 1)
     return parts
 
 
@@ -293,3 +300,91 @@ def safe_scancel_many(job_ids: Sequence, db=None, search_dirs: Sequence = ()
     if not allowed:
         return None, refused
     return subprocess.run(["scancel"] + allowed, capture_output=True, text=True), refused
+
+
+# How long a task must stay unseen (no queue presence of its array, no
+# accounting record, no output of its own) on two sweeps before it is taken
+# as canceled while pending: SLURM keeps no record of such a task anywhere.
+ABSENT_WINDOW_SECONDS = 600
+
+
+def parse_time_left(text: str) -> Optional[int]:
+    """squeue %L (``D-HH:MM:SS``, ``HH:MM:SS``, ``MM:SS``) in seconds; None for
+    UNLIMITED, NOT_SET or anything unreadable."""
+    t = (text or "").strip()
+    m = re.match(r"^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$", t)
+    if not m:
+        return None
+    days, hours, minutes, seconds = (int(x) if x else 0 for x in m.groups())
+    return ((days * 24 + hours) * 60 + minutes) * 60 + seconds
+
+
+def remaining_walltime_seconds(env: Optional[Dict[str, str]] = None) -> Optional[int]:
+    """Time left of the job this process runs in (squeue %L), or None."""
+    env = os.environ if env is None else env
+    job = (env.get("SLURM_JOB_ID") or "").strip()
+    if not job:
+        return None
+    try:
+        res = subprocess.run(["squeue", "-h", "-j", job, "-o", "%L"], capture_output=True,
+                             text=True, timeout=30, env=slurm_env())
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if res.returncode != 0:
+        return None
+    return parse_time_left(res.stdout.strip().splitlines()[0] if res.stdout.strip() else "")
+
+
+def queue_states_of_array(array_id: str) -> Union[Dict[str, str], Truncated, None]:
+    """{A_T: state} for every task of array A that squeue still lists ({} when
+    none), Truncated when a token was cut short, None when squeue failed."""
+    try:
+        res = subprocess.run(["squeue", "-h", "-r", "-j", str(array_id), "-o", "%i,%T"],
+                             capture_output=True, text=True, timeout=30, env=slurm_env())
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if res.returncode != 0:
+        # squeue -j on an id the controller has forgotten: "Invalid job id"
+        if "invalid job id" in (res.stderr or "").lower():
+            return {}
+        return None
+    states: Dict[str, str] = {}
+    for line in res.stdout.splitlines():
+        if not line.strip():
+            continue
+        parts = split_squeue_line(line.strip(), 2)
+        ids = expand_queue_id(parts[0])
+        if isinstance(ids, Truncated):
+            return ids
+        for i in ids:
+            states[i] = parts[1].strip() if len(parts) > 1 else ""
+    return states
+
+
+def accounting_state_of_task(task_id: str) -> Union[str, Truncated, None]:
+    """The state sacct records for task A_T, read from ``sacct -j A --array``
+    (one line per task; a bracket record is expanded). '' when sacct has
+    records of A but none for T, None when sacct knows nothing about A or
+    failed, Truncated when a JobID was cut short."""
+    array_id, _ = split_job_id(task_id)
+    try:
+        res = subprocess.run(["sacct", "-j", array_id, "-X", "-P", "-n", "--array",
+                              "--format=JobID,State"], capture_output=True, text=True,
+                             timeout=30, env=slurm_env())
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if res.returncode != 0:
+        return None
+    lines = [l.strip() for l in res.stdout.splitlines() if l.strip()]
+    if not lines:
+        return None
+    state = ""
+    for line in lines:
+        jid, _, st = line.partition("|")
+        ids = expand_queue_id(jid)
+        if isinstance(ids, Truncated):
+            return ids
+        if task_id in ids:
+            # the last record is the current one (a requeue keeps the old)
+            state = (st.split() or [""])[0].rstrip("+")
+    return state

@@ -39,8 +39,10 @@ from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.workflow.context import get_current_context
 from mace.recovery import opt_restart, screened_hybrid
 from mace.queue.slurm_ids import (
-    Truncated, expand_queue_id, is_array_task_id, own_job_ids, safe_scancel,
-    slurm_env, split_squeue_line)
+    ABSENT_WINDOW_SECONDS, Truncated, accounting_state_of_task, expand_queue_id,
+    is_array_task_id, own_job_ids, own_rows, queue_states_of_array,
+    remaining_walltime_seconds, safe_scancel, slurm_env, split_job_id,
+    split_squeue_line, verified_array_task)
 from mace.utils.calc_detection import (
     PROPERTY_CALC_TYPES, calc_type_from_filename, d12_calc_type, d3_calc_type,
     deck_records)
@@ -1004,6 +1006,7 @@ class EnhancedCrystalQueueManager:
             # Inside a job array task that is the task's A_T, never its raw
             # SLURM_JOB_ID (see mace.queue.slurm_ids).
             own_ids = own_job_ids()
+            handled = set()
 
             running_calcs = self.db.get_calculations_by_status('submitted') + \
                            self.db.get_calculations_by_status('running')
@@ -1012,9 +1015,16 @@ class EnhancedCrystalQueueManager:
                 slurm_job_id = calc['slurm_job_id']
                 if not slurm_job_id:
                     continue
+                handled.add(calc['calc_id'])
+                # A job array task (A_T): judged from its own output only,
+                # and an array whose task list SLURM cut short is left alone.
+                array_task = is_array_task_id(slurm_job_id)
+                if array_task and split_job_id(slurm_job_id)[0] in unknown_arrays:
+                    continue
 
                 if str(slurm_job_id) in own_ids:
-                    self.check_completed_or_failed_job(calc, own_job=True)
+                    self.check_completed_or_failed_job(calc, own_job=True,
+                                                       own_output_only=array_task)
                     continue
 
                 if slurm_job_id in queue_jobs:
@@ -1025,7 +1035,8 @@ class EnhancedCrystalQueueManager:
                     # CRYSTAL finished, so classify from it, as for a job that
                     # has left the queue.
                     if slurm_state == 'COMPLETED':
-                        self.check_completed_or_failed_job(calc, slurm_state=slurm_state)
+                        self.check_completed_or_failed_job(calc, slurm_state=slurm_state,
+                                                           own_output_only=array_task)
                         continue
 
                     # Map SLURM state to our status
@@ -1049,6 +1060,8 @@ class EnhancedCrystalQueueManager:
                     if status == 'failed':
                         self.handle_failed_calculation(calc['calc_id'], slurm_state)
                         
+                elif array_task:
+                    self._check_array_task_not_in_queue(calc, str(slurm_job_id))
                 else:
                     # Job not in queue. squeue transiently returns an empty
                     # or partial list on gateway nodes (observed repeatedly),
@@ -1067,8 +1080,138 @@ class EnhancedCrystalQueueManager:
                     # classify from the output file as before
                     self.check_completed_or_failed_job(calc, slurm_state=state)
 
+            # Inside a MACE array task: the task's own row, found through
+            # the array manifest even before the submission recorded its
+            # A_T (a task can end within seconds).
+            if verified_array_task():
+                for calc in own_rows(self.db):
+                    if calc['calc_id'] in handled:
+                        continue
+                    if calc.get('status') in ('pending', 'submitted', 'running', None, ''):
+                        self.check_completed_or_failed_job(calc, own_job=True,
+                                                           own_output_only=True)
+
+    def _check_array_task_not_in_queue(self, calc: Dict, task_id: str):
+        """A job array task squeue does not list: classify it only on
+        positive evidence (see _array_task_state)."""
+        state = self._sacct_job_state(task_id)
+        if state in ('', None):
+            state = self._array_task_state(calc, task_id)
+        if state == 'COMPLETED_BY_OUTPUT':
+            self.check_completed_or_failed_job(calc, own_output_only=True)
+            return
+        if state in ('RUNNING', 'COMPLETING', 'SUSPENDED'):
+            if calc['status'] != 'running':
+                self.db.update_calculation_status(calc['calc_id'], 'running', slurm_state=state)
+            return
+        if not state or state in ('PENDING', 'CONFIGURING', 'REQUEUED', 'RESIZING'):
+            return
+        self.check_completed_or_failed_job(calc, slurm_state=state, own_output_only=True)
+
+    def _array_settings(self, calc: Dict) -> Dict:
+        try:
+            settings = json.loads(calc.get('settings_json') or '{}')
+        except (json.JSONDecodeError, TypeError):
+            settings = {}
+        arr = settings.get('slurm_array')
+        return dict(arr) if isinstance(arr, dict) else {}
+
+    def _set_absent_since(self, calc: Dict, value: Optional[str]):
+        arr = self._array_settings(calc)
+        if arr.get('absent_since') == value or (value is None and 'absent_since' not in arr):
+            return
+        if value is None:
+            arr.pop('absent_since', None)
+        else:
+            arr['absent_since'] = value
+        self.db.update_calculation_settings(calc['calc_id'], {'slurm_array': arr}, merge=True)
+
+    def _array_task_state(self, calc: Dict, task_id: str) -> str:
+        """State of job array task A_T that neither squeue nor sacct -j A_T
+        reports, or '' (keep the record as it is).
+
+        SLURM keeps no record at all of a task canceled while pending, and
+        sacct can lag behind a task that just ended, so nothing is inferred
+        from absence alone:
+        1. while any task of A is still queued -> '' (T itself -> its state);
+        2. the calculation's own output, newer than its submission ->
+           'COMPLETED_BY_OUTPUT' (classified from that file);
+        3. an accounting record that covers T -> that state;
+        4. A gone from the queue, known to sacct, T nowhere: the first sweep
+           records slurm_array.absent_since; a sweep at least
+           ABSENT_WINDOW_SECONDS later with the same evidence -> 'CANCELLED'.
+        """
+        array_id, _ = split_job_id(task_id)
+        queued = queue_states_of_array(array_id)
+        if queued is None or isinstance(queued, Truncated):
+            return ''
+        if task_id in queued:
+            self._set_absent_since(calc, None)
+            return queued[task_id]
+        if queued:
+            return ''
+        if self._own_output(calc):
+            self._set_absent_since(calc, None)
+            return 'COMPLETED_BY_OUTPUT'
+        recorded = accounting_state_of_task(task_id)
+        if recorded is None or isinstance(recorded, Truncated):
+            return ''
+        if recorded:
+            self._set_absent_since(calc, None)
+            return recorded
+        since = self._array_settings(calc).get('absent_since')
+        now = datetime.now()
+        if not since:
+            self._set_absent_since(calc, now.isoformat())
+            print(f"  Array task {task_id} is gone from the queue with no record of it; "
+                  f"kept as it is (canceled while pending if it is still missing in "
+                  f"{ABSENT_WINDOW_SECONDS // 60} minutes)")
+            return ''
+        try:
+            elapsed = (now - datetime.fromisoformat(since)).total_seconds()
+        except ValueError:
+            self._set_absent_since(calc, now.isoformat())
+            return ''
+        return 'CANCELLED' if elapsed >= ABSENT_WINDOW_SECONDS else ''
+
+    def _own_output(self, calc: Dict) -> Optional[Path]:
+        """The calculation's own <input stem>.out, when it was written after
+        the calculation was submitted; else None. Never another .out of the
+        directory: the tasks of a job array often share one directory."""
+        work_dir = Path(calc.get('work_dir') or '.')
+        stem = Path(calc['input_file']).stem if calc.get('input_file') else None
+        if not stem:
+            return None
+        out = work_dir / f"{stem}.out"
+        try:
+            mtime = out.stat().st_mtime
+        except OSError:
+            return None
+        submitted = calc.get('submitted_at')
+        if submitted:
+            try:
+                # 2 s of slack for the clocks of the node and this host
+                if mtime < datetime.fromisoformat(submitted).timestamp() - 2:
+                    return None
+            except ValueError:
+                pass
+        return out
+
     def _sacct_job_state(self, job_id):
         """Job state per sacct, '' if sacct has no record, None if unavailable."""
+        if is_array_task_id(job_id):
+            # A job array task: parsable output, and the LAST record - a
+            # requeued task keeps its earlier record (REQUEUED) first.
+            try:
+                result = subprocess.run(
+                    ['sacct', '-j', str(job_id), '--format=State', '-n', '-X', '-P'],
+                    capture_output=True, text=True, timeout=30, env=slurm_env())
+                if result.returncode != 0:
+                    return None
+                lines = [l.strip() for l in result.stdout.splitlines() if l.strip()]
+                return lines[-1].split()[0].rstrip('+') if lines else ''
+            except Exception:
+                return None
         try:
             result = subprocess.run(
                 ['sacct', '-j', str(job_id), '--format=State', '-n', '-X'],
@@ -2025,13 +2168,23 @@ class EnhancedCrystalQueueManager:
         return None
         
     def check_completed_or_failed_job(self, calc: Dict, slurm_state: Optional[str] = None,
-                                      own_job: bool = False):
-        """Check if a job that's not in queue has completed or failed."""
+                                      own_job: bool = False, own_output_only: bool = False):
+        """Check if a job that's not in queue has completed or failed.
+
+        own_output_only (job array tasks): read only the calculation's own
+        <input stem>.out written after its submission - never another .out
+        of the directory, which with `mace submit DIR --array` holds the
+        outputs of every other task.
+        """
         # Check for output files to determine completion status
         work_dir = Path(calc['work_dir'])
         
         # Look for output files
-        output_files = list(work_dir.glob("*.out"))
+        if own_output_only:
+            own = self._own_output(calc)
+            output_files = [own] if own else []
+        else:
+            output_files = list(work_dir.glob("*.out"))
         
         if output_files:
             # Prefer the output matching this calculation's input file name
@@ -2159,6 +2312,15 @@ class EnhancedCrystalQueueManager:
         if self.throttler:
             self.throttler.throttle(f"callback_{mode}")
             
+        # Inside a MACE job array task: the tasks of one array have the same
+        # request and often end together, so the lock is waited for longer
+        # (within the task's walltime), and the task's own row is recorded
+        # even when the lock never comes free.
+        array_task = verified_array_task()
+        if self.lock_manager and array_task:
+            self._run_array_task_callback(mode, array_task)
+            return
+
         # Acquire distributed lock
         if self.lock_manager:
             lock_name = f"queue_manager_{mode}"
@@ -2181,6 +2343,120 @@ class EnhancedCrystalQueueManager:
             # No lock manager available, run directly
             self._run_callback_check_locked(mode)
             
+    # Lock waits of a callback inside a job array task (seconds; scaled by
+    # MACE_ARRAY_LOCK_SCALE, which only the tests set).
+    ARRAY_LOCK_BUDGET = 900
+    ARRAY_LOCK_WALLTIME_MARGIN = 300
+    ARRAY_LOCK_BASE, ARRAY_LOCK_FACTOR, ARRAY_LOCK_CAP = 5.0, 1.5, 60.0
+
+    def _array_lock_scale(self) -> float:
+        try:
+            return max(float(os.environ.get('MACE_ARRAY_LOCK_SCALE') or 1.0), 1e-3)
+        except ValueError:
+            return 1.0
+
+    def _run_array_task_callback(self, mode: str, task_id: str):
+        """The callback of job array task A_T.
+
+        The lock is retried with jittered backoff (5 s, x1.5, at most 60 s
+        between tries) for up to 15 minutes, never past the task's walltime
+        less 5 minutes. A 'database is locked' error inside the locked run is
+        retried up to 5 times. When the lock never comes free, the task's own
+        row is classified outside the lock (a row-scoped update), and the
+        next callback or `mace manager --callback-mode completion` chains its
+        follow-up.
+        """
+        import random
+        import sqlite3
+        scale = self._array_lock_scale()
+        lock_name = f"queue_manager_{mode}"
+        budget = self.ARRAY_LOCK_BUDGET * scale
+        left_in_job = remaining_walltime_seconds()
+        if left_in_job is not None:
+            budget = min(budget, max(left_in_job - self.ARRAY_LOCK_WALLTIME_MARGIN * scale, 0))
+        deadline = time.time() + budget
+        wait = self.ARRAY_LOCK_BASE * scale
+        db_retries = 0
+        while True:
+            try:
+                self.lock_manager.with_lock(lock_name, self._run_callback_check_locked, mode,
+                                            timeout=max(min(2.0 * scale, deadline - time.time()),
+                                                        0.05))
+                return
+            except TimeoutError:
+                pass
+            except sqlite3.OperationalError as e:
+                if 'locked' not in str(e).lower() or db_retries >= 5:
+                    print(f"❌ Error in array task callback: {e}")
+                    break
+                db_retries += 1
+                time.sleep(random.uniform(0.5, 1.5) * 2.0 * scale)
+                continue
+            except Exception as e:
+                print(f"❌ Error in callback with locking: {e}")
+                break
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            time.sleep(min(wait * random.uniform(0.7, 1.3), remaining))
+            wait = min(wait * self.ARRAY_LOCK_FACTOR, self.ARRAY_LOCK_CAP * scale)
+        print(f"⚠️  Array task {task_id}: the {mode} lock did not come free; "
+              f"recording this task's own result without it")
+        self.classify_own_row()
+
+    def classify_own_row(self):
+        """Record the result of this job array task's own calculation
+        without the global lock: completed, from its own output, by a
+        row-scoped update; then its properties. Its follow-up step is
+        submitted by the next sweep (any later callback, or
+        `mace manager --callback-mode completion`), which chains every
+        completed row not yet processed. A run that did not complete is left
+        for that sweep, which also starts its recovery."""
+        if not self.enable_tracking:
+            return
+        from mace.completion_checker import categorize_output_file
+        for calc in own_rows(self.db):
+            if calc.get('status') not in ('pending', 'submitted', 'running'):
+                continue
+            out = self._own_output(calc)
+            if not out:
+                print(f"  {calc['calc_id']}: no output of its own yet; left for the next sweep")
+                continue
+            try:
+                category, _ = categorize_output_file(out)
+            except Exception as e:
+                print(f"  {calc['calc_id']}: could not read {out.name}: {e}")
+                continue
+            if not category.startswith('complete'):
+                print(f"  {calc['calc_id']}: did not complete; the next sweep classifies it "
+                      f"and starts its recovery")
+                continue
+            now = datetime.now().isoformat()
+            changed = 0
+            for attempt in range(6):
+                try:
+                    with self.db._get_connection() as conn:
+                        changed = conn.execute(
+                            "UPDATE calculations SET status = 'completed', output_file = ?, "
+                            "completed_at = ? WHERE calc_id = ? AND status IN "
+                            "('pending', 'submitted', 'running')",
+                            (str(out), now, calc['calc_id'])).rowcount
+                    break
+                except Exception as e:
+                    if 'locked' not in str(e).lower() or attempt == 5:
+                        print(f"  {calc['calc_id']}: could not record completion: {e}")
+                        break
+                    time.sleep(1.0 + attempt)
+            if changed:
+                print(f"  {calc['calc_id']}: completed (recorded without the lock). Its next "
+                      f"step follows with the next callback; to run it now: "
+                      f"mace manager --callback-mode completion")
+                fresh = self.db.get_calculation(calc['calc_id']) or calc
+                self.extract_and_store_input_settings(fresh)
+                self.update_file_records(fresh)
+                self.extract_and_store_properties(fresh)
+                self.update_material_information(fresh)
+
     def _run_callback_check_locked(self, mode='completion'):
         """Internal callback implementation with lock protection."""
         print(f"\n=== Queue Manager Callback ({mode}) - {datetime.now()} ===")
@@ -2201,6 +2477,11 @@ class EnhancedCrystalQueueManager:
             # In workflow context, use workflow engine for progression instead of basic D12 processing
             if self.is_workflow_context and self.workflow_enabled:
                 self._trigger_workflow_progression()
+                # A job array task holding the lock: its siblings, which end
+                # together with it, may have recorded their results while it
+                # ran; chain those too before letting go.
+                if verified_array_task():
+                    self._trigger_workflow_progression()
             else:
                 # Manual run: record status and stop. This used to fall through
                 # to process_new_d12_files(), which globs **/*.d12 and submits

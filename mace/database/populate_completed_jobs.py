@@ -133,6 +133,27 @@ def _correct_calc_type(db, existing: Dict, scanned_type: str) -> None:
         print(f"  Could not correct the calc type of {existing['calc_id']}: {e}")
 
 
+def _stale_for_array_task(existing: Dict, calc_info: Dict) -> bool:
+    """True when ``existing`` is a job array task (slurm_job_id A_T) and the
+    scanned output is not its own output written after its submission: the
+    tasks of an array often share one directory, and a resubmitted deck
+    keeps the output of its last run until the task writes a new one."""
+    job_id = str(existing.get('slurm_job_id') or '')
+    if not re.match(r'^\d+_\d+$', job_id):
+        return False
+    out = calc_info.get('output_file')
+    stem = Path(existing['input_file']).stem if existing.get('input_file') else None
+    if not out or not stem or Path(out).stem != stem:
+        return True
+    submitted = existing.get('submitted_at')
+    if not submitted:
+        return False
+    try:
+        return Path(out).stat().st_mtime < datetime.fromisoformat(submitted).timestamp() - 2
+    except (OSError, ValueError):
+        return True
+
+
 def populate_database(completed_calcs: List[Dict], db) -> int:
     """
     Populate database with completed calculations.
@@ -200,6 +221,10 @@ def populate_database(completed_calcs: List[Dict], db) -> int:
                 )
                 if same_output or same_workdir:
                     already_exists = True
+                    if _stale_for_array_task(existing, calc_info):
+                        # A job array task is judged from its own output
+                        # written after its submission, never an older one.
+                        break
                     _correct_calc_type(db, existing, calc_type)
                     # Update status to completed if needed
                     if existing.get('status') != 'completed':

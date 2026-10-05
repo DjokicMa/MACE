@@ -47,6 +47,13 @@ def test_split_keeps_comma_brackets_whole():
     assert "4242_[1,4-6%3],PENDING,N/A".split(",")[1] == "4-6%3]"
 
 
+def test_split_ends_a_cut_task_list_at_the_cut_mark():
+    assert split_squeue_line("4242_[1,3,5,...,PENDING,N/A", 3) == [
+        "4242_[1,3,5,...", "PENDING", "N/A"]
+    assert split_squeue_line("4242_[1,3,5,...,PENDING,N/A,a,b", 4) == [
+        "4242_[1,3,5,...", "PENDING", "N/A", "a,b"]
+
+
 def test_split_keeps_a_job_name_with_commas_whole():
     assert split_squeue_line("4242_[2,4-5%2],PENDING,N/A,my,job", 4) == [
         "4242_[2,4-5%2]", "PENDING", "N/A", "my,job"]
