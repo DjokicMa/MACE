@@ -30,10 +30,14 @@ def get_mace_banner_alt():
 
 def get_mace_banner_compact():
     """Compact banner for frequent use"""
+    try:
+        from mace import __version__ as version
+    except ImportError:
+        version = ""
     banner = r"""
     ╔═╗╔═╗╔═╗╔═╗
     ║║║╠═╣║  ╠╣ 
-    ╩ ╩╩ ╩╚═╝╚═╝ v1.0
+    ╩ ╩╩ ╩╚═╝╚═╝ """ + (f"v{version}" if version else "") + """
     """
     return banner
 

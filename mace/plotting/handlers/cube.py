@@ -30,7 +30,7 @@ from ..prompts import (
 from ..registry import PlotKind, PlotterEntry, register
 
 # Engine flags that write output or open a browser: never honored from the
-# user's --engine-args escape hatch, so mace's explicit --save path always wins.
+# user's --engine-args escape hatch, so MACE's explicit --save path always wins.
 _OUTPUT_CONTROLLING = frozenset({
     "--save", "--save-png", "--save-svg", "--save-pdf", "--save-gif",
     "--output-cube", "--visualize-result",
@@ -250,7 +250,7 @@ def _common_argv(config: Dict[str, Any]) -> List[str]:
     if engine_args:
         kept, rejected = _screen_engine_args(list(engine_args))
         if rejected:
-            print(f"    Ignoring output-controlling engine-args (mace owns output): {' '.join(rejected)}")
+            print(f"    Ignoring output-controlling engine-args (MACE owns output): {' '.join(rejected)}")
         argv += kept
     return argv
 

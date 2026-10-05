@@ -1,6 +1,6 @@
 """Registry spine for ``mace plotting``.
 
-The registry is the single source of truth for "what can mace plot and how".
+The registry is the single source of truth for "what can MACE plot and how".
 Each visualization (band / DOS / structure today; cube / FREQ / IR / Raman in
 later phases) registers one :class:`PlotterEntry`. Discovery (``detect.py``),
 the interactive menu, and CLI dispatch (``main.py``) all iterate the registry

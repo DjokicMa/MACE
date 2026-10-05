@@ -2,7 +2,7 @@
 
 These modules are the heavy visualization engines for cube volumetrics and
 FREQ vibrational modes. This package is their single source of truth — they
-ship with mace so ``mace plotting --cube/--freq`` works from any clone.
+ship with MACE so ``mace plotting --cube/--freq`` works from any clone.
 
 Both engines are import-safe (all CLI work is under ``if __name__ == '__main__'``)
 and depend only on numpy + plotly (scipy / imageio imported lazily; kaleido is

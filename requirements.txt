@@ -22,7 +22,7 @@ spglib>=1.16.0
 # scipy/matplotlib below bring.
 seekpath>=2.1,<3
 
-# Themed terminal UI (optional but recommended: mace degrades to plain
+# Themed terminal UI (optional but recommended: MACE degrades to plain
 # text without it; NO_COLOR / TERM=dumb are honored either way)
 rich>=13.0
 
