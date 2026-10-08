@@ -45,23 +45,55 @@ source ~/.zshrc  # or ~/.bashrc
 source activate_mace.sh
 ```
 
-### New Directory Structure (Phase 3)
+### Repository layout
 ```
-reorganization/
+MACE/
+├── README.md                  # Overview and quick start
+├── INSTALLATION.md            # Installation and requirements
+├── DOCUMENTATION.md           # This file
+├── CHANGELOG.md               # Changes and upgrade notes
+│
 ├── mace_cli                   # Main MACE command-line interface
-├── setup_mace.py              # Installation and setup script
-├── mace/                      # Core MACE package
-│   ├── run_mace.py           # Main workflow runner
-│   ├── workflow/             # Workflow management
-│   ├── queue/                # Queue and job management  
-│   ├── database/             # Material tracking database
-│   ├── submission/           # Job submission scripts
-│   ├── recovery/             # Error detection and recovery
-│   ├── utils/                # Utilities and helpers
-│   └── config/               # Configuration files
-├── Crystal_d12/              # D12 input generation
-├── Crystal_d3/               # D3 properties generation
-└── code/                     # Legacy directory structure (preserved)
+├── setup_mace.py              # Automated installation script
+├── activate_mace.sh           # Environment activation script
+│
+├── mace/                      # Core MACE automation framework
+│   ├── README.md              # MACE-specific documentation
+│   ├── workflow/              # Workflow planning and execution
+│   ├── queue/                 # HPC queue management
+│   ├── database/              # Material tracking database
+│   ├── submission/            # SLURM job submission
+│   ├── recovery/              # Error detection and recovery
+│   ├── plotting/              # `mace plotting` (band/DOS/structure/cube/FREQ/IR/Raman)
+│   ├── gui/                   # `mace gui`: the MACE GUI in your browser
+│   ├── preopt/                # `mace preopt`, `mace mlip`: starting geometries
+│   ├── cluster/               # `mace cluster`: SLURM nodes, limits, quotas, job progress
+│   ├── defects/               # `mace defects`: point-defect deck sets and analysis
+│   ├── phonopy_bridge/        # `mace phonopy`: phonons through phonopy
+│   └── utils/                 # Analysis, themed terminal UI, utility tools
+│
+├── docs/                      # Guides (gui.md, cli.md, preopt.md, defects/, citations.md) and the logo (logo/)
+├── examples/gui/              # The MACE GUI's example folder
+├── scripts/                   # mace gui connect for computers without MACE (bash, PowerShell)
+├── tests/                     # The test suite (pytest)
+│
+├── Crystal_d12/               # D12 input file generation
+│   ├── README.md              # D12 tools documentation
+│   ├── NewCifToD12.py         # CIF to D12 converter
+│   ├── CRYSTALOptToD12.py     # Generate D12 from optimized structures
+│   └── example_configs/       # Pre-configured calculation settings
+│
+├── Crystal_d3/                # D3 property calculation generation
+│   ├── README.md              # D3 tools documentation
+│   ├── CRYSTALOptToD3.py      # Generate property calculations
+│   ├── d3_kpoints.py          # K-point path generation
+│   └── example_configs/       # Property calculation templates
+│
+└── code/                      # Legacy scripts (preserved for compatibility)
+    ├── Check_Scripts/         # Status checking utilities
+    ├── Post_Processing_Scripts/ # Analysis utilities
+    ├── OldSLURMTemplates/     # Original SLURM submission templates
+    └── Band_Alignment/        # Band alignment calculations
 ```
 
 ## Common Commands
@@ -106,6 +138,9 @@ mace convert --cif_dir ./cifs
 # Plot outputs (band/DOS/structure/cube/FREQ/IR/Raman)
 mace plotting
 
+# The MACE GUI in your browser (docs/gui.md; on a cluster it prints the ssh tunnel line)
+mace gui --dir . --open
+
 # Quick workflow execution
 mace workflow --quick-start --cif-dir ./cifs --workflow full_electronic
 
@@ -122,10 +157,11 @@ mace completion --organize                # Sort files by status into folders
 
 For calculations that take seconds or minutes - a MATDUMP, BAND/DOSS/POTC
 properties, a small SP, a quick rerun - `mace run` runs the decks at once on
-the node you are logged in to (an HPCC development node), without SLURM:
+the node you are logged in to (a development or interactive node of your
+cluster), without SLURM:
 
 ```bash
-ssh dev-amd20                                    # not the login gateway
+ssh <dev-node>                                   # not the login node (MSU HPCC: dev-amd20)
 mace run dia_sp.d12                              # one SCF deck, 4 MPI ranks
 mace run dia_sp.d12 dia_band.d3 dia_doss.d3      # SCF first, then BAND and DOSS from its .f9
 mace run decks/ -n 8 --timeout 45m               # every .d12/.d3 in a directory
@@ -155,7 +191,8 @@ completion callback runs, so nothing is submitted afterwards.
   does not stop the others.
 - **Limits.** `-n` is 1-16 MPI ranks (default 4); dev nodes are shared, so
   4-8 is polite. `--timeout` (default 30m) applies to each deck, and is at most
-  1h55m: HPCC dev nodes stop any process after 2 hours of CPU time, and a run
+  1h55m: development nodes often stop a process after 2 hours of CPU time (MSU
+  HPCC's do), and a run
   never reaches that limit. OPT and FREQ decks rarely fit and get a warning.
 - **Stopping.** Ctrl-C, a lost connection or the timeout stops the running
   deck and all its CRYSTAL processes; nothing is copied back, its scratch
@@ -269,6 +306,21 @@ mace opt2d12 --out-file opts/*.out --config-file sp_template.json --output-dir s
 - `--config-file` is a settings JSON: one saved with `--save-options`, or a file from `Crystal_d12/example_configs/`. Each structure keeps its own geometry and symmetry. It is read once before any file, and an unreadable one stops the run
 - With several files, the plan is printed and asked about once (`Apply to all N files?`), only when run at a terminal; `--yes` (`-y`) skips that question. No per-file questions are asked: a file that would need an answer fails with the reason and the others carry on
 - `--output-dir` is created if missing (default: beside each `.out`). The run exits non-zero if any file failed or nothing was written
+
+### Pre-optimization (`mace preopt`, `mace mlip`)
+
+```bash
+# A better starting geometry for CRYSTAL (springs, GFN-FF via xtb, an ML potential, or auto)
+mace preopt hand_built.cif --method auto            # -> hand_built_preopt.cif + .json
+mace mlip setup                                      # how to make the ML environment
+mace mlip fetch acesuit-mace-mpa-0-medium            # the MACE-MPA-0 weights (asks first)
+```
+
+The result is a starting geometry only: CRYSTAL still optimizes it, and the
+next CRYSTAL step must be an OPT. Nothing about the calculation (OPTGEOM,
+functional, basis, tolerances, charge/spin keywords) is touched. See
+[docs/preopt.md](docs/preopt.md) for the methods, refusals, licenses and
+citations; the GUI's Clean Geometry runs the same pipeline.
 
 ### Phonons with phonopy (`mace phonopy`)
 Finite-displacement phonon dispersion, DOS and thermal properties for a 3D
@@ -393,6 +445,9 @@ mace phonopy collect phonopy_mat_opt_222 [--nac-from mat_freq.out] [--plot]
   `BORN`; the run is refused unless its cell has the same cartesian orientation, atoms
   and positions as the phonopy cell and CRYSTAL's asymmetric unit is phonopy's.
 
+Please cite phonopy (and SeeK-path for the default band path) when you
+publish these results; see [docs/citations.md](docs/citations.md#phonons-mace-phonopy).
+
 ### Job Management (Direct Script Access)
 ```bash
 # Enhanced queue management with material tracking
@@ -407,7 +462,8 @@ python mace/enhanced_queue_manager.py --d12-dir /path/to/materials --max-jobs 20
 
 ### Material Tracking System
 ```bash
-# Error recovery and automated fixes
+# Prepare fixed inputs and job scripts for failed tracked runs (nothing is
+# submitted; it prints the mace submit / sbatch command for each one)
 mace recover --action recover --max-recoveries 10
 
 # View recovery statistics
@@ -1094,6 +1150,79 @@ The file storage system extends the existing database schema:
 - **Data Mining**: Systematic analysis of successful parameter combinations
 - **Backup and Recovery**: Complete calculation reconstruction capability
 - **Research Reproducibility**: Full documentation of all calculation parameters
+
+### Workflow isolation
+
+MACE now supports **workflow isolation** to prevent conflicts when running multiple workflows in the same directory. This feature addresses database contamination, material ID collisions, and queue manager conflicts that occurred when multiple workflows shared resources.
+
+#### Isolation Modes
+
+1. **Isolated** (Recommended) - Complete separation with workflow-specific databases
+2. **Shared** - Traditional behavior with shared database (backward compatible)
+3. **Hybrid** - Shared schema with isolated data
+
+#### How It Works
+
+The workflow isolation system provides:
+- **Separate databases** per workflow to prevent material ID collisions
+- **Independent job queues** with per-workflow limits and management
+- **Isolated file storage** for calculation tracking and results
+- **Automatic cleanup** and archival of completed workflows
+
+#### Directory Structure with Isolation
+
+```
+working_directory/
+├── .mace_context_workflow_123/       # Hidden context directory
+│   ├── materials.db                  # Isolated database
+│   ├── structures.db                 # Isolated ASE database
+│   ├── calculation_storage/          # Isolated file storage
+│   ├── .queue_locks/                # Isolated locks
+│   └── context_config.json          # Context metadata
+├── workflow_configs/                # Shared configurations
+└── workflow_outputs/                # Calculation outputs
+```
+
+#### Using Workflow Isolation
+
+##### Interactive Mode
+When using `mace workflow --interactive`, you'll be prompted to select an isolation mode during workflow planning (Step 4.5).
+
+##### Running Multiple Workflows Safely
+```bash
+# Terminal 1: Workflow for project A
+cd /shared/calculations
+mace workflow --interactive
+# Select: Isolated mode
+
+# Terminal 2: Workflow for project B (same directory!)
+cd /shared/calculations  
+mace workflow --interactive
+# Select: Isolated mode
+
+# Both workflows run independently without conflicts
+```
+
+##### Programmatic Usage
+```python
+from mace.workflow.context import workflow_context
+from mace.database.materials_contextual import ContextualMaterialDatabase
+
+# Execute workflow with isolation
+with workflow_context("my_workflow", isolation_mode="isolated") as ctx:
+    db = ContextualMaterialDatabase()
+    # All database operations are isolated
+```
+
+#### Benefits
+
+- **No conflicts**: Multiple workflows can run in the same directory without interference
+- **Clean organization**: Each workflow has its own hidden context directory
+- **Easy cleanup**: Archive or delete entire workflow contexts when done
+- **Backward compatible**: Existing scripts work unchanged in shared mode
+
+For technical details, see the implementation in `mace/workflow/context.py` and
+[the isolation migration guide](mace/workflow/ISOLATION_MIGRATION_GUIDE.md).
 
 ## Development Notes
 

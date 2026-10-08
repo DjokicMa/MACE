@@ -864,6 +864,101 @@ def find_optimal_legend_position(
     return best_corner
 
 
+def read_doss_projection_labels(d3_file):
+    """The projection labels of a DOSS .d3 ("#C S", ..., "END" for the total)."""
+    v = []
+    n = 9999
+    num = 9999
+    with open(d3_file) as F:
+        for i, line in enumerate(F):
+            if line.startswith("DOSS"):
+                n = i
+            if i == n + 1:
+                l = line.split()
+                num = int(l[0])
+            if i >= n + 3 and i <= n + 3 + num:
+                v.append(str(line[max(line.find("#"), 0) :].strip()))
+            if line.startswith("END"):
+                break
+    return v
+
+
+def doss_label(raw):
+    """A .d3 projection label as the plot shows it: "#C P" -> "C (p)",
+    "#MG all" -> "Mg ", "END" -> "Total"."""
+    j = raw.replace(" all", " ")
+    j = j.replace(" S", " (s)")
+    j = j.replace(" P", " (p)")
+    j = j.replace(" D", " (d)")
+    j = j.replace(" F", " (f)")
+    j = j.replace("END", "Total")
+    l = j.replace("#", "")
+    if len(l) > 1:
+        if l[0].isupper() and l[1].isupper():
+            j = list(l)
+            j[1] = j[1].lower()
+            l = "".join(j)
+    return l
+
+
+def vacuum_shift(potc_dat, potc_out):
+    """maxV (eV): the shift that puts energies on the vacuum scale, from a
+    POTC run's planar potential and Fermi energy; 0 without both files."""
+    if not (exists(potc_dat) and exists(potc_out)):
+        return 0
+    z = []
+    V = []
+    EF = 0
+    with open(potc_out) as f5:
+        for i, line in enumerate(f5):
+            if "FERMI ENERGY" in line:
+                EF = float(line.split()[-1])
+    with open(potc_dat) as f:
+        for i, line in enumerate(f):
+            if line.startswith("#") or line.startswith("@"):
+                continue
+            else:
+                z.append(float(line.split()[0]))
+                V.append(float(line.split()[1]))
+    return -(V[0] - EF) * 27.2114
+
+
+def read_doss_columns(doss_file, n_columns, maxV=0):
+    """DOSS.DAT columns: [energies (eV, + maxV), then each projection in
+    states/eV]. Every data record of every spin block is read, in file order."""
+    data_vect = [[] for n in range(n_columns)]
+    with open(doss_file) as f:
+        for i, line in enumerate(f):
+            if line.startswith("# EFERMI"):
+                continue
+            if line.startswith("#") or line.startswith("@") or line.startswith("&"):
+                continue
+
+            data = line.split()
+
+            # A DOS record can wrap across several physical lines when there are
+            # many projection columns; a complete record has n_columns values
+            # (energy + projections). Pull continuation lines until the record is
+            # complete. The previous code unconditionally read ONE line ahead
+            # whenever n_columns >= 17 and discarded it unless it looked like a
+            # short continuation — which silently dropped every second row of any
+            # 17+-column DOS file that was written on single (unwrapped) lines.
+            while len(data) < n_columns:
+                ne = next(f, "")
+                if not ne:
+                    break
+                ne_parts = ne.split()
+                if not ne_parts:
+                    continue
+                data += ne_parts
+
+            data_vect[0].append(float(data[0]) * 27.2114 + maxV)
+
+            for j in range(1, n_columns):
+                data_vect[j].append(float(data[j]) / 27.2114)
+    return data_vect
+
+
 def ipDOS(
     material,
     E_l,
@@ -885,39 +980,14 @@ def ipDOS(
     file4 = material + "_POTC.POTC.DAT"
     file5 = material + "_POTC.out"
 
-    v = []
+    v = read_doss_projection_labels(file1)
     labels = ["Energy (eV)"]
-    n = 9999
-    num = 9999
-
-    with open(file1) as F:
-        for i, line in enumerate(F):
-            if line.startswith("DOSS"):
-                n = i
-            if i == n + 1:
-                l = line.split()
-                num = int(l[0])
-            if i >= n + 3 and i <= n + 3 + num:
-                v.append(str(line[max(line.find("#"), 0) :].strip()))
-            if line.startswith("END"):
-                break
 
     element_treatment = parse_element_mode(element_mode)
 
     search = []
     for i in v:
-        j = i.replace(" all", " ")
-        j = j.replace(" S", " (s)")
-        j = j.replace(" P", " (p)")
-        j = j.replace(" D", " (d)")
-        j = j.replace(" F", " (f)")
-        j = j.replace("END", "Total")
-        l = j.replace("#", "")
-        if len(l) > 1:
-            if l[0].isupper() and l[1].isupper():
-                j = list(l)
-                j[1] = j[1].lower()
-                l = "".join(j)
+        l = doss_label(i)
         labels.append(l)
 
         if should_include_orbital(l, element_treatment, proj_type):
@@ -926,57 +996,10 @@ def ipDOS(
     search = sort_labels_by_element_and_orbital(search)
 
     # Handle vacuum reference
-    if exists(file4) and exists(file5):
-        z = []
-        V = []
-        EF = 0
-        with open(file5) as f5:
-            for i, line in enumerate(f5):
-                if "FERMI ENERGY" in line:
-                    EF = float(line.split()[-1])
-        with open(file4) as f:
-            for i, line in enumerate(f):
-                if line.startswith("#") or line.startswith("@"):
-                    continue
-                else:
-                    z.append(float(line.split()[0]))
-                    V.append(float(line.split()[1]))
-        maxV = -(V[0] - EF) * 27.2114
-    else:
-        maxV = 0
-
-    data_vect = [[] for n in range(len(labels))]
+    maxV = vacuum_shift(file4, file5)
 
     # Read DOS data
-    with open(file) as f:
-        for i, line in enumerate(f):
-            if line.startswith("# EFERMI"):
-                continue
-            if line.startswith("#") or line.startswith("@") or line.startswith("&"):
-                continue
-
-            data = line.split()
-
-            # A DOS record can wrap across several physical lines when there are
-            # many projection columns; a complete record has len(labels) values
-            # (energy + projections). Pull continuation lines until the record is
-            # complete. The previous code unconditionally read ONE line ahead
-            # whenever len(labels) >= 17 and discarded it unless it looked like a
-            # short continuation — which silently dropped every second row of any
-            # 17+-column DOS file that was written on single (unwrapped) lines.
-            while len(data) < len(labels):
-                ne = next(f, "")
-                if not ne:
-                    break
-                ne_parts = ne.split()
-                if not ne_parts:
-                    continue
-                data += ne_parts
-
-            data_vect[0].append(float(data[0]) * 27.2114 + maxV)
-
-            for j in range(1, len(labels)):
-                data_vect[j].append(float(data[j]) / 27.2114)
+    data_vect = read_doss_columns(file, len(labels), maxV)
 
     # Determine x-axis scaling based on mode
     energy_array = np.array(data_vect[0])

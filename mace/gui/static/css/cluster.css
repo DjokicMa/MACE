@@ -1,0 +1,85 @@
+/* The Cluster document and the Job document (js/docs/cluster.js): tokens only.
+ * Loaded on first use and then global: every rule is scoped to .clv/.jbv (or a
+ * clv-/jbv- class) so it never restyles another view's .warn or .chip. */
+.views > #tab-cluster.active, .views > #tab-job.active { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: auto;
+  padding: var(--s-4) var(--s-5); }
+.cluster-host, .job-host { flex: 1; min-height: 0; min-width: 0; }
+.clv, .jbv { display: flex; flex-direction: column; gap: var(--s-3); min-width: 0; }
+.clv-head, .jbv-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-3); }
+.clv-head h2, .jbv-head h2 { margin: 0; font-size: var(--fs-xl); }
+.clv-strip { margin-left: auto; }
+.clv-refresh[aria-disabled="true"] { opacity: .6; }
+.clv-alloc { color: var(--info); }
+.clv-tabs { display: flex; gap: var(--s-1); border-bottom: 1px solid var(--border); }
+.clv-tabs [role=tab] { height: var(--h-control); padding: 0 var(--s-3); border: 0; border-bottom: 2px solid transparent; background: none;
+  color: var(--text-2); cursor: pointer; font: 500 var(--fs-md)/1 var(--font-sans); }
+.clv-tabs [role=tab][aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.clv-tabs [role=tab]:focus-visible, .clv-pane:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.clv-pane { min-width: 0; }
+.clv-pane h3, .jbv h3 { margin: var(--s-4) 0 var(--s-2); font-size: var(--fs-md); }
+.clv-errors .warn, .clv-warn, .clv .warn, .jbv .warn { display: flex; align-items: center; gap: var(--s-2); color: var(--warning); }
+.clv-cards { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.clv-card { min-width: 170px; padding: var(--s-2) var(--s-3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.clv-card .k { font-size: var(--fs-xs); color: var(--text-2); }
+.clv-card .v { font: 600 var(--fs-md)/1.4 var(--font-sans); font-variant-numeric: tabular-nums; }
+.clv-card.warning { border-color: var(--warning); }
+.clv-card.critical { border-color: var(--danger); }
+.clv-card.critical .v { color: var(--danger); }
+.clv-card.warning .v { color: var(--warning); }
+.clv-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.clv-table th, .clv-table td { padding: 3px var(--s-2); border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+/* headers wrap so a wide table (Limits) fits a 1280 px window; cells keep one line */
+.clv-table th { white-space: normal; vertical-align: bottom; }
+.clv-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.clv-row, .clv-fit, .clv-scanform { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); margin: var(--s-2) 0; }
+.clv-fit input, .clv-fit select, .clv-row input, .clv-row select, .clv-scanform input, .clv-scanform select {
+  height: var(--h-control); border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); padding: 0 var(--s-2); }
+.clv-fit input[type=number], .clv-row input[type=number] { width: 80px; }
+.clv-actions { display: inline-flex; gap: var(--s-2); }
+.clv-pred { font-weight: 600; }
+.clv-stack { display: flex; height: 10px; min-width: 4px; border-radius: var(--r-xs); overflow: hidden; background: var(--surface-3); }
+.clv-stack i { display: block; height: 100%; }
+.clv-stack .s-idle { background: var(--success); }
+.clv-stack .s-mixed { background: var(--info); }
+.clv-stack .s-allocated { background: var(--accent); }
+.clv-stack .s-down_drain { background: var(--text-3); }
+.clv-space { padding: var(--s-2) var(--s-3); margin-bottom: var(--s-2); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.clv-space-head { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-1); }
+.clv-space-row { display: grid; grid-template-columns: 48px minmax(120px, 280px) auto; align-items: center; gap: var(--s-2); }
+.clv-space-row .lbl { font-size: var(--fs-sm); color: var(--text-2); }
+.clv-bar { display: inline-block; position: relative; height: 8px; min-width: 120px; border-radius: var(--r-xs); background: var(--surface-3); overflow: hidden; }
+.clv-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); }
+.clv-bar.warning i { background: var(--warning); }
+.clv-bar.critical i { background: var(--danger); }
+.clv .chip, .jbv .chip { display: inline-block; padding: 0 var(--s-2); border: 1px solid var(--border); border-radius: var(--r-sm); font-size: var(--fs-xs); color: var(--text-2); }
+.clv-sug { margin: var(--s-2) 0; font-size: var(--fs-sm); }
+.clv-sug code { word-break: break-all; }
+.clv-empty { color: var(--text-2); }
+.jbv-time { display: flex; align-items: center; gap: var(--s-3); }
+.jbv-time .clv-bar { flex: 0 1 320px; }
+.jbv-risk { display: flex; gap: var(--s-2); padding: var(--s-2) var(--s-3); border-radius: var(--r-md); border: 1px solid var(--warning); }
+.jbv-risk.critical { border-color: var(--danger); }
+.jbv-risk.critical b { color: var(--danger); }
+.jbv-risk.warning b { color: var(--warning); }
+.jbv-summary { font-weight: 600; }
+.jbv-levels { list-style: none; margin: var(--s-2) 0; padding: 0; }
+.jbv-levels .jbv-level { margin: 2px 0; }
+.jbv-levels .jbv-level.d0 .jbv-lt { font-weight: 600; }
+.jbv-levels .jbv-level.d1 { padding-left: var(--s-4); }
+.jbv-levels .jbv-level.d2 { padding-left: calc(2 * var(--s-4)); font-size: var(--fs-sm); }
+.jbv-levels .jbv-level.done .jbv-lt { color: var(--text-2); }
+.jbv-levels .jbv-level.pending .jbv-lt { color: var(--text-2); font-style: italic; }
+.jbv-why summary { cursor: pointer; font-size: var(--fs-sm); }
+.jbv-why ul { margin: var(--s-1) 0; padding-left: var(--s-4); }
+.jbv-note { color: var(--text-2); }
+.jbv-sparks { display: flex; flex-wrap: wrap; gap: var(--s-3); }
+.clv-spark path { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+.clv-spark .thr { stroke: var(--success); stroke-dasharray: 3 3; stroke-width: 1; }
+.jbv .chip.state-running { color: var(--info); border-color: var(--info); }
+.jbv .chip.state-pending { color: var(--warning); border-color: var(--warning); }
+.clv-table td.mono { white-space: normal; word-break: break-all; }
+.clv-soft td { white-space: normal; vertical-align: top; }
+.jbv-array tr.current td { font-weight: 600; }
+.jbv .clv-table td:first-child { white-space: nowrap; }
+.clv-table .clv-stackcell { width: 18%; min-width: 48px; }
+.clv-row label, .clv-fit label, .clv-scanform label { display: inline-flex; align-items: center; gap: var(--s-1); }

@@ -189,6 +189,20 @@ def test_tracked_rows_are_tasks(tmp_path):
         assert "export MACE_DB_PATH=" in (d / f"{n}.sh").read_text()
 
 
+def test_tracked_job_id_line_names_only_this_runs_jobs(tmp_path):
+    """The copy-paste "Job ID(s):" line of mace submit --track lists the jobs
+    this run submitted, not every job crystal_job_status.json remembers from
+    earlier submissions in the folder (seen on HPCC: an ended job's id next to
+    the new one, and the GUI's toast then claimed two jobs)."""
+    fake, env, d = _setup(tmp_path, ["first"])
+    p = _ok(_mace(tmp_path, env, "submit", "--track", "decks/first.d12"))
+    first = re.search(r"Job ID\(s\): (.+)", p.stdout).group(1).strip()
+    (d / "second.d12").write_text(SP_D12)
+    p = _ok(_mace(tmp_path, env, "submit", "--track", "decks/second.d12"))
+    line = re.search(r"Job ID\(s\): (.+)", p.stdout).group(1).strip()
+    assert first not in line.split(", ") and len(line.split(", ")) == 1, (first, line)
+
+
 def test_progress_rows_carry_the_workflow_and_the_task(tmp_path):
     fake, env, d = _setup(tmp_path, ["m0", "m1"], deck=OPT_D12)
     _ok(_mace(tmp_path, env, "submit", "--progress", "opt_sp", "--array", "decks"))

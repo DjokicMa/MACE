@@ -1183,8 +1183,10 @@ def test_plotting_forces_headless_backend(monkeypatch):
     import sys
 
     monkeypatch.delenv("MPLBACKEND", raising=False)
+    # through monkeypatch: the modules come back afterwards, so later tests keep one PlotKind
+    # (a test that imported it before this one compares it with the registry's)
     for mod in [m for m in sys.modules if m.startswith("mace.plotting")]:
-        sys.modules.pop(mod)
+        monkeypatch.delitem(sys.modules, mod)
     importlib.import_module("mace.plotting.main")
     assert os.environ.get("MPLBACKEND") == "Agg"
 

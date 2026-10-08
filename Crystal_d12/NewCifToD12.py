@@ -2222,6 +2222,22 @@ def create_d12_file(cif_data, output_file, options, interactive=None):
     return True
 
 
+def _warn_preopt_geometry(cif_file, calc_type):
+    """A CIF marked by `mace preopt` or the GUI's Clean as an FF/ML starting
+    geometry: a non-OPT deck from it is not meaningful. One line on stderr;
+    the options, the questions and the deck stay exactly as they are."""
+    try:
+        from mace.preopt import marker
+    except ImportError:          # run outside the MACE tree: nothing to check
+        return
+    try:
+        text = marker.convert_warning(os.path.basename(cif_file), marker.read(cif_file), calc_type)
+    except Exception:
+        return
+    if text:
+        print(text, file=sys.stderr)
+
+
 def process_cifs(cif_directory, options, output_directory=None, interactive=None):
     """
     Process all CIF files in a directory
@@ -2259,6 +2275,7 @@ def process_cifs(cif_directory, options, output_directory=None, interactive=None
         # Generate output filename
         dimensionality = options["dimensionality"]
         calc_type = options["calculation_type"]
+        _warn_preopt_geometry(cif_file, calc_type)
 
         # Method identifier
         if options["method"] == "HF":

@@ -88,13 +88,29 @@ class AdvancedElectronicAnalyzer:
         
         try:
             with open(band_file, 'r') as fh:
+                nbnd = 0
+                pending = []
                 for line in fh:
+                    if line.startswith('#'):
+                        tok = line.lstrip('#').split()
+                        if 'NBND' in tok:
+                            try:
+                                nbnd = int(tok[tok.index('NBND') + 1])
+                            except (ValueError, IndexError):
+                                pass
+                        continue
                     # Skip comments and empty lines
-                    if line.startswith(('#', '@')) or not line.strip():
+                    if line.startswith('@') or not line.strip():
                         continue
                     
                     try:
-                        vals = list(map(float, line.split()))
+                        vals = pending + list(map(float, line.split()))
+                        # CRYSTAL wraps a k-point row after 1000 fields
+                        # (NBND >= 1000): keep reading until the row is whole
+                        if nbnd and len(vals) < nbnd + 1:
+                            pending = vals
+                            continue
+                        pending = []
                         if len(vals) >= 2:
                             k_coord = vals[0]  # k-point coordinate
                             energies = vals[1:]  # Energy bands in Hartree

@@ -424,10 +424,19 @@ def test_failed_deck_does_not_stop_independent_decks(box):
 
 def test_refused_on_the_gateway(box):
     box.deck("x.d12")
-    r = box.run("x.d12", MODULEPATH="/opt/modules/x86_64/gateway/all")
+    r = box.run("x.d12", MODULEPATH="/opt/modules/x86_64/gateway/all", MACE_HOSTNAME="gateway-00.hpcc.msu.edu")
     assert r.returncode == 2, r.text
-    assert "gateway" in r.text and "ssh dev-amd20" in r.text
+    assert "gateway" in r.text and "ssh dev-amd20" in r.text       # MSU HPCC: its dev nodes as the example
     assert not (box.work / ".mace_local").exists()
+    assert box.stub_log() == ""
+
+
+def test_refused_on_a_login_node_elsewhere_names_no_msu_node(box):
+    box.deck("x.d12")
+    r = box.run("x.d12", MODULEPATH="/opt/modules/x86_64/gateway/all", MACE_HOSTNAME="login1.cluster.example.edu")
+    assert r.returncode == 2, r.text
+    assert "login node" in r.text and "interactive or development node" in r.text
+    assert "dev-amd" not in r.text and "dev-intel" not in r.text and "HPCC" not in r.text
     assert box.stub_log() == ""
 
 
@@ -451,7 +460,8 @@ def test_refused_inside_a_slurm_job(box):
                                   ["--timeout", "3h"], ["--timeout", "soon"]])
 def test_bad_cores_or_timeout_are_refused(box, args):
     box.deck("x.d12")
-    r = box.run(*args, "x.d12")
+    # 3h is above MSU HPCC's 1h55m cap (elsewhere only ulimit -t or [local_run] max_time cap it)
+    r = box.run(*args, "x.d12", MACE_HOSTNAME="dev-amd20.hpcc.msu.edu")
     assert r.returncode == 2, r.text
     assert box.stub_log() == ""
 
@@ -960,7 +970,7 @@ def test_dry_run_with_track_writes_no_database(box):
 def test_docs_describe_mace_run():
     doc = " ".join((REPO_ROOT / "DOCUMENTATION.md").read_text().split())
     assert "### Run on a dev node (`mace run`)" in doc
-    assert "HPCC dev nodes stop any process after 2 hours of CPU time" in doc
+    assert "development nodes often stop a process after 2 hours of CPU time" in doc
     assert "the login gateway" in doc and "`<job>-local.o`" in doc
     assert "mace run" in (REPO_ROOT / "README.md").read_text()
     assert "`mace run` runs small decks there directly" in " ".join(
@@ -994,3 +1004,24 @@ def test_tracked_band_alone_gives_no_formula_from_its_header(box):
     r = box.run("--track", "-n", "1", "solo_band.d3")
     assert r.returncode == 0, r.text
     assert set(_materials(box).values()) <= {None, "", "Unknown"}, (_materials(box), r.text)
+
+
+def test_site_messages(box, tmp_path):
+    """[local_run] texts from site.toml (PLAN_submit D32): {reason}, {module}
+    and {host} filled; without the file the built-in texts above apply."""
+    import socket
+    from fake_modules import FakeModules
+    cfg = tmp_path / "home" / ".config" / "mace"
+    cfg.mkdir(parents=True)
+    (cfg / "site.toml").write_text(
+        '[local_run]\ngateway_message = "Login host ({reason}) on {host}: use a compute node."\n'
+        'module_message = "no {module} on {host}"\n')
+    box.deck("x.d12")
+    r = box.run("x.d12", MODULEPATH="/opt/modules/x86_64/gateway/all")
+    assert r.returncode == 2
+    assert f"Login host (its MODULEPATH is the gateway's) on {socket.gethostname()}: use a compute node." in r.text
+    fm = FakeModules(tmp_path / "fm", {})
+    e = fm.env({}, MODULEPATH="/fake/modulefiles")
+    r = box.run("x.d12", BASH_ENV=e["BASH_ENV"], MODULEPATH=e["MODULEPATH"], MACE_MODULES_SPY=e["MACE_MODULES_SPY"])
+    assert r.returncode == 2
+    assert f"no CRYSTAL/23-intel-2023a on {socket.gethostname()}" in r.text

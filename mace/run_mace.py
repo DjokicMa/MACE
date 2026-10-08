@@ -274,6 +274,22 @@ def _get_quick_slurm_config(calc_type: str, step_num: int) -> Dict[str, Any]:
         }
     
     resources = default_resources.get(base_type, default_resources.get("OPT"))
+    # the site's account and CRYSTAL module (and partition / Python modules
+    # when set), stored in the plan once: mace/submission/site.py
+    from mace.submission import site
+    try:
+        stored = site.plan_resources()
+    except site.SiteConfigError as exc:
+        print(f"Error: {exc}")
+        raise SystemExit(2)
+    # built-in values stay implicit: the template's own lines, byte for byte
+    if stored.get("account") == site.DEFAULTS["account"]:
+        stored.pop("account")
+    if [stored.get("module")] == site.DEFAULTS["crystal"] and "modules" not in stored:
+        stored.pop("module")
+    resources = {**resources, **stored}
+    # the site's [resources] job size, when set (memory in the site's form)
+    resources = site.overlay_resources(resources, site.load(), "scf" if script_name == "submitcrystal23.sh" else "prop")
     
     return {
         "scripts": {

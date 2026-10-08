@@ -1,0 +1,93 @@
+/* The structure viewer's overlays and the editor's panels (Phase 3). Loaded
+ * with the editor module, never at first paint. Tokens only. */
+.vp-overlay { position: absolute; pointer-events: none; z-index: 4; display: none; }
+.vp-overlay.on { display: block; }
+.vp-rings { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 2; }
+.vp-badge { position: absolute; top: var(--s-3); right: var(--s-3); z-index: 3; padding: 2px var(--s-3);
+  border-radius: var(--r-sm); background: var(--lod-badge-bg); color: var(--text-2); font: 500 var(--fs-xs) var(--font-sans);
+  border: 1px solid var(--border); pointer-events: none; }
+.vp-banner { position: absolute; top: var(--s-3); left: 50%; transform: translateX(-50%); z-index: 3; padding: var(--s-1) var(--s-4);
+  border-radius: var(--r-md); background: var(--warning); color: var(--surface); font: 600 var(--fs-sm) var(--font-sans); pointer-events: none; }
+.vp-chip { position: absolute; top: var(--s-3); left: var(--s-3); z-index: 3; max-width: calc(100% - 140px); display: flex; align-items: center;
+  gap: var(--s-2); padding: var(--s-1) var(--s-3); border-radius: var(--r-md); background: var(--chip-bg); color: var(--text);
+  border: 1px solid var(--border); box-shadow: var(--e1); font: 500 var(--fs-sm) var(--font-sans); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.vp-chip[hidden] { display: none; }
+.vp-chip .k { color: var(--text-2); font-weight: 400; }
+.vp-chip input { width: 4.5em; height: 22px; padding: 0 var(--s-2); font: inherit; border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm); background: var(--surface); color: var(--text); }
+.vp-chip input[aria-invalid="true"] { border-color: var(--danger); }
+.vp-chip .err { color: var(--danger); }
+.vp-chip button { height: 22px; padding: 0 var(--s-3); border-radius: var(--r-sm); border: 1px solid var(--border-strong);
+  background: var(--surface-2); color: var(--text); font: inherit; cursor: pointer; }
+.vp-chip button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.vp-chip.warn { border-color: var(--warning); }
+/* the new viewer reads out hovered atoms in the status bar, not over the atoms */
+.viewer-wrap.vp-owned .hover-tip { display: none; }
+.viewer-wrap.vp-owned .viewer { cursor: default; touch-action: none; }
+.viewer-wrap.vp-owned[data-tool="pan"] .viewer { cursor: grab; }
+.viewer-wrap.vp-owned[data-tool="zoom"] .viewer { cursor: zoom-in; }
+.viewer-wrap.vp-owned[data-tool="add"] .viewer, .viewer-wrap.vp-owned[data-tool="measure"] .viewer,
+.viewer-wrap.vp-owned[data-tool="replace"] .viewer, .viewer-wrap.vp-owned[data-tool="bond"] .viewer { cursor: crosshair; }
+.viewer-wrap.vp-owned[data-tool="move"] .viewer { cursor: move; }
+/* the inspector's editing sections (js/editor/inspector.js) */
+.ins-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); min-height: var(--h-control); }
+.ins-row.end { justify-content: flex-end; }
+.ins-k { color: var(--text-2); font-size: var(--fs-sm); }
+.ins-v { font-variant-numeric: tabular-nums; text-align: right; }
+.ins-atom { display: flex; align-items: center; gap: var(--s-3); margin-bottom: var(--s-3); }
+.ins-el { width: 40px; height: 40px; border-radius: var(--r-md); border: 1px solid var(--border-strong); background: var(--surface-2);
+  color: var(--text); font: 600 var(--fs-lg) var(--font-sans); cursor: pointer; }
+.ins-el:hover { border-color: var(--accent); }
+.ins-name { font-weight: 600; }
+.ins-meta { color: var(--text-2); font-size: var(--fs-sm); }
+.ins-xyz, .ins-grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); margin: var(--s-1) 0 var(--s-2); }
+.ins-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; position: relative; }
+.ins-field input { width: 100%; height: var(--h-control); padding: 0 var(--s-2); border: 1px solid var(--border-strong); border-radius: var(--r-md);
+  background: var(--surface); color: var(--text); font: var(--fs-md) var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.ins-field input[data-unit] { padding-right: 22px; }
+.ins-field .ins-unit { position: absolute; right: var(--s-2); bottom: 6px; color: var(--text-2); font-size: var(--fs-xs); pointer-events: none; }
+.ins-field input[aria-invalid="true"] { border-color: var(--danger); outline-color: var(--danger); }
+.ins-err { color: var(--danger); font-size: var(--fs-xs); min-height: 0; }
+.ins-err:empty { display: none; }
+.ins-tol .ins-field { flex-direction: row; align-items: center; justify-content: space-between; gap: var(--s-3); }
+.ins-tol .ins-field input { width: 9em; }
+.ins-nudge .ins-field { flex-direction: row; align-items: center; justify-content: space-between; gap: var(--s-3); }
+.ins-nudge .ins-field input { width: 7em; }
+.ins-pad { display: grid; grid-template-columns: 2em 1fr 1fr; gap: var(--s-1) var(--s-2); align-items: center; margin: var(--s-2) 0; }
+.ins-pad .tb-btn-text { justify-content: center; font: 600 var(--fs-md) var(--font-mono); }
+.ins-seg button { min-width: 3.2em; }
+.ins-sym .hm.warn { color: var(--warning); }
+.insp-hint.warn { color: var(--warning); }
+.vp-chip-el, .vp-chip-move { display: inline-flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; white-space: normal; }
+.vp-chip-el .k, .vp-chip-move .k { color: var(--text-2); font-weight: 400; }
+.vp-chip .vp-pick { padding: 0 var(--s-2); }
+.vp-chip-move.warn .warn-t { color: var(--warning); font-weight: 600; }
+.vp-chip:has(.vp-chip-move.warn) { border-color: var(--warning); white-space: normal; }
+/* the Measurements panel */
+.ms-head { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-3); }
+.ms-head .muted { flex: 1; }
+.ms-table tr.invalid td:nth-child(-n+3) { text-decoration: line-through; color: var(--text-2); }
+.ms-table th:nth-child(n+4), .ms-table td:nth-child(n+4) { width: 36px; padding-left: 0; padding-right: var(--s-2); text-align: center; }
+/* the Atoms table (virtualized) and the History panel */
+.at-host { height: 100%; }
+.at-scroll { height: 100%; overflow: auto; outline-offset: -2px; }
+.atoms-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.atoms-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); }
+.atoms-table thead .at-sort { all: unset; cursor: pointer; font-weight: 600; }
+.atoms-table thead .at-sort:focus-visible { outline: 2px solid var(--focus); }
+.atoms-table td { padding-top: 0; padding-bottom: 0; white-space: nowrap; }
+.atoms-table tr.sel td { background: var(--sel-soft); }
+.at-scroll:focus-within .atoms-table td.cur { outline: 2px solid var(--focus); outline-offset: -2px; }
+.atoms-table tr.at-pad td { padding: 0; }
+.atoms-table .at-edit { width: 100%; height: 22px; font: inherit; text-align: inherit; border: 1px solid var(--accent); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--text); }
+.hist-scroll { height: 100%; overflow: auto; }
+.hist-row { display: grid; grid-template-columns: 1fr auto auto; gap: var(--s-4); align-items: center; height: 28px; padding: 0 var(--s-4);
+  cursor: pointer; border-bottom: 1px solid var(--border); }
+.hist-row:hover { background: var(--surface-2); }
+.hist-row.cur { background: var(--accent-soft); font-weight: 600; }
+/* steps after the current one: still redoable, so readable (4.5:1), told apart by gray italics */
+.hist-row.redo { color: var(--text-2); font-style: italic; }
+.hist-t, .hist-n { color: var(--text-2); font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }
+.hist-row.redo .hist-t, .hist-row.redo .hist-n { color: var(--text-2); }

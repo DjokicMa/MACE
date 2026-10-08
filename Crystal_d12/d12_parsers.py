@@ -37,11 +37,14 @@ LOW_DIM_GROUPS = {"SLAB": ("layer_group", 80), "POLYMER": ("rod_group", 99)}
 
 # CrystalInputParser keys describing the parent deck's own geometry input. A
 # derived deck takes its geometry from the .out (the optimized structure), so
-# opt2d12 never merges these into its settings.
+# opt2d12 never merges these into its settings. ``origin_shift`` is not one of
+# them: it is the record IFSO > 1 in ``origin_setting`` requires, and the
+# child keeps the parent's origin setting (CRYSTAL prints the atoms in the
+# frame of the deck's own origin, so the .out's coordinates go with it).
 DECK_GEOMETRY_KEYS = (
     "cell_record", "cell_parameters", "n_atoms", "atoms",
     "atom_coordinate_text", "atom_labels",
-    "point_group", "rhombohedral_axes", "origin_shift", "geometry_unparsed",
+    "point_group", "rhombohedral_axes", "geometry_unparsed",
 )
 
 # CrystalInputParser keys about the deck's own records rather than settings:

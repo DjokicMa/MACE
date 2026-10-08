@@ -31,9 +31,41 @@ EXCLUSION_CHOICES = {
 # Users and piped scripts answer by number, so never reorder these.
 MANAGER_MENU = ('none', 'amd20', 'all_amd', 'all_intel', 'mendoza', 'custom')
 PLANNER_MENU = ('none', 'amd20', 'mendoza', 'by_type', 'manual')
+# These menus name MSU HPCC's node types and the Mendoza group's nodes. On
+# any other SLURM cluster both menus are this one (site_menu).
+GENERIC_MENU = ('none', 'by_type', 'manual')
 
-# The choice an empty answer selects, in every menu.
+# The choice an empty answer selects, in every menu (when it offers it;
+# else 'none').
 DEFAULT_EXCLUSION_CHOICE = 'amd20'
+
+
+def _site():
+    try:
+        from mace.submission import site
+        return site
+    except ImportError:          # pragma: no cover - run without the mace package
+        return None
+
+
+def msu_menus(env=None) -> bool:
+    """MSU HPCC's choices apply here: on MSU HPCC, or where there is no
+    SLURM to ask (a workstation keeps today's menus)."""
+    site = _site()
+    return True if site is None else site.msu_choices(env)
+
+
+def site_menu(menu: Sequence[str], env=None) -> Tuple[Optional[str], ...]:
+    """``menu`` as offered on this cluster. Off MSU HPCC: GENERIC_MENU. On
+    it, the Mendoza choice is offered only to a member of the group's
+    account (or where that cannot be checked); a hidden choice keeps its
+    number (None), so the other answers do not move."""
+    if not msu_menus(env):
+        return GENERIC_MENU
+    site = _site()
+    if site is not None and not site.account_usable(site.DEFAULTS["account"], env):
+        return tuple(None if k == 'mendoza' else k for k in menu)
+    return tuple(menu)
 
 # Notes shown next to a cluster generation wherever the clusters are listed.
 CLUSTER_NOTES = {
@@ -44,8 +76,10 @@ CLUSTER_NOTES = {
 
 
 def menu_default_answer(menu: Sequence[str]) -> str:
-    """The option number that selects DEFAULT_EXCLUSION_CHOICE in ``menu``."""
-    return str(menu.index(DEFAULT_EXCLUSION_CHOICE) + 1)
+    """The option number that selects DEFAULT_EXCLUSION_CHOICE in ``menu``
+    ('none' in a menu without it)."""
+    key = DEFAULT_EXCLUSION_CHOICE if DEFAULT_EXCLUSION_CHOICE in menu else 'none'
+    return str(list(menu).index(key) + 1)
 
 
 def menu_choice(menu: Sequence[str], answer: str) -> Optional[str]:
@@ -53,7 +87,7 @@ def menu_choice(menu: Sequence[str], answer: str) -> Optional[str]:
 
     An empty answer selects the default choice."""
     answer = answer.strip() or menu_default_answer(menu)
-    numbered = {str(i): key for i, key in enumerate(menu, 1)}
+    numbered = {str(i): key for i, key in enumerate(menu, 1) if key}
     return numbered.get(answer)
 
 
@@ -101,6 +135,34 @@ class NodeExclusionManager:
     def __init__(self):
         """Initialize the node exclusion manager."""
         self.available_nodes = {}
+        self._msu = None
+
+    @property
+    def msu(self) -> bool:
+        """MSU HPCC's node types and examples apply here (msu_menus)."""
+        if self._msu is None:
+            self._msu = msu_menus()
+        return self._msu
+
+    def node_types(self) -> List[str]:
+        """The node types (name prefixes) offered for "exclude by type":
+        MSU HPCC's, else the ``<type>-<number>`` prefixes SLURM lists here."""
+        if self.msu:
+            return list(self.KNOWN_NODE_TYPES)
+        try:
+            result = subprocess.run(["scontrol", "show", "nodes"], capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if result.returncode != 0:
+            return []
+        found = sorted(set(re.findall(r'NodeName=([a-z]+)-\d+', result.stdout or '')))
+        return found
+
+    def node_examples(self) -> Tuple[str, str]:
+        """(single nodes, ranges): the examples the node-list prompts show."""
+        if self.msu:
+            return "amr-042,amr-050,nvf-123", "amr-[042-050],nvf-[100-110]"
+        return "node-042,node-050", "node-[042-050]"
 
     def get_amd20_nodes(self) -> List[str]:
         """
@@ -446,10 +508,11 @@ class NodeExclusionManager:
         return self.create_exclude_string(self.MENDOZA_NODES)
 
     def menu_lines(self, menu: Sequence[str]) -> List[str]:
-        """The numbered option lines of ``menu``, e.g. '1) No exclusions ...'."""
+        """The numbered option lines of ``menu``, e.g. '1) No exclusions ...'
+        (a hidden choice, None, keeps its number but has no line)."""
         mendoza = self.mendoza_exclude_string().replace('],', '], ')
         return [f"{i}) {EXCLUSION_CHOICES[key].format(mendoza=mendoza)}"
-                for i, key in enumerate(menu, 1)]
+                for i, key in enumerate(menu, 1) if key]
 
     def exclude_string_from_node_list(self, custom_input: str,
                                       warn: Callable[[str], None] = print) -> str:
@@ -463,14 +526,17 @@ class NodeExclusionManager:
             return custom_input
 
         node_groups = {}
+        others = []
         for node in (n.strip() for n in custom_input.split(',')):
             match = re.match(r'^([a-z]+)-(\d+)$', node)
             if match:
                 node_groups.setdefault(match.group(1), []).append(node)
+            elif not self.msu and re.match(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$', node):
+                others.append(node)          # another cluster's node names, as typed
             else:
                 warn(f"Warning: Invalid node format '{node}', skipping")
 
-        return self.create_multi_type_exclude_string(node_groups)
+        return ','.join(p for p in [self.create_multi_type_exclude_string(node_groups)] + others if p)
 
     def interactive_node_exclusion(self) -> Optional[str]:
         """
@@ -483,9 +549,11 @@ class NodeExclusionManager:
         print("SLURM Node Exclusion Configuration")
         print("="*70)
 
-        # Show cluster information first
-        print("\n📊 Cluster Overview:")
-        for family in ('AMD', 'Intel'):
+        menu = site_menu(MANAGER_MENU)
+        # Show cluster information first (MSU HPCC's cluster generations)
+        if menu != GENERIC_MENU:
+            print("\n📊 Cluster Overview:")
+        for family in (('AMD', 'Intel') if menu != GENERIC_MENU else ()):
             if family == 'Intel':
                 print("")
             print(f"  {family} Clusters:")
@@ -498,12 +566,12 @@ class NodeExclusionManager:
         print("\n" + "="*70)
         print("Select exclusion option:")
         print("="*70)
-        for line in self.menu_lines(MANAGER_MENU):
+        for line in self.menu_lines(menu):
             print(line)
 
-        choice = menu_choice(MANAGER_MENU, input(
-            f"\nEnter choice [1-{len(MANAGER_MENU)}] "
-            f"(default: {menu_default_answer(MANAGER_MENU)}): "))
+        choice = menu_choice(menu, input(
+            f"\nEnter choice [1-{len(menu)}] "
+            f"(default: {menu_default_answer(menu)}): "))
 
         if choice == "none":
             print("\nNo node exclusions will be applied.")
@@ -528,6 +596,12 @@ class NodeExclusionManager:
 
         elif choice == "custom":
             return self._custom_selection()
+
+        elif choice == "by_type":
+            return self._exclude_by_type()
+
+        elif choice == "manual":
+            return self._custom_exclusion()
 
         else:
             print("Invalid choice. No exclusions will be applied.")
@@ -709,21 +783,22 @@ class NodeExclusionManager:
 
     def _exclude_by_type(self) -> Optional[str]:
         """Handle exclusion of all nodes by type(s) - supports multiple types."""
+        known = self.node_types()
         print("\nAvailable node types:")
-        for i, node_type in enumerate(self.KNOWN_NODE_TYPES, 1):
-            info = self.NODE_TYPE_INFO.get(node_type, '')
-            print(f"{i}) {node_type:6s} - {info}")
-        print(f"{len(self.KNOWN_NODE_TYPES) + 1}) Enter custom type(s)")
+        for i, node_type in enumerate(known, 1):
+            info = self.NODE_TYPE_INFO.get(node_type, '') if self.msu else ''
+            print(f"{i}) {node_type:6s} - {info}" if info or self.msu else f"{i}) {node_type}")
+        print(f"{len(known) + 1}) Enter custom type(s)")
 
-        choice = input(f"\nSelect node type [1-{len(self.KNOWN_NODE_TYPES) + 1}]: ").strip()
+        choice = input(f"\nSelect node type [1-{len(known) + 1}]: ").strip()
 
         # Parse the choice
         node_types = []
         try:
             choice_num = int(choice)
-            if 1 <= choice_num <= len(self.KNOWN_NODE_TYPES):
-                node_types = [self.KNOWN_NODE_TYPES[choice_num - 1]]
-            elif choice_num == len(self.KNOWN_NODE_TYPES) + 1:
+            if 1 <= choice_num <= len(known):
+                node_types = [known[choice_num - 1]]
+            elif choice_num == len(known) + 1:
                 # Allow custom types - comma or space separated
                 custom_input = input("\nEnter node type(s) (comma or space separated): ").strip()
                 # Parse both comma and space separated
@@ -777,10 +852,11 @@ class NodeExclusionManager:
 
     def _custom_exclusion(self) -> Optional[str]:
         """Handle custom node exclusion list."""
+        single, ranges = self.node_examples()
         print("\nEnter nodes to exclude (comma-separated).")
         print("Examples:")
-        print("  - Single nodes: amr-042,amr-050,nvf-123")
-        print("  - With ranges: amr-[042-050],nvf-[100-110]")
+        print(f"  - Single nodes: {single}")
+        print(f"  - With ranges: {ranges}")
 
         custom_input = input("\nNodes to exclude: ").strip()
 

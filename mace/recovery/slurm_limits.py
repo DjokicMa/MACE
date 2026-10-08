@@ -115,6 +115,61 @@ def sbatch_test_only(script_path: Path, walltime: str,
     return None, partition, text.strip()
 
 
+_START_RE = re.compile(r'\bJob\s+\d+\s+to start at\s+(\S+)')
+_NODES_RE = re.compile(r'\bon nodes\s+(\S+)')
+_PROCS_RE = re.compile(r'\busing\s+(\d+)\s+processors')
+
+
+def parse_test_only(text: str, returncode: int) -> dict:
+    """What ``sbatch --test-only`` said, read from its output (stdout and
+    stderr together). Site submit filters print their own lines first
+    ("Replacing '#!/bin/bash' with ...", an FAQ link); they are ignored.
+    The accepted line reads ``sbatch: Job N to start at <time> [a] using N
+    processors on nodes <list> in partition <p>`` (the " a " token seen on
+    one cluster is tolerated, never needed). A refusal keeps its reason:
+    the ``allocation failure:``/``error:`` line that is not filter noise.
+    """
+    text = text or ''
+    m_start = _START_RE.search(text)
+    m_nodes = _NODES_RE.search(text)
+    m_part = re.search(r'\bin partition (\S+)', text)
+    m_procs = _PROCS_RE.search(text)
+    reason = None
+    if returncode != 0 or not m_start:
+        for line in text.splitlines():
+            low = line.lower()
+            if 'replacing' in low or 'for more information' in low or 'http' in low:
+                continue
+            if 'allocation failure' in low or 'error' in low or 'invalid' in low:
+                reason = line.split('allocation failure:', 1)[-1].split('error:', 1)[-1].strip()
+                if reason:
+                    break
+    accepted = bool(m_start) and returncode == 0
+    if not accepted and reason is None and returncode == 0:
+        reason = 'SLURM gave no start time'
+    return {'accepted': accepted if (accepted or reason) else None,
+            'start': m_start.group(1) if m_start else None,
+            'nodes': m_nodes.group(1) if m_nodes else None,
+            'partition': m_part.group(1) if m_part else None,
+            'processors': int(m_procs.group(1)) if m_procs else None,
+            'reason': None if accepted else reason, 'message': text.strip()}
+
+
+def sbatch_test_only_detail(script_path: Path, extra_args: Optional[List[str]] = None,
+                            runner: Runner = None) -> dict:
+    """Like ``sbatch_test_only`` (same runner, same working directory: the
+    script's folder) but returns ``parse_test_only``'s dict, with the
+    predicted start time and nodes. Nothing is submitted."""
+    runner = runner or run_slurm
+    script_path = Path(script_path)
+    res = runner(['sbatch', '--test-only'] + list(extra_args or []) + [str(script_path)],
+                 cwd=str(script_path.parent))
+    if res is None:
+        return {'accepted': None, 'start': None, 'nodes': None, 'partition': None,
+                'processors': None, 'reason': 'sbatch not available', 'message': ''}
+    return parse_test_only((res.stdout or '') + (res.stderr or ''), res.returncode)
+
+
 def partition_max_time(partition: str, runner: Runner = None) -> Optional[int]:
     runner = runner or run_slurm
     # -a: mendoza_q and mendoza_q_long are HIDDEN partitions, and without it

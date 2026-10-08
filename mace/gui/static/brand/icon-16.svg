@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" role="img" aria-label="MACE">
+<title>MACE</title>
+<defs><linearGradient id="mace-icon-16-tile" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="16"><stop offset="0" stop-color="#2dd4bf"/><stop offset="0.2" stop-color="#22d3ee"/><stop offset="0.4" stop-color="#38bdf8"/><stop offset="0.6" stop-color="#3b82f6"/><stop offset="0.8" stop-color="#6366f1"/><stop offset="1" stop-color="#818cf8"/></linearGradient></defs>
+<rect width="16" height="16" rx="3.5" fill="url(#mace-icon-16-tile)"/>
+<path fill="#0b1220" d="M3 3H6V5H3ZM10 3H13V5H10ZM3 5H7V7H3ZM9 5H13V7H9ZM3 7H5V9H3ZM6 7H10V9H6ZM11 7H13V9H11ZM3 9H5V11H3ZM7 9H9V11H7ZM11 9H13V11H11ZM3 11H5V13H3ZM11 11H13V13H11Z"/>
+</svg>

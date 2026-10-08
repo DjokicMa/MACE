@@ -58,8 +58,19 @@ except ImportError:
         frag = importlib.util.module_from_spec(_spec)
         _spec.loader.exec_module(frag)
 
+try:
+    from mace.preopt import deckscan as _deckscan
+except ImportError:
+    try:
+        import deckscan as _deckscan  # copied flat by copy_dependencies
+    except ImportError:
+        _spec = importlib.util.spec_from_file_location(
+            "_mace_deckscan", Path(__file__).resolve().parent.parent / "mace" / "preopt" / "deckscan.py")
+        _deckscan = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_deckscan)
+
 from charge_records import (LIBRARY_END_MESSAGE, _basis_insert_index, chemod_end, extract_charge_records,
-                            library_basis_end)
+                            has_origin_shift, library_basis_end)
 from d12_writer import DEFAULT_SPINLOCK_CYCLES, atomic_deck
 
 IonChargeError = frag.IonChargeError
@@ -778,9 +789,16 @@ def parse_site_states(value) -> Optional[List[dict]]:
 
 # ------------------------------------------------------------ an existing deck
 
-GEOMETRY_EDITS = {"SUPERCEL", "SUPERCON", "SCELCONF", "SCELPHONO", "ATOMREMO", "ATOMSUBS", "ATOMINSE",
-                  "SLABCUT", "SLABINFO", "ATOMDISP", "MOLECULE", "CLUSTER", "NANOTUBE", "SWCNT",
-                  "ROTCRY", "PRIMITIV", "EXTERNAL"}
+# Geometry records that keep every atom where the deck lists it, in the same
+# order (strain, a rotated molecule, point charges, symmetry handling, ghost
+# basis functions): the deck's atom labels still name the same atoms.
+LABEL_PRESERVING_EDITS = frozenset({"ELASTIC", "BREAKELAS", "ATOMROT", "MOLEXP", "MOLSPLIT", "USESAED",
+                                    "POINTCHG", "GHOSTS"})
+# Every other geometry record of the one table (mace.preopt.deckscan) adds,
+# removes, moves or reorders atoms (ATOMORDE, a supercell, a slab cut, ...),
+# so the atoms CRYSTAL runs are not the ones the deck lists.
+GEOMETRY_EDITS = frozenset(_deckscan.GEOMETRY_EDITS) - LABEL_PRESERVING_EDITS
+_GEOMETRY_BLOCK_END = ("END", "ENDGEOM", "BASISSET", "OPTGEOM", "FREQCALC", "ELASTCON", "EOS")
 
 
 @dataclass
@@ -812,10 +830,14 @@ def read_deck_geometry(text: str) -> DeckGeometry:
     if dim not in ("CRYSTAL", "SLAB", "POLYMER", "MOLECULE"):
         raise IonChargeError(f"geometry {dim!r} is not read here (CRYSTAL, SLAB, POLYMER or MOLECULE)")
     i = 2
+    origin_shift = False
     if dim == "CRYSTAL":
+        origin_shift = has_origin_shift(lines[i])
         i += 1  # IFLAG IFHR IFSO
     group = lines[i].strip()
     i += 1
+    if origin_shift:
+        i += 1  # IFSO > 1: the origin-shift record (a rigid shift; labels and fragments are unchanged)
     symmetric = symmetric_from_deck_group(dim, group)
     cell_vals: List[float] = []
     if dim != "MOLECULE":
@@ -826,9 +848,9 @@ def read_deck_geometry(text: str) -> DeckGeometry:
     except (ValueError, IndexError):
         raise IonChargeError(f"could not read the atom count (line {i + 1}: {lines[i]!r})")
     rows = lines[i + 1:i + 1 + natoms]
-    after = [l.strip().upper() for l in lines[i + 1 + natoms:]]
-    for key in after:
-        if key in ("END", "ENDGEOM", "BASISSET", "OPTGEOM", "FREQCALC", "ELASTCON", "EOS"):
+    for line in lines[i + 1 + natoms:]:
+        key = _deckscan._kw(line)
+        if key in _GEOMETRY_BLOCK_END:
             break
         if key in GEOMETRY_EDITS:
             raise IonChargeError(f"the geometry block edits the structure ({key}) after the atom list, "

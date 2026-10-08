@@ -7,6 +7,7 @@ the data-dependent tests therefore ``skip`` cleanly when it is absent, while the
 self-contained logic tests (recovery input editing, etc.) always run.
 """
 import os
+import queue  # noqa: F401 - the standard library's, cached before a test module puts mace/ on sys.path
 import sys
 from pathlib import Path
 
@@ -27,6 +28,11 @@ os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 # (NO_COLOR-behavior tests are unaffected: NO_COLOR still overrides.)
 os.environ.setdefault("COLORTERM", "truecolor")
 
+# No group site settings (/etc/mace/site.toml, $XDG_CONFIG_DIRS/mace) of the
+# machine the suite runs on reach a test or the subprocesses it starts; a
+# test that wants a group file names it (mace/submission/site.py).
+os.environ["MACE_SITE_GROUP_CONFIG"] = "none"
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TEST_DATA = REPO_ROOT / "test"
 
@@ -46,6 +52,24 @@ if _CRYSTAL_D3.is_dir() and str(_CRYSTAL_D3) not in sys.path:
     sys.path.insert(0, str(_CRYSTAL_D3))
 
 
+# A test marked guismoke runs in CI without the corpus: it must use repo data
+# (examples/gui, tests/data, tests/fixtures) only. This flag is set while one runs.
+_SMOKE = {"on": False}
+
+
+@pytest.fixture(autouse=True)
+def _guismoke_uses_repo_data_only(request):
+    _SMOKE["on"] = request.node.get_closest_marker("guismoke") is not None
+    yield
+    _SMOKE["on"] = False
+
+
+def corpus_guard(pattern: str) -> None:
+    """A guismoke test reading the test/ corpus is a test bug: fail it."""
+    if _SMOKE["on"]:
+        pytest.fail(f"a guismoke test must not read the test/ corpus ({pattern}); use examples/gui", pytrace=False)
+
+
 def find_data(pattern: str, must_contain: str = None) -> Path:
     """First ``test/`` file matching glob ``pattern`` (optionally whose text
     contains ``must_contain``), else ``pytest.skip``.
@@ -53,6 +77,7 @@ def find_data(pattern: str, must_contain: str = None) -> Path:
     Skips — rather than fails — when the gitignored ``test/`` corpus is missing,
     so the suite is safe to run in a data-less CI.
     """
+    corpus_guard(pattern)
     if not TEST_DATA.is_dir():
         pytest.skip("test/ data corpus not present (gitignored, ~12GB)")
     matches = sorted(TEST_DATA.glob(pattern))
@@ -124,3 +149,10 @@ def seekpath_path():
         return result
 
     return get_path
+
+
+@pytest.fixture(autouse=True)
+def _history_store_in_tmp(tmp_path_factory, monkeypatch):
+    """The GUI's File History (mace/gui/history.py) writes under
+    XDG_STATE_HOME: in-process tests keep it in a temp dir, never in ~."""
+    monkeypatch.setenv("MACE_GUI_HISTORY_DIR", str(tmp_path_factory.getbasetemp() / "gui_history"))

@@ -125,8 +125,12 @@ class WorkflowContext:
         """Copy schema from shared database for hybrid mode."""
         shared_db = self.base_dir / "materials.db"
         if shared_db.exists() and not self.db_path.exists():
+            try:
+                from mace.database import dbsafety
+            except ImportError:          # mace/ on sys.path
+                from database import dbsafety
             # Connect to shared database
-            conn_shared = sqlite3.connect(str(shared_db))
+            conn_shared = dbsafety.connect_rw(shared_db)
             
             # Get schema
             schema_sql = []
@@ -138,7 +142,7 @@ class WorkflowContext:
             conn_shared.close()
             
             # Create isolated database with same schema
-            conn_isolated = sqlite3.connect(str(self.db_path))
+            conn_isolated = dbsafety.connect_rw(self.db_path)
             for sql in schema_sql:
                 conn_isolated.execute(sql)
             conn_isolated.commit()

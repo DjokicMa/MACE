@@ -149,4 +149,7 @@ def test_apply_script_customizations_rewrites_sbatch_and_callback(planner):
                    "--max-jobs 950 --reserve 50 --max-submit 10",
                    "--max-recovery-attempts 3"):
         assert needle in out, f"missing {needle!r}"
-    assert "250" not in out  # old hardcoded callback values replaced
+    # old hardcoded callback values replaced (matched as flags: the context path
+    # in out holds pytest's numbered temp dir, which can contain "250")
+    for stale in ("--max-jobs 250", "--reserve 30", "--max-submit 5", "--max-recovery-attempts 9"):
+        assert stale not in out, f"stale {stale!r}"

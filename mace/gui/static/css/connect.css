@@ -1,0 +1,36 @@
+/* Open Folder, Connecting from Your Computer, Sign Out and Stop Server,
+ * Signed Out, Report a Problem (js/lazy/connect_ui.js). Tokens only. */
+#open-folder { width: min(640px, 94vw); }
+.of-roots { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-bottom: var(--s-3); }
+.of-roots .chip { border: 1px solid var(--border-strong); background: none; color: inherit; border-radius: 999px;
+  padding: var(--s-0) var(--s-4); font: inherit; cursor: pointer; }
+.of-roots .chip:hover { border-color: var(--accent); }
+.of-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); margin-bottom: var(--s-2); }
+.of-crumbs .crumb { border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; padding: 0 var(--s-1); }
+.of-crumbs .crumb:last-child { color: inherit; font-weight: 600; }
+.crumb-sep { color: var(--muted); }
+.of-list { list-style: none; margin: 0 0 var(--s-3); padding: 0; max-height: 280px; overflow: auto;
+  border: 1px solid var(--border); border-radius: var(--r-md, 6px); }
+.of-list li { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-1) var(--s-3); cursor: default;
+  user-select: none; }
+.of-list li[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.of-list li:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.of-list .of-empty { color: var(--muted); font-style: italic; }
+.of-paste { display: flex; flex-direction: column; gap: var(--s-1); margin-bottom: var(--s-2); }
+.of-paste input { font: inherit; padding: var(--s-1) var(--s-2); }
+.of-error { color: var(--danger); margin: var(--s-2) 0; }
+.of-h { font-size: inherit; margin: var(--s-3) 0 var(--s-1); }
+.of-recent { list-style: none; margin: 0; padding: 0; }
+.of-recent .link, .cn-link { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px; word-break: break-all; text-align: left; }
+.cn-line { display: flex; gap: var(--s-2); align-items: flex-start; margin: var(--s-1) 0 var(--s-3); }
+.cn-line pre { flex: 1; margin: 0; white-space: pre-wrap; word-break: break-all; }
+.cn-tasks { margin: var(--s-2) 0; padding-left: var(--s-5); }
+.tb-btn-text.danger { background: var(--danger); color: var(--on-danger, white); border-color: var(--danger); }
+.stopped-page { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
+  background: var(--bg, Canvas); color: inherit; }
+.stopped-page .card { max-width: 560px; padding: var(--s-6); }
+.stop-banner { display: flex; gap: var(--s-3); align-items: center; }
+#diag-text { width: 100%; min-height: 320px; font-family: var(--mono, monospace); font-size: var(--fs-sm, 12px); }
+/* a long served-folder path wraps inside a dialog (the Explorer's chip keeps one line) */
+.dlg .root-path { white-space: normal; overflow-wrap: anywhere; }

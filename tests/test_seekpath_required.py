@@ -36,7 +36,8 @@ SLAB = DATA / "low_dim_groups" / "graphene_lg80.out"  # slab, p6/mmm
 POLYMER = DATA / "low_dim_groups" / "polyyne_rg28.out"
 
 INSTALL = "pip install seekpath"
-MODULE_HINT = "module load Python/3.11.3-GCCcore-12.3.0"
+# where to install it on a cluster, without naming one cluster's modules
+MODULE_HINT = "into the Python the job scripts use (mace site shows it"
 
 
 @pytest.fixture

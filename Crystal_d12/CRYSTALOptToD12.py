@@ -85,7 +85,8 @@ from d12_writer import (
 )
 # Import write_scf_section from d12_writer
 from d12_writer import write_scf_section, DEFAULT_SPINLOCK_CYCLES, atomic_deck
-from charge_records import ChargeCarryError, carry_charge_records, charge_from_parent_out
+from charge_records import (ChargeCarryError, carry_charge_records, charge_from_parent_out, has_origin_shift,
+                            origin_shift_record)
 from basis_file_check import BasisFileError
 import basis_library
 from d12_interactive import (
@@ -722,6 +723,10 @@ def write_d12_file(output_file, geometry_data, settings, external_basis_data=Non
                 f.write(f"{origin_setting}\n")
 
             f.write(f"{spacegroup}\n")
+            if has_origin_shift(str(origin_setting)):
+                # IFSO > 1: CRYSTAL reads the origin shift (24ths of the
+                # cell vectors) on the line after the space group
+                f.write(origin_shift_record(settings.get("origin_shift")) + "\n")
         elif dimensionality in ["SLAB", "POLYMER"]:
             f.write(f"{settings.get('spacegroup', 1)}\n")
         elif dimensionality == "MOLECULE":
@@ -1552,7 +1557,7 @@ def _process_files(output_file, input_file=None, shared_settings=None, config_fi
                 geometry_identity_keys = [
                     "coordinates", "primitive_cell", "conventional_cell",
                     "spacegroup", "space_group", "dimensionality",
-                    "origin_setting", "cell_parameters", "lattice_parameters",
+                    "origin_setting", "origin_shift", "cell_parameters", "lattice_parameters",
                     "layer_group", "rod_group",
                 ]
                 # A template that stores its own parent's EXTERNAL basis (the

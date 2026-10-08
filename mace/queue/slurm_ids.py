@@ -50,6 +50,39 @@ class Truncated:
         return hash(("Truncated", self.array_id))
 
 
+# ------------------------------------------------------------------ submissions
+# A process-wide count of successful sbatch calls. The completion callback
+# compares it before and after an attempt: a callback that already submitted
+# a follow-up must never be re-run as a whole (it would submit it twice).
+_SUBMISSIONS = [0]
+_HOOK_FIRED = [False]
+
+
+class _TestLocked(Exception):
+    pass
+
+
+def note_submission() -> None:
+    """Call right after every successful sbatch (a grep test enforces it)."""
+    _SUBMISSIONS[0] += 1
+    if (os.environ.get("MACE_TEST_HOOKS") == "1" and os.environ.get("MACE_TEST_LOCKED_AFTER_SBATCH") == "1"
+            and not _HOOK_FIRED[0]):
+        # test hook: a 'database is locked' error right after the first submission
+        import sqlite3
+        _HOOK_FIRED[0] = True
+        err = sqlite3.OperationalError("database is locked")
+        try:
+            err.sqlite_errorcode = 5
+        except AttributeError:      # pragma: no cover
+            pass
+        raise err
+
+
+def submissions() -> int:
+    """How many sbatch calls succeeded in this process so far."""
+    return _SUBMISSIONS[0]
+
+
 def split_job_id(job_id) -> Tuple[str, Optional[str]]:
     """``"A_T" -> ("A", "T")``; a plain id gives ``(id, None)``."""
     text = str(job_id or "").strip()
@@ -158,6 +191,22 @@ def slurm_env(base: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     ``SLURM_BITSTR_LEN=0`` so array task expressions print in full."""
     env = dict(os.environ if base is None else base)
     env["SLURM_BITSTR_LEN"] = "0"
+    return env
+
+
+def outside_allocation_env(env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """The environment a SLURM client command should see when it must behave
+    as on a login node: inside an allocation (``SLURM_JOB_ID`` set, e.g. a
+    GUI started in ``salloc`` or a command run inside a batch job) every
+    ``SLURM_*`` variable except ``SLURM_CONF`` is dropped, so the
+    allocation's memory, CPU and partition settings never leak into ``sbatch --test-only``, ``squeue`` or a submitted job. Outside
+    an allocation the environment is returned unchanged (a copy). MACE's
+    own query environment is ``slurm_env(outside_allocation_env(env))``."""
+    env = dict(os.environ if env is None else env)
+    if (env.get("SLURM_JOB_ID") or "").strip():
+        for key in list(env):
+            if key.startswith("SLURM_") and key != "SLURM_CONF":
+                env.pop(key)
     return env
 
 
@@ -271,6 +320,10 @@ def scancel_refusal(job_id, db=None, search_dirs: Sequence = ()) -> Optional[str
     it is the array id of any task MACE recorded (database rows ``A_T``) or of
     any array MACE submitted (``.mace_arrays/*/submitted.json`` in the given
     directories or their parents, which covers untracked submissions).
+
+    When the database cannot be read, the check fails closed: SLURM is asked
+    whether the id is an array (squeue, then scontrol), and the id is refused
+    unless SLURM lists it as a plain job.
     """
     text = str(job_id or "").strip()
     if not text:
@@ -279,6 +332,7 @@ def scancel_refusal(job_id, db=None, search_dirs: Sequence = ()) -> Optional[str
         return f"{text} is a task range of a job array; MACE cancels single tasks only"
     if is_array_task_id(text):
         return None
+    db_error = None
     if db is not None:
         try:
             with db._get_connection() as conn:
@@ -288,11 +342,58 @@ def scancel_refusal(job_id, db=None, search_dirs: Sequence = ()) -> Optional[str
             if hit:
                 return (f"{text} is the id of job array {text} (task {hit[0]} is recorded): "
                         f"scancel {text} would cancel every task; cancel {hit[0]} instead")
-        except Exception:
-            pass
+        except Exception as exc:
+            # Fail closed: without the database, SLURM itself has to say
+            # whether the id is an array before a bare id may go to scancel.
+            db_error = str(exc).strip() or type(exc).__name__
     if text in _array_ids_in_submitted(search_dirs):
         return (f"{text} is the id of a job array MACE submitted: scancel {text} would "
                 f"cancel every task; cancel single tasks ({text}_<task>) instead")
+    if db_error is not None:
+        is_array = slurm_says_array(text)
+        if is_array is True:
+            return (f"{text} is a job array (SLURM lists its tasks): scancel {text} would "
+                    f"cancel every task; cancel single tasks ({text}_<task>) instead")
+        if is_array is None:
+            return (f"could not check whether {text} is a job array (database error: "
+                    f"{db_error}); cancel a single task {text}_<task>, or retry")
+    return None
+
+
+SLURM_CHECK_TIMEOUT = 15
+
+
+def slurm_says_array(job_id) -> Optional[bool]:
+    """Whether SLURM knows ``job_id`` as a job array: True when it lists tasks
+    of it, False when it lists it as a plain job, None when neither squeue nor
+    scontrol gives an answer (not reachable, timed out, id unknown)."""
+    text = str(job_id or "").strip()
+    if not text:
+        return None
+    try:
+        res = subprocess.run(["squeue", "-h", "-r", "-j", text, "-o", "%i"],
+                             capture_output=True, text=True,
+                             timeout=SLURM_CHECK_TIMEOUT, env=slurm_env())
+    except (OSError, subprocess.SubprocessError):
+        res = None
+    if res is not None and res.returncode == 0:
+        ids = [line.strip() for line in res.stdout.splitlines() if line.strip()]
+        if any(i.startswith(text + "_") for i in ids):
+            return True
+        if text in ids:
+            return False
+    try:
+        res = subprocess.run(["scontrol", "-o", "show", "job", text],
+                             capture_output=True, text=True,
+                             timeout=SLURM_CHECK_TIMEOUT, env=slurm_env())
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if res.returncode != 0 or not res.stdout.strip():
+        return None
+    if re.search(r"(^|\s)Array(JobId|TaskId)=", res.stdout):
+        return True
+    if re.search(rf"(^|\s)JobId={re.escape(text)}(\s|$)", res.stdout):
+        return False
     return None
 
 

@@ -148,7 +148,8 @@ reported, with the reason. The correction was validated on electron removal
 (q > 0); negative states get a note.
 
 The image-charge term is the Makov-Payne monopole term with the Lany-Zunger
-scaling, added to E_f(q):
+scaling (references in [citations.md](../citations.md#point-defects-mace-defects)),
+added to E_f(q):
 
     E_MP(q) = -f q^2 v_M / (2 eps),    f = 1 - (1 - 1/eps) / 3
 

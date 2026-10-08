@@ -36,13 +36,14 @@ import threading
 # Import MACE components
 from mace.database.materials import STATUS_CANCELED_DB, MaterialDatabase, create_material_id_from_file, extract_formula_from_d12, find_material_by_similarity
 from mace.database.materials_contextual import ContextualMaterialDatabase
+from mace.database import dbsafety
 from mace.workflow.context import get_current_context
 from mace.recovery import opt_restart, screened_hybrid
 from mace.queue.slurm_ids import (
     ABSENT_WINDOW_SECONDS, Truncated, accounting_state_of_task, expand_queue_id,
     is_array_task_id, own_job_ids, own_rows, queue_states_of_array,
-    remaining_walltime_seconds, safe_scancel, slurm_env, split_job_id,
-    split_squeue_line, verified_array_task)
+    note_submission, remaining_walltime_seconds, safe_scancel, slurm_env, split_job_id,
+    split_squeue_line, submissions, verified_array_task)
 from mace.utils.calc_detection import (
     PROPERTY_CALC_TYPES, calc_type_from_filename, d12_calc_type, d3_calc_type,
     deck_records)
@@ -474,6 +475,10 @@ class EnhancedCrystalQueueManager:
             print("  Falling back to basic queue processing")
             self.process_new_d12_files()
         except Exception as e:
+            if dbsafety.is_busy(e):
+                # the callback decides (retry the locked run, or, after a
+                # submission, record its own row and leave the rest to the next sweep)
+                raise
             print(f"  Error in workflow progression: {e}")
             print("  Check workflow engine and database integrity")
         
@@ -710,6 +715,8 @@ class EnhancedCrystalQueueManager:
                     'submitted',
                     slurm_job_id=slurm_job_id
                 )
+                if not job_script_override:
+                    self._record_site_module(calc_id)
                 # Record the SLURM script that was ACTUALLY submitted so the
                 # memory/timeout recovery handlers (which edit resource
                 # directives) can find it. On a recovered resubmission that is
@@ -775,7 +782,10 @@ class EnhancedCrystalQueueManager:
             job_name = input_file.stem
             script_path = Path(submit_script)
             print(f"  Running script generator: {script_path.name}")
-            script_path = self._template_with_walltime(script_path, work_dir) or script_path
+            site_gen, site_cleanup = self._site_generator(script_path, work_dir)
+            if site_gen is None:
+                return 'single', None
+            script_path = self._template_with_walltime(site_gen, work_dir) or site_gen
             env, marker = job_array.sbatch_shim()
             try:
                 result = subprocess.run(['bash', str(script_path), job_name],
@@ -783,6 +793,7 @@ class EnhancedCrystalQueueManager:
                 kind, value = job_array.generator_outcome(result, marker)
             finally:
                 job_array.cleanup_shim(marker)
+                site_cleanup()
             if kind == 'submitted':
                 return kind, value
             if kind == 'shim':
@@ -806,6 +817,7 @@ class EnhancedCrystalQueueManager:
             os.chdir(work_dir)
             result = subprocess.run(['sbatch', str(script)], capture_output=True, text=True)
             if result.returncode == 0:
+                note_submission()
                 m = re.search(r'Submitted batch job (\d+)', result.stdout)
                 if m:
                     return m.group(1)
@@ -847,6 +859,7 @@ class EnhancedCrystalQueueManager:
                 stamp(calc_id, calc_type)
             kind, value = self._generate_batch_script(calc_input_file, calc_dir, calc_type)
             if kind == 'generated':
+                self._record_site_module(calc_id)
                 members.append(job_array.ArrayMember(
                     dir=Path(calc_dir), job=calc_input_file.stem, script=Path(value),
                     calc_id=calc_id, kind='d3' if calc_input_file.suffix == '.d3' else 'd12',
@@ -899,6 +912,9 @@ class EnhancedCrystalQueueManager:
             subs = job_array.submit_prepared(prepared, record_rows) if prepared else []
         except (job_array.ArrayRefusal, job_array.ArraySubmitError) as e:
             print(f"Error: {e}")
+            hint = job_array.invalid_account_hint(str(e))
+            if hint:
+                print(f"  {hint}")
             print("  Nothing of this submission was left in the queue; the calculations "
                   "are recorded without a job id.")
             return results + [(m.calc_id, None) for m in members] + \
@@ -920,6 +936,49 @@ class EnhancedCrystalQueueManager:
                 calc_id, calc_input_file, calc_dir, material_id, calc_type, job_id) else None))
         job_array.summarize(subs, singles, max_running)
         return results
+
+    def _site_generator(self, script_path: Path, work_dir: Path):
+        """(generator, cleanup): MACE's own template with this site's account,
+        partition and modules (mace/submission/site.py), as a copy beside the
+        job when anything differs; any other script as it is. Inside a SLURM
+        job (a completion callback) the CRYSTAL module is the one the job
+        loaded, never a new probe. (None, cleanup) when a site setting is
+        invalid: nothing is generated."""
+        self._last_site_resolution = None
+        try:
+            from mace.submission import site
+        except ImportError:          # pragma: no cover
+            return script_path, (lambda: None)
+        try:
+            gen, cleanup, res = site.generator_for(script_path, None, work_dir)
+        except site.SiteConfigError as e:
+            print(f"Error: {e}")
+            return None, (lambda: None)
+        self._last_site_resolution = res
+        return gen, cleanup
+
+    def _record_site_module(self, calc_id) -> None:
+        """settings_json.crystal_module of a new calculation row: the CRYSTAL
+        module its job script loads (and a note when it differs from the
+        module its parent calculation ran with)."""
+        res = getattr(self, '_last_site_resolution', None)
+        if res is None or not (self.enable_tracking and calc_id):
+            return
+        if res.source == "unchecked" or not res.modules:   # nothing known to record (no module system, bin_dir)
+            return
+        try:
+            self.db.update_calculation_settings(
+                calc_id, {"crystal_module": res.module, "crystal_module_source": res.source}, merge=True)
+            calc = self.db.get_calculation(calc_id) or {}
+            parent_id = calc.get('prerequisite_calc_id')
+            if parent_id:
+                parent = self.db.get_calculation(parent_id) or {}
+                before = json.loads(parent.get('settings_json') or '{}').get('crystal_module')
+                if before and before != res.module:
+                    print(f"Follow-up {calc_id} loads {res.module}, its parent ran with {before}: "
+                          f"results of different CRYSTAL builds are mixed in this chain.")
+        except Exception as e:
+            print(f"  Warning: could not record the CRYSTAL module of {calc_id}: {e}")
 
     def _template_with_walltime(self, script_path: Path, work_dir: Path) -> Optional[Path]:
         """A copy of the generator template with ``-t`` set to the override.
@@ -1032,11 +1091,19 @@ class EnhancedCrystalQueueManager:
                 # the #SBATCH lines and then submits, so rewriting the generated
                 # file afterwards would be too late. Only the -t line is touched,
                 # leaving ntasks/memory/account from the template intact.
-                script_path = self._template_with_walltime(script_path, work_dir) or script_path
-                cmd = ['bash', str(script_path), job_name]
-                result = subprocess.run(cmd, capture_output=True, text=True)
+                site_gen, site_cleanup = self._site_generator(script_path, work_dir)
+                if site_gen is None:
+                    return None
+                try:
+                    script_path = self._template_with_walltime(site_gen, work_dir) or site_gen
+                    cmd = ['bash', str(script_path), job_name]
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                finally:
+                    site_cleanup()
                 
                 if result.returncode == 0:
+                    if 'Submitted batch job' in result.stdout:      # the template ran sbatch itself
+                        note_submission()
                     # Extract job ID from sbatch output (the template runs sbatch at the end)
                     output = result.stdout.strip()
                     job_id_match = re.search(r'Submitted batch job (\d+)', output)
@@ -1052,6 +1119,7 @@ class EnhancedCrystalQueueManager:
                             cmd = ['sbatch', str(generated_script)]
                             result = subprocess.run(cmd, capture_output=True, text=True)
                             if result.returncode == 0:
+                                note_submission()
                                 job_id_match = re.search(r'Submitted batch job (\d+)', result.stdout)
                                 if job_id_match:
                                     return job_id_match.group(1)
@@ -1073,6 +1141,7 @@ class EnhancedCrystalQueueManager:
                 result = subprocess.run(cmd, capture_output=True, text=True)
 
                 if result.returncode == 0:
+                    note_submission()
                     job_id_match = re.search(r'Submitted batch job (\d+)', result.stdout)
                     if job_id_match:
                         return job_id_match.group(1)
@@ -1090,6 +1159,8 @@ class EnhancedCrystalQueueManager:
                 result = subprocess.run(cmd, capture_output=True, text=True)
 
                 if result.returncode == 0:
+                    if 'Submitted batch job' in result.stdout:      # the script ran sbatch itself
+                        note_submission()
                     # Extract job ID from sbatch output
                     output = result.stdout.strip()
                     job_id_match = re.search(r'Submitted batch job (\d+)', output)
@@ -2085,7 +2156,8 @@ class EnhancedCrystalQueueManager:
             try:
                 parent_settings = json.loads(calc.get('settings_json') or '{}')
                 lineage = {k: parent_settings[k] for k in
-                           ('workflow_id', 'workflow_step', 'workflow_calc_type')
+                           ('workflow_id', 'workflow_step', 'workflow_calc_type',
+                            'crystal_module', 'crystal_module_source')
                            if k in parent_settings}
                 if lineage:
                     new_calc = self.db.get_calculation(new_calc_id)
@@ -2507,8 +2579,34 @@ class EnhancedCrystalQueueManager:
                   
         print("=== End Monitoring Cycle ===\n")
         
+    @staticmethod
+    def _forget_missing_crystal_module():
+        """The finished job found no Pcrystal/Pproperties under its CRYSTAL
+        module: drop that module from the cached site choice (a file edit,
+        never a module probe), so the next submit checks the modules again."""
+        job = os.environ.get('JOB')
+        folder = os.environ.get('DIR') or os.environ.get('SLURM_SUBMIT_DIR')
+        if not job or not folder:
+            return
+        try:
+            from mace.submission import site
+            for name in (f"{job}.out",):
+                p = Path(folder) / name
+                if not p.is_file():
+                    continue
+                with open(p, 'rb') as fh:
+                    fh.seek(max(0, p.stat().st_size - 65536))
+                    tail = fh.read().decode('utf-8', 'replace')
+                if site.missing_binary_re(site.safe_load()).search(tail):
+                    loaded = [m for m in (os.environ.get('LOADEDMODULES') or '').split(':')
+                              if site.is_crystal_module(m)]
+                    site.forget_crystal_cache(loaded[-1] if loaded else None)
+        except Exception:
+            pass
+
     def run_callback_check(self, mode='completion'):
         """Run a single callback check cycle based on trigger mode."""
+        self._forget_missing_crystal_module()
         # Apply throttling to reduce simultaneous callbacks
         if self.throttler:
             self.throttler.throttle(f"callback_{mode}")
@@ -2524,25 +2622,70 @@ class EnhancedCrystalQueueManager:
 
         # Acquire distributed lock
         if self.lock_manager:
+            import random
             lock_name = f"queue_manager_{mode}"
-            try:
-                # Execute callback with lock
-                self.lock_manager.with_lock(
-                    lock_name,
-                    self._run_callback_check_locked,
-                    mode,
-                    timeout=60
-                )
-            except TimeoutError:
-                print(f"⚠️  Could not acquire lock for {mode} callback - another instance may be running")
-                return
-            except Exception as e:
-                print(f"❌ Error in callback with locking: {e}")
-                # Fall back to running without lock
-                self._run_callback_check_locked(mode)
+            scale = self._array_lock_scale()
+            db_retries = 0
+            while True:
+                started_with = submissions()
+                try:
+                    # Execute callback with lock
+                    self.lock_manager.with_lock(
+                        lock_name,
+                        self._run_callback_check_locked,
+                        mode,
+                        timeout=60 * scale
+                    )
+                    return
+                except TimeoutError:
+                    # Record this job's own result (a row-scoped update)
+                    # instead of nothing; its follow-up comes with the next sweep
+                    print(f"⚠️  Could not acquire lock for {mode} callback - another instance may be running")
+                    self.classify_own_row()
+                    print(self.NEXT_SWEEP_HINT)
+                    return
+                except Exception as e:
+                    if not dbsafety.is_busy(e):
+                        print(f"❌ Error in callback with locking: {e}")
+                        if submissions() != started_with:
+                            # it failed after submitting a follow-up: running it again
+                            # (with or without the lock) would submit that job twice
+                            self.classify_own_row()
+                            print(self.FOLLOWUP_SUBMITTED_HINT)
+                            return
+                        # Fall back to running without lock
+                        self._run_callback_check_locked(mode)
+                        return
+                    # The database stayed busy. Never re-run the callback
+                    # unlocked, and never after it submitted a job: a re-run
+                    # would submit that follow-up a second time.
+                    if submissions() != started_with:
+                        print(f"⚠️  The database was busy after this callback submitted a job ({e}).")
+                        self.classify_own_row()
+                        print(self.FOLLOWUP_SUBMITTED_HINT)
+                        return
+                    if db_retries >= 5:
+                        print(f"❌ The database stayed busy ({e}); recording this job's own result only.")
+                        self.classify_own_row()
+                        print(self.NEXT_SWEEP_HINT)
+                        return
+                    db_retries += 1
+                    time.sleep(random.uniform(0.5, 1.5) * 2.0 * scale)
         else:
             # No lock manager available, run directly
-            self._run_callback_check_locked(mode)
+            try:
+                self._run_callback_check_locked(mode)
+            except Exception as e:
+                if not dbsafety.is_busy(e):
+                    raise
+                print(f"⚠️  The database was busy ({e}); recording this job's own result only.")
+                self.classify_own_row()
+                print(self.NEXT_SWEEP_HINT)
+
+    NEXT_SWEEP_HINT = ("  Its follow-up step comes with the next sweep "
+                       "(mace manager --callback-mode completion)")
+    FOLLOWUP_SUBMITTED_HINT = ("  A follow-up was already submitted in this callback; the rest is left for "
+                               "the next sweep (mace manager --callback-mode completion)")
             
     # Lock waits of a callback inside a job array task (seconds; scaled by
     # MACE_ARRAY_LOCK_SCALE, which only the tests set).
@@ -2579,6 +2722,7 @@ class EnhancedCrystalQueueManager:
         wait = self.ARRAY_LOCK_BASE * scale
         db_retries = 0
         while True:
+            started_with = submissions()
             try:
                 self.lock_manager.with_lock(lock_name, self._run_callback_check_locked, mode,
                                             timeout=max(min(2.0 * scale, deadline - time.time()),
@@ -2590,6 +2734,12 @@ class EnhancedCrystalQueueManager:
                 if 'locked' not in str(e).lower() or db_retries >= 5:
                     print(f"❌ Error in array task callback: {e}")
                     break
+                if submissions() != started_with:
+                    # this attempt already submitted a job: a re-run would submit it again
+                    print(f"⚠️  The database was busy after this callback submitted a job ({e}).")
+                    self.classify_own_row()
+                    print(self.FOLLOWUP_SUBMITTED_HINT)
+                    return
                 db_retries += 1
                 time.sleep(random.uniform(0.5, 1.5) * 2.0 * scale)
                 continue
@@ -2636,7 +2786,7 @@ class EnhancedCrystalQueueManager:
             changed = 0
             for attempt in range(6):
                 try:
-                    with self.db._get_connection() as conn:
+                    with self.db._get_connection() as conn, dbsafety.immediate(conn):
                         changed = conn.execute(
                             "UPDATE calculations SET status = 'completed', output_file = ?, "
                             "completed_at = ? WHERE calc_id = ? AND status IN "

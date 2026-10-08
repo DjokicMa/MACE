@@ -229,6 +229,10 @@ class ErrorRecoveryEngine:
         
         # Track recovery attempts to prevent infinite loops
         self.recovery_attempts = {}
+        # What the last detect_and_recover_errors() left to submit: one dict
+        # per calculation ({calc_id, work_dir, fixed_input_file,
+        # fixed_job_script, already_prepared}); see next_commands().
+        self.prepared: List[Dict] = []
 
         # How SLURM client commands are run (tests substitute a fake).
         self.slurm_runner = slurm_limits.run_slurm
@@ -240,7 +244,7 @@ class ErrorRecoveryEngine:
                 "shrink_error": {
                     "handler": "fixk_handler",
                     "max_retries": 3,
-                    "resubmit_delay": 300,  # seconds
+                    "resubmit_delay": 300,  # seconds; read, not applied yet (1.1.6)
                     "escalate_on_failure": True
                 },
                 "memory_error": {
@@ -348,16 +352,89 @@ class ErrorRecoveryEngine:
         """
         if max_recoveries is None:
             max_recoveries = self.config["global_settings"].get("max_concurrent_recoveries", 10)
-            
+
         # Get failed calculations that haven't exceeded retry limits
         failed_calcs = self.get_recoverable_calculations()
-        
+        self.prepared = []
+
         recovery_count = 0
         for calc in failed_calcs[:max_recoveries]:
-            if self.attempt_recovery(calc):
+            waiting = self.unsubmitted_recovery(calc['calc_id'])
+            if waiting is not None:
+                # Prepared by an earlier run and never submitted: the same
+                # files again, not another copy of them.
+                print(f"Recovery of {calc['calc_id']} was already prepared ({waiting['calc_id']}) "
+                      "and has not been submitted")
+                self.prepared.append(self._prepared_entry(calc, waiting, already=True))
+                continue
+            result = self.attempt_recovery(calc)
+            if result:
                 recovery_count += 1
-                
+                self.prepared.append({
+                    'calc_id': calc['calc_id'],
+                    'work_dir': calc.get('work_dir'),
+                    'fixed_input_file': result['fixed_input_file'],
+                    'fixed_job_script': result['fixed_job_script'],
+                    'already_prepared': False,
+                })
+
         return recovery_count
+
+    @staticmethod
+    def _was_submitted(row: Dict) -> bool:
+        """A recovery row that reached SLURM (it has a job id, or moved on
+        from 'pending'). `mace recover` itself never submits its rows."""
+        return bool(row.get('slurm_job_id')) or (row.get('status') or 'pending') != 'pending'
+
+    def _recovery_rows(self, calc_id: str) -> List[Dict]:
+        """The recovery rows created for this calculation (any state)."""
+        calc = self.db.get_calculation(calc_id)
+        if not calc:
+            return []
+        rows = []
+        for row in self.db.get_calculations_by_status(material_id=calc['material_id']):
+            try:
+                settings = json.loads(row.get('settings_json') or '{}')
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if settings.get('parent_calc_id') == calc_id and settings.get('is_recovery_attempt'):
+                rows.append(dict(row, _settings=settings))
+        return rows
+
+    def unsubmitted_recovery(self, calc_id: str) -> Optional[Dict]:
+        """The newest recovery row of this calculation that was prepared but
+        never submitted, or None."""
+        waiting = [r for r in self._recovery_rows(calc_id) if not self._was_submitted(r)]
+        return waiting[-1] if waiting else None
+
+    @staticmethod
+    def _prepared_entry(calc: Dict, row: Dict, already: bool) -> Dict:
+        script = (row.get('_settings') or {}).get('recovery_job_script')
+        return {
+            'calc_id': calc['calc_id'],
+            'work_dir': row.get('work_dir') or calc.get('work_dir'),
+            'fixed_input_file': Path(row['input_file']) if row.get('input_file') else None,
+            'fixed_job_script': Path(script) if script else None,
+            'already_prepared': already,
+        }
+
+    @staticmethod
+    def next_command(entry: Dict) -> Optional[str]:
+        """The command that submits one prepared recovery: its bumped job
+        script with sbatch, else its fixed deck with mace submit (which
+        keeps a job script already beside the deck)."""
+        import shlex
+        deck = entry.get('fixed_input_file')
+        script = entry.get('fixed_job_script')
+        where = entry.get('work_dir') or (str(Path(deck).parent) if deck else None)
+        if script and not (deck and Path(script) == Path(deck).with_suffix('.sh')):
+            cmd = f"sbatch {shlex.quote(Path(script).name)}"
+            where = where or str(Path(script).parent)
+        elif deck:
+            cmd = f"mace submit {shlex.quote(Path(deck).name)}"
+        else:
+            return None
+        return f"cd {shlex.quote(str(where))} && {cmd}" if where else cmd
         
     def get_recoverable_calculations(self) -> List[Dict]:
         """Get calculations that failed but can still be recovered."""
@@ -382,26 +459,14 @@ class ErrorRecoveryEngine:
         return recoverable
         
     def get_retry_count(self, calc_id: str) -> int:
-        """Get number of recovery attempts for a calculation."""
-        # Check database for recovery attempts
-        recovery_calcs = self.db.get_calculations_by_status(
-            material_id=self.db.get_calculation(calc_id)['material_id']
-        )
-        
-        # Count calculations that are recovery attempts for this calc.
+        """Recovery attempts spent on a calculation: its recovery rows that
+        were submitted. A row `mace recover` prepared but nobody submitted
+        is no attempt (it used to count, so preparing the fix twice could use
+        up max_retries without a single run)."""
         # The markers live inside settings_json — they are not columns, so
         # reading them off the row directly always returned 0 and the
         # per-error max_retries cap was never enforced.
-        retry_count = 0
-        for calc in recovery_calcs:
-            try:
-                settings = json.loads(calc.get('settings_json') or '{}')
-            except (json.JSONDecodeError, TypeError):
-                continue
-            if settings.get('parent_calc_id') == calc_id and settings.get('is_recovery_attempt'):
-                retry_count += 1
-
-        return retry_count
+        return sum(1 for row in self._recovery_rows(calc_id) if self._was_submitted(row))
         
     def attempt_recovery(self, calc: Dict, create_record: bool = True) -> Optional[Dict]:
         """
@@ -1199,13 +1264,8 @@ class ErrorRecoveryEngine:
             }
         )
         
-        print(f"Created recovery calculation {recovery_calc_id} for {original_calc['calc_id']}")
-        
-        # Add delay before resubmission if configured
-        resubmit_delay = recovery_config.get('resubmit_delay', 0)
-        if resubmit_delay > 0:
-            print(f"Recovery will be delayed by {resubmit_delay} seconds")
-            
+        print(f"Created recovery calculation {recovery_calc_id} for {original_calc['calc_id']} "
+              "(prepared, not submitted)")
         return recovery_calc_id
         
     def get_recovery_statistics(self) -> Dict:
@@ -1331,13 +1391,30 @@ def main():
             
         # Add helpful hints
         print("\n=== Available Actions ===")
-        print("Run 'mace recover' to attempt automatic recovery of failed calculations")
+        print("Run 'mace recover' to prepare fixed inputs and job scripts for failed calculations")
         print("Run 'mace recover --create-config' to create customizable recovery config")
                 
     elif args.action == 'recover':
-        print("Starting error recovery process...")
+        print("Preparing fixed inputs for failed calculations...")
         recovered = recovery_engine.detect_and_recover_errors(args.max_recoveries)
-        print(f"Attempted recovery for {recovered} calculations")
+        print(f"Prepared recovery for {recovered} calculation(s)")
+        print_next_steps(recovery_engine.prepared)
+
+
+NOTHING_SUBMITTED = ("mace recover prepares fixed inputs and job scripts; it submits nothing. "
+                     "Submit them with mace submit (sbatch for a bumped job script), or let the queue "
+                     "manager resubmit tracked runs.")
+
+
+def print_next_steps(prepared: List[Dict]) -> None:
+    """What to run after `mace recover --action recover`: one exact command
+    per prepared recovery."""
+    print(NOTHING_SUBMITTED)
+    commands = [c for c in (ErrorRecoveryEngine.next_command(e) for e in prepared) if c]
+    if commands:
+        print("Next, submit the prepared recovery files:")
+        for c in commands:
+            print(f"  {c}")
 
 
 if __name__ == "__main__":

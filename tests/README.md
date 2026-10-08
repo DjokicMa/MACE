@@ -14,6 +14,27 @@ Install the pinned test dependencies with `pip install -r requirements-test.txt`
 (pytest, pyyaml, numpy, rich, matplotlib). `ase`/`spglib`/`scipy`/`plotly` unlock
 more of the suite; missing extras skip their tests.
 
+## GUI browser tests
+
+`tests/gui/` drives `mace gui` in a headless browser (`pip install -r
+requirements-gui-test.txt`; Firefox, or Chrome/Chromium/Brave). They render
+WebGL in software (Mesa llvmpipe or SwiftShader), never on a GPU.
+
+- `MACE_GUI_BROWSER=chromium` runs the browser-generic tests in Chromium
+  (Chrome, Chromium or Brave on `PATH`, or `MACE_GUI_CHROME=<binary>`).
+  The driver is `MACE_GUI_CHROMEDRIVER=<path>` when set, else `chromedriver`
+  on `PATH`, else Selenium Manager. Brave needs a chromedriver of its own
+  Chromium major version (`brave-browser --version` prints it): download that
+  one and point `MACE_GUI_CHROMEDRIVER` at it; a mismatch is named.
+- `MACE_GUI_REQUIRE_BROWSER=1` makes a missing browser, driver or software
+  WebGL (and a hardware WebGL renderer) fail instead of skip. The CI job
+  `gui-smoke` sets it.
+- `pytest -m guismoke`: the smoke subset CI runs on every push, with repo
+  data only (`examples/gui`); a smoke test that reads the `test/` corpus fails.
+- `MACE_GUI_ARTIFACTS=<dir>`: screenshots, page errors and server logs of
+  failures land there.
+- `MACE_GUI_SLOW=1` adds the real-click sweep of every menu entry.
+
 ## Data dependency
 
 Per project policy these tests verify against the **real** CRYSTAL outputs in

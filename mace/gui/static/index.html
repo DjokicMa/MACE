@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en" @PREFS@>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MACE</title>
+<link rel="icon" href="static/@V@/brand/icon.svg" type="image/svg+xml">
+<link rel="icon" href="static/@V@/brand/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="static/@V@/brand/favicon-16.png" sizes="16x16" type="image/png">
+<script src="static/@V@/js/boot.js"></script>
+<link rel="stylesheet" href="static/@V@/css/tokens.css">
+<link rel="stylesheet" href="static/@V@/app.css">
+<link rel="stylesheet" href="static/@V@/css/shell.css">
+<script src="static/@V@/app.js" defer></script>
+<script src="static/@V@/editor.js" defer></script>
+<script type="module" src="static/@V@/js/shell.js"></script>
+</head>
+<body>
+<div class="shell" id="shell">
+  <header class="menubar" id="menubar">
+    <div class="brand-mark" role="img" aria-label="MACE"><img class="brand-icon" src="static/@V@/brand/icon.svg" alt="" width="20" height="20"><svg class="brand-word" viewBox="0 0 374 108" aria-hidden="true" focusable="false"><g fill="currentColor"><path fill-opacity=".4" d="M20 40H30L34 48H24ZM70 40H80L84 48H74ZM30 60H40L44 68H34ZM60 60H70L74 68H64ZM40 80H60L64 88H44ZM0 100H20L24 108H4ZM80 100H100L104 108H84ZM140 20H170L174 28H144ZM140 60H170L174 68H144ZM120 100H140L144 108H124ZM170 100H190L194 108H174ZM230 20H280L284 28H234ZM210 80H220L224 88H214ZM220 100H280L284 108H224ZM320 20H370L374 28H324ZM320 60H350L354 68H324ZM300 100H370L374 108H304Z"/><path fill-opacity=".62" d="M20 40L24 48V108L20 100ZM30 0L34 8V28L30 20ZM40 20L44 28V48L40 40ZM60 60L64 68V88L60 80ZM70 40L74 48V68L70 60ZM100 0L104 8V108L100 100ZM140 20L144 28V48L140 40ZM140 60L144 68V108L140 100ZM180 0L184 8V28L180 20ZM190 20L194 28V108L190 100ZM230 20L234 28V88L230 80ZM280 0L284 8V28L280 20ZM280 80L284 88V108L280 100ZM320 20L324 28V48L320 40ZM320 60L324 68V88L320 80ZM350 40L354 48V68L350 60ZM370 0L374 8V28L370 20ZM370 80L374 88V108L370 100Z"/><path d="M0 0H30V20H0ZM70 0H100V20H70ZM0 20H40V40H0ZM60 20H100V40H60ZM0 40H20V60H0ZM30 40H70V60H30ZM80 40H100V60H80ZM0 60H20V80H0ZM40 60H60V80H40ZM80 60H100V80H80ZM0 80H20V100H0ZM80 80H100V100H80ZM130 0H180V20H130ZM120 20H140V40H120ZM170 20H190V40H170ZM120 40H190V60H120ZM120 60H140V80H120ZM170 60H190V80H170ZM120 80H140V100H120ZM170 80H190V100H170ZM220 0H280V20H220ZM210 20H230V40H210ZM210 40H230V60H210ZM210 60H230V80H210ZM220 80H280V100H220ZM300 0H370V20H300ZM300 20H320V40H300ZM300 40H350V60H300ZM300 60H320V80H300ZM300 80H370V100H300Z"/></g></svg></div>
+    <div class="menus" id="menus" role="menubar" aria-label="Main menu"></div>
+    <div class="win-title" id="win-title" aria-live="off"></div>
+    <div class="menubar-end">
+      <button class="search-pill" id="palette-btn" data-cmd="view.palette"><svg class="i"><use href="static/@V@/icons/lucide.svg#search"/></svg><span>Search commands</span><kbd id="palette-kbd"></kbd></button>
+      <button class="icon-btn sm" id="theme-btn" data-cmd="view.themeCycle" aria-label="Cycle Theme"><svg class="i"><use href="static/@V@/icons/lucide.svg#sun-moon"/></svg></button>
+      <button class="icon-btn sm" id="settings-btn" data-cmd="file.settings" aria-label="Settings"><svg class="i"><use href="static/@V@/icons/lucide.svg#settings"/></svg></button>
+    </div>
+  </header>
+  <button class="zen-exit" id="zen-exit" data-cmd="view.exitZen" hidden><svg class="i" aria-hidden="true"><use href="static/@V@/icons/lucide.svg#minimize-2"/></svg><span>Exit Zen Mode</span><kbd>Esc</kbd></button>
+  <div class="banners"><div class="banner hidden" id="conn-banner" role="alert"></div><div class="banner info" id="draft-banner" role="status" hidden></div><div class="banner info" id="disk-banner" role="status" hidden></div></div>
+  <div class="toolbar" id="toolbar" role="toolbar" aria-label="Tools"></div>
+
+  <nav class="activity" id="activity" aria-label="Views"></nav>
+  <aside class="sidebar explorer" id="explorer" aria-label="Explorer">
+    <div class="side-title"><span>Explorer</span><span class="root-name" id="root-chip" title=""></span><button class="icon-btn sm" id="open-folder-btn" data-cmd="file.openFolder" aria-label="Open Folder…"><svg class="i" aria-hidden="true"><use href="static/@V@/icons/lucide.svg#folder-open"/></svg></button></div>
+    <div class="side-head">
+      <input id="file-filter" type="search" placeholder="Filter files" aria-label="Filter files">
+      <div class="kind-chips" id="kind-chips"></div>
+    </div>
+    <div class="side-section" id="open-editors"></div>
+    <nav id="file-list" class="file-list" aria-label="Files"></nav>
+    <div class="side-section" id="db-section"></div>
+    <div class="side-section" id="recent-files"></div>
+    <div class="side-foot" id="side-foot"></div>
+  </aside>
+  <div class="splitter v" id="split-explorer" role="separator" aria-orientation="vertical" aria-label="Resize explorer" tabindex="0"></div>
+
+  <main class="center main" id="center">
+    <div class="groups" id="editor-groups">
+    <div class="editor-group main-group" id="group-main" aria-label="Left editor group">
+    <div class="doc-tabs" id="doc-tabs" aria-label="Open documents"></div>
+    <div class="views" id="views">
+    <section class="panel active" id="tab-welcome" aria-label="Welcome"></section>
+    <!-- STRUCTURE -->
+    <section class="panel active" id="tab-structure">
+      <div class="empty" id="structure-empty">
+        <h2>Pick a structure</h2>
+        <p>Choose a <b>.cif</b>, <b>.d12</b> or CRYSTAL <b>.out</b> from the list on the left.</p>
+      </div>
+      <div class="split hidden" id="structure-view">
+        <div class="viewer-wrap">
+          <div class="viewer" id="viewer-main"></div>
+          <div class="viewer-toolbar">
+            <span class="tb-group">
+              <label class="tog"><input type="checkbox" id="opt-cell" checked><span>Cell</span></label>
+              <label class="tog" title="Also draw the atoms on the cell faces, edges and corners"><input type="checkbox" id="opt-boundary" checked><span>Boundary</span></label>
+              <label class="tog"><input type="checkbox" id="opt-bonds" checked><span>Bonds</span></label>
+              <label class="tog"><input type="checkbox" id="opt-labels"><span>Labels</span></label>
+              <label class="tog"><input type="checkbox" id="opt-super"><span>2×2×2</span></label>
+              <label class="tog" title="Pad the non-periodic direction of a slab, rod or molecule with 4 Å of vacuum on each side"><input type="checkbox" id="opt-vacuum"><span>Vacuum</span></label>
+            </span>
+            <span class="tb-group">
+              <select id="opt-style" aria-label="Atom style">
+                <option value="ballstick">Ball &amp; stick</option>
+                <option value="spacefill">Space filling</option>
+                <option value="stick">Sticks</option>
+                <option value="wireframe">Wireframe</option>
+              </select>
+              <select id="opt-colors" aria-label="Element colors"><option value="vesta">VESTA colors</option></select>
+            </span>
+            <span class="tb-group tight" role="group" aria-label="View along">
+              <span class="muted small">View along</span>
+              <button class="btn ghost small" data-view="a" title="Look down a">a</button>
+              <button class="btn ghost small" data-view="b" title="Look down b">b</button>
+              <button class="btn ghost small" data-view="c" title="Look down c">c</button>
+              <button class="btn ghost small" data-view="reset" title="Back to the default view">Reset</button>
+            </span>
+          </div>
+          <div class="hover-tip hidden" id="hover-tip"></div>
+        </div>
+        <div class="info-col">
+          <div class="card">
+            <div class="card-title" id="s-title">—</div>
+            <div class="formula" id="s-formula">—</div>
+            <div class="badges" id="s-badges"></div>
+            <div class="row"><button class="btn small" id="s-edit" title="Open this structure in the Editor tab (3D crystals)">Edit this structure</button></div>
+          </div>
+          <div class="card">
+            <div class="card-label">Symmetry <span class="muted">spglib</span></div>
+            <div id="s-sym"></div>
+          </div>
+          <div class="card">
+            <div class="card-label">Lattice</div>
+            <table class="kv" id="s-lattice"></table>
+          </div>
+          <div class="card">
+            <details>
+              <summary class="card-label">Atoms <span class="muted" id="s-natoms"></span></summary>
+              <div class="table-scroll"><table class="data" id="s-atoms"></table></div>
+            </details>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- EDITOR -->
+    <section class="panel" id="tab-edit">
+      <div class="empty" id="edit-empty">
+        <h2>Structure editor</h2>
+        <p>Open a 3D structure with <b>Edit this structure</b> on the Structure tab, or start a new cell below.</p>
+      </div>
+      <div class="split" id="edit-view">
+        <div class="info-col">
+          <div class="card">
+            <div class="row">
+              <button class="btn small" id="e-undo">Undo</button>
+              <button class="btn small" id="e-redo">Redo</button>
+              <label class="tog" title="Apply each edit to every symmetry-equivalent atom"><input type="checkbox" id="e-locked"><span>Symmetry-aware</span></label>
+              <label class="tog" title="Also draw the atoms on the cell faces, edges and corners"><input type="checkbox" id="e-boundary" checked><span>Boundary</span></label>
+            </div>
+            <div class="edit-status" id="e-status" role="status"></div>
+            <div class="card-title" id="e-title">—</div>
+            <div class="formula" id="e-formula">—</div>
+            <div id="e-sym" class="symline"></div>
+            <div class="muted small" id="e-counts"></div>
+            <div id="e-selected" class="badges" style="margin-top:8px"></div>
+          </div>
+          <div class="card">
+            <div class="card-label">Atoms</div>
+            <div class="row">
+              <span class="field-label">Element</span>
+              <input id="e-element" list="e-elements" placeholder="e.g. Ca" class="tiny2" aria-label="Element">
+              <datalist id="e-elements"></datalist>
+              <button class="btn small" id="e-replace" title="Change the selected atoms to this element">Replace</button>
+              <button class="btn small" id="e-delete" title="Delete the selected atoms (Del)">Delete</button>
+            </div>
+            <div class="row">
+              <span class="field-label">Position</span>
+              <div class="xyz">
+                <input id="e-x" type="number" step="0.01" value="0" aria-label="x">
+                <input id="e-y" type="number" step="0.01" value="0" aria-label="y">
+                <input id="e-z" type="number" step="0.01" value="0" aria-label="z">
+              </div>
+            </div>
+            <div class="row">
+              <select id="e-coord" aria-label="Coordinates"><option value="frac">fractional</option><option value="cart">Cartesian (Å)</option></select>
+              <span style="flex:1"></span>
+              <button class="btn small" id="e-fill" title="Fill in the center of the selected atoms">From selection</button>
+              <button class="btn small primary" id="e-add" title="Add an atom of the element above at this position">Add atom</button>
+            </div>
+            <div class="row">
+              <span class="field-label">Move by Å</span>
+              <div class="xyz">
+                <input id="e-dx" type="number" step="0.01" value="0" aria-label="dx">
+                <input id="e-dy" type="number" step="0.01" value="0" aria-label="dy">
+                <input id="e-dz" type="number" step="0.01" value="0" aria-label="dz">
+              </div>
+            </div>
+            <div class="row end">
+              <button class="btn small" id="e-move" title="Move the selected atoms by this Cartesian vector">Move selected</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-label">Cell and symmetry</div>
+            <div class="grid3">
+              <label>a<input id="e-a" type="number" step="0.01"></label><label>b<input id="e-b" type="number" step="0.01"></label><label>c<input id="e-c" type="number" step="0.01"></label>
+              <label>α<input id="e-alpha" type="number" step="0.1"></label><label>β<input id="e-beta" type="number" step="0.1"></label><label>γ<input id="e-gamma" type="number" step="0.1"></label>
+            </div>
+            <div class="row">
+              <label class="tog"><input type="checkbox" id="e-scale" checked><span>scale atoms with the cell</span></label>
+              <button class="btn small" id="e-setcell">Apply cell</button>
+            </div>
+            <div class="row">
+              <span class="muted small">Supercell</span>
+              <input id="e-n1" type="number" min="1" value="2" class="tiny" aria-label="n1"><input id="e-n2" type="number" min="1" value="2" class="tiny" aria-label="n2"><input id="e-n3" type="number" min="1" value="1" class="tiny" aria-label="n3">
+              <button class="btn small" id="e-supercell">Make</button>
+              <button class="btn small" id="e-primitive">Primitive</button>
+              <button class="btn small" id="e-symmetrize" title="spglib refine at this tolerance">Symmetrize</button>
+            </div>
+            <div class="row">
+              <span class="muted small">spglib tolerance (Å)</span>
+              <input id="e-symprec" type="number" step="0.001" min="0.000001" class="narrow" aria-label="Symmetry tolerance">
+              <button class="btn small" id="e-settol">Apply</button>
+            </div>
+            <div class="row">
+              <span class="muted small">Bond display</span>
+              <input id="e-bondpair" placeholder="Si-O" class="tiny2" aria-label="Element pair">
+              <input id="e-bondmax" type="number" step="0.05" placeholder="max Å" class="narrow" aria-label="Maximum bond length">
+              <button class="btn small" id="e-bondset" title="Draw this pair's bonds only up to this length (display only; 0 removes the rule)">Set</button>
+              <span class="muted small" id="e-bondlist">none</span>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-label">Clean geometry <span class="muted">rough spring pre-relaxation, not physics</span></div>
+            <p class="muted small">Bonded pairs relax toward the sum of their covalent radii; other close pairs push apart. Use it to tidy hand-placed atoms before a real CRYSTAL optimization.</p>
+            <div class="row">
+              <label class="tog"><input type="checkbox" id="c-sym" checked><span>keep the space group</span></label>
+              <label class="tog" title="Covalent radii underestimate ionic bonds: an ionic cell shrinks by about 5 %"><input type="checkbox" id="c-cell"><span>relax the cell (shrinks ionic cells)</span></label>
+              <button class="btn small primary" id="e-clean">Clean</button>
+            </div>
+            <div id="c-result" class="hidden">
+              <p class="small" id="c-summary"></p>
+              <div class="row">
+                <button class="btn small" id="c-compare">Before / after</button>
+                <button class="btn small" id="c-accept">Keep</button>
+                <button class="btn small" id="c-undo">Undo Clean</button>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-label">Save for a deck</div>
+            <div class="row">
+              <input id="e-cifname" placeholder="name.cif" aria-label="CIF name">
+              <select id="e-cifmode" aria-label="CIF kind"><option value="symmetrized">symmetrized CIF</option><option value="p1">P1 CIF (every atom)</option></select>
+            </div>
+            <div class="row">
+              <button class="btn small" id="e-deck" title="Calculation Setup on the edited structure: the deck cif2d12 writes for it">Preview deck</button>
+              <button class="btn small primary" id="e-save">Save CIF</button>
+            </div>
+            <p class="muted small">A P1 CIF gives a P1 deck unless Setup's Symmetry handling is SPGLIB.</p>
+          </div>
+        </div>
+      </div>
+      <details class="card new-cell" open>
+        <summary class="card-label">New cell from lattice parameters</summary>
+        <div class="grid3">
+          <label>a<input id="n-a" type="number" value="4.212" step="0.01"></label><label>b<input id="n-b" type="number" value="4.212" step="0.01"></label><label>c<input id="n-c" type="number" value="4.212" step="0.01"></label>
+          <label>α<input id="n-alpha" type="number" value="90"></label><label>β<input id="n-beta" type="number" value="90"></label><label>γ<input id="n-gamma" type="number" value="90"></label>
+        </div>
+        <div class="row">
+          <label class="small">Space group <input id="n-sg" type="number" min="1" max="230" value="225" class="narrow"></label>
+          <label class="small">Setting <select id="n-setting"><option value="1">1</option><option value="2">2 (origin choice 2)</option></select></label>
+          <label class="small">Name <input id="n-name" value="new_cell" class="narrow2"></label>
+        </div>
+        <label class="small muted">Asymmetric unit (or every atom without a space group): one <code>El x y z</code> per line, fractional</label>
+        <textarea id="n-sites" rows="4" spellcheck="false">Mg 0 0 0
+O 0.5 0.5 0.5</textarea>
+        <div class="row"><button class="btn primary" id="e-new">Create</button></div>
+      </details>
+    </section>
+
+    <!-- OPTIMIZATION -->
+    <section class="panel" id="tab-opt">
+      <div class="empty" id="opt-empty">
+        <h2>Before / after</h2>
+        <p>Pick a CRYSTAL <b>.out</b> with more than one geometry (an OPT run), or compare any two structures with the same atoms:</p>
+        <div class="row">
+          <select id="cmp-a" aria-label="Before"></select>
+          <span class="muted">→</span>
+          <select id="cmp-b" aria-label="After"></select>
+          <button class="btn" id="cmp-go">Compare</button>
+        </div>
+        <div class="cmp-banner warn hidden" id="cmp-refused" role="alert"></div>
+      </div>
+      <div class="hidden" id="opt-view">
+        <div class="opt-head">
+          <div>
+            <div class="card-title" id="o-title">—</div>
+            <div class="muted" id="o-status"></div>
+            <div class="o-live hidden" id="o-live"><span class="live-chip" id="o-live-chip" role="status" aria-live="polite"></span>
+              <label class="tog"><input type="checkbox" id="o-follow" checked><span>Follow the run</span></label></div>
+          </div>
+          <div class="seg" role="group" aria-label="Look">
+            <button class="seg-btn active" data-layout="overlay" title="Initial as a ghost, the selected frame solid">Overlay</button>
+            <button class="seg-btn" data-layout="twotone" title="Initial and selected frame in two colors">Two-tone</button>
+            <button class="seg-btn" data-layout="side" title="Two linked views">Side by side</button>
+            <button class="seg-btn" data-layout="dmap" title="The selected frame colored by |Δr|">Displacement map</button>
+          </div>
+        </div>
+        <div class="opt-grid">
+          <div class="viewer-wrap">
+            <div class="viewers" id="opt-viewers">
+              <div class="viewer" id="viewer-before"></div>
+              <div class="viewer hidden" id="viewer-after"></div>
+            </div>
+            <div class="viewer-toolbar">
+              <span class="tb-group">
+                <label class="tog"><input type="checkbox" id="o-arrows" checked><span>Arrows</span></label>
+                <label class="tog"><input type="checkbox" id="o-ghost" checked><span>Initial (ghost)</span></label>
+              </span>
+              <label class="slider tb-group" title="Arrows are drawn this many times longer than the real displacement">Arrow ×<input type="range" id="o-scale" min="1" max="200" value="1"><output id="o-scale-out">1</output></label>
+              <label class="slider tb-group hidden" id="o-frame-wrap">Frame<input type="range" id="o-frame" min="0" max="0" value="0"><output id="o-frame-out"></output></label>
+              <button class="btn small" id="o-edit-step" type="button" title="Open this step as a structure you can edit">Edit This Step</button>
+            </div>
+            <div class="legend" id="o-legend"></div>
+          </div>
+          <div class="info-col" id="o-info">
+            <div class="cmp-banner hidden" id="o-banner" role="status"></div>
+            <div class="cmp-subs" role="tablist" aria-label="Comparison table">
+              <button class="chip active" role="tab" data-sub="all" aria-selected="true">All</button>
+              <button class="chip" role="tab" data-sub="energy" aria-selected="false">Energy</button>
+              <button class="chip" role="tab" data-sub="cell" aria-selected="false">Δcell</button>
+              <button class="chip" role="tab" data-sub="bonds" aria-selected="false">Δbond</button>
+              <button class="chip" role="tab" data-sub="disp" aria-selected="false">Displacements</button>
+              <button class="chip" role="tab" data-sub="sym" aria-selected="false">Δsymmetry</button>
+              <button class="btn small cmp-copy" type="button" title="Copy the shown table as tab-separated text">Copy TSV</button>
+            </div>
+            <div class="card stat-row" id="o-stats" data-sub="all"></div>
+            <div class="card" id="o-energy-card" data-sub="energy">
+              <div class="card-label" id="o-energy-label">Energy along the run <span class="muted">meV, relative to the first</span></div>
+              <div class="o-energy-row" role="toolbar" aria-label="Energy chart options">
+                <button type="button" class="tb-btn-text" id="o-e-log" aria-pressed="false" title="Log of |ΔE|">Log |ΔE|</button>
+                <label class="o-e-sel">Relative to <select id="o-e-rel" aria-label="Relative to"><option value="first">First</option><option value="final">Final</option></select></label>
+                <label class="o-e-sel">Units <select id="o-e-unit" aria-label="Energy unit"><option>eV</option><option>meV</option><option>Ha</option><option value="kJ/mol">kJ/mol</option><option value="kcal/mol">kcal/mol</option></select></label>
+                <button type="button" class="tb-btn-text" id="o-e-tsv" title="Copy the plotted values as tab-separated text">Copy TSV</button>
+                <button type="button" class="tb-btn-text" id="o-e-plot" title="Run Analysis: energy, convergence, SCF, cell">Open as Plot</button>
+              </div>
+              <div id="o-energy" class="chart"></div>
+            </div>
+            <div class="card" data-sub="cell">
+              <div class="card-label">Cell parameters</div>
+              <table class="data" id="o-cell"></table>
+            </div>
+            <div class="card" data-sub="bonds">
+              <div class="card-label">Bond lengths <span class="muted">Å, pairs within 1.2 × covalent radii</span></div>
+              <div class="table-scroll"><table class="data" id="o-bonds"></table></div>
+            </div>
+            <div class="card" data-sub="disp">
+              <details id="o-disp-details">
+                <summary class="card-label">Displacements <span class="muted">Å, fractional change in the final cell</span></summary>
+                <div class="table-scroll"><table class="data" id="o-disp"></table></div>
+              </details>
+            </div>
+            <div class="card" data-sub="sym">
+              <div class="card-label">Symmetry <span class="muted">spglib at 1e-3 Å, both ends</span></div>
+              <table class="data" id="o-sym"></table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RESULTS -->
+    <section class="panel" id="tab-results" aria-label="Plot">
+      <div class="plot-host" id="plot-host"></div>
+      <div class="plot-host" id="runplot-host" hidden></div>
+      <div class="plot-opts" id="plot-opts"></div>
+    </section>
+
+    <!-- FREQ: an output's normal modes (js/docs/freq.js) -->
+    <section class="panel" id="tab-freq" aria-label="Normal modes">
+      <div class="freq-host" id="freq-host"></div>
+      <div class="freq-opts" id="freq-opts"></div>
+      <div class="freq-table" id="freq-table"></div>
+    </section>
+
+    <!-- VOLUME: cube files (plan E5) -->
+    <section class="panel" id="tab-volume" aria-label="Volume">
+      <div class="volume-host" id="volume-host"></div>
+      <div class="volume-opts" id="volume-opts"></div>
+    </section>
+
+    <!-- DATABASE -->
+    <section class="panel" id="tab-db" aria-label="Database">
+      <div class="db-host" id="db-host"></div>
+      <div class="empty hidden" id="db-empty">
+        <h2>No materials.db here</h2>
+        <p>Run <code>mace gui</code> in a directory that holds a MACE <b>materials.db</b>, pick one from the file list, or build one from this folder's outputs (the same as <code>mace analyze --extract-properties</code>).</p>
+        <p><button class="tb-btn-text primary" type="button" data-act="db-build">Create Database from Folder…</button></p>
+      </div>
+      <div id="db-detail"><p class="muted">Select a material.</p></div>
+    </section>
+
+    <!-- CLUSTER and JOB documents (js/docs/cluster.js, loaded on first use) -->
+    <section class="panel" id="tab-cluster" aria-label="Cluster"><div class="cluster-host" id="cluster-host"></div></section>
+    <section class="panel" id="tab-job" aria-label="Job details"><div class="job-host" id="job-host"></div></section>
+
+    <!-- BATCH SETUP (js/batch/panel.js) -->
+    <section class="panel" id="tab-batch" aria-label="Batch Setup">
+      <div class="batch-host" id="batch-host"></div>
+    </section>
+
+    <!-- TEXT: "Open as Text" -->
+    <section class="panel" id="tab-text" aria-label="Text">
+      <div class="text-doc">
+        <div class="text-head"><span class="mono" id="text-path"></span><span class="muted small" id="text-note"></span></div>
+        <div class="text-job" id="text-job" hidden></div>
+        <div class="info-doc" id="text-info" hidden></div>
+        <pre class="deck" id="text-body" tabindex="0"></pre>
+        <div class="tv-host" id="text-view" hidden></div>
+      </div>
+    </section>
+    </div>
+    </div>
+    <div class="splitter v group-splitter" id="split-groups" role="separator" aria-orientation="vertical" aria-label="Resize editor groups" tabindex="0" hidden></div>
+    <div class="editor-group side-group" id="group-side" aria-label="Right editor group" hidden></div>
+    </div>
+    <div class="splitter h" id="split-bottom" role="separator" aria-orientation="horizontal" aria-label="Resize bottom panel" tabindex="0"></div>
+    <section class="bottom" id="bottom" aria-label="Bottom panel">
+      <div class="bottom-tabs" id="bottom-tabs" role="tablist"></div>
+      <div class="bottom-body" id="bottom-body"></div>
+    </section>
+  </main>
+
+  <div class="splitter v" id="split-inspector" role="separator" aria-orientation="vertical" aria-label="Resize inspector" tabindex="0"></div>
+  <aside class="inspector" id="inspector" aria-label="Inspector"></aside>
+
+  <footer class="statusbar" id="statusbar" role="status" aria-label="Status"></footer>
+</div>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+<div id="toast" class="hidden"></div>
+<div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+<div class="sr-only" id="sr-live" aria-live="polite"></div>
+</body>
+</html>

@@ -84,6 +84,9 @@ def _env(tmp_path, fake):
     env["HOME"] = str(home)
     env["PYTHONUSERBASE"] = site.getuserbase()
     env["USER"] = "tester"
+    # The goldens are the owner's path: MSU HPCC (its node-exclusion choices
+    # apply). Elsewhere see tests/test_site_generic_cluster.py.
+    env["MACE_HOSTNAME"] = "dev-amd20.hpcc.msu.edu"
     env.pop("MACE_HOME", None)
     env.pop("PYTHONPATH", None)
     return env
@@ -258,9 +261,23 @@ def _canonical_rows(rows):
     return masked, sorted(str(r.get("slurm_job_id")) for r in rows)
 
 
+# The read-only questions mace/submission/site.py asks SLURM before it writes a
+# job script (is the built-in account yours, MaxSubmitJobs, the partition's
+# MaxTime). They came after these goldens; with the fake's empty answers they
+# change nothing, so they are checked to be exactly these and set aside.
+SITE_QUERIES = (["sacctmgr", "-nP", "show", "assoc"], ["sacctmgr", "-nP", "show", "user"],
+                ["scontrol", "show", "assoc_mgr"], ["scontrol", "show", "partition", "-a", "-o"])
+
+
+def _site_query(call):
+    return any(call["argv"][:len(q)] == q for q in SITE_QUERIES)
+
+
 def compare(snapshot, golden):
-    assert [c["tool"] for c in snapshot["calls"]] == [c["tool"] for c in golden["calls"]]
-    assert _canonical_calls(snapshot["calls"]) == _canonical_calls(golden["calls"])
+    calls = [c for c in snapshot["calls"] if not _site_query(c)]
+    gold = [c for c in golden["calls"] if not _site_query(c)]
+    assert [c["tool"] for c in calls] == [c["tool"] for c in gold]
+    assert _canonical_calls(calls) == _canonical_calls(gold)
     assert snapshot["files"] == golden["files"]
     assert _canonical_plans(snapshot["plans"]) == _canonical_plans(golden["plans"])
     assert _canonical_rows(snapshot["rows"]) == _canonical_rows(golden["rows"])

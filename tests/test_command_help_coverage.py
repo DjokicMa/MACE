@@ -38,12 +38,30 @@ def _mace(*args):
     return r.returncode, r.stdout + r.stderr
 
 
+def _registry():
+    """mace_cli's command registry (COMMANDS, COMMAND_HELP, PASSTHROUGH_COMMANDS)."""
+    code = ("import importlib.machinery, importlib.util, json, sys\n"
+            f"loader = importlib.machinery.SourceFileLoader('mace_cli_mod', {str(MACE_CLI)!r})\n"
+            "spec = importlib.util.spec_from_loader('mace_cli_mod', loader)\n"
+            "m = importlib.util.module_from_spec(spec)\n"
+            "loader.exec_module(m)\n"
+            "print(json.dumps({'commands': list(m.COMMANDS), 'curated': sorted(m.COMMAND_HELP),"
+            " 'forwarded': sorted(m.PASSTHROUGH_COMMANDS)}))\n")
+    r = subprocess.run([sys.executable, "-c", code], env=_env(), cwd=str(REPO_ROOT),
+                       stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                       timeout=120)
+    assert r.returncode == 0, r.stderr
+    return json.loads(r.stdout.strip().splitlines()[-1])
+
+
 def _commands():
     rc, text = _mace("--no-banner", "--help")
     assert rc == 0, text
-    m = re.search(r"\{(workflow,[^}]*)\}", text)
-    assert m, text
-    return m.group(1).split(",")
+    names = _registry()["commands"]
+    # every registered command has its line in the grouped list of the general help
+    missing = [n for n in names if not re.search(rf"^  {re.escape(n):<12}\S", text, re.M)]
+    assert not missing, (missing, text)
+    return names
 
 
 COMMANDS = _commands()
@@ -51,7 +69,7 @@ COMMANDS = _commands()
 
 def test_command_list_is_complete():
     for name in ("convert", "opt2d12", "opt2d3", "opt2cif", "completion", "ions",
-                 "defects", "phonopy", "workflow", "version"):
+                 "defects", "phonopy", "workflow", "version", "preopt", "mlip"):
         assert name in COMMANDS, (name, COMMANDS)
 
 
@@ -65,18 +83,7 @@ def test_every_command_help_answers_and_names_itself(command):
 
 
 def test_curated_and_forwarded_commands_do_not_overlap():
-    code = ("import importlib.machinery, importlib.util, json, sys\n"
-            f"loader = importlib.machinery.SourceFileLoader('mace_cli_mod', {str(MACE_CLI)!r})\n"
-            "spec = importlib.util.spec_from_loader('mace_cli_mod', loader)\n"
-            "m = importlib.util.module_from_spec(spec)\n"
-            "loader.exec_module(m)\n"
-            "print(json.dumps({'curated': sorted(m.COMMAND_HELP),"
-            " 'forwarded': sorted(m.PASSTHROUGH_COMMANDS)}))\n")
-    r = subprocess.run([sys.executable, "-c", code], env=_env(), cwd=str(REPO_ROOT),
-                       stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                       timeout=120)
-    assert r.returncode == 0, r.stderr
-    data = json.loads(r.stdout.strip().splitlines()[-1])
+    data = _registry()
     curated, forwarded = set(data["curated"]), set(data["forwarded"])
     assert not curated & forwarded, curated & forwarded
     assert set(COMMANDS) == curated | forwarded, set(COMMANDS) ^ (curated | forwarded)

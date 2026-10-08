@@ -28,6 +28,8 @@ from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
 import threading
 
+from mace.queue.slurm_ids import note_submission as _note_submission
+
 # Import MACE components
 try:
     from mace.database.materials import STATUS_CANCELED_DB, MaterialDatabase
@@ -84,6 +86,19 @@ def _basis_path_exists(path) -> bool:
     except Exception:
         return Path(path).exists()
 
+
+
+def _site_account():
+    """The site's SLURM account (mace/submission/site.py) for a plan without one."""
+    from mace.submission import site
+    return site.account()
+
+
+def _site_memory_line(line, resources):
+    """The memory directive in the site's form when the plan carries one
+    (site.memory_line), else None: the line's own form, as before."""
+    from mace.submission import site
+    return site.memory_line(line, resources)
 
 class WorkflowExecutor:
     """
@@ -214,6 +229,10 @@ class WorkflowExecutor:
 
             # SLURM directive mappings - handle both short and long forms
             # Format: (short_flag, long_flag, new_value)
+            # the plan's account; None (stored or resolved): no -A line, so
+            # SLURM charges the user's default account (site.py)
+            account = resources['account'] if 'account' in resources and resources['account'] is None \
+                else (resources.get('account') or _site_account())
             slurm_mappings = [
                 ('-n ', '--ntasks=', str(resources.get('ntasks', 32))),
                 ('--ntasks=', '--ntasks=', str(resources.get('ntasks', 32))),
@@ -221,8 +240,8 @@ class WorkflowExecutor:
                 ('--nodes=', '--nodes=', str(resources.get('nodes', 1))),
                 ('-t ', '--time=', resources.get('walltime', '7-00:00:00')),
                 ('--time=', '--time=', resources.get('walltime', '7-00:00:00')),
-                ('-A ', '-A ', resources.get('account', 'mendoza_q')),
-                ('--account=', '--account=', resources.get('account', 'mendoza_q')),
+                ('-A ', '-A ', account),
+                ('--account=', '--account=', account),
                 ('--mem-per-cpu=', '--mem-per-cpu=', resources.get('memory_per_cpu', '5G')),
                 ('--mem=', '--mem=', resources.get('memory', '48G')),
             ]
@@ -236,11 +255,19 @@ class WorkflowExecutor:
                 replaced = False
 
                 # Handle script generator format: echo '#SBATCH ...' >> $1.sh
-                if "echo '#SBATCH" in line or 'echo "#SBATCH' in line:
+                # (the memory line in the site's form, when it set one)
+                site_mem = _site_memory_line(line, resources)
+                if site_mem:
+                    modified_lines.append(site_mem)
+                    replaced = True
+                elif "echo '#SBATCH" in line or 'echo "#SBATCH' in line:
                     for short_flag, long_flag, new_value in slurm_mappings:
                         # Check if this line contains this SLURM flag
                         flag_pattern = f"#SBATCH {short_flag}" if not short_flag.startswith('--') else f"#SBATCH {short_flag}"
                         if flag_pattern in line:
+                            if new_value is None:          # no account line
+                                replaced = True
+                                break
                             # Preserve the echo format and quotes
                             if "echo '#SBATCH" in line:
                                 # Single-quoted echo
@@ -257,6 +284,9 @@ class WorkflowExecutor:
                     for short_flag, long_flag, new_value in slurm_mappings:
                         flag_pattern = f"#SBATCH {short_flag}"
                         if flag_pattern in line:
+                            if new_value is None:          # no account line
+                                replaced = True
+                                break
                             new_line = f"#SBATCH {long_flag}{new_value}"
                             modified_lines.append(new_line)
                             replaced = True
@@ -280,6 +310,9 @@ class WorkflowExecutor:
                         modified_lines.append(line)
             
             content = '\n'.join(modified_lines)
+            # the plan's partition, CRYSTAL module and Python modules (site.py)
+            from mace.submission.site import customize_workflow_text
+            content = customize_workflow_text(content, resources)
 
         # The planner collects a node exclusion into the plan (planner.py
         # writes it into the scripts it generates), but Phase 0 regenerates
@@ -958,6 +991,7 @@ class WorkflowExecutor:
             os.chdir(calc_dir)
             result = subprocess.run(['sbatch', script_name], capture_output=True, text=True)
             if result.returncode == 0:
+                _note_submission()
                 for line in result.stdout.strip().split('\n'):
                     if 'Submitted batch job' in line:
                         return line.split()[-1]
@@ -1221,6 +1255,7 @@ class WorkflowExecutor:
             )
             
             if result.returncode == 0:
+                _note_submission()
                 # Extract job ID from sbatch output
                 for line in result.stdout.strip().split('\n'):
                     if 'Submitted batch job' in line:
@@ -1542,6 +1577,8 @@ fi'''
                 result = run_script_generator(script_file.name, job_name, os.getcwd())
                 
                 if result.returncode == 0:
+                    if 'Submitted batch job' in result.stdout:      # the template ran sbatch itself
+                        _note_submission()
                     # Extract job ID from sbatch output (the template runs sbatch at the end)
                     output_lines = result.stdout.strip().split('\n')
                     for line in output_lines:
@@ -1560,6 +1597,7 @@ fi'''
                             text=True
                         )
                         if result.returncode == 0:
+                            _note_submission()
                             output_lines = result.stdout.strip().split('\n')
                             for line in output_lines:
                                 if 'Submitted batch job' in line:
@@ -1578,6 +1616,7 @@ fi'''
                 )
                 
                 if result.returncode == 0:
+                    _note_submission()
                     # Extract job ID from sbatch output
                     output_lines = result.stdout.strip().split('\n')
                     for line in output_lines:

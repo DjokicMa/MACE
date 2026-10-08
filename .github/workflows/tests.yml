@@ -8,6 +8,9 @@ on:
 jobs:
   pytest:
     runs-on: ubuntu-latest
+    # a cap, not a behavior change: a server a test fails to stop cannot hold
+    # the runner for GitHub's 6-hour default
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -32,6 +35,8 @@ jobs:
       - name: Run regression suite
         # The ~12GB test/ corpus is gitignored and not present in CI, so the
         # data-dependent tests skip; the self-contained logic tests run.
+        # selenium is not installed (requirements-gui-test.txt is opt-in), so
+        # the GUI's browser tests skip; its API and CLI tests run.
         run: python -m pytest -ra
 
   pytest-optional:
@@ -40,6 +45,7 @@ jobs:
     # instead of skipping. seekpath, a required dependency, is installed by
     # requirements-test.txt in both jobs.
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -58,3 +64,48 @@ jobs:
 
       - name: Run regression suite
         run: python -m pytest -ra
+
+  gui-smoke:
+    # Headless Firefox and Chromium with software WebGL on the repo's own
+    # example data, so a GUI regression is caught on push (the jobs above skip
+    # every browser test: they install no selenium). MACE_GUI_REQUIRE_BROWSER
+    # turns a missing browser, driver or software WebGL into a failure, not a skip.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-test.txt
+            requirements-gui-test.txt
+
+      - name: Software OpenGL (Mesa llvmpipe)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1-mesa-dri libegl-mesa0 libegl1
+
+      - name: Install MACE, test and GUI-test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-test.txt -r requirements-gui-test.txt
+
+      - name: Browsers
+        # preinstalled on GitHub's Ubuntu 24.04 image; a missing one fails here, by name
+        run: firefox --version && geckodriver --version && google-chrome --version && chromedriver --version
+
+      - name: GUI smoke tests
+        env:
+          MACE_GUI_REQUIRE_BROWSER: "1"
+          MACE_GUI_ARTIFACTS: ${{ runner.temp }}/gui-artifacts
+        run: python -m pytest -m guismoke -ra -p no:cacheprovider
+
+      - name: Keep screenshots and logs of failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-smoke-artifacts
+          path: ${{ runner.temp }}/gui-artifacts
+          retention-days: 7

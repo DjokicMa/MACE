@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="MACE">
+<title>MACE</title>
+<defs><linearGradient id="mace-icon-tile" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="32"><stop offset="0" stop-color="#2dd4bf"/><stop offset="0.2" stop-color="#22d3ee"/><stop offset="0.4" stop-color="#38bdf8"/><stop offset="0.6" stop-color="#3b82f6"/><stop offset="0.8" stop-color="#6366f1"/><stop offset="1" stop-color="#818cf8"/></linearGradient></defs>
+<rect width="32" height="32" rx="7" fill="url(#mace-icon-tile)"/>
+<path fill="#0f172a" fill-opacity=".38" d="M9 13L10 15V27L9 25ZM11 5L12 7V11L11 9ZM13 9L14 11V15L13 13ZM17 17L18 19V23L17 21ZM19 13L20 15V19L19 17ZM25 5L26 7V27L25 25ZM9 13H11L12 15H10ZM19 13H21L22 15H20ZM11 17H13L14 19H12ZM17 17H19L20 19H18ZM13 21H17L18 23H14ZM5 25H9L10 27H6ZM21 25H25L26 27H22Z"/>
+<path fill="#0b1220" d="M5 5H11V9H5ZM19 5H25V9H19ZM5 9H13V13H5ZM17 9H25V13H17ZM5 13H9V17H5ZM11 13H19V17H11ZM21 13H25V17H21ZM5 17H9V21H5ZM13 17H17V21H13ZM21 17H25V21H21ZM5 21H9V25H5ZM21 21H25V25H21Z"/>
+</svg>

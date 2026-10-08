@@ -368,30 +368,33 @@ def reset_module_probe_cache() -> None:
     _MODULE_PROBE_CACHE.clear()
 
 
-def _module_probe() -> Optional[str]:
-    """``module purge && module load CRYSTAL/23`` in a login shell, read $EBROOTCRYSTAL.
+def _site_resolution():
+    from mace.submission import site
+    try:
+        return site.crystal_module()
+    except site.SiteConfigError:
+        return site.Resolution([CRYSTAL_MODULE], "built-in")
 
-    ``module purge`` first, matching submitcrystal23.sh:27 and scan_basis.sh:4 -
-    without it a CRYSTAL module already loaded on a login node can win and point
-    the validator at a different build, which is the worst outcome this feature
-    can produce. Cached, so a 1000-deck batch spawns at most one shell.
+
+def _module_probe() -> Optional[str]:
+    """$EBROOTCRYSTAL after the job script's own ``module`` lines, or None.
+
+    The probe is ``local_run.crystal_root``, the one `mace run` uses: the
+    site's module(s) (mace/submission/site.py), with ``module purge`` first
+    unless the site sets ``[modules] purge = false``, exactly as the job
+    script loads them, so the validator never tests a different CRYSTAL build
+    than the job runs. None when the site takes CRYSTAL from ``[crystal]
+    bin_dir`` (no module to load) or there is no ``module`` command. Cached,
+    so a 1000-deck batch spawns at most one shell.
     """
     if "root" in _MODULE_PROBE_CACHE:
         return _MODULE_PROBE_CACHE["root"]
-    root = None
-    script = (
-        "module purge >/dev/null 2>&1 && "
-        f"module load {CRYSTAL_MODULE} >/dev/null 2>&1 && "
-        'printf %s "$EBROOTCRYSTAL"'
-    )
+    from mace.submission.local_run import crystal_root
     try:
-        proc = subprocess.run(["bash", "--login", "-c", script],
-                              capture_output=True, text=True, timeout=60)
-        candidate = (proc.stdout or "").strip()
-        if candidate:
-            root = candidate
-    except (OSError, subprocess.SubprocessError):
-        root = None
+        source, root = crystal_root()
+    except Exception:
+        source, root = None, None
+    root = root if source == "module" else None
     _MODULE_PROBE_CACHE["root"] = root
     return root
 
@@ -402,6 +405,30 @@ def _usable(path: Optional[str]) -> Optional[str]:
     return None
 
 
+def _site_bin_dir_crystal() -> Optional[str]:
+    """<[crystal] bin_dir>/crystal when the site settings name a directory."""
+    try:
+        from mace.submission import site
+        d = site.safe_load().crystal_bin_dir
+    except Exception:
+        return None
+    return os.path.join(d, "crystal") if d else None
+
+
+def site_bin_dir_problem() -> Optional[str]:
+    """Why the site's ``[crystal] bin_dir`` cannot run a preflight, or None.
+
+    The job scripts take CRYSTAL from that directory, so a preflight with a
+    serial ``crystal`` found anywhere else would test another build; when
+    the directory has none, MACE says so and looks no further."""
+    path = _site_bin_dir_crystal()
+    if path is None or _usable(path):
+        return None
+    return (f"[crystal] bin_dir is {os.path.dirname(path)}, but it has no executable serial "
+            f"'crystal' (the one preflight runs); install it there, or pass --crystal-bin PATH "
+            f"or set MACE_CRYSTAL_BIN to a serial crystal of the same build")
+
+
 def find_crystal_binary(explicit: Optional[str] = None) -> Optional[str]:
     """Locate the SERIAL ``crystal`` binary, or None.
 
@@ -410,9 +437,11 @@ def find_crystal_binary(explicit: Optional[str] = None) -> Optional[str]:
     this binary (``"$EBROOTCRYSTAL/bin/crystal"``) and its 12 result CSVs show
     it works on the cluster.
 
-    Search order - explicit path, ``$MACE_CRYSTAL_BIN``, ``$EBROOTCRYSTAL/bin``
+    Search order - explicit path, ``$MACE_CRYSTAL_BIN``, the site's
+    ``[crystal] bin_dir`` (when set, its ``crystal`` or None: the job scripts
+    run that build, see :func:`site_bin_dir_problem`), ``$EBROOTCRYSTAL/bin``
     (already set inside a job that loaded the module), ``crystal`` on PATH, then
-    a ``module load`` probe as a last resort. Never cached at this level, so the
+    the job script's ``module`` lines as a last resort. Never cached at this level, so the
     answer always reflects the current environment.
     """
     if explicit:
@@ -421,6 +450,12 @@ def find_crystal_binary(explicit: Optional[str] = None) -> Optional[str]:
     found = _usable(os.environ.get("MACE_CRYSTAL_BIN"))
     if found:
         return found
+
+    # [crystal] bin_dir of the site settings: the job scripts' CRYSTAL. Its
+    # serial crystal or nothing - never a build found somewhere else.
+    site_crystal = _site_bin_dir_crystal()
+    if site_crystal is not None:
+        return _usable(site_crystal)
 
     root = os.environ.get("EBROOTCRYSTAL")
     if root:
@@ -810,10 +845,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         runner = None
     else:
         binary = find_crystal_binary(args.crystal_bin)
+        if binary is None and site_bin_dir_problem() and not args.crystal_bin:
+            _say("err", f"No CRYSTAL binary found - nothing was checked: {site_bin_dir_problem()}")
+            return 2
         if binary is None:
             _say("err", "No CRYSTAL binary found - nothing was checked")
             _say("info", "Set MACE_CRYSTAL_BIN, pass --crystal-bin PATH, load the "
-                         f"{CRYSTAL_MODULE} module, or use --static-only")
+                         f"{_site_resolution().module} module, or use --static-only")
             return 2
         _say("info", f"Using {binary}")
         runner = CrystalRunner(binary, timeout=args.timeout)

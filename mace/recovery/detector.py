@@ -73,7 +73,7 @@ class CrystalErrorDetector:
                 'recoverable': False,
                 'description': 'No writable scratch directory - CRYSTAL was not run',
                 'recovery_hints': [
-                    'Check that $SCRATCH (/mnt/scratch/$USER) exists and is writable',
+                    'Check that $SCRATCH (your scratch directory) exists and is writable',
                     'Check write permission and quota of the submit directory',
                     'Resubmit once one of them is writable'
                 ]

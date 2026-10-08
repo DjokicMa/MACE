@@ -6,3 +6,5 @@ ase<4
 spglib<3
 # Finite-displacement phonons (`mace phonopy`); 4.7.2 tested. Needs spglib>=2.5.
 phonopy<5
+# The GUI's browser tests need selenium and Firefox: see requirements-gui-test.txt
+# (test-only, not needed to run `mace gui`).

@@ -1,0 +1,85 @@
+/* Submit dialog, Jobs panel and Batch Setup (PLAN_submit T9-T11). Loaded
+ * with the first of them, never before first paint. Tokens only. */
+
+/* ---------------------------------------------------------------- Submit dialog */
+dialog.submit-dlg { width: min(880px, 96vw); max-height: calc(100dvh - 32px); display: none; flex-direction: column; }
+dialog.submit-dlg[open] { display: flex; }
+.submit-dlg .dlg-body { overflow: auto; min-height: 0; display: flex; flex-direction: column; gap: var(--s-1); }
+.submit-dlg .dlg-foot { display: flex; align-items: center; gap: var(--s-3); }
+.submit-note { margin-right: auto; color: var(--text-2); font-size: var(--fs-sm); }
+.sub-row { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: var(--s-4); padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--border); align-items: start; }
+.sub-k { color: var(--text-2); font-size: var(--fs-sm); padding-top: 3px; }
+.sub-v { min-width: 0; overflow-wrap: anywhere; }
+.sub-v code { white-space: pre-wrap; }
+.sub-opts { display: flex; flex-direction: column; gap: var(--s-2); align-items: flex-start; }
+.sub-opts .f.inline, .bat .f.inline { display: inline-flex; align-items: center; gap: var(--s-2); }
+.sub-opts .field, .bat .field { width: auto; min-width: 160px; height: var(--h-control); }
+.sub-opts .field.num { min-width: 90px; width: 110px; }
+.sub-ex { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); border: 0; padding: 0; margin: 0; }
+.sub-ex legend { float: left; margin-right: var(--s-3); color: var(--text); }
+.sub-line { margin: var(--s-1) 0; font-size: var(--fs-sm); }
+.sub-line.warn { color: var(--warning, var(--warn)); }
+.sub-line.bad { color: var(--danger); }
+.sub-pop { margin-top: var(--s-2); padding: var(--s-3); border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface-2); font-size: var(--fs-sm); }
+.sub-log { max-height: 200px; overflow: auto; margin: 0; padding: var(--s-2); background: var(--surface-2);
+  border-radius: var(--r-md); font: var(--fs-xs)/1.4 var(--font-mono); white-space: pre-wrap; }
+.tb-btn-text.sm { height: 22px; padding: 0 var(--s-2); font-size: var(--fs-xs); }
+/* a disabled button looks disabled (Submit before the needed ticks, Next with nothing picked) */
+.submit-dlg .tb-btn-text:disabled, .submit-dlg .icon-btn:disabled, .bat .tb-btn-text:disabled,
+.jobs-bar .tb-btn-text:disabled, .jobs-table .tb-btn-text:disabled { opacity: .45; cursor: default; }
+.submit-dlg .tb-btn-text.primary:disabled:hover, .bat .tb-btn-text.primary:disabled:hover { background: var(--accent); }
+
+/* ---------------------------------------------------------------- Jobs panel */
+.jobs-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); padding: var(--s-2) 0; }
+.jobs-bar .grow { flex: 1; }
+.jobs-bar .muted { color: var(--text-2); font-size: var(--fs-sm); }
+.jobs-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.jobs-table th, .jobs-table td { text-align: left; padding: 3px var(--s-2); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.jobs-table th { color: var(--text-2); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
+.jobs-table td.name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+/* the row's actions stay in view when the table is wider than the panel (1280 px with the Inspector open) */
+.jobs-table td:last-child, .jobs-table th:last-child { position: sticky; right: 0; background: var(--surface); }
+.jobs-table th:last-child { z-index: 1; }
+.jobs-table tr.group td:last-child { position: static; }
+.jobs-table tr.group td { color: var(--text-2); font-weight: 600; background: var(--surface-2); }
+.jobs-table tr:focus-within, .jobs-table tr:focus { outline: 2px solid var(--focus); outline-offset: -2px; }
+.jobs-table .st-RUNNING { color: var(--success); }
+.jobs-table .st-PENDING { color: var(--text-2); }
+.jobs-badge { font-size: var(--fs-xs); padding: 1px 6px; border-radius: var(--r-sm); background: var(--accent-soft); color: var(--accent); }
+.jobs-acts { display: inline-flex; gap: var(--s-1); }
+
+/* ---------------------------------------------------------------- Batch Setup */
+.batch-host { height: 100%; overflow: auto; padding: var(--s-4) var(--s-6); }
+.bat { max-width: 1100px; display: flex; flex-direction: column; gap: var(--s-4); }
+.bat h2 { margin: 0; font-size: var(--fs-lg); }
+.bat-steps { display: flex; gap: var(--s-2); flex-wrap: wrap; }
+.bat-steps button { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: var(--r-md);
+  padding: 4px var(--s-3); font: inherit; cursor: pointer; }
+.bat-steps button[aria-current="step"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.bat-step { display: flex; flex-direction: column; gap: var(--s-3); }
+.bat-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
+.bat-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.bat-table th, .bat-table td { text-align: left; padding: 3px var(--s-2); border-bottom: 1px solid var(--border); }
+.bat-table tr.off td { color: var(--text-2); }
+.bat-table td.why { font-size: var(--fs-xs); color: var(--text-2); }
+.bat-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s-3); }
+.bat-fields label { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); color: var(--text-2); }
+.bat-fields .field { width: 100%; }
+.bat-fields label.tog { flex-direction: row; align-items: center; align-self: end; min-height: var(--h-control); color: var(--text); }
+.bat-cmds { margin: 0; padding: var(--s-3); background: var(--surface-2); border-radius: var(--r-md);
+  font: var(--fs-xs)/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.bat .note { color: var(--text-2); font-size: var(--fs-sm); margin: 0; }
+.bat .bad { color: var(--danger); }
+/* the Site row's resolved values (mace site --json) and the Check report */
+.sub-site { margin: var(--s-2) 0 0; font-size: var(--fs-sm); display: grid; gap: 2px; }
+.sub-site > div { display: grid; grid-template-columns: 7.5em 1fr; gap: var(--s-2); }
+.sub-site dt { color: var(--muted); margin: 0; }
+.sub-site dd { margin: 0; overflow-wrap: anywhere; }
+.sub-check { font-size: var(--fs-sm); }
+.sub-check ul { margin: var(--s-1) 0; padding-left: 1.2em; }
+.sub-check li { margin: 2px 0; }
+.sub-check .good { color: var(--success, var(--text)); }
+.sub-check .warn { color: var(--warning, var(--warn)); }
+.sub-check .bad { color: var(--danger); }

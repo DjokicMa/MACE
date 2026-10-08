@@ -11,6 +11,7 @@ Author: Based on implementation plan for material tracking system
 import sqlite3
 import json
 import os
+import sys
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -18,6 +19,8 @@ from contextlib import contextmanager
 from typing import Dict, List, Optional, Tuple, Any
 import tempfile
 import shutil
+
+from . import dbsafety        # the SQLite journal/lock/backup policy (stdlib only)
 
 # The status stored in the database for a canceled job. The value keeps its
 # original spelling because existing databases already hold it.
@@ -30,7 +33,8 @@ try:
     HAS_ASE = True
 except ImportError:
     HAS_ASE = False
-    print("Warning: ASE not available. Structure storage will be limited.")
+    # a warning, so stderr: stdout may be a JSON stream (--progress-json, --dry-run --json)
+    print("Warning: ASE not available. Structure storage will be limited.", file=sys.stderr)
 
 
 class MaterialDatabase:
@@ -258,7 +262,7 @@ class MaterialDatabase:
         # Ensure database is initialized before connecting
         self._ensure_initialized()
         
-        with self.lock:
+        with self.lock, dbsafety.write_guard(self.db_path):
             conn = sqlite3.connect(
                 str(self.db_path),
                 timeout=30.0,  # 30 second timeout for database locks
@@ -266,15 +270,17 @@ class MaterialDatabase:
             )
             conn.row_factory = sqlite3.Row  # Enable column access by name
             
-            # Enable WAL mode for better concurrent access
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
-            conn.execute("PRAGMA busy_timeout=30000")  # 30 second timeout
+            # Journal mode by file system (dbsafety): WAL on a local disk as
+            # before, the rollback journal on a network/cluster file system
+            # (WAL is not safe across nodes); busy_timeout 30 s either way
+            dbsafety.configure(conn, self.db_path)
             conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
             
             try:
                 yield conn
-                conn.commit()
+                # a commit is idempotent (the transaction already holds its
+                # lock): retried while another process holds the database
+                dbsafety.retry_locked(conn.commit)
             except Exception:
                 conn.rollback()
                 raise
@@ -1274,19 +1280,13 @@ class MaterialDatabase:
         backup_dir = Path(backup_dir)
         backup_dir.mkdir(exist_ok=True)
         
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = backup_dir / f"materials_backup_{timestamp}.db"
-        
-        # Use SQLite backup API for safe backup of active database
-        with self._get_connection() as conn:
-            backup_conn = sqlite3.connect(str(backup_path))
-            conn.backup(backup_conn)
-            backup_conn.close()
-            
-        # Also backup ASE database if it exists
+        # A consistent copy through the SQLite backup API from a read-only
+        # connection (dbsafety.snapshot_backup), for the ASE database too: it
+        # is SQLite as well, and a plain file copy can tear while it is written
+        self._ensure_initialized()
+        backup_path = dbsafety.snapshot_backup(self.db_path, backup_dir, "materials_backup")
         if self.ase_db and os.path.exists(self.ase_db_path):
-            ase_backup_path = backup_dir / f"structures_backup_{timestamp}.db"
-            shutil.copy2(self.ase_db_path, ase_backup_path)
+            dbsafety.snapshot_backup(self.ase_db_path, backup_dir, "structures_backup")
             
         return backup_path
     

@@ -347,6 +347,10 @@ echo "Plotting:"
 echo "  # Plot band structures, DOS, CIFs, and overviews"
 echo "  mace plotting"
 echo ""
+echo "MACE GUI:"
+echo "  # Browse, view and set up calculations in your browser"
+echo "  mace gui --dir . --open"
+echo ""
 echo "Current environment:"
 echo "  MACE_HOME=$MACE_HOME"
 echo "  All script directories are in PATH"
@@ -428,6 +432,7 @@ echo "  All script directories are in PATH"
             print("   mace opt2d12 file.out             # D12 creation")
             print("   mace opt2d3 file.out              # D3 creation")
             print("   mace plotting                     # Plot band/DOS/cube/FREQ/IR/Raman")
+            print("   mace gui --dir . --open           # MACE GUI in your browser (docs/gui.md)")
             print("   mace monitor --status             # Queue status")
 
 def main():

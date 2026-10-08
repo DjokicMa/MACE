@@ -35,6 +35,7 @@ OPTIONAL_CALC_TYPES = {'BAND', 'DOSS', 'FREQ', 'TRANSPORT', 'CHARGE+POTENTIAL'}
 
 # Import MACE components
 from mace.database.materials import MaterialDatabase, create_material_id_from_file, extract_formula_from_d12
+from mace.queue.slurm_ids import note_submission as _note_submission
 from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.workflow.context import get_current_context
 from mace.workflow.common.constants import opt2d3_default_band_config, opt2d3_default_doss_config
@@ -689,8 +690,20 @@ class WorkflowEngine:
         if not generator.exists():
             return None
         print(f"  No template available - generating with mace submit generator: {gen_name}")
-        result = subprocess.run(["bash", str(generator), material_name, "100"],
-                                cwd=str(calc_dir), capture_output=True, text=True)
+        # the site's account, partition and modules (mace/submission/site.py);
+        # in a completion callback the CRYSTAL module is the one the parent
+        # job loaded, never a new probe
+        try:
+            from mace.submission import site
+            generator, site_cleanup, _ = site.generator_for(generator, None, calc_dir)
+        except Exception as e:      # an invalid site setting: generate nothing
+            print(f"  Generator not run: {e}")
+            return None
+        try:
+            result = subprocess.run(["bash", str(generator), material_name, "100"],
+                                    cwd=str(calc_dir), capture_output=True, text=True)
+        finally:
+            site_cleanup()
         emitted = calc_dir / f"{material_name}.sh"
         if result.returncode != 0 or not emitted.exists():
             if (result.stderr or "").strip():
@@ -976,6 +989,8 @@ fi'''
                 result = run_script_generator(script_filename, job_name, os.getcwd())
                 
                 if result.returncode == 0:
+                    if 'Submitted batch job' in result.stdout:      # the template ran sbatch itself
+                        _note_submission()
                     # Extract job ID from sbatch output (the template runs sbatch at the end)
                     output = result.stdout.strip()
                     job_id_match = re.search(r'Submitted batch job (\d+)', output)
@@ -993,6 +1008,7 @@ fi'''
                             text=True
                         )
                         if result.returncode == 0:
+                            _note_submission()
                             job_id_match = re.search(r'Submitted batch job (\d+)', result.stdout)
                             if job_id_match:
                                 return job_id_match.group(1)
@@ -1009,6 +1025,7 @@ fi'''
                 )
                 
                 if result.returncode == 0:
+                    _note_submission()
                     # Extract job ID from sbatch output
                     output = result.stdout.strip()
                     job_id_match = re.search(r'Submitted batch job (\d+)', output)

@@ -39,6 +39,7 @@ PATHFINDER-*/
 
 # Generated SQLite databases (always regenerable from calculation outputs)
 *.db
+!examples/gui/materials.db
 
 # Throwaway UI/visual demos (not part of the shipped CLI)
 mace_visual_demo*.py

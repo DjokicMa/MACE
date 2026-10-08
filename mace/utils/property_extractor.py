@@ -27,6 +27,7 @@ from typing import Dict, List, Tuple, Optional, Any
 from datetime import datetime
 
 from mace.constants import HARTREE_TO_EV
+from mace.utils import db_build
 from mace.utils.calc_detection import (
     is_band_output, is_optimization_output, is_transport_output)
 
@@ -83,13 +84,15 @@ def band_occupied_count(content: str, output_file: Optional[Path] = None) -> Opt
 class CrystalPropertyExtractor:
     """Extract comprehensive properties from CRYSTAL output files."""
     
-    def __init__(self, db_path: str = "materials.db", enable_tracking: bool = True):
+    def __init__(self, db_path: str = "materials.db", enable_tracking: bool = True,
+                 ase_db_path: Optional[str] = None):
         # The database is created lazily (on first real use) so pure parsing —
         # e.g. extracting properties from a single .out with enable_tracking=False
         # — never touches or creates materials.db. Pass enable_tracking=False for
         # offline single-file extraction.
         self.db_path = db_path
         self.enable_tracking = enable_tracking
+        self.ase_db_path = ase_db_path      # None: MaterialDatabase's own default
         self._db = None
         self.properties = []
 
@@ -97,7 +100,10 @@ class CrystalPropertyExtractor:
     def db(self):
         """Lazily-opened MaterialDatabase, or None when tracking is disabled."""
         if self._db is None and self.enable_tracking and self.db_path:
-            self._db = MaterialDatabase(self.db_path)
+            if self.ase_db_path:
+                self._db = MaterialDatabase(self.db_path, ase_db_path=self.ase_db_path)
+            else:
+                self._db = MaterialDatabase(self.db_path)
         return self._db
         
     def extract_all_properties(self, output_file: Path, material_id: str = None, calc_id: str = None) -> Dict[str, Any]:
@@ -115,11 +121,16 @@ class CrystalPropertyExtractor:
             print(f"❌ Error reading file: {e}")
             return {}
         
-        # Auto-detect material_id and calc_id if not provided
-        if not material_id:
-            material_id = self._extract_material_id_from_filename(output_file)
+        # Auto-detect material_id and calc_id if not provided. A tracked
+        # calculation files its rows under its own material (the one the
+        # Database view lists), not under an id guessed from the file name;
+        # an untracked output keeps the file-name id.
         if not calc_id:
             calc_id = self._find_calc_id_for_output(output_file)
+        if not material_id and calc_id:
+            material_id = self._material_of_calc(calc_id)
+        if not material_id:
+            material_id = self._extract_material_id_from_filename(output_file)
         
         properties = {}
         
@@ -130,11 +141,22 @@ class CrystalPropertyExtractor:
         properties.update(self._extract_energy_properties(content))
         properties.update(self._extract_geometry_optimization(content))
         properties.update(self._extract_crystallographic_info(content))
+        if 'space_group_number' not in properties:
+            # CRYSTAL23 prints the symbol ("SPACE GROUP (CENTROSYMMETRIC) : F D 3 M"), not a
+            # number: the formula extractor's validated symbol table gives it
+            try:
+                from mace.utils.formula_extractor import extract_space_group_from_output
+                sg = extract_space_group_from_output(Path(output_file)) if 'SPACE GROUP' in content else None
+                if sg:
+                    properties['space_group_number'] = int(sg)
+            except Exception:
+                pass
         properties.update(self._extract_neighbor_information(content))
         properties.update(self._extract_computational_properties(content))
         properties.update(self._extract_band_structure_properties(content, output_file))
         properties.update(self._extract_dos_properties(content, output_file))
         properties.update(self._extract_frequency_properties(content))
+        properties.update(self._extract_raman_intensities(content))
         properties.update(self._extract_transport_properties(content, output_file))
         # CHARGE+POTENTIAL (CRYSTAL ECH3/POT3): grid metadata + references to the
         # generated .CUBE grid files. Additive and self-skipping -- returns {} when
@@ -360,47 +382,178 @@ class CrystalPropertyExtractor:
         
         return props
     
+    _GAP_LINE = re.compile(r'(INDIRECT|DIRECT) ENERGY BAND GAP:\s*([\d.]+)\s*eV')
+    _SPIN_MARK = re.compile(r'^\s*(ALPHA|BETA)\s+ELECTRONS\s*$')
+    _EDGE_LINE = re.compile(r'(TOP|BOTTOM) OF (VALENCE|VIRTUAL) BANDS\s*-\s*BAND\s+(\d+);\s*K\s+(\d+);'
+                            r'\s*EIG\s+(\S+)\s*AU')
+
+    @classmethod
+    def final_band_gaps(cls, content: str) -> Dict[str, Any]:
+        """The band gaps of the last SCF in the output (the converged one).
+
+        Every SCF cycle prints, per spin channel (``ALPHA``/``BETA ELECTRONS``
+        in a spin-polarized run), either ``INSULATING STATE`` with a
+        ``DIRECT`` or ``INDIRECT ENERGY BAND GAP`` line or a ``(POSSIBLY)
+        CONDUCTING STATE``. Only the last block of each channel describes the
+        result: an earlier cycle's gap (cycle 0 of an SP is the guess) is not
+        a property of the material.
+
+        Returns ``{channel: (kind, value)}`` for channel ``None`` (closed
+        shell), ``"ALPHA"`` and ``"BETA"``; kind is ``"direct"``,
+        ``"indirect"`` or ``"conducting"`` (value 0.0)."""
+        return {chan: (b['kind'], b['value'])
+                for chan, b in cls._final_scf_blocks(content).items()}
+
+    @classmethod
+    def _final_scf_blocks(cls, content: str) -> Dict[Any, Dict[str, Any]]:
+        """final_band_gaps with each record's band edges.
+
+        ``{channel: {'kind', 'value', 'tops', 'bottoms'}}``; ``tops`` and
+        ``bottoms`` are ``(eig_au, k)`` of the block's ``TOP OF VALENCE
+        BANDS`` and ``BOTTOM OF VIRTUAL BANDS`` lines (CRYSTAL prints more
+        than one when the direct gap is at another k than the indirect one,
+        and a BOTTOM line can follow the gap line)."""
+        final: Dict[Any, Dict[str, Any]] = {}
+        chan = None
+        edges: Dict[str, list] = {'tops': [], 'bottoms': []}
+        collecting = False    # inside a channel's block, where edge lines go
+        for line in content.splitlines():
+            m = cls._SPIN_MARK.match(line)
+            if m:
+                chan = m.group(1)
+                edges, collecting = {'tops': [], 'bottoms': []}, True
+                continue
+            if 'INSULATING STATE' in line:
+                edges, collecting = {'tops': [], 'bottoms': []}, True
+                continue
+            m = cls._EDGE_LINE.search(line)
+            if m:
+                if collecting:
+                    key = 'tops' if m.group(1) == 'TOP' else 'bottoms'
+                    edges[key].append((float(m.group(5)), int(m.group(4))))
+                continue
+            if 'CONDUCTING STATE' in line:
+                rec = ('conducting', 0.0)
+            else:
+                m = cls._GAP_LINE.search(line)
+                if not m:
+                    if line.strip():
+                        collecting = False
+                    continue
+                rec = (m.group(1).lower(), float(m.group(2)))
+            # BOTTOM lines after the gap line still belong to this record
+            block = {'kind': rec[0], 'value': rec[1], **edges}
+            # a cycle's records: ALPHA then BETA, or one for both channels
+            # (closed shell, or a spin run whose Fermi level is common)
+            if chan == 'BETA':
+                final['BETA'] = block
+            else:
+                final = {chan: block}
+            chan = None
+        return final
+
+    @classmethod
+    def _fundamental_gap(cls, blocks: Dict[Any, Dict[str, Any]]):
+        """The fundamental gap of the last SCF of a spin-polarized run.
+
+        min(CBM over channels) - max(VBM over channels), in eV: a channel's
+        own gap is only an upper bound, the valence-band top can be in one
+        channel and the conduction-band bottom in the other. Returns
+        ``(kind, value)`` -- kind ``"direct"`` when VBM and CBM are at the
+        same k point (k decides direct/indirect even when they are in
+        different channels), ``"conducting"`` (0.0) when the edges overlap --
+        or None when the blocks are not two gapped channels with their band
+        edges (closed shell, conducting, or edge lines missing). When VBM and
+        CBM are in the same channel the gap is that channel's printed one."""
+        if set(blocks) != {'ALPHA', 'BETA'}:
+            return None
+        if any(b['kind'] not in ('direct', 'indirect') or not b['tops'] or not b['bottoms']
+               for b in blocks.values()):
+            return None
+        vbm_chan, (vbm, vbm_k) = max(((c, max(b['tops'])) for c, b in blocks.items()),
+                                     key=lambda cv: cv[1][0])
+        cbm_chan, (cbm, cbm_k) = min(((c, min(b['bottoms'])) for c, b in blocks.items()),
+                                     key=lambda cv: cv[1][0])
+        if vbm_chan == cbm_chan:
+            b = blocks[vbm_chan]
+            return (b['kind'], b['value'])
+        gap = round((cbm - vbm) * HARTREE_TO_EV, 4)
+        if gap <= 0:
+            return ('conducting', 0.0)
+        return ('direct' if vbm_k == cbm_k else 'indirect', gap)
+
     def _extract_electronic_properties(self, content: str) -> Dict[str, Any]:
         """Extract electronic properties."""
-        props = {}
-        
-        # Band gaps - handle both spin-polarized and non-spin-polarized
-        alpha_gap_match = re.search(r'ALPHA BAND GAP:\s*([\d.]+)\s*eV', content)
-        beta_gap_match = re.search(r'BETA BAND GAP:\s*([\d.]+)\s*eV', content)
-        
-        if alpha_gap_match and beta_gap_match:
+        props = self._band_gap_properties(content)
+        # Add advanced electronic properties
+        props.update(self._extract_advanced_electronic_properties(content))
+        return props
+
+    def _band_gap_properties(self, content: str) -> Dict[str, Any]:
+        """band_gap, direct/indirect_band_gap, band_gap_type, alpha/beta_band_gap
+        and spin_polarized, all from the last SCF (see final_band_gaps)."""
+        props: Dict[str, Any] = {}
+
+        # CRYSTAL's own summary after the run (when it prints one): the last one
+        alpha_summary = re.findall(r'ALPHA BAND GAP:\s*([\d.]+)\s*eV', content)
+        beta_summary = re.findall(r'BETA BAND GAP:\s*([\d.]+)\s*eV', content)
+        blocks = self._final_scf_blocks(content)
+        final = {chan: (b['kind'], b['value']) for chan, b in blocks.items()}
+        # spin-polarized: the fundamental gap across both channels, not the
+        # smaller channel gap (an upper bound); None without the band edges
+        fundamental = self._fundamental_gap(blocks)
+
+        if alpha_summary and beta_summary:
             # Spin-polarized calculation
             props.update({
-                'alpha_band_gap': float(alpha_gap_match.group(1)),
-                'beta_band_gap': float(beta_gap_match.group(1)),
+                'alpha_band_gap': float(alpha_summary[-1]),
+                'beta_band_gap': float(beta_summary[-1]),
                 'spin_polarized': True
             })
         else:
-            # Non-spin-polarized - look for general band gap
-            gap_matches = re.findall(r'(?:DIRECT|INDIRECT)?\s*(?:ENERGY\s+)?BAND GAP:\s*([\d.]+)\s*eV', content)
-            if gap_matches:
-                props['band_gap'] = float(gap_matches[-1])  # Take the last (final) value
+            plain = re.findall(r'^\s*BAND GAP:\s*([\d.]+)\s*eV', content, re.M)
+            if plain:
+                props['band_gap'] = float(plain[-1])
                 props['spin_polarized'] = False
-        
-        # Direct vs indirect band gap. The negative lookbehind keeps "DIRECT"
-        # from matching inside "INDIRECT", which stored a spurious
-        # direct_band_gap for every indirect-gap material; take the LAST
-        # occurrence (earlier ones are pre-optimization SCF cycles).
-        direct_matches = re.findall(r'(?<!IN)DIRECT ENERGY BAND GAP:\s*([\d.]+)\s*eV', content)
-        if direct_matches:
-            props['direct_band_gap'] = float(direct_matches[-1])
-            props['band_gap_type'] = 'direct'
+            elif final and self._GAP_LINE.search(content):
+                # the last SCF: its fundamental gap (spin-polarized), else the
+                # smaller gap of its spin channels (0 when it ended conducting
+                # after gapped cycles), not the last line of an earlier cycle;
+                # a run conducting throughout stores none
+                props['band_gap'] = (fundamental[1] if fundamental is not None
+                                     else min(v for _, v in final.values()))
+                props['spin_polarized'] = {'ALPHA', 'BETA'} <= set(blocks)
 
-        indirect_matches = re.findall(r'INDIRECT ENERGY BAND GAP:\s*([\d.]+)\s*eV', content)
-        if indirect_matches:
-            props['indirect_band_gap'] = float(indirect_matches[-1])
-            props['band_gap_type'] = 'indirect'
-        
-        # Add advanced electronic properties
-        props.update(self._extract_advanced_electronic_properties(content))
-        
+        # Direct vs indirect: the kind of the last SCF's gap (the fundamental
+        # gap of a spin-polarized run, by the k points of its VBM and CBM, else
+        # the smaller of the two spin channels), never a gap of an earlier
+        # cycle. Taking the last DIRECT line and the last INDIRECT line
+        # separately stored cycle 0's INDIRECT gap of an SP whose converged gap
+        # is direct.
+        insulating = [kv for kv in final.values() if kv[0] in ('direct', 'indirect')]
+        if fundamental is not None:
+            if fundamental[0] != 'conducting':
+                props[f'{fundamental[0]}_band_gap'] = fundamental[1]
+                props['band_gap_type'] = fundamental[0]
+        elif insulating and len(insulating) == len(final):
+            kind, value = min(insulating, key=lambda kv: kv[1])
+            props[f'{kind}_band_gap'] = value
+            props['band_gap_type'] = kind
         return props
-    
+
+    def _final_gap_value(self, content: str) -> Optional[float]:
+        """The material's gap after the last SCF (as band_gap reports it)."""
+        p = self._band_gap_properties(content)
+        if 'band_gap' in p:
+            return p['band_gap']
+        # with CRYSTAL's ALPHA/BETA summary: the fundamental gap of the last
+        # SCF (as direct/indirect_band_gap report it), else the smaller channel
+        fundamental = self._fundamental_gap(self._final_scf_blocks(content))
+        if fundamental is not None:
+            return fundamental[1]
+        gaps = [p[k] for k in ('alpha_band_gap', 'beta_band_gap') if k in p]
+        return min(gaps) if gaps else None
+
     def _extract_advanced_electronic_properties(self, content: str) -> Dict[str, Any]:
         """Extract advanced electronic properties like effective mass and transport properties."""
         props = {}
@@ -408,10 +561,9 @@ class CrystalPropertyExtractor:
         # Effective mass estimation from band gaps
         # This is a simplified estimation - real effective mass requires band structure data
         if 'band_gap' in content.lower():
-            gap_matches = re.findall(r'(?:DIRECT|INDIRECT)?\s*(?:ENERGY\s+)?BAND GAP:\s*([\d.]+)\s*eV', content)
-            if gap_matches:
-                band_gap = float(gap_matches[-1])
-                
+            band_gap = self._final_gap_value(content)
+            if band_gap is not None:
+
                 # Simplified effective mass estimation (placeholder for now)
                 # Real implementation would analyze band curvature from BAND calculations
                 if band_gap > 0:
@@ -449,9 +601,8 @@ class CrystalPropertyExtractor:
         
         # Conductivity type from band gap
         if 'band_gap' in content.lower():
-            gap_matches = re.findall(r'(?:DIRECT|INDIRECT)?\s*(?:ENERGY\s+)?BAND GAP:\s*([\d.]+)\s*eV', content)
-            if gap_matches:
-                band_gap = float(gap_matches[-1])
+            band_gap = self._final_gap_value(content)
+            if band_gap is not None:
                 if band_gap < 0.1:
                     props['conductivity_classification'] = 'metallic'
                 elif band_gap < 3.0:
@@ -1180,14 +1331,90 @@ class CrystalPropertyExtractor:
     
     def _extract_material_id_from_filename(self, output_file: Path) -> str:
         """Extract material ID from filename."""
-        filename = output_file.stem
-        # Remove common suffixes
-        for suffix in ['_opt', '_sp', '_band', '_doss', '_freq']:
-            if filename.endswith(suffix):
-                filename = filename[:-len(suffix)]
-                break
-        return filename
+        return db_build.material_id_from_filename(output_file)
     
+    def _material_of_calc(self, calc_id: str) -> Optional[str]:
+        """The material_id of a tracked calculation, or None."""
+        if not self.enable_tracking or self.db is None:
+            return None
+        try:
+            calc = self.db.get_calculation(calc_id)
+        except Exception:
+            return None
+        return (calc or {}).get('material_id') or None
+
+    def _migrate_calc_rows(self, material_id: str, calc_id: str) -> int:
+        """Rows this extractor filed for ``calc_id`` under another material id
+        (the file-name id earlier versions used) move to ``material_id`` by
+        UPDATE; nothing is deleted. A row whose property name the target
+        already has for this calculation stays where it is (moving it would
+        make a duplicate)."""
+        try:
+            with self.db._get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT DISTINCT material_id FROM properties WHERE calc_id = ? AND material_id != ? "
+                    "AND extractor_script = 'crystal_property_extractor.py'", (calc_id, material_id)).fetchall()
+                moved = conn.execute(
+                    "UPDATE properties SET material_id = ? WHERE calc_id = ? AND material_id != ? "
+                    "AND extractor_script = 'crystal_property_extractor.py' AND property_name NOT IN "
+                    "(SELECT property_name FROM properties WHERE material_id = ? AND calc_id = ?)",
+                    (material_id, calc_id, material_id, material_id, calc_id)).rowcount
+        except Exception as e:
+            print(f"⚠️  Error moving earlier properties of {calc_id}: {e}")
+            return 0
+        if moved:
+            old = ", ".join(r[0] for r in rows)
+            print(f"   ↪ moved {moved} rows of {calc_id} from {old} to {material_id}")
+        return moved
+
+    def _fill_placeholder_material(self, material_id: str, properties: Dict[str, Any],
+                                   output_file: Path, calc_id: Optional[str]) -> None:
+        """A material created as a placeholder (formula 'Unknown', by
+        populate_completed_jobs) gets its formula and space group from this
+        run (the existing formula_extractor helpers: the deck's formula, the
+        output's space group). A real formula or space group is never
+        overwritten."""
+        try:
+            with self.db._get_connection() as conn:
+                row = conn.execute("SELECT formula, space_group FROM materials WHERE material_id = ?",
+                                   (material_id,)).fetchone()
+        except Exception:
+            return
+        if not row or row[0] != 'Unknown':
+            return
+        try:
+            try:
+                from mace.utils.formula_extractor import extract_material_info_from_files
+            except ImportError:
+                from formula_extractor import extract_material_info_from_files
+            d12 = None
+            calc = self.db.get_calculation(calc_id) if calc_id else None
+            for cand in ((calc or {}).get('input_file'), Path(output_file).with_suffix('.d12')):
+                if cand and Path(cand).suffix == '.d12' and Path(cand).is_file():
+                    d12 = Path(cand)
+                    break
+            formula, sg = extract_material_info_from_files(d12, None, output_file)
+        except Exception as e:
+            print(f"⚠️  Could not read the formula for {material_id}: {e}")
+            return
+        sg = sg or properties.get('space_group_number')
+        fields, values = [], []
+        if formula:
+            fields.append('formula = ?')
+            values.append(formula)
+        if sg and (row[1] in (None, 1) or row[1] == sg):
+            fields.append('space_group = ?')
+            values.append(int(sg))
+        if not fields:
+            return
+        try:
+            with self.db._get_connection() as conn:
+                conn.execute(f"UPDATE materials SET {', '.join(fields)}, updated_at = ? WHERE material_id = ? "
+                             "AND formula = 'Unknown'", (*values, datetime.now().isoformat(), material_id))
+            print(f"   📝 {material_id}: formula {formula or 'unchanged'}, space group {sg or 'unchanged'}")
+        except Exception as e:
+            print(f"⚠️  Error updating material {material_id}: {e}")
+
     def _find_calc_id_for_output(self, output_file: Path) -> Optional[str]:
         """Find the calculation ID associated with this output file."""
         if not self.enable_tracking or self.db is None:
@@ -1196,37 +1423,13 @@ class CrystalPropertyExtractor:
         # a rule); a scan passes them as found ('LiEC.out' for a scan of '.').
         # Compare every spelling, or no row ever matched and each extraction
         # filed its properties a second time with calc_id NULL.
-        output_file = Path(output_file)
-
-        def spellings(path):
-            forms = {str(path), os.path.abspath(str(path))}
-            try:
-                forms.add(str(path.resolve()))
-            except OSError:
-                pass
-            return sorted(forms)
-
-        outs, dirs = spellings(output_file), spellings(output_file.parent)
+        # An in-place directory holds several calculations: the one whose
+        # input deck has this output's name, and the directory alone only
+        # when it holds just one (db_build.calc_for_output; the dry run of
+        # --register/--skip-unchanged uses the same lookup read-only).
         try:
             with self.db._get_connection() as conn:
-                marks = ",".join("?" * len(outs))
-                row = conn.execute(
-                    f"SELECT calc_id FROM calculations WHERE output_file IN ({marks}) "
-                    "ORDER BY created_at DESC LIMIT 1", outs).fetchone()
-                if row:
-                    return row[0]
-                # An in-place directory holds several calculations: pick the
-                # one whose input deck has this output's name, and use the
-                # directory alone only when it holds just one.
-                marks = ",".join("?" * len(dirs))
-                rows = conn.execute(
-                    f"SELECT calc_id, input_file FROM calculations WHERE work_dir IN ({marks}) "
-                    "ORDER BY created_at DESC", dirs).fetchall()
-                named = [r[0] for r in rows
-                         if r[1] and Path(r[1]).stem == output_file.stem]
-                if named:
-                    return named[0]
-                return rows[0][0] if len(rows) == 1 else None
+                return db_build.calc_for_output(conn, Path(output_file))
         except Exception:
             return None
     
@@ -1249,6 +1452,9 @@ class CrystalPropertyExtractor:
         # Untracked rows (calc_id NULL) are shared by every output of the
         # material, so they cannot be attributed and are left alone.
         if calc_id is not None:
+            # rows earlier versions filed under a file-name id move to the
+            # calculation's material (UPDATE, never DELETE)
+            self._migrate_calc_rows(material_id, calc_id)
             produced = [name for name in properties if not name.startswith('_')]
             try:
                 with self.db._get_connection() as conn:
@@ -1321,6 +1527,9 @@ class CrystalPropertyExtractor:
                     
             except Exception as e:
                 print(f"⚠️  Error saving property {prop_name}: {e}")
+
+        if calc_id is not None and saved_count:
+            self._fill_placeholder_material(material_id, properties, Path(metadata['output_file']), calc_id)
         
         return saved_count
     
@@ -2334,6 +2543,27 @@ class CrystalPropertyExtractor:
         
         return classification
     
+    def _extract_raman_intensities(self, content: str) -> Dict[str, Any]:
+        """Raman intensities of a FREQ run with RAMAN/RAMSPEC: CRYSTAL's
+        "AVERAGED ISOTROPIC INTENSITIES" table (I_tot, I_par, I_perp per mode,
+        normalized to the most intense peak). Self-skipping: {} without it."""
+        head = content.find('AVERAGED ISOTROPIC INTENSITIES')
+        if head < 0:
+            return {}
+        rows = []
+        row = re.compile(r'^\s*(\d+)-\s*(\d+)\s+(-?\d+\.\d+)\s+\(\s*(\S+)\s*\)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s+(-?\d+\.\d+)\s*$')
+        started = False
+        for line in content[head:head + 400000].splitlines()[1:]:
+            m = row.match(line)
+            if m:
+                started = True
+                rows.append({'mode_start': int(m.group(1)), 'mode_end': int(m.group(2)),
+                             'frequency_cm': float(m.group(3)), 'irrep': m.group(4),
+                             'i_tot': float(m.group(5)), 'i_par': float(m.group(6)), 'i_perp': float(m.group(7))})
+            elif started and line.strip() and not line.strip().startswith('-'):
+                break
+        return {'raman_intensities': rows, 'num_raman_modes': len(rows)} if rows else {}
+
     def _extract_frequency_properties(self, content: str) -> Dict[str, Any]:
         """Extract frequency calculation properties."""
         props = {}
@@ -3528,6 +3758,11 @@ def _output_matches_calc_type(output_file: Path, wanted: str) -> bool:
         return False
 
 
+def _json_line(stream, obj) -> None:
+    stream.write(json.dumps(obj) + "\n")
+    stream.flush()
+
+
 def main():
     """Main function."""
     parser = argparse.ArgumentParser(description="Extract properties from CRYSTAL output files")
@@ -3541,16 +3776,56 @@ def main():
     parser.add_argument("--filter-type", help="Only extract properties from specific calculation type")
     parser.add_argument("--fragments", action="store_true",
                         help="Per-fragment Mulliken charges for every run (charged runs get them anyway)")
+    # Building a database from a folder (all opt-in; without them a run is unchanged)
+    parser.add_argument("--register", action="store_true",
+                        help="First record the folder's completed calculations (materials and calculations rows)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Write nothing: list each output as new, changed, unchanged, not tracked, "
+                             "unreadable or incomplete")
+    parser.add_argument("--json", action="store_true", help="With --dry-run: one JSON document")
+    parser.add_argument("--skip-unchanged", action="store_true",
+                        help="Extract only new and changed outputs of tracked calculations")
+    parser.add_argument("--backup", action="store_true",
+                        help="Back up the database into <db dir>/backups before the first write")
+    parser.add_argument("--keep-backups", type=int, default=None,
+                        help="With --backup: keep the newest N backups (1-100, default 3)")
+    parser.add_argument("--progress-json", action="store_true",
+                        help="Machine-readable progress: one JSON line per file on stdout, the rest on stderr")
     
     args = parser.parse_args()
     
     if not args.output_file and not args.scan_directory:
         print("❌ Please specify either --output-file or --scan-directory")
         sys.exit(1)
-    
-    extractor = CrystalPropertyExtractor(args.db_path)
-    extractor.extract_fragments = args.fragments
-    
+    if args.keep_backups is not None and not args.backup:
+        print("❌ --keep-backups needs --backup", file=sys.stderr)
+        sys.exit(2)
+    keep = 3 if args.keep_backups is None else args.keep_backups
+    if not 1 <= keep <= 100:
+        print("❌ --keep-backups is a number from 1 to 100", file=sys.stderr)
+        sys.exit(2)
+    if args.json and not args.dry_run:
+        print("❌ --json goes with --dry-run (use --progress-json for a run)", file=sys.stderr)
+        sys.exit(2)
+    if args.skip_unchanged and not args.register and not db_build.has_tracked(args.db_path):
+        print("❌ --skip-unchanged needs tracked calculations; add --register", file=sys.stderr)
+        sys.exit(2)
+
+    # JSON on stdout (--progress-json, --dry-run --json): everything else,
+    # including what the helpers print, goes to stderr
+    import contextlib
+    machine = args.progress_json or (args.dry_run and args.json)
+    real_stdout = sys.stdout
+    with (contextlib.redirect_stdout(sys.stderr) if machine else contextlib.nullcontext()):
+        _run(args, keep, real_stdout)
+
+
+def _run(args, keep: int, real_stdout) -> None:
+    db_dir = Path(args.db_path).resolve().parent
+    building = args.register or args.backup or args.skip_unchanged or args.dry_run or args.progress_json
+    # structures.db beside materials.db (not in the current directory) when
+    # building from a folder; a plain run keeps MaterialDatabase's default
+    ase_db = str(db_dir / "structures.db") if building else None
     output_files = []
     seen_outputs = []  # every output the run could see, extracted or filtered out
     if args.output_file:
@@ -3582,6 +3857,61 @@ def main():
             print(f"🔍 Found {len(output_files)} output files to process")
     else:
         print(f"🔍 Found {len(output_files)} output files to process")
+
+    scan_root = Path(args.scan_directory) if args.scan_directory else Path(args.output_file).parent
+
+    if args.dry_run:
+        rows = db_build.classify(output_files, args.db_path, register=args.register, scan_dir=scan_root)
+        doc = {"db": str(Path(args.db_path).resolve()), "db_exists": Path(args.db_path).is_file(),
+               "register": args.register, "files": rows, "counts": db_build.counts(rows)}
+        if args.json:
+            _json_line(real_stdout, doc)
+        else:
+            where = "updates" if doc["db_exists"] else "would create"
+            print(f"Dry run ({where} {doc['db']}); nothing is written.")
+            print(db_build.table(rows))
+        return
+
+    # --backup: before the first write; a backup that fails stops the run
+    backup_made = None
+    if args.backup:
+        db_file = Path(args.db_path)
+        if db_file.is_file():
+            try:
+                from mace.database import dbsafety
+            except ImportError:
+                from database import dbsafety
+            try:
+                b = dbsafety.snapshot_backup(db_file, db_dir / "backups", "materials_backup")
+                print(f"💾 Backup: {b}")
+                if (db_dir / "structures.db").is_file():
+                    sb = dbsafety.snapshot_backup(db_dir / "structures.db", db_dir / "backups", "structures_backup")
+                    print(f"💾 Backup: {sb}")
+                pruned = dbsafety.prune_backups(db_dir / "backups", keep=keep)
+                backup_made = str(b)
+                if args.progress_json:
+                    _json_line(real_stdout, {"backup": backup_made, "pruned": pruned})
+            except Exception as e:
+                print(f"❌ The backup failed ({e}); nothing was written.", file=sys.stderr)
+                sys.exit(1)
+        else:
+            print(f"No database at {db_file} yet: nothing to back up.")
+
+    extractor = CrystalPropertyExtractor(args.db_path, ase_db_path=ase_db)
+    extractor.extract_fragments = args.fragments
+
+    if args.register:
+        from mace.database.populate_completed_jobs import scan_for_completed_calculations, populate_database
+        # absolute paths, as `mace submit` records them: a path relative to the
+        # shell's folder is found neither from the database's folder nor by the GUI
+        calcs = scan_for_completed_calculations(scan_root.resolve())
+        added = populate_database(calcs, extractor.db) if calcs else 0
+        print(f"📋 Registered {added} new calculation(s) from {scan_root}")
+
+    classes = {}
+    if args.skip_unchanged or args.progress_json:
+        for r in db_build.classify(output_files, args.db_path, register=False, scan_dir=scan_root):
+            classes[str(r["file"])] = r["class"]
     
     total_properties = 0
     files_processed = 0
@@ -3594,8 +3924,19 @@ def main():
     # with --material-id: outputs given one material by hand can be anywhere.
     run_started = datetime.now().isoformat()
     untracked = {}
+    n_files = len(output_files)
+    summary = {"extracted": 0, "skipped": 0, "failed": 0, "by_class": {}}
     
-    for output_file in output_files:
+    for i, output_file in enumerate(output_files, start=1):
+        cls = classes.get(str(output_file))
+        if cls:
+            summary["by_class"][cls] = summary["by_class"].get(cls, 0) + 1
+        if args.skip_unchanged and cls == "unchanged":
+            summary["skipped"] += 1
+            if args.progress_json:
+                _json_line(real_stdout, {"i": i, "n": n_files, "file": str(output_file), "status": "skipped",
+                                         "properties": 0, "class": cls})
+            continue
         print(f"\n📊 Processing: {output_file}")
         
         # --calc-type filters like --filter-type (a scanned directory was
@@ -3603,6 +3944,10 @@ def main():
         wanted = args.calc_type or (args.filter_type if args.output_file else None)
         if wanted and not _output_matches_calc_type(output_file, wanted):
             print(f"   ⏭️  Skipping - not a {wanted.upper()} calculation")
+            summary["skipped"] += 1
+            if args.progress_json:
+                _json_line(real_stdout, {"i": i, "n": n_files, "file": str(output_file), "status": "skipped",
+                                         "properties": 0, "class": cls})
             continue
         
         properties = extractor.extract_all_properties(
@@ -3610,6 +3955,7 @@ def main():
             material_id=args.material_id,
             calc_id=args.calc_id
         )
+        status, saved_count = "no properties", 0
         
         if properties:
             # Extract material ID from properties if available
@@ -3623,6 +3969,12 @@ def main():
             meta = properties.get('_metadata', {})
             if meta.get('calc_id') is None and saved_count and not args.material_id:
                 untracked.setdefault(meta['material_id'], set()).add(Path(output_file).resolve())
+            if building and meta.get('calc_id') and saved_count:
+                try:
+                    db_build.record_extracted(extractor.db, meta['calc_id'], Path(output_file))
+                except Exception as e:
+                    print(f"   ⚠️  Could not record the extraction of {output_file}: {e}")
+            status = "extracted" if saved_count else "failed"
             print(f"   ✅ Extracted and saved {saved_count} properties")
             if properties.get("fragment_charges"):
                 from mace.utils.ion_fragments import format_fragment_charges
@@ -3630,8 +3982,14 @@ def main():
                     print(f"   {line}")
         else:
             print(f"   ⚠️  No properties extracted")
+        summary["extracted" if status == "extracted" else "failed"] += 1
+        if args.progress_json:
+            _json_line(real_stdout, {"i": i, "n": n_files, "file": str(output_file), "status": status,
+                                     "properties": saved_count, "class": cls})
     
-    for material_id, extracted in untracked.items():
+    # The untracked clean-up needs every output of the material re-extracted:
+    # with --skip-unchanged the extracted set is not complete
+    for material_id, extracted in ({} if args.skip_unchanged else untracked).items():
         siblings = {f.resolve() for f in seen_outputs
                     if extractor._extract_material_id_from_filename(f) == material_id}
         if not siblings <= extracted:
@@ -3652,6 +4010,10 @@ def main():
             print(f"   Material ID: {args.filter_material}")
         if args.filter_type or args.calc_type:
             print(f"   Calculation type: {args.filter_type or args.calc_type}")
+    if args.progress_json:
+        _json_line(real_stdout, {"done": True, "files": n_files, "files_processed": files_processed,
+                                 "properties": total_properties, "materials": len(materials_processed),
+                                 "backup": backup_made, **summary})
 
 
 if __name__ == "__main__":

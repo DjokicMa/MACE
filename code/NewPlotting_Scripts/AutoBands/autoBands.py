@@ -374,9 +374,9 @@ def     ipBANDS(material, E_l, E_u):
             # Read band data
             if alpha_beta_counter == 0:  # Alpha bands
                 data = line.split()
-                if M > 1000 and len(data) != M + 1:
-                    while len(data) != M + 1:
-                        data = np.concatenate([data, next(fb).split()])
+                # CRYSTAL wraps a k-point row after 1000 fields (NBND >= 1000)
+                while len(data) < M + 1:
+                    data = np.concatenate([data, next(fb).split()])
                 E[i] = float(data[0])
                 for j in range(0, M):
                     BANDS[i, j] = (float(data[j + 1]) * 27.2114) + maxV
@@ -384,9 +384,9 @@ def     ipBANDS(material, E_l, E_u):
             
             elif alpha_beta_counter == 1:  # Beta bands
                 data = line.split()
-                if M > 1000 and len(data) != M + 1:
-                    while len(data) != M + 1:
-                        data = np.concatenate([data, next(fb).split()])
+                # CRYSTAL wraps a k-point row after 1000 fields (NBND >= 1000)
+                while len(data) < M + 1:
+                    data = np.concatenate([data, next(fb).split()])
                 Ebeta[ib] = float(data[0])
                 for j in range(0, M):
                     BANDSbeta[ib, j] = (float(data[j + 1]) * 27.2114) + maxV

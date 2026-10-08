@@ -61,7 +61,7 @@ try:
     from mace.queue.manager import EnhancedCrystalQueueManager
     from mace.workflow.engine import WorkflowEngine
     from mace.utils.node_exclusion import (
-        NodeExclusionManager, PLANNER_MENU, menu_choice, menu_default_answer,
+        NodeExclusionManager, PLANNER_MENU, menu_choice, menu_default_answer, site_menu,
     )
 except ImportError:
     try:
@@ -132,6 +132,64 @@ def _report_plan_functionals(plan: Dict[str, Any]) -> None:
     for err in errors:
         ui.err(f"Plan step {err}")
 
+
+
+def _site_plan_resources():
+    """account / module (/ partition / python_modules) for a new plan (mace/submission/site.py)."""
+    from mace.submission import site
+    try:
+        return site.plan_resources()
+    except site.SiteConfigError as exc:
+        ui.err(f"Error: {exc}")
+        raise SystemExit(2)
+
+
+def _site_account():
+    from mace.submission import site
+    return site.account()
+
+
+def _site_overlay(resources, kind):
+    """``resources`` with the site's [resources] job size (site.overlay_resources)."""
+    from mace.submission import site
+    try:
+        return site.overlay_resources(resources, site.load(), kind)
+    except site.SiteConfigError:
+        return resources
+
+
+def clamp_queue_config(max_jobs, reserve):
+    """(max_jobs, reserve): never more than this user's SLURM MaxSubmitJobs
+    allows (mace/submission/site.py clamp_queue, at plan time only)."""
+    from mace.submission import site
+    try:
+        s = site.load()
+        account = site.resolve_account(s)[0]
+        mj, rs, note = site.clamp_queue(max_jobs, reserve, account)
+    except Exception:
+        return max_jobs, reserve
+    if note:
+        site.say_once(note, ui.info)
+    return mj, rs
+
+
+def _site_memory_line(line, resources):
+    from mace.submission import site
+    return site.memory_line(line, resources)
+
+
+def _fallback_account(name):
+    from mace.submission import site
+    return name if site.account_usable(name) else None
+
+
+def _account_label(resources):
+    """The account a step's job script gets, as shown in the planner: the
+    plan's own (None: the SLURM default account), else the site's."""
+    from mace.submission import site
+    if "account" in resources:
+        return site.account_label(resources["account"])
+    return site.account_label(_site_account())
 
 class WorkflowPlanner:
     """
@@ -3882,7 +3940,7 @@ class WorkflowPlanner:
             ui.info(f"          Memory: N/A")
 
         ui.info(f"          Walltime: {default_resources['walltime']}")
-        ui.info(f"          Account: {default_resources.get('account', 'mendoza_q')}")
+        ui.info(f"          Account: {_account_label(default_resources)}")
 
         # Ask user if they want to customize
         customize = yes_no_prompt(
@@ -3935,9 +3993,10 @@ class WorkflowPlanner:
                 "nodes": 1,
                 "walltime": "7-00:00:00",
                 "memory_per_cpu": "5G",
-                "account": "mendoza_q",
-                "module": "CRYSTAL/23-intel-2023a",
                 "scratch_dir": "$SCRATCH/crys23",
+                # account, CRYSTAL module (resolved once, now) and the site's
+                # partition / Python modules: mace/submission/site.py
+                **_site_plan_resources(),
             }
         elif script_name == "submit_prop.sh":
             # From the script analysis: 28 cores, 2 hours, 80G total
@@ -3946,9 +4005,10 @@ class WorkflowPlanner:
                 "nodes": 1,
                 "walltime": "2:00:00",
                 "memory": "80G",
-                "account": "mendoza_q",
-                "module": "CRYSTAL/23-intel-2023a",
                 "scratch_dir": "$SCRATCH/crys23/prop",
+                # account, CRYSTAL module (resolved once, now) and the site's
+                # partition / Python modules: mace/submission/site.py
+                **_site_plan_resources(),
             }
         else:
             # Default fallback
@@ -3957,8 +4017,14 @@ class WorkflowPlanner:
                 "nodes": 1,
                 "walltime": "4:00:00",
                 "memory_per_cpu": "4G",
-                "account": "general",
+                # MSU HPCC's open account, only where the user has it (or it
+                # cannot be checked); else no -A, the SLURM default account
+                "account": _fallback_account("general"),
             }
+
+        # the site's [resources] job size, when set (mace/submission/site.py)
+        if script_name in ("submitcrystal23.sh", "submit_prop.sh"):
+            base_resources = _site_overlay(base_resources, "scf" if script_name == "submitcrystal23.sh" else "prop")
 
         # Apply calculation-specific scaling from workflows.yaml
         scaled_resources = self.apply_calc_type_scaling(base_resources, calc_type)
@@ -4135,13 +4201,11 @@ class WorkflowPlanner:
             if not user_input:
                 return default
 
-            # Valid memory formats: number + optional unit (G, GB, M, MB)
-            pattern = r"^\d+([GMK]B?)?$"
-
-            if re.match(pattern, user_input, re.IGNORECASE):
-                # Normalize the format
-                if user_input.isdigit():
-                    return f"{user_input}G"  # Default to GB if no unit
+            # A number with its unit, G or M (optional B), as `mace submit -i`
+            # takes it. A bare number is refused: it used to become <n>G per
+            # CPU ("4096" -> 4096G, a job that can never be scheduled), and
+            # K was taken although no job needs memory in kilobytes.
+            if re.fullmatch(r"\d+[GM]B?", user_input, re.IGNORECASE):
                 return user_input.upper()
             else:
                 invalid += 1
@@ -4214,7 +4278,7 @@ class WorkflowPlanner:
 
         # Account
         new_account = input(
-            f"          Account [{resources.get('account', 'mendoza_q')}]: "
+            f"          Account [{_account_label(resources)}]: "
         ).strip()
         if new_account:
             resources["account"] = new_account
@@ -4239,6 +4303,13 @@ class WorkflowPlanner:
             "6": "Custom directive",
         }
         from mace.submission.job_array import ARRAY_DIRECTIVE_MESSAGE, is_array_directive
+        from mace.utils.node_exclusion import msu_menus
+        # intel18 is an MSU HPCC node feature: offered (and the example) only
+        # there; the other numbers keep their meaning everywhere
+        example = "--constraint=amd20"
+        if not msu_menus():
+            del common_options["1"]
+            example = "--constraint=<feature>"
 
         ui.info("        Common options:")
         for key, option in common_options.items():
@@ -4274,7 +4345,7 @@ class WorkflowPlanner:
                             break
                         invalid += 1
                         stop_if_out_of_step(invalid, prompt, "an sbatch option starting with -")
-                        ui.warn("        A directive is an sbatch option, e.g. --constraint=amd20")
+                        ui.warn(f"        A directive is an sbatch option, e.g. {example}")
                     if custom:
                         customizations.append(
                             {"directive": custom, "description": "Custom"}
@@ -4292,7 +4363,7 @@ class WorkflowPlanner:
             else:
                 invalid += 1
                 stop_if_out_of_step(invalid, prompt, "1-6 or an sbatch option starting with -")
-                ui.warn("        Enter 1-6, an sbatch option (e.g. --constraint=amd20), "
+                ui.warn(f"        Enter 1-6, an sbatch option (e.g. {example}), "
                         "or press Enter to finish")
 
         return customizations
@@ -4307,12 +4378,13 @@ class WorkflowPlanner:
         ui.info("        " + "="*60)
 
         ui.info("\n        Select node exclusion option:")
-        for line in self.node_manager.menu_lines(PLANNER_MENU):
+        menu = site_menu(PLANNER_MENU)
+        for line in self.node_manager.menu_lines(menu):
             ui.info(f"        {line}")
 
-        choice = menu_choice(PLANNER_MENU, input(
-            f"\n        Enter choice [1-{len(PLANNER_MENU)}] "
-            f"(default: {menu_default_answer(PLANNER_MENU)}): "))
+        choice = menu_choice(menu, input(
+            f"\n        Enter choice [1-{len(menu)}] "
+            f"(default: {menu_default_answer(menu)}): "))
 
         if choice == "none":
             ui.info("        No node exclusions will be applied.")
@@ -4355,20 +4427,21 @@ class WorkflowPlanner:
 
     def _exclude_by_type_prompt(self) -> Optional[str]:
         """Handle exclusion of all nodes by type"""
+        known = self.node_manager.node_types()
         ui.info("\n        Available node types:")
-        for i, node_type in enumerate(self.node_manager.KNOWN_NODE_TYPES, 1):
+        for i, node_type in enumerate(known, 1):
             ui.info(f"        {i}) {node_type}")
-        ui.info(f"        {len(self.node_manager.KNOWN_NODE_TYPES) + 1}) Enter custom type")
+        ui.info(f"        {len(known) + 1}) Enter custom type")
 
         choice = input(
-            f"\n        Select node type [1-{len(self.node_manager.KNOWN_NODE_TYPES) + 1}]: "
+            f"\n        Select node type [1-{len(known) + 1}]: "
         ).strip()
 
         try:
             choice_num = int(choice)
-            if 1 <= choice_num <= len(self.node_manager.KNOWN_NODE_TYPES):
-                node_type = self.node_manager.KNOWN_NODE_TYPES[choice_num - 1]
-            elif choice_num == len(self.node_manager.KNOWN_NODE_TYPES) + 1:
+            if 1 <= choice_num <= len(known):
+                node_type = known[choice_num - 1]
+            elif choice_num == len(known) + 1:
                 node_type = input("        Enter custom node type prefix: ").strip()
             else:
                 ui.err("        Invalid choice.")
@@ -4400,10 +4473,11 @@ class WorkflowPlanner:
 
     def _custom_exclusion_prompt(self) -> Optional[str]:
         """Handle custom node exclusion list"""
+        single, ranges = self.node_manager.node_examples()
         ui.info("\n        Enter nodes to exclude (comma-separated).")
         ui.info("        Examples:")
-        ui.info("          - Single nodes: amr-042,amr-050,nvf-123")
-        ui.info("          - With ranges: amr-[042-050],nvf-[100-110]")
+        ui.info(f"          - Single nodes: {single}")
+        ui.info(f"          - With ranges: {ranges}")
 
         custom_input = input("\n        Nodes to exclude: ").strip()
 
@@ -4502,6 +4576,8 @@ class WorkflowPlanner:
         modified_lines = []
 
         for line in lines:
+            # the site's memory form, when it set one (either template line)
+            site_mem = _site_memory_line(line, resources)
             # Modify resource directives
             if line.startswith("echo '#SBATCH --ntasks="):
                 modified_lines.append(
@@ -4511,6 +4587,8 @@ class WorkflowPlanner:
                 modified_lines.append(
                     f"echo '#SBATCH -t {resources['walltime']}' >> $1.sh"
                 )
+            elif site_mem:
+                modified_lines.append(site_mem)
             elif (
                 line.startswith("echo '#SBATCH --mem-per-cpu=")
                 and "memory_per_cpu" in resources
@@ -4523,9 +4601,11 @@ class WorkflowPlanner:
                     f"echo '#SBATCH --mem={resources['memory']}' >> $1.sh"
                 )
             elif line.startswith("echo '#SBATCH -A ") and "account" in resources:
-                modified_lines.append(
-                    f"echo '#SBATCH -A {resources['account']}' >> $1.sh"
-                )
+                # None: no -A line, SLURM charges the default account (site.py)
+                if resources["account"]:
+                    modified_lines.append(
+                        f"echo '#SBATCH -A {resources['account']}' >> $1.sh"
+                    )
             elif (
                 line.startswith("echo '#SBATCH --constraint=")
                 and "constraint" in resources
@@ -4583,6 +4663,10 @@ class WorkflowPlanner:
 
         # Apply queue management configuration to callback parameters
         content_str = "\n".join(modified_lines)
+        # the plan's partition, CRYSTAL module and Python modules (site.py);
+        # a plan without them (made before site settings) changes nothing
+        from mace.submission.site import customize_workflow_text
+        content_str = customize_workflow_text(content_str, resources)
         
         # Replace hardcoded callback parameters with configured values
         # Pattern: --max-jobs 250 --reserve 30 --max-submit 5
@@ -4853,6 +4937,9 @@ class WorkflowPlanner:
             "max_recovery_attempts": 3 # Error recovery attempts
         }
         
+        # never more than this user's MaxSubmitJobs allows (site.clamp_queue)
+        default_config["max_jobs"], default_config["reserve_slots"] = self._clamp_queue(
+            default_config["max_jobs"], default_config["reserve_slots"])
         ui.info("Default queue management settings:")
         ui.info(f"  • Maximum total jobs: {default_config['max_jobs']}")
         ui.info(f"  • Reserve slots: {default_config['reserve_slots']}")
@@ -4899,11 +4986,18 @@ class WorkflowPlanner:
         config['max_recovery_attempts'] = self.get_safe_integer_input(
             f"   Enter value [{default_config['max_recovery_attempts']}]: ", default_config['max_recovery_attempts'], min_val=0)
         
+        config['max_jobs'], config['reserve_slots'] = self._clamp_queue(config['max_jobs'], config['reserve_slots'])
         ui.info(f"\nQueue management configuration:")
         for key, value in config.items():
             ui.info(f"  {key}: {value}")
             
         return config
+
+    @staticmethod
+    def _clamp_queue(max_jobs: int, reserve: int):
+        """(max_jobs, reserve) lowered to this user's SLURM MaxSubmitJobs
+        when they would exceed it (site.clamp_queue; said once)."""
+        return clamp_queue_config(max_jobs, reserve)
 
     def main_interactive_workflow(self):
         """Main interactive workflow planning interface"""

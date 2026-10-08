@@ -1,0 +1,26 @@
+/* The Volume document (js/docs/volume.js, plan E5): tokens only. */
+.views > #tab-volume.active { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+#tab-volume > .volume-opts { display: none; }
+.volume-host { flex: 1; min-height: 0; display: flex; }
+.vv { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.vv { min-width: 0; overflow: hidden; }
+/* the head never widens the panel: the title and the grid chip give way (ellipsis), the buttons keep their size */
+.vv-head { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-4); border-bottom: 1px solid var(--border); min-width: 0; }
+.vv-head > button { flex: none; }
+.vv-title { flex: 0 1 auto; min-width: 4em; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vv-chip { flex: 1 1 0; min-width: 0; font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vv-view { position: relative; flex: 1; min-height: 120px; }
+.vv-view .viewer { position: absolute; inset: 0; }
+.vv-view .viewer:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.vv-msg { position: absolute; inset: 0; display: grid; place-content: center; gap: var(--s-2); color: var(--text-2); z-index: 2; background: var(--viewport-bg); }
+.vv-msg[hidden], .vv-bar[hidden], .vv-slice[hidden] { display: none; }
+.vv-bar { position: absolute; left: var(--s-4); bottom: var(--s-3); width: min(360px, 60%); z-index: 2; padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--border); border-radius: var(--r-md); background: color-mix(in srgb, var(--surface) 90%, transparent); }
+.vv-grad { height: 10px; border-radius: 3px; border: 1px solid var(--border); }
+.vv-ticks { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--text-2); }
+.vv-legend { color: var(--text-2); }
+.vv-slice { flex: none; height: 38%; min-height: 160px; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+.vv-slice-head { padding: var(--s-1) var(--s-4); }
+.vv-slice-plot { flex: 1; min-height: 0; }
+.vo-stat { margin: 0 0 var(--s-2); font-size: var(--fs-sm); color: var(--text-2); }
+.vo-stat b { color: var(--text); }

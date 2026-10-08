@@ -4,7 +4,7 @@
 module purge >/dev/null 2>&1
 module load CRYSTAL/23-intel-2023a >/dev/null 2>&1
 BASES="$1"; ZLIST="$2"; OUT="$3"
-SCR=/mnt/gs21/scratch/djokicma/basisscan
+SCR="${SCRATCH:-${TMPDIR:-/tmp}}/basisscan"
 mkdir -p "$SCR"
 echo "basis,Z,status,detail" > "$OUT"
 for B in $BASES; do

@@ -1,0 +1,28 @@
+/* The Tasks bottom panel (js/editor/tasks_panel.js), loaded with it. Tokens only. */
+/* one grid for the whole list (rows are subgrids), so the columns line up whatever buttons a row has */
+.task-list { list-style: none; margin: 0; padding: 0; display: grid; column-gap: var(--s-3);
+  grid-template-columns: 76px minmax(160px, 2fr) minmax(80px, 1fr) 56px minmax(100px, 1.5fr) max-content; }
+.task-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid;
+  align-items: center; min-height: var(--h-row); padding: var(--s-1) var(--s-2);
+  border-bottom: 1px solid var(--border); font-size: var(--fs-sm); }
+.task-row:last-child { border-bottom: 0; }
+.task-chip { justify-self: start; padding: 1px var(--s-2); border-radius: var(--r-sm); font-size: var(--fs-xs); font-weight: 600;
+  background: var(--surface-3); color: var(--text-2); white-space: nowrap; }
+.task-row.s-running .task-chip, .task-row.s-queued .task-chip { background: var(--accent-soft); color: var(--accent); }
+.task-row.s-done .task-chip { color: var(--success); }
+.task-row.s-failed .task-chip { background: var(--danger); color: var(--on-danger); }
+.task-row.s-lost .task-chip { color: var(--warning); }
+.task-title, .task-log { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-log { color: var(--text-2); }
+.task-row.s-failed .task-log { color: var(--danger); }
+.task-bar { height: 4px; border-radius: 2px; background: var(--task-track); overflow: hidden; }
+.task-bar > span { display: block; height: 100%; background: var(--task-bar); transition: width var(--dur-2) var(--ease); }
+.task-row.s-failed .task-bar > span { background: var(--danger); }
+.task-row.s-canceled .task-bar > span { background: var(--text-3); }
+.task-time { color: var(--text-2); text-align: right; }
+.task-acts { display: flex; gap: var(--s-1); justify-content: flex-end; }
+.task-acts .tb-btn-text { height: 24px; padding: 0 var(--s-2); }
+.task-tb { display: none; grid-column: 1 / -1; margin: var(--s-1) 0 var(--s-2); padding: var(--s-2) var(--s-3); max-height: 180px;
+  overflow: auto; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md);
+  font-size: var(--fs-xs); white-space: pre-wrap; color: var(--text); }
+.task-row.details-open .task-tb { display: block; }

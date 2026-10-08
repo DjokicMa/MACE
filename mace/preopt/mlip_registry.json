@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "models": [
+    {
+      "id": "acesuit-mace-mpa-0-medium",
+      "label": "MACE-MPA-0 (ACEsuit mace-torch)",
+      "unrelated_note": "ML potential from ACEsuit's mace-torch; not part of, and unrelated to, this MACE tool",
+      "backend": "mace_mp",
+      "default": true,
+      "code": {
+        "package": "mace-torch",
+        "pin": "mace-torch==0.3.16",
+        "license": "MIT",
+        "license_text_url": "https://raw.githubusercontent.com/ACEsuit/mace/849f7e505ae386ff433c9c37eae4a666494feb5f/LICENSE.md"
+      },
+      "weights": {
+        "license": "MIT",
+        "license_text_url": "https://raw.githubusercontent.com/ACEsuit/mace-foundations/a2e6dec371933d3323a4439c37a8c51bfb4908f0/LICENSE",
+        "url": "https://huggingface.co/mace-foundations/mace-mpa-0/resolve/066a0b68ddd0154110b065c3c64a564b60f368fc/mace-mpa-0-medium.model",
+        "mirror_url": "https://github.com/ACEsuit/mace-foundations/releases/download/mace_mpa_0/mace-mpa-0-medium.model",
+        "sha256": "75428afe3a1d7d8062e19bcaabd5c433623cabf308242ec9fb493e38604fb638",
+        "size_bytes": 79462305,
+        "filename": "mace-mpa-0-medium.model"
+      },
+      "training_data": [
+        "MPtrj (Materials Project trajectories, CC BY 4.0; Materials Project terms of use)",
+        "sAlex (subset of Alexandria, CC BY 4.0)"
+      ],
+      "citation": [
+        {"text": "I. Batatia et al., A foundation model for atomistic materials chemistry, arXiv:2401.00096", "doi": "10.48550/arXiv.2401.00096"},
+        {"text": "I. Batatia et al., MACE: Higher order equivariant message passing neural networks for fast and accurate force fields, NeurIPS 2022", "doi": "10.48550/arXiv.2206.07697"}
+      ],
+      "data_citation": [
+        {"text": "Alexandria database: Th. Cavignac, J. Schmidt et al., AI-Driven expansion and application of the Alexandria database, J. Phys. Mater. 9, 025014 (2026)", "doi": "10.1088/2515-7639/ae6620"},
+        {"text": "sAlex subset: L. Barroso-Luque et al., Open Materials 2024 (OMat24) Inorganic Materials Dataset and Models, arXiv:2410.12771", "doi": "10.48550/arXiv.2410.12771"}
+      ],
+      "defaults": {"dtype": "float32", "fmax": 0.02, "steps": 300, "time_limit": 120},
+      "limits": "PBE-like: lattice ~1% too large; takes no charge or spin input; trained on MP GGA/GGA+U data, so magnetic order and +U are implicit and averaged"
+    },
+    {
+      "id": "chgnet-0.3.0",
+      "label": "CHGNet 0.3.0",
+      "unrelated_note": "ML potential from the chgnet package (Ceder group); not part of this MACE tool",
+      "backend": "chgnet",
+      "fallback": true,
+      "code": {
+        "package": "chgnet",
+        "pin": "chgnet==0.4.2",
+        "license": "BSD-3-Clause-LBNL",
+        "license_text_url": "https://raw.githubusercontent.com/CederGroupHub/chgnet/fb289840fc81c28226a5f0e5d186d933ca6ad817/LICENSE"
+      },
+      "weights": {"license": "BSD-3-Clause-LBNL", "bundled_in": "chgnet wheel (model 0.3.0)"},
+      "training_data": ["MPtrj (Materials Project trajectories, CC BY 4.0; Materials Project terms of use)"],
+      "citation": [
+        {"text": "B. Deng et al., CHGNet as a pretrained universal neural network potential for charge-informed atomistic modelling, Nat. Mach. Intell. 5, 1031 (2023)", "doi": "10.1038/s42256-023-00716-3"}
+      ],
+      "defaults": {"dtype": "float32", "fmax": 0.02, "steps": 300, "time_limit": 120},
+      "limits": "PBE-like; takes no charge or spin input (its magnetic-moment head is not used); trained on MP GGA/GGA+U data"
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+/* MACE GUI design tokens: the only file with literal colors (besides the
+ * element color tables). Light is the default; dark applies with the OS
+ * setting unless the user picked light, or when the user picked dark.
+ * WCAG 2.1 AA, checked by tests/gui/test_tokens_contrast.py: text and
+ * status colors at least 4.5:1 on every surface, the focus ring and
+ * control borders (--border-strong) at least 3:1. */
+:root {
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  --fs-xs: 11px; --fs-sm: 12px; --fs-md: 13px; --fs-lg: 15px; --fs-xl: 18px; --fs-2xl: 24px;
+  --s-0: 2px; --s-1: 4px; --s-2: 6px; --s-3: 8px; --s-4: 12px; --s-5: 16px; --s-6: 20px;
+  --s-7: 24px; --s-8: 32px; --s-9: 48px;
+  --r-xs: 3px; --r-sm: 4px; --r-md: 6px; --r-lg: 8px; --r-xl: 12px;
+  --h-menubar: 32px; --h-toolbar: 40px; --h-tabs: 34px; --h-status: 24px;
+  --h-row: 28px; --h-control: 28px; --icon: 16px; --icon-tb: 18px;
+  --dur-1: 80ms; --dur-2: 140ms; --dur-3: 200ms; --ease: cubic-bezier(.2, 0, 0, 1);
+
+  --bg: #f3f4f6; --surface: #ffffff; --surface-2: #f7f8fa; --surface-3: #eef0f4;
+  --border: #e3e6eb; --border-strong: #848b97;
+  --text: #15181e; --text-2: #545b67; --text-3: #636a76;
+  --accent: #2563eb; --accent-hover: #1d4ed8; --accent-soft: #ebf2ff; --on-accent: #ffffff;
+  --focus: #2563eb; --sel: #f59e0b; --hover-atom: #2563eb; --measure: #c026d3;
+  --success: #137336; --danger: #b91c1c; --warning: #a54b07; --info: #0369a1;
+  --on-danger: #ffffff;
+  --viewport-bg: #ffffff; --cell: #334155; --ghost: #9aa3b2; --plot-bg: #ffffff;
+  /* Settings › Viewport › Background: White / Black (the same in both themes) */
+  --viewport-white: #ffffff; --viewport-black: #000000;
+  --axis-a: #dc2626; --axis-b: #15803d; --axis-c: #2563eb;
+  --scrollbar: #c4c9d2; --scrollbar-track: transparent;
+  --e1: 0 1px 2px rgb(16 24 40 / .06);
+  --e2: 0 4px 12px rgb(16 24 40 / .10), 0 1px 3px rgb(16 24 40 / .06);
+  --e3: 0 16px 48px rgb(16 24 40 / .18);
+  --overlay: rgb(16 24 40 / .28);
+  /* file-kind chips: white text on each hue is at least 4.5:1 (WCAG AA) */
+  --k-cif: #047857; --k-d12: #7c3aed; --k-d3: #9333ea; --k-out: #2563eb; --k-band: #db2777;
+  --k-dos: #c2410c; --k-db: #0e7490; --k-json: #64748b; --k-image: #a16207; --k-on: #ffffff;
+  --k-ir: #0f766e; --k-raman: #9d174d; --k-freq: #b45309;
+  /* plot series */
+  --plot-1: #e5484d; --plot-2: #30a46c; --plot-3: #f59e0b; --plot-4: #8b5cf6; --plot-5: #0891b2;
+  --plot-6: #db2777; --plot-7: #65a30d; --plot-8: #ea580c; --plot-9: #64748b; --plot-10: #2563eb;
+  --fallback-atom: #888888;
+  /* volumes (plan E5): the two lobes, and the potential's diverging scale (RdBu, as mace plotting --cube) */
+  --vol-plus: #2563eb; --vol-minus: #dc2626; --mep-pos: #b2182b; --mep-mid: #f7f7f7; --mep-neg: #2166ac;
+  /* Compare (plan B7): the ghost, the two tones, and a viridis-like sequential scale
+   * (stops sampled from matplotlib's BSD-licensed viridis table) */
+  --cmp-ghost-opacity: 0.35; --cmp-ghost-lift: 0; --cmp-a: #2563eb; --cmp-b: #ea580c;
+  --seq-0: #440154; --seq-1: #472d7b; --seq-2: #3b528b; --seq-3: #2c728e; --seq-4: #21918c;
+  --seq-5: #28ae80; --seq-6: #5ec962; --seq-7: #addc30; --seq-8: #fde725;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1014; --surface: #16191f; --surface-2: #1c2028; --surface-3: #232833;
+    --border: #2a303b; --border-strong: #6b7383;
+    --text: #e7e9ee; --text-2: #a3abb8; --text-3: #8f97a4;
+    --accent: #6ea2ff; --accent-hover: #8db6ff; --accent-soft: #1b2a47; --on-accent: #0a1020;
+    --focus: #8db6ff; --sel: #fbbf24; --hover-atom: #8db6ff; --measure: #e879f9;
+    --success: #4ade80; --danger: #f87171; --warning: #fbbf24; --info: #38bdf8; --on-danger: #0a1020;
+    --viewport-bg: #0f1217; --cell: #8aa4d6; --ghost: #6f7785; --plot-bg: #16191f;
+    --axis-a: #f87171; --axis-b: #4ade80; --axis-c: #60a5fa;
+    --scrollbar: #3a4150;
+    --e1: 0 1px 2px rgb(0 0 0 / .5), 0 0 0 1px #3a4150;
+    --e2: 0 4px 12px rgb(0 0 0 / .5), 0 0 0 1px #3a4150;
+    --e3: 0 16px 48px rgb(0 0 0 / .5), 0 0 0 1px #3a4150;
+    --overlay: rgb(0 0 0 / .5);
+    --k-cif: #0b7a55; --k-d12: #6d28d9; --k-d3: #7c3aed; --k-out: #1d4ed8; --k-band: #be185d;
+    --k-dos: #c2410c; --k-db: #0e7490; --k-json: #475569; --k-image: #854d0e;
+    --k-ir: #0f766e; --k-raman: #9d174d; --k-freq: #92400e;
+    --cmp-ghost-opacity: 0.6; --cmp-ghost-lift: 0.65; --cmp-a: #60a5fa; --cmp-b: #fb923c;
+    --seq-0: #3b528b; --seq-1: #33638d; --seq-2: #2c728e; --seq-3: #26828e; --seq-4: #21918c;
+    --seq-5: #1fa088; --seq-6: #3bbb75; --seq-7: #7ad151; --seq-8: #fde725;
+    --ghost-opacity: 0.5;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1014; --surface: #16191f; --surface-2: #1c2028; --surface-3: #232833;
+  --border: #2a303b; --border-strong: #6b7383;
+  --text: #e7e9ee; --text-2: #a3abb8; --text-3: #8f97a4;
+  --accent: #6ea2ff; --accent-hover: #8db6ff; --accent-soft: #1b2a47; --on-accent: #0a1020;
+  --focus: #8db6ff; --sel: #fbbf24; --hover-atom: #8db6ff; --measure: #e879f9;
+  --success: #4ade80; --danger: #f87171; --warning: #fbbf24; --info: #38bdf8; --on-danger: #0a1020;
+  --viewport-bg: #0f1217; --cell: #8aa4d6; --ghost: #6f7785; --plot-bg: #16191f;
+  --axis-a: #f87171; --axis-b: #4ade80; --axis-c: #60a5fa;
+  --scrollbar: #3a4150;
+  --e1: 0 1px 2px rgb(0 0 0 / .5), 0 0 0 1px #3a4150;
+  --e2: 0 4px 12px rgb(0 0 0 / .5), 0 0 0 1px #3a4150;
+  --e3: 0 16px 48px rgb(0 0 0 / .5), 0 0 0 1px #3a4150;
+  --overlay: rgb(0 0 0 / .5);
+  --k-cif: #0b7a55; --k-d12: #6d28d9; --k-d3: #7c3aed; --k-out: #1d4ed8; --k-band: #be185d;
+  --k-dos: #c2410c; --k-db: #0e7490; --k-json: #475569; --k-image: #854d0e;
+  --k-ir: #0f766e; --k-raman: #9d174d; --k-freq: #92400e;
+  --cmp-ghost-opacity: 0.6; --cmp-ghost-lift: 0.65; --cmp-a: #60a5fa; --cmp-b: #fb923c;
+  --seq-0: #3b528b; --seq-1: #33638d; --seq-2: #2c728e; --seq-3: #26828e; --seq-4: #21918c;
+  --seq-5: #1fa088; --seq-6: #3bbb75; --seq-7: #7ad151; --seq-8: #fde725;
+  --ghost-opacity: 0.5;
+  color-scheme: dark;
+}
+:root[data-density="compact"] { --h-row: 24px; --h-control: 24px; }
+:root[data-motion="reduce"] { --dur-1: 0ms; --dur-2: 0ms; --dur-3: 0ms; }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) { --dur-1: 0ms; --dur-2: 0ms; --dur-3: 0ms; }
+}
+/* the editor's viewport overlays (css/editor.css): built from the tokens above, so both themes follow */
+:root {
+  --ghost-opacity: 0.3;
+  --lod-badge-bg: color-mix(in srgb, var(--surface) 85%, transparent);
+  --chip-bg: color-mix(in srgb, var(--surface) 92%, transparent);
+  --sel-soft: color-mix(in srgb, var(--sel) 22%, transparent);
+  /* text on an element's own color (the periodic table): the same in both themes */
+  /* pure black and white: one of the two always reaches 4.58:1 on any element color */
+  --on-light-fill: #000000; --on-dark-fill: #ffffff;
+  /* Phase 4: task progress, the drop target, previews */
+  --task-bar: var(--accent); --task-track: color-mix(in srgb, var(--accent) 16%, transparent);
+  --drop-border: var(--accent); --drop-bg: color-mix(in srgb, var(--accent-soft) 72%, transparent);
+  --preview-cell: var(--accent);
+}
+/* names the classic stylesheet used, kept as aliases */
+:root {
+  --line: var(--border); --line-strong: var(--border-strong); --muted: var(--text-2);
+  --accent-text: var(--on-accent); --good: var(--success); --bad: var(--danger); --warn: var(--warning);
+  --viewer-bg: var(--viewport-bg); --shadow: var(--e1); --radius: var(--r-lg);
+  --mono: var(--font-mono); --sans: var(--font-sans);
+}
+html { scrollbar-color: var(--scrollbar) var(--scrollbar-track); scrollbar-width: thin; }

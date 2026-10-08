@@ -75,6 +75,12 @@ def copy_dependencies(target_dir: str = "."):
                 "executor.py",  # was workflow_executor.py
             ]
         },
+        "Pre-optimization": {
+            "source_dir": base_dir / "preopt",
+            "files": [
+                "deckscan.py",  # ion_charges reads its table of geometry edits
+            ]
+        },
         "Recovery": {
             "source_dir": base_dir / "recovery",
             "files": [

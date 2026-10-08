@@ -457,18 +457,22 @@ def read_band_data(band_file, potc_dat=None, potc_out=None):
                 continue
             if alpha_beta_counter == 0:
                 data = line.split()
-                if M > 1000:
-                    while len(data) != M + 1:
-                        data = np.concatenate([data, next(fb).split()])
+                # CRYSTAL writes at most 1000 fields per line (k + 999 bands)
+                # and continues the k-point on the next line, so a row with
+                # NBND >= 1000 is short until stitched.
+                while len(data) < M + 1:
+                    data = np.concatenate([data, next(fb).split()])
                 E[i] = float(data[0])
                 for j in range(0, M):
                     BANDS[i, j] = (float(data[j + 1]) * 27.2114) + maxV
                 i = i + 1
             if alpha_beta_counter == 1:
                 data = line.split()
-                if M > 1000:
-                    while len(data) != M + 1:
-                        data = np.concatenate([data, next(fb).split()])
+                # CRYSTAL writes at most 1000 fields per line (k + 999 bands)
+                # and continues the k-point on the next line, so a row with
+                # NBND >= 1000 is short until stitched.
+                while len(data) < M + 1:
+                    data = np.concatenate([data, next(fb).split()])
                 Ebeta[ib] = float(data[0])
                 for j in range(0, M):
                     BANDSbeta[ib, j] = (float(data[j + 1]) * 27.2114) + maxV

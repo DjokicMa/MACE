@@ -26,13 +26,17 @@ from pathlib import Path
 # shadow it -- goes onto sys.path; use `mace.queue`, never bare `queue`.)
 from mace import __version__
 
+# The environment exactly as the shell gave it, before MACE changes anything:
+# what `mace gui` submits jobs with (a GUI submit equals a shell submit).
+MACE_LOGIN_ENV = dict(os.environ)
+
 # Job scripts generated from here pin their completion callback to this
 # install; MACE_HOME is what the workflow's generator copies pin.
 from mace.utils.install_home import pin_install_home
 pin_install_home()
 
 # Add MACE package to Python path
-MACE_DIR = Path(__file__).parent / "mace"
+MACE_DIR = Path(__file__).resolve().parent / "mace"
 sys.path.insert(0, str(MACE_DIR))
 
 # Import banner/credits + the ui visual-layer facade. The ui facade renders the
@@ -580,7 +584,10 @@ def show_recover_action_help(action):
         'recover': """
 Usage: mace recover --action recover [options]
 
-Detect and fix errors in failed calculations.
+Detect errors in failed tracked calculations and prepare fixed inputs and
+job scripts. Nothing is submitted: submit them with mace submit (the exact
+commands are printed at the end), or let the queue manager resubmit
+tracked runs.
 
 Options:
   --max-recoveries N    Maximum total recovery attempts (default: 10)
@@ -630,6 +637,116 @@ Write the default error-recovery configuration file (equivalent to
 # Commands handed straight to a script's own argparse: `mace X --help` is
 # that script's help (examples included), named `mace X` by argv[0].
 PASSTHROUGH_COMMANDS = ('convert', 'opt2d12', 'opt2d3', 'opt2cif', 'completion', 'ions')
+
+
+# ------------------------------------------------------------ command registry
+# A new top-level command goes in COMMANDS AND in one COMMAND_GROUPS entry
+# (tests/test_cli_groups.py fails otherwise). A new subcommand worth naming
+# (e.g. `site check`) goes in that command's one-liner here.
+COMMANDS = ['workflow', 'submit', 'run', 'site', 'preflight', 'preopt', 'mlip', 'defects', 'phonopy', 'monitor',
+            'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif', 'ions', 'completion', 'status', 'queue',
+            'manager', 'recover', 'database', 'engine', 'plotting', 'gui', 'cluster', 'help', 'credits', 'version']
+
+# (key for `mace help KEY`, title, purpose or "", [(command, one-liner, extra lines)])
+COMMAND_GROUPS = (
+    ("workflows", "Automated workflows", "plan the steps once; MACE submits each next step", [
+        ("workflow", "Plan and run multi-step workflows - OPT, SP, BAND/DOSS, FREQ...", ()),
+        ("engine", "Advance workflows: process finished runs, submit the next step", ()),
+        ("manager", "Tracking queue manager - materials.db records, submission cycles", ()),
+        ("recover", "Prepare fixes for failed tracked runs (SHRINK, memory, SCF)", ()),
+    ]),
+    ("monitoring", "Monitoring", "your calculations and the cluster", [
+        ("monitor", "What MACE tracks (materials.db) - live dashboard, or --status", ()),
+        ("completion", "Outputs in a folder, no database - finished, failed, running", ()),
+        ("cluster", "The cluster from SLURM - nodes, limits, quotas, a job's progress", ()),
+    ]),
+    ("manual", "Manual calculations", "build decks, check them, submit or run them", [
+        ("convert", "CIF to D12 - supports all CRYSTAL basis sets and functionals", ()),
+        ("opt2d12", "D12 decks from a finished run - SP, FREQ and more, settings kept", ()),
+        ("opt2d3", "D3 property decks from a finished run - BAND, DOSS, TRANSPORT...", ()),
+        ("opt2cif", "CIF from a finished run - any dimensionality or calculation type", ()),
+        ("preflight", "Check D12 decks with CRYSTAL's TESTPDIM before you spend a job", ()),
+        ("submit", "Submit D12/D3 decks to SLURM as written (--array, --track, ...)", ()),
+        ("run", "Run decks on this node now, no SLURM - small SP, BAND/DOSS...", ()),
+    ]),
+    ("results", "Results", "extract, analyze, plot and query", [
+        ("analyze", "Outputs into materials.db (gaps, energies); --convergence FILE", ()),
+        ("plotting", "Plots - bands, DOS, structures, cube volumetrics, FREQ, IR/Raman", ()),
+        ("database", "Query materials.db - search, compare, export (CSV, Excel, ...)", ()),
+    ]),
+    ("special", "Special systems and structure tools", "", [
+        ("preopt", "A better starting geometry for a CIF/D12 (springs, GFN-FF, ML)", ()),
+        ("mlip", "ML potentials for preopt - list, set up the environment, fetch", ()),
+        ("defects", "Point-defect deck sets (charge states, calibration) and analysis", ()),
+        ("ions", "Charged systems - CHEMOD/DOPING/SPIN for ions and charged cells", ()),
+        ("phonopy", "Phonons with phonopy - displaced supercells, then bands and DOS", ()),
+    ]),
+    ("gui", "GUI", "", [
+        ("gui", "The MACE GUI in your browser - structures, plots, database, setup", (
+            "--slurm      run it as a SLURM batch job on a compute node",
+            "connect      start it on a cluster node from your computer",
+            "login-url    a new one-time sign-in link for a running GUI",
+            "diagnostics  the server's part of a bug report (no GUI needed)")),
+    ]),
+    ("setup", "Setup and information", "run `mace site` first on a new cluster", [
+        ("site", "Show the site settings for job scripts (--init, check)", ()),
+        ("help", "This list, one group (mace help monitoring) or one command", ()),
+        ("version", "Show the MACE version (same as --version)", ()),
+        ("credits", "Show the development team (same as --credits)", ()),
+    ]),
+    ("aliases", "Aliases and deprecated", "(they keep working)", [
+        ("status", "Same as 'mace monitor --status'", ()),
+        ("queue", "Deprecated - use 'mace manager'", ()),
+    ]),
+)
+
+WHICH_JOBS_HELP = """Which command shows my jobs?
+  mace monitor             calculations MACE tracks (workflows, submit --track)
+  mace completion          any CRYSTAL outputs in a folder, tracked or not
+  mace cluster job ID      one SLURM job: state, progress, ETA, walltime risk
+  mace manager --status    the SLURM queue: running, pending, free slots
+  You seldom run engine or manager yourself: when a tracked job ends, its
+  script runs the manager's completion step, which records the result,
+  recovers a failure and submits the workflow's next step through the engine."""
+
+QUICK_START_HELP = """Quick start:
+  mace gui --dir . --open           # the MACE GUI in your browser
+  mace workflow --interactive       # automated: plan the steps, MACE runs them
+  mace monitor                      # live dashboard of tracked calculations
+  mace site                         # new cluster: account, partition, CRYSTAL
+  mace convert --cif_dir ./cifs     # manual: CIFs to D12 decks
+  mace submit ./cifs                # submit those decks to SLURM
+  mace completion -d ./cifs         # which runs finished or failed
+  mace plotting                     # plot what is in this folder"""
+
+MORE_HELP = """More help:
+  mace <command> --help             # one command's options and examples
+  mace help <group>                 # workflows, monitoring, manual, results,
+                                    # special, gui, setup, aliases
+  docs/cli.md (groups and reference), docs/gui.md, DOCUMENTATION.md"""
+
+
+def _format_command_groups(keys=None):
+    """The grouped command list (all groups, or the ones named by key)."""
+    blocks = []
+    for key, title, purpose, entries in COMMAND_GROUPS:
+        if keys is not None and key not in keys:
+            continue
+        if purpose.startswith("("):
+            head = f"{title} {purpose}"
+        else:
+            head = f"{title} - {purpose}" if purpose else title
+        lines = [head]
+        for name, line, extra in entries:
+            lines.append(f"  {name:<12}{line}")
+            lines.extend(f"                {x}" for x in extra)
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
+GENERAL_HELP_EPILOG = ("\nCommands, grouped from automated workflows to manual steps (mace help GROUP):\n\n"
+                       + _format_command_groups() + "\n\n" + WHICH_JOBS_HELP + "\n\n" + QUICK_START_HELP
+                       + "\n\n" + MORE_HELP + "\n")
 
 # Curated help for the commands whose `--help` mace_cli answers itself. A
 # command forwarded to a script's own argparse (PASSTHROUGH_COMMANDS) must
@@ -703,10 +820,11 @@ Options:
                        resubmissions are normal jobs and are not limited.
 
 Node Exclusion Options (mutually exclusive):
-  --exclude-amd20      Exclude all AMD20 nodes (amr + nvf types) [RECOMMENDED]
-  --exclude-mendoza    Exclude Mendoza group nodes
-  --exclude-type TYPE  Exclude all nodes of specific type (amr, nvf, agg, etc.)
-  --exclude-nodes STR  Custom node exclusion (e.g., "amr-042,amr-050" or "amr-[042-050]")
+  --exclude-type TYPE  Exclude all nodes named TYPE-<number> (e.g. TYPE node)
+  --exclude-nodes STR  Custom node exclusion (e.g., "node-042,node-050" or "node-[042-050]")
+  --exclude-amd20      MSU HPCC only: exclude all AMD20 nodes (amr + nvf types)
+  --exclude-mendoza    MSU HPCC only: exclude the Mendoza group's nodes (members
+                       of its account)
 
 Examples:
   # Basic submission
@@ -719,10 +837,9 @@ Examples:
   mace submit -i calculation.d12
 
   # With node exclusion
-  mace submit --exclude-amd20 calculation.d12
-  mace submit --exclude-type amr my_calculations/
-  mace submit --exclude-nodes "amr-042,amr-050" calculation.d12
-  mace submit -i --exclude-mendoza my_calculations/
+  mace submit --exclude-type node my_calculations/
+  mace submit --exclude-nodes "node-042,node-050" calculation.d12
+  mace submit -i --exclude-nodes "node-[042-050]" my_calculations/
 
   # Other options
   mace submit --nosubmit my_calculations/
@@ -750,12 +867,30 @@ scancel 12345678_7 cancels that task, scancel 12345678 cancels every task.
 The array's files (manifest, wrapper, per-task logs) are in .mace_arrays/.
 To run decks on the node you are on (a dev node, no SLURM), use: mace run
 """,
+    'site': """
+mace site - Show the site settings MACE writes into the job scripts it generates
+
+Usage:
+  mace site [--json] [--refresh] [--init]
+  mace site check [--partition P] [--account A] [--kind scf|prop|both] [--no-sbatch] [--json]
+
+The SLURM account, partition, QOS, constraint and extra directives, the job
+size, how CRYSTAL is started (mpirun or srun), the CRYSTAL module (with a
+fallback within the same major version when it does not load here) or
+directory, the Python modules and the scratch directory, from the
+environment (MACE_SLURM_ACCOUNT, MACE_SLURM_PARTITION, MACE_CRYSTAL_MODULE,
+...), then ~/.config/mace/site.toml (MACE_SITE_CONFIG names another file),
+then group files (/etc/mace/site.toml, or MACE_SITE_GROUP_CONFIG), then the
+built-in values. mace site check tests them on this cluster (with sbatch
+--test-only) before your first real job. MACE submits with SLURM only (PBS,
+Torque and LSF: MACE 1.2 or later). See docs/cli.md, "Site settings".
+""",
     'run': """
 Usage: mace run [files/directories] [options]
 
-Run CRYSTAL decks now, on the node you are on - an HPCC dev node - without
-SLURM. For calculations that take seconds or minutes: a MATDUMP, BAND/DOSS/POTC
-properties, a small SP, a quick rerun.
+Run CRYSTAL decks now, on the node you are on - an interactive or development
+node of your cluster - without SLURM. For calculations that take seconds or
+minutes: a MATDUMP, BAND/DOSS/POTC properties, a small SP, a quick rerun.
 
 Each deck runs through the job script mace submit would submit (written to
 .mace_local/<job>.sh beside the deck), so it is staged, run in its own scratch
@@ -771,9 +906,7 @@ Arguments:
 Options:
   -n, --cores N         MPI ranks (default: 4, or fewer on a smaller machine;
                         1 to 16 - dev nodes are shared, 4-8 is polite)
-  --timeout T           Wall time per deck: 90s, 30m, 1h or H:MM:SS
-                        (default: 30m; at most 1h55m, as HPCC dev nodes stop
-                        any process after 2 hours of CPU time)
+  --timeout T           {RUN_TIMEOUT_HELP}
   --track               Record the runs in ./materials.db, as mace submit --track
                         (no SLURM job id; a failure is never resubmitted)
   --dry-run             Print the order, scratch directories and .f9 hand-offs;
@@ -789,9 +922,10 @@ Ctrl-C (or a lost connection, or the timeout) stops the running deck at once,
 all its CRYSTAL processes included; nothing is copied back, and its scratch
 directory is kept. Decks reuse $SCRATCH/crys23/<job> as SLURM jobs do.
 
-Refused: on the login gateway (log in to a dev node: ssh dev-amd20, dev-amd24
-or dev-intel18), inside a SLURM job, and where the CRYSTAL/23-intel-2023a
-module cannot be loaded. OPT and FREQ decks rarely fit; they get a warning.
+Refused: on a login node (log in to an interactive or development node
+first), inside a SLURM job, and where the CRYSTAL module of the job scripts
+(mace site shows it) cannot be loaded. OPT and FREQ decks rarely fit; they get
+a warning.
 
 Exit codes:
   0    every deck completed
@@ -839,8 +973,8 @@ Examples:
 
 Note: needs the serial `crystal` binary (not Pcrystal). It is found from
 --crystal-bin, $MACE_CRYSTAL_BIN, $EBROOTCRYSTAL/bin/crystal, PATH, or by
-loading the CRYSTAL/23-intel-2023a module. Run it on a compute node, or on a
-login node only for a handful of decks.
+loading the CRYSTAL module of the job scripts (mace site shows it). Run it on
+a compute node, or on a login node only for a handful of decks.
 """,
     'defects': """
 Usage: mace defects {build,potc,analyze} [options]
@@ -864,6 +998,230 @@ Makov-Payne image-charge term when a dielectric constant is given (otherwise
 they are labeled uncorrected for image charges). The --calibrate decks are an
 optional cross-check; POTC alignment is opt-in. See docs/defects/README.md, and
 `mace defects analyze --help`.
+""",
+    'preopt': """
+Usage: mace preopt INPUT.cif|INPUT.d12 [--method springs|gfnff|mlip:ID|auto] [-o OUTDIR] [options]
+
+Pre-optimize a structure into a better STARTING geometry for CRYSTAL. The
+result is never a final structure: CRYSTAL still optimizes it, and the next
+CRYSTAL step must be an OPT. Nothing about the calculation is touched - no
+OPTGEOM, functional, basis, tolerances, SPIN or charge keywords; only the
+geometry is written: OUTDIR/<stem>_preopt.cif (in the input's own space group
+and setting when the run kept it) plus OUTDIR/<stem>_preopt.json (provenance).
+
+Methods:
+  springs        rough spring model, always available (default)
+  gfnff          GFN-FF through the xtb program (6.7 or newer; external, LGPL)
+  mlip:ID        an ML potential run in its own environment (see `mace mlip list`):
+                 mlip:acesuit-mace-mpa-0-medium (MACE-MPA-0 from ACEsuit's
+                 mace-torch, unrelated to this MACE) or mlip:chgnet-0.3.0
+  auto           the best available: GFN-FF for molecules, ions and charged or
+                 organic systems; ML for neutral periodic inorganic cells
+
+Every run first makes the spring result. A GFN-FF or ML result is rejected,
+and the spring result written instead (exit 3), when its energy rose, the
+volume changed more than 10 %, a close contact appeared, the space group
+changed (a raised group is never accepted: CRYSTAL OPT would keep it) or it
+did not converge.
+
+Options:
+  --method M          springs (default), gfnff, mlip:ID or auto
+  -o, --output-dir D  where to write (default: the input's directory)
+  --force             overwrite existing <stem>_preopt.cif/.json
+  --relax-cell        relax the cell too (off: positions only)
+  --no-symmetry       do not keep the space group while moving atoms
+  --symprec TOL       symmetry tolerance in Angstrom (default 1e-3)
+  --symmetrize TOL    symmetrize first at TOL (off by default; it can raise the
+                      space group, and CRYSTAL keeps the raised group)
+  --charge Q          net charge (GFN-FF uses it; ML potentials take none)
+  --uhf N             unpaired electrons, passed to xtb and recorded only
+                      (GFN-FF ignores it)
+  --fmax F            force threshold, eV/A (springs 1e-3, gfnff 0.01, mlip 0.02)
+  --steps N           step limit (springs 2000, gfnff 500, mlip 300)
+  --time-limit S      seconds (springs 10, gfnff 60, mlip 120)
+  --threads K         ML worker threads (default: a quarter of the CPUs, 1-4;
+                      inside a SLURM job, SLURM_CPUS_PER_TASK)
+  --device cpu|cuda:N ML device (default cpu; a GPU only when you name it)
+  --no-fallback       write nothing when the method fails (exit 1)
+  --json              print the provenance JSON on stdout
+
+Exit codes:
+  0  the requested method's result was written (auto: whatever ran)
+  1  nothing was written (bad input, a refused deck, --no-fallback)
+  2  usage error
+  3  gfnff/mlip was refused, failed or rejected: the spring result was written
+
+Examples:
+  mace preopt hand_built.cif
+  mace preopt LiFSI_box.cif --method gfnff --charge 0
+  mace preopt MgO.cif --method mlip:acesuit-mace-mpa-0-medium --relax-cell
+  mace preopt rattled.cif --method auto --symmetrize 0.1 -o preopt/
+
+Note: starting geometry only; CRYSTAL still optimizes; the next CRYSTAL step
+must be an OPT (mace convert <stem>_preopt.cif with your options, calculation
+type OPT). A .d12 that builds its geometry with SUPERCEL, ATOMREMO, ATOMSUBS,
+GHOSTS, ... is refused: pre-optimize the expanded structure (a CIF of it).
+See docs/preopt.md.
+""",
+    'mlip': """
+Usage: mace mlip list [--json] [--recheck]
+       mace mlip setup [--python PATH]
+       mace mlip fetch ID [--yes] [--dir DIR]
+
+ML potentials for `mace preopt` and the GUI's Clean. They are third-party
+models, unrelated to this MACE tool, and run out of process in their own
+Python environment (ACEsuit's package is also called "mace").
+
+  list     each model: id, label, code and weights license, size, status
+           (ready, needs_setup, import_failed, probe_timeout, needs_fetch,
+           bad_hash, unsupported_python) and the next step
+  setup    without --python: print how to make an ML environment (MACE never
+           creates or installs one); with --python PATH: probe that interpreter
+           and record it ($XDG_CONFIG_HOME/mace/mlip.json)
+  fetch    show the license, size, URL, sha256, training data and citation,
+           ask, then download and verify the weights (--yes when stdin is not
+           a terminal). The only MACE command that downloads anything.
+
+Models (1.1.5): acesuit-mace-mpa-0-medium (MIT code and weights, default)
+                chgnet-0.3.0 (BSD, weights inside the chgnet package, fallback)
+
+Environment: MACE_MLIP_PYTHON (the interpreter), MACE_MLIP_DIR (the weights),
+MACE_MLIP_NO_DOWNLOAD=1 (refuse to download).
+
+Examples:
+  mace mlip setup
+  mace mlip setup --python ~/mlenv/bin/python
+  mace mlip fetch acesuit-mace-mpa-0-medium
+  mace mlip list
+
+See docs/preopt.md.
+""",
+    'cluster': """
+Usage: mace cluster [SUBCOMMAND] [options] [--json] [--refresh]
+
+Cluster status, limits, quotas and job progress, read from SLURM. Read-only:
+nothing is submitted (only sbatch --test-only), canceled or deleted. Every
+SLURM query is cached and rate-limited (one node query per minute at most,
+shared by all your MACE windows and shells; --refresh at most every 15 s).
+
+Subcommands:
+  (none), overview   usable partitions, your jobs vs limits, quota warnings,
+                     reservations soon
+  nodes              nodes by CPU type or partition: idle/mixed/allocated,
+                     free cores, memory and GPUs
+      --partition P  --feature F  --free  --all-partitions
+      --group-by feature|partition
+  fit --cpus N       which nodes could take a request now
+      --nodes N  --mem-per-cpu SIZE | --mem SIZE  --gpus [TYPE:]N
+      --constraint EXPR  --partition P  --time D-HH:MM:SS
+      --predict      also ask sbatch --test-only for the predicted start
+      --script JOB.sh  predict an existing job script
+  reservations       reservations and maintenance windows
+  quota              storage and file-count quotas (warning 80 %, critical 90 %)
+      --rediscover   look up the site's quota alias again now
+  files [PATH]       where are my files: a throttled scan with cleanup
+                     suggestions to copy (never deletes)
+      --top N  --max-seconds S  --sizes top|all|off
+  limits             account/QOS limits, your use, fairshare
+      --check-submit N --cpus C   warn before adding N jobs of C cores
+  job ID             one of your jobs: state, efficiency, files, progress,
+                     ETA and walltime risk
+      --follow       refresh every 60 s from the shared cache (Ctrl+C stops)
+      --live         one sstat call for live memory and CPU
+  estimate DECK.d12  runtime estimate from similar finished runs
+      --cores N  --history DIR  --db materials.db
+  devnodes           the least-loaded configured development node
+      --pick         print only its name
+
+Every subcommand takes --json (machine-readable output) and --refresh.
+Settings: [cluster], [quota], [scan] and [devnodes] tables of
+~/.config/mace/site.toml (MACE_SITE_CONFIG replaces the path).
+Exit codes: 0 ok (warnings included), 2 bad arguments, 3 no SLURM here,
+4 job not found or not yours, 5 a file scan is already running.
+
+Examples:
+  mace cluster
+  mace cluster nodes --free
+  mace cluster fit --cpus 32 --mem-per-cpu 4G --time 2-00:00:00 --predict
+  mace cluster limits --check-submit 300 --cpus 32
+  mace cluster job 12345678
+  mace cluster estimate mat1_sp.d12 --cores 32
+
+See docs/cli.md#mace-cluster.
+""",
+    'gui': """
+Usage: mace gui [--dir DIR] [--port P] [--open] [options]
+       mace gui --slurm [--dir DIR] [--time T] [--cpus N] [--mem M] [options]
+       mace gui connect [PROFILE] [--gateway G] [--node N] [--dir D] [options]
+
+The MACE GUI: browse the structures, optimizations, band/DOS and FREQ plots,
+materials.db and calculation settings of a directory in your web browser,
+edit and build structures, and save the JSON settings file the CLI reads.
+The server uses only the Python standard library; ase, spglib and plotly
+(from requirements.txt) enable structures and plots, and a feature whose
+package is missing shows the pip command instead.
+
+Options:
+  -d, --dir DIR          directory to serve (default: .)
+  -p, --port P           port (default: MACE_GUI_PORT, else 8765; 0 picks a free
+                         one). On a shared node choose your own port
+  --open                 open a browser on this machine (never a text browser
+                         on an ssh node without a display)
+  --gpu N                with --open: the NVIDIA GPU the browser renders on
+                         (default: GPU 0; N >= 1 uses PRIME render offload)
+  --host H               interface to bind (default 127.0.0.1)
+  --insecure-network     needed for any --host but loopback: the token and your
+                         data then cross the network unencrypted
+  --allow-host NAME      also accept this Host header
+  --token T              this session token instead of a random one: 16 or more
+                         letters, digits or . _ ~ - (visible to other users
+                         in ps; MACE_GUI_TOKEN does it privately)
+  --gateway G            your cluster's login host, named in the tunnel hint
+                         (default MACE_GUI_GATEWAY, else <gateway>)
+  --root DIR             a folder File > Open Folder may switch within
+                         (repeatable; replaces the defaults, your home and
+                         scratch folders; MACE_GUI_ROOTS does the same);
+                         --root none turns Open Folder off
+  --managed              used by mace gui connect: a machine-readable READY
+                         line, control lines on stdin, and it stops when the
+                         connection closes and no task is running
+  --http-control         with --managed, used by mace gui --slurm inside the
+                         job (no stdin): control through the managed routes
+  --ready-file FILE      with --http-control: the READY data in a 0600 file
+  --slurm                run MACE GUI as a small batch job on a compute node
+                         and forward a port of this node to it; the job ends
+                         when the server stops (mace gui --slurm --help)
+  -v, --verbose          log requests
+
+Tools (they need only Python 3 and ssh, not MACE's scientific packages):
+  mace gui connect       start MACE GUI on a cluster node and open it in this
+                         computer's browser, with one ssh session (start,
+                         tunnel and stop in one step); mace gui connect --help
+  mace gui login-url     a new one-time sign-in link for a running server
+                         (--port P when several run; --open opens it)
+  mace gui diagnostics   the server's part of a bug report (versions, OS,
+                         packages), with paths and names removed; works when
+                         the GUI does not start
+
+It prints a one-time sign-in link (it works once, so the browser's history
+cannot sign anyone in) and the session token for the sign-in form; the token
+is valid while the server runs. When stdout is not a terminal (sbatch, nohup,
+a log file) neither is printed: the token is in a file only you can read
+(removed when the server stops), and mace gui login-url prints a link. On a
+cluster node it names the exact node and prints the mace gui connect line and
+the ssh command that forward the port to your computer.
+
+Examples:
+  mace gui --dir . --open                  # on your own machine
+  mace gui connect --gateway me@hpcc.example.edu --node dev-node-01 --dir ~/runs
+                                           # from your computer, in one step
+  mace gui --dir ~/runs                    # on a cluster's dev node, then run the
+                                           # printed ssh -N -J ... -L line on your computer
+  MACE_GUI_PORT=8642 mace gui --dir ~/runs # a personal port on a shared node
+  mace gui connect --slurm --gateway me@hpcc.example.edu --node dev-node-01
+                                           # as a SLURM job on a compute node
+
+See docs/gui.md.
 """,
     'phonopy': """
 Usage: mace phonopy generate PARENT.out --dim "N N N" [options]
@@ -932,8 +1290,9 @@ For action-specific options, use: mace monitor --action <ACTION> --help
 """,
     'analyze': """
 Usage: mace analyze --extract-properties <directory> [options]
+       mace analyze --convergence <file.out> [--json]
 
-Extract properties from CRYSTAL output files.
+Extract properties from CRYSTAL output files, or show how one run converged.
 
 Options:
   --extract-properties DIR    Directory containing output files (required)
@@ -947,6 +1306,29 @@ Options:
   --fragments                Per-fragment Mulliken charges for neutral runs too
                              (charged runs always get them)
 
+Building a database from a folder (all opt-in):
+  --register                 First record the folder's completed calculations
+                             (materials and calculations rows), so the
+                             database lists them
+  --dry-run                  Write nothing: list each output as new, changed,
+                             unchanged, not tracked, unreadable or incomplete
+  --json                     With --dry-run: one JSON document
+  --skip-unchanged           Extract only new and changed outputs of tracked
+                             calculations (needs --register or a tracked DB)
+  --backup                   Back up materials.db (and structures.db) into
+                             <db dir>/backups/ before the first write
+  --keep-backups N           With --backup: keep the newest N (default 3)
+  --progress-json            One JSON line per file on stdout; the rest of
+                             the output goes to stderr
+
+Convergence of one run (reads the .out only, writes nothing):
+  --convergence FILE         Per optimization point: SCF cycles, CRYSTAL's DE,
+                             max/RMS gradient and displacement vs threshold,
+                             FINALRUN restart segments, how the run stopped,
+                             and where each threshold came from (.out, .d12
+                             or the CRYSTAL23 default with its manual page)
+  --json                     With --convergence: the same data as JSON
+
 Examples:
   mace analyze --extract-properties .
   mace analyze --extract-properties outputs/
@@ -955,6 +1337,10 @@ Examples:
   mace analyze --extract-properties outputs/ --filter-material 1_dia --filter-type SP
   mace analyze --extract-properties --output-file single_calc.out
   mace analyze --extract-properties clusters/ --fragments
+  mace analyze --extract-properties runs/ --register --dry-run
+  mace analyze --extract-properties runs/ --register --skip-unchanged --backup
+  mace analyze --convergence mat1_opt.out
+  mace analyze --convergence mat1_opt.out --json
 
 Note: This command extracts properties and stores them in the materials database.
 Filters help process only specific materials or calculation types.
@@ -995,7 +1381,9 @@ This command will be removed in a future version.
     'recover': """
 Usage: mace recover [options]
 
-Automated error recovery for failed CRYSTAL calculations.
+Prepares fixed inputs and job scripts for failed tracked CRYSTAL
+calculations; submit them with mace submit, or let the queue manager
+resubmit tracked runs. The exact commands are printed at the end.
 
 Options:
   --action ACTION       Action to perform: recover, stats, config (default: recover)
@@ -1200,8 +1588,54 @@ Usage: mace version
 Show the MACE version (single-sourced from mace/__init__.py). Equivalent to the
 global 'mace --version' flag.
 """
+,
+    'help': """
+Usage: mace help [GROUP|COMMAND]
+
+Print the command list (no word), one group of it, or one command's help.
+
+Groups:
+  workflows   Automated workflows: workflow, engine, manager, recover
+  monitoring  Monitoring: monitor, completion, cluster
+  manual      Manual calculations: convert, opt2d12, opt2d3, opt2cif,
+              preflight, submit, run
+  results     Results: analyze, plotting, database
+  special     Special systems and structure tools: preopt, mlip, defects,
+              ions, phonopy
+  gui         GUI: gui (connect, login-url, diagnostics)
+  setup       Setup and information: site, help, version, credits
+  aliases     Aliases and deprecated: status, queue
+
+A command name prints that command's help, exactly as mace <command> --help.
+`gui` is both a group and a command: mace help gui prints the GUI group; use
+mace gui --help for its options.
+
+-h/--help anywhere after `help` prints this text; use mace submit --help for a
+command's own help.
+
+Examples:
+  mace help                  # the grouped command list (as mace --help)
+  mace help monitoring       # one group
+  mace help submit           # the same as mace submit --help
+"""
 }
 
+
+
+def _option_help(text, indent=24, width=80):
+    """An option's help text wrapped under its column, as the curated
+    help pages print it (first letter upper case)."""
+    import textwrap
+    text = text[:1].upper() + text[1:]
+    lines = textwrap.wrap(text, width=width - indent, break_on_hyphens=False)
+    return ("\n" + " " * indent).join(lines)
+
+
+try:   # one source for `mace run --timeout`: the parser's own help (stdlib-only module)
+    from mace.submission.local_run import TIMEOUT_HELP as _RUN_TIMEOUT_HELP
+except Exception:  # pragma: no cover - a broken install still prints the page
+    _RUN_TIMEOUT_HELP = "wall time per deck: 90s, 30m, 1h or H:MM:SS (default: 30m)"
+COMMAND_HELP["run"] = COMMAND_HELP["run"].replace("{RUN_TIMEOUT_HELP}", _option_help(_RUN_TIMEOUT_HELP))
 
 def show_command_help(command):
     """Show help for a specific command"""
@@ -1308,6 +1742,14 @@ def main():
         # Remove --no-banner and shift arguments
         sys.argv = [sys.argv[0]] + sys.argv[2:]
     
+    # `mace cluster ...` goes straight to its own parser (standard library
+    # only, no banner: it runs on a cluster's module Python and is often
+    # piped with --json). Only `mace cluster -h/--help` takes the help below.
+    if len(sys.argv) >= 2 and sys.argv[1] == 'cluster' and not (
+            len(sys.argv) == 3 and sys.argv[2] in ('-h', '--help')):
+        from mace.cluster.cli import main as cluster_main
+        sys.exit(cluster_main([a for a in sys.argv[2:] if a != '--no-banner']))
+
     # Check for action-specific help before argparse for any command
     if len(sys.argv) >= 5 and sys.argv[2] == '--action' and sys.argv[4] == '--help':
         command = sys.argv[1]
@@ -1350,42 +1792,62 @@ def main():
         # file: argparse names its prog after it, so `mace opt2d3 --help`
         # reads `usage: mace opt2d3 ...` (and %(prog)s examples match).
         if command == 'convert':
-            sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
+            sys.path.insert(0, str(Path(__file__).resolve().parent / "Crystal_d12"))
             from NewCifToD12 import main as cif_main
             sys.argv = ['mace convert'] + sys.argv[2:]
             cif_main()
         elif command == 'opt2d12':
-            sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
+            sys.path.insert(0, str(Path(__file__).resolve().parent / "Crystal_d12"))
             from CRYSTALOptToD12 import main as opt2d12_main
             sys.argv = ['mace opt2d12'] + sys.argv[2:]
             opt2d12_main()
         elif command == 'opt2d3':
-            sys.path.insert(0, str(Path(__file__).parent / "Crystal_d3"))
+            sys.path.insert(0, str(Path(__file__).resolve().parent / "Crystal_d3"))
             from CRYSTALOptToD3 import main as opt2d3_main
             sys.argv = ['mace opt2d3'] + sys.argv[2:]
             opt2d3_main()
         elif command == 'opt2cif':
-            sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
+            sys.path.insert(0, str(Path(__file__).resolve().parent / "Crystal_d12"))
             from CrystalOutToCif import main as opt2cif_main
             sys.argv = ['mace opt2cif'] + sys.argv[2:]
             opt2cif_main()
         elif command == 'completion':
-            sys.path.insert(0, str(Path(__file__).parent / "mace"))
+            sys.path.insert(0, str(Path(__file__).resolve().parent / "mace"))
             from completion_checker import main as completion_main
             sys.argv = ['mace completion'] + sys.argv[2:]
             completion_main()
         elif command == 'ions':
-            sys.path.insert(0, str(Path(__file__).parent / "Crystal_d12"))
+            sys.path.insert(0, str(Path(__file__).resolve().parent / "Crystal_d12"))
             from ion_charges import main as ions_main
             sys.exit(ions_main(sys.argv[2:]))
         sys.exit(0)
     
+    # `mace gui connect|login-url|diagnostics ...`: standard-library tools that
+    # must run on a computer without numpy/ase/plotly (your own computer, a
+    # GUI that cannot start), so the GUI server is never imported for them;
+    # their own --help answers, not the `mace gui` help block.
+    if len(sys.argv) >= 3 and sys.argv[1] == 'gui' and sys.argv[2] in ('connect', 'login-url', 'diagnostics'):
+        from mace.gui.cli import dispatch_tool
+        sys.exit(dispatch_tool(sys.argv[2], [a for a in sys.argv[3:] if a != '--no-banner']))
+
+    # `mace gui --slurm ...`: MACE GUI as a batch job (standard library only, its
+    # own --help); the server itself starts inside the job.
+    if len(sys.argv) >= 3 and sys.argv[1] == 'gui' and '--slurm' in sys.argv[2:]:
+        from mace.gui.slurmsession import main as slurm_main
+        sys.exit(slurm_main([a for a in sys.argv[2:] if a not in ('--no-banner', '--slurm')]))
+
     # `mace phonopy generate|collect ...` goes straight to its own parser, so that
     # `mace phonopy generate --help` shows the subcommand's options rather than
     # being taken by the top-level parser below.
     if len(sys.argv) >= 3 and sys.argv[1] == 'phonopy' and sys.argv[2] in ('generate', 'collect'):
         from mace.phonopy_bridge.cli import main as phonopy_main
         sys.exit(phonopy_main([a for a in sys.argv[2:] if a != '--no-banner']))
+
+    # `mace site [--json|--refresh|--init]` goes straight to its own parser,
+    # so `mace site --help` shows its options (as phonopy above).
+    if len(sys.argv) >= 2 and sys.argv[1] == 'site':
+        from mace.submission.site_cli import main as site_main
+        sys.exit(site_main([a for a in sys.argv[2:] if a != '--no-banner']))
 
     # Check if asking for help on a specific command (for non-passthrough commands)
     # `-h` counts like `--help`, and anywhere after the command
@@ -1400,48 +1862,11 @@ def main():
     parser = argparse.ArgumentParser(
         description=f"MACE - Mendoza Automated CRYSTAL Engine (v{__version__})",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Commands:
-  workflow    Interactive workflow planner - design and execute complex calculation sequences
-  submit      Submit calculations to queue - handles both D12 and D3 files automatically
-  run         Run decks on this node now (dev node, no SLURM) - quick SP, BAND/DOSS/POTC, MATDUMP
-  preflight   Validate D12 decks by running CRYSTAL with TESTPDIM before you spend a job
-  defects     Point-defect deck sets (charge states, calibration) and their analysis
-  phonopy     Phonons with phonopy - displaced-supercell decks, then bands, DOS, thermal
-  monitor     System monitoring - real-time dashboard or quick status (--status, --detailed, --summary)
-  analyze     Extract properties from outputs - band gaps, energies, convergence data
-  completion  Check calculation status - categorize completed/errored jobs, organize files
-  convert     CIF to D12 conversion - supports all CRYSTAL basis sets and functionals
-  opt2d12     Generate D12 from optimized output - create SP/FREQ inputs from OPT results
-  opt2d3      Generate D3 property inputs - BAND, DOSS, TRANSPORT, CHARGE calculations
-  opt2cif     Convert CRYSTAL outputs to CIF - supports all dimensionalities and calc types
-  ions        Charged systems - CHEMOD/DOPING/SPIN for ion clusters and charged cells
-  manager     Enhanced Queue Manager - material tracking, workflow automation, SLURM integration
-  recover     Error recovery - automated fixes for SHRINK, memory, and convergence issues
-  database    Database queries - search materials, export results, view statistics
-  engine      Workflow automation - process completed calcs and submit the next step
-  plotting    Plot outputs - band structures, DOS, structures, cube volumetrics, FREQ/IR/Raman
-  credits     Show the development team (same as --credits)
-  version     Show the MACE version (same as --version)
-
-Aliases / deprecated:
-  status      Alias for 'mace monitor --status'
-  queue       Deprecated - use 'mace manager'
-
-Quick Start:
-  mace workflow --interactive      # Plan new workflow
-  mace monitor                     # Live dashboard
-  mace monitor --status            # Quick status check
-  
-More Help:
-  mace <command> --help           # Command details
-"""
+        epilog=GENERAL_HELP_EPILOG
     )
     
-    parser.add_argument('command', nargs='?',
-                       choices=['workflow', 'submit', 'run', 'preflight', 'defects', 'phonopy', 'monitor', 'analyze', 'convert', 'opt2d12', 'opt2d3', 'opt2cif', 'ions',
-                               'completion', 'status', 'queue', 'manager', 'recover', 'database', 'engine', 'plotting', 'credits', 'version'],
-                       help='Command to run')
+    parser.add_argument('command', nargs='?', choices=COMMANDS, metavar='COMMAND',
+                       help='Command to run (every one is listed in a group below)')
     parser.add_argument('args', nargs='*', help='Arguments for the command')
     parser.add_argument('--no-banner', action='store_true', help='Suppress ASCII art banner')
     parser.add_argument('--theme', choices=_THEME_CHOICES, metavar='NAME',
@@ -1474,7 +1899,7 @@ More Help:
         os.environ['MACE_NO_BANNER'] = '1'
     
     # Show banner unless suppressed or showing help or running with arguments
-    if not args.no_banner and args.command and args.command != 'version' and not args.args:
+    if not args.no_banner and args.command and args.command not in ('version', 'help') and not args.args:
         show_banner()
     
     # If no command, show help
@@ -1555,13 +1980,13 @@ More Help:
         # Node exclusion options
         exclusion_group = submit_parser.add_mutually_exclusive_group()
         exclusion_group.add_argument('--exclude-amd20', action='store_true',
-                                    help='Exclude all AMD20 nodes (amr + nvf types)')
+                                    help='MSU HPCC only: exclude all AMD20 nodes (amr + nvf types)')
         exclusion_group.add_argument('--exclude-mendoza', action='store_true',
-                                    help='Exclude Mendoza group nodes')
+                                    help="MSU HPCC only: exclude the Mendoza group's nodes (members of its account)")
         exclusion_group.add_argument('--exclude-type', metavar='TYPE',
-                                    help='Exclude all nodes of specific type (amr, nvf, agg, etc.)')
+                                    help='Exclude all nodes named TYPE-<number>')
         exclusion_group.add_argument('--exclude-nodes', metavar='NODES',
-                                    help='Custom node exclusion (e.g., "amr-042,amr-050" or "amr-[042-050]")')
+                                    help='Custom node exclusion (e.g., "node-042,node-050" or "node-[042-050]")')
 
         try:
             submit_args = submit_parser.parse_args(command_args('submit'))
@@ -1606,8 +2031,14 @@ More Help:
                         ui.warn("Warning: No AMD20 nodes found")
 
                 elif submit_args.exclude_mendoza:
-                    exclude_string = node_manager.create_exclude_string(node_manager.MENDOZA_NODES)
-                    ui.info(f"Excluding Mendoza nodes: {exclude_string}")
+                    from mace.utils.node_exclusion import site_menu, MANAGER_MENU
+                    if 'mendoza' not in site_menu(MANAGER_MENU):
+                        # another cluster, or not a member of the group's account
+                        ui.warn("Warning: --exclude-mendoza applies only to members of the Mendoza "
+                                "group's account on MSU HPCC; no nodes excluded")
+                    else:
+                        exclude_string = node_manager.create_exclude_string(node_manager.MENDOZA_NODES)
+                        ui.info(f"Excluding Mendoza nodes: {exclude_string}")
 
                 elif submit_args.exclude_type:
                     node_type = submit_args.exclude_type
@@ -1737,7 +2168,7 @@ More Help:
                         "workflow_id": workflow_id,
                         "workflow_step": position_in_sequence(calc_type, sequence) or 1,
                         "workflow_calc_type": calc_type,
-                    })
+                    }, merge=True)      # keeps crystal_module (site.py)
 
                 results = manager.submit_calculations_as_arrays(
                     [Path(f) for f in selected], max_running=max_running,
@@ -1749,6 +2180,8 @@ More Help:
                     ui.info(f"Job ID(s): {', '.join(str(j) for j in tracked_ids)}")
                 sys.exit(0 if submitted == len(selected) else 1)
 
+            # the folder's crystal_job_status.json keeps earlier submissions too
+            submitted_before = set(getattr(manager, "legacy_job_status", {}).get("submitted", {}).keys())
             for f in ui.progress(selected, total=len(selected), description="Submitting"):
                 try:
                     calc_id = manager.submit_calculation(Path(f))
@@ -1761,14 +2194,17 @@ More Help:
                                 "workflow_id": workflow_id,
                                 "workflow_step": position_in_sequence(calc_type, sequence) or 1,
                                 "workflow_calc_type": calc_type,
-                            })
+                            }, merge=True)      # keeps crystal_module (site.py)
                 except Exception as e:
                     ui.err(f"  Failed to submit {f.name}: {e}")
             ui.ok(f"\nSubmitted {submitted}/{len(selected)} tracked calculation(s)")
             # Single copy-pasteable job-id line for follow-up squeue/scancel, at
             # parity with the non-tracking submit path (the per-file ids were only
             # printed scattered across the manager's own output).
-            tracked_ids = list(getattr(manager, "legacy_job_status", {}).get("submitted", {}).keys())
+            # Only this run's jobs: an earlier submission's id in this line
+            # would be copied into the next scancel.
+            tracked_ids = [j for j in getattr(manager, "legacy_job_status", {}).get("submitted", {}).keys()
+                           if j not in submitted_before]
             if tracked_ids:
                 ui.info(f"Job ID(s): {', '.join(str(j) for j in tracked_ids)}")
             sys.exit(0 if submitted == len(selected) else 1)
@@ -2075,6 +2511,11 @@ More Help:
         # other rebuilt subcommand) so the original flag/value pairing is preserved
         # and --no-banner is stripped consistently, including in the fallback.
         all_args = command_args('analyze')
+        if '--convergence' in all_args:
+            from utils.out_convergence import main as convergence_main
+            i = all_args.index('--convergence')
+            rest = all_args[:i] + all_args[i + 1:]
+            sys.exit(convergence_main(rest))
         if '--extract-properties' in all_args:
             from utils.property_extractor import main as extract_main
             # Translate --extract-properties [DIR] to the extractor's own flags:
@@ -2118,6 +2559,32 @@ More Help:
                 ui.print("Contributors: Daniel Maldonado Lopez, Brandon Lewis, Dr. William Comaskey")
                 ui.print("PI: Prof. Jose Luis Mendoza-Cortes")
 
+    elif args.command == 'help':
+        # `mace help [GROUP|COMMAND]`: the list, one group, or a command's help
+        words = [a for a in command_args('help') if a != '--no-banner']
+        if not words:
+            parser.print_help()
+            sys.exit(0)
+        word = words[0]
+        keys = [g[0] for g in COMMAND_GROUPS]
+        if word in keys:                       # a group wins over a command (`gui`)
+            print(_format_command_groups([word]))
+            if word in ('monitoring', 'workflows'):
+                print()
+                print(WHICH_JOBS_HELP)
+            print()
+            print("mace gui --help for its options." if word == 'gui'
+                  else "mace <command> --help shows a command's options and examples.")
+            sys.exit(0)
+        if word == 'help':
+            show_command_help('help')
+            sys.exit(0)
+        if word in COMMANDS:
+            sys.argv = [sys.argv[0], word, '--help']
+            main()  # Recursive call: exactly `mace <command> --help`
+            return
+        print(f"Unknown group or command '{word}'. Groups: {', '.join(keys)}", file=sys.stderr)
+        sys.exit(2)
     elif args.command == 'status':
         # Redirect to monitor --status for backward compatibility
         ui.info("Note: 'mace status' has been merged into 'mace monitor --status'")
@@ -3463,6 +3930,27 @@ More Help:
         # detect failure instead of always seeing exit 0.
         all_args = command_args('plotting')
         sys.exit(plotting_main(all_args))
+
+    elif args.command == 'preopt':
+        from mace.preopt.cli import main as preopt_main
+        sys.exit(preopt_main(command_args('preopt')))
+
+    elif args.command == 'mlip':
+        from mace.preopt.mlip_cli import main as mlip_main
+        sys.exit(mlip_main(command_args('mlip')))
+
+    elif args.command == 'gui':
+        try:
+            from mace.gui.cli import main as gui_main
+        except ImportError as exc:
+            ui.err(f"Error: could not import the GUI (mace/gui): {exc}")
+            ui.info("Check that MACE_HOME points at a MACE 1.1.5 or newer checkout.")
+            sys.exit(1)
+        sys.exit(gui_main(command_args('gui')))
+
+    elif args.command == 'cluster':
+        from mace.cluster.cli import main as cluster_main
+        sys.exit(cluster_main(command_args('cluster')))
 
     elif args.command == 'version':
         # Show version with main banner

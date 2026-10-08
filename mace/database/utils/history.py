@@ -10,6 +10,8 @@ import json
 import sqlite3
 from contextlib import contextmanager
 
+from .. import dbsafety       # the SQLite journal/lock policy (stdlib only)
+
 
 class PropertyHistory:
     """Manages property history and versioning."""
@@ -27,7 +29,7 @@ class PropertyHistory:
     @contextmanager
     def _get_connection(self):
         """Get database connection context manager."""
-        conn = sqlite3.connect(self.db_path)
+        conn = dbsafety.connect_rw(self.db_path)       # the shared journal/lock policy
         conn.row_factory = sqlite3.Row
         try:
             yield conn

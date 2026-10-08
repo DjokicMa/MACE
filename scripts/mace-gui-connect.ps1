@@ -1,0 +1,270 @@
+<#
+.SYNOPSIS
+  Start MACE GUI on a cluster node and open it in this computer's browser, with one ssh session.
+
+.DESCRIPTION
+  The Windows (PowerShell 5.1+) twin of `mace gui connect`: same options, same profiles file
+  (%APPDATA%\mace\connect.toml), same protocol. Needs the ssh built into Windows 10 1809+ (-J needs
+  OpenSSH 8.1+; check with ssh -V). Ctrl+C stops the server on the node; GUI tasks that are still
+  running keep it alive until they finish, and running this script again reattaches.
+  -Manual prints the two-terminal manual commands instead of connecting.
+
+  Downloaded scripts are blocked by Windows: run Unblock-File .\mace-gui-connect.ps1 once, then
+  powershell -ExecutionPolicy Bypass -File .\mace-gui-connect.ps1 -Gateway <user>@<gateway> -Node <node> -Dir <folder>
+
+.EXAMPLE
+  .\mace-gui-connect.ps1 -Gateway me@hpcc.example.edu -Node dev-node-01 -Dir ~/runs
+#>
+[CmdletBinding()]
+param(
+  [Parameter(Position = 0)][string]$ProfileName = "",
+  [string]$Gateway = "",
+  [string]$Jump = "",
+  [string]$Node = "",
+  [ValidateSet("", "jump", "nested")][string]$Hop = "",
+  [string]$Dir = "",
+  [string]$Mace = "",
+  [string]$Setup = "",
+  [string]$Conda = "",
+  [int]$LocalPort = 0,
+  [string[]]$SshOption = @(),
+  [string[]]$Root = @(),
+  [switch]$NoOpen,
+  [switch]$DryRun,
+  [switch]$Manual
+)
+
+# >>> mace-gui-connect defaults >>>
+$D_GATEWAY = ""
+$D_JUMP = ""
+$D_NODE = ""
+$D_HOP = "jump"
+$D_DIR = ""
+$D_MACE = "mace"
+$D_SETUP = ""
+$D_CONDA = ""
+$D_LOCAL_PORT = 8765
+$D_SSH_OPTIONS = @()
+$D_ROOTS = @()
+$D_OPEN = $true
+# <<< mace-gui-connect defaults <<<
+
+$ErrorActionPreference = "Stop"
+
+# ------------------------------------------------------------------ profile (flat TOML subset)
+function Unquote-Basic([string]$s) {
+  return ($s -replace '\\"', '"' -replace '\\t', "`t" -replace '\\\\', '\')
+}
+
+function Read-Profile([string]$want) {
+  $conf = Join-Path $env:APPDATA "mace\connect.toml"
+  $p = @{}
+  if (-not (Test-Path $conf)) { return $p }
+  $lines = Get-Content -LiteralPath $conf
+  $section = ""
+  if (-not $want) {
+    foreach ($raw in $lines) {
+      $line = $raw.Trim()
+      if ($line -match '^\[(.+)\]$') { $section = $Matches[1]; continue }
+      if ($section -eq "defaults" -and $line -match '^profile\s*=\s*"(.*)"$') { $want = $Matches[1] }
+    }
+  }
+  if (-not $want) { return $p }
+  $section = ""
+  $n = 0
+  foreach ($raw in $lines) {
+    $n++
+    $line = $raw.Trim()
+    if (-not $line -or $line.StartsWith("#")) { continue }
+    if ($line -match '^\[(.+)\]$') { $section = $Matches[1]; continue }
+    if ($section -ne "profiles.$want") { continue }
+    if ($line -notmatch '^([A-Za-z0-9_-]+)\s*=\s*(.*)$') {
+      Write-Warning "connect.toml uses a form this script cannot read (line $n); pass the values as flags"; continue
+    }
+    $key = $Matches[1]; $val = $Matches[2].Trim()
+    if ($val -match '^"((?:[^"\\]|\\.)*)"$') { $p[$key] = Unquote-Basic $Matches[1] }
+    elseif ($val -eq "true") { $p[$key] = $true }
+    elseif ($val -eq "false") { $p[$key] = $false }
+    elseif ($val -match '^-?\d+$') { $p[$key] = [int]$val }
+    elseif ($val -match '^\[.*\]$') {
+      $items = [regex]::Matches($val, '"((?:[^"\\]|\\.)*)"') | ForEach-Object { Unquote-Basic $_.Groups[1].Value }
+      $p[$key] = @($items)
+    }
+    else { Write-Warning "connect.toml uses a form this script cannot read (line $n); pass the values as flags" }
+  }
+  return $p
+}
+
+$P = Read-Profile $ProfileName
+function Pick($flag, $key, $default) {
+  if ($flag) { return $flag }
+  if ($P.ContainsKey($key) -and $P[$key] -ne "") { return $P[$key] }
+  return $default
+}
+$GatewayV = Pick $Gateway "gateway" $D_GATEWAY
+$JumpV = Pick $Jump "jump" $D_JUMP
+$NodeV = Pick $Node "node" $D_NODE
+$HopV = Pick $Hop "hop" $D_HOP
+if ($HopV -eq "auto") { $HopV = "jump" }
+$DirV = Pick $Dir "dir" $D_DIR
+$MaceV = Pick $Mace "mace" $D_MACE
+$SetupV = Pick $Setup "setup" $D_SETUP
+$CondaV = Pick $Conda "conda" $D_CONDA
+$LocalPortV = [int](Pick $(if ($LocalPort -gt 0) { $LocalPort } else { $null }) "local_port" $D_LOCAL_PORT)
+$SshOptions = @(if ($SshOption.Count) { $SshOption } elseif ($P.ContainsKey("ssh_options")) { $P["ssh_options"] } else { $D_SSH_OPTIONS })
+$Roots = @(if ($Root.Count) { $Root } elseif ($P.ContainsKey("roots")) { $P["roots"] } else { $D_ROOTS })
+$OpenV = if ($NoOpen) { $false } elseif ($P.ContainsKey("open")) { $P["open"] } else { $D_OPEN }
+if (-not $GatewayV -and -not $NodeV) {
+  Write-Error "Pass -Gateway <login host> (and usually -Node <dev node> and -Dir <folder>), or save a profile with mace gui connect --save."
+  exit 2
+}
+
+# ------------------------------------------------------------------ the command (as mace gui connect builds it)
+function ShQuote([string]$s) {
+  if ($s -eq "") { return "''" }
+  if ($s -match '^[a-zA-Z0-9_@%+=:,./-]+$') { return $s }
+  return "'" + ($s -replace "'", "'`"'`"'") + "'"
+}
+function HomePath([string]$s) {
+  if ($s -eq "~") { return '"$HOME"' }
+  if ($s.StartsWith("~/")) { return '"$HOME"/' + (ShQuote $s.Substring(2)) }
+  return ShQuote $s
+}
+function Remote-Command([int]$rp) {
+  $parts = @()
+  if ($SetupV) { $parts += $SetupV.TrimEnd(";") }
+  if ($CondaV) { $parts += "conda activate " + (ShQuote $CondaV) }
+  $cmd = @("exec")
+  if (-not $NodeV) { $cmd += @("env", "MACE_GUI_MAX_WORKERS=2") }
+  foreach ($w in ($MaceV -split '\s+' | Where-Object { $_ })) { $cmd += (HomePath $w) }
+  $cmd += @("--no-banner", "gui", "--managed", "--port", "$rp", "--dir", ".")
+  foreach ($r in $Roots) { $cmd += @("--root", (HomePath $r)) }
+  $d = if ($DirV) { $DirV } else { "~" }
+  $parts += "cd -- " + (HomePath $d) + " && " + ($cmd -join " ")
+  return "exec bash -lc " + (ShQuote ($parts -join "; "))
+}
+function Build-Argv([int]$lp, [int]$rp, [int]$gp) {
+  $a = New-Object System.Collections.ArrayList
+  $opts = @("-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=4")
+  $rcmd = Remote-Command $rp
+  if (-not $NodeV -or -not $GatewayV) {
+    if ($JumpV) { [void]$a.AddRange(@("-J", $JumpV)) }
+    [void]$a.AddRange($opts); if ($SshOptions.Count) { [void]$a.AddRange($SshOptions) }
+    $target = if ($NodeV) { $NodeV } else { $GatewayV }
+    [void]$a.AddRange(@("-L", "127.0.0.1:${lp}:127.0.0.1:${rp}", $target, $rcmd))
+    return ,$a
+  }
+  if ($HopV -eq "nested") {
+    $inner = "ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -L 127.0.0.1:${gp}:127.0.0.1:${rp} " + (ShQuote $NodeV) + " " + (ShQuote $rcmd)
+    if ($JumpV) { [void]$a.AddRange(@("-J", $JumpV)) }
+    [void]$a.AddRange($opts); if ($SshOptions.Count) { [void]$a.AddRange($SshOptions) }
+    [void]$a.AddRange(@("-L", "127.0.0.1:${lp}:127.0.0.1:${gp}", $GatewayV, $inner))
+    return ,$a
+  }
+  $j = if ($JumpV) { "$JumpV,$GatewayV" } else { $GatewayV }
+  $target = $NodeV
+  if ($NodeV -notmatch "@") {
+    $u = ""
+    if ($GatewayV -match "^([^@]+)@") { $u = $Matches[1] }
+    else { try { $u = (& ssh -G $GatewayV 2>$null | Where-Object { $_ -match "^user " } | Select-Object -First 1) -replace "^user ", "" } catch {} }
+    if ($u -and $u -ne $env:USERNAME) { $target = "$u@$NodeV" }
+  }
+  [void]$a.AddRange(@("-J", $j))
+  [void]$a.AddRange($opts); if ($SshOptions.Count) { [void]$a.AddRange($SshOptions) }
+  [void]$a.AddRange(@("-L", "127.0.0.1:${lp}:127.0.0.1:${rp}", $target, $rcmd))
+  return ,$a
+}
+# Windows ssh takes one command line: quote each argument for CreateProcess
+function Win-Quote([string]$s) {
+  if ($s -notmatch '[\s"]' -and $s -ne "") { return $s }
+  return '"' + ($s -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"'
+}
+
+if ($DryRun) {
+  Build-Argv $LocalPortV 40000 40001 | ForEach-Object { $_ }
+  exit 0
+}
+if ($Manual) {
+  $u = if ($GatewayV -match "@") { $GatewayV } else { "$env:USERNAME@$GatewayV" }
+  Write-Output "1. In one terminal, on the node (or through ssh -J $u $NodeV): mace gui --dir $DirV --port $LocalPortV"
+  Write-Output "2. In another terminal here (leave it running): ssh -N -J $u -L ${LocalPortV}:127.0.0.1:${LocalPortV} $NodeV"
+  Write-Output "3. Open the URL that mace gui printed (127.0.0.1:$LocalPortV/...)."
+  exit 0
+}
+
+# ------------------------------------------------------------------ run
+$ver = (& ssh -V 2>&1 | Out-String)
+if ($ver -match 'OpenSSH_for_Windows_(\d+)\.(\d+)' -and ([int]$Matches[1] -lt 8 -or ([int]$Matches[1] -eq 8 -and [int]$Matches[2] -lt 1)) -and ($JumpV -or ($NodeV -and $GatewayV -and $HopV -ne "nested"))) {
+  Write-Warning "Your ssh is older than 8.1, whose -J is unreliable on Windows; update Windows OpenSSH or use -Hop nested."
+}
+function Port-Free([int]$p) {
+  try { $l = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, $p); $l.Start(); $l.Stop(); return $true }
+  catch { return $false }
+}
+$LP = $LocalPortV
+while (-not (Port-Free $LP)) {
+  $LP++
+  if ($LP -gt $LocalPortV + 20) { Write-Error "No free local port near $LocalPortV"; exit 1 }
+}
+if ($LP -ne $LocalPortV) { Write-Output "Port $LocalPortV is busy here; using $LP. Drafts saved under port $LocalPortV won't be offered on $LP." }
+$rnd = New-Object System.Random
+$RP = $rnd.Next(20000, 61000); $GP = $rnd.Next(20000, 61000)
+$argv = Build-Argv $LP $RP $GP
+$where = if ($NodeV) { $NodeV } else { $GatewayV }
+Write-Output "Connecting to $where..."
+
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = "ssh.exe"
+$psi.Arguments = (($argv | ForEach-Object { Win-Quote $_ }) -join " ")
+$psi.UseShellExecute = $false
+$psi.RedirectStandardInput = $true
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $false
+$proc = [System.Diagnostics.Process]::Start($psi)
+$state = "wait"
+$timer = $null
+try {
+  while (-not $proc.StandardOutput.EndOfStream) {
+    $line = $proc.StandardOutput.ReadLine()
+    if ($line -like "MACE_GUI_READY *") {
+      $j = $line.Substring(15) | ConvertFrom-Json
+      $base = "http://127.0.0.1:$LP$($j.prefix)"
+      for ($i = 0; $i -lt 60; $i++) {
+        try { $r = Invoke-WebRequest -UseBasicParsing -Uri "$($base)api/info" -Headers @{ "X-Mace-Token" = $j.token } -TimeoutSec 3; if ($r.StatusCode -eq 200) { break } } catch { Start-Sleep -Milliseconds 300 }
+      }
+      $url = if ($j.login) { $j.login -replace '^http://127\.0\.0\.1:\d+', "http://127.0.0.1:$LP" } else { "$($base)?token=$($j.token)" }
+      if ($j.reattached) { Write-Output "Reattached to the server still running on $where." }
+      if ($OpenV) { Start-Process $url }
+      Write-Output "MACE GUI on ${where}: $url"
+      Write-Output "Press Ctrl+C to stop the server on $where."
+      $timer = New-Object System.Timers.Timer 60000
+      Register-ObjectEvent -InputObject $timer -EventName Elapsed -Action { try { $proc.StandardInput.WriteLine("ping") } catch {} } | Out-Null
+      $timer.Start()
+      $state = "ready"
+    }
+    elseif ($line -like "MACE_GUI_LOGIN *") {
+      $j = $line.Substring(15) | ConvertFrom-Json
+      $u = $j.url -replace '^http://127\.0\.0\.1:\d+', "http://127.0.0.1:$LP"
+      Write-Output "New sign-in link: $u"; if ($OpenV) { Start-Process $u }
+    }
+    elseif ($line -like "MACE_GUI_STOPPED *") {
+      if ($line -match '"browser"') { Write-Output "The server on $where was stopped from the browser." }
+      elseif ($line -match '"cpu-limit"') { Write-Output "The server reached the node's CPU-time limit and stopped cleanly. Run this script again to start a fresh one." }
+      else { Write-Output "The server on $where stopped." }
+      $state = "stopped"; break
+    }
+    elseif ($line -like "MACE_GUI_ERROR *") { Write-Warning "The server reported: $($line.Substring(15))"; $state = "error"; break }
+    elseif ($line) { Write-Output "remote: $line" }
+  }
+}
+finally {
+  if ($timer) { $timer.Stop() }
+  if (-not $proc.HasExited) {
+    try { $proc.StandardInput.WriteLine("detach"); $proc.StandardInput.Close() } catch {}
+    if (-not $proc.WaitForExit(5000)) { try { $proc.Kill() } catch {} }
+  }
+}
+if ($state -eq "stopped") { exit 0 }
+if ($state -eq "ready") { Write-Output "The connection to $where closed. If GUI tasks were running, the server keeps them running: run this script again to reattach."; exit 1 }
+Write-Warning "The connection ended before MACE GUI was ready. If no password or 2FA prompt appeared, set up an ssh key or agent (docs/gui.md#windows-powershell), or use -Manual."
+exit 1

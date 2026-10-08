@@ -1,0 +1,33 @@
+/* The FREQ document (js/docs/freq.js): tokens only. */
+.views > #tab-freq.active { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+#tab-freq > .freq-opts, #tab-freq > .freq-table { display: none; }
+/* min-width 0: a long output name in the head must not widen the view past its group (the molecule then sat off-screen) */
+.freq-host { flex: 1; min-height: 0; min-width: 0; display: flex; }
+.fv { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.fv-head { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-4); border-bottom: 1px solid var(--border); }
+.fv-title { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fv-mode { font-size: var(--fs-sm); color: var(--text-2); white-space: nowrap; }
+.fv-play kbd { font: 500 var(--fs-xs)/1 var(--font-mono); }
+.fv-view { position: relative; flex: 1; min-height: 0; }
+.fv-view .viewer { position: absolute; inset: 0; }
+.fv-view .viewer:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.fv-msg { position: absolute; inset: 0; display: grid; place-content: center; gap: var(--s-2); color: var(--text-2); z-index: 2; background: var(--viewport-bg); }
+.fv-msg[hidden] { display: none; }
+/* the modes table (bottom panel) */
+.fm { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.fm-spec { flex: none; width: 100%; height: 80px; }
+.fm-spec .axis { stroke: var(--border-strong); }
+.fm-spec .ir { stroke: var(--plot-10); stroke-width: 2; }
+.fm-spec .ra { stroke: var(--plot-1); stroke-width: 2; }
+.fm-spec .cur { stroke: var(--sel); stroke-width: 1; stroke-dasharray: 3 2; }
+.fm-spec .lab { font-size: 10px; fill: var(--text-3); }
+.fm-grid { flex: 1; min-height: 0; overflow: auto; font-size: var(--fs-sm); outline: none; }
+.fm-grid:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.fm-head, .fm-row { display: grid; grid-template-columns: 52px 92px 74px 88px 88px minmax(80px, 1fr); align-items: center; height: 26px; padding: 0 var(--s-3); }
+.fm-head { position: sticky; top: 0; background: var(--surface-2); border-bottom: 1px solid var(--border); font-weight: 600; color: var(--text-2); z-index: 1; }
+.fm-row { border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); cursor: default; }
+.fm-row:hover { background: var(--surface-2); }
+.fm-row.sel { background: var(--accent-soft); }
+.fm-row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.fm-row.imag span:nth-child(2) { color: var(--danger); font-weight: 600; }
+.fm .num { text-align: right; font-variant-numeric: tabular-nums; padding-right: var(--s-3); }

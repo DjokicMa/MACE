@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.5] - 2026-10-02
+## [1.1.5] - 2026-10-03
 
-Everything since 1.1.4. New: charged systems and ion clusters (fragments found
+Everything since 1.1.4. New: **the MACE GUI (`mace gui`)**, the folder's
+structures, optimizations, plots and `materials.db` in your browser, with a
+structure editor, builders and Calculation Setup that saves the JSON the CLI
+reads, on your machine or on a cluster node through an ssh tunnel; pre-optimized
+starting geometries (`mace preopt`, `mace mlip`; CRYSTAL still optimizes); a new
+logo; charged systems and ion clusters (fragments found
 by connectivity, CHEMOD/DOPING/spin planned for you, per-fragment Mulliken
 charges), `mace defects` (defect deck sets and formation energies, with the 3D
 charged-cell offset and image-charge corrections measured on CRYSTAL23),
@@ -31,6 +36,163 @@ Ac-Es basis records are neutral. Several of these change generated decks -
 see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 
 ### Upgrading from 1.1.1-1.1.4
+
+- **Refresh the band gaps of existing databases.** Earlier versions could
+  store `indirect_band_gap`, `direct_band_gap` and `band_gap_type` from an
+  earlier SCF cycle (cycle 0 of an SP) instead of the converged one, a
+  `band_gap` from the last gapped cycle of a run that ended conducting, and,
+  for a spin-polarized run, one channel's gap instead of the fundamental gap
+  across both channels (see Fixed). Run `mace analyze --extract-properties
+  <folder> --db-path <materials.db>` again on the folders of a database to
+  replace them; the rows of an extraction are rewritten, so a stale gap is
+  removed.
+- **What to install.** seekpath 2.1 or newer is now required; everything
+  else new is optional (phonopy for `mace phonopy`, xtb and an ML Python
+  environment for `mace preopt` and Clean, a browser on your computer for the
+  GUI). No shell startup file is needed: every new setting lives in an
+  optional file under `~/.config/mace/` or an optional environment variable.
+  INSTALLATION.md, "What MACE needs", lists each requirement, how MACE finds
+  it and what changed since 1.1.4, including every new environment variable.
+- **`mace --help` lists the commands in groups.** The usage line and the
+  positional entry now read `COMMAND` instead of listing every command; a
+  mistyped command's error now reads `argument COMMAND: invalid choice: 'x'
+  ...` (was `argument command: ...`; the `invalid choice: 'x'` part and exit
+  code 2 are unchanged). `mace help` (an error before) now prints the help;
+  `mace help gui` prints the GUI group, not `mace gui --help`. No command,
+  option or per-command help changed.
+- **`mace cluster` is a new command; no existing command changes.** It keeps a
+  small cache in `~/.cache/mace/cluster/<cluster>/` (about 20 files, counted
+  against a home file quota) and reads optional `[cluster]`, `[quota]`,
+  `[scan]` and `[devnodes]` tables of `~/.config/mace/site.toml`. Once a day
+  it looks up a `quota` alias in your login profile (`bash -lc`, 20 s at most).
+  With the GUI open on a cluster it asks SLURM for your jobs once per
+  `cluster.pollSeconds` (60 s) while a cluster view is visible or a job of
+  the folder is queued.
+- **Site settings for job scripts.** With no `~/.config/mace/site.toml` and
+  no `MACE_SLURM_*`/`MACE_CRYSTAL_MODULE` in the environment, every job script
+  keeps its bytes on MSU HPCC for a member of `mendoza_q`, and wherever SLURM
+  and modules cannot be asked (a workstation); a `site.toml` written by `mace
+  site --init` changes nothing until you uncomment a line. On any other
+  cluster the built-in values are checked first: an account you are not a
+  member of is left out (SLURM charges your default account), Python modules
+  that do not load are replaced by the Python that runs MACE, the completion
+  step's `--max-jobs/--reserve` follow your MaxSubmitJobs, and the default
+  walltime is lowered to your partition's MaxTime; MACE says each once, and
+  `mace site` lists them. MSU's development-node names and node-exclusion
+  choices appear only on MSU HPCC. If the CRYSTAL module MACE was built for
+  is not available, job scripts now load the best CRYSTAL 23.x module that has
+  Pcrystal and Pproperties (it used to fail with `bin/Pcrystal: No such file
+  or directory`), a lower-case `crystal/...` modulefile too; a notice and a
+  `# MACE:` line in the script say so. MACE
+  never switches to another CRYSTAL major version on its own: set
+  `crystal_maximum` (or `crystal`) in `~/.config/mace/site.toml` to allow one.
+  Pin a module with `MACE_CRYSTAL_MODULE=<module>`, or keep the old line with
+  `MACE_CRYSTAL_MODULE=none`. An invalid value in the file or in those
+  variables now stops generation with exit code 2 instead of writing a broken
+  script. Completion callbacks reuse the module their parent job loaded and
+  never probe modules.
+- **Site settings need Python 3.11 to be read.** On an older Python with a
+  site settings file present, MACE now stops with exit code 2 (it ignored the
+  file and wrote the built-in values); MACE already requires 3.11. A
+  `~/.config/mace/site.toml` that group or others can write gets a warning
+  (its values still apply); `MACE_SITE_CONFIG=none` now also ignores group
+  files. A `[resources]`, `[mpi]`, `[paths]` or `[crystal]` table you put in
+  site.toml by hand earlier ("unknown keys ignored") now applies.
+- **`mace run` off MSU HPCC is no longer capped at 1h55m per deck** where the
+  node sets no CPU-time limit (`ulimit -t`); the 30-minute default per deck
+  stays. On MSU HPCC the cap is unchanged; `[local_run] max_time` sets it.
+- **Workflows on a cluster with a MaxSubmitJobs below 1000** get queue limits
+  that fit it at plan time (`--max-jobs 190 --reserve 10` for 200), said once.
+- **Workflows planned before you set an account or modules in site.toml keep
+  the account and module stored in their plan** (`workflow_configs/*.json`),
+  including plans made by MACE 1.1.4, which store `mendoza_q` explicitly. Plan
+  again to use the new settings. The planner's account prompt now defaults to
+  the site account. A quick-start plan without a stored account (1.1.4's
+  `mace submit --progress`) gets the site account when its steps are built.
+- **Submitting from the GUI writes only what `mace submit` writes**, plus, for
+  a tracked submit, one backup of the folder's `materials.db` in `backups/`
+  (the newest three are kept) and File History copies of the files it
+  replaces. Batch Setup writes a `batch_*/` folder only when you click
+  Write. Jobs the GUI submits get the environment `mace gui` was started
+  with, as from that shell.
+
+- **`mace gui` is new; nothing else changes.** It needs no new packages: it
+  uses ase, spglib and plotly from `requirements.txt`, and shows an install
+  hint if your install is missing one. Plain `mace` commands do not load it.
+- **It writes only what docs/gui.md lists:** files you save in `--dir`
+  (structures, CIF, settings JSON, Calculation Setup's files and the decks you
+  ask for), `~/.config/mace/gui.json`, `~/.cache/mace/gui`, temporary files
+  under `$TMPDIR` (removed at exit), a 0600 state file holding its token while
+  it runs (`$XDG_RUNTIME_DIR/mace-gui-<port>.json`, removed at exit), and,
+  only when you use them, `~/.config/mace/connect.toml` (`mace gui connect`
+  profiles) and `~/.cache/mace/modules.json` (the xtb module search).
+  `materials.db` is opened read-only unless you run Create or Update Database
+  from a Folder (below); no schema changes.
+- **It listens only on 127.0.0.1.** Another address needs `--host` together
+  with `--insecure-network`, because the token then travels unencrypted; the
+  ssh tunnel it prints is the supported way to reach it from a laptop. The
+  token is random unless you set one (`MACE_GUI_TOKEN` or `--token`), which
+  must be at least 16 characters, each a letter, a digit or `. _ ~ -`.
+- **Choose your own port on shared nodes** (`export MACE_GUI_PORT=8xxx`):
+  browser drafts are kept per port (everything else in the GUI profile follows
+  you to any port).
+- **GUI defaults to GPU 0** for its GPU features (none yet) and for
+  `--open --gpu`'s help; a pre-release GUI's stored GPU 1 falls back to GPU 0
+  once: pick it again in Settings › Advanced or set `MACE_GUI_GPU=1`. Shift+A,
+  Shift+P and the Boundary Atoms checkbox now change the open document only
+  (the defaults stay in Settings › Viewport). A pre-release GUI's
+  `gui.json` becomes the version-2 profile on its first save (a copy is kept
+  as `gui.json.v1.bak`); a pre-release GUI writing it afterwards keeps only the
+  settings.
+- **The printed link signs in once** (`?login=`): the same URL from the
+  browser's history signs nobody in. `mace gui login-url` prints a new link,
+  and the sign-in page takes the token; the token works only there and in an
+  `X-Mace-Token` header, never in a URL or a cookie. A pre-release `?token=`
+  link or bookmark shows the sign-in page. A session ends after 12 hours
+  without keyboard or mouse input (Settings › Server › Sign out after: Never
+  restores the old behavior); tasks are not affected. When stdout is not a
+  terminal, the token is in the state file (`.json`, not the earlier `.url`
+  file): read `base` from it and use `mace gui login-url`.
+- **`mace gui --open` no longer starts a browser on an ssh node without a
+  display** (a text browser would take over the terminal); it says so.
+- **MACE GUI never reads credential or secret files** (`.ssh/...`,
+  `.config/gh/...`, `.config/gcloud/...`, `.netrc`, `.gnupg`, `.aws`,
+  `.azure`, `.kube`, `.docker`, `.git-credentials`, `.pgpass`, `.pypirc`,
+  `.npmrc`, `.vault-token`, `.env` and `.env.*`, shell and interpreter
+  histories, ssh private keys `id_rsa`/`id_ed25519`/...), even when it serves
+  your home folder: they are not listed and show as "hidden for safety". It
+  never writes into a hidden folder.
+- **xtb may now be found through your cluster's module system** where GFN-FF
+  said "not found": when xtb is not on PATH, MACE loads the newest xtb module
+  6.7 or newer for xtb's own process (`MACE_XTB` still wins;
+  `MACE_XTB_MODULE=<module>` pins one, `MACE_XTB_MODULE=none` turns the search
+  off). The wrapper of the earlier HPCC notes keeps working.
+- **New environment variables:** `MACE_GUI_ROOTS`, `MACE_GUI_MANAGED_TIMEOUT`,
+  `MACE_GUI_MANAGED_GRACE`, `MACE_GUI_SESSION_IDLE_HOURS`,
+  `MACE_GUI_SESSION_MAX_DAYS`, `MACE_GUI_IDLE_STOP_HOURS` and
+  `MACE_XTB_MODULE`; new gui.json keys
+  `session.idleHours`, `session.maxDays` and `server.idleStopHours`.
+- **The README header is now an SVG logo;** the ANSI banner in the terminal is
+  unchanged.
+- **`mace preopt` and `mace mlip` are new.** xtb and the ML environment are
+  optional and external; nothing new is required. `mace mlip fetch` is the
+  only MACE command that downloads; the weights go to
+  `$XDG_DATA_HOME/mace-tool/mlip/` (or `MACE_MLIP_DIR`), apart from
+  mace-torch's own `~/.cache/mace`. A pre-optimized geometry is a starting
+  point only: run a CRYSTAL OPT from it before SP/FREQ/BAND/DOSS.
+  `mace preopt` refuses a .d12 whose records edit its geometry (SUPERCEL,
+  ATOMREMO, ATOMSUBS, GHOSTS, ...): pre-optimize the expanded structure (the
+  .out of a run, or a CIF exported from it).
+- **A CIF from `mace preopt`** (or saved from the GUI after a GFN-FF/ML
+  Clean) carries one `# mace-preopt:` comment line; every other save is
+  unchanged. `mace convert` prints one stderr warning for such a CIF when the
+  deck is not an OPT; its prompts, defaults and decks are unchanged.
+- **`mace gui` checks in the background at start what Clean can offer:** a
+  short `xtb --version` when xtb is found, and an import probe of the ML
+  interpreter only when one is recorded (up to 20 s, cached for 7 days in
+  `$XDG_CACHE_HOME/mace/preopt/`). Startup does not wait for it. Its
+  temporary files, and those of every GFN-FF/ML run, go under
+  `<tmp>/mace-preopt-<uid>/`, which stays as an empty directory.
 
 - **Install seekpath 2.1 or newer; it is now required** (`pip install -r
   requirements.txt`, or `pip install --upgrade seekpath`). seekpath 2.0.x
@@ -171,9 +333,280 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   - A database written by 1.1.5 with job array rows (`A_T` job ids) should be
     read by 1.1.5: an older MACE does not expand the pending task lists of
     squeue and keeps such rows as they are.
+- **materials.db on a cluster file system uses SQLite's rollback journal.**
+  SQLite's WAL mode is not safe when processes on different nodes share a
+  database on NFS, GPFS, Lustre or BeeGFS, which is how completion callbacks, <!-- british-ok: Lustre is a file system -->
+  the login node and the GUI use it. The first write by 1.1.5 to such a
+  database switches it out of WAL when nothing else has it open (the `-wal`
+  and `-shm` files go away); on a local disk nothing changes. A 1.1.4 process
+  switches it back on its next write, without losing data: upgrade every MACE
+  install that writes the same database. On mounts without cluster-wide locks
+  (Lustre `localflock`/`noflock`, NFS `nolock`, BeeGFS by default) MACE's <!-- british-ok: Lustre is a file system -->
+  writers also take turns through `<db>.mace-writer.lock` and say so once.
+  `MACE_DB_JOURNAL=wal|delete` and `MACE_DB_LOCKING=trust|degraded` override
+  this; set them in `~/.bashrc` (jobs inherit them) or not at all. FUSE
+  mounts count as network file systems too (sshfs, automounted research
+  storage, and `fuseblk` disks such as NTFS or exFAT USB drives): a database
+  there gets the rollback journal and the writer lock file.
+- **A busy database no longer re-runs a completion callback.** A "database is
+  locked" error after the callback had submitted a follow-up used to re-run
+  the whole callback (without its lock on the plain path), which could submit
+  the follow-up twice. Now the job records its own row and leaves the rest to
+  the next sweep (`mace manager --callback-mode completion`). Any other error
+  raised after a submission no longer falls back to an unlocked re-run either;
+  an error before any submission keeps that fallback. A callback that
+  waited 60 s for the queue lock also records its own row instead of nothing.
+- **`mace analyze --extract-properties` files a tracked calculation's rows
+  under that calculation's material.** Rows an earlier extraction filed under
+  a material id guessed from the file name are moved (by UPDATE, never
+  deleted) on the next extraction, and an "Unknown" placeholder material gets
+  its formula and space group. A query by the file-name id for a tracked
+  calculation then finds nothing. Untracked outputs keep their file-name ids.
+  The new flags `--register`, `--dry-run [--json]`, `--skip-unchanged`,
+  `--backup [--keep-backups N]` and `--progress-json` are opt-in; `--backup`
+  writes `<db dir>/backups/materials_backup_YYYYMMDD_HHMMSS.db` (and the
+  structures.db beside it) and keeps 3.
+- **The GUI's energy card now plots point 1 with CRYSTAL's D3/gCP correction**
+  (see Fixed); runs with a dispersion or gCP correction show different (correct)
+  first steps. Its run cache is rebuilt once.
+- **The GUI never writes over outputs and keeps what it replaces.** Save,
+  Save As and Calculation Setup refuse a calculation output, a wavefunction, a
+  data file, a database, a MACE job script or the deck of a queued job (409,
+  with the reason); before any other replace the current version goes to File
+  History in `~/.local/state/mace/gui/history/` (up to 500 MB of inputs and
+  1000 MB of output copies by default; `MACE_GUI_HISTORY_DIR` moves it). A
+  write is refused when that copy cannot be made.
+- The Settings "Energy unit" (Units and numbers) is now used by plots.
 
 ### Added
 
+- **Two editor groups side by side in the GUI** (View › Editor Groups › Split
+  Editor Right, Ctrl+\\; Open to the Side; drag a tab across): any two
+  documents, every kind, either group editable; Link Cameras turns two 3D
+  views together; a spectrum's peak opens its mode in the other group, and
+  Color Density by Potential, Volume Difference and Compare the Two Groups'
+  Structures take the other group's document. The Inspector follows the
+  focused group and each group has its own bottom panel (its atoms, timeline
+  or modes). The split comes back per folder.
+- **MACE GUI as a SLURM job: `mace gui --slurm` and `mace gui connect
+  --slurm`.** One small batch job (`mace-gui`; 2 CPUs, 4G and 4 hours by
+  default, partition/account/QOS/constraint from the flags, the connect
+  profile or your site settings, never one cluster's built-in values) runs
+  the server on a compute node; MACE waits while it is pending (Ctrl+C
+  cancels that job only), forwards a port to the job's node, and reattaches
+  to it later. The job ends, and its allocation is released, when the server
+  stops: Ctrl+C, Sign Out and Stop Server, 1 hour without use, or 60 s before
+  the time limit (warnings at 15 and 5 minutes; the status bar shows the
+  job). Every SLURM read goes through the shared rate-limited cache. See
+  docs/gui.md#run-it-as-a-slurm-job.
+- **The Submit dialog's Site row shows every resolved site value** (job size,
+  MPI launch, scratch, QOS, constraint, executables, each with its source) and
+  has a **Check** button that runs `mace site check` (sbatch --test-only only).
+- **`mace --help` lists the commands in groups** - automated workflows,
+  monitoring, manual calculations, results, special systems and structure
+  tools, GUI, setup - with a note on which command shows your jobs and a
+  Quick start that begins with the GUI and includes `mace site` for a new
+  cluster. `mace help GROUP` prints one group and `mace help COMMAND` a
+  command's help; docs/cli.md starts with the same groups.
+- **`mace cluster`: cluster status and job progress (SLURM), read-only.**
+  Nodes by CPU type or partition with free cores, memory and GPUs in the
+  partitions your accounts may use; `fit` (where a request could start now)
+  and `--predict` (`sbatch --test-only`, nothing submitted); reservations;
+  storage and file-count quotas from the site's own tool, lfs, mmlsquota,
+  quota or df, warned at 80/90 %; `files`, a throttled scan of where your
+  files are with cleanup commands to copy (never deletes); your association
+  and QOS limits, use and fairshare, and `--check-submit` advice before a big
+  batch; `job ID`, with efficiency only when SLURM measured it, progress and
+  a nested ETA (total, stage, inner loop) from the live output for
+  optimizations, single points and frequencies (CRYSTAL's stop rules and its
+  default FINALRUN restart for optimizations; the IR/Raman CPHF stages and
+  FREQINFO.DAT restarts for frequencies, never extrapolated from the central
+  point), backtested on the test corpus with family-grouped held-out scores,
+  and what happens if it times out; `estimate`, a runtime range and walltime
+  suggestion from similar finished runs; `devnodes --pick`. Every query is
+  cached and rate-limited (one node query per minute, shared by all your MACE
+  windows); standard library only, so it runs on a cluster's bare module
+  Python. See docs/cli.md#mace-cluster.
+- **The GUI's Cluster view and Job documents** (the same data): Overview,
+  Nodes, Will It Start?, Storage (with the scan), Limits and, where a module
+  system exists, Software (the CRYSTAL and xtb modules MACE would load) tabs; a Job
+  document that follows a running job's progress; a status-bar chip when
+  storage is nearly full; optional browser notifications when your jobs
+  finish (Settings › Cluster). One server-side poller asks SLURM for your
+  jobs, at most once a minute.
+- **MACE on any SLURM cluster: the rest of the job script in site.toml, group
+  settings, and `mace site check`.** New optional keys change only their own
+  lines: the job size (`[resources] ntasks, nodes, cpus_per_task, mem_per_cpu`
+  or `mem`, `[resources.properties]` for Pproperties jobs; `mace submit -i`,
+  `--walltime` and the planner offer them as defaults), how CRYSTAL starts
+  (`[mpi] launcher = "srun"`, `srun_mpi`, `env`), CRYSTAL from a directory
+  instead of a module (`[crystal] bin_dir`, `scf = "MPPcrystal"`), `[modules]
+  purge = false`, `[slurm] qos`, `constraint` and `extra` directives, a shared
+  scratch candidate (`[paths] scratch`, never guessed) and `[local_run]
+  max_time`, each with a `MACE_*` variable. Admins and labs can share settings
+  in `/etc/mace/site.toml`, `$XDG_CONFIG_DIRS/mace/site.toml` or the files
+  `MACE_SITE_GROUP_CONFIG` names; each person's site.toml overrides them per
+  key, and a group file others can modify is refused. Values that reach a line
+  bash runs are checked to be data only, in the file and again when a
+  workflow plan is replayed. `mace site` shows every value with its file (and
+  a group file's owner) and whether the job size fits a node (`sinfo`);
+  `mace site check` tests account, partition, QOS, job size, CRYSTAL, MPI,
+  the completion Python and scratch, and asks `sbatch --test-only` about a
+  generated job script. sbatch refusals for QOS, node size, features and time
+  limits now get a one-line hint naming the key. With none of the new keys
+  set, every job script keeps its bytes. MACE submits with SLURM only; PBS,
+  Torque and LSF are planned for MACE 1.2 or later.
+- **Site settings for the job scripts MACE generates (account, partition,
+  modules), `mace site`, and a CRYSTAL module fallback within the same major
+  version.** `~/.config/mace/site.toml` (or `MACE_SLURM_ACCOUNT`,
+  `MACE_SLURM_PARTITION`, `MACE_CRYSTAL_MODULE`) sets what `mace submit`,
+  `mace run`, job arrays, workflows and completion callbacks write into job
+  scripts; `mace site` shows each value and its source, checks the account
+  against your SLURM associations, and `--init` writes a commented template.
+  `mace run` and `mace preflight` probe the module the scripts load. With
+  no setting, MACE works out of the box on any SLURM cluster: it checks the
+  built-in account (`sacctmgr`), Python modules (a module probe), queue
+  limits (`scontrol show assoc_mgr`) and the partition's MaxTime, caches the
+  answers for a day, and writes only what applies; `[queue] max_jobs,
+  reserve` set the limits. See docs/cli.md, "Site settings", and
+  INSTALLATION.md, "Using MACE on another cluster".
+- **Submit, Run on This Node, Jobs and Batch Setup in the GUI.** Submit…
+  previews the exact `mace submit` command in a copy of the folder (read-only
+  SLURM queries reach the cluster, state changes are only recorded), shows
+  the resources, the files it and the jobs will write, the site settings and
+  every conflict (a finished output, a deck already queued, an account that
+  is not yours), and submits only on its own button; Run on This Node does
+  the same with `mace run`. Jobs lists your own jobs (arrays grouped, the
+  folder or all), follows them, reports jobs that leave the queue, and
+  cancels single jobs and array tasks only. Batch Setup sets up decks for a
+  folder's CIFs or for completed runs that need a follow-up, each follow-up
+  keeping its parent's settings, and writes a `batch_*/` folder with the
+  CLI's settings files, the decks and a `commands.sh` that re-creates them.
+  See docs/gui.md, "Submit and Jobs" and "Batch Setup".
+- **The MACE GUI: `mace gui [--dir DIR] [--open]`.** A local browser app,
+  served by a standard-library server bound to 127.0.0.1 with a session
+  token, for the calculations in a folder: an explorer, document tabs, a
+  structure viewer and editor with symmetry (Sym/P1, undo, `.bak` on the
+  first overwrite, drafts), builders (supercell, slab, point defects,
+  transform, symmetrize), Clean Geometry (springs, GFN-FF, ML potentials or
+  Auto, run out of process, the spring result kept as the fallback), the
+  OPT trajectory before/after, BAND/DOS, IR/Raman and FREQ-mode documents,
+  Compare, coordination polyhedra, SVG/PNG export, the `materials.db`
+  browser, and Calculation Setup, which asks the CLI's own questions and
+  saves the JSON settings file `mace convert`/`opt2d12`/`opt2d3` read (the
+  same deck as the manual route). On a cluster it runs on a dev node and
+  prints the `ssh -N -J ... -L` line for your laptop (`export
+  MACE_GUI_GATEWAY=<login host>` fills in its gateway); the 3D views draw on
+  the laptop's GPU. No new dependencies. See docs/gui.md and try
+  `examples/gui`.
+- **GUI viewer: per-document Range & boundary and Rendering.** Each structure
+  document has its own display range (fractional from/to per axis, e.g. Cell
+  + 10% = −0.1 to 1.1), boundary atoms, bonded atoms outside the range (one
+  shell, or whole discrete molecules; chains, layers and 3D networks are
+  found by the rank of their bond cycles and never grown), polyhedra, atom
+  size and bond radius, and its own look (presets Default, Flat, Publication
+  and Presentation; depth cueing, light strength and direction, ambient
+  light, ambient occlusion, outline, background). Settings › Viewport holds
+  the defaults, which every document follows until it changes a value; Save
+  as Default and Reset per group. View only: nothing reaches decks, CIFs or
+  the settings JSON.
+- **The GUI profile on the server.** Layout, Recent files, remembered choices
+  and each document's view options are kept in `~/.config/mace/gui.json` and
+  `gui-docprefs.json` next to it (not only in the browser), so they come back
+  on a new tunnel port, in another browser and on another computer sharing
+  your home; the first paint uses them too, and a change made just before
+  closing the tab is saved. Only unsaved drafts, Zen Mode, plot options and
+  the overwrite question stay per browser. Two servers saving at once keep both
+  changes (a file lock and a read-back check).
+- **GUI: Settings › Advanced exports, imports and resets the whole profile**
+  (you choose the parts; Recent files and per-document options are off by
+  default when exporting; a reset keeps a copy first, the newest 3), and a
+  browser without WebGL gets an explanation in the viewport instead of a blank
+  canvas, with the rest of the GUI working.
+- **GUI: a way out of Zen Mode** (a chip at the top right, Esc, the viewport
+  menu), and the browser tab names the folder ("MgO.cif — project — MACE");
+  the menu bar shortens paths under `$SCRATCH`, `$WORK` or `$PSCRATCH` too.
+- **CI: a headless browser smoke job** (`gui-smoke`: Firefox and Chromium with
+  software WebGL on the example folder), which fails, never skips, without a
+  browser.
+- **`mace gui connect`: start MACE GUI on a cluster node and open it in your
+  computer's browser with one ssh session.** It logs in through the gateway
+  (`--hop jump`, `--hop nested` for nodes that accept logins only from the
+  login node, or `auto`), starts `mace gui --managed` in the folder you name,
+  forwards a free local port and opens a one-time sign-in link; Ctrl+C stops
+  the server, and a dropped connection stops it unless GUI tasks still run, in
+  which case `mace gui connect` again reattaches. Profiles in
+  `~/.config/mace/connect.toml`; it needs only Python 3 and ssh on your
+  computer. `scripts/mace-gui-connect.sh` and `scripts/mace-gui-connect.ps1`
+  do the same without MACE (Linux, macOS, MobaXterm, Windows PowerShell), read
+  the same profiles, and `--export-script bash|powershell` fills one in. The
+  server's own hint now names the exact node and prints the connect line; in
+  a VS Code terminal it says to Ctrl+click the link.
+- **File › Open Folder…** switches the served folder within your home and
+  scratch folders (`--root`, `MACE_GUI_ROOTS`; `--root none` turns it off),
+  refusing hidden and credential folders; other tabs follow.
+- **File › Sign Out and Stop Server…** ends the session and stops the server
+  cleanly (Stop When Tasks Finish waits for running tasks, Cancel Stop undoes
+  it); **one-time sign-in links**, session expiry after a time without input,
+  an optional idle stop, and `mace gui login-url` (for a server started by
+  `mace gui connect`, run it where `mace gui connect` runs: the link uses the
+  forwarded port; on the node it says so).
+- **Help › Copy Diagnostics and Report a Problem…** (and `mace gui
+  diagnostics`): a bug report with versions, OS, browser, packages, settings,
+  recent errors and log lines, with paths, file and folder names, tokens, user
+  and host names removed.
+- **CPU-time limits per process** (`ulimit -t`, common on dev nodes) are
+  detected: MACE GUI restarts its ML worker and pool workers before they reach
+  the limit, a worker the kernel kills anyway fails only its own task, and the
+  server warns and stops itself cleanly near the limit.
+- **GFN-FF finds an xtb module by itself** (`mace/utils/envmodules.py`): the
+  newest suitable version of the machine's Lmod or Tcl modules, loaded for
+  xtb's process only and remembered for 7 days; provenance names the module.
+- **The GUI opens everything the CLI reads or writes.** Files are recognized
+  by content: CRYSTAL and properties outputs (calculation type from the CLI's
+  own classifier: all 161 FREQ and 118 OPT outputs of the test corpus right),
+  SLURM job logs (opened as text linked to their calculation, never parsed for
+  geometry), molecule outputs (no PRIMITIVE CELL block: 132 FREQ, 66 OPT and 67
+  SP runs that did not open before), cube files including CRYSTAL's raw
+  `*_CUBE.DAT` and `_WAN_CUBE.DAT` names, fort.25, BOLTZTRA data, restart data,
+  wave functions, scripts and molecular formats. New documents: a properties
+  output's summary with its data files; a **Volume** viewer for cubes
+  (isosurfaces, ± lobes, slices, integrated density, a density colored by its
+  potential with the CLI's range and colors, differences of grids and Save
+  Result As); transport plots; 2D charge-density and potential maps from
+  fort.25 as contour plots; Compare Convergence of several runs. FREQ
+  outputs open as Normal modes, with arrows that move with the atoms while the
+  mode plays; IR/Raman peaks are clickable and open their mode, and a FREQ
+  output with no SPEC.DAT gets a spectrum broadened from its modes with
+  CRYSTAL's DAMPFAC width (FWHM 8 cm⁻¹). Notices close on their own (info) or
+  stay with a close button (errors), count repeats, and land in a notification
+  history. Export Image takes a printed size at a DPI (written into the PNG)
+  and SVG shading. Setup writes SLAB, POLYMER and MOLECULE decks, orienting the
+  cell first so the CLI's coordinate writer gets the orientation it handles.
+  The CLI is unchanged. See docs/gui.md, "What each file opens as", "Volumes"
+  and "Molecules, slabs and polymers".
+- **Pre-optimized starting geometries: `mace preopt INPUT.cif|INPUT.d12
+  --method springs|gfnff|mlip:<id>|auto`**, written as `<stem>_preopt.cif` in
+  the input's own space group and setting, with a provenance
+  `<stem>_preopt.json`. Springs are the default; GFN-FF runs through an
+  external xtb 6.7+; the ML potentials (MACE-MPA-0 from ACEsuit's mace-torch,
+  which is unrelated to this MACE, and CHGNet 0.3.0) run out of process in
+  their own environment. Every run makes the spring result first and keeps it
+  when GFN-FF/ML is refused, fails, or is rejected (energy rose, volume moved
+  over 10 %, a close contact, a space-group change, not converged). A raised
+  space group is never accepted, since CRYSTAL OPT would keep it;
+  `--symmetrize TOL` is the explicit way to raise it. The result is a starting
+  geometry only: the method of the calculation is untouched and CRYSTAL still
+  optimizes. See docs/preopt.md.
+- **`mace mlip list|setup|fetch`:** the ML models, their licenses and status;
+  instructions for an ML environment (MACE creates none) and recording one;
+  the weights download, shown and confirmed first, sha256-verified.
+- `mace convert` and the GUI's Setup warn (and change nothing else) when a
+  geometry pre-optimized with GFN-FF or an ML potential is used for anything
+  but an OPT.
+- **A MACE logo** (docs/logo/, with its usage guide), drawn from the
+  terminal banner: the README header and the GUI's favicon, menu bar, About
+  and welcome screen use it.
 - **SLURM job arrays (opt-in): `mace submit --array [--max-running N]`.**
   Many decks at once go to SLURM as job arrays instead of one job each. Every
   deck keeps the job script the default path writes; decks whose scripts ask
@@ -363,8 +796,48 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
 - `mace preflight` checks an EXTERNAL deck when its geometry sits next to it as
   `<stem>.ext`, staging it as fort.34 the way the job script does.
 
+- **Run Analysis in the GUI**: a run card (how the run stopped, in the words
+  of `mace check` and the CRYSTAL23 manual, and the run's details), and a plot
+  document with the energy per CRYSTAL optimization point by FINALRUN segment,
+  the four convergence criteria against their thresholds (with where each
+  threshold came from), SCF cycles, the cell along the run and distances or
+  angles tracked across frames; Compare Runs; Problems rows from the output
+  (warning stops, SCF not converged, CRYSTAL warnings, non-default tolerances,
+  imaginary modes beyond numerical noise). See docs/gui.md › Analyzing a run.
+- **`mace analyze --convergence FILE.out [--json]`**: the same per-point table
+  in a terminal (SCF cycles, printed DE, the four criteria against their
+  thresholds, FINALRUN segments, how the run stopped, threshold sources).
+- **Plot options on every GUI plot**: Log Y/X, units (eV, meV, Ha, kJ/mol,
+  kcal/mol; cm⁻¹, meV, THz), relative to, per cell/atom/formula unit, ranges,
+  line width, Export (PNG, SVG, CSV, Copy as TSV), remembered per plot.
+- **Create or Update Database from a Folder** (GUI): the
+  `mace analyze --extract-properties … --register` command it shows, with a
+  preview of new, changed, unchanged, untracked, unreadable and incomplete
+  outputs, a backup first, progress and Cancel. Raman intensities of FREQ
+  runs (`raman_intensities`) and the space-group number CRYSTAL23 prints as a
+  symbol (`space_group_number`) are now extracted too.
+- **Live runs and live databases in the GUI**: outputs a job is still writing
+  update every 15 s (never shown as broken), the text view follows the tail,
+  and the Database view reloads when jobs record results, keeping its sort
+  and selection; a busy database says so and retries.
+- **File History** (Explorer › Show File History…, File: Show History): Open,
+  Compare with Current and Restore for every file the GUI replaced, and Undo
+  on the save toast.
+- **The Atoms, Coordination and Measurements panels of a run** show the frame
+  on screen, read-only (Edit This Step to change it).
+
 ### Changed
 
+- **The documentation is reorganized.** The README is a short front page:
+  what MACE is, how to install it, a GUI quick start, then the command line,
+  a feature tour and links. docs/cli.md now has a reference section for every
+  command with all of its options (a test keeps it in step with each
+  command's `--help`); docs/gui.md is the GUI guide; docs/citations.md lists
+  what to cite (CRYSTAL23, SeeK-path, spglib, ASE, phonopy, the defect
+  corrections, 3Dmol.js and the pre-optimization methods); INSTALLATION.md
+  lists every requirement. The repository tree and workflow isolation moved
+  from the README to DOCUMENTATION.md. A test checks every relative link and
+  anchor in the Markdown files.
 - **seekpath is a required dependency** (`requirements.txt`, `seekpath>=2.1,<3`;
   an older seekpath counts as missing, and `setup_mace.py` checks for it).
   A SeeK-path band path of a 3D cell is
@@ -465,6 +938,51 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   byte-identical.
 
 ### Fixed
+
+- **`mace` works through a symbolic link to `mace_cli`** (for example
+  `~/bin/mace`) without `MACE_HOME`: `convert`, `opt2d12`, `opt2d3`, `opt2cif`
+  and `ions` looked for their tools next to the link and stopped with "No
+  module named ...". Since 1.0.0.
+- **GUI: the activity bar and the theme, settings and search buttons work.**
+  They had no click handler. Every visible command button is now tested with
+  real clicks.
+- **GUI: no atom is cut off by the clipping planes** after a range change, a
+  pan or a zoom (the planes followed only the first fit: 637 of 900 atoms of
+  a 3×3×3 AgTe cell were clipped), and depth cueing is subtle (15%) instead of
+  3Dmol's default fog over most of the cell.
+- **`mace preopt --device cuda:N` stays within the job's GPUs.** Inside a job
+  with `CUDA_VISIBLE_DEVICES` set (SLURM, a site wrapper), N now counts within
+  that list (`3,5` and `cuda:1` give GPU 5); an N outside it, or a cuda device
+  in a job without GPUs, is refused before the worker starts.
+- **The GUI's energy card put an optimization's first point on the wrong
+  energy surface.** CRYSTAL prints point 1's `TOTAL ENERGY(DFT)` without its
+  D3/gCP correction and compares later points with the corrected value, so
+  most real runs (117 of 118 test optimizations) showed a spurious drop of
+  hundreds of meV at step 1. The card now uses CRYSTAL's corrected value
+  (and the OPT END energy for the final frame).
+- **The GUI's Database view could read a database mid-write.** It fell back to
+  an "immutable" read on any open error, including a busy database and the
+  hot journal a killed writer leaves; it now decides by SQLite's error code,
+  answers "busy" and retries, and reads a snapshot only of a database in a
+  folder it cannot write.
+- **Extracted properties of tracked calculations were invisible in the
+  database** (filed under file-name material ids no materials row had).
+- **MACE never cancels a whole job array when its database cannot be read.**
+  The check that refuses `scancel <array id>` gave up silently on a database
+  error, so a bare array id that no nearby `.mace_arrays/*/submitted.json`
+  named went through and canceled every task. Now SLURM is asked instead
+  (`squeue -r`, then `scontrol show job`): an array id is refused, a plain
+  job SLURM lists cancels as before, and when SLURM cannot answer either the
+  cancel is refused with the reason ("could not check whether <id> is a job
+  array ..."). Affects the queue manager's cancels and the GUI's Jobs panel.
+- **Security: MACE GUI could read secret files outside its credential
+  list.** Serving your home folder, the read, preview and download routes
+  blocked only `.ssh`, `.gnupg`, `.aws`, `.kube`, `.docker`, `.config/gh`,
+  `.netrc`, `.git-credentials` and `.pgpass`, so `api/text?path=.pypirc` (or
+  `.npmrc`, `.env`, `.bash_history`, an `id_rsa` outside `.ssh`, ...) returned
+  the file. Those are now hidden for safety too, wherever they are and also
+  through a symbolic link (the list is in the Security section of
+  docs/gui.md).
 
 - **squeue lines of job arrays are read whole.** squeue folds an array's
   pending tasks into one token, and once the pending set has a gap the
@@ -1173,11 +1691,201 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   from the `.out` when there is no `.d12`, giving the same deck; only when
   neither has one is the default used, and opt2d3 says so. Decks made with
   the `.d12` present do not change.
+- **`mace submit --track` names only this run's jobs in its `Job ID(s):`
+  line.** It listed every job the folder's `crystal_job_status.json`
+  remembers, so a second tracked submission in a folder also named the
+  earlier jobs (copied into `scancel`, it would cancel them too).
+- **GUI: Submit refuses a walltime that is not a SLURM time** (`30`,
+  `2:00:00`, `1-00`, `1-00:00:00` and the like) before anything runs, and a
+  deck whose earlier submission sbatch refused is no longer called "already
+  queued".
+- **GUI: a server keeps answering after the terminal that started it closed**
+  (a plain `ssh node mace gui ...` without a tty): File > Open Folder lost its
+  reply on the dead pipe.
+- **GUI: the Jobs panel opens a job's Job document** (progress, ETA) with
+  Details or a double-click; an ended job's document shows its name, size,
+  node and output from `sacct`, and `mace gui connect --slurm` names the
+  job's node instead of the node ssh reached.
+- **GUI: Run Analysis Export > PNG/SVG saves the file, and Copy Image to
+  Clipboard copies.** Both turned the image into a file with a request the
+  page's security policy refuses, so nothing was saved and the copy always
+  failed.
+- **GUI: Calculation Setup ignores views that hold no file of their own**
+  (a file opened as text, Run Analysis, Compare with Input). It treated them
+  as an unsaved structure or an output to follow and showed "no path given".
+- **GUI: the FREQ modes view stays inside its editor group.** A long output
+  name widened it past its panel: the molecule sat off center, and in a split
+  group it was off screen.
 - **opt2d3 copies the wavefunction only for a deck it writes.** A run that
   ended without a deck (`< /dev/null`, "The input ended before every question
   was answered") still left `<base>_band.f9` / `<base>_doss.f9`, a full copy
   of the `.f9`, in the directory. The copy is now made after the deck is
   written.
+- **`mace ions` (and the CHEMOD carry of opt2d12) refuses decks that reorder
+  or rebuild the atoms.** It kept its own list of 17 geometry records and
+  missed ATOMORDE, which reorders the atoms after the geometry is read, so
+  CHEMOD labels taken from the deck order pointed at other atoms; FULLE,
+  NANOMULTI, HYDROSUB, CLUSTSIZE, NANORODS, NANOCRYSTAL and WULFF were
+  missed too, and PRIMITIV (a properties keyword) was refused. It now reads
+  the one table `mace preopt` uses, on the first word of each line; records
+  that keep every atom in place (ELASTIC, BREAKELAS, ATOMROT, MOLEXP,
+  MOLSPLIT, USESAED, POINTCHG, GHOSTS) are still accepted. Decks without
+  these records are written as before.
+- **Decks with a non-standard origin (IFSO > 1) work in `mace ions` and
+  opt2d12.** The origin-shift record after the space group was read as the
+  cell, so `mace ions` refused valid decks with confusing errors and the
+  opt2d12 child of a CHEMOD parent lost its CHEMOD; the child also kept
+  `0 0 2` without the shift record, a deck CRYSTAL misreads. The record is
+  now skipped where the atoms are counted and carried into the child.
+- **`mace preflight` tests the CRYSTAL build the job scripts use.** Its
+  module probe always ran `module purge` and ignored `[modules] purge =
+  false`, so it could load another build than `mace run` and the job
+  scripts; it now uses the same probe as `mace run`, and runs none when
+  CRYSTAL comes from `[crystal] bin_dir`. When `bin_dir` has no serial
+  `crystal`, preflight and the GUI say so instead of using a `crystal`
+  found elsewhere.
+- **A whitespace-only `SLURM_JOB_ID` no longer counts as a SLURM
+  allocation.** A second definition of `outside_allocation_env` replaced the
+  first and dropped every `SLURM_*` variable for it.
+- **GUI pre-optimizations in two threads with the same method keep their own
+  calculator.** The tier's factory went through a shared table that each run
+  set and cleared, so one run could use the other's (another charge or
+  backend) or silently fall back to the springs.
+- **`mace recover` says what it does: it prepares fixed inputs and job
+  scripts and submits nothing.** The command list, `docs/cli.md` and the
+  help promised a resubmission, and the action printed a `resubmit_delay`
+  that nothing applies. It now ends with the exact `mace submit` (or
+  `sbatch`, for a bumped job script) command for each prepared recovery;
+  a recovery prepared but never submitted is reused when the action runs
+  again and no longer counts toward `max_retries`. The queue manager still
+  resubmits tracked runs itself.
+- **The workflow planner's "Memory per CPU" takes `<n>G` or `<n>M` (optional
+  B) only.** A bare number became gigabytes per CPU (`4096` wrote
+  `--mem-per-cpu=4096G`, a job SLURM can never schedule) and `4K` was
+  accepted; both are now asked again, as `mace submit -i` does. Valid answers
+  give the same `#SBATCH` line as before.
+- **GUI: Submit loads the database safety helpers without the database
+  package**, as every other GUI page does (no change in behavior).
+- **Stored band gaps come from the converged SCF (a correction to stored
+  data).** The extractor took the last DIRECT and the last INDIRECT gap line
+  separately, so an SP whose cycle 0 printed an indirect gap of 3.4768 eV and
+  that converged to a direct gap of 4.3946 eV was stored with
+  `indirect_band_gap` 3.4768 and `band_gap_type` "indirect"; 24 of the 244
+  SP/OPT outputs of the test corpus had a wrong type or a stale gap. Only
+  the last SCF counts now: its gap kind and value per spin channel, the
+  last ALPHA/BETA summary rather than the first, and a run that ended
+  conducting stores `band_gap` 0 and no gap kind instead of the last gapped
+  cycle's value. A spin-polarized run's `band_gap` (without CRYSTAL's
+  ALPHA/BETA summary) and its direct/indirect gap are now the fundamental
+  gap of the converged SCF, min(CBM) - max(VBM) over both spin channels
+  from its TOP OF VALENCE / BOTTOM OF VIRTUAL BANDS lines, instead of the
+  last channel's gap (1.1.4) or the smaller channel gap: when the
+  valence-band top is in one channel and the conduction-band bottom in the
+  other, the gap is smaller than both (the FSI radical: 3.0356 eV, beta
+  HOMO to alpha LUMO, not 3.3875 or 8.7278), and edges that overlap store
+  0 with no gap kind. Direct or indirect follows the k points of the VBM
+  and CBM. `alpha_band_gap` and `beta_band_gap` keep CRYSTAL's per-channel
+  values; when CRYSTAL prints that summary, the gap used by the derived
+  estimates is the same fundamental gap. A two-channel run without the
+  summary is now stored with `spin_polarized` true (it was false).
+  Re-extract existing databases (see Upgrading).
+- **`mace cluster job` and the Job document show a started job as running.**
+  scontrol and squeue answers are cached for a minute, so about a minute
+  after a job started it showed "PENDING (Priority), Elapsed 0 s" next to
+  its live SCF progress. When the job's output was written after SLURM was
+  asked, MACE asks again; within the 15 s refresh floor the output wins and
+  the job is shown as running with a note instead of an elapsed time.
+- **The Copy Diagnostics / Sign Out smoke test no longer fails at random**
+  (tests only): a menu closes when the browser window loses focus, which a
+  busy machine with several headless browsers caused between the click and
+  the wait; the test opens the menu again and runs in Firefox too.
+- **Tests that compare with an older tree use the 1.1.5 base commit**, so
+  they run in a public clone instead of skipping (tests only).
+
+### Known limitations (planned for MACE 1.1.6)
+
+- The plot gallery (many outputs in panes, cycled, with a caption table) is
+  not in 1.1.5; the split view compares two documents side by side, and
+  Compare Runs overlays convergence.
+- A database update that a dev node's CPU-time limit stops does not continue
+  by itself; start it again with "Only new and changed files" (or `mace
+  analyze ... --skip-unchanged`) and it continues where it stopped.
+- GUI preferences are per user (`~/.config/mace/gui.json`); per-folder
+  overrides (`.mace/gui.json` in a project) are not there yet.
+- `mace gui connect --slurm` is not in the standalone `scripts/` connect
+  scripts.
+- The job ETA (`mace cluster job`, the GUI's Job document) covers
+  optimizations, single points and frequencies. The IR/Raman CPHF/CPKS stages
+  and tensors have no time estimate yet (a running one says how long it has
+  run, and the total reads "at least ... left"); a FREQ preoptimization has
+  no inner levels; properties runs (band, DOS, transport and the other
+  properties blocks) show which block runs without a time; EOS, ELASTCON,
+  anharmonic and phonon-dispersion runs get no dedicated estimate; job
+  arrays and workflows get no total. The estimate was backtested on a corpus
+  where every run converged and none used SMEAR, so it can be too short for
+  an SCF that stalls or a metallic system and too long for a GUESSP restart
+  (flagged). Planned for 1.1.6: CPHF stage timing, properties blocks,
+  EOS/ELASTCON, anharmonic and dispersion runs, and totals for arrays and
+  workflows (see `docs/cli.md`).
+- `mace recover` prepares fixed inputs and job scripts but does not submit
+  them; only the queue manager resubmits tracked runs, and `resubmit_delay`
+  is read but not applied. A standalone resubmission from `mace recover` is
+  planned for 1.1.6.
+- The FREQ templates are defined twice (`Crystal_d12/d12_constants.py` and
+  `Crystal_d12/d12_calc_freq.py`); 1.1.6 keeps one.
+- The consolidation proposed in `PATHFINDER-2026-10-08/03-unified-proposal.md`
+  (U0-U8: dead code, one SLURM client, one site/CRYSTAL resolution, shared
+  prompt validators, one deck-records toolkit, fast `.out` facts, library
+  code out of `mace/gui`, workflow/queue control flow, CLI/GUI hygiene) is
+  planned for 1.1.6.
+
+### Testing
+
+- 7752 tests (3322 in 1.1.4). On the final tree: 7683 passed (67 skipped,
+  2 xfailed) on Python 3.12 with the test/ corpus, ase, plotly and selenium;
+  6857 passed (891 skipped) on Python 3.12 without the corpus; 5841 passed
+  (927 skipped) on Python 3.11 with CI's packages plus selenium; 6414 passed
+  (786 skipped) on Python 3.12 with ase, spglib and phonopy but neither plotly
+  nor selenium; the GUI smoke tests (`-m guismoke`) pass with the browsers
+  required. Run in parallel groups on a busy workstation, a few browser and
+  process tests (a keyboard activation, a pool worker check after a hangup
+  or Ctrl+C, a local-run cancel) missed their deadline and passed when rerun
+  alone. A test runner that starts pytest in the background of a script must
+  give it the default Ctrl+C handling (a shell's background job ignores
+  SIGINT, and the children inherit that), or the Ctrl+C tests fail. No test
+  writes into the read-only test/ corpus (a WAL database there is read
+  through a copy).
+- The GUI's browser tests (`pytest -m gui`) drive headless Firefox through
+  `mace_cli gui`, drawing WebGL in software (llvmpipe), never on a GPU. They
+  are opt-in: `pip install -r requirements-gui-test.txt` (selenium,
+  axe-selenium-python); without selenium they skip, as in CI, where the GUI's
+  API and CLI tests run. Both CI jobs now stop after 30 minutes.
+- Release gates through the real entry point: the access rules (token, Host,
+  session path and cookie scope, POST header, no test route without the test
+  hooks), the start-up rules (`--host`, `--token`, `MACE_GUI_TOKEN`,
+  `MACE_GUI_PORT`, the URL file), the connection limits, SIGTERM and a
+  hangup (also of a real terminal), writes that refuse symbolic links, the
+  help, that plain commands import no GUI code, the Python children's
+  environment, no pool worker left after SIGTERM, Ctrl+C, a hangup or
+  SIGKILL of the server, and a deck written with a single pool worker.
+- Accessibility: axe-core finds no serious or critical WCAG 2 A/AA violation
+  on the main screens and dialogs in light and dark; a keyboard walkthrough,
+  Esc and focus return on every dialog, reduced motion, and the tokens'
+  contrast are tested.
+- Wall time with CI's packages plus selenium (Python 3.11, nice 10): 4 min
+  59 s before the GUI, 6 min 47 s after.
+- The performance budgets stay opt-in (`MACE_GUI_BENCH=1 pytest -m guibench
+  tests/gui/bench`). Measured by hand while the GUI was developed: over an ssh
+  tunnel from a workstation to an MSU HPCC dev node (2026-10-04, the module
+  Python 3.11.3 with plotly 6.1.2 and ase 3.25), API calls took 5-75 ms, a
+  deck preview about 0.9 s, 3Dmol.js (0.5 MB) about 60 ms and plotly.js (4.6
+  MB) about 100 ms, and the server stopped leaving nothing running; on a
+  two-GPU workstation (GPU0 driving the display), `mace gui --open --gpu 1`
+  moved Firefox 156's processes from GPU0 to GPU1 (nvidia-smi). The browser
+  keys that only real key presses reach (Alt+Left/Right, F5 with a modified
+  document, the developer-tool keys) are checked under Xvfb
+  (`tests/gui/test_browser_keys_xvfb.py`, opt-in); a check on a desktop
+  session is still to do.
 
 ## [1.1.4] - 2026-10-02
 

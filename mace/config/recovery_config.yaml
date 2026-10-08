@@ -29,7 +29,7 @@ error_recovery:
   shrink_error:
     handler: "fixk_handler"              # Uses the fixk.py script
     max_retries: 3                       # Maximum recovery attempts
-    resubmit_delay: 300                  # Delay before resubmission (seconds)
+    resubmit_delay: 300                  # Seconds; read but not applied yet (resubmission is immediate)
     escalate_on_failure: true
     description: "Fixes k-point mesh issues using fixk.py script"
 

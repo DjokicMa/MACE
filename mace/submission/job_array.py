@@ -34,6 +34,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
+
+def note_submission():
+    """Count a successful sbatch (mace.queue.slurm_ids: the completion
+    callback never re-runs after a submission)."""
+    try:
+        from mace.queue.slurm_ids import note_submission as note
+    except ImportError:          # pragma: no cover - run without the mace package
+        return
+    note()
+
 ARRAYS_DIRNAME = ".mace_arrays"
 MANIFEST_HEADER = "# MACE job array manifest v1: task\tdir\tjob\tscript\tcalc_id"
 SHIM_MESSAGE = "MACE_ARRAY_SBATCH_SHIM"
@@ -587,6 +597,7 @@ def submit_prepared(prepared: Sequence[PreparedArray],
             raise ArraySubmitError(f"sbatch refused job array {p.tag} "
                                    f"({len(p.members)} tasks): {err}")
         p.array_job_id = m.group(1)
+        note_submission()
         submitted.append(p)
         _write_submitted(p, argv, released=False)
     if record_rows is not None:
@@ -667,7 +678,11 @@ def submit_untracked_arrays(names: Sequence[str], data_folder, generate: Callabl
             say(f"  Warning: Failed to submit {script_name}")
             if res is not None and res.stderr:
                 say(f"    {res.stderr.strip()}")
+                hint = invalid_account_hint(res.stderr)
+                if hint:
+                    say(f"    {hint}")
             return None
+        note_submission()
         m = SUBMITTED_RE.search(res.stdout)
         if m:
             say(f"  ✓ Submitted {script_name} as a normal job (job {m.group(1)})")
@@ -721,6 +736,9 @@ def submit_untracked_arrays(names: Sequence[str], data_folder, generate: Callabl
             subs = submit_prepared(prepared) if prepared else []
         except (ArrayRefusal, ArraySubmitError) as e:
             say(f"Error: {e}")
+            hint = invalid_account_hint(str(e))
+            if hint:
+                say(f"  {hint}")
             raise SystemExit(1)
         for p in subs:
             job_ids.extend(p.task_id(i) for i in range(len(p.members)))
@@ -744,13 +762,25 @@ def submit_untracked_arrays(names: Sequence[str], data_folder, generate: Callabl
 # --------------------------------------------------------------------------
 # messages
 
+def invalid_account_hint(text: str) -> Optional[str]:
+    """Where to fix it, after an sbatch rejection a site setting can fix
+    (account, QOS, job size, constraint, time limit: site.sbatch_hint);
+    None for any other text."""
+    try:
+        from mace.submission import site
+    except ImportError:          # pragma: no cover - run without the mace package
+        return None
+    return site.sbatch_hint(text or "")
+
+
 def describe_request(group: ArrayGroup) -> str:
     keep = []
     for line in group.directive_lines:
         for name, value in parse_directive(line):
             if name in ("--ntasks", "--nodes", "--cpus-per-task", "--mem", "--mem-per-cpu",
                         "--time", "--account", "--partition", "--qos", "--constraint",
-                        "--exclude", "--gres"):
+                        "--exclude", "--gres", "--exclusive", "--reservation", "--clusters",
+                        "--licenses"):
                 keep.append(f"{name}={value}" if value is not None else name)
     return " ".join(keep) or "(no #SBATCH request)"
 

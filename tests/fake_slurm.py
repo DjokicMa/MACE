@@ -30,7 +30,7 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 
-TOOLS = ("sbatch", "squeue", "sacct", "scancel", "scontrol", "sinfo", "sacctmgr")
+TOOLS = ("sbatch", "squeue", "sacct", "scancel", "scontrol", "sinfo", "sacctmgr", "sshare", "sstat", "srun")
 HERE = Path(__file__).resolve().parent
 
 
@@ -59,6 +59,53 @@ class FakeSlurm:
                                 strings may hold {A} (the array id)
       no_array_hold             sbatch ignores --hold (simulates an
                                 unheld submit)
+    Cluster monitoring (mace cluster), all texts in SLURM's own format:
+      nodes_text                ``scontrol show nodes -o``
+      partitions_text           ``scontrol show partition -a -o``
+      res_text                  ``scontrol show res -o`` (default "No
+                                reservations in the system")
+      job_text                  {id: ``scontrol show job -o`` line}
+      sinfo_text                ``sinfo -h -o "%P|%a|%l|%D|%F"``
+      sacct_rows                {id: [pipe-separated lines]} printed for
+                                ``sacct ... -o JobID,...`` queries
+      sshare_text / assoc_text / qos_text / sstat_text
+      test_only                 {"accept": line} or {"refuse": line}; the
+                                optional "noise" lines print first
+      cluster_name              ClusterName in ``scontrol show config``
+      delay                     {tool: seconds} sleep before answering
+      fail                      {tool: "stderr text"} exit 1 with it
+    Records may also carry: time_limit, elapsed, nodes, cpus, partition,
+    account, nodelist, workdir (squeue %l %M %D %C %P %a %N %Z).
+      nodes                     text printed by ``scontrol show nodes``
+      max_array_size            MaxArraySize in ``scontrol show config``
+      record_env                sbatch logs its whole environment
+                                ("full_env"), not only SLURM_*
+      reject_account            sbatch refuses a script whose -A is this
+                                account (true: every script) with SLURM's
+                                invalid-account error
+      assoc                     [account, ...] printed by
+                                ``sacctmgr show assoc`` (-nP)
+      default_account           printed by ``sacctmgr show user``
+      partitions                text printed by ``scontrol show partition``
+                                (no partition named; -a/-o ignored)
+      sbatch_delay              seconds sbatch sleeps before it answers
+      fail_test_only_with       sbatch --test-only prints this to stderr and
+                                fails (an sbatch rejection text)
+      reject_with               every real sbatch fails with this stderr text
+      sinfo                     text printed by ``sinfo`` (any options)
+      srun_mpi_list             text printed by ``srun --mpi=list``
+      qos                       [qos, ...] printed by ``sacctmgr show assoc
+                                ... format=qos``
+      run_batch                 {pending_s, node, end_in_s}: sbatch runs a
+                                plain job's script in the background (mace gui
+                                --slurm): PENDING for pending_s seconds (as
+                                ``scontrol show job`` says), then RUNNING on
+                                node (default localhost) with SLURM_JOB_ID set
+                                and EndTime end_in_s from the start (default
+                                the --time= limit); the job leaves the queue
+                                when its script exits; scancel kills it
+    Records may also carry user, workdir, elapsed, limit, nodes, cpus and
+    nodelist (squeue %u %Z %M %l %D %C %N); sbatch fills user and workdir.
     """
 
     def __init__(self, root, state=None):
@@ -242,7 +289,7 @@ def sbatch(argv):
         a = argv[i]
         if script is None and a.startswith("-"):
             opts.append(a)
-            if a in ("-t", "-a", "--array", "-J", "-o", "-A", "-p") and i + 1 < len(argv):
+            if a in ("-t", "-a", "--array", "-J", "-o", "-A", "-p", "-n", "-N", "-C", "-c") and i + 1 < len(argv):
                 opts.append(argv[i + 1])
                 i += 1
         elif script is None:
@@ -256,16 +303,52 @@ def sbatch(argv):
             text = Path(script).read_text()
         except OSError:
             text = ""
+    elif "--test-only" in opts and not sys.stdin.isatty():
+        try:
+            text = sys.stdin.read()
+        except OSError:
+            text = ""
     extra = {"script": script, "script_text": text,
              "script_sha256": hashlib.sha256(text.encode()).hexdigest()}
+    early = _load(state_file)
+    if early.get("record_env"):
+        extra["full_env"] = dict(os.environ)
+        try:
+            extra["nice"] = os.nice(0)
+        except OSError:
+            pass
+    if early.get("sbatch_delay"):
+        import time
+        time.sleep(float(early["sbatch_delay"]))
     _log("sbatch", argv, extra)
     if "--test-only" in opts:
-        sys.stderr.write("sbatch: Job 5999 to start at 2030-01-01T00:00:00 using 1 processors "
-                         "on nodes n001 in partition general\n")
+        if early.get("fail_test_only_with"):
+            sys.stderr.write(f"sbatch: error: {early['fail_test_only_with']}\n")
+            return 1
+        state = _load(state_file)
+        t = state.get("test_only") or {}
+        for line in t.get("noise", []):
+            sys.stderr.write(line + "\n")
+        if t.get("refuse"):
+            sys.stderr.write(t["refuse"] + "\n")
+            return 1
+        sys.stderr.write((t.get("accept") or "sbatch: Job 5999 to start at 2030-01-01T00:00:00 using 1 "
+                          "processors on nodes n001 in partition general") + "\n")
         return 0
     if not script or not text:
         sys.stderr.write(f"sbatch: error: Unable to open file {script}\n")
         return 1
+    if early.get("reject_with"):
+        sys.stderr.write(f"sbatch: error: {early['reject_with']}\n")
+        return 1
+    rej = early.get("reject_account")
+    if rej:
+        acct = next((d.split(None, 1)[1].split()[0] for d in _leading_directives(text)
+                     if d.startswith("-A ")), "")
+        if rej is True or acct == rej:
+            sys.stderr.write("sbatch: error: Batch job submission failed: Invalid account or "
+                             "account/partition combination specified\n")
+            return 1
     with _locked(state_file):
         state = _load(state_file)
         state["sbatch_calls"] = state.get("sbatch_calls", 0) + 1
@@ -280,7 +363,7 @@ def sbatch(argv):
         spec = _array_spec(opts, directives)
         hold = "--hold" in opts and not state.get("no_array_hold")
         name = Path(script).stem
-        for d in directives:
+        for d in directives + [o for o in opts if o.startswith("--job-name=")]:
             m = re.match(r"(?:-J\s*|--job-name[= ])(\S+)", d)
             if m:
                 name = m.group(1)
@@ -293,6 +376,7 @@ def sbatch(argv):
                 state.setdefault("throttle", {})[str(job_id)] = throttle
             for t in tasks:
                 records.append({"id": f"{job_id}_{t}", "array": str(job_id), "task": t,
+                                "user": os.environ.get("USER", ""), "workdir": os.getcwd(),
                                 "state": "PENDING",
                                 "reason": "JobHeldUser" if hold else "None",
                                 "name": name, "command": str(Path(script).resolve()),
@@ -303,14 +387,111 @@ def sbatch(argv):
             job_id = state.get("next_id", 5000)
             state["next_id"] = job_id + 1
             records.append({"id": str(job_id), "state": "PENDING",
+                            "user": os.environ.get("USER", ""), "workdir": os.getcwd(),
                             "reason": "JobHeldUser" if hold else "None",
                             "name": name, "command": str(Path(script).resolve()),
                             "start": "N/A", "timeleft": "1:00:00"})
+            if state.get("run_batch"):
+                state.setdefault("job_text", {})[str(job_id)] = _job_line(job_id, name, "PENDING", "Priority",
+                                                                         "Unknown", "Unknown", "(null)")
         Path(state_file).write_text(json.dumps(state, indent=1))
-    print(f"Submitted batch job {job_id}")
+    if not spec and state.get("run_batch"):
+        _start_batch(state_file, str(job_id), text, opts)
+    if "--parsable" in opts:
+        print(f"{job_id}")
+    else:
+        print(f"Submitted batch job {job_id}")
     sys.stdout.flush()
     if spec and not hold:
         _run_hooks(state, "submit", job_id)
+    return 0
+
+
+def _job_line(job_id, name, st, reason, start, end, nodes):
+    return (f"JobId={job_id} JobName={name} UserId={os.environ.get('USER', 'u')}(1000) JobState={st} "
+            f"Reason={reason} TimeLimit=04:00:00 StartTime={start} EndTime={end} NodeList={nodes} "
+            f"BatchHost={nodes if nodes != '(null)' else '(null)'}")
+
+
+def _time_s(text):
+    """SLURM's [D-]HH:MM:SS, MM:SS or minutes -> seconds."""
+    days = 0
+    if "-" in text:
+        d, text = text.split("-", 1)
+        days = int(d)
+    parts = [int(x) for x in text.split(":")]
+    if len(parts) == 1:
+        secs = parts[0] * 60
+    elif len(parts) == 2:
+        secs = parts[0] * 60 + parts[1]
+    else:
+        secs = parts[0] * 3600 + parts[1] * 60 + parts[2]
+    return days * 86400 + secs
+
+
+def _start_batch(state_file, job_id, text, opts):
+    """Run a submitted script in the background like a real job (run_batch)."""
+    root = Path(state_file).parent
+    scripts = root / "batch"
+    scripts.mkdir(exist_ok=True)
+    path = scripts / f"{job_id}.sh"
+    path.write_text(text)
+    out = next((o.split("=", 1)[1] for o in opts if o.startswith("--output=")), str(scripts / f"slurm-{job_id}.out"))
+    out = out.replace("%j", job_id)
+    limit = next((o.split("=", 1)[1] for o in opts if o.startswith("--time=")), "1:00:00")
+    cpus = next((o.split("=", 1)[1] for o in opts if o.startswith("--cpus-per-task=")), "1")
+    subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "_runner", job_id, str(path), out,
+                      str(_time_s(limit)), cpus],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True, env=dict(os.environ))
+
+
+def _runner(job_id, script, out, limit_s, cpus):
+    import signal
+    import time
+    from datetime import datetime, timedelta
+    state_file = os.environ["FAKE_SLURM_STATE"]
+    cfg = _load(state_file).get("run_batch") or {}
+    t_end = time.time() + float(cfg.get("pending_s", 0))
+    while time.time() < t_end:
+        if not any(r["id"] == job_id for r in _load(state_file).get("records", [])):
+            return 0                                     # canceled while pending
+        time.sleep(0.2)
+    node = cfg.get("node", "localhost")
+    now = datetime.now().replace(microsecond=0)
+    end = now + timedelta(seconds=float(cfg.get("end_in_s") or limit_s))
+    with _locked(state_file):
+        state = _load(state_file)
+        recs = [r for r in state.get("records", []) if r["id"] == job_id]
+        if not recs:
+            return 0
+        name = recs[0].get("name", "job")
+        recs[0].update(state="RUNNING", reason="None", nodelist=node, start=now.isoformat())
+        state.setdefault("job_text", {})[job_id] = _job_line(job_id, name, "RUNNING", "None", now.isoformat(),
+                                                            end.isoformat(), node)
+        recs[0]["pgid"] = os.getpid()
+        Path(state_file).write_text(json.dumps(state, indent=1))
+    env = dict(os.environ, SLURM_JOB_ID=job_id, SLURM_JOB_NAME=name, SLURM_CPUS_ON_NODE=str(cpus),
+               SLURM_JOB_NODELIST=node)
+    with open(out, "ab") as fh:
+        proc = subprocess.Popen(["bash", script], stdin=subprocess.DEVNULL, stdout=fh, stderr=fh, env=env)
+
+        def _term(*_):
+            try:
+                proc.send_signal(signal.SIGTERM)
+                proc.wait(20)
+            except Exception:
+                proc.kill()
+            raise SystemExit(0)
+        signal.signal(signal.SIGTERM, _term)
+        code = proc.wait()
+    with _locked(state_file):
+        state = _load(state_file)
+        state["records"] = [r for r in state.get("records", []) if r["id"] != job_id]
+        state.setdefault("job_text", {})[job_id] = _job_line(job_id, name, "COMPLETED" if code == 0 else "FAILED",
+                                                            "None", now.isoformat(), datetime.now().replace(
+                                                                microsecond=0).isoformat(), node)
+        Path(state_file).write_text(json.dumps(state, indent=1))
     return 0
 
 
@@ -356,6 +537,8 @@ def squeue(argv):
     if "-j" in opts:
         wanted = set(opts["-j"].split(","))
         records = [r for r in records if r["id"] in wanted or str(r.get("array")) in wanted]
+    if "-u" in opts:
+        records = [r for r in records if r.get("user", os.environ.get("USER", "")) == opts["-u"]]
     full = os.environ.get("SLURM_BITSTR_LEN") == "0"
     rows = []
     if "-r" in flags:
@@ -391,7 +574,13 @@ def squeue(argv):
                   "o": r.get("command", ""), "L": r.get("timeleft", "1:00:00"),
                   "A": str(r.get("raw") or (r.get("array") if r["state"] == "PENDING" and r.get("array") else r["id"])),
                   "F": str(r.get("array") or r["id"]),
-                  "K": str(r.get("task")) if r.get("task") is not None else "N/A"}
+                  "K": str(r.get("task")) if r.get("task") is not None else "N/A",
+                  "l": r.get("time_limit", r.get("limit", "1:00:00")), "M": r.get("elapsed", "0:00"),
+                  "D": str(r.get("nodes", 1)), "C": str(r.get("cpus", 1)),
+                  "P": r.get("partition", "general"), "a": r.get("account", "acct1"),
+                  "R": (r.get("reason", "None") if r["state"] == "PENDING" else r.get("nodelist", "n001")),
+                  "N": r.get("nodelist", "") if r["state"] == "RUNNING" else "",
+                  "Z": r.get("workdir", ""), "u": r.get("user", "")}
         print(re.sub(r"%(\w)", lambda m: fields.get(m.group(1), ""), fmt))
     return 0
 
@@ -408,6 +597,12 @@ def sacct(argv):
     if "--array" in flags and state.get("sacct_array"):
         table = state["sacct_array"]
     parsable = "-P" in flags or "--parsable2" in flags
+    rows = state.get("sacct_rows")
+    if rows is not None and len(fmt) > 2:
+        for jid in ids:
+            for line in rows.get(jid, []):
+                print(line)
+        return 0
     for jid in ids:
         entries = table.get(jid)
         if entries is None:
@@ -442,6 +637,15 @@ def scancel(argv):
         ids = [a for a in argv if not a.startswith("-")]
         recs = state.get("records", [])
         for jid in ids:
+            for r in recs:
+                if r["id"] == jid and r.get("pgid"):         # a running background job (run_batch)
+                    try:
+                        os.kill(int(r["pgid"]), 15)
+                    except OSError:
+                        pass
+                if r["id"] == jid and jid in (state.get("job_text") or {}):
+                    state["job_text"][jid] = state["job_text"][jid].replace("JobState=PENDING", "JobState=CANCELLED") \
+                        .replace("JobState=RUNNING", "JobState=CANCELLED")
             recs = [r for r in recs if r["id"] != jid and str(r.get("array")) != jid]
         state["records"] = recs
         Path(state_file).write_text(json.dumps(state, indent=1))
@@ -469,12 +673,34 @@ def scontrol(argv):
         _run_hooks(state, "release", arr)
         return 0
     if args[:2] == ["show", "config"]:
+        if state.get("cluster_name"):
+            print(f"ClusterName             = {state['cluster_name']}")
         print(f"MaxArraySize            = {state.get('max_array_size', 4000001)}")
         print("SchedulerParameters     = bf_continue,max_array_tasks="
               f"{state.get('max_array_tasks', 10000)},nohold_on_prolog_fail")
         return 0
+    if (args[:2] == ["show", "nodes"] or args[:2] == ["show", "node"]) and "nodes" in state:
+        print(state.get("nodes", ""))                       # the submit tests' plain text (nodes_text below: -o)
+        return 0
     if args[:2] == ["show", "assoc_mgr"]:
         print(state.get("assoc_mgr", ""))
+        return 0
+    if args[:2] == ["show", "nodes"] or args[:2] == ["show", "node"]:
+        print(state.get("nodes_text", ""))
+        return 0
+    if args[:2] == ["show", "res"] or args[:2] == ["show", "reservation"]:
+        print(state.get("res_text", "No reservations in the system"))
+        return 0
+    if args[:2] == ["show", "job"] and len(args) > 2:
+        line = (state.get("job_text") or {}).get(args[2])
+        if line is None:
+            sys.stderr.write("slurm_load_jobs error: Invalid job id specified\n")
+            return 1
+        print(line)
+        return 0
+    if args == ["show", "partition"] and (state.get("partitions_text") is not None or "partitions" in state):
+        text = state.get("partitions_text")
+        print(text if text is not None else state.get("partitions", ""))
         return 0
     if args[:2] == ["show", "partition"] and len(args) > 2:
         print(f"PartitionName={args[2]} MaxTime=7-00:00:00 State=UP")
@@ -482,12 +708,82 @@ def scontrol(argv):
     return 0
 
 
-def quiet(tool, argv):
-    _log(tool, argv)
+def sacctmgr(argv):
+    state = _load(os.environ["FAKE_SLURM_STATE"])
+    if "assoc" not in state and "qos" not in state and not state.get("default_account"):
+        return quiet("sacctmgr", argv)                        # the cluster tests' assoc_text / qos_text
+    _log("sacctmgr", argv)
+    if any(a in ("show", "list") for a in argv[:3]) and any(a.startswith("assoc") for a in argv) \
+            and "format=qos" in argv:
+        print(",".join(state.get("qos", ["normal"])) + "|")
+    elif any(a in ("show", "list") for a in argv[:3]) and any(a.startswith("assoc") for a in argv):
+        for acct in state.get("assoc", []):
+            print(f"{acct}|")
+    elif any(a in ("show", "list") for a in argv[:3]) and "user" in argv and state.get("default_account"):
+        print(f"{state['default_account']}|")
     return 0
 
 
+def sinfo(argv):
+    state = _load(os.environ["FAKE_SLURM_STATE"])
+    if not state.get("sinfo"):
+        return quiet("sinfo", argv)                           # the cluster tests' sinfo_text
+    _log("sinfo", argv)
+    if state.get("sinfo"):
+        print(state["sinfo"], end="" if state["sinfo"].endswith("\n") else "\n")
+    return 0
+
+
+def srun(argv):
+    _log("srun", argv)
+    state = _load(os.environ["FAKE_SLURM_STATE"])
+    if "--mpi=list" in argv:
+        sys.stderr.write(state.get("srun_mpi_list", "MPI plugin types are...\n\tnone\n\tpmi2\n\tcray_shasta\n"))
+        return 0
+    return 0
+
+
+def quiet(tool, argv):
+    _log(tool, argv)
+    state = _load(os.environ["FAKE_SLURM_STATE"])
+    if tool == "sinfo":
+        if state.get("sinfo_text") is not None:
+            print(state["sinfo_text"])
+    elif tool == "sacctmgr":
+        if "qos" in argv and state.get("qos_text") is not None:
+            print(state["qos_text"])
+        elif "assoc" in argv and state.get("assoc_text") is not None:
+            print(state["assoc_text"])
+    elif tool == "sshare":
+        if state.get("sshare_text") is not None:
+            print(state["sshare_text"])
+    elif tool == "sstat":
+        if state.get("sstat_text") is not None:
+            print(state["sstat_text"])
+    return 0
+
+
+def _common(tool):
+    """delay and fail hooks shared by every tool."""
+    state = _load(os.environ.get("FAKE_SLURM_STATE", ""))
+    d = (state.get("delay") or {}).get(tool)
+    if d:
+        import time
+        time.sleep(float(d))
+    f = (state.get("fail") or {}).get(tool)
+    if f:
+        _log(tool, sys.argv[2:])
+        sys.stderr.write(f + "\n")
+        return 1
+    return None
+
+
 def tool_main(tool, argv):
+    if tool == "_runner":
+        return _runner(*argv)
+    rc = _common(tool)
+    if rc is not None:
+        return rc
     if tool == "sbatch":
         return sbatch(argv)
     if tool == "squeue":
@@ -498,6 +794,12 @@ def tool_main(tool, argv):
         return scancel(argv)
     if tool == "scontrol":
         return scontrol(argv)
+    if tool == "sacctmgr":
+        return sacctmgr(argv)
+    if tool == "sinfo":
+        return sinfo(argv)
+    if tool == "srun":
+        return srun(argv)
     return quiet(tool, argv)
 
 

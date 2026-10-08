@@ -1,0 +1,9 @@
+# Opt-in: the MACE GUI's browser tests (pytest -m gui) and its accessibility
+# scan. Test-only; nothing here ships in mace/gui/static or is needed to run
+# `mace gui`. Install on top of requirements-test.txt and requirements.txt:
+#   python -m pip install -r requirements-gui-test.txt
+# The browser tests also need Firefox (geckodriver comes through Selenium
+# Manager, or install it). Without selenium they skip.
+selenium>=4.10,<5
+# axe-core for the accessibility scan (MPL-2.0; bundles axe.min.js)
+axe-selenium-python>=2.1,<3

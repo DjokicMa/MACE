@@ -1,0 +1,32 @@
+/* Plot documents (js/docs/plot.js): tokens only. */
+.views > #tab-results.active { display: flex; flex-direction: column; min-height: 0; min-width: 0; padding: var(--s-4) var(--s-5); }
+#tab-results > .plot-opts { display: none; }
+.plot-host { flex: 1; min-height: 0; min-width: 0; display: flex; }
+.pv { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; gap: var(--s-2); outline: none; }
+.pv-head { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
+.pv-title { flex: 1 1 200px; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-chips { display: flex; gap: var(--s-2); }
+.pv-chip { padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: var(--fs-xs); font-weight: 600; }
+.pv-acts { display: flex; gap: var(--s-1); }
+.pv-acts[hidden] { display: none; }
+.pv-plot { flex: 1; min-height: 240px; min-width: 0; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--plot-bg); }
+.pv-plot:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.pv-plot[hidden] { display: none; }
+.pv-plot .modebar { opacity: 0; transition: opacity var(--dur-2) var(--ease); }
+.pv-plot:hover .modebar, .pv-plot .modebar:focus-within { opacity: 1; }
+.pv-readout { min-height: 18px; font-size: var(--fs-sm); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-img { max-width: 100%; max-height: 100%; object-fit: contain; align-self: center; background: var(--surface); }
+.pv-img[hidden], .pv-frame[hidden] { display: none; }
+.pv-frame { flex: 1; border: 1px solid var(--border); border-radius: var(--r-md); background: #ffffff; }
+/* the Plot options inspector */
+.po-row { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; align-items: center; gap: var(--s-2); margin: 0 0 var(--s-2); font-size: var(--fs-sm); }
+.po-row > span:first-child { color: var(--text-2); }
+.po-row input[type=number], .po-row select { height: var(--h-control); border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface);
+  color: var(--text); padding: 0 var(--s-2); min-width: 0; }
+.po-row.chk { display: flex; gap: var(--s-2); }
+.po-u { color: var(--text-3); font-size: var(--fs-xs); }
+.po-proj { margin: var(--s-3) 0; display: grid; gap: 2px; }
+.po-proj .chk { display: flex; align-items: center; gap: var(--s-2); font-size: var(--fs-sm); }
+.po-h { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); margin: 0 0 var(--s-1); }
+.po-acts { margin-top: var(--s-3); }
+.po-acts .tb-btn-text:disabled { opacity: .45; cursor: default; }

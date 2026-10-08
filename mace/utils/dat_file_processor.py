@@ -143,6 +143,7 @@ class DatFileProcessor:
 
         k_abscissa: List[float] = []
         eigenvalues: List[List[float]] = []
+        pending: List[float] = []
 
         for raw in content.split('\n'):
             line = raw.strip()
@@ -171,6 +172,16 @@ class DatFileProcessor:
                 values = [float(x) for x in parts]
             except ValueError:
                 continue
+            # CRYSTAL wraps a k-point row after 1000 fields (NBND >= 1000):
+            # a short row continues on the next data line(s).
+            nb = results['num_bands']
+            if pending:
+                pending.extend(values)
+                values = pending
+            if nb and len(values) < nb + 1:
+                pending = values
+                continue
+            pending = []
             if len(values) < 2:
                 continue
             k_abscissa.append(values[0])

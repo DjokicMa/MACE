@@ -1,0 +1,35 @@
+# server.classify (and the names it uses) from mace/gui/server.py at the base of the
+# 1.1.5 GUI polish round, frozen here as the oracle for tests/gui/test_parity_kinds.py.
+_BAND_SUFFIXES = (".BAND.DAT", ".band.band.dat", "_band.dat")
+_DOS_SUFFIXES = (".DOSS.DAT", "_doss.dat")
+
+
+def classify(name: str) -> str:
+    low = name.lower()
+    if low.endswith(".cif"):
+        return "cif"
+    if low.endswith(".d12"):
+        return "d12"
+    if low.endswith(".d3"):
+        return "d3"
+    if name.endswith(_BAND_SUFFIXES):
+        return "band"
+    if name.endswith(_DOS_SUFFIXES):
+        return "dos"
+    if name.upper().endswith("IRSPEC.DAT"):
+        return "ir"
+    if name.upper().endswith("RAMSPEC.DAT"):
+        return "raman"
+    if low.endswith((".out", ".o")):
+        return "out"
+    if low.endswith(".db"):
+        return "db"
+    if low.endswith(".json"):
+        return "json"
+    if low.endswith((".png", ".svg", ".jpg", ".jpeg", ".gif")):
+        return "image"
+    if low.endswith((".html", ".htm")):
+        return "html"
+    return ""
+
+

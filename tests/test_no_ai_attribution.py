@@ -37,6 +37,13 @@ FORBIDDEN = [
 # Files that legitimately discuss the rule itself.
 ALLOWED = {"tests/test_no_ai_attribution.py"}
 
+# Third-party code shipped byte-for-byte as upstream released it (each folder
+# carries its own LICENSE). Its comments are other projects' words, not
+# credits for MACE, and editing a minified upstream build would make it
+# unverifiable against the release. 3Dmol.js 2.5.5 has a shader comment that
+# names a chatbot as the source of a hash function.
+VENDORED_PREFIXES = ("mace/gui/static/vendor/",)
+
 
 def _tracked_files():
     out = subprocess.run(["git", "ls-files", "-z"], cwd=REPO_ROOT,
@@ -49,7 +56,7 @@ def _tracked_files():
 def test_no_ai_attribution_in_tracked_files():
     offenders = []
     for rel in _tracked_files():
-        if rel in ALLOWED:
+        if rel in ALLOWED or rel.startswith(VENDORED_PREFIXES):
             continue
         path = REPO_ROOT / rel
         if not path.is_file():

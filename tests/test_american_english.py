@@ -50,13 +50,17 @@ BRITISH = re.compile(
     r")(?![A-Za-z0-9_])",
     re.IGNORECASE)
 
-PROSE_SUFFIXES = {".md", ".sh", ".yaml", ".yml", ".cff", ".json", ".txt"}
-SCAN_ROOTS = ["mace", "Crystal_d12", "Crystal_d3", "Plotting", "code", "docs", "tests", ".github"]
+# .js/.css/.html/.svg: the GUI's own front end (mace/gui/static) and the logo
+# files (docs/logo); .cif: the example structures' titles (examples/gui)
+PROSE_SUFFIXES = {".md", ".sh", ".yaml", ".yml", ".cff", ".json", ".txt", ".js", ".css", ".html", ".svg"}
+SCAN_ROOTS = ["mace", "Crystal_d12", "Crystal_d3", "Plotting", "code", "docs", "tests", ".github", "examples"]
+CIF_UNDER = [Path("examples/gui")]
 TOP_FILES = ["README.md", "INSTALLATION.md", "DOCUMENTATION.md", "CHANGELOG.md", "AUTHORSHIP.md",
              "CITATION.cff", "mace_cli", "mace_config.py", "setup_mace.py", "mace_examples.sh",
              "activate_mace.sh"]
 # Real program output and third-party data: not MACE's prose.
-SKIP_DIRS = {"__pycache__", ".git", "data", "fixtures"}
+SKIP_DIRS = {"__pycache__", ".git", "data", "fixtures",
+             "vendor"}   # vendored upstream code and license texts stay byte-for-byte
 SKIP_FILES = {Path("tests/test_american_english.py")}
 SKIP_PROSE_UNDER = [Path("Crystal_d12/basis_sets")]   # UniTO-named .lib files and their notes
 
@@ -66,6 +70,8 @@ ALLOWED = [
     ("mace/database/materials.py", "completed, failed, cancelled"),
     # the 1.1.5 changelog entry names that stored value
     ("CHANGELOG.md", "`cancelled`, the saved-config keys"),
+    # a paper's own title (CHGNet, Nat. Mach. Intell. 2023) in the ML model registry
+    ("mace/preopt/mlip_registry.json", "charge-informed atomistic modelling"),
 ]
 
 
@@ -89,6 +95,8 @@ def _files():
                     yield p
                 elif p.suffix in PROSE_SUFFIXES and not any(
                         rel.is_relative_to(s) for s in SKIP_PROSE_UNDER):
+                    yield p
+                elif p.suffix == ".cif" and any(rel.is_relative_to(s) for s in CIF_UNDER):
                     yield p
 
 

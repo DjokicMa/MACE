@@ -28,6 +28,9 @@ def _mace(*args):
 @pytest.mark.parametrize("argv, usage", [
     (("preflight", "x", "-h"), "Usage: mace preflight"),
     (("preflight", "-h"), "Usage: mace preflight"),
+    (("preopt", "-h"), "Usage: mace preopt"),
+    (("preopt", "x.cif", "-h"), "Usage: mace preopt"),
+    (("mlip", "fetch", "-h"), "Usage: mace mlip"),
     (("phonopy", "-h"), "Usage: mace phonopy"),
     (("submit", "-h"), "Usage: mace submit"),
     (("submit", "somedir", "--help"), "Usage: mace submit"),

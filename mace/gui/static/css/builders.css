@@ -1,0 +1,81 @@
+/* The builder dialogs (js/lazy/builder_util.js and each builder): loaded with
+ * the first one. Tokens only; the panel itself is dialogs.css's dlg-panel. */
+dialog.builder-dialog { width: 480px; display: flex; flex-direction: column; overflow: hidden; }
+dialog.builder-dialog[open] { display: flex; }
+dialog.builder-dialog[hidden] { display: none; }
+dialog.builder-dialog > .dlg-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding-bottom: var(--s-3); }
+dialog.builder-dialog > .dlg-foot { flex: none; }
+.bld-body { display: grid; gap: var(--s-3); }
+.bld-params { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: var(--s-3); }
+.bld-params[disabled] { opacity: .6; }
+.bld-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); align-items: center; gap: var(--s-3); font-size: var(--fs-sm); color: var(--text-2); }
+.bld-row > input, .bld-row > select, .bld-row > .bld-inline { min-width: 0; }
+.bld-row input[type="number"], .bld-row input[type="text"], .bld-row select { height: var(--h-control); }
+.bld-inline { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.bld-inline input[type="number"] { width: 64px; }
+.bld-check { display: flex; align-items: center; gap: var(--s-2); font-size: var(--fs-sm); color: var(--text); }
+.bld-tabs { display: flex; gap: var(--s-1); border-bottom: 1px solid var(--border); padding-bottom: var(--s-2); }
+.bld-tabs button { height: 26px; padding: 0 var(--s-3); border: 0; border-radius: var(--r-sm); background: none; color: var(--text-2); font: inherit; cursor: pointer; }
+.bld-tabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.bld-presets { display: flex; flex-wrap: wrap; gap: var(--s-1); }
+.bld-presets button { height: 24px; padding: 0 var(--s-2); border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.bld-presets button:hover { border-color: var(--accent); }
+.bld-matrix { display: grid; grid-template-columns: repeat(3, 64px); gap: var(--s-1); }
+.bld-matrix input { width: 64px; height: var(--h-control); text-align: right; font-family: var(--font-mono); }
+.bld-readout { font-size: var(--fs-sm); color: var(--text-2); display: grid; gap: var(--s-1); }
+.bld-readout .num, .bld-readout b { color: var(--text); font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 500; }
+.bld-readout .warn, .bld-warn { color: var(--warning); }
+.bld-readout p { margin: 0; }
+.bld-error { color: var(--danger); font-size: var(--fs-sm); }
+.bld-error[hidden] { display: none; }
+.bld-error.hint { color: var(--text-2); }
+.bld-note { color: var(--text-2); font-size: var(--fs-xs); margin: 0; }
+.bld-foot { display: flex; align-items: center; gap: var(--s-2); width: 100%; }
+/* what the build makes: Result and Name, under a hairline, aligned with the parameters */
+.bld-out { display: grid; gap: var(--s-2); padding-top: var(--s-3); border-top: 1px solid var(--border); }
+.bld-out:empty { display: none; }
+.bld-out .segment { justify-self: start; }
+.bld-out .segment button { height: 28px; }
+.bld-out .segment button[aria-disabled="true"] { color: var(--text-3); cursor: not-allowed; }
+.bld-name[hidden] { display: none; }
+.bld-name input { width: 100%; min-width: 0; height: var(--h-control); font-family: var(--font-mono); }
+.bld-name input[aria-invalid="true"] { border-color: var(--danger); }
+.bld-spacer { flex: 1 0 0; }
+.bld-go { position: relative; overflow: hidden; min-width: 92px; justify-content: center; }
+.bld-go .bld-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: color-mix(in srgb, var(--on-accent) 22%, transparent); pointer-events: none; transition: width var(--dur-2) var(--ease); }
+.bld-go .bld-go-label { position: relative; }
+/* lists: slab terminations, defect sites, the symmetrize sweep */
+.bld-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--r-md); max-height: 188px; overflow: auto; background: var(--surface); }
+.bld-list li { display: flex; align-items: center; gap: var(--s-3); min-height: var(--h-row); padding: var(--s-1) var(--s-3); border-bottom: 1px solid var(--border); cursor: pointer; font-size: var(--fs-sm); }
+.bld-list li:last-child { border-bottom: 0; }
+.bld-list li:hover { background: var(--surface-2); }
+.bld-list li[aria-selected="true"] { background: var(--accent-soft); color: var(--text); }
+.bld-list li .sub { color: var(--text-2); margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-xs); }
+.bld-list li.change b { font-weight: 700; }
+.bld-list li .bld-term { display: grid; gap: 1px; min-width: 0; }
+.bld-list li .bld-term .sub { margin-left: 0; font-family: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bld-list li svg.thumb { flex: none; width: 44px; height: 44px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--viewport-bg); }
+.bld-empty { color: var(--text-2); font-size: var(--fs-sm); padding: var(--s-3); }
+.bld-chip { display: inline-block; padding: 0 var(--s-2); border-radius: var(--r-sm); background: var(--accent-soft); color: var(--accent); font-size: var(--fs-xs); font-weight: 600; }
+.bld-slider { width: 100%; }
+/* the slab's preview: over the bulk's viewer while the dialog is open (the bulk keeps its size and view) */
+.preview-pane { position: absolute; inset: 0; z-index: 3; min-width: 0; min-height: 0; background: var(--viewport-bg); }
+.preview-pane[hidden] { display: none; }
+.preview-pane .pp-label { position: absolute; left: var(--s-3); top: var(--s-3); z-index: 2; padding: 2px var(--s-2); border-radius: var(--r-sm);
+  background: var(--chip-bg); color: var(--text); font-size: var(--fs-xs); border: 1px solid var(--border); pointer-events: none;
+  white-space: normal; overflow-wrap: anywhere; }
+.preview-pane .pp-viewer { position: absolute; inset: 0; }
+
+/* Clean Geometry's methods (Clean tiers plan §8) */
+.clean-unavailable { margin: 0 0 6px; padding-left: 18px; font-size: 12px; color: var(--muted); }
+.clean-unavailable li { margin: 2px 0; }
+.clean-cmds { display: flex; flex-wrap: wrap; gap: 4px; margin: 3px 0 2px; }
+.clean-cmd { user-select: all; cursor: copy; font-size: 11px; padding: 1px 5px; border: 1px solid var(--border);
+  border-radius: 4px; background: var(--surface-2, transparent); overflow-wrap: anywhere; }
+.builder-dialog [data-k="symtol"]:disabled { opacity: .5; }
+.clean-attempts { margin: 2px 0 6px; padding-left: 18px; font-size: 12px; }
+.clean-more { margin: 0 0 6px; font-size: 12px; }
+.clean-more > summary { cursor: pointer; color: var(--muted); }
+.bld-readout .clean-ran { color: var(--text); font-weight: 600; }
+.bld-note.bld-warn { color: var(--warning); font-size: var(--fs-sm); }
+.builder-dialog [data-k="run"]:disabled { opacity: 0.5; cursor: not-allowed; }

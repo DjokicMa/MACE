@@ -171,17 +171,42 @@ def chemod_labels(chemod: List[str], shells_of=None) -> List[int]:
     return [label for label, _ in chemod_entries(chemod, shells_of)]
 
 
+def has_origin_shift(flags_line: str) -> bool:
+    """True when a CRYSTAL deck's IFLAG IFHR IFSO line has IFSO > 1: the
+    line after the space group is then the origin-shift record (manual p.19)."""
+    tok = flags_line.split()
+    try:
+        return len(tok) >= 3 and int(tok[2]) > 1
+    except ValueError:
+        return False
+
+
+def origin_shift_record(shift) -> str:
+    """The IX IY IZ origin-shift record (24ths of the cell vectors) for a
+    deck with IFSO > 1, from the three values the parent deck gave."""
+    try:
+        values = [float(v) for v in shift]
+    except (TypeError, ValueError):
+        values = []
+    if len(values) != 3:
+        raise ValueError("the parent deck sets a non-standard origin (IFSO > 1) but its origin-shift "
+                         "record could not be read, so the new deck cannot keep that origin")
+    return " ".join(str(int(v)) if v == int(v) else repr(v) for v in values)
+
+
 def _geometry_atom_count(lines: List[str]) -> Optional[int]:
     """Number of atoms in a deck's geometry block (the record after the symmetry line)."""
     dims = {"CRYSTAL": 3, "SLAB": 2, "POLYMER": 2, "MOLECULE": 2}
     for i, line in enumerate(lines[1:], start=1):
         key = line.strip().upper()
         if key in dims:
-            # CRYSTAL: IFLAG IFHR IFSO / space group / cell / natoms
+            # CRYSTAL: IFLAG IFHR IFSO / space group / [origin shift] / cell / natoms
             # SLAB, POLYMER, MOLECULE: group / cell (none for MOLECULE) / natoms
             j = i + 1
             if key == "CRYSTAL":
                 j += 3
+                if j - 3 < len(lines) and has_origin_shift(lines[j - 3]):
+                    j += 1
             elif key in ("SLAB", "POLYMER"):
                 j += 2
             else:

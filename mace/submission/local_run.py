@@ -1,7 +1,7 @@
 """Run CRYSTAL decks on the node you are on, without SLURM (`mace run`).
 
 For the calculations that take seconds or minutes - a MATDUMP, BAND/DOSS/POTC
-properties, a small SP, a quick rerun - on an HPCC development node.
+properties, a small SP, a quick rerun - on a cluster's development node.
 
 Each deck runs through the job script `mace submit` would submit: the shipped
 generator (submitcrystal23.sh for a .d12, submit_prop.sh for a .d3) writes it
@@ -57,8 +57,10 @@ DEFAULT_CORES = 4
 MAX_CORES = 16
 POLITE_CORES = 8
 DEFAULT_TIMEOUT = 30 * 60
-MAX_TIMEOUT = 115 * 60          # HPCC dev nodes stop a process at 2 h of CPU time
+MAX_TIMEOUT = 115 * 60          # MSU HPCC dev nodes stop a process at 2 h of CPU time
 CPU_LIMIT_MARGIN = 5 * 60
+TIMEOUT_HELP = ("wall time per deck: 90s, 30m, 1h or H:MM:SS (default: 30m; at most the node's CPU-time "
+                "limit (ulimit -t) minus 5m, 1h55m on MSU HPCC, or [local_run] max_time)")
 KILL_GRACE = 15                 # seconds between SIGTERM and SIGKILL
 CLAIM_REFRESH = 15              # a running mace run touches its claims this often
 CLAIM_STALE = 120               # a claim not touched for this long is a dead run's
@@ -115,17 +117,40 @@ def parse_duration(text: str) -> int:
     return value
 
 
-def timeout_cap():
-    """(longest timeout allowed, the CPU-time limit behind it or None)."""
+def _cpu_limit() -> Optional[int]:
+    """This process's CPU-time limit in seconds (ulimit -t), or None."""
     try:
         import resource
         soft = resource.getrlimit(resource.RLIMIT_CPU)[0]
         unlimited = resource.RLIM_INFINITY
     except (ImportError, OSError, ValueError):
-        return MAX_TIMEOUT, None
+        return None
     if soft == unlimited or soft < 0:
-        return MAX_TIMEOUT, None
-    return min(MAX_TIMEOUT, soft - CPU_LIMIT_MARGIN), soft
+        return None
+    return soft
+
+
+def timeout_cap():
+    """(longest timeout allowed or None for no cap, the CPU-time limit
+    behind it or None, why): [local_run] max_time when set; else on MSU HPCC
+    1h55m (its dev nodes stop a process at 2 h of CPU time); elsewhere the
+    node's own CPU-time limit minus 5 minutes, or no cap."""
+    soft = _cpu_limit()
+    ulimit_text = (f"this node stops any process after {fmt_duration(soft)} of CPU time (ulimit -t)"
+                   if soft is not None else "")
+    site = _site_mod()
+    configured = site.safe_load().run_max_time
+    if configured:
+        if soft is not None and soft - CPU_LIMIT_MARGIN < configured:
+            return soft - CPU_LIMIT_MARGIN, soft, ulimit_text
+        return configured, None, f"[local_run] max_time allows at most {fmt_duration(configured)}"
+    if site.msu_hpcc():
+        if soft is None:
+            return MAX_TIMEOUT, None, f"mace run allows at most {fmt_duration(MAX_TIMEOUT)}"
+        return min(MAX_TIMEOUT, soft - CPU_LIMIT_MARGIN), soft, ulimit_text
+    if soft is not None:
+        return soft - CPU_LIMIT_MARGIN, soft, ulimit_text
+    return None, None, ""
 
 
 def available_cores() -> int:
@@ -144,6 +169,21 @@ def gateway_reason(env, hostname: str) -> Optional[str]:
     return None
 
 
+def _site_mod():
+    from mace.submission import site
+    return site
+
+
+def _site_resolution():
+    """The CRYSTAL module(s) the job script loads (mace/submission/site.py),
+    so this probe and the generated script load the same module."""
+    site = _site_mod()
+    try:
+        return site.crystal_module()
+    except site.SiteConfigError:
+        return site.Resolution([CRYSTAL_MODULE], "built-in")
+
+
 def crystal_root():
     """Where the job script's CRYSTAL will come from: (source, root).
 
@@ -152,10 +192,18 @@ def crystal_root():
     probed here. Without `module` (a workstation, the test stubs) the script
     keeps the $EBROOTCRYSTAL it inherits.
     """
+    site = _site_mod()
+    conf = site.safe_load()
+    res = _site_resolution()
+    if conf.crystal_bin_dir and not res.modules:
+        # [crystal] bin_dir: the executables are there, no module to load
+        return "site", conf.crystal_bin_dir
+    loads = "".join(f"module load {m} >/dev/null 2>&1 || exit 4\n" for m in res.modules)
     script = ("type module >/dev/null 2>&1 || exit 3\n"
-              "module purge >/dev/null 2>&1\n"
-              f"module load {CRYSTAL_MODULE} >/dev/null 2>&1 || exit 4\n"
-              'printf "\\nMACE_EBROOTCRYSTAL=%s\\n" "$EBROOTCRYSTAL"\n')
+              + ("module purge >/dev/null 2>&1\n" if conf.module_purge else "")
+              + loads
+              + (_site_mod().ROOT_FROM_PATH_LINE + "\n" if res.root_from_path else "")
+              + 'printf "\\nMACE_EBROOTCRYSTAL=%s\\n" "$EBROOTCRYSTAL"\n')
     try:
         proc = subprocess.run(["bash", "--login", "-c", script], stdin=subprocess.DEVNULL,
                               capture_output=True, text=True, timeout=120)
@@ -392,8 +440,13 @@ def generate_script(deck: Deck) -> Path:
     script = local / f"{deck.job}.sh"
     if script.exists():
         script.unlink()
-    r = subprocess.run(["bash", str(GENERATORS[deck.kind]), deck.job], cwd=str(local),
-                       stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+    # the site's account, partition and modules (mace/submission/site.py)
+    generator, cleanup, _ = _site_mod().generator_for(GENERATORS[deck.kind], deck.kind, local)
+    try:
+        r = subprocess.run(["bash", str(generator), deck.job], cwd=str(local),
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+    finally:
+        cleanup()
     if r.returncode != 0 or not script.is_file():
         raise RuntimeError(f"the job script generator failed: {(r.stderr or r.stdout).strip()}")
     if LOCAL_MARKER not in script.read_text(errors="ignore"):
@@ -432,7 +485,7 @@ def run_deck(deck: Deck, opts, stop: StopFlag, host: str) -> None:
     """Run one deck's job script and set deck.status / deck.note."""
     try:
         script = generate_script(deck)
-    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
         deck.status, deck.note = "failed", str(exc)
         return
     if stop.signum:
@@ -668,15 +721,14 @@ class Tracker:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mace run",
-        description="Run CRYSTAL decks now on the node you are on (an HPCC dev node), "
+        description="Run CRYSTAL decks now on the node you are on (an interactive or development node), "
                     "without SLURM, through the same job script mace submit uses.")
     p.add_argument("targets", nargs="*", metavar="FILE|DIR",
                    help=".d12/.d3 decks or directories of them (default: current directory)")
     p.add_argument("-n", "--cores", type=int, default=None, metavar="N",
                    help=f"MPI ranks (default: {DEFAULT_CORES}, or fewer on a smaller machine; "
                         f"at most {MAX_CORES})")
-    p.add_argument("--timeout", default=None, metavar="T",
-                   help="wall time per deck: 90s, 30m, 1h or H:MM:SS (default: 30m)")
+    p.add_argument("--timeout", default=None, metavar="T", help=TIMEOUT_HELP)
     p.add_argument("--track", action="store_true",
                    help="record the runs in ./materials.db (as mace submit --track)")
     p.add_argument("--dry-run", action="store_true",
@@ -699,15 +751,12 @@ def check_options(opts) -> List[str]:
         if opts.cores > POLITE_CORES:
             warnings.append(f"-n {opts.cores}: dev nodes are shared; {DEFAULT_CORES}-"
                             f"{POLITE_CORES} ranks is polite")
-    cap, cpu_limit = timeout_cap()
-    limit_text = (f"this node stops any process after {fmt_duration(cpu_limit)} of CPU time "
-                  "(ulimit -t)" if cpu_limit else
-                  f"mace run allows at most {fmt_duration(MAX_TIMEOUT)}")
-    if cap <= 0:
+    cap, cpu_limit, limit_text = timeout_cap()
+    if cap is not None and cap <= 0:
         raise Refusal(f"{limit_text}: too little for a run; use mace submit")
     if opts.timeout is None:
         opts.timeout = DEFAULT_TIMEOUT
-        if opts.timeout > cap:
+        if cap is not None and opts.timeout > cap:
             opts.timeout = cap
             warnings.append(f"timeout {fmt_duration(cap)} per deck: {limit_text}")
     else:
@@ -715,7 +764,7 @@ def check_options(opts) -> List[str]:
             opts.timeout = parse_duration(opts.timeout)
         except ValueError as exc:
             raise Refusal(str(exc))
-        if opts.timeout > cap:
+        if cap is not None and opts.timeout > cap:
             raise Refusal(f"--timeout {fmt_duration(opts.timeout)}: {limit_text}, so at most "
                           f"{fmt_duration(cap)}; use mace submit for longer runs")
     return warnings
@@ -729,21 +778,21 @@ def check_node(decks: List[Deck]) -> str:
     host = socket.gethostname()
     gateway = gateway_reason(os.environ, host)
     if gateway:
-        raise Refusal(f"This is the HPCC gateway ({gateway}): CRYSTAL cannot run here. Log in "
-                      "to a dev node first (ssh dev-amd20, dev-amd24 or dev-intel18) and rerun "
-                      "mace run.")
+        raise Refusal(_site_mod().safe_load().message("gateway_message", reason=gateway, host=host))
     source, root = crystal_root()
     if not root:
         if source == "module":
-            raise Refusal(f"the {CRYSTAL_MODULE} module cannot be loaded on {host}; run "
-                          "mace run on a dev node (ssh dev-amd20)")
+            raise Refusal(_site_mod().safe_load().message(
+                "module_message", module=_site_resolution().module, host=host))
         raise Refusal(f"no CRYSTAL here: $EBROOTCRYSTAL is not set and there is no module "
-                      f"command to load {CRYSTAL_MODULE}")
-    needed = sorted({BINARIES[d.kind] for d in decks})
-    missing = [b for b in needed if not os.access(os.path.join(root, "bin", b), os.X_OK)]
+                      f"command to load {_site_resolution().module}")
+    names = dict(zip(("scf", "prop"), _site_mod().safe_load().binaries()))
+    needed = sorted({names[d.kind] for d in decks})
+    bindir = root if source == "site" else os.path.join(root, "bin")
+    missing = [b for b in needed if not os.access(os.path.join(bindir, b), os.X_OK)]
     if missing:
-        raise Refusal(f"{', '.join(missing)} not found in {root}/bin")
-    if source == "environment" and not shutil.which("mpirun"):
+        raise Refusal(f"{', '.join(missing)} not found in {bindir}")
+    if source in ("environment", "site") and not shutil.which("mpirun"):
         raise Refusal("no mpirun on PATH")
     return host
 
@@ -874,6 +923,16 @@ def claim_dir() -> Optional[Path]:
     if scratch:
         return Path(scratch) / ".mace_run"
     user = os.environ.get("USER") or os.environ.get("LOGNAME")
+    # [paths] scratch (site.py), in the job script's order
+    base = _site_mod().safe_load().scratch
+    if base:
+        home = os.environ.get("HOME") or os.path.expanduser("~")
+        path = base
+        for tok, val in (("${SLURM_JOB_ID}", ""), ("$SLURM_JOB_ID", ""), ("${USER}", user or ""),
+                         ("$USER", user or ""), ("${HOME}", home), ("$HOME", home)):
+            path = path.replace(tok, val)
+        if os.path.isdir(path):
+            return Path(path) / ".mace_run"
     if user and os.path.isdir(f"/mnt/scratch/{user}"):
         return Path(f"/mnt/scratch/{user}") / ".mace_run"
     return None
@@ -1053,6 +1112,12 @@ def _main(argv, started) -> int:
         return EXIT_REFUSED
     parser = build_parser()
     opts = parser.parse_args(argv)
+    site = _site_mod()
+    try:
+        site.load()
+    except site.SiteConfigError as exc:        # before anything is generated
+        say(f"mace run: {exc}", err=True)
+        return EXIT_REFUSED
     try:
         decks = plan(collect_decks(opts.targets))
         warnings = check_options(opts)

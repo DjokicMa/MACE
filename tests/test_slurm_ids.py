@@ -186,6 +186,79 @@ def test_safe_scancel_runs_exactly_scancel_id(tmp_path, monkeypatch):
         ["scancel", "4242_3"], ["scancel", "5000"], ["scancel", "5001", "4242_1"]]
 
 
+class _BrokenDb:
+    """A database whose every query raises (locked, corrupt, unreadable)."""
+
+    def _get_connection(self):
+        raise sqlite3.OperationalError("database is locked")
+
+
+def _fake_env(fake, monkeypatch):
+    for k in ("PATH", "FAKE_SLURM_STATE", "FAKE_SLURM_LOG"):
+        monkeypatch.setenv(k, fake.env[k])
+
+
+def test_scancel_fails_closed_on_db_error_for_an_array_id(tmp_path, monkeypatch):
+    fake = FakeSlurm(tmp_path)
+    _fake_env(fake, monkeypatch)
+    fake.add_record(id="7000_1", array="7000", task=1, state="RUNNING")
+    fake.add_record(id="7000_2", array="7000", task=2, state="PENDING")
+    why = scancel_refusal("7000", db=_BrokenDb())
+    assert why and "job array" in why and "7000_<task>" in why
+    res = safe_scancel("7000", db=_BrokenDb())
+    assert res.returncode == 1 and "refused" in res.stderr
+    _, refused = safe_scancel_many(["7000"], db=_BrokenDb())
+    assert [r[0] for r in refused] == ["7000"]
+    assert fake.calls("scancel") == []
+
+
+def test_scancel_uses_scontrol_when_squeue_cannot_answer(tmp_path, monkeypatch):
+    fake = FakeSlurm(tmp_path)
+    _fake_env(fake, monkeypatch)
+    fake.update(fail={"squeue": "slurm_load_jobs error: Socket timed out"},
+                job_text={"7100": "JobId=7101 ArrayJobId=7100 ArrayTaskId=1 JobState=RUNNING",
+                          "7200": "JobId=7200 JobName=x JobState=RUNNING"})
+    assert "job array" in scancel_refusal("7100", db=_BrokenDb())
+    assert scancel_refusal("7200", db=_BrokenDb()) is None
+
+
+def test_scancel_refuses_when_neither_db_nor_slurm_answers(tmp_path, monkeypatch):
+    fake = FakeSlurm(tmp_path)
+    _fake_env(fake, monkeypatch)
+    fake.update(fail={"squeue": "slurm_load_jobs error: Unable to contact slurm controller",
+                      "scontrol": "slurm_load_jobs error: Unable to contact slurm controller"})
+    why = scancel_refusal("7300", db=_BrokenDb())
+    assert why == ("could not check whether 7300 is a job array (database error: database "
+                   "is locked); cancel a single task 7300_<task>, or retry")
+    res = safe_scancel("7300", db=_BrokenDb())
+    assert res.returncode == 1 and "could not check" in res.stderr
+    assert fake.calls("scancel") == []
+
+
+def test_scancel_refuses_when_slurm_tools_are_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", str(tmp_path))          # no squeue, no scontrol
+    assert "could not check" in scancel_refusal("7400", db=_BrokenDb())
+
+
+def test_scancel_cancels_a_plain_id_slurm_confirms_on_db_error(tmp_path, monkeypatch):
+    fake = FakeSlurm(tmp_path)
+    _fake_env(fake, monkeypatch)
+    fake.add_record(id="7500", state="RUNNING")
+    assert scancel_refusal("7500", db=_BrokenDb()) is None
+    assert safe_scancel("7500", db=_BrokenDb()).returncode == 0
+    assert [c["argv"] for c in fake.calls("scancel")] == [["scancel", "7500"]]
+
+
+def test_scancel_happy_path_asks_slurm_nothing(tmp_path, monkeypatch):
+    """A readable database: no squeue/scontrol call, exactly as before."""
+    fake = FakeSlurm(tmp_path)
+    _fake_env(fake, monkeypatch)
+    db = _db(tmp_path)
+    assert scancel_refusal("5000", db=db) is None
+    assert scancel_refusal("5000") is None
+    assert fake.calls("squeue") == [] and fake.calls("scontrol") == []
+
+
 # --- .o id lookup -----------------------------------------------------------
 
 def _old_find_slurm_job_id(out_file_path):
@@ -369,3 +442,24 @@ def test_time_left_of_a_plain_job_and_of_a_child_job(monkeypatch):
     assert slurm_ids.remaining_walltime_seconds(child) == 120
     assert [c[c.index("-j") + 1] for c in seen] == ["5000", "10001"]
     assert slurm_ids.remaining_walltime_seconds({}) is None
+
+
+def test_outside_allocation_env_is_defined_once():
+    # A second definition later in the module silently replaced the first
+    # (and dropped its whitespace handling).
+    src = Path(slurm_ids.__file__).read_text()
+    assert len(re.findall(r"^def outside_allocation_env\(", src, re.M)) == 1
+
+
+@pytest.mark.parametrize("job_id", ["", " ", "\t", "  \n"])
+def test_blank_slurm_job_id_is_outside_an_allocation(job_id):
+    env = {"SLURM_JOB_ID": job_id, "SLURM_MEM_PER_CPU": "4000",
+           "SLURM_CONF": "/etc/slurm.conf", "PATH": "/bin"}
+    assert slurm_ids.outside_allocation_env(env) == env
+
+
+def test_real_slurm_job_id_drops_allocation_settings():
+    env = {"SLURM_JOB_ID": "123", "SLURM_MEM_PER_CPU": "4000",
+           "SLURM_CONF": "/etc/slurm.conf", "PATH": "/bin"}
+    assert slurm_ids.outside_allocation_env(env) == {
+        "SLURM_CONF": "/etc/slurm.conf", "PATH": "/bin"}

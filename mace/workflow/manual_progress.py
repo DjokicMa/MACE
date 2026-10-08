@@ -69,9 +69,14 @@ def _template_plan(planner, sequence: List[str], input_dir: Path,
     # queue manager now resolves SLURM templates out of workflow_scripts/
     # instead of the plain submitcrystal23.sh generator. Materialize them, or
     # the very first submission dies with "Submit script not found".
+    # never more than this user's SLURM MaxSubmitJobs allows (site.clamp_queue)
+    from mace.workflow.planner import clamp_queue_config
+    queue_config = dict(DEFAULT_QUEUE_CONFIG)
+    queue_config["max_jobs"], queue_config["reserve_slots"] = clamp_queue_config(
+        queue_config["max_jobs"], queue_config["reserve_slots"])
     planner.copy_and_customize_scripts(plan["step_configurations"], workflow_id,
-                                       DEFAULT_QUEUE_CONFIG)
-    plan["queue_management"] = dict(DEFAULT_QUEUE_CONFIG)
+                                       queue_config)
+    plan["queue_management"] = queue_config
     plan["scripts_directory"] = str(planner.work_dir / "workflow_scripts")
     return plan
 
