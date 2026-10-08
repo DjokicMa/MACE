@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.5] - 2026-10-03
+## [1.1.5] - 2026-10-08
 
 Everything since 1.1.4. New: **the MACE GUI (`mace gui`)**, the folder's
 structures, optimizations, plots and `materials.db` in your browser, with a
@@ -1886,6 +1886,10 @@ see Fixed below. Coming from 1.1.1-1.1.4, read Upgrading first.
   document, the developer-tool keys) are checked under Xvfb
   (`tests/gui/test_browser_keys_xvfb.py`, opt-in); a check on a desktop
   session is still to do.
+
+*Fittingly, 1.1.5 shares its number with element 115, moscovium (Mc). Any
+resemblance to a certain meteorite-powered Pack-a-Punch machine is purely
+coincidental.*
 
 ## [1.1.4] - 2026-10-02
 
