@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (and anything it started) now ends with the session however it ends: Stop,
   Ctrl+C, SIGTERM, a hang-up, an error, or, on Linux, the session being
   killed. A hang-up or SIGTERM leaves the job running, to reattach to.
+- **`mace gui connect` explains a key that ssh could not use.** When ssh
+  ends with "Permission denied (publickey)" or cannot unlock a key with a
+  passphrase, it now says to load the key with `ssh-agent` and `ssh-add` (on
+  Windows the OpenSSH Authentication Agent service), or to use an
+  `~/.ssh/config` Host alias as the gateway. A gateway that looks like an
+  email address (`netid@university.edu`) gets a warning naming the profile
+  file and the `--gateway ... --save` fix; it still connects. The standalone
+  scripts do the same.
 
 ## [1.1.5] - 2026-10-08
 

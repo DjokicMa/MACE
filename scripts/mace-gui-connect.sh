@@ -199,6 +199,34 @@ if [ -z "$GATEWAY" ] && [ -z "$NODE" ]; then
   exit 2
 fi
 
+# A gateway such as user@university.edu is an email address, not a login host
+# (user@login.university.edu): flagged when the part after @ is two labels
+# (name.tld) and no ~/.ssh/config Host pattern matches it. The same heuristic
+# as mace gui connect (gateway_looks_like_email in connect.py, which explains
+# the tradeoff); a warning only.
+email_like() {
+  local gw host pat
+  case "$1" in *@*) ;; *) return 1 ;; esac
+  gw="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  host="${gw##*@}"
+  printf '%s' "$host" | grep -Eq '^[a-z0-9-]+[.][a-z]{2,}$' || return 1
+  [ -f "$HOME/.ssh/config" ] || return 0
+  while IFS= read -r pat; do
+    pat="${pat#\"}"; pat="${pat%\"}"
+    case "$pat" in ""|"!"*) continue ;; esac
+    # shellcheck disable=SC2254  # the Host pattern is a glob on purpose
+    case "$host" in $pat) return 1 ;; esac
+    # shellcheck disable=SC2254
+    case "$gw" in $pat) return 1 ;; esac
+  done <<EOF3
+$(sed -n -E 's/^[[:space:]]*[Hh][Oo][Ss][Tt]([[:space:]]+|[[:space:]]*=[[:space:]]*)//p' "$HOME/.ssh/config" | tr '[:upper:]' '[:lower:]' | tr -s ' \t' '\n\n')
+EOF3
+  return 0
+}
+if [ -n "$GATEWAY" ] && email_like "$GATEWAY"; then
+  echo "Warning: the gateway $GATEWAY looks like an email address. It should be user@login-host (your cluster's login node, e.g. netid@login.example.edu) or a Host alias from ~/.ssh/config. Connecting anyway; to fix the profile in $CONF, run: mace gui connect ${PROFILE:+$PROFILE }--gateway <user@login-host> --save (or pass --gateway to this script)." >&2
+fi
+
 # ------------------------------------------------------------------ the command (as mace gui connect builds it)
 shq() {  # Python's shlex.quote
   case "$1" in
@@ -382,6 +410,12 @@ case "$STATE" in
   ready) echo "The connection to $WHERE closed. If GUI tasks were running, the server keeps them running: run this script again to reattach."; exit 1 ;;
 esac
 ERR="$(cat "$TMPD/err" 2>/dev/null)"
+key_failed() {  # no key got ssh in: the same test as mace gui connect (KEY_FAILURE_RE in connect.py)
+  [ "$CODE" = 255 ] && printf '%s\n' "$ERR" | grep -Eq "Permission denied \\([^)]*publickey|Enter passphrase for key|read_passphrase: can't open|incorrect passphrase supplied|agent refused operation"
+}
+key_hint() {
+  echo "mace-gui-connect: ssh could not log in with your key (see ssh's message above). If the key has a passphrase, ssh cannot ask for it here: load it into an agent first, with eval \"\$(ssh-agent)\" and ssh-add (on Windows: start the OpenSSH Authentication Agent service, then run ssh-add), then run this script again. A Host alias from ~/.ssh/config also works as the gateway." >&2
+}
 case "$ERR" in
   *"unrecognized arguments: --managed"*|*"invalid choice: 'gui'"*)
     echo "mace-gui-connect: the MACE on $WHERE is older than this script (it has no managed GUI). Update it, or use the manual tunnel (docs/gui.md)." >&2; exit 3 ;;
@@ -391,8 +425,10 @@ case "$ERR" in
     if [ "$HOP" = jump ] && [ -n "$NODE" ] && [ -n "$GATEWAY" ]; then
       echo "mace-gui-connect: if your cluster's nodes accept logins only from the login node, add --hop nested." >&2
     fi
+    key_failed && key_hint
     exit 1 ;;
 esac
+key_failed && { key_hint; exit 1; }
 [ "$CODE" = 127 ] && { echo "mace-gui-connect: the remote shell did not find mace: pass --mace <full path> or a --setup line." >&2; exit 127; }
 echo "mace-gui-connect: the connection ended before MACE GUI was ready (exit code $CODE)." >&2
 exit 1

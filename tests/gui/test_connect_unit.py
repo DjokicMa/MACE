@@ -169,7 +169,13 @@ def test_no_tty_and_no_gateway_exits_2(tmp_path):
     (98, [], ["MACE_GUI_ERROR port-busy"], "port-busy"),
     (255, ["channel 2: open failed: administratively prohibited: open failed"], [], "forwarding"),
     (255, ["me@dev-node-01: Permission denied (publickey,gssapi-with-mic)."], [], "node-auth"),
-    (255, ["me@gw.example.edu: Permission denied (publickey)."], [], "ssh"),
+    (255, ["me@gw.example.edu: Permission denied (publickey)."], [], "key"),
+    (255, ["me@gw.example.edu: Permission denied (publickey,password)."], [], "key"),
+    (255, ['Load key "/home/me/.ssh/id_ed25519": incorrect passphrase supplied to decrypt private key',
+           "me@gw.example.edu: Permission denied (publickey,keyboard-interactive)."], [], "key"),
+    (255, ["read_passphrase: can't open /dev/tty: No such device or address",
+           "me@gw.example.edu: Permission denied (publickey)."], [], "key"),
+    (255, ["me@gw.example.edu: Permission denied (password)."], [], "ssh"),
     (255, ["Host key verification failed."], [], "host-key"),
     (255, ["ssh: Could not resolve hostname gw: Name or service not known"], [], "ssh"),
 ])
@@ -178,6 +184,9 @@ def test_classify_failure(code, err, out, kind):
     assert got == kind, msg
     if kind == "old-remote":
         assert "older than this connect" in msg and "run-it-on-a-cluster" in msg
+    if kind == "key":
+        assert "ssh-add" in msg and 'eval "$(ssh-agent)"' in msg and "OpenSSH Authentication Agent" in msg
+        assert "Host alias from ~/.ssh/config" in msg
     if kind == "forwarding":
         assert "administratively prohibited" in msg and "ask your administrators" in msg
         assert "OnDemand" not in msg
@@ -236,3 +245,95 @@ def test_stopped_page_command_quotes_the_folder(tmp_path):
     assert out == ["/home/u/runs", "'/home/u/my runs'", "'/x/it'\"'\"'s'"]
     import shlex
     assert [shlex.split(w)[0] for w in out] == ["/home/u/runs", "/home/u/my runs", "/x/it's"]
+
+
+def test_key_failure_needs_ssh_exit_255():
+    denied = ["me@gw.example.edu: Permission denied (publickey)."]
+    assert C.key_auth_failed(255, denied)
+    assert C.key_auth_failed(255, ["Enter passphrase for key '/home/me/.ssh/id_rsa': "])
+    assert C.key_auth_failed(255, ["sign_and_send_pubkey: signing failed for ED25519 \"/home/me/.ssh/id_ed25519\" "
+                                   "from agent: agent refused operation", *denied])
+    assert not C.key_auth_failed(1, denied)          # the remote command failed, not ssh
+    assert not C.key_auth_failed(255, ["ssh: Could not resolve hostname gw: Name or service not known"])
+
+
+@pytest.mark.parametrize("gateway,hosts,flagged", [
+    ("netid@university.edu", [], True),
+    ("NetID@University.EDU", [], True),
+    ("me@cluster.org", [], True),                   # a real two-label login host: warned, an alias silences it
+    ("netid@login.university.edu", [], False),
+    ("me@hpcc.example.edu", [], False),
+    ("hpcc", [], False),
+    ("me@gw", [], False),
+    ("me@10.0.0.5", [], False),
+    ("netid@university.edu", ["university.edu"], False),
+    ("netid@university.edu", ["*.edu"], False),
+    ("netid@university.edu", ["other", "university.*"], False),
+    ("netid@university.edu", ["hpcc", "*.example.org"], True),
+])
+def test_gateway_looks_like_email(gateway, hosts, flagged):
+    assert C.gateway_looks_like_email(gateway, hosts) is flagged
+
+
+def test_ssh_config_host_patterns(tmp_path):
+    cfg = tmp_path / "config"
+    cfg.write_text("Host hpcc university.edu\n  HostName login.university.edu\n  User netid\n"
+                   "host=*.example.org !bad.example.org\nHostKeyAlgorithms ssh-ed25519\nMatch host x\n")
+    assert C.ssh_config_hosts(cfg) == ["hpcc", "university.edu", "*.example.org"]
+    assert C.ssh_config_hosts(tmp_path / "missing") == []
+
+
+def _stub_ssh(tmp_path, stderr_text):
+    """An "ssh" that logs that it ran, prints ssh's message and exits 255."""
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    ran = tmp_path / "ran"
+    ssh = fakebin / "ssh"
+    ssh.write_text("#!/bin/sh\necho \"$@\" >> %s\nprintf '%%s\\n' %s >&2\nsleep 0.2\nexit 255\n"
+                   % (shlex.quote(str(ran)), " ".join(shlex.quote(x) for x in stderr_text)))
+    ssh.chmod(0o755)
+    return fakebin, ran
+
+
+def _connect(tmp_path, fakebin, *args):
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON") and k not in ("BROWSER",)}
+    env.update(PATH=f"{fakebin}:/usr/bin:/bin", XDG_CONFIG_HOME=str(tmp_path / "cfg"), HOME=str(tmp_path / "home"))
+    (tmp_path / "home").mkdir(exist_ok=True)
+    return subprocess.run([sys.executable, str(Path(C.__file__).resolve().parents[2] / "mace_cli"), "--no-banner",
+                           "gui", "connect", "--no-open", *args], env=env, stdin=subprocess.DEVNULL,
+                          capture_output=True, text=True, timeout=60)
+
+
+@pytest.mark.parametrize("stderr_text", [
+    ["netid@login.example.edu: Permission denied (publickey)."],
+    ["read_passphrase: can't open /dev/tty: No such device or address",
+     "netid@login.example.edu: Permission denied (publickey,password)."],
+    ['Load key "/home/netid/.ssh/id_ed25519": incorrect passphrase supplied to decrypt private key',
+     "netid@login.example.edu: Permission denied (publickey,gssapi-keyex,gssapi-with-mic)."],
+])
+def test_key_failure_prints_the_agent_hint(tmp_path, stderr_text):
+    fakebin, ran = _stub_ssh(tmp_path, stderr_text)
+    r = _connect(tmp_path, fakebin, "--gateway", "netid@login.example.edu")
+    assert r.returncode == 1 and ran.exists()
+    assert "mace gui connect: " + C.KEY_HINT in r.stdout
+    assert "looks like an email address" not in r.stderr
+    assert "ssh could not connect: check the gateway" not in r.stdout
+
+
+def test_email_like_gateway_warns_and_still_connects(tmp_path):
+    fakebin, ran = _stub_ssh(tmp_path, ["ssh: connect to host university.edu port 22: Connection timed out"])
+    C.save_profiles({"defaults": {"profile": "hpcc"}, "profiles": {"hpcc": {"gateway": "netid@university.edu"}}},
+                    tmp_path / "cfg" / "mace" / "connect.toml")
+    r = _connect(tmp_path, fakebin)
+    want = C.email_gateway_warning("netid@university.edu", tmp_path / "cfg" / "mace" / "connect.toml", "hpcc")
+    assert want in r.stderr
+    assert "user@login-host" in want and "mace gui connect hpcc --gateway <user@login-host> --save" in want
+    # a warning: ssh still ran, to the saved gateway
+    assert "Connecting to netid@university.edu..." in r.stdout
+    assert "netid@university.edu" in ran.read_text()
+    assert C.KEY_HINT not in r.stdout
+    # an ~/.ssh/config Host for it silences the warning
+    (tmp_path / "home" / ".ssh").mkdir(parents=True)
+    (tmp_path / "home" / ".ssh" / "config").write_text("Host university.edu\n  HostName login.university.edu\n")
+    r = _connect(tmp_path, fakebin)
+    assert "looks like an email address" not in r.stderr
