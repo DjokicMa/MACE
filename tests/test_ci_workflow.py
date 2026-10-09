@@ -34,3 +34,5 @@ def test_existing_jobs_unchanged():
     for name in ("pytest", "pytest-optional"):
         runs = [s.get("run", "") for s in j[name]["steps"]]
         assert any("python -m pytest -ra" in r for r in runs), name
+        # the whole suite takes over 30 minutes on a runner (1.1.5 hit that cap)
+        assert 60 <= j[name]["timeout-minutes"] <= 120, name
