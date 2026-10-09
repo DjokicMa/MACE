@@ -33,6 +33,17 @@ os.environ.setdefault("COLORTERM", "truecolor")
 # test that wants a group file names it (mace/submission/site.py).
 os.environ["MACE_SITE_GROUP_CONFIG"] = "none"
 
+# A suite started in the background (`pytest &` from a script) inherits SIGINT
+# ignored, and every subprocess it starts would too: Python then installs no
+# KeyboardInterrupt handler, so the tests that stop a server or `mace gui
+# connect` with Ctrl+C (SIGINT) would wait for a stop that never comes.
+# Exec resets handled signals to their default but keeps ignored ones, so
+# restoring the handler here gives every child the usual Ctrl+C.
+import signal  # noqa: E402
+
+if signal.getsignal(signal.SIGINT) is signal.SIG_IGN:
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TEST_DATA = REPO_ROOT / "test"
 

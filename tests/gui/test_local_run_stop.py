@@ -42,9 +42,13 @@ def _box(tmp):
         _exe(ebroot / "bin" / n, MR.CRYSTAL_STUB)
     for d in ("stubdir", "scratch", "home"):
         (tmp / d).mkdir()
+    # mace run's scratch locks: this test's own, never the user's (or another
+    # suite's) $XDG_RUNTIME_DIR/mace-run-<uid>, where a run of m.d12 would collide
+    (tmp / "run").mkdir(mode=0o700)
     env = {"PATH": f"{stubs}:/usr/bin:/bin", "SCRATCH": str(tmp / "scratch"), "EBROOTCRYSTAL": str(ebroot),
            "STUB_LOG": str(tmp / "stub.log"), "STUB_DIR": str(tmp / "stubdir"), "HOME": str(tmp / "home"),
-           "STUB_SLEEP": "60", "STUB_IGNORE_TERM": "1", "USER": SU.USER, "LOGNAME": SU.USER, "LANG": "C.UTF-8"}
+           "STUB_SLEEP": "60", "STUB_IGNORE_TERM": "1", "USER": SU.USER, "LOGNAME": SU.USER, "LANG": "C.UTF-8",
+           "XDG_RUNTIME_DIR": str(tmp / "run")}
     return env, ebroot
 
 
