@@ -2,7 +2,8 @@
 
 The plot ipDOS() draws is unchanged: it is compared, pixel for pixel, with the
 plot the pre-refactor ipDOS_V2.py (the 1.1.5 base before the GUI, daa5468e) draws
-from the same synthetic files, when git can show that file.
+from the same synthetic files. That file is frozen in tests/frozen, so the
+comparison also runs in a shallow clone (CI) that lacks the base commit.
 """
 import importlib.util
 import os
@@ -16,6 +17,7 @@ from conftest import REPO_ROOT
 
 PLOTTING = REPO_ROOT / "Plotting"
 BASE = "daa5468e"
+FROZEN_BASE = REPO_ROOT / "tests" / "frozen" / "ipDOS_V2.base.txt"   # Plotting/ipDOS_V2.py at BASE
 
 
 def _load(path, name):
@@ -60,14 +62,7 @@ def test_lifted_readers_return_the_columns():
 
 
 def test_ipdos_plot_is_unchanged_by_the_refactor(tmp_path):
-    try:
-        old = subprocess.run(["git", "show", f"{BASE}:Plotting/ipDOS_V2.py"], cwd=REPO_ROOT,
-                             capture_output=True, text=True, timeout=60)
-    except (OSError, subprocess.SubprocessError):
-        pytest.skip("git is not available")
-    if old.returncode != 0:
-        pytest.skip(f"{BASE} is not in this clone")
-    (tmp_path / "old.py").write_text(old.stdout)
+    (tmp_path / "old.py").write_text(FROZEN_BASE.read_text())
     pngs = []
     for label, path in (("old", tmp_path / "old.py"), ("new", PLOTTING / "ipDOS_V2.py")):
         work = tmp_path / label
@@ -86,3 +81,15 @@ def test_ipdos_plot_is_unchanged_by_the_refactor(tmp_path):
         assert found, label
         pngs.append(found[0].read_bytes())
     assert pngs[0] == pngs[1]
+
+
+def test_frozen_base_is_the_base_commit_file():
+    """tests/frozen/ipDOS_V2.base.txt is Plotting/ipDOS_V2.py at BASE, when git has it."""
+    try:
+        old = subprocess.run(["git", "show", f"{BASE}:Plotting/ipDOS_V2.py"], cwd=REPO_ROOT,
+                             capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        pytest.skip("git is not available")
+    if old.returncode != 0:
+        pytest.skip(f"{BASE} is not in this clone (shallow); the frozen copy is used above")
+    assert FROZEN_BASE.read_text() == old.stdout

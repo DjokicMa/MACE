@@ -9,6 +9,7 @@ D28: account, partition (one or a list) and Python modules reach every
 shipped-template route, and only those lines change.
 D31: only MACE's own templates are rewritten, idempotently; copies and
 edited lines are left as written."""
+import hashlib
 import json
 import os
 import shutil
@@ -131,16 +132,30 @@ def test_unchanged_text_with_built_in_values():
         assert (new, changes, notes) == (text, [], [])
 
 
+# SHA-256 of the templates at daa5468e (the 1.1.5 base before the GUI), frozen
+# here so the check also runs in a shallow clone (CI) that lacks that commit.
+BASE_TEMPLATE_SHA256 = {
+    "submitcrystal23.sh": "76926e20f3a1f1b7c42a3b8ec84fb55d59d434cd20f853c309458a0eab26dace",
+    "submit_prop.sh": "87019c4598f2ed8944376476dad3191853dbb2350b2d88985b233c9fb6dbd42a",
+}
+
+
 def test_templates_unchanged_since_base():
     """The templates themselves are never edited (site settings are layered on top).
     daa5468e is the 1.1.5 base before the GUI; the templates are unchanged since."""
+    for t in (SCF, PROP):
+        assert hashlib.sha256(t.read_bytes()).hexdigest() == BASE_TEMPLATE_SHA256[t.name], t.name
+
+
+def test_frozen_template_digests_match_the_base_commit():
+    """The frozen digests are those of daa5468e, when git history is available."""
     r = subprocess.run(["git", "-C", str(REPO_ROOT), "cat-file", "-e", "daa5468e^{commit}"], capture_output=True)
     if r.returncode != 0:
-        pytest.skip("base commit not in this clone")
+        pytest.skip("base commit not in this clone (shallow); the frozen digests are checked above")
     for t in (SCF, PROP):
         old = subprocess.run(["git", "-C", str(REPO_ROOT), "show", f"daa5468e:mace/submission/{t.name}"],
                              capture_output=True, check=True).stdout
-        assert t.read_bytes() == old
+        assert hashlib.sha256(old).hexdigest() == BASE_TEMPLATE_SHA256[t.name], t.name
 
 
 # ---------------------------------------------------------------- D28
