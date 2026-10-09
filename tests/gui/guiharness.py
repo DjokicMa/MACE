@@ -185,6 +185,9 @@ def check_software_gl(drv):
     ok = bool(name) and any(k in name.lower() for k in SOFTWARE_GL)
     if not ok:
         msg = f"the browser's WebGL renderer is {name!r}, not software GL (SwiftShader or llvmpipe)"
+        if not name and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+            # headless Firefox on Linux creates no WebGL context without a display
+            msg += "; there is no X display: run the tests under xvfb-run -a"
         if os.environ.get(REQUIRE) == "1":
             drv.quit()
             pytest.fail(msg, pytrace=False)

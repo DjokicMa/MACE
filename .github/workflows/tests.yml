@@ -85,7 +85,10 @@ jobs:
             requirements-gui-test.txt
 
       - name: Software OpenGL (Mesa llvmpipe)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1-mesa-dri libegl-mesa0 libegl1
+        # xvfb: headless Firefox on Linux gets no WebGL context without an X
+        # display (FEATURE_FAILURE_WEBGL_EXHAUSTED_DRIVERS), so the smoke tests
+        # run under xvfb-run; the browsers stay headless and draw with llvmpipe
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1-mesa-dri libegl-mesa0 libegl1 xvfb
 
       - name: Install MACE, test and GUI-test dependencies
         run: |
@@ -100,7 +103,7 @@ jobs:
         env:
           MACE_GUI_REQUIRE_BROWSER: "1"
           MACE_GUI_ARTIFACTS: ${{ runner.temp }}/gui-artifacts
-        run: python -m pytest -m guismoke -ra -p no:cacheprovider
+        run: xvfb-run -a python -m pytest -m guismoke -ra -p no:cacheprovider
 
       - name: Keep screenshots and logs of failures
         if: failure()

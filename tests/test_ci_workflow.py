@@ -23,6 +23,8 @@ def test_gui_smoke_job():
     smoke = next(s for s in steps if "-m guismoke" in s.get("run", ""))
     assert smoke["env"]["MACE_GUI_REQUIRE_BROWSER"] == "1"
     assert "pytest -m guismoke" in smoke["run"]
+    # headless Firefox has no WebGL without an X display: the smoke run needs Xvfb
+    assert smoke["run"].startswith("xvfb-run ") and "xvfb" in run.split("pip install")[0]
     assert any("upload-artifact" in u for u in uses)
 
 
