@@ -25,6 +25,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   email address (`netid@university.edu`) gets a warning naming the profile
   file and the `--gateway ... --save` fix; it still connects. The standalone
   scripts do the same.
+- **GUI: a middle click in a 3D viewer no longer pastes on Linux.** The
+  primary-selection paste it also sends opened Import from Clipboard with
+  whatever text was last selected (or pasted copied atoms into the open
+  structure); the middle button now only pans or zooms there. Ctrl+V and a
+  middle click on a text field paste as before.
+- **GUI: no drop-down, menu or button cut off or hidden at everyday zoom
+  levels.** Drop-downs with a fixed height cut their text's descenders (the
+  vertical padding left too little room for Linux's DejaVu Sans), segmented
+  buttons wrapped inside their fixed height ("Upper Left"), the Inspector's
+  Supercell/Transform/Edit Cell row pushed its first button out of sight, and
+  Calculation Setup squeezed its drop-downs in the narrow Inspector. Menus,
+  plot menus, the Plot Options popover and the periodic table now open in one
+  overlay layer above every panel (a plot's popover was clipped by its panel
+  and covered by the bottom panel), stay inside the window, and follow one
+  z-index scale (`--z-*` in `css/tokens.css`), with notices below menus.
 
 ## [1.1.5] - 2026-10-08
 

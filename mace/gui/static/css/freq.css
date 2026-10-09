@@ -8,7 +8,7 @@
 .fv-title { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fv-mode { font-size: var(--fs-sm); color: var(--text-2); white-space: nowrap; }
 .fv-play kbd { font: 500 var(--fs-xs)/1 var(--font-mono); }
-.fv-view { position: relative; flex: 1; min-height: 0; }
+.fv-view { position: relative; isolation: isolate; flex: 1; min-height: 0; }
 .fv-view .viewer { position: absolute; inset: 0; }
 .fv-view .viewer:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .fv-msg { position: absolute; inset: 0; display: grid; place-content: center; gap: var(--s-2); color: var(--text-2); z-index: 2; background: var(--viewport-bg); }

@@ -1196,7 +1196,7 @@ function renderStatus() {
   if (run.length) {
     const t = run[0], pct = Math.round((t.progress || 0) * 100), more = run.length > 1 ? ` +${run.length - 1}` : "";
     items.push(`<button class="st-item st-task" id="st-task" data-tip="Background tasks" data-desc="Open the Tasks panel">` +
-      `<span class="spinner sm" aria-hidden="true"></span><span class="st-task-title">${esc(t.title)}${more}</span>` +
+      `<span class="spinner sm" aria-hidden="true"></span><span class="st-task-title" title="${esc(t.title)}${more}">${esc(t.title)}${more}</span>` +
       `<span class="st-task-bar" role="progressbar" aria-label="${esc(t.title)}" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></span></button>`);
   } else if (task) items.push(`<button class="st-item" id="st-task">${icon("loader-circle")}<span>${esc(task)}</span></button>`);
   if (storageChip) items.push(`<button class="st-item st-storage ${storageChip.level === "critical" ? "crit" : "warn"}" id="st-storage" data-tip="Storage" data-desc="Open the Cluster view's Storage tab">${icon("triangle-alert")}<span>${esc(storageChip.text)}</span></button>`);

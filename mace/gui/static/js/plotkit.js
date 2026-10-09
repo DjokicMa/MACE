@@ -12,6 +12,7 @@
  *   per, relTo, single, range, width, png, svg, image, csv, pub}, get() -> opts, set(patch, label),
  *   table() -> {columns, rows}, png(), svg(), image() (Export Image…), pub(), resetZoom(), axes() -> {x: label, y: label} }
  * opts = {ylog, xlog, unit, per, relTo, single, xr: [from, to], yr: [from, to], width} */
+import { overlayHost, place } from "./ui.js";
 
 export const HARTREE_EV = 27.211386245988;          // CODATA 2018
 export const AVOGADRO_EV_KJMOL = 96.48533212331;    // 1 eV per particle in kJ/mol
@@ -76,6 +77,23 @@ export async function copyText(text) {
 export const hosts = new Set();
 let menuOpen = null;
 function closeMenus() { if (menuOpen) { const m = menuOpen; menuOpen = null; m.close(); } }
+/* A menu or the options popover opens in the overlay layer (ui.js), so the
+ * plot's panel can neither clip nor cover it, right-aligned under its button
+ * and kept on screen. Tab past either end closes it and goes on from the button. */
+function float(el, btn) {
+  overlayHost().appendChild(el);
+  const r = btn.getBoundingClientRect();
+  place(el, { left: r.right - el.offsetWidth, right: r.right, top: r.top, bottom: r.bottom }, "bottom", 4);
+  el.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const all = [...el.querySelectorAll("button:not([disabled]), input, select")];
+    const atEnd = e.shiftKey ? document.activeElement === all[0] : document.activeElement === all[all.length - 1];
+    if (el.getAttribute("role") === "menu" || atEnd) {
+      if (e.shiftKey) e.preventDefault();      // back to the button itself
+      closeMenus();
+    }
+  });
+}
 document.addEventListener("pointerdown", (e) => { if (menuOpen && !menuOpen.contains(e.target)) closeMenus(); }, true);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && menuOpen) { e.preventDefault(); e.stopPropagation(); closeMenus(); } }, true);
 
@@ -114,7 +132,7 @@ export function attach(acts, adapter, H) {
     m.setAttribute("role", "menu");
     m.innerHTML = items.map((it) => it === "-" ? `<div class="pk-sep" role="separator"></div>` :
       `<button type="button" role="${it.checked !== undefined ? "menuitemradio" : "menuitem"}" data-v="${esc(it.v)}"${it.checked !== undefined ? ` aria-checked="${it.checked}"` : ""}${it.disabled ? ' aria-disabled="true" disabled' : ""}>${esc(it.label)}</button>`).join("");
-    btn.parentElement.appendChild(m);
+    float(m, btn);
     btn.setAttribute("aria-expanded", "true");
     m.close = () => { m.remove(); btn.setAttribute("aria-expanded", "false"); btn.focus(); };
     menuOpen = m;
@@ -150,7 +168,7 @@ export function attach(acts, adapter, H) {
         <div class="pk-row pk-range"><span>${esc(ax.y)}</span>${num("y", 0, (o.yr || [])[0])}<span>–</span>${num("y", 1, (o.yr || [])[1])}</div>` : ""}
       ${f.width ? `<label class="pk-row"><span>Line width</span><input type="number" min="0.5" max="6" step="0.5" data-k="width" value="${o.width ?? 1.5}" aria-label="Line width"></label>` : ""}
       <div class="pk-row"><button type="button" class="tb-btn-text" data-act="resetzoom">Reset Zoom</button></div>`;
-    btn.parentElement.appendChild(p);
+    float(p, btn);
     btn.setAttribute("aria-expanded", "true");
     p.close = () => { p.remove(); btn.setAttribute("aria-expanded", "false"); btn.focus(); };
     menuOpen = p;

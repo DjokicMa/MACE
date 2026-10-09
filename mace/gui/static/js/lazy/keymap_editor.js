@@ -86,10 +86,10 @@ function paint() {
     const user = C.isUserBound(r.c), on = recording && recording.id === r.id;
     html += `<div class="km-row${on ? " recording" : ""}" role="row" data-id="${H.esc(r.id)}" style="top:${k * ROW}px">` +
       `<span class="km-cmd" title="${H.esc(r.label)} (${H.esc(r.id)})">${H.esc(r.label)}</span>` +
-      `<span class="km-keyscell"><button class="km-keys" data-id="${H.esc(r.id)}" aria-label="Change the keybinding of ${H.esc(r.label)}">` +
+      `<span class="km-keyscell"><button class="km-keys" data-id="${H.esc(r.id)}" title="${H.esc(r.keys.join(", ") || "Unbound")}" aria-label="Change the keybinding of ${H.esc(r.label)}">` +
       (r.keys.length ? r.keys.map((k2) => `<kbd>${H.esc(k2)}</kbd>`).join("") : `<span class="muted">Unbound</span>`) + `</button>` +
       `<button class="km-add icon-btn sm" data-add="${H.esc(r.id)}" aria-label="Add a keybinding to ${H.esc(r.label)}">${H.icon("plus")}</button></span>` +
-      `<span class="km-when">${H.esc(readableWhen(r.c.when))}</span><span class="km-src">${user ? "User" : "Default"}</span>` +
+      `<span class="km-when" title="${H.esc(readableWhen(r.c.when))}">${H.esc(readableWhen(r.c.when))}</span><span class="km-src">${user ? "User" : "Default"}</span>` +
       `<button class="set-reset km-reset" data-reset-key="${H.esc(r.id)}"${user ? "" : " hidden"}>Reset</button></div>`;
   }
   list.innerHTML = html;

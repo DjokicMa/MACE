@@ -95,6 +95,11 @@ summary.card-label { cursor: pointer; margin: 0; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 input, select, textarea { font: inherit; color: var(--text); background: var(--surface-2);
   border: 1px solid var(--line-strong); border-radius: 7px; padding: 6px 9px; min-width: 0; }
+/* A drop-down clips its text to its content box, so vertical padding inside a
+ * fixed height cuts the descenders (DejaVu Sans, Linux's usual system-ui, is
+ * taller than Segoe UI or Arial): no vertical padding, the text centers in the
+ * control's height instead. :where() keeps this below every sized rule. */
+select:where(:not([multiple], [size])) { padding-block: 0; height: var(--h-control); }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .btn { font: inherit; font-weight: 500; padding: 6px 13px; border-radius: 7px; cursor: pointer;
   border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); }
@@ -130,7 +135,8 @@ table.clickable tbody tr.sel { background: var(--accent-soft); }
 
 /* structure */
 .split { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; height: 100%; }
-.viewer-wrap { position: relative; background: var(--viewer-bg); border: 1px solid var(--line);
+/* isolate: the view's own overlays (chips, badges, the axis triad) stack inside it, never against the window */
+.viewer-wrap { position: relative; isolation: isolate; background: var(--viewer-bg); border: 1px solid var(--line);
   border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column;
   min-height: 460px; box-shadow: var(--shadow); }
 .viewer { position: relative; flex: 1; min-height: 400px; }
@@ -143,6 +149,8 @@ table.clickable tbody tr.sel { background: var(--accent-soft); }
  * splits a field from its label */
 .tb-group { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 10px; white-space: nowrap; }
 .tb-group.tight { gap: 4px; }
+/* a group wider than the whole view (a narrow pane) wraps inside, as a last resort, rather than being cut */
+.viewer-toolbar .tb-group, .viewer-toolbar .slider { flex-wrap: wrap; max-width: 100%; }
 .viewer-toolbar select { padding: 3px 6px; font-size: 13px; }
 .hover-tip { position: absolute; top: 10px; left: 10px; background: var(--surface);
   border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: 12px var(--mono);
@@ -243,7 +251,7 @@ pre.log { max-height: 220px; overflow: auto; font-size: 11.5px; color: var(--mut
 
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); max-width: 80vw;
   background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 8px; font-size: 13px;
-  box-shadow: var(--e2); z-index: 20; white-space: pre-wrap; }
+  box-shadow: var(--e2); z-index: var(--z-toast); white-space: pre-wrap; }
 .toast.err { background: var(--bad); color: var(--on-danger); }
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line-strong);
   border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite;
@@ -312,7 +320,7 @@ pre.log { max-height: 220px; overflow: auto; font-size: 11.5px; color: var(--mut
 .pk-acts { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; min-width: 0; }
 .pk-wrap { position: relative; display: inline-flex; }
 .pk-logy[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
-.pk-menu, .pk-pop { position: absolute; top: calc(100% + 4px); right: 0; z-index: 60; min-width: 168px; padding: 4px;
+.pk-menu, .pk-pop { position: fixed; z-index: var(--z-menu); min-width: 168px; max-width: calc(100vw - 8px); max-height: calc(100dvh - 8px); overflow: auto; padding: 4px;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md, 6px); box-shadow: var(--shadow-2, 0 6px 24px rgba(0,0,0,.18)); }
 .pk-menu { display: flex; flex-direction: column; }
 .pk-menu button { text-align: left; padding: 5px 10px; border: 0; background: none; color: var(--text); border-radius: 4px; cursor: pointer; font: inherit; white-space: nowrap; }

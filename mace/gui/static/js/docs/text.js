@@ -109,7 +109,7 @@ export function createTextView(host, H) {
     try {
       const r = await apiTask("text/find", { path: doc.srcPath || doc.path, query: text, doc: doc.id });
       count.textContent = r.matches.length ? `${r.matches.length}${r.more ? "+" : ""} line${r.matches.length === 1 ? "" : "s"}` : "No match";
-      hits.innerHTML = r.matches.slice(0, 200).map((h, k) => `<button role="option" data-hit="${h.line}" ${k === 0 ? 'aria-selected="true"' : ""}>` +
+      hits.innerHTML = r.matches.slice(0, 200).map((h, k) => `<button role="option" data-hit="${h.line}" title="${esc(h.text.slice(0, 160))}" ${k === 0 ? 'aria-selected="true"' : ""}>` +
         `<span class="tv-ln">${h.line + 1}</span><span>${esc(h.text.slice(0, 160))}</span></button>`).join("");
       hits.hidden = !r.matches.length;
       if (r.matches.length) jump(r.matches[0].line);

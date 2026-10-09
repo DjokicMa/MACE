@@ -11,7 +11,7 @@ dialog.settings-dlg[open] { display: flex; }
 .set-main { flex: 1; min-height: 0; display: grid; grid-template-columns: 196px minmax(0, 1fr); }
 .set-nav { display: flex; flex-direction: column; gap: 2px; padding: var(--s-3); border-right: 1px solid var(--border);
   background: var(--surface-2); overflow: auto; }
-.set-nav-item { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); min-height: 28px;
+.set-nav-item { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); min-height: 28px;
   padding: 0 var(--s-3); border: 0; border-radius: var(--r-md); background: none; color: var(--text); font: inherit;
   text-align: left; cursor: pointer; }
 .set-nav-item:hover { background: var(--surface-3); }
@@ -29,7 +29,8 @@ dialog.settings-dlg[open] { display: flex; }
 .set-ctl { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-1); min-width: 0; }
 .set-ctl select.field, .set-ctl .field { width: auto; min-width: 200px; max-width: 100%; height: var(--h-control); }
 .set-ctl textarea.field { width: 100%; height: auto; padding: var(--s-2) var(--s-3); font: var(--fs-sm)/1.4 var(--font-mono); resize: vertical; }
-.set-ctl .segment button { height: 28px; }
+.set-ctl .segment { flex-wrap: wrap; max-width: 100%; }
+.set-ctl .segment button { min-height: 28px; }
 .set-check { width: 16px; height: 16px; margin: 6px 0; accent-color: var(--accent); }
 .set-range { display: inline-flex; align-items: center; gap: var(--s-3); height: var(--h-control); }
 .set-range input { width: 220px; accent-color: var(--accent); }
@@ -54,6 +55,13 @@ dialog.settings-dlg[open] { display: flex; }
   border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2); }
 .tb-btn-text.danger { color: var(--danger); }
 @media (max-width: 1099.98px) { .set-main { grid-template-columns: 168px minmax(0, 1fr); } .set-row { grid-template-columns: 160px minmax(0, 1fr) 52px; } }
+/* a zoomed-in window: each label above its control, so the controls keep their width */
+@media (max-width: 799.98px) {
+  .set-main { grid-template-columns: 136px minmax(0, 1fr); }
+  .set-pane { padding-inline: var(--s-4); }
+  .set-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--s-1); }
+  .set-row > label, .set-row > .lbl { grid-column: 1 / -1; }
+}
 
 /* ---------------------------------------------------------------- keymap editor */
 .km-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); margin-bottom: var(--s-3); }
@@ -133,8 +141,9 @@ dialog.cheat-dlg { width: min(1240px, 96vw); }
   .cheat-row kbd { font-size: 6pt; padding: 0 1.5pt; box-shadow: none; }
 }
 /* the periodic-table picker (js/lazy/ptable.js) */
-.ptable { position: fixed; z-index: 60; background: var(--surface); color: var(--text); border: 1px solid var(--border);
-  border-radius: var(--r-xl); box-shadow: var(--e3); padding: var(--s-4); }
+.ptable { position: fixed; z-index: var(--z-menu); background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: var(--r-xl); box-shadow: var(--e3); padding: var(--s-4);
+  max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow: auto; }
 .pt-head { display: flex; align-items: center; gap: var(--s-4); margin-bottom: var(--s-3); }
 .pt-title { font-weight: 600; }
 .pt-search { flex: 1; height: var(--h-control); padding: 0 var(--s-3); border: 1px solid var(--border-strong); border-radius: var(--r-md);
@@ -154,7 +163,7 @@ dialog.cheat-dlg { width: min(1240px, 96vw); }
  * so they float at the window's right edge, over the inspector rather than the
  * structure (and their header drags them elsewhere) */
 dialog.dlg-panel { position: fixed; top: calc(var(--h-menubar) + var(--h-toolbar) + var(--s-3)); right: var(--s-4);
-  left: auto; margin: 0; z-index: 40; width: 360px; max-width: calc(100vw - 32px); max-height: calc(100dvh - var(--h-menubar) - var(--h-toolbar) - var(--h-status) - var(--s-5));
+  left: auto; margin: 0; z-index: var(--z-float); width: 360px; max-width: calc(100vw - 32px); max-height: calc(100dvh - var(--h-menubar) - var(--h-toolbar) - var(--h-status) - var(--s-5));
   overflow: auto; box-shadow: var(--e3); }
 dialog.dlg-panel .dlg-head { cursor: move; user-select: none; touch-action: none; }
 dialog.dlg-panel .dlg-head button { cursor: pointer; }
