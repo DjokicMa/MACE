@@ -1642,6 +1642,8 @@ document.addEventListener("paste", onPaste);
 function onPaste(e) {
   const t = e.target;
   if (isTextField(t) || (t && t.closest && t.closest("dialog"))) return;
+  // the primary selection a middle click in a viewer brings (Linux): never a paste
+  if (performance.now() - midUpAt < MID_PASTE_MS) return;
   const text = e.clipboardData ? e.clipboardData.getData("text/plain") : "";
   const imp = !!pasteAsImport && performance.now() - pasteAsImport < 1000;
   pasteAsImport = 0;
@@ -1649,6 +1651,32 @@ function onPaste(e) {
   e.preventDefault();
   pasteText(text, imp);
 }
+/* The middle button in a 3D viewer pans (viewport/pointer.js) or zooms
+ * (3Dmol's own viewers: optimization, normal mode, volume); on Linux it is
+ * also the primary selection's paste, which Chromium runs on the mouseup and
+ * Firefox on the auxclick. Its mousedown, pointerup, mouseup and auxclick are
+ * canceled there: preventDefault only, so pointer.js and 3Dmol (whose mouseup
+ * listener is on the body and ignores defaultPrevented) still get every
+ * event. Its pointerdown is left alone: canceling it would keep the mousedown
+ * from 3Dmol. A paste that still comes within MID_PASTE_MS of the release is
+ * dropped by onPaste; Mod+V clears that window. */
+const MID_PASTE_MS = 500;
+let midDown = false, midTail = false, midUpAt = -Infinity;
+function onMiddleButton(e) {
+  if (e.button !== 1) return;
+  const inViewer = !!e.target && !!e.target.closest && !!e.target.closest(".viewer");
+  if (e.type === "pointerdown" || e.type === "mousedown") {
+    midDown = inViewer; midTail = false;
+    if (inViewer && e.type === "mousedown") e.preventDefault();       // no focus move, no autoscroll
+    return;
+  }
+  if (e.type === "pointercancel") { midDown = false; return; }
+  // the release of a press that began in a viewer (pointer capture retargets it), then its mouseup and auxclick
+  if (!midDown && !midTail && !inViewer) return;
+  e.preventDefault();
+  if (e.type !== "auxclick") { midDown = false; midTail = true; midUpAt = performance.now(); }
+}
+for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "auxclick", "pointercancel"]) addEventListener(type, onMiddleButton, true);
 /** Copied atoms paste into the open structure; anything else opens Import from Clipboard. */
 function pasteText(text, asImport = false) {
   if (!asImport && isAtomsBlock(text) && active && active.kind === "structure" && edOf(active) && !active.viewOnly) return S.ed("edit.pasteText", { text });
@@ -2157,7 +2185,7 @@ let previewKeys = null;
 function onKeydown(e) {
   if ((e.defaultPrevented && !e.__maceNav) || e.isComposing) return;
   // Mod+V / Mod+Shift+V: the browser's own paste (plan B12), never preventDefault here
-  if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === "KeyV" && !isTextField(e.target)) { pasteAsImport = e.shiftKey ? performance.now() : 0; return; }
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === "KeyV" && !isTextField(e.target)) { pasteAsImport = e.shiftKey ? performance.now() : 0; midUpAt = -Infinity; return; }
   if (previewKeys && !isPaletteOpen() && !menuOpen() && !document.querySelector("dialog:modal") && previewKeys(e)) {
     e.preventDefault(); e.stopPropagation(); return;
   }
