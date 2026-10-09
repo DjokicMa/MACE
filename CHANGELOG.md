@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   canceled.** The server now waits (5 s at most) for each canceled task to end
   and for its event to reach the tabs before it exits; before, the tabs could
   keep showing the task as running.
+- **`mace gui --slurm` no longer leaves its ssh tunnel running.** The tunnel
+  (and anything it started) now ends with the session however it ends: Stop,
+  Ctrl+C, SIGTERM, a hang-up, an error, or, on Linux, the session being
+  killed. A hang-up or SIGTERM leaves the job running, to reattach to.
 
 ## [1.1.5] - 2026-10-08
 
