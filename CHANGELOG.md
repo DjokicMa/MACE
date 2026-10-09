@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Stop Server in the GUI tells every open tab that its running tasks were
+  canceled.** The server now waits (5 s at most) for each canceled task to end
+  and for its event to reach the tabs before it exits; before, the tabs could
+  keep showing the task as running.
+
 ## [1.1.5] - 2026-10-08
 
 Everything since 1.1.4. New: **the MACE GUI (`mace gui`)**, the folder's
