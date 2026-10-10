@@ -141,6 +141,27 @@ def test_middle_click_on_text_field_still_pastes(drv):
     assert not H.errors(drv), H.errors(drv)
 
 
+def test_middle_click_on_a_button_pastes_nothing(drv):
+    """Outside the viewer too: a middle click on a toolbar button or a tab is
+    not a paste into the structure or Import from Clipboard."""
+    assert open_doc(drv, "structures/MgO.cif") == "structure"
+    H.wait(drv, "return window.__mace.viewState().displayedAtoms > 0", 20)
+    select_probe(drv, "data_x primary selection")
+    before = state(drv)
+    btn = drv.execute_script("""return [...document.querySelectorAll('button')].find((b) => {
+        const r = b.getBoundingClientRect();
+        return r.width > 8 && r.height > 8 && r.top > 80 && !b.closest('.viewer, dialog, #probe')
+            && document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b; })""")
+    assert btn is not None
+    from selenium.webdriver.common.actions.action_builder import ActionBuilder
+    ab = ActionBuilder(drv)
+    ab.pointer_action.move_to(btn).pointer_down(1).pointer_up(1)
+    ab.perform()
+    time.sleep(0.6)
+    assert state(drv) == before
+    assert not H.errors(drv), H.errors(drv)
+
+
 def _model_point_under(drv, x, y):
     return drv.execute_script("""const c = window.__mace.viewport.camera().calibrate();
         return [0, 1, 2].map((k) => c.center[k] + c.right[k] * (arguments[0] - c.centerPx[0]) / c.s

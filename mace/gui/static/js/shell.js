@@ -1659,7 +1659,8 @@ function onPaste(e) {
  * listener is on the body and ignores defaultPrevented) still get every
  * event. Its pointerdown is left alone: canceling it would keep the mousedown
  * from 3Dmol. A paste that still comes within MID_PASTE_MS of the release is
- * dropped by onPaste; Mod+V clears that window. */
+ * dropped by onPaste, after a middle click anywhere outside a text field;
+ * Mod+V clears that window. */
 const MID_PASTE_MS = 500;
 let midDown = false, midTail = false, midUpAt = -Infinity;
 function onMiddleButton(e) {
@@ -1672,7 +1673,11 @@ function onMiddleButton(e) {
   }
   if (e.type === "pointercancel") { midDown = false; return; }
   // the release of a press that began in a viewer (pointer capture retargets it), then its mouseup and auxclick
-  if (!midDown && !midTail && !inViewer) return;
+  if (!midDown && !midTail && !inViewer) {
+    // elsewhere outside a text field (a toolbar button, a tab) the primary selection's paste is dropped too
+    if (!isTextField(e.target)) midUpAt = performance.now();
+    return;
+  }
   e.preventDefault();
   if (e.type !== "auxclick") { midDown = false; midTail = true; midUpAt = performance.now(); }
 }
