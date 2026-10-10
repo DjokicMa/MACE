@@ -134,7 +134,8 @@ def test_powershell_static_parity():
         assert f'"{key}"' in ps or f"{key})" in sh, key
     if shutil.which("pwsh"):
         r = subprocess.run(["pwsh", "-NoProfile", "-Command",
-                            f"$null = [System.Management.Automation.Language.Parser]::ParseFile('{PS1}', [ref]$null, "
+                            "$t = $null; $e = $null; "      # [ref] needs variables that exist
+                            f"$null = [System.Management.Automation.Language.Parser]::ParseFile('{PS1}', [ref]$t, "
                             "[ref]$e); if ($e) { $e; exit 1 }"], capture_output=True, text=True)
         assert r.returncode == 0, r.stdout
 
