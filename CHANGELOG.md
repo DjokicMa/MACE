@@ -46,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exiting server never finished starting, which printed an `EOFError`
   traceback; the pool now takes nothing new once it is stopping.
 
+- **Auto pre-optimization classifies a structure about ten times faster.**
+  The dimensionality scan now checks the bond network once per bond length
+  instead of after every bond: 0.4 s instead of 5 s for a 128-atom slab.
+
 ## [1.1.5] - 2026-10-08
 
 Everything since 1.1.4. New: **the MACE GUI (`mace gui`)**, the folder's
