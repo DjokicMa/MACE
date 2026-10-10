@@ -41,6 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and covered by the bottom panel), stay inside the window, and follow one
   z-index scale (`--z-*` in `css/tokens.css`), with notices below menus.
 
+- **Stopping the GUI no longer leaves a half-started worker behind.** A task
+  dispatched while the server stopped could start a pool worker that the
+  exiting server never finished starting, which printed an `EOFError`
+  traceback; the pool now takes nothing new once it is stopping.
+
 ## [1.1.5] - 2026-10-08
 
 Everything since 1.1.4. New: **the MACE GUI (`mace gui`)**, the folder's

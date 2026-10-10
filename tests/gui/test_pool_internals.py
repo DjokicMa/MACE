@@ -159,3 +159,13 @@ def test_one_worker_still_writes_a_deck(tmp_path):
     finally:
         proc.terminate()
         proc.wait(timeout=15)
+
+
+def test_nothing_is_submitted_once_the_pool_was_killed():
+    """A task dispatched while the server stops must not start a worker the
+    exiting server would leave half started (EOFError on stderr)."""
+    p = pool.Pool(lambda: 1, lambda *a: None)
+    p.shutdown(kill=True)
+    with pytest.raises(RuntimeError, match="stopping"):
+        p.submit("sleep", {}, 0)
+    assert p.ex is None and p.started == 0
