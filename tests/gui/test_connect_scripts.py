@@ -134,6 +134,87 @@ def test_powershell_static_parity():
         assert f'"{key}"' in ps or f"{key})" in sh, key
     if shutil.which("pwsh"):
         r = subprocess.run(["pwsh", "-NoProfile", "-Command",
-                            f"$null = [System.Management.Automation.Language.Parser]::ParseFile('{PS1}', [ref]$null, "
+                            "$t = $null; $e = $null; "      # [ref] needs variables that exist
+                            f"$null = [System.Management.Automation.Language.Parser]::ParseFile('{PS1}', [ref]$t, "
                             "[ref]$e); if ($e) { $e; exit 1 }"], capture_output=True, text=True)
         assert r.returncode == 0, r.stdout
+
+
+# the key-failure hint and the email-like gateway warning: the same words as mace gui connect
+HINT_CORE = ('If the key has a passphrase, ssh cannot ask for it here: load it into an agent first, with '
+             'eval "$(ssh-agent)" and ssh-add (on Windows: start the OpenSSH Authentication Agent service, then '
+             'run ssh-add)')
+HINT_TAIL = "A Host alias from ~/.ssh/config also works as the gateway."
+WARN_PARTS = ("looks like an email address. It should be user@login-host (your cluster's login node, e.g. "
+              "netid@login.example.edu) or a Host alias from ~/.ssh/config. Connecting anyway; to fix the profile in ",
+              "--gateway <user@login-host> --save")
+
+
+def test_key_hint_and_email_warning_parity():
+    ps, sh = PS1.read_text(), SH.read_text()
+    sh_hint = sh.replace('\\"\\$(ssh-agent)\\"', '"$(ssh-agent)"')    # the bash string's escapes
+    for text in (C.KEY_HINT, sh_hint, ps):
+        assert HINT_CORE in text and HINT_TAIL in text
+    py_warn = C.email_gateway_warning("netid@university.edu", Path("connect.toml"), "p")
+    for text in (py_warn, sh, ps):
+        for part in WARN_PARTS:
+            assert part in text, part
+    # the same ssh messages and the same email heuristic
+    for pat in C.KEY_FAILURE_RE.pattern.split("|"):
+        assert pat in sh.replace("\\\\(", "\\("), pat
+    assert "'^[a-z0-9-]+\\.[a-z]{2,}$'" in ps and "'^[a-z0-9-]+[.][a-z]{2,}$'" in sh
+    assert r"[a-z0-9-]+\.[a-z]{2,}" in Path(C.__file__).read_text()
+    assert "if ($code -eq 255)" in ps            # PowerShell leaves ssh's stderr to the console: the exit code only
+
+
+def _stub_ssh(tmp_path, stderr_lines):
+    """An "ssh" that logs its arguments, prints ssh's message and exits 255."""
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    ran = tmp_path / "ran"
+    ssh = fakebin / "ssh"
+    ssh.write_text("#!/bin/sh\n[ \"$1\" = -G ] && exit 0\necho \"$@\" >> %s\nprintf '%%s\\n' %s >&2\nsleep 0.2\n"
+                   "exit 255\n" % (shlex.quote(str(ran)), " ".join(shlex.quote(x) for x in stderr_lines)))
+    ssh.chmod(0o755)
+    return fakebin, ran
+
+
+@pytest.mark.parametrize("gateway,stderr_lines,hint,warn", [
+    ("netid@login.example.edu", ["netid@login.example.edu: Permission denied (publickey)."], True, False),
+    ("netid@login.example.edu", ["Enter passphrase for key '/home/netid/.ssh/id_ed25519': ",
+                                 "netid@login.example.edu: Permission denied (publickey,password)."], True, False),
+    ("netid@university.edu", ["ssh: connect to host university.edu port 22: Connection timed out"], False, True),
+    ("netid@university.edu", ["netid@university.edu: Permission denied (publickey)."], True, True),
+])
+def test_bash_script_key_hint_and_email_warning(tmp_path, gateway, stderr_lines, hint, warn):
+    if shutil.which("mkfifo") is None:
+        pytest.skip("needs mkfifo")
+    fakebin, ran = _stub_ssh(tmp_path, stderr_lines)
+    env = _env(tmp_path)
+    env["PATH"] = f"{fakebin}:{env.get('PATH', '/usr/bin:/bin')}"
+    env.pop("BROWSER", None)
+    r = subprocess.run(["bash", str(SH), "--gateway", gateway, "--no-open"], env=env, capture_output=True,
+                       text=True, timeout=60, stdin=subprocess.DEVNULL)
+    assert r.returncode == 1
+    assert gateway in ran.read_text()            # the warning does not stop the connection
+    assert (HINT_CORE in r.stderr.replace("\n", " ")) is hint, r.stderr
+    assert (WARN_PARTS[0] in r.stderr) is warn, r.stderr
+    if warn:
+        assert f"to fix the profile in {env['XDG_CONFIG_HOME']}/mace/connect.toml" in r.stderr
+
+
+@pytest.mark.parametrize("config,warn", [("Host hpcc *.EDU\n  HostName login.university.edu\n", False),
+                                         ("Host=university.edu\n", False),
+                                         ("Host hpcc !university.edu\nHostName university.edu\n", True)])
+def test_bash_script_email_warning_respects_ssh_config(tmp_path, config, warn):
+    env = _env(tmp_path)
+    (tmp_path / "home" / ".ssh").mkdir()
+    (tmp_path / "home" / ".ssh" / "config").write_text(config)
+    r = subprocess.run(["bash", str(SH), "p", "--gateway", "NetID@University.edu", "--dry-run"], env=env,
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0
+    assert (WARN_PARTS[0] in r.stderr) is warn, r.stderr
+    assert C.gateway_looks_like_email("NetID@University.edu", C.ssh_config_hosts(
+        tmp_path / "home" / ".ssh" / "config")) is warn
+    if warn:
+        assert "mace gui connect p --gateway <user@login-host> --save" in r.stderr

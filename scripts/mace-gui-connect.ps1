@@ -119,6 +119,35 @@ if (-not $GatewayV -and -not $NodeV) {
   exit 2
 }
 
+# A gateway such as user@university.edu is an email address, not a login host
+# (user@login.university.edu): flagged when the part after @ is two labels
+# (name.tld) and no ~/.ssh/config Host pattern matches it. The same heuristic
+# as mace gui connect (gateway_looks_like_email in connect.py, which explains
+# the tradeoff); a warning only.
+function Test-EmailLike([string]$gw) {
+  if ($gw -notmatch '@([^@]+)$') { return $false }
+  $h = $Matches[1].ToLower()
+  if ($h -notmatch '^[a-z0-9-]+\.[a-z]{2,}$') { return $false }
+  $cfg = Join-Path $env:USERPROFILE ".ssh\config"
+  if (Test-Path -LiteralPath $cfg) {
+    foreach ($l in Get-Content -LiteralPath $cfg) {
+      if ($l -match '^\s*Host(?:\s+|\s*=\s*)(.+)$') {
+        foreach ($pat in ($Matches[1].Trim() -split '\s+')) {
+          $pat = $pat.Trim('"')
+          if (-not $pat -or $pat.StartsWith("!")) { continue }
+          if ($h -like $pat -or $gw -like $pat) { return $false }
+        }
+      }
+    }
+  }
+  return $true
+}
+if ($GatewayV -and (Test-EmailLike $GatewayV)) {
+  $conf = Join-Path $env:APPDATA "mace\connect.toml"
+  $pn = if ($ProfileName) { "$ProfileName " } else { "" }
+  Write-Warning "The gateway $GatewayV looks like an email address. It should be user@login-host (your cluster's login node, e.g. netid@login.example.edu) or a Host alias from ~/.ssh/config. Connecting anyway; to fix the profile in $conf, run: mace gui connect $($pn)--gateway <user@login-host> --save (or pass -Gateway to this script)."
+}
+
 # ------------------------------------------------------------------ the command (as mace gui connect builds it)
 function ShQuote([string]$s) {
   if ($s -eq "") { return "''" }
@@ -266,5 +295,10 @@ finally {
 }
 if ($state -eq "stopped") { exit 0 }
 if ($state -eq "ready") { Write-Output "The connection to $where closed. If GUI tasks were running, the server keeps them running: run this script again to reattach."; exit 1 }
+# ssh's messages go straight to this window (so its prompts work); ssh's exit code 255 means ssh itself failed
+$code = if ($proc.WaitForExit(5000)) { $proc.ExitCode } else { -1 }
+if ($code -eq 255) {
+  Write-Warning ('If ssh said "Permission denied (publickey)" above, or could not read a passphrase: ssh could not log in with your key. If the key has a passphrase, ssh cannot ask for it here: load it into an agent first, with eval "$(ssh-agent)" and ssh-add (on Windows: start the OpenSSH Authentication Agent service, then run ssh-add), then run this script again. A Host alias from ~/.ssh/config also works as the gateway.')
+}
 Write-Warning "The connection ended before MACE GUI was ready. If no password or 2FA prompt appeared, set up an ssh key or agent (docs/gui.md#windows-powershell), or use -Manual."
 exit 1

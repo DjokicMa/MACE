@@ -31,7 +31,7 @@ kbd { font: 500 var(--fs-xs)/1 var(--font-mono); padding: 2px 5px; border-radius
 .shell.zen { grid-template-columns: 0 0 0 minmax(0, 1fr) 0 0; grid-template-rows: 0 auto 0 minmax(0, 1fr) 0; }
 .shell.zen > :is(.menubar, .toolbar, .activity, .explorer, .inspector, .statusbar, .splitter) { display: none; }
 /* the way out of Zen Mode: top right of the viewport, faded after 3 s, back on hover, focus or a pointer near the top */
-.zen-exit { position: fixed; top: 12px; right: 12px; z-index: 40; display: inline-flex; align-items: center; gap: var(--s-1);
+.zen-exit { position: fixed; top: 12px; right: 12px; z-index: var(--z-float); display: inline-flex; align-items: center; gap: var(--s-1);
   padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text);
   font: inherit; cursor: pointer; box-shadow: 0 1px 4px rgb(0 0 0 / 0.15); transition: opacity 0.3s; }
 .zen-exit[hidden] { display: none; }
@@ -81,12 +81,16 @@ kbd { font: 500 var(--fs-xs)/1 var(--font-mono); padding: 2px 5px; border-radius
 .icon-btn .dirty-dot { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 
 /* ---------------------------------------------------------------- menus */
-.menu { position: fixed; z-index: 50; min-width: 240px; max-width: 420px; max-height: calc(100dvh - 48px); overflow: auto;
+/* in the overlay layer (ui.js overlayHost()); never wider or taller than the window, and a
+ * label too long for the widest menu ends in an ellipsis with the whole text as its title (menus.js) */
+.menu { position: fixed; z-index: var(--z-menu); min-width: min(240px, calc(100vw - 8px)); max-width: min(480px, calc(100vw - 8px));
+  max-height: calc(100dvh - 48px); overflow: auto;
   padding: var(--s-1); margin: 0; border: 1px solid var(--border); border-radius: var(--r-lg);
   background: var(--surface); box-shadow: var(--e2); color: var(--text); inset: auto; }
-.menu-item { display: grid; grid-template-columns: 18px 1fr auto 12px; align-items: center; gap: var(--s-3);
-  width: 100%; height: 28px; padding: 0 var(--s-3); border: 0; border-radius: var(--r-md); background: none;
+.menu-item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto 12px; align-items: center; gap: var(--s-3);
+  width: 100%; min-height: 28px; padding: 0 var(--s-3); border: 0; border-radius: var(--r-md); background: none;
   color: inherit; font: inherit; text-align: left; cursor: default; white-space: nowrap; }
+.menu-item .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .menu-item:is(:hover, :focus-visible, .active):not([aria-disabled="true"]) { background: var(--accent-soft); outline: none; }
 .menu-item[aria-disabled="true"] { color: var(--text-3); }
 .menu-item .i { width: 15px; height: 15px; }
@@ -97,8 +101,10 @@ kbd { font: 500 var(--fs-xs)/1 var(--font-mono); padding: 2px 5px; border-radius
 .menu-sep { height: 1px; margin: var(--s-1) var(--s-2); background: var(--border); }
 
 /* ---------------------------------------------------------------- toolbar */
+/* down to 1024px everything fits (the media queries below); a narrower page (a
+ * zoomed-in browser) scrolls the row sideways rather than cutting tools off */
 .toolbar { display: flex; align-items: center; gap: var(--s-1); padding: 0 var(--s-3); background: var(--surface);
-  border-bottom: 1px solid var(--border); min-width: 0; overflow: hidden; }
+  border-bottom: 1px solid var(--border); min-width: 0; overflow: auto hidden; scrollbar-width: thin; }
 .tb-group { display: flex; align-items: center; gap: 2px; }
 .toolbar > :not(.tb-spacer) { flex: none; }   /* groups never squeeze into each other */
 .tb-sep { width: 1px; height: 20px; background: var(--border); margin: 0 var(--s-2); flex: none; }
@@ -112,8 +118,8 @@ kbd { font: 500 var(--fs-xs)/1 var(--font-mono); padding: 2px 5px; border-radius
 .tb-btn-text[aria-disabled="true"] { opacity: .45; cursor: default; }
 .tb-btn-text .chev { width: 12px; height: 12px; }
 .segment { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
-.segment button { height: 26px; padding: 0 var(--s-3); border: 0; background: var(--surface); color: var(--text-2);
-  font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.segment button { min-height: 26px; padding: 0 var(--s-3); border: 0; background: var(--surface); color: var(--text-2);
+  font: inherit; font-size: var(--fs-sm); cursor: pointer; white-space: nowrap; }
 .segment button + button { border-left: 1px solid var(--border); }
 .segment button[aria-checked="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 
@@ -139,7 +145,7 @@ kbd { font: 500 var(--fs-xs)/1 var(--font-mono); padding: 2px 5px; border-radius
 .nm.mid { display: flex; min-width: 0; flex: 1 1 auto; white-space: nowrap; }
 .nm.mid .mid-a { overflow: hidden; text-overflow: ellipsis; min-width: 1ch; }
 .nm.mid .mid-b { flex: none; }
-.splitter { background: transparent; position: relative; z-index: 5; }
+.splitter { background: transparent; position: relative; z-index: var(--z-overlay); }
 .splitter.v { cursor: col-resize; border-left: 1px solid var(--border); }
 .splitter.h { cursor: row-resize; height: 4px; border-top: 1px solid var(--border); flex: none; }
 .splitter:hover, .splitter.dragging, .splitter:focus-visible { background: var(--accent); outline: none; }
@@ -160,7 +166,7 @@ kbd { font: 500 var(--fs-xs)/1 var(--font-mono); padding: 2px 5px; border-radius
 /* "All documents" / "This document": which values the section's controls change */
 .insp-caption { margin-left: auto; font: 400 var(--fs-xs)/1 var(--font-sans); letter-spacing: 0; text-transform: none; color: var(--muted); }
 /* the Range & boundary and Rendering groups (viewport/display_panel.js) */
-.dp .ins-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); min-height: var(--h-control); }
+.dp .ins-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-2); min-height: var(--h-control); }
 .dp .ins-row.end { justify-content: flex-end; }
 .dp-sub { font-weight: 600; margin: var(--s-2) 0 var(--s-1); display: flex; align-items: center; gap: var(--s-1); }
 .dp-axis { justify-content: flex-start !important; }
@@ -239,7 +245,8 @@ kbd { font: 500 var(--fs-xs)/1 var(--font-mono); padding: 2px 5px; border-radius
 
 /* ---------------------------------------------------------------- status */
 .statusbar { display: flex; align-items: center; gap: 0; padding: 0 var(--s-2); background: var(--surface);
-  border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-2); min-width: 0; overflow: hidden; }
+  border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-2); min-width: 0;
+  overflow: auto hidden; scrollbar-width: none; }   /* a narrow window scrolls it, as the tab strips */
 .st-item { height: 100%; display: inline-flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-3); border: 0;
   background: none; color: inherit; font: inherit; cursor: pointer; white-space: nowrap; }
 .st-item:hover { background: var(--surface-3); color: var(--text); }
@@ -321,7 +328,7 @@ dialog.palette::backdrop { background: var(--overlay); }
 .pal-hint { padding: var(--s-2) var(--s-4); border-top: 1px solid var(--border); color: var(--text-2); font-size: var(--fs-xs); }
 
 /* ---------------------------------------------------------------- toasts, tooltip */
-.toasts { position: fixed; right: var(--s-5); bottom: calc(var(--h-status) + var(--s-4)); z-index: 60; width: 360px;
+.toasts { position: fixed; right: var(--s-5); bottom: calc(var(--h-status) + var(--s-4)); z-index: var(--z-toast); width: 360px;
   max-width: calc(100vw - 32px); display: flex; flex-direction: column; gap: var(--s-2); }
 .setup-open .toasts { bottom: calc(var(--h-status) + 88px); }
 .toast2 { display: grid; grid-template-columns: 18px 1fr auto; gap: var(--s-3); align-items: start; padding: var(--s-3) var(--s-4);
@@ -345,7 +352,7 @@ dialog.palette::backdrop { background: var(--overlay); }
 .problem-filter { display: flex; gap: var(--s-2); padding: var(--s-1) var(--s-3); border-bottom: 1px solid var(--border); }
 .problem-filter button[aria-pressed="true"] { color: var(--text); font-weight: 600; }
 .problem .p-count { color: var(--text-2); font: var(--fs-xs)/1 var(--font-mono); }
-.tooltip { position: fixed; z-index: 70; pointer-events: none; max-width: 320px; padding: var(--s-1) var(--s-3);
+.tooltip { position: fixed; z-index: var(--z-tooltip); pointer-events: none; max-width: 320px; padding: var(--s-1) var(--s-3);
   border-radius: var(--r-md); background: var(--text); color: var(--surface); font-size: var(--fs-sm); box-shadow: var(--e2);
   display: flex; gap: var(--s-3); align-items: center; }
 .tooltip kbd { background: none; border-color: var(--text-2); color: var(--surface); box-shadow: none; }
@@ -355,7 +362,7 @@ dialog.palette::backdrop { background: var(--overlay); }
 /* ---------------------------------------------------------------- responsive */
 @media (max-width: 1099.98px) {   /* "below 1100px", as narrow() in shell.js */
   .shell:not(.no-inspector) .inspector { position: fixed; right: 0; top: calc(var(--h-menubar) + var(--h-toolbar));
-    bottom: var(--h-status); width: 320px; z-index: 30; box-shadow: var(--e3); }
+    bottom: var(--h-status); width: 320px; z-index: var(--z-drawer); box-shadow: var(--e3); }
   .shell { grid-template-columns: 44px var(--w-explorer) 4px minmax(0, 1fr) 0 0; }
   .shell.no-explorer { grid-template-columns: 44px 0 0 minmax(0, 1fr) 0 0; }
   #split-inspector { display: none; }
@@ -414,6 +421,15 @@ table.kv.about td:last-child { text-align: left; font-family: var(--font-sans); 
   .toolbar .icon-btn { width: 30px; }
   .toolbar .tb-sep { margin: 0 2px; }
 }
+/* below the 1024px minimum (a browser zoomed in on a small window): the menu
+ * bar keeps every menu reachable; the wordmark and the search label give way
+ * first, then the menus scroll sideways (arrow keys bring each one into view) */
+@media (max-width: 1023.98px) {
+  .brand-word, .search-pill > span { display: none; }
+  .search-pill { min-width: 0; }
+  .menus { min-width: 0; overflow: auto hidden; scrollbar-width: none; }
+  .menu-top { flex: none; }
+}
 /* the plot toolbar shows while the pointer is on the plot (or it has focus),
  * so at rest it never covers the legend; plotly 3 ignores displayModeBar:"hover" */
 
@@ -443,7 +459,7 @@ table.kv.about td:last-child { text-align: left; font-family: var(--font-sans); 
 /* the virtualized table and the History list scroll inside the pane, not the pane itself */
 .bottom-pane.atoms.editor-table.active, .bottom-pane.history.active { height: 100%; }
 /* Drag and drop (plan T9): the whole window while files are dragged over it */
-#drop-overlay { position: fixed; inset: 0; z-index: 900; display: grid; place-items: center; pointer-events: none;
+#drop-overlay { position: fixed; inset: 0; z-index: var(--z-drop); display: grid; place-items: center; pointer-events: none;
   background: var(--drop-bg); border: 2px dashed var(--drop-border); }
 #drop-overlay[hidden] { display: none; }
 #drop-overlay .drop-box { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-4) var(--s-5);
@@ -485,7 +501,7 @@ table.kv.about td:last-child { text-align: left; font-family: var(--font-sans); 
   border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent); border-radius: var(--r-sm); }
 .tv-find { width: min(360px, 60%); height: var(--h-control); padding: 0 var(--s-2); border: 1px solid var(--border); border-radius: var(--r-sm);
   background: var(--surface); color: var(--text); }
-.tv-hits { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; width: min(640px, 100%); max-height: 280px; overflow: auto;
+.tv-hits { position: absolute; top: calc(100% + 4px); left: 0; z-index: var(--z-overlay); width: min(640px, 100%); max-height: 280px; overflow: auto;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--e2); }
 .tv-hits[hidden] { display: none; }
 .tv-hits button { display: flex; gap: var(--s-3); width: 100%; padding: 4px var(--s-3); border: 0; background: none; color: var(--text);
@@ -546,15 +562,15 @@ table.kv.about td:last-child { text-align: left; font-family: var(--font-sans); 
 .group-splitter[hidden], .side-group[hidden] { display: none; }
 .group-frame { flex: 1; width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
 /* the focused group: an accent line over its tabs */
-.groups.is-split .editor-group::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: 3;
+.groups.is-split .editor-group::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: var(--z-overlay);
   background: transparent; pointer-events: none; }
 .groups.is-split .editor-group.focused::before { background: var(--accent); }
 /* the right group's frame reaches into the bottom panel's row and, while focused, over the Inspector
  * (groups.js chrome()); the window's own bottom panel narrows to the left group */
-.groups.is-split .side-group .group-frame { position: absolute; left: 0; top: 0; z-index: 10; }
-.groups.is-split .side-group::before { z-index: 11; }
+.groups.is-split .side-group .group-frame { position: absolute; left: 0; top: 0; z-index: var(--z-split); }
+.groups.is-split .side-group::before { z-index: calc(var(--z-split) + 1); }
 .center.split-open > #bottom, .center.split-open > #split-bottom { width: var(--split-left, 50%); }
-.group-drop { position: fixed; z-index: 900; display: grid; place-items: center; pointer-events: none;
+.group-drop { position: fixed; z-index: var(--z-drop); display: grid; place-items: center; pointer-events: none;
   background: color-mix(in srgb, var(--accent) 12%, transparent); border: 2px dashed var(--accent); border-radius: var(--r-md); }
 .group-drop.over { background: color-mix(in srgb, var(--accent) 24%, transparent); }
 .group-drop span { background: var(--surface); color: var(--text); padding: 4px 10px; border-radius: var(--r-md); font-size: var(--fs-sm); }

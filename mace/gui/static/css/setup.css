@@ -1,6 +1,7 @@
 /* Calculation Setup (js/setup/panel.js): the inspector panel, built on the tokens only. */
 .inspector:has(> .setup) { overflow: hidden; display: flex; flex-direction: column; }
-.setup { display: flex; flex-direction: column; height: 100%; min-height: 0; font-size: var(--fs-md); color: var(--text); }
+.setup { display: flex; flex-direction: column; height: 100%; min-height: 0; font-size: var(--fs-md); color: var(--text);
+  container: setup / inline-size; }
 .su-head { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-4) var(--s-4) var(--s-2); border-bottom: 1px solid var(--border); }
 .su-title { font-size: var(--fs-lg); font-weight: 650; margin: 0; flex: 1; letter-spacing: -0.01em; }
 .su-chip { font: 600 var(--fs-xs)/1 var(--font-mono); padding: 4px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
@@ -126,11 +127,19 @@ pre.deck .ctx { color: var(--text-2); }
 .su-foot-state .warn { color: var(--warning); }
 .su-foot-state .bad { color: var(--danger); }
 .su-busy-t { flex: 1; min-width: 0; }
-.su-cancel { border: 0; background: none; color: var(--accent); cursor: pointer; font-size: var(--fs-sm); padding: 0; }
-.su-foot-acts { display: flex; align-items: center; gap: var(--s-2); justify-content: flex-end; }
+.su-cancel { flex: none; border: 0; background: none; color: var(--accent); cursor: pointer; font-size: var(--fs-sm); padding: 0; }
+.su-foot-state .st-task-bar { flex: none; }
+.su-foot-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); justify-content: flex-end; }
 .su-live { display: inline-flex; align-items: center; gap: var(--s-1); margin-right: auto; font-size: var(--fs-sm); color: var(--text-2); cursor: pointer; }
 .su-live input { accent-color: var(--accent); }
 .su-foot .tb-btn-text:disabled { opacity: .45; cursor: default; }
+/* a narrow inspector (the drawer below 1100px, or a zoomed-in window): each label
+ * above its control, so a drop-down keeps the width to show its whole choice */
+@container setup (max-width: 420px) {
+  .su-row { grid-template-columns: minmax(0, 1fr); grid-template-areas: "l" "c" "m"; }
+  .su-ro { grid-template-columns: minmax(0, 1fr); }
+  .su-ro-h { grid-column: 1; }
+}
 /* the Deck document beside it */
 #tab-text.stale #text-body { opacity: .6; }
 .text-acts { display: inline-flex; gap: var(--s-2); }

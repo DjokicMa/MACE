@@ -88,6 +88,7 @@ MAX_PARSE = 50 * 1024 * 1024        # a dropped file or pasted text
 _SKIP_DIRS = {"__pycache__", ".git", "node_modules", ".ipynb_checkpoints"}
 
 HEARTBEAT_S = 10.0
+STOP_DRAIN_S = 5.0                  # Stop Server waits this long at most for canceled tasks to reach the tabs
 HANDLER_TIMEOUT_S = 30.0            # a socket that sends no request in this time is closed
 MAX_CONNECTIONS = 64                # connections served at once (one thread each)
 IMMUTABLE = "public, max-age=31536000, immutable"
@@ -1317,8 +1318,12 @@ class GuiHandler(BaseHTTPRequestHandler):
                     break
                 try:
                     event, data = q.get(timeout=max(0.0, min(0.5, next_beat - time.monotonic())))
-                    self.wfile.write(f"event: {event}\ndata: {json.dumps(data, default=_json_default)}\n\n".encode())
-                    self.wfile.flush()
+                    try:
+                        self.wfile.write(f"event: {event}\ndata: {json.dumps(data, default=_json_default)}\n\n"
+                                         .encode())
+                        self.wfile.flush()
+                    finally:
+                        q.task_done()                      # sent (a stop waits for it: TaskManager.delivered)
                 except gui_tasks._stdlib_queue.Empty:
                     pass
                 if time.monotonic() >= next_beat:
@@ -1944,13 +1949,34 @@ def _stop_from_browser(st, delay: float = 0.3) -> None:
     st.stop_pending = None
     st.web.revoke_all()
     st.tasks.broadcast("server-stopping", {"reason": "browser"})
+    canceled = []
     for rec in st.tasks.running():
         try:
             st.tasks.cancel(rec["id"])
+            canceled.append(st.tasks.get(rec["id"]))
         except KeyError:
             pass
     if st.request_stop is not None:
-        threading.Timer(delay, st.request_stop, args=("browser",)).start()
+        threading.Thread(target=_stop_when_canceled, args=(st, canceled, delay),
+                         name="mace-stop-browser", daemon=True).start()
+
+
+def _stop_when_canceled(st, canceled, delay: float, bound: float = STOP_DRAIN_S) -> None:
+    """The stop of Sign Out and Stop Server: after `delay`, and once each
+    canceled task has ended and its last event reached every open tab (at
+    most `bound` seconds; then the server stops anyway and says so)."""
+    time.sleep(delay)
+    end = time.monotonic() + bound
+    left = [t for t in canceled if not t.done.wait(max(0.0, end - time.monotonic()))]
+    sent = st.tasks.delivered(max(0.0, end - time.monotonic()))
+    if left or not sent:
+        what = (f"{len(left)} canceled task(s) had not stopped" if left
+                else "the last events had not reached every open tab")
+        try:
+            print(f"mace gui: stopping anyway after {bound:g} s: {what}", file=sys.stderr, flush=True)
+        except OSError:
+            pass
+    st.request_stop("browser")
 
 
 def _shutdown_route(handler, mode: str):

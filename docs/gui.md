@@ -2140,6 +2140,29 @@ the same text to edit, copy or save (`mace-gui-diagnostics.txt`), with a link
 to open an issue on GitHub. When the GUI does not start at all, `mace gui
 diagnostics --dir <folder>` prints the server's part.
 
+### mace gui connect: key passphrases and the gateway
+
+- **"ssh could not log in with your key"**: ssh ended with "Permission denied
+  (publickey)" or could not unlock a key. When your key has a passphrase,
+  ssh may have no terminal to ask for it on (often so on Windows, or when run
+  from a script). Load the key into an agent
+  once per login session, then run `mace gui connect` again:
+  `eval "$(ssh-agent)"` and `ssh-add` (Linux, macOS, MobaXterm), or on
+  Windows start the **OpenSSH Authentication Agent** service (in Services,
+  set its startup type to Manual and start it) and run `ssh-add`. A Host
+  alias from `~/.ssh/config` (with its `HostName`, `User` and
+  `IdentityFile`) works as the gateway too: `--gateway hpcc`.
+- **"the gateway … looks like an email address"**: the gateway is the login
+  host you `ssh` to, `user@login-host` (e.g. `netid@login.example.edu`) or a
+  Host alias from `~/.ssh/config`, not your email address
+  (`netid@university.edu`). The warning shows when the part after `@` is a
+  bare `name.tld` and no `Host` pattern in `~/.ssh/config` matches it; a real
+  login host of that form gets the warning too, which a Host alias for it
+  silences. MACE still connects. Fix the saved profile (in
+  `~/.config/mace/connect.toml`, on Windows `%APPDATA%\mace\connect.toml`)
+  with `mace gui connect [PROFILE] --gateway netid@login.example.edu --save`.
+  The standalone scripts warn the same way.
+
 ### Messages
 
 - **"3D view unavailable" where the structure should be:** this browser cannot

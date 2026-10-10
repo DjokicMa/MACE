@@ -9,7 +9,7 @@
 .vv-head > button { flex: none; }
 .vv-title { flex: 0 1 auto; min-width: 4em; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vv-chip { flex: 1 1 0; min-width: 0; font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.vv-view { position: relative; flex: 1; min-height: 120px; }
+.vv-view { position: relative; isolation: isolate; flex: 1; min-height: 120px; }
 .vv-view .viewer { position: absolute; inset: 0; }
 .vv-view .viewer:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .vv-msg { position: absolute; inset: 0; display: grid; place-content: center; gap: var(--s-2); color: var(--text-2); z-index: 2; background: var(--viewport-bg); }

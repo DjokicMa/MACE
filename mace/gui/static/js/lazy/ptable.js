@@ -6,6 +6,7 @@
  * in `present` (Select by Element) are disabled. */
 import { loadCss } from "./lazy_util.js";
 import * as profile from "../profile.js";
+import { overlayHost } from "../ui.js";
 
 const SYM = ("H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr " +
   "Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb " +
@@ -63,7 +64,7 @@ export async function open(handle, anchor, onPick, opts = {}) {
     b.style.gridRow = r; b.style.gridColumn = c;
     b.removeAttribute("style-grid");
   });
-  document.body.appendChild(pop);
+  overlayHost().appendChild(pop);   // above every panel, or inside the open modal dialog
   cells = [...pop.querySelectorAll(".pt-grid .pt-cell")];
   const r = (anchor && anchor.getBoundingClientRect) ? anchor.getBoundingClientRect() : { left: 100, right: 100, top: 100, bottom: 100 };
   placePop(r);

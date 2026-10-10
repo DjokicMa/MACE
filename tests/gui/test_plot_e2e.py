@@ -160,7 +160,7 @@ def test_export_png_svg_and_data(fresh):
     for act in ("png", "svg", "csv"):
         # the export buttons moved into the plotkit toolbar's Export menu (PLAN_analysis C3)
         drv.find_element("css selector", "#plot-host .pk-export").click()
-        drv.find_element("css selector", f"#plot-host .pk-menu [data-v={act}]").click()
+        drv.find_element("css selector", f".pk-menu [data-v={act}]").click()
     end = time.time() + 20
     while time.time() < end and len([f for f in downloads.iterdir() if not f.name.endswith(".part")]) < 3:
         time.sleep(0.2)

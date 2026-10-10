@@ -28,6 +28,7 @@ and ssh but not MACE's scientific packages.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import getpass
 import json
 import os
@@ -421,6 +422,8 @@ def classify_failure(code: Optional[int], stderr_lines: Sequence[str], node: str
                        "(and --setup / --mace).")
     if node_auth_refused(stderr_lines, node, gateway):
         return ("node-auth", f"The node {node} did not accept a login through the gateway.")
+    if key_auth_failed(code, stderr_lines):
+        return ("key", KEY_HINT)
     if code == 255:
         return ("ssh", f"ssh could not connect: check the gateway name and that `ssh {gateway or where}` works "
                        "in this terminal.")
@@ -442,6 +445,64 @@ def node_auth_refused(stderr_lines: Sequence[str], node: str, gateway: str) -> b
     if gh and any(gh in ln.split(":")[0] for ln in denied):
         return False
     return any(nh and nh in ln.split(":")[0] for ln in denied)
+
+
+# ssh's own words when it could not log in with a key: the server refused
+# every key ("Permission denied (publickey...)"), or a key with a passphrase
+# could not be unlocked (no terminal to ask on, a wrong passphrase, the agent
+# declined). Only with ssh's exit code 255 (ssh itself failed).
+KEY_FAILURE_RE = re.compile(r"Permission denied \([^)]*publickey|Enter passphrase for key|read_passphrase: can't open"
+                            r"|incorrect passphrase supplied|agent refused operation")
+KEY_HINT = ("ssh could not log in with your key (see ssh's message above). If the key has a passphrase, ssh "
+            "cannot ask for it here: load it into an agent first, with eval \"$(ssh-agent)\" and ssh-add (on "
+            "Windows: start the OpenSSH Authentication Agent service, then run ssh-add), then run mace gui connect "
+            "again. A Host alias from ~/.ssh/config also works as the gateway.")
+
+
+def key_auth_failed(code: Optional[int], stderr_lines: Sequence[str]) -> bool:
+    """ssh failed (exit 255) because no key got it in (KEY_FAILURE_RE)."""
+    return code == 255 and any(KEY_FAILURE_RE.search(ln) for ln in stderr_lines)
+
+
+def ssh_config_hosts(path: Optional[Path] = None) -> List[str]:
+    """The Host patterns of ~/.ssh/config (negated ones and Include files left out)."""
+    p = path or Path(os.path.expanduser("~")) / ".ssh" / "config"
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    out: List[str] = []
+    for line in text.splitlines():
+        m = re.match(r"\s*Host(?:\s+|\s*=\s*)(.+)", line, re.I)
+        if m:
+            out += [w.strip('"') for w in m.group(1).split() if not w.startswith("!")]
+    return out
+
+
+def gateway_looks_like_email(gateway: str, hosts: Optional[Sequence[str]] = None) -> bool:
+    """A gateway such as user@university.edu: an email address, not a login host.
+
+    The heuristic: an email's domain is usually the bare registered name, two
+    labels (university.edu), while a login host has a host label in front
+    (login.university.edu, hpcc.example.edu). So user@<label>.<letters> is
+    flagged unless an ~/.ssh/config Host pattern matches it (an alias the user
+    chose). It misses emails at longer domains (me@cs.university.edu,
+    me@university.ac.uk) and flags a real login host named by two labels
+    (me@cluster.org); that is only a warning, which a Host alias silences."""
+    if "@" not in gateway:
+        return False
+    host = gateway.rsplit("@", 1)[1].lower()
+    if not re.fullmatch(r"[a-z0-9-]+\.[a-z]{2,}", host):
+        return False
+    pats = ssh_config_hosts() if hosts is None else hosts
+    return not any(fnmatch.fnmatchcase(t, pat.lower()) for pat in pats for t in (host, gateway.lower()))
+
+
+def email_gateway_warning(gateway: str, path: Path, name: Optional[str]) -> str:
+    return (f"Warning: the gateway {gateway} looks like an email address. It should be user@login-host (your "
+            "cluster's login node, e.g. netid@login.example.edu) or a Host alias from ~/.ssh/config. Connecting "
+            f"anyway; to fix the profile in {path}, run: mace gui connect {name + ' ' if name else ''}"
+            "--gateway <user@login-host> --save")
 
 
 def windows_ssh_too_old(version_text: str) -> bool:
@@ -1043,6 +1104,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         else:
             sys.stdout.write(text)
         return 0
+    if prof.get("gateway") and gateway_looks_like_email(str(prof["gateway"])):
+        print(email_gateway_warning(str(prof["gateway"]), path, args.save or name), file=sys.stderr)
     if args.dry_run:
         node, gateway = prof.get("node"), prof.get("gateway")
         hop = str(prof.get("hop") or "auto")

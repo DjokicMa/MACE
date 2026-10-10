@@ -118,6 +118,24 @@ export function toast(message, kind = "info", action = null) {
   return el;
 }
 /* ---------------------------------------------------------------- placement */
+/** Where a menu or popover goes, positioned fixed with place(): the overlay
+ * layer at the end of <body>, outside every panel, so no panel's overflow
+ * clips it and no panel's stacking context covers it (the z-index scale in
+ * tokens.css orders it); or, while a modal dialog is open, that dialog: the
+ * browser draws it above the whole page and makes the rest inert, so a menu
+ * opened from it must live inside it to show and take clicks. */
+export function overlayHost() {
+  const modal = $$("dialog[open]").reverse().find((d) => d.matches(":modal"));
+  if (modal) return modal;
+  let layer = document.getElementById("overlay-layer");
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.id = "overlay-layer";
+    document.body.appendChild(layer);
+  }
+  return layer;
+}
+
 /** Put a floating element next to an anchor rect, flipping and shifting to stay on screen. */
 export function place(el, rect, side = "bottom", gap = 4) {
   const w = el.offsetWidth, h = el.offsetHeight, W = innerWidth, H = innerHeight;

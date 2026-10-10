@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Stop Server in the GUI tells every open tab that its running tasks were
+  canceled.** The server now waits (5 s at most) for each canceled task to end
+  and for its event to reach the tabs before it exits; before, the tabs could
+  keep showing the task as running.
+- **`mace gui --slurm` no longer leaves its ssh tunnel running.** The tunnel
+  (and anything it started) now ends with the session however it ends: Stop,
+  Ctrl+C, SIGTERM, a hang-up, an error, or, on Linux, the session being
+  killed. A hang-up or SIGTERM leaves the job running, to reattach to.
+- **`mace gui connect` explains a key that ssh could not use.** When ssh
+  ends with "Permission denied (publickey)" or cannot unlock a key with a
+  passphrase, it now says to load the key with `ssh-agent` and `ssh-add` (on
+  Windows the OpenSSH Authentication Agent service), or to use an
+  `~/.ssh/config` Host alias as the gateway. A gateway that looks like an
+  email address (`netid@university.edu`) gets a warning naming the profile
+  file and the `--gateway ... --save` fix; it still connects. The standalone
+  scripts do the same.
+- **GUI: a middle click in a 3D viewer no longer pastes on Linux.** The
+  primary-selection paste it also sends opened Import from Clipboard with
+  whatever text was last selected (or pasted copied atoms into the open
+  structure); the middle button now only pans or zooms there. Ctrl+V and a
+  middle click on a text field paste as before.
+- **GUI: no drop-down, menu or button cut off or hidden at everyday zoom
+  levels.** Drop-downs with a fixed height cut their text's descenders (the
+  vertical padding left too little room for Linux's DejaVu Sans), segmented
+  buttons wrapped inside their fixed height ("Upper Left"), the Inspector's
+  Supercell/Transform/Edit Cell row pushed its first button out of sight, and
+  Calculation Setup squeezed its drop-downs in the narrow Inspector. Menus,
+  plot menus, the Plot Options popover and the periodic table now open in one
+  overlay layer above every panel (a plot's popover was clipped by its panel
+  and covered by the bottom panel), stay inside the window, and follow one
+  z-index scale (`--z-*` in `css/tokens.css`), with notices below menus.
+
+- **Stopping the GUI no longer leaves a half-started worker behind.** A task
+  dispatched while the server stopped could start a pool worker that the
+  exiting server never finished starting, which printed an `EOFError`
+  traceback; the pool now takes nothing new once it is stopping.
+
+- **Auto pre-optimization classifies a structure about ten times faster.**
+  The dimensionality scan now checks the bond network once per bond length
+  instead of after every bond: 0.4 s instead of 5 s for a 128-atom slab.
+
+- **A middle click on a toolbar button or tab no longer pastes either.** As
+  in the 3D viewer, the primary selection a middle click brings on Linux is
+  dropped anywhere outside a text field.
+
 ## [1.1.5] - 2026-10-08
 
 Everything since 1.1.4. New: **the MACE GUI (`mace gui`)**, the folder's

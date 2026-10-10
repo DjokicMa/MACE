@@ -36,6 +36,7 @@ Standard library only (dispatched before the server is imported).
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
 import queue
@@ -43,6 +44,7 @@ import re
 import secrets
 import shlex
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -58,6 +60,7 @@ DEFAULTS = {"time": "4:00:00", "cpus": 2, "mem": "4G"}
 PENDING_POLL_S = 30.0
 READY_WAIT_S = 120.0
 TUNNEL_WAIT_S = 20.0
+TUNNEL_GRACE_S = 3.0             # SIGTERM to the tunnel's group, then SIGKILL after this
 PING_S = 60.0
 TIME_RE = re.compile(r"^(\d{1,3}-)?\d{1,4}(:\d{2}){0,2}$")
 MEM_RE = re.compile(r"^[0-9]{1,7}[KMGT]?$")
@@ -329,19 +332,73 @@ def ssh_command() -> List[str]:
     return shlex.split(v) if v else ["ssh"]
 
 
+def _death_signal() -> Optional[Callable[[], None]]:
+    """preexec_fn for the tunnel on Linux: SIGTERM when the thread that
+    started it ends (PR_SET_PDEATHSIG), so even a session killed with
+    SIGKILL leaves no ssh behind. libc's prctl is looked up here, before the
+    fork; the child only calls it. Only from the main thread (the signal
+    follows the starting thread, not the process); None elsewhere."""
+    if not sys.platform.startswith("linux") or threading.current_thread() is not threading.main_thread():
+        return None
+    try:
+        import ctypes
+        prctl = ctypes.CDLL(None, use_errno=True).prctl
+    except (OSError, AttributeError, ImportError):
+        return None
+    parent = os.getpid()
+
+    def preexec():
+        prctl(1, int(signal.SIGTERM), 0, 0, 0)          # PR_SET_PDEATHSIG
+        if os.getppid() != parent:                      # the session died before that call
+            os._exit(1)
+    return preexec
+
+
+_TUNNELS: "set[Tunnel]" = set()      # open tunnels: closed at exit whatever way it comes
+
+
+def close_tunnels() -> None:
+    for t in list(_TUNNELS):
+        t.close()
+
+
+atexit.register(close_tunnels)
+
+
 class Tunnel:
-    """``ssh -N -L 127.0.0.1:<local>:127.0.0.1:<remote> <node>`` (non-interactive)."""
+    """``ssh -N -L 127.0.0.1:<local>:127.0.0.1:<remote> <node>`` (non-interactive),
+    in a process group of its own: close() ends the whole group (an ssh
+    wrapper's children too, never anything this run did not start)."""
 
     def __init__(self, node: str, local: int, remote: int):
         self.node, self.local, self.remote = node, local, remote
         self.argv = ssh_command() + ["-N", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes",
                                      "-o", "ServerAliveInterval=30", "-L",
                                      f"127.0.0.1:{local}:127.0.0.1:{remote}", node]
+        self._group = False            # its process group may still hold processes to end
         self.proc = subprocess.Popen(self.argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                     stderr=subprocess.PIPE, start_new_session=True)
+                                     stderr=subprocess.PIPE, start_new_session=True, preexec_fn=_death_signal())
+        self._group = hasattr(os, "killpg")
+        _TUNNELS.add(self)
+
+    def _signal_group(self, sig: int) -> None:
+        if not self._group:
+            return
+        try:
+            os.killpg(self.proc.pid, sig)
+        except ProcessLookupError:
+            self._group = False
+        except OSError:
+            pass
 
     def alive(self) -> bool:
-        return self.proc.poll() is None
+        if self.proc.poll() is None:
+            return True
+        # ssh ended: what is left of its group goes now, while the group id
+        # cannot belong to anything else yet
+        self._signal_group(signal.SIGKILL)
+        self._group = False
+        return False
 
     def stderr(self) -> str:
         if self.alive():
@@ -352,29 +409,54 @@ class Tunnel:
             return ""
 
     def close(self) -> None:
-        if self.alive():
-            self.proc.terminate()
+        """SIGTERM to the tunnel's group, SIGKILL after TUNNEL_GRACE_S."""
+        if self.proc.poll() is None:
+            if self._group:
+                self._signal_group(signal.SIGTERM)
+            else:
+                self.proc.terminate()
             try:
-                self.proc.wait(5)
+                self.proc.wait(TUNNEL_GRACE_S)
             except subprocess.TimeoutExpired:
-                self.proc.kill()
+                if not self._group:
+                    self.proc.kill()
+            except KeyboardInterrupt:          # a second Ctrl+C: no more grace
+                pass
+        if self._group:
+            self._signal_group(signal.SIGKILL)
+            self._group = False
+        if self.proc.poll() is None:
+            self.proc.kill()
+        try:
+            self.proc.wait(5)
+        except subprocess.TimeoutExpired:
+            pass
+        if self.proc.stderr is not None:
+            try:
+                self.proc.stderr.close()
+            except OSError:
+                pass
+        _TUNNELS.discard(self)             # last: one cut short is closed again at exit
 
 
 def open_tunnel(node: str, local: int, ready: Dict[str, Any], wait_s: float = TUNNEL_WAIT_S) -> Tunnel:
     """The inner hop; it answers api/info with the server's token, or SlurmError."""
     t = Tunnel(node, local, int(ready["port"]))
-    end = time.monotonic() + wait_s
-    while time.monotonic() < end:
-        if not t.alive():
-            err = t.stderr()
-            if any(b in err for b in BIND_FAILED):
-                raise SlurmError("port-busy", f"Port {local} is busy on this node (ssh could not listen on it).")
-            raise SlurmError("ssh-node", SSH_REFUSED + (f"\n(ssh: {err.splitlines()[-1]})" if err else ""))
-        if _api(local, ready["prefix"], ready["token"], "info", timeout=3) is not None:
-            return t
-        time.sleep(0.3)
-    t.close()
-    raise SlurmError("ssh-node", SSH_REFUSED)
+    try:
+        end = time.monotonic() + wait_s
+        while time.monotonic() < end:
+            if not t.alive():
+                err = t.stderr()
+                if any(b in err for b in BIND_FAILED):
+                    raise SlurmError("port-busy", f"Port {local} is busy on this node (ssh could not listen on it).")
+                raise SlurmError("ssh-node", SSH_REFUSED + (f"\n(ssh: {err.splitlines()[-1]})" if err else ""))
+            if _api(local, ready["prefix"], ready["token"], "info", timeout=3) is not None:
+                return t
+            time.sleep(0.3)
+        raise SlurmError("ssh-node", SSH_REFUSED)
+    except BaseException:                  # Ctrl+C or an error while it came up: no ssh left behind
+        t.close()
+        raise
 
 
 def read_json(path: Path) -> Optional[Dict[str, Any]]:
@@ -652,6 +734,7 @@ class Session:
             elif self.tunnel is not None and not self.tunnel.alive():
                 if self._server_gone():
                     return self._finish(wait_s=0)
+                self.tunnel.close()
                 try:                                           # one new hop (a dropped ssh)
                     self.tunnel = open_tunnel(self.node or "", self.port, ready, wait_s=10)
                 except SlurmError:
@@ -693,6 +776,39 @@ def _tail_note(tail: str) -> str:
 def _emit(tag: str, data: Any) -> None:
     from .managed import emit
     emit(tag, data)
+
+
+class _Terminated(KeyboardInterrupt):
+    """SIGTERM or SIGHUP (the connection that started this run closed): as
+    Ctrl+C before the server answers; after it, this run leaves (the job
+    keeps running, as on EOF), always closing its tunnel."""
+
+    def __init__(self, signum: int):
+        super().__init__(signum)
+        self.signum = signum
+
+
+def _on_termination() -> Dict[int, Any]:
+    """Termination signals raise _Terminated (once) in the main thread; returns
+    the handlers to put back."""
+    if threading.current_thread() is not threading.main_thread():
+        return {}
+    fired = []
+
+    def handler(signum, frame):
+        if not fired:                      # a second one must not cut the cleanup short
+            fired.append(signum)
+            raise _Terminated(signum)
+    old = {}
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        try:
+            old[sig] = signal.signal(sig, handler)
+        except (ValueError, OSError):
+            pass
+    return old
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -746,10 +862,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         out = lambda tag, data: None                               # noqa: E731
         say = lambda text: print(text, flush=True)                 # noqa: E731
     sess = Session(args, out, say, lines, ask=input)
+    handlers = _on_termination()
     try:
         try:
             ready = sess.start()
-        except KeyboardInterrupt:
+        except KeyboardInterrupt as exc:
             # before the server could be reached: the job this run submitted
             # (pending, or started with no one able to use it) is canceled; a
             # job reattached to is left running
@@ -760,7 +877,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     scancel(sess.job)
                     say(f"Canceled job {sess.job}" + (" (pending)." if st == "PENDING" else
                                                      " before MACE GUI was ready."))
-            return 130
+            return 128 + exc.signum if isinstance(exc, _Terminated) else 130
         except SlurmError as exc:
             out("MACE_GUI_ERROR", {"kind": exc.kind, "message": str(exc), "job": sess.job})
             print(f"mace gui --slurm: {exc}", file=sys.stderr)
@@ -770,6 +887,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             _banner(ready, args)
         try:
             return sess.relay()
+        except _Terminated as exc:
+            r = ready
+            _api(r["port"], r["prefix"], r["token"], "managed/detach", {"watcher": sess.wid}, timeout=2)
+            return 128 + exc.signum
         except KeyboardInterrupt:
             r = ready
             _api(r["port"], r["prefix"], r["token"], "managed/stop", {"watcher": sess.wid})
@@ -777,6 +898,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             return sess._finish(wait_s=30)
     finally:
         sess.close()
+        for sig, h in handlers.items():
+            try:
+                signal.signal(sig, h)
+            except (ValueError, OSError, TypeError):
+                pass
 
 
 def _banner(ready: Dict[str, Any], args) -> None:

@@ -224,9 +224,14 @@ def _rda_scan(atoms, kmax: float = RDA_KMAX):
     end[int(sum(atoms.pbc))] = 1
     end = tuple(end)
     intervals, kprev = [], 0.0
-    for n in np.argsort(ks, kind="stable"):
+    order = np.argsort(ks, kind="stable")
+    for pos, n in enumerate(order):
         k = float(ks[n])
         calc.insert_bond(int(ii[n]), int(jj[n]), tuple(int(x) for x in SS[n]))
+        # check once per bond length: a crystal has many equal bonds, and the
+        # check (a search over the components) is most of the time
+        if pos + 1 < len(order) and np.isclose(ks[order[pos + 1]], k, rtol=1e-9, atol=0.0):
+            continue
         h = calc.check()
         if h == hprev:
             continue

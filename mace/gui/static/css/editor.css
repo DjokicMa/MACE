@@ -32,7 +32,8 @@
 .viewer-wrap.vp-owned[data-tool="move"] .viewer { cursor: move; }
 /* the inspector's editing sections (js/editor/inspector.js) */
 .ins-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); min-height: var(--h-control); }
-.ins-row.end { justify-content: flex-end; }
+/* a row of buttons wraps in a narrow inspector instead of pushing the first one out past the left edge */
+.ins-row.end { justify-content: flex-end; flex-wrap: wrap; gap: var(--s-2); padding-block: 2px; }
 .ins-k { color: var(--text-2); font-size: var(--fs-sm); }
 .ins-v { font-variant-numeric: tabular-nums; text-align: right; }
 .ins-atom { display: flex; align-items: center; gap: var(--s-3); margin-bottom: var(--s-3); }
