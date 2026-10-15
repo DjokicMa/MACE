@@ -114,10 +114,13 @@ def _norm(text, tmp_path):
     for root, tag in ((str(tmp_path.resolve()), "<TMP>"), (str(tmp_path), "<TMP>"),
                       (str(REPO_ROOT.resolve()), "<REPO>"), (str(REPO_ROOT), "<REPO>")):
         text = text.replace(root, tag)
-    text = re.sub(r"workflow_\d{8}_\d{6}", "workflow_<ID>", text)
+    # a workflow id ends in 4 random hex digits (two launches in one second)
+    text = re.sub(r"workflow_\d{8}_\d{6}(?:_[0-9a-f]{4})?", "workflow_<ID>", text)
     text = re.sub(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?", "<ISO>", text)
-    text = re.sub(r"\d{8}_\d{6}\d*", "<TS>", text)
+    text = re.sub(r"\d{8}_\d{6}\d*(?:_[0-9a-f]{4}(?![0-9A-Za-z]))?", "<TS>", text)
     text = re.sub(r"_custom_\d+\.sh", "_custom_<PID>.sh", text)
+    # the job script's checksum line covers the paths replaced above
+    text = re.sub(r"(cksum of the lines above: )\d+ \d+", r"\1<CKSUM>", text)
     return text
 
 
@@ -174,6 +177,8 @@ def _decks(d, names):
     for name in names:
         if name.endswith(".d3"):
             (d / name).write_text(BAND_D3)
+            # the wavefunction it reads: `mace submit` refuses a .d3 without it
+            (d / name).with_suffix(".f9").write_text("fort9\n")
         elif "_opt" in name:
             (d / name).write_text(OPT_D12)
         else:

@@ -22,7 +22,7 @@ export scratch=$SCRATCH/crys23
 
 # CRITICAL: Set MACE_HOME for the compute node
 # Option 1: Hardcode the path (most reliable)
-export MACE_HOME=/mnt/iscsi/UsefulScripts/Codebase/reorganization
+export MACE_HOME=/path/to/mace   # your MACE checkout
 
 # Option 2: Pass from current environment (requires --export with sbatch)
 # The MACE_HOME should already be set if using --export=ALL

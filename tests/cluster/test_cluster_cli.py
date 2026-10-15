@@ -433,6 +433,22 @@ def test_job_text_error_progress_unchanged():
     assert "Total" not in out
 
 
+def test_job_text_cpu_caveat_once_after_the_cpu_line():
+    """The busy-wait caveat follows the CPU line once; the advice stays."""
+    from mace.cluster import job_efficiency as je
+    from mace.cluster.cli import job_text
+    rows = {"7100": {"JobID": "7100", "State": "COMPLETED", "Elapsed": "10:00:00", "NCPUS": "32",
+                     "AllocTRES": "cpu=32,mem=64G,node=1"},
+            "7100.batch": {"JobID": "7100.batch", "TotalCPU": "3-08:00:00", "MaxRSS": "9813656K", "NTasks": "1"}}
+    eff = je.summarize(rows, "7100")
+    v = {"id": "7100", "name": "x", "state": "COMPLETED", "elapsed_s": 36000, "limit_s": 86400,
+         "efficiency": eff, "scontrol_command": "scontrol show job 7100"}
+    lines = job_text(v).splitlines()
+    i = lines.index(eff["cpu_text"])
+    assert lines[i + 1] == je.CPU_CAVEAT and lines.count(je.CPU_CAVEAT) == 1
+    assert "You could request fewer cores (about 8 were busy)." in lines
+
+
 def test_job_text_thresholds_line_only_when_non_default(fs, tmp_path):
     """A tighter max gradient in the .out header joins the Thresholds line
     under the optimization level (the gradient defaults show none: previous

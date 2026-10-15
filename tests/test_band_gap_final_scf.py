@@ -168,11 +168,10 @@ CASES = {
     # spin run with identical channels, and closed shell: as CRYSTAL prints them
     "SP/Ag2Se_mp-568936_sg19_sym_CRYSTAL_OPT_symm_PBE-D3_full.basis.triplezeta_opt_B3LYP-D3-D3_optimized_"
     "sp_B3LYP-D3-D3_optimized.out": {"band_gap": 2.228, "direct_band_gap": 2.228, "band_gap_type": "direct"},
-    # (band_gap from CRYSTAL's closing BAND GAP summary, the kind from the last SCF)
-    "OPT/1_dia_opt_BULK_OPTGEOM.out": {"band_gap": 6.001, "indirect_band_gap": 6.003,
-                                       "band_gap_type": "indirect"},
-    "OPT/3_dia3_opt_BULK_OPTGEOM.out": {"band_gap": 6.8348, "indirect_band_gap": 6.8399,
-                                        "band_gap_type": "indirect"},
+    # multi-point OPTs: band_gap from CRYSTAL's closing BAND GAP summary; the
+    # last SCF's gap kind (6.003 / 6.8399 eV indirect) is point 1's, not stored
+    "OPT/1_dia_opt_BULK_OPTGEOM.out": {"band_gap": 6.001},
+    "OPT/3_dia3_opt_BULK_OPTGEOM.out": {"band_gap": 6.8348},
     # gapped early cycles, conducting at the end
     "SP/Ti19O30_mp-760075_sg1_sym_CRYSTAL_OPT_symm_PBE-D3_full.basis.triplezeta_opt_B3LYP-D3-D3_optimized_"
     "sp_B3LYP-D3-D3_optimized.out": {"band_gap": 0.0},

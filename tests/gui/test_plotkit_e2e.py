@@ -103,23 +103,23 @@ def test_band_toolbar_every_control(app):
     ev = drv.execute_script("return window.__mace.plotView.figure().traces[0]")
     # Units: kJ/mol (title and values)
     drv.find_element("css selector", "#plot-host .pk-units").click()
-    drv.find_element("css selector", "#plot-host .pk-menu [data-v='kJ/mol']").click()
+    drv.find_element("css selector", ".pk-menu [data-v='kJ/mol']").click()
     H.wait(drv, "return /kJ\\/mol/.test(window.__mace.plotView.figure().layout.yaxis.title.text)", 10)
     # the figure helper gives counts only: compare the plotted arrays directly
     ys = drv.execute_script("const el = window.__mace.plotView.el(); return [el.data[0].y.find((v) => v !== null)]")
     drv.find_element("css selector", "#plot-host .pk-units").click()
-    drv.find_element("css selector", "#plot-host .pk-menu [data-v='eV']").click()
+    drv.find_element("css selector", ".pk-menu [data-v='eV']").click()
     H.wait(drv, "return /\\(eV\\)/.test(window.__mace.plotView.figure().layout.yaxis.title.text)", 10)
     ys_ev = drv.execute_script("const el = window.__mace.plotView.el(); return [el.data[0].y.find((v) => v !== null)]")
     assert abs(ys[0] - ys_ev[0] * 96.48533212331) < 1e-6 * max(1, abs(ys[0]))
     # Range, then Reset Zoom
     drv.find_element("css selector", "#plot-host .pk-more").click()
-    lo = drv.find_element("css selector", "#plot-host .pk-pop [data-r=y0]")
+    lo = drv.find_element("css selector", ".pk-pop [data-r=y0]")
     lo.send_keys("-3", Keys.TAB)
-    hi = drv.find_element("css selector", "#plot-host .pk-pop [data-r=y1]")
+    hi = drv.find_element("css selector", ".pk-pop [data-r=y1]")
     hi.send_keys("2", Keys.TAB)
     H.wait(drv, "const r = window.__mace.plotView.el().layout.yaxis.range; return r && r[0] === -3 && r[1] === 2", 10)
-    drv.find_element("css selector", "#plot-host .pk-pop [data-act=resetzoom]").click()
+    drv.find_element("css selector", ".pk-pop [data-act=resetzoom]").click()
     H.wait(drv, "const o = window.__mace.plotView.state().opts; return o.yr === null", 10)
     H.wait(drv, "const r = window.__mace.plotView.el().layout.yaxis.range; return r && r[0] === -6 && r[1] === 6", 10)
     U.keys(drv, Keys.ESCAPE)
@@ -128,7 +128,7 @@ def test_band_toolbar_every_control(app):
         f.unlink()
     for v in ("png", "svg", "csv"):
         drv.find_element("css selector", "#plot-host .pk-export").click()
-        drv.find_element("css selector", f"#plot-host .pk-menu [data-v={v}]").click()
+        drv.find_element("css selector", f".pk-menu [data-v={v}]").click()
     end = time.time() + 20
     while time.time() < end and len([f for f in downloads.iterdir() if not f.name.endswith(".part")]) < 3:
         time.sleep(0.2)
@@ -136,7 +136,7 @@ def test_band_toolbar_every_control(app):
     assert any(n.endswith(".png") for n in names) and any(n.endswith(".svg") for n in names) and any(n.endswith("_data.csv") for n in names), names
     # Copy as TSV through the real clipboard
     drv.find_element("css selector", "#plot-host .pk-export").click()
-    drv.find_element("css selector", "#plot-host .pk-menu [data-v=tsv]").click()
+    drv.find_element("css selector", ".pk-menu [data-v=tsv]").click()
     H.wait(drv, "return [...document.querySelectorAll('#toasts .msg')].some((m) => /Copied \\d+ rows/.test(m.textContent))", 10)
     text = paste(drv)
     assert text.split("\n")[0].startswith("path\tband1"), text[:200]
@@ -147,7 +147,7 @@ def test_persistence_and_settings_defaults(app):
     drv, base = app[0], app[1]
     open_band(drv)
     drv.find_element("css selector", "#plot-host .pk-units").click()
-    drv.find_element("css selector", "#plot-host .pk-menu [data-v='meV']").click()
+    drv.find_element("css selector", ".pk-menu [data-v='meV']").click()
     H.wait(drv, "return window.__mace.plotView.state().opts.unit === 'meV'", 10)
     H.load(drv, base)
     open_band(drv)
@@ -172,7 +172,7 @@ def test_persistence_and_settings_defaults(app):
     assert drv.execute_script("return window.__mace.runView.state().opts.energy.unit") == "Ha"
     # Per atom on the run plot: the axis says so
     drv.find_element("css selector", "#runplot-host .pk-more").click()
-    Select(drv.find_element("css selector", "#runplot-host .pk-pop [data-k=per]")).select_by_value("atom")
+    Select(drv.find_element("css selector", ".pk-pop [data-k=per]")).select_by_value("atom")
     U.keys(drv, Keys.ESCAPE)
     H.wait(drv, "return /\\/atom/.test(window.__mace.runView.figure().layout.yaxis.title.text)", 10)
     drv.execute_script("window.__mace.settings.set('energyUnit', 'eV')")
@@ -213,6 +213,6 @@ def test_keyboard_and_names(app):
     U.keys(drv, Keys.TAB)
     assert drv.execute_script("return document.activeElement.classList.contains('pk-more')")
     U.keys(drv, Keys.ENTER)
-    H.wait(drv, "return !!document.querySelector('#plot-host .pk-pop')", 5)
+    H.wait(drv, "return !!document.querySelector('.pk-pop')", 5)
     U.keys(drv, Keys.ESCAPE)
-    H.wait(drv, "return !document.querySelector('#plot-host .pk-pop') && document.activeElement.classList.contains('pk-more')", 5)
+    H.wait(drv, "return !document.querySelector('.pk-pop') && document.activeElement.classList.contains('pk-more')", 5)

@@ -156,6 +156,41 @@ export function createPlotView(host, optsHost, H) {
     bands.forEach((b, k) => { for (let i = 0; i < x.length; i++) { xs.push(x[i]); ys.push(b[i] === null ? null : b[i] - shift); idx.push(k); } xs.push(null); ys.push(null); idx.push(-1); });
     return { xs, ys, idx };
   }
+  /* k-path tick labels that never overlap: ticks at the same k (a writer that repeats a break's
+     point) become one "A|B" label; a label too close to its neighbor for both to fit (seekpath's
+     Y and F₀ 0.04 Å⁻¹ apart) drops to a second row instead of overlapping or turning the axis's
+     labels sideways. Widths are estimated from the text at the axis font size. */
+  const TICK_FONT = 12;
+  function labelWidth(html) {
+    const sub = (html.match(/<sub>(.*?)<\/sub>/g) || []).join("").replace(/<[^>]+>/g, "").length;
+    const main = html.replace(/<sub>.*?<\/sub>/g, "").replace(/<[^>]+>/g, "").length;
+    return (main * 0.62 + sub * 0.45) * TICK_FONT + 6;
+  }
+  function kTicks(ticks, labels, range, widthPx) {
+    const vals = [], text = [];
+    ticks.forEach((t, i) => {
+      const lab = kLabel(labels[i]), k = vals.length - 1;
+      if (k >= 0 && Math.abs(t - vals[k]) < 1e-5) { if (text[k] !== lab) text[k] = `${text[k]}|${lab}`; return; }
+      vals.push(t); text.push(lab);
+    });
+    const [x0, x1] = range[0] <= range[1] ? range : [range[1], range[0]], span = x1 - x0 || 1;
+    const right = [-Infinity, -Infinity];
+    let rows = 1;
+    const out = text.map((lab, i) => {
+      if (vals[i] < x0 - 1e-9 || vals[i] > x1 + 1e-9 || !lab) return lab;
+      const px = ((vals[i] - x0) / span) * widthPx, half = labelWidth(lab) / 2;
+      let row = px - half >= right[0] + 4 ? 0 : px - half >= right[1] + 4 ? 1 : right[0] <= right[1] ? 0 : 1;
+      right[row] = px + half;
+      if (row) rows = 2;
+      return row ? `\u00a0<br>${lab}` : lab;     // plotly drops an empty first line: a no-break space holds it
+    });
+    return { vals, text: out, rows };
+  }
+  function bandTickLayout(band, range, dos, r = el._fullLayout && el._fullLayout.margin ? el._fullLayout.margin.r : 14) {
+    const w = Math.max(200, ((el.clientWidth || 900) - 58 - r) * (dos ? 0.7 : 1));
+    const t = kTicks(band.ticks, band.labels, range, w);
+    return { "xaxis.tickvals": t.vals, "xaxis.ticktext": t.text, "margin.b": 42 + (t.rows - 1) * 15 };
+  }
   function bandFigure(d) {
     const { band, dos } = d.data, o = d.opts, css = cssVar, pal = PAL();
     // the dashed line marks the reference energy and stays where the reader put E_F; a Fermi shift s
@@ -170,8 +205,10 @@ export function createPlotView(host, optsHost, H) {
     const grid = css("--line"), traces = [], shapes = [];
     const yr = o.yr || [o.emin * f, o.emax * f];
     const lay = {
-      margin: { l: 58, r: 14, t: 10, b: 42 }, showlegend: true, hovermode: "closest", dragmode: "zoom",
-      legend: { orientation: "h", x: 0, y: 1.07, font: { size: 11 } }, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+      // the legends sit outside the data, in the top and right margins that fitLegends sizes to the
+      // legends as drawn: the bands' above the band panel, the DOS's right of the DOS panel (below)
+      margin: { l: 58, r: 14, t: 10, b: 42, autoexpand: false }, showlegend: true, hovermode: "closest", dragmode: "zoom",
+      legend: PK.legendTop(), paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
       font: { color: css("--text"), size: 12, family: css("--font-sans") },
       modebar: { bgcolor: "rgba(0,0,0,0)", color: css("--text-2"), activecolor: css("--accent") },
       yaxis: { title: { text: `${logE ? "|" : ""}${ref === "vacuum" ? "E − E<sub>vac</sub>" : "E − E<sub>F</sub>"}${logE ? "|" : ""} (${unit})` },
@@ -180,24 +217,30 @@ export function createPlotView(host, optsHost, H) {
         showspikes: true, spikemode: "across", spikethickness: 1, spikecolor: css("--text-3"), spikedash: "dot" },
     };
     if (band) {
-      lay.xaxis = { domain: dos ? [0, 0.7] : [0, 1], tickvals: band.ticks, ticktext: band.labels.map(kLabel),
+      lay.xaxis = { domain: dos ? [0, 0.7] : [0, 1],
         range: [band.ticks[0], band.ticks[band.ticks.length - 1]], showgrid: true, gridcolor: css("--border-strong"), zeroline: false,
         showline: true, mirror: true, linecolor: grid, showspikes: true, spikemode: "across", spikethickness: 1,
-        spikecolor: css("--text-3"), spikedash: "dot" };
+        spikecolor: css("--text-3"), spikedash: "dot", tickangle: 0 };
       const accent = css("--accent");
       if (o.xr) lay.xaxis.range = o.xr;
-      if (o.spin !== "down") {
-        const up = joinBands(band.x, band.up, shift);
-        up.ys = lg(up.ys.map(tf));
-        traces.push({ x: up.xs, y: up.ys, customdata: up.idx, xaxis: "x", yaxis: "y", mode: "lines", type: "scatter",
-          name: band.spin_polarized ? "spin up (α)" : "bands", showlegend: !!band.spin_polarized, meta: "up",
-          line: { color: accent, width: o.width }, hoverinfo: "none" });
-      }
+      const tl = bandTickLayout(band, lay.xaxis.range, dos);
+      lay.xaxis.tickvals = tl["xaxis.tickvals"]; lay.xaxis.ticktext = tl["xaxis.ticktext"]; lay.margin.b = tl["margin.b"];
+      // beta under alpha: where the two coincide alpha stays readable (dotted copies of degenerate
+      // beta bands, out of phase, would otherwise paint one solid line over it); a non-magnetic run
+      // (alpha = beta within 10 meV) comes as one set and is drawn once whichever spin is chosen
       if (band.spin_polarized && band.down && o.spin !== "up") {
         const dn = joinBands(band.x, band.down, shift);
         dn.ys = lg(dn.ys.map(tf));
         traces.push({ x: dn.xs, y: dn.ys, customdata: dn.idx, xaxis: "x", yaxis: "y", mode: "lines", type: "scatter",
-          name: "spin down (β)", meta: "down", line: { color: pal[0], width: Math.max(0.6, o.width - 0.2), dash: "dot" }, hoverinfo: "none" });
+          name: "spin down (β)", meta: "down", legendrank: 2, line: { color: pal[0], width: Math.max(0.6, o.width - 0.2), dash: "dot" }, hoverinfo: "none" });
+      }
+      if (o.spin !== "down" || !band.spin_polarized) {
+        const up = joinBands(band.x, band.up, shift);
+        up.ys = lg(up.ys.map(tf));
+        traces.push({ x: up.xs, y: up.ys, customdata: up.idx, xaxis: "x", yaxis: "y", mode: "lines", type: "scatter",
+          name: band.spin_polarized ? "spin up (α)" : band.spin_identical ? "α = β (non-magnetic)" : "bands",
+          showlegend: !!(band.spin_polarized || band.spin_identical), meta: "up", legendrank: 1,
+          line: { color: accent, width: o.width }, hoverinfo: "none" });
       }
       if (!logE) shapes.push({ type: "line", xref: "x domain", x0: 0, x1: 1, yref: "y", y0: 0, y1: 0, editable: true, name: "fermi",
         line: { color: css("--text-2"), width: 1.4, dash: "dash" } });
@@ -210,24 +253,69 @@ export function createPlotView(host, optsHost, H) {
         type: dlog ? "log" : "linear", range: dlog ? undefined : dosRange(dos, ef + yr[0] / f, ef + yr[1] / f, o), autorange: dlog ? true : undefined };
       if (dlog) d.absShown = true;
       if (!band && o.xr) lay[ax].range = o.xr;
+      // the DOS legend: a column right of the DOS panel, its own legend beside the bands' one
+      const dl = band ? "legend2" : "legend", spin2 = dos.spin_polarized;
+      lay[dl] = PK.legendSide();
+      // a legend-only entry (no data): a projection named once for both spins, or the spin key
+      const entry = (name, line, more) => ({ x: [null], y: [null], xaxis: xr, yaxis: "y", mode: "lines", type: "scatter",
+        name, legend: dl, line, hoverinfo: "skip", ...more });
       dos.projections.forEach((p, k) => {
         if ((o.hidden || []).includes(p.label)) return;
         const total = p.label === "Total";
         const col = total ? css("--text") : pal[(k + 1) % pal.length];
         const ys = dos.energy.map((e) => tf(e - shift));
         const dx = (xs) => (o.ylog ? xs.map((v) => (v === null || v === 0 ? null : Math.abs(v))) : xs);
+        const lw = total ? o.width + 0.2 : o.width - 0.2;
+        // spin-polarized: the projection is named once (one group: a click hides both spins) and
+        // the spin key below says which line is which
+        if (spin2) traces.push(entry(p.label, { color: col, width: lw }, { meta: "dos-key", legendgroup: p.label, legendrank: 10 + k,
+          fill: total ? "tozerox" : "none", fillcolor: total ? "rgba(128,128,128,0.12)" : undefined }));
         if (o.spin !== "down") traces.push({ x: dx(p.up), y: ys, xaxis: xr, yaxis: "y", mode: "lines", type: "scatter", meta: "dos",
-          name: dos.spin_polarized ? `${p.label} ↑` : p.label, legendgroup: p.label, line: { color: col, width: total ? o.width + 0.2 : o.width - 0.2 },
+          name: spin2 ? `${p.label} ↑` : p.label, legendgroup: p.label, legend: dl, showlegend: !spin2, legendrank: 10 + k,
+          line: { color: col, width: lw },
           fill: total ? "tozerox" : "none", fillcolor: total ? "rgba(128,128,128,0.12)" : undefined, hoverinfo: "none" });
-        if (dos.spin_polarized && p.down && o.spin !== "up") traces.push({ x: dx(p.down), y: ys, xaxis: xr, yaxis: "y", mode: "lines", type: "scatter",
-          meta: "dos", name: `${p.label} ↓`, legendgroup: p.label, showlegend: o.spin === "down",
-          line: { color: col, width: total ? o.width + 0.2 : o.width - 0.2, dash: "dot" }, hoverinfo: "none" });
+        // spin down mirrors spin up: the total is filled as well, lighter and hatched so the two sides read apart
+        if (spin2 && p.down && o.spin !== "up") traces.push({ x: dx(p.down), y: ys, xaxis: xr, yaxis: "y", mode: "lines", type: "scatter",
+          meta: "dos", name: `${p.label} ↓`, legendgroup: p.label, legend: dl, showlegend: false,
+          line: { color: col, width: lw, dash: "dot" },
+          fill: total ? "tozerox" : "none", fillcolor: total ? "rgba(128,128,128,0.06)" : undefined,
+          fillpattern: total ? { shape: "/", fgcolor: "rgba(128,128,128,0.45)", size: 7, solidity: 0.15 } : undefined, hoverinfo: "none" });
       });
+      if (spin2) {
+        const key = { color: css("--text-2"), width: 1.4 };
+        if (o.spin !== "down") traces.push(entry("↑ solid, right", key, { meta: "key", legendrank: 1000 }));
+        if (o.spin !== "up") traces.push(entry("↓ dotted, left", { ...key, dash: "dot" }, { meta: "key", legendrank: 1001 }));
+      }
       if (!logE) shapes.push({ type: "line", xref: `${xr} domain`, x0: 0, x1: 1, yref: "y", y0: 0, y1: 0, editable: !band, name: "fermi2",
         line: { color: css("--text-2"), width: 1.4, dash: "dash" } });
+      // CRYSTAL computed the DOS between these energies only: shade beyond them on the DOS panel
+      // (after the Fermi lines, whose shape index is what a drag reports)
+      if (dos.window && !logE) {
+        const lo = tf(dos.window[0] - shift), hi = tf(dos.window[1] - shift), span = Math.abs(yr[1] - yr[0]) || 1;
+        const rect = (y0, y1, name) => ({ type: "rect", layer: "below", xref: `${xr} domain`, x0: 0, x1: 1, yref: "y", y0, y1, name,
+          fillcolor: css("--line"), opacity: 0.45, line: { width: 0 } });
+        // one view past the visible range, not to infinity: an autorange (double-click) stays sane
+        shapes.push(rect(Math.min(yr[0], lo) - span, lo, "nodos-below"), rect(hi, Math.max(yr[1], hi) + span, "nodos-above"));
+      }
     }
     lay.shapes = shapes;
-    return { traces, layout: lay };
+    return { traces, layout: lay, legendBase: { t: lay.margin.t, r: lay.margin.r } };
+  }
+  /* The band and DOS legends sit in the top and right margins (bandFigure). Plotly's own margin
+     push leaves a legend where the previous size put it when a resize changes its height (it does
+     not redraw while replotting), so the margins are set here from the legends as drawn: a legend
+     never covers the data or the tick labels at any pane size or UI scale, and the exports, drawn
+     from this layout, are the same. */
+  let legendBase = null;
+  function fitLegends() {
+    if (!legendBase || building) return Promise.resolve();
+    // the k labels' rows depend on the band panel's width, which the right margin changes
+    return PK.fitLegends(el, legendBase, (r) => (doc && doc.data && doc.data.band && el.layout.xaxis
+      ? bandTickLayout(doc.data.band, el.layout.xaxis.range, doc.data.dos, r) : {}));
+  }
+  function irLabel(shown, fallback) {
+    const r = [...shown].filter((c) => c.startsWith("reflectance")).length;
+    return r === 0 ? fallback || "Absorbance" : r === shown.size ? "Reflectance" : "Absorbance / reflectance";
   }
   function spectrumFigure(d) {
     const o = d.opts, css = cssVar, pal = PAL(), grid = css("--line");
@@ -235,8 +323,12 @@ export function createPlotView(host, optsHost, H) {
     const list = o.average && d.data.average ? [d.data.average] : d.data.spectra;
     const fx = PK.WAVENUMBER_UNITS[o.unit] || 1, ul = PK.UNIT_LABEL[o.unit] || "cm⁻¹";
     d.absShown = false;
+    const shown = new Set();
     list.forEach((s, k) => {
-      const comps = d.kind === "raman" ? (o.component === "all" ? Object.keys(s.columns) : [o.component]) : [Object.keys(s.columns)[0]];
+      // Raman's components, or a crystal's IR absorbances and reflectances (IRSPEC.DAT columns 3-9)
+      const keys = Object.keys(s.columns);
+      const comps = o.component === "all" && (d.kind === "raman" || keys.length > 1) ? keys : [s.columns[o.component] ? o.component : keys[0]];
+      comps.forEach((c) => shown.add(c));
       comps.forEach((c, j) => {
         let y = s.columns[c] || s.columns[Object.keys(s.columns)[0]];
         if (o.normalize) { const m = Math.max(...y.map(Math.abs)) || 1; y = y.map((v) => v / m); }
@@ -246,21 +338,32 @@ export function createPlotView(host, optsHost, H) {
       });
     });
     const xs = d.data.spectra[0].x.map((v) => v * fx);
-    const lay = { margin: { l: 64, r: 14, t: 10, b: 44 }, showlegend: traces.length > 1 || !!(o.average && d.data.average), hovermode: "x unified",
-      legend: { orientation: "h", x: 0, y: 1.07, font: { size: 11 } }, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+    // the legend in a column right of the plot, the peaks' wavenumbers on a top axis (fitLegends sizes both margins)
+    const lay = { margin: { l: 64, r: 14, t: 10, b: 44, autoexpand: false }, showlegend: traces.length > 1 || !!(o.average && d.data.average), hovermode: "x unified",
+      legend: PK.legendSide(), paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
       font: { color: css("--text"), size: 12, family: css("--font-sans") },
       modebar: { bgcolor: "rgba(0,0,0,0)", color: css("--text-2"), activecolor: css("--accent") },
       xaxis: { title: { text: `${o.unit === "cm-1" || !o.unit ? "Wavenumber" : "Energy"} (${ul})` },
         type: o.xlog ? "log" : "linear",
         range: o.xr || (o.xlog ? undefined : [(o.xmin ?? Math.min(...d.data.spectra[0].x)) * fx, (o.xmax ?? Math.max(...d.data.spectra[0].x)) * fx]),
         autorange: o.xlog && !o.xr ? true : undefined, gridcolor: grid, showline: true, mirror: true, linecolor: grid, zeroline: false },
-      yaxis: { title: { text: o.normalize ? "Normalized" : d.kind === "ir" ? d.data.spectra[0].ylabel || "Absorbance" : "Raman activity" },
+      yaxis: { title: { text: o.normalize ? "Normalized" : d.kind === "ir" ? irLabel(shown, d.data.spectra[0].ylabel) : "Raman activity" },
         type: o.ylog ? "log" : "linear", range: o.yr || undefined,
         gridcolor: grid, showline: true, mirror: true, linecolor: grid, zeroline: false } };
     if (d.data.peaks && d.data.peaks.length) {
-      const strongest = [...d.data.peaks].sort((a, b) => b.intens - a.intens).slice(0, 12);
-      lay.annotations = strongest.map((p) => ({ x: p.freq * fx, y: 1, yref: "y domain", text: `${(p.freq * fx).toFixed(o.unit === "cm-1" || !o.unit ? 0 : 2)}`, showarrow: false,
-        textangle: -90, font: { size: 9, color: css("--text-3") }, yanchor: "top" }));
+      // the strongest peaks' positions as labels on a top axis, above the data; a weaker peak too close to
+      // a stronger one's label (13 px at the plot's width) is left unlabeled
+      const xr = lay.xaxis.range || [Math.min(...xs), Math.max(...xs)], span = Math.abs(xr[1] - xr[0]) || 1;
+      const gap = span * 13 / Math.max(200, (el.clientWidth || 900) - 64 - 14 - 110);
+      const strongest = [];
+      for (const p of [...d.data.peaks].sort((a, b) => b.intens - a.intens)) {
+        if (strongest.length >= 12) break;
+        if (strongest.every((q) => Math.abs(q.freq - p.freq) * fx >= gap)) strongest.push(p);
+      }
+      lay.xaxis2 = { overlaying: "x", matches: "x", side: "top", type: lay.xaxis.type, showgrid: false, zeroline: false, showline: false, ticks: "",
+        tickmode: "array", tickvals: strongest.map((p) => p.freq * fx), ticktext: strongest.map((p) => `${(p.freq * fx).toFixed(o.unit === "cm-1" || !o.unit ? 0 : 2)}`),
+        tickangle: -90, tickfont: { size: 9, color: css("--text-3") } };
+      traces.push({ x: [null], y: [null], xaxis: "x2", mode: "markers", type: "scatter", meta: "peak-axis", showlegend: false, hoverinfo: "skip" });
       // one marker per active mode, on the curve: hover names the mode, a click opens its animation (plan E4)
       if (traces.length && d.data.out) {
         const t0 = traces[0], at = (f) => {
@@ -279,7 +382,7 @@ export function createPlotView(host, optsHost, H) {
       }
     }
     if (d.source === "modes") lay.yaxis.title.text = o.normalize ? "Normalized" : d.data.spectra[0].ylabel;
-    return { traces, layout: lay };
+    return { traces, layout: lay, legendBase: { t: 10, r: 14 } };
   }
 
   /* a 2D map: contours in the plane of A, B, C (Å), the corners labeled */
@@ -289,7 +392,10 @@ export function createPlotView(host, optsHost, H) {
     const z = m.values.map((col) => col.map((v) => (log ? Math.log10(v) : v)));
     const dist = (p, r) => Math.hypot(p[0] - r[0], p[1] - r[1], p[2] - r[2]);
     const ab = dist(m.A, m.B), bc = dist(m.B, m.C), sin = Math.sqrt(Math.max(0, 1 - m.cosxy * m.cosxy));
-    const corner = (t, x, y) => ({ x, y, text: t, showarrow: false, font: { size: 13, color: css("--text") }, xanchor: "center", yanchor: "middle",
+    // each corner's label sits inside the plane, on the side of its corner away from the edges and tick labels
+    const cx = (ab + ab + bc * m.cosxy) / 3, cy = bc * sin / 3;
+    const corner = (t, x, y) => ({ x, y, text: t, showarrow: false, font: { size: 13, color: css("--text") },
+      xanchor: x < cx - 1e-6 ? "left" : x > cx + 1e-6 ? "right" : "center", yanchor: y < cy ? "bottom" : "top",
       bgcolor: css("--surface"), opacity: 0.85 });
     const signed = m.min < 0 && m.max > 0;
     const trace = { type: "contour", x: m.x, y: m.y, z, ncontours: o.contours, colorscale: signed ? "RdBu" : "Viridis", reversescale: signed,
@@ -319,7 +425,7 @@ export function createPlotView(host, optsHost, H) {
         name: `${r.name} · ${stop}`, line: { color: pal[k % pal.length], width: o.width }, marker: { size: 5 },
         hovertemplate: `%{y:.3f} meV/atom at geometry %{x}<extra>${esc(r.name)}</extra>` };
     });
-    return { traces, layout: { margin: { l: 70, r: 14, t: 10, b: 50 }, showlegend: true, legend: { orientation: "h", x: 0, y: 1.02, yanchor: "bottom", font: { size: 11 } },
+    return { legendBase: { t: 10, r: 14 }, traces, layout: { margin: { l: 70, r: 14, t: 10, b: 50, autoexpand: false }, showlegend: true, legend: PK.legendTop(),
       hovermode: "closest", paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)", font: { color: css("--text"), size: 12, family: css("--font-sans") },
       xaxis: { title: { text: "Geometry (initial, optimization points, final)" }, gridcolor: grid, showline: true, mirror: true, linecolor: grid, dtick: 1 },
       yaxis: { title: { text: "ΔE per atom (meV)" }, type: o.log ? "log" : "linear", gridcolor: grid, showline: true, mirror: true, linecolor: grid } } };
@@ -333,11 +439,11 @@ export function createPlotView(host, optsHost, H) {
     const traces = comps.map((c, k) => ({ x: block.mu, y: block[c], mode: "lines", type: "scatter",
       name: c === "avg" ? "(xx + yy + zz) / 3" : c, line: { color: pal[k % pal.length], width: o.width },
       hovertemplate: `%{x:.3f} eV: %{y:.4g} ${esc(t.unit)}<extra>${esc(c)}</extra>` }));
-    const lay = { margin: { l: 70, r: 14, t: 10, b: 44 }, showlegend: traces.length > 1, hovermode: "x unified",
+    const lay = { margin: { l: 70, r: 14, t: 10, b: 44, autoexpand: false }, showlegend: traces.length > 1, hovermode: "x unified", legend: PK.legendTop(),
       paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)", font: { color: css("--text"), size: 12, family: css("--font-sans") },
       xaxis: { title: { text: t.x === "energy" ? "Energy (eV)" : "Chemical potential μ (eV)" }, gridcolor: grid, showline: true, mirror: true, linecolor: grid, zeroline: true, zerolinecolor: grid },
       yaxis: { title: { text: `${t.label} (${t.unit})` }, gridcolor: grid, showline: true, mirror: true, linecolor: grid, zeroline: true, zerolinecolor: grid } };
-    return { traces, layout: lay };
+    return { traces, layout: lay, legendBase: { t: 10, r: 14 } };
   }
 
   let again = false;
@@ -359,6 +465,8 @@ export function createPlotView(host, optsHost, H) {
       // plotly's react cannot add a second x axis to an existing figure
       const sig = `${doc.path}|${Object.keys(fig.layout).filter((k) => /^[xy]axis/.test(k)).sort().join(",")}`;
       const config = { displaylogo: false, responsive: true, modeBarButtonsToRemove: ["lasso2d", "select2d"], edits: { shapePosition: true } };
+      // the same figure again (an option changed): keep the margins fitted to its legends (fitLegends)
+      if (fig.legendBase && el.__sig === sig && el.layout && el.layout.margin) Object.assign(fig.layout.margin, { t: el.layout.margin.t, r: el.layout.margin.r });
       // no transitions: zoom and pan are instant (and so under reduced motion too)
       if (el.__sig !== sig) {
         if (el.__sig) window.Plotly.purge(el);
@@ -370,11 +478,13 @@ export function createPlotView(host, optsHost, H) {
       }
       building = false;
       fit();          // react keeps the size the figure had; the pane may have changed since
+      legendBase = fig.legendBase || null;
+      await fitLegends();
       bind();
       chips();
       el.dataset.drawn = doc.path;
       performance.mark("plot:drawn");
-    } catch (e) { $(".pv-note").textContent = e.message; } finally {
+    } catch (e) { $(".pv-note").classList.remove("one"); $(".pv-note").textContent = e.message; } finally {
       building = false;
       if (again) { again = false; redraw(); }
     }
@@ -392,6 +502,11 @@ export function createPlotView(host, optsHost, H) {
   function bind() {
     if (el.__maceBound) return;
     el.__maceBound = true;
+    // the DOS spin key only explains the line styles: a click on it hides nothing
+    el.on("plotly_legendclick", PK.keyClick);
+    el.on("plotly_legenddoubleclick", PK.keyClick);
+    // a resize (the window, a splitter, the UI scale) redraws the legends: fit the margins to them again
+    el.on("plotly_afterplot", () => { if (legendBase && !el.__fitting && !building) requestAnimationFrame(() => fitLegends()); });
     el.on("plotly_hover", (ev) => {
       if (!doc || !doc.data || !ev.points || !ev.points.length) return;
       const p = ev.points[0], t = p.data;
@@ -423,7 +538,22 @@ export function createPlotView(host, optsHost, H) {
     el.on("plotly_click", (ev) => {
       if (!doc || !(doc.kind === "ir" || doc.kind === "raman") || !doc.data || !doc.data.out || !ev.points || !ev.points.length) return;
       const pt = ev.points[0];
-      let mode = pt.data && pt.data.meta === "peaks" ? pt.customdata : null;
+      // The marker under the click itself, from the click's own position: plotly throttles its
+      // hover to one per 50 ms and a click re-uses the last one, so a click right after the pointer
+      // moved came with a point it passed on the way (the strong peak's neighbor 17 px below it).
+      let mode = null;
+      const pk = (el.data || []).find((t) => t.meta === "peaks"), fl = el._fullLayout, e = ev.event;
+      if (pk && fl && fl.xaxis && fl.yaxis && e && typeof e.clientX === "number") {
+        // the click in the plot's own px: its screen offset is the UI scale's zoom x the plot's px
+        const [px, py] = window.maceZoom.point(el, e.clientX, e.clientY), mx = px - fl._size.l, my = py - fl._size.t;
+        let bi = -1, bd = 10;                      // px: a marker within reach of the pointer
+        pk.x.forEach((x, i) => {
+          const dd = Math.hypot(fl.xaxis.c2p(x) - mx, fl.yaxis.c2p(pk.y[i]) - my);
+          if (dd <= bd) { bd = dd; bi = i; }
+        });
+        if (bi >= 0) mode = pk.customdata[bi];
+      }
+      if ((mode === null || mode === undefined) && pt.data && pt.data.meta === "peaks") mode = pt.customdata;
       if (mode === null || mode === undefined) {
         const half = Math.max(4, ((doc.data.spectra[0] && doc.data.spectra[0].fwhm) || 8) / 2);
         let best = null, bd = Infinity;
@@ -444,6 +574,11 @@ export function createPlotView(host, optsHost, H) {
         const ns = Math.round(((doc.opts.shift || 0) + ev[sy] / (PK.ENERGY_UNITS[doc.opts.unit] || 1)) * 1000) / 1000 || 0;
         setOpt(doc, { shift: ns }, `Fermi shift ${ns.toFixed(2)} eV`, "drag");
         return;
+      }
+      // a zoom along k: lay the tick labels out again for the new range (the rows depend on it)
+      if (doc.data.band && el.layout.xaxis && Object.keys(ev).some((k) => k === "xaxis.autorange" || k.startsWith("xaxis.range"))) {
+        const r = el.layout.xaxis.range, tk = doc.data.band.ticks;
+        window.Plotly.relayout(el, bandTickLayout(doc.data.band, r || [tk[0], tk[tk.length - 1]], doc.data.dos));
       }
       if (doc.data.dos && Object.keys(ev).some((k) => k.startsWith("yaxis."))) {
         if (doc.opts.ylog || !el.layout.yaxis.range) return;
@@ -497,7 +632,7 @@ export function createPlotView(host, optsHost, H) {
     if (doc.kind === "transport") {
       const t = doc.data && doc.data.transport;
       if (t) {
-        const Q = { SEEBECK: "Seebeck", SIGMA: "σ", SIGMAS: "σS", KAPPA: "κ", TDF: "TDF" };
+        const Q = { SEEBECK: "Seebeck", SIGMA: "σ", SIGMAS: "σS", KAPPA: "κ₀", TDF: "TDF" };
         h += `<div class="po-row"><span>Quantity</span><span class="segment po-tq" role="radiogroup" aria-label="Quantity">${Object.keys(Q).filter((k) => t.siblings[k]).map((k) =>
           `<button role="radio" aria-checked="${k === t.quantity}" data-tq="${esc(t.siblings[k])}">${Q[k]}</button>`).join("")}</span></div>`;
         if (t.blocks.length > 1 || t.blocks[0].T !== null) h += `<label class="po-row" for="po-temp"><span>Temperature</span><select id="po-temp">${t.blocks.map((b) =>
@@ -523,9 +658,10 @@ export function createPlotView(host, optsHost, H) {
       h += num("po-xmin", "Wavenumber from", o.xmin, "cm⁻¹", "10") + num("po-xmax", "Wavenumber to", o.xmax, "cm⁻¹", "10") +
         num("po-width", "Line width", o.width, "px", "0.2") +
         `<label class="chk po-row"><input type="checkbox" id="po-norm"${o.normalize ? " checked" : ""}> Normalize to the highest peak</label>`;
-      if (doc.kind === "raman" && doc.data) {
-        const comps = Object.keys(doc.data.spectra[0].columns);
-        h += `<label class="po-row" for="po-comp"><span>Component</span><select id="po-comp">${["all", ...comps].map((c) => `<option value="${esc(c)}"${o.component === c ? " selected" : ""}>${esc(c === "all" ? "All components" : c)}</option>`).join("")}</select></label>`;
+      const comps = doc.data ? Object.keys(doc.data.spectra[0].columns) : [];
+      if (doc.data && (doc.kind === "raman" || comps.length > 1)) {
+        const cur = o.component === "all" || comps.includes(o.component) ? o.component : comps[0];
+        h += `<label class="po-row" for="po-comp"><span>Component</span><select id="po-comp">${["all", ...comps].map((c) => `<option value="${esc(c)}"${cur === c ? " selected" : ""}>${esc(c === "all" ? "All components" : c)}</option>`).join("")}</select></label>`;
       }
       if (doc.data && doc.data.group) h += `<label class="chk po-row"><input type="checkbox" id="po-avg"${o.average ? " checked" : ""}> Average the ${doc.data.group.length} conformers</label>`;
       if (doc.data && doc.data.spectra[0].broadening) h += `<p class="po-h">Broadening as CRYSTAL wrote it: ${esc(doc.data.spectra[0].broadening)}</p>`;
@@ -643,8 +779,9 @@ export function createPlotView(host, optsHost, H) {
     if (isSpec(d)) {
       const s = d.data.spectra[0], cols = Object.keys(s.columns), fx = PK.WAVENUMBER_UNITS[d.opts.unit] || 1;
       const u = (PK.UNIT_LABEL[d.opts.unit] || "cm⁻¹").replace("⁻¹", "-1");
-      s.x.forEach((x, i) => rows.push([x * fx, ...cols.map((c) => s.columns[c][i])]));
-      return { columns: [`${d.opts.unit === "cm-1" ? "wavenumber" : "energy"}_${u}`, ...cols], rows };
+      const wl = s.wavelength_nm;          // IRSPEC.DAT's second column
+      s.x.forEach((x, i) => rows.push([x * fx, ...(wl ? [wl[i]] : []), ...cols.map((c) => s.columns[c][i])]));
+      return { columns: [`${d.opts.unit === "cm-1" ? "wavenumber" : "energy"}_${u}`, ...(wl ? ["wavelength_nm"] : []), ...cols], rows };
     }
     const { band, dos } = d.data, shift = d.opts.shift || 0, f = PK.ENERGY_UNITS[d.opts.unit] || 1, u = d.opts.unit || "eV";
     const ef = (band || dos).fermi;
@@ -667,7 +804,9 @@ export function createPlotView(host, optsHost, H) {
   }
   function note(d) {
     if (d.source !== "modes" || !d.data) return;
-    $(".pv-note").innerHTML = sourceNote(d) + " · click a peak to animate its mode. Drag to zoom, double-click to reset; Mod+Z undoes an option.";
+    const line = sourceNote(d) + " · click a peak to animate its mode", tip = esc(`${line.replace(/<[^>]+>/g, "")}. Drag to zoom, double-click to reset; Mod+Z undoes an option.`);
+    $(".pv-note").classList.add("one");
+    $(".pv-note").innerHTML = `<span class="pv-note-line">${line}</span><span class="pv-help" data-help tabindex="0" role="img" title="${tip}" aria-label="${tip}">${icon("circle-help")}</span>`;
   }
   function rebuild() { if (doc && doc.data && el.offsetWidth > 0) { el.__sig = null; redraw(); } }
   document.addEventListener("mace-theme", rebuild);
@@ -681,12 +820,13 @@ export function createPlotView(host, optsHost, H) {
       load(d);
       renderOptions();
       if (kit) kit.refresh();
+      $(".pv-note").classList.remove("one");
       $(".pv-note").innerHTML = `<span class="spinner"></span> Reading ${esc(d.title)}…`;
       try {
         await fetchData(d);
         if (doc !== d) return;
         const { band, dos } = d.data || {};
-        const notes = [];
+        const notes = [], help = [];
         if (d.data && d.data.map) {
           notes.push(`${d.data.map.maps.length} map${d.data.map.maps.length === 1 ? "" : "s"} from CRYSTAL's fort.25 (MAPN), the plane through A, B and C`);
         } else if (d.data && d.data.convergence) {
@@ -697,16 +837,31 @@ export function createPlotView(host, optsHost, H) {
         } else if (band || dos) {
           const files = [band && band.name, dos && dos.name].filter(Boolean);
           setTitle(files.join("  +  "));
-          if (band) notes.push(band.spin_polarized ? "spin-polarized: α solid, β dotted" : "closed shell: one set of bands");
-          notes.push((band || dos).reference === "vacuum" ? "energies on the vacuum scale (POTC run found); the dashed line is E<sub>F</sub>" : "dashed line = Fermi level, drag it to shift the reference");
+          // one short line; the longer guidance is in the help icon's tooltip
+          const meV = band && Math.max(1, Math.round(band.spin_max_diff * 1000));
+          notes.push(band ? (band.spin_polarized ? "spin-polarized: α solid, β dotted"
+            : band.spin_identical ? `spin-polarized · α = β (non-magnetic, ≤${meV} meV)` : "closed shell")
+            : dos.spin_polarized ? "spin-polarized" : "closed shell");
           if (band && band.truncated) notes.push(`the ${band.up.length} bands nearest E<sub>F</sub> of ${band.n_bands}`);
+          notes.push((band || dos).reference === "vacuum" ? "vacuum scale · dashed = E<sub>F</sub>, drag to shift" : "dashed = Fermi level, drag to shift");
+          if (band && band.spin_identical) help.push(`α and β agree within ${meV} meV, so one set of bands is drawn`);
+          if (dos && dos.spin_polarized) help.push("DOS: ↑ to the right, ↓ mirrored to the left (total hatched)");
+          if (dos && dos.window) help.push(`shaded: outside the computed DOS window${dos.edge_pileup ? " (its edge bin, the states beyond it, is left out)" : ""}`);
+          if ((band || dos).reference === "vacuum") help.push("energies on the vacuum scale (POTC run found); the dashed line is E_F");
+          help.push("dragging the dashed line shifts the energy reference");
         } else if (d.data && d.data.spectra) {
           const s = d.data.spectra[0];
           if (d.source === "modes") notes.push(sourceNote(d));
           else notes.push(`CRYSTAL ${d.kind === "ir" ? "IRSPEC" : "RAMSPEC"}.DAT · ${s.n_points.toLocaleString("en-US")} points, read with mace plotting's reader${s.broadening ? `; broadening ${esc(s.broadening)}` : ""}`);
           if (d.data.out && d.data.peaks.length) notes.push("click a peak to animate its mode");
         }
-        $(".pv-note").innerHTML = notes.join(" · ") + ". Drag to zoom, double-click to reset; Mod+Z undoes an option.";
+        const drag = "Drag to zoom, double-click to reset; Mod+Z undoes an option.";
+        // one line for every plot's subtitle: what does not fit is in the help icon's tooltip, with the guidance
+        if (!help.length) help.push(...notes);
+        const tip = esc(`${help.join(" · ")}. ${drag}`.replace(/<\/?sub>/g, (t) => (t === "<sub>" ? "_" : "")).replace(/<[^>]+>/g, ""));
+        $(".pv-note").classList.add("one");
+        $(".pv-note").innerHTML = `<span class="pv-note-line">${notes.join(" · ")}</span>`
+          + `<span class="pv-help" data-help tabindex="0" role="img" title="${tip}" aria-label="${tip}">${icon("circle-help")}</span>`;
         renderOptions();
         await redraw();
       } catch (e) {
@@ -725,6 +880,7 @@ export function createPlotView(host, optsHost, H) {
       doc = null;
       el.hidden = true; $(".pv-acts").hidden = true; $(".pv-readout").textContent = ""; $(".pv-chips").innerHTML = "";
       setTitle(d.title);
+      $(".pv-note").classList.remove("one");
       $(".pv-note").textContent = kind === "html" ? "An HTML plot in this folder, shown in a sandbox (its scripts cannot reach MACE)" : "An image in this folder";
       const src = "api/raw?" + q({ path: d.path });
       if (kind === "html") { const f = $(".pv-frame"); f.hidden = false; $(".pv-img").hidden = true; if (f.getAttribute("src") !== src) f.src = src; }

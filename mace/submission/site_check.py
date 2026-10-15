@@ -198,6 +198,9 @@ def run(env: Optional[Dict[str, str]] = None, partition: Optional[str] = None, a
         elif st == "default":
             items.append(_item("Account", "ok", "no #SBATCH -A line: SLURM charges your default account"
                                + (f" ({chk.get('default')})" if chk.get("default") else "")))
+        elif st == "unreadable":
+            items.append(_item("Account", "warn", "SLURM accounting does not answer here (sacctmgr): "
+                               + site.NO_ACCOUNT_TEXT, f'[slurm] account = "my_account"  in {where}'))
         elif st == "not_member":
             mine = chk.get("accounts") or []
             items.append(_item("Account", "fail", f"{conf.account} is not one of your SLURM accounts "

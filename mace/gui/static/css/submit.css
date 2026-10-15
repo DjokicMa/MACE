@@ -37,11 +37,14 @@ dialog.submit-dlg[open] { display: flex; }
 .jobs-bar .muted { color: var(--text-2); font-size: var(--fs-sm); }
 .jobs-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
 .jobs-table th, .jobs-table td { text-align: left; padding: 3px var(--s-2); border-bottom: 1px solid var(--border); white-space: nowrap; }
-.jobs-table th { color: var(--text-2); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
+/* the header sticks to the scroller's very top (over its padding), opaque in every theme, above the rows
+ * (the sticky actions cells too) and below the menus' layer; its line is a shadow, which moves with it */
+.jobs-table th { color: var(--text-2); font-weight: 600; position: sticky; top: calc(-1 * var(--scroll-pad-top, 0px));
+  z-index: var(--z-raised); background: var(--surface); box-shadow: inset 0 -1px 0 var(--border); }
 .jobs-table td.name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
 /* the row's actions stay in view when the table is wider than the panel (1280 px with the Inspector open) */
 .jobs-table td:last-child, .jobs-table th:last-child { position: sticky; right: 0; background: var(--surface); }
-.jobs-table th:last-child { z-index: 1; }
+.jobs-table th:last-child { z-index: calc(var(--z-raised) + 1); }
 .jobs-table tr.group td:last-child { position: static; }
 .jobs-table tr.group td { color: var(--text-2); font-weight: 600; background: var(--surface-2); }
 .jobs-table tr:focus-within, .jobs-table tr:focus { outline: 2px solid var(--focus); outline-offset: -2px; }
@@ -73,8 +76,7 @@ dialog.submit-dlg[open] { display: flex; }
 .bat .note { color: var(--text-2); font-size: var(--fs-sm); margin: 0; }
 .bat .bad { color: var(--danger); }
 /* the Site row's resolved values (mace site --json) and the Check report */
-.sub-site { margin: var(--s-2) 0 0; font-size: var(--fs-sm); display: grid; gap: 2px; }
-.sub-site > div { display: grid; grid-template-columns: 7.5em 1fr; gap: var(--s-2); }
+.sub-site { margin: var(--s-2) 0 0; font-size: var(--fs-sm); display: grid; grid-template-columns: 7.5em 1fr; gap: 2px var(--s-2); }
 .sub-site dt { color: var(--muted); margin: 0; }
 .sub-site dd { margin: 0; overflow-wrap: anywhere; }
 .sub-check { font-size: var(--fs-sm); }

@@ -279,3 +279,95 @@ def test_two_hundred_point_parse_under_a_second(tmp_path):
     dt = time.perf_counter() - t0
     assert len(r["points"]) >= 200
     assert dt < 1.0, dt
+
+
+# ------------------------------------------------------------------ energy along the run (FINALRUN segments)
+def _fake_res():
+    """Two FINALRUN segments, energies in Ha, and the OPT END energy."""
+    pts = [{"point": 1, "segment": 0, "frame": 0, "energy_au": -10.0},
+           {"point": 2, "segment": 0, "frame": 1, "energy_au": -10.004},
+           {"point": 3, "segment": 1, "frame": 2, "energy_au": -10.003},
+           {"point": 4, "segment": 1, "frame": 3, "energy_au": -10.005}]
+    return {"points": pts, "final_frame": 4, "opt": {"end": {"energy": -10.005}}}
+
+
+def test_energy_along_run_continuous_is_one_reference():
+    rows = oc.energy_along_run(_fake_res())
+    assert [r["point"] for r in rows] == [1, 2, 3, 4, 4] and rows[-1]["final"] and rows[-1]["frame"] == 4
+    assert {r["ref_au"] for r in rows} == {-10.005}                      # the run's final energy
+    assert [round(r["de_au"], 9) for r in rows] == [0.005, 0.001, 0.002, 0.0, 0.0]
+    assert [r["is_ref"] for r in rows] == [False, False, False, True, True]   # no value on a log axis
+    first = oc.energy_along_run(_fake_res(), relative_to="first")
+    assert {r["ref_au"] for r in first} == {-10.0} and first[0]["is_ref"] and not first[2]["is_ref"]
+    mn = oc.energy_along_run(_fake_res(), relative_to="minimum")
+    assert {r["ref_au"] for r in mn} == {-10.005}
+    ab = oc.energy_along_run(_fake_res(), relative_to="absolute")
+    assert [r["de_au"] for r in ab] == [r["energy_au"] for r in ab] and not any(r["is_ref"] for r in ab)
+
+
+def test_energy_along_run_separate_is_one_reference_per_segment():
+    rows = oc.energy_along_run(_fake_res(), segments="separate")
+    assert [r["ref_au"] for r in rows] == [-10.004, -10.004, -10.005, -10.005, -10.005]
+    assert [round(r["de_au"], 9) for r in rows] == [0.004, 0.0, 0.002, 0.0, 0.0]
+    first = oc.energy_along_run(_fake_res(), relative_to="first", segments="separate")
+    assert [r["ref_au"] for r in first] == [-10.0, -10.0, -10.003, -10.003, -10.003]
+    # below its reference (relative to the final point only)
+    res = _fake_res()
+    res["points"][1]["energy_au"] = -10.006
+    assert [r["below"] for r in oc.energy_along_run(res)] == [False, True, False, False, False]
+    with pytest.raises(ValueError):
+        oc.energy_along_run(res, segments="merged")
+    with pytest.raises(ValueError):
+        oc.energy_along_run(res, relative_to="last")
+
+
+def test_energy_tsv_columns_and_units():
+    rows = oc.energy_along_run(_fake_res())
+    lines = oc.energy_tsv(rows, "meV").splitlines()
+    assert lines[0] == "point\tsegment\tframe\tE_Ha\tdE_meV"
+    assert lines[1].split("\t")[:4] == ["1", "1", "0", "-10.0"]
+    assert abs(float(lines[1].split("\t")[4]) - 0.005 * oc.HARTREE_EV * 1000) < 1e-9
+    assert lines[3].split("\t")[1] == "2"                                 # the segment is 1-based
+    ha = oc.energy_tsv(rows, "Ha").splitlines()
+    assert ha[0].endswith("dE_Ha") and abs(float(ha[1].split("\t")[4]) - 0.005) < 1e-12
+    res = _fake_res()
+    res["final_frame"] = None
+    assert oc.energy_tsv(oc.energy_along_run(res)).splitlines()[-1].split("\t")[2] == ""   # no frame: empty
+    with pytest.raises(ValueError):
+        oc.energy_tsv(rows, "kelvin")
+
+
+def test_energy_along_run_real_finalrun_output(tmp_path):
+    """A real OPT with three FINALRUN restarts (four segments)."""
+    r = oc.parse(_copy(tmp_path, LG4))
+    assert len(r["segments"]) == 4
+    cont = oc.energy_along_run(r)
+    sep = oc.energy_along_run(r, segments="separate")
+    assert len(cont) == len(r["points"]) + 1 and cont[-1]["final"]
+    e_end = r["opt"]["end"]["energy"]
+    assert all(x["ref_au"] == e_end for x in cont)
+    # Separate: each segment against its own last point (the last segment against OPT END)
+    for s in r["segments"]:
+        last = [p for p in r["points"] if p["segment"] == s["index"]][-1]["energy_au"]
+        want = e_end if s["index"] == len(r["segments"]) - 1 else last
+        assert {x["ref_au"] for x in sep if x["segment"] == s["index"]} == {want}
+    # the segments differ, so the two modes really differ before the last segment
+    assert any(abs(a["de_au"] - b["de_au"]) > 1e-9 for a, b in zip(cont, sep))
+
+
+def test_cli_energy_matches_shared_function(tmp_path):
+    p = _copy(tmp_path, LG4)
+    cli = [sys.executable, str(REPO / "mace_cli"), "--no-banner", "analyze", "--convergence", str(p), "--energy"]
+    res = oc.parse(p)
+    r = subprocess.run(cli, capture_output=True, text=True, env=_env(), timeout=120)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == oc.energy_tsv(oc.energy_along_run(res), "meV")      # continuous, final, meV by default
+    r = subprocess.run(cli + ["--segments", "separate", "--relative-to", "first", "--unit", "eV"],
+                       capture_output=True, text=True, env=_env(), timeout=120)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == oc.energy_tsv(oc.energy_along_run(res, relative_to="first", segments="separate"), "eV")
+    r = subprocess.run(cli + ["--json"], capture_output=True, text=True, env=_env(), timeout=120)
+    assert json.loads(r.stdout) == json.loads(json.dumps(oc.energy_along_run(res)))
+    h = subprocess.run([sys.executable, str(REPO / "mace_cli"), "analyze", "--help"], capture_output=True, text=True,
+                       env=_env(), timeout=120)
+    assert "--segments MODE" in h.stdout and "--energy" in h.stdout

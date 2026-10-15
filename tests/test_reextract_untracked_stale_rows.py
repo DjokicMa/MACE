@@ -78,7 +78,7 @@ def _extract_twice(tmp_path, outs, material, stale, extra_args=()):
 
 def test_the_audits_doss_rows_go(tmp_path):
     out = find_data("DOSS/1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized_doss.out")
-    material = "1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized"
+    material = "1_dia"            # the registration's id (create_material_id_from_file)
     before, after = _extract_twice(tmp_path, [out], material, STALE_111)
     for _, name, *_ in STALE_111:
         assert name in before

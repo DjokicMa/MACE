@@ -65,6 +65,7 @@ def test_relative_d3_target_is_submitted(tmp_path, env, target):
     sub = tmp_path / "B"
     sub.mkdir()
     (sub / "x_band.d3").write_text(D3)
+    (sub / "x_band.f9").write_text("wavefunction")         # a properties job needs its .f9
     proc = subprocess.run([sys.executable, str(MACE_CLI), "--no-banner", "submit", *target],
                           cwd=tmp_path, env=env, capture_output=True, text=True, timeout=300)
     out = proc.stdout + proc.stderr

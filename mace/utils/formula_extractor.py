@@ -132,10 +132,13 @@ def extract_formula_from_d12(d12_file: Path) -> Optional[str]:
     if not atoms:
         return None
     
-    # Count atoms and create formula. Convention: electropositive elements
-    # (cations/metals) first, ordered by atomic number, then the nonmetal anions
-    # in a fixed electronegativity order (so SiO2, TiPbO3, AgBr read naturally).
-    atom_counts = Counter(atoms)
+    return _format_formula(Counter(atoms))
+
+
+def _format_formula(atom_counts) -> str:
+    """A formula from element counts. Convention: electropositive elements
+    (cations/metals) first, ordered by atomic number, then the nonmetal anions
+    in a fixed electronegativity order (so SiO2, TiPbO3, AgBr read naturally)."""
     symbol_to_z = {sym: z for z, sym in _ELEMENT_SYMBOLS.items()}
 
     cations = sorted(
@@ -180,23 +183,60 @@ def extract_formula_from_cif(cif_file: Path) -> Optional[str]:
             formula = re.sub(r'[\'"\s]', '', formula)
             return formula
     
-    # If no formula found, try to extract from atom sites
-    atom_sites = []
-    site_pattern = r'_atom_site_type_symbol\s+(\w+)'
-    matches = re.findall(site_pattern, content, re.IGNORECASE)
-    
-    if matches:
-        atom_counts = Counter(matches)
-        formula_parts = []
-        for element in sorted(atom_counts.keys()):
-            count = atom_counts[element]
-            if count == 1:
-                formula_parts.append(element)
-            else:
-                formula_parts.append(f"{element}{count}")
-        return ''.join(formula_parts)
-    
+    # If no formula found, count the sites of the atom-site loop: the
+    # type-symbol column, else the label column ("Ti1" -> Ti). A regex on
+    # the header line took the next loop tag ("_atom_site_fract_x") as the
+    # element. Charges and site numbers are dropped ("O2-" -> O).
+    symbols = _atom_site_symbols(content)
+    if symbols:
+        return _format_formula(Counter(symbols))
+
     return None
+
+
+def _atom_site_symbols(content: str):
+    """The element of each row of a CIF's ``_atom_site_`` loop, or []."""
+    lines = content.splitlines()
+    i = 0
+    while i < len(lines):
+        if lines[i].strip().lower() != 'loop_':
+            i += 1
+            continue
+        tags = []
+        j = i + 1
+        while j < len(lines) and lines[j].strip().startswith('_'):
+            tags.append(lines[j].strip().split()[0].lower())
+            j += 1
+        if not any(t.startswith('_atom_site_') and not t.startswith('_atom_site_aniso') for t in tags):
+            i = j
+            continue
+        col = tags.index('_atom_site_type_symbol') if '_atom_site_type_symbol' in tags else (
+            tags.index('_atom_site_label') if '_atom_site_label' in tags else None)
+        if col is None:
+            return []
+        out = []
+        while j < len(lines):
+            row = lines[j].strip()
+            if not row or row.startswith('#'):
+                if out:
+                    break
+                j += 1
+                continue
+            if row.startswith('_') or row.lower().startswith(('loop_', 'data_')):
+                break
+            fields = row.split()
+            if len(fields) > col:
+                m = re.match(r"([A-Z][a-z]?)", fields[col].strip("'\""))
+                if m and m.group(1) in _SYMBOL_SET:
+                    out.append(m.group(1))
+                elif m and m.group(1)[0] in _SYMBOL_SET:
+                    out.append(m.group(1)[0])
+            j += 1
+        return out
+    return []
+
+
+_SYMBOL_SET = frozenset(_ELEMENT_SYMBOLS.values())
 
 
 def extract_space_group_from_output(output_file: Path) -> Optional[int]:
@@ -329,8 +369,15 @@ def extract_material_info_from_files(d12_file: Path = None,
     cif_file = Path(cif_file) if cif_file else None
     output_file = Path(output_file) if output_file else None
 
+    # The cell the output prints, else the deck expanded by its space group
+    # (material_info); the deck's own atom lines are the asymmetric unit only
+    # (TiPbO3 read as TiPbO2), so they come after both.
+    info = material_info(output_file=output_file, d12_file=d12_file)
+    if info.get("source") in ("output", "d12"):
+        formula = info["formula"]
+
     # Try to get formula from multiple sources
-    if d12_file and d12_file.exists():
+    if not formula and d12_file and d12_file.exists():
         formula = extract_formula_from_d12(d12_file)
     
     if not formula and cif_file and cif_file.exists():
@@ -341,6 +388,105 @@ def extract_material_info_from_files(d12_file: Path = None,
         space_group = extract_space_group_from_output(output_file)
     
     return formula, space_group
+
+
+_DIM_NAMES = {3: "CRYSTAL", 2: "SLAB", 1: "POLYMER", 0: "MOLECULE"}
+
+
+def _formulas(numbers, molecule: bool) -> Optional[Tuple[str, str]]:
+    """(formula, cell formula) from the atomic numbers of a whole cell: the
+    formula is reduced by the counts' greatest common divisor, except for a
+    molecule (H2O2 is not HO)."""
+    from math import gcd
+    from functools import reduce
+    counts = Counter()
+    for z in numbers:
+        sym = atomic_number_to_symbol(int(z) % 100)    # CRYSTAL: Z + 200 for an ECP atom
+        if sym:
+            counts[sym] += 1
+    if not counts:
+        return None
+    cell = _format_formula(counts)
+    if molecule:
+        return cell, cell
+    g = reduce(gcd, counts.values())
+    return _format_formula(Counter({k: v // g for k, v in counts.items()})), cell
+
+
+def output_dimensionality(output_file) -> Optional[str]:
+    """CRYSTAL's own word for the system of an output (MOLECULE, POLYMER,
+    SLAB, CRYSTAL): the banner it prints (``MOLECULAR CALCULATION``), else the
+    first ``DIMENSIONALITY OF THE SYSTEM n`` line; None when it prints neither
+    (a properties run, a run that stopped first)."""
+    try:
+        text = Path(output_file).read_text(errors="replace")
+    except OSError:
+        return None
+    try:
+        from mace.phonopy_bridge.parent import output_dimensionality as _banner_dim
+        dim = _banner_dim(text)
+    except Exception:
+        dim = None
+    if dim is None:
+        m = re.search(r"DIMENSIONALITY OF THE SYSTEM\s+([0-3])\s*$", text, re.MULTILINE)
+        dim = int(m.group(1)) if m else None
+    return _DIM_NAMES.get(dim) if dim is not None else None
+
+
+def _info_from_output(output_file: Path) -> Optional[Dict]:
+    """Formula, cell formula and dimensionality from the last geometry the
+    output prints, read with the GUI's structure reader (so the database and
+    the structure view agree); None when it prints no geometry."""
+    try:
+        from mace.gui.structures import read_out_frames
+        data = read_out_frames(Path(output_file))
+    except Exception:
+        return None
+    if not data.get("frames"):
+        return None
+    dim = data.get("dimensionality")
+    f = _formulas(data["frames"][-1]["structure"]["numbers"], molecule=(dim == "MOLECULE"))
+    if not f:
+        return None
+    return {"formula": f[0], "cell_formula": f[1], "dimensionality": dim, "source": "output"}
+
+
+def _info_from_d12(d12_file: Path) -> Optional[Dict]:
+    """A 3D deck's asymmetric unit expanded by its space group (the GUI's
+    d12_atoms): the reduced formula and the formula of the conventional cell.
+    None for a deck that is not a 3D CRYSTAL deck or cannot be expanded."""
+    try:
+        from mace.gui.structures import d12_atoms
+        atoms, _sg = d12_atoms(Path(d12_file))
+    except Exception:
+        return None
+    f = _formulas(atoms.numbers, molecule=False)
+    if not f:
+        return None
+    return {"formula": f[0], "cell_formula": f[1], "dimensionality": "CRYSTAL", "source": "d12"}
+
+
+def material_info(output_file: Path = None, d12_file: Path = None) -> Dict:
+    """What the materials table records about a material, from its output
+    first: ``formula`` (reduced; a molecule's whole formula), ``cell_formula``
+    (the cell CRYSTAL computed, or the deck's conventional cell),
+    ``dimensionality`` and ``source`` ("output" or "d12"). A deck is the
+    fallback when the output prints no geometry (BAND, DOSS, a run that
+    stopped early). Keys are None when neither file gives them."""
+    info: Dict = {"formula": None, "cell_formula": None, "dimensionality": None, "source": None}
+    out = Path(output_file) if output_file else None
+    if out is not None and out.is_file():
+        got = _info_from_output(out)
+        if got:
+            return got
+        info["dimensionality"] = output_dimensionality(out)
+    if d12_file and Path(d12_file).is_file():
+        got = _info_from_d12(Path(d12_file))
+        if got:
+            if info["dimensionality"] not in (None, "CRYSTAL"):
+                got["dimensionality"] = info["dimensionality"]
+            return got
+    return info
 
 
 def atomic_number_to_symbol(atomic_num: int) -> Optional[str]:

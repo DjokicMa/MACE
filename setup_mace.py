@@ -234,52 +234,24 @@ echo "    - Legacy scripts (Check, Plotting, Post-Processing)"
         print("  Use: source activate_mace.sh")
     
     def update_slurm_templates(self):
-        """Update SLURM script templates with detected paths"""
-        templates_updated = 0
-        
+        """Check the SLURM script templates MACE ships. They find MACE_HOME at
+        run time (no install path is written into them), so nothing is
+        rewritten; returns the number of templates updated (always 0)."""
         # The job-script templates MACE ships
         slurm_scripts = [
             'mace/submission/submitcrystal23.sh',
             'mace/submission/submit_prop.sh'
         ]
-        
+
         print("\nChecking SLURM templates...")
         for script_path in slurm_scripts:
-            full_path = self.repo_root / script_path
-            if not full_path.exists():
+            if not (self.repo_root / script_path).exists():
                 print(f"  ⚠️  {script_path} not found")
                 continue
-            
-            try:
-                with open(full_path, 'r') as f:
-                    content = f.read()
-                
-                # Check if it needs updating
-                if 'MACE_HOME=/mnt/iscsi/UsefulScripts' in content or 'CRYSTAL_TOOLS_HOME=/mnt/iscsi/UsefulScripts' in content:
-                    # Replace hardcoded path with dynamic detection
-                    new_content = content.replace(
-                        'export CRYSTAL_TOOLS_HOME=/mnt/iscsi/UsefulScripts/Codebase/reorganization',
-                        f'# Auto-configured by setup script\nexport MACE_HOME={self.repo_root}'
-                    ).replace(
-                        'export MACE_HOME=/mnt/iscsi/UsefulScripts/Codebase/reorganization',
-                        f'# Auto-configured by setup script\nexport MACE_HOME={self.repo_root}'
-                    )
-                    
-                    with open(full_path, 'w') as f:
-                        f.write(new_content)
-                    
-                    templates_updated += 1
-                    print(f"  ✓ Updated {script_path}")
-                else:
-                    print(f"  ✓ {script_path} finds MACE_HOME at run time; nothing to update")
-            except Exception as e:
-                print(f"  ⚠️  Could not update {script_path}: {e}")
-        
-        if templates_updated > 0:
-            print(f"\n✓ Updated {templates_updated} SLURM templates")
-        
-        return templates_updated
-    
+            print(f"  ✓ {script_path} finds MACE_HOME at run time; nothing to update")
+
+        return 0
+
     def check_dependencies(self):
         """Check if required Python packages are installed"""
         # seekpath: the HPKOT band k-paths of 3D cells, in CRYSTAL's basis

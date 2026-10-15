@@ -895,6 +895,36 @@ export function boxCorners(s, box) {
   return [[lo[0], lo[1], lo[2]], [hi[0], lo[1], lo[2]], [lo[0], hi[1], lo[2]], [lo[0], lo[1], hi[2]], [hi[0], hi[1], lo[2]],
     [hi[0], lo[1], hi[2]], [lo[0], hi[1], hi[2]], [hi[0], hi[1], hi[2]]].map(at);
 }
+/** The rotation center of the default view: the middle of the drawn cell box
+ * (box.lo to box.hi) along each periodic axis and of the atoms (cart: flat
+ * or [x, y, z] rows, n of them) along each other one. A crystal turns about
+ * its cell's center (a displayed supercell: the center of what is drawn), a
+ * slab about its in-plane cell center at the slab's mid-height, a molecule
+ * (or a structure without a cell) about the middle of its atoms. */
+export function pivotOf(s, box, cart, n = null) {
+  const flat = !!(cart && cart.length && typeof cart[0] === "number");
+  const count = n ?? (cart ? (flat ? cart.length / 3 : cart.length) : 0);
+  const at = (k) => (flat ? [cart[3 * k], cart[3 * k + 1], cart[3 * k + 2]] : cart[k]);
+  const pbc = s.pbc || [true, true, true];
+  const R = s.cell && pbc.some(Boolean) ? reciprocal(s.cell) : null;
+  if (!R) {
+    if (!count) return [0, 0, 0];
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (let k = 0; k < count; k++) {
+      const p = at(k);
+      for (let j = 0; j < 3; j++) { if (p[j] < lo[j]) lo[j] = p[j]; if (p[j] > hi[j]) hi[j] = p[j]; }
+    }
+    return [0, 1, 2].map((j) => (lo[j] + hi[j]) / 2);
+  }
+  const o = s.origin || [0, 0, 0], b = box || { lo: [0, 0, 0], hi: [1, 1, 1] };
+  const f = [0, 1, 2].map((j) => {
+    if (pbc[j]) return (b.lo[j] + b.hi[j]) / 2;
+    let lo = Infinity, hi = -Infinity;
+    for (let k = 0; k < count; k++) { const x = dot3(R[j], sub3(at(k), o)); if (x < lo) lo = x; if (x > hi) hi = x; }
+    return count ? (lo + hi) / 2 : 0.5;
+  });
+  return add3(o, cartOf(s.cell, f));
+}
 /** About how many atoms a range draws (the Inspector's estimate). */
 export function estimateCount(s, range, boundary) {
   const pbc = s.pbc || [true, true, true];

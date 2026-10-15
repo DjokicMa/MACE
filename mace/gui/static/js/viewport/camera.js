@@ -118,6 +118,8 @@ export function createCamera(v, hooks = {}) {
       setView([view[0] + d[0], view[1] + d[1], view[2] + d[2], ...view.slice(3)]);
     },
     zoom(factor) { stopAnim(); v.zoom(factor); v.render(); changed(); },
+    /** Turn about model point p from now on: p slides to the view's center (animated), zoom and orientation kept. */
+    centerOn(p) { return animateTo(getView().slice(4, 8), p); },
     /** Look along d (toward the viewer) with up as up; animated. */
     along(d, up) { return animateTo(G.viewQuaternion(d, up)); },
     /** Turn the view about a screen axis ("x", "y" or "z": in-plane) by deg. */

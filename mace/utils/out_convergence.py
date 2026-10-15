@@ -579,6 +579,76 @@ def parse(path, size: Optional[int] = None, complete_lines_only: bool = False,
     return res
 
 
+# ------------------------------------------------------------------ energy along the run
+HARTREE_EV = 27.211386245988
+# eV per unit, as the GUI's energy chart converts (app.js E_UNITS, plotkit ENERGY_UNITS)
+ENERGY_UNITS = {"eV": 1.0, "meV": 1000.0, "Ha": 1 / HARTREE_EV, "kJ/mol": 96.48533212331, "kcal/mol": 23.060547830619}
+SEGMENT_MODES = ("continuous", "separate")
+RELATIVE_TO = ("final", "first", "minimum", "absolute")
+
+
+def energy_along_run(res: Dict[str, Any], relative_to: str = "final",
+                     segments: str = "continuous") -> List[Dict[str, Any]]:
+    """The energy along the run as the GUI's chart draws it, one row per
+    optimization point plus the OPT END energy (the final geometry, at the
+    last point, ``final`` True).
+
+    ``segments="continuous"`` (the default) takes one reference for the whole
+    run, so the curve runs on across the FINALRUN restarts; ``"separate"``
+    takes one per FINALRUN segment (each segment relative to its own first or
+    final point). ``relative_to`` is "final", "first", "minimum" or
+    "absolute" (no reference). ``de_au`` is E - E_ref in Hartree; ``is_ref``
+    marks the reference itself (zero, so no value on a log axis) to the
+    printed precision of 1e-10 Ha."""
+    if segments not in SEGMENT_MODES:
+        raise ValueError(f"segments is one of {', '.join(SEGMENT_MODES)}")
+    if relative_to not in RELATIVE_TO:
+        raise ValueError(f"relative_to is one of {', '.join(RELATIVE_TO)}")
+    rows: List[Dict[str, Any]] = [
+        {"point": p["point"], "segment": p.get("segment", 0), "frame": p.get("frame"), "final": False,
+         "energy_au": p["energy_au"]}
+        for p in res.get("points") or [] if p.get("energy_au") is not None]
+    end = (res.get("opt") or {}).get("end") or {}
+    if rows and end.get("energy") is not None:
+        rows.append({"point": rows[-1]["point"], "segment": rows[-1]["segment"], "frame": res.get("final_frame"),
+                     "final": True, "energy_au": end["energy"]})
+
+    def group(r):
+        return 0 if segments == "continuous" else r["segment"]
+
+    ref: Dict[int, float] = {}
+    for r in rows:
+        g, e = group(r), r["energy_au"]
+        if relative_to == "first":
+            ref.setdefault(g, e)
+        elif relative_to == "final":
+            ref[g] = e
+        elif relative_to == "minimum":
+            ref[g] = min(ref.get(g, math.inf), e)
+        else:
+            ref[g] = 0.0
+    for r in rows:
+        e0 = ref[group(r)]
+        r["ref_au"] = e0
+        r["de_au"] = r["energy_au"] - e0
+        r["is_ref"] = relative_to != "absolute" and abs(r["de_au"]) <= 1e-10
+        r["below"] = relative_to == "final" and r["energy_au"] < e0 - 1e-10
+    return rows
+
+
+def energy_tsv(rows: List[Dict[str, Any]], unit: str = "meV") -> str:
+    """The rows as the GUI's Copy TSV writes them: point, FINALRUN segment
+    (1-based), frame, E in Hartree, ΔE in ``unit``."""
+    if unit not in ENERGY_UNITS:
+        raise ValueError(f"unit is one of {', '.join(ENERGY_UNITS)}")
+    f = HARTREE_EV * ENERGY_UNITS[unit]
+    out = [f"point\tsegment\tframe\tE_Ha\tdE_{unit}"]
+    for r in rows:
+        fr = "" if r["frame"] is None else r["frame"]
+        out.append(f"{r['point']}\t{r['segment'] + 1}\t{fr}\t{r['energy_au']!r}\t{r['de_au'] * f!r}")
+    return "\n".join(out) + "\n"
+
+
 # ------------------------------------------------------------------ words
 def stop_sentence(res: Dict[str, Any]) -> str:
     """The one sentence the GUI's Problems row, run card and the CLI print."""
@@ -660,12 +730,28 @@ def main(argv: Optional[List[str]] = None) -> int:
                                  description="Optimization and SCF convergence of a CRYSTAL output.")
     ap.add_argument("output", help="a CRYSTAL .out file")
     ap.add_argument("--json", action="store_true", help="print the parsed result as JSON")
+    ap.add_argument("--energy", action="store_true",
+                    help="print the energy along the run instead (tab-separated, as the GUI's Copy TSV; "
+                         "with --json, the rows as JSON)")
+    ap.add_argument("--segments", choices=SEGMENT_MODES, default="continuous",
+                    help="with --energy: one reference for the whole run (continuous, the default) "
+                         "or one per FINALRUN segment (separate)")
+    ap.add_argument("--relative-to", choices=RELATIVE_TO, default="final",
+                    help="with --energy: the reference point (default: final)")
+    ap.add_argument("--unit", choices=tuple(ENERGY_UNITS), default="meV", help="with --energy: the ΔE unit (default: meV)")
     a = ap.parse_args(argv)
     p = Path(a.output)
     if not p.is_file():
         print(f"Error: {p} is not a file", file=sys.stderr)
         return 2
     res = parse(p)
+    if a.energy:
+        rows = energy_along_run(res, relative_to=a.relative_to, segments=a.segments)
+        if a.json:
+            print(json.dumps(rows, indent=1))
+        else:
+            sys.stdout.write(energy_tsv(rows, a.unit))
+        return 0
     if a.json:
         print(json.dumps(res, indent=1))
     else:

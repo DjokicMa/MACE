@@ -92,6 +92,7 @@ def test_callback_runs_the_submitting_install_not_the_login_one(tmp_path, kind, 
     submit = tmp_path / "submit"
     submit.mkdir()
     (submit / deck).write_text("mat\nEND\n")
+    (submit / "mat.f9").write_text("wavefunction")         # what a properties job reads
     # Generated from this install while the shell names the other one.
     script = _generate(GENERATORS[kind], submit, "mat", _gen_env(MACE_HOME=str(other)))
     r, seen = _run_login(tmp_path, script, other)

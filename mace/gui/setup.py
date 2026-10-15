@@ -33,6 +33,7 @@ CLI run (``DERIVED_BY_CLI``); none is patched.
 """
 from __future__ import annotations
 
+import glob
 import hashlib
 import json
 import os
@@ -99,19 +100,20 @@ def json_name(mode: str, calc: str, stem: str) -> str:
 
 
 # ---------------------------------------------------------------- the wavefunction (opt2d3)
-def wavefunction_candidates(out_name: str) -> List[str]:
+def wavefunction_candidates(out_name: str, base: Optional[str] = None) -> List[str]:
     """The names opt2d3 looks for beside the .out, in its order
     (CRYSTALOptToD3.D3Generator._copy_wavefunction; mirrored here because the
-    list is built inside that method, and a test checks it against the CLI)."""
+    list is built inside that method, and a test checks it against the CLI).
+    ``base``: the name opt2d3 gives the files (cli_base), d3_base by default."""
     stem = Path(out_name).stem
-    base = d3_base(stem)
-    names = ["fort.9", "fort.98", f"{base}.f9", f"{base}.f98"]
+    if base is None:
+        base = d3_base(stem)
+    # the output's own wavefunction first, then as before
+    names = [f"{stem}.f9", f"{stem}.f98", "fort.9", "fort.98", f"{base}.f9", f"{base}.f98"]
     for suffix in ("sp", "opt", "freq", "soc"):
         names += [f"{base}_{suffix}.f9", f"{base}_{suffix}.f98"]
         for i in range(2, 100):
             names += [f"{base}_{suffix}{i}.f9", f"{base}_{suffix}{i}.f98"]
-    if stem != base:
-        names += [f"{stem}.f9", f"{stem}.f98"]
     return names
 
 
@@ -171,7 +173,7 @@ def find_wavefunction(out_path: Path) -> Optional[Dict[str, Any]]:
     (never opened): {name, bytes, live}, or None. ``live``: the run that
     writes it is still going (``_f9_live``)."""
     folder = out_path.parent
-    for name in wavefunction_candidates(out_path.name):
+    for name in wavefunction_candidates(out_path.name, cli_base(out_path)):
         try:
             st = os.stat(folder / name)
         except OSError:
@@ -181,16 +183,23 @@ def find_wavefunction(out_path: Path) -> Optional[Dict[str, Any]]:
 
 
 def _anatase_siblings(out_path: Path) -> List[str]:
-    """Sibling <base>_{opt,sp,OPT,SP}.{out,log} names: they change opt2d3's output names."""
+    """Sibling .out/.log names that have or make the same base name: they
+    change opt2d3's output names (CRYSTALOptToD3.D3Generator.__init__)."""
     base = d3_base(out_path.stem)
     if base == out_path.stem:
         return []
     out = []
-    for other in out_path.parent.glob(f"{base}_*"):
+    for other in out_path.parent.glob(f"{glob.escape(base)}*"):
         if (other.suffix in (".out", ".log") and other.name != out_path.name
-                and other.stem[len(base):] in ("_opt", "_sp", "_OPT", "_SP")):
+                and base in (other.stem, d3_base(other.stem))):
             out.append(other.name)
     return sorted(out)
+
+
+def cli_base(out_path: Path) -> str:
+    """The name opt2d3 gives the files of ``out_path``: d3_base, or the whole
+    stem when another output beside it has or makes that name."""
+    return out_path.stem if _anatase_siblings(out_path) else d3_base(out_path.stem)
 
 
 def _d12_globs(out_path: Path) -> List[Path]:
@@ -321,6 +330,104 @@ DEFAULT_RULES = {
 }
 
 
+# The questions Setup leaves at the CLI's default (Enter) on purpose, beyond the gates and the
+# fields' own questions: the CLI's other questions on the Setup routes (spike S6 transcripts).
+# answer_driver answers Enter only to a question a rule or this list names; any other question
+# stops the run and is named, so a reworded prompt never becomes a silent default
+# (tests/gui/test_setup_prompts.py runs every route and fails on a question not matched).
+_D12_COMMON = [
+    r"Select functional category", r"Select Hartree-Fock method", r"SPINLOCK value", r"Use level shifting",
+    r"SCF method:\s.*Select method \(1-2\)", r"Enable PPAN", r"Modify memory settings", r"Use HISTDIIS", r"HISTDIIS size",
+    r"Set maximum step size \(MAXTRADIUS\)",
+    # a custom optimization convergence, custom SCF tolerances
+    r"Custom convergence criteria:.*Enter TOLDEG", r"Enter TOLDEX \(", r"Enter TOLDEE \(energy difference",
+    r"Enter MAXCYCLE \(max optimization steps\)", r"Enter TOLINTEG values", r"Enter TOLDEE value \(integer\)",
+    # FREQ: the type, the IR method and each template's own questions
+    r"Frequency calculation type:.*Select type \(1-2\)", r"Configure advanced frequency settings\?",
+    r"CPHF/CPKS.*Select method \(1-3\)", r"Generate (IR|Raman) spectrum plot\?", r"Customize spectral range\?",
+    r"Customize temperature range\?", r"Customize supercell size\?", r"Band path definition:.*Select method \(1-4\)",
+    r"Automatic path format:.*Select format \(1-4\)", r"Select DOS calculation type:.*Select type \(1-2\)",
+    r"Maximum frequency for DOS", r"Number of DOS bins", r"Calculate atom-projected DOS\?",
+    r"Frequency calculation modes:.*Select mode \(1-2\)", r"Calculate Raman intensities\?",
+    r"Calculate thermodynamic properties\?", r"Calculate atom-projected vibrational modes\?",
+    r"Calculate zero-point energy\?", r"Enable mode tracking", r"Configure restart capability\?",
+    r"Enable parallel displacement calculations\?",
+    # behind a non-default answer ("Other questions"): level shifting, memory, MAXTRADIUS, FREQ's advanced settings
+    r"LEVSHIFT ISHIFT ILOCK \[", r"(^|\n)BIPOSIZE \[", r"(^|\n)EXCHSIZE \[", r"Enter MAXTRADIUS \(max displacement, default",
+    r"Apply Eckart conditions", r"Calculate anharmonic corrections\?", r"Print level for frequency calculation:.*Select print level",
+    r"Enable mode following", r"Symmetry handling:.*Select symmetry option \(1-3\)",
+    r"Maintain symmetry \(move all equivalent H atoms\)\?", r"Use extended 26-point grid", r"Calculate isotope effects",
+    # FREQ, behind a non-default answer: each template's customizations (spectral and temperature
+    # range, supercell, k-point density, INS), the band path's crystal system and its templates
+    r"(Minimum|Maximum) frequency \(cm⁻¹\) \[", r"Number of temperature points \[", r"(Minimum|Maximum) temperature \(K\) \[",
+    r"Supercell N[₁₂₃] \[", r"Select system \(1-6\) \[", r"Select template \(1-[234]\) \[",
+    r"Use mixed label/coordinate segments\?", r"Customize k-point density\?", r"Shrink factor for k-points \[",
+    r"Points per band segment \[", r"Select neutron weighting \(0-2\)", r"Maximum frequency for INS",
+    r"Number of (spectrum|INS) bins", r"Inelastic Neutron Scattering\) spectrum\?",
+    r"Both coherent and incoherent.*Select type \(0-2\)",
+    # FREQ custom settings: phonon dispersion (supercell, INTERPHESS, bands, DOS), IR by CPHF or Wannier, restart
+    r"Select supercell method \(1-3\)", r"Expansion in [xyz] \[", r"Use Fourier interpolation \(INTERPHESS\)\?",
+    r"L[123] expansion factor \[", r"(^|\n)Print level \(0-2\) \[", r"Is this a polar material",
+    r"Calculate phonon band structure\?", r"High-symmetry points only.*Select type \(1-2\)", r"Select path method \(1-4\)",
+    r"Calculate phonon density of states\?", r"Relocalize at each displaced geometry \(RELOCAL\)\?",
+    r"Maximum CPHF iterations \[", r"CPHF convergence tolerance \(10\^-x\) \[", r"Checkpoint interval \(calculations\) \[",
+    # custom settings' IR/Raman spectrum parameters, asked after a Yes to the spectrum plot (IRSPEC/
+    # RAMSPEC): Enter keeps CRYSTAL's defaults (no LENSTEP, Lorentzian, DAMPFAC 8, no RAMANEXP)
+    r"Spectrum step size \(cm⁻¹\) \[", r"Select broadening \(1-2\)", r"(Lorentzian|Gaussian) FWHM \(cm⁻¹\) \[",
+    r"Use RAMANEXP for experimental conditions\?", r"Laser wavelength \(nm\) \[", r"(^|\n)Temperature \(K\) \[",
+]
+KNOWN_QUESTIONS = {
+    "cif2d12": _D12_COMMON + [r"Save these options for future batch processing\?", r"Atom writing options",
+                              r"Validate symmetry operations\?", r"Trigonal axes preference", r"Select origin choice",
+                              # the CIF's space group and spglib's differ: keep the CIF's (the batch default)
+                              r"Use original CIF space group.*Select option \(default",
+                              # spglib finds no smaller asymmetric unit (a P1 CIF, a slab or molecule
+                              # in a box): Enter keeps the CLI's default, the full set either way
+                              r"Use the 'reduced' structure anyway\?",
+                              # "Use original CIF space group" answered 1 (try other tolerances): Enter
+                              # takes a tolerance that matches, else keeps the CIF's group
+                              r"Match found with tolerance.*Use tolerance \S+\?", r"Final choice \(default",
+                              # the basis set lacks an element: Enter is No, and the CLI's refusal is shown
+                              r"Missing elements:.*Continue anyway\?"],
+    # the parent's basis set not kept: the basis questions cif2d12 asks
+    "opt2d12": _D12_COMMON + [r"Select basis set type", r"Select (internal|external) basis set",
+                              # a parent functional MACE cannot identify (e.g. B2PLYP), the method
+                              # asked again: Enter uses HSE06, as the CLI says
+                              r"Enter another functional, 'm' to choose from the menu, or press Enter to use"],
+    "opt2d3": [
+        # BAND: the template route, a band window; DOSS
+        r"Select crystal system:", r"Available templates:.*Select template \(", r"Use mixed label/coordinate segments\?",
+        r"Segment format:.*Select format \(1-2\)", r"Number of bands (below|above) Fermi", r"First band \[", r"Last band \[",
+        r"Print eigenvalues to output\?", r"Atom selection:.*Select \(1-2\)", r"(Lower|Upper) energy limit \(eV (below|above) Fermi\)",
+        r"Output format:.*Select format \(1-2\)", r"Print integrated DOS to output\?",
+        # TRANSPORT
+        r"(Minimum|Maximum) temperature \(K\)", r"Temperature step \(K\)", r"Chemical potential options:",
+        r"(Minimum|Maximum) μ \(eV\)",
+        # μ relative to the output's Fermi energy (an output that has one)
+        r"(Minimum|Maximum) μ \(eV (below|above) Fermi\)", r"μ step \(eV\)", r"(Minimum|Maximum) energy \(eV\)", r"Energy step \(eV\)",
+        r"Relaxation time \(fs\)", r"Use smearing for metallic systems\?",
+        # CHARGE, POTENTIAL
+        r"Charge density type:.*Select type \(1-2\)", r"Potential calculation type:.*Select type \(1-2\)",
+        r"Number of grid points per direction", r"define non-periodic directions:.*Select option \(1-2\)",
+        r"Scale factor for non-periodic directions", r"Bipolar expansion tolerance",
+        # behind a non-default answer: TRANSPORT smearing, a 2D charge map (ECHG), potential at points (POTC)
+        r"Smearing width \(eV\)", r"Smearing type:.*Select type \(0-2\)", r"Derivative order:.*Select order \(0-1\)",
+        r"Define charge density map plane\?", r"Coordinate type \(F\)ractional or \(C\)artesian",
+        r"Number of points along the B-A segment", r"Calculation mode:.*Select mode \(0, 2 or 3\)",
+        r"Define points:.*Select option \(1-3\)", r"Calculate at all atoms\?", r"Z (minimum|maximum) \(bohr\)",
+        r"Number of planes \[", r"Half thickness of the volume",
+        # POTC at custom points or from POTC.INP: how many (the points themselves have no default)
+        r"(^|\n)Number of points( in file)?: ",
+        # no wavefunction next to the output: Enter is No, and the CLI's refusal is shown
+        r"will fail without the wavefunction file.*Continue anyway\?",
+    ],
+}
+# Not on the list: questions with no default to keep (opt2d3's "Path:", "Number of path segments:",
+# "Enter projection specification:", "Point A (x y z):", ANHARM's H atom); Enter there answers
+# nothing, so the run stops and names them. tests/gui/prompt_coverage.py lists every CLI question
+# not on the list, and why (test_setup_prompts.py checks the CLI sources against both).
+
+
 class Field:
     def __init__(self, id: str, label: str, section: str, kind: str, match: str, keys=(), gates=(),
                  modes=("cif2d12", "opt2d12"), calcs=None, unit: str = "", hint: str = ""):
@@ -373,12 +480,12 @@ FIELDS: List[Field] = [
           calcs=("OPT",)),
     Field("opt_convergence", "Convergence", "Optimization", "menu", r"Select convergence level", ["optimization_settings.convergence"], [N],
           calcs=("OPT",)),
-    Field("freq_template", "Frequency calculation", "Frequencies", "menu", r"Select template", ["freq_settings.template"], [N],
+    Field("freq_template", "Frequency calculation", "Frequencies", "menu", r"Select template \([01]-8\)", ["freq_settings.template"], [N],
           calcs=("FREQ",)),
     Field("numderiv", "NUMDERIV", "Frequencies", "menu", r"Numerical derivative method", ["freq_settings.numderiv"], [N], calcs=("FREQ",)),
     Field("ir", "IR intensities", "Frequencies", "yesno", r"Calculate IR intensities\?", ["freq_settings.intensities"], [N], calcs=("FREQ",)),
     Field("method", "Method", "Method", "menu", r"Select method type", ["method", "method_type"], [N]),
-    FunctionalField("functional", "Functional", "Method", "menu", r"Select [\w -]*functional \(default", ["dft_functional", "functional"], [N]),
+    FunctionalField("functional", "Functional", "Method", "menu", r"Select [\w/ -]*functional \(default", ["dft_functional", "functional"], [N]),
     Field("dispersion", "D3 dispersion", "Method", "yesno", r"Add D3 dispersion correction", ["dispersion", "use_dispersion"], [N]),
     Field("basis_keep", "Parent's basis set", "Method", "yesno", r"Keep the basis set from the original D12\?", ["use_original_external_basis"], [N],
           ("opt2d12",)),
@@ -444,6 +551,17 @@ def schema() -> Dict[str, Any]:
                         "how": DERIVED_BY_CLI[f.id]} for f in FIELDS],
             "patch_fields": {k: {**v, "modes": list(v["modes"])} for k, v in PATCH_FIELDS.items()},
             "derived_by_cli": DERIVED_BY_CLI, "cli_hash": clirun.cli_hash()}
+
+
+def known_questions(mode: str) -> List[str]:
+    """The questions Enter may answer on this mode's routes: the gates, every field's
+    question (left at its default unless answered), the CLI's save-the-answers question
+    and KNOWN_QUESTIONS. answer_driver stops at any question not on this list."""
+    out = [g["match"] for g in GATES[mode].values()] + [r["match"] for r in DEFAULT_RULES[mode]]
+    for f in FIELDS:
+        if mode in f.modes:
+            out.append(f.match)
+    return out + KNOWN_QUESTIONS[mode]
 
 
 def answer_rules(mode: str, answers: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -743,7 +861,7 @@ def ask(st: Staged, work: Path, rules: List[Dict[str, Any]], tag: str, ctx=None,
     d.mkdir(parents=True, exist_ok=True)
     rules_p, tr_p, json_p, out = d / "rules.json", d / "transcript.json", d / "answers.json", d / "out"
     out.mkdir(exist_ok=True)
-    rules_p.write_text(json.dumps({"rules": rules, "max_prompts": 400}))
+    rules_p.write_text(json.dumps({"rules": rules, "known": known_questions(st.mode), "max_prompts": 400}))
     args = ask_args(st, json_p, out) + list(extra_args)
     res = clirun.run(clirun.driver_argv(rules_p, tr_p, "--no-banner", *args), st.tree, ctx, timeout=180)
     try:
@@ -783,7 +901,8 @@ def p1_note(cif: Path) -> Optional[str]:
     (or the structure is over 2000 atoms, where spglib is not worth a preview)."""
     try:
         from ase.io.cif import parse_cif
-        blocks = [b for b in parse_cif(str(cif)) if b.has_structure()]
+        from mace.utils.cif_symbols import normalize_block
+        blocks = [b for b in map(normalize_block, parse_cif(str(cif))) if b.has_structure()]
         if not blocks or len(blocks[-1].get_spacegroup(True).get_symop()) != 1:
             return None
         from . import structures
@@ -828,6 +947,9 @@ def refusal(log: str) -> str:
     """The CLI's own words when it wrote no deck: its error lines, else the log's end."""
     lines = [x.strip() for x in log.splitlines() if x.strip()]
     errs = [x for x in lines if re.match(r"^(\[ERR\]|\[ERROR\]|ERROR|Error|\[X\])", x) or "Aborting" in x or "requires" in x.lower()]
+    # opt2d3's closing "No D3 file was generated." says less than the reason before it
+    told = [x for x in errs if not re.search(r"No D3 file was generated\.?$", x)]
+    errs = told or errs
     return "\n".join(errs[-6:]) if errs else "\n".join(lines[-12:])
 
 
@@ -915,12 +1037,16 @@ def run_setup(req: Request, mode: str, calc: str, work: Path, source_path: Optio
     def cached_ask(tag, rules, frac, msg, extra=()):
         key = ("setup-ask", base_key, json.dumps(rules, sort_keys=True), list(extra))
         hit = cache_get(key)
-        if hit is not None:
-            return hit
-        progress(frac, msg)
-        r = ask(st, work, rules, tag, ctx, extra)
-        cache_put(key, r, len(json.dumps(r)))
-        return r
+        if hit is None:
+            progress(frac, msg)
+            hit = ask(st, work, rules, tag, ctx, extra)
+            cache_put(key, hit, len(json.dumps(hit)))
+        if hit.get("error"):
+            # a question no rule or known question names (a reworded prompt), a menu line not found:
+            # stopped unanswered, never left at a default nobody chose
+            raise SetupError(f"{cmd_name} did not ask what Setup expected: {hit['error']}. "
+                             f"Set it through the CLI: {cmd_name} …")
+        return hit
 
     if mode == "cif2d12" and calc != DEFAULT_CALC[mode] and "calc_type" not in req.answers:
         # convert asks for the calculation type: SP and FREQ are answers, like any other
@@ -940,9 +1066,6 @@ def run_setup(req: Request, mode: str, calc: str, work: Path, source_path: Optio
     elif req.answers or req.flags:
         extra = ["--net-charge", str(req.flags["net_charge"])] if "net_charge" in req.flags and mode != "opt2d3" else []
         asked = cached_ask("answers", answer_rules(mode, req.answers), 0.35, f"Answering {cmd_name}'s questions", extra)
-        if asked.get("error"):
-            raise SetupError(f"{cmd_name} did not ask what Setup expected: {asked['error']}. "
-                             f"Set it through the CLI: {cmd_name} …")
         final = asked.get("json_text")
         current = asked.get("questions")
         source_of_json = "answers"

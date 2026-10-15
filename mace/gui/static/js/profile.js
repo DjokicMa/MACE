@@ -28,6 +28,7 @@
  * | (new) mace.gui.runplot.<dirHash>.<path>    | this browser: Run Analysis plot options, as the plot options  |
  * | (new) mace.gui.runcard.<dirHash>.<path>    | this browser: the energy card's unit and reference, likewise  |
  * | (new) mace.gui.followRun                   | this browser: Follow the run while a live output is watched   |
+ * | (new) mace.gui.cmp.dispMode                | this browser: the OPT compare view's displacement (Δr) choice, as the plot options |
  * | mace.gui.draft.*, mace.gui.setup.<…>       | this browser only: unsaved drafts                            |
  * | mace.gui.builder.<id>.result               | this browser only: a builder's transient result              |
  * | mace.gui.saveConfirmed.<…>                 | this browser only: "already asked before overwriting"        |
@@ -43,6 +44,7 @@ export const LOCAL_ONLY = [
   "mace.gui.plot.",                                            // plot options and undo history (per browser for now)
   "mace.gui.runplot.", "mace.gui.runcard.",                    // Run Analysis and energy card options, as the plot options
   "mace.gui.followRun",                                        // Follow the run, for the live output watched here
+  "mace.gui.cmp.dispMode",                                     // the OPT compare view's Δr choice, as the plot options
   "mace.gui.draft.", "mace.gui.setup.",                        // unsaved drafts (Setup's per-document draft too)
   "mace.gui.builder.",                                         // a builder's transient result
   "mace.gui.saveConfirmed.",                                   // the overwrite question, asked once per browser

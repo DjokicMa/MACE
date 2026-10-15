@@ -117,14 +117,26 @@ class TaskManager:
         self.subscribers: List[_stdlib_queue.Queue] = []
         self._pool = None
         self._pool_factory = pool_factory
+        self._pool_lock = threading.Lock()
+        self.stopping = False          # set at the start of the server's stop: no new pool, no new task
         self.by_slot: Dict[int, Task] = {}
         self.on_cancel: Optional[Callable[[Task], None]] = None   # e.g. the ML host's grace-then-kill
 
     @property
     def pool(self):
-        if self._pool is None:
-            self._pool = self._pool_factory(self)
-        return self._pool
+        with self._pool_lock:
+            if self._pool is None:
+                if self.stopping:       # a first pool task while the server stops: no fresh pool, no worker
+                    raise RuntimeError("The server is stopping.")
+                self._pool = self._pool_factory(self)
+            return self._pool
+
+    def stop(self):
+        """The server is stopping: refuse new tasks and never build a pool
+        from here on. Returns the pool when one was started (to shut down)."""
+        with self._pool_lock:
+            self.stopping = True
+            return self._pool
 
     def pool_if_started(self):
         return self._pool
@@ -152,8 +164,23 @@ class TaskManager:
                 except _stdlib_queue.Full:
                     try:
                         q.get_nowait()          # the oldest event goes
+                        q.task_done()
                     except _stdlib_queue.Empty:
                         break
+
+    def delivered(self, timeout: float) -> bool:
+        """Wait up to ``timeout`` s until every event broadcast so far has been
+        written to each open stream (the stream calls task_done() after its
+        flush). False when the time ran out first."""
+        end = time.monotonic() + timeout
+        while True:
+            with self.lock:
+                subs = list(self.subscribers)
+            if all(q.unfinished_tasks == 0 for q in subs):
+                return True
+            if time.monotonic() >= end:
+                return False
+            time.sleep(0.02)
 
     def _publish(self, task: Task, force: bool = False) -> None:
         now = time.monotonic()
@@ -177,6 +204,13 @@ class TaskManager:
         t.supersede_key = supersede
         t.weight = max(1, int(weight))
         t.acquire = acquire
+        if self.stopping:                # refused: recorded as failed, never dispatched
+            with self.lock:
+                self.tasks[t.id] = t
+                self._trim()
+            self._set_state(t, "failed", error="The server is stopping.", log="The server is stopping.",
+                            message="failed")
+            return t
         older = []
         with self.lock:
             if supersede is not None:
@@ -267,8 +301,11 @@ class TaskManager:
             if state == "canceled":
                 t.log = ("Superseded by a newer run" if t.message == "superseded"
                          else getattr(t, "cancel_note", None) or f"Canceled after {t.elapsed:.1f} s")
-            t.done.set()
-        self._publish(t, force=True)
+        try:
+            self._publish(t, force=True)
+        finally:
+            if state in ("done", "failed", "canceled"):
+                t.done.set()            # after the event is queued: a stop that waits on it sends it too
 
     def _dispatch(self, t: Task) -> None:
         from .pool_worker import JobCanceled
@@ -326,6 +363,8 @@ class TaskManager:
         from concurrent.futures.process import BrokenProcessPool
         from .pool_worker import NOT_IDEMPOTENT
         t.future = pool.submit(t.job, t.payload, t.slot)
+        if t.cancel_requested:          # canceled while the pool started: its cancel flag did not exist yet
+            pool.set_cancel(t.slot)
         try:
             return t.future.result()
         except BrokenProcessPool:
@@ -344,6 +383,8 @@ class TaskManager:
             t.resubmitted = True
             t.message = t.log = "restarted after another task's worker stopped"
             t.future = pool.submit(t.job, t.payload, t.slot)
+            if t.cancel_requested:
+                pool.set_cancel(t.slot)
             return t.future.result()
 
     def wait(self, t: Task, seconds: float = WAIT_S) -> bool:

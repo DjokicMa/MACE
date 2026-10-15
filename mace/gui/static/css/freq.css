@@ -1,15 +1,19 @@
 /* The FREQ document (js/docs/freq.js): tokens only. */
-.views > #tab-freq.active { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+/* overflow hidden: nothing in the mode view may scroll its panel. A scrollbar there took
+ * width or height from the 3D view, which resized it, which took the scrollbar away
+ * again: the view pumped in and out while it played or turned (1.1.5, UI scale 110 %) */
+.views > #tab-freq.active { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
 #tab-freq > .freq-opts, #tab-freq > .freq-table { display: none; }
 /* min-width 0: a long output name in the head must not widen the view past its group (the molecule then sat off-screen) */
 .freq-host { flex: 1; min-height: 0; min-width: 0; display: flex; }
 .fv { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.fv-head { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-4); border-bottom: 1px solid var(--border); }
+.fv-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); padding: var(--s-2) var(--s-4); border-bottom: 1px solid var(--border); min-width: 0; }
 .fv-title { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fv-mode { font-size: var(--fs-sm); color: var(--text-2); white-space: nowrap; }
 .fv-play kbd { font: 500 var(--fs-xs)/1 var(--font-mono); }
-.fv-view { position: relative; flex: 1; min-height: 0; }
-.fv-view .viewer { position: absolute; inset: 0; }
+.fv-view { position: relative; isolation: isolate; flex: 1; min-height: 0; }
+/* the view fills what the head leaves, however little (the structure views' 280 px floor would overflow it) */
+.views .fv-view .viewer { position: absolute; inset: 0; min-height: 0; }
 .fv-view .viewer:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .fv-msg { position: absolute; inset: 0; display: grid; place-content: center; gap: var(--s-2); color: var(--text-2); z-index: 2; background: var(--viewport-bg); }
 .fv-msg[hidden] { display: none; }

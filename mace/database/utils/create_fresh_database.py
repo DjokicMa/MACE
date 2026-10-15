@@ -197,7 +197,10 @@ class WorkflowDatabaseCreator:
         # Check for workflow_configs directory
         config_dir = self.workflow_dir.parent / "workflow_configs"
         if config_dir.exists():
-            config_files = list(config_dir.glob("*.json"))
+            # not the CIF-conversion copy of a plan (workflow_plan_<id>_updated.json)
+            config_files = [p for p in config_dir.glob("*.json")
+                            if not (p.name.startswith("workflow_plan_")
+                                    and p.stem.endswith("_updated"))]
             print(f"   Found {len(config_files)} configuration files")
             
             for config_file in config_files:

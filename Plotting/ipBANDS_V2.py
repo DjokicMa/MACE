@@ -492,6 +492,83 @@ def read_band_data(band_file, potc_dat=None, potc_out=None):
     )
 
 
+# alpha and beta closer than this everywhere are one set of bands: CRYSTAL
+# prints energies to 1e-4 Ha (2.7 meV), so a non-magnetic spin-polarized run
+# differs by that much; anything below 10 meV is invisible on a band plot.
+SPIN_IDENTICAL_EV = 0.01
+
+
+def spin_state(BANDS, BANDSbeta, tol=SPIN_IDENTICAL_EV):
+    """("closed" | "identical" | "polarized", largest |alpha - beta| in eV).
+
+    "closed": no beta block, or one equal to alpha (CRYSTAL writes both blocks
+    for a closed-shell run); "identical": a spin-polarized run whose beta bands
+    match alpha within ``tol`` (non-magnetic); "polarized": they differ.
+    """
+    a = np.asarray(BANDS, dtype=float)
+    b = np.asarray(BANDSbeta, dtype=float)
+    if b.size == 0 or not np.any(b != 0) or a.shape != b.shape:
+        return "closed", 0.0
+    diff = float(np.max(np.abs(a - b))) if a.size else 0.0
+    if diff == 0.0:
+        return "closed", 0.0
+    return ("identical" if diff <= tol else "polarized"), diff
+
+
+def _label_width_in(label, fontsize):
+    """Rough printed width (inches) of a tick label, mathtext included."""
+    text = re.sub(r"\\[A-Za-z]+", "x", str(label))
+    sub = sum(len(m) for m in re.findall(r"_\{([^}]*)\}", text))
+    main = len(re.sub(r"_\{[^}]*\}|[${}_^]", "", text))
+    return (main * 0.62 + sub * 0.45) * fontsize / 72.0 + 0.05
+
+
+def stagger_tick_labels(positions, labels, x0, x1, axis_width_in, fontsize=12):
+    """Labels too close to their neighbor to fit side by side drop one line
+    ("\\n" first) instead of overlapping (seekpath's Y and F0 0.04 1/Å apart)."""
+    span = (x1 - x0) or 1.0
+    right = [-np.inf, -np.inf]
+    out = []
+    for pos, label in zip(positions, labels):
+        px = (pos - x0) / span * axis_width_in
+        half = _label_width_in(label, fontsize) / 2
+        gap = 0.04
+        if px - half >= right[0] + gap:
+            row = 0
+        elif px - half >= right[1] + gap:
+            row = 1
+        else:
+            row = 0 if right[0] <= right[1] else 1
+        right[row] = px + half
+        out.append(("\n" + label) if row else label)
+    return out
+
+
+def path_break_indices(E, ticks, labels):
+    """Where a discontinuous k-path ("A|L") breaks: indices i with no line
+    from point i to point i+1.
+
+    CRYSTAL does not repeat the k-point at a break: the tick's point (A) ends
+    one panel and the next point, one step further along x, is already L. Some
+    writers repeat the x instead (two points at the tick); the break then goes
+    between those two.
+    """
+    x = np.asarray(E, dtype=float)
+    if len(x) < 2:
+        return []
+    steps = np.abs(np.diff(x))
+    steps = steps[steps > 1e-9]
+    tol = max(0.5 * float(np.median(steps)) if len(steps) else 0.0, 1e-6)
+    out = []
+    for tick, label in zip(ticks, labels):
+        if "|" not in str(label):
+            continue
+        i = int(np.argmin(np.abs(x - float(tick))))   # the first of a repeated pair
+        if abs(x[i] - float(tick)) <= tol and i + 1 < len(x):
+            out.append(i)
+    return sorted(set(out))
+
+
 def find_band_gap_region(BANDS, BANDSbeta, maxV, E_l, E_u):
     """
     Find if there's a band gap in the visible energy range.
@@ -532,6 +609,16 @@ def find_band_gap_region(BANDS, BANDSbeta, maxV, E_l, E_u):
         return vbm, cbm
 
     return None, None
+
+
+def legend_outside(fig, ax, *args, **kwargs):
+    """The shared outside-the-data legend (mace/plotting/legend_layout.py)."""
+    try:
+        from mace.plotting.legend_layout import legend_outside as place
+    except ImportError:          # run as a script from Plotting/: the repository root
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from mace.plotting.legend_layout import legend_outside as place
+    return place(fig, ax, *args, **kwargs)
 
 
 def find_optimal_legend_position(E, BANDS, Ebeta, BANDSbeta, maxV, E_l, E_u, x_max):
@@ -654,6 +741,10 @@ def plot_bands_with_gaps(
         plot_down_color = spin_down_color
         plot_alpha = 1.0
 
+    spin, spin_diff = spin_state(BANDS, BANDSbeta)
+    if spin == "identical":
+        print(f"  Spin up and down agree within {spin_diff * 1000:.1f} meV (non-magnetic): one set drawn")
+
     if all_segments is None:
         all_segments = segments
 
@@ -709,6 +800,19 @@ def plot_bands_with_gaps(
         spine.set_edgecolor("black")
         spine.set_linewidth(1.2)
 
+    # the BAND.DAT tick of each segment's first label: segments share the tick
+    # at a joint (and at a break, where "F0|Δ0" is one tick for two labels)
+    file_ticks = [float(t) for t in np.asarray(x_labels, dtype=float).ravel()] if x_labels is not None else []
+    half = len(file_ticks) // 2
+    if half and len(file_ticks) % 2 == 0 and np.allclose(file_ticks[:half], file_ticks[half:]):
+        file_ticks = file_ticks[:half]                     # one copy per spin block
+    tick_start, n_edges = {}, 0
+    for seg_ in sorted(all_segments, key=lambda seg_: seg_.index):
+        tick_start[seg_.index] = n_edges
+        n_edges += len(seg_.labels) - 1
+    if n_edges + 1 != len(file_ticks):                           # no usable ticks: spread evenly
+        tick_start = {}
+
     all_tick_positions = []
     all_tick_labels = []
     gap_positions = []
@@ -741,6 +845,10 @@ def plot_bands_with_gaps(
                 alpha=plot_alpha,
                 zorder=2,  # Spin up below
             )
+            # one set when beta repeats alpha: dashed copies of degenerate
+            # bands, out of phase, read as one solid line over spin up
+            if spin != "polarized":
+                continue
             ax.plot(
                 shifted_Ebeta,
                 seg_BANDSbeta[:, j],
@@ -759,12 +867,17 @@ def plot_bands_with_gaps(
         seg_tick_positions = []
         seg_tick_labels = []
 
+        # each label at its own k (the BAND.DAT tick), not spread evenly over
+        # the segment: Γ-Y-F0 with |Y-F0| 14x shorter than |Γ-Y| put Y mid-way
+        first_tick = tick_start.get(segment.index)
         for i, label in enumerate(segment.labels):
-            if n_labels > 1:
-                frac = i / (n_labels - 1)
+            if first_tick is not None:
+                xl = file_ticks[first_tick + i] - segment.x_start
+                tick_pos = current_x_offset + min(max(xl, 0.0), seg_width)
+            elif n_labels > 1:
+                tick_pos = current_x_offset + i / (n_labels - 1) * seg_width
             else:
-                frac = 0.5
-            tick_pos = current_x_offset + frac * seg_width
+                tick_pos = current_x_offset + 0.5 * seg_width
             seg_tick_positions.append(tick_pos)
             seg_tick_labels.append(label)
 
@@ -821,16 +934,18 @@ def plot_bands_with_gaps(
                 current_x_offset += gap_size
 
     # Legend entries - use ADJUSTED colors to match what's actually plotted
-    dummy_line_up = ax.plot([], [], linewidth=2.0, color=plot_up_color, label="Spin ↑")
-    dummy_line_down = ax.plot(
-        [],
-        [],
-        linewidth=2.0,
-        linestyle="--",
-        color=plot_down_color,
-        label="Spin ↓",
-        dashes=(5, 2),
-    )
+    up_label = {"closed": "Bands", "identical": "Spin ↑ = ↓ (non-magnetic)"}.get(spin, "Spin ↑")
+    dummy_line_up = ax.plot([], [], linewidth=2.0, color=plot_up_color, label=up_label)
+    if spin == "polarized":
+        dummy_line_down = ax.plot(
+            [],
+            [],
+            linewidth=2.0,
+            linestyle="--",
+            color=plot_down_color,
+            label="Spin ↓",
+            dashes=(5, 2),
+        )
 
     # Fermi level (always opaque)
     fermi_line = ax.axhline(
@@ -882,7 +997,11 @@ def plot_bands_with_gaps(
 
     # Set ticks
     ax.set_xticks(all_tick_positions)
-    ax.set_xticklabels(all_tick_labels, fontsize=12)
+    tick_text = stagger_tick_labels(all_tick_positions, all_tick_labels, 0, current_x_offset,
+                                    fig_width * (SUBPLOT_RIGHT - SUBPLOT_LEFT), 12)
+    staggered = any(t.startswith("\n") for t in tick_text)
+    # the dropped row clears a subscript (F0) in the row above
+    ax.set_xticklabels(tick_text, fontsize=12, linespacing=1.4 if staggered else 1.2)
 
     # Y-axis formatting
     ax.yaxis.set_major_locator(MultipleLocator(1.0))
@@ -915,22 +1034,26 @@ def plot_bands_with_gaps(
     else:
         ax.set_ylabel(r"$\mathbf{E-E_F}$ (eV)", fontsize=16, weight="bold")
 
-    ax.set_xlabel(r"Wave Vector", fontsize=16, weight="bold")
+    # a second row of k labels takes the room the title had under the axis (the
+    # axes keep their fixed place so band and DOS figures line up): the k labels
+    # name the axis then
+    if not staggered:
+        ax.set_xlabel(r"Wave Vector", fontsize=16, weight="bold")
 
     plt.yticks(fontsize=14)
     ax.tick_params(which="major", length=8, width=1.2)
     ax.tick_params(which="minor", length=5, width=1.0)
 
-    # Smart legend placement
-    legend_loc = find_optimal_legend_position(
-        E, BANDS, Ebeta, BANDSbeta, maxV, E_l, E_u, current_x_offset
-    )
-    print(f"  Legend placed at: {legend_loc}")
-
-    legend = ax.legend(
-        [dummy_line_up[0], dummy_line_down[0], fermi_line],
-        ["Spin ↑", "Spin ↓", r"$E_F$"],
-        loc=legend_loc,
+    # the legend outside the axes: a metal or a crowded path has no empty corner for it
+    handles, names = [dummy_line_up[0]], [up_label]
+    if spin == "polarized":
+        handles.append(dummy_line_down[0])
+        names.append("Spin ↓")
+    legend = legend_outside(
+        fig,
+        ax,
+        handles + [fermi_line],
+        names + [r"$E_F$"],
         frameon=True,
         fontsize=9,
         ncol=1,

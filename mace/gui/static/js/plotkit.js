@@ -3,15 +3,16 @@
  * A chart host registers with attach(actsEl, adapter): the toolbar gets the
  * quick controls only, so a narrow split pane stays readable
  *   Log Y · Units ▾ · Export ▾ (PNG, SVG, CSV, Copy as TSV, Publication Figure…) · ⋯ Plot Options
- * and the popover holds Log X, Relative to, Per, Range (from/to per axis,
+ * and the popover holds Log X, Relative to, Segments, Per, Range (from/to per axis,
  * blank = auto), Line width and Reset Zoom. The adapter owns its document's
  * option model and its persistence (per document); plotkit owns the unit
  * tables, the controls, CSV/TSV and the clipboard.
  *
  * adapter = { name, host (the chart element), features: {logY, logX, units: "energy" | "wavenumber" | null,
- *   per, relTo, single, range, width, png, svg, image, csv, pub}, get() -> opts, set(patch, label),
+ *   per, relTo, segments, range, width, png, svg, image, csv, pub}, get() -> opts, set(patch, label),
  *   table() -> {columns, rows}, png(), svg(), image() (Export Image…), pub(), resetZoom(), axes() -> {x: label, y: label} }
- * opts = {ylog, xlog, unit, per, relTo, single, xr: [from, to], yr: [from, to], width} */
+ * opts = {ylog, xlog, unit, per, relTo, segments ("continuous" | "separate"), xr: [from, to], yr: [from, to], width} */
+import { overlayHost, place } from "./ui.js";
 
 export const HARTREE_EV = 27.211386245988;          // CODATA 2018
 export const AVOGADRO_EV_KJMOL = 96.48533212331;    // 1 eV per particle in kJ/mol
@@ -76,6 +77,24 @@ export async function copyText(text) {
 export const hosts = new Set();
 let menuOpen = null;
 function closeMenus() { if (menuOpen) { const m = menuOpen; menuOpen = null; m.close(); } }
+/* A menu or the options popover opens in the overlay layer (ui.js), so the
+ * plot's panel can neither clip nor cover it, right-aligned under its button
+ * and kept on screen. Tab past either end closes it and goes on from the button. */
+function float(el, btn) {
+  overlayHost().appendChild(el);
+  // the button's rect is screen px; the element's width is its own px (the layer's zoom)
+  const r = btn.getBoundingClientRect(), z = window.maceZoom.of(el);
+  place(el, { left: r.right - el.offsetWidth * z, right: r.right, top: r.top, bottom: r.bottom }, "bottom", 4);
+  el.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const all = [...el.querySelectorAll("button:not([disabled]), input, select")];
+    const atEnd = e.shiftKey ? document.activeElement === all[0] : document.activeElement === all[all.length - 1];
+    if (el.getAttribute("role") === "menu" || atEnd) {
+      if (e.shiftKey) e.preventDefault();      // back to the button itself
+      closeMenus();
+    }
+  });
+}
 document.addEventListener("pointerdown", (e) => { if (menuOpen && !menuOpen.contains(e.target)) closeMenus(); }, true);
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && menuOpen) { e.preventDefault(); e.stopPropagation(); closeMenus(); } }, true);
 
@@ -87,7 +106,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
  */
 export function attach(acts, adapter, H) {
   // the features may change with the document shown (a spectrum after a band plot)
-  const feat = () => ({ logY: true, logX: false, units: null, per: false, relTo: false, single: false, range: true, width: true,
+  const feat = () => ({ logY: true, logX: false, units: null, per: false, relTo: false, segments: false, range: true, width: true,
     png: true, svg: true, image: false, csv: true, pub: false, ...(adapter.features || {}) });
   let f = feat(), sig = "";
   const icon = H.icon || (() => "");
@@ -114,7 +133,7 @@ export function attach(acts, adapter, H) {
     m.setAttribute("role", "menu");
     m.innerHTML = items.map((it) => it === "-" ? `<div class="pk-sep" role="separator"></div>` :
       `<button type="button" role="${it.checked !== undefined ? "menuitemradio" : "menuitem"}" data-v="${esc(it.v)}"${it.checked !== undefined ? ` aria-checked="${it.checked}"` : ""}${it.disabled ? ' aria-disabled="true" disabled' : ""}>${esc(it.label)}</button>`).join("");
-    btn.parentElement.appendChild(m);
+    float(m, btn);
     btn.setAttribute("aria-expanded", "true");
     m.close = () => { m.remove(); btn.setAttribute("aria-expanded", "false"); btn.focus(); };
     menuOpen = m;
@@ -143,14 +162,15 @@ export function attach(acts, adapter, H) {
     p.innerHTML = `${f.logX ? `<label class="pk-row"><input type="checkbox" data-k="xlog"${o.xlog ? " checked" : ""}> Log X</label>` : ""}
       ${f.relTo ? `<label class="pk-row"><span>Relative to</span><select data-k="relTo" aria-label="Relative to">${[["first", "First point"], ["final", "Final point"], ["minimum", "Minimum"], ["absolute", "Absolute"]]
         .map(([v, t]) => `<option value="${v}"${o.relTo === v ? " selected" : ""}${(adapter.disabled || {})["relTo:" + v] ? ` disabled title="${esc(adapter.disabled["relTo:" + v])}"` : ""}>${t}</option>`).join("")}</select></label>` : ""}
-      ${f.single ? `<label class="pk-row"><input type="checkbox" data-k="single"${o.single ? " checked" : ""}> Single reference (merge FINALRUN segments)</label>` : ""}
+      ${f.segments ? `<label class="pk-row" title="One curve and one reference across the FINALRUN restarts, or each FINALRUN segment relative to its own point"><span>Segments</span><select data-k="segments" aria-label="FINALRUN segments">${[["continuous", "Continuous"], ["separate", "Separate"]]
+        .map(([v, t]) => `<option value="${v}"${(o.segments || "continuous") === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>` : ""}
       ${f.per ? `<label class="pk-row"><span>Per</span><select data-k="per" aria-label="Energy per">${[["cell", "Cell"], ["atom", "Atom"], ["fu", "Formula unit"]]
         .map(([v, t]) => `<option value="${v}"${o.per === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>` : ""}
       ${f.range ? `<div class="pk-row pk-range"><span>${esc(ax.x)}</span>${num("x", 0, (o.xr || [])[0])}<span>–</span>${num("x", 1, (o.xr || [])[1])}</div>
         <div class="pk-row pk-range"><span>${esc(ax.y)}</span>${num("y", 0, (o.yr || [])[0])}<span>–</span>${num("y", 1, (o.yr || [])[1])}</div>` : ""}
       ${f.width ? `<label class="pk-row"><span>Line width</span><input type="number" min="0.5" max="6" step="0.5" data-k="width" value="${o.width ?? 1.5}" aria-label="Line width"></label>` : ""}
       <div class="pk-row"><button type="button" class="tb-btn-text" data-act="resetzoom">Reset Zoom</button></div>`;
-    btn.parentElement.appendChild(p);
+    float(p, btn);
     btn.setAttribute("aria-expanded", "true");
     p.close = () => { p.remove(); btn.setAttribute("aria-expanded", "false"); btn.focus(); };
     menuOpen = p;
@@ -158,7 +178,7 @@ export function attach(acts, adapter, H) {
     p.addEventListener("change", (e) => {
       const t = e.target;
       if (t.dataset.k === "xlog") adapter.set({ xlog: t.checked }, t.checked ? "Log X" : "Linear X");
-      else if (t.dataset.k === "single") adapter.set({ single: t.checked }, t.checked ? "Single reference" : "Per segment");
+      else if (t.dataset.k === "segments") adapter.set({ segments: t.value }, t.value === "separate" ? "Segments: separate" : "Segments: continuous");
       else if (t.dataset.k === "relTo") adapter.set({ relTo: t.value }, `Relative to ${t.value}`);
       else if (t.dataset.k === "per") adapter.set({ per: t.value }, `Per ${t.value}`);
       else if (t.dataset.k === "width") adapter.set({ width: Number(t.value) || 1.5 }, `Line width ${t.value}`);
@@ -235,4 +255,117 @@ export function absIfNeeded(ys) {
   let neg = false;
   const out = ys.map((y) => { if (y !== null && y <= 0) { neg = true; return y === 0 ? null : Math.abs(y); } return y; });
   return { ys: out, abs: neg };
+}
+
+/* ------------------------------------------------------------ legends outside the data
+   One rule for every plotly plot MACE draws (plot.js, runplot.js; the CLI's figures follow
+   it too, mace/plotting/legend_layout.py): a legend, a reference line's label, a colorbar
+   never sits on the data, a tick label or each other. Legends go above the plot ("top",
+   wrapping into rows) or in a column right of it ("side"); a reference line's label is a
+   legend entry of its own (keyEntry: no data, a click hides nothing); the top and right
+   margins are sized by fitLegends from the legends as drawn (plotly's own margin push
+   leaves a legend where the previous size put it when a resize changes its height). */
+export function legendTop(more = {}) {
+  return { orientation: "h", x: 0, xanchor: "left", y: 1, yanchor: "bottom", font: { size: 11 }, ...more };
+}
+export function legendSide(more = {}) {
+  return { orientation: "v", x: 1, xanchor: "left", y: 1, yanchor: "top", font: { size: 11 }, tracegroupgap: 0, ...more };
+}
+/** A legend-only entry: a key for a line style, a reference line or a shaded band (meta "key"). */
+export function keyEntry(name, style = {}, more = {}) {
+  const { line, marker, fill } = style;
+  const t = { x: [null], y: [null], mode: marker && !line ? "markers" : "lines", type: "scatter", name, meta: "key", hoverinfo: "skip" };
+  if (line) t.line = line;
+  if (marker) t.marker = marker;
+  if (fill) Object.assign(t, { fill: "toself", fillcolor: fill });
+  return { ...t, ...more };
+}
+/** plotly_legendclick / legenddoubleclick handler: a key entry hides nothing. */
+export function keyClick(ev) {
+  const t = ev && ev.data && ev.data[ev.curveNumber];
+  return !(t && typeof t.meta === "string" && t.meta.startsWith("key"));
+}
+/** Size the top and right margins to the legends and top-axis labels as drawn. base = {t, r}
+ *  (the margins without legends); extra(r) may add relayout keys that depend on the right margin. */
+export async function fitLegends(el, base, extra = null) {
+  if (!base || !window.Plotly || !el._fullLayout || el.__fitting) return;
+  el.__fitting = true;
+  try {
+    for (let i = 0; i < 8; i++) {
+      const L = el._fullLayout, ids = Object.keys(L).filter((k) => /^legend\d*$/.test(k));
+      const drawn = (id) => !!el.querySelector(`.infolayer > g.${id} [class$=text]`);
+      // a top legend that would take more than a third of the figure's height (many or long entries,
+      // a short pane) becomes a column right of the plot, where it scrolls instead of crushing the data
+      let rband = 0;
+      {
+        const r0 = el.querySelector(".main-svg").getBoundingClientRect(), z = r0.width / L.width || 1, right = r0.left + z * (L._size.l + L._size.w);
+        for (const ax of Object.keys(L).filter((k) => /^yaxis\d*$/.test(k) && L[k].side === "right" && L[k].visible !== false)) {
+          for (const tx of el.querySelectorAll(`g.${L[ax]._id}tick > text, .g-${L[ax]._id}title text`)) rband = Math.max(rband, (tx.getBoundingClientRect().right - right) / z);
+        }
+      }
+      // a column chosen for another size: back to rows when the figure's size changed, and judged again
+      const sw = el.__sideFromTop;
+      if (sw && sw.ids.every((id) => L[id] && L[id].orientation === "v") && (Math.abs(sw.w - L.width) > 2 || Math.abs(sw.h - L.height) > 2)) {
+        el.__sideFromTop = null;
+        const upd = {};
+        for (const id of sw.ids) Object.assign(upd, { [`${id}.orientation`]: "h", [`${id}.x`]: 0, [`${id}.xanchor`]: "left", [`${id}.y`]: 1, [`${id}.yanchor`]: "bottom" });
+        await window.Plotly.relayout(el, upd);
+        continue;
+      }
+      // rows are judged at the width they will have: a right margin left wide by a column (this
+      // figure's last fit, or a redraw that kept it) narrows the plot, plotly wraps the rows to that
+      // width, one entry per row, and the rows look tall enough to pick the column again
+      const sideNow = ids.some((id) => L[id] && L[id].orientation === "v" && L[id].x >= 1 && drawn(id));
+      const rRows = Math.ceil(base.r + rband);
+      if (!sideNow && L.margin.r > rRows + 1 && ids.some((id) => L[id] && L[id].orientation === "h" && L[id].y >= 1 && drawn(id))) {
+        const upd = { "margin.r": rRows };
+        if (extra) Object.assign(upd, extra(rRows));
+        await window.Plotly.relayout(el, upd);
+        continue;
+      }
+      // (only when the column costs the data less width than the rows cost it height)
+      const z0 = el.querySelector(".main-svg").getBoundingClientRect().width / L.width || 1;
+      const colWidth = (id) => Math.max(0, ...[...el.querySelectorAll(`.infolayer > g.${id} g.traces`)].map((g) => g.getBoundingClientRect().width / z0)) + 12;
+      const tall = ids.filter((id) => L[id] && L[id].orientation === "h" && L[id].y >= 1 && drawn(id) && L[id]._height > L.height / 3
+        && (colWidth(id) + rband) / L.width < L[id]._height / L.height);
+      if (tall.length) {
+        const upd = {};
+        for (const id of tall) Object.assign(upd, { [`${id}.orientation`]: "v", [`${id}.x`]: 1, [`${id}.xanchor`]: "left", [`${id}.y`]: 1, [`${id}.yanchor`]: "top" });
+        el.__sideFromTop = { ids: tall, w: L.width, h: L.height };
+        await window.Plotly.relayout(el, upd);
+        continue;
+      }
+      let top = 0, side = 0;
+      for (const id of ids) {
+        const g = L[id];
+        if (!g || !drawn(id)) continue;
+        if (g.orientation === "h" && g.y >= 1) top = Math.max(top, g._height);
+        else if (g.orientation === "v" && g.x >= 1) side = Math.max(side, g._width);
+      }
+      // labels of an axis on top (the peaks of a spectrum) take room above the plot too
+      let band = 0;
+      for (const ax of Object.keys(L).filter((k) => /^xaxis\d*$/.test(k) && L[k].side === "top" && L[k].visible !== false)) {
+        const r = el.querySelector(".main-svg").getBoundingClientRect(), z = r.width / L.width || 1;
+        for (const t of el.querySelectorAll(`g.${L[ax]._id}tick > text`)) band = Math.max(band, (r.top + z * L._size.t - t.getBoundingClientRect().top) / z);
+      }
+      // labels of an axis on the right (a second y axis) take room right of the plot: a side legend goes beyond them
+      const t = Math.ceil(base.t + top + band + (band ? 4 : 0)), r = Math.ceil(base.r + rband + (side ? side + 4 : 0));
+      const upd = {};
+      if (L.margin.t !== t) upd["margin.t"] = t;
+      if (L.margin.r !== r) upd["margin.r"] = r;
+      // a side legend right of the right-axis labels
+      for (const id of ids) if (L[id] && L[id].orientation === "v" && L[id].x >= 1 && drawn(id)) {
+        const x = rband ? 1 + (rband + 4) / Math.max(1, L.width - L.margin.l - r) : 1;
+        if (Math.abs(L[id].x - x) > 1e-3) upd[`${id}.x`] = x;
+      }
+      // a top legend above the top-axis labels
+      for (const id of ids) if (L[id] && L[id].orientation === "h" && L[id].y >= 1 && drawn(id)) {
+        const y = band ? 1 + (band + 4) / Math.max(1, L.height - t - L.margin.b) : 1;
+        if (Math.abs(L[id].y - y) > 1e-3) upd[`${id}.y`] = y;
+      }
+      if (!Object.keys(upd).length) break;
+      if (extra) Object.assign(upd, extra(r));
+      await window.Plotly.relayout(el, upd);
+    }
+  } finally { el.__fitting = false; }
 }

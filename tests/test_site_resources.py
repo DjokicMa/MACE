@@ -45,7 +45,7 @@ def test_both_kinds_and_properties_level(tmp_path):
                                              ["#SBATCH --mem-per-cpu=5G", "#SBATCH --ntasks=32"])
     prop, _ = _submit(tmp_path, env, "m_band.d3")
     assert _diff(tmp_path, prop, PROP, "m_band") == (["#SBATCH --mem-per-cpu=2G", "#SBATCH --ntasks=16"],
-                                                    ["#SBATCH --mem=80G", "#SBATCH --ntasks=28"])
+                                                    ["#SBATCH --mem=80G", "#SBATCH --ntasks=8"])
     _toml(tmp_path, '[resources]\nntasks = 16\nmem_per_cpu = "2G"\nnodes = 1\ncpus_per_task = 1\n'
                     '[resources.properties]\nmem = "40G"\n')
     prop, _ = _submit(tmp_path, env, "m_band.d3")

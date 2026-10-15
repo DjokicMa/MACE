@@ -54,8 +54,8 @@ def cluster(tmp_path):
             p.wait(10)
     for r in fake.records():                     # nothing may stay "running" after a test
         if r.get("pgid"):
-            try:
-                os.kill(int(r["pgid"]), 9)
+            try:                                 # the job's whole group: its server, not only the runner
+                os.killpg(int(r["pgid"]), 9)
             except OSError:
                 pass
     subprocess.run(["pkill", "-f", str(tmp_path / "fs")], capture_output=True)

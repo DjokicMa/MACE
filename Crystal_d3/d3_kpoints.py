@@ -418,7 +418,13 @@ def determine_orthorhombic_i_variant(a: float, b: float, c: float) -> str:
     return "oI1"
 
 
-def determine_orthorhombic_s_variant(a: float, b: float, c: float) -> str:
+# C-centered orthorhombic groups whose symmetry does not tell a from b: spglib
+# standardizes their cells with a < b, so SeeK-path takes oC1 for every cell
+# (hpkot_static.crystal_points then evaluates oC1 on the swapped axes)
+AB_SYMMETRIC_C_GROUPS = {20, 21, 35, 37, 65, 66, 67, 68}
+
+
+def determine_orthorhombic_s_variant(a: float, b: float, c: float, space_group: Optional[int] = None) -> str:
     """
     Determine which oS (base-centered orthorhombic) variant.
     
@@ -428,12 +434,14 @@ def determine_orthorhombic_s_variant(a: float, b: float, c: float) -> str:
     Returns:
         "oS1" or "oS2" based on cell analysis
     """
-    # oS1: Standard base-centered
-    # oS2: Alternative centering with different axis relationships
-    
-    # Simplified logic for now
-    # TODO: Implement full criteria
-    return "oS1"
+    # SeeK-path (hpkot.get_path, HPKOT Table 2): a C-centered orthorhombic
+    # conventional cell (C face a x b) is oC1 when a <= b, else oC2, in
+    # spglib's standard cell, which has a < b where the group allows either.
+    # MACE's static table names oC1 "oS1"; oC2 has its own entry. Both are
+    # evaluated for the cell and moved to CRYSTAL's basis (hpkot_static).
+    if space_group in AB_SYMMETRIC_C_GROUPS:
+        return "oS1"
+    return "oS1" if a <= b else "oC2"
 
 
 def determine_tetragonal_i_variant(a: float, c: float) -> str:
@@ -1351,7 +1359,7 @@ def get_extended_bravais(sg: int, lat: str,
         elif lat == "C":
             # Distinguish oS1 vs oS2 based on cell parameters
             if all(p is not None for p in [a, b, c]):
-                return determine_orthorhombic_s_variant(a, b, c)
+                return determine_orthorhombic_s_variant(a, b, c, sg)
             else:
                 return "oS1"
         elif lat == "F":
@@ -1789,7 +1797,7 @@ seekpath_data = {
             [0.0, 0.5, 0.5, 0.0, 0.0, 0.5],              # R → Z
             [0.0, 0.0, 0.5, 0.5, 0.5, 0.5]               # Z → T
         ],
-        "labels": ["GAMMA", "Y", "F_0", "DELTA_0", "GAMMA", "Z", "B_0", "G_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T"]
+        "labels": ["GAMMA", "Y", "F_0", "|", "DELTA_0", "GAMMA", "Z", "B_0", "|", "G_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T"]
     },
     
     # Orthorhombic I-centered lattices
@@ -2402,7 +2410,7 @@ seekpath_data = {
             [0.0, -0.5, -0.5, 0.0, 0.0, -0.5],           # R' → Z'
             [0.0, 0.0, -0.5, -0.5, -0.5, -0.5]           # Z' → T'
         ],
-        "labels": ["GAMMA", "Y", "F_0", "DELTA_0", "GAMMA", "Z", "B_0", "G_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "F_0'", "DELTA_0'", "GAMMA", "Z'", "B_0'", "G_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
+        "labels": ["GAMMA", "Y", "F_0", "|", "DELTA_0", "GAMMA", "Z", "B_0", "|", "G_0", "T", "Y", "|", "GAMMA", "S", "R", "Z", "T", "|", "GAMMA", "Y'", "F_0'", "|", "DELTA_0'", "GAMMA", "Z'", "B_0'", "|", "G_0'", "T'", "Y'", "|", "GAMMA", "S'", "R'", "Z'", "T'"]
     },
     "oF1_noinv": {
         # Orthorhombic face-centered without inversion (Fmm2)

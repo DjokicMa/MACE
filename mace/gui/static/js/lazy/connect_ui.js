@@ -150,6 +150,8 @@ export async function tunnel(H) {
   await css();
   const info = H.info() || {};
   const node = info.node || info.hostname || "this machine";
+  // paste-safe placeholders (a <gateway> is a redirect in bash and PowerShell)
+  const connectCmd = info.connect || `mace gui connect --gateway USER@LOGIN_HOST --node ${node} --dir FOLDER`;
   const line = (id, text) => `<div class="cn-line"><pre class="mono" id="${id}">${H.esc(text)}</pre>` +
     `<button class="tb-btn-text" data-copy="${id}">${H.icon("copy")}<span>Copy</span></button></div>`;
   const body = info.vscode
@@ -159,9 +161,15 @@ export async function tunnel(H) {
     : `<p>This server runs on <b>${H.esc(node)}</b> and shows <code class="root-path">${H.esc(info.root || "")}</code>.
          The tunnel must go to this exact node.</p>
        <p>From your computer, with MACE installed there (one step: it starts, forwards and stops the server):</p>
-       ${line("cn-connect", info.connect || `mace gui connect --gateway <user>@<gateway> --node ${node} --dir <folder>`)}
+       ${line("cn-connect", connectCmd)}
+       <p>Without MACE there (MobaXterm's local terminal, Git Bash, PowerShell): run this in the terminal of
+         <code>mace gui</code>, copy the script to your computer and run it there (<code>bash mace-gui-connect.sh</code>;
+         <code>--export-script powershell -o mace-gui-connect.ps1</code> for PowerShell):</p>
+       ${line("cn-export", connectCmd + " --export-script bash -o mace-gui-connect.sh")}
        <p>Or with ssh alone (leave it running), then open the URL that <code>mace gui</code> printed:</p>
-       ${line("cn-ssh", info.tunnel || `ssh -N -J <user>@<gateway> -L PORT:127.0.0.1:PORT <user>@${node}`)}
+       ${line("cn-ssh", info.tunnel || `ssh -N -J USER@LOGIN_HOST -L PORT:127.0.0.1:PORT USER@${node}`)}
+       ${/LOGIN_HOST/.test(connectCmd + (info.tunnel || "")) ? `<p class="insp-hint" id="cn-placeholder">Replace USER, LOGIN_HOST
+         and FOLDER (your cluster's login host, e.g. from export MACE_GUI_GATEWAY on the node) before you run them.</p>` : ""}
        <p class="insp-hint" id="cn-hop">If your cluster's nodes accept logins only from the login node, use --hop nested.</p>`;
   const d = dialog({ id: "tunnel", title: "Connecting from Your Computer", narrow: true,
     body: body + `<p class="insp-hint">Every way to connect (Windows, MobaXterm, VS Code, jump hosts):

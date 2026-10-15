@@ -488,7 +488,7 @@ def _run_staging(tmp_path, deck, scratch_files=(), dir_files=()):
     """Run the generated script's staging (RESTART + GUESSP) in bash on a
     scratch directory; returns (stdout, INPUT afterwards, fort.20 or None)."""
     script = _generated_script(tmp_path)
-    block = script[script.index("# OPTGEOM RESTART"):script.index("\ncd $scratch/$JOB") + 1]
+    block = script[script.index("# OPTGEOM RESTART"):script.index('\ncd "$scratch/$JOB"') + 1]
     d = tmp_path / "run"
     s = d / "scratch" / "testmat"
     s.mkdir(parents=True)
@@ -576,7 +576,7 @@ def test_empty_f9_is_not_staged_as_a_guess(tmp_path):
     """An aborted OPT copies its EMPTY fort.9 back as $JOB.f9 (measured:
     tqb_pto.f9, 0 bytes); GUESSP must not stage it."""
     script = _generated_script(tmp_path)
-    block = script[script.index("# OPTGEOM RESTART"):script.index("\ncd $scratch/$JOB") + 1]
+    block = script[script.index("# OPTGEOM RESTART"):script.index('\ncd "$scratch/$JOB"') + 1]
     d = tmp_path / "run"
     (d / "scratch" / "testmat").mkdir(parents=True)
     deck = "t\nCRYSTAL\nEND\nGUESSP\nEND\n"

@@ -145,6 +145,10 @@ class Pool:
         self._on_progress = on_progress
         self.ctx = make_context()
         self.lock = threading.Lock()
+        # held while a job is handed to the executor (which may start a worker):
+        # shutdown waits for it, so no worker is left half started at exit
+        self._submit_lock = threading.Lock()
+        self.closed = False
         self.ex: Optional[ProcessPoolExecutor] = None
         self.n = 0
         self.busy = 0
@@ -244,18 +248,21 @@ class Pool:
             self.cancel[s] = 1
 
     def submit(self, kind: str, payload: Dict[str, Any], slot: int) -> Future:
-        ex = self._executor()
-        with self.lock:
-            self.busy += 1
-        if self.slot_pids is not None and 0 <= slot < SLOTS:
-            self.slot_pids[slot] = 0
-        with no_hangup():       # 3.12 starts workers (and the manager thread) here
-            try:
-                fut = ex.submit(pool_worker.run, kind, payload, slot)
-            except BaseException:
-                with self.lock:
-                    self.busy -= 1
-                raise
+        with self._submit_lock:
+            if self.closed:
+                raise RuntimeError("The server is stopping.")
+            ex = self._executor()
+            with self.lock:
+                self.busy += 1
+            if self.slot_pids is not None and 0 <= slot < SLOTS:
+                self.slot_pids[slot] = 0
+            with no_hangup():       # 3.12 starts workers (and the manager thread) here
+                try:
+                    fut = ex.submit(pool_worker.run, kind, payload, slot)
+                except BaseException:
+                    with self.lock:
+                        self.busy -= 1
+                    raise
         fut.mace_executor = ex
         fut.add_done_callback(self._job_done)
         self.sample()
@@ -330,7 +337,12 @@ class Pool:
 
     def shutdown(self, kill: bool = False):
         """Stop the executor. ``kill`` (the server is stopping): also end the
-        workers at once, so a running job does not hold the server's exit."""
+        workers at once, so a running job does not hold the server's exit.
+        After a kill nothing more is submitted: a worker started while the
+        server exits would die half started, with a traceback on stderr."""
+        if kill:
+            with self._submit_lock:     # a submit under way finishes starting its worker first
+                self.closed = True
         with self.lock:
             ex, self.ex = self.ex, None
             if self._idle_timer is not None:

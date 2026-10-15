@@ -7,7 +7,1411 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.5] - 2026-10-08
+## [1.1.5] - 2026-10-14
+
+A preview of this release was tagged `v1.1.5-preview` on 2026-10-08. The
+final 1.1.5 is that preview plus the fixes listed first, under "Since the
+preview".
+
+### Since the preview
+
+#### Upgrading from the preview
+
+- **Upgrade in place while jobs are running.** The queue lock is now
+  `.queue_locks/queue_state.lock`, one lock for every callback mode. Jobs
+  still pinned to an older separate install take the old per-mode locks,
+  which do not exclude the new one, until they finish; upgrading the
+  install they use (in place) avoids that. Old `queue_manager_<mode>.lock`
+  files are ignored and safe to delete.
+- **Completion callbacks wait for `mace manager` sweeps.** A job's
+  completion callback now takes the same queue lock as `mace manager`
+  (every mode, interactive sweeps included) and gives up after 60 s: it
+  then records only its own job's result and leaves the follow-up steps to
+  the next sweep or callback (it says so). A long interactive `mace
+  manager` session can therefore delay follow-ups until the next sweep;
+  job array tasks keep retrying for up to 15 minutes.
+- **`mace completion --remove-zombie-jobs` is stricter.** Only a
+  calculation's own SLURM logs (`<name>-<id>.o`, `<name>_<id>.o`,
+  `<name>.o<id>`, `<name>-<A>_<T>.o`) are read, and a job is canceled only
+  when SLURM confirms its name and folder; anything else is listed as not
+  canceled. Cancel those by hand if they really are stuck.
+- **The max-jobs limit counts all your queued jobs.** `--max-jobs` and
+  `--reserve` now apply to every running and pending job you have in the
+  queue (each array task counted), including jobs MACE did not submit; an
+  old `crystal_job_status.json` in your home or temp folder no longer
+  matters.
+- **Calculations stuck "submitted" by long-ended jobs.** The next sweep
+  records them failed with the job's real end state. Those whose job ended
+  more than 3 days ago (`MACE_RECOVER_MAX_AGE_DAYS`) are not resubmitted
+  automatically; MACE prints one line for each, and `mace recover` prepares
+  their retry (their error is classified as for any failed job; a job
+  SLURM ended OUT_OF_MEMORY or TIMEOUT before writing its `.out` counts as
+  a memory or walltime error).
+- **Job scripts an older MACE wrote are written again.** A `<name>.sh`
+  that MACE 1.0.0 to the 1.1.5 preview wrote with its default resources
+  and nobody changed is now recognized: `mace submit` (with or without
+  `--track`, `--walltime`, `-i`, `--progress`, `--array`) says "<name>.sh
+  was written by an older MACE; regenerating it with 1.1.5's fixes" and
+  writes it again, instead of reusing it without the 1.1.5 job-script
+  fixes (or, with those options, stopping as if it had been edited). For a
+  properties script that means 8 cores, not 28 (see below). A script
+  edited by hand, or written with other resources (`-i`, a site setting),
+  is still yours: it is reused as written, or stops a submission with
+  resource options until you add `--overwrite-sh`.
+- **A workflow step's job script keeps the plan's cores and memory.**
+  `mace submit --walltime` (or node exclusion, or `--track` without
+  options) on a step folder used to write its `<name>.sh` again from the
+  plain template, dropping the cores and memory the plan had set. Now
+  only the walltime (or exclusion) is set in that script; use `-i` or
+  `--overwrite-sh` to size it again.
+- **Queue lock in a folder shared by several users.** The lock file
+  `.queue_locks/queue_state.lock` was created readable only (0644) for
+  everyone but its creator, whose sweeps then failed to take it. It is now
+  created 0666 less your umask (group-writable under the usual shared-folder
+  umask 002). A sweep that cannot write an existing one prints one line and
+  uses the owner-token lock instead; since that does not exclude a sweep
+  holding the file, have its owner run `chmod g+w` on it.
+- **Properties jobs ask for 8 cores, not 28.** BAND, DOSS, TRANSPORT and
+  CHARGE+POTENTIAL scripts now carry `--ntasks=8` (memory unchanged:
+  `--mem` is a total). To keep 28, set `ntasks = 28` under
+  `[resources.properties]` in `~/.config/mace/site.toml`; a `[resources]`
+  ntasks, `MACE_SLURM_NTASKS`, a typed answer and the sizes stored in an
+  existing workflow plan still win. New planner and quick-start BAND/DOSS
+  steps ask for `--mem=80G` (was 48G), the same as `mace submit`.
+- **Edited or older job scripts.** With `-i`, `--walltime` or an
+  `--exclude-*` option, `mace submit` rewrites a script MACE wrote; one
+  edited by hand or written before 1.1.5 now stops the submission. Add
+  `--overwrite-sh` to replace it. `--track` keeps an edited `.sh` and
+  honors `-i`.
+- **`mace submit` exits 1 when any job was not submitted** (also with
+  `--nosubmit` when a script cannot be written). Check wrappers that test
+  its exit status.
+- **Some decks are refused.** Deck names with spaces or shell characters
+  are refused, and so is a `.d3` whose `.f9` is missing or empty.
+- **Generated scripts quote their paths,** so they differ byte for byte from
+  older ones; jobs already queued keep their old scripts.
+- **Copy-back is narrower.** fort.9 and properties outputs are copied back
+  only when this run wrote them.
+- **`-i` walltimes are capped** at the partition's MaxTime.
+- **Lattice vectors of 40 Å or more get k = 1.** Regenerate decks for
+  molecules or clusters in a box.
+- **opt2d3 changes.** It refuses BAND, DOSS and TRANSPORT for a molecule
+  (workflow plans with such a step stop there), picks collision-safe
+  names, uses the output's own `.f9` first, and the static oC k-path
+  changed.
+- **Re-extract your database.** Several stored values changed (see Fixed:
+  slab areas, TRANSPORT ZT and κ, final-geometry keys, summary counts, and
+  others). Run `mace analyze --extract-properties <folder> --db-path <db>`
+  without `--skip-unchanged` (or untick "Only new and changed files" in the
+  GUI). A full run replaces stale rows of tracked calculations; rows filed
+  under old untracked ids and rows of failed runs stay.
+- **Workflows.** Workflow ids gain a 4-hex suffix
+  (`workflow_20250618_160317_3fa9`; check scripts that parse ids),
+  `auto_progression: false` is obeyed, d12 steps use the plan's
+  `expert_config_file` when a plan carries one (the planner writes it only
+  for D3 steps), isolated workflows copy their templates into
+  `.mace_context_<id>/workflow_scripts/`, and a plan's archive or
+  export-and-delete action runs when its last step finishes.
+- **Error type names changed:** `convergence_error`, `timeout_error`,
+  `disk_space_error`, `geometry_error` (old names are mapped).
+  Out-of-memory and Fermi-level errors are now recoverable.
+- **MSU-only flags are hidden off MSU HPCC.**
+- **GUI Setup and Batch Setup stop on an unrecognized CLI question**
+  instead of sending Enter (a chosen VBH functional is now really
+  applied). Batch Setup prefixes same-named parents (`A_`, `B_`).
+- **`mace/workflow/submitcrystal23.sh` and `mace/workflow/submit_prop.sh`
+  are gone.** They were symbolic links to the generators in
+  `mace/submission/`, which every MACE reader now uses directly. A script
+  or alias of your own that names the `mace/workflow/` path must name
+  `mace/submission/submitcrystal23.sh` (or `submit_prop.sh`) instead; the
+  generators on your PATH are unchanged, and edits you made through the
+  links were made to the `mace/submission/` files already.
+- **No `-A mendoza_q` where SLURM accounting cannot be read, off MSU
+  HPCC.** On a cluster other than MSU HPCC whose SLURM accounting MACE
+  cannot read (no `sacctmgr`, or one that lists nothing for you), new job
+  scripts now carry no `#SBATCH -A` line, so SLURM charges your default
+  account. If such a cluster accepted the built-in `mendoza_q` and you want
+  to keep writing it, set `MACE_SLURM_ACCOUNT=mendoza_q` or `[slurm]
+  account` in site.toml. Job scripts already written (`<job>.sh` beside a
+  deck, reused unless you regenerate them) and workflows planned before the
+  upgrade (the account stored in `workflow_configs/*.json`, the copies in
+  `workflow_scripts/`) keep the line they have; regenerate the scripts or
+  plan the workflow again to drop it. MSU HPCC and hosts without SLURM are
+  unchanged.
+- **The scripts' dry runs print comment lines.** `mace-gui-connect.sh
+  --dry-run` and `mace-gui-connect.ps1 -DryRun` now start with a `# hop ...`
+  line, and the `.ps1` adds `ssh --% ...` (the same command, to paste into
+  PowerShell) after a `#` line. A script that reads their output one
+  argument per line should skip lines starting with `# `.
+
+#### Added
+
+- **Docs: how to set the default cores per job.** `docs/cli.md` ("Change the
+  default cores per job") shows that `ntasks` under `[resources]` in the site
+  config (or `MACE_SLURM_NTASKS`) sets the job size everywhere MACE offers or
+  writes one: the planner, `mace submit`, job arrays, `--progress` plans and
+  the GUI.
+- **Docs: SSH key setup for `mace gui connect`.** `docs/ssh-setup.md` walks
+  through a key with a passphrase, loading it into an agent (Linux, the macOS
+  Keychain, the Windows OpenSSH Authentication Agent service, MobaXterm's
+  MobAgent, VS Code), an `~/.ssh/config` for the gateway and the dev nodes
+  (with connection sharing for 2FA on Linux and macOS), how each maps to
+  `--gateway`, `--hop` and `--ssh-option`, and a troubleshooting table.
+  Linked from docs/gui.md and the README.
+
+#### Changed
+
+- **Built-in cores for properties jobs: 8 (was 28).** On MSU HPCC, real
+  BAND and DOSS jobs on 28 cores kept 0.4-0.9 cores busy (1-3%), and a
+  work-based sizing of 160+ measured properties runs (BAND, DOSS,
+  CHARGE+POTENTIAL) asked for 8 or fewer for most of them (12-19 only for
+  the largest slabs). Pproperties does spread k-points over its ranks, so
+  the default is not 1. The number now lives in one place
+  (`PROPERTIES_NTASKS` in `mace/workflow/common/constants.py`): the
+  `submit_prop.sh` template, `mace site` and `mace site --init`, the
+  planner's offer, `mace submit`, quick start and workflow plans all take
+  it from there. The total memory stays `--mem=80G` (the planner and quick
+  start now use it too; see Fixed); measured properties peaks stay under
+  0.6 GB per rank. CRYSTAL jobs (OPT, SP, FREQ) keep 32 cores, byte for
+  byte.
+
+#### Fixed
+
+- **`mace submit -i`, `--walltime` and `--exclude` work from a read-only
+  install.** Their temporary job-script generator
+  (`submitcrystal23_custom_<pid>.sh`, `submit_prop_custom_<pid>.sh`) was
+  written into the install's `mace/submission/` folder, so on a group or
+  site-wide install the submit stopped with "Permission denied", and a
+  checkout collected the files of runs running side by side. It now goes to
+  a private folder in your temporary folder (`$TMPDIR`, else `/tmp`), one
+  per generator, removed when the run ends. The job scripts it writes are
+  unchanged, still pinned to the install.
+- **The VS Code Remote-SSH notes cover the integrated browser and
+  stopping.** Ctrl+click on the sign-in link can open VS Code's own browser:
+  the docs name the setting that sends `localhost` links to your default
+  browser (`workbench.browser.openLocalhostLinks`) and how to get a fresh
+  link, and say that closing the tab leaves the server running until Sign
+  Out and Stop Server or Ctrl+C.
+- **A SLAB, POLYMER or MOLECULE deck opens its run's output.** The
+  viewer draws 3D decks only, so clicking such a `.d12` (the example
+  folder's `graphene_slab_sp.d12` on first click) gave an error. When the
+  `.out` of the same name sits next to it, the GUI now opens that output
+  and says why; without one the message is as before.
+- **The built-in account stays at MSU HPCC.** Where SLURM accounting
+  could not be read (no `sacctmgr`, or one that lists nothing for you),
+  MACE kept MSU HPCC's `mendoza_q`, so on any other cluster with SLURM
+  every job script (`mace submit`, workflow steps and their
+  `workflow_scripts/` copies, array tasks, recovery resubmissions, the
+  GUI's Submit, `mace run`) got `#SBATCH -A mendoza_q # or general`, which
+  that cluster may reject. The built-in account (and the planner's MSU
+  fallback `general`) is now kept there only on MSU HPCC and on a host
+  without SLURM (a workstation); elsewhere the scripts get no account line
+  and SLURM charges your default account. `mace site`, `mace site check`,
+  the warning MACE prints once and the GUI's Submit preview say "no account
+  line (SLURM's default account); set yours with MACE_SLURM_ACCOUNT or
+  site.toml". An account you set yourself is always written, members of
+  `mendoza_q` still get it, and MSU HPCC's job scripts are unchanged byte
+  for byte.
+- **A recovered workflow step is resubmitted from its own folder.** The
+  queue manager looked for a workflow step's folder by the material's name
+  (`step_*/A`), but a later step's folder is named after its calculation
+  (`step_002_SP/A_sp`). A recovered step after the first was copied into
+  and run from the OPT step's folder (`step_001_OPT/A`), or, from a
+  completion callback, from the folder of the job whose callback ran, or
+  from the current folder with "Could not find workflow directory for A,
+  using current directory". Recovery now uses the folder recorded for the
+  failed calculation, and the warning, where no folder is found, names the
+  folder it submits from.
+- **`mace-gui-connect.ps1` runs on Windows PowerShell 5.1.** It read
+  `ssh -V` with `2>&1` while `$ErrorActionPreference` was `Stop`, which
+  PowerShell 5.1 turns into a terminating error (ssh prints its version on
+  stderr), so every real run stopped at once. ssh now runs as a process
+  whose output the script reads itself, nothing in the script redirects a
+  native command's stderr, and an error message or a failed browser start
+  no longer ends the script early.
+- **Profile paths with backslashes read correctly in the connect
+  scripts.** Both scripts decoded TOML escapes one after the other, so a
+  saved `C:\\Users\\me\\tmp` came back as `C:\Users\me`, a tab, and
+  `mp`. They now decode every escape in one pass, as Python does, and the
+  PowerShell script reads `connect.toml` as UTF-8.
+- **A `--dir` that does not exist on the node is named.** `mace gui
+  connect` (and both scripts) said the node "did not find the mace
+  command" when the remote `cd` failed; they now say "The folder <dir> does
+  not exist on <node>". The stderr reader no longer writes to the console
+  after the session ends, which could abort Python at exit ("could not
+  acquire lock for <stderr> at interpreter shutdown").
+- **First use of a node through the gateway explains the host-key
+  question.** With `--hop jump`, ssh asks once whether to trust the node's
+  key; the waiting note now mentions that question, and when ssh reports
+  "Host key verification failed" MACE prints the line to run once (`ssh -J
+  <gateway> <node> true`) or suggests `--hop nested`. Keys are never
+  trusted automatically, and `--hop auto` does not switch hops on a
+  host-key failure. With `-J` the gateway's key is checked on your computer
+  too: the message names the gateway (`ssh <gateway> true`) or the node
+  when ssh's own message names it, and otherwise gives both lines, the
+  gateway's first. ssh prompts written to stderr now show before you
+  answer them.
+- **`mace gui connect --dry-run` prints a PowerShell line on Windows.**
+  Its POSIX-quoted line cannot be pasted into PowerShell; on Windows each
+  command now also comes as `ssh --% ...`, and each form says which shell
+  it is for.
+- **Killing `mace gui connect` on Windows ends its ssh.** A Python killed
+  from Task Manager left `ssh.exe` holding the tunnel; ssh now runs in a
+  Windows job object that closes with Python.
+- **Stopping MACE GUI no longer fails on a cut-off reply.** A stop shuts
+  the server down while it answers, and on a busy machine the reply could
+  end early. `mace gui --slurm` then exited with code 1 (an IncompleteRead
+  traceback) instead of reporting that MACE GUI stopped. The control calls
+  of `mace gui --managed`/`--slurm`, `mace gui connect` and `mace gui
+  login-url` now treat a cut-off reply as no answer.
+- **`mace-gui-connect.sh` shows the link at once in MobaXterm.** Under
+  MobaXterm the link appeared only after Enter was pressed. The script now
+  takes ssh's output from a file it follows instead of a FIFO, and its
+  check that the tunnel answers gives up on a silent connection after 3 s
+  (20 s in all, as `mace gui connect`) instead of waiting for good.
+- **No "stty: standard input: Inappropriate ioctl for device" before the
+  link.** A node's login profile prints it when `bash -l` runs without a
+  terminal; `mace gui connect` and `mace-gui-connect.sh` drop exactly that
+  line until the server is ready (it stays in their failure diagnosis).
+- **No "channel N: open failed: connect failed: Connection refused"
+  before the link.** With the jump hop the tunnel's local port listens as
+  soon as ssh connects, so a connection that arrives before the server
+  listens (a browser tab left from an earlier session) made ssh print it.
+  `mace gui connect` and `mace-gui-connect.sh` hide exactly that line until
+  the tunnel answers, and show it when the tunnel never does.
+- **The scripts' `--dry-run` names the hop.** `mace-gui-connect.sh
+  --dry-run` and `mace-gui-connect.ps1 -DryRun` start with a `# hop jump`,
+  `# hop nested` or `# no hop` line, as `mace gui connect --dry-run` does;
+  the arguments follow one per line.
+- **The MobaXterm notes cover its own keys.** MobaXterm asks the host-key
+  questions again and, with the jump hop, the node's password, until a key
+  is set up in its own `~/.ssh`; docs/gui.md shows how to use the Windows
+  key there.
+- **The MobaSSHTunnel recipe works.** docs/gui.md told MobaXterm users to
+  make one tunnel from the gateway to the node's port, but `mace gui`
+  listens only on the node's `127.0.0.1`, so the browser kept loading. The
+  section now uses the `ssh -N -J ...` line `mace gui` prints (in
+  MobaXterm's local terminal) or two chained MobaSSHTunnel tunnels ending
+  at `127.0.0.1`, and explains a browser that keeps loading. The printed
+  hint says the tunnel must end at the node's `127.0.0.1`.
+- **The tunnel hint can be pasted.** `mace gui` printed `you@<gateway>`,
+  which bash reads as a redirect ("bash: gateway: No such file or
+  directory"). It now prints `LOGIN_HOST` and says to replace it, or the
+  real login host from `--gateway`, `MACE_GUI_GATEWAY` or the new `[gui]`
+  `gateway` key of `site.toml` (which a cluster's `/etc/mace/site.toml`
+  can set for everyone). It also gives the line that exports the
+  standalone script for a computer without MACE (MobaXterm, Git Bash,
+  PowerShell), and the GUI's Connecting dialog shows the same.
+- **`mace gui` never draws through X11 forwarding.** MobaXterm sets
+  `DISPLAY` on the node. The server and its workers now always use
+  matplotlib's Agg backend (jobs submitted from the GUI keep your login
+  environment), and `--open` starts no browser on the node through a
+  forwarded display; it says to use the tunnel.
+- **A profile saved on Windows reads in MobaXterm.** Python on Windows
+  wrote `connect.toml` with CRLF line ends, and `mace-gui-connect.sh` then
+  never found its `[defaults]` profile ("pass --gateway ... or save a
+  profile"). The script now ignores a line's trailing CR everywhere, and
+  `mace gui connect --save` writes LF line ends on every system (Python and
+  the PowerShell script read both).
+- **MobaXterm, Cygwin and Git Bash find a profile saved on Windows.**
+  `mace-gui-connect.sh` reads `%APPDATA%\mace\connect.toml` when its own
+  `~/.config/mace/connect.toml` is missing, and says so; under Git Bash it
+  turns off MSYS path conversion, so `//` and `/c/` paths reach ssh as
+  written.
+- **Windows checkouts and zip files no longer break workflow plans.** The
+  workflow planner and executor read their job-script templates through
+  two symbolic links, which Windows extraction (or git without symlink
+  support) turns into one-line text files that were copied as the
+  template. They now read `mace/submission/` directly.
+- **The connect documentation covers Windows.** `mace gui connect` runs
+  natively on Windows (`python <MACE>\mace_cli gui connect`, since
+  Anaconda has no `py` launcher); the profile's permissions on Windows, the
+  dry-run quoting per shell, first-use host keys, MobaXterm's own profile
+  and `~/.ssh`, picking a personal port on a shared dev node, and the
+  PowerShell script's differences (no `--slurm`, `-Hop auto` works as
+  `jump`) are described.
+
+- **Submit no longer reports a false preview mismatch.** It could say the
+  run's job scripts differ from the preview when the scripts' trailing
+  checksum happened to look like a Unix time, because only one side was
+  normalized. The comparison now ignores that checksum.
+
+- **FREQ "Custom settings" writes the IR/Raman spectrum it asks for.** A
+  Yes to "Generate IR/Raman spectrum plot?" wrote no IRSPEC or RAMSPEC
+  block, and the spectrum questions were never asked. They now are, and
+  each answer becomes its CRYSTAL23 keyword: the spectral range (RANGE),
+  the step size (LENSTEP, replacing a "resolution" nothing read), a
+  Gaussian line shape (GAUSS for IRSPEC, VOIGT 0 for RAMSPEC), the FWHM
+  (DAMPFAC), and the Raman temperature and laser (RAMANEXP T, nm). An
+  answer at CRYSTAL's default writes nothing. With IR and Raman both
+  chosen, both plots are offered. The questions no CRYSTAL input or MACE
+  tool reads (a Raman laser and temperature outside RAMANEXP, absolute
+  Raman units, CSV/JCAMP-DX output) are gone, and the RAMANEXP temperature
+  is kept apart from THERMO's TEMP. The predefined FREQ templates write the
+  same decks as before.
+- **Setup and Batch Setup accept a CIF spglib cannot reduce.** A P1 CIF, or
+  a slab or molecule in a box, makes `mace cif2d12` ask "Use the 'reduced'
+  structure anyway?", a question Setup did not know, so it stopped and
+  wrote no deck. Setup now keeps the CLI's default (Yes; every atom is kept
+  either way).
+- **TRANSPORT Setup works on an output with a Fermi energy.** `mace opt2d3`
+  then asks for the chemical potential range relative to it ("Minimum μ
+  (eV below Fermi)"), which Setup did not recognize, so Setup and Batch
+  Setup stopped without a deck. The CLI's defaults (-2 to 2 eV) are kept.
+- **Setup knows the rest of the CLIs' questions on its routes.** A check of
+  every question in the CLIs' source found more that Setup could reach but
+  did not recognize, each stopping the run: a FREQ template's "Other
+  questions" (spectral and temperature ranges, supercell, phonon band path
+  and k-point density, INS) and Custom settings (supercell expansion,
+  INTERPHESS, phonon bands and DOS, CPHF, restart checkpoint); cif2d12's
+  tolerance search after "Use original CIF space group"; a basis set
+  missing an element (Setup now shows the CLI's refusal); opt2d12 on a
+  parent whose functional MACE cannot identify (Enter keeps the CLI's
+  HSE06); and opt2d3's POTC point count. The FREQ template answer no longer
+  also answers the phonon band path's "Select template" menu.
+- **An EXTERNAL deck redraws when its geometry file changes.** The GUI's
+  cache was keyed on the deck file alone, so after its `.ext` (or the
+  run's `.out`) was added or changed the viewer kept the old drawing or the
+  old error until the deck itself changed.
+- **A deck with a non-standard origin (IFSO > 1) is drawn as CRYSTAL builds
+  it.** The GUI (and `mace preopt`) ignored the IX IY IZ origin-shift
+  record, so the space group's operations were applied about the wrong
+  point and a different structure was drawn. They now act about the shifted
+  origin (IX IY IZ / 24 of the cell vectors), matching CRYSTAL23's TESTGEOM
+  output; the deck's own frame is kept.
+- **An EXTERNAL deck opens in `mace gui`, and `mace submit` / `mace
+  preflight` say when its fort.34 is missing.** A deck whose geometry is
+  `EXTERNAL` (CRYSTAL reads fort.34 at run time) showed "not found:
+  'cell_parameters'". The GUI now draws it from the file its job would stage
+  as fort.34 (`<deck>.ext`, or what the deck's own `.sh` copies there), else
+  from the run's `.out`, labeled "geometry from <file>"; with neither it says
+  what to put where. `mace submit` (and the GUI's submit preview) warns
+  before such a deck goes to the queue without that file, and `mace
+  preflight` names it and stages what a hand-written job script copies.
+  A deck the reader cannot follow now gets a plain reason (a 400, not "not
+  found"); decks with the space group as a symbol (IFLAG 1) or in
+  rhombohedral axes (IFHR 1) draw correctly, and a geometry edited after the
+  atoms (SUPERCEL, ATOMSUBS, ...) is labeled as drawn before the edits.
+- **Properties jobs get one memory default on every path.** Workflow quick
+  start stored the properties memory as `memory_per_cpu: "80G"`, which the
+  executor ignores for `submit_prop.sh`, so those jobs got `--mem=48G`; the
+  planner offered 48G for BAND and DOSS (80G x 0.6, also applied to a
+  site's own `[resources.properties] mem`), while `mace submit` and the
+  template use 80G. Quick start, the planner, workflow steps and `mace
+  submit` now all write the same total, `--mem=80G` (`PROPERTIES_MEMORY` in
+  `mace/workflow/common/constants.py`), and a site's `[resources.properties]`
+  `mem` or `mem_per_cpu` is written as set.
+- **The job-efficiency report says what CPU efficiency cannot show.** MPI
+  libraries such as Intel MPI keep waiting ranks busy, so CPU efficiency near
+  100% does not show that every core did useful work. `mace cluster job` and
+  the GUI's Job document now say so once, right after the CPU line (once per
+  `--follow`, not every refresh), and suggest comparing run times at different
+  core counts; the numbers and the "You could request fewer cores" hint are
+  unchanged.
+- **The run view's ENERGY ALONG THE RUN is one continuous curve across
+  FINALRUN restarts.** An optimization CRYSTAL restarted with FINALRUN was
+  drawn as separate pieces, each relative to its own segment's point, with
+  the line broken at every restart. By default the card now connects every
+  optimization point and takes ΔE relative to the run's first or final
+  point; the restarts stay marked by dotted lines. **Segments: Separate**
+  (the card, Run Analysis › Plot Options, and Settings › Plots) brings back
+  the per-segment view, remembered per document. Copy TSV gains a segment
+  column and, like Open as Plot, follows the choice. The same data in the
+  terminal: `mace analyze --convergence FILE.out --energy [--segments
+  separate] [--relative-to first] [--unit eV]`.
+- **The OPT compare view's Displacement map and arrows show something when
+  only the cell relaxes.** Displacements were measured relative to the cell
+  (the change of fractional coordinates), so an optimization whose atoms sit
+  on special positions (AB graphite, rock salt) while the cell shrinks drew
+  no arrows and a 0.0000 Å to 0.0000 Å scale. A new **Δr** choice offers
+  **With cell change** (r_final − r_initial in Å, the cell change included,
+  the mean shift removed, the nearest periodic image), the default when the
+  cell changed, and **Relative to the cell** (the old measure), remembered
+  in this browser. When the atoms did not move the legend says so and gives
+  the cell's change (a, b, c, V in Å and %); the scale reads in Å or pm
+  with three significant figures (one value when every atom moved the
+  same), the arrow note says how far 1 Å drawn moved, the Arrow × slider
+  reaches past ×200 for small relaxations, and arrows are skipped only when
+  their drawn length is under 0.01 Å.
+- **A click on an IR or Raman peak opens the mode under the pointer.** The
+  plot took the mode from plotly's last hover, which plotly computes at most
+  every 50 ms, so a quick click right after moving could open a neighbor the
+  pointer passed on the way (on a LiFSI-DEC spectrum, mode 55 instead of the
+  strong mode 54 1.5 cm⁻¹ away). The mode now comes from the marker nearest
+  the click itself (within 10 px).
+- **`mace gui connect` no longer asks for the node's password when the
+  gateway's key is set in `~/.ssh/config`.** With the jump hop (`ssh -J`),
+  the node hop logs in from your computer with the settings ssh has for the
+  node's name, so an `IdentityFile` in the gateway's `Host` block (e.g.
+  `Host hpcc` with `~/.ssh/id_ed25519_hpcc`) did not reach it: without an
+  agent holding that key, the node got only the default key files, and ssh
+  asked for the node's password. The gateway's `IdentityFile`,
+  `IdentityAgent` and `IdentitiesOnly` are now passed for the node hop too
+  (`--dry-run` shows them), and a refused node points to the new
+  troubleshooting entry (docs/gui.md, "the node asks for a password"). The
+  standalone scripts do the same.
+- **`mace gui connect --mace ~/...` finds MACE on the node.** An unquoted
+  `~` is expanded by your own shell, so `--mace ~/mace/mace_cli` reached the
+  node as `/home/you/mace/mace_cli`, which is not there when the node's home
+  is elsewhere ("did not find the mace command"). A `--mace`, `--dir`,
+  `--root` or `--conda` value (or a saved profile value) under this
+  computer's home folder is now sent as `~/...` and expanded on the node,
+  with a note; quote the `~` to pass a path as is. When the mace command is
+  still not found, the message names the rewritten path. `--conda` takes a
+  `~/...` path too. The standalone scripts do the same.
+- **Stop Server in the GUI tells every open tab that its running tasks were
+  canceled.** The server now waits (5 s at most) for each canceled task to end
+  and for its event to reach the tabs before it exits; before, the tabs could
+  keep showing the task as running.
+- **`mace gui --slurm` no longer leaves its ssh tunnel running.** The tunnel
+  (and anything it started) now ends with the session however it ends: Stop,
+  Ctrl+C, SIGTERM, a hang-up, an error, or, on Linux, the session being
+  killed. Once the GUI is ready, a hang-up or SIGTERM leaves the job
+  running, to reattach to; before that, the session cancels the job it
+  submitted.
+- **`mace gui connect` explains a key that ssh could not use.** When ssh
+  ends with "Permission denied (publickey)" or cannot unlock a key with a
+  passphrase, it now says to load the key with `ssh-agent` and `ssh-add` (on
+  Windows the OpenSSH Authentication Agent service), or to use an
+  `~/.ssh/config` Host alias as the gateway. A gateway that looks like an
+  email address (`netid@university.edu`) gets a warning naming the profile
+  file and the `--gateway ... --save` fix; it still connects. The standalone
+  scripts do the same.
+- **GUI: a middle click in a 3D viewer no longer pastes on Linux.** The
+  primary-selection paste it also sends opened Import from Clipboard with
+  whatever text was last selected (or pasted copied atoms into the open
+  structure); the middle button now only pans or zooms there. Ctrl+V and a
+  middle click on a text field paste as before.
+- **GUI: no drop-down, menu or button cut off or hidden at everyday zoom
+  levels.** Drop-downs with a fixed height cut their text's descenders (the
+  vertical padding left too little room for Linux's DejaVu Sans), segmented
+  buttons wrapped inside their fixed height ("Upper Left"), the Inspector's
+  Supercell/Transform/Edit Cell row pushed its first button out of sight, and
+  Calculation Setup squeezed its drop-downs in the narrow Inspector. Menus,
+  plot menus, the Plot Options popover and the periodic table now open in one
+  overlay layer above every panel (a plot's popover was clipped by its panel
+  and covered by the bottom panel), stay inside the window, and follow one
+  z-index scale (`--z-*` in `css/tokens.css`), with notices below menus. At
+  narrow widths the main toolbar scrolls sideways rather than wrapping: at
+  110% on a 1280 px wide window, for example, Setup is reached by scrolling
+  the toolbar.
+- **Stopping the GUI no longer leaves a half-started worker behind.** A task
+  dispatched while the server stopped could start a pool worker that the
+  exiting server never finished starting, which printed an `EOFError`
+  traceback; the pool now takes nothing new once it is stopping.
+- **Auto pre-optimization classifies a structure about ten times faster.**
+  The dimensionality scan now checks the bond network once per bond length
+  instead of after every bond: 0.4 s instead of 5 s for a 128-atom slab.
+- **A middle click on a toolbar button or tab no longer pastes either.** As
+  in the 3D viewer, the primary selection a middle click brings on Linux is
+  dropped anywhere outside a text field.
+- **All-caps element symbols in CIFs are read as the right element.** `BI`
+  was read as boron, `CL` as carbon and `SN4+` as sulfur, and a lower-case
+  `bi` failed. cif2d12, the GUI and `mace preopt` now take the two-letter
+  element when the first two letters name one, and prefer the type symbol over
+  the label.
+- **POSCAR species lines are read in any case.** `BI S` or `bi s` no longer
+  stops the GUI with a `KeyError`.
+- **cif2d12's manual CIF reader works again.** When ase cannot read a CIF,
+  the fallback reader stopped with `NameError`; it now reads the atoms (a
+  label such as `C1A` is carbon) and drops uncertainties from cell values.
+- **cif2d12 writes the CIF's asymmetric unit when it keeps the CIF's space
+  group over spglib's.** When spglib found a different group (an R-3c or
+  P63/mmc CIF written to 6 decimals reads as a lower one) and the CIF's group
+  was kept, as batch mode always does, the deck listed every atom of the cell
+  under that group (30 for R-3c Ag2Br3), so each atom CRYSTAL generated was a
+  copy it had to fold back, and the GUI could not open the deck. It now lists
+  the CIF's own atom records (2), which CRYSTAL expands to the same 30 atoms.
+- **The GUI shows the same Fd-3m structure cif2d12 writes.** A CIF of
+  diamond at (1/8, 1/8, 1/8) with no symmetry operators listed opened as 16
+  overlapping atoms (ase's origin choice 1); it now opens in origin choice 2,
+  as cif2d12 writes the deck, with 8.
+- **`mace preopt` reads such an Fd-3m CIF the same way.** It pre-optimized
+  the 16 overlapping atoms and wrote them back under Fd-3m; it now starts
+  from the 8-atom diamond cif2d12 and the GUI read.
+- **Job efficiency in plain numbers.** The Job view and `mace cluster job`
+  now say, for example, "CPU efficiency 62% (used about 20 of 32 cores on
+  average)" and "Memory peak 9.4 GiB of 64 GiB requested (15%)", also for a
+  running job (from `sstat`) instead of "Not measured by SLURM". CPU time is
+  summed over all job steps, not taken from the largest one, and a per-node
+  `ReqMem` is counted correctly. A running job's `extern` step, for which
+  sstat reports an impossible CPU time, is left out (and listed in the
+  details), and an OUT_OF_MEMORY job is advised to ask for more memory.
+- **GUI: clicks and selections land under the pointer at any UI scale.** At a
+  scale other than 100 %, picking atoms, box and lasso selections, right-click
+  menus, plot hover and splitter drags landed off from the pointer in current
+  Chrome, Edge, Brave and Firefox.
+- **GUI: a clear message instead of a blank 3D view without WebGL.** The
+  message now says first that the 3D view needs WebGL and to turn on hardware
+  acceleration in the browser's settings, then reload. It also shows when the
+  browser passes the WebGL check but gives the 3D view no context, which left
+  the panel blank before.
+- **GUI: the 3D view is sharp at a UI scale above 100 %.** The 3D canvas was
+  drawn at 100 % and stretched, so atoms and labels looked soft at 110-150 %.
+  It now draws at the screen's full resolution; clicks and selections still
+  land under the pointer.
+- **Two workflows in one folder no longer share job-script templates.** The
+  templates each later step is built from were kept only in the folder's
+  `workflow_scripts/`, named by step (`submitcrystal23_sp_2.sh`), so a second
+  workflow planned in the same folder overwrote the first one's, and the first
+  workflow's later steps ran with the second one's cores, memory and walltime.
+  An isolated (or hybrid) workflow now also keeps its own copy in
+  `.mace_context_<id>/workflow_scripts/` and its steps are built from that.
+  A workflow planned before this keeps using `workflow_scripts/`; when a new
+  workflow is planned in its folder it first gets a copy of the templates it
+  uses, so it keeps its resources. Shared-mode workflows are unchanged.
+- **"Archive workflow context after completion" waits for the last step.**
+  The planner's archive (and export-and-delete) option acted right after the
+  first jobs were submitted: the running jobs' `MACE_CONTEXT_DIR` pointed at
+  a folder that was gone, their callbacks fell back to a database in the job
+  folder, and the workflow stopped after its first step. The job callback
+  now carries out the action, under the queue lock, once every step of the
+  workflow has finished (completed, or failed with nothing resubmitted) and
+  the completed ones have been through progression. Exported databases are
+  copied through SQLite, so the latest results are in them.
+- **An incomplete copy of a workflow's own templates costs no step its
+  resources.** A copy into `.mace_context_<id>/workflow_scripts/` that failed
+  part way (over quota, say) left the folder with templates missing, and the
+  engine then looked nowhere else: those steps got the generic job script
+  instead of the plan's cores, memory and walltime. The copy made for an
+  older workflow is now made aside and renamed into place whole, and a step
+  whose template is missing from the workflow's own copy uses the folder's
+  `workflow_scripts/` one (with a line saying so) before the generic script.
+- **A d12 step's own expert configuration in the plan is used.** BAND, DOSS
+  and the other D3 steps built their deck from the plan step's
+  `expert_config_file`; the SP (the first one too), OPTn, SPn and FREQ steps
+  ignored it and ran with the parent's method or the step's other settings.
+  The planner writes `expert_config_file` only for D3 steps, so plans made
+  by the planner are unchanged; this affects plans whose d12 steps carry the
+  key (written by hand, or by tools to come such as the GUI planner). Those
+  steps now take the same order as the D3 steps: the step's
+  `expert_config_file` first (a path from another machine is looked up by
+  name in `workflow_configs/expert_<type>_configs/`), then what they used
+  before. For OPT2/SP2/FREQ-style steps the key, when present, now takes
+  precedence over the per-material
+  `{material}_{type}_expert_config.json` lookup. A step without one is
+  unchanged and keeps the parent's settings.
+- **A plan's `auto_progression: false` is followed.** `mace workflow` printed
+  "Auto progression: disabled" and every job's completion callback submitted
+  the next steps anyway. With it off, the callback now records the completed
+  step, submits nothing and prints how to continue: `mace engine --action
+  process` (with the workflow's database), which submits the next steps.
+- **A workflow started from CIFs keeps one plan.** The CIF conversion saves
+  the plan with the generated decks as `workflow_plan_<id>_updated.json`,
+  which also matched `workflow_plan_*.json`: the workflow progress report then
+  found two plans and showed no planned sequence, and the template store took
+  the copy instead of the plan. Both, the GUI's batch view and the database
+  rebuild now skip the copy.
+- **Workflows started in the same second no longer share an id.** A
+  workflow id was the start time to the second (`workflow_20261014_120000`),
+  so two launches in one second (two `mace submit --progress` runs, a script
+  starting several plans) wrote the same plan file and used one context. Ids
+  now end in four random hex digits (`workflow_20261014_120000_3fa9`), and
+  each new id is checked before use: a suffix drawn again in the same second,
+  or an id whose plan file or context already exists in the folder, is
+  replaced by a new draw, and the id is reserved in the workflow folder
+  (`workflow_configs/.workflow_ids/<id>`, created atomically) so two
+  processes starting at the same moment never get the same one. The plan
+  file, context folder and output folder names follow the id as before.
+  `mace workflow --quick-start` names its plan file and runs the workflow with
+  one id (they matched only when both were made in the same second, otherwise
+  the folder got a second plan file). Existing workflows keep their ids.
+- **The 3D views turn about the unit cell's center, and show it while they
+  turn.** A view turns about the point at its center, and the default view
+  centered the projected outline of the drawing, so a crystal turned about a
+  point that moved with the atoms and boundary atoms drawn. The default view
+  (and Reset View) now centers the cell: its middle for a crystal (the middle
+  of what is drawn for a larger display range), the in-plane cell center at
+  the slab's mid-height for a slab, and the middle of the atoms for a
+  molecule. This holds in the structure view, the comparison, the mode and
+  volume views and the slab preview; edits keep the view as before, and a pan
+  carries the center along. While a drag turns a view (right-drag in the
+  structure view, left-drag in the others) a small crosshair marks the center
+  and goes away on release. View › Center Rotation on Unit Cell and Center
+  Rotation on Selection (also in the viewport's menu and the command palette)
+  move the center without changing the zoom or the orientation.
+- **The toolbar's display options work in the mode view of a FREQ output.**
+  Show Unit Cell, Show Bonds, labels, boundary atoms, the display range
+  (supercells), the atom style, the projection, View Along, the 90° turns and
+  Reset View were gray there. Every periodic image of an atom now moves as the
+  atom does (the modes are at Γ); for a phonon-dispersion output the view keeps
+  one cell and the range says why. Bonds come from the rest geometry in every
+  frame, so they no longer flicker as atoms swing past the bond cutoff; labels
+  sit at the rest positions. The Inspector's 2×2×2 box follows the display
+  range. Every 3D view now starts in the projection Settings › Viewport set
+  (the mode, volume and comparison views drew in perspective until it was
+  changed), and a refit of the mode or comparison view lands where the first
+  one did. The comparison of a run's steps follows Show Unit Cell, Show Bonds
+  and the atom style too. Options that cannot apply say why in their tooltip
+  (editing tools in the mode view, labels and ranges in the comparison, the
+  structure options in a volume, which has its own in the Inspector).
+- **The mode view no longer shows scrollbars or zooms in and out while it
+  plays or turns.** The structure views' 280 px minimum height applied to the
+  mode view's 3D view too, so where less room was left under its head (a
+  bottom panel, a UI scale of 110 % or more) its panel scrolled; a scrollbar
+  took room from the 3D view, which resized it, which took the scrollbar away
+  again, and the view pumped on every frame. The mode and volume views now
+  fill exactly the room they have, their panels never scroll, the mode view's
+  head wraps instead of widening the panel, and every 3D canvas is a block
+  clipped to its viewer.
+- **Band plots no longer join the two sides of a k-path break.** At a
+  discontinuity such as `A|L` or `M|H`, the `mace gui` band plot drew a
+  near-vertical line from the last band energy at A to the first at L.
+  CRYSTAL does not repeat the k-point at a break (the tick's point ends one
+  panel and the next point is already one step along the path), and the gap
+  was only inserted where an x value repeated, so real BAND.DAT files never
+  got one. The gap now goes after the tick's point in both layouts; the
+  `A|L` label is unchanged. `mace plotting --band` already drew each segment
+  on its own and is unaffected.
+- **A non-magnetic spin-polarized band structure is drawn once, not as a
+  solid red line over the blue one.** With SPIN on, CRYSTAL writes beta bands
+  that differ from alpha only in the last printed digit (graphite: at most
+  2.7 meV), and `mace gui` drew them dotted over the solid alpha set. Where
+  bands are degenerate (graphite's L-H valence pair, the flat Γ-A bands) the
+  dotted copies run out of phase and fill each other's gaps, so those regions
+  looked solid pink. Bands that agree within 10 meV everywhere are now drawn
+  once, labeled "α = β (non-magnetic)" with the largest difference in the
+  note under the title; a magnetic run keeps both sets, now with beta drawn
+  under alpha. `mace plotting --band` draws such a run (and a closed-shell
+  run, which also writes two equal blocks) as one set too, with the legend
+  "Spin ↑ = ↓ (non-magnetic)" or "Bands" instead of a dashed copy on top.
+- **Both spins of a spin-polarized DOS are filled and listed in the
+  legend.** In the `mace gui` DOS panel only the spin-up total had a shaded
+  fill; the mirrored spin-down total (dotted, on the left) had none, and the
+  legend listed only the "↑" entries. The spin-down total is now filled too,
+  lighter and hatched so the two sides read apart in light and dark themes,
+  the legend lists each projection once (a click hides both its spins) plus
+  a key, "↑ solid, right" and "↓ dotted, left", and the note under the title
+  says which side is which. `mace
+  plotting --dos` already filled both sides.
+- **A wide energy range no longer collapses the DOS panel.** When the DOSS
+  energy window cuts through bands, CRYSTAL puts a large value in the
+  second record of each spin block (graphite: 133 states/eV in one bin, under
+  2 elsewhere; about four states, those below the window). With the plot's
+  energy range widened past the window edge (for example -10 to +10 eV
+  around a window starting at -7 eV), that bin drew a long horizontal line
+  across the DOS panel and set its axis to about ±130 states/eV, squashing
+  every curve onto zero. `mace gui` and `mace plotting --dos` now leave that
+  edge bin out (only when it is a clear spike: three times its neighbor and
+  above every value inside the window), the GUI shades the energies outside
+  the computed DOS window on the DOS panel and says so in the note under the
+  title, and the DOS axis keeps fitting the data within the visible range.
+- **The GUI's Open Editors list no longer squeezes the file tree.** Every
+  open document added a row to the explorer's Open Editors section with no
+  limit, so with many documents open the file tree shrank to nothing. Each
+  explorer section (Open Editors, Files, Materials.db, Recent) now scrolls
+  inside its own share of the explorer, the file tree keeps at least about
+  five rows (a third of a short explorer), and the active editor's row stays
+  in view. Open Editors and Files now fold from their header like Recent and
+  Materials.db (click, Enter or Space), and the folds are remembered with
+  your profile. The section is also no longer redrawn under the pointer or
+  keyboard focus every time the profile syncs.
+- **k-path tick labels no longer overlap, and `mace plotting --band` puts
+  each one at its own k.** Seekpath's path for a base-centered orthorhombic
+  cell (oC2/oA2, e.g. slipped AB graphite: Γ-Y-F₀|Δ₀-Γ-Z-B₀|G₀-T-Y|Γ-S-R-Z-T)
+  has segments much shorter than the rest when ζ is close to 1/2 (Y-F₀ and
+  B₀|G₀-T, 14 times shorter than Γ-Y here). That is the standard path, not a
+  generation error, but the labels of those ticks ran into each other: the
+  `mace gui` band plot printed "YF₀|Δ₀" and "B₀|G₀T" on top of each other and
+  turned the axis labels sideways. A label too close to its neighbor now
+  drops to a second row (the plot makes room below), the labels stay
+  upright, ticks at the same k merge into one "A|B" label, and the layout is
+  redone when you zoom along k. `mace plotting --band` spread each segment's
+  labels evenly along it, so on Γ-Y-F₀ the Y label sat half-way instead of
+  next to F₀ (and on graphite's Γ-M-K-Γ-A-L-H-A every inner label was off);
+  labels now sit at the BAND.DAT tick positions, a crowded label drops a row
+  the same way, and the "Wave Vector" title is left out when it does (the
+  axes keep their fixed place so band and DOS figures still line up).
+  The three breaks of this path get gaps like any other.
+- **Two queue callbacks no longer run at once.** The queue lock counted as
+  expired after 5 minutes even while its holder was still running, so a
+  waiting callback broke in, and the first holder's release then deleted the
+  new holder's lock file, letting a third one in. It is now an OS lock (a
+  POSIX record lock, held until its holder finishes or exits, with no
+  expiry) on a lock file that is never deleted; it works across the nodes of
+  a cluster on NFS and GPFS (checked on MSU HPCC's home and scratch). The
+  lock is also one lock for every callback mode: before, completion
+  callbacks and `mace manager --callback-mode full_check` / `status_check`
+  each took their own lock and both could resubmit the same failed job
+  through recovery. On a filesystem without working locks MACE falls back
+  to an owner-token file with a heartbeat that is deleted only by its owner;
+  `MACE_QUEUE_LOCK=token` forces that (for Lustre mounted with <!-- british-ok: Lustre is a file system -->
+  `localflock`). The lock file is now `.queue_locks/queue_state.lock`; old
+  `queue_manager_<mode>.lock` files are ignored and can be deleted.
+- **`mace completion --remove-zombie-jobs` no longer cancels another
+  calculation's job.** The job id was read from any `*<name>*.o` log in the
+  folder, so a finished `si` took `si_sp-19000002.o` (a healthy job still
+  running) as its own and canceled it; with several logs the first one the
+  folder listed won. Now only the calculation's own logs count
+  (`<name>-<id>.o`, as MACE's job scripts write them, `<name>_<id>.o`,
+  `<name>.o<id>` and a job array task's `<name>-<A>_<T>.o`), the newest
+  wins, and before anything is canceled SLURM (squeue, else scontrol) must
+  confirm the job: its name is the calculation's and it runs in the
+  calculation's folder, or, for an array task, MACE's record of that array
+  lists this calculation as that task. A job SLURM does not confirm is
+  listed as not canceled, with the reason. The prompts are unchanged.
+- **The max-jobs limit counts the jobs really in the queue.** `mace manager`
+  (`--callback-mode submit_new` and `full_check`) counted the entries of
+  `crystal_job_status.json`, which are never removed and were also read
+  from your home folder and the temp folder: an old file with 220 entries
+  stopped every new submission ("Queue nearly full (220/250)") with an
+  empty queue, while a really full queue did not stop anything. It now
+  counts your running and pending jobs in squeue (each job array task
+  counted, all your jobs, as SLURM counts them against its limit), or, when
+  squeue does not answer, the database's submitted and running
+  calculations. The status file is still written, and `--status` still
+  shows it, but it no longer limits submission.
+- **A job killed for memory before writing its output is recorded as
+  failed.** The queue check asked sacct for a job's state without `-P`, and
+  sacct cuts the State column at 10 characters: OUT_OF_MEMORY came back as
+  `OUT_OF_ME+`, which MACE did not take as an end state, so the calculation
+  stayed "submitted" forever and its recovery never ran. sacct is now asked
+  for parsable output (as job array tasks already were), and the state is
+  read whole (`CANCELLED by 1234` reads CANCELLED). OUT_OF_MEMORY,
+  NODE_FAIL, PREEMPTED, BOOT_FAIL, DEADLINE and TIMEOUT all count as end
+  states.
+- **Jobs that ended days ago are not resubmitted on their own.** With the
+  sacct fix above, a calculation left "submitted" by a job that ended long
+  ago (OUT_OF_MEMORY, NODE_FAIL, ...) is now recorded failed on the next
+  sweep. When sacct says that job ended more than 3 days ago, MACE records
+  the failure with the real state and classifies its error (so `mace
+  recover` finds it) but does not start its recovery; it
+  prints one line per job ("job 123 (name) ended OUT_OF_MEMORY on <date>;
+  not resubmitted automatically - run `mace recover --db <db>` to retry").
+  Jobs that ended more recently are recovered as before. Set
+  `MACE_RECOVER_MAX_AGE_DAYS` to change the 3 days.
+- **Batch Setup keeps parents with the same file name apart.** Two parents
+  named alike in different subfolders (`A/mat.out` and `B/mat.out`, or two
+  `mat.cif`) wrote the same settings file and the same deck in the batch
+  folder, so the second overwrote the first. Their settings files, CIF copies
+  and decks now start with their subfolder's name (`A_...`, `B_...`), and
+  `commands.sh` renames the follow-up decks the same way. Files whose names
+  would still clash (`x.out` and `x.log` in one folder) are refused before
+  anything is written.
+- **IR spectra from IRSPEC.DAT have the right column names.** The GUI called
+  the file's second column "transmittance"; it is the wavelength in nm
+  (CRYSTAL23 manual, p.453). The third column is the raw absorbance, and a
+  periodic run's file has the classical and two Rayleigh absorbances and a
+  reflectance per inequivalent direction after it, which the plot now offers
+  as components (the y axis says Reflectance when one is shown). The data
+  export names every column and adds `wavelength_nm`. RAMSPEC.DAT's columns
+  were already right.
+- **Comparing molecules no longer shows atoms that did not move.** A
+  molecule's cell is only its bounding box, and Compare measured each atom
+  in fractions of each structure's own box (a CIF of the EC molecule in a
+  40 Å box against its MOLECULE output: 2.4 Å "displacements" and a −93 %
+  cell). A molecule, or two structures that differ in periodicity, is now
+  compared in Cartesian coordinates once the rigid translation and rotation
+  are taken out, with no cell table; the atom pairing works about each
+  structure's center too. Crystals, slabs and polymers compare as before.
+- **Build › Supercell works on slabs and polymers.** It refused every
+  structure that is not periodic in 3D ("Supercells are built from 3D
+  cells"), so a SLAB or POLYMER output could not be repeated. It now repeats
+  along the periodic directions: the dialog keeps n at 1 along the others,
+  and a matrix that would repeat or mix in a non-periodic direction is
+  refused with the reason (a molecule has nothing to repeat). Atoms are no
+  longer wrapped along a non-periodic direction, which would have split a
+  slab whose atoms sit outside its nominal cell. Opening the Matrix tab now
+  carries the n1 × n2 × n3 values over; it left the matrix empty.
+- **No BAND, DOSS or TRANSPORT deck for a molecule.** `mace opt2d3` (and so
+  Setup and Batch Setup) wrote a BAND deck with a triclinic k-path for a
+  MOLECULE output, which CRYSTAL does not run: the CRYSTAL23 manual says BAND
+  "does not run for molecules" (p.309) and DOSS "do not run for molecules"
+  (p.320), and BOLTZTRA's transport comes from the bands. `opt2d3` now stops
+  before asking anything, says why and writes no deck; Batch Setup's scan
+  marks a molecule not eligible for these three, and Setup shows the reason.
+  CHARGE and POTENTIAL still work for molecules. Slabs and polymers keep
+  their in-plane and along-chain k-paths.
+- **A keybinding row's Reset no longer binds a key twice.** Reset gave the
+  command its default keys back even when another command had been given one
+  of them since, so one key ran two commands with no warning. It now asks
+  first, as recording a key does: Replace takes the key back from the other
+  command, Cancel leaves both as they are.
+- **A crashed or out-of-memory-killed run no longer reads as "still
+  running" for 10 minutes.** An output that ended with CRYSTAL's fatal
+  `ERROR ****` banner, or with the MPI launcher's "BAD TERMINATION … KILLED
+  BY SIGNAL: 9" (an out-of-memory kill) or an `MPI_Abort`, had none of the
+  end markers MACE looked for, so the GUI showed it live (and Batch Setup
+  "still running") until it was 10 minutes old. These lines now end a run
+  at once, everywhere MACE decides whether an output is live. None of them
+  appears mid-run in any output of the test corpus.
+- **A volume slice outside the grid is refused with the valid range.**
+  `api/volume/slice` with a plane index past the grid's last plane failed
+  as a server error (500); a negative or non-numeric index did too. The
+  index is now checked against the cube's header before anything runs, and
+  answered with 400 and "index runs from 0 to N". The volume view resets a
+  stored plane that does not fit the grid it opens.
+- **A molecule's output is known by CRYSTAL's own banner.** CRYSTAL23 prints
+  "MOLECULAR CALCULATION" (every molecule output in the test corpus), but the
+  GUI looked for "MOLECULE CALCULATION". Molecules were still found through
+  the later "DIMENSIONALITY OF THE SYSTEM 0" line, so a finished output read
+  the same, but a molecule's output still being written, cut before that
+  line, read as a 3D crystal. The workflow planner's stand-in outputs wrote
+  the same wrong banner, so `opt2d3` took a planned molecule for a crystal;
+  now it refuses a BAND, DOSS or TRANSPORT step for it, as it does for a
+  real molecule output.
+- **Decks of the same name in different folders no longer share a scratch
+  directory.** The job scripts ran CRYSTAL in `$SCRATCH/crys23/<deck name>`
+  (properties: `crys23/prop/<deck name>`), so `x.d12` in two folders used one
+  directory: at the same time they overwrote each other's `INPUT` and
+  `fort.9`, and one after the other the second restarted from the first
+  one's `OPTINFO.DAT` or `fort.20`. The directory now records the folder whose
+  deck uses it (`.mace_submit_dir`), and a deck of the same name from another
+  folder runs in `$SCRATCH/crys23/.mace_by_dir/<checksum>/<deck name>`. A deck
+  rerun from its own folder keeps its directory, so OPTGEOM RESTART and GUESSP
+  restarts work as before; a directory without a record (an earlier MACE, or a
+  `fort.20` you staged by hand) belongs to the first deck that runs in it.
+  The `OPTINFO.DAT`, `fort.20` and `fort.9` a rerun brings over from the
+  directory its last run used are taken only when that directory is still
+  this folder's (or has no record), never from one a same-named deck in
+  another folder has claimed since; each run writes its claim again, so a
+  purged scratch is reclaimed by the next run.
+  Jobs already queued run their old script and are unchanged.
+- **A properties job runs on its own `.f9` and copies back only what it
+  wrote.** Its scratch directory was never emptied, the `.f9` was copied
+  there unchecked and every result file was copied back unconditionally: with
+  `<name>.f9` missing, Pproperties ran on the `fort.9` an earlier run left,
+  and a run that failed copied the earlier run's `BAND.DAT`, `fort.25`,
+  `DOSS.DAT`, ... back as its own result. The directory is now emptied before
+  staging, the job stops at once with the reason in `<name>.out` when
+  `<name>.f9` is missing or empty, and only files this run wrote come back
+  (`fort.9` only when Pproperties rewrote it). The SCF job script likewise
+  copies `fort.9` back only when CRYSTAL wrote it in this run, so an old one
+  left in scratch no longer replaces `<name>.f9`. `mace submit` refuses a
+  `.d3` whose `.f9` is missing or empty and says which (`--nosubmit` still
+  writes its job script).
+- **`mace submit` exits 1 when a job was not submitted.** Without
+  `--track` it printed "Submission complete" and exited 0 even when every
+  `sbatch` call failed. It now ends with how many jobs were not submitted
+  ("none of the 2 job(s) was submitted", "1 of 3 job(s) not submitted") and
+  exits 1, also when only some failed or a job script could not be written
+  (with `--nosubmit`: "Script generation incomplete"), so scripts that run
+  `mace submit` can tell. A folder with both kinds of decks submits both and
+  exits 1 if either part failed. `--track` already exited 1.
+- **Job folders and scratch directories with a space in their path work.**
+  The job scripts expanded `$DIR` and `$scratch` unquoted (`cp $DIR/$JOB.d12
+  $scratch/$JOB/INPUT`, `cd $scratch/$JOB`, `>& $DIR/${JOB}.out`), so a deck
+  in `my calcs/` staged nothing, CRYSTAL wrote no output and the copy-back
+  failed. Every expansion in the generated scripts is quoted now, the CRYSTAL
+  launch line included (`mpirun -n "$SLURM_NTASKS"
+  "$EBROOTCRYSTAL/bin/Pcrystal"`; shellcheck reports no SC2086 or SC2164),
+  and the job stops with a message when it cannot enter its scratch
+  directory instead of running CRYSTAL elsewhere (after CRYSTAL, a failed
+  `cd` back to the submit folder is reported and the steps that follow use
+  full paths). The site settings' launcher still replaces the older
+  unquoted launch line in a template copied by an earlier MACE. A deck *name* with
+  a space or a shell character (`si (copy).d12`) cannot be a SLURM job name
+  or the script's `JOB` variable: `mace submit` now refuses it up front, says
+  to rename it and exits 1 (it wrote a broken script and still reported
+  success), and the generators refuse such a name too. The site settings'
+  `[mpi]`/`[crystal]` launch lines still apply to a template copied into a
+  workflow folder by an earlier MACE.
+- **`mace submit -i` keeps to the partition's time limit it announces.**
+  Where the default partition allows less than the template's 7 days, MACE
+  said "partition short allows at most 2-00:00:00" but only the plain path
+  applied it: `-i` (and `--exclude-nodes`, `--walltime`, which write the
+  `-t` line themselves) still asked for 7 days, and SLURM rejected or held
+  the job. The default walltime, the one `-i` offers and the one you accept
+  there are now capped to the partition's MaxTime on every path. A walltime
+  you give (`--walltime`, or typed at the `-i` prompt) is written as given,
+  with a warning when the partition allows less, also with `--track`.
+- **`--walltime`, `-i` and the node-exclusion options no longer miss an
+  existing job script.** `mace submit` reuses an existing `<name>.sh` unless
+  `--overwrite-sh` is given, and the options went only into a newly written
+  script: a reused one ran with its old resources and nothing said so. Job
+  scripts now end with a line holding the `cksum` of the lines above it. With
+  resource options, a script MACE wrote and nobody changed since is written
+  again with them; a script that was edited (or written before 1.1.5) stops
+  the submission before anything is queued (and before the `-i` prompts),
+  naming the scripts and `--overwrite-sh`. Without resource options existing
+  scripts are reused as before.
+  again with them; a script that was edited (or that an older MACE wrote
+  with other than its default resources) stops the submission before
+  anything is queued (and before the `-i` prompts), naming the scripts and
+  `--overwrite-sh`. A script an older MACE (1.0.0 to the 1.1.5 preview)
+  wrote with its default resources, unchanged since, is recognized and
+  written again (with or without options). A script MACE wrote from a
+  customized template (a workflow plan's `workflow_scripts/` copy with the
+  plan's cores and memory, or `-i`) is not written again from the plain
+  template under `--walltime` or node exclusion: only the walltime or
+  exclusion asked for is set in it, so it keeps its cores and memory (`-i`
+  still writes it again with the resources you type). Without resource
+  options other existing scripts are reused as before.
+
+- **`mace submit --track` honors `-i` and keeps an edited job script.** The
+  tracked path regenerated `<name>.sh` from the template every time: `-i` was
+  ignored and a hand-edited script was silently replaced. It now follows the
+  untracked path's rules: `-i` asks for the resources and the tracked jobs
+  get them; an edited `<name>.sh` is submitted as written (MACE adds only the
+  line that points its completion step at the database); a script MACE wrote
+  and nobody changed is written again as before (so is one an older MACE
+  wrote with its default resources), except one written from a customized
+  template (a workflow plan's copy, `-i`), which is submitted with its own
+  cores and memory (`--walltime` set in it); and with `-i`, `--walltime`,
+  `--progress` or `--array` an edited script stops the submission before
+  anything is recorded or queued. `--overwrite-sh` replaces any script.
+  (`-i` with `--progress` says it is not applied: the plan sets the
+  resources.)
+- **The final energies of a multi-point geometry optimization count D3 and
+  gCP once.** From the second point of an OPT on (and from the first point
+  of a restarted one), CRYSTAL's `TOTAL ENERGY(DFT)` line already includes
+  the dispersion and gCP corrections, and the extractor added them again:
+  `total_energy_corrected_au` was low by D3 + gCP (Ti11O14 by 0.63 AU, a
+  4LG 3c OPT by 0.094 AU), `total_energy_au` held the corrected energy, and
+  `total_energy_plus_d3_au` was point 1's. The corrected total is now the
+  `OPT END` energy, and the plain and D3-only totals are it minus the final
+  corrections. 52 outputs of the test corpus change (every multi-point OPT
+  with D3 or gCP); one-point OPTs and SPs do not.
+- **A multi-point geometry optimization no longer stores its first
+  geometry's SCF values as the run's.** CRYSTAL prints an OPT's SCF in full
+  only at point 1; the extractor took the gap kind (`direct_band_gap`,
+  `indirect_band_gap`, `band_gap_type`), `fermi_energy` from the EFERMI
+  lines and the `+++ ENERGIES IN A.U. +++` components (kinetic, e-e, e-n,
+  n-n, exchange, correlation) from there (Ti8O13: 0.76 eV indirect at point
+  1 against 1.04 eV at the end). Only what follows the last optimization
+  point counts now: the gap and Fermi energy CRYSTAL prints after OPT END,
+  and a final geometry printed as conducting (FERMI ENERGY after OPT END)
+  after gapped cycles at point 1 has `band_gap` 0. Point-1-only values are
+  no longer stored for these runs. 51 multi-point OPTs of the test corpus
+  change; one-point OPTs and SPs do not.
+- **A spin-polarized geometry optimization stores its `band_gap`.** With
+  CRYSTAL's `ALPHA BAND GAP` / `BETA BAND GAP` summary after OPT END, only
+  the two channel gaps were stored, and the classification took the alpha
+  one. `band_gap` is now the gap the rest of the extractor already used
+  (the fundamental gap of the final geometry's SCF when CRYSTAL printed its
+  band edges, else the smaller channel), and the classification uses it
+  (Ti11O14: 0.1403 eV, not alpha's 0.1826). 87 OPTs of the test corpus gain
+  a `band_gap`; 6 change `classification_band_gap`.
+- **The final geometry of a slab or molecule optimization is stored.** The
+  final cell was read only from a PRIMITIVE CELL line with `VOLUME=` and a
+  density, and the final atoms only under an `X/A Y/B Z/C` header, as a 3D
+  cell prints them. A slab prints no volume and `X/A Y/B Z(ANGSTROM)`, a
+  molecule `X(ANGSTROM) Y(ANGSTROM) Z(ANGSTROM)`, so neither got
+  `final_primitive_*` or `final_atomic_positions`, and a slab's
+  `primitive_*` kept the input cell (with its area as
+  `primitive_cell_volume`). Both are read now, and the new
+  `final_atomic_position_axes` names the Cartesian columns of such a table.
+  9 slab and 66 molecule OPTs of the test corpus change; 3D runs do not.
+- **A slab's cell area is stored as `primitive_cell_area` (Å²), not as a
+  volume.** CRYSTAL heads the cell measure VOLUME in every output, but for
+  a slab it is the area of the 2D cell (and for a polymer the length of
+  its cell), and the extractor stored it as `primitive_cell_volume` and
+  `initial_primitive_cell_volume` in Å³. For dimensionality 2 these are now
+  `primitive_cell_area` / `initial_primitive_cell_area` (Å²), for
+  dimensionality 1 `..._cell_length` (Å); `primitive_cell_volume` is kept
+  for 3D only. A slab OPT's final cell, which CRYSTAL prints without its
+  area, gets `final_primitive_cell_area` = a·b·sin γ (a polymer's
+  `final_primitive_cell_length` = a), and `primitive_cell_area` is the final
+  one, as the other `primitive_*` values are. The completeness check and the
+  unit tables know the new names. 27 slab outputs of the test corpus change
+  (8 OPT, 19 SP).
+- **`mace database --db-path PATH` uses PATH.** The option was in the help
+  but never read: every action opened the workflow context's database or
+  `materials.db` in the current folder (creating an empty one there). Every
+  action now reads (or, for `clean`, changes) the given file, and a path with
+  no database is an error ("No database at ...") rather than a new empty
+  database.
+- **No more `final_final_*` and `initial_initial_*` properties.** The
+  extractor prefixed the final and initial geometry's keys again when they
+  already carried the prefix, so every OPT stored its atoms twice
+  (`final_atomic_positions` and `final_final_atomic_positions`, and
+  `initial_initial_atomic_positions` in place of `initial_atomic_positions`),
+  and an export carried the doubled tables (13,500-character cells). The
+  keys keep their one prefix now; an OPT's initial atoms are
+  `initial_atomic_positions`. An existing database's doubled rows are left
+  out of exports like the other structure tables. 193 outputs of the test
+  corpus lose the doubled keys, with the same values under the single names.
+- **The electronic ZT of a TRANSPORT run uses the electronic thermal
+  conductivity, and is named as electrons-only.** KAPPA.dat holds
+  CRYSTAL's zero-field coefficient κ₀ (its header's "K coefficient",
+  CRYSTAL23 manual Eq. 14.3), not κₑ; κₑ = κ₀ −
+  T·σ·S². `transport_zt_max` was PF·T/κ₀, which can never reach 1; it is
+  conductivity, and is named as electrons-only.** KAPPA.dat holds what the
+  CRYSTAL23 manual calls κₑ (Eq. 14.3; the file's header says "K
+  coefficient"): the zero-field coefficient κ₀, measured with no electric
+  field. MACE derives the electronic thermal conductivity at zero current,
+  κₑ = κ₀ − T·σ·S², from it. `transport_zt_max` was PF·T/κ₀, which can never reach 1; it is
+  now PF·T/κₑ = x/(1 − x) with x = PF·T/κ₀ (C1-RCSR-bcu-f: 0.935 → 14.42;
+  afi 0.951 → 19.55; ana 0.928 → 12.88). κ₀ and κₑ at the ZT peak are
+  stored as `transport_kappa0_at_zt_max` and
+  `transport_kappa_electronic_at_zt_max` (W/(m·K)). A point where T·σ·S² ≥
+  κ₀ is left out with a warning, and a run with no usable KAPPA.dat point
+  stores no `transport_zt_max` (was 0). This ZTₑ counts the electrons
+  only: the lattice thermal conductivity is left out, so it is an upper
+  bound on the material's ZT that grows without limit as T·σ·S² approaches
+  κ₀ (values of 10-20 near a band edge are expected, not an error). It is
+  now also stored as `transport_zt_electronic_max`; `transport_zt_max`
+  keeps the same value under its old name. The Database view explains these
+  properties on hover, `transport_power_factor_max` shows its unit
+  (W/(m·K²), was "dimensionless"), and the GUI's transport plot labels
+  KAPPA.dat as κ₀. docs/cli.md (`mace analyze`) describes them. 3
+  TRANSPORT outputs of the test corpus change.
+- **`num_imaginary_frequencies` counts imaginary modes as the GUI's run
+  analysis does.** It counted every printed row with a negative frequency:
+  a molecule's rigid-body modes (-0.007 cm⁻¹), noise of a few cm⁻¹, and a
+  degenerate row once. Both now use one rule
+  (`mace/utils/imaginary_modes.py`): without the 3 (periodic), 6
+  (molecule) or 5 (linear molecule) modes closest to zero, each mode of a
+  degenerate row, and only those of at least 20 cm⁻¹. The run analysis'
+  own fallback when the dimensionality is unknown now also recognizes a
+  molecule from its `DIMENSIONALITY OF THE SYSTEM    0` line. 65 FREQ
+  outputs of the test corpus change (e.g. 2 to 0 for a molecule with a
+  -11 cm⁻¹ mode, 1 to 3 for a triply degenerate -164 cm⁻¹ mode).
+- **The advanced BAND/DOSS analysis reads wrapped DOSS.DAT rows and gives
+  a BAND.DAT's gap.** It read each physical line of a DOSS.DAT as an energy
+  point, but CRYSTAL wraps a record with many projections over several
+  lines and repeats the energy grid per spin: a 1002-point file read as
+  4008 points, and a molecule's `band_gap_advanced_ev` came out as
+  68.76 eV (true 7.84). It now uses the extractor's own DOSS.DAT parser.
+  A gap read off a DOS is not the material's (CRYSTAL puts E_F on a
+  molecule's broadened HOMO peak, and a DOSS band range leaves states out),
+  so a DOSS.DAT alone stores no `band_gap_advanced_*` and no
+  `electronic_classification_advanced`. A BAND.DAT alone stored a gap of 0
+  and "unknown"; its gap now comes from the band edges, taken by band
+  rather than by the sign of each eigenvalue (a valence-band top a few
+  micro-Hartree above E_F made a 7.8 eV gap 0.16 eV): it matches
+  `band_dat_band_gap_ev` within 0.01 eV for all 72 corpus outputs that
+  have one. The effective masses, which start from these band edges, now
+  take the hole mass from the valence band and the electron mass from the
+  conduction band. A hole mass without an electron mass no longer fails
+  the analysis. 156 BAND/DOSS outputs of the test corpus change.
+- **A database build records the formula and dimensionality the output
+  shows.** Every material the build registered was stored as a CRYSTAL (a
+  molecule too), and its formula was counted from the .d12's atom lines, which
+  hold the asymmetric unit only: TiPbO3 was stored as TiPbO2, TiO (space group
+  189, 3 Ti + 3 O in the cell) as Ti2O, and a material with no .d12 beside its
+  output as "Unknown". The formula is now the reduced formula of the cell
+  CRYSTAL prints (a molecule's whole formula), read with the same structure
+  reader as the GUI's structure view, the cell formula is kept in the
+  material's metadata (`cell_formula`), and the dimensionality is MOLECULE,
+  POLYMER, SLAB or CRYSTAL as the output says. A deck is only the fallback, for
+  an output with no geometry, and is expanded by its space group first. In an
+  existing database the next build corrects a formula MACE took from a deck's
+  atom lines and a CRYSTAL it wrote for a molecule, polymer or slab; a formula
+  set any other way (typed by hand) is left as it is.
+- **A database build no longer files properties under materials it has no
+  row for, and its summary counts what it did.** With Register on, the build
+  still extracted every `.out` it saw: failed runs (which it rightly does not
+  register) and MACE's `X_temp.out` copy of a run whose `X.out` sits beside
+  it got their properties under a material id taken from the file name, with
+  no materials row, so the Database view could not open them (the material
+  page answered 404) and an export left them out; the `_temp` copy was also
+  registered in place of the run's own output. Such outputs are now listed as
+  Skipped (a new class in the preview and in `--dry-run`) and not extracted,
+  the populate scan registers `X.out` rather than its copy (with the
+  `X_temp.d12` deck), an older record of the copy is matched to `X.out`, and
+  an output a build extracts with Register off gets a materials row (formula
+  and dimensionality from the output). With Register off a failed or
+  unfinished output is still extracted (as `mace analyze --extract-properties`
+  without the build options does), under its own materials row; only a build
+  that registers skips it. A skipped output's line says why ("a copy of
+  X.out", "the same run as ...", "a failed or unfinished run with no
+  calculation record"), as `--dry-run` does. Outputs extracted again
+  although unchanged (a build without `--skip-unchanged`) are counted as
+  "N re-extracted" in the summary, which read "0 new, 0 changed" after
+  re-extracting 11. The CLI's last line and the GUI's
+  notification are now the same sentence from one function, for example
+  "Database updated: 11 new, 0 changed, 0 failed outputs; 8 materials (8
+  new); 5 skipped"; the notification used to count files as "new" (11 for a
+  folder of 5 materials) and the CLI counted the orphaned ids as materials.
+  Rows an earlier build filed for failed runs stay in an existing database
+  (a build deletes nothing); they are not shown, as before.
+- **A CIF with no `_chemical_formula_sum` gets its formula from its atom
+  sites.** The fallback read the word after the `_atom_site_type_symbol`
+  header, which is the next loop tag, so such a CIF got the formula
+  "_atom_site_fract_x". The atom-site loop is now read row by row (the type
+  symbol, else the label; charges such as `O2-` dropped).
+- **The Database view's CSV and JSON export keeps text-valued properties.**
+  The GUI's export read only the numeric column, so a property stored as text
+  (e.g. `electronic_classification`) came out empty, where `mace database
+  --action export` wrote it; the GUI's export also kept the large structure
+  fields the CLI leaves out, and where two calculations of a material gave
+  one property the two exports could pick different values. Both now take
+  their values from one function, and a test compares every cell of the two
+  CSV files, not only their headers.
+- **The Database view finds a calculation's files after the project folder
+  was moved or copied.** A database keeps the absolute paths of the folder it
+  was built in; after a move (or with a copy opened from another folder) the
+  material page said "Not in this folder" for every input and output. When
+  the recorded path is not in the served folder, the file is now looked for
+  under the database's folder by the end of the recorded path
+  (`/old/project/OPT/x.out` -> `OPT/x.out` beside the database), and a bare
+  file name under the recorded work folder found the same way. The database
+  is not changed.
+- **The Create Database dialog's command shows the backup it will run.**
+  For a new database the command at the bottom of the dialog left out
+  `--backup --keep-backups N` while the build ran with them when Back up the
+  database first was ticked (the default), so the copied command was not the
+  one that ran. The dialog now sends the tick and the command follows it.
+- **Registering a copy of a run whose SLURM job id is already recorded no
+  longer leaves a half-made calculation.** The same run in two folders (its
+  `.out`, `.d12` and `-<job>.o`) made the second registration stop with
+  "UNIQUE constraint failed: calculations.slurm_job_id" after the
+  calculation row was written: the row stayed `pending` with no output file
+  and the build filed the copy's properties under it. An identical copy
+  (same job id, same size and content) is now the same calculation: not
+  registered again and not extracted (Skipped); a different output with the
+  job id is registered without it, with a warning; and a registration that
+  fails part-way takes its row back out. In an existing database the next
+  build completes such a left-behind row with its output (no job id); no row
+  is deleted.
+- **Extracting without Register files a material's outputs under one id,
+  the one a registration gives.** Without `--register`, an output's rows went
+  under its file name with one suffix stripped: `1_dia_opt_rev1` for the OPT,
+  `1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized` for its SP and
+  `2_dia2_opt_rev1_freq_B3LYP-D3-D3_optimized` for a FREQ, where `--register`
+  (and the workflow) file them under `1_dia` and `2_dia2`. Untracked rows now
+  use the same function as the registration. In an existing database, rows
+  an earlier untracked extraction filed under the old ids stay where they are
+  (nothing is deleted); a new extraction writes under the new id.
+- **Two different structures whose outputs have the same name in different
+  folders are two materials.** `A/mat_opt.out` (diamond) and `B/mat_opt.out`
+  (TiO) both map to the material id "mat", so a database build (CLI or GUI)
+  filed both runs under one material. When a new calculation's structure
+  clearly differs from the material its id names (another reduced formula,
+  or the same formula in another space group, read from the outputs), it now
+  gets the id plus its folder, as Batch Setup names same-name parents
+  ("mat_B"; a short hash of the folder is added if that id holds yet another
+  structure), and the build says so. The same structure in another folder,
+  such as a copied project, stays the same material. A calculation already
+  recorded keeps its material: rows an earlier build merged stay where they
+  are.
+- **`mace submit` lists MSU HPCC's node options only on MSU HPCC.** The
+  help of every cluster showed `--exclude-amd20` and `--exclude-mendoza`.
+  Where MSU HPCC's node choices do not apply (another SLURM cluster), the
+  help no longer lists them, and `--exclude-amd20` is still accepted but
+  warns and excludes nothing, as `--exclude-mendoza` already did. On MSU
+  HPCC the help and the job scripts are unchanged.
+- **No developer machine paths in code that runs for users.**
+  `setup_mace.py --update-templates` looked for (and would have rewritten)
+  one developer's checkout path in the job-script templates; the templates
+  find `MACE_HOME` at run time, so it now only checks that they are there.
+  The unused `code/OldSLURMTemplates/submitcrystal23_env_aware.sh` names a
+  placeholder instead of that path. A test keeps such paths out.
+- **Setup no longer answers a CLI question it does not know.** Calculation
+  Setup (and Batch Setup) runs `mace convert`, `opt2d12` and `opt2d3` and
+  answers their questions; a question no answer named got Enter, the CLI's
+  default. So a reworded prompt turned a GUI answer into a default without
+  notice, and the deck changed. Enter now goes only to the questions Setup
+  knows are meant to keep their default; any other question stops Setup
+  with "did not ask what Setup expected" and quotes it. A question with no
+  default to keep (opt2d3's custom band "Path:", for one) stops the same
+  way instead of being sent empty answers. Choosing an LDA functional (VBH)
+  in Setup now sets it; the question went unrecognized and SVWN was kept. A
+  new test runs every Setup route through the real CLI and fails on any
+  question nothing matched.
+- **`mace gui --slurm` leaves no tunnel behind when it is killed.** The ssh
+  tunnel to the job's node runs in a process group of its own, so killing
+  the session with SIGKILL (`kill -9`, an out-of-memory kill) skipped its
+  cleanup: on Linux only the ssh itself was told to stop, and only when the
+  tunnel was opened from the main thread; an ssh wrapper's other processes
+  (a ProxyCommand, for one) kept running, and on other systems nothing
+  stopped. The tunnel now runs under a small guard that ends its whole
+  process group within a second of the session's death, from any thread
+  and on any POSIX system.
+- **The Jobs table's header no longer lets rows show above it.** Scrolled,
+  the sticky header stopped at the panel's top padding, so a strip of rows
+  stayed visible above it, and its bottom line scrolled away with the
+  first row. The header now sticks to the panel's very top, keeps its line,
+  takes the theme's surface color (light, dark or any theme built on the
+  tokens) and paints above the rows, the pinned actions column too, while
+  staying below menus.
+- **The Explorer lists new files without a reload.** A file that appeared
+  in the folder from outside the GUI (a job writing its `.out`, a copy from
+  a shell) showed only after reloading the page, or for a page with an open
+  document, after switching back to it. The server now notices a file added
+  to or removed from any folder the Explorer lists within about 2 seconds,
+  with one stat of each folder (up to 500 folders, within the Explorer's
+  depth; no file is read), and the page lists the folder again. Polling
+  rather than inotify, so jobs writing from other nodes of a cluster's
+  shared filesystem are seen too.
+- **A lattice vector of 40 Å or longer gets one k-point, not 12.**
+  The k-point rule gives each direction the smallest shrinking factor k
+  with 40 < k·L < 80 Å, but its search started at k = 2, so a vector that
+  already reaches 40 Å never matched and fell back to 12: a cluster in a
+  44 × 44 × 48 Å box (`mace convert`, an `opt2d12` deck without a parent
+  SHRINK, the workflow dummy files) was written with `SHRINK 0 24 /
+  12 12 12`. Such a vector now gets k = 1, and the factor never grows with
+  the length. In the test corpus 131 of 261 CIFs, all molecules or
+  clusters in a vacuum box, change from `0 24 / 12 12 12` to `0 2 / 1 1 1`
+  when converted as CRYSTAL; every deck of a cell under 40 Å is
+  byte-identical. The dimensionality is not changed for you: convert such a
+  structure as MOLECULE to drop the periodic images altogether.
+- **The completion checker, the recovery detector and the queue manager
+  now agree on why a run failed.** Each had its own error patterns:
+  the completion checker had no OOM or Fermi patterns and filed an OOM kill
+  (`KILLED BY SIGNAL: 9`) and a diverged SCF (`ERROR **** ZERO **** FERMI
+  ENERGY NOT IN INTERVAL`) as "Segmentation fault/runtime error"; the
+  detector took the first matching line, so mpirun's BAD TERMINATION banner
+  printed above `KILLED BY SIGNAL: 9` made an OOM kill a `system_error`
+  with no recovery, and it called a NEIGHB stop (atoms too close) a basis
+  set linear dependence. All three now read one table
+  (`mace/utils/crystal_errors.py`) in one priority order: an OOM kill
+  first, then CRYSTAL's own errors, then the generic MPI/SLURM lines. On
+  the 707 corpus outputs, the 4 failed runs now classify the same way
+  everywhere (OOM kill and segfault-then-kill: memory; Fermi stop: SCF
+  convergence; NEIGHB: geometry), and the other 703 classify as before.
+  The detector now reports the queue manager's error type names
+  (`convergence_error`, `timeout_error`, `disk_space_error`,
+  `geometry_error`; older names stored in the database are still mapped),
+  `ANISOTROPIC SHRINKING FACTOR` now reaches the SHRINK recovery, and an
+  error with no automatic recovery says why.
+- **`mace opt2d3` takes the output's own wavefunction and no longer lets
+  two outputs share a deck name.** `X_opt_sp.out` is named `X_opt_*`, and
+  the wavefunction search tried `fort.9` and `X_opt.f9` (the
+  optimization's) before `X_opt_sp.f9`, so its BAND/DOSS deck could run on
+  the wrong wavefunction; the output's own `.f9`/`.f98` is now tried first.
+  `X.out` and `X_sp.out` side by side both wrote `X_band.d3` (and
+  `X_band.f9`), the second over the first (the `X_sp`/`X_opt` pair was
+  already kept apart); and `X_opt_sp.out` took the `X_opt_*` name that
+  `X_opt.out` keeps when it collides. Beside another output with (or
+  making) the same name, each output keeps its whole name; alone, the name
+  is as before.
+- **The static k-path of a C-centered orthorhombic cell is in CRYSTAL's
+  basis and for that cell.** With `--static-kpath` (or `MACE_STATIC_KPATH=1`)
+  every C-centered orthorhombic cell got SeeK-path's oC1 path ("oS1") with
+  the numbers SeeK-path writes in its own standard cell and a C₀/Σ₀
+  parameter for some other cell, behind a warning. Read in CRYSTAL's
+  primitive basis those points name other points and can lie outside the
+  first Brillouin zone. The variant is now SeeK-path's (oC1 when a ≤ b,
+  else oC2; oC1 for the groups that do not tell a from b, as spglib
+  standardizes them), and its points are evaluated for the cell and moved
+  to CRYSTAL's basis, as for the other centered lattices: the static deck
+  is the deck the seekpath library writes. The oC2 entries' labels now
+  name their segments. A corpus test checks that every point of the path
+  opt2d3 writes, library and static route, lies in the first zone of the
+  cell CRYSTAL runs. (BAND decks written before 1.1.4 also had the library
+  route's points in SeeK-path's cell, for any lattice whose standard cell
+  differs from CRYSTAL's, graphite AB slip's Y, F₀ and Δ₀ among them; 1.1.4
+  fixed that route: write such decks again.)
+- **The band + DOS plot's legends no longer cover the data.** One legend
+  spanned both panels in two rows inside the plot, over the top bands, the
+  y tick labels and the DOS curves, and listed every projection twice
+  (↑ and ↓). The band legend (α/β, or "α = β (non-magnetic)") now sits
+  above the band panel and the DOS legend to the right of the DOS panel, in
+  margins sized to the legends as drawn at any window size and UI scale
+  (PNG/SVG exports too); each projection is listed once, with one spin key
+  ("↑ solid, right", "↓ dotted, left") for a spin-polarized DOS. The
+  subtitle is one short line, the rest of its guidance in a help tooltip.
+  `mace plotting --band/--dos` (and so the Publication Figure) puts its
+  legend right of the axes and their labels, the figure widening when it
+  needs the room, the axes keeping their size so band and DOS figures still
+  line up; the DOS band-gap note heads the legend instead of a box over the
+  curves.
+- GUI split view: when a document was slow to open to the side and you
+  moved the focus to the left group meanwhile, the right group took the
+  focus (and the Inspector) back once the document was in. The focus now
+  stays where you put it.
+- GUI: dragging a document tab selected the tab text. In Chromium, the next
+  drag from that tab then started the browser's own drag, which canceled
+  the drag onto the right half that splits the editor. Tabs no longer
+  select text or start a native drag.
+- **A task started as the GUI stops no longer starts a worker.** When the
+  first pool task was dispatched while the server was stopping, it built a
+  fresh process pool and started a worker the exiting server then left half
+  started. The stop now marks the tasks stopping first; a pool is never
+  built after that and a new task is refused ("The server is stopping.").
+- **A slab compared with its own CIF no longer shows a wrapped atom as a
+  move.** Two ends that differ in periodicity were compared in Cartesian
+  coordinates with no periodic image at all, so an atom wrapped by +a in
+  one of them showed up to 7 Å of displacement (and RMSD). Along the axes
+  periodic in both ends each atom is now taken at its nearest image.
+- **`mace gui connect` takes a literal absolute path under your home
+  folder.** A path under this computer's home folder was always sent as
+  `~/...`, so a node that has the very same absolute path (a shared file
+  system mounted at the same place) could not be given it. A leading `//`
+  now marks a literal path (`--dir //home/you/runs` is sent as
+  `/home/you/runs`, never rewritten); the bash and PowerShell connect scripts
+  do the same, and docs/ssh-setup.md says so.
+- **GUI: a click on an IR or Raman peak opens that peak's mode at any UI
+  scale.** Above 100 % the click was measured in screen px against the
+  plot's own px, so it opened the mode of a marker up and to the left of
+  the pointer (or none).
+- **GUI: menus, a plot's Units/Export menus and Plot Options, and the
+  periodic table follow the UI scale.** They open in a layer outside the
+  zoomed window shell, so above 100 % they stayed at 100 % (the plot's menus
+  had been scaled before they moved there). The layer now takes the UI
+  scale; each still opens next to its button and flips to stay inside the
+  window.
+- **GUI: the Compare view of an optimization fits a 1280x800 window again.**
+  Its longer legend (the arrows' scale and the cell's change, each on a row
+  of its own) and a 240 px floor under the 3D view made the tab scroll by
+  about 90 px at 100 % UI scale (over 200 px at 110 %), hiding the Frame
+  slider and Edit This Step. The legend is now one wrapping line with the
+  cell's change cut to one line (its whole text as the tooltip), the
+  toolbar is tighter, and the 3D view gives way first, down to 150 px. At
+  110 % the tab may still scroll a little at that window size; the Frame
+  slider and Edit This Step are reached by scrolling it.
+- **GUI: Run Analysis' Cell plot keeps its data area at high UI scale.** At
+  125 % in a 900 px window, the legend's eight entries became one entry per
+  row and then moved to a column right of the volume axis. That left the
+  plots 86 x 220 px of a 463 x 300 px figure (seen with plotly 7.1). Plotly
+  wraps a legend that does not fit on one row into a grid as wide as its
+  widest entry, here the FINALRUN restart key. Each entry is now its own legend group, so the rows wrap as wide as
+  the entries are: four rows above the plot, and the plots take 265 x 112 px.
+  The legend fit also judges rows at the right margin they will have, not
+  the wider one a column left behind.
+- **GUI: the Submit dialog's site details pass the `dlitem` accessibility
+  check.** Each term and value sat in a `<div>` inside the `<dl>`, which
+  axe-core (as bundled with axe-selenium-python) reports as a serious
+  violation. The `<dt>`/`<dd>` pairs are now direct children of the `<dl>`,
+  which is the two-column grid itself. No other GUI markup uses `<dt>`/`<dd>`.
+
+#### Testing
+
+- A symlinked `test/` corpus is ignored by git (`/test` in `.gitignore`).
+- The GUI database-build browser tests (`tests/gui/test_db_build_e2e.py`)
+  pass alone and in any order; each builds the database it needs.
+- The database-build CLI tests (`tests/test_db_build_cli.py`) compare
+  against the base tree knowing that the doubled geometry keys
+  (`final_final_*`, `initial_initial_*`) are now stored once under their
+  single prefix. They run only with the `test/` corpus, so CI never saw
+  them fail.
+- The corpus deck test (`test_every_corpus_deck_opens_or_says_why`)
+  accepts a SLAB, POLYMER or MOLECULE deck that now opens the `.out` of
+  its run, and checks that the `.out` it names exists.
+- `tests/fake_slurm.py`'s sacct cuts the State column as SLURM's does, and
+  its fake jobs no longer leave a GUI server running.
+- **No plot's legend, label or note covers its data any more.** The same
+  rule now holds for every plot, GUI and CLI. The IR/Raman spectra drew
+  their legend in two rows over the curves and the peak wavenumbers over
+  the peaks: the legend is now a column right of the plot and the peak
+  labels sit on an axis above it (a weaker peak too close to a stronger one
+  goes unlabeled). Run Analysis wrote the thresholds, TOLDEE, SCF
+  MAXCYCLE, the FINALRUN restarts and the reason the optimization stopped
+  as text on the plot; each is now a legend entry with its line style.
+  Transport and Compare Convergence legends sit above the plot. A legend
+  too tall for the pane moves to a scrolling column, and the margins follow
+  the legends at any window size and UI scale. The 2D map's corner labels
+  stay inside the plane, clear of the tick labels, and every plot's
+  subtitle is one line, its full text in the help tooltip. `mace plotting
+  --ir/--raman` and the DOS's band-edge composition notes moved their
+  legend and notes right of the axes too.
+- **The GUI's Submit preview of a properties (.d3) job matches the real
+  submit again.** The preview copies a folder into a scratch mirror with an
+  empty stand-in for each .f9, and since `mace submit` refuses a .d3 whose
+  .f9 is empty, the preview reported "b.f9 is empty ... Not submitted" for
+  a job the real submit sends. The stand-in now keeps the real .f9 empty or
+  not, so the preview refuses exactly what the real run refuses.
+- **A job recovered from an SCF error keeps the resources set in its job
+  script.** Recovery writes a fixed `*_recovery_*` deck and generated that
+  deck's job script from the template, so the ntasks, memory, walltime,
+  partition, exclude and account changed in the original `<job>.sh` were
+  lost on resubmission. The new script now takes the original's `#SBATCH`
+  resource lines (job name and output stay the recovery deck's); an
+  out-of-memory recovery still raises the memory from the value set there.
+  When the original is not a job script MACE can read, the template's
+  resources are used and one line says so.
+- **The GUI's Setup shows the wavefunction opt2d3 copies.** Since opt2d3
+  looks for the output's own `<stem>.f9` first, and names an output's files
+  after its whole stem when another output beside it has the same name, the
+  Setup panel could name a different .f9 (`X.f9` for `X_sp.out`) than the
+  command it prints would copy. It now follows the same search.
+- The mode view's size test (`tests/gui/test_freq_view_size_e2e.py`) also
+  plays in a headless Chromium that never gives the page focus (Chrome for
+  Testing 140).
+
+### The 1.1.5 preview (2026-10-08)
 
 Everything since 1.1.4. New: **the MACE GUI (`mace gui`)**, the folder's
 structures, optimizations, plots and `materials.db` in your browser, with a

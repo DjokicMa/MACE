@@ -78,8 +78,20 @@ def no_basis_env(monkeypatch):
         monkeypatch.delenv(var, raising=False)
 
 
+def _fresh_mace_config():
+    """mace_config as the executor reads it: executed anew from the checkout.
+    The `mace_config` in sys.modules keeps the $MACE_HOME of whichever test
+    imported it first, so comparing against it depended on test order."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("fresh_mace_config", REPO_ROOT / "mace_config.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_executor_maps_bundled_family_names(no_basis_env):
-    import mace_config
+    mace_config = _fresh_mace_config()
 
     assert _resolve("x_full.basis.triplezeta.d12") == mace_config.DEFAULT_TZ_PATH
     assert _resolve("x_full.basis.doublezeta.d12") == mace_config.DEFAULT_DZ_PATH

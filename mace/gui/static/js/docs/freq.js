@@ -31,15 +31,32 @@ export function createFreqView(host, tableHost, optsHost, H) {
 
   const reduced = () => document.documentElement.dataset.motion === "reduce"
     || (document.documentElement.dataset.motion !== "full" && matchMedia("(prefers-reduced-motion: reduce)").matches);
-  const defaults = () => ({ amplitude: 1, speed: 1, arrows: true, arrowScale: 2, supercell: 1 });
+  const defaults = () => ({ amplitude: 1, speed: 1, arrows: true, arrowScale: 2 });
 
   function v() { if (!viewer) viewer = M().viewer("viewer-freq"); return viewer; }
 
-  /* where the atoms are drawn: inside the cell (a mode moves an atom the same way wherever its image is) */
-  function sites(s) {
-    if (!s.pbc.every(Boolean)) return s.cart;
-    return s.frac.map((f) => { const w = f.map((x) => x - Math.floor(x + 1e-9)); return [0, 1, 2].map((k) => w[0] * s.cell[0][k] + w[1] * s.cell[1][k] + w[2] * s.cell[2][k]); });
+  /* What the toolbar's display options draw (the document's display range and
+   * boundary atoms, the unit cell, bonds, labels, the atom style), and where:
+   * every drawn atom, each periodic image of a site too, moves as its site
+   * does (the modes are at Γ, where every cell moves alike); a mode away from Γ
+   * would need its phases, so it draws one cell. */
+  let G = null;            // geom/core.js, loaded with the first document
+  let lastDisplay = null;   // what the last draw showed (state(), for the tests)
+  function display(d) {
+    const s = d.structure, vo = H.viewOpts ? H.viewOpts() : {}, per = s.pbc.some(Boolean), many = per && d.gamma !== false;
+    const range = many ? (vo.range || [1, 1, 1]) : [1, 1, 1];
+    const box = many ? (vo.box || { lo: [0, 0, 0], hi: Array.isArray(range) ? range : [1, 1, 1] }) : { lo: [0, 0, 0], hi: [1, 1, 1] };
+    const list = G.displayList(s, range, many && !!vo.boundary);
+    return { list, box, cell: per && vo.cell !== false, bonds: vo.bonds !== false, labels: vo.labels || "off", style: vo.style || "ballstick" };
   }
+  /* the drawn cell box (from box.lo to box.hi cells along the periodic axes), as a structure for drawCell and the fit */
+  function boxed(s, box) {
+    const C = s.cell, o = (s.origin || [0, 0, 0]).slice();
+    const cell = C.map((r, k) => (s.pbc[k] ? r.map((x) => x * (box.hi[k] - box.lo[k])) : r.slice()));
+    for (let k = 0; k < 3; k++) if (s.pbc[k]) for (let j = 0; j < 3; j++) o[j] += box.lo[k] * C[k][j];
+    return { ...s, cell, origin: o };
+  }
+  const cartOf = (list, k) => [list.cart[3 * k], list.cart[3 * k + 1], list.cart[3 * k + 2]];
   /* the mode's scale: its largest displacement drawn as 0.5 Å (amplitude 1×), whatever CRYSTAL's normalization */
   let drawnArrows = [];   // the still view's arrows (state(), for the tests)
   let frameArrows = [];   // while playing: the arrows of each animation frame (3Dmol shows a shape only in its frame)
@@ -48,74 +65,97 @@ export function createFreqView(host, tableHost, optsHost, H) {
   const ARROW_FROM = 0.5;   // Å: about the drawn sphere's radius (0.28 × the van der Waals radius)
   const scaleOf = (disp) => { const m = disp ? Math.max(...disp.map((v) => Math.hypot(...v))) : 0; return m > 1e-9 ? 0.5 / m : 0; };
   /* frames of one mode: XYZ text, FRAMES per cycle (3Dmol keeps each as a frame) */
-  function framesXyz(d, disp) {
-    const s = d.structure, n = s.numbers.length, o = d.opts, out = [], at = sites(s), k0 = scaleOf(disp);
-    const reps = o.supercell > 1 && s.pbc.every(Boolean) ? [0, 1].flatMap((a) => [0, 1].flatMap((b) => [0, 1].map((c) => [a, b, c]))) : [[0, 0, 0]];
-    const shift = (r) => [0, 1, 2].map((k) => r[0] * s.cell[0][k] + r[1] * s.cell[1][k] + r[2] * s.cell[2][k]);
+  function framesXyz(d, disp, list = display(d).list) {
+    const s = d.structure, o = d.opts, out = [], k0 = scaleOf(disp);
     for (let f = 0; f < FRAMES; f++) {
       const w = disp ? Math.sin((2 * Math.PI * f) / FRAMES) * o.amplitude * k0 : 0;
-      out.push(String(n * reps.length), `${d.title} mode ${d.mode ? d.mode.mode : 0} frame ${f + 1}`);
-      for (const r of reps) {
-        const t = shift(r);
-        for (let i = 0; i < n; i++) {
-          const c = at[i], dv = disp ? disp[i] || [0, 0, 0] : [0, 0, 0];
-          out.push(`${s.symbols[i]} ${(c[0] + t[0] + w * dv[0]).toFixed(5)} ${(c[1] + t[1] + w * dv[1]).toFixed(5)} ${(c[2] + t[2] + w * dv[2]).toFixed(5)}`);
-        }
+      out.push(String(list.n), `${d.title} mode ${d.mode ? d.mode.mode : 0} frame ${f + 1}`);
+      for (let k = 0; k < list.n; k++) {
+        const i = list.base[k], c = cartOf(list, k), dv = disp ? disp[i] || [0, 0, 0] : [0, 0, 0];
+        out.push(`${s.symbols[i]} ${(c[0] + w * dv[0]).toFixed(5)} ${(c[1] + w * dv[1]).toFixed(5)} ${(c[2] + w * dv[2]).toFixed(5)}`);
       }
     }
     return out.join("\n") + "\n";
   }
 
   function draw(keepView = true) {
-    if (!doc || !doc.structure) return;
+    if (!doc || !doc.structure || !G) return;
     const vw = v();
     if (!vw) return;                // no WebGL: the viewport explains it
     const view = keepView && vw.getModel() ? vw.getView() : null;
     vw.removeAllModels(); vw.removeAllShapes(); vw.removeAllLabels();
-    const disp = doc.mode && doc.mode.displacement;
-    const m = vw.addModelsAsFrames(framesXyz(doc, disp), "xyz");
-    const cs = M().state.colors ? { prop: "elem", map: M().state.colors.schemes[M().schemeName()] } : "Jmol";
-    m.setStyle({}, { sphere: { scale: 0.28, colorscheme: cs }, stick: { radius: 0.12, colorscheme: cs } });
-    if (doc.structure.pbc.some(Boolean)) M().drawCell(vw, doc.structure, M().cssVar("--cell"), 0.025, doc.opts.supercell > 1 ? 2 : 1);
-    const at = sites(doc.structure);
+    const s = doc.structure, disp = doc.mode && doc.mode.displacement, dd = display(doc), list = dd.list;
+    lastDisplay = dd;
+    const m = vw.addModelsAsFrames(framesXyz(doc, disp, list), "xyz");
+    // bonds from the rest geometry in every frame: they never flicker as atoms swing past the bond cutoff
+    const fr = m.frames || [];
+    if (fr.length > 1 && fr[0]) {
+      for (let f = 1; f < fr.length; f++) {
+        fr[f].forEach((a, i) => { const r = fr[0][i]; if (r) { a.bonds = r.bonds.slice(); a.bondOrder = (r.bondOrder || []).slice(); } });
+      }
+    }
+    if (dd.style === "wireframe") {
+      const cs = M().state.colors ? { prop: "elem", map: M().state.colors.schemes[M().schemeName()] } : "Jmol";
+      m.setStyle({}, dd.bonds ? { line: { colorscheme: cs }, sphere: { scale: 0.12, colorscheme: cs } } : { sphere: { scale: 0.12, colorscheme: cs } });
+    } else m.setStyle({}, M().styleFor(dd.style, dd.bonds));
+    const shown = boxed(s, dd.box);
+    if (dd.cell) M().drawCell(vw, shown, M().cssVar("--cell"), 0.025, 1);
+    // labels at the atoms' rest positions (the cell's own atoms, as the structure view labels them)
+    if (dd.labels && dd.labels !== "off") {
+      const w = s.symmetry && s.symmetry.available ? s.symmetry.wyckoffs : null, size = Number(H.setting && H.setting("labelSize")) || 12;
+      for (let k = 0; k < list.n; k++) {
+        if (list.image[k]) continue;
+        const i = list.base[k], c = cartOf(list, k), sym = s.symbols[i];
+        const text = dd.labels === "element" ? sym : dd.labels === "index" ? String(i + 1) : dd.labels === "wyckoff" && w ? `${sym} ${w[i]}` : `${sym}${i + 1}`;
+        vw.addLabel(text, { position: { x: c[0], y: c[1], z: c[2] }, fontSize: size, fontColor: M().cssVar("--text"),
+          backgroundColor: M().cssVar("--surface"), backgroundOpacity: 0.75, borderThickness: 0, inFront: true });
+      }
+    }
     drawnArrows = [];
     frameArrows = [];
     doc.arrowsCapped = false;
+    const moving = (k) => {
+      const kk = scaleOf(disp) * doc.opts.arrowScale, out = [];
+      for (let j = 0; j < list.n; j++) {
+        const dv = disp[list.base[j]];
+        if (dv && Math.hypot(...dv) * kk >= 0.05) out.push([cartOf(list, j), dv]);
+      }
+      return out;
+    };
     if (disp && doc.opts.arrows && playing) {
       // arrows that move with their atoms: one set per animation frame, each shape tagged with its frame
       // (3Dmol draws a shape with a frame only while the viewer shows that frame), so toggling them never
       // stops the animation and no shape is rebuilt per frame
       const col = M().cssVar("--sel"), k = scaleOf(disp) * doc.opts.arrowScale, k0 = scaleOf(disp);
-      const live = at.map((c, i) => [c, disp[i]]).filter(([, dv]) => dv && Math.hypot(...dv) * k >= 0.05);
+      const live = moving();
       if (live.length * FRAMES > PLAY_ARROWS_MAX) doc.arrowsCapped = true;
       else {
         for (let f = 0; f < FRAMES; f++) {
-          const w = Math.sin((2 * Math.PI * f) / FRAMES) * doc.opts.amplitude * k0, list = [];
+          const w = Math.sin((2 * Math.PI * f) / FRAMES) * doc.opts.amplitude * k0, arr = [];
           for (const [c, dv] of live) {
             const len = Math.hypot(...dv), u = dv.map((x) => x / len);
             const s0 = c.map((x, j) => x + w * dv[j] + u[j] * ARROW_FROM);
-            list.push({ atom: c, start: s0, length: len * k });
+            arr.push({ atom: c, start: s0, length: len * k });
             vw.addArrow({ start: { x: s0[0], y: s0[1], z: s0[2] }, end: { x: s0[0] + dv[0] * k, y: s0[1] + dv[1] * k, z: s0[2] + dv[2] * k },
               radius: 0.07, radiusRatio: 2, mid: 0.72, color: col, frame: f });
           }
-          frameArrows.push(list);
+          frameArrows.push(arr);
         }
       }
     }
     if (disp && doc.opts.arrows && !playing) {
       const col = M().cssVar("--sel"), k = scaleOf(disp) * doc.opts.arrowScale;
-      drawnArrows = [];
-      at.forEach((c, i) => {
-        const dv = disp[i], len = dv ? Math.hypot(...dv) : 0;
-        if (!len || len * k < 0.05) return;
+      for (const [c, dv] of moving()) {
+        const len = Math.hypot(...dv);
         // from the sphere's surface (the atoms sit at rest in the still view), so no arrow is buried in its atom
         const u = dv.map((x) => x / len), s0 = c.map((x, j) => x + u[j] * ARROW_FROM);
         drawnArrows.push({ atom: c, start: s0, length: len * k });
         vw.addArrow({ start: { x: s0[0], y: s0[1], z: s0[2] }, end: { x: s0[0] + dv[0] * k, y: s0[1] + dv[1] * k, z: s0[2] + dv[2] * k },
           radius: 0.07, radiusRatio: 2, mid: 0.72, color: col });
-      });
+      }
     }
-    if (view) vw.setView(view); else M().fitView(vw, doc.structure, at.map((p, i) => ({ i, cart: p })), doc.opts.supercell > 1 ? 2 : 1);
+    if (view) vw.setView(view);
+    else M().fitView(vw, shown, Array.from({ length: list.n }, (_, k) => ({ i: list.base[k], cart: cartOf(list, k) })), 1);
     // still: the rest geometry under the arrows (the arrows show the motion); no arrows: the turning point
     setFrame(playing ? frame : disp && doc.opts.arrows ? 0 : FRAMES / 4 | 0);
   }
@@ -245,7 +285,9 @@ export function createFreqView(host, tableHost, optsHost, H) {
       <label class="chk po-row"><input type="checkbox" id="fo-arrows"${o.arrows ? " checked" : ""}> Arrows</label>
       ${doc.arrowsCapped ? `<p class="muted small po-row">This structure has too many moving atoms for arrows during the animation: they show when paused</p>` : ""}
       <label class="po-row"><span>Arrow scale</span><input type="range" id="fo-ascale" min="0.5" max="8" step="0.5" value="${o.arrowScale}"><span class="po-u">${o.arrowScale}×</span></label>
-      ${doc.structure && doc.structure.pbc.every(Boolean) ? `<label class="chk po-row"><input type="checkbox" id="fo-super"${o.supercell > 1 ? " checked" : ""}> 2×2×2 cells</label>` : ""}
+      ${doc.structure && doc.structure.pbc.some(Boolean) ? (doc.gamma === false
+    ? `<p class="muted small po-row">One cell: this mode is not at Γ, so its periodic images move with phases the output does not give</p>`
+    : `<label class="chk po-row"><input type="checkbox" id="fo-super"${H.rangeN && H.rangeN() === 2 ? " checked" : ""}> 2×2×2 cells</label>`) : ""}
       <div class="po-acts"><button class="tb-btn-text" data-fo="xyz">${icon("download")}<span>Export Mode as XYZ</span></button></div>`;
   }
   optsHost.addEventListener("input", (e) => {
@@ -255,7 +297,7 @@ export function createFreqView(host, tableHost, optsHost, H) {
     else if (t.id === "fo-speed") o.speed = Number(t.value);
     else if (t.id === "fo-ascale") o.arrowScale = Number(t.value);
     else if (t.id === "fo-arrows") o.arrows = t.checked;
-    else if (t.id === "fo-super") o.supercell = t.checked ? 2 : 1;
+    else if (t.id === "fo-super") { if (H.setRange) H.setRange(t.checked ? 2 : 1); return; }
     else return;
     const u = t.parentElement.querySelector(".po-u");
     if (u) u.textContent = t.id === "fo-speed" ? `${o.speed.toFixed(1)}/s` : t.id === "fo-amp" ? `${o.amplitude.toFixed(1)}×` : `${o.arrowScale}×`;
@@ -280,8 +322,9 @@ export function createFreqView(host, tableHost, optsHost, H) {
         try {
           const r = await apiTask("freq?" + q({ path: d.path }));
           const core = await import("../geom/core.js");
+          G = core;
           Object.assign(d, { modes: r.modes, structure: core.decodePacked(r.structure), imaginary: r.imaginary, active: 0,
-            nFrames: r.n_frames || 1 });
+            nFrames: r.n_frames || 1, gamma: r.gamma !== false });
           if (r.mode_atoms && r.mode_atoms !== r.n_atoms) throw new Error(`the modes move ${r.mode_atoms} atoms, the geometry has ${r.n_atoms}`);
           H.imaginary(d, r.imaginary);
         } catch (e) { msg.textContent = e.message; return; }
@@ -302,10 +345,18 @@ export function createFreqView(host, tableHost, optsHost, H) {
       if (reduced()) play(false);
     },
     close() { if (playing) play(false); doc = null; },
+    /** The toolbar's display options changed (range, boundary atoms, cell, bonds, labels, style): redraw, camera kept. */
+    redraw() { if (doc && doc.structure && G) { renderOpts(); draw(true); } },
+    /** Reset View: the default view again. */
+    resetView() { if (doc && doc.structure && G) draw(false); },
+    viewer: () => viewer,
+    doc: () => doc,
     play: (on) => play(on), playing: () => playing, select: (k) => select(k), selectMode: (n) => selectMode(n),
     stats: () => ({ ...stats, playing, frame, reduced: reduced() }),
     state: () => doc && { mode: doc.mode && doc.mode.mode, active: doc.active, frame,
       arrows: playing ? (frameArrows[frame] || []).slice() : drawnArrows.slice(), capped: !!doc.arrowsCapped,
-      n: doc.modes ? doc.modes.length : 0, opts: { ...doc.opts } },
+      n: doc.modes ? doc.modes.length : 0, opts: { ...doc.opts }, gamma: doc.gamma !== false,
+      display: lastDisplay && { atoms: lastDisplay.list.n, cell: lastDisplay.cell, bonds: lastDisplay.bonds, labels: lastDisplay.labels,
+        style: lastDisplay.style, box: lastDisplay.box } },
   };
 }

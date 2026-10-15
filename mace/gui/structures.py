@@ -32,7 +32,8 @@ BOND_SCALE = 1.2
 # CRYSTAL's dummy length for a non-periodic direction
 _DUMMY = 500.0
 
-_DIM_BANNERS = (("MOLECULE CALCULATION", 0), ("POLYMER CALCULATION", 1),
+# CRYSTAL23 prints "MOLECULAR CALCULATION" for a molecule (all 331 corpus molecule outputs)
+_DIM_BANNERS = (("MOLECULAR CALCULATION", 0), ("POLYMER CALCULATION", 1),
                 ("SLAB CALCULATION", 2), ("CRYSTAL CALCULATION", 3))
 _DIM_NAMES = {3: "CRYSTAL", 2: "SLAB", 1: "POLYMER", 0: "MOLECULE"}
 
@@ -241,7 +242,8 @@ def _p1_cif_atoms(path: Path):
     anything else, which then takes ase's own path."""
     try:
         from ase.io.cif import parse_cif
-        blocks = [b for b in parse_cif(str(path)) if b.has_structure()]
+        from mace.utils.cif_symbols import normalize_block   # "BI" is bismuth, not boron
+        blocks = [b for b in map(normalize_block, parse_cif(str(path))) if b.has_structure()]
         if not blocks:
             return None
         b = blocks[-1]                                # ase.io.read's default: the last one
@@ -255,14 +257,48 @@ def _p1_cif_atoms(path: Path):
         return None
 
 
+def cif_deck_origin(path: Path, atoms):
+    """``atoms`` as cif2d12 writes them for the deck (the GUI and
+    ``mace preopt`` both read CIFs through this).
+
+    Without listed operators ase expands a CIF in origin choice 1; cif2d12
+    re-expands an Fd-3m CIF whose atoms say origin choice 2 (diamond at
+    1/8, 1/8, 1/8) in that origin (NewCifToD12.expand_to_p1). Same rule
+    here, so the GUI shows the 8-atom diamond the deck describes, not
+    ase's 16 overlapping atoms."""
+    sg = atoms.info.get("spacegroup")
+    if getattr(sg, "no", None) != 227:
+        return atoms
+    try:
+        import NewCifToD12 as cif2d12
+        if cif2d12._cif_lists_symops(str(path)):
+            return atoms
+        records = cif2d12._parse_cif_atom_site_records(str(path))
+        if not records:
+            return atoms
+        data = dict(zip(("a", "b", "c", "alpha", "beta", "gamma"), atoms.cell.cellpar()),
+                    spacegroup=227, cif_lists_symops=False,
+                    cif_atom_symbols=records[0], cif_atom_positions=records[1])
+        expanded = cif2d12.expand_to_p1(data, {"origin_setting": "AUTO"})
+    except Exception:
+        return atoms
+    if expanded is data:
+        return atoms
+    # expand_to_p1's own expansion, rebuilt here so the atoms keep the group
+    # and spacegroup_kinds that mace preopt writes its CIF from.
+    from ase.spacegroup import crystal
+    return crystal(records[0], records[1], spacegroup=227, setting=2,
+                   cellpar=atoms.cell.cellpar())
+
+
 def read_cif(path: Path) -> Dict[str, Any]:
     import warnings
-    import ase.io
+    from mace.utils.cif_symbols import read_cif as _read_cif
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         atoms = _p1_cif_atoms(path)
         if atoms is None:
-            atoms = ase.io.read(str(path), format="cif")
+            atoms = cif_deck_origin(path, _read_cif(path))
     return _payload(atoms.cell.array, atoms.get_scaled_positions(wrap=False),
                     atoms.positions, atoms.numbers, (True, True, True),
                     {"kind": "cif", "path": str(path)})
@@ -272,6 +308,51 @@ _TWO_ORIGINS = frozenset({48, 50, 59, 68, 70, 85, 86, 88, 125, 126, 129, 130, 13
                           137, 138, 141, 142, 201, 203, 222, 224, 227, 228})
 
 
+_RHOMBOHEDRAL = frozenset({146, 148, 155, 160, 161, 166, 167})
+
+
+def _deck_spacegroup(path: Path, parsed: Dict[str, Any]) -> int:
+    """The deck's space group number; IFLAG = 1 decks give a symbol instead,
+    which the parser leaves as None in ``spacegroup``."""
+    if parsed.get("spacegroup") is not None:
+        return int(parsed["spacegroup"])
+    from d12_constants import spacegroup_number_from_symbol
+    lines = Path(path).read_text(errors="replace").splitlines()
+    for i, line in enumerate(lines[1:], 1):
+        if line.strip() == "CRYSTAL" and i + 2 < len(lines):
+            number = spacegroup_number_from_symbol(lines[i + 2].split("#", 1)[0].strip())
+            if number:
+                return number
+            break
+    raise ValueError(f"cannot read the geometry of {Path(path).name}: "
+                     "its space group record is not a number or a symbol CRYSTAL reads")
+
+
+def external_keyword(path: Path) -> Optional[str]:
+    """EXTERNAL / DLVINPUT when the deck reads its geometry from fort.34."""
+    from mace.submission.external_geometry import deck_keyword
+    return deck_keyword(path)
+
+
+def _missing_external_message(path: Path) -> str:
+    from mace.submission.external_geometry import missing_fort34_message
+    msg = missing_fort34_message(path)
+    if msg is None:     # the staged file is there; d12_atoms still reads only inline geometry
+        return (f"{Path(path).name} reads its geometry from an external file "
+                f"(fort.34); open that file to see the structure")
+    return msg + " Or open the .out of its run to see the geometry CRYSTAL used."
+
+
+class OpenInstead(ValueError):
+    """The file cannot be drawn, but ``path`` (a file next to it, e.g. the
+    .out of a SLAB deck's run) shows the same structure: the server names it
+    and the GUI opens it instead."""
+
+    def __init__(self, message: str, path: Path):
+        super().__init__(message)
+        self.path = Path(path)
+
+
 def d12_atoms(path: Path):
     """A 3D deck's structure as ase Atoms: the asymmetric unit expanded by the
     space group with ase's ``crystal`` (which records the site of each atom in
@@ -279,24 +360,50 @@ def d12_atoms(path: Path):
 
     CRYSTAL's default origin (IFSO 0) is ITA origin choice 2 where a group
     has two; ``0 0 1`` asks for choice 1.
+
+    IFSO > 1 adds the record IX IY IZ, "non-standard shift of the origin ...
+    in fractions of the crystallographic cell lattice vectors times 24"
+    (manual p.19). CRYSTAL23 applies the group's operations about the point
+    -s (s = IX IY IZ / 24) of the deck's frame: an atom at x has the image
+    R(x + s) + t - s, which is what TESTGEOM prints (P-1, s = 1/8 0 0: the
+    inversion image of x = 0.1 is -0.35). So the atoms are expanded at x + s
+    and the result moved back by s, keeping the deck's own frame.
     """
     from d12_parsers import CrystalInputParser
     from ase.spacegroup import crystal
 
+    keyword = external_keyword(path)
+    if keyword:
+        raise ValueError(_missing_external_message(path))
     parsed = CrystalInputParser(str(path)).parse()
-    if parsed.get("dimensionality", "CRYSTAL") != "CRYSTAL":
+    dim = parsed.get("dimensionality", "CRYSTAL")
+    if dim != "CRYSTAL":
+        out = Path(path).with_suffix(".out")
+        if out.is_file():
+            raise OpenInstead(f"{Path(path).name} is a {dim} deck, which MACE GUI does not draw from the deck; "
+                              f"{out.name}, the output of its run, shows the structure", out)
         raise ValueError("MACE GUI reads 3D (CRYSTAL) decks; open the .out of a "
                          "SLAB/POLYMER/MOLECULE run instead")
+    if "cell_parameters" not in parsed or "atoms" not in parsed:
+        why = parsed.get("geometry_unparsed") or "no CRYSTAL geometry block after the title"
+        raise ValueError(f"cannot read the geometry of {Path(path).name}: {why}")
     cp = parsed["cell_parameters"]
-    sg = int(parsed["spacegroup"])
+    sg = _deck_spacegroup(path, parsed)
     numbers = [int(a["atomic_number"]) % 100 for a in parsed["atoms"]]
     basis = [[a["x"], a["y"], a["z"]] for a in parsed["atoms"]]
     origin = (parsed.get("origin_setting") or "0 0 0").split()
+    shift = None
+    if parsed.get("origin_shift") is not None:
+        shift = np.asarray(parsed["origin_shift"], float) / 24.0
+        basis = (np.asarray(basis, float) + shift).tolist()
     # ase's setting 2 is origin choice 2 only for the groups that have two
     # origins; for a rhombohedral group it means rhombohedral axes, and
-    # CRYSTAL's default there is hexagonal (ase setting 1)
+    # CRYSTAL's default there is hexagonal (ase setting 1) unless the deck's
+    # IFHR is 1 (its cell record is then a, alpha of the rhombohedral cell)
     if sg in _TWO_ORIGINS:
         settings = [1, 2] if origin[-1:] == ["1"] else [2, 1]
+    elif parsed.get("rhombohedral_axes") and sg in _RHOMBOHEDRAL:
+        settings = [2]
     else:
         settings = [1]
     last = None
@@ -311,22 +418,84 @@ def d12_atoms(path: Path):
             last = exc
     else:
         raise ValueError(f"cannot expand space group {sg}: {last}")
+    if shift is not None:
+        atoms.set_scaled_positions(np.mod(atoms.get_scaled_positions(wrap=False) - shift, 1.0))
     return atoms, sg
 
 
 def read_d12(path: Path) -> Dict[str, Any]:
-    """A 3D deck: asymmetric unit + space group expanded with ase (d12_atoms)."""
+    """A 3D deck: asymmetric unit + space group expanded with ase (d12_atoms).
+
+    An EXTERNAL / DLVINPUT deck has no geometry of its own: it is drawn from
+    the file its job would stage as fort.34, else from its run's .out, and the
+    payload's source says which (``geometry_from``, ``geometry_staged``)."""
+    if external_keyword(path):
+        return _read_external_d12(Path(path))
     atoms, sg = d12_atoms(path)
+    source = {"kind": "d12", "path": str(path), "deck_spacegroup": sg}
+    # records that edit this geometry (a supercell, substituted atoms, ...):
+    # CRYSTAL runs the edited structure; the drawing is the one before them
+    from mace.preopt import deckscan
+    edits = deckscan.scan(Path(path).read_text(errors="replace"))["geometry_edits"]
+    if edits:
+        source["geometry_edits"] = edits
     return _payload(atoms.cell.array, atoms.get_scaled_positions(wrap=False),
-                    atoms.positions, atoms.numbers, (True, True, True),
-                    {"kind": "d12", "path": str(path), "deck_spacegroup": sg})
+                    atoms.positions, atoms.numbers, (True, True, True), source)
+
+
+def companion_stamp(path: Path) -> Tuple:
+    """For an EXTERNAL / DLVINPUT deck, the (name, mtime_ns, size) of every
+    file its drawing may come from (and of its job script, which names the
+    staged one), None for a missing one; () for any other file. Part of the
+    parse-cache key, so a changed .ext or .out redraws the deck."""
+    path = Path(path)
+    if path.suffix.lower() != ".d12" or not external_keyword(path):
+        return ()
+    from mace.submission.external_geometry import UNSTAGED_SUFFIXES, fort34_sources
+    files = fort34_sources(path) + [path.with_suffix(x) for x in UNSTAGED_SUFFIXES] + [
+        path.parent / "fort.34", path.with_suffix(".out"), path.with_suffix(".sh")]
+    out = []
+    for f in dict.fromkeys(files):
+        try:
+            st = f.stat()
+            out.append((str(f), int(st.st_mtime_ns), int(st.st_size)))
+        except OSError:
+            out.append((str(f), None))
+    return ("companions",) + tuple(out)
+
+
+def _read_external_d12(path: Path) -> Dict[str, Any]:
+    from mace.submission.external_geometry import fort34_source, unstaged_geometry_files
+    staged = fort34_source(path)
+    if staged is not None:
+        candidates = [(staged, True)]
+    else:
+        candidates = [(p, False) for p in unstaged_geometry_files(path)]
+    out = path.with_suffix(".out")
+    if out.is_file():
+        candidates.append((out, False))
+    if not candidates:
+        raise ValueError(_missing_external_message(path))
+    src, is_staged = candidates[0]
+    if src.suffix.lower() == ".out":
+        data = read_out(src, -1)
+    else:
+        try:
+            data = read_any(src, "fort34", box=False)
+        except Exception as exc:  # ase's fort.34 reader: any malformed record
+            raise ValueError(f"{path.name} reads its geometry from {src.name} (fort.34), "
+                             f"which cannot be read: {exc}") from exc
+    data["source"] = {"kind": "d12", "path": str(path), "geometry_from": str(src),
+                      "geometry_staged": is_staged,
+                      "geometry_keyword": external_keyword(path)}
+    return data
 
 
 _DIM_LINE = re.compile(r"DIMENSIONALITY OF THE SYSTEM\s+(\d)\s*$")
 
 
 def _out_dimensionality(lines: List[str]) -> int:
-    """The banner (``MOLECULE CALCULATION`` ...) when CRYSTAL printed one, else
+    """The banner (``MOLECULAR CALCULATION`` ...) when CRYSTAL printed one, else
     the first ``DIMENSIONALITY OF THE SYSTEM n`` line, else 3. Runs restarted
     from EXTERNAL or GUESSP data print no banner; the dimensionality line is
     printed with every geometry (where both exist, they agree)."""
@@ -522,7 +691,28 @@ def read_out(path: Path, frame: int = -1) -> Dict[str, Any]:
     return out
 
 
+class UnreadableStructure(ValueError):
+    """A parser stopped on the file (a missing record, a bad number): said in
+    words, as a ValueError, so the server answers 400 with the reason instead
+    of a parser's bare KeyError text."""
+
+
+def _unreadable(path: Path, exc: Exception) -> UnreadableStructure:
+    detail = str(exc).strip("'\"") or type(exc).__name__
+    if isinstance(exc, KeyError):
+        detail = f"no {detail} in it"
+    return UnreadableStructure(f"cannot read the structure in {Path(path).name}: {detail}")
+
+
 def read_structure(path: Path, frame: int = -1) -> Dict[str, Any]:
+    """The structure in a file, as the payload the viewer draws."""
+    try:
+        return _read_structure(path, frame)
+    except (KeyError, TypeError, IndexError, AttributeError) as exc:
+        raise _unreadable(path, exc) from exc
+
+
+def _read_structure(path: Path, frame: int = -1) -> Dict[str, Any]:
     suffix = path.suffix.lower()
     if suffix == ".cif":
         return read_cif(path)
@@ -588,13 +778,108 @@ def _neighbor_pairs(cell, cart, numbers, pbc, scale=BOND_SCALE, max_pairs=4000):
     return pairs
 
 
+def _kabsch(x0, x1):
+    """``x1`` moved onto ``x0``: centroids together, then the proper rotation
+    that fits them best (Kabsch)."""
+    m0, m1 = x0.mean(axis=0), x1.mean(axis=0)
+    a, b = x0 - m0, x1 - m1
+    if len(a) >= 3:
+        u, _, vt = np.linalg.svd(b.T @ a)
+        d = 1.0 if np.linalg.det(u @ vt) >= 0 else -1.0
+        b = b @ (u @ np.diag([1.0, 1.0, d]) @ vt)
+    return b + m0
+
+
+def align_molecule(x0, x1):
+    """``x1`` in ``x0``'s frame without its rigid translation and rotation. The
+    fit is done again without the atoms that clearly moved, so one moved atom
+    does not spread a little of its move over all the others."""
+    x0, x1 = np.asarray(x0, float), np.asarray(x1, float)
+    if not len(x0):
+        return x1
+    y = _kabsch(x0, x1)
+    d = np.linalg.norm(y - x0, axis=1)
+    keep = d <= max(0.05, 3.0 * float(np.median(d)))
+    if 3 <= keep.sum() < len(d):
+        m0, m1 = x0[keep].mean(axis=0), x1[keep].mean(axis=0)
+        a, b = x0[keep] - m0, x1[keep] - m1
+        u, _, vt = np.linalg.svd(b.T @ a)
+        sgn = 1.0 if np.linalg.det(u @ vt) >= 0 else -1.0
+        y = (x1 - m1) @ (u @ np.diag([1.0, 1.0, sgn]) @ vt) + m0
+    return y
+
+
+def _nearest_shared_images(before, after):
+    """``after``'s Cartesian positions, each atom moved by whole lattice
+    vectors along the axes periodic in BOTH ends to its image nearest its
+    ``before`` position (a slab against its own 3D CIF: an atom wrapped by +a
+    in one of them is not a displacement). The common shift of the whole
+    structure along each such axis (a different cell origin) is kept, so only
+    a per-atom wrap is undone."""
+    x1 = np.asarray(after["cart"], float)
+    shared = [i for i in range(3) if before.get("pbc") and after.get("pbc")
+              and bool(before["pbc"][i]) and bool(after["pbc"][i])]
+    cell = after.get("cell")
+    if not shared or not len(x1) or cell is None or len(cell) != 3:
+        return x1
+    c1 = np.asarray(cell, float)
+    if not all(np.linalg.norm(c1[i]) > 1e-8 for i in shared):
+        return x1
+    d = (x1 - np.asarray(before["cart"], float)) @ np.linalg.pinv(c1)
+    n = np.zeros_like(d)
+    for i in shared:
+        ang = 2 * np.pi * d[:, i]
+        common = np.arctan2(np.sin(ang).mean(), np.cos(ang).mean()) / (2 * np.pi)
+        n[:, i] = np.round(d[:, i] - common)
+    return x1 - n @ c1
+
+
+def _compare_molecule(before, after) -> Dict[str, Any]:
+    """compare() when either end is a molecule (no periodic direction) or the
+    two differ in periodicity (a CIF's box against a MOLECULE output's
+    bounding box): Cartesian displacements once the rigid translation and
+    rotation are taken out; there is no cell to compare. Along the axes
+    periodic in both ends (a slab against its 3D CIF) each atom is first
+    taken at its nearest periodic image."""
+    x0 = np.asarray(before["cart"], float)
+    x1 = align_molecule(x0, _nearest_shared_images(before, after))
+    disp = x1 - x0
+    dist = np.linalg.norm(disp, axis=1)
+    sym = _symbols()
+    numbers = [int(n) for n in before["numbers"]]
+    bonds = {}
+    for i, j, _img in _neighbor_pairs(np.eye(3), x0, numbers, (False, False, False)):
+        d0, d1 = float(np.linalg.norm(x0[j] - x0[i])), float(np.linalg.norm(x1[j] - x1[i]))
+        a, b = sorted((sym[numbers[i]], sym[numbers[j]]))
+        row = bonds.setdefault((a, b, round(d0, 3), round(d1, 3)), {"pair": f"{a}-{b}", "before": d0, "after": d1,
+                                                                    "delta": d1 - d0, "count": 0, "example": [i + 1, j + 1]})
+        row["count"] += 1
+    return {
+        "displacements": [{"atom": k + 1, "symbol": sym[numbers[k]], "vector": disp[k].tolist(), "length": float(dist[k])}
+                          for k in range(len(numbers))],
+        "before_cart": x0.tolist(),
+        "after_unwrapped_cart": x1.tolist(),
+        "max_displacement": float(dist.max()) if len(dist) else 0.0,
+        "rms_displacement": float(np.sqrt((dist ** 2).mean())) if len(dist) else 0.0,
+        "cell": [],
+        "bonds": sorted(bonds.values(), key=lambda r: (r["pair"], r["before"])),
+        "aligned": "molecule",
+    }
+
+
 def compare(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
     """Displacements, cell-parameter and bond-length changes between two
     structures with the same atoms in the same order.
 
     Displacements are the change of fractional coordinates expressed in the
     final cell (non-periodic directions: Cartesian), so a cell change alone
-    displaces nothing.
+    displaces nothing ("internal": the relaxation relative to the cell).
+    ``displacements_cart`` are r_final - r_initial in Angstrom with the cell
+    change included and the mean shift removed (see below); the GUI shows
+    them by default when ``cell_changed``. A molecule, or two ends that
+    differ in periodicity, is compared in Cartesian coordinates with its rigid
+    translation and rotation taken out (_compare_molecule, which has no cell,
+    so no ``displacements_cart`` and no "relative to the cell" choice).
 
     ``before``/``after`` are the internal frame structures (cell, frac or
     None, cart, numbers, pbc). Each atom of ``after`` is taken at the periodic
@@ -604,6 +889,8 @@ def compare(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
     if list(before["numbers"]) != list(after["numbers"]):
         raise ValueError("the two structures do not hold the same atoms in the same order")
     pbc = before["pbc"]
+    if not any(pbc) or [bool(v) for v in pbc] != [bool(v) for v in after["pbc"]]:
+        return _compare_molecule(before, after)
     c0, c1 = np.asarray(before["cell"]), np.asarray(after["cell"])
     x0, x1 = np.asarray(before["cart"]), np.asarray(after["cart"])
     # fractional along periodic axes, Cartesian elsewhere
@@ -626,6 +913,16 @@ def compare(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
     # is reported separately in the cell table.)
     disp = (f1u - f0) @ c1
     dist = np.linalg.norm(disp, axis=1)
+    # The Cartesian displacement, cell change included: each final atom at the
+    # image nearest its initial position (x1u), minus the mean shift, so the
+    # answer does not depend on where the cell origin sits (a cell that only
+    # shrinks moves the atoms toward their common center, not toward the
+    # origin). Atoms fixed in fractional terms by symmetry (graphite's layers
+    # along c) move here and not above.
+    dcart = x1u - x0
+    if len(dcart):
+        dcart = dcart - dcart.mean(axis=0)
+    dist_cart = np.linalg.norm(dcart, axis=1)
     sym = _symbols()
     numbers = [int(n) for n in before["numbers"]]
 
@@ -657,6 +954,14 @@ def compare(before: Dict[str, Any], after: Dict[str, Any]) -> Dict[str, Any]:
         "after_unwrapped_cart": x1u.tolist(),
         "max_displacement": float(dist.max()) if len(dist) else 0.0,
         "rms_displacement": float(np.sqrt((dist ** 2).mean())) if len(dist) else 0.0,
+        "displacements_cart": [{"atom": k + 1, "symbol": sym[numbers[k]],
+                                "vector": dcart[k].tolist(), "length": float(dist_cart[k])}
+                               for k in range(len(numbers))],
+        "max_displacement_cart": float(dist_cart.max()) if len(dist_cart) else 0.0,
+        "rms_displacement_cart": float(np.sqrt((dist_cart ** 2).mean())) if len(dist_cart) else 0.0,
+        # the cell changed (a length or the volume by more than 1e-6 relative, an angle by 1e-6 degrees)
+        "cell_changed": any(abs(r["delta"]) > (1e-6 * abs(r["before"]) if r["param"] in ("a", "b", "c", "volume") else 1e-6)
+                            for r in cell_rows),
         "cell": cell_rows,
         "bonds": bond_rows,
     }
@@ -726,7 +1031,10 @@ def match_atoms(before: Dict[str, Any], after: Dict[str, Any]) -> Tuple[List[int
     if periodic:
         x0, x1 = np.asarray(before["frac"], float), np.asarray(after["frac"], float)
     else:
+        # a molecule (or a box against a bounding box): positions about each one's center
         x0, x1 = np.asarray(before["cart"], float), np.asarray(after["cart"], float)
+        if len(x0):
+            x0, x1 = x0 - x0.mean(axis=0), x1 - x1.mean(axis=0)
     order = [-1] * len(n0)
     worst = 0.0
     same_seq = n0 == n1
@@ -874,6 +1182,13 @@ def read_any(path: Path, fmt: str, box: bool = True) -> Dict[str, Any]:
     """A dropped or pasted file read with the format sniff() found. A plain XYZ
     has no cell: with ``box`` it gets one with 10 Å of vacuum between images,
     else it is a molecule (view-only)."""
+    try:
+        return _read_any(path, fmt, box)
+    except (KeyError, TypeError, IndexError, AttributeError) as exc:
+        raise _unreadable(path, exc) from exc
+
+
+def _read_any(path: Path, fmt: str, box: bool = True) -> Dict[str, Any]:
     import warnings
     path = Path(path)
     if fmt == "cif":
@@ -888,9 +1203,18 @@ def read_any(path: Path, fmt: str, box: bool = True) -> Dict[str, Any]:
     ase_fmt = {"poscar": "vasp", "xyz": "xyz", "extxyz": "extxyz"}.get(fmt) or ASE_ONLY[fmt]
     if fmt == "mol" and path.suffix.lower() == ".sdf":
         ase_fmt = "sdf"
+    source = str(path)
+    if fmt == "poscar":
+        # "BI S" on the species line: ase looks it up exactly (KeyError).
+        import io
+        from mace.utils.cif_symbols import normalize_poscar_species
+        text = path.read_text(errors="replace")
+        fixed = normalize_poscar_species(text)
+        if fixed != text:
+            source = io.StringIO(fixed)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        atoms = ase.io.read(str(path), format=ase_fmt)
+        atoms = ase.io.read(source, format=ase_fmt)
     numbers = [int(n) for n in atoms.numbers]
     has_cell = atoms.cell.rank == 3 and abs(atoms.cell.volume) > 1e-6
     if not has_cell and box:

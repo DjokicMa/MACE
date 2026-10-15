@@ -135,9 +135,10 @@ def test_power_factor_and_zt_finite_and_consistent(afi_props):
     zt = t["zt_electronic_max"]
     assert math.isfinite(pf) and pf > 0.0
     assert math.isfinite(zt) and zt > 0.0
-    # Electronic ZT (no lattice kappa) is an upper bound; for a real semiconductor
-    # it should be a modest O(1)-or-below figure here, not absurd.
-    assert zt < 10.0
+    # Electronic ZT (no lattice kappa) is an upper bound, PF*T/kappa_e with
+    # kappa_e = kappa0 - T*sigma*S^2 (KAPPA.dat is kappa0), so it is large
+    # near the gap edge: 19.55 here (test_transport_zt_kappa0.py)
+    assert zt < 100.0
     assert afi_props["transport_power_factor_max"] == pytest.approx(pf)
     assert afi_props["transport_zt_max"] == pytest.approx(zt)
     # Peak locations are at real grid temperatures.

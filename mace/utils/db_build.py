@@ -19,7 +19,11 @@ calculation writes one row of the existing ``files`` table with
   ``--register``;
 * ``unreadable``: an OS error, or not a CRYSTAL output;
 * ``incomplete``: ``categorize_output_file`` says it is still running or
-  failed (listed, and extracted as before).
+  failed, and a calculation record has it (listed, and extracted as before);
+* ``skipped``: not extracted by a build: with ``--register``, a failed or
+  unfinished run that no calculation record has (registering records none, so
+  its rows would sit under a material with no materials row), or MACE's ``X_temp.out`` copy of the run whose ``X.out``
+  is beside it.
 
 Nothing here writes; the read-only database connection never creates a file.
 """
@@ -35,8 +39,10 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 EXTRACTED = "output_extracted"
 EDGE = 64 * 1024
-CLASSES = ("new", "changed", "unchanged", "not tracked (always re-extracted)", "unreadable", "incomplete")
+CLASSES = ("new", "changed", "unchanged", "not tracked (always re-extracted)", "unreadable", "incomplete",
+           "skipped")
 NOT_TRACKED = "not tracked (always re-extracted)"
+SKIPPED = "skipped"
 _BANNER = re.compile(rb"\*\s+CRYSTAL\d{2}\b")
 
 
@@ -60,6 +66,16 @@ def fingerprint(path: Path) -> Tuple[int, int, str]:
     return st.st_size, st.st_mtime_ns, h.hexdigest()
 
 
+def same_output(a: Path, b: Path) -> bool:
+    """Two outputs with the same size and the same first and last 64 KiB
+    (the change detection's fingerprint): copies of one run."""
+    try:
+        fa, fb = fingerprint(Path(a)), fingerprint(Path(b))
+    except OSError:
+        return False
+    return fa[0] == fb[0] and fa[2] == fb[2]
+
+
 def checksum_text(fp: Tuple[int, int, str]) -> str:
     return f"mtime_ns={fp[1]};head_tail_sha1={fp[2]}"
 
@@ -74,14 +90,61 @@ def parse_checksum(text: Optional[str]) -> Dict[str, str]:
 
 
 def material_id_from_filename(output_file: Path) -> str:
-    """The id an untracked output's rows are filed under (the extractor's
-    validated rule)."""
-    filename = Path(output_file).stem
-    for suffix in ['_opt', '_sp', '_band', '_doss', '_freq']:
-        if filename.endswith(suffix):
-            filename = filename[:-len(suffix)]
-            break
-    return filename
+    """The id an untracked output's rows are filed under: the one its
+    registration would give (materials.create_material_id_from_file, which
+    the populate scan and the workflow use). A local one-suffix strip gave
+    "1_dia_opt_rev1" for an OPT and "1_dia_opt_rev1_sp_..._optimized" for its
+    SP, where a registration files both under "1_dia"."""
+    from mace.database.materials import create_material_id_from_file
+    return create_material_id_from_file(Path(output_file).name)
+
+
+def temp_copy_of(path: Path) -> Optional[Path]:
+    """``X.out`` when ``path`` is MACE's ``X_temp.out`` and ``X.out`` is
+    beside it (the run's output kept under its deck's ``_temp`` name), else
+    None. A lone ``X_temp.out`` is the run's only output and counts."""
+    p = Path(path)
+    if not p.stem.endswith("_temp"):
+        return None
+    run = p.with_name(p.stem[:-len("_temp")] + p.suffix)
+    return run if run.is_file() else None
+
+
+def file_candidates(name, db_dir: Path, work_dir=None) -> List[Path]:
+    """Where a calculation's recorded input or output can be now, in order:
+    the recorded path (a relative one under the database's folder, then
+    under the recorded work_dir), then - for a project folder moved or copied
+    with its database, whose records keep the old absolute paths - the end of
+    the recorded path under the database's folder, longest first
+    (``/old/proj/OPT/x.out`` -> ``<db dir>/OPT/x.out``), and a bare name
+    under the recorded work_dir found that way. The caller takes the first
+    that exists (and is where it may look)."""
+    if not name:
+        return []
+    db_dir = Path(db_dir)
+    out: List[Path] = []
+
+    def tails(p: Path) -> List[Path]:
+        parts = [x for x in p.parts if x not in (p.anchor, "")]
+        return [db_dir.joinpath(*parts[k:]) for k in range(len(parts))]
+
+    name_p = Path(str(name))
+    if name_p.is_absolute():
+        out.append(name_p)
+        out += tails(name_p)
+    else:
+        out.append(db_dir / name_p)
+        if work_dir:
+            wd = Path(str(work_dir))
+            out.append(wd / name_p)
+            if wd.is_absolute():
+                out += [t / name_p for t in tails(wd)]
+    seen, uniq = set(), []
+    for c in out:
+        if str(c) not in seen:
+            seen.add(str(c))
+            uniq.append(c)
+    return uniq
 
 
 def spellings(path: Path) -> List[str]:
@@ -99,6 +162,10 @@ def calc_for_output(conn, output_file: Path) -> Optional[str]:
     calculation. ``conn`` is any sqlite3 connection to the database."""
     output_file = Path(output_file)
     outs, dirs = spellings(output_file), spellings(output_file.parent)
+    # X.out of a run an earlier scan recorded by its X_temp.out copy
+    temp = output_file.with_name(output_file.stem + "_temp" + output_file.suffix)
+    if temp.is_file():
+        outs += spellings(temp)
     marks = ",".join("?" * len(outs))
     row = conn.execute(
         f"SELECT calc_id FROM calculations WHERE output_file IN ({marks}) "
@@ -110,6 +177,8 @@ def calc_for_output(conn, output_file: Path) -> Optional[str]:
         f"SELECT calc_id, input_file FROM calculations WHERE work_dir IN ({marks}) "
         "ORDER BY created_at DESC", dirs).fetchall()
     named = [r[0] for r in rows if r[1] and Path(r[1]).stem == output_file.stem]
+    if not named and temp.is_file():
+        named = [r[0] for r in rows if r[1] and Path(r[1]).stem == temp.stem]
     if named:
         return named[0]
     return rows[0][0] if len(rows) == 1 else None
@@ -164,10 +233,14 @@ def _quiet():
 
 
 def classify(outputs: Iterable[Path], db_path, register: bool = False,
-             scan_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
+             scan_dir: Optional[Path] = None, registering: Optional[bool] = None) -> List[Dict[str, Any]]:
     """One row per output: {file, class, material_id, calc_type, calc_id,
     size}. With ``register`` the outputs the populate scan would register
-    count as tracked (their calculation would be created first)."""
+    count as tracked (their calculation would be created first).
+    ``registering`` (default: ``register``) says the build registers, after
+    which a failed or unfinished output with no calculation is skipped."""
+    if registering is None:
+        registering = register
     from mace.completion_checker import categorize_output_file
     outputs = [Path(p) for p in outputs]
     would = {}
@@ -179,6 +252,7 @@ def classify(outputs: Iterable[Path], db_path, register: bool = False,
                     would[sp] = info
     conn = open_ro(db_path)
     rows = []
+    first_of_job: Dict[str, Path] = {}     # job id -> the output registered with it in this scan
     try:
         for p in outputs:
             row: Dict[str, Any] = {"file": str(p), "class": None, "material_id": None, "calc_type": None,
@@ -226,6 +300,21 @@ def classify(outputs: Iterable[Path], db_path, register: bool = False,
                 cls = NOT_TRACKED
             if not complete and cls != "unchanged":
                 cls = "incomplete"
+            copy_of = temp_copy_of(p)
+            if copy_of is not None:
+                cls = SKIPPED
+                row["reason"] = f"a copy of {copy_of.name}"
+            elif cls == "incomplete" and row["calc_id"] is None and registering:
+                # registering records no calculation for it: its rows would sit
+                # under a material with no materials row. Register off, it is
+                # extracted as a plain run extracts it (with a materials row).
+                cls = SKIPPED
+                row["reason"] = "a failed or unfinished run with no calculation record"
+            elif row["calc_id"] is None and complete:
+                twin = _recorded_copy(conn, p, first_of_job, cls == "new")
+                if twin is not None:
+                    cls = SKIPPED
+                    row["reason"] = f"the same run as {twin} (same SLURM job and content)"
             row["class"] = cls
             rows.append(row)
     finally:
@@ -234,11 +323,69 @@ def classify(outputs: Iterable[Path], db_path, register: bool = False,
     return rows
 
 
+def _recorded_copy(conn, p: Path, first_of_job: Dict[str, Path], registering: bool) -> Optional[str]:
+    """The output a calculation records (or this scan registers first) with
+    the same SLURM job id as ``p`` and the same content, in another folder:
+    ``p`` is a copy of that run, which the populate scan does not register
+    again (populate_completed_jobs._check_job_id). None otherwise."""
+    from mace.database.populate_completed_jobs import slurm_job_id_for
+    try:
+        job = slurm_job_id_for(p)
+    except OSError:
+        return None
+    if not job:
+        return None
+    other = None
+    if conn is not None:
+        r = conn.execute("SELECT output_file FROM calculations WHERE slurm_job_id = ?", (job,)).fetchone()
+        if r and r[0]:
+            other = Path(r[0])
+    if other is None:
+        other = first_of_job.get(job)
+        if other is None:
+            if registering:
+                first_of_job[job] = p
+            return None
+    if set(spellings(other)) & set(spellings(p)) or spellings(other.parent) == spellings(p.parent):
+        return None
+    return str(other) if same_output(other, p) else None
+
+
 def counts(rows: List[Dict[str, Any]]) -> Dict[str, int]:
     out = {c: 0 for c in CLASSES}
     for r in rows:
         out[r["class"]] = out.get(r["class"], 0) + 1
     return out
+
+
+def summarize(files: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """The per-file progress records of a build (``--progress-json`` lines)
+    counted for its summary: extracted outputs by class (``new`` counts the
+    untracked and incomplete ones too), the outputs nothing was extracted
+    from, and the skipped ones. The CLI and the GUI both count with this."""
+    by_class: Dict[str, int] = {}
+    for x in files:
+        if x.get("status") == "extracted":
+            k = x.get("class") or "extracted"
+            by_class[k] = by_class.get(k, 0) + 1
+    return {"new": sum(v for k, v in by_class.items() if k in ("new", NOT_TRACKED, "incomplete", "extracted")),
+            "changed": by_class.get("changed", 0),
+            # extracted again though unchanged (a build without --skip-unchanged)
+            "reextracted": by_class.get("unchanged", 0),
+            "failed": [x.get("rel") or x.get("file") for x in files if x.get("status") in ("failed", "no properties")],
+            "skipped": sum(1 for x in files if x.get("status") == "skipped" and x.get("class") == SKIPPED)}
+
+
+def summary_message(done: Dict[str, Any]) -> str:
+    """The one-line summary of a build, from its ``done`` record (the CLI
+    prints it, the GUI shows it in its notification)."""
+    n_failed = done.get("failed_outputs", 0)
+    reext = f", {done['reextracted']} re-extracted" if done.get("reextracted") else ""
+    msg = (f"Database updated: {done.get('new', 0)} new, {done.get('changed', 0)} changed{reext}, "
+           f"{n_failed} failed outputs; {done.get('materials', 0)} materials ({done.get('materials_new', 0)} new)")
+    if done.get("skipped_outputs"):
+        msg += f"; {done['skipped_outputs']} skipped"
+    return msg
 
 
 def record_extracted(db, calc_id: str, output_file: Path) -> None:

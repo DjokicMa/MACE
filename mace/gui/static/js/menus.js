@@ -4,7 +4,7 @@
  * separator, or {label, sub: [...]} for a submenu. Roving focus, arrows, Esc,
  * Alt+letter (the menu.open.* mnemonics in the chord index), F10. */
 import { registry, shortcutOf, disabledReason } from "./commands.js";
-import { $, $$, esc, icon, place, hideTip } from "./ui.js";
+import { $, $$, esc, icon, place, hideTip, overlayHost } from "./ui.js";
 
 let MENUS = [], ctxFn = () => ({}), runFn = () => {};
 let openTop = null;          // the open top-level button
@@ -140,8 +140,13 @@ function buildMenu(items, label, args = null) {
       `<kbd>${esc(shortcutOf(id))}</kbd><span></span></button>`;
   }).join("");
   el.__args = args;
-  document.body.appendChild(el);
+  overlayHost().appendChild(el);
   stack.push(el);
+  // a label the window's width cuts short keeps its whole text in the entry's title
+  for (const l of $$(".lbl", el)) {
+    const b = l.parentElement;
+    if (l.scrollWidth > l.clientWidth + 1 && !(b.title || "").startsWith(l.textContent)) b.title = b.title ? `${l.textContent}: ${b.title}` : l.textContent;
+  }
   el.addEventListener("click", (e) => {
     const b = e.target.closest(".menu-item");
     if (!b || b.getAttribute("aria-disabled") === "true") return;

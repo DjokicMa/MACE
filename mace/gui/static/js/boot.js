@@ -28,6 +28,28 @@
     var scale = Number(s.uiScale);
     root.style.setProperty("--ui-scale", String((scale >= 80 && scale <= 150 ? scale : 100) / 100));
   }
+  // The UI scale is a CSS zoom on the window's shell (shell.css). Chromium 128+
+  // (Chrome, Brave, Edge) and Firefox 126+ apply zoom as the standard says: a
+  // pointer event's clientX/Y and getBoundingClientRect() are screen CSS px,
+  // while an element's own lengths (offsetWidth, a canvas's drawing, 3Dmol's
+  // WIDTH, a style's left or width) are its zoomed px. Inside the shell the
+  // two differ by the zoom, so every point taken from the pointer goes through
+  // here before it meets the element's own coordinates.
+  window.maceZoom = {
+    /** The CSS zoom in effect on el: the product of its own and its ancestors' zoom. */
+    of: function (el) {
+      if (!el || el.nodeType !== 1) return 1;
+      if (typeof el.currentCSSZoom === "number") return el.currentCSSZoom || 1;
+      var z = 1;
+      for (var n = el; n && n.nodeType === 1; n = n.parentElement) z *= parseFloat(getComputedStyle(n).zoom) || 1;
+      return z;
+    },
+    /** A client point (clientX, clientY) as [x, y] in el's own px from its top left corner. */
+    point: function (el, x, y) {
+      var r = el.getBoundingClientRect(), z = window.maceZoom.of(el);
+      return [(x - r.left) / z, (y - r.top) / z];
+    }
+  };
   // what the first frame is painted with (the tests read it once the page is up)
   window.__maceFirstPaint = { theme: root.getAttribute("data-theme") || "system", density: root.getAttribute("data-density") || "",
     scale: root.style.getPropertyValue("--ui-scale").trim() || "1", source: server ? "server" : "browser" };

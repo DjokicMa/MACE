@@ -27,6 +27,7 @@ class MissingDataAnalyzer:
                          'final_gradient_norm', 'final_primitive_a', 'final_primitive_b',
                          'final_primitive_c', 'final_primitive_alpha', 'final_primitive_beta',
                          'final_primitive_gamma', 'final_primitive_cell_volume',
+                         'final_primitive_cell_area', 'final_primitive_cell_length',
                          'final_density', 'atoms_in_unit_cell']
         },
         'SP': {
@@ -69,7 +70,8 @@ class MissingDataAnalyzer:
             'required': ['transport_data_available'],
             'optional': ['transport_n_temperatures', 'transport_n_data_points',
                          'transport_seebeck_max_uv_per_k', 'transport_power_factor_max',
-                         'transport_zt_max', 'transport_carrier_type',
+                         'transport_zt_electronic_max', 'transport_zt_max', 'transport_carrier_type',
+                         'transport_kappa0_at_zt_max', 'transport_kappa_electronic_at_zt_max',
                          'band_gap', 'electronic_classification', 'conductivity_type']
         },
         'CHARGE+POTENTIAL': {

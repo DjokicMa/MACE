@@ -38,6 +38,7 @@ from mace.database.materials import MaterialDatabase
 from mace.utils.file_manager import CrystalFileManager
 from mace.completion_checker import determine_completed_subtype
 from mace.recovery import opt_restart, screened_hybrid
+from mace.utils import crystal_errors
 
 
 class CrystalErrorDetector:
@@ -78,7 +79,7 @@ class CrystalErrorDetector:
                     'Resubmit once one of them is writable'
                 ]
             },
-            'scf_convergence': {
+            'convergence_error': {
                 'patterns': ["TOO MANY CYCLES", "SCF NOT CONVERGED", "CONVERGENCE NOT ACHIEVED",
                              "FERMI ENERGY NOT IN INTERVAL"],
                 'severity': 'medium',
@@ -109,7 +110,7 @@ class CrystalErrorDetector:
                     'Split calculation into smaller parts'
                 ]
             },
-            'disk_quota': {
+            'disk_space_error': {
                 'patterns': ["error during write", "disk full", "No space left on device"],
                 'severity': 'high',
                 'recoverable': True,
@@ -121,7 +122,7 @@ class CrystalErrorDetector:
                     'Compress or archive old results'
                 ]
             },
-            'time_limit': {
+            'timeout_error': {
                 'patterns': ["DUE TO TIME LIMIT", "TIME LIMIT EXCEEDED", "killed by signal 15"],
                 'severity': 'medium',
                 'recoverable': True,
@@ -131,22 +132,6 @@ class CrystalErrorDetector:
                     'Restart from checkpoint if available',
                     'Reduce calculation complexity',
                     'Use more efficient settings'
-                ]
-            },
-            'geometry_error': {
-                'patterns': [
-                    "GEOMETRY OPTIMIZATION FAILED", "NEGATIVE FREQUENCY",
-                    "OPTIMIZATION NOT CONVERGED"
-                ],
-                'severity': 'medium',
-                'recoverable': True,
-                'description': 'Geometry optimization convergence problems',
-                'recovery_hints': [
-                    'Check initial geometry for reasonable bond lengths',
-                    'Use smaller optimization steps (MAXTRADIUS)',
-                    'Try different optimization algorithm',
-                    'Manually adjust problematic atoms',
-                    'Use constraints for problematic coordinates'
                 ]
             },
             # Found by opt_restart.finalrun_loop, not by a line: FINALRUN keeps
@@ -176,19 +161,17 @@ class CrystalErrorDetector:
                     'Check whether the energy oscillates (FINALRUN re-starts)'
                 ]
             },
-            'basis_linear_dependence': {
-                'patterns': [
-                    "**** NEIGHB ****", "ATOMS TOO CLOSE", "SMALL DISTANCE BETWEEN ATOMS"
-                ],
+            # NEIGHB: CRYSTAL found two atoms too close (the queue manager's
+            # geometry_error; not a basis-set linear dependence).
+            'geometry_error': {
+                'patterns': [],
                 'severity': 'high',
-                'recoverable': True,
-                'description': 'Basis set linear dependence from close atomic distances',
+                'recoverable': False,
+                'description': 'Geometry error (atoms too close, or a failed optimization)',
                 'recovery_hints': [
-                    'Scale unit cell to separate close atoms',
-                    'Use EIGS keyword to diagnose overlap matrix',
-                    'Remove diffuse basis functions',
-                    'Increase basis set contraction',
-                    'Consider different basis set choice'
+                    'Check the geometry for atoms too close (DISTANCE BETWEEN ATOMS ... TOO SMALL)',
+                    'Scale the unit cell or move the close atoms apart',
+                    'SMALLDIST runs it anyway when the short distance is real'
                 ]
             },
             'shrink_error': {
@@ -256,6 +239,14 @@ class CrystalErrorDetector:
             }
         }
         
+        # The line patterns and their priority are the shared table's
+        # (mace.utils.crystal_errors), keyed by the queue manager's error types.
+        for error_type, info in self.error_patterns.items():
+            classes = [c for c in crystal_errors.ERROR_CLASSES if c.error_type == error_type]
+            if classes:
+                info['patterns'] = [p for c in classes for p in c.patterns]
+                info['recoverable'] = not any(c.no_recovery for c in classes)
+
         # Completion patterns from updatelists2.py
         self.completion_patterns = {
             'optimization_complete': {
@@ -378,25 +369,27 @@ class CrystalErrorDetector:
         return result
         
     def _check_for_errors(self, lines: List[str], result: Dict) -> bool:
-        """Check for error patterns in output file lines."""
-        for line in lines:
-            line_lower = line.lower()
-            
-            for error_type, error_info in self.error_patterns.items():
-                for pattern in error_info['patterns']:
-                    if pattern.lower() in line_lower:
-                        result['status'] = 'error'
-                        result['error_type'] = error_type
-                        result['error_details'].append({
-                            'pattern': pattern,
-                            'line': line.strip(),
-                            'severity': error_info['severity'],
-                            'description': error_info['description']
-                        })
-                        result['recoverable'] = error_info['recoverable']
-                        result['recovery_hints'] = error_info['recovery_hints']
-                        return True
-                        
+        """Check for error patterns in output file lines, in the shared
+        priority order (an OOM kill before the BAD TERMINATION banner above
+        it, CRYSTAL's own error before the MPI_Abort it causes)."""
+        match = crystal_errors.classify(lines)
+        if match:
+            error_info = self.error_patterns[match.error_type]
+            result['status'] = 'error'
+            result['error_type'] = match.error_type
+            result['error_details'].append({
+                'pattern': match.pattern,
+                'line': match.line,
+                'severity': error_info['severity'],
+                'description': match.description
+            })
+            result['recoverable'] = error_info['recoverable']
+            hints = list(error_info['recovery_hints'])
+            if match.no_recovery:
+                hints.insert(0, f"No automatic recovery: {match.no_recovery}")
+            result['recovery_hints'] = hints
+            return True
+
         # Check for generic errors
         for line in lines:
             if 'error' in line.lower() and not any(skip in line.lower() 
@@ -833,7 +826,7 @@ class CrystalErrorDetector:
         actions = []
         
         # Generate specific actions based on error type and context
-        if error_type == 'scf_convergence':
+        if error_type == 'convergence_error':
             runtime_info = analysis_result.get('runtime_info', {})
             cycles = runtime_info.get('scf_cycles', 0)
             
@@ -872,7 +865,7 @@ class CrystalErrorDetector:
                     'parameters': {'direct_scf': True, 'smaller_basis': True}
                 })
                 
-        elif error_type == 'time_limit':
+        elif error_type == 'timeout_error':
             runtime_info = analysis_result.get('runtime_info', {})
             cpu_time = runtime_info.get('total_cpu_time', 0)
             

@@ -160,3 +160,48 @@ def test_broadening_grid_is_bounded():
     with pytest.raises(ValueError, match="eta"):
         spectra.from_modes(parsed, "raman", shape="pseudo-voigt", eta=float("nan"))
     assert spectra.from_modes(parsed, "ir", xmax=4000.0)["x"][-1] <= 4001
+
+
+# ---------------------------------------------------------------- IRSPEC.DAT's columns (CRYSTAL23 manual p.453)
+def _irspec(path, ncol):
+    rows = []
+    for k in range(1, 50):
+        nu = 10.0 * k
+        rows.append([nu, 1e7 / nu] + [c * 100 + k for c in range(3, ncol + 1)])
+    path.write_text("".join("  ".join(f"{v:.5E}" for v in r) + "\n" for r in rows))
+
+
+def test_irspec_columns_of_a_molecule(tmp_path):
+    """Frequency, wavelength (nm), absorbance: the wavelength is not a spectrum."""
+    from mace.gui import spectra
+    f = tmp_path / "m_IRSPEC.DAT"
+    _irspec(f, 3)
+    d = spectra.read(f)
+    assert list(d["columns"]) == ["absorbance"]
+    assert d["columns"]["absorbance"][0] == 301.0
+    assert d["wavelength_nm"][0] == pytest.approx(1e6)
+
+
+def test_irspec_columns_of_a_crystal(tmp_path):
+    """A periodic run adds the classical and two Rayleigh absorbances (4-6) and a
+    reflectance per inequivalent direction (7-9)."""
+    from mace.gui import spectra
+    f = tmp_path / "c_IRSPEC.DAT"
+    _irspec(f, 9)
+    d = spectra.read(f)
+    assert list(d["columns"]) == ["absorbance", "absorbance_classical", "absorbance_rayleigh_1", "absorbance_rayleigh_2",
+                                  "reflectance_1", "reflectance_2", "reflectance_3"]
+    assert [v[0] for v in d["columns"].values()] == [301.0, 401.0, 501.0, 601.0, 701.0, 801.0, 901.0]
+    assert "transmittance" not in d["columns"]
+
+
+@needs_corpus
+def test_irspec_columns_of_a_real_molecule():
+    from mace.gui import spectra
+    f = next(CORPUS.glob("*_IRSPEC.DAT"))
+    d = spectra.read(f)
+    raw = np.loadtxt(f)
+    raw = raw[::max(1, len(raw) // spectra.MAX_POINTS)]
+    assert list(d["columns"]) == ["absorbance"]
+    assert np.allclose(d["columns"]["absorbance"], raw[:, 2], rtol=1e-6, atol=1e-7)
+    assert np.allclose(d["wavelength_nm"], raw[:, 1], rtol=1e-6)

@@ -131,8 +131,11 @@ def test_preview_reads_live_state_split(srv):
 
 def test_preview_reads_live_state_limit(srv):
     from mace.submission import site
-    acct = site.DEFAULTS["account"]               # the account the default job script asks for
-    srv.fake.update(assoc_mgr=f"ClusterName=c Account={acct} UserName=tester(1000) Partition= ID=1 MaxSubmitJobs=2(2)")
+    # the user's default association (the job script has no -A line on this
+    # test cluster, whose accounting lists nothing) under the built-in account
+    acct = site.DEFAULTS["account"]
+    srv.fake.update(assoc_mgr=f"ClusterName=c Account={acct} UserName=tester(1000) Partition= ID=1 "
+                              "DefAssoc=Yes MaxSubmitJobs=2(2)")
     try:
         srv.decks("d1b_lim/decks", ["a", "b"])
         st, prev = srv.preview(["d1b_lim/decks"], options={"array": True})
@@ -307,11 +310,18 @@ def test_staging_bound_and_mixed_folder(srv):
         sub.stage(sel, srv.root, srv.tmp / "m", budget_free=10)
     assert "would copy" in str(e.value)
     (d / "b_band.d3").write_text(BAND_D3)
+    # Since 1f90ee9a the CLI refuses a .d3 whose .f9 is missing or empty, so
+    # the folder carries the SCF wavefunction; the mirror's stand-in for it
+    # must not read as empty, or the preview refuses what the real run submits.
+    (d / "b_band.f9").write_bytes(b"\0" * 64)
     st, _, r = srv.req("api/submit/preview", {"targets": ["d26/decks"]})
     assert st == 400 and "choose which" in r["error"]
     st, prev = srv.preview(["d26/decks"], mixed="3")
     assert prev["command"] == "cd d26 && echo 3 | mace submit decks" and prev["code"] == 0, prev["cli_log"]
     assert prev["stdin"] == "3\n"
+    (d / "b_band.f9").write_bytes(b"")             # an empty .f9 is refused in the preview as in the real run
+    st, prev = srv.preview(["d26/decks"], mixed="3")
+    assert prev["code"] != 0 and "b_band.f9 is empty" in prev["cli_log"], prev["cli_log"]
 
 
 @pytest.mark.parametrize("mode", ["wal", "delete"])

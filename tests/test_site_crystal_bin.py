@@ -26,7 +26,7 @@ def test_bin_dir_without_a_module(tmp_path):
     assert "module load CRYSTAL/" not in text
     assert "# MACE: CRYSTAL from /opt/crystal23/bin ([crystal] bin_dir)" in text
     assert 'export EBROOTCRYSTAL="/opt/crystal23"' in text
-    assert 'mpirun -n $SLURM_NTASKS /opt/crystal23/bin/Pcrystal 2>&1 >& $DIR/${JOB}.out' in text
+    assert 'mpirun -n "$SLURM_NTASKS" "/opt/crystal23/bin/Pcrystal" 2>&1 >& "$DIR/${JOB}.out"' in text
     assert subprocess.run(["bash", "-n", str(sh)]).returncode == 0
 
 
@@ -35,13 +35,13 @@ def test_bin_dir_with_the_users_module_keeps_the_module(tmp_path):
     p, sh = _submit(tmp_path, _env(tmp_path))
     text = sh.read_text()
     assert "module load foss/2023a\nmodule load CRYSTAL/23-foss-2023a" in text
-    assert "/opt/c23/Pcrystal 2>&1" in text and "EBROOTCRYSTAL=" not in text.split("module load CRYSTAL")[0][-200:]
+    assert '/opt/c23/Pcrystal" 2>&1' in text and "EBROOTCRYSTAL=" not in text.split("module load CRYSTAL")[0][-200:]
 
 
 def test_mpp_executable_name(tmp_path):
     _toml(tmp_path, '[crystal]\nscf = "MPPcrystal"\n')
     p, sh = _submit(tmp_path, _env(tmp_path))
-    assert "$EBROOTCRYSTAL/bin/MPPcrystal 2>&1" in sh.read_text()
+    assert '"$EBROOTCRYSTAL/bin/MPPcrystal" 2>&1' in sh.read_text()
 
 
 def test_module_without_the_configured_binary_is_rejected(tmp_path):

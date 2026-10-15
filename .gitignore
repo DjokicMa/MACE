@@ -26,8 +26,10 @@ config/secrets.yml
 *.CUBE
 *.zip
 
-# Local calculation test data (12+ GB) - never commit
+# Local calculation test data (12+ GB) - never commit. `test/` matches only a
+# directory; `/test` also matches the corpus symlinked into a checkout.
 test/
+/test
 
 # Graphify build/working output (regenerable)
 graphify-out/

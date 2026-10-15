@@ -197,7 +197,7 @@ def test_the_server_stops_cleanly_near_its_own_limit(tmp_path):
         assert s.req("info")[1]["cpu"]["level"] == "warn"
         try:
             s.req("test/burn-server", {"seconds": 12 * 0.98 - s.req("info")[1]["cpu"]["used_s"] + 0.3}, timeout=30)
-        except OSError:
+        except (OSError, http.client.HTTPException):     # the server stops during this request: cut short either way
             pass
         s.p.wait(15)
         assert s.p.returncode == 0

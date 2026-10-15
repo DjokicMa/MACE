@@ -113,7 +113,8 @@ export async function render(X, o) {
   const v = X.viewer, el = document.getElementById("viewer-main"), canvas = v.getCanvas();
   const viewRect = canvas.getBoundingClientRect();
   const triad = o.triad ? await triadImage(X.triadEl) : null;
-  const dpr = window.devicePixelRatio || 1;
+  // the canvas holds devicePixelRatio x the UI scale's zoom pixels per own px (app.js sharpUnderZoom)
+  const dpr = (window.devicePixelRatio || 1) * (window.maceZoom ? window.maceZoom.of(el) : 1);
   const restoreScene = X.scene ? X.scene.forExport({ cell: o.cell, measurements: o.labels }) : () => {};
   const saved = el.getAttribute("style") || "";
   // the shared WebGL context takes the new size only on a later frame (a

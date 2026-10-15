@@ -281,8 +281,7 @@ def _old_find_slurm_job_id(out_file_path):
 
 
 @pytest.mark.parametrize("names", [
-    ["X-12345678.o"], ["X.o12345678"], ["pre_X_12345678.o"], [],
-    ["X-111.o", "X-222.o"], ["X-abc.o", "X.o99"],
+    ["X-12345678.o"], ["X.o12345678"], [], ["X-abc.o", "X.o99"],
 ])
 def test_find_job_id_unchanged_without_array_logs(tmp_path, names):
     from mace.completion_checker import find_slurm_job_id
@@ -291,6 +290,21 @@ def test_find_job_id_unchanged_without_array_logs(tmp_path, names):
     for n in names:
         (tmp_path / n).write_text("")
     assert find_slurm_job_id(out) == _old_find_slurm_job_id(out)
+
+
+@pytest.mark.parametrize("names, expect", [
+    (["pre_X_12345678.o"], None),            # the log of another calculation, pre_X
+    (["X_sp-12345678.o"], None),             # ... and of X_sp
+    (["X_sp-222.o", "X-111.o"], "111"),
+    (["X-222.o", "X-111.o", "X-1000.o"], "1000"),   # the newest job id, not the glob's first
+])
+def test_find_job_id_reads_only_its_own_logs(tmp_path, names, expect):
+    from mace.completion_checker import find_slurm_job_id
+    out = tmp_path / "X.out"
+    out.write_text("")
+    for n in names:
+        (tmp_path / n).write_text("")
+    assert find_slurm_job_id(out) == expect
 
 
 def test_find_job_id_never_reads_a_task_index(tmp_path):

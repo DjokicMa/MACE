@@ -2614,20 +2614,27 @@ def generate_k_points(a: float, b: float, c: float, dimensionality: str, spacegr
 
     Returns:
         tuple: ka, kb, kc values for shrinking factor
+
+    The rule is a real-space density window: each direction gets the smallest
+    factor k from ``ks`` with 40 < k*L < 80 Angstrom. A vector of 40 Angstrom
+    or more already reaches that density with a single k-point and gets k = 1
+    (a molecule or cluster in a big vacuum box, a long supercell axis); the
+    factor never grows with the length. Only a vector too short for any
+    factor in ``ks`` (below 0.67 Angstrom) falls back to 12. The rule does not
+    change the dimensionality: a cluster kept as CRYSTAL stays CRYSTAL with a
+    1 1 1 mesh along its vacuum-padded axes.
     """
     ks = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 16, 18, 20, 24, 30, 36, 40, 45, 48, 60]
 
-    # Initialize defaults
-    ka = kb = kc = 1
+    def _density_k(length: float) -> Optional[int]:
+        if length >= 40.0:
+            return 1
+        for k in ks:
+            if 40.0 < k * length < 80.0:
+                return k
+        return None
 
-    # Find appropriate values based on cell dimensions
-    for k in ks:
-        if k * a > 40.0 and k * a < 80.0 and ka == 1:
-            ka = k
-        if k * b > 40.0 and k * b < 80.0 and kb == 1:
-            kb = k
-        if k * c > 40.0 and k * c < 80.0 and kc == 1:
-            kc = k
+    ka, kb, kc = (_density_k(x) for x in (a, b, c))
 
     # Adjust based on dimensionality
     if dimensionality == "SLAB":
@@ -2637,13 +2644,12 @@ def generate_k_points(a: float, b: float, c: float, dimensionality: str, spacegr
     elif dimensionality == "MOLECULE":
         ka = kb = kc = 1
 
-    # Ensure reasonable values
-    if ka == 1 and dimensionality not in ["POLYMER", "MOLECULE"]:
-        ka = 12
-    if kb == 1 and dimensionality not in ["POLYMER", "MOLECULE"]:
-        kb = 12
-    if kc == 1 and dimensionality not in ["SLAB", "POLYMER", "MOLECULE"]:
-        kc = 12
+    # Ensure reasonable values: a direction no factor in ks fits gets 12
+    # (a POLYMER's periodic direction keeps 1, as it always has)
+    fallback = 1 if dimensionality in ("POLYMER", "MOLECULE") else 12
+    ka = fallback if ka is None else ka
+    kb = fallback if kb is None else kb
+    kc = fallback if kc is None else kc
 
     # For non-P1 symmetry, try to use consistent k-points
     if spacegroup != 1 and dimensionality == "CRYSTAL":
@@ -2662,9 +2668,10 @@ def generate_k_points(a: float, b: float, c: float, dimensionality: str, spacegr
                 ka = kb = k_avg
             elif spacegroup >= 16 and spacegroup <= 74:  # Orthorhombic
                 # Keep different values but round to nearest in ks list
-                ka = min([k for k in ks if k >= ka] or [ka])
-                kb = min([k for k in ks if k >= kb] or [kb])
-                kc = min([k for k in ks if k >= kc] or [kc])
+                # A long axis keeps its single k-point.
+                ka = min([k for k in ks if k >= ka] or [ka]) if ka > 1 else ka
+                kb = min([k for k in ks if k >= kb] or [kb]) if kb > 1 else kb
+                kc = min([k for k in ks if k >= kc] or [kc]) if kc > 1 else kc
 
     return ka, kb, kc
 

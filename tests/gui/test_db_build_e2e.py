@@ -3,10 +3,15 @@ C10-a, C10-b, C10-d): a real right-click on an Explorer folder, the preview
 counts against the CLI's own --dry-run --json, Create, the Database view
 with real formulas, then a content change, Update from Folder… on the
 Database view's toolbar with a backup, and "Updating…" while it runs. Real
-outputs copied from the corpus into a fresh folder, a fresh profile."""
+outputs copied from the corpus into a fresh folder, a fresh profile.
+
+The server and the browser are shared by the module; every test starts from
+the corpus copies again (no database, nothing open, the page reloaded) and
+builds what it needs itself, so the tests pass alone and in any order."""
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -34,8 +39,7 @@ def app(tmp_path_factory):
     RC.need(RC.DIA_OPT)
     tmp = tmp_path_factory.mktemp("dbbuilde2e")
     root = tmp / "root"
-    for r in MIXED:
-        RC.copy_into(root / "runs", RC.CORPUS / r)
+    _copy_runs(root)
     xdg = tmp / "xdg"
     proc, base, _ = H.start_server(root, xdg, MACE_GUI_TEST_HOOKS="1")
     downloads = tmp / "downloads"
@@ -57,6 +61,33 @@ def app(tmp_path_factory):
         proc.wait(timeout=15)
 
 
+def _copy_runs(root):
+    """root/runs: the corpus copies and nothing else (no database, no backups)."""
+    shutil.rmtree(root / "runs", ignore_errors=True)
+    for r in MIXED:
+        RC.copy_into(root / "runs", RC.CORPUS / r)
+
+
+@pytest.fixture
+def fresh(app):
+    """The shared app reset to its starting state: nothing open, the runs
+    copied again, the page reloaded."""
+    drv, base, root, xdg, proc, downloads = app
+    drv.execute_script("window.__mace && window.__mace.closeAll && window.__mace.closeAll()")
+    _copy_runs(root)
+    H.load(drv, base)
+    return app
+
+
+def _build_db(drv, base):
+    """runs/materials.db built through the GUI's own build route, waited for;
+    the page is loaded again so its file list has the new database."""
+    st, _, r = U.req(base, "api/db/build", {"folder": "runs", "confirm": True, "skip_unchanged": False,
+                                            "wait": 600}, timeout=660)
+    assert st == 200, r
+    H.load(drv, base)
+
+
 def _cli_dry_run(root):
     env = {k: v for k, v in os.environ.items() if k not in ("COLORTERM", "TERM", "NO_COLOR", "MACE_HOME", "PYTHONPATH")}
     p = subprocess.run([sys.executable, str(H.REPO_ROOT / "mace_cli"), "--no-banner", "analyze", "--extract-properties", "runs",
@@ -75,8 +106,8 @@ def wait_preview(drv):
     H.wait(drv, "const n = document.querySelector('#db-build .dbb-pnote'); return n && /outputs? in the folder/.test(n.textContent)", 120)
 
 
-def test_create_from_explorer_then_update_from_the_database_view(app):
-    drv, base, root, xdg, proc, downloads = app
+def test_create_from_explorer_then_update_from_the_database_view(fresh):
+    drv, base, root, xdg, proc, downloads = fresh
     # a real right-click on the folder's header in the Explorer (the list may still be redrawn
     # once after the page loads its file details: the header is looked up again then)
     from selenium.common.exceptions import StaleElementReferenceException
@@ -97,12 +128,14 @@ def test_create_from_explorer_then_update_from_the_database_view(app):
     got = chips(drv)
     assert {k: got.get(k, 0) for k in cli["counts"]} == cli["counts"]
     cmd = drv.find_element("css selector", "#db-build .dbb-cmd").text
-    assert cmd == "mace analyze --extract-properties runs --db-path runs/materials.db --register --skip-unchanged"
+    # Back up the database first is ticked (the default): the build runs --backup, so the command shows it
+    assert cmd == ("mace analyze --extract-properties runs --db-path runs/materials.db --register --skip-unchanged "
+                   "--backup --keep-backups 3")
     guarantee = drv.find_element("css selector", "#db-build .dbb-guarantee").text
     docs = (H.REPO_ROOT / "docs" / "gui.md").read_text()
     assert guarantee and guarantee in " ".join(docs.split())
-    # the chip filter: Incomplete lists the killed run only
-    drv.find_element("css selector", "#db-build .dbb-chip[data-class=incomplete]").click()
+    # the chip filter: Skipped lists the killed run only (no calculation record: not extracted)
+    drv.find_element("css selector", "#db-build .dbb-chip[data-class=skipped]").click()
     H.wait(drv, "return document.querySelectorAll('#db-build .dbb-row').length === 1", 5)
     assert "killed" in drv.find_element("css selector", "#db-build .dbb-row").text
     go = drv.find_element("css selector", "#db-build .dbb-go")
@@ -110,8 +143,9 @@ def test_create_from_explorer_then_update_from_the_database_view(app):
     go.click()
     H.wait(drv, "const d = document.querySelector('#db-build'); return !d.open", 600)
     H.wait(drv, "return [...document.querySelectorAll('#toasts .msg')].some((m) => /^Database updated: \\d+ new/.test(m.textContent))", 10)
-    open_btn = [b for b in drv.find_elements("css selector", "#toasts button") if b.text == "Open Database"][-1]
-    open_btn.click()
+    # the toast's button may be drawn a moment after its message
+    H.wait(drv, "return [...document.querySelectorAll('#toasts button')].some((b) => b.textContent.trim() === 'Open Database')", 10)
+    drv.execute_script("[...document.querySelectorAll('#toasts button')].filter((b) => b.textContent.trim() === 'Open Database').pop().click()")
     H.wait(drv, "return document.querySelectorAll('#tab-db .dbv-tr[data-id]').length >= 1", 60)
     formulas = drv.execute_script("return [...document.querySelectorAll('#tab-db .dbv-tr[data-id]')].map((r) => r.textContent)")
     assert formulas and not any("Unknown" in f for f in formulas), formulas
@@ -134,9 +168,12 @@ def test_create_from_explorer_then_update_from_the_database_view(app):
     U.no_errors(drv)
 
 
-def test_database_view_shows_updating_during_a_build(app):
+def test_database_view_shows_updating_during_a_build(fresh):
     """C10-d: a build that holds the database for a while (the CLI starts 6 s late, test hook)."""
-    drv, base, root, xdg, proc, downloads = app
+    drv, base, root, xdg, proc, downloads = fresh
+    _build_db(drv, base)
+    U.open_doc(drv, "runs/materials.db", wait_atoms=False)
+    H.wait(drv, "return document.querySelectorAll('#tab-db .dbv-tr[data-id]').length > 0", 60)
     st, _, r = U.req(base, "api/db/build", {"folder": "runs", "confirm": True, "skip_unchanged": False, "wait": 0,
                                             "test_delay": 6})
     assert st == 202, r
@@ -148,10 +185,10 @@ def test_database_view_shows_updating_during_a_build(app):
     U.no_errors(drv)
 
 
-def test_long_json_values_are_cut_with_copy_json(app):
+def test_long_json_values_are_cut_with_copy_json(fresh):
     """C11-b: the material with BAND and DOSS runs: long values cut, Copy JSON gives the whole valid JSON."""
-    drv, base, root, xdg, proc, downloads = app
-    drv.execute_script("window.__mace.closeAll()")
+    drv, base, root, xdg, proc, downloads = fresh
+    _build_db(drv, base)
     U.open_doc(drv, "runs/materials.db", wait_atoms=False)
     H.wait(drv, "return document.querySelectorAll('#tab-db .dbv-tr[data-id]').length > 0", 60)
     from selenium.common.exceptions import StaleElementReferenceException

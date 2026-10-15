@@ -18,7 +18,8 @@ HEADS = re.findall(r"^#+ (.+)$", DOC, re.M)
 
 
 def test_headings():
-    for h in ("First run from your computer", "mace gui connect (Linux, macOS, WSL)", "Windows (PowerShell)",
+    for h in ("First run from your computer", "mace gui connect (Linux, macOS, WSL, Windows)", "Dry-run quoting",
+              "First use of a node with --hop jump", "Windows (PowerShell)",
               "MobaXterm", "VS Code Remote-SSH", "Jump hosts and nodes that accept logins only from the login node",
               "Run it on a cluster and view it on your computer", "Open Folder", "Sign out and stop the server",
               "Long sessions on shared nodes", "Sign-in links, sessions and expiry", "Reporting a problem"):
@@ -93,7 +94,7 @@ def test_quoted_messages_are_the_codes():
     code += (REPO_ROOT / "mace" / "gui" / "static" / "js" / "lazy" / "connect_ui.js").read_text()
     for msg in ("This sign-in link was already used or has expired.", "Hidden folders cannot be opened here",
                 "Open a project folder inside your home, not your home folder itself.",
-                "(waiting: approve the 2FA prompt if there is one)", "is older than this connect",
+                "(waiting: approve the 2FA prompt if there is one. If ssh asks whether to continue connecting", "(the host-key yes/no question), check the fingerprint and answer yes", "is older than this connect",
                 "did not accept a login through the gateway", "MACE GUI has stopped",
                 "Reattached to the server still running on", "This node limits each process to",
                 "stopped before this node's CPU-time limit", "The server on {node} was stopped from the browser."):

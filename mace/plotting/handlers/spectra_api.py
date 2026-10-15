@@ -135,8 +135,16 @@ def _decorate(ax, title, ylabel='Intensity'):
     ax.set_ylabel(ylabel)
     ax.set_title(title)
     ax.invert_xaxis()
-    ax.legend()
     ax.grid(True, alpha=0.3)
+
+
+def _legends_outside(fig, axes):
+    """Lay the figure out, then put each axes' legend right of it, outside the data
+    (one shared rule: mace/plotting/legend_layout.py)."""
+    from ..legend_layout import legend_outside
+    fig.tight_layout()
+    for ax in axes:
+        legend_outside(fig, ax)
 
 
 def render_ir(data: np.ndarray, out_prefix: str, formats=('png',),
@@ -154,7 +162,7 @@ def render_ir(data: np.ndarray, out_prefix: str, formats=('png',),
     x_min = np.floor(wavenumber.min() / 1000) * 1000
     x_max = np.ceil(wavenumber.max() / 1000) * 1000
     ax.set_xticks(np.arange(x_min, x_max + 1000, 1000))
-    fig.tight_layout()
+    _legends_outside(fig, [ax])
     return _save(plt, fig, out_prefix, '_absorbance', formats)
 
 
@@ -179,7 +187,7 @@ def render_raman(data: np.ndarray, out_prefix: str, mode: str = 'all',
         fig, ax = plt.subplots(1, 1, figsize=(8, 5))
         ax.plot(wn, data[:, 1], color='steelblue', linewidth=1.5, label='Total')
         _decorate(ax, 'Raman Spectrum - Total' + title_suffix)
-        fig.tight_layout()
+        _legends_outside(fig, [ax])
         return _save(plt, fig, out_prefix, '_total', formats)
 
     if mode == 'par_perp':
@@ -188,7 +196,7 @@ def render_raman(data: np.ndarray, out_prefix: str, mode: str = 'all',
         ax.plot(wn, data[:, 2], color='darkorange', linewidth=1.5, label='Parallel')
         ax.plot(wn, data[:, 3], color='seagreen', linewidth=1.5, label='Perpendicular')
         _decorate(ax, 'Raman Spectrum - Total, Parallel, Perpendicular' + title_suffix)
-        fig.tight_layout()
+        _legends_outside(fig, [ax])
         return _save(plt, fig, out_prefix, '_par_perp', formats)
 
     # mode == 'all'
@@ -201,5 +209,5 @@ def render_raman(data: np.ndarray, out_prefix: str, mode: str = 'all',
         axes[1].plot(wn, data[:, 4 + i], color=SINGLE_CRYSTAL_COLORS[i],
                      linewidth=1.5, label=SINGLE_CRYSTAL_LABELS[i])
     _decorate(axes[1], 'Raman Spectrum - Single Crystal Directions' + title_suffix)
-    fig.tight_layout()
+    _legends_outside(fig, axes)
     return _save(plt, fig, out_prefix, '_all', formats)

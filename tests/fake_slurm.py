@@ -609,11 +609,14 @@ def sacct(argv):
             continue
         if isinstance(entries, str):
             entries = [[jid, entries]]
-        for jobid, st in entries:
+        for entry in entries:
+            jobid, st = entry[0], entry[1]
+            end = entry[2] if len(entry) > 2 else "Unknown"      # [id, state, End]
             cols = []
             for f in fmt:
                 f = f.strip().split("%")[0].lower()
-                cols.append(jobid if f == "jobid" else st if f == "state" else "Unknown")
+                cols.append(jobid if f == "jobid" else st if f == "state" else end if f == "end"
+                            else "Unknown")
             if parsable:
                 print("|".join(cols))
             else:
@@ -621,6 +624,9 @@ def sacct(argv):
                 for f, c in zip(fmt, cols):
                     if f.strip().lower().startswith("jobid") and len(c) > 12:
                         c = c[:11] + "+"
+                    # sacct's State column is 10 wide: OUT_OF_ME+, CANCELLED+
+                    if f.strip().lower().startswith("state") and len(c) > 10:
+                        c = c[:9] + "+"
                     out.append(f"{c:<12}" if f.strip().lower().startswith("jobid") else f"{c:>10}")
                 print(" ".join(out))
     return 0

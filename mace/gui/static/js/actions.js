@@ -13,7 +13,19 @@ export function registerAll(S) {
   const SETUP = "arrives with the Calculation Setup panel", ANALYSIS = "arrives with the Analysis tools",
     FILES = "arrives with the file tools", BUILDERS = "arrives with the builders";
   const structureDoc = "docKind == structure|trajectory";
-  const needsStructure = { when: structureDoc, reason: "Needs a structure" };
+  const FREQ_NO = "Not in the mode view: open its structure (Structure, top right)";
+  const needsStructure = { when: structureDoc, reason: (c) => (c.docKind === "freq" ? FREQ_NO : "Needs a structure") };
+  // the display options the mode view (a FREQ document) draws with too; a volume has its own (Inspector)
+  const view3D = "docKind == structure|trajectory|freq";
+  const VOL_NO = "The volume view has its own display options: Inspector › Atoms and Cell";
+  const needsView = { when: view3D, reason: (c) => (c.docKind === "volume" ? VOL_NO : "Needs a structure") };
+  // the comparison of a run's steps draws the run's own cell, unlabeled
+  const CMP_NO = "The comparison draws the run's own cell: Edit This Step opens a step with every display option";
+  // the mode view replicates a mode at Γ; away from Γ its images move with phases the output does not give
+  const OFF_GAMMA = "One cell only: this mode is not at Γ, so its periodic images would need phases the output does not give";
+  const notHere = (c) => (c.docKind === "trajectory" ? CMP_NO : c.docKind === "volume" ? VOL_NO : c.freqOffGamma ? OFF_GAMMA : "Needs a structure");
+  const needsRange = { when: "docKind == structure|freq && !freqOffGamma", reason: notHere };
+  const needsLabels = { when: "docKind == structure|freq", reason: notHere };
   // Phase 3: the work is in js/editor (loaded with the first structure); S.ed runs it
   const ed = (id) => (c, a) => S.ed(id, a);
   const editable = (extra = "") => ({ when: `docEditable${extra}`, reason: (c) => S.editReason(c) });
@@ -132,55 +144,63 @@ export function registerAll(S) {
     aliases: ["commands", "search"], run: () => S.palette("") });
   const along = [["a", "1", "view-a"], ["b", "2", "view-b"], ["c", "3", "view-c"]];
   along.forEach(([ax, key, ic], k) => register({ id: `view.along${ax.toUpperCase()}`, title: `View Along ${ax}`,
-    menuTitle: ax, category: "View", keys: [key], icon: ic, ...needsStructure, run: () => S.viewAlong(k) }));
+    menuTitle: ax, category: "View", keys: [key], icon: ic, ...needsView, run: () => S.viewAlong(k) }));
   along.forEach(([ax], k) => register({ id: `view.along${ax.toUpperCase()}Star`, title: `View Along ${ax}*`, menuTitle: `${ax}*`,
-    category: "View", keys: [`Shift+${k + 1}`], ...needsStructure, desc: `Look down the reciprocal axis ${ax}* (perpendicular to the other two)`,
+    category: "View", keys: [`Shift+${k + 1}`], ...needsView, desc: `Look down the reciprocal axis ${ax}* (perpendicular to the other two)`,
     run: () => S.viewAlong(`${ax}*`) }));
   register({ id: "view.alongUVW", title: "View Along [uvw]…", menuTitle: "[uvw]…", category: "View", keys: ["Alt+U"],
     when: "docKind == structure", reason: "Needs a structure", run: () => S.lazyDialog("cell_dialog", "openAlongUVW") });
   // Alt+arrows turn the view by 90° in the Select and Orbit tools; in the Move tool they nudge
   [["Left", "y", -90, "rotate-ccw"], ["Right", "y", 90, "rotate-cw"], ["Up", "x", -90, ""], ["Down", "x", 90, ""]].forEach(([d, axis, deg, ic]) =>
     register({ id: `view.rotate${d}`, title: `Rotate 90° ${d}`, menuTitle: d, category: "View", keys: [`Alt+${d}`], icon: ic,
-      when: `${structureDoc} && !moveNudge`, reason: "Needs a structure", run: () => S.rotateView(axis, deg) }));
+      when: `${view3D} && !moveNudge`, reason: "Needs a structure", run: () => S.rotateView(axis, deg) }));
   register({ id: "view.rotateInPlaneMinus", title: "Rotate 90° In-Plane Left", menuTitle: "In-Plane −90°", category: "View",
-    keys: ["Alt+["], ...needsStructure, run: () => S.rotateView("z", 90) });
+    keys: ["Alt+["], ...needsView, run: () => S.rotateView("z", 90) });
   register({ id: "view.rotateInPlanePlus", title: "Rotate 90° In-Plane Right", menuTitle: "In-Plane +90°", category: "View",
-    keys: ["Alt+]"], ...needsStructure, run: () => S.rotateView("z", -90) });
+    keys: ["Alt+]"], ...needsView, run: () => S.rotateView("z", -90) });
   // 15° turns with the arrow keys (Shift: 1°) while the viewport has focus
   [["Left", "y", -1], ["Right", "y", 1], ["Up", "x", -1], ["Down", "x", 1]].forEach(([d, axis, sign]) =>
     register({ id: `view.rotate15${d}`, title: `Rotate 15° ${d}`, category: "View", keys: [d, `Shift+${d}`],
-      when: `${structureDoc} && viewportFocus`, reason: "Needs a structure", desc: "Shift: 1°",
+      when: `${view3D} && viewportFocus`, reason: "Needs a structure", desc: "Shift: 1°",
       run: (c, a) => S.rotateView(axis, sign * (a && a.chord && a.chord.startsWith("Shift+") ? 1 : 15)) }));
   register({ id: "view.zoomIn3D", title: "Zoom In", category: "View", keys: ["+"], icon: "zoom-in",
-    when: `${structureDoc} && viewportFocus`, reason: "Needs a structure", run: () => S.zoomView(1.25) });
+    when: `${view3D} && viewportFocus`, reason: "Needs a structure", run: () => S.zoomView(1.25) });
   register({ id: "view.zoomOut3D", title: "Zoom Out", category: "View", keys: ["-"], icon: "zoom-out",
-    when: `${structureDoc} && viewportFocus`, reason: "Needs a structure", run: () => S.zoomView(0.8) });
+    when: `${view3D} && viewportFocus`, reason: "Needs a structure", run: () => S.zoomView(0.8) });
   register({ id: "view.reset", title: "Reset View", category: "View", keys: ["Home"], icon: "house",
-    ...needsStructure, run: () => S.resetView() });
+    ...needsView, run: () => S.resetView() });
   register({ id: "view.frameSelection", title: "Frame Selection", category: "View", keys: ["F"], icon: "scan-search",
     ...needsStructure, desc: "Fit the selected atoms (or everything) to the view", run: () => S.frameSelection() });
+  register({ id: "view.pivotCell", title: "Center Rotation on Unit Cell", category: "View", icon: "crosshair",
+    when: "docKind == structure", reason: "Needs a structure",
+    desc: "Turn the view about the center of the drawn cell (a molecule: of its atoms); zoom and orientation kept",
+    run: () => S.pivotOn("cell") });
+  register({ id: "view.pivotSelection", title: "Center Rotation on Selection", category: "View", icon: "crosshair",
+    when: "docKind == structure && hasSelection", reason: "Select atoms first",
+    desc: "Turn the view about the middle of the selected atoms; zoom and orientation kept", run: () => S.pivotOn("selection") });
   register({ id: "view.projection", title: "Orthographic / Perspective", category: "View", keys: ["5"], icon: "projection",
-    ...needsStructure, checked: () => S.setting("projection") === "perspective",
+    when: "docKind == structure|trajectory|freq|volume", reason: "Needs a 3D view", checked: () => S.setting("projection") === "perspective",
     tipTitle: () => `Projection: ${S.setting("projection") === "orthographic" ? "orthographic" : "perspective"}`,
     run: () => S.toggleProjection() });
   const toggle = (id, title, key, ic, run, checked, extra = {}) => register({ id, title, category: "View", keys: [key], icon: ic,
-    ...needsStructure, checked, run, ...extra });
+    ...needsView, checked, run, ...extra });
   toggle("view.cell", "Show Unit Cell", "Shift+C", "unit-cell", () => S.toggleSetting("showCell"), () => S.setting("showCell"));
   // per document (Inspector › Range & boundary); the default stays in Settings › Viewport
   toggle("view.boundary", "Show Boundary Atoms", "Shift+A", "boundary", () => S.toggleDisplay("showBoundary"), () => S.displayValue("showBoundary"),
-    { desc: "For this document: the atoms on the faces, edges and corners of the range" });
+    { desc: "For this document: the atoms on the faces, edges and corners of the range", ...needsRange });
   toggle("view.bonds", "Show Bonds", "Shift+B", "bonds", () => S.toggleOpt("opt-bonds"), () => S.optChecked("opt-bonds"));
   const LABELS = [["off", "Off"], ["element", "Element"], ["index", "Index"], ["both", "Element+Index"], ["wyckoff", "Wyckoff"]];
   LABELS.forEach(([v, t]) => register({ id: `view.labels.${v}`, title: `Labels: ${t}`, menuTitle: t, category: "View",
-    radio: true, ...needsStructure, checked: () => S.labelMode() === v, run: () => S.setLabels(v) }));
+    radio: true, ...needsLabels, checked: () => S.labelMode() === v, run: () => S.setLabels(v) }));
   register({ id: "view.labelsCycle", title: "Show Labels (Cycle)", category: "View", keys: ["Shift+L"], icon: "labels",
-    ...needsStructure, checked: () => S.labelMode() !== "off", run: () => S.cycleLabels() });
+    ...needsLabels, checked: () => S.labelMode() !== "off", run: () => S.cycleLabels() });
   register({ id: "view.axes", title: "Show Axes", category: "View", keys: ["Shift+X"], icon: "axes",
     checked: () => S.setting("showAxes"), run: () => S.toggleSetting("showAxes") });
   register({ id: "view.measurements", title: "Show Measurements", category: "View", keys: ["Shift+M"], icon: "ruler",
     ...needsStructure, checked: () => S.measurementsShown(), run: () => S.toggleMeasurements() });
   toggle("view.polyhedra", "Show Polyhedra", "Shift+P", "hexagon", () => S.toggleDisplay("showPolyhedra"), () => S.displayValue("showPolyhedra"),
-    { aliases: ["polyhedra", "octahedra", "tetrahedra", "coordination polyhedra"], desc: "For this document: coordination polyhedra around the cations (off above 2000 drawn atoms)" });
+    { aliases: ["polyhedra", "octahedra", "tetrahedra", "coordination polyhedra"], desc: "For this document: coordination polyhedra around the cations (off above 2000 drawn atoms)",
+      ...needsStructure });
   register({ id: "view.rangePanel", title: "Range and Boundary…", category: "View", icon: "supercell", ...needsStructure,
     aliases: ["boundary", "vesta range", "search molecules", "whole molecules", "bonded atoms", "fractional range"],
     desc: "Inspector › Range & boundary: the drawn range, boundary atoms and bonded atoms outside, for this document",
@@ -190,18 +210,18 @@ export function registerAll(S) {
     desc: "Inspector › Rendering: depth cueing, light, ambient light, outline and background, for this document",
     run: () => S.displayPanel("render") });
   [[1, "1×1×1"], [2, "2×2×2"], [3, "3×3×3"]].forEach(([n, t]) => register({ id: `view.range${n}`, title: `Display Range ${t}`,
-    menuTitle: t, category: "View", radio: true, ...needsStructure,
+    menuTitle: t, category: "View", radio: true, ...needsRange,
     checked: () => S.range() === n, run: () => S.setRange(n) }));
   register({ id: "view.rangeCustom", title: "Display Range Custom…", menuTitle: "Custom…", category: "View", radio: true,
-    ...needsStructure, checked: () => S.range() === 0, run: () => S.lazyDialog("cell_dialog", "openRangeCustom") });
+    ...needsRange, checked: () => S.range() === 0, run: () => S.lazyDialog("cell_dialog", "openRangeCustom") });
   register({ id: "view.rangeCycle", title: "Cycle Display Range", category: "View", keys: ["Shift+R"], icon: "supercell",
-    ...needsStructure, tipTitle: () => `Display range ${S.rangeText()}`,
+    ...needsRange, tipTitle: () => `Display range ${S.rangeText()}`,
     run: () => S.setRange(S.range() >= 3 || S.range() === 0 ? 1 : S.range() + 1) });
   // Alt+1..4 only while the viewport has focus (spec §1.3): elsewhere Linux
   // browsers switch tabs with them, which the shell keeps from happening
   [["ballstick", "Ball and Stick", "Alt+1"], ["spacefill", "Space-Filling", "Alt+2"], ["stick", "Sticks", "Alt+3"],
     ["wireframe", "Wireframe", "Alt+4"]].forEach(([v, t, k]) => register({ id: `view.style.${v}`, title: `Style: ${t}`,
-    menuTitle: t, category: "View", keys: [k], radio: true, when: `${structureDoc} && viewportFocus`, reason: "Needs a structure",
+    menuTitle: t, category: "View", keys: [k], radio: true, when: `${view3D} && viewportFocus`, reason: "Needs a structure",
     checked: () => S.style() === v, run: () => S.setStyle(v) }));
   register({ id: "view.explorer", title: "Explorer", category: "View", keys: ["Mod+B"], icon: "panel-left",
     checked: () => S.panelShown("explorer"), run: () => S.togglePanel("explorer") });
@@ -591,7 +611,8 @@ export const CONTEXT = {
     "atom.copyCart", "-", "atom.properties"],
   empty: ["viewport.addAtomHere", "edit.paste", "select.all", "-",
     { label: "View Along", sub: ["view.alongA", "view.alongB", "view.alongC", "view.alongAStar", "view.alongBStar", "view.alongCStar", "view.alongUVW"] },
-    "view.reset", { label: "Display Range", sub: ["view.range1", "view.range2", "view.range3", "view.rangeCustom"] }, "-",
+    "view.reset", "view.pivotCell", "view.pivotSelection",
+    { label: "Display Range", sub: ["view.range1", "view.range2", "view.range3", "view.rangeCustom"] }, "-",
     "file.exportImage"],
   explorer: ["explorer.open", "explorer.openToSide", "explorer.openAsText", "explorer.compareWithActive", "explorer.plot",
     "explorer.compareConvergence", "-",
@@ -614,7 +635,7 @@ export const MENUS = [
   { label: "View", items: ["view.palette", "-",
     { label: "View Along", sub: ["view.alongA", "view.alongB", "view.alongC", "view.alongAStar", "view.alongBStar", "view.alongCStar", "view.alongUVW"] },
     { label: "Rotate 90°", sub: ["view.rotateLeft", "view.rotateRight", "view.rotateUp", "view.rotateDown", "view.rotateInPlaneMinus", "view.rotateInPlanePlus"] },
-    "view.reset", "view.frameSelection", "view.projection", "-",
+    "view.reset", "view.frameSelection", "view.pivotCell", "view.pivotSelection", "view.projection", "-",
     "view.cell", "view.boundary", "view.bonds",
     { label: "Show Labels", sub: ["view.labels.off", "view.labels.element", "view.labels.index", "view.labels.both", "view.labels.wyckoff", "-", "view.labelsCycle"] },
     "view.axes", "view.measurements", "view.polyhedra",

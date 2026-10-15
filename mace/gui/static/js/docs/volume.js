@@ -90,7 +90,16 @@ export function createVolumeView(host, optsHost, H) {
     stats.vertices = shapes.reduce((n, s) => n + vertexCount(s), 0);
     window.__maceVolumeStats = { ...stats };
     // the first view fits the atoms and the surfaces; the cell (a slab's c spans its vacuum) and the plane come after
-    if (view) vw.setView(view); else { vw.zoomTo(); vw.zoom(0.9); }
+    if (view) vw.setView(view);
+    else {
+      vw.zoomTo(); vw.zoom(0.9);
+      // the rotation center: the cell's center (a slab's at its atoms' mid-height), else the atoms' middle
+      const P = M().pivotOf, cart = m.atoms.cart || [];
+      const pv = !P ? null : m.periodic && m.lattice
+        ? P({ cell: m.lattice, pbc: m.pbc || [true, true, true], origin: m.cell_origin || m.origin || [0, 0, 0] }, null, cart)
+        : cart.length ? P({ pbc: [false, false, false] }, null, cart) : null;
+      if (pv && pv.every(Number.isFinite)) { const w = vw.getView(); vw.setView([-pv[0], -pv[1], -pv[2], ...w.slice(3)]); }
+    }
     if (o.cell && m.periodic && m.lattice) {
       M().drawCell(vw, { cell: m.lattice, pbc: m.pbc || [true, true, true], origin: m.cell_origin || m.origin }, M().cssVar("--cell"), 0.02, 1);
     }
@@ -143,7 +152,8 @@ export function createVolumeView(host, optsHost, H) {
   /* ---------------------------------------------------------------- slice */
   async function loadSlice(d) {
     const m = d.meta, ax = "abc".indexOf(d.opts.axis);
-    if (d.opts.index === null || d.opts.index >= m.full_shape[ax]) d.opts.index = Math.floor(m.full_shape[ax] / 2);
+    const n = m.full_shape[ax], i = d.opts.index;
+    if (!Number.isInteger(i) || i < 0 || i >= n) d.opts.index = Math.floor(n / 2);       // a plane of this grid only
     // a difference made here: the plane of the difference itself, computed from its operands
     const where = d.combo ? d.meta.combined.paths.map((p, k) => `path=${encodeURIComponent(p)}&coef=${encodeURIComponent(d.meta.combined.coefficients[k])}`).join("&") + "&"
       : "";

@@ -84,8 +84,8 @@ class ExportFormatter:
         
     def _remove_structure_data(self, data: List[Dict]) -> List[Dict]:
         """Remove large structure-related fields."""
-        structure_fields = ['structure_json', 'structure_ase', 'atomic_positions',
-                          'initial_atomic_positions', 'final_atomic_positions']
+        from mace.utils.db_export_values import STRUCTURE_FIELDS
+        structure_fields = STRUCTURE_FIELDS
         
         cleaned = []
         for record in data:
@@ -448,19 +448,14 @@ def export_materials(db, format: str = 'csv', output_file: str = None,
         # default, and what `mace database --action export` passes), the
         # named ones for a list, none for an empty list. This read None as
         # 'none', so a plain export held the materials table only.
+        # The values come from db_export_values, which the GUI's export
+        # uses too (a text value, e.g. electronic_classification, included).
         if data and include_properties != []:
+            from mace.utils.db_export_values import property_values
+            with db._get_connection() as conn:
+                values = property_values(conn, [m['material_id'] for m in data], include_properties)
             for material in data:
-                mat_id = material['material_id']
-                props = db.get_material_properties(mat_id)
-                
-                # Convert properties to dict
-                prop_dict = {}
-                for prop in props:
-                    prop_name = prop['property_name']
-                    if include_properties is None or prop_name in include_properties:
-                        prop_dict[prop_name] = prop['property_value']
-                        
-                material.update(prop_dict)
+                material.update(values.get(material['material_id'], {}))
                 
     # Export
     success = formatter.export(

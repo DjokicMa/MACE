@@ -861,6 +861,9 @@ Note: This command submits files using the appropriate submission script
 The --interactive flag allows you to customize SLURM resources similar to
 the workflow interactive mode, with defaults optimized for each calculation type.
 By default, existing .sh files are reused; use --overwrite-sh to regenerate them.
+With -i, --walltime or an --exclude-* option, a script MACE wrote is rewritten;
+one edited by hand or written before 1.1.5 stops the submission (use
+--overwrite-sh). Exits 1 when any job was not submitted.
 For directories with mixed file types, you'll be prompted to choose.
 With --array, each task is shown as <array id>_<task> (e.g. 12345678_7):
 scancel 12345678_7 cancels that task, scancel 12345678 cancels every task.
@@ -1291,6 +1294,7 @@ For action-specific options, use: mace monitor --action <ACTION> --help
     'analyze': """
 Usage: mace analyze --extract-properties <directory> [options]
        mace analyze --convergence <file.out> [--json]
+       mace analyze --convergence <file.out> --energy [--segments continuous|separate]
 
 Extract properties from CRYSTAL output files, or show how one run converged.
 
@@ -1328,6 +1332,16 @@ Convergence of one run (reads the .out only, writes nothing):
                              and where each threshold came from (.out, .d12
                              or the CRYSTAL23 default with its manual page)
   --json                     With --convergence: the same data as JSON
+  --energy                   With --convergence: the energy along the run, as
+                             the GUI's energy card copies it (point, FINALRUN
+                             segment, frame, E in Ha, dE); with --json, as JSON
+  --segments MODE            With --energy: continuous (default: one reference
+                             for the whole run, across FINALRUN restarts) or
+                             separate (one reference per FINALRUN segment)
+  --relative-to REF          With --energy: final (default), first, minimum
+                             or absolute
+  --unit UNIT                With --energy: meV (default), eV, Ha, kJ/mol or
+                             kcal/mol
 
 Examples:
   mace analyze --extract-properties .
@@ -1341,6 +1355,7 @@ Examples:
   mace analyze --extract-properties runs/ --register --skip-unchanged --backup
   mace analyze --convergence mat1_opt.out
   mace analyze --convergence mat1_opt.out --json
+  mace analyze --convergence mat1_opt.out --energy --segments separate
 
 Note: This command extracts properties and stores them in the materials database.
 Filters help process only specific materials or calculation types.
@@ -1353,7 +1368,8 @@ Enhanced CRYSTAL Queue Manager with material tracking and workflow automation.
 Options:
   --status              Show current queue status
   --d12-dir DIR         Directory with D12 files (default: current directory)
-  --max-jobs N          Maximum concurrent jobs (default: 250)
+  --max-jobs N          Maximum running+pending jobs of yours in the queue
+                        (default: 250)
   --reserve N           Reserved job slots (default: 30)
   --organize            Copy inputs into <calc_type>/<material_id>/ folders
                         (default: submit in place)
@@ -1423,6 +1439,7 @@ ACTIONS:
 
 OPTIONS:
   --action ACTION       Action to perform (default: stats)
+  --db-path PATH        Database file (default: the workflow context's, else materials.db)
   --material-id ID      Specific material ID
   --filter "EXPR"       Filter by property (query/export)
   --logic AND|OR        Filter logic (default: AND)
@@ -1637,12 +1654,34 @@ except Exception:  # pragma: no cover - a broken install still prints the page
     _RUN_TIMEOUT_HELP = "wall time per deck: 90s, 30m, 1h or H:MM:SS (default: 30m)"
 COMMAND_HELP["run"] = COMMAND_HELP["run"].replace("{RUN_TIMEOUT_HELP}", _option_help(_RUN_TIMEOUT_HELP))
 
+def _msu_node_choices():
+    """True where MSU HPCC's node-exclusion choices apply (on MSU HPCC, or
+    where there is no SLURM to ask), as the exclusion menus decide it."""
+    try:
+        from mace.submission.site import msu_choices
+        return msu_choices()
+    except Exception:  # pragma: no cover - a broken install keeps today's help
+        return True
+
+
+# The MSU-only node-exclusion options of the `mace submit` help page: shown
+# only where MSU HPCC's choices apply, so another cluster's help names none
+# of its nodes.
+_MSU_SUBMIT_HELP = """  --exclude-amd20      MSU HPCC only: exclude all AMD20 nodes (amr + nvf types)
+  --exclude-mendoza    MSU HPCC only: exclude the Mendoza group's nodes (members
+                       of its account)
+"""
+
+
 def show_command_help(command):
     """Show help for a specific command"""
     if command in COMMAND_HELP:
+        text = COMMAND_HELP[command]
+        if command == 'submit' and not _msu_node_choices():
+            text = text.replace(_MSU_SUBMIT_HELP, "")
         # Verbatim help text: print() directly (it contains [option]-style
         # placeholders that ui's markup stripper would remove).
-        print(COMMAND_HELP[command])
+        print(text)
     else:
         ui.err(f"No help available for command: {command}")
 
@@ -1979,10 +2018,15 @@ def main():
 
         # Node exclusion options
         exclusion_group = submit_parser.add_mutually_exclusive_group()
+        # MSU HPCC's options stay accepted everywhere (scripts keep working)
+        # but are listed only where its node choices apply.
+        msu_nodes = _msu_node_choices()
         exclusion_group.add_argument('--exclude-amd20', action='store_true',
-                                    help='MSU HPCC only: exclude all AMD20 nodes (amr + nvf types)')
+                                    help='MSU HPCC only: exclude all AMD20 nodes (amr + nvf types)'
+                                    if msu_nodes else argparse.SUPPRESS)
         exclusion_group.add_argument('--exclude-mendoza', action='store_true',
-                                    help="MSU HPCC only: exclude the Mendoza group's nodes (members of its account)")
+                                    help="MSU HPCC only: exclude the Mendoza group's nodes (members of its account)"
+                                    if msu_nodes else argparse.SUPPRESS)
         exclusion_group.add_argument('--exclude-type', metavar='TYPE',
                                     help='Exclude all nodes named TYPE-<number>')
         exclusion_group.add_argument('--exclude-nodes', metavar='NODES',
@@ -2021,7 +2065,10 @@ def main():
                 from mace.utils.node_exclusion import NodeExclusionManager
                 node_manager = NodeExclusionManager()
 
-                if submit_args.exclude_amd20:
+                if submit_args.exclude_amd20 and not msu_nodes:
+                    ui.warn("Warning: --exclude-amd20 applies only on MSU HPCC; no nodes excluded")
+
+                elif submit_args.exclude_amd20:
                     ui.info("\nExcluding all AMD20 nodes (amr + nvf)...")
                     amd20_nodes = node_manager.get_amd20_nodes()
                     if amd20_nodes:
@@ -2080,6 +2127,12 @@ def main():
                 ui.warn("Warning: node-exclusion flags are not applied to --track submissions "
                       "(the tracking manager uses the submission templates directly); ignoring them.")
             from mace.queue.manager import EnhancedCrystalQueueManager
+            if walltime:
+                # written as given; say so when the partition allows less
+                from mace.submission import site as site_mod
+                over = site_mod.walltime_over_limit(walltime)
+                if over:
+                    ui.warn(over)
 
             # Resolve the files to submit and the directory used for context/templates.
             if os.path.isfile(target):
@@ -2119,6 +2172,91 @@ def main():
                 ui.err(f"Error: {target} is not a valid file or directory")
                 sys.exit(1)
 
+            # an EXTERNAL deck without its fort.34 source: say so before submitting
+            from mace.submission.external_geometry import missing_fort34_message
+            for f in selected:
+                if str(f).endswith('.d12') and missing_fort34_message(Path(f)):
+                    ui.warn(f"Warning: {missing_fort34_message(Path(f))}")
+
+            # Existing job scripts, as on the untracked path: one MACE wrote and
+            # nobody changed is written again (with the resources asked for
+            # now); an edited one is submitted as written, and never replaced
+            # without --overwrite-sh - with resource options (-i, --walltime),
+            # --progress (the plan's job scripts carry the workflow context) or
+            # --array (its tasks are generated together) it stops the
+            # submission before anything is recorded or queued.
+            # A script an older MACE wrote with its default resources is
+            # written again (it lacks the 1.1.5 job-script fixes); one written
+            # from a customized template (a workflow plan's copy, -i) is reused
+            # and keeps its cores and memory (--walltime is set in it as it is).
+            from mace.submission.job_script_age import (
+                generated_unmodified, conflict_message, older_generated_unmodified,
+                older_regenerated_message, generated_from_custom_copy, set_in_place, in_place_message)
+            reuse_scripts, conflicts, in_place = {}, [], []
+            if not overwrite_sh:
+                for f in selected:
+                    sh = Path(f).with_suffix('.sh')
+                    if not sh.exists():
+                        continue
+                    if older_generated_unmodified(sh):
+                        ui.info(older_regenerated_message(Path(f).stem))
+                        continue
+                    if generated_unmodified(sh):
+                        if (not (interactive or progress or array_mode)
+                                and generated_from_custom_copy(sh, 'prop' if str(f).endswith('.d3') else 'scf')):
+                            if walltime:
+                                in_place.append(sh)
+                            reuse_scripts[str(Path(f).resolve())] = sh.resolve()
+                        continue
+                    if interactive or walltime or progress or array_mode:
+                        conflicts.append(Path(f).stem)
+                    else:
+                        reuse_scripts[str(Path(f).resolve())] = sh.resolve()
+            if conflicts:
+                given = [o for o, on in (("-i", interactive), ("--walltime", walltime),
+                                         ("--progress", progress), ("--array", array_mode)) if on]
+                ui.err(conflict_message(conflicts, " / ".join(given)))
+                sys.exit(1)
+            for sh in in_place:
+                set_in_place(sh, walltime=walltime)
+                ui.info(in_place_message(sh.stem, walltime=walltime))
+
+            # -i: the resources asked for here go into the job scripts the
+            # tracking manager generates (the templates, customized as on the
+            # untracked path). A --progress plan sets its own resources.
+            custom_generators = {}
+            if interactive and progress:
+                ui.warn("Warning: -i is not applied with --progress; the plan's job scripts set the resources "
+                        "(plan them with `mace workflow --interactive` to choose them).")
+            elif interactive:
+                import atexit
+                from mace.submission import site as site_mod
+                kinds = sorted({'prop' if str(f).endswith('.d3') else 'scf' for f in selected})
+                for kind in kinds:
+                    if kind == 'scf':
+                        from mace.submission import crystal as sub_mod
+                        template = Path(sub_mod.__file__).with_name('submitcrystal23.sh')
+                        ui.info("\nResources for the D12 calculations:")
+                    else:
+                        from mace.submission import properties as sub_mod
+                        template = Path(sub_mod.__file__).with_name('submit_prop.sh')
+                        ui.info("\nResources for the D3 property calculations:")
+                    resources = sub_mod.configure_interactive_resources()
+                    if walltime:
+                        resources['walltime'] = walltime
+                    elif resources.get('walltime'):
+                        over = site_mod.walltime_over_limit(resources['walltime'])
+                        if over:
+                            ui.warn(over)
+                    custom = sub_mod.create_custom_slurm_script(template, resources)
+                    atexit.register(lambda c=custom: c.unlink(missing_ok=True))
+                    try:
+                        site_mod.customize_file_in_place(custom, kind)
+                    except site_mod.SiteConfigError as e:
+                        ui.err(f"Error: {e}")
+                        sys.exit(2)
+                    custom_generators['submitcrystal23' if kind == 'scf' else 'submit_prop'] = custom
+
             # --progress: write a real workflow plan for these decks BEFORE
             # submitting, then stamp each submission with its workflow id so
             # the completion callback can find the plan and follow it. Without
@@ -2156,6 +2294,8 @@ def main():
             manager = EnhancedCrystalQueueManager(
                 d12_dir=base_dir, enable_tracking=True, organize_outputs=False,
                 walltime_override=walltime, db_path=manager_db)
+            for key, custom in custom_generators.items():
+                manager.script_paths[key] = custom
             ui.info(f"\nTracking enabled: recording {len(selected)} calculation(s) in "
                     f"{manager_db} (in-place)")
             submitted = 0
@@ -2180,11 +2320,19 @@ def main():
                     ui.info(f"Job ID(s): {', '.join(str(j) for j in tracked_ids)}")
                 sys.exit(0 if submitted == len(selected) else 1)
 
+            for sh in reuse_scripts.values():
+                ui.info(f"Using existing script: {sh.name} (edited; submitted as written, "
+                        f"--overwrite-sh writes it again)")
             # the folder's crystal_job_status.json keeps earlier submissions too
             submitted_before = set(getattr(manager, "legacy_job_status", {}).get("submitted", {}).keys())
             for f in ui.progress(selected, total=len(selected), description="Submitting"):
                 try:
-                    calc_id = manager.submit_calculation(Path(f))
+                    reuse = reuse_scripts.get(str(Path(f).resolve()))
+                    if reuse is not None:
+                        # submitted as written; only the line naming the
+                        # database its completion step records into is added
+                        manager._export_db_path(reuse)
+                    calc_id = manager.submit_calculation(Path(f), job_script_override=reuse)
                     if calc_id:
                         submitted += 1
                         if workflow_id:
@@ -2209,6 +2357,8 @@ def main():
                 ui.info(f"Job ID(s): {', '.join(str(j) for j in tracked_ids)}")
             sys.exit(0 if submitted == len(selected) else 1)
 
+        # 1 when a deck was not submitted (the submission modules' main())
+        submit_rc = 0
         # Check what type of files we're dealing with
         if os.path.isfile(target):
             # Single file submission
@@ -2227,10 +2377,10 @@ def main():
 
             if target.endswith('.d3'):
                 from submission.properties import main as submit_properties
-                submit_properties()
+                submit_rc = max(submit_rc, submit_properties() or 0)
             elif target.endswith('.d12'):
                 from submission.crystal import main as submit_crystal
-                submit_crystal()
+                submit_rc = max(submit_rc, submit_crystal() or 0)
             else:
                 ui.err(f"Error: {target} is not a D12 or D3 file")
                 sys.exit(1)
@@ -2272,7 +2422,7 @@ def main():
                         sys.argv.extend(['--walltime', walltime])
                     sys.argv.extend(array_argv)
                     from submission.crystal import main as submit_crystal
-                    submit_crystal()
+                    submit_rc = max(submit_rc, submit_crystal() or 0)
                 elif choice == '2':
                     # Submit D3 only
                     sys.argv = ['submit_script', target]
@@ -2288,7 +2438,7 @@ def main():
                         sys.argv.extend(['--walltime', walltime])
                     sys.argv.extend(array_argv)
                     from submission.properties import main as submit_properties
-                    submit_properties()
+                    submit_rc = max(submit_rc, submit_properties() or 0)
                 elif choice == '3':
                     # Submit both
                     ui.rule("Submitting D12 files")
@@ -2305,7 +2455,7 @@ def main():
                         sys.argv.extend(['--walltime', walltime])
                     sys.argv.extend(array_argv)
                     from submission.crystal import main as submit_crystal
-                    submit_crystal()
+                    submit_rc = max(submit_rc, submit_crystal() or 0)
 
                     ui.rule("Submitting D3 files")
                     sys.argv = ['submit_script', target]
@@ -2321,7 +2471,7 @@ def main():
                         sys.argv.extend(['--walltime', walltime])
                     sys.argv.extend(array_argv)
                     from submission.properties import main as submit_properties
-                    submit_properties()
+                    submit_rc = max(submit_rc, submit_properties() or 0)
                 else:
                     ui.err("Invalid choice. Exiting.")
                     sys.exit(1)
@@ -2341,7 +2491,7 @@ def main():
                     sys.argv.extend(['--walltime', walltime])
                 sys.argv.extend(array_argv)
                 from submission.crystal import main as submit_crystal
-                submit_crystal()
+                submit_rc = max(submit_rc, submit_crystal() or 0)
 
             else:
                 # Only D3 files
@@ -2358,11 +2508,13 @@ def main():
                     sys.argv.extend(['--walltime', walltime])
                 sys.argv.extend(array_argv)
                 from submission.properties import main as submit_properties
-                submit_properties()
+                submit_rc = max(submit_rc, submit_properties() or 0)
 
         else:
             ui.err(f"Error: {target} is not a valid file or directory")
             sys.exit(1)
+        if submit_rc:
+            sys.exit(submit_rc)
 
     elif args.command == 'run':
         # Run decks on this node through their normal job script; argv rebuilt
@@ -2746,6 +2898,7 @@ def main():
         status = None
         export_csv = None
         workflow_id = None
+        db_path_arg = None
 
         i = 0
         while i < len(all_args):
@@ -2767,16 +2920,29 @@ def main():
             elif all_args[i] == '--export-csv' and i + 1 < len(all_args):
                 export_csv = all_args[i + 1]
                 i += 2
+            elif all_args[i] == '--db-path' and i + 1 < len(all_args):
+                db_path_arg = all_args[i + 1]
+                i += 2
             else:
                 i += 1
-        
-        # Auto-activate the isolated workflow context so database actions read the
-        # workflow's DB, not the empty default materials.db.
-        from workflow.context import auto_activate_context
-        auto_activate_context(workflow_id=workflow_id)
 
-        # Initialize database
-        db = ContextualMaterialDatabase()
+        if db_path_arg is not None:
+            # an explicit database: every action reads (or cleans) that file;
+            # none creates one, so a missing file is an error, not a new empty
+            # materials.db
+            db_path_arg = os.path.abspath(os.path.expanduser(db_path_arg))
+            if not os.path.isfile(db_path_arg):
+                ui.err(f"No database at {db_path_arg}")
+                sys.exit(1)
+            db = ContextualMaterialDatabase(db_path=db_path_arg)
+        else:
+            # Auto-activate the isolated workflow context so database actions read the
+            # workflow's DB, not the empty default materials.db.
+            from workflow.context import auto_activate_context
+            auto_activate_context(workflow_id=workflow_id)
+
+            # Initialize database
+            db = ContextualMaterialDatabase()
 
         # Debug: show what action was selected
         # print(f"DEBUG: Selected action = '{action}', all_args = {all_args}")
@@ -2940,7 +3106,7 @@ def main():
                 # Common properties with units
                 properties_with_units = [
                     'total_energy', 'fermi_energy', 'band_gap', 'cohesive_energy',
-                    'a_lattice', 'b_lattice', 'c_lattice', 'cell_volume',
+                    'a_lattice', 'b_lattice', 'c_lattice', 'cell_volume', 'cell_area',
                     'alpha', 'beta', 'gamma',
                     'pressure', 'bulk_modulus', 'young_modulus',
                     'phonon_frequencies', 'temperature'

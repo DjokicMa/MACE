@@ -1,9 +1,12 @@
 """ipDOS_V2's DOSS readers, lifted out of ipDOS() so other code can reuse them.
 
-The plot ipDOS() draws is unchanged: it is compared, pixel for pixel, with the
-plot the pre-refactor ipDOS_V2.py (the 1.1.5 base before the GUI, daa5468e) draws
-from the same synthetic files. That file is frozen in tests/frozen, so the
-comparison also runs in a shallow clone (CI) that lacks the base commit.
+The plot ipDOS() draws is unchanged: it is compared with the plot the
+pre-refactor ipDOS_V2.py (the 1.1.5 base before the GUI, daa5468e) draws from
+the same synthetic files, artist by artist (the curves, fills, limits, ticks,
+labels and legend entries). Pixel for pixel it is not the same since the legend
+moved outside the axes (the band-gap and band-edge composition notes heading it). That file is frozen in
+tests/frozen, so the comparison also runs in a shallow clone (CI) that lacks
+the base commit.
 """
 import importlib.util
 import os
@@ -61,26 +64,47 @@ def test_lifted_readers_return_the_columns():
     assert ip.vacuum_shift(str(d / "none.DAT"), str(d / "none.out")) == 0
 
 
-def test_ipdos_plot_is_unchanged_by_the_refactor(tmp_path):
+def _artists(fig):
+    """What the DOS plot shows, legend placement and band-gap note aside."""
+    ax = fig.axes[0]
+    gap = ("$E_g", "Conductive", "Semimetal", "VB: ", "CB: ", "$E_F$: ")      # notes now heading the legend
+    return {
+        "lim": (ax.get_xlim(), ax.get_ylim()),
+        "lines": [(ln.get_label(), ln.get_color(), ln.get_linestyle(), np.asarray(ln.get_xydata()).round(9).tolist())
+                  for ln in ax.get_lines()],
+        "fills": [[np.asarray(p.vertices).round(9).tolist() for p in c.get_paths()] for c in ax.collections],
+        "ticks": ([t.get_text() for t in ax.get_xticklabels()], ax.get_xticks().tolist(), ax.get_yticks().tolist()),
+        "labels": (ax.get_xlabel(), ax.get_ylabel(), ax.get_title()),
+        "texts": [(t.get_text(), t.get_position()) for t in ax.texts if not t.get_text().startswith(gap)],
+        "legend": [t.get_text() for t in ax.get_legend().get_texts()],
+    }
+
+
+def test_ipdos_plot_is_unchanged_by_the_refactor(tmp_path, monkeypatch):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.figure import Figure
     (tmp_path / "old.py").write_text(FROZEN_BASE.read_text())
-    pngs = []
+    drawn = []
     for label, path in (("old", tmp_path / "old.py"), ("new", PLOTTING / "ipDOS_V2.py")):
         work = tmp_path / label
         work.mkdir()
         m = write_doss(work)
         mod = _load(path, f"ipDOS_V2_{label}")
+        saved = []
+        monkeypatch.setattr(Figure, "savefig", lambda self, *a, **k: saved.append(self))
+        monkeypatch.setattr(mod.plt, "close", lambda *a, **k: None)
         cwd = os.getcwd()
         os.chdir(work)
         try:
             mod.ipDOS(m, -5, 5, "orbital", formats="png", output_dir=str(work))
         finally:
             os.chdir(cwd)
-            import matplotlib.pyplot as plt
-            plt.close("all")
-        found = sorted(work.glob("*.png"))
-        assert found, label
-        pngs.append(found[0].read_bytes())
-    assert pngs[0] == pngs[1]
+        assert saved, label
+        drawn.append(_artists(saved[-1]))
+        plt.close("all")
+    assert drawn[0] == drawn[1]
 
 
 def test_frozen_base_is_the_base_commit_file():

@@ -113,6 +113,9 @@ New environment variables, all optional:
 - Starting geometries: `MACE_XTB`, `MACE_XTB_MODULE`, `MACE_MLIP_PYTHON`,
   `MACE_MLIP_DIR`, `MACE_MLIP_NO_DOWNLOAD` ([docs/preopt.md](docs/preopt.md#environment-variables))
 - Charged systems: `MACE_FRAGMENT_CHARGES` (CHANGELOG)
+- Queue: `MACE_QUEUE_LOCK` (`token` uses an owner-token lock file, for
+  filesystems without POSIX locks), `MACE_RECOVER_MAX_AGE_DAYS` (default 3;
+  jobs that ended longer ago are not recovered automatically)
 
 ## Detailed Installation
 
@@ -354,8 +357,8 @@ templates; each is optional and changes only its own lines:
 
 | What | Built-in | Key (environment) |
 |---|---|---|
-| Job size | `--ntasks=32`, `-N 1`, `--cpus-per-task=1`, `--mem-per-cpu=5G` (properties: 28 tasks, `--mem=80G`) | `[resources] ntasks, nodes, cpus_per_task, mem_per_cpu` or `mem`; `[resources.properties]` for Pproperties jobs (`MACE_SLURM_NTASKS`, ...) |
-| Starting CRYSTAL | `I_MPI_HYDRA_BOOTSTRAP=ssh mpirun -n $SLURM_NTASKS` | `[mpi] launcher = "srun"`, `srun_mpi`, `env` (`MACE_MPI_LAUNCHER`) |
+| Job size | `--ntasks=32`, `-N 1`, `--cpus-per-task=1`, `--mem-per-cpu=5G` (properties: 8 tasks, `--mem=80G`) | `[resources] ntasks, nodes, cpus_per_task, mem_per_cpu` or `mem`; `[resources.properties]` for Pproperties jobs (`MACE_SLURM_NTASKS`, ...) |
+| Starting CRYSTAL | `I_MPI_HYDRA_BOOTSTRAP=ssh mpirun -n "$SLURM_NTASKS"` | `[mpi] launcher = "srun"`, `srun_mpi`, `env` (`MACE_MPI_LAUNCHER`) |
 | CRYSTAL itself | the CRYSTAL module's `Pcrystal`/`Pproperties` | `[crystal] bin_dir`, `scf`, `properties` (`MACE_CRYSTAL_BIN_DIR`) |
 | `module purge` | yes | `[modules] purge = false` (`MACE_MODULE_PURGE=0`) |
 | More `#SBATCH` lines | none | `[slurm] qos`, `constraint`, `extra` (`MACE_SLURM_QOS`, ...) |

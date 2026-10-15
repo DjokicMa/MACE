@@ -342,3 +342,82 @@ def test_overwrite_never_writes_through_a_symlink(srv, tmp_path, link):
     assert st != 200 and "symbolic link" in json.dumps(res), res
     assert _tree(outside) == before
     assert not (B / "decks").exists()               # refused before anything was written
+
+
+def test_same_name_parents_in_subfolders_keep_their_own_files(srv, tmp_path):
+    """Two parents named alike in different subfolders: each keeps its own
+    settings file and deck (named after its subfolder), and commands.sh
+    still re-creates both."""
+    dup = srv.root / "dup"
+    for sub, p in (("A", PARENTS[0]), ("B", PARENTS[1])):
+        (dup / sub).mkdir(parents=True)
+        for ext in (".out", ".d12", ".f9"):
+            shutil.copy2(TEST_DATA / f"{p}{ext}", dup / sub / f"mat_opt{ext}")
+    r = _plan(srv, "dup", ["dup/A/mat_opt.out", "dup/B/mat_opt.out"], "SP", {"maxcycle": 321})
+    assert all(f["status"] == "ok" for f in r["files"]), r
+    st, out = _write(srv, r["batch_id"], "batch_dup")
+    assert st == 200 and out["code"] == 0, out
+    B = srv.root / out["folder_rel"]
+    opts = sorted(p.name for p in (B / "options").iterdir() if p.name != "template.json")
+    assert len(opts) == 2 and opts[0].startswith("A_") and opts[1].startswith("B_"), opts
+    decks = sorted(p.name for p in (B / "decks").glob("*.d12"))
+    assert len(decks) == 2 and decks[0].startswith("A_") and decks[1].startswith("B_"), decks
+    assert not list((B / "decks").glob("*.bak"))
+    assert len(set(out["parents"].values())) == 2
+    for rel, deck in out["parents"].items():          # each deck holds its own parent's geometry
+        assert (srv.root / deck).name.startswith(Path(rel).parent.name + "_")
+    a, b = ((B / "decks" / d).read_text() for d in decks)
+    assert a != b
+    T = _reproduce(srv, out, tmp_path)[1]
+    assert _tree(B / "decks") == _tree(T / "decks")
+    assert _tree(B / "options") == _tree(T / "options")
+
+
+def test_same_name_cifs_in_subfolders(srv, tmp_path):
+    dup = srv.root / "cdup"
+    for sub, n in (("A", "MgO"), ("B", "NaCl")):
+        (dup / sub).mkdir(parents=True)
+        shutil.copy2(SU.H.EXAMPLES / "structures" / f"{n}.cif", dup / sub / "mat.cif")
+    r = _plan(srv, "cdup", ["cdup/A/mat.cif", "cdup/B/mat.cif"], "OPT")
+    st, out = _write(srv, r["batch_id"], "batch_cdup")
+    assert st == 200 and out["code"] == 0, out
+    B = srv.root / out["folder_rel"]
+    decks = sorted(p.name for p in (B / "decks").glob("*.d12"))
+    assert len(decks) == 2 and decks[0].startswith("A_") and decks[1].startswith("B_"), decks
+    assert len(set(out["parents"].values())) == 2, out["parents"]
+    T = _reproduce(srv, out, tmp_path)[1]
+    assert _tree(B / "decks") == _tree(T / "decks")
+
+
+def test_same_name_collision_refused_before_writing(tmp_path):
+    """Names that still clash after the subfolder prefix (x.out and x.log in
+    one folder) are refused before anything is written."""
+    from mace.gui import batch
+
+    class St:
+        root = tmp_path
+        def check_write(self, t): pass
+        def rel_new(self, p): return str(p)
+    b = batch.Batch("b1", 0, tmp_path, [], "opt2d12", "SP")
+    b.items = {r: {"status": "ok", "json_text": "{}", "rel": r, "deck_name": "x_sp.d12", "group": None}
+               for r in ("x.out", "x.log")}
+    with pytest.raises(batch.BatchError) as e:
+        batch.write(St(), b, "batch_x", False)
+    assert "same name" in str(e.value)
+    assert not (tmp_path / "batch_x").exists()
+
+
+@pytest.mark.parametrize("calc", ["BAND", "DOSS", "TRANSPORT"])
+def test_molecule_has_no_band_doss_or_transport(srv, calc):
+    """CRYSTAL runs BAND and DOSS for periodic systems only (manual p.309, p.320):
+    a MOLECULE parent is not eligible, and a plan with it is refused (opt2d3's words)."""
+    rows = _scan(srv, "runs", "followup", calc)
+    ec = next(r for r in rows if "EC_MOLECULE" in r)
+    assert not rows[ec]["eligible"] and "molecule" in rows[ec]["why_not"], rows[ec]
+    assert "molecule" not in rows["runs/1_dia_opt_rev1.out"]["why_not"]          # a crystal is not refused for it
+    if calc == "BAND":
+        r = _plan(srv, "runs", [ec], "BAND")
+        f = r["files"][0]
+        assert f["status"] == "refused" and "periodic structure" in f["message"], f
+    rows = _scan(srv, "runs", "followup", "CHARGE")
+    assert rows[ec]["eligible"], rows[ec]

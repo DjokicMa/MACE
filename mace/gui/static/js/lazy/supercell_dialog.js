@@ -19,12 +19,29 @@ function hexagonal(s) {
   return !!L && Math.abs(L.a - L.b) < 1e-3 * L.a && Math.abs(L.gamma - 120) < 0.5;
 }
 
+/** The structure's periodic directions (a molecule: none; a slab: a and b). */
+function periodic(s) {
+  return s && Array.isArray(s.pbc) ? [0, 1, 2].map((i) => !!s.pbc[i]) : [true, true, true];
+}
+
+/** The server's rule (builders.check_periodic): M leaves each non-periodic vector as it is. */
+function alongNonPeriodic(m, per) {
+  if (!per.some(Boolean)) return "A molecule has no periodic direction to repeat";
+  const along = [0, 1, 2].filter((i) => per[i]).map((i) => "abc"[i]).join(" and ");
+  for (let i = 0; i < 3; i++) {
+    if (per[i]) continue;
+    if (m[i][i] !== 1) return `This structure is periodic along ${along} only: n${i + 1} must be 1`;
+    if ([0, 1, 2].some((j) => j !== i && (m[i][j] || m[j][i]))) return `This structure is periodic along ${along} only: the matrix must leave ${"abc"[i]} as it is`;
+  }
+  return "";
+}
+
 export function open(H, preset = null) {
   let tab = "diag", linked = true, presetName = null;
   return openBuilder(H, {
     id: "supercell", title: "Supercell", route: "build/supercell", defaultResult: "new", primary: "Create",
     render(host, api) {
-      const s = api.structure(), hex = hexagonal(s);
+      const s = api.structure(), hex = hexagonal(s), per = periodic(s);
       host.innerHTML = `<div class="bld-tabs" role="tablist" aria-label="Supercell kind">
           <button role="tab" data-tab="diag" aria-selected="true">Diagonal</button><button role="tab" data-tab="matrix" aria-selected="false">Matrix</button></div>
         <div data-pane="diag" class="bld-row"><span>n1 × n2 × n3</span><span class="bld-inline">
@@ -33,7 +50,7 @@ export function open(H, preset = null) {
           <input type="number" min="1" max="10" step="1" value="2" data-n="2" aria-label="n3">
           <label class="bld-check" title="The same in all three"><input type="checkbox" data-k="link" checked> Same in all three</label></span></div>
         <div data-pane="matrix" class="bld-row" hidden><span>New a, b, c (rows)</span><span class="bld-matrix">${[0, 1, 2].map((i) => [0, 1, 2].map((j) =>
-          `<input type="number" step="1" min="-30" max="30" value="${i === j ? 2 : 0}" data-m="${i}${j}" aria-label="Row ${i + 1}, column ${j + 1}">`).join("")).join("")}</span></div>
+          `<input type="number" step="1" min="-30" max="30" value="${i === j ? (per[i] ? 2 : 1) : 0}" data-m="${i}${j}" aria-label="Row ${i + 1}, column ${j + 1}">`).join("")).join("")}</span></div>
         <div class="bld-row" data-pane="matrix" hidden><span>Determinant</span><span class="num" data-k="det"></span></div>
         <div class="bld-row"><span>Presets</span><span class="bld-presets">
           <button type="button" data-preset="222">2×2×2</button><button type="button" data-preset="r45">√2×√2×1 R45°</button>
@@ -44,18 +61,23 @@ export function open(H, preset = null) {
         host.querySelectorAll("[data-pane]").forEach((p) => { p.hidden = p.dataset.pane !== t; });
       };
       host.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => {
-        if (b.dataset.tab === "matrix") setMatrix(host, readDiag(host));
+        if (b.dataset.tab === "matrix") { const n = readDiag(host); setMatrix(host, [[n[0], 0, 0], [0, n[1], 0], [0, 0, n[2]]]); }
         showTab(b.dataset.tab); presetName = null; api.changed();
       }));
       host.querySelector('[data-k="link"]').addEventListener("change", (e) => { linked = e.target.checked; });
+      // a slab or polymer repeats along its periodic directions only: n is 1 along the others
+      host.querySelectorAll("[data-n]").forEach((inp) => {
+        if (per[Number(inp.dataset.n)]) return;
+        inp.value = "1"; inp.disabled = true; inp.title = `Not periodic along ${"abc"[Number(inp.dataset.n)]}`;
+      });
       host.querySelectorAll("[data-n]").forEach((inp) => inp.addEventListener("input", () => {
         presetName = null;
-        if (linked) host.querySelectorAll("[data-n]").forEach((o) => { if (o !== inp) o.value = inp.value; });
+        if (linked) host.querySelectorAll("[data-n]").forEach((o) => { if (o !== inp && !o.disabled) o.value = inp.value; });
       }));
       host.querySelectorAll("[data-m]").forEach((inp) => inp.addEventListener("input", () => { presetName = null; }));
       host.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => {
         const p = b.dataset.preset;
-        if (p === "222") { showTab("diag"); host.querySelectorAll("[data-n]").forEach((o) => { o.value = "2"; }); presetName = null; }
+        if (p === "222") { showTab("diag"); host.querySelectorAll("[data-n]").forEach((o) => { o.value = o.disabled ? "1" : "2"; }); presetName = null; }
         else { showTab("matrix"); setMatrix(host, p === "r45" ? R45 : R30); presetName = p; }
         api.changed();
       }));
@@ -93,6 +115,8 @@ export function open(H, preset = null) {
         else if (diag) { name = `${stem}_${m[0][0]}x${m[1][1]}x${m[2][2]}`; what = `${m[0][0]}×${m[1][1]}×${m[2][2]}`; }
         else { name = `${stem}_sc${det}`; what = `det ${det}`; }
       }
+      const bad = alongNonPeriodic(m, periodic(s));
+      if (bad) return { error: bad, name };
       const det = det3(m), n = det * (s ? s.numbers.length : 0);
       if (n > 250000) return { error: `This makes ${fmtN(n)} atoms; builds stop at 250,000`, name };
       const C = mul(m, s.cell), L = C.map(len);

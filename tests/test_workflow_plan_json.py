@@ -8,6 +8,7 @@ upward from its job directory). These tests follow one plan through all three
 without SLURM or a database.
 """
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -102,7 +103,8 @@ def test_planner_names_a_plan_without_id_by_timestamp(tmp_path, input_dir):
     path = planner.save_workflow_plan(plan)
     stamp = path.name[len("workflow_plan_"):-len(".json")]
     assert path.parent == planner.configs_dir
-    assert len(stamp) == 15 and stamp[8] == "_" and stamp.replace("_", "").isdigit()
+    # <YYYYmmdd_HHMMSS>_<4 hex>: two plans saved in one second differ
+    assert re.fullmatch(r"\d{8}_\d{6}_[0-9a-f]{4}", stamp), stamp
 
 
 # ---------------------------------------------------- planner: --execute FILE

@@ -322,3 +322,17 @@ def test_round_off_negatives_do_not_make_a_density_signed(tmp_path):
     write_cube(tmp_path / "b_DENS.CUBE", b)
     meta, _ = volume.payload(volume.read(str(tmp_path / "b_DENS.CUBE")), tmp_path / "b_DENS.CUBE", "low")
     assert meta["signed"]
+
+
+@needs_corpus
+def test_slice_index_out_of_range_is_a_400(served):
+    """A plane outside the grid (or no number) is the request's fault: 400 with
+    the valid range, before any task is started; never a 500."""
+    root, base, _ = served
+    n = _cube(root / "vol/mol_DENS.CUBE").data.shape[2]
+    for idx in (n, -1, 10 ** 9, "x", "1.5"):
+        st, _, r = U.req(base, f"api/volume/slice?path=vol/mol_DENS.CUBE&axis=c&index={idx}&wait=30")
+        assert st == 400, (idx, st, r)
+        assert "index" in r["error"], r
+    st, _, r = U.req(base, f"api/volume/slice?path=vol/mol_DENS.CUBE&axis=c&index={n - 1}")
+    assert st in (200, 202), r

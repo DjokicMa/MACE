@@ -174,6 +174,47 @@ def test_export_has_the_clis_columns(served, tmp_path):
     assert len(data["data"]) == c["count"] == data["record_count"]
 
 
+def _parity_db(path):
+    """The demo database plus the property rows the two exports used to
+    disagree on: a text value, one name written by two calculations, and a
+    structure field the CLI leaves out."""
+    import sqlite3
+    shutil.copy2(H.EXAMPLES / "materials.db", path)
+    c = sqlite3.connect(str(path))
+    with c:
+        mid = c.execute("SELECT material_id FROM materials ORDER BY material_id LIMIT 1").fetchone()[0]
+        cols = "material_id, calc_id, property_category, property_name, property_value, property_value_text, extracted_at"
+        rows = [(mid, None, "electronic", "electronic_classification", None, "semiconductor", "2026-01-01"),
+                (mid, "c1", "energy", "parity_energy", -1.5, None, "2026-01-01"),
+                (mid, "c2", "energy", "parity_energy", -2.5, None, "2026-01-02"),
+                (mid, None, "structural", "atomic_positions", None, "[[0, 0, 0]]", "2026-01-01")]
+        c.executemany(f"INSERT INTO properties ({cols}) VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+    c.close()
+    return mid
+
+
+def test_export_values_equal_the_clis(served, tmp_path):
+    """Every cell of the GUI's CSV equals the CLI's (a text-valued property
+    was empty in the GUI's: it read property_value only)."""
+    root, base, _ = served
+    mid = _parity_db(root / "parity.db")
+    d = tmp_path / "cli"
+    d.mkdir()
+    _parity_db(d / "materials.db")
+    env = {**H.env(tmp_path / "xdg"), "NO_COLOR": "1", "MACE_NO_BANNER": "1"}
+    r = subprocess.run([sys.executable, str(H.MACE_CLI), "--no-banner", "database", "--action", "export", "--format", "csv",
+                        "--output", "out.csv"], cwd=str(d), capture_output=True, text=True, env=env, timeout=300, stdin=subprocess.DEVNULL)
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
+    cli = list(csv.DictReader(io.StringIO((d / "out.csv").read_text())))
+    st, h, body = U.req(base, "api/db/export?path=parity.db&format=csv")
+    ours = list(csv.DictReader(io.StringIO(body.decode() if isinstance(body, bytes) else body)))
+    assert list(ours[0].keys()) == list(cli[0].keys())
+    by_id = lambda rows: {x["material_id"]: x for x in rows}      # noqa: E731
+    assert by_id(ours) == by_id(cli)
+    assert by_id(ours)[mid]["electronic_classification"] == "semiconductor"
+    assert "atomic_positions" not in ours[0]
+
+
 def test_material_files_resolve_inside_the_folder(served):
     root, base, _ = served
     st, _, r = U.req(base, "api/db/material?path=materials.db&id=Ag2Br3")
@@ -181,6 +222,29 @@ def test_material_files_resolve_inside_the_folder(served):
     assert c["output_rel"] == "outputs/Ag2Br3_opt_unfinished.out" and c["input_rel"] == "outputs/Ag2Br3_opt_unfinished.d12"
     st, _, r = U.req(base, "api/db/material?path=big.db&id=mat000001")
     assert all(c["output_rel"] is None for c in r["calculations"])         # not in this folder
+
+
+def test_material_files_are_found_after_the_project_folder_moved(served):
+    """A database copied or moved with its project keeps the paths of the old
+    place: a file is found under the database's folder by the end of its
+    recorded path (and through the recorded work_dir for a bare name)."""
+    import sqlite3
+    root, base, _ = served
+    moved = root / "moved.db"
+    shutil.copy2(H.EXAMPLES / "materials.db", moved)
+    c = sqlite3.connect(str(moved))
+    with c:
+        old = "/nonexistent/old/place/project"
+        c.execute("UPDATE calculations SET output_file = ? || '/' || output_file, "
+                  "input_file = 'Ag2Br3_opt_unfinished.d12', work_dir = ? || '/outputs' "
+                  "WHERE material_id = 'Ag2Br3'", (old, old))
+        row = c.execute("SELECT output_file FROM calculations WHERE material_id = 'Ag2Br3'").fetchone()
+    c.close()
+    assert row[0].startswith("/nonexistent/")
+    st, _, r = U.req(base, "api/db/material?path=moved.db&id=Ag2Br3")
+    calc = r["calculations"][0]
+    assert calc["output_rel"] == "outputs/Ag2Br3_opt_unfinished.out", calc
+    assert calc["input_rel"] == "outputs/Ag2Br3_opt_unfinished.d12", calc
 
 
 def test_export_file_name_is_safe_in_the_header(served):

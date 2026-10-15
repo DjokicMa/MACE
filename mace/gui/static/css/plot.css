@@ -9,6 +9,14 @@
 .pv-chip { padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: var(--fs-xs); font-weight: 600; }
 .pv-acts { display: flex; gap: var(--s-1); }
 .pv-acts[hidden] { display: none; }
+/* a band/DOS subtitle: one line, its longer guidance in the help icon's tooltip */
+.pv-note.one { display: flex; align-items: center; gap: var(--s-1); min-width: 0; }
+#runplot-host .pv-note { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-note-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-help { flex: none; display: inline-flex; color: var(--text-3); cursor: help; border-radius: var(--r-sm); }
+.pv-help:hover, .pv-help:focus-visible { color: var(--text); }
+.pv-help:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.pv-help svg { width: 14px; height: 14px; }
 .pv-plot { flex: 1; min-height: 240px; min-width: 0; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--plot-bg); }
 .pv-plot:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .pv-plot[hidden] { display: none; }

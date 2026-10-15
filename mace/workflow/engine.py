@@ -37,7 +37,7 @@ OPTIONAL_CALC_TYPES = {'BAND', 'DOSS', 'FREQ', 'TRANSPORT', 'CHARGE+POTENTIAL'}
 from mace.database.materials import MaterialDatabase, create_material_id_from_file, extract_formula_from_d12
 from mace.queue.slurm_ids import note_submission as _note_submission
 from mace.database.materials_contextual import ContextualMaterialDatabase
-from mace.workflow.context import get_current_context
+from mace.workflow.context import get_current_context, new_workflow_id
 from mace.workflow.common.constants import opt2d3_default_band_config, opt2d3_default_doss_config
 from mace.utils.settings_extractor import extract_input_settings
 from mace.workflow.plan_functionals import (normalize_plan_functionals,
@@ -83,6 +83,9 @@ class WorkflowEngine:
         self.lock = threading.RLock()
         self.auto_submit = auto_submit  # Enable automatic submission by default
         self.allow_planless_progression = _planless_progression_allowed()
+        # `mace engine --action process` sets this: a person continuing a
+        # plan whose auto_progression is off (see _auto_progression_off).
+        self.manual_progression = False
         
         # Create workflow working directories
         self.workflow_dir = self.base_work_dir / "workflow_staging"
@@ -153,6 +156,49 @@ class WorkflowEngine:
             if key.rsplit('_', 1)[0] == calc_type and isinstance(cfg, dict):
                 return cfg
         return {}
+
+    def _auto_progression_off(self, workflow_id: Optional[str]) -> bool:
+        """True when the plan says ``execution_settings.auto_progression``
+        false and nobody asked to continue by hand (``manual_progression``)."""
+        if not workflow_id or getattr(self, 'manual_progression', False):
+            return False
+        try:
+            plan = self._load_workflow_plan(workflow_id) or {}
+        except Exception:       # unreadable plan: progression as before
+            return False
+        auto = (plan.get('execution_settings') or {}).get('auto_progression', True)
+        if isinstance(auto, str):
+            auto = auto.strip().lower() not in ('false', 'no', 'off', '0')
+        return auto is False or auto == 0
+
+    def _print_held_by_plan(self, workflow_id: str, what: str) -> None:
+        db_path = getattr(self.db, 'db_path', None) or 'materials.db'
+        print(f"The plan of {workflow_id} has auto_progression off: {what} is recorded as "
+              f"completed and its next steps are not submitted.")
+        print(f"  To continue, run in {self.base_work_dir}:")
+        print(f"    mace engine --action process --db {db_path} --work-dir {self.base_work_dir}")
+
+    def _plan_expert_config_file(self, workflow_id: Optional[str],
+                                 calc_type: str) -> Optional[Path]:
+        """The plan step's ``expert_config_file`` for a d12 step, or None.
+
+        A path that does not exist here (a plan from another machine) is
+        retried by name in workflow_configs/expert_<type>_configs/.
+        """
+        step_cfg = self._get_plan_step_config(workflow_id, calc_type) if workflow_id else {}
+        expert_path = step_cfg.get('expert_config_file')
+        if not expert_path:
+            return None
+        cand = Path(expert_path)
+        if not cand.exists():
+            cand = (self.base_work_dir / "workflow_configs"
+                    / f"expert_{calc_type.lower()}_configs" / cand.name)
+        if cand.exists():
+            print(f"  Using plan expert config for {calc_type}: {cand.name}")
+            return cand
+        print(f"  Warning: the plan's expert config for {calc_type} was not found "
+              f"({expert_path}); using the step's other settings")
+        return None
 
     def _build_numbered_calc_config(self, workflow_id: str, target_calc_type: str,
                                     target_base_type: str,
@@ -420,128 +466,150 @@ class WorkflowEngine:
         # Use the base_work_dir from the workflow engine, not current directory
         base_dir = self.base_work_dir
         workflow_scripts_dir = base_dir / "workflow_scripts"
-        
-        # Look for templates with flexible numbering
-        template_script = None
+        # The workflow's own templates when it keeps them (isolated and
+        # hybrid workflows); the folder's shared ones otherwise (shared mode,
+        # and workflows planned before workflows kept their own copy).
+        if workflow_id:
+            from mace.workflow.context import workflow_scripts_dir as own_scripts_dir
+            own = own_scripts_dir(base_dir, workflow_id)
+            if own.is_dir():
+                workflow_scripts_dir = own
+
         base_type, type_num = self._parse_calc_type(calc_type)
+
+        def _find_template(workflow_scripts_dir):
+            # Look for templates with flexible numbering
+            template_script = None
         
-        if base_type == "SP":
-            # Try numbered templates first (for SP2, SP3, etc.)
-            if type_num > 1:
-                # Try specific numbered templates
-                numbered_patterns = [
-                    f"submitcrystal23_sp{type_num}_*.sh",
-                    f"submitcrystal23_sp{type_num}.sh"
-                ]
-                for pattern in numbered_patterns:
-                    candidates = list(workflow_scripts_dir.glob(pattern))
-                    if candidates:
-                        template_script = candidates[0]
-                        break
-            
-            # If no specific template found, try general SP templates
-            if not template_script:
-                for name in ["submitcrystal23_sp_*.sh", "submitcrystal23_sp.sh"]:
-                    candidates = list(workflow_scripts_dir.glob(name))
-                    if candidates:
-                        template_script = candidates[0]
-                        break
-        elif base_type == "FREQ":
-            # Try numbered templates first (for FREQ2, FREQ3, etc.)
-            if type_num > 1:
-                # Try specific numbered templates
-                numbered_patterns = [
-                    f"submitcrystal23_freq{type_num}_*.sh",
-                    f"submitcrystal23_freq{type_num}.sh"
-                ]
-                for pattern in numbered_patterns:
-                    candidates = list(workflow_scripts_dir.glob(pattern))
-                    if candidates:
-                        template_script = candidates[0]
-                        break
-            
-            # If no specific template found, try general FREQ templates
-            if not template_script:
-                for pattern in ["submitcrystal23_freq_*.sh", "submitcrystal23_freq.sh"]:
-                    candidates = list(workflow_scripts_dir.glob(pattern))
-                    if candidates:
-                        template_script = candidates[0]
-                        break
-        elif base_type == "BAND":
-            # Try numbered templates first (for BAND2, BAND3, etc.)
-            if type_num > 1:
-                numbered_patterns = [
-                    f"submit_prop_band{type_num}_*.sh",
-                    f"submit_prop_band{type_num}.sh"
-                ]
-                for pattern in numbered_patterns:
-                    candidates = list(workflow_scripts_dir.glob(pattern))
-                    if candidates:
-                        template_script = candidates[0]
-                        break
-            
-            # If no specific template found, try general BAND templates
-            if not template_script:
-                for pattern in ["submit_prop_band_*.sh", "submit_prop_band.sh"]:
-                    candidates = list(workflow_scripts_dir.glob(pattern))
-                    if candidates:
-                        template_script = candidates[0]
-                        break
-        elif base_type == "DOSS":
-            # Try numbered templates first (for DOSS2, DOSS3, etc.)
-            if type_num > 1:
-                numbered_patterns = [
-                    f"submit_prop_doss{type_num}_*.sh",
-                    f"submit_prop_doss{type_num}.sh"
-                ]
-                for pattern in numbered_patterns:
-                    candidates = list(workflow_scripts_dir.glob(pattern))
-                    if candidates:
-                        template_script = candidates[0]
-                        break
-            
-            # If no specific template found, try general DOSS templates
-            if not template_script:
-                for pattern in ["submit_prop_doss_*.sh", "submit_prop_doss.sh"]:
-                    candidates = list(workflow_scripts_dir.glob(pattern))
-                    if candidates:
-                        template_script = candidates[0]
-                        break
-        else:
-            # For other calculation types (OPT, OPTn, etc.)
-            if base_type == "OPT":
-                # Try numbered templates first (for OPT2, OPT3, etc.)
+            if base_type == "SP":
+                # Try numbered templates first (for SP2, SP3, etc.)
                 if type_num > 1:
                     # Try specific numbered templates
                     numbered_patterns = [
-                        f"submitcrystal23_opt{type_num}_*.sh",
-                        f"submitcrystal23_opt{type_num}.sh"
+                        f"submitcrystal23_sp{type_num}_*.sh",
+                        f"submitcrystal23_sp{type_num}.sh"
                     ]
                     for pattern in numbered_patterns:
                         candidates = list(workflow_scripts_dir.glob(pattern))
                         if candidates:
                             template_script = candidates[0]
                             break
-                    
-                # If no specific template found, try general OPT templates
+            
+                # If no specific template found, try general SP templates
                 if not template_script:
-                    for pattern in ["submitcrystal23_opt_*.sh", "submitcrystal23_opt.sh", "submitcrystal23.sh"]:
+                    for name in ["submitcrystal23_sp_*.sh", "submitcrystal23_sp.sh"]:
+                        candidates = list(workflow_scripts_dir.glob(name))
+                        if candidates:
+                            template_script = candidates[0]
+                            break
+            elif base_type == "FREQ":
+                # Try numbered templates first (for FREQ2, FREQ3, etc.)
+                if type_num > 1:
+                    # Try specific numbered templates
+                    numbered_patterns = [
+                        f"submitcrystal23_freq{type_num}_*.sh",
+                        f"submitcrystal23_freq{type_num}.sh"
+                    ]
+                    for pattern in numbered_patterns:
                         candidates = list(workflow_scripts_dir.glob(pattern))
                         if candidates:
                             template_script = candidates[0]
                             break
-        
-        # If still no template found, use the first available one that matches the pattern
-        if not template_script:
-            if calc_type in ["OPT", "SP", "FREQ"]:
-                pattern = f"submitcrystal23_*{calc_type.lower()}*.sh"
-            else:
-                pattern = f"submit_prop_*{calc_type.lower()}*.sh"
             
-            templates = list(workflow_scripts_dir.glob(pattern))
-            if templates:
-                template_script = templates[0]
+                # If no specific template found, try general FREQ templates
+                if not template_script:
+                    for pattern in ["submitcrystal23_freq_*.sh", "submitcrystal23_freq.sh"]:
+                        candidates = list(workflow_scripts_dir.glob(pattern))
+                        if candidates:
+                            template_script = candidates[0]
+                            break
+            elif base_type == "BAND":
+                # Try numbered templates first (for BAND2, BAND3, etc.)
+                if type_num > 1:
+                    numbered_patterns = [
+                        f"submit_prop_band{type_num}_*.sh",
+                        f"submit_prop_band{type_num}.sh"
+                    ]
+                    for pattern in numbered_patterns:
+                        candidates = list(workflow_scripts_dir.glob(pattern))
+                        if candidates:
+                            template_script = candidates[0]
+                            break
+            
+                # If no specific template found, try general BAND templates
+                if not template_script:
+                    for pattern in ["submit_prop_band_*.sh", "submit_prop_band.sh"]:
+                        candidates = list(workflow_scripts_dir.glob(pattern))
+                        if candidates:
+                            template_script = candidates[0]
+                            break
+            elif base_type == "DOSS":
+                # Try numbered templates first (for DOSS2, DOSS3, etc.)
+                if type_num > 1:
+                    numbered_patterns = [
+                        f"submit_prop_doss{type_num}_*.sh",
+                        f"submit_prop_doss{type_num}.sh"
+                    ]
+                    for pattern in numbered_patterns:
+                        candidates = list(workflow_scripts_dir.glob(pattern))
+                        if candidates:
+                            template_script = candidates[0]
+                            break
+            
+                # If no specific template found, try general DOSS templates
+                if not template_script:
+                    for pattern in ["submit_prop_doss_*.sh", "submit_prop_doss.sh"]:
+                        candidates = list(workflow_scripts_dir.glob(pattern))
+                        if candidates:
+                            template_script = candidates[0]
+                            break
+            else:
+                # For other calculation types (OPT, OPTn, etc.)
+                if base_type == "OPT":
+                    # Try numbered templates first (for OPT2, OPT3, etc.)
+                    if type_num > 1:
+                        # Try specific numbered templates
+                        numbered_patterns = [
+                            f"submitcrystal23_opt{type_num}_*.sh",
+                            f"submitcrystal23_opt{type_num}.sh"
+                        ]
+                        for pattern in numbered_patterns:
+                            candidates = list(workflow_scripts_dir.glob(pattern))
+                            if candidates:
+                                template_script = candidates[0]
+                                break
+                    
+                    # If no specific template found, try general OPT templates
+                    if not template_script:
+                        for pattern in ["submitcrystal23_opt_*.sh", "submitcrystal23_opt.sh", "submitcrystal23.sh"]:
+                            candidates = list(workflow_scripts_dir.glob(pattern))
+                            if candidates:
+                                template_script = candidates[0]
+                                break
         
+            # If still no template found, use the first available one that matches the pattern
+            if not template_script:
+                if calc_type in ["OPT", "SP", "FREQ"]:
+                    pattern = f"submitcrystal23_*{calc_type.lower()}*.sh"
+                else:
+                    pattern = f"submit_prop_*{calc_type.lower()}*.sh"
+            
+                templates = list(workflow_scripts_dir.glob(pattern))
+                if templates:
+                    template_script = templates[0]
+            return template_script
+
+        template_script = _find_template(workflow_scripts_dir)
+        shared_scripts_dir = base_dir / "workflow_scripts"
+        if not template_script and workflow_scripts_dir != shared_scripts_dir:
+            # An own copy missing this step's template (a copy that failed
+            # part way): the shared one keeps the plan's resources, where
+            # the generic script would not.
+            template_script = _find_template(shared_scripts_dir)
+            if template_script:
+                print(f"  The {calc_type} template is not in this workflow's own templates "
+                      f"({workflow_scripts_dir}); using {template_script}")
+
         # Debug: Print template path being used
         print(f"  Using template: {template_script}")
         if template_script:
@@ -1257,7 +1325,7 @@ fi'''
         print(f"WARNING: Creating new workflow directory - could not find existing workflow context")
         print(f"  opt_calc: {opt_calc}")
         from datetime import datetime
-        workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        workflow_id = new_workflow_id(self.base_work_dir)
         return self.base_work_dir / "workflow_outputs" / workflow_id
     
     def extract_core_material_name(self, material_id: str) -> str:
@@ -2211,6 +2279,9 @@ fi'''
             print("   use 'mace submit --progress' or 'mace workflow' to plan follow-up steps)")
             return new_calc_ids
 
+        if planned_sequence and self._auto_progression_off(workflow_id):
+            self._print_held_by_plan(workflow_id, f"{calc_type} {completed_calc_id}")
+            return new_calc_ids
 
         # Parse current calculation type to handle numbered types
         base_type, type_num = self._parse_calc_type(calc_type)
@@ -3063,9 +3134,14 @@ fi'''
             except json.JSONDecodeError:
                 pass
         
+        # The plan step's own expert_config_file comes first, as for the D3
+        # steps (generate_d3_calculation); every d12 step, the first SP too.
+        expert_config_file = self._plan_expert_config_file(
+            workflow_id or os.environ.get('MACE_WORKFLOW_ID'), target_calc_type)
+
         # Check for expert config file for numbered calculations (OPT2/OPT3/SP2/FREQ)
-        expert_config_file = None
-        if (target_base_type in ["OPT", "SP", "FREQ"]) and (target_num > 1 or target_base_type == "FREQ"):
+        if expert_config_file is None and (target_base_type in ["OPT", "SP", "FREQ"]) \
+                and (target_num > 1 or target_base_type == "FREQ"):
             # First check for material-specific config
             config_search_paths = [
                 # Material-specific config in workflow_configs
@@ -3685,6 +3761,71 @@ fi'''
             
         return workflow_status
         
+    # A calculation in one of these states will not change on its own.
+    FINISHED_STATUSES = frozenset({'completed', 'failed', 'resubmitted', 'error',
+                                   'timeout', 'cancelled', 'canceled'})  # british-ok: status value
+
+    def finish_workflow_if_done(self, db_path) -> Optional[Path]:
+        """Carry out the plan's post_completion_action once the workflow is done.
+
+        Called by the job callback (under the queue lock) after it has
+        recorded its job and chained the next steps. The workflow is done
+        when every calculation in its context database is finished
+        (completed, or failed with nothing resubmitted) and every completed
+        one has been through progression. Then 'archive' moves the context
+        to ``archived_workflows/`` and 'export_and_delete' copies the results
+        to ``workflow_results/<id>/`` and removes the context. Returns where
+        the context went, or None when nothing was done.
+        """
+        db_file = Path(db_path).resolve()
+        context_dir = db_file.parent
+        prefix = '.mace_context_'
+        if not context_dir.name.startswith(prefix) or not db_file.is_file():
+            return None                 # shared mode: nothing to archive
+        workflow_id = context_dir.name[len(prefix):]
+        plan = self._load_workflow_plan(workflow_id) or {}
+        action = plan.get('post_completion_action', 'keep')
+        isolation_mode = plan.get('isolation_mode', 'isolated')
+        if action not in ('archive', 'export_and_delete') or isolation_mode == 'shared':
+            return None
+
+        calcs = MaterialDatabase(str(db_file)).get_calculations_by_status()
+        if not calcs:
+            return None
+        for calc in calcs:
+            if calc.get('status') not in self.FINISHED_STATUSES:
+                return None
+            if calc.get('status') == 'completed':
+                try:
+                    settings = json.loads(calc.get('settings_json') or '{}')
+                except (json.JSONDecodeError, TypeError):
+                    settings = {}
+                if not settings.get('workflow_processed'):
+                    return None         # its next steps are not made yet
+
+        from mace.workflow.context import WorkflowContext
+        base_dir = context_dir.parent
+        ctx = WorkflowContext(workflow_id, base_dir=base_dir, isolation_mode=isolation_mode)
+        try:
+            if action == 'archive':
+                print(f"  Every step of {workflow_id} has finished; archiving its context "
+                      f"(post-completion action 'archive')")
+                target = ctx.archive(base_dir / 'archived_workflows')
+                # the lock this callback holds was in the context folder
+                shutil.rmtree(target / '.queue_locks', ignore_errors=True)
+            else:
+                target = base_dir / 'workflow_results' / workflow_id
+                print(f"  Every step of {workflow_id} has finished; exporting its results to "
+                      f"{target} and deleting its context (post-completion action "
+                      f"'export_and_delete')")
+                ctx.export_results(target)
+                shutil.rmtree(context_dir)
+        except Exception as e:
+            print(f"  Could not carry out the post-completion action '{action}' "
+                  f"for {workflow_id}: {e}")
+            return None
+        return target
+
     def process_completed_calculations(self) -> int:
         """
         Process all recently completed calculations and trigger workflow steps.
@@ -3708,6 +3849,13 @@ fi'''
                 settings = {}
                 
             if settings.get('workflow_processed'):
+                continue
+
+            # Held by the plan (auto_progression off): left unprocessed, so
+            # `mace engine --action process` continues it later.
+            held_id = settings.get('workflow_id') or os.environ.get('MACE_WORKFLOW_ID')
+            if held_id and self._auto_progression_off(held_id):
+                self._print_held_by_plan(held_id, f"{calc['calc_type']} {calc['calc_id']}")
                 continue
                 
             # Execute workflow step
@@ -3763,6 +3911,8 @@ def main():
             
     elif args.action == 'process':
         print("Processing completed calculations...")
+        # run by hand: also continues plans whose auto_progression is off
+        workflow_engine.manual_progression = True
         new_steps = workflow_engine.process_completed_calculations()
         print(f"Initiated {new_steps} new workflow steps")
         

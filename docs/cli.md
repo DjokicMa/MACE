@@ -181,7 +181,7 @@ mace manager [--status] [--d12-dir DIR] [--max-jobs N] [--reserve N] [--organize
 |---|---|
 | `--status` | The SLURM queue: running, pending, free slots |
 | `--d12-dir DIR` | Decks to manage (default: here) |
-| `--max-jobs N` | Concurrent jobs at most (default 250) |
+| `--max-jobs N` | Your running and pending jobs in squeue (each array task counted, jobs MACE did not submit too) at most (default 250) |
 | `--reserve N` | Slots kept free (default 30) |
 | `--organize` | Copy inputs into `<calc_type>/<material_id>/` (default: submit in place) |
 | `--callback-mode MODE` | One cycle of `full_check` (default), `submit_new`, `status_check`, `early_failure` or `completion` |
@@ -202,6 +202,10 @@ action ends with the exact command for each one), or let the queue manager
 (`mace manager`) resubmit tracked runs. A recovery that was prepared but
 never submitted does not count toward `max_retries`, and running `mace
 recover` again reuses it instead of preparing another copy.
+
+Completion callbacks do not recover a job that ended more than
+`MACE_RECOVER_MAX_AGE_DAYS` (default 3) days ago on their own; run `mace
+recover --db <db>` for those.
 
 ```
 mace recover [--action recover|stats|config] [--max-recoveries N] [--config FILE] [--db PATH] [--create-config]
@@ -268,7 +272,7 @@ mace completion [-d DIR] [-r] [--detailed] [--move-completed | --organize] [opti
 | `--organize` | Sort every file into folders by status and calculation type |
 | `--output-dir DIR` | Where `--move-completed`/`--organize` put them |
 | `--extensions EXT ...` | The file suffixes to move (default: inputs, outputs, .f9/.f25, .DAT and cube files) |
-| `--remove-zombie-jobs` | Cancel your SLURM jobs whose output already shows a failure |
+| `--remove-zombie-jobs` | Cancel a calculation's own SLURM job (found from its own `<name>-<id>.o` log and confirmed with SLURM) whose output already shows a failure |
 
 ```bash
 mace completion -d ./cifs
@@ -464,7 +468,7 @@ mace submit [FILE_OR_DIR ...] [options]
 |---|---|
 | `-i`, `--interactive` | Choose cores, memory and walltime |
 | `--nosubmit` | Write the job scripts only |
-| `--overwrite-sh` | Write new job scripts instead of reusing existing `.sh` files |
+| `--overwrite-sh` | Write new job scripts instead of reusing existing `.sh` files; also required for `-i`/`--walltime`/`--exclude-*` to apply to a script edited by hand or written before 1.1.5 |
 | `--walltime TIME` | Walltime for these jobs (e.g. `2:00:00`) |
 | `--track` | Record the jobs in materials.db (monitor, analysis, recovery) |
 | `--progress TEMPLATE` | Plan the steps that follow and run them as each job ends (a template from `mace workflow --show-templates`, or `interactive`); implies `--track` |
@@ -475,8 +479,16 @@ mace submit [FILE_OR_DIR ...] [options]
 | `--exclude-amd20` | MSU HPCC only: exclude the AMD20 nodes |
 | `--exclude-mendoza` | MSU HPCC only: exclude the Mendoza group's nodes |
 
-The exclusion options are mutually exclusive. The job scripts follow your
+The exclusion options are mutually exclusive, and the MSU HPCC rows are
+listed in `--help` only on MSU HPCC. The job scripts follow your
 [site settings](#site-settings-mace-site-sitetoml).
+
+A deck whose name has spaces or shell characters is refused, and so is a
+`.d3` whose `.f9` is missing or empty.
+
+**Exit status:** 0 when every job was submitted; 1 when any job was not
+submitted or was refused (also with `--nosubmit` when a script cannot be
+written).
 
 ```bash
 mace submit my_calculations/
@@ -521,6 +533,7 @@ folder, or show how one run converged.
 ```
 mace analyze --extract-properties DIR [options]
 mace analyze --convergence FILE.out [--json]
+mace analyze --convergence FILE.out --energy [--segments continuous|separate] [--relative-to REF] [--unit UNIT]
 ```
 
 | Option | What it does |
@@ -542,10 +555,25 @@ mace analyze --convergence FILE.out [--json]
 | `--keep-backups N` | With `--backup`: keep N (default 3) |
 | `--progress-json` | One JSON line per file on stdout |
 | `--convergence FILE` | Per optimization point: SCF cycles, energy change, gradients and displacements against their thresholds |
+| `--energy` | With `--convergence`: the energy along the run as the GUI's energy card copies it (point, FINALRUN segment, frame, E in Ha, ΔE) |
+| `--segments MODE` | With `--energy`: `continuous` (default: one reference across the FINALRUN restarts) or `separate` (one per segment) |
+| `--relative-to REF` | With `--energy`: `final` (default), `first`, `minimum` or `absolute` |
+| `--unit UNIT` | With `--energy`: `meV` (default), `eV`, `Ha`, `kJ/mol` or `kcal/mol` |
+
+For a TRANSPORT run the database gets the peak Seebeck coefficient, power
+factor and **electronic** figure of merit `transport_zt_electronic_max`
+(also stored as `transport_zt_max`, its earlier name). ZTₑ = PF·T/κₑ counts
+the electrons only: the lattice thermal conductivity is not in it, so it is
+an upper bound on the material's ZT, and it grows without limit where
+T·σ·S² approaches κ₀ (values of 10-20 are common near a band edge). κ₀
+(KAPPA.dat; the manual's κₑ of Eq. 14.3 is this zero-field coefficient) and
+the electronic κₑ = κ₀ − T·σ·S² at that peak are stored as
+`transport_kappa0_at_zt_max` and `transport_kappa_electronic_at_zt_max`.
 
 ```bash
 mace analyze --extract-properties runs/ --register --skip-unchanged --backup
 mace analyze --convergence mat1_opt.out
+mace analyze --convergence mat1_opt.out --energy --segments separate
 ```
 
 ### mace plotting
@@ -606,6 +634,7 @@ mace database [--action ACTION] [options]
 | Option | What it does |
 |---|---|
 | `--action ACTION` | stats (default), query, properties, export, compare, missing, correlate, distribution, workflow, validate, history, interactive or aggregate |
+| `--db-path PATH` | The database file (default: the workflow context's, else `materials.db`); it must exist |
 | `--material-id ID` | One material |
 | `--filter "EXPR"` | Property filter for query/export, e.g. `"band_gap > 3.0"` (repeatable) |
 | `--logic AND\|OR` | How filters combine (default AND) |
@@ -953,7 +982,7 @@ qos        = "normal"               # #SBATCH --qos=normal
 constraint = "epyc"                 # #SBATCH --constraint=epyc (node features: sinfo -o "%P %f")
 extra      = ["--exclusive"]        # more #SBATCH options, at most 16 (see below)
 [resources]
-ntasks        = 64                  # #SBATCH --ntasks=64 (built-in: 32; properties 28)
+ntasks        = 64                  # #SBATCH --ntasks=64 (built-in: 32; properties 8)
 nodes         = 1                   # #SBATCH -N 1 (above 1: see "Several nodes" below)
 cpus_per_task = 1                   # #SBATCH --cpus-per-task=1
 mem_per_cpu   = "3900M"             # #SBATCH --mem-per-cpu=3900M; or mem = "250G" (#SBATCH --mem), not both
@@ -1005,6 +1034,39 @@ memory themselves: the `[resources]` values are their defaults (the prompt
 shows the site's memory form, "Memory per CPU" or "Memory per node
 (total)"), and a value you type is written as typed.
 
+### Change the default cores per job
+
+The built-in job size is 32 cores for CRYSTAL jobs (OPT, SP, FREQ) and 8
+for properties jobs (BAND, DOSS, TRANSPORT, CHARGE+POTENTIAL; 28 before
+1.1.5, but measured BAND and DOSS runs kept only about 1 of 28 cores busy;
+`[resources.properties] ntasks = 28` keeps the old size). To use, for
+example, 16 cores for every job, set it once in `~/.config/mace/site.toml`
+(`mace site --init` creates the file with every key commented out):
+
+```toml
+[resources]
+ntasks = 16            # every job: OPT, SP, FREQ, and properties jobs too
+
+[resources.properties]
+ntasks = 14            # optional: properties jobs only (BAND, DOSS, ...)
+```
+
+or for one shell session (or in `~/.bashrc`): `export MACE_SLURM_NTASKS=16`.
+Check it with `mace site`: the `Resources:` and `Properties:` lines show
+`--ntasks=16` and the file it comes from.
+
+The value is then the default everywhere MACE offers or writes a job size:
+the workflow planner's "Cores" offer, `mace submit` (also `--array`,
+`--track`, `--progress` and `-i`), `mace workflow --quick-start`, the GUI's
+Submit dialog, and the next steps of a workflow (also the follow-up jobs of
+`mace submit --track` in a plain folder). A number you choose for one job
+still wins: the answer to a planner or `-i` prompt, and
+`MACE_SLURM_NTASKS` over the file. A workflow planned before you changed the
+setting keeps the sizes stored in its plan. Memory (`mem_per_cpu` or `mem`)
+works the same way; the walltime is chosen per job (`mace submit
+--walltime`, the planner prompt). The split is per job kind (CRYSTAL or
+properties), not per calculation type: OPT and SP get the same default.
+
 Values that land on a line bash runs are data only: `[mpi] env` items are
 `NAME=value` with a value of letters, digits and `. _ / : , = + @ % ^ -`
 (no spaces, quotes or shell characters); names that change how the job or
@@ -1044,9 +1106,12 @@ is written. An unknown key is only a warning.
 day in `~/.cache/mace/modules.json`; `mace site --refresh` checks again):
 
 - **Account.** The built-in account is written only when you are a member of
-  it (`sacctmgr show assoc user=$USER`), or when that cannot be checked (no
-  `sacctmgr`: a workstation). Otherwise the `#SBATCH -A` line is left out, so
-  SLURM charges your default account, and MACE says so once.
+  it (`sacctmgr show assoc user=$USER`). Where that cannot be checked (no
+  `sacctmgr`, or one that lists nothing for you) it is still written on MSU
+  HPCC and on a host without SLURM (a workstation). Otherwise the `#SBATCH
+  -A` line is left out, so SLURM charges your default account, and MACE says
+  so once: "no account line (SLURM's default account); set yours with
+  MACE_SLURM_ACCOUNT or site.toml".
 - **Python modules.** The built-in Python modules are loaded only where they
   load (a module probe), or where there is no module system. Otherwise the
   job's completion step runs the Python that runs MACE (its full path, as
@@ -1436,11 +1501,20 @@ GUESSP- and SMEAR-aware SCF prior; reading only the new part of a very large
 output; totals for job arrays and workflows; and `mace cluster progress
 FILE.out` for runs started with `mace run`.
 
-CPU and memory efficiency come from SLURM's accounting and are shown only
-when they are plausible. MACE's job script starts CRYSTAL's MPI ranks through
-mpirun, outside SLURM's job steps, so SLURM often measures nothing for them;
-the job then says "Not measured by SLURM for this job" rather than a wrong
-number. `--live` asks `sstat` once; `--follow` prints again every 60 s from the
+CPU and memory efficiency are shown in plain numbers, for example "CPU
+efficiency 62% (used about 20 of 32 cores on average)" and "Memory peak 9.4 GiB
+of 64 GiB requested (15%)", with a short hint when a job clearly asked for too
+much. One note follows the CPU line: MPI libraries such as Intel MPI keep
+waiting ranks busy, so CPU efficiency near 100% does not show that every core
+did useful work; compare run times at different core counts to find the useful
+size. CPU efficiency is the CPU time of all the job's steps over elapsed time x
+cores; memory is the highest MaxRSS of its steps (x tasks for a multi-task step)
+over the requested memory (AllocTRES `mem=`, else ReqMem per CPU, per node or in
+total). A running job has no CPU time or peak memory in `sacct` until its steps
+end, so `--live` asks `sstat` once for its running steps and uses those numbers.
+A figure SLURM did not record says "Not measured by SLURM for this job" and why
+(for example processes started outside SLURM, such as by mpirun's ssh launcher on
+other nodes, are not counted). `--follow` prints again every 60 s from the
 shared cache.
 
 ### Estimates from history

@@ -15,10 +15,9 @@ from conftest import REPO_ROOT
 LITERALS = re.compile(r"mendoza_q|CRYSTAL/23-intel-2023a")
 ALLOWED = {
     "mace/submission/site.py": "DEFAULTS: the one Python home of the built-in site values",
+    "mace/submission/job_script_age.py": "the headers older MACE versions wrote, to recognize their unchanged job scripts",
     "mace/submission/submitcrystal23.sh": "the shipped template, never edited (site.py rewrites a copy)",
     "mace/submission/submit_prop.sh": "the shipped template, never edited (site.py rewrites a copy)",
-    "mace/workflow/submitcrystal23.sh": "a symbolic link to the shipped template",
-    "mace/workflow/submit_prop.sh": "a symbolic link to the shipped template",
     "mace/workflow/common/constants.py": "import-compatible constants; readers go through site.py",
     "mace/submission/local_run.py": "import-compatible CRYSTAL_MODULE; the probe uses site.py",
     "mace/submission/preflight.py": "import-compatible CRYSTAL_MODULE; the probe uses site.py",
@@ -96,3 +95,33 @@ def test_rewritten_literals_are_in_each_template_once():
         for w in wanted:
             n = lines.count(w)
             assert n == 1, (kind, w, n)
+
+
+# One developer's or one machine's paths: never in code that runs for users.
+# (`DjokicMa` in the GitHub URL is the project's home, not a path, and this
+# match is case-sensitive on the NetID.)
+MACHINE_PATHS = re.compile(r"/mnt/iscsi|/home/marcus|/home/djokic|djokicma|/mnt/research/")
+MACHINE_PATHS_ALLOWED = {
+    "mace/workflow/executor.py": "MSU group basis-set folder, tried only if it exists, after "
+                                 "the bundled sets and MACE_*_BASIS_PATH",
+}
+
+
+def test_no_machine_specific_paths_in_runtime_code():
+    # committed files only: a developer's untracked scratch is not shipped
+    r = subprocess.run(["git", "-C", str(REPO_ROOT), "ls-files"], capture_output=True, text=True)
+    if r.returncode != 0:
+        pytest.skip("not a git checkout")
+    bad = []
+    for rel in [l for l in r.stdout.splitlines() if l and (REPO_ROOT / l).is_file()]:
+        if (rel in MACHINE_PATHS_ALLOWED or rel.startswith("tests/") or rel.endswith(DOC_SUFFIXES)
+                or rel in ("CITATION.cff", ".gitignore")):
+            continue
+        try:
+            text = (REPO_ROOT / rel).read_text(errors="ignore")
+        except OSError:
+            continue
+        for i, line in enumerate(text.splitlines(), 1):
+            if MACHINE_PATHS.search(line):
+                bad.append(f"{rel}:{i}: {line.strip()[:100]}")
+    assert not bad, f"machine-specific paths in runtime code: {bad}"

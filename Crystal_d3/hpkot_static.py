@@ -115,6 +115,22 @@ L 1/2 1/2 1/2
 """,
         "path": "GAMMA-Y Y-T T-Z Z-GAMMA GAMMA-SIGMA_0 U_0-T Y-C_0 A_0-Z GAMMA-L",
     },
+    "oC1": {
+        "parameters": [("X", "(1+a*a/b/b)/4")],
+        "points": """
+GAMMA 0 0 0
+Y -1/2 1/2 0
+T -1/2 1/2 1/2
+Z 0 0 1/2
+S 0 1/2 0
+R 0 1/2 1/2
+SIGMA_0 X X 0
+C_0 -X 1-X 0
+A_0 X X 1/2
+E_0 -X 1-X 1/2
+""",
+        "path": "GAMMA-Y Y-C_0 SIGMA_0-GAMMA GAMMA-Z Z-A_0 E_0-T T-Y GAMMA-S S-R R-Z Z-T",
+    },
     "oC2": {
         "parameters": [("X", "(1+b*b/a/a)/4")],
         "points": """
@@ -165,8 +181,8 @@ E_4 Z -Z 1-H
 
 # MACE's static lookup names every C-centered monoclinic lattice "mS1"; its
 # entry is SeeK-path's mC1 path with the primed copy SeeK-path appends
-# without time reversal.
-ALIASES = {"mS1": "mC1"}
+# without time reversal. Its "oS1" entry is SeeK-path's oC1 path.
+ALIASES = {"mS1": "mC1", "oS1": "oC1"}
 
 # HPKOT's primitive vectors in terms of its conventional ones,
 # (a_P, b_P, c_P) = (a, b, c) P (SeeK-path hpkot.spg_mapping.get_P_matrix,
@@ -336,13 +352,21 @@ def crystal_points(lookup_key: str, conv_params: Dict[str, float],
     key = hpkot_key(lookup_key)
     if key is None:
         raise NotInHpkotSetting(f"no lattice-dependent formulas for {lookup_key}")
+    original = conv_params
     family = key[:2]
     check_setting(family, conv_params)
+    rows = conventional_vectors(conv_params)
+    if key == "oC1" and conv_params["a"] > conv_params["b"]:
+        # a C-centered group with a and b equivalent: spglib's standard cell has
+        # a < b (d3_kpoints.AB_SYMMETRIC_C_GROUPS); HPKOT's oC1 is evaluated on the
+        # swapped axes (b, a, -c, right-handed) and mapped back to CRYSTAL's cell
+        rows = np.array([rows[1], rows[0], -rows[2]])
+        conv_params = dict(conv_params, a=conv_params["b"], b=conv_params["a"])
     variant = hpkot_variant(family, conv_params)
     if variant != key:
         raise NotInHpkotSetting(f"SeeK-path takes {variant} for this cell, not {key}")
-    a_hp = hpkot_standard_primitive(key, conv_params)
-    a_crystal = crystal_primitive(conv_params, FAMILY_CENTRING[family], w)
+    a_hp = HPKOT_P[family].T @ rows
+    a_crystal = np.linalg.inv(np.array(CRYSTAL_W[FAMILY_CENTRING[family]] if w is None else w, dtype=float).T) @ conventional_vectors(original)
     try:
         from seekpath_interface import crystal_cell_matrix
     except ImportError:  # pragma: no cover - package-relative import

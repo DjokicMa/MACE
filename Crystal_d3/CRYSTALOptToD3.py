@@ -20,6 +20,7 @@ The script automatically:
 - Handles all calculation types interactively
 """
 
+import glob
 import os
 import shutil
 import argparse
@@ -125,6 +126,14 @@ def _resolve_map_coord_type(value: Any) -> Optional[str]:
     return None
 
 
+def _strip_run_suffix(stem: str) -> str:
+    """The name opt2d3 gives a run's files: its stem without _opt/_sp."""
+    for suffix in ['_opt', '_sp', '_OPT', '_SP', '.out', '.log']:
+        if stem.endswith(suffix):
+            return stem[:-len(suffix)]
+    return stem
+
+
 class D3Generator:
     """Handle D3 file generation from CRYSTAL output files."""
     
@@ -134,17 +143,17 @@ class D3Generator:
         self.base_name = self.input_file.stem
         
         # Remove common suffixes to get clean base name
-        for suffix in ['_opt', '_sp', '_OPT', '_SP', '.out', '.log']:
-            if self.base_name.endswith(suffix):
-                self.base_name = self.base_name[:-len(suffix)]
-                break
+        self.base_name = _strip_run_suffix(self.base_name)
         # anatase_sp.out and anatase_opt.out side by side would both write
-        # anatase_band.d3 (and anatase_band.f9), the second over the first:
-        # then each keeps its whole name.
+        # anatase_band.d3 (and anatase_band.f9), the second over the first;
+        # so would anatase.out and anatase_sp.out, and anatase_opt_sp.out
+        # would take the anatase_opt_* name anatase_opt.out keeps when it
+        # collides. With another output that has (or makes) the same name
+        # beside it, each keeps its whole name.
         if self.base_name != self.input_file.stem:
-            for other in self.input_file.parent.glob(f"{self.base_name}_*"):
+            for other in self.input_file.parent.glob(f"{glob.escape(self.base_name)}*"):
                 if (other.suffix in ('.out', '.log') and other.resolve() != self.input_file
-                        and other.stem[len(self.base_name):] in ('_opt', '_sp', '_OPT', '_SP')):
+                        and self.base_name in (other.stem, _strip_run_suffix(other.stem))):
                     ui.info(f"Note: {other.name} is beside {self.input_file.name}; naming the "
                             f"files {self.input_file.stem}_* so neither overwrites the other")
                     self.base_name = self.input_file.stem
@@ -319,7 +328,11 @@ class D3Generator:
         """
         self._pending_wavefunction = None
         # Look for wavefunction files - try various naming patterns
+        # The output's own wavefunction first: X_opt_sp.out is named X_opt_*,
+        # and X_opt.f9 beside it is the optimization's, not this run's.
+        input_stem = self.input_file.stem
         wf_files = [
+            f'{input_stem}.f9', f'{input_stem}.f98',
             'fort.9', 'fort.98', 
             f'{self.base_name}.f9', f'{self.base_name}.f98',
         ]
@@ -337,11 +350,6 @@ class D3Generator:
                     f'{self.base_name}_{suffix}{i}.f9', 
                     f'{self.base_name}_{suffix}{i}.f98'
                 ])
-        
-        # Also check if the input file stem has a different name
-        input_stem = self.input_file.stem
-        if input_stem != self.base_name:
-            wf_files.extend([f'{input_stem}.f9', f'{input_stem}.f98'])
         
         source_wf = None
         for wf_file in wf_files:
@@ -1370,6 +1378,11 @@ class D3Generator:
         ui.rule(f"Generating {self.calc_type} D3 file")
         ui.info(f"Input file: {self.input_file}")
         ui.info(f"Base name: {self.base_name}")
+
+        why = molecule_refusal(self.calc_type, self.structure_info.get('dimensionality', 3))
+        if why:
+            ui.err(why)
+            return None
         
         # Check if wavefunction exists and copy it
         # ALL calculation types need the wavefunction file
@@ -1657,6 +1670,24 @@ class D3Generator:
         
         # Return the configuration for potential saving
         return config
+
+
+# Properties CRYSTAL computes for periodic systems only. CRYSTAL23 manual: BAND "does not run
+# for molecules!! (0D)" (p.309), DOSS "do not run for molecules!" (p.320); BOLTZTRA's transport
+# coefficients come from the band structure. ECH3/POT3 (CHARGE, POTENTIAL) work for molecules.
+PERIODIC_ONLY = {
+    "BAND": "a molecule has no band structure (CRYSTAL23 manual, BAND: \"does not run for molecules\")",
+    "DOSS": "CRYSTAL computes no density of states for a molecule (CRYSTAL23 manual, DOSS: \"do not run for molecules\")",
+    "TRANSPORT": "BOLTZTRA's transport coefficients come from the band structure, which a molecule does not have",
+}
+
+
+def molecule_refusal(calc_type: str, dimensionality: int) -> Optional[str]:
+    """Why ``calc_type`` cannot be set up from a molecule (dimensionality 0), or None."""
+    if dimensionality != 0 or calc_type not in PERIODIC_ONLY:
+        return None
+    return (f"{calc_type} requires a periodic structure, and this output is a molecule (MOLECULE): "
+            f"{PERIODIC_ONLY[calc_type]}. No D3 file was written; CHARGE and POTENTIAL work for molecules.")
 
 
 def main():

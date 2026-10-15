@@ -31,6 +31,9 @@ def app(tmp_path_factory):
     (root / "results").mkdir()
     write_band(root / "results")
     write_doss(root / "results", material="mgo")
+    # a crystal's IRSPEC.DAT (CRYSTAL23 manual p.453): cm-1, nm, 4 absorbances, 3 reflectances
+    (root / "results" / "agcl_IRSPEC.DAT").write_text("".join(
+        "  ".join(f"{v:.5E}" for v in [10.0 * k, 1e6 / k] + [c + k / 100 for c in range(3, 10)]) + "\n" for k in range(1, 60)))
     (root / "spin").mkdir()
     write_band(root / "spin", stem="fe_band", spin=True)
     a = U.start_app(tmp, root=root)
@@ -160,7 +163,7 @@ def test_export_png_svg_and_data(fresh):
     for act in ("png", "svg", "csv"):
         # the export buttons moved into the plotkit toolbar's Export menu (PLAN_analysis C3)
         drv.find_element("css selector", "#plot-host .pk-export").click()
-        drv.find_element("css selector", f"#plot-host .pk-menu [data-v={act}]").click()
+        drv.find_element("css selector", f".pk-menu [data-v={act}]").click()
     end = time.time() + 20
     while time.time() < end and len([f for f in downloads.iterdir() if not f.name.endswith(".part")]) < 3:
         time.sleep(0.2)
@@ -189,3 +192,30 @@ def test_plot_refits_a_pane_resized_while_hidden(fresh):
         U.no_errors(drv)
     finally:
         H.set_viewport(drv, 1280, 800)
+
+
+def test_crystal_irspec_columns_and_export(fresh):
+    """IRSPEC.DAT's columns are named as the manual names them (no "transmittance"):
+    the absorbances and reflectances are components, the wavelength goes to the export."""
+    drv, base, root, xdg, proc, downloads = fresh
+    open_plot(drv, "results/agcl_IRSPEC.DAT")
+    opts = drv.execute_script("return [...document.querySelectorAll('#po-comp option')].map((o) => o.value)")
+    assert opts == ["all", "absorbance", "absorbance_classical", "absorbance_rayleigh_1", "absorbance_rayleigh_2",
+                    "reflectance_1", "reflectance_2", "reflectance_3"], opts
+    assert drv.execute_script("return document.querySelector('#po-comp').value") == "absorbance"
+    fig = drv.execute_script("return window.__mace.plotView.figure()")
+    assert len(fig["traces"]) == 1 and fig["layout"]["yaxis"]["title"]["text"] == "Absorbance"
+    drv.execute_script("const c = document.querySelector('#po-comp'); c.value = 'reflectance_2'; c.dispatchEvent(new Event('change', {bubbles: true}))")
+    H.wait(drv, "return window.__mace.plotView.figure().layout.yaxis.title.text === 'Reflectance'", 20)
+    for f in downloads.iterdir():
+        f.unlink()
+    drv.find_element("css selector", "#plot-host .pk-export").click()
+    drv.find_element("css selector", ".pk-menu [data-v=csv]").click()
+    end = time.time() + 20
+    while time.time() < end and not [f for f in downloads.iterdir() if f.name.endswith("_data.csv")]:
+        time.sleep(0.2)
+    csv = next(f for f in downloads.iterdir() if f.name.endswith("_data.csv")).read_text().splitlines()
+    assert csv[0].split(",") == ["wavenumber_cm-1", "wavelength_nm", "absorbance", "absorbance_classical", "absorbance_rayleigh_1",
+                                 "absorbance_rayleigh_2", "reflectance_1", "reflectance_2", "reflectance_3"], csv[0]
+    assert [float(v) for v in csv[1].split(",")[:4]] == [10.0, 1e6, 3.01, 4.01]
+    U.no_errors(drv)

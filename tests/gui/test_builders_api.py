@@ -147,8 +147,42 @@ def test_supercell_errors(served):
     _, _, o2 = U.post(base, "api/edit/op", {"session": o["session"], "base_rev": o["rev"], "op": "supercell", "args": {"n": [2, 2, 1]}})
     st, _, r = build(base, "supercell", {"n": [30, 30, 30]}, source={"session": o["session"], "rev": o2["rev"]})
     assert st == 400 and "builds stop at 250,000" in r["error"], r
+    # a slab repeats along a and b only
     st, _, r = build(base, "supercell", {"n": [2, 2, 2]}, source={"path": "outputs/graphene_slab_sp.out"})
-    assert st == 400 and "3D cells" in r["error"]
+    assert st == 400 and "n3 must be 1" in r["error"], r
+    st, _, r = build(base, "supercell", {"matrix": [[1, 0, 1], [0, 1, 0], [0, 0, 1]]}, source={"path": "outputs/graphene_slab_sp.out"})
+    assert st == 400 and "periodic along a and b only" in r["error"], r
+
+
+def test_builders_supercell_of_a_slab_keeps_its_layers():
+    """2x2x1 of a slab whose atoms sit outside [0, 1) along its non-periodic c:
+    nothing is wrapped along c, the heights stay, the slab stays a slab."""
+    from mace.gui import builders as B
+    cell = [[2.46, 0, 0], [-1.23, 2.130422, 0], [0, 0, 14.0]]
+    frac = [[0, 0, 0.9], [1 / 3, 2 / 3, 0.9], [0, 0, 1.15], [2 / 3, 1 / 3, 1.15]]
+    r = B.supercell(cell=cell, frac=frac, numbers=[6] * 4, pbc=(True, True, False), matrix=[[2, 0, 0], [0, 2, 0], [0, 0, 1]])
+    assert len(r["numbers"]) == 16 and r["pbc"] == [True, True, False]
+    z = sorted(set(np.round(np.asarray(r["frac"])[:, 2] * 14.0, 6)))
+    assert z == [12.6, 16.1], z
+    for M in ([[2, 0, 0], [0, 2, 0], [0, 0, 2]], [[1, 0, 1], [0, 1, 0], [0, 0, 1]], [[1, 0, 0], [0, 1, 0], [1, 0, 1]]):
+        with pytest.raises(ValueError):
+            B.supercell(cell=cell, frac=frac, numbers=[6] * 4, pbc=(True, True, False), matrix=M)
+
+
+def test_supercell_of_the_graphene_slab_output(served):
+    base = served[0]
+    s = U.req(base, "api/structure?path=outputs/graphene_slab_sp.out")[2]
+    st, _, r = build(base, "supercell", {"n": [2, 2, 1]}, source={"path": "outputs/graphene_slab_sp.out"}, open_as={"name": "gr_2x2"})
+    r = result_of(base, st, r)
+    got = r["structure"]                 # held, view-only (editing needs a 3D cell)
+    import base64
+    zn = np.frombuffer(base64.b64decode(got["zn"]), np.uint8)
+    frac = np.frombuffer(base64.b64decode(got["frac"]), "<f8").reshape(-1, 3)
+    assert len(zn) == 4 * len(s["numbers"]), r
+    assert got["pbc"] == [True, True, False] and got["dimensionality"] == "SLAB"
+    z_new = sorted(set(np.round((frac @ np.asarray(got["cell"], float).reshape(3, 3))[:, 2], 4)))
+    assert z_new == sorted(set(np.round(np.asarray(s["cart"])[:, 2], 4)))
+    U.post(base, "api/held/release", {"ids": [r["held"]]})
 
 
 def test_supercell_over_5000_view_only_reason(served):

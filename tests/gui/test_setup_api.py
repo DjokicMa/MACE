@@ -180,7 +180,7 @@ def test_stage_matches_in_place(tmp_path, mode, calc):
     assert (r["deck_name"], r["deck"]) == _in_place(folder, tmp_path, calc, mode, r["json_text"])
     if mode == "opt2d3":
         assert r["deck_name"].startswith("Si_sp_")          # the sibling Si_opt.out renames the files
-        assert r["f9"]["name"] == "fort.9"                   # the CLI's first candidate
+        assert r["f9"]["name"] == "Si_sp.f9"                 # the output's own, first for the CLI since bd397f5f
     # each sibling removed in turn: the staged deck still equals the in-place one
     for gone in ("Si_opt.out", "Si_extra.d12", "fort.9"):
         f2 = tmp_path / f"m_{gone}"
@@ -195,9 +195,10 @@ CANDIDATES = ["fort.9", "fort.98", "Si.f9", "Si.f98", "Si_sp.f9", "Si_opt.f98", 
 
 def test_wavefunction_candidates_are_the_clis(tmp_path):
     names = S.wavefunction_candidates("Si_sp.out")
-    assert names[:6] == ["fort.9", "fort.98", "Si.f9", "Si.f98", "Si_sp.f9", "Si_sp.f98"]
-    # the CLI's own list, repeats and all: <stem>.f9 comes again at the end when the stem is not the base
-    assert len(names) == 4 + 4 * 2 * 99 + 2 and names[-2:] == ["Si_sp.f9", "Si_sp.f98"]
+    # since bd397f5f the CLI looks for the output's own <stem>.f9 first (it no
+    # longer comes at the end)
+    assert names[:8] == ["Si_sp.f9", "Si_sp.f98", "fort.9", "fort.98", "Si.f9", "Si.f98", "Si_sp.f9", "Si_sp.f98"]
+    assert len(names) == 6 + 4 * 2 * 99 and names[-2:] == ["Si_soc99.f9", "Si_soc99.f98"]
     for name in CANDIDATES:
         d = tmp_path / name
         shutil.copytree(H.EXAMPLES / "outputs", d)
@@ -209,11 +210,30 @@ def test_wavefunction_candidates_are_the_clis(tmp_path):
     # the order: with two, the CLI takes the one earlier in the list
     d = tmp_path / "two"
     shutil.copytree(H.EXAMPLES / "outputs", d)
-    (d / "Si_sp.f9").write_text("x")
+    (d / "Si_opt.f9").write_text("x")
     (d / "Si.f98").write_text("x")
+    (d / "fort.9").write_text("x")
+    (d / "Si_sp.f9").write_text("x")       # the output's own: first since bd397f5f
+    r = R.run_printed(["mace", "opt2d3", "-i", "Si_sp.out", "-t", "DOSS", "--config-file", str(_doss_config(tmp_path))], d)
+    assert "Copying wavefunction: Si_sp.f9 ->" in r.stdout + r.stderr
+    assert S.find_wavefunction(d / "Si_sp.out")["name"] == "Si_sp.f9"
+    (d / "Si_sp.f9").unlink()
+    (d / "fort.9").unlink()
+    for f in d.glob("Si_doss*"):
+        f.unlink()
     r = R.run_printed(["mace", "opt2d3", "-i", "Si_sp.out", "-t", "DOSS", "--config-file", str(_doss_config(tmp_path))], d)
     assert "Copying wavefunction: Si.f98 ->" in r.stdout + r.stderr
     assert S.find_wavefunction(d / "Si_sp.out")["name"] == "Si.f98"
+    # beside an output of the same name (Si.out) the CLI names Si_sp.out's
+    # files Si_sp_* and looks no further for Si.f9: that one is Si.out's
+    d = tmp_path / "sibling"
+    shutil.copytree(H.EXAMPLES / "outputs", d)
+    shutil.copy(d / "Si_sp.out", d / "Si.out")
+    (d / "Si.f9").write_text("x")
+    (d / "Si_sp_sp.f9").write_text("x")
+    r = R.run_printed(["mace", "opt2d3", "-i", "Si_sp.out", "-t", "DOSS", "--config-file", str(_doss_config(tmp_path))], d)
+    assert "Copying wavefunction: Si_sp_sp.f9 ->" in r.stdout + r.stderr
+    assert S.find_wavefunction(d / "Si_sp.out")["name"] == "Si_sp_sp.f9"
 
 
 def _doss_config(tmp):

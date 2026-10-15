@@ -481,7 +481,7 @@ def raise_tolinteg(d12_text: str) -> Tuple[str, Optional[str], Optional[str]]:
 _TEMPLATE = Path(__file__).resolve().parent.parent / 'submission' / 'submitcrystal23.sh'
 _STAGING_START = '# OPTGEOM RESTART'
 _GUESSP_START = '# GUESSP restart'
-_INPUT_COPY_RE = re.compile(r'^cp \$DIR/\$JOB\.d12\s+\$scratch/\$JOB/INPUT[ \t]*$', re.M)
+_INPUT_COPY_RE = re.compile(r'^cp "?\$DIR/\$JOB\.d12"?\s+"?\$scratch/\$JOB/INPUT"?[ \t]*$', re.M)
 _OLD_GUESSP_IF = 'if grep -qiE "^[[:space:]]*GUESSP" "$scratch/$JOB/INPUT" 2>/dev/null; then'
 _NEW_GUESSP_IF = 'if [ -z "$RESTART_KEEPS_FORT20" ] && ' + _OLD_GUESSP_IF[3:]
 

@@ -57,6 +57,10 @@ def world(tmp_path):
     env.update(PATH=f"{fakebin}:{env.get('PATH', '/usr/bin:/bin')}", FAKE_SSH_HOME=str(node_home),
                FAKE_SSH_LOG=str(log), FAKE_SSH_BIN=str(fakebin), FAKE_SSH_ENV=json.dumps(node_env),
                XDG_CONFIG_HOME=str(tmp_path / "localcfg"), PYTHONDONTWRITEBYTECODE="1")
+    # this computer's own home, apart from the node's: paths under the real home (python, the repo, a
+    # pytest tmp there) would otherwise be sent to the node as ~/... (localize_home_paths)
+    env["HOME"] = str(tmp_path / "localhome")
+    (tmp_path / "localhome").mkdir()
     procs = []
     yield {"tmp": tmp_path, "data": data, "env": env, "log": log, "node_tmp": node_tmp, "procs": procs,
            "mace": f"{sys.executable} {REPO / 'mace_cli'}"}

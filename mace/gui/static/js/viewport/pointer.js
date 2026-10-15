@@ -1,6 +1,7 @@
 /* The structure viewer's pointer (spec §2.1): the same in every tool, as
  * in OVITO, Avogadro and Blender —
- *   wheel: zoom toward the cursor; middle-drag: pan; right-drag: orbit;
+ *   wheel: zoom toward the cursor; middle-drag: pan; right-drag: orbit
+ *   (about the view's center, marked while the drag lasts);
  *   Alt+left-drag: orbit from any tool (laptop trackpads);
  *   right-click without dragging (< 4 px): the context menu —
  * and the left button per tool: Select (click picks, drag draws a box,
@@ -21,20 +22,22 @@ export function attachPointer(el, deps) {
   let lastPos = null;
   const tools = deps.tools || {};
 
-  const local = (e) => { const r = el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  // the pointer in the viewer's own px (what the picker and the camera use): the UI scale zooms the shell
+  const local = (e) => window.maceZoom.point(el, e.clientX, e.clientY);
   const mod = (e) => (deps.isMac ? e.metaKey : e.ctrlKey);
   const modeOf = (e) => (e.shiftKey && mod(e) ? "subtract" : e.shiftKey ? "add" : mod(e) ? "toggle" : "replace");
 
   /* ---------------------------------------------------------------- overlay */
   function sizeOverlay() {
-    const r = el.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+    // the viewer's own px, drawn at the screen's resolution (the UI scale zooms it)
+    const w = el.offsetWidth, h = el.offsetHeight, k = (devicePixelRatio || 1) * window.maceZoom.of(el);
     overlay.style.left = el.offsetLeft + "px"; overlay.style.top = el.offsetTop + "px";
-    overlay.style.width = r.width + "px"; overlay.style.height = r.height + "px";
-    if (overlay.width !== Math.round(r.width * dpr) || overlay.height !== Math.round(r.height * dpr)) {
-      overlay.width = Math.round(r.width * dpr); overlay.height = Math.round(r.height * dpr);
+    overlay.style.width = w + "px"; overlay.style.height = h + "px";
+    if (overlay.width !== Math.round(w * k) || overlay.height !== Math.round(h * k)) {
+      overlay.width = Math.round(w * k); overlay.height = Math.round(h * k);
     }
     const g = overlay.getContext("2d");
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.setTransform(k, 0, 0, k, 0, 0);
     return g;
   }
   function clearOverlay() {
@@ -121,7 +124,11 @@ export function attachPointer(el, deps) {
     const dx = x - drag.x, dy = y - drag.y;
     drag.x = x; drag.y = y;
     const k = drag.kind;
-    if (k === "orbit" || k === "right") deps.cam().orbit(dx, dy, e.shiftKey && k === "orbit" && deps.tool() === "orbit" && !e.altKey);
+    if (k === "orbit" || k === "right") {
+      // the rotation center shows while the drag turns the view (gone on release)
+      if (!drag.pivot && deps.pivot) { drag.pivot = true; deps.pivot(true); }
+      deps.cam().orbit(dx, dy, e.shiftKey && k === "orbit" && deps.tool() === "orbit" && !e.altKey);
+    }
     else if (k === "pan") deps.cam().pan(dx, dy);
     else if (k === "zoom") deps.cam().zoomAt(Math.exp(-dy * 0.01), drag.x0, drag.y0);
     else if (k === "select") drawRegion([[drag.x0, drag.y0], [x, y]], true);
@@ -137,6 +144,7 @@ export function attachPointer(el, deps) {
     drag = null;
     try { el.releasePointerCapture(d.id); } catch (err) { /* not captured */ }
     if (["orbit", "pan", "zoom", "right"].includes(d.kind)) deps.interacting(false);
+    if (d.pivot) deps.pivot(false);
     if (canceled) { clearOverlay(); return; }
     const [x, y] = local(e);
     if (d.kind === "right") {
@@ -206,9 +214,9 @@ export function attachPointer(el, deps) {
   return {
     overlay, clearOverlay,
     get dragging() { return !!drag; },
-    cancel() { if (drag) { drag = null; clearOverlay(); deps.interacting(false); } },
+    cancel() { if (drag) { if (drag.pivot && deps.pivot) deps.pivot(false); drag = null; clearOverlay(); deps.interacting(false); } },
     /** Where the pointer last was over the viewer (CSS px), or its center. */
-    lastPos() { if (lastPos) return lastPos; const r = el.getBoundingClientRect(); return [r.width / 2, r.height / 2]; },
+    lastPos() { return lastPos || [el.offsetWidth / 2, el.offsetHeight / 2]; },
     regionSelect,
   };
 }

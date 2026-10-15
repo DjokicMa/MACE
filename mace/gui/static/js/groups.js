@@ -51,7 +51,7 @@ const MOVABLE = (d) => !!(d && d.path);
 /** host: the shell's group API (window.__macePane of this page) plus
  *  toast, profile, dirHash(), afterChange(). */
 export function createGroups(host) {
-  const g = { open: false, ratio: 0.5, linked: false, focused: "main", frame: null, ready: null, restoring: false };
+  const g = { open: false, ratio: 0.5, linked: false, focused: "main", frame: null, ready: null, restoring: false, focusTick: 0 };
   const root = () => document.getElementById("editor-groups");
   const side = () => document.getElementById("group-side");
   const splitEl = () => document.getElementById("split-groups");
@@ -222,6 +222,7 @@ export function createGroups(host) {
     if (!g.open) which = "main";
     const changed = g.focused !== which;
     g.focused = which;
+    g.focusTick++;
     css();
     if (which === "side" && g.frame) {
       try { g.frame.contentWindow.focus(); const o = other(); if (o) o.focusView(); } catch (e) { /* loading */ }
@@ -275,8 +276,10 @@ export function createGroups(host) {
   async function openToSide(path, opts = {}) {
     if (!path) return null;
     const api = await openSplit({ focus: "side" });
+    const tick = g.focusTick;
     const r = await api.reopen({ path, kind: "", as: opts.as || "" });
-    focusGroup("side");
+    // a slow document: the focus moved meanwhile (a click, Focus Other Group) stays where it went
+    if (g.focusTick === tick) focusGroup("side");
     persist();
     return r;
   }

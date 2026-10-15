@@ -26,6 +26,7 @@ Standard library only (the attach proxy runs before the server is imported).
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import socket
@@ -320,7 +321,9 @@ def _api(port: int, prefix: str, token: str, route: str, body: Optional[Dict[str
     try:
         with opener.open(req, timeout=timeout) as resp:
             return json.loads(resp.read() or b"{}")
-    except (OSError, ValueError, urllib.error.URLError):
+    except (OSError, ValueError, urllib.error.URLError, http.client.HTTPException):
+        # HTTPException: a reply the server cut off as it stopped (managed/stop
+        # shuts it down from another thread; IncompleteRead is no OSError)
         return None
 
 

@@ -67,7 +67,8 @@ def test_quick_start_first_wave_is_an_array(tmp_path):
     for name in ("m0", "m1", "m2"):
         (a,) = tmp_path.glob(f"workflow_outputs/*/step_001_OPT/{name}/{name}.sh")
         (b,) = (tmp_path / "plain").glob(f"workflow_outputs/*/step_001_OPT/{name}/{name}.sh")
-        norm = lambda t, root: re.sub(r"workflow_\d{8}_\d{6}", "WF", t.replace(str(root), "<R>"))
+        norm = lambda t, root: re.sub(r"(cksum of the lines above: )\d+ \d+", r"\1N", re.sub(
+            r"workflow_\d{8}_\d{6}(?:_[0-9a-f]{4})?", "WF", t.replace(str(root), "<R>")))
         assert norm(a.read_text(), tmp_path) == norm(b.read_text(), tmp_path / "plain")
 
 

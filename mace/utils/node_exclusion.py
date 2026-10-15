@@ -58,7 +58,7 @@ def msu_menus(env=None) -> bool:
 def site_menu(menu: Sequence[str], env=None) -> Tuple[Optional[str], ...]:
     """``menu`` as offered on this cluster. Off MSU HPCC: GENERIC_MENU. On
     it, the Mendoza choice is offered only to a member of the group's
-    account (or where that cannot be checked); a hidden choice keeps its
+    account (or where that cannot be checked: site.account_usable); a hidden choice keeps its
     number (None), so the other answers do not move."""
     if not msu_menus(env):
         return GENERIC_MENU

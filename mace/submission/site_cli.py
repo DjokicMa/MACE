@@ -173,6 +173,9 @@ def render(d: dict) -> List[str]:
         dflt = chk.get("default")
         lines.append("  Account check: no #SBATCH -A line; SLURM charges your default account"
                      + (f" ({dflt})" if dflt else "") + f" (yours: {', '.join(chk.get('accounts') or [])})")
+    elif chk.get("status") == "unreadable":
+        lines.append(f"  Account check: SLURM accounting cannot be read here: {site.NO_ACCOUNT_TEXT} "
+                     f"([slurm] account in {cfg['path'] or '~/.config/mace/site.toml'})")
     elif chk.get("status") == "not_member":
         yours = ", ".join(chk.get("accounts") or []) or "none found"
         lines.append(f"  Account {acct['value']} is not one of your SLURM accounts (yours: {yours}). "

@@ -461,16 +461,16 @@ def test_a_16_character_url_safe_token_works(tmp_path):
 
 
 def test_the_tunnel_hint_names_no_site_without_a_gateway(tmp_path):
-    """Without MACE_GUI_GATEWAY or --gateway the hint says <gateway> and how to fill it in."""
+    """Without MACE_GUI_GATEWAY or --gateway the hint says LOGIN_HOST (paste-safe) and how to fill it in."""
     env = _env(tmp_path, MACE_GUI_PRINT_TOKEN="1", SSH_CONNECTION="10.0.0.1 5555 10.0.0.2 22")
     env.pop("MACE_GUI_GATEWAY", None)
     proc, out, err = _start_capture(tmp_path, "--port", "0", env=env)
-    assert re.search(r"ssh -N -J \S+@<gateway> -L ", out), out
+    assert re.search(r"ssh -N -J \S+@LOGIN_HOST -L ", out), out
     assert "MACE_GUI_GATEWAY" in out and "msu.edu" not in out
     env["MACE_GUI_GATEWAY"] = "login.example.org"
     proc, out, err = _start_capture(tmp_path, "--port", "0", env=env)
     assert re.search(r"ssh -N -J \S+@login\.example\.org -L ", out), out
-    assert "<gateway>" not in out
+    assert "LOGIN_HOST" not in out and "<gateway>" not in out
 
 
 def test_fixed_token_keeps_the_same_session_path(tmp_path):

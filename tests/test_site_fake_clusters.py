@@ -104,8 +104,8 @@ def test_openmpi_srun_tcl_group_and_user_files(tmp_path):
         assert subprocess.run(["bash", "-n"], input=s, text=True).returncode == 0
     assert "#SBATCH --ntasks=64" in scf and "#SBATCH --mem-per-cpu=3900M" in scf
     assert "#SBATCH --ntasks=32" in prop and "#SBATCH --mem=120G" in prop and "--mem-per-cpu" not in prop
-    assert "  srun --mpi=pmix $EBROOTCRYSTAL/bin/Pcrystal 2>&1 >& $DIR/${JOB}.out" in scf
-    assert "  srun --mpi=pmix $EBROOTCRYSTAL/bin/Pproperties 2>&1 >& $DIR/${JOB}.out" in prop
+    assert '  srun --mpi=pmix "$EBROOTCRYSTAL/bin/Pcrystal" 2>&1 >& "$DIR/${JOB}.out"' in scf
+    assert '  srun --mpi=pmix "$EBROOTCRYSTAL/bin/Pproperties" 2>&1 >& "$DIR/${JOB}.out"' in prop
     # mace site shows where each value comes from, with the group file's owner
     j = json.loads(_mace(tmp_path, env, "site", "--json").stdout)
     assert j["account"]["source"] == "site.toml" and j["partition"]["source"] == "group"
@@ -128,7 +128,7 @@ def test_no_module_system_crystal_from_a_directory(tmp_path):
         s = c["script_text"]
         assert "module load" not in s and "# MACE: module purge skipped" in s
         assert 'export EBROOTCRYSTAL="/opt/crystal23"' in s
-        assert re.search(r"mpirun -n \$SLURM_NTASKS /opt/crystal23/bin/P(crystal|properties) 2>&1", s)
+        assert re.search(r'mpirun -n "\$SLURM_NTASKS" "/opt/crystal23/bin/P(crystal|properties)" 2>&1', s)
         assert not SCRIPT_PATTERN.search(s)
 
 

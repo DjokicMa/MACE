@@ -1,1 +1,0 @@
-../submission/submit_prop.sh

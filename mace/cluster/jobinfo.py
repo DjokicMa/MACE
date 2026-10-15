@@ -7,24 +7,23 @@ of your jobs". ``scontrol show job`` runs when a Job document opens and on
 its Refresh (and once per ``mace cluster job``); accounting comes from the
 shared batched ``sacct``; ``sstat`` only on the explicit "Show Live Use".
 
-Efficiency (CPU = TotalCPU / (Elapsed x NCPUS), memory = MaxRSS / request)
-is shown only when plausible (TotalCPU > 0 and <= 1.05 x cores x elapsed;
-MaxRSS > 0): MACE's job script starts the MPI ranks through mpirun's ssh
-bootstrap, outside SLURM's steps, so SLURM often measures nothing for them
-("Not measured by SLURM for this job").
+Efficiency comes from job_efficiency (CPU time over all steps / (elapsed x
+cores), peak MaxRSS / requested memory, in plain numbers); for a running job
+sacct has neither yet, so "Show Live Use" adds sstat's numbers. A figure
+SLURM really did not measure says so and why.
 """
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from mace.cluster import job_efficiency as job_eff
 from mace.cluster import progress as progress_mod
 from mace.cluster import reader, recoveryview
 from mace.recovery.slurm_limits import format_walltime, parse_walltime
 
-NOT_MEASURED = "Not measured by SLURM for this job"
+NOT_MEASURED = job_eff.NOT_MEASURED
 # sacct states of a job that has not ended yet
 _QUEUED = {"PENDING", "RUNNING", "REQUEUED", "RESIZING", "SUSPENDED", "CONFIGURING", "COMPLETING"}
 
@@ -33,37 +32,21 @@ class NotYours(LookupError):
     pass
 
 
-def _mem_mb(text: Optional[str]) -> Optional[float]:
-    m = re.match(r"^([\d.]+)([KMGT]?)", (text or "").strip())
-    if not m:
-        return None
-    return float(m.group(1)) * {"": 1 / 1024 / 1024, "K": 1 / 1024, "M": 1, "G": 1024, "T": 1024 ** 2}[m.group(2)]
+def efficiency(acct: Dict[str, Dict[str, Any]], job_id: str, live: Optional[List[Dict[str, Any]]] = None,
+               elapsed_s: Optional[float] = None, ncpus: Any = None, nnodes: Any = None,
+               state: Optional[str] = None) -> Dict[str, Any]:
+    """CPU and memory efficiency in plain numbers (see job_efficiency)."""
+    return job_eff.summarize(acct, job_id, live=live, elapsed_s=elapsed_s, ncpus=ncpus, nnodes=nnodes, state=state)
 
 
-def efficiency(acct: Dict[str, Dict[str, Any]], job_id: str) -> Dict[str, Any]:
-    """CPU and memory efficiency from sacct rows (allocation + steps), each
-    only when plausible."""
-    main = acct.get(job_id) or {}
-    steps = [v for k, v in acct.items() if k.startswith(job_id + ".")]
-    elapsed = parse_walltime(main.get("Elapsed"))
-    ncpus = int(main.get("NCPUS") or 0) if str(main.get("NCPUS") or "").isdigit() else 0
-    tcpu = [parse_walltime((r.get("TotalCPU") or "").split(".")[0]) for r in [main] + steps]
-    tcpu = max([t for t in tcpu if t] or [0])
-    rss = max([_mem_mb(r.get("MaxRSS")) or 0 for r in [main] + steps] or [0])
-    req = main.get("ReqMem") or ""
-    req_mb = _mem_mb(req.rstrip("nc"))
-    if req.endswith("c") and req_mb and ncpus:
-        req_mb *= ncpus
-    out = {"cpu": None, "memory": None, "cpu_note": NOT_MEASURED, "memory_note": NOT_MEASURED,
-           "max_rss_mb": rss or None, "req_mem_mb": req_mb, "total_cpu_s": tcpu or None,
-           "elapsed_s": elapsed, "ncpus": ncpus or None}
-    if elapsed and ncpus and tcpu and 0 < tcpu <= 1.05 * ncpus * elapsed:
-        out["cpu"] = round(100.0 * tcpu / (ncpus * elapsed), 1)
-        out["cpu_note"] = None
-    if rss and req_mb:
-        out["memory"] = round(100.0 * rss / req_mb, 1)
-        out["memory_note"] = None
-    return out
+def live_efficiency(job_id: str, rows: Optional[List[Dict[str, Any]]], tag: Optional[str] = None) -> Dict[str, Any]:
+    """The efficiency with ``sstat``'s live rows, from the cached queue row
+    and accounting (no query of its own)."""
+    row = own_row(job_id, tag=tag) or {}
+    acct = reader.sacct_for([job_id], tag=tag)
+    elapsed = parse_walltime(row.get("elapsed")) if row.get("elapsed") else None
+    return efficiency(acct, job_id, live=rows or [], elapsed_s=elapsed, ncpus=row.get("cpus"),
+                      nnodes=row.get("nodes"), state=row.get("state") or ("RUNNING" if rows else None))
 
 
 _NOT_STARTED = ("PENDING", "CONFIGURING")
@@ -281,7 +264,9 @@ def job(job_id: str, refresh: bool = False, live: bool = False, use_engine: bool
         "account": detail.get("Account") or (row or {}).get("account"), "qos": detail.get("QOS"),
         "tres": detail.get("ReqTRES") or detail.get("TRES"), "dependency": detail.get("Dependency"),
         "array_job": detail.get("ArrayJobId"), "array_task": detail.get("ArrayTaskId"),
-        "detail_cache": d.as_dict(), "accounting": acct.get(job_id), "efficiency": efficiency(acct, job_id),
+        "detail_cache": d.as_dict(), "accounting": acct.get(job_id), "efficiency": efficiency(
+            acct, job_id, elapsed_s=elapsed_s, ncpus=detail.get("NumCPUs") or (row or {}).get("cpus"),
+            nnodes=detail.get("NumNodes") or (row or {}).get("nodes"), state=state),
         "scontrol_command": f"scontrol show job {job_id}",
     }
     if state_note:
@@ -302,7 +287,9 @@ def job(job_id: str, refresh: bool = False, live: bool = False, use_engine: bool
     res["access"] = access
     if live:
         s = reader.sstat(job_id, tag=tag)
-        res["live"] = {"rows": s.value, "cache": s.as_dict()}
+        res["live"] = {"rows": s.value, "cache": s.as_dict(),
+                       "efficiency": efficiency(acct, job_id, live=s.value or [], elapsed_s=elapsed_s,
+                                                ncpus=res["ncpus"], nnodes=res["nnodes"], state=state)}
     out = files.get("out")
     readable = out and access.get("out") in ("in_root", "other_root", "readable") and os.path.isfile(out)
     scratch = files.get("scratch")

@@ -251,12 +251,16 @@ def test_welcome_says_how_many_more_structures(fresh):
 
 
 def test_opt_view_keeps_a_usable_3d_view_at_1280x800(fresh):
-    """The before/after view is never squeezed below 240 px by the panels around it."""
+    """The before/after view keeps at least 150 px at 100 % UI scale with the bottom panel
+    open, while the tab (toolbar and legend included) fits without scrolling
+    (test_compare_e2e.py checks 110 %, where the tab may scroll a little)."""
     drv = fresh[0]
     open_doc(drv, "outputs/Ag2Br3_opt_unfinished.out")
     H.wait(drv, "return document.querySelector('#opt-viewers').getBoundingClientRect().height > 0", 10)
-    h = drv.execute_script("return document.querySelector('#opt-viewers').getBoundingClientRect().height")
-    assert h >= 239, h
+    h = drv.execute_script("return document.querySelector('#opt-viewers').offsetHeight")
+    assert h >= 150, h
+    tab = drv.execute_script("const t = document.getElementById('tab-opt'); return t.scrollHeight - t.clientHeight")
+    assert tab <= 1, tab
     assert not H.errors(drv), H.errors(drv)
 
 
@@ -1436,6 +1440,41 @@ def test_reserved_binding_refused(fresh):
     drv.execute_script("document.querySelector('#settings').close()")
 
 
+def test_keymap_row_reset_asks_before_taking_a_key_back(fresh):
+    """A row's Reset gives the command its default keys back; when another command
+    holds one of them now, it asks (Replace / Cancel) instead of binding it twice."""
+    drv = fresh[0]
+    open_keymap(drv, "Select All")
+    record(drv, "select.all")
+    rec_key(drv, code="KeyD", key="d", ctrlKey=True)
+    drv.execute_script("[...document.querySelectorAll('.km-msg button')].find((b) => b.textContent === 'Replace').click()")
+    assert drv.execute_script("return window.__mace.keymap.keysOf('edit.duplicate')") == []
+    open_keymap(drv, "Duplicate")
+    reset = "document.querySelector(`.km-row[data-id='edit.duplicate'] [data-reset-key]`).click()"
+    drv.execute_script(reset)
+    H.wait(drv, "return !document.querySelector('.km-rec').hidden")
+    msg = rec_msg(drv)
+    assert "Ctrl+D" in msg and "Select All" in msg, msg
+    # nothing changes until asked: no key is bound twice
+    assert drv.execute_script("return window.__mace.keymap.keysOf('edit.duplicate')") == []
+    assert drv.execute_script("return window.__mace.keymap.keysOf('select.all')") == ["Mod+D"]
+    shot(drv, "keymap_reset_conflict")
+    drv.execute_script("[...document.querySelectorAll('.km-msg button')].find((b) => b.textContent === 'Cancel').click()")
+    assert drv.execute_script("return document.querySelector('.km-rec').hidden")
+    assert drv.execute_script("return window.__mace.keymap.keysOf('edit.duplicate')") == []
+    drv.execute_script(reset)
+    H.wait(drv, "return !document.querySelector('.km-rec').hidden")
+    drv.execute_script("[...document.querySelectorAll('.km-msg button')].find((b) => b.textContent === 'Replace').click()")
+    assert drv.execute_script("return window.__mace.keymap.keysOf('edit.duplicate')") == ["Mod+D"]
+    assert drv.execute_script("return window.__mace.keymap.keysOf('select.all')") == []
+    # a row whose default keys are free resets at once
+    open_keymap(drv, "Select All")
+    drv.execute_script("document.querySelector(`.km-row[data-id='select.all'] [data-reset-key]`).click()")
+    assert drv.execute_script("return window.__mace.keymap.keysOf('select.all')") == ["Mod+A"]
+    assert drv.execute_script("return window.__mace.settings.get('keymap')") == []
+    drv.execute_script("document.querySelector('#settings').close()")
+
+
 def test_keymap_editor_warns_browser_nav(fresh):
     drv = fresh[0]
     open_keymap(drv, "Reset View")
@@ -1735,7 +1774,7 @@ def test_rebind_view_along_a_everywhere(fresh):
 ATOM_MENU = ["Select Equivalents", "Select Element (Mg)", "Select Neighbors", "-", "Replace Element…", "Set Coordinates…",
              "Delete", "-", "Vacancy Here", "Substitute…", "Antisite…", "-", "Measure from Here", "Center View Here", "-", "Copy Coordinates (Fractional)",
              "Copy Coordinates (Cartesian)", "-", "Properties"]
-EMPTY_MENU = ["Add Atom Here", "Paste", "Select All", "-", "View Along", "Reset View", "Display Range", "-", "Export Image…"]
+EMPTY_MENU = ["Add Atom Here", "Paste", "Select All", "-", "View Along", "Reset View", "Center Rotation on Unit Cell", "Center Rotation on Selection", "Display Range", "-", "Export Image…"]
 EXPLORER_MENU = ["Open", "Open to the Side", "Open as Text", "Compare With Active", "Plot", "Compare Convergence", "-",
                  "Copy Path", "Reveal in Folder", "Show File History…", "-", "Set Up Calculation", "Submit…", "Run on This Node…",
                  "Create or Update Database from This Folder…"]

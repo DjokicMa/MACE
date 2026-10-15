@@ -239,18 +239,41 @@ class CrystalPropertyExtractor:
         initial_geometry = self._extract_initial_geometry(content)
         if initial_geometry:
             for key, value in initial_geometry.items():
-                props[f'initial_{key}'] = value
+                # keys already named initial_* keep their name (no initial_initial_*)
+                props[key if key.startswith('initial_') else f'initial_{key}'] = value
         
         final_geometry = self._extract_final_geometry(content)
         if final_geometry:
             for key, value in final_geometry.items():
-                props[f'final_{key}'] = value
+                props[key if key.startswith('final_') else f'final_{key}'] = value
         
         # Use final geometry as default if no prefix specified
         if final_geometry:
             props.update(final_geometry)
         elif initial_geometry:
             props.update(initial_geometry)
+
+        # CRYSTAL heads the cell measure VOLUME whatever the dimensionality:
+        # for a slab it is the area of the 2D cell (A^2), for a polymer the
+        # length of its 1D cell (A). primitive_cell_volume is kept for 3D.
+        dim = re.search(r'DIMENSIONALITY OF THE SYSTEM\s+(\d)', content)
+        measure = {'2': 'area', '1': 'length'}.get(dim.group(1)) if dim else None
+        if measure:
+            for key in [k for k in props if k.endswith('primitive_cell_volume')]:
+                props[key[:-len('volume')] + measure] = props.pop(key)
+            # the final cell prints no measure: from its parameters (area
+            # a*b*sin(gamma) of a slab, length a of a polymer), and the plain
+            # name is the final one, as for the other primitive_* values
+            if 'final_primitive_a' in props and f'final_primitive_cell_{measure}' not in props:
+                import math
+                if measure == 'area' and {'final_primitive_b', 'final_primitive_gamma'} <= set(props):
+                    final = (props['final_primitive_a'] * props['final_primitive_b']
+                             * math.sin(math.radians(props['final_primitive_gamma'])))
+                else:
+                    final = props['final_primitive_a'] if measure == 'length' else None
+                if final is not None:
+                    props[f'final_primitive_cell_{measure}'] = round(final, 6)
+                    props[f'primitive_cell_{measure}'] = round(final, 6)
         
         # Number of atoms
         atoms_match = re.search(r'ATOMS IN THE UNIT CELL:\s*(\d+)', content)
@@ -352,6 +375,26 @@ class CrystalPropertyExtractor:
                     'primitive_beta': float(final_primitive_match.group(7)),
                     'primitive_gamma': float(final_primitive_match.group(8))
                 })
+            else:
+                # A slab (or polymer) prints no VOLUME/DENSITY on its final
+                # PRIMITIVE CELL line (the non-periodic parameter is formally
+                # 500); read the cell within the final geometry's own block
+                block = re.search(r'FINAL OPTIMIZED GEOMETRY.*?(?=ATOMS IN THE ASYMMETRIC UNIT|\Z)',
+                                  content, re.DOTALL)
+                cell = block and re.search(
+                    r'PRIMITIVE CELL([^\n]*)\n\s*A\s+B\s+C\s+ALPHA\s+BETA\s+GAMMA\s*\n'
+                    r'\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)',
+                    block.group(0))
+                if cell:
+                    props.update({name: float(cell.group(i)) for i, name in enumerate(
+                        ('primitive_a', 'primitive_b', 'primitive_c', 'primitive_alpha',
+                         'primitive_beta', 'primitive_gamma'), start=2)})
+                    volume = re.search(r'VOLUME=\s*([\d.]+)', cell.group(1))
+                    density = re.search(r'DENSITY\s*([\d.]+)\s*g/cm\^3', cell.group(1))
+                    if volume:
+                        props['primitive_cell_volume'] = float(volume.group(1))
+                    if density:
+                        props['density'] = float(density.group(1))
             
             # Final crystallographic cell
             final_crystal_match = re.search(
@@ -376,7 +419,14 @@ class CrystalPropertyExtractor:
             if final_positions:
                 props['final_atomic_positions'] = final_positions
                 props['final_atoms_count'] = len(final_positions)
-                
+                # x/y/z are fractional (X/A Y/B Z/C) for a 3D cell; a slab,
+                # polymer or molecule has Cartesian columns, named here as
+                # CRYSTAL prints them (e.g. "X/A Y/B Z(ANGSTROM)")
+                axes = re.search(r'FINAL OPTIMIZED GEOMETRY.*?ATOM\s+(X\S*)\s+(Y\S*)\s+(Z\S*)\s*\n',
+                                 content, re.DOTALL)
+                if axes and any('ANGSTROM' in g for g in axes.groups()):
+                    props['final_atomic_position_axes'] = ' '.join(axes.groups())
+
                 # Set default atomic positions to final (for backward compatibility)
                 props['atomic_positions'] = final_positions
         
@@ -386,6 +436,22 @@ class CrystalPropertyExtractor:
     _SPIN_MARK = re.compile(r'^\s*(ALPHA|BETA)\s+ELECTRONS\s*$')
     _EDGE_LINE = re.compile(r'(TOP|BOTTOM) OF (VALENCE|VIRTUAL) BANDS\s*-\s*BAND\s+(\d+);\s*K\s+(\d+);'
                             r'\s*EIG\s+(\S+)\s*AU')
+    _OPT_POINT = re.compile(r'OPTIMIZATION - POINT\s+\d+')
+
+    @classmethod
+    def _after_last_opt_point(cls, content: str) -> str:
+        """The output from the last geometry-optimization point on (all of it
+        when there is none).
+
+        CRYSTAL prints an OPT's SCF in full (gap blocks, EFERMI lines, the
+        ``+++ ENERGIES IN A.U. +++`` components) only at the first point of
+        a run; later points print only the energy, and the summary after OPT
+        END describes the final geometry. What comes before the last point
+        is an earlier geometry's, never the final one's."""
+        last = None
+        for last in cls._OPT_POINT.finditer(content):
+            pass
+        return content[last.start():] if last else content
 
     @classmethod
     def final_band_gaps(cls, content: str) -> Dict[str, Any]:
@@ -412,7 +478,9 @@ class CrystalPropertyExtractor:
         ``bottoms`` are ``(eig_au, k)`` of the block's ``TOP OF VALENCE
         BANDS`` and ``BOTTOM OF VIRTUAL BANDS`` lines (CRYSTAL prints more
         than one when the direct gap is at another k than the indirect one,
-        and a BOTTOM line can follow the gap line)."""
+        and a BOTTOM line can follow the gap line). In a multi-point OPT the
+        blocks are point 1's, so there are none for the final geometry."""
+        content = cls._after_last_opt_point(content)
         final: Dict[Any, Dict[str, Any]] = {}
         chan = None
         edges: Dict[str, list] = {'tops': [], 'bottoms': []}
@@ -510,6 +578,12 @@ class CrystalPropertyExtractor:
                 'beta_band_gap': float(beta_summary[-1]),
                 'spin_polarized': True
             })
+            # the material's gap: the fundamental gap of the last SCF when its
+            # band edges are printed for the final geometry, else the smaller
+            # channel gap of the summary (a multi-point OPT prints no edges
+            # after point 1)
+            props['band_gap'] = (fundamental[1] if fundamental is not None
+                                 else min(props['alpha_band_gap'], props['beta_band_gap']))
         else:
             plain = re.findall(r'^\s*BAND GAP:\s*([\d.]+)\s*eV', content, re.M)
             if plain:
@@ -523,6 +597,15 @@ class CrystalPropertyExtractor:
                 props['band_gap'] = (fundamental[1] if fundamental is not None
                                      else min(v for _, v in final.values()))
                 props['spin_polarized'] = {'ALPHA', 'BETA'} <= set(blocks)
+            elif (not final and self._GAP_LINE.search(content)
+                  and re.search(r'OPT END\b.*?^\s*FERMI ENERGY:', content, re.S | re.M)):
+                # a multi-point OPT (its SCF blocks are point 1's) whose final
+                # geometry is conducting: CRYSTAL prints the FERMI ENERGY
+                # instead of a BAND GAP after OPT END. 0 as for a run that
+                # ended conducting after gapped cycles.
+                props['band_gap'] = 0.0
+                props['spin_polarized'] = bool(
+                    re.search(r'^\s*BETA\s+ELECTRONS\s*$', content, re.M))
 
         # Direct vs indirect: the kind of the last SCF's gap (the fundamental
         # gap of a spin-polarized run, by the k points of its VBM and CBM, else
@@ -675,16 +758,37 @@ class CrystalPropertyExtractor:
             props['gcp_energy_au'] = gcp_energy
             props['gcp_energy_ev'] = gcp_energy * HARTREE_TO_EV
 
+        # From the second point of an OPT on (and from the first point of a
+        # restarted one), CRYSTAL's TOTAL ENERGY(DFT) line already includes D3
+        # and gCP: that point's DE is measured from the previous point's
+        # corrected energy, and OPT END's E(AU) equals the last such line.
+        # Adding the D3/gCP printed after OPT END to it counted them twice
+        # (4LG 3c OPT by -0.094 AU). Then OPT END's energy is the corrected
+        # total and the plain DFT energy is it minus the final corrections. A
+        # one-point OPT's DFT line is the plain energy (OPT END = it + D3 +
+        # gCP), and is left as is.
+        opt_end = re.findall(r'OPT END\b[^\n]*?E\(AU\):\s*([-\d.E+]+)', content)
+        corrections = (d3_energy or 0.0) + (gcp_energy or 0.0)
+        if (opt_end and energy_matches and abs(corrections) > 1e-6
+                and abs(float(opt_end[-1]) - float(energy_matches[-1])) < 1e-6):
+            end = float(opt_end[-1])
+            props['total_energy_au'] = end - corrections
+            props['total_energy_ev'] = props['total_energy_au'] * HARTREE_TO_EV
+            if d3_energy is not None:
+                props['total_energy_plus_d3_au'] = end - (gcp_energy or 0.0)
+                props['total_energy_plus_d3_ev'] = props['total_energy_plus_d3_au'] * HARTREE_TO_EV
+            props['total_energy_corrected_au'] = end
+            props['total_energy_corrected_ev'] = end * HARTREE_TO_EV
         # Fully corrected total energy = total + D3 + gCP, built from the
         # FINAL-geometry components (total_energy_au, d3_energy, gcp_energy are
         # all taken as last occurrences = the converged geometry). We do NOT
         # prefer CRYSTAL's printed "TOTAL ENERGY + DISP + GCP" line: in an OPT
         # that combined line is emitted only for the INITIAL geometry and is
         # never re-printed after OPT END, so trusting it yields a stale total
-        # (verified: 4LG OPT off by ~0.094 AU). For single-geometry SP runs the
+        # (4LG AA OPT: by 1.2e-4 AU). For single-geometry SP runs the
         # computed sum matches the printed line to ~1e-10. Only fall back to the
         # printed line when the components themselves are unavailable.
-        if 'total_energy_au' in props and (d3_energy is not None or gcp_energy is not None):
+        elif 'total_energy_au' in props and (d3_energy is not None or gcp_energy is not None):
             corrected = props['total_energy_au'] + (d3_energy or 0.0) + (gcp_energy or 0.0)
             props['total_energy_corrected_au'] = corrected
             props['total_energy_corrected_ev'] = corrected * HARTREE_TO_EV
@@ -705,7 +809,9 @@ class CrystalPropertyExtractor:
         """Extract detailed energy components."""
         components = {}
         
-        # Look for energy breakdown section
+        # Look for energy breakdown section (an OPT prints it at point 1 only:
+        # in a multi-point OPT it is not the final geometry's)
+        content = self._after_last_opt_point(content)
         if '+++ ENERGIES IN A.U. +++' in content:
             component_patterns = {
                 'kinetic_energy_au': r'KINETIC ENERGY\s*([-\d.E+]+)',
@@ -1009,6 +1115,18 @@ class CrystalPropertyExtractor:
             if final_geom_match:
                 atom_lines = final_geom_match.group(1).strip().split('\n')
                 positions = self._parse_atomic_position_lines(atom_lines)
+            else:
+                # A slab (X/A Y/B Z(ANGSTROM)), polymer (X/A Y(ANGSTROM)
+                # Z(ANGSTROM)) or molecule (all in ANGSTROM): the table's
+                # header names each column's unit (final_atomic_position_axes)
+                final_geom_match = re.search(
+                    r'FINAL OPTIMIZED GEOMETRY.*?ATOM\s+(?:X/A|X\(ANGSTROM\))\s+(?:Y/B|Y\(ANGSTROM\))'
+                    r'\s+(?:Z/C|Z\(ANGSTROM\))\s*\n\s*\*+\s*\n(.*?)\n\s*(?:T = ATOM|TRANSFORMATION)',
+                    content, re.DOTALL
+                )
+                if final_geom_match:
+                    atom_lines = final_geom_match.group(1).strip().split('\n')
+                    positions = self._parse_atomic_position_lines(atom_lines)
         
         if not positions:
             # Look for initial/general atomic positions
@@ -1370,48 +1488,84 @@ class CrystalPropertyExtractor:
     def _fill_placeholder_material(self, material_id: str, properties: Dict[str, Any],
                                    output_file: Path, calc_id: Optional[str]) -> None:
         """A material created as a placeholder (formula 'Unknown', by
-        populate_completed_jobs) gets its formula and space group from this
-        run (the existing formula_extractor helpers: the deck's formula, the
-        output's space group). A real formula or space group is never
-        overwritten."""
+        populate_completed_jobs) gets its formula, dimensionality and space
+        group from this run: formula_extractor.material_info, which reads the
+        cell the output prints (the deck, expanded by its space group, only
+        when the output has no geometry). The cell formula goes into
+        metadata_json.
+
+        A formula MACE itself took from the deck's atom lines (the asymmetric
+        unit: TiPbO3 stored as TiPbO2) is corrected the same way, and so is
+        the dimensionality CRYSTAL every scan used to write for a molecule,
+        polymer or slab. A formula or space group set any other way is never
+        overwritten, so a second run changes nothing."""
         try:
             with self.db._get_connection() as conn:
-                row = conn.execute("SELECT formula, space_group FROM materials WHERE material_id = ?",
-                                   (material_id,)).fetchone()
+                row = conn.execute("SELECT formula, space_group, dimensionality, metadata_json "
+                                   "FROM materials WHERE material_id = ?", (material_id,)).fetchone()
         except Exception:
             return
-        if not row or row[0] != 'Unknown':
+        if not row:
             return
+        old_formula, old_sg, old_dim, old_meta = row[0], row[1], row[2], row[3]
         try:
             try:
-                from mace.utils.formula_extractor import extract_material_info_from_files
+                from mace.utils.formula_extractor import (extract_formula_from_d12,
+                                                          extract_space_group_from_output, material_info)
             except ImportError:
-                from formula_extractor import extract_material_info_from_files
+                from formula_extractor import extract_formula_from_d12, extract_space_group_from_output, material_info
             d12 = None
             calc = self.db.get_calculation(calc_id) if calc_id else None
             for cand in ((calc or {}).get('input_file'), Path(output_file).with_suffix('.d12')):
                 if cand and Path(cand).suffix == '.d12' and Path(cand).is_file():
                     d12 = Path(cand)
                     break
-            formula, sg = extract_material_info_from_files(d12, None, output_file)
+            info = material_info(output_file=output_file, d12_file=d12)
+            formula = info.get('formula')
+            if not formula and d12 is not None:
+                formula = extract_formula_from_d12(d12)     # the deck's atom lines: the last resort
+            sg = extract_space_group_from_output(output_file)
         except Exception as e:
             print(f"⚠️  Could not read the formula for {material_id}: {e}")
             return
         sg = sg or properties.get('space_group_number')
         fields, values = [], []
-        if formula:
+        placeholder = old_formula == 'Unknown'
+        # the asymmetric-unit formula an earlier scan took from this deck
+        from_deck = (not placeholder and d12 is not None and info.get('source') is not None
+                     and old_formula == extract_formula_from_d12(d12))
+        if formula and formula != old_formula and (placeholder or from_deck):
             fields.append('formula = ?')
             values.append(formula)
-        if sg and (row[1] in (None, 1) or row[1] == sg):
+        if sg and old_sg != sg and (old_sg is None or (placeholder and old_sg == 1)):
             fields.append('space_group = ?')
             values.append(int(sg))
+        dim = info.get('dimensionality')
+        if dim and dim != old_dim and old_dim in (None, '', 'CRYSTAL'):
+            fields.append('dimensionality = ?')
+            values.append(dim)
+        if info.get('cell_formula') and (placeholder or from_deck or formula == old_formula):
+            try:
+                meta = json.loads(old_meta) if old_meta else {}
+            except (TypeError, ValueError):
+                meta = None                       # not MACE's JSON: left as it is
+            if isinstance(meta, dict) and (meta.get('cell_formula') != info['cell_formula']
+                                           or meta.get('formula_source') != info['source']):
+                meta['cell_formula'] = info['cell_formula']
+                meta['formula_source'] = info['source']
+                fields.append('metadata_json = ?')
+                values.append(json.dumps(meta))
         if not fields:
             return
         try:
             with self.db._get_connection() as conn:
-                conn.execute(f"UPDATE materials SET {', '.join(fields)}, updated_at = ? WHERE material_id = ? "
-                             "AND formula = 'Unknown'", (*values, datetime.now().isoformat(), material_id))
-            print(f"   📝 {material_id}: formula {formula or 'unchanged'}, space group {sg or 'unchanged'}")
+                conn.execute(f"UPDATE materials SET {', '.join(fields)}, updated_at = ? WHERE material_id = ?",
+                             (*values, datetime.now().isoformat(), material_id))
+            shown = [f"formula {formula}" if 'formula = ?' in fields else None,
+                     f"space group {sg}" if 'space_group = ?' in fields else None,
+                     f"dimensionality {dim}" if 'dimensionality = ?' in fields else None]
+            if any(shown):
+                print(f"   📝 {material_id}: {', '.join(x for x in shown if x)}")
         except Exception as e:
             print(f"⚠️  Error updating material {material_id}: {e}")
 
@@ -1581,10 +1735,13 @@ class CrystalPropertyExtractor:
             r'POSSIBLY CONDUCTING STATE.*?EFERMI\(AU\)\s+([-\d.E+\-]+)'  # Full conducting state pattern
         ]
         
+        # A multi-point OPT prints EFERMI lines at point 1 only; its final
+        # Fermi energy is the FERMI ENERGY line after OPT END, if any
+        final_part = self._after_last_opt_point(content)
         for pattern in fermi_patterns:
             # Last occurrence: conducting-state EFERMI lines are printed per
             # SCF iteration and only the final one is converged
-            fermi_matches = re.findall(pattern, content, re.IGNORECASE)
+            fermi_matches = re.findall(pattern, final_part, re.IGNORECASE)
             if fermi_matches:
                 props['fermi_energy'] = float(fermi_matches[-1])
                 break
@@ -2464,6 +2621,14 @@ class CrystalPropertyExtractor:
             ('alpha_band_gap', 'alpha_spin'),
             ('beta_band_gap', 'beta_spin')
         ]
+        # both spin channels without a band_gap: the smaller one, as
+        # _final_gap_value takes it (alpha alone was taken before)
+        if all(properties.get(k) is not None for k in ('alpha_band_gap', 'beta_band_gap')):
+            try:
+                if float(properties['beta_band_gap']) < float(properties['alpha_band_gap']):
+                    gap_sources[-2:] = gap_sources[-1:-3:-1]
+            except (ValueError, TypeError):
+                pass
         
         for gap_prop, source in gap_sources:
             if gap_prop in properties and properties[gap_prop] is not None:
@@ -2671,11 +2836,22 @@ class CrystalPropertyExtractor:
                 )
 
                 # Imaginary modes are flagged by a NEGATIVE frequency in CRYSTAL
-                # output (no trailing 'i'); use the cm**-1 sign as the primary
-                # signal. This is always set when modes were parsed.
-                props['num_imaginary_frequencies'] = sum(
-                    1 for f in freq_data if f['frequency_cm'] < 0
-                )
+                # output (no trailing 'i'). Counted as the GUI's run analysis
+                # counts them (one shared rule): without the 3/5/6 modes
+                # closest to zero (rigid-body motion), each mode of a
+                # degenerate row, and only beyond the 20 cm-1 noise. This is
+                # always set when modes were parsed.
+                try:
+                    from mace.utils.imaginary_modes import count_imaginary, is_linear, is_molecule
+                except ImportError:
+                    from imaginary_modes import count_imaginary, is_linear, is_molecule
+                molecule = is_molecule(content)
+                linear = molecule and is_linear(
+                    [(a['x'], a['y'], a['z']) for a in self._extract_atomic_positions(content)])
+                props['num_imaginary_frequencies'] = count_imaginary(
+                    [f['frequency_cm'] for f in freq_data
+                     for _ in range(f['mode_end'] - f['mode_start'] + 1)],
+                    molecule, linear)
 
                 # Highest / lowest among the genuine (non-translational) modes.
                 non_zero_freqs = [f['frequency_cm'] for f in freq_data if f['frequency_cm'] > 0.1]
@@ -2828,7 +3004,8 @@ class CrystalPropertyExtractor:
             peak |Seebeck| with its (T, mu) and carrier type, peak power factor,
             peak electronic ZT, units, and the source data files referenced), and
           * flat queryable scalar rows (``transport_seebeck_max_uv_per_k``,
-            ``transport_power_factor_max``, ``transport_zt_max``,
+            ``transport_power_factor_max``, ``transport_zt_electronic_max``
+            (alias ``transport_zt_max``),
             ``transport_n_temperatures``).
 
         Mirrors ``_build_band_structure_summary``: a compact payload + flat
@@ -2846,6 +3023,15 @@ class CrystalPropertyExtractor:
           * Power factor PF = S^2 * sigma; electronic figure of merit
             ZT_e = PF * T / kappa_e (electronic kappa only -- no lattice term, so
             it is an upper bound the summary labels ``zt_electronic``).
+          * KAPPA.dat (the manual's kappa_e, Eq. 14.3) is the zero-field coefficient
+            kappa0 = (1/T) int(-df/dE)(E-mu)^2 Xi ("K coefficient" in its
+            header), and the electronic kappa_e = kappa0 - T*sigma*S^2 (zero current). So
+            ZT_e = x / (1 - x) with x = PF*T/kappa0 (PF*T/kappa0 alone is
+            below 1 always). A point with x >= 1 (kappa_e <= 0, outside the
+            model) is skipped with a warning; kappa0 and kappa_e at the peak
+            are stored as transport_kappa0_at_zt_max and
+            transport_kappa_electronic_at_zt_max (W/m/K). All from the
+            diagonal averages of the tensors.
         """
         props: Dict[str, Any] = {}
 
@@ -2935,6 +3121,8 @@ class CrystalPropertyExtractor:
             peak_pf_loc = None
             peak_zt = 0.0          # dimensionless (electronic only)
             peak_zt_loc = None
+            peak_zt_kappas = None  # (kappa0, kappa_e) at the ZT peak, W/m/K
+            n_kappa_skipped = 0    # points with kappa_e <= 0 (x >= 1)
             n_usable = 0
 
             for (T, mu, n_carr, s_val) in s_rows:
@@ -2954,12 +3142,20 @@ class CrystalPropertyExtractor:
                     if pf > peak_pf:
                         peak_pf = pf
                         peak_pf_loc = (T, mu)
-                    k = kap_lut.get(key)
+                    k = kap_lut.get(key)   # kappa0 (K coefficient), not kappa_e
                     if k and abs(k) > 0.0:
-                        zt = pf * T / abs(k)
+                        kappa_e = abs(k) - pf * T
+                        if kappa_e <= 0.0:
+                            n_kappa_skipped += 1
+                            continue
+                        zt = pf * T / kappa_e
                         if zt > peak_zt:
                             peak_zt = zt
                             peak_zt_loc = (T, mu)
+                            peak_zt_kappas = (abs(k), kappa_e)
+            if n_kappa_skipped:
+                print(f"Warning: {output_file.name}: {n_kappa_skipped} transport points with "
+                      f"T*sigma*S^2 >= kappa0 (kappa_e <= 0) left out of ZT")
 
             has_usable = abs(peak_s) > 0.0
             # Carrier-type convention: N(#carriers) > 0 -> holes (p-type),
@@ -3000,9 +3196,11 @@ class CrystalPropertyExtractor:
                 'units': {
                     'seebeck': s_unit or 'V/K',
                     'electrical_conductivity': '1/Ohm/m',
-                    'electronic_thermal_conductivity': 'W/m/K',
+                    'kappa0': 'W/m/K (KAPPA.dat zero-field K coefficient)',
+                    'kappa_electronic': 'W/m/K (kappa0 - T*sigma*S^2)',
                     'power_factor': 'W/m/K^2',
-                    'zt': 'dimensionless (electronic, kappa_lattice excluded)',
+                    'zt': ('dimensionless; ZT_e: electrons only, no lattice kappa, '
+                           'an upper bound that diverges as T*sigma*S^2 -> kappa0'),
                 },
                 'seebeck_max_signed_v_per_k': float(peak_s),
                 'seebeck_max_abs_uv_per_k': float(abs(peak_s) * 1.0e6),
@@ -3010,8 +3208,13 @@ class CrystalPropertyExtractor:
                 'power_factor_max_w_per_m_k2': (float(peak_pf) if have_sigma
                                                 else None),
                 'power_factor_max_at': _loc(peak_pf_loc),
-                'zt_electronic_max': (float(peak_zt) if have_sigma else None),
+                'zt_electronic_max': (float(peak_zt) if peak_zt_loc else None),
                 'zt_electronic_max_at': _loc(peak_zt_loc),
+                'kappa0_at_zt_max_w_per_m_k': (float(peak_zt_kappas[0])
+                                               if peak_zt_kappas else None),
+                'kappa_electronic_at_zt_max_w_per_m_k': (float(peak_zt_kappas[1])
+                                                         if peak_zt_kappas else None),
+                'zt_points_skipped_kappa_e_nonpositive': int(n_kappa_skipped),
             }
             props['transport'] = summary
 
@@ -3025,7 +3228,13 @@ class CrystalPropertyExtractor:
                     # PF/ZT need conductivity; for SEEBECK-only runs storing
                     # 0.0 here would be the same misleading-zero bug.
                     props['transport_power_factor_max'] = float(peak_pf)
-                    props['transport_zt_max'] = float(peak_zt)
+                    if peak_zt_loc:   # none without a usable KAPPA.dat
+                        # electrons only (no lattice kappa): an upper bound on ZT.
+                        # transport_zt_max is the same value under its old name.
+                        props['transport_zt_electronic_max'] = float(peak_zt)
+                        props['transport_zt_max'] = float(peak_zt)
+                        props['transport_kappa0_at_zt_max'] = float(peak_zt_kappas[0])
+                        props['transport_kappa_electronic_at_zt_max'] = float(peak_zt_kappas[1])
                 if carrier_type:
                     props['transport_carrier_type'] = carrier_type
 
@@ -3303,6 +3512,10 @@ class CrystalPropertyExtractor:
         # Volumes MUST come before length parameters
         elif 'volume' in prop_lower:
             return 'Å³'
+        elif prop_lower.endswith('cell_area'):
+            return 'Å²'
+        elif prop_lower.endswith('cell_length'):
+            return 'Å'
         
         # Density
         elif 'density' in prop_lower:
@@ -3319,6 +3532,10 @@ class CrystalPropertyExtractor:
             return 'm_e'  # electron mass units
         elif 'mobility' in prop_lower:
             return 'cm²/(V·s)'
+        elif 'kappa' in prop_lower:
+            return 'W/(m·K)'
+        elif 'power_factor' in prop_lower:
+            return 'W/(m·K²)'
         elif 'conductivity' in prop_lower and 'classification' not in prop_lower:
             return 'S/m'  # Siemens per meter
         elif 'seebeck' in prop_lower:
@@ -3656,8 +3873,9 @@ class CrystalPropertyExtractor:
             advanced_props['advanced_analysis_available'] = True
             advanced_props['advanced_analysis_method'] = analysis_results.get('analysis_method', 'unknown')
             
-            # Electronic classification (override basic classification if we have better data)
-            if 'electronic_classification' in analysis_results:
+            # Electronic classification (override basic classification if we have better data);
+            # none from a DOSS.DAT alone
+            if analysis_results.get('electronic_classification') is not None:
                 advanced_props['electronic_classification_advanced'] = analysis_results['electronic_classification']
                 
                 # Update the main classification if we have better data
@@ -3704,10 +3922,10 @@ class CrystalPropertyExtractor:
             advanced_props['conductivity_type_advanced'] = analysis_results.get('conductivity_type', 'unknown')
             advanced_props['conductivity_estimate_advanced'] = analysis_results.get('conductivity_estimate', 'unknown')
             
-            # Gap information with source tracking
-            if 'gap_ev' in analysis_results:
+            # Gap information with source tracking (none from a DOSS.DAT alone)
+            if analysis_results.get('gap_ev') is not None:
                 advanced_props['band_gap_advanced_ev'] = analysis_results['gap_ev']
-            if 'gap_hartree' in analysis_results:
+            if analysis_results.get('gap_hartree') is not None:
                 advanced_props['band_gap_advanced_ha'] = analysis_results['gap_hartree']
             
             # Analysis metadata
@@ -3717,7 +3935,7 @@ class CrystalPropertyExtractor:
             if files_analyzed.get('doss_file'):
                 advanced_props['doss_file_analyzed'] = files_analyzed['doss_file']
                 
-            print(f"      🚀 Advanced analysis: {analysis_results['electronic_classification']} classification")
+            print(f"      🚀 Advanced analysis: {analysis_results.get('electronic_classification') or 'no'} classification")
             if analysis_results.get('has_real_effective_mass'):
                 print(f"      📊 Real effective masses calculated from band structure")
             
@@ -3756,6 +3974,37 @@ def _output_matches_calc_type(output_file: Path, wanted: str) -> bool:
         return _output_calc_type(Path(output_file)) == base
     except OSError:
         return False
+
+
+def _material_count(db, ids=None) -> int:
+    """Rows of the materials table (of ``ids`` only, when given)."""
+    with db._get_connection() as conn:
+        if ids is None:
+            return int(conn.execute("SELECT count(*) FROM materials").fetchone()[0])
+        ids = sorted(ids)
+        return sum(int(conn.execute(f"SELECT count(*) FROM materials WHERE material_id IN "
+                                    f"({','.join('?' * len(ids[k:k + 500]))})", ids[k:k + 500]).fetchone()[0])
+                   for k in range(0, len(ids), 500))
+
+
+def _ensure_material(db, material_id: str, output_file: Path) -> None:
+    """A materials row for ``material_id`` when it has none: formula and
+    dimensionality from the output (formula_extractor.material_info)."""
+    if db.get_material(material_id):
+        return
+    try:
+        from mace.utils.formula_extractor import material_info, extract_space_group_from_output
+        d12 = Path(output_file).with_suffix('.d12')
+        info = material_info(output_file=output_file, d12_file=d12 if d12.is_file() else None)
+        sg = extract_space_group_from_output(output_file) or 1
+    except Exception:
+        info, sg = {}, 1
+    meta = ({"cell_formula": info["cell_formula"], "formula_source": info["source"]}
+            if info.get("cell_formula") else None)
+    db.create_material(material_id=material_id, formula=info.get("formula") or "Unknown", space_group=sg,
+                       dimensionality=info.get("dimensionality") or "CRYSTAL", source_type="output",
+                       source_file=str(output_file), metadata=meta)
+    print(f"   📝 Created material {material_id} for an output with no calculation record")
 
 
 def _json_line(stream, obj) -> None:
@@ -3900,6 +4149,7 @@ def _run(args, keep: int, real_stdout) -> None:
     extractor = CrystalPropertyExtractor(args.db_path, ase_db_path=ase_db)
     extractor.extract_fragments = args.fragments
 
+    materials_before = _material_count(extractor.db) if building else None
     if args.register:
         from mace.database.populate_completed_jobs import scan_for_completed_calculations, populate_database
         # absolute paths, as `mace submit` records them: a path relative to the
@@ -3909,9 +4159,14 @@ def _run(args, keep: int, real_stdout) -> None:
         print(f"📋 Registered {added} new calculation(s) from {scan_root}")
 
     classes = {}
-    if args.skip_unchanged or args.progress_json:
-        for r in db_build.classify(output_files, args.db_path, register=False, scan_dir=scan_root):
+    reasons = {}
+    if building:
+        for r in db_build.classify(output_files, args.db_path, register=False, scan_dir=scan_root,
+                                   registering=bool(args.register)):
             classes[str(r["file"])] = r["class"]
+            if r.get("reason"):
+                reasons[str(r["file"])] = r["reason"]
+    records = []   # one per file, as --progress-json writes them: the summary counts these
     
     total_properties = 0
     files_processed = 0
@@ -3931,11 +4186,21 @@ def _run(args, keep: int, real_stdout) -> None:
         cls = classes.get(str(output_file))
         if cls:
             summary["by_class"][cls] = summary["by_class"].get(cls, 0) + 1
-        if args.skip_unchanged and cls == "unchanged":
+        if (args.skip_unchanged and cls == "unchanged") or cls == db_build.SKIPPED:
+            # a build files nothing for a failed run no calculation records,
+            # or for the _temp copy of a run's output: their rows had no material
             summary["skipped"] += 1
+            rec = {"i": i, "n": n_files, "file": str(output_file), "status": "skipped",
+                   "properties": 0, "class": cls}
+            if reasons.get(str(output_file)):
+                rec["reason"] = reasons[str(output_file)]
+            records.append(rec)
+            if cls == db_build.SKIPPED:
+                # db_build's reason (e.g. "a copy of X.out")
+                print(f"\n⏭️  Skipping {output_file}: "
+                      f"{reasons.get(str(output_file)) or 'not a registered calculation output'}")
             if args.progress_json:
-                _json_line(real_stdout, {"i": i, "n": n_files, "file": str(output_file), "status": "skipped",
-                                         "properties": 0, "class": cls})
+                _json_line(real_stdout, rec)
             continue
         print(f"\n📊 Processing: {output_file}")
         
@@ -3945,9 +4210,11 @@ def _run(args, keep: int, real_stdout) -> None:
         if wanted and not _output_matches_calc_type(output_file, wanted):
             print(f"   ⏭️  Skipping - not a {wanted.upper()} calculation")
             summary["skipped"] += 1
+            rec = {"i": i, "n": n_files, "file": str(output_file), "status": "skipped",
+                   "properties": 0, "class": cls}
+            records.append(rec)
             if args.progress_json:
-                _json_line(real_stdout, {"i": i, "n": n_files, "file": str(output_file), "status": "skipped",
-                                         "properties": 0, "class": cls})
+                _json_line(real_stdout, rec)
             continue
         
         properties = extractor.extract_all_properties(
@@ -3956,6 +4223,11 @@ def _run(args, keep: int, real_stdout) -> None:
             calc_id=args.calc_id
         )
         status, saved_count = "no properties", 0
+        meta = (properties or {}).get('_metadata') or {}
+        if building and properties and meta.get('calc_id') is None and meta.get('material_id'):
+            # an untracked output (Register off): its rows need a material
+            # the Database view can open (no calculation row is written)
+            _ensure_material(extractor.db, meta['material_id'], Path(output_file))
         
         if properties:
             # Extract material ID from properties if available
@@ -3983,9 +4255,11 @@ def _run(args, keep: int, real_stdout) -> None:
         else:
             print(f"   ⚠️  No properties extracted")
         summary["extracted" if status == "extracted" else "failed"] += 1
+        rec = {"i": i, "n": n_files, "file": str(output_file), "status": status,
+               "properties": saved_count, "class": cls, "material": meta.get('material_id')}
+        records.append(rec)
         if args.progress_json:
-            _json_line(real_stdout, {"i": i, "n": n_files, "file": str(output_file), "status": status,
-                                     "properties": saved_count, "class": cls})
+            _json_line(real_stdout, rec)
     
     # The untracked clean-up needs every output of the material re-extracted:
     # with --skip-unchanged the extracted set is not complete
@@ -4010,10 +4284,20 @@ def _run(args, keep: int, real_stdout) -> None:
             print(f"   Material ID: {args.filter_material}")
         if args.filter_type or args.calc_type:
             print(f"   Calculation type: {args.filter_type or args.calc_type}")
-    if args.progress_json:
-        _json_line(real_stdout, {"done": True, "files": n_files, "files_processed": files_processed,
-                                 "properties": total_properties, "materials": len(materials_processed),
-                                 "backup": backup_made, **summary})
+    if building:
+        counted = db_build.summarize(records)
+        written = {r["material"] for r in records if r.get("status") == "extracted" and r.get("material")}
+        done = {"done": True, "files": n_files, "files_processed": files_processed,
+                "properties": total_properties, "materials": _material_count(extractor.db, written),
+                "materials_new": max(0, _material_count(extractor.db) - materials_before),
+                "backup": backup_made, **summary,
+                "new": counted["new"], "changed": counted["changed"],
+                "reextracted": counted["reextracted"],
+                "failed_outputs": len(counted["failed"]), "skipped_outputs": counted["skipped"]}
+        done["message"] = db_build.summary_message(done)
+        print(f"   {done['message']}")
+        if args.progress_json:
+            _json_line(real_stdout, done)
 
 
 if __name__ == "__main__":

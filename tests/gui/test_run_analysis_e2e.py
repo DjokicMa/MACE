@@ -113,7 +113,7 @@ def test_convergence_tab_and_linking(app):
     open_run(drv, "runs/1_dia_opt_rev1.out")
     open_analysis(drv)
     tab(drv, "convergence")
-    tr = [t for t in traces(drv) if t["type"] == "scatter"]
+    tr = [t for t in traces(drv) if t["type"] == "scatter" and t["meta"] != "key"]      # not the legend-only keys
     assert len(tr) == 4
     lay = drv.execute_script("return window.__mace.runView.figure().layout")
     thr = sorted(round(s["y0"], 6) for s in lay["shapes"] if str(s.get("name", "")).startswith("thr-"))
@@ -124,7 +124,9 @@ def test_convergence_tab_and_linking(app):
     box = drv.execute_script("""const p = document.querySelector('#runplot-host .rp-plot .main-svg').getBoundingClientRect();
         const b = document.querySelector('#runplot-host .rp-below').getBoundingClientRect(); return [p.bottom, b.top, b.height]""")
     assert box[2] > 0 and box[0] <= box[1] + 1, box
-    assert all("from the .out" in a["text"] for a in lay["annotations"] if "(" in a["text"] and "TOLDEE" not in a["text"] and "restart" not in a["text"] and "met" not in a["text"].lower())
+    # the thresholds' labels are legend entries (no boxes over the data)
+    keys = drv.execute_script("return window.__mace.runView.figure().traces.filter((t) => t.meta === 'key').map((t) => t.name.replace('<br>', ' '))")
+    assert all("from the .out" in k for k in keys if "(" in k and "TOLDEE" not in k and "restart" not in k and "met" not in k.lower()), keys
     mx = next(t for t in tr if t["meta"] == "max_grad0")
     assert mx["marker"]["symbol"][mx["x"].index(3)] == "circle"          # POINT 3: all four YES, filled
     md = next(t for t in tr if t["meta"] == "max_disp0")
@@ -146,9 +148,14 @@ def test_energy_log_view_segments_and_below_reference(app):
     open_run(drv, "runs/1_dia_opt_rev1.out")
     open_analysis(drv)
     tab(drv, "energy")
+    # the per-segment view (Segments: Separate, Plot Options)
+    drv.find_element("css selector", "#runplot-host .pk-more").click()
+    from selenium.webdriver.support.ui import Select
+    Select(drv.find_element("css selector", ".pk-pop [data-k=segments]")).select_by_value("separate")
+    U.keys(drv, Keys.ESCAPE)
     # Units: Ha (the Units menu), then Log |dE| (Log Y)
     drv.find_element("css selector", "#runplot-host .pk-units").click()
-    drv.find_element("css selector", "#runplot-host .pk-menu [data-v='Ha']").click()
+    drv.find_element("css selector", ".pk-menu [data-v='Ha']").click()
     if not drv.execute_script("return window.__mace.runView.state().opts.energy.ylog"):
         drv.find_element("css selector", "#runplot-host .pk-logy").click()
     H.wait(drv, "return window.__mace.runView.state().opts.energy.ylog && window.__mace.runView.figure().traces.some((t) => t.meta === 'de0')", 10)
@@ -167,9 +174,8 @@ def test_energy_log_view_segments_and_below_reference(app):
     # linear, relative to the final energy, one reference: the points below it get the red marker and the chip
     drv.find_element("css selector", "#runplot-host .pk-logy").click()
     drv.find_element("css selector", "#runplot-host .pk-more").click()
-    from selenium.webdriver.support.ui import Select
-    Select(drv.find_element("css selector", "#runplot-host .pk-pop [data-k=relTo]")).select_by_value("final")
-    drv.find_element("css selector", "#runplot-host .pk-pop [data-k=single]").click()
+    Select(drv.find_element("css selector", ".pk-pop [data-k=relTo]")).select_by_value("final")
+    Select(drv.find_element("css selector", ".pk-pop [data-k=segments]")).select_by_value("continuous")
     U.keys(drv, Keys.ESCAPE)
     H.wait(drv, "return /below/.test(document.querySelector('#runplot-host .pv-chips').textContent)", 10)
     tr = {t["meta"]: t for t in traces(drv)}
@@ -190,7 +196,7 @@ def test_scf_tab(app):
     tr = {t["meta"]: t for t in traces(drv)}
     assert tr["cycles"]["y"] == [6, 5, 5, 3]
     assert len(tr["detail"]["x"]) == 7
-    ann = drv.execute_script("return window.__mace.runView.figure().layout.annotations.map((a) => a.text)")
+    ann = drv.execute_script("return window.__mace.runView.figure().traces.filter((t) => t.meta === 'key').map((t) => t.name.replace('<br>', ' '))")          # legend entries
     assert any("TOLDEE 1e-7 Ha (from the .out)" in a for a in ann), ann
     sel = drv.execute_script("return window.__mace.runView.figure().layout.shapes.find((x) => x.name === 'selected')")
     assert sel and sel["yref"] == "y domain"          # the point axis only, not across the SCF-cycle plot below
@@ -248,7 +254,7 @@ def test_compare_runs_per_atom(app):
     names = {t["name"] for t in traces(drv)}
     assert any("1_dia_opt_rev1.out" in n for n in names) and any(other in n for n in names)
     drv.find_element("css selector", "#runplot-host .pk-more").click()
-    opt = drv.find_element("css selector", "#runplot-host .pk-pop [data-k=relTo] option[value=absolute]")
+    opt = drv.find_element("css selector", ".pk-pop [data-k=relTo] option[value=absolute]")
     assert opt.get_attribute("disabled") and "different compositions" in opt.get_attribute("title")
     U.keys(drv, Keys.ESCAPE)
     t = drv.execute_script("return window.__mace.runView.table()")
@@ -278,7 +284,7 @@ def test_export_png_and_svg_download(app):
         f.unlink()
     for v in ("png", "svg"):
         drv.find_element("css selector", "#runplot-host .pk-export").click()
-        drv.find_element("css selector", f"#runplot-host .pk-menu [data-v={v}]").click()
+        drv.find_element("css selector", f".pk-menu [data-v={v}]").click()
     end = time.time() + 20
     while time.time() < end and len([f for f in downloads.iterdir() if not f.name.endswith(".part")]) < 2:
         time.sleep(0.2)

@@ -156,6 +156,7 @@ def test_mixed_directory_gives_one_array_per_kind(tmp_path):
     fake, env, d = _setup(tmp_path, ["a", "b"])
     for n in ("c", "e"):
         (d / f"{n}.d3").write_text("BAND\nX\n2 8 50 1 8 1 0\n 0 0 0  4 0 4\n 4 0 4  4 2 4\nEND\n")
+        (d / f"{n}.f9").write_text("wavefunction")     # a properties job needs its .f9
     _ok(_mace(tmp_path, env, "submit", "--array", "decks", stdin="3\n"))
     ws = _wrappers(d)
     assert len(ws) == 2
@@ -395,18 +396,27 @@ def test_untracked_array_id_is_protected_too(tmp_path, monkeypatch):
     assert not fake.calls("scancel")
 
 
-def test_zombie_removal_cancels_the_task(tmp_path):
-    fake, env, d = _setup(tmp_path, ["X"])
+@pytest.mark.parametrize("task, canceled", [("1", True), ("0", False)])
+def test_zombie_removal_cancels_the_task(tmp_path, task, canceled):
+    """A real `mace submit --array`: X is task 1 (its record in
+    submitted.json). X's finished output with a running task log: task 1 is
+    canceled, never the array. A log naming task 0 (Y's task) is not X's
+    job and is left alone."""
+    fake, env, d = _setup(tmp_path, ["X", "Y"])
+    _ok(_mace(tmp_path, env, "submit", "--array", "decks"))
+    for t in (0, 1):
+        fake.set_record(f"4242_{t}", state="RUNNING")
     (d / "X.out").write_text(SP_DONE)
-    (d / "X-4242_3.o").write_text("")
-    fake.update(records=[{"id": "4242_3", "array": "4242", "task": 3, "state": "RUNNING"},
-                         {"id": "4242_4", "array": "4242", "task": 4, "state": "RUNNING"}])
+    (d / f"X-4242_{task}.o").write_text("")
     p = subprocess.run([sys.executable, str(REPO_ROOT / "mace" / "completion_checker.py"),
                         "--directory", str(d), "--remove-zombie-jobs"], input="y\nn\n",
                        env=dict(env, PYTHONPATH=str(REPO_ROOT)), capture_output=True, text=True,
                        timeout=300)
     _ok(p)
-    assert [c["argv"] for c in fake.calls("scancel")] == [["scancel", "4242_3"]]
+    expect = [["scancel", f"4242_{task}"]] if canceled else []
+    assert [c["argv"] for c in fake.calls("scancel")] == expect, p.stdout[-3000:]
+    if not canceled:
+        assert f"Not canceled 4242_{task}" in p.stdout
 
 
 # --- generators that submit their own script -----------------------------------

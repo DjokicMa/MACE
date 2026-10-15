@@ -29,12 +29,19 @@ from datetime import datetime
 import threading
 
 from mace.queue.slurm_ids import note_submission as _note_submission
+from mace.workflow.common.constants import PROPERTIES_MEMORY
+
+# The job-script generators (submitcrystal23.sh, submit_prop.sh): one copy, in
+# mace/submission. (mace/workflow had symbolic links to them, which a Windows
+# zip or a git checkout without symlinks turns into text stubs.)
+TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "submission"
 
 # Import MACE components
 try:
     from mace.database.materials import STATUS_CANCELED_DB, MaterialDatabase
     from mace.queue.manager import EnhancedCrystalQueueManager
-    from mace.workflow.context import WorkflowContext, workflow_context, get_current_context
+    from mace.workflow.context import (WorkflowContext, workflow_context, get_current_context,
+                                       new_workflow_id)
     from mace.workflow.plan_functionals import normalize_plan_functionals
     # Crystal_d12 modules no longer needed here - handled by subprocess calls
 except ImportError as e:
@@ -179,8 +186,13 @@ class WorkflowExecutor:
         # ..._000104 vs ..._000103) — templates then pointed every job
         # callback at a shadow context, splitting the workflow across two
         # databases.
-        workflow_id = plan.get('workflow_id') or f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        workflow_id = plan.get('workflow_id') or new_workflow_id(self.work_dir)
         plan['workflow_id'] = workflow_id
+
+        # Other workflows in this folder keep the templates they have now.
+        from mace.workflow.context import freeze_shared_scripts, keep_workflow_scripts
+        freeze_shared_scripts(self.work_dir, workflow_id)
+        written = []
 
         # Iterate through all step configurations
         for step_key, step_config in plan.get('step_configurations', {}).items():
@@ -214,11 +226,17 @@ class WorkflowExecutor:
                         
                         # Make executable
                         target_script.chmod(0o755)
-                        
+                        written.append(target_script.name)
+
                         ui.ok(f"  Created {target_script.name} for {step_key}")
                     else:
                         ui.warn(f"  Warning: Source script {source_script} not found")
-        
+
+        # An isolated workflow keeps its own copy, which its steps are built
+        # from (execution sets isolation_mode before this runs).
+        if getattr(self, 'isolation_mode', None) in ('isolated', 'hybrid'):
+            keep_workflow_scripts(self.work_dir, workflow_id, written)
+
         print("")
         
     def apply_script_customizations(self, content: str, script_config: Dict[str, Any]) -> str:
@@ -243,7 +261,7 @@ class WorkflowExecutor:
                 ('-A ', '-A ', account),
                 ('--account=', '--account=', account),
                 ('--mem-per-cpu=', '--mem-per-cpu=', resources.get('memory_per_cpu', '5G')),
-                ('--mem=', '--mem=', resources.get('memory', '48G')),
+                ('--mem=', '--mem=', resources.get('memory', PROPERTIES_MEMORY)),
             ]
 
             # Apply replacements line by line
@@ -299,7 +317,7 @@ class WorkflowExecutor:
                         # Add workflow context environment variables for script generators
                         # ('or'-form: a None/missing id must never mint a
                         # second, divergent workflow id here)
-                        workflow_id = script_config.get('workflow_id') or f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                        workflow_id = script_config.get('workflow_id') or new_workflow_id(self.work_dir)
                         modified_lines.append(f"echo '# Workflow context for queue manager' >> $1.sh")
                         modified_lines.append(f"echo 'export MACE_WORKFLOW_ID=\"{workflow_id}\"' >> $1.sh")
                         # Use absolute path for MACE_CONTEXT_DIR
@@ -415,7 +433,8 @@ class WorkflowExecutor:
         # and write it back so every later consumer of this plan dict
         # (script preparation, step execution) sees the SAME id instead of
         # minting its own a second later.
-        workflow_id = plan.get('workflow_id') or f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        workflow_id = (plan.get('workflow_id') or getattr(self, 'default_workflow_id', None)
+                       or new_workflow_id(self.work_dir))
         plan['workflow_id'] = workflow_id
         ui.info(f"Using workflow_id: {workflow_id}")
 
@@ -485,16 +504,18 @@ class WorkflowExecutor:
                     # Execute workflow within context
                     self._execute_workflow_plan_impl(plan, workflow_id, isolation_mode)
                     
-                    # Handle post-completion actions
+                    # The post-completion action runs when the last step
+                    # finishes (the job callback, WorkflowEngine.
+                    # finish_workflow_if_done): archiving here, right after the
+                    # first wave was submitted, took the context away from the
+                    # running jobs and the workflow stopped.
                     if post_completion_action == 'archive':
-                        print(f"\nArchiving workflow context to: {self.work_dir / 'archived_workflows'}")
-                        ctx.archive(self.work_dir / 'archived_workflows')
+                        ui.info(f"The workflow context will be moved to "
+                                f"{self.work_dir / 'archived_workflows'} when its last step finishes")
                     elif post_completion_action == 'export_and_delete':
-                        print(f"\nExporting results and deleting context")
-                        export_dir = self.work_dir / 'workflow_results' / workflow_id
-                        ctx.export_results(export_dir)
-                        # Context will be cleaned up automatically on exit
-                    # 'keep' action requires no special handling
+                        ui.info(f"The results will be exported to "
+                                f"{self.work_dir / 'workflow_results' / workflow_id} and the "
+                                f"context deleted when the last step finishes")
                     
                 finally:
                     # Restore original instances
@@ -629,6 +650,9 @@ class WorkflowExecutor:
         # Auto progression
         auto_progression = execution_settings.get('auto_progression', True)
         ui.info(f"   • Auto progression: {'enabled' if auto_progression else 'disabled'}")
+        if not auto_progression:
+            ui.info("     (each completed step is recorded and the next ones wait; submit them "
+                    "with `mace engine --action process`)")
 
         # Max concurrent jobs
         max_concurrent = execution_settings.get('max_concurrent_jobs', 200)
@@ -1101,7 +1125,7 @@ class WorkflowExecutor:
         """Generate individual SLURM script for workflow calculation"""
         # Look for template scripts - first try workflow_scripts, then fallback to Job_Scripts
         scripts_dir = self.work_dir / "workflow_scripts"
-        job_scripts_dir = Path(__file__).parent  # Job_Scripts directory
+        job_scripts_dir = TEMPLATE_DIR  # the shipped generators (mace/submission)
         
         # Determine template names
         base_type = calc_type.rstrip('0123456789')  # Remove trailing numbers
@@ -1295,7 +1319,7 @@ class WorkflowExecutor:
         
         # Look for template scripts - first try workflow_scripts, then fallback to Job_Scripts
         scripts_dir = self.work_dir / "workflow_scripts"
-        job_scripts_dir = Path(__file__).parent  # Job_Scripts directory
+        job_scripts_dir = TEMPLATE_DIR  # the shipped generators (mace/submission)
         
         # Determine template names
         base_type = calc_type.rstrip('0123456789')  # Remove trailing numbers

@@ -67,6 +67,7 @@ from . import history as gui_history
 from . import runinfo
 from . import cache as gui_cache
 from . import filekind
+from . import dirwatch
 from . import pool as gui_pool
 from . import tasks as gui_tasks
 from . import settings as gui_settings
@@ -88,6 +89,7 @@ MAX_PARSE = 50 * 1024 * 1024        # a dropped file or pasted text
 _SKIP_DIRS = {"__pycache__", ".git", "node_modules", ".ipynb_checkpoints"}
 
 HEARTBEAT_S = 10.0
+STOP_DRAIN_S = 5.0                  # Stop Server waits this long at most for canceled tasks to reach the tabs
 HANDLER_TIMEOUT_S = 30.0            # a socket that sends no request in this time is closed
 MAX_CONNECTIONS = 64                # connections served at once (one thread each)
 IMMUTABLE = "public, max-age=31536000, immutable"
@@ -377,11 +379,11 @@ class GuiState:
         self.ledger.limit = int(limit)
 
     def close(self):
-        self.stopping.set()
+        _mark_stopping(self)
         self.jobs.stop.set()
         _finish_runs(self)
         self.mlip_host.shutdown()
-        p = self.tasks.pool_if_started()
+        p = self.tasks.stop()
         if p is not None:
             p.shutdown(kill=True)
         shutil.rmtree(self.cache, ignore_errors=True)
@@ -1270,6 +1272,12 @@ class GuiHandler(BaseHTTPRequestHandler):
             return self._error(404, f"not found: {exc}")
         except filekind.KindConflict as exc:
             return self._error(409, str(exc))
+        except structures.OpenInstead as exc:
+            # a SLAB/POLYMER/MOLECULE deck: the GUI opens its run's output instead
+            try:
+                return self._json({"error": str(exc), "open": self.state.rel(exc.path)}, 400)
+            except Exception:
+                return self._error(400, str(exc))
         except (ValueError, decks.DeckError) as exc:
             return self._error(400, str(exc))
 
@@ -1317,8 +1325,12 @@ class GuiHandler(BaseHTTPRequestHandler):
                     break
                 try:
                     event, data = q.get(timeout=max(0.0, min(0.5, next_beat - time.monotonic())))
-                    self.wfile.write(f"event: {event}\ndata: {json.dumps(data, default=_json_default)}\n\n".encode())
-                    self.wfile.flush()
+                    try:
+                        self.wfile.write(f"event: {event}\ndata: {json.dumps(data, default=_json_default)}\n\n"
+                                         .encode())
+                        self.wfile.flush()
+                    finally:
+                        q.task_done()                      # sent (a stop waits for it: TaskManager.delivered)
                 except gui_tasks._stdlib_queue.Empty:
                     pass
                 if time.monotonic() >= next_beat:
@@ -1402,10 +1414,12 @@ class GuiHandler(BaseHTTPRequestHandler):
         frame = int(self._q(query, "frame", "-1"))
         packed = self._q(query, "packed") == "1"
         # the parsed payload and each encoded body under their own keys
-        base_key = gui_cache.file_key(p, ("structure", frame))
-        key = gui_cache.file_key(p, ("body", frame, "packed" if packed else "json"))
+        # an EXTERNAL deck is drawn from its companion files: their stats too
+        comp = structures.companion_stamp(p)
+        base_key = gui_cache.file_key(p, ("structure", frame) + comp)
+        key = gui_cache.file_key(p, ("body", frame, "packed" if packed else "json") + comp)
         if key[1:3] != base_key[1:3]:
-            base_key = key[:4] + ("structure", frame)      # the file changed between the two stats
+            base_key = key[:4] + ("structure", frame) + comp      # the file changed between the two stats
         etag = gui_cache.etag_of(key)
         if etag in (self.headers.get("If-None-Match") or ""):
             dur = (time.perf_counter() - t0) * 1000
@@ -1808,6 +1822,10 @@ def start_watchdog(st) -> threading.Thread:
     """One server-wide 2 s watchdog: Stop When Tasks Finish, and the hooks
     other features add (session idle stop, CPU-time limits)."""
     def loop():
+        try:
+            _files_hook(st)                # the Explorer's watch starts from the folder as served
+        except Exception:
+            pass
         while not st.stopping.wait(WATCHDOG_S):
             try:
                 if st.stop_pending is not None and st.tasks.running_count() == 0:
@@ -1817,12 +1835,33 @@ def start_watchdog(st) -> threading.Thread:
             except Exception:              # the watchdog never dies
                 if os.environ.get("MACE_GUI_TEST_HOOKS") == "1":
                     traceback.print_exc()
-    for hook in (_idle_hook, _cpu_hook, _walltime_hook):
+    for hook in (_idle_hook, _cpu_hook, _walltime_hook, _files_hook):
         if hook not in st.watchdog_hooks:
             st.watchdog_hooks.append(hook)
     t = threading.Thread(target=loop, name="mace-gui-watchdog", daemon=True)
     t.start()
     return t
+
+
+def _list_skip(name: str) -> bool:
+    """A folder the Explorer does not list (list_files)."""
+    from . import roots as gui_roots
+    return name.startswith(".") or name in _SKIP_DIRS or bool(gui_roots.credential_component((name,)))
+
+
+def _files_hook(st) -> None:
+    """The Explorer's refresh: while a page is connected, a files-changed event
+    when a file appears in or leaves the served folder (dirwatch.py: one stat
+    per listed folder per watchdog tick); the page then lists the folder. The
+    folders are taken when the watchdog starts and after Open Folder, so a
+    file added before the first check is seen too."""
+    served = st.served
+    w = getattr(st, "_dirwatch", None)
+    if w is None or w.root != served.root:
+        st._dirwatch = dirwatch.DirWatch(served.root, MAX_DEPTH, _list_skip)
+        return
+    if st.tasks.subscribers and w.changed():
+        st.tasks.broadcast("files-changed", {"gen": served.gen})
 
 
 def _idle_hook(st) -> None:
@@ -1944,13 +1983,34 @@ def _stop_from_browser(st, delay: float = 0.3) -> None:
     st.stop_pending = None
     st.web.revoke_all()
     st.tasks.broadcast("server-stopping", {"reason": "browser"})
+    canceled = []
     for rec in st.tasks.running():
         try:
             st.tasks.cancel(rec["id"])
+            canceled.append(st.tasks.get(rec["id"]))
         except KeyError:
             pass
     if st.request_stop is not None:
-        threading.Timer(delay, st.request_stop, args=("browser",)).start()
+        threading.Thread(target=_stop_when_canceled, args=(st, canceled, delay),
+                         name="mace-stop-browser", daemon=True).start()
+
+
+def _stop_when_canceled(st, canceled, delay: float, bound: float = STOP_DRAIN_S) -> None:
+    """The stop of Sign Out and Stop Server: after `delay`, and once each
+    canceled task has ended and its last event reached every open tab (at
+    most `bound` seconds; then the server stops anyway and says so)."""
+    time.sleep(delay)
+    end = time.monotonic() + bound
+    left = [t for t in canceled if not t.done.wait(max(0.0, end - time.monotonic()))]
+    sent = st.tasks.delivered(max(0.0, end - time.monotonic()))
+    if left or not sent:
+        what = (f"{len(left)} canceled task(s) had not stopped" if left
+                else "the last events had not reached every open tab")
+        try:
+            print(f"mace gui: stopping anyway after {bound:g} s: {what}", file=sys.stderr, flush=True)
+        except OSError:
+            pass
+    st.request_stop("browser")
 
 
 def _shutdown_route(handler, mode: str):
@@ -3035,8 +3095,10 @@ def _db_build_info(handler, query):
     exists = db.is_file()
     keep = int(handler._q(query, "keep") or 3)
     flag = lambda k: handler._q(query, k) not in ("0", "false")    # noqa: E731
+    # the Backup tick of a new database (an existing one is always backed up):
+    # the shown command is the one the build runs
     opts = dbbuild.options({"keep": keep, "register": flag("register"), "skip_unchanged": flag("skip"),
-                            "backup": exists}, exists)
+                            "backup": exists or handler._q(query, "backup") in ("1", "true")}, exists)
     folder_arg, db_arg = dbbuild.rel_or_abs(st.root, folder), dbbuild.rel_or_abs(st.root, db)
     args = dbbuild.cli_args(folder_arg, db_arg, opts["register"], opts["skip_unchanged"], opts["backup"], opts["keep"])
     n_out = dbbuild.count_outputs(folder)
@@ -3113,11 +3175,13 @@ def _db_build_route(handler, body):
 
 
 def _db_file(st, db_path: Path, name, work_dir) -> Optional[str]:
-    """A calculation's input or output as a path inside --dir, or None ("Not in this folder")."""
+    """A calculation's input or output as a path inside --dir, or None ("Not in this folder").
+    A database moved or copied with its project keeps the old absolute paths: the
+    file is then found under the database's folder (db_build.file_candidates)."""
     if not name:
         return None
-    cands = [Path(name)] if os.path.isabs(name) else [db_path.parent / name] + ([Path(work_dir) / name] if work_dir else [])
-    for c in cands:
+    from mace.utils.db_build import file_candidates
+    for c in file_candidates(name, db_path.parent, work_dir):
         try:
             r = c.resolve()
         except (OSError, RuntimeError):
@@ -3280,7 +3344,7 @@ def _freq_route(handler, query):
         nd = {len(v) for v in parsed["displacements"].values()}
         return {"path": st.rel(p), "modes": parsed["modes"], "structure": gui_cache.pack(geo),
                 "n_atoms": n, "mode_atoms": max(nd) if nd else 0, "section_bytes": parsed["section_bytes"],
-                "n_frames": idx.n_steps, "dim": idx.dim,
+                "n_frames": idx.n_steps, "dim": idx.dim, "gamma": bool(parsed.get("gamma", True)),
                 "imaginary": [m for m in parsed["modes"] if m["imaginary"]]}
     hit = st.parse_cache.get(key)
     if hit is not None:
@@ -3330,7 +3394,13 @@ def _volume_get(handler, route, query):
         axis = q("axis", "c")
         if axis not in ("a", "b", "c"):
             raise ValueError("axis is a, b or c")
-        job: Dict[str, Any] = {"axis": axis, "index": int(q("index", "0"))}
+        try:
+            index = int(q("index", "0"))
+        except (TypeError, ValueError):
+            raise ValueError("index is a whole number (the plane along the axis, from 0)")
+        if index < 0:
+            raise ValueError("index runs from 0")
+        job: Dict[str, Any] = {"axis": axis, "index": index}
         if query.get("coef"):
             # a difference made here: the plane of the combination itself (never of its first operand)
             coefs = []
@@ -3342,10 +3412,18 @@ def _volume_get(handler, route, query):
             paths, coefs = _volume_operands(st, {"paths": list(query.get("path") or []), "coefficients": coefs})
             job.update(paths=[str(x) for x in paths], coefficients=coefs)
             title = "Slice of the difference"
+            shapes = {filekind.cube_grid_shape(Path(x)) for x in paths}
         else:
             p = _cube_path(st, q("path"))
             job["path"] = str(p)
             title = f"Slice of {p.name}"
+            shapes = {filekind.cube_grid_shape(p)}
+        # the plane is checked here, so a wrong one is the request's error (400), not a failed task
+        # (operands on different grids are aligned onto a grid the task makes; it checks those)
+        if len(shapes) == 1 and None not in shapes:
+            n = next(iter(shapes))["abc".index(axis)]
+            if index >= n:
+                raise ValueError(f"index runs from 0 to {n - 1}")
         t = st.tasks.submit("volume", title, "volume.slice", job, client=handler.headers.get("X-Mace-Client"), quiet=True)
         return gui_tasks.answer(handler, st.tasks, t, 120)
     p = _cube_path(st, q("path"))
@@ -3611,7 +3689,7 @@ def _read_structure(st, path: Path, frame: int = -1) -> Dict[str, Any]:
 
 def _cached_payload(st, path: Path, frame: int = -1) -> Dict[str, Any]:
     """A file's structure payload through the parse cache (as /api/structure gave it)."""
-    key = gui_cache.file_key(path, ("structure", frame))
+    key = gui_cache.file_key(path, ("structure", frame) + structures.companion_stamp(path))
     data = st.parse_cache.get(key)
     if data is None:
         data = _read_structure(st, path, frame)
@@ -3749,8 +3827,9 @@ def _supercell_matrix(params):
 
 def _supercell_estimate(src, params):
     import numpy as np
-    _need_3d(src, "Supercells")
     m = _supercell_matrix(params)
+    if not all(src.atoms.pbc):          # a slab or polymer: along its periodic directions only
+        builders.check_periodic(m, src.atoms.pbc)
     det = int(round(np.linalg.det(m)))
     n = det * len(src.atoms)
     if n > MAX_BUILD_ATOMS:
@@ -4553,6 +4632,13 @@ def _json_default(obj):
     return str(obj)
 
 
+def _mark_stopping(st) -> None:
+    """The start of every stop: the server's flag, and the tasks refuse a new
+    pool (a first pool task dispatched now must not start a worker)."""
+    st.stopping.set()
+    st.tasks.stop()
+
+
 def _finish_runs(st, say=print) -> None:
     """Server shutdown: a submission in flight is waited for (it cannot stop
     halfway; a second Ctrl+C stops waiting, the CLI child finishes in its
@@ -4696,7 +4782,7 @@ def make_server(root: Path, host: str = "127.0.0.1", port: int = 8765,
     shutdown = httpd.shutdown
 
     def stop():  # end the event streams too, or shutdown() waits on them
-        state.stopping.set()
+        _mark_stopping(state)
         if getattr(state, "cluster", None) is not None:
             state.cluster.stop()
         shutdown()

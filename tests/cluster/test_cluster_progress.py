@@ -336,7 +336,7 @@ def test_efficiency_plausibility():
     rows["4100.batch"]["TotalCPU"] = "10:00:00"               # more than 4 cores x 1 h: implausible
     rows["4100.batch"]["MaxRSS"] = ""
     e = jobinfo.efficiency(rows, "4100")
-    assert e["cpu"] is None and e["cpu_note"] == jobinfo.NOT_MEASURED and e["memory"] is None
+    assert e["cpu"] is None and e["cpu_note"].startswith(jobinfo.NOT_MEASURED) and e["memory"] is None
 
 
 def test_array_task_deck_from_manifest(tmp_path):

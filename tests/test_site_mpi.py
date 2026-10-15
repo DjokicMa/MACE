@@ -41,8 +41,8 @@ def test_srun_block(tmp_path, deck, exe):
     text = sh.read_text()
     block = ["export OMPI_MCA_btl=^openib", "export I_MPI_PMI_LIBRARY=/usr/lib64/libpmi2.so",
              'if [ -n "$MACE_LOCAL_RUN" ] && [ -z "$SLURM_JOB_ID" ]; then',
-             f'  I_MPI_HYDRA_BOOTSTRAP="ssh" mpirun -n $SLURM_NTASKS $EBROOTCRYSTAL/bin/{exe} 2>&1 >& $DIR/${{JOB}}.out',
-             "else", f"  srun --mpi=pmix $EBROOTCRYSTAL/bin/{exe} 2>&1 >& $DIR/${{JOB}}.out", "fi"]
+             f'  I_MPI_HYDRA_BOOTSTRAP="ssh" mpirun -n "$SLURM_NTASKS" "$EBROOTCRYSTAL/bin/{exe}" 2>&1 >& "$DIR/${{JOB}}.out"',
+             "else", f'  srun --mpi=pmix "$EBROOTCRYSTAL/bin/{exe}" 2>&1 >& "$DIR/${{JOB}}.out"', "fi"]
     lines = text.splitlines()
     i = lines.index(block[0])
     assert lines[i:i + len(block)] == block
@@ -56,13 +56,13 @@ def test_cpus_per_task_with_srun(tmp_path):
     p, sh = _submit(tmp_path, _env(tmp_path))
     text = sh.read_text()
     assert "export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK" in text
-    assert "  srun -c $SLURM_CPUS_PER_TASK $EBROOTCRYSTAL/bin/Pcrystal 2>&1 >& $DIR/${JOB}.out" in text
+    assert '  srun -c "$SLURM_CPUS_PER_TASK" "$EBROOTCRYSTAL/bin/Pcrystal" 2>&1 >& "$DIR/${JOB}.out"' in text
     assert "#SBATCH --cpus-per-task=4" in text
 
 
 def test_env_launcher(tmp_path):
     p, sh = _submit(tmp_path, _env(tmp_path, MACE_MPI_LAUNCHER="srun"))
-    assert "  srun $EBROOTCRYSTAL/bin/Pcrystal 2>&1 >& $DIR/${JOB}.out" in sh.read_text()
+    assert '  srun "$EBROOTCRYSTAL/bin/Pcrystal" 2>&1 >& "$DIR/${JOB}.out"' in sh.read_text()
 
 
 BAD_VALUES = [";id", "$(id)", "`id`", "a|b", "a&b", "a>b", "a<b", "a b", "a'b", "a\\b", "a\nb", "*",

@@ -52,8 +52,15 @@ except Exception:
     ui = _UIShim()
 
 from mace.workflow.plan_functionals import normalize_plan_functionals
+from mace.workflow.context import new_workflow_id
 from mace.workflow.common.constants import opt2d3_default_band_config, opt2d3_default_doss_config
+from mace.workflow.common.constants import PROPERTIES_MEMORY, PROPERTIES_NTASKS
 from mace.utils.piped_answers import read_answer, stop_if_out_of_step
+
+# The job-script generators (submitcrystal23.sh, submit_prop.sh): one copy, in
+# mace/submission. (mace/workflow had symbolic links to them, which a Windows
+# zip or a git checkout without symlinks turns into text stubs.)
+TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "submission"
 
 # Import MACE components
 try:
@@ -3999,12 +4006,13 @@ class WorkflowPlanner:
                 **_site_plan_resources(),
             }
         elif script_name == "submit_prop.sh":
-            # From the script analysis: 28 cores, 2 hours, 80G total
+            # The properties built-ins (PROPERTIES_NTASKS cores, PROPERTIES_MEMORY
+            # total), 2 hours
             base_resources = {
-                "ntasks": 28,
+                "ntasks": PROPERTIES_NTASKS,
                 "nodes": 1,
                 "walltime": "2:00:00",
-                "memory": "80G",
+                "memory": PROPERTIES_MEMORY,
                 "scratch_dir": "$SCRATCH/crys23/prop",
                 # account, CRYSTAL module (resolved once, now) and the site's
                 # partition / Python modules: mace/submission/site.py
@@ -4018,7 +4026,8 @@ class WorkflowPlanner:
                 "walltime": "4:00:00",
                 "memory_per_cpu": "4G",
                 # MSU HPCC's open account, only where the user has it (or it
-                # cannot be checked); else no -A, the SLURM default account
+                # cannot be checked on MSU HPCC or without SLURM:
+                # site.keeps_builtin_account); else no -A, the SLURM default
                 "account": _fallback_account("general"),
             }
 
@@ -4050,14 +4059,16 @@ class WorkflowPlanner:
                 "walltime_factor": 1.0,
                 "memory_factor": 1.5,
             },  # 7 days (N_atoms × 2 × OPT time)
+            # properties: the built-in (or the site's) total memory as it is,
+            # the one --mem every properties path writes
             "BAND": {
                 "walltime_factor": 1.0,
-                "memory_factor": 0.6,
-            },  # 1 day (base is already 1 day)
+                "memory_factor": 1.0,
+            },
             "DOSS": {
                 "walltime_factor": 1.0,
-                "memory_factor": 0.6,
-            },  # 1 day (base is already 1 day)
+                "memory_factor": 1.0,
+            },
         }
 
         # Use base type for lookup (so BAND2, BAND3 etc use BAND scaling)
@@ -4506,8 +4517,11 @@ class WorkflowPlanner:
 
         scripts_dir = self.work_dir / "workflow_scripts"
         scripts_dir.mkdir(exist_ok=True)
+        # Other workflows in this folder keep the templates they have now.
+        from mace.workflow.context import freeze_shared_scripts
+        freeze_shared_scripts(self.work_dir, workflow_id)
 
-        bin_scripts_dir = Path(__file__).parent
+        bin_scripts_dir = TEMPLATE_DIR
 
         # Copy SLURM scripts
         for step_key, config in step_configs.items():
@@ -4618,7 +4632,7 @@ class WorkflowPlanner:
                 modified_lines.append(line)
                 # Add workflow context environment variables ('or'-form: a
                 # None/missing id must never mint a second, divergent one)
-                workflow_id = script_config.get('workflow_id') or f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                workflow_id = script_config.get('workflow_id') or new_workflow_id(self.work_dir)
                 # Use absolute path to workflow context directory
                 context_dir = str(Path(self.work_dir).resolve() / f".mace_context_{workflow_id}")
                 modified_lines.append(f"echo '# Workflow context for queue manager' >> $1.sh")
@@ -4726,7 +4740,7 @@ class WorkflowPlanner:
         """Save complete workflow plan to JSON"""
         # Use the workflow_id timestamp to ensure the plan file matches
         workflow_id = workflow_plan.get(
-            "workflow_id", f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            "workflow_id", new_workflow_id(self.work_dir)
         )
         timestamp = workflow_id.replace("workflow_", "")
         plan_file = self.configs_dir / f"workflow_plan_{timestamp}.json"
@@ -4822,7 +4836,7 @@ class WorkflowPlanner:
             workflow_id = plan.get("workflow_id")
             if not workflow_id:
                 # Only generate a new one if missing (shouldn't happen)
-                workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                workflow_id = new_workflow_id(self.work_dir)
                 ui.warn(f"WARNING: No workflow_id in plan, generated new one: {workflow_id}")
 
             # Prepare the workflow directory structure for the executor
@@ -5052,8 +5066,8 @@ class WorkflowPlanner:
         if isolation_mode != "shared":
             ui.info("\nPost-completion actions:")
             ui.info("  1. Keep workflow context active (default)")
-            ui.info("  2. Archive workflow context after completion")
-            ui.info("  3. Export results and delete context after completion")
+            ui.info("  2. Archive workflow context when the last step finishes")
+            ui.info("  3. Export results and delete context when the last step finishes")
             
             action_choice = input("\nSelect action [1]: ").strip() or "1"
             action_map = {"1": "keep", "2": "archive", "3": "export_and_delete"}
@@ -5082,7 +5096,7 @@ class WorkflowPlanner:
         }
 
         # Step 5: Copy and customize SLURM scripts
-        workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        workflow_id = new_workflow_id(self.work_dir)
         self.copy_and_customize_scripts(step_configs, workflow_id, queue_config)
 
         # Add script information to workflow plan

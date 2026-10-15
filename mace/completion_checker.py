@@ -32,32 +32,24 @@ except ImportError:  # pragma: no cover - run as a script from mace/
         is_frequency_output, is_optimization_output, is_transport_output)
 
 # === Define known error and completion message patterns === #
-ERROR_PATTERNS = {
-    'too_many_scf': ["TOO MANY CYCLES"],
-    'memory': ["out-of-memory handler"],
-    'quota': ["error during write"],
-    'time': ["DUE TO TIME LIMIT"],
-    'geometry_small_dist': ["**** NEIGHB ****"],
-    'shrink_error': ["ANISOTROPIC SHRINKING FACTOR"],
-    'linear_basis': ["BASIS SET LINEARLY DEPENDENT"],
-    # The job script's scratch guard stopped the job before CRYSTAL ran
-    'scratch': ["no writable scratch directory"],
-    # OPTGEOM MAXCYCLE reached: CRYSTAL prints this, then stops with
-    # MPI_Abort - which is no runtime error. Matched first because its line
-    # comes before the abort lines.
-    'opt_unconverged': ["OPT END - FAILED"],
-    # `mace run` stopped it (Ctrl-C, hang-up); its timeout is 'time' below
-    'stopped': ["mace run: STOPPED (interrupted"],
-    'potential': [
-        "segmentation fault",
-        "=   bad termination of",
-        "abort(1) on node",
-        "srun: error:",
-        "slurmstepd: error: ***",
-        "forrtl: error (78):",
-        "Stack trace terminated abnormally."
-    ],
-}
+# The error lines and their priority are mace.utils.crystal_errors' table,
+# shared with the recovery detector and the queue manager; this is that table
+# per bucket (the bucket folders keep their names), for the GUI and livefile.
+try:
+    from mace.utils import crystal_errors
+except ImportError:  # pragma: no cover - run as a script from mace/
+    from utils import crystal_errors
+
+# `mace run` stopped it (Ctrl-C, hang-up); its timeout is 'time'
+_STOPPED = crystal_errors.ErrorClass(
+    "stopped", ("mace run: STOPPED (interrupted",), "stopped", "stopped",
+    "Stopped by mace run before it finished", "stopped on purpose")
+_CLASSES = (_STOPPED,) + crystal_errors.ERROR_CLASSES
+
+ERROR_PATTERNS = crystal_errors.bucket_patterns(
+    ['too_many_scf', 'memory', 'quota', 'time', 'geometry_small_dist', 'shrink_error',
+     'linear_basis', 'scratch', 'opt_unconverged', 'stopped', 'potential'])
+ERROR_PATTERNS['stopped'] = list(_STOPPED.patterns)
 
 # Error descriptions for better reporting
 ERROR_DESCRIPTIONS = {
@@ -230,10 +222,11 @@ def categorize_output_file(file_path):
             return ('time' if "DUE TO TIME LIMIT" in line else 'stopped'), base_name
 
     # === Error pattern matching FIRST === #
-    for line in lines:
-        for category, keywords in ERROR_PATTERNS.items():
-            if any(keyword.lower() in line.lower() for keyword in keywords):
-                return category, base_name
+    # In the shared priority order: an OOM kill before the BAD TERMINATION
+    # banner printed above it, CRYSTAL's error before its MPI_Abort.
+    match = crystal_errors.classify(lines, _CLASSES)
+    if match:
+        return match.bucket, base_name
 
     # === Completion checks only if no error found === #
     # Detection logic unchanged: OPT END and TOTAL CPU TIME = are the same
@@ -441,9 +434,19 @@ def find_slurm_job_id(out_file_path: Path) -> Optional[str]:
     """
     Find SLURM job ID from associated .o file.
 
-    Looks for patterns like:
+    Only the calculation's own logs count, the names MACE's job scripts
+    give them (``#SBATCH -o <name>-%J.o``; a job array task's link
+    ``<name>-<A>_<T>.o``) and the other two common forms:
+
     - material_name-12345678.o
+    - material_name_12345678.o
     - material_name.o12345678
+    - material_name-12345678_3.o  (job array task 12345678_3)
+
+    A log of another calculation whose name starts with this one
+    (``si_sp-1.o`` for ``si``) is never read. When there are several, the
+    newest wins: the newest log when an array task log is among them, else
+    the highest job id.
 
     Args:
         out_file_path: Path to the .out file
@@ -451,42 +454,20 @@ def find_slurm_job_id(out_file_path: Path) -> Optional[str]:
     Returns:
         Job ID string if found, None otherwise
     """
-    base = out_file_path.stem
-    parent = out_file_path.parent
-
-    # A MACE job array task leaves <name>-<A>_<T>.o (a link to the array's
-    # per-task log): its id is A_T. Read first, and when such a file is
-    # present the newest log wins: an older plain <name>-<id>.o must not
-    # shadow a newer task, nor an older task the newer single job a restart
-    # submitted. Without one, the order below is unchanged.
-    array_logs = [f for f in parent.glob(f"*{base}*.o") if _ARRAY_LOG_RE.search(f.name)]
-    if array_logs:
-        return _newest_job_id(parent, base)
-
-    # Pattern 1: name-jobid.o (e.g., 4^2T37-CA_SCF_opt-62676309.o)
-    for f in parent.glob(f"{base}-*.o"):
-        match = re.search(r'-(\d+)\.o$', f.name)
-        if match:
-            return match.group(1)
-
-    # Pattern 2: name.ojobid (e.g., material.o12345678)
-    for f in parent.glob(f"{base}.o*"):
-        match = re.search(r'\.o(\d+)$', f.name)
-        if match:
-            return match.group(1)
-
-    # Pattern 3: name_jobid.o or name-jobid.o with underscores
-    for f in parent.glob(f"*{base}*.o"):
-        # Look for any file containing the base name with a job ID
-        match = re.search(r'[-_](\d{6,})\.o$', f.name)
-        if match:
-            return match.group(1)
-
-    return None
+    logs = _own_logs(out_file_path.parent, out_file_path.stem)
+    if not logs:
+        return None
+    if any(is_task for _, _, is_task in logs):
+        # an array task log is among them: the newest log wins (an older
+        # plain log must not shadow a newer task, nor an older task the
+        # newer single job a restart submitted)
+        return max((mtime, jid) for mtime, jid, _ in logs)[1]
+    return max(logs, key=lambda x: int(x[1]))[1]
 
 
-# <name>-<array id>_<task>.o: the per-task log of a MACE job array task.
-_ARRAY_LOG_RE = re.compile(r'-(\d+_\d+)\.o$')
+# What may follow <name> in the name of its own SLURM log.
+_OWN_TASK_LOG = re.compile(r'-(\d+_\d+)\.o')
+_OWN_JOB_LOGS = (re.compile(r'-(\d+)\.o'), re.compile(r'_(\d{6,})\.o'), re.compile(r'\.o(\d+)'))
 
 
 def _log_mtime(path: Path) -> float:
@@ -499,29 +480,104 @@ def _log_mtime(path: Path) -> float:
             return 0.0
 
 
-def _newest_job_id(parent: Path, base: str) -> Optional[str]:
-    """The job id of the newest SLURM log of ``base`` in ``parent``, array
-    task logs (``A_T``) and plain ones alike. A name that ends in ``_<n>.o``
-    after an array id never yields the task number as a job id."""
-    candidates = []
-    for f in parent.glob(f"*{base}*.o"):
-        m = _ARRAY_LOG_RE.search(f.name)
-        if m and f.name.startswith(f"{base}-"):
-            candidates.append((_log_mtime(f), m.group(1)))
+def _own_logs(parent: Path, base: str) -> List[Tuple[float, str, bool]]:
+    """(mtime, job id, is array task) of each SLURM log of ``base`` itself."""
+    import glob as _glob
+    logs = []
+    for f in parent.glob(f"{_glob.escape(base)}*.o*"):
+        rest = f.name[len(base):]
+        m = _OWN_TASK_LOG.fullmatch(rest)
+        if m:
+            logs.append((_log_mtime(f), m.group(1), True))
             continue
-        if m:
-            continue
-        m = re.search(r'-(\d+)\.o$', f.name) if f.name.startswith(f"{base}-") else None
-        m = m or re.search(r'[-_](\d{6,})\.o$', f.name)
-        if m:
-            candidates.append((_log_mtime(f), m.group(1)))
-    for f in parent.glob(f"{base}.o*"):
-        m = re.search(r'\.o(\d+)$', f.name)
-        if m:
-            candidates.append((_log_mtime(f), m.group(1)))
-    if not candidates:
+        for rx in _OWN_JOB_LOGS:
+            m = rx.fullmatch(rest)
+            if m:
+                logs.append((_log_mtime(f), m.group(1), False))
+                break
+    return logs
+
+
+def _slurm_job_identity(job_id: str) -> Optional[Tuple[str, str]]:
+    """(job name, working directory) SLURM gives for a queued job: squeue,
+    else scontrol. None when neither answers."""
+    try:
+        from mace.queue.slurm_ids import slurm_env
+        env = slurm_env()
+    except Exception:
+        env = None
+    try:
+        res = subprocess.run(['squeue', '-h', '-j', job_id, '-o', '%j|%Z'],
+                             capture_output=True, text=True, timeout=30, env=env)
+        lines = [l for l in res.stdout.splitlines() if l.strip()] if res.returncode == 0 else []
+        if len(lines) == 1 and '|' in lines[0]:
+            name, workdir = lines[0].split('|', 1)
+            return name.strip(), workdir.strip()
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    try:
+        res = subprocess.run(['scontrol', 'show', 'job', '-o', job_id],
+                             capture_output=True, text=True, timeout=30, env=env)
+        if res.returncode == 0:
+            name = re.search(r'\bJobName=(.*?)\s+\w+=', res.stdout)
+            workdir = re.search(r'\bWorkDir=(\S+)', res.stdout)
+            if name and workdir:
+                return name.group(1).strip(), workdir.group(1)
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    return None
+
+
+def _same_dir(a, b) -> bool:
+    try:
+        return Path(a).resolve() == Path(b).resolve()
+    except OSError:
+        return False
+
+
+def _array_member(out_path: Path, task_id: str) -> Optional[Dict]:
+    """The submitted.json of the MACE job array that ran task A_T for this
+    output, with the member, or None."""
+    import json
+    array_id, task = task_id.split('_', 1)
+    base, folder = out_path.stem, out_path.parent
+    for root in (folder, folder.parent):
+        for f in root.glob('.mace_arrays/*/submitted.json'):
+            try:
+                data = json.loads(f.read_text())
+            except (OSError, ValueError):
+                continue
+            if str(data.get('array_job_id')) != array_id:
+                continue
+            for m in data.get('members') or []:
+                if (str(m.get('task')) == task and m.get('job') == base
+                        and _same_dir(m.get('dir', ''), folder)):
+                    return data
+    return None
+
+
+def confirm_own_job(job_id: str, out_path: Path) -> Optional[str]:
+    """Why ``job_id`` must not be canceled as the job of ``out_path``, or
+    None when SLURM confirms it is: a plain job named like the calculation,
+    working in its folder; a MACE job array task of an array whose record
+    lists this calculation as that task, working in the array's folder."""
+    who = _slurm_job_identity(job_id)
+    if who is None:
+        return "SLURM did not say which job this is (squeue/scontrol gave no answer)"
+    name, workdir = who
+    if '_' in job_id:
+        data = _array_member(out_path, job_id)
+        if data is None:
+            return f"no MACE job array record lists {out_path.stem} as task {job_id}"
+        if not _same_dir(workdir, data.get('array_dir', '')):
+            return f"SLURM runs {job_id} in {workdir}, not in the array folder {data.get('array_dir')}"
         return None
-    return max(candidates)[1]
+    if name != out_path.stem:
+        return f"SLURM names job {job_id} '{name}', not '{out_path.stem}'"
+    if not _same_dir(workdir, out_path.parent):
+        return f"SLURM runs job {job_id} in {workdir}, not in {out_path.parent}"
+    return None
+
 
 def get_running_jobs() -> Set[str]:
     """
@@ -606,6 +662,28 @@ def detect_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]) -> Lis
 
     return zombies
 
+def _cancel_confirmed(zombies: List[Dict]):
+    """scancel the jobs of ``zombies`` that SLURM confirms are theirs
+    (confirm_own_job); never a job it does not, nor a whole job array.
+    Returns (scancel result or None, the ids canceled)."""
+    from mace.queue.slurm_ids import safe_scancel_many
+    ids, refused = [], []
+    for z in zombies:
+        why = confirm_own_job(z['job_id'], z['path'])
+        if why:
+            refused.append((z['job_id'], why))
+        elif z['job_id'] not in ids:
+            ids.append(z['job_id'])
+    # Task ids (A_T) of a job array are canceled one task at a
+    # time; a bare array id would cancel every task and is refused.
+    result, more = (safe_scancel_many(ids, search_dirs=[z['path'].parent for z in zombies])
+                    if ids else (None, []))
+    for jid, reason in refused + more:
+        print(f"\n✗ Not canceled {jid}: {reason}")
+    canceled = [j for j in ids if j not in {r[0] for r in more}]
+    return result, canceled
+
+
 def remove_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]):
     """
     Detect zombie jobs and offer to cancel them interactively.
@@ -689,14 +767,7 @@ def remove_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]):
         response = input(prompt).strip().lower()
 
         if response == 'y':
-            # Task ids (A_T) of a job array are canceled one task at a
-            # time; a bare array id would cancel every task and is refused.
-            from mace.queue.slurm_ids import safe_scancel_many
-            result, refused = safe_scancel_many(
-                definite_ids, search_dirs=[z['path'].parent for z in definite_zombies])
-            for jid, reason in refused:
-                print(f"\n✗ Not canceled {jid}: {reason}")
-            canceled = [j for j in definite_ids if j not in {r[0] for r in refused}]
+            result, canceled = _cancel_confirmed(definite_zombies)
 
             if result is not None and result.returncode == 0:
                 print(f"\n✓ Canceled {len(canceled)} zombie job(s):")
@@ -713,17 +784,11 @@ def remove_zombie_jobs(result_buckets: Dict, file_paths: Dict[str, Path]):
 
     # Optionally ask about ongoing jobs
     if ongoing_zombies:
-        ongoing_ids = [z['job_id'] for z in ongoing_zombies]
         print()
         response = input(f"Also cancel {len(ongoing_zombies)} ongoing job(s) that may be stuck? [y/N]: ").strip().lower()
 
         if response == 'y':
-            from mace.queue.slurm_ids import safe_scancel_many
-            result, refused = safe_scancel_many(
-                ongoing_ids, search_dirs=[z['path'].parent for z in ongoing_zombies])
-            for jid, reason in refused:
-                print(f"\n✗ Not canceled {jid}: {reason}")
-            canceled = [j for j in ongoing_ids if j not in {r[0] for r in refused}]
+            result, canceled = _cancel_confirmed(ongoing_zombies)
 
             if result is not None and result.returncode == 0:
                 print(f"\n✓ Canceled {len(canceled)} ongoing job(s):")
@@ -797,7 +862,8 @@ Status categories:
                              'SIGMAS/KAPPA/TDF), cube files (_DENS/_POT/_SPIN.CUBE), and '
                              'FREQ-related .DAT files.'))
     parser.add_argument('--remove-zombie-jobs', action='store_true',
-                       help='Detect and cancel jobs that failed but are still running in SLURM')
+                       help='Detect and cancel jobs that failed but are still running in SLURM '
+                            "(only a calculation's own, SLURM-confirmed job)")
 
     args = parser.parse_args()
 

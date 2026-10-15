@@ -55,13 +55,14 @@ def test_ev_conversions_use_full_precision_constant(extractor):
 
 def test_corrected_total_uses_final_geometry_in_opt(extractor):
     """In an OPT the printed combined line is the INITIAL geometry; the corrected
-    total must come from the FINAL-geometry components instead (4LG was stale by
-    ~0.094 AU when the printed line was trusted)."""
+    total is the final geometry's: OPT END's E(AU), which already includes D3
+    and gCP (-3644.7719812597, pinned here before, counted them twice; see
+    test_opt_final_energy.py)."""
     out = find_data("SP/4LG_2x2_AA_opt_HSESOL3C_optimized.out")
     p = energy_props(extractor, out)
-    assert p["total_energy_corrected_au"] == pytest.approx(-3644.7719812597, abs=1e-3)
-    # Definitely NOT the stale initial-geometry printed value.
-    assert abs(p["total_energy_corrected_au"] - (-3644.6775083249)) > 0.05
+    assert p["total_energy_corrected_au"] == pytest.approx(-3644.677628625, abs=1e-8)
+    # Not the stale initial-geometry printed value (1.2e-4 AU higher).
+    assert abs(p["total_energy_corrected_au"] - (-3644.6775083249)) > 1e-4
 
 
 def test_molecular_freq_thermo_extracted(extractor):

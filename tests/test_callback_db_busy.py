@@ -126,10 +126,10 @@ QUEUE_LOCK = textwrap.dedent("""
     from mace.queue.queue_lock_manager import QueueLockManager
     from pathlib import Path
     m = QueueLockManager(lock_dir=Path(sys.argv[1]))
-    assert m.acquire_lock('queue_manager_completion', 10)
+    assert m.acquire_lock('queue_state', 10)
     print('held', flush=True)
     time.sleep(float(sys.argv[2]))
-    m.release_lock('queue_manager_completion')
+    m.release_lock('queue_state')
     """)
 
 

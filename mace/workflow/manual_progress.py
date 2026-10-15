@@ -47,8 +47,9 @@ DEFAULT_QUEUE_CONFIG = {
 }
 
 
-def _mint_workflow_id() -> str:
-    return f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+def _mint_workflow_id(base_dir=None) -> str:
+    from mace.workflow.context import new_workflow_id
+    return new_workflow_id(base_dir)
 
 
 def _template_plan(planner, sequence: List[str], input_dir: Path,
@@ -168,7 +169,7 @@ def build_progress_plan(work_dir: Path, db_path: str, input_files: List[Path],
     # That is intended here (this run IS becoming a workflow) and is why it
     # never happens on the default `mace submit` path.
     planner = WorkflowPlanner(str(work_dir), db_path)
-    workflow_id = _mint_workflow_id()
+    workflow_id = _mint_workflow_id(planner.work_dir)
     input_dir = Path(input_files[0]).resolve().parent if input_files else work_dir
 
     if interactive:
@@ -185,6 +186,15 @@ def build_progress_plan(work_dir: Path, db_path: str, input_files: List[Path],
     # path — the submissions themselves must be stamped with the same id the
     # plan is filed under, or the completion callback cannot find the plan.
     plan["workflow_id"] = workflow_id
+    # The job scripts run this workflow in its own context
+    # (.mace_context_<id>), which keeps its own copy of the templates its
+    # later steps are built from.
+    from mace.workflow.context import keep_workflow_scripts
+    keep_workflow_scripts(work_dir, workflow_id, [
+        script.get("step_specific_name")
+        for step in (plan.get("step_configurations") or {}).values()
+        for script in (((step or {}).get("slurm_config") or {}).get("scripts") or {}).values()
+        if isinstance(script, dict) and script.get("step_specific_name")])
     if job_arrays:
         plan["job_arrays"] = job_arrays
     plan_file = planner.save_workflow_plan(plan)

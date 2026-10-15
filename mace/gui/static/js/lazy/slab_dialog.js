@@ -150,28 +150,35 @@ function fitPane(v, s, core) {
   const cv = v.getCanvas(), rc = cv.getBoundingClientRect(), W = cv.clientWidth, Hh = cv.clientHeight;
   const dlg = document.querySelector('dialog.builder-dialog[data-builder="slab"][open]');
   const dr = dlg ? dlg.getBoundingClientRect() : null;
-  const free = dr && dr.left > rc.left + 0.3 * W && dr.left < rc.right && dr.bottom > rc.top ? dr.left - rc.left - 8 : W;
+  const z = window.maceZoom.of(cv);     // the dialog's rectangle is in screen px, W in the canvas's own
+  const free = dr && dr.left > rc.left + 0.3 * W * z && dr.left < rc.right && dr.bottom > rc.top ? (dr.left - rc.left) / z - 8 : W;
+  // the rotation center: the in-plane cell center at the slab's mid-height (not the vacuum's)
+  const pivot = core.pivotOf({ cell: C, pbc: [true, true, false], origin: [0, 0, 0] }, null, s.cart);
+  const now0 = v.getView();
+  v.setView([-pivot[0], -pivot[1], -pivot[2], ...now0.slice(3), 0, 0]);
   if (!(W > 0 && Hh > 0)) return free;
   const xyz = pts.map((p) => ({ x: p[0], y: p[1], z: p[2] }));
-  const box = () => {
+  const paint = () => {
     // 3Dmol updates its size and matrices when it paints (once per frame here): paint this view now
     if (!(v.paintNow && v.paintNow())) { try { if (v.setSlabAndFog) v.setSlabAndFog(); if (v.scene && v.scene.updateMatrixWorld) v.scene.updateMatrixWorld(true); } catch (e) { /* not drawn yet */ } }
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (const p of v.modelToScreen(xyz)) {
-      const x = p.x - rc.left, y = p.y - rc.top;
-      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
-    }
-    return { x0, x1, y0, y1 };
   };
+  const centerPx = () => { paint(); const c = v.modelToScreen({ x: pivot[0], y: pivot[1], z: pivot[2] }); return [c.x - rc.left, c.y - rc.top]; };
   for (let pass = 0; pass < 3; pass++) {
-    let b = box();
-    if (!(b.x1 > b.x0 && b.y1 > b.y0)) break;
-    const f = 0.85 * Math.min(free / (b.x1 - b.x0), Hh / (b.y1 - b.y0));
-    if (Math.abs(f - 1) > 0.005) v.zoom(f);
-    b = box();
-    const dx = free / 2 - (b.x0 + b.x1) / 2, dy = Hh / 2 - (b.y0 + b.y1) / 2;
-    if (Math.hypot(dx, dy) > 0.5) v.translateScene(dx, dy);
-    if (Math.abs(f - 1) < 0.01 && Math.hypot(dx, dy) < 1) break;
+    const [cx, cy] = centerPx();
+    let hw = 0, hh = 0;
+    for (const p of v.modelToScreen(xyz)) { hw = Math.max(hw, Math.abs(p.x - rc.left - cx)); hh = Math.max(hh, Math.abs(p.y - rc.top - cy)); }
+    if (!(hw > 0 && hh > 0)) break;
+    const f = 0.85 * Math.min(free / (2 * hw), Hh / (2 * hh));
+    if (Math.abs(f - 1) < 0.005) break;
+    v.zoom(f);
+  }
+  // the center into the middle of the free part: 3Dmol turns about its rotation
+  // group's origin, which view[8], view[9] place off the canvas's center
+  if (Math.abs(free - W) > 0.5) {
+    const view = v.getView(), [x0] = centerPx();
+    v.setView([...view, 1, 0]);
+    const [x1] = centerPx(), k = x1 - x0;               // px per unit of the offset
+    v.setView([...view, Math.abs(k) > 1e-6 ? (free / 2 - x0) / k : 0, 0]);
   }
   v.render();
   return free;

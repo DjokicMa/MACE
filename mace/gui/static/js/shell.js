@@ -77,7 +77,8 @@ function ctxHere() {
     hasMeasurements: !!eds && eds.measurements.length > 0,
     inputFocus: !!ae && (ae.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(ae.tagName)),
     dialogOpen: !!document.querySelector("dialog:modal"),   // a non-modal panel (Edit Cell) leaves the keys on
-    viewportFocus: !!ae && !!ae.closest && !!ae.closest(".viewer-wrap"),
+    viewportFocus: !!ae && !!ae.closest && !!ae.closest(".viewer-wrap, .fv-view"),
+    freqOffGamma: !!(d && d.kind === "freq" && d.gamma === false),
     setupOpen, setupHasDeck: !!(setupMod && setupMod.hasDeck()), setupFocus: !!ae && !!ae.closest && !!ae.closest("#inspector .setup"),
     isMac, symMode: eds ? eds.symMode === "sym" : symMode === "sym", toolNotSelect: tool !== "select",
     openFolderOn: !!(info && info.open_folder),
@@ -174,6 +175,11 @@ async function openDoc(path, opts = {}) {
     // a log or an output with no geometry, found only now (the details were not in yet): never an error toast
     if (e.status === 409 && /job log/i.test(e.message)) return openJobLog(path);
     if (e.status === 409 && /No geometry in this output/.test(e.message)) return openNoGeometry(path);
+    // a SLAB/POLYMER/MOLECULE deck the viewer does not draw: the output of its run, next to it, opens instead
+    if (e.status === 400 && e.data && e.data.open && e.data.open !== path) {
+      toast(`${e.message}; opening it instead.`, "info");
+      return openDoc(e.data.open);
+    }
     toast(`${path.split("/").pop()}: ${e.message}`, "error");
     return null;
   } finally { clearTimeout(busy); setTask(""); }
@@ -370,6 +376,8 @@ $("#doc-tabs").addEventListener("pointerdown", (e) => {
   if (!t || e.target.closest("[data-close]") || !GR || GR.pane) return;
   GR.dragTab(e, docs.find((y) => y.id === Number(t.dataset.doc)), () => { tabDragged = true; setTimeout(() => { tabDragged = false; }, 0); });
 });
+// a tab moves by the pointer (groups.js): no native drag of a tab's text or icon
+$("#doc-tabs").addEventListener("dragstart", (e) => e.preventDefault());
 $("#doc-tabs").addEventListener("click", (e) => {
   if (tabDragged) { tabDragged = false; return; }
   const x = e.target.closest("[data-close]");
@@ -545,10 +553,11 @@ function splitter(el, prop, key, min, max, sign, axis = "x") {
   el.setAttribute("aria-valuenow", layout[key] || def);
   el.addEventListener("pointerdown", (e) => {
     e.preventDefault(); el.setPointerCapture(e.pointerId); el.classList.add("dragging");
-    const start = axis === "x" ? e.clientX : e.clientY, base = layout[key] || def;
+    const start = axis === "x" ? e.clientX : e.clientY, base = layout[key] || def, z = window.maceZoom.of(shell);
     let frame = 0;
+    // the sizes are the shell's own px: a screen px of pointer travel is 1/zoom of them
     const move = (ev) => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() =>
-      set(base + sign * ((axis === "x" ? ev.clientX : ev.clientY) - start))); };
+      set(base + sign * ((axis === "x" ? ev.clientX : ev.clientY) - start) / z)); };
     const up = () => { el.classList.remove("dragging"); el.removeEventListener("pointermove", move); saveLayout(); };
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up, { once: true });
@@ -653,6 +662,7 @@ function toggleOpt(id, value) {
   const el = optEl(id);
   el.checked = value === undefined ? !el.checked : value;
   el.dispatchEvent(new Event("change"));
+  redrawFreq();
   refresh();
 }
 /* The document the 3D views draw: the active one when it has a view, else the
@@ -705,14 +715,31 @@ const labelMode = () => settings.get("labels");
 function setLabels(v) { settings.set("labels", v); }
 function cycleLabels() { const order = ["off", "element", "index", "both", "wyckoff"]; setLabels(order[(order.indexOf(labelMode()) + 1) % order.length]); }
 const style = () => (optEl("opt-style") ? optEl("opt-style").value : "ballstick");
-function setStyle(v) { const el = optEl("opt-style"); el.value = v; el.dispatchEvent(new Event("change")); refresh(); }
-function mainViewer() { return M().state.viewers[active && active.kind === "trajectory" ? "viewer-before" : "viewer-main"]; }
+function setStyle(v) { const el = optEl("opt-style"); el.value = v; el.dispatchEvent(new Event("change")); redrawFreq(); refresh(); }
+function mainViewer() {
+  return M().state.viewers[active && active.kind === "trajectory" ? "viewer-before" : active && active.kind === "freq" ? "viewer-freq" : "viewer-main"];
+}
+/* The mode view (a FREQ document) draws with the toolbar's display options too (js/docs/freq.js). */
+const FREQ_VIEW_ONLY = "The mode view is view-only: open its structure (Structure, top right) to edit";
+const freqActive = () => !!(freqView && active && active.kind === "freq");
+function redrawFreq() { if (freqActive()) freqView.redraw(); }
 /* View along a, b, c, a*, b*, c* or [u v w]: the camera module in a
  * structure document (with a defined "up", animated); the old turn elsewhere. */
 function viewAlong(k) {
+  const which = typeof k === "number" ? "abc"[k] : k;
+  if (freqActive()) {
+    const v = mainViewer(), fd = freqView.doc(), s = fd && fd.structure;
+    if (!v || !s || !s.cell || Array.isArray(which)) return;
+    import("./geom/core.js").then((G) => {
+      const dir = G.alongDirection(s.cell, which), view = v.getView();
+      v.setView([...view.slice(0, 4), ...G.viewQuaternion(dir, G.upVector(s.cell, dir))]);
+      v.render();
+      if ($("#tb-along-label")) $("#tb-along-label").textContent = which;
+    });
+    return;
+  }
   const s = M().state.structure, v = mainViewer();
   if (!s || !v) return;
-  const which = typeof k === "number" ? "abc"[k] : k;
   // the view's name for an exported image (<stem>_a.png, _b*.png, _uvw.png), while the camera stays there
   const keep = () => { alongState = { label: Array.isArray(which) ? "uvw" : which, view: v.getView() }; };
   if (E && active && active.kind === "structure") {
@@ -724,7 +751,7 @@ function viewAlong(k) {
   $("#tb-along-label") && ($("#tb-along-label").textContent = label);
   updateTriad();
 }
-function resetView() { M().drawStructure(false); updateTriad(); }
+function resetView() { if (freqActive()) { freqView.resetView(); return; } M().drawStructure(false); updateTriad(); }
 function toggleProjection() {
   settings.set("projection", settings.get("projection") === "orthographic" ? "perspective" : "orthographic");
 }
@@ -1196,7 +1223,7 @@ function renderStatus() {
   if (run.length) {
     const t = run[0], pct = Math.round((t.progress || 0) * 100), more = run.length > 1 ? ` +${run.length - 1}` : "";
     items.push(`<button class="st-item st-task" id="st-task" data-tip="Background tasks" data-desc="Open the Tasks panel">` +
-      `<span class="spinner sm" aria-hidden="true"></span><span class="st-task-title">${esc(t.title)}${more}</span>` +
+      `<span class="spinner sm" aria-hidden="true"></span><span class="st-task-title" title="${esc(t.title)}${more}">${esc(t.title)}${more}</span>` +
       `<span class="st-task-bar" role="progressbar" aria-label="${esc(t.title)}" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></span></button>`);
   } else if (task) items.push(`<button class="st-item" id="st-task">${icon("loader-circle")}<span>${esc(task)}</span></button>`);
   if (storageChip) items.push(`<button class="st-item st-storage ${storageChip.level === "critical" ? "crit" : "warn"}" id="st-storage" data-tip="Storage" data-desc="Open the Cluster view's Storage tab">${icon("triangle-alert")}<span>${esc(storageChip.text)}</span></button>`);
@@ -1306,6 +1333,11 @@ function connect() {
   });
   es.addEventListener("task-removed", (e) => { try { const d = JSON.parse(e.data); taskStore.delete(d.id); tasksChanged(); } catch (err) { /* */ } });
   es.addEventListener("jobs.finished", (e) => { try { jobFinished(JSON.parse(e.data)); } catch (err) { /* malformed */ } });
+  // a file appeared in or left the folder (a job's output, a copy from a shell): the Explorer lists it again
+  es.addEventListener("files-changed", (e) => {
+    let d = {}; try { d = JSON.parse(e.data); } catch (err) { /* */ }
+    if (d.gen === undefined || String(d.gen) === window.__maceRootGen) filesChanged();
+  });
   es.addEventListener("heartbeat", (e) => { window.__maceBeats = (window.__maceBeats || 0) + 1; beat(e); });
   // the browser retries every few seconds while the tunnel or server is down:
   // the banner comes 20 s after the first error, not 20 s after the last
@@ -1313,6 +1345,17 @@ function connect() {
     connection = "warn"; renderStatus(); clearTimeout(beatTimer);
     if (!errTimer) errTimer = setTimeout(() => { errTimer = 0; lost(); }, 20000);
   };
+}
+/* files-changed: one /api/files at a time, the last change always listed */
+let filesLoading = false, filesAgain = false;
+function filesChanged() {
+  if (leaving) return;
+  if (filesLoading) { filesAgain = true; return; }
+  filesLoading = true;
+  M().loadFiles().catch(() => {}).finally(() => {
+    filesLoading = false;
+    if (filesAgain) { filesAgain = false; filesChanged(); }
+  });
 }
 function lost() {
   if (lostShown) return;
@@ -1642,6 +1685,8 @@ document.addEventListener("paste", onPaste);
 function onPaste(e) {
   const t = e.target;
   if (isTextField(t) || (t && t.closest && t.closest("dialog"))) return;
+  // the primary selection a middle click in a viewer brings (Linux): never a paste
+  if (performance.now() - midUpAt < MID_PASTE_MS) return;
   const text = e.clipboardData ? e.clipboardData.getData("text/plain") : "";
   const imp = !!pasteAsImport && performance.now() - pasteAsImport < 1000;
   pasteAsImport = 0;
@@ -1649,6 +1694,37 @@ function onPaste(e) {
   e.preventDefault();
   pasteText(text, imp);
 }
+/* The middle button in a 3D viewer pans (viewport/pointer.js) or zooms
+ * (3Dmol's own viewers: optimization, normal mode, volume); on Linux it is
+ * also the primary selection's paste, which Chromium runs on the mouseup and
+ * Firefox on the auxclick. Its mousedown, pointerup, mouseup and auxclick are
+ * canceled there: preventDefault only, so pointer.js and 3Dmol (whose mouseup
+ * listener is on the body and ignores defaultPrevented) still get every
+ * event. Its pointerdown is left alone: canceling it would keep the mousedown
+ * from 3Dmol. A paste that still comes within MID_PASTE_MS of the release is
+ * dropped by onPaste, after a middle click anywhere outside a text field;
+ * Mod+V clears that window. */
+const MID_PASTE_MS = 500;
+let midDown = false, midTail = false, midUpAt = -Infinity;
+function onMiddleButton(e) {
+  if (e.button !== 1) return;
+  const inViewer = !!e.target && !!e.target.closest && !!e.target.closest(".viewer");
+  if (e.type === "pointerdown" || e.type === "mousedown") {
+    midDown = inViewer; midTail = false;
+    if (inViewer && e.type === "mousedown") e.preventDefault();       // no focus move, no autoscroll
+    return;
+  }
+  if (e.type === "pointercancel") { midDown = false; return; }
+  // the release of a press that began in a viewer (pointer capture retargets it), then its mouseup and auxclick
+  if (!midDown && !midTail && !inViewer) {
+    // elsewhere outside a text field (a toolbar button, a tab) the primary selection's paste is dropped too
+    if (!isTextField(e.target)) midUpAt = performance.now();
+    return;
+  }
+  e.preventDefault();
+  if (e.type !== "auxclick") { midDown = false; midTail = true; midUpAt = performance.now(); }
+}
+for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "auxclick", "pointercancel"]) addEventListener(type, onMiddleButton, true);
 /** Copied atoms paste into the open structure; anything else opens Import from Clipboard. */
 function pasteText(text, asImport = false) {
   if (!asImport && isAtomsBlock(text) && active && active.kind === "structure" && edOf(active) && !active.viewOnly) return S.ed("edit.pasteText", { text });
@@ -1936,18 +2012,54 @@ function recentMenu() {
     disabled: isMissing(x.path), title: isMissing(x.path) ? "Missing" : x.path, run: () => openDoc(x.path) }));
   return [...(items.length ? items : [{ label: "No recent files", disabled: true, run: () => {} }]), "-", "file.clearRecent"];
 }
+/* The explorer's sections (Open Editors, Files, Materials.db, Recent): each
+ * header folds its section, remembered in the profile's ui.explorer like the
+ * Recent and Materials.db sections always were. Each section scrolls inside
+ * its own share (shell.css), so a long list never squeezes the file tree. */
+const explorerUi = () => profile.ui("explorer", {}) || {};
+function setExplorerOpen(key, open) { profile.setUi("explorer", { ...explorerUi(), [key]: open }); }
+let editorsHtml = "";
 function renderOpenEditors() {
   const host = $("#open-editors");
-  if (!docs.length) { host.innerHTML = ""; return; }
-  host.innerHTML = `<div class="section-label">Open editors</div>` + docs.map((d) =>
+  if (!docs.length) { host.innerHTML = ""; editorsHtml = ""; return; }
+  const open = explorerUi().editorsOpen !== false, was = $("#editors-rows"), top = was ? was.scrollTop : 0;
+  const focused = document.activeElement && document.activeElement.id === "editors-toggle";
+  const html = `<button class="section-label section-toggle" id="editors-toggle" aria-expanded="${open}" aria-controls="editors-rows">` +
+    `${icon("chevron-down", "i chev")}<span>Open Editors</span><span class="section-count">${docs.length}</span></button>` +
+    `<div class="side-rows" id="editors-rows"${open ? "" : " hidden"}>` + docs.map((d) =>
     `<button class="file ${d === active ? "active" : ""}" data-doc="${d.id}" title="${esc(d.path || d.title)}">` +
-    `<span class="kb ${esc(d.fileKind || "out")}">${esc(KIND_LABEL[d.fileKind] || "view")}</span>${M().middleName(d.title)}</button>`).join("");
+    `<span class="kb ${esc(d.fileKind || "out")}">${esc(KIND_LABEL[d.fileKind] || "view")}</span>${M().middleName(d.title)}</button>`).join("") + `</div>`;
+  // only when something changed: a row replaced under the pointer or the focus loses it
+  if (html === editorsHtml && was) { revealActiveEditor(); return; }
+  editorsHtml = html;
+  host.innerHTML = html;
+  $("#editors-rows").scrollTop = top;
+  if (focused) $("#editors-toggle").focus();
+  revealActiveEditor();
 }
+/* The active row stays in sight inside the section's own scroll (never the page's),
+ * also when the window or the UI scale shrinks the section. */
+function revealActiveEditor() {
+  const rows = $("#editors-rows"), cur = rows && !rows.hidden && $(".file.active", rows);
+  if (cur && (cur.offsetTop < rows.scrollTop || cur.offsetTop + cur.offsetHeight > rows.scrollTop + rows.clientHeight)) {
+    rows.scrollTop = cur.offsetTop - (rows.clientHeight - cur.offsetHeight) / 2;
+  }
+}
+addEventListener("resize", revealActiveEditor);
+function applyFilesOpen() {
+  const open = explorerUi().filesOpen !== false, t = $("#files-toggle");
+  t.setAttribute("aria-expanded", String(open));
+  $("#file-list").hidden = !open;
+  $("#files-section").classList.toggle("collapsed", !open);
+}
+applyFilesOpen();
+$("#files-toggle").addEventListener("click", () => { setExplorerOpen("filesOpen", !(explorerUi().filesOpen !== false)); applyFilesOpen(); });
 $("#root-chip").addEventListener("contextmenu", (e) => {
   e.preventDefault();
   openAt(["file.copyRootPath"], e.clientX, e.clientY, "Folder menu");
 });
 $("#open-editors").addEventListener("click", (e) => {
+  if (e.target.closest("#editors-toggle")) { setExplorerOpen("editorsOpen", !(explorerUi().editorsOpen !== false)); renderOpenEditors(); return; }
   const b = e.target.closest("[data-doc]");
   if (b) activate(docs.find((d) => d.id === Number(b.dataset.doc)));
 });
@@ -2157,7 +2269,7 @@ let previewKeys = null;
 function onKeydown(e) {
   if ((e.defaultPrevented && !e.__maceNav) || e.isComposing) return;
   // Mod+V / Mod+Shift+V: the browser's own paste (plan B12), never preventDefault here
-  if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === "KeyV" && !isTextField(e.target)) { pasteAsImport = e.shiftKey ? performance.now() : 0; return; }
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && e.code === "KeyV" && !isTextField(e.target)) { pasteAsImport = e.shiftKey ? performance.now() : 0; midUpAt = -Infinity; return; }
   if (previewKeys && !isPaletteOpen() && !menuOpen() && !document.querySelector("dialog:modal") && previewKeys(e)) {
     e.preventDefault(); e.stopPropagation(); return;
   }
@@ -2282,7 +2394,7 @@ const REDRAW_KEYS = new Set(["showPolyhedra", "colorScheme", "atomScale", "bondR
 let redrawFrame = 0;
 function redrawSoon() {
   cancelAnimationFrame(redrawFrame);
-  redrawFrame = requestAnimationFrame(() => { if (M() && M().redrawViews) M().redrawViews(); });
+  redrawFrame = requestAnimationFrame(() => { if (M() && M().redrawViews) M().redrawViews(); redrawFreq(); });
 }
 /* The classic views' own controls (now in Inspector › Display) write the settings. */
 function mirrorClassicControls() {
@@ -2433,7 +2545,7 @@ function runPathOf(a) {
   if (active && (active.kind === "trajectory" || active.kind === "structure") && active.path && /\.(out|log)$/i.test(active.path)) return active.path;
   return null;
 }
-async function openRunPlot(path, tab = null, compare = null) {
+async function openRunPlot(path, tab = null, compare = null, energy = null) {
   path = path || runPathOf(null);
   if (!path) { toast("Open an optimization output (.out) first", "info"); return null; }
   let d = docs.find((x) => x.kind === "runplot" && x.runPath === path && (x.compare || null) === (compare || null));
@@ -2444,8 +2556,10 @@ async function openRunPlot(path, tab = null, compare = null) {
       title: compare ? `Compare Runs · ${name} vs ${compare.split("/").pop()}` : `Run Analysis · ${name}`, tab: tab || undefined };
     docs.push(d);
   } else if (tab) d.tab = tab;
+  if (energy) d.energyPatch = energy;            // the energy card's options (Open as Plot)
   await activate(d);
   if (tab && runView) runView.showTab(tab);
+  if (energy && runView) runView.setEnergy(d, d.energyPatch);
   return d;
 }
 /* ---------------------------------------------------------------- a run's card and problems (PLAN_analysis C4.8, C7)
@@ -2555,7 +2669,7 @@ async function trackMeasurement(m, label) {
   const v = await runViewer();
   v.track(m, label);
 }
-window.__maceOpenRunPlot = (p, tab) => openRunPlot(p, tab || "energy");
+window.__maceOpenRunPlot = (p, tab, energy) => openRunPlot(p, tab || "energy", null, energy || null);
 /** Compare Runs…: a second .out picked from the folder's outputs. */
 async function compareRunsDialog() {
   const first = runPathOf(null);
@@ -2581,6 +2695,8 @@ function freqViewer() {
       lu.loadCss(new URL("./docs/freq.js", import.meta.url).href, "../../css/plot.css")]);
     freqView = m.createFreqView($("#freq-host"), pieces.freqTable, pieces.freqOpts, { api: (...a) => M().api(...a), q: (o) => M().q(o), esc, icon, toast,
       apiTask: (p, b, u, x) => apiTask(p, b, u, x), download: (b, n) => download(b, n), M,
+      // the toolbar's display options, as the structure view takes them (the range and boundary atoms per document)
+      viewOpts: () => viewOpts(), setting: (k) => settings.get(k), rangeN: () => range(), setRange: (n) => setRange(n),
       openStructure: (p) => openStructure(p), openSpectrum: (p, kind) => openFreqSpectrum(p, kind),
       imaginary: (d, list) => {
         clearProblems(d.id, "FREQ");
@@ -3311,7 +3427,8 @@ async function exportCompareSvg() {
   const groups = [];
   let dx = 0, height = 0;
   for (const p of data.panes) {
-    const rect = p.v.getCanvas().getBoundingClientRect();
+    // the canvas's own px (modelToScreen's), not its zoomed size on screen
+    const cv = p.v.getCanvas(), r = cv.getBoundingClientRect(), rect = { left: r.left, top: r.top, width: cv.clientWidth, height: cv.clientHeight };
     groups.push({ ...X.viewerGroup(p.v, p.id, p.items, rect), dx });
     dx += rect.width; height = Math.max(height, rect.height);
   }
@@ -3841,6 +3958,7 @@ const S = {
     const d = active, e = edOf(d);
     if (e) return e.editBlock() || "";
     if (d && d.kind === "trajectory") return "Trajectories are view-only. Use Edit This Step";
+    if (d && d.kind === "freq") return FREQ_VIEW_ONLY;
     return "Needs a structure";
   },
   escape: () => {
@@ -3850,6 +3968,7 @@ const S = {
     if (e && e.selection.size) E.select(e, [], "replace");
   },
   frameSelection: () => E && E.frameSelection(),
+  pivotOn: (what) => E && E.pivotOn(what),
   openMenuAt: (items, x, y, label) => openAt(items, x, y, label),
   toast: (m, kind, action) => toast(m, kind, action),
   docChanged: (d, e) => docChanged(d, e),
@@ -4060,7 +4179,8 @@ async function onAppReady(detail) {
   profile.migrateLegacy();
   profileReady = true;
   adoptProfileLayout();
-  profile.onChange(() => { adoptProfileLayout(); renderRecentSection(); renderWelcome(); });
+  applyFilesOpen();
+  profile.onChange(() => { adoptProfileLayout(); applyFilesOpen(); renderOpenEditors(); renderRecentSection(); renderWelcome(); });
   // per-document view options: the server's copy, localStorage as its cache (docprefs.js)
   docprefs.init((...a) => M().api(...a), (info && info.dir_hash) || "", "api/docprefs");
   docprefs.onChange((kind, doc) => { if (kind === "display") displayChanged(doc ? docs.find((x) => x === doc || (x.path && x.path === doc.path)) || null : viewDoc()); });

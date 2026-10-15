@@ -35,7 +35,9 @@ def start_app(tmp, width=1280, height=800, root=None, **env):
     downloads.mkdir(exist_ok=True)
     drv = None
     try:
-        drv = H.firefox(width, height, download_dir=downloads)
+        # positional size: some tests swap H.firefox for a (w, h) lambda
+        pick = H.chromium if os.environ.get("MACE_GUI_BROWSER", "firefox").startswith("chrom") else H.firefox
+        drv = pick(width, height, download_dir=downloads)
         H.load(drv, base)
     except BaseException:
         # a page that never got ready: leave no browser and no server behind

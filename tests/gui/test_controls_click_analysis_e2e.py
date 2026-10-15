@@ -141,13 +141,13 @@ def test_run_card_inspector_and_run_analysis(app):
         sweep(drv, "#runplot-host .rp-tabopts")
         # Plot Options: the popover's own fields and buttons
         real_click(drv, drv.find_element("css selector", "#runplot-host .pk-more"))
-        H.wait(drv, "return !!document.querySelector('#runplot-host .pk-pop')", 5)
-        n = drv.execute_script("return document.querySelectorAll('#runplot-host .pk-pop button, #runplot-host .pk-pop input[type=checkbox]').length")
+        H.wait(drv, "return !!document.querySelector('.pk-pop')", 5)
+        n = drv.execute_script("return document.querySelectorAll('.pk-pop button, .pk-pop input[type=checkbox]').length")
         for i in range(n):
-            if not drv.execute_script("return !!document.querySelector('#runplot-host .pk-pop')", ):
+            if not drv.execute_script("return !!document.querySelector('.pk-pop')", ):
                 real_click(drv, drv.find_element("css selector", "#runplot-host .pk-more"))
-                H.wait(drv, "return !!document.querySelector('#runplot-host .pk-pop')", 5)
-            el = drv.execute_script("return document.querySelectorAll('#runplot-host .pk-pop button, #runplot-host .pk-pop input[type=checkbox]')[arguments[0]]", i)
+                H.wait(drv, "return !!document.querySelector('.pk-pop')", 5)
+            el = drv.execute_script("return document.querySelectorAll('.pk-pop button, .pk-pop input[type=checkbox]')[arguments[0]]", i)
             if el is None or not el.is_displayed() or not el.is_enabled():
                 continue
             real_click(drv, el)

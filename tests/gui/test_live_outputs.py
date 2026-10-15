@@ -145,3 +145,39 @@ def test_extend_of_a_big_live_run_is_fast(tmp_path):
         times.append(time.perf_counter() - t0)
     p.unlink()
     assert min(times) < 0.1, times
+
+
+def test_crashed_outputs_end_at_once(tmp_path):
+    """An output CRYSTAL stopped with a fatal "ERROR ****" or the MPI launcher ended
+    (an out-of-memory kill: "BAD TERMINATION ... KILLED BY SIGNAL: 9") is finished
+    as soon as it is written, not "still running" for the 10-minute live window."""
+    _, livefile, _ = _mods()
+    from mace.gui.submit import out_bucket
+    outs = list(RC.corpus_outs("FAILED_QA"))
+    assert outs
+    for src in outs:
+        (p,) = RC.copy_into(tmp_path, src)
+        os.utime(p, None)                                   # written just now
+        st = livefile.state(p)
+        assert st["finished"] and not st["live"], src.name
+        assert out_bucket(p) != "ongoing", src.name
+        p.unlink()
+
+
+def test_running_outputs_stay_live(tmp_path):
+    """No mid-run line of a corpus output (OPT, SP, FREQ, BAND, DOSS, written up to
+    a point) reads as an end: each one cut at a third and at two thirds is live."""
+    _, livefile, _ = _mods()
+    outs = [p for p in RC.corpus_outs("OPT", "SP", "FREQ", "BAND", "DOSS") if p.stat().st_size < 3_000_000]
+    n = 0
+    for src in outs:
+        data = src.read_bytes()
+        for frac in (1 / 3, 2 / 3):
+            cut = data[:int(len(data) * frac)]
+            if any(m.encode() in cut for m in ("TOTAL CPU TIME =", "EEEEEEEEEE TERMINATION", "OPT END")):
+                continue                                    # a finished step inside (a multi-step run)
+            p = tmp_path / src.name
+            p.write_bytes(cut)
+            assert livefile.is_live(p), (src.name, frac, livefile.tail_text(p, livefile.snapshot(p))[-300:])
+            n += 1
+    assert n > 100

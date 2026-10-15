@@ -39,7 +39,10 @@ SQUEUE_FIELDS = (("id", "%i"), ("state", "%T"), ("reason", "%r"), ("start", "%S"
                  ("array_job", "%F"), ("array_task", "%K"), ("name", "%j"))
 SQUEUE_FORMAT = "|".join(code for _, code in SQUEUE_FIELDS)
 SACCT_FIELDS = ("JobID", "JobName", "State", "Elapsed", "Timelimit", "NCPUS", "ReqMem", "MaxRSS", "TotalCPU",
-                "AllocTRES", "NodeList", "ExitCode", "Start", "End", "WorkDir")
+                "AllocTRES", "NodeList", "ExitCode", "Start", "End", "WorkDir", "NTasks", "AveCPU", "NNodes")
+# the first fields every sacct line carries (older cached / recorded lines end at WorkDir)
+_SACCT_REQUIRED = SACCT_FIELDS.index("WorkDir") + 1
+SSTAT_FIELDS = ("JobID", "MaxRSS", "AveCPU", "NTasks")
 JOB_ID_RE = re.compile(r"^\d+(_\d+)?$")
 
 
@@ -86,8 +89,9 @@ def parse_sacct(text: str) -> Dict[str, Dict[str, Any]]:
     out: Dict[str, Dict[str, Any]] = {}
     for line in (text or "").splitlines():
         f = line.split("|")
-        if len(f) < len(SACCT_FIELDS):
+        if len(f) < _SACCT_REQUIRED:
             continue
+        f += [""] * (len(SACCT_FIELDS) - len(f))
         rec = dict(zip(SACCT_FIELDS, (x.strip() for x in f)))
         out[rec["JobID"]] = rec
     return out
@@ -208,7 +212,9 @@ def sacct_for(ids: Sequence[str], refresh=False, tag=None, max_age: float = 60) 
 def sstat(job_id: str, refresh=False, tag=None) -> query.Result:
     if not valid_job_id(job_id):
         raise ValueError(f"not a job id: {job_id!r}")
-    return query.run(f"sstat:{job_id}", ["sstat", "-j", f"{job_id}.batch", "-P", "-n", "-o", "MaxRSS,AveCPU"],
+    # every running step (batch, extern, srun's .0, ...): MPI ranks may sit in
+    # any of them, and sacct has no CPU time or MaxRSS for a step until it ends
+    return query.run(f"sstat:{job_id}", ["sstat", "-a", "-j", job_id, "-P", "-n", "-o", ",".join(SSTAT_FIELDS)],
                      ttl=60, refresh_floor=30, refresh=refresh, tag=tag,
-                     parse=lambda p: [dict(zip(("MaxRSS", "AveCPU"), l.split("|")))
+                     parse=lambda p: [dict(zip(SSTAT_FIELDS, (x.strip() for x in l.split("|"))))
                                       for l in p.stdout.splitlines() if "|" in l])

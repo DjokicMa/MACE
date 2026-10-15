@@ -388,7 +388,7 @@ def test_non_opt_timeout_is_unchanged(engine, tmp_path, monkeypatch):
 
 def _staging_blocks(tmp_path):
     """The RESTART and GUESSP staging of a REALLY generated job script, from
-    the RESTART block up to `cd $scratch/$JOB` (the template is a generator;
+    the RESTART block up to `cd "$scratch/$JOB"` (the template is a generator;
     asserting on its text would not prove what runs - a stray apostrophe in a
     comment there once turned the generator itself into a broken script)."""
     gen = tmp_path / "submitcrystal23.sh"
@@ -400,7 +400,7 @@ def _staging_blocks(tmp_path):
     start = script.index("# OPTGEOM RESTART")
     # Before GUESSP staging, which must not overwrite the killed run's fort.20.
     assert start < script.index("# GUESSP restart")
-    end = script.index("\ncd $scratch/$JOB", start)
+    end = script.index('\ncd "$scratch/$JOB"', start)
     return script[start:end + 1]
 
 

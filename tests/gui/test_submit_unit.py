@@ -199,11 +199,12 @@ def test_staging_bound(tmp_path):
     sel = sub.selection(tmp_path, [d])
     items, size = sub.stage_plan(sel, tmp_path)
     assert ("stub" in [h for p, h in items if p.name == "a.f9"])
-    assert size < 4096                         # the wavefunction is a zero-byte stand-in
+    assert size < 4096                         # the wavefunction is not copied
     with pytest.raises(sub.SubmitError):
         sub.stage(sel, tmp_path, tmp_path / "m", budget_free=100)
     sub.stage(sel, tmp_path, tmp_path / "m2")
-    assert (tmp_path / "m2" / "decks" / "a.f9").stat().st_size == 0
+    # a one-byte stand-in: mace submit refuses a .d3 whose .f9 is empty
+    assert (tmp_path / "m2" / "decks" / "a.f9").stat().st_size == 1
 
 
 def test_normalize_rules():

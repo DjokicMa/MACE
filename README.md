@@ -109,6 +109,7 @@ mace --help                                 # every command, in groups
 
 - [INSTALLATION.md](INSTALLATION.md) - installation, requirements, other clusters
 - [docs/gui.md](docs/gui.md) - the MACE GUI
+- [docs/ssh-setup.md](docs/ssh-setup.md) - SSH keys, agents and `~/.ssh/config` for `mace gui connect`
 - [docs/cli.md](docs/cli.md) - every command and its options
 - [docs/preopt.md](docs/preopt.md) - starting geometries (`mace preopt`, the GUI's Clean)
 - [docs/defects/README.md](docs/defects/README.md) - point defects

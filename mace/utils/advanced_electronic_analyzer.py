@@ -33,6 +33,9 @@ except ImportError:
 class AdvancedElectronicAnalyzer:
     """Advanced electronic structure analysis using CRYSTAL BAND and DOSS data."""
     
+    # Hartree above E_F up to which a band's maximum still counts as occupied
+    OCCUPIED_TOL = 1e-3
+
     def __init__(self):
         self.ha_to_ev = HARTREE_TO_EV  # Hartree to eV conversion
         self.bohr_to_angstrom = BOHR_TO_ANGSTROM  # Bohr to Angstrom conversion
@@ -43,33 +46,37 @@ class AdvancedElectronicAnalyzer:
         
         Returns:
             E: Energy array in Hartree (relative to Fermi level = 0)
-            g: Total DOS array in states/Ha/cell
+            g: Total DOS array in states/Ha/cell, the spin channels summed
+
+        Read by DatFileProcessor's DOSS.DAT parser: CRYSTAL wraps a record
+        with many projections over several lines, and repeats the energy
+        grid per spin channel (beta DOS negative). Line by line, a 1002-point
+        file of 26 projections and 2 spins read as 4008 points.
         """
-        E, g = [], []
-        
         try:
+            try:
+                from mace.utils.dat_file_processor import DatFileProcessor
+            except ImportError:
+                from dat_file_processor import DatFileProcessor
             with open(doss_file, 'r') as fh:
-                for line in fh:
-                    # Skip comments and empty lines
-                    if line.startswith(('#', '@')) or not line.strip():
-                        continue
-                    
-                    try:
-                        vals = list(map(float, line.split()))
-                        if len(vals) >= 2:
-                            E.append(vals[0])  # Energy in Hartree
-                            g.append(sum(vals[1:]))  # Total DOS (sum all spin channels)
-                    except ValueError:
-                        continue
-                        
+                dat = DatFileProcessor()._parse_doss_dat_content(fh.read())
         except FileNotFoundError:
             print(f"Warning: DOSS file not found: {doss_file}")
             return np.array([]), np.array([])
         except Exception as e:
             print(f"Warning: Error reading DOSS file {doss_file}: {e}")
             return np.array([]), np.array([])
-            
-        return np.asarray(E), np.asarray(g)
+
+        energies = np.asarray(dat.get('energy_points') or [], float)
+        total = np.asarray(dat.get('total_dos') or [], float)
+        nspin = max(int(dat.get('num_spins') or 1), 1)
+        if len(energies) == 0 or len(energies) != len(total) or len(energies) % nspin:
+            return np.array([]), np.array([])
+        n = len(energies) // nspin
+        E = energies[:n]
+        # total DOS = sum of the spin channels' (absolute) total columns
+        g = np.abs(total.reshape(nspin, n)).sum(axis=0)
+        return E, g
     
     def read_band_data(self, band_file: Path) -> Tuple[float, float, np.ndarray, np.ndarray]:
         """
@@ -80,11 +87,20 @@ class AdvancedElectronicAnalyzer:
             Ec_min: Conduction band minimum in Hartree  
             k_points: k-point coordinates
             energies: Energy bands at each k-point
+
+        The edges are by band, not by the sign of each eigenvalue: CRYSTAL
+        puts E_F at the valence-band top, which can sit a few micro-Hartree
+        above 0 (taking every E > 0 as a conduction state gave a molecule's
+        7.8 eV gap as 0.16 eV). Per spin block, a band whose maximum is at
+        most OCCUPIED_TOL above E_F is occupied: VBM is the highest occupied
+        level, CBM the lowest level of the other bands (below VBM for a band
+        crossing E_F, a metal).
         """
         Ev_max = -np.inf
         Ec_min = np.inf
         k_points = []
         all_energies = []
+        nkpt = nspin = 0
         
         try:
             with open(band_file, 'r') as fh:
@@ -98,6 +114,16 @@ class AdvancedElectronicAnalyzer:
                                 nbnd = int(tok[tok.index('NBND') + 1])
                             except (ValueError, IndexError):
                                 pass
+                        for key in ('NKPT', 'NSPIN'):
+                            if key in tok:
+                                try:
+                                    val = int(tok[tok.index(key) + 1])
+                                except (ValueError, IndexError):
+                                    continue
+                                if key == 'NKPT':
+                                    nkpt = nkpt or val
+                                else:
+                                    nspin = nspin or val
                         continue
                     # Skip comments and empty lines
                     if line.startswith('@') or not line.strip():
@@ -117,13 +143,6 @@ class AdvancedElectronicAnalyzer:
                             
                             k_points.append(k_coord)
                             all_energies.append(energies)
-                            
-                            # Find band edges relative to E_F = 0
-                            for E in energies:
-                                if E < 0 and E > Ev_max:  # Highest occupied
-                                    Ev_max = E
-                                if E > 0 and E < Ec_min:  # Lowest unoccupied
-                                    Ec_min = E
                                     
                     except ValueError:
                         continue
@@ -134,6 +153,19 @@ class AdvancedElectronicAnalyzer:
         except Exception as e:
             print(f"Warning: Error reading BAND file {band_file}: {e}")
             return -np.inf, np.inf, np.array([]), np.array([])
+
+        # Band edges per spin block (the k path is written once per spin)
+        widths = {len(row) for row in all_energies}
+        if all_energies and len(widths) == 1:
+            arr = np.asarray(all_energies, float)
+            blocks = (np.split(arr, nspin) if nspin > 1 and nkpt and len(arr) == nkpt * nspin
+                      else [arr])
+            for block in blocks:
+                occupied = block.max(axis=0) <= self.OCCUPIED_TOL
+                if occupied.any():
+                    Ev_max = max(Ev_max, float(block[:, occupied].max()))
+                if (~occupied).any():
+                    Ec_min = min(Ec_min, float(block[:, ~occupied].min()))
             
         return Ev_max, Ec_min, np.array(k_points), np.array(all_energies)
     
@@ -145,9 +177,9 @@ class AdvancedElectronicAnalyzer:
         
         Based on the sophisticated algorithm from your provided code.
         """
-        classification_results = {}
-        
-        if len(E) == 0 or len(g) == 0:
+        have_dos = len(E) > 0 and len(g) > 0
+        have_band = Ev_max != -np.inf and Ec_min != np.inf
+        if not have_dos and not have_band:
             return {
                 'electronic_classification': 'unknown',
                 'gap_hartree': 0.0,
@@ -157,48 +189,41 @@ class AdvancedElectronicAnalyzer:
                 'classification_method': 'no_dos_data'
             }
         
-        # Find DOS at Fermi level (E = 0)
-        Ef_index = np.argmin(np.abs(E))
-        g_Ef = g[Ef_index]
+        g_Ef = g_mean = g_crit = None
+        if have_dos:
+            # Find DOS at Fermi level (E = 0)
+            Ef_index = np.argmin(np.abs(E))
+            g_Ef = g[Ef_index]
+
+            # Calculate mean DOS and threshold
+            g_positive = g[g > 0]
+            g_mean = g_positive.mean() if len(g_positive) > 0 else 0.0
+            g_crit = gcrit_factor * g_mean
         
-        # Calculate mean DOS and threshold
-        g_positive = g[g > 0]
-        g_mean = g_positive.mean() if len(g_positive) > 0 else 0.0
-        g_crit = gcrit_factor * g_mean
-        
-        # Estimate gap from DOS data
-        try:
-            # First energy above E_F with finite DOS
-            Ec_dos = E[(E > 0) & (g > 0)][0] if np.any((E > 0) & (g > 0)) else np.inf
-            # Last energy below E_F with finite DOS  
-            Ev_dos = E[(E < 0) & (g > 0)][-1] if np.any((E < 0) & (g > 0)) else -np.inf
-            gap_dos = Ec_dos - Ev_dos if (Ec_dos != np.inf and Ev_dos != -np.inf) else 0.0
-        except IndexError:
-            gap_dos = 0.0
-        
-        # Use band structure gap if available, otherwise DOS gap
-        if Ev_max != -np.inf and Ec_min != np.inf:
-            gap = Ec_min - Ev_max
+        # The gap comes from the band structure only. One read off the DOS
+        # is not the material's: CRYSTAL puts E_F on a molecule's broadened
+        # HOMO peak (DOS on both sides of it), and a DOSS band range leaves
+        # states out (an empty window that is no gap). With the DOS alone
+        # neither a gap nor a classification is reported.
+        gap = None
+        gap_source = None
+        classification = None
+        if have_band:
+            gap = max(Ec_min - Ev_max, 0.0)  # bands overlapping E_F: none
             gap_source = "band_structure"
-        else:
-            gap = gap_dos
-            gap_source = "dos_analysis"
-        
-        # Classification logic
-        if gap > 0.001:  # 0.001 Ha ≈ 0.027 eV threshold for clear gap
-            if gap > 0.15:  # 0.15 Ha ≈ 4.0 eV
-                classification = "insulator"
-            else:
-                classification = "semiconductor"
-        elif g_Ef > g_crit:
-            classification = "metal"
-        else:
-            classification = "semimetal"
+            if gap > 0.001:  # 0.001 Ha ≈ 0.027 eV threshold for clear gap
+                if gap > 0.15:  # 0.15 Ha ≈ 4.0 eV
+                    classification = "insulator"
+                else:
+                    classification = "semiconductor"
+            elif have_dos:
+                # metal vs semimetal needs the DOS at E_F
+                classification = "metal" if g_Ef > g_crit else "semimetal"
         
         return {
             'electronic_classification': classification,
             'gap_hartree': gap,
-            'gap_ev': gap * self.ha_to_ev,
+            'gap_ev': gap * self.ha_to_ev if gap is not None else None,
             'dos_at_fermi': g_Ef,
             'dos_threshold': g_crit,
             'dos_mean': g_mean,
@@ -349,10 +374,11 @@ class AdvancedElectronicAnalyzer:
         
         # Mobility calculation (Drude model approximation)
         # μ = qτ/m* where τ is scattering time
+        # Assume scattering time ~1e-14 s for order of magnitude (set for the
+        # hole mobility too: a hole mass without an electron one raised)
+        scattering_time = 1e-14  # seconds
+        elementary_charge = 1.602e-19  # Coulombs
         if electron_mass is not None and electron_mass > 0:
-            # Assume scattering time ~1e-14 s for order of magnitude
-            scattering_time = 1e-14  # seconds
-            elementary_charge = 1.602e-19  # Coulombs
             electron_mass_kg = electron_mass * 9.109e-31  # kg
             
             electron_mobility = (elementary_charge * scattering_time / electron_mass_kg) * 1e4  # cm²/(V·s)
@@ -378,12 +404,13 @@ class AdvancedElectronicAnalyzer:
             else:
                 transport_props['conductivity_type'] = 'very_low'
             transport_props['conductivity_estimate'] = 'semiconducting'
-        else:  # insulator
+        elif classification == 'insulator':
             transport_props['conductivity_type'] = 'very_low'
             transport_props['conductivity_estimate'] = 'insulating'
         
         # Seebeck coefficient estimation
-        transport_props['seebeck_coefficient_estimate'] = gap_ev * 80  # μV/K (rough estimate)
+        if gap_ev is not None:
+            transport_props['seebeck_coefficient_estimate'] = gap_ev * 80  # μV/K (rough estimate)
         
         return transport_props
     
@@ -481,8 +508,11 @@ def main():
     if doss_file:
         print(f"  DOSS: {doss_file.name}")
     
-    print(f"\nElectronic Classification: {results.get('electronic_classification', 'unknown').upper()}")
-    print(f"Band Gap: {results.get('gap_ev', 0):.4f} eV ({results.get('gap_hartree', 0):.4f} Ha)")
+    print(f"\nElectronic Classification: {(results.get('electronic_classification') or 'unknown').upper()}")
+    if results.get('gap_ev') is not None:
+        print(f"Band Gap: {results['gap_ev']:.4f} eV ({results['gap_hartree']:.4f} Ha)")
+    else:
+        print("Band Gap: unknown (no band structure)")
     
     if results.get('dos_data_available'):
         print(f"DOS at Fermi Level: {results.get('dos_at_fermi', 0):.3e}")

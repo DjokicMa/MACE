@@ -46,3 +46,33 @@ def test_a_lone_output_keeps_the_short_name(tmp_path):
     _doss(tmp_path, "agbr_sp.out")
     assert (tmp_path / "agbr_doss.d3").exists()
     assert (tmp_path / "agbr_doss.f9").read_bytes() == b"agbr_sp"
+
+
+def test_a_plain_output_beside_its_sp_keeps_its_own_deck(tmp_path):
+    """agbr.out and agbr_sp.out both made agbr_doss.d3: the second run wrote
+    over the first deck and its wavefunction."""
+    _stage(tmp_path, ["agbr", "agbr_sp"])
+    _doss(tmp_path, "agbr.out")
+    _doss(tmp_path, "agbr_sp.out")
+    assert (tmp_path / "agbr_doss.f9").read_bytes() == b"agbr"
+    assert (tmp_path / "agbr_sp_doss.f9").read_bytes() == b"agbr_sp"
+
+
+def test_an_sp_of_an_opt_takes_its_own_wavefunction(tmp_path):
+    """agbr_opt_sp.out took the OPT's agbr_opt.f9 beside it before its own
+    agbr_opt_sp.f9, and its agbr_opt_* name is the one agbr_opt.out keeps when
+    an agbr_sp.out is there too: beside agbr_opt.out it keeps its whole name."""
+    _stage(tmp_path, ["agbr_opt", "agbr_sp", "agbr_opt_sp"])
+    _doss(tmp_path, "agbr_opt_sp.out")
+    _doss(tmp_path, "agbr_opt.out")
+    _doss(tmp_path, "agbr_sp.out")
+    assert (tmp_path / "agbr_opt_sp_doss.f9").read_bytes() == b"agbr_opt_sp"
+    assert (tmp_path / "agbr_opt_doss.f9").read_bytes() == b"agbr_opt"
+    assert (tmp_path / "agbr_sp_doss.f9").read_bytes() == b"agbr_sp"
+
+
+def test_an_sp_of_an_opt_alone_takes_its_own_wavefunction(tmp_path):
+    _stage(tmp_path, ["agbr_opt_sp"])
+    (tmp_path / "agbr_opt.f9").write_bytes(b"the OPT's")
+    _doss(tmp_path, "agbr_opt_sp.out")
+    assert (tmp_path / "agbr_opt_doss.f9").read_bytes() == b"agbr_opt_sp"

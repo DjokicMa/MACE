@@ -168,8 +168,8 @@ interactive defaults:
 
 Batch mode never prompts. Where an interactive run would ask, it takes the
 prompt's default: when spglib finds a different space group than the CIF
-states, the CIF's group is kept and every atom is written (CRYSTAL folds the
-symmetry-equivalent ones), and a structure whose atoms are all
+states, the CIF's group is kept with the CIF's own atom records (its
+asymmetric unit), and a structure whose atoms are all
 symmetry-unique is written whole.
 
 ## Key Settings Explained

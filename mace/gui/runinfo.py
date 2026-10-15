@@ -27,6 +27,8 @@ import statistics
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from mace.utils.imaginary_modes import imaginary, is_linear, is_molecule  # noqa: F401 (one rule with the extractor)
+
 HARTREE_EV = 27.211386245988
 DEFAULT_TOLINTEG = (6, 6, 6, 6, 12)
 
@@ -115,37 +117,7 @@ def _linear_molecule(text: str) -> bool:
     x = CrystalPropertyExtractor(db_path=None, enable_tracking=False)
     with contextlib.redirect_stdout(io.StringIO()):
         pos = x._extract_atomic_positions(text)
-    pts = [(p["x"], p["y"], p["z"]) for p in pos]
-    if len(pts) <= 2:
-        return len(pts) == 2
-    try:
-        import numpy as np
-        a = np.asarray(pts, float)
-        a = a - a.mean(axis=0)
-        s = np.linalg.svd(a, compute_uv=False)
-        return bool(s[1] < 1e-3 * max(s[0], 1e-12))
-    except Exception:
-        return False
-
-
-def imaginary(freqs: List[float], molecule: bool, linear: bool, noise_cm: float) -> Optional[Dict[str, Any]]:
-    """{severity, n, lowest} for the negative modes left after dropping the
-    expected zero modes (3 for a periodic system, 6 for a molecule, 5 for a
-    linear one), or None. Below ``noise_cm`` in size: info (usually
-    numerical noise), else a warning."""
-    if not freqs:
-        return None
-    drop = (5 if linear else 6) if molecule else 3
-    order = sorted(range(len(freqs)), key=lambda i: abs(freqs[i]))
-    rest = [freqs[i] for i in order[drop:]]
-    neg = sorted(f for f in rest if f < 0)
-    if not neg:
-        return None
-    lowest = neg[0]
-    real = [f for f in neg if abs(f) >= noise_cm]
-    if real:
-        return {"severity": "warning", "n": len(real), "lowest": lowest}
-    return {"severity": "info", "n": len(neg), "lowest": lowest}
+    return is_linear([(p["x"], p["y"], p["z"]) for p in pos])
 
 
 def problems(path: Path, conv: Dict[str, Any], noise_cm: float = 20.0, dim: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -244,7 +216,7 @@ def problems(path: Path, conv: Dict[str, Any], noise_cm: float = 20.0, dim: Opti
         text = ""
     if text and ("FREQUENCIES" in text and ("VIBRATIONAL" in text or "FORCE CONSTANT MATRIX" in text)):
         freqs = _frequencies(text)
-        molecule = dim == 0 if dim is not None else "DIMENSIONALITY OF THE SYSTEM      0" in text
+        molecule = dim == 0 if dim is not None else is_molecule(text)
         im = imaginary(freqs, molecule, _linear_molecule(text) if molecule else False, noise_cm)
         if im:
             where = " at Γ" if "PHONON FREQUENCIES AT THE GAMMA POINT" in text else ""

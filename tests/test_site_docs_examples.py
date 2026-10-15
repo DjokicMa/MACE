@@ -115,4 +115,4 @@ def test_docs_example_runs_on_a_fake_cluster(tmp_path, text):
     if "ntasks" in prop:
         assert f"#SBATCH --ntasks={prop['ntasks']}" in scripts["m_band.sh"]
     if data.get("mpi", {}).get("launcher") == "srun":
-        assert re.search(r"^  srun .*P(crystal|properties) 2>&1", scripts["m.sh"], re.M)
+        assert re.search(r'^  srun .*P(crystal|properties)" 2>&1', scripts["m.sh"], re.M)

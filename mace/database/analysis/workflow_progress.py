@@ -135,7 +135,9 @@ class WorkflowProgress:
             if not cfg_dir.is_dir():
                 return None, None
 
-            plans = sorted(cfg_dir.glob("workflow_plan_*.json"))
+            # not the CIF-conversion copy, workflow_plan_<id>_updated.json
+            plans = sorted(p for p in cfg_dir.glob("workflow_plan_*.json")
+                           if not p.stem.endswith("_updated"))
             chosen = None
             try:
                 from mace.workflow.context import get_current_context

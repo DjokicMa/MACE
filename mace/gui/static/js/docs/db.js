@@ -342,9 +342,11 @@ export function createDbView(host, detailHost, H) {
     const g = e.target.closest("[data-grip]");
     if (!g) return;
     e.preventDefault();
-    const c = COLS.find((x) => x.key === g.dataset.grip), x0 = e.clientX, w0 = g.parentElement.getBoundingClientRect().width;
+    // the column widths are the table's own px; the pointer's travel is screen px (the UI scale zooms the table)
+    const z = window.maceZoom.of(g), c = COLS.find((x) => x.key === g.dataset.grip), x0 = e.clientX;
+    const w0 = g.parentElement.getBoundingClientRect().width / z;
     g.setPointerCapture(e.pointerId);
-    const move = (ev) => { widths[c.key] = Math.max(48, Math.min(600, w0 + ev.clientX - x0)); renderHead(); paint(); };
+    const move = (ev) => { widths[c.key] = Math.max(48, Math.min(600, w0 + (ev.clientX - x0) / z)); renderHead(); paint(); };
     const up = () => { g.removeEventListener("pointermove", move); profile.setUi("dbWidths", { ...widths }); };
     g.addEventListener("pointermove", move);
     g.addEventListener("pointerup", up, { once: true });
@@ -404,6 +406,12 @@ export function createDbView(host, detailHost, H) {
    * a property never puts kilobytes of text into the inspector (PLAN_analysis C11.3). */
   const LONG = 2000, CUT = 160;
   let longValues = [];
+  /* what a property's name cannot say, shown on hover */
+  const ZT_E = "ZTₑ (electrons only, no lattice κ; an upper bound that grows without limit as T·σ·S² approaches κ₀)";
+  const NOTES = { transport_zt_electronic_max: ZT_E, transport_zt_max: `${ZT_E}; the same value as transport_zt_electronic_max`,
+    transport_kappa0_at_zt_max: "κ₀, the zero-field K coefficient of KAPPA.dat, at the ZTₑ peak",
+    transport_kappa_electronic_at_zt_max: "κₑ = κ₀ − T·σ·S² at the ZTₑ peak (no lattice κ)" };
+  const propTitle = (n) => (NOTES[n] ? `${n}: ${NOTES[n]}` : n);
   function textCell(p) {
     const t = String(p.property_value_text || "");
     if (t.length <= LONG) return esc(t);
@@ -443,7 +451,7 @@ export function createDbView(host, detailHost, H) {
         <div class="dbd-c2">${files(c)}${c.error_type ? `<span class="bad small">${esc(c.error_type)}</span>` : ""}</div></div>`).join("") || '<p class="muted small">None</p>'}</div>
       <h4>Properties <span class="muted">${r.properties.length}</span></h4>
       ${[...cats.entries()].map(([c, ps]) => `<details open class="dbd-cat"><summary>${esc(c)}</summary><table class="kv">${ps.map((p) =>
-        `<tr><td title="${esc(p.property_name)}">${esc(p.property_name)}${from(p)}</td><td class="num">${p.property_value !== null && p.property_value !== undefined ? fmt(p.property_value) : textCell(p)}` +
+        `<tr><td title="${esc(propTitle(p.property_name))}">${esc(p.property_name)}${from(p)}</td><td class="num">${p.property_value !== null && p.property_value !== undefined ? fmt(p.property_value) : textCell(p)}` +
         ` <span class="muted">${esc(UNITS[String(p.property_unit || "").toLowerCase()] || p.property_unit || "")}</span></td></tr>`).join("")}</table></details>`).join("") || '<p class="muted small">None</p>'}</div>`;
   }
   detailHost.addEventListener("click", (e) => {

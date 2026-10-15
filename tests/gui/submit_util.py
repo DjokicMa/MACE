@@ -106,11 +106,12 @@ def twin_submit(tmp, fake, folder, args, stdin=""):
                           capture_output=True, text=True, timeout=600)
 
 
-ID_NORM = [(re.compile(r"\b(9\d{8}|4\d{3}|5\d{3})(_\d+)?\b"), "<JOB>"),
+ID_NORM = [(re.compile(r"(?<=# MACE-generated; cksum of the lines above: )\d+ \d+"), "<CKSUM>"),
+           (re.compile(r"\b(9\d{8}|4\d{3}|5\d{3})(_\d+)?\b"), "<JOB>"),
            (re.compile(r"arr_\d{8}_\d{6}_\d+"), "arr_<TAG>"),
-           (re.compile(r"(wf_[0-9a-f]{6,}|workflow_\d{8}_\d{6}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"), "<WF>"),
+           (re.compile(r"(wf_[0-9a-f]{6,}|workflow_\d{8}_\d{6}(?:_[0-9a-f]{4})?|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"), "<WF>"),
            (re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?"), "<TS>"),
-           (re.compile(r"(?<!\d)\d{8}_\d{6}\d*(?!\d)"), "<TS>")]
+           (re.compile(r"(?<!\d)\d{8}_\d{6}\d*(?:_[0-9a-f]{4}(?![0-9A-Za-z]))?(?!\d)"), "<TS>")]
 
 
 def norm(text, *roots):

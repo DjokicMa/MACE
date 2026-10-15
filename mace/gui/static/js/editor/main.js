@@ -83,6 +83,7 @@ export function init(S) {
     ptr = attachPointer(el, {
       scene, cam: () => cam, tool: S.tool, isMac: S.isMac, cssVar: M.cssVar,
       active: () => !!scene.doc,
+      pivot: (on) => { if (v.showPivot) v.showPivot(on); },
       focus: () => { const w = el.closest(".viewer-wrap"); if (w && document.activeElement !== w) w.focus({ preventScroll: true }); },
       select: (indices, mode) => { const d = scene.doc; if (d && !d.viewOnly) select(d, indices, mode); },
       selectOrbit: (i, mode) => { const d = scene.doc; if (d && !d.viewOnly) select(d, d.orbitOf(i), mode); },
@@ -125,12 +126,17 @@ export function init(S) {
     if (q) v.setView([...view.slice(0, 4), ...q]);
     else { v.setView([...view.slice(0, 4), 0, 0, 0, 1]); v.rotate(-75, "x"); v.rotate(-20, "y"); }   // a molecule: the old tilt
     const R = scene ? scene.drawnRadii : null, drawnCorners = opts.cell ? corners : [];
+    // the rotation center (the view's center): the drawn cell's center, a slab's
+    // at its mid-height, a molecule's atoms' middle; the zoom fits what is drawn around it
+    const pivot = G.pivotOf(s, opts.box || { lo: [0, 0, 0], hi: opts.range }, disp.cart, disp.n);
+    const now0 = v.getView();
+    v.setView([-pivot[0], -pivot[1], -pivot[2], ...now0.slice(3)]);
     for (let pass = 0; pass < 3; pass++) {
       cam.invalidate();
       const c = cam.calibrate(), cv = v.getCanvas(), W = cv.clientWidth, Hh = cv.clientHeight;
       if (!(W > 0 && Hh > 0)) break;
-      const uv = G.projectAll(c.P, disp.cart);
-      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      const uv = G.projectAll(c.P, disp.cart), [cx, cy] = c.centerPx;
+      let x0 = cx, x1 = cx, y0 = cy, y1 = cy;
       for (let k = 0; k < disp.n; k++) {
         const r = (R && R[k] ? R[k] : 0.5) * c.s, x = uv[2 * k], y = uv[2 * k + 1];
         if (x - r < x0) x0 = x - r; if (x + r > x1) x1 = x + r;
@@ -140,14 +146,11 @@ export function init(S) {
         const [x, y] = G.project(c.P, ...p);
         if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
       }
-      if (!(x1 > x0) || !(y1 > y0)) break;
-      // the box's center to the canvas's, then the zoom that fills FIT_FILL of the limiting side
-      const dx = (x0 + x1) / 2 - W / 2, dy = (y0 + y1) / 2 - Hh / 2;
-      const center = G.add3(c.center, G.add3(G.scale3(c.right, dx / c.s), G.scale3(c.up, -dy / c.s)));
-      const now = v.getView();
-      v.setView([-center[0], -center[1], -center[2], ...now.slice(3)]);
-      const f = FIT_FILL * Math.min(W / (x1 - x0), Hh / (y1 - y0));
-      if (pass > 0 && Math.abs(f - 1) < 0.005 && Math.hypot(dx, dy) < 0.5) break;
+      // the zoom that fills FIT_FILL of the limiting side, the drawing kept around the center
+      const hw = Math.max(cx - x0, x1 - cx), hh = Math.max(cy - y0, y1 - cy);
+      if (!(hw > 0) || !(hh > 0)) break;
+      const f = FIT_FILL * Math.min(W / (2 * hw), Hh / (2 * hh));
+      if (pass > 0 && Math.abs(f - 1) < 0.005) break;
       if (Number.isFinite(f) && f > 0) v.zoom(f);
     }
     cam.invalidate();
@@ -172,7 +175,9 @@ export function init(S) {
       if (!(W > 0 && Hh > 0)) break;
       // the free region: left of a dialog that covers the viewport's right part
       let rx0 = 0, rx1 = W;
-      if (avoid && avoid.left > hr.left + 0.4 * W && avoid.left < hr.right && avoid.bottom > hr.top) rx1 = avoid.left - hr.left - 8;
+      // the dialog's rectangle is in screen px, W in the viewer's own (the UI scale zooms it)
+      const hz = window.maceZoom.of(host);
+      if (avoid && avoid.left > hr.left + 0.4 * W * hz && avoid.left < hr.right && avoid.bottom > hr.top) rx1 = (avoid.left - hr.left) / hz - 8;
       const uv = G.projectAll(c.P, disp.cart);
       let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
       for (let k = 0; k < disp.n; k++) {
@@ -370,6 +375,30 @@ export function init(S) {
     for (let k = 0; k < disp.n; k++) if (!d.selection.size || d.selection.has(disp.base[k])) pts.push([disp.cart[3 * k], disp.cart[3 * k + 1], disp.cart[3 * k + 2]]);
     cam.frame(pts, d.selection.size ? 2.5 : 1.6);
   }
+  /** Turn about the drawn cell's center (what Reset View starts from), or the
+   * middle of the selected atoms, from now on: the view slides there, its
+   * zoom and orientation kept, and the center shows for a moment. */
+  function pivotOn(what) {
+    const d = scene && scene.doc, disp = scene && scene.display;
+    if (!d || !disp || !cam) return null;
+    let p;
+    if (what === "selection") {
+      const pts = [], home = [];
+      for (let k = 0; k < disp.n; k++) {
+        if (!d.selection.has(disp.base[k])) continue;
+        const q = [disp.cart[3 * k], disp.cart[3 * k + 1], disp.cart[3 * k + 2]];
+        pts.push(q);
+        if (!disp.image[k]) home.push(q);
+      }
+      const use = home.length ? home : pts;
+      if (!use.length) return null;
+      p = use.reduce((t, q) => G.add3(t, q), [0, 0, 0]).map((x) => x / use.length);
+    } else {
+      const o = S.viewOpts();
+      p = G.pivotOf(d.structure, o.box || { lo: [0, 0, 0], hi: o.range }, disp.cart, disp.n);
+    }
+    return cam.centerOn(p).then(() => { if (v.flashPivot) v.flashPivot(); });
+  }
 
   /* ---------------------------------------------------------------- editing */
   const api = {};             // filled below: what edit.js and commands.js call back
@@ -510,7 +539,7 @@ export function init(S) {
 
   return {
     bench,
-    attach, edOf, draw, select, neighbors, fragment, viewAlong, frameSelection, viewport, wyckoff,
+    attach, edOf, draw, select, neighbors, fragment, viewAlong, frameSelection, pivotOn, viewport, wyckoff,
     run, has: (id) => !!handlers[id], editing, api, structureChanged, stateChanged, inspector, tools, selectWithin,
     chip: (tool, e) => (tool === "measure" ? `${e && e.waiting ? "Applying… · " : ""}Measure · ${measure.pending
       ? `${measure.pending} atom${measure.pending === 1 ? "" : "s"}: click the next` : "click 2, 3 or 4 atoms (distance, angle, dihedral)"}` +

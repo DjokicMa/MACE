@@ -180,3 +180,40 @@ def test_dark_ghost_contrast(fresh):
     finally:
         drv.execute_script("window.MACE.state.soloGhost = false; document.querySelector('#o-arrows').checked = true;"
                            "window.__mace.settings.set('theme', 'light')")
+
+
+@pytest.mark.parametrize("scale", [100, 110])
+def test_opt_tab_fits_a_1280x800_window(fresh, scale):
+    """At 1280x800 (bottom panel open) the Compare tab keeps a 3D view of at least 150 px
+    in every look, at 100 % and 110 % UI scale. At 100 % the toolbar (Frame slider, Edit
+    This Step) and legend fit without scrolling; at 110 % the tab may scroll a little,
+    and both controls are reached by scrolling it."""
+    drv = fresh[0]
+    H.set_viewport(drv, 1280, 800)
+    drv.execute_script("window.__mace.settings.set('uiScale', arguments[0])", scale)
+    try:
+        open_run(drv)
+        for look in ("overlay", "twotone", "side", "dmap"):
+            drv.execute_script("window.MACE.setLook(arguments[0])", look)
+            H.wait(drv, "return document.querySelector('#o-legend').dataset.look === arguments[0]", 10, look)
+            time.sleep(0.4)
+            m = drv.execute_script("""
+                const tab = document.getElementById('tab-opt');
+                const vis = (sel) => { const e = document.querySelector(sel); if (!e) return null;
+                  const t = tab.getBoundingClientRect(), r = e.getBoundingClientRect();
+                  return {w: r.width, h: r.height, inside: r.top >= t.top - 0.5 && r.bottom <= t.bottom + 0.5 && r.right <= t.right + 0.5,
+                          hidden: e.classList.contains('hidden') || e.hidden}; };
+                const reach = (sel) => { const e = document.querySelector(sel); if (e) e.scrollIntoView({block: 'nearest'}); return vis(sel); };
+                const out = {over: tab.scrollHeight - tab.clientHeight, view: document.getElementById('opt-viewers').offsetHeight,
+                             legend: vis('#o-legend'), frame: reach('#o-frame-wrap'), edit: reach('#o-edit-step')};
+                tab.scrollTop = 0;
+                return out;""")
+            if scale == 100:
+                assert m["over"] <= 1, (scale, look, m)
+                assert m["legend"] and not m["legend"]["hidden"] and m["legend"]["inside"], (scale, look, m)
+            for k in ("frame", "edit"):
+                assert m[k] and not m[k]["hidden"] and m[k]["w"] > 0 and m[k]["inside"], (scale, look, k, m)
+            assert m["view"] >= 150, (scale, look, m)
+    finally:
+        drv.execute_script("window.__mace.settings.set('uiScale', 100)")
+    U.no_errors(drv)

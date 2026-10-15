@@ -410,8 +410,8 @@ def test_site_row_shows_resolved_values_and_check_runs_mace_site_check(fresh):
     _click_item(drv, "Submit…")
     _dialog(drv)
     H.wait(drv, "return !!document.querySelector('#submit-dialog [data-part=site-details]')", 15)
-    shown = drv.execute_script("""return Object.fromEntries([...document.querySelectorAll('#submit-dialog [data-part=site-details] > div')]
-        .map((d) => [d.dataset.site, d.querySelector('dd').textContent.replace(/\\s+/g, ' ').trim()]))""")
+    shown = drv.execute_script("""return Object.fromEntries([...document.querySelectorAll('#submit-dialog [data-part=site-details] > dt')]
+        .map((d) => [d.dataset.site, d.nextElementSibling.textContent.replace(/\\s+/g, ' ').trim()]))""")
     # the same describe() the CLI prints with `mace site --json`
     site = _api(base, "api/submit/capabilities")[2]["site"]
     res = site["resources"]["scf"]["value"]

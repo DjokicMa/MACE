@@ -10,7 +10,8 @@ both with software WebGL. Real clicks; the server started through mace_cli.
 - an OPT output renders and its step slider moves the frame; a slab ignores
   the range along c; the database tab opens;
 - Zen Mode's exit chip leaves Zen;
-- without WebGL the viewport explains itself and image export says why.
+- without WebGL (or when 3Dmol gets no context) the viewport explains itself
+  and image export says why.
 """
 import time
 
@@ -147,7 +148,9 @@ def test_no_webgl_explains_and_keeps_the_rest(tmp_path, browser, request):
         H.load(drv, base)
         assert open_doc(drv, "structures/MgO.cif") == "structure"
         H.wait(drv, "return !!document.querySelector('#viewer-main .no3d')", 10)
-        assert "3D view unavailable" in drv.find_element("css selector", "#viewer-main .no3d").text
+        note = drv.find_element("css selector", "#viewer-main .no3d").text
+        assert "3D view unavailable" in note and "3D view needs WebGL" in note, note
+        assert "Turn on hardware acceleration in your browser settings, then reload." in note, note
         H.wait(drv, "return !!document.getElementById('st-no3d')", 10)     # drawn on the status bar's next refresh
         assert drv.execute_script("return window.__mace.menuReason('file.exportImage')") == "Needs 3D (WebGL)"
         before = drv.execute_script("return performance.now()")
@@ -164,6 +167,33 @@ def test_no_webgl_explains_and_keeps_the_rest(tmp_path, browser, request):
         assert open_doc(drv, "structures/Si.cif") == "structure"
         drv.execute_script("window.__mace.run('calc.setup')")
         H.wait(drv, "return !!document.querySelector('#inspector .setup')", 20)
+        assert not H.errors(drv), H.errors(drv)
+        failed = False
+    finally:
+        stop(drv, proc, request.node.name, failed)
+
+
+@pytest.mark.parametrize("browser", ["firefox", "chromium"])
+def test_viewer_without_a_context_explains(tmp_path, browser, request):
+    """WebGL passes the probe, yet 3Dmol gets no context (a driver that refuses
+    its attributes, a context limit): the viewport explains instead of staying
+    blank, 3D commands say why, and the rest keeps working."""
+    drv, proc, base, _ = start(tmp_path, browser)
+    failed = True
+    try:
+        H.load(drv, base)
+        assert drv.execute_script("return !window.MACE.state.viewers['viewer-main']")
+        drv.execute_async_script("const d = arguments[0]; window.MACE.load3Dmol().then(() => d(true))")
+        # 3Dmol's namespace is read-only: a copy whose createViewer fails as 3Dmol's does
+        drv.execute_script("window.$3Dmol = Object.assign({}, window.$3Dmol,"
+                           " {createViewer: () => { throw new Error('Error creating WebGL context.'); }})")
+        assert open_doc(drv, "structures/MgO.cif") == "structure"
+        H.wait(drv, "return !!document.querySelector('#viewer-main .no3d')", 10)
+        assert "3D view needs WebGL" in drv.find_element("css selector", "#viewer-main .no3d").text
+        assert drv.execute_script("return window.MACE.webgl.ok") is False
+        assert drv.execute_script("return window.__mace.menuReason('file.exportImage')") == "Needs 3D (WebGL)"
+        drv.execute_script("window.__mace.run('view.database')")
+        H.wait(drv, "const d = window.__mace.activeDoc(); return d && d.kind === 'db'", 20)
         assert not H.errors(drv), H.errors(drv)
         failed = False
     finally:
@@ -197,6 +227,27 @@ def test_split_editor_both_groups_draw(tmp_path, browser, request):
         assert n > 50                                         # the right group: Si
         assert drv.execute_script("return window.__csp") == []
         assert not H.errors(drv), H.errors(drv)
+        failed = False
+    finally:
+        stop(drv, proc, request.node.name, failed)
+
+
+def test_slab_deck_opens_its_runs_output(tmp_path, request):
+    """The example folder's graphene_slab_sp.d12 (a SLAB deck, which the
+    viewer does not draw) opens graphene_slab_sp.out on the first click,
+    with a note, instead of an error."""
+    drv, proc, base, root = start(tmp_path, "firefox")
+    failed = True
+    try:
+        H.load(drv, base)
+        got = drv.execute_async_script(
+            "const d = arguments[1]; window.__mace.open(arguments[0]).then((x) => d(x ? [x.kind, x.path] : null))",
+            "outputs/graphene_slab_sp.d12")
+        time.sleep(0.6)
+        assert got and got[1] == "outputs/graphene_slab_sp.out" and got[0] in ("structure", "trajectory"), got
+        toasts = drv.execute_script("return [...document.querySelectorAll('#toasts > *')].map((t) => t.textContent)")
+        assert any("opening it instead" in t for t in toasts), toasts
+        assert not any("reads 3D (CRYSTAL) decks" in t for t in toasts), toasts
         failed = False
     finally:
         stop(drv, proc, request.node.name, failed)

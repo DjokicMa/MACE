@@ -11,12 +11,16 @@ mode at a time.
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 SECTION_MAX = 128 * 1024 * 1024
 CHUNK = 1 << 20
+# A phonon dispersion (FREQCALC with DISPERSI): modes away from Gamma, whose periodic
+# images move with phases; the page then draws one cell only.
+OFF_GAMMA = re.compile(rb"PHONON DISPERSION|DISPERSION K POINT|PHONON BANDS")
 
 
 class TooBig(ValueError):
@@ -34,10 +38,15 @@ def parse_job(ctx=None, path: str = "", start: int = 0, end: int = 0, tmpdir: Op
             src.seek(start)
             left = end - start
             done = 0
+            tail = b""
+            gamma = True
             while left > 0:
                 chunk = src.read(min(CHUNK, left))
                 if not chunk:
                     break
+                if gamma and OFF_GAMMA.search(tail + chunk):
+                    gamma = False
+                tail = chunk[-64:]
                 out.write(chunk)
                 left -= len(chunk)
                 done += len(chunk)
@@ -56,7 +65,7 @@ def parse_job(ctx=None, path: str = "", start: int = 0, end: int = 0, tmpdir: Op
     modes = [{k: m[k] for k in ("mode", "freq", "irrep", "imaginary", "degeneracy", "ir_active", "ir_intens",
                                 "raman_active", "raman_intens")} for m in p.modes]
     disp = {int(k): np.asarray(v, dtype=np.float32) for k, v in p.displacements.items()}
-    return {"modes": modes, "displacements": disp, "section_bytes": end - start}
+    return {"modes": modes, "displacements": disp, "section_bytes": end - start, "gamma": gamma}
 
 
 BOHR = 0.529177210903

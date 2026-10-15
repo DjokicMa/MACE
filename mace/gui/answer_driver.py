@@ -19,10 +19,16 @@ text, or the prompt itself, gives the answer:
   ``<n>: PBE0 ...`` (or ``<n>. PBE0``) printed with the question;
 * ``"once": true``: the rule is used for one question only.
 
-Anything no rule matches gets Enter, the CLI's own default. Each question
-and its answer go to the transcript. A ``choose`` that finds no such line,
-or a run past ``max_prompts`` questions, stops the run (exit 3) and says
-why in the transcript, so a changed CLI menu is reported, never guessed.
+A question no rule matches gets Enter, the CLI's own default, only when
+it is a known question: one the spec's ``known`` list (regular expressions,
+matched the same way) names as a question where Enter is the intended
+answer. Any other question is not answered: the run stops (exit 3) and the
+transcript's error quotes the question, so a reworded prompt is reported,
+never answered with a default nobody chose. Each question and its answer
+go to the transcript (``rule``: the rule's index, ``known``: the list
+entry's). A ``choose`` that finds no such line, or a run past
+``max_prompts`` questions, stops the run the same way, so a changed CLI
+menu is reported, never guessed.
 
 stdin stays a non-terminal (as ``yes '' | mace ...``): the CLI behaves as it
 does with piped answers.
@@ -89,6 +95,7 @@ def main(argv):
     rules = [dict(r) for r in spec.get("rules", [])]
     for r in rules:
         r["_re"] = re.compile(r["match"], re.I | re.S)
+    known = [re.compile(k, re.I | re.S) for k in spec.get("known", [])]
     max_prompts = int(spec.get("max_prompts", 400))
     printed = []
     transcript = {"questions": [], "error": None}
@@ -132,8 +139,20 @@ def main(argv):
             if r.get("once"):
                 r["done"] = True
             break
+        known_as = None
+        if used is None:
+            known_as = next((k for k, kr in enumerate(known) if kr.search(question)), None)
+            if known_as is None:
+                # the prompt and the line before it, menu lines left out ("Select ...:" / "Enter your choice:")
+                lines = [x.strip() for x in question.splitlines() if x.strip() and not _OPTION.match(x)]
+                asked = " / ".join(lines[-2:])[-400:]
+                transcript["error"] = f"a question Setup does not know (not answered): {asked!r}"
+                transcript["questions"].append({"question": question[-1500:], "prompt": str(prompt)[-300:],
+                                                "answer": None, "rule": None, "known": None})
+                save()
+                raise Stop(3)
         transcript["questions"].append({"question": question[-1500:], "prompt": str(prompt)[-300:],
-                                        "answer": reply, "rule": used})
+                                        "answer": reply, "rule": used, "known": known_as})
         return reply
 
     builtins.input = answer

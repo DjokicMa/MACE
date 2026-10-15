@@ -6,6 +6,7 @@
  * in `present` (Select by Element) are disabled. */
 import { loadCss } from "./lazy_util.js";
 import * as profile from "../profile.js";
+import { overlayHost } from "../ui.js";
 
 const SYM = ("H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr " +
   "Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb " +
@@ -63,7 +64,7 @@ export async function open(handle, anchor, onPick, opts = {}) {
     b.style.gridRow = r; b.style.gridColumn = c;
     b.removeAttribute("style-grid");
   });
-  document.body.appendChild(pop);
+  overlayHost().appendChild(pop);   // above every panel, or inside the open modal dialog
   cells = [...pop.querySelectorAll(".pt-grid .pt-cell")];
   const r = (anchor && anchor.getBoundingClientRect) ? anchor.getBoundingClientRect() : { left: 100, right: 100, top: 100, bottom: 100 };
   placePop(r);
@@ -92,11 +93,13 @@ export async function open(handle, anchor, onPick, opts = {}) {
   search.focus();
   return pop;
 }
-function placePop(r) {
-  const w = pop.offsetWidth, h = pop.offsetHeight;
+function placePop(rect) {
+  // in the picker's own px: the anchor's rect and the window are screen px, the layer is zoomed
+  const z = window.maceZoom.of(pop), w = pop.offsetWidth, h = pop.offsetHeight, W = innerWidth / z, Hh = innerHeight / z;
+  const r = { left: rect.left / z, top: rect.top / z, bottom: rect.bottom / z };
   let x = r.left, y = r.bottom + 6;
-  if (y + h > innerHeight - 8) y = Math.max(8, r.top - h - 6);
-  x = Math.min(Math.max(8, x), innerWidth - w - 8);
+  if (y + h > Hh - 8) y = Math.max(8, r.top - h - 6);
+  x = Math.min(Math.max(8, x), W - w - 8);
   pop.style.left = x + "px"; pop.style.top = y + "px";
 }
 function outside(e) { if (pop && !pop.contains(e.target)) close(false); }

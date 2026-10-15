@@ -784,6 +784,16 @@ def analyze_composition(
     }
 
 
+def legend_outside(fig, ax, *args, **kwargs):
+    """The shared outside-the-data legend (mace/plotting/legend_layout.py)."""
+    try:
+        from mace.plotting.legend_layout import legend_outside as place
+    except ImportError:          # run as a script from Plotting/: the repository root
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from mace.plotting.legend_layout import legend_outside as place
+    return place(fig, ax, *args, **kwargs)
+
+
 def find_optimal_legend_position(
     ax,
     data_vect,
@@ -923,6 +933,55 @@ def vacuum_shift(potc_dat, potc_out):
     return -(V[0] - EF) * 27.2114
 
 
+def read_doss_header(doss_file):
+    """(NPROJ or None, NSPIN) from the DOSS.DAT header line."""
+    with open(doss_file) as fh:
+        head = fh.readline().split()
+    try:
+        nproj = int(head[head.index("NPROJ") + 1])
+    except (ValueError, IndexError):
+        nproj = None
+    try:
+        nspin = int(head[head.index("NSPIN") + 1])
+    except (ValueError, IndexError):
+        nspin = 1
+    return nproj, nspin
+
+
+def suppress_edge_pileup(data_vect, n_blocks=1, ratio=3.0):
+    """Zero the bin at either end of the DOS window that holds a pile-up.
+
+    When the DOSS energy window cuts through bands, CRYSTAL writes a zero at
+    each end of the window and puts a large value in the second record
+    (graphite: 133 states/eV in one bin, under 2 everywhere else), which is
+    not a density at that energy. Drawn, it is a long horizontal line at the
+    window edge that sets the DOS axis scale. A bin next to an end point is a
+    pile-up when it is ``ratio`` times its inner neighbor and above every
+    value inside the window; it is set to zero in every column of every spin
+    block. Returns (columns, number of bins zeroed per block).
+    """
+    cols = [np.asarray(c, dtype=float) for c in data_vect]
+    n = len(cols[0]) if cols else 0
+    if n_blocks < 1 or n % n_blocks:
+        n_blocks = 1
+    m = n // n_blocks if n_blocks else 0
+    if len(cols) < 2 or m < 8:
+        return [c.tolist() for c in cols], 0
+    mag = np.max(np.abs(np.vstack(cols[1:])), axis=0).reshape(n_blocks, m)
+    zero = set()
+    for b in mag:
+        inner = b[3:-3].max()
+        if b[1] > ratio * b[2] and b[1] > inner:
+            zero.add(1)
+        if b[-2] > ratio * b[-3] and b[-2] > inner:
+            zero.add(m - 2)
+    for k in zero:
+        for blk in range(n_blocks):
+            for c in cols[1:]:
+                c[blk * m + k] = 0.0
+    return [c.tolist() for c in cols], len(zero)
+
+
 def read_doss_columns(doss_file, n_columns, maxV=0):
     """DOSS.DAT columns: [energies (eV, + maxV), then each projection in
     states/eV]. Every data record of every spin block is read, in file order."""
@@ -1000,6 +1059,9 @@ def ipDOS(
 
     # Read DOS data
     data_vect = read_doss_columns(file, len(labels), maxV)
+    data_vect, n_pileup = suppress_edge_pileup(data_vect, read_doss_header(file)[1])
+    if n_pileup:
+        print("  Left out the pile-up bin at the edge of the DOS window (states outside the window)")
 
     # Determine x-axis scaling based on mode
     energy_array = np.array(data_vect[0])
@@ -1297,126 +1359,20 @@ def ipDOS(
     )
     plt.axvline(0, color="black", lw=2.5, alpha=0.9, zorder=101)
 
-    # Composition labels - positioned near band edges with white boxes
+    # Composition notes (the orbitals at the band edges): with the band-gap note they head
+    # the legend, outside the axes, not boxes over the curves
+    comp_lines = []
     if show_composition and composition_info:
-        y_bottom = E_l + maxV
-        y_top = E_u + maxV
-        y_range = y_top - y_bottom
-
-        # Check if conductive (single E_F label) or semiconducting (VB/CB labels)
         if composition_info.get("is_conductive") and composition_info.get("fermi"):
-            # Conductive material - single label at Fermi level
-            fermi_y_axes = (maxV - y_bottom) / y_range
-            fermi_y_axes = max(0.05, min(0.95, fermi_y_axes))
-
-            ax.text(
-                0.02,
-                fermi_y_axes,
-                f"$E_F$: {composition_info['fermi']}",
-                transform=ax.transAxes,
-                fontsize=8,
-                verticalalignment="center",
-                horizontalalignment="left",
-                bbox=dict(
-                    boxstyle="round,pad=0.3",
-                    facecolor="white",
-                    alpha=0.9,
-                    edgecolor="gray",
-                    linewidth=0.8,
-                ),
-                zorder=102,
-            )
+            comp_lines.append(f"$E_F$: {composition_info['fermi']}")
         else:
-            # Semiconducting - separate VB and CB labels
-            # VB label - position just above VBM
-            if composition_info.get("vb"):
-                if composition_info["vbm"] is not None:
-                    vb_y_pos = composition_info["vbm"] + 0.15
-                else:
-                    vb_y_pos = maxV - 0.2
-
-                vb_y_axes = (vb_y_pos - y_bottom) / y_range
-                vb_y_axes = max(0.05, min(0.45, vb_y_axes))
-
-                ax.text(
-                    0.02,
-                    vb_y_axes,
-                    f"VB: {composition_info['vb']}",
-                    transform=ax.transAxes,
-                    fontsize=8,
-                    verticalalignment="bottom",
-                    horizontalalignment="left",
-                    bbox=dict(
-                        boxstyle="round,pad=0.3",
-                        facecolor="white",
-                        alpha=0.9,
-                        edgecolor="gray",
-                        linewidth=0.8,
-                    ),
-                    zorder=102,
-                )
-
-            # CB label - position just below CBM
             if composition_info.get("cb"):
-                if composition_info["cbm"] is not None:
-                    cb_y_pos = composition_info["cbm"] - 0.15
-                else:
-                    cb_y_pos = maxV + 0.2
+                comp_lines.append(f"CB: {composition_info['cb']}")
+            if composition_info.get("vb"):
+                comp_lines.append(f"VB: {composition_info['vb']}")
 
-                cb_y_axes = (cb_y_pos - y_bottom) / y_range
-                cb_y_axes = max(0.55, min(0.95, cb_y_axes))
-
-                ax.text(
-                    0.02,
-                    cb_y_axes,
-                    f"CB: {composition_info['cb']}",
-                    transform=ax.transAxes,
-                    fontsize=8,
-                    verticalalignment="top",
-                    horizontalalignment="left",
-                    bbox=dict(
-                        boxstyle="round,pad=0.3",
-                        facecolor="white",
-                        alpha=0.9,
-                        edgecolor="gray",
-                        linewidth=0.8,
-                    ),
-                    zorder=102,
-                )
-
-    # Smart legend placement
-    vbm = composition_info["vbm"] if composition_info else None
-    cbm = composition_info["cbm"] if composition_info else None
-
-    legend_loc = find_optimal_legend_position(
-        ax,
-        data_vect,
-        labels,
-        search_ordered,
-        xlim_neg,
-        xlim_pos,
-        E_l,
-        E_u,
-        maxV,
-        vbm,
-        cbm,
-    )
-    print(f"  Legend placed at: {legend_loc}")
-
-    legend = plt.legend(
-        loc=legend_loc,
-        frameon=True,
-        fontsize=9,
-        ncol=1,
-        columnspacing=0.5,
-        handlelength=1.5,
-    )
-    legend.get_frame().set_facecolor("white")
-    legend.get_frame().set_edgecolor("black")
-    legend.get_frame().set_linewidth(1.0)
-    legend.get_frame().set_alpha(0.9)
-
-    # Band gap text box - position at same height as legend (upper area)
+    # Band gap note: it heads the legend, outside the axes with it
+    gap_text = None
     if band_gap_info:
         if "semimetal" in band_gap_info:
             gap_text = f"Semimetal\n$E_g$ = {band_gap_info['semimetal']:.2f} eV"
@@ -1427,31 +1383,24 @@ def ipDOS(
                 gap_text = "Conductive"
             else:
                 gap_text = f"$E_g$ = {band_gap_info['gap']:.2f} eV"
-        else:
-            gap_text = None
 
-        if gap_text:
-            # Position based on legend location
-            if "left" in legend_loc:
-                # Legend is on left, put Eg on right
-                eg_x, eg_ha = 0.98, "right"
-            else:
-                # Legend is on right, put Eg on left (but not too far left)
-                eg_x, eg_ha = 0.55, "left"
-
-            ax.text(
-                eg_x,
-                0.98,
-                gap_text,
-                transform=ax.transAxes,
-                fontsize=10,
-                verticalalignment="top",
-                horizontalalignment=eg_ha,
-                bbox=dict(
-                    boxstyle="round", facecolor="white", alpha=0.9, edgecolor="gray"
-                ),
-                zorder=103,
-            )
+    # the legend outside the axes and the tick labels and axis label on their right:
+    # a busy DOS has no empty corner for it
+    legend = legend_outside(
+        fig,
+        ax,
+        frameon=True,
+        fontsize=9,
+        ncol=1,
+        columnspacing=0.5,
+        handlelength=1.5,
+        title="\n".join(t for t in (gap_text, *comp_lines) if t) or None,
+        title_fontsize=9,
+    )
+    legend.get_frame().set_facecolor("white")
+    legend.get_frame().set_edgecolor("black")
+    legend.get_frame().set_linewidth(1.0)
+    legend.get_frame().set_alpha(0.9)
 
     # Save figures
     format_list = formats.lower().split(',')

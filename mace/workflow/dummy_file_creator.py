@@ -372,7 +372,7 @@ class DummyFileCreator:
             elif dim == "POLYMER":
                 f.write(" POLYMER CALCULATION\n")
             else:
-                f.write(" MOLECULE CALCULATION\n")
+                f.write(" MOLECULAR CALCULATION\n")          # CRYSTAL23's own banner
             f.write("\n")
             
             # Add space group information - parser looks for "SPACE GROUP : <symbol>"

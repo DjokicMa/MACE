@@ -437,7 +437,7 @@ def test_walltime_kill_is_resubmitted_with_restart_through_real_slurm_calls(
     assert re.fullmatch(r"tqb_pto_recovery_\d{8}_\d{6}\.sh", resub.name)
     assert "#SBATCH -t 6-00:00:00" in resub.read_text()
     assert "# OPTGEOM RESTART" in resub.read_text()
-    assert ["sacct", "-j", "777001", "--format=State", "-n", "-X"] in calls
+    assert ["sacct", "-j", "777001", "--format=State,End", "-n", "-X", "-P"] in calls
     assert ["sbatch", "--test-only", "-t", "6-00:00:00", str(work / "tqb_pto.sh")] in calls
     new = [c for c in mgr.db.get_all_calculations() if c["calc_id"] != calc_id]
     assert [c["slurm_job_id"] for c in new] == ["777002"]

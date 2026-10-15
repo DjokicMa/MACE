@@ -62,6 +62,7 @@ _CHOICES = {"lightDirection": ("front", "upper-left", "top"), "bondedOutside": (
             "database.refreshSeconds": (0, 15, 30, 60),
             "plots.relTo": ("first", "final", "minimum", "absolute"),
             "plots.per": ("cell", "atom", "fu"),
+            "plots.segments": ("continuous", "separate"),
             "energyUnit": ("eV", "meV", "Ha", "kJ/mol", "kcal/mol")}
 _RANGE_KEYS = ("displayLo", "displayHi")
 RANGE_LIMITS = (-5.0, 10.0)

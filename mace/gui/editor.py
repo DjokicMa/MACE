@@ -763,12 +763,12 @@ class EditSession:
             from ase import Atoms
             try:
                 r = builders.supercell(cell=self.atoms.cell.array, frac=self.atoms.get_scaled_positions(wrap=False),
-                                       numbers=self.atoms.numbers, matrix=matrix)
+                                       numbers=self.atoms.numbers, pbc=tuple(bool(p) for p in self.atoms.pbc), matrix=matrix)
             except ValueError as exc:
                 raise EditError(str(exc))
             if len(r["numbers"]) > MAX_ATOMS:
                 raise EditError(f"more than {MAX_ATOMS} atoms: too big for the editor")
-            self.atoms = Atoms(numbers=r["numbers"], cell=r["cell"], scaled_positions=r["frac"], pbc=True)
+            self.atoms = Atoms(numbers=r["numbers"], cell=r["cell"], scaled_positions=r["frac"], pbc=r["pbc"])
             m = r["info"]["matrix"]
             diag = all(m[i][j] == 0 for i in range(3) for j in range(3) if i != j)
             what = f"{m[0][0]}x{m[1][1]}x{m[2][2]}" if diag else f"det {r['info']['det']}"
@@ -776,6 +776,12 @@ class EditSession:
         n = [int(x) for x in n]
         if min(n) < 1 or np.prod(n) > 64:
             raise EditError("supercell multiples must be 1-64 in total")
+        if not all(self.atoms.pbc):
+            from . import builders
+            try:
+                builders.check_periodic(np.diag(n), self.atoms.pbc)
+            except ValueError as exc:
+                raise EditError(str(exc))
         self.atoms = self.atoms.repeat(n)
         return self._recaptured(f"{n[0]}x{n[1]}x{n[2]} supercell"), None
 

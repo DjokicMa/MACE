@@ -100,11 +100,33 @@ def lattice_points(m: np.ndarray, ctx=NOCTX) -> np.ndarray:
     return pts.astype(np.int64)
 
 
+def check_periodic(m, pbc) -> None:
+    """A slab or polymer repeats along its periodic directions only: M leaves
+    each non-periodic vector as it is (1 on the diagonal, 0 beside it)."""
+    pbc = [bool(p) for p in pbc]
+    if not any(pbc):
+        raise ValueError("A molecule has no periodic direction to repeat")
+    m = np.asarray(m)
+    names = "abc"
+    along = " and ".join(names[i] for i in range(3) if pbc[i])
+    for i in range(3):
+        if pbc[i]:
+            continue
+        if m[i, i] != 1:
+            raise ValueError(f"This structure is periodic along {along} only: n{i + 1} must be 1")
+        if any(m[i, j] or m[j, i] for j in range(3) if j != i):
+            raise ValueError(f"This structure is periodic along {along} only: the matrix must leave {names[i]} as it is "
+                             f"(row and column {i + 1}: 1 on the diagonal, 0 elsewhere)")
+
+
 def supercell(ctx=NOCTX, cell=None, frac=None, numbers=None, pbc=(True, True, True), matrix=None, **_):
     """The supercell with new vectors M @ cell: every atom at every lattice
     point, image by image (atoms inside each image in their old order), new
-    fractional coordinates wrapped into [0, 1)."""
+    fractional coordinates wrapped into [0, 1) along the periodic directions
+    (a slab or polymer repeats along those only; check_periodic)."""
     m = check_matrix(matrix)
+    if not all(pbc):
+        check_periodic(m, pbc)
     cell = np.asarray(cell, float).reshape(3, 3)
     frac = np.asarray(frac, float).reshape(-1, 3)
     numbers = np.asarray(numbers, dtype=np.int64)
@@ -119,8 +141,11 @@ def supercell(ctx=NOCTX, cell=None, frac=None, numbers=None, pbc=(True, True, Tr
         blk = pts[i0:i0 + step]
         new[i0 * n_at:(i0 + len(blk)) * n_at] = ((blk[:, None, :] + frac[None, :, :]) @ inv).reshape(-1, 3)
         ctx.progress(0.6 + 0.3 * min(1.0, (i0 + len(blk)) / n_img), "building coordinates")
-    new -= np.floor(new + 1e-12)
-    new[np.abs(new - 1.0) < 1e-12] = 0.0
+    per = np.array([bool(p) for p in pbc])
+    w = new[:, per]
+    w -= np.floor(w + 1e-12)
+    w[np.abs(w - 1.0) < 1e-12] = 0.0
+    new[:, per] = w
     out = result(m @ cell, new, np.tile(numbers, n_img), pbc, summary=f"{n_img * n_at} atoms ({n_img} × {n_at})")
     out["info"] = {"det": n_img, "matrix": m.tolist()}
     ctx.progress(0.9, "packing")

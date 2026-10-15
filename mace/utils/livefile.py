@@ -27,8 +27,14 @@ from typing import Optional, Tuple
 
 HEAD = 64 * 1024
 LIVE_MINUTES = 10
-# CRYSTAL's normal and error ends, and the line `mace run` appends to a run it stopped
-TERMINAL_MARKERS = ("TOTAL CPU TIME =", "EEEEEEEEEE TERMINATION", "OPT END - FAILED")
+# CRYSTAL's normal and error ends, and the line `mace run` appends to a run it stopped.
+# "ERROR ****" is CRYSTAL's fatal-error banner (its warnings say "WARNING ****"); the
+# others are the MPI launcher's when a process dies or is killed (an out-of-memory kill:
+# "BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES ... KILLED BY SIGNAL: 9"), or a
+# rank calls MPI_Abort. None appears in a run that goes on (checked on the test corpus).
+TERMINAL_MARKERS = ("TOTAL CPU TIME =", "EEEEEEEEEE TERMINATION", "OPT END - FAILED",
+                    "ERROR ****", "BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES", "KILLED BY SIGNAL:",
+                    "application called MPI_Abort")
 
 
 def _markers():

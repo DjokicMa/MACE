@@ -27,7 +27,7 @@
 .cn-line pre { flex: 1; margin: 0; white-space: pre-wrap; word-break: break-all; }
 .cn-tasks { margin: var(--s-2) 0; padding-left: var(--s-5); }
 .tb-btn-text.danger { background: var(--danger); color: var(--on-danger, white); border-color: var(--danger); }
-.stopped-page { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
+.stopped-page { position: fixed; inset: 0; z-index: var(--z-blocker); display: flex; align-items: center; justify-content: center;
   background: var(--bg, Canvas); color: inherit; }
 .stopped-page .card { max-width: 560px; padding: var(--s-6); }
 .stop-banner { display: flex; gap: var(--s-3); align-items: center; }

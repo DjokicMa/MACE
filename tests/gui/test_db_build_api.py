@@ -118,6 +118,14 @@ def test_info_names_the_database_and_the_command(served):
     assert r["db"] == "runs/materials.db" and r["source"] == "new" and r["exists"] is False and r["inside"]
     assert r["command"] == "mace analyze --extract-properties runs --db-path runs/materials.db --register --skip-unchanged"
     assert r["outputs"] == 5 and r["guarantee"].startswith("Nothing is deleted from the database.")
+    # the Backup tick of a new database is in the command the build runs (db_build_route's argv)
+    st, _, r = _get(base, "db/build/info", folder="runs", backup="1", keep="4")
+    assert r["command"] == ("mace analyze --extract-properties runs --db-path runs/materials.db --register "
+                            "--skip-unchanged --backup --keep-backups 4")
+    from mace.gui import dbbuild
+    opts = dbbuild.options({"backup": True, "keep": 4}, False)
+    assert r["command"] == dbbuild.command_text(dbbuild.cli_args("runs", "runs/materials.db", opts["register"],
+                                                                 opts["skip_unchanged"], opts["backup"], opts["keep"]))
 
 
 def test_preview_equals_the_cli_dry_run_and_writes_nothing(served):

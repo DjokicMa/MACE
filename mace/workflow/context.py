@@ -15,6 +15,7 @@ Features:
 
 import os
 import json
+import secrets
 import shutil
 import sqlite3
 import threading
@@ -364,12 +365,13 @@ class WorkflowContext:
         
         export_dir.mkdir(parents=True, exist_ok=True)
         
-        # Export databases
+        # Export databases (through SQLite: a file copy misses what is
+        # still in the write-ahead log)
         if self.db_path.exists():
-            shutil.copy2(self.db_path, export_dir / f"{self.workflow_id}_materials.db")
+            _copy_sqlite(self.db_path, export_dir / f"{self.workflow_id}_materials.db")
         
         if self.structures_db_path.exists():
-            shutil.copy2(self.structures_db_path, export_dir / f"{self.workflow_id}_structures.db")
+            _copy_sqlite(self.structures_db_path, export_dir / f"{self.workflow_id}_structures.db")
         
         # Export calculation files
         if self.storage_dir.exists():
@@ -386,6 +388,22 @@ class WorkflowContext:
                 "isolation_mode": self.isolation_mode,
                 "metadata": self.metadata
             }, f, indent=2)
+
+
+def _copy_sqlite(source: Path, target: Path) -> None:
+    """A consistent copy of a SQLite database, write-ahead log included."""
+    import sqlite3
+    src = sqlite3.connect(str(source))
+    try:
+        dst = sqlite3.connect(str(target))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    except sqlite3.Error:
+        shutil.copy2(source, target)
+    finally:
+        src.close()
 
 
 @contextmanager
@@ -406,6 +424,138 @@ def workflow_context(workflow_id: str, **kwargs):
         yield ctx
     finally:
         ctx.deactivate()
+
+
+# Ids this process has handed out (several may be minted in one second).
+_ISSUED_IDS: set = set()
+_ISSUED_LOCK = threading.Lock()
+# Reservations of minted ids in a folder: not a plan file, so no reader of
+# workflow_plan_*.json ever sees one.
+ID_RESERVATIONS = Path("workflow_configs") / ".workflow_ids"
+
+
+def _id_stamp() -> str:
+    return datetime.now().strftime('%Y%m%d_%H%M%S')
+
+
+def _id_suffix() -> str:
+    return secrets.token_hex(2)
+
+
+def _id_taken(base: Path, workflow_id: str) -> bool:
+    """A plan file or a context of this id already exists in ``base``."""
+    plan = base / "workflow_configs" / f"workflow_plan_{workflow_id[len('workflow_'):]}.json"
+    return plan.exists() or (base / f".mace_context_{workflow_id}").exists()
+
+
+def _reserve_id(base: Path, workflow_id: str) -> bool:
+    """Claim the id in ``base`` atomically (O_EXCL); False when another
+    process has it. A folder that is no workflow folder yet (no
+    ``workflow_configs/``) or cannot be written is checked, not claimed."""
+    if _id_taken(base, workflow_id):
+        return False
+    folder = base / ID_RESERVATIONS
+    if not folder.parent.is_dir():
+        return True
+    try:
+        folder.mkdir(exist_ok=True)
+        fd = os.open(str(folder / workflow_id), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        return False
+    except OSError:
+        return True
+    os.close(fd)
+    return True
+
+
+def new_workflow_id(base_dir: Optional[Union[str, Path]] = None) -> str:
+    """A new workflow id: ``workflow_<YYYYmmdd_HHMMSS>_<4 hex>``, unique.
+
+    The time alone has one-second resolution, and a random suffix alone
+    still repeats now and then, so the id is also checked: not handed out
+    before by this process, no plan file or context of it in the folder
+    (``base_dir``, else the current one), and, when ``base_dir`` is given,
+    reserved there atomically (``workflow_configs/.workflow_ids/<id>``,
+    O_EXCL) so another process minting at the same moment gets another.
+    On any clash a new suffix is drawn. Everything that reads an id takes it
+    whole (the plan file is ``workflow_plan_<id without "workflow_">.json``),
+    so existing ids keep resolving.
+    """
+    base = Path(base_dir) if base_dir is not None else Path.cwd()
+    while True:
+        workflow_id = f"workflow_{_id_stamp()}_{_id_suffix()}"
+        with _ISSUED_LOCK:
+            if workflow_id in _ISSUED_IDS:
+                continue
+            try:
+                free = (_reserve_id(base, workflow_id) if base_dir is not None
+                        else not _id_taken(base, workflow_id))
+            except OSError:
+                free = True
+            if not free:
+                continue
+            _ISSUED_IDS.add(workflow_id)
+            return workflow_id
+
+
+def workflow_scripts_dir(base_dir: Union[str, Path], workflow_id: str) -> Path:
+    """A workflow's own copy of its job-script templates.
+
+    ``workflow_scripts/`` in the folder is shared: the templates there are
+    named by step (``submitcrystal23_sp_2.sh``), so a second workflow planned
+    in the same folder overwrote the first one's, and the first workflow's
+    later steps ran with the second one's resources. Each isolated workflow
+    keeps its templates here as well, and the engine builds its steps from
+    this copy.
+    """
+    return Path(base_dir) / f".mace_context_{workflow_id}" / "workflow_scripts"
+
+
+def keep_workflow_scripts(base_dir: Union[str, Path], workflow_id: str, names) -> None:
+    """Copy the named templates from the folder's ``workflow_scripts/`` into
+    the workflow's own copy (``workflow_scripts_dir``)."""
+    shared = Path(base_dir) / "workflow_scripts"
+    own = workflow_scripts_dir(base_dir, workflow_id)
+    for name in names:
+        src = shared / name
+        if src.is_file():
+            own.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, own / name)
+
+
+def freeze_shared_scripts(base_dir: Union[str, Path], workflow_id: Optional[str] = None) -> None:
+    """Before ``workflow_scripts/`` is rewritten for a new workflow, give
+    every other workflow in the folder that has no copy of its own (planned
+    before workflows kept one) a copy of the templates it builds its steps
+    from today, so the new workflow's templates never reach it."""
+    base = Path(base_dir)
+    shared = base / "workflow_scripts"
+    try:
+        templates = [p for p in shared.glob("*.sh") if p.is_file()]
+        contexts = list(base.glob(".mace_context_*"))
+    except OSError:
+        return
+    if not templates:
+        return
+    for ctx_dir in contexts:
+        wid = ctx_dir.name[len(".mace_context_"):]
+        if not ctx_dir.is_dir() or wid == workflow_id:
+            continue
+        own = ctx_dir / "workflow_scripts"
+        if own.exists():
+            continue
+        # Copied whole or not at all: the copy is made aside and renamed
+        # into place, so a copy that fails part way (over quota, say) never
+        # leaves an own folder missing templates; the workflow then keeps
+        # using the shared ones.
+        tmp = ctx_dir / f".workflow_scripts.tmp-{secrets.token_hex(4)}"
+        try:
+            tmp.mkdir()
+            for p in templates:
+                shutil.copy2(p, tmp / p.name)
+            os.rename(tmp, own)
+        except OSError:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 def get_current_context() -> Optional[WorkflowContext]:

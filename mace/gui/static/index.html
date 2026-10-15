@@ -38,10 +38,13 @@
       <input id="file-filter" type="search" placeholder="Filter files" aria-label="Filter files">
       <div class="kind-chips" id="kind-chips"></div>
     </div>
-    <div class="side-section" id="open-editors"></div>
-    <nav id="file-list" class="file-list" aria-label="Files"></nav>
-    <div class="side-section" id="db-section"></div>
-    <div class="side-section" id="recent-files"></div>
+    <div class="side-section" id="open-editors" data-section="editors"></div>
+    <section class="side-section" id="files-section" data-section="files">
+      <button class="section-label section-toggle" id="files-toggle" aria-expanded="true" aria-controls="file-list"><svg class="i chev" aria-hidden="true"><use href="static/@V@/icons/lucide.svg#chevron-down"/></svg><span>Files</span></button>
+      <nav id="file-list" class="file-list" aria-label="Files"></nav>
+    </section>
+    <div class="side-section" id="db-section" data-section="db"></div>
+    <div class="side-section" id="recent-files" data-section="recent"></div>
     <div class="side-foot" id="side-foot"></div>
   </aside>
   <div class="splitter v" id="split-explorer" role="separator" aria-orientation="vertical" aria-label="Resize explorer" tabindex="0"></div>
@@ -289,6 +292,7 @@ O 0.5 0.5 0.5</textarea>
                 <label class="tog"><input type="checkbox" id="o-arrows" checked><span>Arrows</span></label>
                 <label class="tog"><input type="checkbox" id="o-ghost" checked><span>Initial (ghost)</span></label>
               </span>
+              <label class="o-e-sel tb-group" id="o-dmode-wrap" hidden title="With cell change: how far each atom moved in space (the cell's change included, the mean shift removed). Relative to the cell: the relaxation of the fractional coordinates, in the final cell.">Δr <select id="o-dmode" aria-label="Displacement"><option value="cart">With cell change</option><option value="internal">Relative to the cell</option></select></label>
               <label class="slider tb-group" title="Arrows are drawn this many times longer than the real displacement">Arrow ×<input type="range" id="o-scale" min="1" max="200" value="1"><output id="o-scale-out">1</output></label>
               <label class="slider tb-group hidden" id="o-frame-wrap">Frame<input type="range" id="o-frame" min="0" max="0" value="0"><output id="o-frame-out"></output></label>
               <button class="btn small" id="o-edit-step" type="button" title="Open this step as a structure you can edit">Edit This Step</button>
@@ -313,6 +317,7 @@ O 0.5 0.5 0.5</textarea>
                 <button type="button" class="tb-btn-text" id="o-e-log" aria-pressed="false" title="Log of |ΔE|">Log |ΔE|</button>
                 <label class="o-e-sel">Relative to <select id="o-e-rel" aria-label="Relative to"><option value="first">First</option><option value="final">Final</option></select></label>
                 <label class="o-e-sel">Units <select id="o-e-unit" aria-label="Energy unit"><option>eV</option><option>meV</option><option>Ha</option><option value="kJ/mol">kJ/mol</option><option value="kcal/mol">kcal/mol</option></select></label>
+                <label class="o-e-sel" hidden title="One curve across the FINALRUN restarts, or each FINALRUN segment relative to its own point">Segments <select id="o-e-seg" aria-label="FINALRUN segments"><option value="continuous">Continuous</option><option value="separate">Separate</option></select></label>
                 <button type="button" class="tb-btn-text" id="o-e-tsv" title="Copy the plotted values as tab-separated text">Copy TSV</button>
                 <button type="button" class="tb-btn-text" id="o-e-plot" title="Run Analysis: energy, convergence, SCF, cell">Open as Plot</button>
               </div>

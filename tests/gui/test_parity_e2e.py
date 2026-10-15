@@ -226,10 +226,28 @@ def test_stick_spectrum_click_selects_the_mode(fresh):
     drv.execute_script("window.__mace.freqView.play(false)")
 
 
-def test_spectrum_peak_click_opens_its_mode(fresh):
+@pytest.mark.parametrize("scale", [100, 110, 125])
+def test_spectrum_peak_click_opens_its_mode(fresh, scale):
     """An IRSPEC.DAT opened cold (its FREQ output never read): the peaks are its modes,
-    and a real click on the strongest peak opens Modes at that mode."""
+    and a real click on the strongest peak opens Modes at that mode, at every UI scale.
+
+    The strongest (mode 54, 1180.5 cm-1) has mode 55 (1182.0 cm-1) on the same band
+    17 px below it. Plotly throttles hover to one per 50 ms and a click re-uses the
+    last hover, so a click right after the pointer's move (WebDriver moves it along a
+    path from below) opened mode 55 whenever the last hover fell on the way; the
+    plot now takes the marker under the click's own position.
+
+    The UI scale zooms the plot: the click's screen offset is zoom x the plot's own px
+    (at 110 % and 125 % the click used to land on a marker up and to the left of it)."""
     drv = fresh[0]
+    drv.execute_script("window.__mace.settings.set('uiScale', arguments[0])", scale)
+    try:
+        _peak_click(drv, scale)
+    finally:
+        drv.execute_script("window.__mace.settings.set('uiScale', 100)")
+
+
+def _peak_click(drv, scale):
     click_file(drv, "spectra/cold_freq_IRSPEC.DAT")
     H.wait(drv, "const s = window.__mace.plotView && window.__mace.plotView.state(); return s && s.drawn && s.peaks > 0", 90)
     st = drv.execute_script("return window.__mace.plotView.state()")
@@ -237,16 +255,18 @@ def test_spectrum_peak_click_opens_its_mode(fresh):
     # the plot settled (the pane's size and the figure's agree), then the strongest IR mode's marker on the screen
     H.wait(drv, "const el = window.__mace.plotView.el(), fl = el._fullLayout; return fl && Math.abs(fl.width - el.clientWidth) <= 4", 20)
     time.sleep(0.5)
-    want, xy = drv.execute_script("""
+    want, (*xy, z) = drv.execute_script("""
         const el = window.__mace.plotView.el(), t = el.data.find((x) => x.meta === 'peaks');
         let k = 0; for (let i = 1; i < t.y.length; i++) if (t.y[i] > t.y[k]) k = i;
-        const fl = el._fullLayout, r = el.getBoundingClientRect();
-        return [t.customdata[k], [r.left + fl._size.l + fl.xaxis.l2p(t.x[k]), r.top + fl._size.t + fl.yaxis.l2p(t.y[k])]];""")
-    U.shot(drv, "parity_ir_peaks")
+        // the plot's screen corner plus its own px times the zoom
+        const fl = el._fullLayout, r = el.getBoundingClientRect(), z = r.width / el.offsetWidth;
+        return [t.customdata[k], [r.left + (fl._size.l + fl.xaxis.l2p(t.x[k])) * z, r.top + (fl._size.t + fl.yaxis.l2p(t.y[k])) * z, z]];""")
+    assert abs(z - scale / 100) < 0.01, (scale, z)
+    U.shot(drv, f"parity_ir_peaks_{scale}")
     body = drv.find_element(By.TAG_NAME, "body")
     ActionChains(drv).move_to_element_with_offset(body, 0, 0).perform()
-    ActionChains(drv).move_by_offset(int(xy[0]) - drv.execute_script("return innerWidth / 2 | 0"),
-                                     int(xy[1]) - drv.execute_script("return innerHeight / 2 | 0")).click().perform()
+    ActionChains(drv).move_by_offset(round(xy[0]) - drv.execute_script("return innerWidth / 2 | 0"),
+                                     round(xy[1]) - drv.execute_script("return innerHeight / 2 | 0")).click().perform()
     H.wait(drv, "const d = window.__mace.activeDoc(); return d && d.kind === 'freq' && d.path === 'spectra/cold_freq.out'", 30)
     H.wait(drv, "const v = window.__mace.freqView, s = v && v.state(); return s && s.mode === arguments[0]", 60, want)
     drv.execute_script("window.__mace.freqView.play(false)")

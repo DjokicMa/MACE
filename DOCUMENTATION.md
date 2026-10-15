@@ -175,8 +175,9 @@ written to `.mace_local/<job>.sh` beside the deck (a `<job>.sh` of your own is
 left alone) and run under `bash --login` with `SLURM_SUBMIT_DIR` and
 `SLURM_NTASKS` set. Staging, scratch and copy-back are therefore the SLURM
 job's: `INPUT`, `<job>.f20`/`.f9` as `fort.20`, `<job>.ext` as `fort.34`, the
-scratch directory `$SCRATCH/crys23/<job>` (`crys23/prop/<job>` for properties),
-and the results `<job>.out`, `<job>.f9`, `<job>.BAND.DAT`, `<job>.DOSS.DAT`,
+scratch directory `$SCRATCH/crys23/<job>` (`crys23/prop/<job>` for properties;
+a same-named deck from another folder uses
+`$SCRATCH/crys23/.mace_by_dir/<checksum>/<job>`), and the results `<job>.out`, `<job>.f9`, `<job>.BAND.DAT`, `<job>.DOSS.DAT`,
 `<job>.f25`, ... beside the deck. `mace completion`, `mace analyze`, `opt2d3`
 and `opt2d12` read them as they read a SLURM job's. Two things differ: the job
 log is `<job>-local.o` (a SLURM job writes `<job>-<jobid>.o`), and no
@@ -219,9 +220,9 @@ completion callback runs, so nothing is submitted afterwards.
 - **Exit status:** 0 every deck completed, 1 a deck failed or was skipped, 2
   refused, 124 a deck timed out, 128+signal when stopped (130 for Ctrl-C).
 
-Each deck reuses `$SCRATCH/crys23/<job>`, as SLURM jobs do: files a failed
-earlier run of the same job left there (a `fort.9`, a `BAND.DAT`) can be
-copied back after another failure, the same as under SLURM.
+Each deck reuses `$SCRATCH/crys23/<job>`, as SLURM jobs do. Only files this
+run wrote are copied back (a properties deck's scratch directory is emptied
+first; fort.9 only when this run wrote it).
 
 ### Job arrays (`mace submit --array`)
 
@@ -792,7 +793,7 @@ Cores: 32, Memory: 5G, Walltime: 7-00:00:00, Account: mendoza_q
 Cores: 32, Memory: 4G, Walltime: 3-00:00:00, Account: mendoza_q
 
 # Properties calculations (BAND/DOSS/TRANSPORT/CHARGE+POTENTIAL)
-Cores: 28, Memory: 80G, Walltime: 2:00:00, Account: mendoza_q
+Cores: 8, Memory: 80G, Walltime: 2:00:00, Account: mendoza_q
 
 # Frequency calculations
 Cores: 32, Memory: 5G, Walltime: 7-00:00:00, Account: mendoza_q
@@ -812,7 +813,7 @@ Cores: 32, Memory: 5G, Walltime: 7-00:00:00, Account: mendoza_q
   ↓ Cleaned to: mat_1_dia
 
 # Individual folder structure creation
-workflow_outputs/workflow_20250618_160317/step_001_OPT/mat_1_dia/
+workflow_outputs/workflow_20250618_160317_3fa9/step_001_OPT/mat_1_dia/
 ├── mat_1_dia.d12     # Material input file
 ├── mat_1_dia.sh      # Individual SLURM script
 ├── mat_1_dia.out     # CRYSTAL output (after job completion)
@@ -821,7 +822,7 @@ workflow_outputs/workflow_20250618_160317/step_001_OPT/mat_1_dia/
 # Customized SLURM script generation
 --job-name=mat_1_dia_opt
 --output=mat_1_dia_opt.o%j
-export scratch=$SCRATCH/workflow_20250618_160317/step_001_OPT/mat_1_dia
+export scratch=$SCRATCH/workflow_20250618_160317_3fa9/step_001_OPT/mat_1_dia
 ```
 
 ### Configuration Management
@@ -933,7 +934,7 @@ working_directory/
 ├── workflow_inputs/           # Initial input files
 │   └── step_001_OPT/
 ├── workflow_outputs/          # Individual calculation folders
-│   └── workflow_20250618_160317/
+│   └── workflow_20250618_160317_3fa9/
 │       └── step_001_OPT/
 │           ├── mat_1_dia/      # Individual material folder
 │           │   ├── mat_1_dia.d12

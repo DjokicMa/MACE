@@ -24,7 +24,7 @@ hs = pytest.importorskip("hpkot_static")
 import crystal_out_text as cot  # noqa: E402
 
 CORPUS = Path(__file__).resolve().parents[1] / "test"
-CONVERTED = ["tI1", "tI2", "hR1", "hR2", "oF1", "oC2", "mC1"]
+CONVERTED = ["tI1", "tI2", "hR1", "hR2", "oF1", "oC1", "oC2", "mC1"]
 
 # CRYSTAL's primitive cell in terms of the conventional one (rows),
 # (W^T)^-1 with W as CRYSTAL prints it
@@ -102,6 +102,11 @@ CELLS = [
     (12, "C", (10.6, 3.45, 9.33, 90, 120.43, 90)), (15, "C", (9.0, 4.0, 12.0, 90, 95, 90)),
     (5, "C", (9.0, 4.0, 12.0, 90, 95, 90)), (9, "C", (10.6, 3.45, 9.33, 90, 120.43, 90)),
     (8, "C", (6.0, 4.0, 5.0, 90, 100, 90)),
+    # C-centered orthorhombic: oC1 (a <= b) and oC2 (a > b, graphite AB slip's 7.36 x 6.22),
+    # with and without inversion
+    (63, "C", (3.0, 5.1, 7.4, 90, 90, 90)), (63, "C", (5.1, 3.0, 7.4, 90, 90, 90)),
+    (65, "C", (7.36, 6.22, 4.25, 90, 90, 90)), (65, "C", (3.75, 7.72, 2.49, 90, 90, 90)),
+    (36, "C", (4.0, 6.0, 5.0, 90, 90, 90)), (36, "C", (6.0, 4.0, 5.0, 90, 90, 90)),
 ]
 
 
@@ -220,7 +225,7 @@ def test_refusal_keeps_the_entry_with_a_warning(tmp_path, monkeypatch, sg, latti
     assert reason in printed
 
 
-@pytest.mark.parametrize("key", ["oC2", "mC1"])
+@pytest.mark.parametrize("key", ["mC1"])
 def test_entries_whose_labels_do_not_name_their_segments_are_not_converted(key):
     params = {"a": 11.49, "b": 10.08, "c": 13.89, "alpha": 90.0, "beta": 90.0, "gamma": 90.0}
     segments, reason, _ = d3_kpoints.parametric_static_segments(key, params)
@@ -228,12 +233,11 @@ def test_entries_whose_labels_do_not_name_their_segments_are_not_converted(key):
 
 
 def test_unconverted_lattices_still_warn(tmp_path, monkeypatch):
-    """aP, mP, oP, oI, oS, oF3, ... keep the warning."""
+    """aP, mP, oP, oI, oF3, ... keep the warning (oS/oC is converted since 1.1.5)."""
     for sg, lattice, params in [(2, "P", (5.1, 3.0, 7.4, 100, 95, 80)),
                                 (14, "P", (7.4, 5.1, 3.0, 90, 115, 90)),
                                 (62, "P", (5.1, 7.4, 3.0, 90, 90, 90)),
-                                (71, "I", (3.0, 5.1, 7.4, 90, 90, 90)),
-                                (63, "C", (3.0, 5.1, 7.4, 90, 90, 90))]:
+                                (71, "I", (3.0, 5.1, 7.4, 90, 90, 90))]:
         _, info, _, printed = _static(monkeypatch, sg, lattice, _out(tmp_path, params, sg))
         assert info["source"] == "seekpath_data" and "WARNING: the static" in printed, sg
 
@@ -336,8 +340,8 @@ def test_corpus_static_route_writes_the_library_deck(monkeypatch):
     pytest.importorskip("seekpath")
     import re
     names = {"I 4/M M M": 139, "I 4/M": 87, "R -3 C": 167, "R -3 M": 166, "R -3": 148,
-             "F M M M": 69, "C 2": 5, "C M": 8, "C 2/M": 12}
-    centrosymmetric = {"I 4/M M M", "I 4/M", "R -3 C", "R -3 M", "R -3", "F M M M", "C 2/M"}
+             "F M M M": 69, "C 2": 5, "C M": 8, "C 2/M": 12, "C M C A": 64, "C M C E": 64}
+    centrosymmetric = {"I 4/M M M", "I 4/M", "R -3 C", "R -3 M", "R -3", "F M M M", "C 2/M", "C M C A", "C M C E"}
     checked = 0
     for out in sorted(CORPUS.glob("*/*.out")):
         text = out.read_text(errors="ignore")
@@ -376,3 +380,67 @@ def test_of_variant_is_seekpaths(tmp_path, monkeypatch, params, variant):
                                            sorted(params[:3]) + [90, 90, 90]))) == variant
     _, info, _, _ = _static(monkeypatch, 69, "F", _out(tmp_path, params, 69))
     assert info["lookup_key"] == variant
+
+
+
+def test_oc_variant_is_seekpaths():
+    """C-centered orthorhombic: oC1 when a <= b, else oC2 (hpkot.get_path). The static
+    route named every one "oS1" (oC1) and wrote its numbers in SeeK-path's cell: for
+    graphite AB slip (a 7.36 > b 6.22, oC2) a "Y" at (1/2, 1/2, 0) of CRYSTAL's basis,
+    outside the first zone, and F_0, DELTA_0 for another cell."""
+    assert d3_kpoints.determine_orthorhombic_s_variant(3.0, 5.1, 7.4) == "oS1"
+    assert d3_kpoints.determine_orthorhombic_s_variant(7.36, 6.22, 4.25) == "oC2"
+    params = {"a": 7.36, "b": 6.22, "c": 4.25, "alpha": 90.0, "beta": 90.0, "gamma": 90.0}
+    points, key = hs.crystal_points("oC2", params)
+    zeta = (1 + 6.22 ** 2 / 7.36 ** 2) / 4
+    assert key == "oC2" and points["Y"] == [0.5, -0.5, 0.0]
+    np.testing.assert_allclose(points["F_0"], [1 - zeta, -zeta, 0], atol=1e-12)
+    np.testing.assert_allclose(points["DELTA_0"], [zeta, zeta, 0], atol=1e-12)
+
+
+def _in_first_zone(f, rec):
+    import itertools
+    k = np.asarray(f) @ rec
+    for n in itertools.product(range(-2, 3), repeat=3):
+        if any(n):
+            g = np.array(n) @ rec
+            if k @ g > g @ g / 2 + 2e-3 * max(1.0, g @ g):     # ISS rounding of a boundary point
+                return False
+    return True
+
+
+@pytest.mark.skipif(not CORPUS.is_dir(), reason="test/ corpus not present")
+@pytest.mark.parametrize("static", [False, True])
+def test_corpus_band_paths_lie_in_the_first_zone(monkeypatch, static):
+    """Every point of the SeeK-path path opt2d3 writes for a 3D corpus output (the library
+    route, and the static route asked for) lies in the first Brillouin zone of the cell
+    CRYSTAL runs: the coordinates are in CRYSTAL's reciprocal basis. (A triclinic static
+    path is in SeeK-path's reduced cell and is not checked; it warns.) """
+    pytest.importorskip("seekpath")
+    import CRYSTALOptToD3 as d3gen
+    import seekpath_interface as si
+    checked = 0
+    for out in sorted(set(CORPUS.glob("OPT/*.out")) | set(CORPUS.glob("SP/*.out"))):
+        if "MOLECULE" in out.name:
+            continue
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            if d3_kpoints.output_dimensionality(str(out)) != 3:
+                continue
+            g = d3gen.D3Generator(str(out), "BAND")
+            sg, lat = g.structure_info.get("space_group"), g.structure_info.get("lattice_type")
+            st = si.parse_crystal_structure(str(out))
+            monkeypatch.setattr(d3_kpoints, "SEEKPATH_LIBRARY_AVAILABLE", not static)
+            if static:
+                monkeypatch.setenv("MACE_STATIC_KPATH", "1")
+            try:
+                frac, info = d3_kpoints.get_seekpath_full_kpath(sg, lat, str(out))
+            finally:
+                monkeypatch.delenv("MACE_STATIC_KPATH", raising=False)
+        if st is None or not frac or info.get("lookup_key", "")[:2] == "aP":
+            continue
+        rec = 2 * np.pi * np.linalg.inv(np.asarray(st["cell"], float)).T
+        for seg in frac:
+            for f in (seg[:3], seg[3:]):
+                assert _in_first_zone(f, rec), (out.name, info.get("lookup_key") or info.get("bravais_lattice_extended"), f)
+        checked += 1
+    assert checked >= 40

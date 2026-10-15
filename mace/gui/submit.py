@@ -344,9 +344,18 @@ def _copy_db(src: Path, dst: Path) -> None:
         s.close()
 
 
+def _inside(p: Path, root: Path) -> bool:
+    try:
+        p.resolve().relative_to(root.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
 def stage_plan(sel: Selection, root: Path) -> Tuple[List[Tuple[Path, str]], int]:
     """[(real path, how)], bytes: what the mirror copies (how: file, stub
-    (an empty stand-in for a wavefunction), db, tree, marker)."""
+    (a one-byte stand-in for a wavefunction, empty when the real one is
+    empty), db, tree, marker)."""
     items: List[Tuple[Path, str]] = []
     seen = set()
 
@@ -359,6 +368,13 @@ def stage_plan(sel: Selection, root: Path) -> Tuple[List[Tuple[Path, str]], int]
         add(d, "file")
         add(d.with_suffix(".sh"), "file")
         add(d.with_suffix(".f9"), "stub")
+        # an EXTERNAL deck's fort.34 source: the CLI warns when it is missing
+        if d.suffix.lower() == ".d12":
+            from mace.submission.external_geometry import deck_keyword, fort34_source
+            if deck_keyword(d):
+                src = fort34_source(d)
+                if src is not None and _inside(src, root):
+                    add(src, "stub")
     for f in folders:
         for name in STATE_DIRS:
             add(f / name, "tree")
@@ -402,7 +418,12 @@ def stage(sel: Selection, root: Path, mirror_root: Path, budget_free: Optional[i
             shutil.copy2(p, dst)
         elif how == "stub":
             dst.parent.mkdir(parents=True, exist_ok=True)
-            dst.write_bytes(b"")
+            # keep empty vs non-empty: the CLI refuses a .d3 whose .f9 is empty
+            try:
+                filled = p.stat().st_size > 0
+            except OSError:
+                filled = False
+            dst.write_bytes(b"\0" if filled else b"")
         elif how == "marker":
             dst.mkdir(parents=True, exist_ok=True)
         elif how == "db":
@@ -437,10 +458,13 @@ def listing(top: Path) -> Dict[str, Tuple[int, int, str]]:
 
 # ------------------------------------------------------------------ normalization (S1)
 NORM_RULES = (
+    # the job script's trailing checksum (job_script_age.py) covers its lines, so it moves with the
+    # install path and the ids; first, so a sum that looks like a Unix time is not half-normalized
+    (re.compile(r"(?<=# MACE-generated; cksum of the lines above: )\d+ \d+"), "<CKSUM>"),
     (re.compile(r"\b9\d{8}\b"), "<JOB>"),
-    (re.compile(r"(wf_[0-9a-f]{6,}|workflow_\d{8}_\d{6}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"), "<WF>"),
+    (re.compile(r"(wf_[0-9a-f]{6,}|workflow_\d{8}_\d{6}(?:_[0-9a-f]{4})?|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"), "<WF>"),
     (re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?"), "<TS>"),
-    (re.compile(r"(?<!\d)\d{8}_\d{6}\d*(?!\d)"), "<TS>"),
+    (re.compile(r"(?<!\d)\d{8}_\d{6}\d*(?:_[0-9a-f]{4}(?![0-9A-Za-z]))?(?!\d)"), "<TS>"),
     (re.compile(r"\b1[6-9]\d{8}(\.\d+)?\b"), "<TS>"),
 )
 

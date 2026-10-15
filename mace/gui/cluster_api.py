@@ -394,7 +394,8 @@ def post(handler, route: str, body: Dict[str, Any]) -> None:
         if jobinfo.own_row(jid) is None and jid not in reader.sacct_for([jid]):
             return handler._error(404, "Not one of your jobs")
         r = reader.sstat(jid, tag="refresh")
-        return handler._json({"rows": r.value, **r.as_dict()})
+        return handler._json({"rows": r.value, "efficiency": jobinfo.live_efficiency(jid, r.value or []),
+                              **r.as_dict()})
     if route == "job/close":
         jid = str(body.get("id") or "")
         if svc.poller is not None and reader.valid_job_id(jid):

@@ -11,7 +11,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-IR_COLUMNS = ["transmittance", "absorbance"]          # after the wavenumber (spectra_api: ir_column 2 = absorbance)
+# IRSPEC.DAT (CRYSTAL23 manual, p.453): frequency (cm-1), wavelength (nm), the raw absorbance; a
+# periodic run adds the classical and the two Rayleigh-scattering absorbances (columns 4-6) and one
+# reflectance per inequivalent polarization direction (7 on). The wavelength is a second x axis.
+IR_COLUMNS = ["absorbance", "absorbance_classical", "absorbance_rayleigh_1", "absorbance_rayleigh_2"]
+IR_FIRST = 2                                           # 0-based column of the raw absorbance
 RAMAN_COLUMNS = ["total", "parallel", "perpendicular", "xx", "xy", "xz", "yy", "yz", "zz"]
 MAX_POINTS = 20000
 
@@ -36,15 +40,19 @@ def _shape(name: str, kind: str, data) -> Dict[str, Any]:
         raise ValueError(f"{name}: a Raman spectrum needs {RAMAN_MIN_COLS['total']} columns, found {data.shape[1]}")
     step = max(1, len(data) // MAX_POINTS)
     d = data[::step]
-    names = IR_COLUMNS if kind == "ir" else RAMAN_COLUMNS
     cols: Dict[str, List[float]] = {}
-    order = [2, 1] if kind == "ir" else list(range(1, d.shape[1]))     # IR: absorbance first (mace plotting's default)
-    for j in order:
-        if j < d.shape[1]:
-            label = names[j - 1] if j - 1 < len(names) else f"column {j + 1}"
-            cols[label] = [float(v) for v in np.round(d[:, j], 7)]
-    return {"x": [float(v) for v in np.round(d[:, 0], 5)], "columns": cols, "n_points": int(len(data)),
-            "ylabel": "Absorbance" if kind == "ir" else "Raman activity"}
+    for j in range(IR_FIRST if kind == "ir" else 1, d.shape[1]):
+        if kind == "ir":
+            k = j - IR_FIRST
+            label = IR_COLUMNS[k] if k < len(IR_COLUMNS) else f"reflectance_{k - len(IR_COLUMNS) + 1}"
+        else:
+            label = RAMAN_COLUMNS[j - 1] if j - 1 < len(RAMAN_COLUMNS) else f"column {j + 1}"
+        cols[label] = [float(v) for v in np.round(d[:, j], 7)]
+    out = {"x": [float(v) for v in np.round(d[:, 0], 5)], "columns": cols, "n_points": int(len(data)),
+           "ylabel": "Absorbance" if kind == "ir" else "Raman activity"}
+    if kind == "ir":
+        out["wavelength_nm"] = [float(v) for v in np.round(d[:, 1], 5)]
+    return out
 
 
 def read(path: Path) -> Dict[str, Any]:

@@ -433,7 +433,7 @@ async function openFile(path, cached) {
 function coreReady() {
   if (window.MACE.standardView) return Promise.resolve();
   return import(new URL(assetUrl("js/geom/core.js"), document.baseURI).href)
-    .then((c) => { window.MACE.standardView = c.standardView; }, () => { /* the old tilt stays */ });
+    .then((c) => { window.MACE.standardView = c.standardView; window.MACE.pivotOf = c.pivotOf; }, () => { /* the old tilt stays */ });
 }
 /* 3Dmol (about 0.5 MB) loads after first paint, or at once when a document
  * needs it: nothing 3D waits on it before the shell is up. */
@@ -449,8 +449,11 @@ function load3Dmol() {
   }),
   // what every viewer gets on top of 3Dmol (clipping planes and depth cueing): before the first viewer
   import(new URL(assetUrl("js/viewport/clip.js"), document.baseURI).href),
-  import(new URL(assetUrl("js/viewport/rendering.js"), document.baseURI).href)]).then(([, clip, look]) => {
+  import(new URL(assetUrl("js/viewport/rendering.js"), document.baseURI).href),
+  // the rotation center every fitted view starts from (geom/core.js pivotOf)
+  import(new URL(assetUrl("js/geom/core.js"), document.baseURI).href)]).then(([, clip, look, core]) => {
     state.gl = { clip, look };
+    window.MACE.pivotOf = core.pivotOf;
     // a viewer made in between (3Dmol here, the module not yet): it gets them now
     Object.values(state.viewers).forEach((v) => v && glExtras(v));
   },
@@ -514,14 +517,108 @@ function no3d(el) {
   const diag = window.MACE.hasCommand && window.MACE.hasCommand("help.copyDiagnostics")
     ? ' <button type="button" class="tb-btn-text sm no3d-diag">Copy Diagnostics</button>' : "";
   el.insertAdjacentHTML("beforeend", `<div class="no3d" role="note"><h3>3D view unavailable</h3>` +
+    `<p><strong>3D view needs WebGL.</strong> Turn on hardware acceleration in your browser settings, then reload.</p>` +
     `<p>This browser cannot draw 3D here (WebGL is off or not supported, which is common in remote desktops). ` +
-    `Plots, text, the database and Setup still work. Try another browser, turn on hardware acceleration, or open ` +
+    `Plots, text, the database and Setup still work. If that does not help, try another browser, or open ` +
     `MACE GUI from your own computer with mace gui connect.${diag}</p></div>`);
   const b = el.querySelector(".no3d-diag");
   if (b) b.addEventListener("click", () => window.MACE.runCommand && window.MACE.runCommand("help.copyDiagnostics"));
 }
+/* 3Dmol's own mouse handling (the run and comparison viewers) measures the
+ * pointer from the page (pageX minus the canvas's screen corner) against the
+ * canvas's own size (WIDTH, offsetWidth). The UI scale zooms the shell, and
+ * in Chromium 128+ and Firefox 126+ those two differ by the zoom: clicks,
+ * hovers and right-clicks landed off the pointer, further right and down the
+ * larger the scale. Its pointer readers report the point in the canvas's own
+ * px from its corner instead (the corner stays where 3Dmol adds it); the
+ * vendored 3Dmol itself stays untouched. */
+function unzoom3Dmol() {
+  const P = window.$3Dmol && $3Dmol.GLViewer && $3Dmol.GLViewer.prototype;
+  if (!P || !P.getX || P.getX.maceUnzoomed) return;
+  const wrap = (read, side) => {
+    const f = function (e) {
+      const at = read.call(this, e);
+      const z = at == null || !this.glDOM ? 1 : window.maceZoom.of(this.glDOM);
+      if (z === 1) return at;
+      const corner = this.canvasOffset()[side];
+      return corner + (at - corner) / z;
+    };
+    f.maceUnzoomed = true;
+    return f;
+  };
+  P.getX = wrap(P.getX, "left");
+  P.getY = wrap(P.getY, "top");
+}
+/* The UI scale zooms the shell, and a canvas inside it is drawn at its own px
+ * and then stretched by the zoom: 3Dmol sizes its drawing to the viewer's own
+ * px times devicePixelRatio, so above 100 % the 3D view was soft. While its
+ * renderer sizes the canvas, devicePixelRatio counts the zoom too, so the
+ * canvas holds one pixel per screen pixel. Only the drawing grows: the
+ * canvas's own size, 3Dmol's WIDTH and HEIGHT, and so every pointer reader and
+ * the picking, stay in the viewer's own px. The vendored 3Dmol stays untouched. */
+const backing = (el) => (window.devicePixelRatio || 1) * window.maceZoom.of(el);
+function sharpUnderZoom(v, el) {
+  const r = v.renderer;
+  if (!r || typeof r.setSize !== "function" || r.setSize.maceSharp) return;
+  const setSize = r.setSize;
+  r.setSize = function (...args) {
+    const z = window.maceZoom.of(el);
+    if (Math.abs(z - 1) < 1e-3) return setSize.apply(this, args);
+    let own;
+    try {
+      own = Object.getOwnPropertyDescriptor(window, "devicePixelRatio");
+      Object.defineProperty(window, "devicePixelRatio", { value: (window.devicePixelRatio || 1) * z, configurable: true });
+    } catch (e) { return setSize.apply(this, args); }   // a browser that keeps it fixed: drawn as before
+    try { return setSize.apply(this, args); }
+    finally { if (own) Object.defineProperty(window, "devicePixelRatio", own); else delete window.devicePixelRatio; }
+  };
+  r.setSize.maceSharp = true;
+}
+/* The rotation center, shown while a drag turns the view (a small crosshair,
+ * gone on release): 3Dmol turns about the model point at the view's center,
+ * minus its translation (view[0..2]), so panning carries the center along.
+ * The structure viewer's pointer (viewport/pointer.js) shows it during its
+ * orbit drags (right-drag, Alt+left-drag, the Orbit tool); the viewers that
+ * keep 3Dmol's own mouse (comparison, modes, volumes, the slab preview) turn
+ * on a plain left-drag (right-drag zooms there, Ctrl or middle-drag pans). */
+function pivotMark(v, el, ownPointer) {
+  const mark = document.createElement("div");
+  mark.className = "pivot-mark";
+  mark.setAttribute("aria-hidden", "true");
+  mark.hidden = true;
+  el.appendChild(mark);
+  let flash = 0;
+  // where the center is drawn, in the viewer's own px from its top left
+  v.pivotPx = () => {
+    const cv = v.getCanvas ? v.getCanvas() : null;
+    if (!cv || !v.visible()) return null;
+    try { if (v.setSlabAndFog) v.setSlabAndFog(); if (v.scene && v.scene.updateMatrixWorld) v.scene.updateMatrixWorld(true); } catch (e) { return null; }
+    const w = v.getView(), p = v.modelToScreen({ x: -w[0], y: -w[1], z: -w[2] }), r = cv.getBoundingClientRect();
+    return p && Number.isFinite(p.x) && Number.isFinite(p.y) ? [p.x - r.left + cv.offsetLeft, p.y - r.top + cv.offsetTop] : null;
+  };
+  v.showPivot = (on) => {
+    clearTimeout(flash);
+    const at = on ? v.pivotPx() : null;
+    if (at) { mark.style.left = at[0] + "px"; mark.style.top = at[1] + "px"; }
+    mark.hidden = !at;
+  };
+  v.flashPivot = (ms = 700) => { v.showPivot(true); flash = setTimeout(() => { mark.hidden = true; }, ms); };
+  if (ownPointer) return;
+  // 3Dmol's own mouse: a left-drag without Shift or Ctrl turns the view
+  let down = null;
+  el.addEventListener("pointerdown", (e) => {
+    down = e.button === 0 && !e.shiftKey && !e.ctrlKey && !e.metaKey ? { x: e.clientX, y: e.clientY, id: e.pointerId } : null;
+  }, true);
+  el.addEventListener("pointermove", (e) => {
+    if (down && e.pointerId === down.id && mark.hidden && Math.hypot(e.clientX - down.x, e.clientY - down.y) >= 3) v.showPivot(true);
+  }, true);
+  const up = (e) => { if (down && e.pointerId === down.id) { down = null; v.showPivot(false); } };
+  addEventListener("pointerup", up, true);
+  addEventListener("pointercancel", up, true);
+}
 function viewer(id) {
   if (!state.viewers[id] && !webgl().ok) { no3d(document.getElementById(id)); return null; }
+  unzoom3Dmol();
   if (!state.viewers[id]) {
     const el = document.getElementById(id);
     // antialias alone makes 3Dmol also draw at 2x the pixels (its "upscale"),
@@ -530,9 +627,24 @@ function viewer(id) {
     // antialias needs a new WebGL context: it applies to viewers created after it changes
     // the structure viewer's pointer belongs to the shell (viewport/pointer.js):
     // 3Dmol's own mouse handling stays on for the run and comparison viewers
-    const v = $3Dmol.createViewer(el, { backgroundColor: viewerBg(),
-      antialias: setting("antialias", true) !== false, upscale: false, id: id + "-gl", minimumZoomToDistance: 1,
-      nomouse: id === "viewer-main" });
+    let v = null;
+    try {
+      v = $3Dmol.createViewer(el, { backgroundColor: viewerBg(),
+        antialias: setting("antialias", true) !== false, upscale: false, id: id + "-gl", minimumZoomToDistance: 1,
+        nomouse: id === "viewer-main" });
+    } catch (e) { v = null; }
+    // the probe found WebGL, yet 3Dmol got no context (a driver that refuses its
+    // attributes, a context limit): the same explanation, and no more viewers
+    if (!v || (v.renderer && "_gl" in v.renderer && !v.renderer._gl)) {
+      webglProbe = { ...webglProbe, ok: false };
+      window.MACE.webgl = webglProbe;
+      no3d(el);
+      return null;
+    }
+    sharpUnderZoom(v, el);
+    pivotMark(v, el, id === "viewer-main");
+    // every 3D view follows Settings › Viewport › Projection from the start (the mode and volume views drew in perspective until it changed)
+    if (v.setProjection) v.setProjection(setting("projection", "orthographic") === "perspective" ? "perspective" : "orthographic");
     // A viewer in a hidden tab has a 0x0 canvas, and 3Dmol's shared
     // OffscreenCanvas throws when it copies a 0x0 frame; showTab() renders
     // it once it is visible. 3Dmol also paints from inside its own calls
@@ -556,7 +668,7 @@ function viewer(id) {
       if (!v.visible() || frame) return;
       frame = requestAnimationFrame(() => {
         if (!v.visible()) { frame = 0; return; }
-        const now = el.offsetWidth + "x" + el.offsetHeight;
+        const now = el.offsetWidth + "x" + el.offsetHeight + "@" + backing(el);
         // resize() paints through show() itself: still "frame", so that is a no-op
         if (now !== size || !v.WIDTH || !v.HEIGHT) { size = now; v.resize(); }
         frame = 0;
@@ -571,7 +683,7 @@ function viewer(id) {
       if (!v.visible()) return false;
       if (frame) cancelAnimationFrame(frame);
       frame = -1;                    // resize() paints through show(): a no-op meanwhile
-      const now = el.offsetWidth + "x" + el.offsetHeight;
+      const now = el.offsetWidth + "x" + el.offsetHeight + "@" + backing(el);
       if (now !== size || !v.WIDTH || !v.HEIGHT) { size = now; v.resize(); }
       frame = 0;
       show();
@@ -750,7 +862,7 @@ function drawStructure(keepView = false) {
   v.render();
 }
 $$("#tab-structure .viewer-toolbar input, #opt-style, #opt-colors").forEach((el) =>
-  el.addEventListener("change", () => drawStructure(true)));
+  el.addEventListener("change", () => { drawStructure(true); if (state.traj && state.cmp) drawOpt(); }));
 /* A Settings change that changes what the 3D views draw: redraw them, camera kept. */
 function redrawViews() {
   Object.values(state.viewers).forEach((v) => v && v.setBackgroundColor(viewerBg()));
@@ -773,9 +885,25 @@ function fitPoints(s, atoms, n = 1) {
   }
   return pts;
 }
-/* opts.tilt: the Phase 1-3 view (a fixed turn from no rotation, a loose sphere fit) instead of the standard view's tight fit */
+/* The rotation center of a fitted view: the drawn cell's center (n cells a
+ * side), a slab's at its mid-height, a molecule's atoms' middle (geom/core.js
+ * pivotOf); before that module is here, the middle of the fitted points. */
+function pivotFor(s, atoms, n = 1, pts = null) {
+  const cart = atoms.map((a) => a.cart);
+  if (window.MACE.pivotOf && s) return window.MACE.pivotOf(s.cell ? s : { ...s, pbc: [false, false, false] }, { lo: [0, 0, 0], hi: [n, n, n] }, cart);
+  if (s && s.cell && s.pbc && s.pbc.every(Boolean)) {
+    const { o, C } = cellBox(s, n);
+    return add(o, mul(add(add(C[0], C[1]), C[2]), 0.5));
+  }
+  const P = cart.length ? cart : pts || [];
+  if (!P.length) return [0, 0, 0];
+  return [0, 1, 2].map((k) => (Math.min(...P.map((p) => p[k])) + Math.max(...P.map((p) => p[k]))) / 2);
+}
+/* opts.tilt: the Phase 1-3 view (a fixed turn from no rotation, a loose sphere fit) instead of the standard view's tight fit;
+ * opts.pivot: the rotation center (side-by-side views share one) */
 function fitView(v, s, atoms, n = 1, pts = null, opts = {}) {
   pts = pts || fitPoints(s, atoms, n);
+  const pivot = opts.pivot || pivotFor(s, atoms, n, pts);
   const doFit = () => {
     const m = v.addModel();
     m.addAtoms(pts.map((p, k) => ({ elem: "H", x: p[0], y: p[1], z: p[2], index: k, bonds: [] })));
@@ -785,7 +913,10 @@ function fitView(v, s, atoms, n = 1, pts = null, opts = {}) {
     // the cell's standard view (c up, as the structure viewport shows it) once geom/core.js is here
     const q = !opts.tilt && window.MACE.standardView && s && s.cell ? window.MACE.standardView(s.cell, s.pbc || [true, true, true]) : null;
     if (q) { const view = v.getView(); v.setView([...view.slice(0, 4), ...q]); }
-    else { v.rotate(-75, "x"); v.rotate(-20, "y"); }
+    // the tilt from no rotation, so a refit (Reset View) lands where the first fit did
+    else { const view = v.getView(); v.setView([...view.slice(0, 4), 0, 0, 0, 1]); v.rotate(-75, "x"); v.rotate(-20, "y"); }
+    // the view's center is the rotation center
+    { const view = v.getView(); v.setView([-pivot[0], -pivot[1], -pivot[2], ...view.slice(3)]); }
     const el = v.getCanvas ? v.getCanvas() : null;
     const w = el ? el.clientWidth : 0, h = el ? el.clientHeight : 0;
     if (opts.tilt) {
@@ -795,27 +926,25 @@ function fitView(v, s, atoms, n = 1, pts = null, opts = {}) {
       v.zoom(0.92 * (R / (R + 1.6)) * Math.min(1, w > 0 && h > 0 ? w / h : 1));
     } else if (w > 0 && h > 0 && v.modelToScreen) {
       // a tight fit of the projected points (atom centers, cell corners), with
-      // room for the drawn balls: 85% of the limiting side, centered
+      // room for the drawn balls: 85% of the limiting side, around the rotation center
       const rc = el.getBoundingClientRect(), xyz = pts.map((p) => ({ x: p[0], y: p[1], z: p[2] }));
-      const box = () => {
+      const half = () => {
         // 3Dmol updates its size and matrices when it paints (once per frame here): paint this view now
-    if (!(v.paintNow && v.paintNow())) { try { if (v.setSlabAndFog) v.setSlabAndFog(); if (v.scene && v.scene.updateMatrixWorld) v.scene.updateMatrixWorld(true); } catch (e) { /* not drawn yet */ } }
-        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        if (!(v.paintNow && v.paintNow())) { try { if (v.setSlabAndFog) v.setSlabAndFog(); if (v.scene && v.scene.updateMatrixWorld) v.scene.updateMatrixWorld(true); } catch (e) { /* not drawn yet */ } }
+        const c = v.modelToScreen(xyz.length ? { x: pivot[0], y: pivot[1], z: pivot[2] } : { x: 0, y: 0, z: 0 });
+        const cx = c.x - rc.left, cy = c.y - rc.top;
+        let hw = 0, hh = 0;
         for (const p of v.modelToScreen(xyz)) {
-          const x = p.x - rc.left, y = p.y - rc.top;
-          if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+          hw = Math.max(hw, Math.abs(p.x - rc.left - cx)); hh = Math.max(hh, Math.abs(p.y - rc.top - cy));
         }
-        return { x0, x1, y0, y1 };
+        return { hw, hh };
       };
       for (let pass = 0; pass < 3; pass++) {
-        let b = box();
-        if (!(b.x1 > b.x0 && b.y1 > b.y0)) break;
-        const f = 0.85 * Math.min(w / (b.x1 - b.x0), h / (b.y1 - b.y0));
-        if (Math.abs(f - 1) > 0.005) v.zoom(f);
-        b = box();
-        const dx = w / 2 - (b.x0 + b.x1) / 2, dy = h / 2 - (b.y0 + b.y1) / 2;
-        if (Math.hypot(dx, dy) > 0.5) v.translateScene(dx, dy);
-        if (Math.abs(f - 1) < 0.01 && Math.hypot(dx, dy) < 1) break;
+        const b = half();
+        if (!(b.hw > 0 && b.hh > 0)) break;
+        const f = 0.85 * Math.min(w / (2 * b.hw), h / (2 * b.hh));
+        if (Math.abs(f - 1) < 0.005) break;
+        v.zoom(f);
       }
     }
     v.render();
@@ -855,6 +984,17 @@ function renderStructureInfo(s, kind) {
     `<span class="badge">${s.numbers.length} atoms</span>`,
     `<span class="badge">${esc(kind || s.source.kind)}</span>`];
   if (s.frame_label) b.push(`<span class="badge">${esc(s.frame_label)} geometry</span>`);
+  // an EXTERNAL deck is drawn from the file its job stages as fort.34 (or its .out)
+  const src = s.source || {};
+  if (src.geometry_from) {
+    const name = src.geometry_from.split(/[\\/]/).pop();
+    const why = src.geometry_staged ? `the job script copies ${name} to fort.34 (${src.geometry_keyword || "EXTERNAL"})`
+      : `the deck reads its geometry from fort.34 (${src.geometry_keyword || "EXTERNAL"}), which its job script stages from a file that is not here; ${name} is the closest geometry found`;
+    b.push(`<span class="badge" id="s-geometry-from" title="${esc(why)}">geometry from ${esc(name)}</span>`);
+  }
+  if (src.geometry_edits && src.geometry_edits.length) {
+    b.push(`<span class="badge" id="s-geometry-edits" title="The deck edits this geometry after its atoms (${esc(src.geometry_edits.join(", "))}); CRYSTAL runs the edited structure, drawn here before the edits">before ${esc(src.geometry_edits.join(", "))}</span>`);
+  }
   // plan E10: a periodic cell that holds a molecule, a slab or a polymer says so (a suggestion; Setup asks)
   const hint = s.dim_hint;
   if (hint && hint.from === "vacuum" && hint.dim !== "CRYSTAL" && s.dimensionality === "CRYSTAL") {
@@ -1079,10 +1219,55 @@ function setTrajectory(t, title, status) {
   if (t.path) loadTrajConv(t);
 }
 
+/* The arrows: the longest drawn 1.5 Å long. The slider reaches further than ×200 when the
+ * displacements are smaller than 7.5 mÅ, so a small relaxation still shows. */
 function autoScale() {
-  const m = state.cmp ? state.cmp.max_displacement : 0;
-  const s = m > 0 ? Math.max(1, Math.min(200, Math.round(1.5 / m))) : 1;
-  $("#o-scale").value = s; $("#o-scale-out").textContent = s;
+  const m = state.cmp ? dispSet(state.cmp).max : 0;
+  const s = m > 1e-9 ? Math.max(1, Math.min(100000, Math.round(1.5 / m))) : 1;
+  const sl = $("#o-scale");
+  sl.max = Math.max(200, s);
+  sl.value = s; $("#o-scale-out").textContent = s;
+}
+
+/* The displacement shown (the server's compare): "cart" is r_final − r_initial in Å with the
+ * cell change included and the mean shift removed, the default when the cell changed; "internal"
+ * is the relaxation relative to the cell (the change of fractional coordinates in the final
+ * cell), zero for atoms that symmetry pins while only the cell changes (AB graphite along c). */
+const NEGLIGIBLE_DR = 1e-4;          // Å: below CRYSTAL's printed coordinate precision, "did not move"
+function dispMode(c) {
+  if (c && c.aligned === "molecule") return "molecule";     // no cell: Cartesian, rigid motion removed (compare())
+  if (!c || !c.displacements_cart) return "internal";
+  const m = store("mace.gui.cmp.dispMode");
+  return m === "cart" || m === "internal" ? m : (c.cell_changed ? "cart" : "internal");
+}
+function dispSet(c) {
+  const mode = dispMode(c);
+  return mode === "cart" ? { mode, list: c.displacements_cart, max: c.max_displacement_cart, rms: c.rms_displacement_cart }
+    : { mode, list: c.displacements || [], max: c.max_displacement || 0, rms: c.rms_displacement || 0 };
+}
+/* a length as people read it: Å from 0.1 Å, pm below (3 significant figures), scientific when tiny */
+function lenUnit(hi) { return hi >= 0.1 || hi < 1e-5 ? "Å" : "pm"; }
+function fmtLen(v, unit = lenUnit(Math.abs(v))) {
+  if (!v) return `0 ${unit}`;
+  const x = unit === "pm" ? v * 100 : v, ax = Math.abs(x);
+  return `${ax >= 1e-3 && ax < 1e4 ? String(+x.toPrecision(3)) : x.toExponential(2)} ${unit}`;
+}
+/* the cell's change in words: "a, b 2.4520→2.4528 Å (+0.03%), c 6.7000→6.1752 Å (−7.83%), V …" */
+function cellChangeText(c) {
+  const rows = (c.cell || []).filter((r) => r.percent !== null && Math.abs(r.delta) > (["alpha", "beta", "gamma"].includes(r.param) ? 1e-6 : 1e-6 * Math.abs(r.before)));
+  const greek = { alpha: "α", beta: "β", gamma: "γ", volume: "V" };
+  const pct = (p) => `${p > 0 ? "+" : p < 0 ? "−" : ""}${Math.abs(p) < 0.01 ? Math.abs(p).toExponential(1) : Math.abs(p).toFixed(2)}%`;
+  const out = [];
+  for (const r of rows) {
+    const prev = out.length ? out[out.length - 1] : null;
+    if (prev && prev.r.param.length === 1 && r.param.length === 1 && Math.abs(prev.r.before - r.before) < 1e-9 && Math.abs(prev.r.after - r.after) < 1e-9) { prev.names.push(r.param); continue; }
+    out.push({ r, names: [greek[r.param] || r.param] });
+  }
+  return out.map(({ r, names }) => {
+    const ang = ["alpha", "beta", "gamma"].includes(r.param), u = r.param === "volume" ? " Å³" : ang ? "°" : " Å";
+    const d = r.param === "volume" ? 2 : 4;
+    return `${names.join(", ")} ${fmt(r.before, d)}→${fmt(r.after, d)}${u} (${pct(r.percent)})`;
+  }).join(", ");
 }
 
 /* The comparison's tables (plan B7): one model per sub-tab, rendered, sorted,
@@ -1109,7 +1294,7 @@ function cmpTables() {
     bonds: { title: "bonds", cols: [["pair", "pair"], ["n", "count", 0], ["initial", "before", 4], [now, "after", 4], ["Δ", "delta", 4, true]],
       rows: c.bonds.map((r) => ({ ...r, tip: `e.g. atoms ${r.example.join("-")}` })), empty: "no bonded pairs" },
     disp: { title: "displacements", cols: [["atom", "atom"], ["|Δr| Å", "length", 4], ["Δx", "dx", 4, true], ["Δy", "dy", 4, true], ["Δz", "dz", 4, true]],
-      rows: c.displacements.map((d) => ({ atom: `${d.symbol}${d.atom}`, index: d.atom, length: d.length, dx: d.vector[0], dy: d.vector[1], dz: d.vector[2] })),
+      rows: dispSet(c).list.map((d) => ({ atom: `${d.symbol}${d.atom}`, index: d.atom, length: d.length, dx: d.vector[0], dy: d.vector[1], dz: d.vector[2] })),
       sort: ["length", -1] },
     sym: { title: "symmetry", cols: [["", "end"], ["space group", "group"]],
       rows: sy ? [{ end: "initial", group: sy.before || "— (not 3D, or too large)" }, { end: now, group: sy.after || "— (not 3D, or too large)" },
@@ -1148,9 +1333,15 @@ function renderComparison() {
   const es = optEnergies(t);
   const eSel = es[state.frame] ?? null;
   const e0 = es.find((e) => e != null) ?? null;
+  const D = dispSet(c), du = lenUnit(D.max), dTip = D.mode === "cart" ? "r(final) − r(initial), the cell change included, the mean shift removed"
+    : D.mode === "molecule" ? "r(final) − r(initial) once the molecule's rigid translation and rotation are taken out"
+    : "relative to the cell (the change of fractional coordinates, in the final cell)";
+  // Δr is a choice only for a periodic run whose cell changed (a molecule has no cell to be relative to)
+  $("#o-dmode-wrap").hidden = !(c.cell_changed && c.displacements_cart && D.mode !== "molecule");
+  if (D.mode !== "molecule") $("#o-dmode").value = D.mode;
   $("#o-stats").innerHTML = `
-    <div class="stat"><div class="k">max |Δr|</div><div class="v">${fmt(c.max_displacement, 3)} Å</div></div>
-    <div class="stat"><div class="k">rms |Δr|</div><div class="v">${fmt(c.rms_displacement, 3)} Å</div></div>
+    <div class="stat" title="${esc(dTip)}"><div class="k">max |Δr|</div><div class="v">${fmtLen(D.max, du)}</div></div>
+    <div class="stat" title="${esc(dTip)}"><div class="k">rms |Δr|</div><div class="v">${fmtLen(D.rms, du)}</div></div>
     <div class="stat"><div class="k">${vol ? "ΔV" : "ΔE"}</div><div class="v">${vol ? (vol.percent > 0 ? "+" : "") + fmt(vol.percent, 2) + " %" :
       (eSel != null && e0 != null ? fmt((eSel - e0) * HARTREE_MEV, 1) + " meV" : "—")}</div></div>`;
   const tabs = cmpTables();
@@ -1248,7 +1439,9 @@ function drawOpt() {
   const s0 = t.frames[0], s1 = t.frames[state.frame];
   // a molecule (no periodic direction, plan E2/E10): it has no unit cell, so none is drawn or fitted
   const periodic = (s) => !!(s && s.pbc && s.pbc.some(Boolean));
-  const drawCell = (v, s, ...rest) => (periodic(s) ? drawCellBox(v, s, ...rest) : null);
+  // the toolbar's Show Unit Cell, Show Bonds and the atom style apply here too
+  const showCell = !$("#opt-cell") || $("#opt-cell").checked;
+  const drawCell = (v, s, ...rest) => (periodic(s) && showCell ? drawCellBox(v, s, ...rest) : null);
   // its fit: the atoms' box widened by 1.6 A, so the balls of a small molecule are not cut by the edges
   const fitPoints = (s, atoms, n = 1) => {
     if (periodic(s)) return fitPointsBox(s, atoms, n);
@@ -1275,18 +1468,18 @@ function drawOpt() {
       `${s1.formula ? `, ${s1.formula}` : ""}. The Timeline and Atoms tabs in the bottom panel list the values.`);
   }
   const keep = vb.getModel() ? vb.getView() : null;
-  [vb, side ? viewer("viewer-after") : null].forEach((v) => v && (v.removeAllModels(), v.removeAllShapes(), v.removeAllLabels()));
+  [vb, side ? viewer("viewer-after") : null].forEach((v) => v && (v.removeAllModels(), v.removeAllShapes(), v.removeAllLabels(), v.arrowCount = 0));
   const atoms0 = c.before_cart.map((p, i) => ({ i, cart: p, image: false }));
   const s0w = { ...s0, cart: c.before_cart };
   const s1u = { ...s1, cart: c.after_unwrapped_cart };
   const atoms1 = s1u.cart.map((p, i) => ({ i, cart: p, image: false }));
-  const base = { bonds: true, style: "ballstick" };
+  const base = { bonds: !$("#opt-bonds") || $("#opt-bonds").checked, style: ($("#opt-style") && $("#opt-style").value) || "ballstick" };
   const muted = cssVar("--muted"), accent = cssVar("--accent");
   renderLegend(c);
   if (state.layout === "twotone") {
     const ca = cssVar("--cmp-a"), cb = cssVar("--cmp-b");
-    tint(addModel(vb, s0w, atoms0, base), s0w, (a) => mixHex(elementColor(s0w.symbols[a.serial - 1]), ca, 0.7));
-    tint(addModel(vb, s1u, atoms1, base), s1u, (a) => mixHex(elementColor(s1u.symbols[a.serial - 1]), cb, 0.7));
+    tint(addModel(vb, s0w, atoms0, base), s0w, (a) => mixHex(elementColor(s0w.symbols[a.serial - 1]), ca, 0.7), base);
+    tint(addModel(vb, s1u, atoms1, base), s1u, (a) => mixHex(elementColor(s1u.symbols[a.serial - 1]), cb, 0.7), base);
     drawCell(vb, s0, ca, 0.02, 1, true);
     drawCell(vb, s1, cb, 0.03);
     if (keep && !state.refit) vb.setView(keep); else fitView(vb, s1, atoms0.concat(atoms1));
@@ -1295,9 +1488,9 @@ function drawOpt() {
     return;
   }
   if (state.layout === "dmap") {
-    const L = c.displacements.map((d) => d.length);
+    const L = dispSet(c).list.map((d) => d.length);
     const lo = Math.min(...L), hi = Math.max(...L);
-    tint(addModel(vb, s1u, atoms1, base), s1u, (a) => seqColor(hi > lo ? (L[a.serial - 1] - lo) / (hi - lo) : 0));
+    tint(addModel(vb, s1u, atoms1, base), s1u, (a) => seqColor(hi > lo ? (L[a.serial - 1] - lo) / (hi - lo) : 0), base);
     drawCell(vb, s1, accent, 0.03);
     if (showArrows) arrows(vb, atoms1, c, scale);
     if (keep && !state.refit) vb.setView(keep); else fitView(vb, s1, atoms1);
@@ -1312,7 +1505,9 @@ function drawOpt() {
     addModel(va, s1u, atoms1, base); drawCell(va, s1, accent, 0.03);
     if (showArrows) arrows(va, atoms1, c, scale);
     const pts = fitPoints(s0, atoms0).concat(fitPoints(s1, atoms1));
-    fitView(vb, s0, atoms0, 1, pts); fitView(va, s1, atoms1, 1, pts);
+    // one rotation center for both (the views are linked): the selected frame's
+    const pivot = pivotFor(periodic(s1) ? s1 : { ...s1, cell: null }, atoms1, 1, pts);
+    fitView(vb, s0, atoms0, 1, pts, { pivot }); fitView(va, s1, atoms1, 1, pts, { pivot });
     if (!vb.linked) { vb.linkViewer(va); va.linkViewer(vb); vb.linked = true; }
     vb.render(); va.render();
     return;
@@ -1337,8 +1532,8 @@ function drawOpt() {
 }
 
 /* one color per atom through a colorfunc: element shading kept by the lighting, one model per look */
-function tint(m, s, fn) {
-  const st = styleFor("ballstick", true, 1);
+function tint(m, s, fn, o = { style: "ballstick", bonds: true }) {
+  const st = styleFor(o.style, o.bonds, 1);
   for (const sub of Object.values(st)) { delete sub.colorscheme; sub.colorfunc = fn; }
   m.setStyle({}, st);
   return m;
@@ -1362,14 +1557,29 @@ function renderLegend(c) {
   const el = $("#o-legend");
   const look = state.layout;
   let html;
-  if (look === "twotone") html = `<span class="lg-twotone"><i class="sw" style="background:var(--cmp-a)"></i>initial</span><span><i class="sw" style="background:var(--cmp-b)"></i>${state.frame === state.traj.frames.length - 1 ? "final" : "selected frame"}</span>`;
+  const D = dispSet(c), L = D.list.map((d) => d.length);
+  const lo = L.length ? Math.min(...L) : 0, hi = L.length ? Math.max(...L) : 0;
+  const scale = Number($("#o-scale").value) || 1, arrowsOn = $("#o-arrows").checked;
+  const what = D.mode === "cart" ? "displacement, cell change included" : D.mode === "molecule" ? "displacement, rigid motion removed" : "relaxation relative to the cell";
+  // the arrows' scale in words: how far an atom moved per Å drawn
+  const arrowTxt = `<span class="lg-arrows" title="Arrow × ${scale}"><i class="sw arrow"></i>${what}: arrows ×${scale}, 1 Å drawn = ${fmtLen(1 / scale, "Å")} moved</span>`;
+  const still = hi < NEGLIGIBLE_DR;
+  const cellTxt = c.cell_changed ? cellChangeText(c) : "";
+  if (still) {
+    // nothing to draw: say why instead of a blank view and a 0–0 scale
+    const why = D.mode === "internal" ? "Atoms did not move relative to the cell (their positions are fixed by symmetry, or only the cell was optimized)" : "Atoms did not move";
+    const pre = look === "twotone" ? `<span class="lg-twotone"><i class="sw" style="background:var(--cmp-a)"></i>initial</span><span><i class="sw" style="background:var(--cmp-b)"></i>${state.frame === state.traj.frames.length - 1 ? "final" : "selected frame"}</span>` : "";
+    html = `${pre}<span class="lg-note" role="status">${why}${hi > 0 ? ` (max |Δr| ${fmtLen(hi)})` : ""}${cellTxt ? `; the cell changed: ${esc(cellTxt)}` : ""}.${D.mode === "internal" && c.cell_changed && c.max_displacement_cart >= NEGLIGIBLE_DR ? " Δr: With cell change shows how far they moved in space." : ""}</span>`;
+  } else if (look === "twotone") html = `<span class="lg-twotone"><i class="sw" style="background:var(--cmp-a)"></i>initial</span><span><i class="sw" style="background:var(--cmp-b)"></i>${state.frame === state.traj.frames.length - 1 ? "final" : "selected frame"}</span>`;
   else if (look === "dmap") {
-    const L = c.displacements.map((d) => d.length);
-    const lo = L.length ? Math.min(...L) : 0, hi = L.length ? Math.max(...L) : 0;
-    const dg = hi - lo < 0.01 ? 4 : 3;           // a small spread still shows two different ends
-    html = `<span class="lg-seq"><span>|Δr|</span><span class="num">${fmt(lo, dg)} Å</span><i class="seq-bar" style="background:linear-gradient(90deg, ${seqStops().join(", ")})"></i><span class="num">${fmt(hi, dg)} Å</span></span><span><i class="sw arrow"></i>scaled arrows</span>`;
-  } else if (look === "side") html = `<span><i class="sw" style="background:var(--muted)"></i>initial (left)</span><span><i class="sw solid"></i>selected frame (right)</span><span><i class="sw arrow"></i>relaxation (cell strain excluded)</span>`;
-  else html = `<span><i class="sw ghost"></i>initial</span><span><i class="sw solid"></i>selected frame</span><span><i class="sw arrow"></i>relaxation (cell strain excluded)</span>`;
+    const u = lenUnit(hi), a = fmtLen(lo, u), b = fmtLen(hi, u);
+    html = a === b
+      ? `<span class="lg-seq"><span>|Δr|</span><span class="num">${b}</span><span>(every atom)</span></span>`
+      : `<span class="lg-seq"><span>|Δr|</span><span class="num">${a}</span><i class="seq-bar" style="background:linear-gradient(90deg, ${seqStops().join(", ")})"></i><span class="num">${b}</span></span>`;
+    if (arrowsOn) html += arrowTxt;
+  } else if (look === "side") html = `<span><i class="sw" style="background:var(--muted)"></i>initial (left)</span><span><i class="sw solid"></i>selected frame (right)</span>${arrowsOn ? arrowTxt : ""}`;
+  else html = `<span><i class="sw ghost"></i>initial</span><span><i class="sw solid"></i>selected frame</span>${arrowsOn ? arrowTxt : ""}`;
+  if (!still && cellTxt) html += `<span class="lg-cell" title="Cell: ${esc(cellTxt)}">Cell: ${esc(cellTxt)}</span>`;
   el.innerHTML = html;
   el.dataset.look = look;
 }
@@ -1409,7 +1619,7 @@ function compareSvgItems() {
       list = items(vb, c.before_cart, s0.symbols, (i) => mixHex(el(i, s0.symbols), cssVar("--cmp-a"), 0.7), 1)
         .concat(items(vb, c.after_unwrapped_cart, s1.symbols, (i) => mixHex(el(i, s1.symbols), cssVar("--cmp-b"), 0.7), 1));
     } else if (look === "dmap") {
-      const L = c.displacements.map((d) => d.length), lo = Math.min(...L), hi = Math.max(...L);
+      const L = dispSet(c).list.map((d) => d.length), lo = Math.min(...L), hi = Math.max(...L);
       list = items(vb, c.after_unwrapped_cart, s1.symbols, (i) => seqColor(hi > lo ? (L[i] - lo) / (hi - lo) : 0), 1);
     } else {
       if ($("#o-ghost").checked) list = items(vb, c.before_cart, s0.symbols, (i) => el(i, s0.symbols), Number(cssVar("--cmp-ghost-opacity")) || 0.35);
@@ -1436,8 +1646,11 @@ function setLook(look) {
 function cycleLook() { setLook(LOOKS[(LOOKS.indexOf(state.layout) + 1) % LOOKS.length]); }
 
 function arrows(v, atomsAt, c, scale) {
-  c.displacements.forEach((d, i) => {
-    if (d.length < 1e-4) return;
+  v.arrowCount = 0;                 // how many were drawn (the tests read it; the cell's edges are shapes too)
+  dispSet(c).list.forEach((d, i) => {
+    // drawn length, not the real one: a 1e-4 Å relaxation at ×2000 is a 0.2 Å arrow
+    if (!(d.length > 1e-9) || d.length * scale < 0.01) return;
+    v.arrowCount++;
     const start = atomsAt[i].cart, end = add(start, mul(d.vector, scale));
     v.addArrow({ start: xyz(start), end: xyz(end), radius: 0.06, radiusRatio: 2.2, mid: 0.75,
       color: cssVar("--sel") });
@@ -1448,15 +1661,20 @@ function arrows(v, atomsAt, c, scale) {
  * plotly (4.6 MB): plotly loads only when a plot opens (Open as Plot).
  * PLAN_analysis C3.8: x is CRYSTAL's optimization POINT (frame k = POINT k+1;
  * the final frame is a ring at the last point), energies on the optimizer's
- * surface (C0), relative to the first or the final point of each FINALRUN
- * segment (D6), in a chosen unit, or the log of |ΔE|. */
+ * surface (C0), relative to the first or the final point, in a chosen unit,
+ * or the log of |ΔE|. Segments: "continuous" (the default) is one curve and
+ * one reference across the FINALRUN restarts (dotted lines mark them);
+ * "separate" re-references each FINALRUN segment (D6). The twin of
+ * mace.utils.out_convergence.energy_along_run (`mace analyze --convergence
+ * FILE --energy`), whose TSV is the Copy TSV here. */
 const E_UNITS = { eV: 1, meV: 1000, Ha: 1 / 27.211386245988, "kJ/mol": 96.48533212331, "kcal/mol": 23.060547830619 };
 function cardKey(t) { return `mace.gui.runcard.${(state.info && state.info.dir_hash) || ""}.${t.path || ""}`; }
 function cardOpts(t) {
   let o = null;
   try { o = JSON.parse(store(cardKey(t)) || "null"); } catch (e) { o = null; }
   const su = setting("energyUnit", "eV");
-  return { log: false, rel: "first", unit: su && su !== "eV" ? su : "meV", ...(o || {}) };
+  const sg = setting("plots.segments", "continuous");
+  return { log: false, rel: "first", unit: su && su !== "eV" ? su : "meV", segments: sg === "separate" ? "separate" : "continuous", ...(o || {}) };
 }
 function setCardOpts(t, patch) { store(cardKey(t), JSON.stringify({ ...cardOpts(t), ...patch })); drawEnergy(); }
 /** {x (POINT), y, frame, ring, seg, below} per plotted frame, in the card's unit. */
@@ -1475,29 +1693,35 @@ function energySeries(t) {
     const seg = ring ? (lastPoint ? lastPoint.segment : 0) : (segOf[k] ?? 0);
     pts.push({ k, x, e: es[k], seg, ring });
   }
+  // one reference for the whole run (continuous) or one per FINALRUN segment (separate)
+  const grp = (p) => (o.segments === "separate" ? p.seg : 0);
   const segRef = {};
   for (const p of pts) {
-    if (o.rel === "first") { if (!(p.seg in segRef)) segRef[p.seg] = p.e; }
-    else segRef[p.seg] = p.e;                             // the segment's last (the final frame for the last segment)
+    if (o.rel === "first") { if (!(grp(p) in segRef)) segRef[grp(p)] = p.e; }
+    else segRef[grp(p)] = p.e;                            // the last (the final frame for the last segment)
   }
   for (const p of pts) {
-    p.dE = (p.e - segRef[p.seg]) * HARTREE_MEV / 1000 * f;      // Ha -> eV -> unit
-    p.isRef = Math.abs(p.e - segRef[p.seg]) <= 1e-10;          // the printed precision
-    p.below = o.rel === "final" && p.e < segRef[p.seg] - 1e-10;
-    p.y = o.log ? (p.isRef || p.dE === 0 ? null : Math.abs(p.dE)) : p.dE;
+    const ref = segRef[grp(p)];
+    p.dE = (p.e - ref) * HARTREE_MEV / 1000 * f;                // Ha -> eV -> unit
+    p.isRef = Math.abs(p.e - ref) <= 1e-10;                     // the printed precision
+    p.below = o.rel === "final" && p.e < ref - 1e-10;
+    p.y = o.log ? (p.isRef || p.dE === 0 ? null : Math.abs(p.dE)) : p.dE;   // the reference has no log value
   }
-  return { pts, o, conv };
+  const nSeg = conv && conv.segments ? conv.segments.length : 1;
+  return { pts, o, conv, nSeg, grp };
 }
 function drawEnergy() {
   const t = state.traj;
   const el = $("#o-energy");
   if (!t) return;
-  const { pts: all, o, conv } = energySeries(t);
+  const { pts: all, o, conv, nSeg, grp } = energySeries(t);
   const pts = all.filter((p) => p.y !== null);
   $("#o-energy-card").classList.toggle("no-data", all.length < 2);
   $("#o-e-log").setAttribute("aria-pressed", String(!!o.log));
-  $("#o-e-rel").value = o.rel; $("#o-e-unit").value = o.unit;
-  $("#o-energy-label").innerHTML = `Energy along the run <span class="muted">· ${esc(o.unit)}, ${o.log ? "log |ΔE|, " : ""}relative to the ${o.rel === "final" ? "final" : "first"} point${conv && conv.segments && conv.segments.length > 1 ? " of each FINALRUN segment" : ""}</span>`;
+  $("#o-e-rel").value = o.rel; $("#o-e-unit").value = o.unit; $("#o-e-seg").value = o.segments;
+  $("#o-e-seg").closest("label").hidden = nSeg < 2;               // only a run with FINALRUN restarts has segments
+  const of = nSeg > 1 ? (o.segments === "separate" ? " of each FINALRUN segment" : " of the run") : "";
+  $("#o-energy-label").innerHTML = `Energy along the run <span class="muted">· ${esc(o.unit)}, ${o.log ? "log |ΔE|, " : ""}relative to the ${o.rel === "final" ? "final" : "first"} point${of}</span>`;
   if (all.length < 2 || pts.length < 1) { el.innerHTML = ""; return; }
   const W = Math.max(240, el.clientWidth || 360), H = 200, L = 60, R = 12, T = 10, B = 34;
   const ys = pts.map((p) => (o.log ? Math.log10(p.y) : p.y));
@@ -1513,15 +1737,16 @@ function drawEnergy() {
   ticks.forEach((v) => { svg += `<line class="grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/>` +
     `<text class="tick" x="${L - 6}" y="${Y(v) + 4}" text-anchor="end">${o.log ? `1e${Math.round(v)}` : +v.toFixed(Math.abs(hi - lo) < 0.1 ? 4 : 2)}</text>`; });
   for (let x = x0; x <= x1; x += xstep) svg += `<text class="tick" x="${X(x)}" y="${H - B + 16}" text-anchor="middle">${x}</text>`;
-  // FINALRUN restarts: a dotted line between the segments
+  // FINALRUN restarts: a dotted line between the segments (the curve runs on across it unless Separate)
   if (conv) for (const sgm of conv.segments.slice(1)) {
     const xm = sgm.first_point - 0.5;
-    svg += `<line class="seg-line" x1="${X(xm)}" x2="${X(xm)}" y1="${T}" y2="${H - B}"><title>FINALRUN restart (re-referenced)</title></line>`;
+    const tip = `FINALRUN restart before POINT ${sgm.first_point}${o.segments === "separate" ? " (re-referenced)" : ""}`;
+    svg += `<line class="seg-line" x1="${X(xm)}" x2="${X(xm)}" y1="${T}" y2="${H - B}" data-first-point="${sgm.first_point}"><title>${tip}</title></line>`;
   }
   svg += `<text class="axis-title" x="${(L + W - R) / 2}" y="${H - 4}" text-anchor="middle">Optimization point</text>`;
   svg += `<text class="axis-title" transform="translate(12 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">${o.log ? "|ΔE|" : "ΔE"} (${esc(o.unit)})</text>`;
   const bySeg = {};
-  pts.filter((p) => !p.ring).forEach((p) => { (bySeg[p.seg] = bySeg[p.seg] || []).push(p); });
+  pts.filter((p) => !p.ring).forEach((p) => { (bySeg[grp(p)] = bySeg[grp(p)] || []).push(p); });
   Object.values(bySeg).forEach((sp) => {
     svg += `<polyline class="line" points="${sp.map((p) => `${X(p.x)},${Y(o.log ? Math.log10(p.y) : p.y)}`).join(" ")}"/>`;
   });
@@ -1541,7 +1766,8 @@ function energyTSV() {
   const t = state.traj;
   if (!t) return "";
   const { pts, o } = energySeries(t);
-  return [`point\tframe\tE_Ha\tdE_${o.unit}`, ...pts.map((p) => `${p.x}\t${p.k}\t${p.e}\t${p.dE}`)].join("\n") + "\n";
+  // the columns of `mace analyze --convergence FILE --energy`; the segment is 1-based
+  return [`point\tsegment\tframe\tE_Ha\tdE_${o.unit}`, ...pts.map((p) => `${p.x}\t${p.seg + 1}\t${p.k}\t${p.e}\t${p.dE}`)].join("\n") + "\n";
 }
 async function copyPlain(text) {
   if (window.isSecureContext && navigator.clipboard) { try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* fall back */ } }
@@ -1553,11 +1779,17 @@ async function copyPlain(text) {
 $("#o-e-log").addEventListener("click", () => { if (state.traj) setCardOpts(state.traj, { log: !cardOpts(state.traj).log }); });
 $("#o-e-rel").addEventListener("change", (e) => { if (state.traj) setCardOpts(state.traj, { rel: e.target.value }); });
 $("#o-e-unit").addEventListener("change", (e) => { if (state.traj) setCardOpts(state.traj, { unit: e.target.value }); });
+$("#o-e-seg").addEventListener("change", (e) => { if (state.traj) setCardOpts(state.traj, { segments: e.target.value }); });
 $("#o-e-tsv").addEventListener("click", async () => {
   const text = energyTSV(), n = text.trim().split("\n").length - 1;
   toast((await copyPlain(text)) ? `Copied ${n} rows` : "Copy failed", "info");
 });
-$("#o-e-plot").addEventListener("click", () => { if (window.__maceOpenRunPlot && state.traj) window.__maceOpenRunPlot(state.traj.path, "energy"); });
+$("#o-e-plot").addEventListener("click", () => {
+  if (!window.__maceOpenRunPlot || !state.traj) return;
+  // the plot opens on the data the card shows: its reference, segments, unit and log view, per cell
+  const o = cardOpts(state.traj);
+  window.__maceOpenRunPlot(state.traj.path, "energy", { relTo: o.rel, segments: o.segments, unit: o.unit, ylog: !!o.log, per: "cell" });
+});
 $("#o-energy").addEventListener("click", (e) => {
   const c = e.target.closest("[data-frame]");
   if (!c || !state.traj) return;
@@ -1581,6 +1813,10 @@ function niceTicks(lo, hi, count) {
 
 $("#o-scale").addEventListener("input", (e) => { $("#o-scale-out").textContent = e.target.value; drawOpt(); });
 $("#o-arrows").addEventListener("change", drawOpt);
+$("#o-dmode").addEventListener("change", (e) => {
+  store("mace.gui.cmp.dispMode", e.target.value);
+  autoScale(); renderComparison(); drawOpt();
+});
 $("#o-ghost").addEventListener("change", drawOpt);
 $("#o-frame").addEventListener("input", async (e) => {
   const want = Number(e.target.value);
@@ -1627,11 +1863,54 @@ function loadPlotly() {
   if (!plotlyLoading) plotlyLoading = new Promise((resolve) => {
     const el = document.createElement("script");
     el.src = assetUrl("vendor/plotly.min.js");
-    el.onload = () => resolve();
+    el.onload = () => { unzoomPlotly(); resolve(); };
     el.onerror = () => { toast("plotly is not installed here: interactive plots are unavailable", true); resolve(); };
     document.head.appendChild(el);
   });
   return plotlyLoading;
+}
+/* plotly measures the pointer as 3Dmol does (clientX minus the plot's screen
+ * corner) and maps it into the plot's own px with the inverse of the CSS
+ * transforms above the plot, which knows nothing of the UI scale's zoom:
+ * hovers, zoom boxes and drags landed off the pointer. Each plot's inverse
+ * also undoes the zoom; plotly itself stays as installed. */
+function unzoomPlotly() {
+  const P = window.Plotly;
+  if (!P || !P.newPlot || P.newPlot.maceUnzoomed) return;
+  const fixLayout = (gd) => {
+    const fl = gd && gd._fullLayout, calc = fl && fl._calcInverseTransform;
+    if (typeof calc !== "function" || calc.maceUnzoomed) return;
+    let base = null, scaled = null;
+    const f = function (g) {
+      calc.call(this, g);
+      const L = g._fullLayout;
+      // plotly recomputes only when the plot's screen box changed; else ours is still in place
+      if (L._invTransform !== scaled) base = L._invTransform;
+      if (!base) return;
+      const z = window.maceZoom.of(g);
+      // first the zoom off the screen px, then plotly's own inverse: its x and y columns over z
+      scaled = base.map((row) => row.map((v, j) => (j < 2 ? v / z : v)));
+      L._invTransform = scaled;
+      L._invScaleX = Math.hypot(scaled[0][0], scaled[0][1], scaled[0][2]);
+      L._invScaleY = Math.hypot(scaled[1][0], scaled[1][1], scaled[1][2]);
+    };
+    f.maceUnzoomed = true;
+    fl._calcInverseTransform = f;
+  };
+  const fix = (gd) => {
+    fixLayout(gd);
+    if (gd && gd.on && !gd.__maceUnzoom) { gd.__maceUnzoom = true; gd.on("plotly_afterplot", () => fixLayout(gd)); }
+    return gd;
+  };
+  for (const name of ["newPlot", "react"]) {
+    const orig = P[name];
+    P[name] = function (gd, ...rest) {
+      const out = orig.call(this, gd, ...rest);
+      const el = typeof gd === "string" ? document.getElementById(gd) : gd;
+      return out && out.then ? out.then((g) => fix(g || el)) : fix(el);
+    };
+    P[name].maceUnzoomed = true;
+  }
 }
 /* ---------------------------------------------------------------- selectors */
 /* The compare pickers and the database select (the deck tab is Calculation Setup now, js/setup). */
@@ -1675,7 +1954,7 @@ async function start() {
 }
 window.addEventListener("resize", () => Object.values(state.viewers).forEach((v) => v && (v.resize(), v.render())));
 window.MACE = { isFreq, isJobLog, roleOf, roleInfo, chipOf, middleName, api, q, esc, fmt, signed, hm, toast, cssVar, store, viewer, openFile, load3Dmol,
-  loadPlotly, assetUrl, applyTheme, drawStructure, viewAlong, fileByPath, renderFiles, drawEnergy, displayAtoms, bondsFor, addModel,
+  loadPlotly, assetUrl, applyTheme, drawStructure, viewAlong, fileByPath, renderFiles, drawEnergy, energyTSV, displayAtoms, bondsFor, addModel,
   drawCell, axisLabels, fitView, fitPoints, styleFor, elementColor, showTab, state, highlightDeck,
   redrawViews, sphereScale, schemeName, viewerBg, renderStructureInfo,
   loadFiles: () => loadFiles(), loadStructure: (p, d) => loadStructure(p, d), ensureStep: (t, i) => ensureStep(t, i), expandSummary,

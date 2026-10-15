@@ -69,5 +69,6 @@ def test_every_anchor_link_has_its_heading():
 
 
 def test_the_tunnel_hint_names_no_site():
-    """The hint's gateway is <gateway> unless MACE_GUI_GATEWAY names one."""
-    assert "msu.edu" not in DOC and "you@<gateway>" in DOC and "MACE_GUI_GATEWAY" in DOC
+    """The hint's gateway is LOGIN_HOST (paste-safe) unless MACE_GUI_GATEWAY or site.toml names one."""
+    assert "msu.edu" not in DOC and "you@LOGIN_HOST" in DOC and "MACE_GUI_GATEWAY" in DOC
+    assert "you@<gateway>" not in DOC and "[gui]" in DOC

@@ -346,10 +346,12 @@ export function createScene(v, deps) {
     let c = cam.calibrate();
     const view = v.getView();
     if (c.view.some((x, k) => Math.abs(x - view[k]) > 1e-9)) { cam.invalidate(); projCache = null; c = cam.calibrate(); }
-    const cv = v.getCanvas(), cr = cv.getBoundingClientRect(), wr = wrap.getBoundingClientRect(), dpr = devicePixelRatio || 1;
-    ringCv.style.left = cr.left - wr.left + "px"; ringCv.style.top = cr.top - wr.top + "px";
-    ringCv.style.width = cr.width + "px"; ringCv.style.height = cr.height + "px";
-    const W = Math.round(cr.width * dpr), Hh = Math.round(cr.height * dpr);
+    // over the canvas, in its own px (the UI scale zooms both), at the screen's resolution
+    const cv = v.getCanvas(), cr = cv.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
+    const z = window.maceZoom.of(cv), dpr = (devicePixelRatio || 1) * z;
+    ringCv.style.left = (cr.left - wr.left) / z + "px"; ringCv.style.top = (cr.top - wr.top) / z + "px";
+    ringCv.style.width = cr.width / z + "px"; ringCv.style.height = cr.height / z + "px";
+    const W = Math.round(cr.width * dpr / z), Hh = Math.round(cr.height * dpr / z);
     if (ringCv.width !== W || ringCv.height !== Hh) { ringCv.width = W; ringCv.height = Hh; }
     const g = ringCv.getContext("2d");
     g.setTransform(1, 0, 0, 1, 0, 0);

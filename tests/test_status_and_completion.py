@@ -202,7 +202,9 @@ def test_nothing_completed_moves_nothing(tmp_path, monkeypatch, capsys):
 @pytest.mark.parametrize("log, job_id", [
     ("tqb_pto-17781763.o", "17781763"),        # the job script's -o $JOB-%J.o
     ("tqb_pto.o17781763", "17781763"),
-    ("x_tqb_pto_17781763.o", "17781763"),
+    ("tqb_pto_17781763.o", "17781763"),
+    ("x_tqb_pto_17781763.o", None),            # the log of another calculation, x_tqb_pto
+    ("tqb_pto_sp-17781763.o", None),           # ... and of tqb_pto_sp
 ])
 def test_job_id_comes_from_the_slurm_log_name(tmp_path, log, job_id):
     (tmp_path / "tqb_pto.out").write_text("")
@@ -218,12 +220,16 @@ def test_no_log_no_job_id(tmp_path):
 class FakeSlurm:
     """squeue lists `running`; scancel records what it was asked to cancel."""
 
-    def __init__(self, running):
+    def __init__(self, running, jobs=None):
         self.running = running
+        self.jobs = jobs or {}          # id -> (job name, working directory)
         self.calls = []
 
     def __call__(self, cmd, **kw):
         self.calls.append(cmd)
+        if cmd[0] == "squeue" and "-j" in cmd:
+            job = self.jobs.get(cmd[cmd.index("-j") + 1])
+            return subprocess.CompletedProcess(cmd, 0, f"{job[0]}|{job[1]}\n" if job else "", "")
         if cmd[0] == "squeue":
             return subprocess.CompletedProcess(cmd, 0, "".join(f"{j}\n" for j in self.running), "")
         if cmd[0] == "scancel":
@@ -236,7 +242,9 @@ def zombies(calc_dir, monkeypatch):
     for stem, jid in (("tqb_done", "101"), ("graphene_lg80", "102"),
                       ("tqb_pto", "103"), ("graphene_lg37", "104")):
         (calc_dir / f"{stem}-{jid}.o").write_text("")
-    fake = FakeSlurm(running=["101", "102", "103", "999"])      # 104 has left the queue
+    fake = FakeSlurm(running=["101", "102", "103", "999"],      # 104 has left the queue
+                     jobs={"101": ("tqb_done", calc_dir), "102": ("graphene_lg80", calc_dir),
+                           "103": ("tqb_pto", calc_dir)})
     monkeypatch.setattr(cc.subprocess, "run", fake)
     buckets, paths = cc.scan_directory(calc_dir)
     return buckets, paths, fake

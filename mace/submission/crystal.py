@@ -85,8 +85,8 @@ def _site_check():
 def _site_generator(script_to_use, custom_script, data_folder):
     """The generator with this site's account, partition and modules
     (mace/submission/site.py). MACE's own temporary generator (the -i /
-    walltime copy in mace/submission/) is customized in place, so its install
-    pin is unchanged; the shipped template gets a rewritten copy in the job
+    walltime copy in a private temp folder, see temp_generator) is customized
+    in place, so its install pin is unchanged; the shipped template gets a rewritten copy in the job
     folder, removed at exit, only when something differs. Copies of a
     template are used as written."""
     site = _site()
@@ -144,7 +144,7 @@ def get_default_d12_resources():
     return _site_resources({
         'ntasks': 32,
         'memory_per_cpu': '5G',
-        'walltime': '7-00:00:00',
+        'walltime': _site().default_walltime("scf", '7-00:00:00'),   # the partition's MaxTime when shorter
         'account': _site_account(),
         'node_exclusion': get_default_amd20_exclusion()  # Default: exclude AMD20 nodes
     }, "scf")
@@ -339,16 +339,60 @@ def create_custom_slurm_script(script_path, resources):
         exclude_line = f"echo '#SBATCH --exclude={resources['node_exclusion']}' >> $1.sh"
         modified_lines.insert(last_sbatch_line + 1, exclude_line)
 
-    # Create temporary customized script
-    custom_script_path = script_path.parent / f"submitcrystal23_custom_{os.getpid()}.sh"
+    # The temporary generator goes to a private folder in the user's temp
+    # folder, not beside the template: an install can be read-only (a group
+    # or site-wide copy), and two runs must not share a file. It still pins
+    # the job to this install (temp_generator).
+    return _temp_generator().write(script_path, '\n'.join(modified_lines),
+                                   f"submitcrystal23_custom_{os.getpid()}.sh")
 
-    with open(custom_script_path, 'w') as f:
-        f.write('\n'.join(modified_lines))
 
-    # Make executable
-    custom_script_path.chmod(0o755)
+def _temp_generator():
+    try:
+        from mace.submission import temp_generator
+    except ImportError:  # run as a script from mace/submission/
+        import temp_generator
+    return temp_generator
 
-    return custom_script_path
+
+def remove_custom_slurm_script(path):
+    """Remove a generator create_custom_slurm_script wrote (and its folder);
+    says so when it cannot."""
+    _temp_generator().remove(path)
+
+def _job_name_helpers():
+    """(unusable_job_name, unusable_name_message) of job_script_age."""
+    try:
+        from mace.submission.job_script_age import unusable_job_name, unusable_name_message
+    except ImportError:  # run as a script from mace/submission/
+        from job_script_age import unusable_job_name, unusable_name_message
+    return unusable_job_name, unusable_name_message
+
+
+def _refuse_unusable_name(file_name):
+    """Say why a deck whose name a job script cannot use is skipped (True)."""
+    unusable, message = _job_name_helpers()
+    if unusable(file_name.rsplit(".", 1)[0]):
+        print(message(file_name))
+        return True
+    return False
+
+
+def _reuse_conflicts(data_folder, names, overwrite_sh, resources_given, **kw):
+    try:
+        from mace.submission.job_script_age import reuse_conflicts
+    except ImportError:  # run as a script from mace/submission/
+        from job_script_age import reuse_conflicts
+    return reuse_conflicts(data_folder, names, overwrite_sh, resources_given, **kw)
+
+
+def _conflict_message(conflicts, options):
+    try:
+        from mace.submission.job_script_age import conflict_message
+    except ImportError:  # run as a script from mace/submission/
+        from job_script_age import conflict_message
+    return conflict_message(conflicts, options)
+
 
 def check_existing_sh_file(data_folder, submit_name):
     """Check if corresponding .sh file already exists"""
@@ -369,22 +413,39 @@ def _warn_if_pre_guard(script_path):
         print(reused_script_warning(Path(script_path).name))
 
 
+def warn_missing_external_geometry(decks):
+    """Say so, before anything is submitted, for each EXTERNAL / DLVINPUT deck
+    whose fort.34 source is not there (the job would stop with no geometry)."""
+    try:
+        from mace.submission.external_geometry import missing_fort34_message
+    except ImportError:  # run as a script from mace/submission/
+        from external_geometry import missing_fort34_message
+    for deck in decks:
+        msg = missing_fort34_message(Path(deck))
+        if msg:
+            print(f"Warning: {msg}")
+
+
 def generate_or_use_script(script_to_use, submit_name, data_folder, overwrite_sh,
-                           env=None, outcome=None):
+                           env=None, outcome=None, regenerate=False):
     """Generate .sh file or use existing one based on flags.
 
     env: the generator's environment (job arrays run it with an sbatch that
-    refuses to submit); outcome: a dict that receives the generator's result.
+    refuses to submit); outcome: a dict that receives the generator's result;
+    regenerate: write an existing <name>.sh again (MACE wrote it and nobody
+    changed it, and resource options were given).
     """
     existing_sh = check_existing_sh_file(data_folder, submit_name)
 
-    if existing_sh.exists() and not overwrite_sh:
+    if existing_sh.exists() and not overwrite_sh and not regenerate:
         print(f"  Using existing script: {existing_sh.name}")
         _warn_if_pre_guard(existing_sh)
         return existing_sh, False  # (script_path, was_generated)
     else:
         if existing_sh.exists() and overwrite_sh:
             print(f"  Overwriting existing script: {existing_sh.name}")
+        elif existing_sh.exists():
+            print(f"  Writing {existing_sh.name} again with the requested resources (MACE wrote it; unchanged since)")
 
         # Generate new script by running the submission script generator.
         # The generator only writes <name>.sh; actual submission happens in
@@ -461,29 +522,6 @@ def main():
         print(f"Error: submitcrystal23.sh not found at {submitcrystal_script}")
         sys.exit(1)
 
-    # Configure resources if interactive mode
-    custom_script = None
-    if interactive_mode:
-        resources = configure_interactive_resources()
-        # If exclude_string was provided via command line, use it
-        if exclude_string and not resources.get('node_exclusion'):
-            resources['node_exclusion'] = exclude_string
-        if walltime_override:
-            resources['walltime'] = walltime_override
-        custom_script = create_custom_slurm_script(submitcrystal_script, resources)
-    elif exclude_string or walltime_override:
-        # Non-interactive mode but exclusion and/or walltime specified
-        resources = get_default_d12_resources()
-        if exclude_string:
-            resources['node_exclusion'] = exclude_string
-        if walltime_override:
-            resources['walltime'] = walltime_override
-            print(f"  Walltime override: {walltime_override}")
-        custom_script = create_custom_slurm_script(submitcrystal_script, resources)
-
-    # Use custom script if created, otherwise use original
-    script_to_use = custom_script if custom_script else submitcrystal_script
-
     # Get target from command line or use current directory
     if len(sys.argv) > 1:
         target = sys.argv[1]
@@ -512,36 +550,81 @@ def main():
         print(f"No D12 files found in {data_folder}")
         return
 
+    # Resource options go into the job scripts MACE writes: an existing script
+    # it wrote and nobody changed is written again with them, and one that was
+    # edited is never replaced - reusing it would silently drop the options.
+    given = [o for o, on in (("-i", interactive_mode), ("--walltime", walltime_override),
+                             ("node exclusion", exclude_string)) if on]
+    regenerate, conflicts = _reuse_conflicts(data_folder, [f.rsplit(".", 1)[0] for f in d12_files],
+                                             overwrite_sh, bool(given), kind="scf",
+                                             walltime=walltime_override, exclude=exclude_string,
+                                             interactive=bool(interactive_mode))
+    if conflicts:
+        print(_conflict_message(conflicts, " / ".join(given)))
+        return 1
+
+    # Configure resources if interactive mode
+    custom_script = None
+    if interactive_mode:
+        resources = configure_interactive_resources()
+        # If exclude_string was provided via command line, use it
+        if exclude_string and not resources.get('node_exclusion'):
+            resources['node_exclusion'] = exclude_string
+        if walltime_override:
+            resources['walltime'] = walltime_override
+        custom_script = create_custom_slurm_script(submitcrystal_script, resources)
+    elif exclude_string or walltime_override:
+        # Non-interactive mode but exclusion and/or walltime specified
+        resources = get_default_d12_resources()
+        if exclude_string:
+            resources['node_exclusion'] = exclude_string
+        if walltime_override:
+            resources['walltime'] = walltime_override
+            print(f"  Walltime override: {walltime_override}")
+        custom_script = create_custom_slurm_script(submitcrystal_script, resources)
+
+    # a walltime given on the command line or typed at the prompt is written as
+    # given; say so when the partition allows less
+    if custom_script is not None:
+        warning = _site().walltime_over_limit(resources.get('walltime'))
+        if warning:
+            print(f"  {warning}")
+
+    # Use custom script if created, otherwise use original
+    script_to_use = custom_script if custom_script else submitcrystal_script
+
+
     script_to_use = _site_generator(script_to_use, custom_script, data_folder)
 
     if nosubmit_mode:
         print(f"Found {len(d12_files)} D12 file(s) to generate scripts for")
     else:
         print(f"Found {len(d12_files)} D12 file(s) to submit")
+    warn_missing_external_geometry(Path(data_folder) / f for f in d12_files)
 
     if array_mode:
         from mace.submission.job_array import submit_untracked_arrays
+        names = [f.split(".d12")[0] for f in d12_files if not _refuse_unusable_name(f)]
+        refused = len(d12_files) - len(names)
         try:
             ids = submit_untracked_arrays(
-                [f.split(".d12")[0] for f in d12_files], data_folder,
+                names, data_folder,
                 lambda name, env=None, outcome=None: generate_or_use_script(
-                    script_to_use, name, data_folder, overwrite_sh, env=env, outcome=outcome),
+                    script_to_use, name, data_folder, overwrite_sh, env=env, outcome=outcome,
+                    regenerate=name in regenerate),
                 nosubmit=nosubmit_mode, max_running=max_running, label="d12")
         finally:
-            if custom_script and custom_script.exists():
-                try:
-                    custom_script.unlink()
-                except Exception as e:
-                    print(f"Warning: Could not remove temporary script {custom_script}: {e}")
+            remove_custom_slurm_script(custom_script)
         if ids:
             print(f"\nSubmitted {len(ids)} job(s): {', '.join(ids)}")
         if nosubmit_mode:
-            print(f"\nScript generation complete. Scripts are ready for submission.")
+            failed = refused + sum(1 for n in names if not (Path(data_folder) / f"{n}.sh").exists())
         else:
-            print(f"\nSubmission complete. Use 'mace monitor' to track job status.")
-        return
+            failed = refused + max(0, len(names) - len(ids))
+        return _finish(nosubmit_mode, failed, len(names) + refused)
 
     submitted_job_ids = []
+    failed = 0
     try:
         # Process each D12 file
         for file_name in d12_files:
@@ -551,6 +634,9 @@ def main():
                 print(f"Generating script for: {file_name}")
             else:
                 print(f"Processing: {file_name}")
+            if _refuse_unusable_name(file_name):
+                failed += 1
+                continue
 
             # Change to the directory containing the D12 file
             original_dir = os.getcwd()
@@ -558,7 +644,8 @@ def main():
 
             # Generate or use existing script
             sh_script, was_generated = generate_or_use_script(
-                script_to_use, submit_name, data_folder, overwrite_sh
+                script_to_use, submit_name, data_folder, overwrite_sh,
+                regenerate=submit_name in regenerate
             )
 
             if sh_script:
@@ -576,6 +663,7 @@ def main():
                             capture_output=True, text=True
                         )
                         if submit_result.returncode != 0:
+                            failed += 1
                             print(f"  Warning: Failed to submit {sh_script.name}")
                             if submit_result.stderr:
                                 print(f"    {submit_result.stderr.strip()}")
@@ -589,8 +677,10 @@ def main():
                             else:
                                 print(f"  ✓ Submitted successfully")
                     else:
+                        failed += 1
                         print(f"  Error: Script {sh_script.name} not found")
             else:
+                failed += 1
                 print(f"  Error: Failed to generate/find script for {file_name}")
 
             # Return to original directory
@@ -602,16 +692,29 @@ def main():
 
     finally:
         # Cleanup: Remove temporary custom script if created
-        if custom_script and custom_script.exists():
-            try:
-                custom_script.unlink()
-            except Exception as e:
-                print(f"Warning: Could not remove temporary script {custom_script}: {e}")
+        remove_custom_slurm_script(custom_script)
 
+    return _finish(nosubmit_mode, failed, len(d12_files))
+
+
+def _finish(nosubmit_mode, failed, total):
+    """The closing line of a run, and its exit status: 1 when any deck was
+    not submitted (or, with --nosubmit, got no job script)."""
     if nosubmit_mode:
+        if failed:
+            print(f"\nScript generation incomplete: {failed} of {total} job script(s) not written (see above).")
+            return 1
         print(f"\nScript generation complete. Scripts are ready for submission.")
-    else:
+        return 0
+    if not failed:
         print(f"\nSubmission complete. Use 'mace monitor' to track job status.")
+        return 0
+    if failed >= total:
+        print(f"\nSubmission failed: none of the {total} job(s) was submitted (see above).")
+    else:
+        print(f"\nSubmission incomplete: {failed} of {total} job(s) not submitted (see above). "
+              f"Use 'mace monitor' to track the others.")
+    return 1
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

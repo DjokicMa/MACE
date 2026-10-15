@@ -494,7 +494,7 @@ def export(path: Path, fmt: str, sort: str = "material_id", direction: str = "as
     Spike S8: ExportFormatter itself would need every row in memory and an output
     file, and export_materials() needs a MaterialDatabase, which opens the file
     read-write; so this writes the same columns with the csv / json modules, and a
-    test compares the header with the CLI's."""
+    test compares every cell with the CLI's (the values come from db_export_values)."""
     if fmt not in ("csv", "json"):
         raise ValueError("format is csv or json")
     if sort not in SORTS:
@@ -513,7 +513,9 @@ def export(path: Path, fmt: str, sort: str = "material_id", direction: str = "as
             f"WHERE {where}", args)] if has_props else []
         has_meta = conn.execute(f"SELECT 1 FROM materials m WHERE ({where}) AND m.metadata_json IS NOT NULL "
                                 f"AND m.metadata_json != '' LIMIT 1", args).fetchone() is not None
-        fields = sorted(set(mat_cols) | set(prop_names) | ({"metadata"} if has_meta else set()))
+        from mace.utils.db_export_values import STRUCTURE_FIELDS, property_values
+        fields = sorted((set(mat_cols) | set(prop_names) | ({"metadata"} if has_meta else set()))
+                        - set(STRUCTURE_FIELDS))
         if computed:
             sql = (f"SELECT m.* FROM materials m LEFT JOIN (SELECT material_id, COUNT(*) AS n_calcs, "
                    f"SUM(status = 'completed') AS n_completed FROM calculations GROUP BY material_id) c "
@@ -530,12 +532,8 @@ def export(path: Path, fmt: str, sort: str = "material_id", direction: str = "as
                 if not batch:
                     return
                 recs = [dict(r) for r in batch]
-                props = {}
-                if pconn is not None:
-                    ids = [r["material_id"] for r in recs]
-                    for pr in pconn.execute(f"SELECT material_id, property_name, property_value FROM properties "
-                                            f"WHERE material_id IN ({','.join('?' * len(ids))})", ids):
-                        props.setdefault(pr[0], {})[pr[1]] = pr[2]
+                # the CLI's values (db_export_values): text values too
+                props = property_values(pconn, [r["material_id"] for r in recs]) if pconn is not None else {}
                 for r in recs:
                     if r.get("metadata_json"):
                         try:
@@ -543,6 +541,8 @@ def export(path: Path, fmt: str, sort: str = "material_id", direction: str = "as
                         except json.JSONDecodeError:
                             pass
                     r.update(props.get(r["material_id"], {}))
+                    for k in STRUCTURE_FIELDS:
+                        r.pop(k, None)
                     yield r
 
         try:

@@ -44,8 +44,7 @@ USAGE:
        These defaults are the interactive prompts' defaults. Where the
        interactive run would ask, batch mode takes the prompt's default: a
        structure whose spglib space group differs from the CIF's keeps the
-       CIF's group with every atom written (CRYSTAL folds the equivalent
-       ones), and one whose atoms are all symmetry-unique is written whole.
+       CIF's group with the CIF's own atom records, and one whose atoms are all symmetry-unique is written whole.
 
     4. Specify output directory:
        python NewCifToD12.py --cif_dir /path/to/cif/files --output_dir /path/to/output
@@ -63,6 +62,7 @@ AUTHOR:
 """
 
 import os
+import re
 import sys
 import glob
 import argparse
@@ -225,7 +225,18 @@ except Exception:
 
 def read(*args, **kwargs):
     """ase.io.read, imported when a CIF is read: without ase, `mace convert
-    --help` still answers (main() says what is missing before converting)."""
+    --help` still answers (main() says what is missing before converting).
+
+    A CIF goes through mace.utils.cif_symbols, so an all-caps "BI" is
+    bismuth, not boron (ase alone takes the first capital letter). Run
+    standalone without `mace` importable, plain ase.io.read is used."""
+    if len(args) == 1 and kwargs == {"format": "cif"}:
+        try:
+            from mace.utils.cif_symbols import read_cif
+        except ImportError:
+            pass
+        else:
+            return read_cif(args[0])
     from ase.io import read as ase_read
 
     return ase_read(*args, **kwargs)
@@ -390,120 +401,42 @@ def parse_cif(cif_file, interactive=None):
             "name": os.path.basename(cif_file).replace(".cif", ""),
         }
 
-        # Counters for parsing
-        sym_counter = 0
-        atom_counter = 0
-        a_counter = b_counter = c_counter = 0
-        alpha_counter = beta_counter = gamma_counter = 0
-        atom_list = []
-
-        # Parse CIF file
+        # Cell and space-group number: the value is the word after the tag,
+        # with any standard uncertainty dropped ("5.4307(2)" -> 5.4307).
+        cell_tags = {
+            "_cell_length_a": "a",
+            "_cell_length_b": "b",
+            "_cell_length_c": "c",
+            "_cell_angle_alpha": "alpha",
+            "_cell_angle_beta": "beta",
+            "_cell_angle_gamma": "gamma",
+        }
+        sg_tags = ("_symmetry_Int_Tables_number", "_space_group_IT_number")
         for line in contents:
             words = line.split()
-            for i, word in enumerate(words):
-                # Get lattice parameters
-                if word == "_cell_length_a":
-                    a_counter = 1
-                elif a_counter == 1:
-                    data["a"] = float(word)
-                    a_counter = 0
+            for tag, value in zip(words, words[1:]):
+                value = value.split("(")[0]
+                try:
+                    if tag in cell_tags:
+                        data[cell_tags[tag]] = float(value)
+                    elif tag in sg_tags:
+                        data["spacegroup"] = int(value)
+                except ValueError:
+                    pass
 
-                if word == "_cell_length_b":
-                    b_counter = 1
-                elif b_counter == 1:
-                    data["b"] = float(word)
-                    b_counter = 0
-
-                if word == "_cell_length_c":
-                    c_counter = 1
-                elif c_counter == 1:
-                    data["c"] = float(word)
-                    c_counter = 0
-
-                # Get unit cell angles
-                if word == "_cell_angle_alpha":
-                    alpha_counter = 1
-                elif alpha_counter == 1:
-                    data["alpha"] = float(word)
-                    alpha_counter = 0
-
-                if word == "_cell_angle_beta":
-                    beta_counter = 1
-                elif beta_counter == 1:
-                    data["beta"] = float(word)
-                    beta_counter = 0
-
-                if word == "_cell_angle_gamma":
-                    gamma_counter = 1
-                elif gamma_counter == 1:
-                    data["gamma"] = float(word)
-                    gamma_counter = 0
-
-                # Get space group
-                if (
-                    word == "_symmetry_Int_Tables_number"
-                    or word == "_space_group_IT_number"
-                ):
-                    sym_counter = 1
-                elif sym_counter == 1:
-                    data["spacegroup"] = int(word)
-                    sym_counter = 0
-
-                # Get atom data
-                if word == "_atom_site_occupancy":
-                    atom_counter = 1
-                elif word == "loop_":
-                    atom_counter = 0
-                elif atom_counter == 1:
-                    atom_list.append(word)
-
-        # Process atom data
-        true_index = 0
-        index = 0
-        atom_name = []
-        h = []
-        k = []
-        l = []
-
-        for i in atom_list:
-            if index == 1:
-                atom_name.append(i)
-            if index == 2:
-                h.append(float(i))
-            if index == 3:
-                k.append(float(i))
-            if index == 4:
-                l.append(float(i))
-
-            true_index += 1
-            index += 1
-            if index == 8:
-                index = 0
-
-        # Convert atom names to atomic numbers and filter out unknown elements
-        atomic_numbers = []
-        filtered_atom_names = []
-        filtered_positions = []
-
-        for i, name in enumerate(atom_name):
-            try:
-                atom = getattr(Element, name)
-                atomic_num = int(atom)
-            except (AttributeError, ValueError):
-                atomic_num = SYMBOL_TO_NUMBER.get(name)
-                if atomic_num is None:
-                    ui.warn(
-                        f"Warning: Unknown element symbol '{name}' at position {i} - skipping"
-                    )
-                    continue
-
-            atomic_numbers.append(atomic_num)
-            filtered_atom_names.append(name)
-            filtered_positions.append([h[i], k[i], l[i]])
-
-        data["atomic_numbers"] = atomic_numbers
-        data["symbols"] = filtered_atom_names
-        data["positions"] = filtered_positions
+        # Atoms: the _atom_site_ loop as written (the asymmetric unit),
+        # elements from _atom_site_type_symbol, else the label.
+        records = _parse_cif_atom_site_records(cif_file)
+        if records is None:
+            raise ValueError(f"{cif_file}: no readable _atom_site_ loop")
+        symbols, positions = records
+        data["atomic_numbers"] = [SYMBOL_TO_NUMBER[sym] for sym in symbols]
+        data["symbols"] = symbols
+        data["positions"] = positions
+        data["cif_atom_symbols"] = symbols
+        data["cif_atom_positions"] = positions
+        data["cif_symops"] = None
+        data["cif_lists_symops"] = _cif_lists_symops(cif_file)
 
         return data
 
@@ -683,7 +616,9 @@ def _parse_cif_atom_site_records(cif_file):
                 parts = row.split()
                 if len(parts) < len(tags):
                     break
-                alpha = "".join(ch for ch in parts[isym] if ch.isalpha())
+                # The first run of letters names the element (the rule of
+                # mace.utils.cif_symbols): "BI1" -> Bi, "C1A" -> C, not Ca.
+                alpha = re.match(r"[^A-Za-z]*([A-Za-z]*)", parts[isym]).group(1)
                 sym = alpha[:2].capitalize()
                 if sym not in SYMBOL_TO_NUMBER:
                     sym = alpha[:1].upper()
@@ -855,6 +790,30 @@ def reduce_in_spglib_setting(cif_data, cell, tolerance, number):
     return reduced
 
 
+def _keep_cif_space_group(cif_data):
+    """cif_data for a deck that keeps the CIF's own space group unreduced.
+
+    The CIF's _atom_site_ records are its asymmetric unit, in its own
+    setting: what CRYSTAL expands under the declared group (R-3c Ag2Br3,
+    whose 6-decimal coordinates spglib reads as a lower group: 2 records,
+    30 atoms built). The expanded cell ASE builds is the whole cell; written
+    under the group it made every atom a copy CRYSTAL had to fold back onto
+    the original, which only works while the copies land within CRYSTAL's
+    tolerance, and the GUI's d12 reader (ase) refused such a deck outright.
+    So the records are used when there are fewer of them; otherwise the
+    atoms are kept as they are.
+    """
+    raw_syms = cif_data.get("cif_atom_symbols")
+    raw_pos = cif_data.get("cif_atom_positions")
+    if not raw_syms or not raw_pos or len(raw_syms) >= len(cif_data.get("symbols", [])):
+        return cif_data
+    kept = dict(cif_data)
+    kept["symbols"] = list(raw_syms)
+    kept["atomic_numbers"] = [SYMBOL_TO_NUMBER[s] for s in raw_syms]
+    kept["positions"] = [[p % 1.0 for p in pos] for pos in raw_pos]
+    return kept
+
+
 def verify_and_reduce_to_asymmetric_unit(
     cif_data, tolerance=1e-5, validate_symmetry=False, interactive=None,
 ):
@@ -972,7 +931,7 @@ def verify_and_reduce_to_asymmetric_unit(
             ui.print(f"  1: Try different tolerance values")
             ui.print(f"  2: Proceed with spglib space group {detected_spacegroup_num}")
             ui.print(
-                f"  3: Use original CIF space group {original_spacegroup_num} (no reduction)"
+                f"  3: Use original CIF space group {original_spacegroup_num} (the CIF's own atom records)"
             )
 
             # Unattended runs cannot answer this. Take the documented default
@@ -989,9 +948,9 @@ def verify_and_reduce_to_asymmetric_unit(
                 ui.warn(
                     f"Space group mismatch (CIF {original_spacegroup_num} vs "
                     f"spglib {detected_spacegroup_num}) - keeping the CIF "
-                    f"space group and writing every atom (no reduction)."
+                    f"space group and writing the CIF's own atom records."
                 )
-                return cif_data
+                return _keep_cif_space_group(cif_data)
 
             choice = get_user_input(
                 "Select option", {"1": "tolerance", "2": "spglib", "3": "original"}, "3"
@@ -1024,8 +983,8 @@ def verify_and_reduce_to_asymmetric_unit(
                     "Final choice", {"1": "spglib", "2": "original"}, "2"
                 )
                 if final_choice == "2":
-                    ui.print("Using all atoms from the CIF file without reduction.")
-                    return cif_data
+                    ui.print("Keeping the CIF space group and the CIF's own atom records.")
+                    return _keep_cif_space_group(cif_data)
                 else:
                     ui.print(
                         f"Proceeding with spglib space group {detected_spacegroup_num}"
@@ -1040,8 +999,8 @@ def verify_and_reduce_to_asymmetric_unit(
                     cif_data, cell, tolerance, detected_spacegroup_num
                 )
             else:
-                ui.print("Using all atoms from the CIF file without reduction.")
-                return cif_data
+                ui.print("Keeping the CIF space group and the CIF's own atom records.")
+                return _keep_cif_space_group(cif_data)
         else:
             ui.ok(f"Space group verification successful!")
 

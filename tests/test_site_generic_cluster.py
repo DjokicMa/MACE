@@ -302,3 +302,44 @@ def test_workstation_without_slurm_keeps_msu_menus(tmp_path):
     s = site.resolve(site.load(env), env, out=lambda t: None)
     assert (s.account, s.python_executable, s.queue_text) == ("mendoza_q", None, site.QUEUE_TEXT)
     assert s.checks["account"] == "not checked" and s.checks["python"] == "unchecked"
+
+
+# ------------------------------------------------- MSU-only submit options
+MSU_FLAGS = ("--exclude-amd20", "--exclude-mendoza")
+
+
+@pytest.mark.parametrize("ask", [("submit", "--help"), ("help", "submit")])
+def test_other_cluster_submit_help_names_no_msu_option(tmp_path, ask):
+    """Off MSU HPCC the help lists the generic exclusion options only; the
+    MSU-only ones (and its node names) are not shown."""
+    env, fake = _cluster(tmp_path, owner=False)
+    p = _mace(tmp_path, env, *ask)
+    out = p.stdout + p.stderr
+    assert "--exclude-nodes" in out and "--exclude-type" in out, out[-2000:]
+    for flag in MSU_FLAGS:
+        assert flag not in out
+    assert not MSU_PATTERN.search(out), MSU_PATTERN.search(out)
+
+
+@pytest.mark.parametrize("ask", [("submit", "--help"), ("help", "submit")])
+def test_msu_submit_help_keeps_the_msu_options(tmp_path, ask):
+    env, fake = _cluster(tmp_path, owner=True)
+    p = _mace(tmp_path, env, *ask)
+    out = p.stdout + p.stderr
+    for flag in MSU_FLAGS + ("--exclude-nodes",):
+        assert flag in out, out[-2000:]
+    if ask[0] == "help":     # the curated page, exactly as before
+        assert ("  --exclude-amd20      MSU HPCC only: exclude all AMD20 nodes (amr + nvf types)\n"
+                "  --exclude-mendoza    MSU HPCC only: exclude the Mendoza group's nodes (members\n"
+                "                       of its account)\n\nExamples:") in out
+
+
+def test_other_cluster_exclude_amd20_is_accepted_but_excludes_nothing(tmp_path):
+    env, fake = _cluster(tmp_path, owner=False)
+    d = tmp_path / "decks"
+    _deck(d, "m.d12")
+    p = _mace(d, env, "submit", "--nosubmit", "--exclude-amd20", "m.d12")
+    out = p.stdout + p.stderr
+    assert p.returncode == 0 and "--exclude-amd20 applies only on MSU HPCC" in out, out[-3000:]
+    assert "#SBATCH --exclude" not in (d / "m.sh").read_text()
+    assert not fake.calls("sinfo")

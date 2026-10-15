@@ -242,7 +242,7 @@ def test_many_task_callbacks_at_once(tmp_path, hold_seconds, scale, expect_fallb
     sys.path.insert(0, str(REPO_ROOT))
     from mace.queue.queue_lock_manager import QueueLockManager
     holder = QueueLockManager(lock_dir=root / ".queue_locks", lock_timeout=300)
-    assert holder.acquire_lock("queue_manager_completion", timeout=5)
+    assert holder.acquire_lock("queue_state", timeout=5)
     procs = []
     try:
         for t, wd in enumerate(dirs):
@@ -252,7 +252,7 @@ def test_many_task_callbacks_at_once(tmp_path, hold_seconds, scale, expect_fallb
             time.sleep(0.05)
         time.sleep(hold_seconds)
     finally:
-        holder.release_lock("queue_manager_completion")
+        holder.release_lock("queue_state")
     outs = [p.communicate(timeout=600)[0] for p in procs]
     assert all(p.returncode == 0 for p in procs), outs
     fell_back = sum("recording this task's own result without it" in o for o in outs)

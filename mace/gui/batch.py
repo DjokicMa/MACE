@@ -95,6 +95,22 @@ def _walk(folder: Path, pattern: str, recursive: bool) -> List[Path]:
     return out
 
 
+# what opt2d3 refuses for a molecule (CRYSTALOptToD3.molecule_refusal; CRYSTAL23 manual pp.309, 320)
+PERIODIC_ONLY = {"BAND": "CRYSTAL computes no bands for 0D", "DOSS": "CRYSTAL computes no DOSS for 0D",
+                 "TRANSPORT": "transport comes from the bands"}
+MOLECULE_HEAD = 4 << 20          # the dimensionality banner comes before the basis set and the SCF
+
+
+def is_molecule(p: Path) -> bool:
+    """A MOLECULE run: CRYSTAL prints "MOLECULAR CALCULATION" near the top of its output."""
+    try:
+        with open(p, "rb") as fh:
+            head = fh.read(MOLECULE_HEAD)
+    except OSError:
+        return False
+    return b"MOLECULAR CALCULATION" in head
+
+
 def followup_mode(calc: str) -> str:
     return "opt2d3" if calc in D3_TYPES else "opt2d12"
 
@@ -165,7 +181,10 @@ def workflow_next(folder: Path) -> Dict[str, Tuple[str, str]]:
     ``folder`` (read-only; no context is activated): the step after the last
     one with an output in the plan's folder."""
     out: Dict[str, Tuple[str, str]] = {}
-    for plan in sorted(folder.glob("workflow_configs/workflow_plan_*.json"))[-20:]:
+    # not the CIF-conversion copy, workflow_plan_<id>_updated.json
+    plans = [p for p in folder.glob("workflow_configs/workflow_plan_*.json")
+             if not p.stem.endswith("_updated")]
+    for plan in sorted(plans)[-20:]:
         try:
             data = json.loads(plan.read_text())
         except (OSError, ValueError):
@@ -207,6 +226,8 @@ def scan(root: Path, folder: Path, filt: str, followup: Optional[str], recursive
             why = ""
             if not path_ok(p):
                 why = f"File names with spaces or shell characters cannot be submitted; rename {p.name}"
+            elif calc in PERIODIC_ONLY and is_molecule(p):
+                why = f"{calc} needs a periodic structure; this output is a molecule ({PERIODIC_ONLY[calc]})"
             elif calc == "FREQ" and ptype != "OPT":
                 why = "FREQ needs a converged OPT geometry (imaginary modes otherwise)"
             elif calc in D3_TYPES and S.find_wavefunction(p) is None:
@@ -381,12 +402,13 @@ def check_name(name: str) -> str:
     return name
 
 
-def move_new_files(stage: Path, out_dir: Path, st) -> Tuple[List[Path], List[str]]:
+def move_new_files(stage: Path, out_dir: Path, st, prefix: str = "") -> Tuple[List[Path], List[str]]:
     """Move what a CLI run wrote into ``stage`` to ``out_dir`` (Write decks
-    now's rules: no symlink followed, a replaced deck keeps a .bak)."""
+    now's rules: no symlink followed, a replaced deck keeps a .bak). A
+    ``prefix`` (a same-name parent's subfolder) goes in front of each name."""
     from . import saving
     made = sorted(x for x in stage.iterdir() if x.is_file() and not x.is_symlink())
-    targets = [(x, out_dir / x.name) for x in made]
+    targets = [(x, out_dir / (prefix + x.name)) for x in made]
     for src, target in targets:
         # the opt2d3 wavefunction copy may be written as Write decks now writes it: when the
         # target is absent, or holds the same copy (same size and mtime as the copy just made)
@@ -412,6 +434,38 @@ def move_new_files(stage: Path, out_dir: Path, st) -> Tuple[List[Path], List[str
     return written, backups
 
 
+def same_name_prefixes(folder: Path, root: Path, items: List[Dict[str, Any]]) -> Dict[str, str]:
+    """rel -> prefix for parents whose file names repeat (``A/mat.out`` and
+    ``B/mat.out``): the subfolder they sit in, so their settings files and
+    decks do not overwrite each other in the batch's one options/ and decks/
+    folder. Parents with a name of their own keep their names ("")."""
+    by: Dict[str, List[str]] = {}
+    for it in items:
+        by.setdefault(Path(it["rel"]).stem, []).append(it["rel"])
+    out = {it["rel"]: "" for it in items}
+    for rels in by.values():
+        if len(rels) < 2:
+            continue
+        for rel in rels:
+            d = (root / rel).parent
+            try:
+                parts = d.relative_to(folder).parts
+            except ValueError:
+                parts = Path(rel).parent.parts
+            out[rel] = "_".join(parts) + "_" if parts else ""
+    return out
+
+
+def check_unique(names: Dict[str, List[str]]) -> None:
+    """Refuse (before anything is written) when two parents would still
+    write the same file."""
+    clash = {n: rels for n, rels in names.items() if len(rels) > 1}
+    if clash:
+        n, rels = sorted(clash.items())[0]
+        raise BatchError(f"{' and '.join(rels)} would write the same name ({n}) in the batch folder; "
+                         "rename one of them, or set them up in separate batches")
+
+
 def write(st, b: Batch, name: str, overwrite: bool, ctx=None) -> Dict[str, Any]:
     root = st.root
     name = check_name(name or default_name(b.calc, b.folder))
@@ -424,6 +478,17 @@ def write(st, b: Batch, name: str, overwrite: bool, ctx=None) -> Dict[str, Any]:
     ok = [it for it in b.items.values() if it["status"] == "ok"]
     if not ok:
         raise BatchError("No file of this batch has a deck to write")
+    pre = same_name_prefixes(b.folder, root, ok)
+    seen: Dict[str, List[str]] = {}
+    for it in ok:
+        if it.get("deck_name"):
+            seen.setdefault("decks/" + pre[it["rel"]] + it["deck_name"], []).append(it["rel"])
+        if b.mode == "cif2d12":
+            seen.setdefault(f"inputs/g{it['group']}/" + pre[it["rel"]] + Path(it["rel"]).name, []).append(it["rel"])
+        else:
+            seen.setdefault("options/" + S.json_name(b.mode, b.calc, pre[it["rel"]] + Path(it["rel"]).stem),
+                            []).append(it["rel"])
+    check_unique(seen)
     if b.mode == "opt2d3":
         need = sum((it.get("f9") or {}).get("bytes", 0) for it in ok) + (1 << 30)
         free = shutil.disk_usage(b.folder).free
@@ -436,10 +501,10 @@ def write(st, b: Batch, name: str, overwrite: bool, ctx=None) -> Dict[str, Any]:
     if b.mode == "cif2d12":
         for it in ok:
             targets += [B / "inputs", B / "inputs" / f"g{it['group']}",
-                        B / "inputs" / f"g{it['group']}" / Path(it["rel"]).name,
+                        B / "inputs" / f"g{it['group']}" / (pre[it["rel"]] + Path(it["rel"]).name),
                         B / "options" / f"g{it['group']}_options.json"]
     else:
-        targets += [B / "options" / S.json_name(b.mode, b.calc, Path(it["rel"]).stem) for it in ok]
+        targets += [B / "options" / S.json_name(b.mode, b.calc, pre[it["rel"]] + Path(it["rel"]).stem) for it in ok]
     for t in targets:
         st.check_write(t)
     for sub_ in ("options", "decks"):
@@ -447,6 +512,7 @@ def write(st, b: Batch, name: str, overwrite: bool, ctx=None) -> Dict[str, Any]:
     cwd = b.folder
     rel_b = _rel(cwd, B) if B != cwd else "."
     cmds: List[List[str]] = []
+    cmd_pre: List[str] = []                 # follow-ups: the prefix each command's files get
     written_opts: List[str] = []
     parents: Dict[str, str] = {}
     calc = b.calc
@@ -458,7 +524,7 @@ def write(st, b: Batch, name: str, overwrite: bool, ctx=None) -> Dict[str, Any]:
             inp = B / "inputs" / f"g{g}"
             inp.mkdir(parents=True, exist_ok=True)
             for it in items:
-                shutil.copy2(root / it["rel"], inp / Path(it["rel"]).name)
+                shutil.copy2(root / it["rel"], inp / (pre[it["rel"]] + Path(it["rel"]).name))
             opt = B / "options" / f"g{g}_options.json"
             opt.write_text(items[0]["json_text"])
             written_opts.append(_rel(root, opt))
@@ -467,11 +533,12 @@ def write(st, b: Batch, name: str, overwrite: bool, ctx=None) -> Dict[str, Any]:
     else:
         for it in ok:
             p = root / it["rel"]
-            jn = S.json_name(b.mode, calc, p.stem)
+            jn = S.json_name(b.mode, calc, pre[it["rel"]] + p.stem)
             opt = B / "options" / jn
             opt.write_text(it["json_text"])
             written_opts.append(_rel(root, opt))
             prel = os.path.relpath(p, cwd)
+            cmd_pre.append(pre[it["rel"]])
             if b.mode == "opt2d12":
                 cmds.append(["opt2d12", "--out-file", prel, "--config-file", f"{rel_b}/options/{jn}", "--yes",
                              "--output-dir", f"{rel_b}/decks"])
@@ -483,6 +550,7 @@ def write(st, b: Batch, name: str, overwrite: bool, ctx=None) -> Dict[str, Any]:
     # run each command into a private stage inside decks/, then move the files in
     decks_dir = B / "decks"
     written, backups, logs, codes = [], [], [], []
+    renames: List[List[Tuple[str, str]]] = [[] for _ in cmds]
     for i, args in enumerate(cmds):
         if ctx is not None:
             ctx.check()
@@ -495,7 +563,11 @@ def write(st, b: Batch, name: str, overwrite: bool, ctx=None) -> Dict[str, Any]:
             r = clirun.run(clirun.mace_argv("--no-banner", *run_args), cwd, ctx, timeout=900)
             logs.append(r.log.replace(str(stage), f"{rel_b}/decks"))
             codes.append(r.returncode)
-            w, bk = move_new_files(stage, decks_dir, st)
+            prefix = cmd_pre[i] if i < len(cmd_pre) else ""
+            if prefix:
+                renames[i] = [(x.name, prefix + x.name) for x in sorted(stage.iterdir())
+                              if x.is_file() and not x.is_symlink()]
+            w, bk = move_new_files(stage, decks_dir, st, prefix)
             written += w
             backups += bk
         finally:
@@ -503,11 +575,15 @@ def write(st, b: Batch, name: str, overwrite: bool, ctx=None) -> Dict[str, Any]:
     # parent -> deck map (by name: the CLI's names, read back)
     deck_names = {x.name for x in written if x.suffix in (".d12", ".d3")}
     for it in ok:
-        if it.get("deck_name") in deck_names:
-            parents[it["rel"]] = _rel(root, decks_dir / it["deck_name"])
+        dn = pre[it["rel"]] + (it.get("deck_name") or "")
+        if it.get("deck_name") and dn in deck_names:
+            parents[it["rel"]] = _rel(root, decks_dir / dn)
     text = ["#!/bin/bash", f"# Re-create these decks with: bash commands.sh (run it in {st.rel_new(cwd) or 'the served folder'})",
             "# MACE Batch Setup: one command per line, as typed at the command line.", "set -e"]
-    text += ["mace " + " ".join(shlex.quote(a) for a in args) for args in cmds]
+    for args, ren in zip(cmds, renames):
+        text.append("mace " + " ".join(shlex.quote(a) for a in args))
+        # a same-name parent's files carry its subfolder's name (as Write did)
+        text += [f"mv {shlex.quote(f'{rel_b}/decks/{a}')} {shlex.quote(f'{rel_b}/decks/{z}')}" for a, z in ren]
     (B / "commands.sh").write_text("\n".join(text) + "\n")
     os.chmod(B / "commands.sh", 0o644)
     from mace import __version__

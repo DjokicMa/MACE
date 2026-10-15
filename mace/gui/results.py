@@ -10,7 +10,9 @@ This module only reshapes their arrays into JSON for the browser:
   scale, so the Fermi level sits at that shift (``fermi``), not at 0;
 * CRYSTAL writes two spin blocks even for a closed-shell run; when the beta
   block equals the alpha one (bands) or its negative (DOS) the run is
-  reported closed-shell and only one set is sent;
+  reported closed-shell and only one set is sent; beta bands within 10 meV of
+  alpha (a non-magnetic spin-polarized run) are sent once too, flagged
+  ``spin_identical``;
 * a path discontinuity (``U|K``) gets a break (null) so no line joins the
   two sides.
 """
@@ -32,7 +34,7 @@ WINDOW_EV = 25.0           # bands that never come within this of E_F are droppe
 
 
 def _plotters():
-    os.environ.setdefault("MPLBACKEND", "Agg")
+    os.environ["MPLBACKEND"] = "Agg"        # the server never draws through X (DISPLAY may be X11 forwarding)
     if str(_PLOTTING) not in sys.path:
         sys.path.insert(0, str(_PLOTTING))
     import ipBANDS_V2
@@ -63,10 +65,10 @@ def _plotly_label(label: str) -> str:
     return re.sub(r"_\{([^}]*)\}", r"<sub>\1</sub>", label)
 
 
-def _with_breaks(x: np.ndarray, ys: np.ndarray, breaks: List[float]):
-    """Insert a null between two points at the same x on a discontinuous tick."""
-    cut = [i + 1 for i in range(len(x) - 1)
-           if any(abs(x[i] - b) < 1e-6 and abs(x[i + 1] - b) < 1e-6 for b in breaks)]
+def _with_breaks(x: np.ndarray, ys: np.ndarray, after: List[int]):
+    """Insert a null after each point in ``after`` (a discontinuous tick, see
+    ``ipBANDS_V2.path_break_indices``) so no line joins the two sides."""
+    cut = [i + 1 for i in after if 0 <= i < len(x) - 1]
     if not cut:
         return x.tolist(), ys.T.tolist()
     xs = np.insert(x.astype(float), cut, np.nan)
@@ -108,14 +110,17 @@ def band_data(path: Path) -> Dict[str, Any]:
         ticks = ticks[:half]
     if len(labels) != len(ticks):
         labels = labels[: len(ticks)] + [""] * max(0, len(ticks) - len(labels))
-    breaks = [t for t, lab in zip(ticks, labels) if "|" in lab]
-    spin = bool(np.any(Bb != 0)) and not np.array_equal(B, Bb)
+    breaks = ipb.path_break_indices(E[:n], ticks, labels)
+    state, spin_diff = ipb.spin_state(B, Bb)
+    spin = state == "polarized"
     fermi = float(maxV)
     up, trunc_up = _window(B, fermi)
     x, up_cols = _with_breaks(E[:n], up[:n], breaks)
     result = {
         "kind": "band", "name": path.name, "x": x, "up": up_cols,
         "down": None, "spin_polarized": spin, "fermi": fermi,
+        # a spin-polarized run whose beta bands match alpha (non-magnetic): one set
+        "spin_identical": state == "identical", "spin_max_diff": spin_diff,
         "reference": "vacuum" if has_potc else "fermi",
         "ticks": ticks, "labels": labels, "truncated": trunc_up,
         "n_kpoints": n, "n_bands": int(B.shape[1]),
@@ -128,17 +133,8 @@ def band_data(path: Path) -> Dict[str, Any]:
 
 
 def _doss_header(path: Path) -> Tuple[Optional[int], int]:
-    with open(path) as fh:
-        head = fh.readline().split()
-    try:
-        nproj = int(head[head.index("NPROJ") + 1])
-    except (ValueError, IndexError):
-        nproj = None
-    try:
-        nspin = int(head[head.index("NSPIN") + 1])
-    except (ValueError, IndexError):
-        nspin = 1
-    return nproj, nspin
+    _, ipd = _plotters()
+    return ipd.read_doss_header(str(path))
 
 
 def dos_data(path: Path) -> Dict[str, Any]:
@@ -162,9 +158,12 @@ def dos_data(path: Path) -> Dict[str, Any]:
             raise ValueError(f"{path.name}: no NPROJ in the header and no .d3 beside it")
         labels = [f"projection {k}" for k in range(1, nproj)] + ["Total"]
     maxV = ipd.vacuum_shift(dat, out) if has_potc else 0
-    cols = [np.asarray(c, float) for c in ipd.read_doss_columns(str(path), len(labels) + 1, maxV)]
+    cols = ipd.read_doss_columns(str(path), len(labels) + 1, maxV)
     n_all = len(cols[0])
     half = n_all // 2 if nspin == 2 and n_all % 2 == 0 else n_all
+    # the bin at a window edge that holds the states outside the window (same as mace plotting --dos)
+    cols, pileup = ipd.suppress_edge_pileup(cols, n_all // half)
+    cols = [np.asarray(c, float) for c in cols]
     energy = cols[0][:half]
     up = [c[:half] for c in cols[1:]]
     down = [c[half:] for c in cols[1:]] if half < n_all else None
@@ -173,6 +172,9 @@ def dos_data(path: Path) -> Dict[str, Any]:
         "kind": "dos", "name": path.name, "energy": energy.tolist(),
         "fermi": float(maxV), "reference": "vacuum" if has_potc else "fermi",
         "spin_polarized": spin,
+        # the computed DOS window: no data beyond it (the plot shades that region)
+        "window": [float(energy[0]), float(energy[-1])] if len(energy) else None,
+        "edge_pileup": int(pileup),
         "projections": [{"label": lab, "up": u.tolist(),
                          "down": (d.tolist() if spin else None)}
                         for lab, u, d in zip(labels, up, down or up)],
@@ -200,7 +202,9 @@ TRANSPORT_QUANTITIES = {
     "SEEBECK": ("Seebeck coefficient", "µV/K", 1e6),
     "SIGMA": ("Electrical conductivity σ", "S/m", 1.0),
     "SIGMAS": ("σS (conductivity × Seebeck)", "A/(m·K)", 1.0),
-    "KAPPA": ("Electronic thermal conductivity κ", "W/(m·K)", 1.0),
+    # KAPPA.dat: the manual's κₑ (CRYSTAL23 Eq. 14.3) is the zero-field
+    # coefficient κ₀; the electronic κₑ at zero current is κ₀ − T·σ·S²
+    "KAPPA": ("Zero-field thermal coefficient κ₀ (the manual's κₑ, Eq. 14.3)", "W/(m·K)", 1.0),
     "TDF": ("Transport distribution function", "1/ħ²·eV·fs/Å", 1.0),
 }
 _TRANSPORT_RE = re.compile(r"^(?P<stem>.+)\.(?P<q>SEEBECK|SIGMAS|SIGMA|KAPPA|TDF)\.dat$", re.I)

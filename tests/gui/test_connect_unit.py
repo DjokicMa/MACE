@@ -164,12 +164,18 @@ def test_no_tty_and_no_gateway_exits_2(tmp_path):
     (2, ["mace gui: error: unrecognized arguments: --managed"], [], "old-remote"),
     (2, ["mace: error: argument command: invalid choice: 'gui' (choose from 'workflow', ...)"], [], "old-remote"),
     (127, ["bash: line 1: mace: command not found"], [], "mace-not-found"),
-    (1, ["bash: line 1: cd: /nope: No such file or directory"], [], "mace-not-found"),
+    (1, ["bash: line 1: cd: /nope: No such file or directory"], [], "dir"),
     (2, ["mace gui: /x is not a directory"], [], "dir"),
     (98, [], ["MACE_GUI_ERROR port-busy"], "port-busy"),
     (255, ["channel 2: open failed: administratively prohibited: open failed"], [], "forwarding"),
     (255, ["me@dev-node-01: Permission denied (publickey,gssapi-with-mic)."], [], "node-auth"),
-    (255, ["me@gw.example.edu: Permission denied (publickey)."], [], "ssh"),
+    (255, ["me@gw.example.edu: Permission denied (publickey)."], [], "key"),
+    (255, ["me@gw.example.edu: Permission denied (publickey,password)."], [], "key"),
+    (255, ['Load key "/home/me/.ssh/id_ed25519": incorrect passphrase supplied to decrypt private key',
+           "me@gw.example.edu: Permission denied (publickey,keyboard-interactive)."], [], "key"),
+    (255, ["read_passphrase: can't open /dev/tty: No such device or address",
+           "me@gw.example.edu: Permission denied (publickey)."], [], "key"),
+    (255, ["me@gw.example.edu: Permission denied (password)."], [], "ssh"),
     (255, ["Host key verification failed."], [], "host-key"),
     (255, ["ssh: Could not resolve hostname gw: Name or service not known"], [], "ssh"),
 ])
@@ -178,6 +184,9 @@ def test_classify_failure(code, err, out, kind):
     assert got == kind, msg
     if kind == "old-remote":
         assert "older than this connect" in msg and "run-it-on-a-cluster" in msg
+    if kind == "key":
+        assert "ssh-add" in msg and 'eval "$(ssh-agent)"' in msg and "OpenSSH Authentication Agent" in msg
+        assert "Host alias from ~/.ssh/config" in msg
     if kind == "forwarding":
         assert "administratively prohibited" in msg and "ask your administrators" in msg
         assert "OnDemand" not in msg
@@ -236,3 +245,272 @@ def test_stopped_page_command_quotes_the_folder(tmp_path):
     assert out == ["/home/u/runs", "'/home/u/my runs'", "'/x/it'\"'\"'s'"]
     import shlex
     assert [shlex.split(w)[0] for w in out] == ["/home/u/runs", "/home/u/my runs", "/x/it's"]
+
+
+def test_key_failure_needs_ssh_exit_255():
+    denied = ["me@gw.example.edu: Permission denied (publickey)."]
+    assert C.key_auth_failed(255, denied)
+    assert C.key_auth_failed(255, ["Enter passphrase for key '/home/me/.ssh/id_rsa': "])
+    assert C.key_auth_failed(255, ["sign_and_send_pubkey: signing failed for ED25519 \"/home/me/.ssh/id_ed25519\" "
+                                   "from agent: agent refused operation", *denied])
+    assert not C.key_auth_failed(1, denied)          # the remote command failed, not ssh
+    assert not C.key_auth_failed(255, ["ssh: Could not resolve hostname gw: Name or service not known"])
+
+
+@pytest.mark.parametrize("gateway,hosts,flagged", [
+    ("netid@university.edu", [], True),
+    ("NetID@University.EDU", [], True),
+    ("me@cluster.org", [], True),                   # a real two-label login host: warned, an alias silences it
+    ("netid@login.university.edu", [], False),
+    ("me@hpcc.example.edu", [], False),
+    ("hpcc", [], False),
+    ("me@gw", [], False),
+    ("me@10.0.0.5", [], False),
+    ("netid@university.edu", ["university.edu"], False),
+    ("netid@university.edu", ["*.edu"], False),
+    ("netid@university.edu", ["other", "university.*"], False),
+    ("netid@university.edu", ["hpcc", "*.example.org"], True),
+])
+def test_gateway_looks_like_email(gateway, hosts, flagged):
+    assert C.gateway_looks_like_email(gateway, hosts) is flagged
+
+
+def test_ssh_config_host_patterns(tmp_path):
+    cfg = tmp_path / "config"
+    cfg.write_text("Host hpcc university.edu\n  HostName login.university.edu\n  User netid\n"
+                   "host=*.example.org !bad.example.org\nHostKeyAlgorithms ssh-ed25519\nMatch host x\n")
+    assert C.ssh_config_hosts(cfg) == ["hpcc", "university.edu", "*.example.org"]
+    assert C.ssh_config_hosts(tmp_path / "missing") == []
+
+
+def _stub_ssh(tmp_path, stderr_text):
+    """An "ssh" that logs that it ran, prints ssh's message and exits 255."""
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    ran = tmp_path / "ran"
+    ssh = fakebin / "ssh"
+    ssh.write_text("#!/bin/sh\necho \"$@\" >> %s\nprintf '%%s\\n' %s >&2\nsleep 0.2\nexit 255\n"
+                   % (shlex.quote(str(ran)), " ".join(shlex.quote(x) for x in stderr_text)))
+    ssh.chmod(0o755)
+    return fakebin, ran
+
+
+def _connect(tmp_path, fakebin, *args):
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON") and k not in ("BROWSER",)}
+    env.update(PATH=f"{fakebin}:/usr/bin:/bin", XDG_CONFIG_HOME=str(tmp_path / "cfg"), HOME=str(tmp_path / "home"))
+    (tmp_path / "home").mkdir(exist_ok=True)
+    return subprocess.run([sys.executable, str(Path(C.__file__).resolve().parents[2] / "mace_cli"), "--no-banner",
+                           "gui", "connect", "--no-open", *args], env=env, stdin=subprocess.DEVNULL,
+                          capture_output=True, text=True, timeout=60)
+
+
+@pytest.mark.parametrize("stderr_text", [
+    ["netid@login.example.edu: Permission denied (publickey)."],
+    ["read_passphrase: can't open /dev/tty: No such device or address",
+     "netid@login.example.edu: Permission denied (publickey,password)."],
+    ['Load key "/home/netid/.ssh/id_ed25519": incorrect passphrase supplied to decrypt private key',
+     "netid@login.example.edu: Permission denied (publickey,gssapi-keyex,gssapi-with-mic)."],
+])
+def test_key_failure_prints_the_agent_hint(tmp_path, stderr_text):
+    fakebin, ran = _stub_ssh(tmp_path, stderr_text)
+    r = _connect(tmp_path, fakebin, "--gateway", "netid@login.example.edu")
+    assert r.returncode == 1 and ran.exists()
+    assert "mace gui connect: " + C.KEY_HINT in r.stdout
+    assert "looks like an email address" not in r.stderr
+    assert "ssh could not connect: check the gateway" not in r.stdout
+
+
+def test_email_like_gateway_warns_and_still_connects(tmp_path):
+    fakebin, ran = _stub_ssh(tmp_path, ["ssh: connect to host university.edu port 22: Connection timed out"])
+    C.save_profiles({"defaults": {"profile": "hpcc"}, "profiles": {"hpcc": {"gateway": "netid@university.edu"}}},
+                    tmp_path / "cfg" / "mace" / "connect.toml")
+    r = _connect(tmp_path, fakebin)
+    want = C.email_gateway_warning("netid@university.edu", tmp_path / "cfg" / "mace" / "connect.toml", "hpcc")
+    assert want in r.stderr
+    assert "user@login-host" in want and "mace gui connect hpcc --gateway <user@login-host> --save" in want
+    # a warning: ssh still ran, to the saved gateway
+    assert "Connecting to netid@university.edu..." in r.stdout
+    assert "netid@university.edu" in ran.read_text()
+    assert C.KEY_HINT not in r.stdout
+    # an ~/.ssh/config Host for it silences the warning
+    (tmp_path / "home" / ".ssh").mkdir(parents=True)
+    (tmp_path / "home" / ".ssh" / "config").write_text("Host university.edu\n  HostName login.university.edu\n")
+    r = _connect(tmp_path, fakebin)
+    assert "looks like an email address" not in r.stderr
+
+
+# ---- a ~ that the local shell expanded (--mace ~/x arrives as /home/you/x)
+
+def test_localize_home_paths_rewrites_only_remote_paths_under_this_home():
+    prof = {"gateway": "g", "node": "n", "dir": "/home/you/my runs", "mace": "python3  /home/you/m/mace_cli",
+            "roots": ["/home/you", "/scratch/x", "/home/yours/y"], "conda": "/home/you/envs/m",
+            "setup": "source /home/you/a.sh", "ssh_options": ["-oIdentityFile=/home/you/.ssh/k"]}
+    pairs = C.localize_home_paths(prof, home="/home/you/")
+    assert prof["dir"] == "~/my runs" and prof["mace"] == "python3  ~/m/mace_cli"
+    assert prof["roots"] == ["~", "/scratch/x", "/home/yours/y"] and prof["conda"] == "~/envs/m"
+    # shell code the user quotes, and local paths (ssh's key file), stay as written
+    assert prof["setup"] == "source /home/you/a.sh" and prof["ssh_options"] == ["-oIdentityFile=/home/you/.ssh/k"]
+    assert pairs == [("/home/you/my runs", "~/my runs"), ("/home/you/envs/m", "~/envs/m"),
+                     ("/home/you/m/mace_cli", "~/m/mace_cli"), ("/home/you", "~")]
+    note = C.localized_note(pairs)
+    assert note.startswith("Note: treated /home/you/my runs as ~/my runs, ")
+    assert "quote the ~, as '~/my runs', to avoid this" in note
+    # nothing to do: no note; a home of "/" never rewrites
+    assert C.localize_home_paths({"dir": "~/x", "mace": "mace"}, home="/home/you") == []
+    assert C.localize_home_paths({"dir": "/x/y"}, home="/") == []
+
+
+def test_double_slash_is_a_literal_path_never_rewritten():
+    """A leading // marks a literal absolute path on the node (one that happens
+    to sit under this computer's home folder too): not rewritten to ~/..., no
+    note, and sent with the extra slash dropped."""
+    prof = {"gateway": "g", "node": "n", "dir": "//home/you/my runs", "mace": "python3 //home/you/m/mace_cli",
+            "roots": ["//home/you", "/home/you/x"], "conda": "//home/you/envs/m"}
+    pairs = C.localize_home_paths(prof, home="/home/you")
+    assert pairs == [("/home/you/x", "~/x")]
+    assert prof["dir"] == "//home/you/my runs" and prof["mace"] == "python3 //home/you/m/mace_cli"
+    assert prof["roots"] == ["//home/you", "~/x"] and prof["conda"] == "//home/you/envs/m"
+    cmd = C.remote_command(prof, 1)
+    assert "//home" not in cmd
+    for want in ("cd -- '\"'\"'/home/you/my runs'\"'\"'", "/home/you/m/mace_cli", "--root /home/you ",
+                 "conda activate /home/you/envs/m"):
+        assert want in cmd, (want, cmd)
+
+
+def test_literal_path_runs_at_that_path_on_the_node(tmp_path):
+    here = tmp_path / "same_path"     # the mace words are split on blanks
+    rec = tmp_path / "rec"
+    stub = here / "mace_cli"
+    stub.parent.mkdir(parents=True)
+    stub.write_text(f"#!/bin/sh\npwd > {shlex.quote(str(rec))}\n")
+    stub.chmod(0o755)
+    (here / "my runs").mkdir()
+    node_home = tmp_path / "node home"
+    node_home.mkdir()
+    prof = {"gateway": "g", "node": "n", "mace": "/" + str(stub), "dir": "/" + str(here / "my runs")}
+    assert C.localize_home_paths(prof, home=str(tmp_path)) == []
+    r = subprocess.run(["sh", "-c", C.remote_command(prof, 1)], env={"HOME": str(node_home), "PATH": "/usr/bin:/bin"},
+                       capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    assert rec.read_text().strip() == str(here / "my runs")
+
+
+def test_localized_mace_runs_from_the_nodes_home(tmp_path):
+    """The maintainer's case: --mace ~/mace-1.1.5-test/mace/mace_cli, expanded here to this computer's home;
+    the node's home is elsewhere, and the command must find mace_cli there (~ expanded on the node)."""
+    node_home = tmp_path / "node home"
+    rec = tmp_path / "rec"
+    stub = node_home / "mace-1.1.5-test" / "mace" / "mace_cli"
+    stub.parent.mkdir(parents=True)
+    stub.write_text(f"#!/bin/sh\npwd > {shlex.quote(str(rec))}\n")
+    stub.chmod(0o755)
+    (node_home / "runs").mkdir()
+    prof = {"gateway": "g", "node": "n", "mace": "/home/you/mace-1.1.5-test/mace/mace_cli", "dir": "/home/you/runs"}
+    assert len(C.localize_home_paths(prof, home="/home/you")) == 2
+    r = subprocess.run(["sh", "-c", C.remote_command(prof, 1)], env={"HOME": str(node_home), "PATH": "/usr/bin:/bin"},
+                       capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    assert rec.read_text().strip() == str(node_home / "runs")
+
+
+def _cli(tmp_path, *args, path=None):
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON") and k not in ("BROWSER",)}
+    env.update(XDG_CONFIG_HOME=str(tmp_path / "cfg"), HOME=str(tmp_path / "home"))
+    if path:
+        env["PATH"] = path
+    (tmp_path / "home").mkdir(exist_ok=True)
+    return subprocess.run([sys.executable, str(Path(C.__file__).resolve().parents[2] / "mace_cli"), "--no-banner",
+                           "gui", "connect", *args], env=env, stdin=subprocess.DEVNULL, capture_output=True,
+                          text=True, timeout=60)
+
+
+def test_cli_rewrites_flags_and_saved_profiles_with_one_note(tmp_path):
+    home = str(tmp_path / "home")
+    r = _cli(tmp_path, "--gateway", "me@gw", "--node", "n1", "--hop", "jump", "--mace", f"{home}/m/mace_cli",
+             "--dir", f"{home}/runs", "--root", f"{home}/proj", "--save", "p", "--dry-run")
+    assert r.returncode == 0, r.stderr
+    notes = [ln for ln in r.stderr.splitlines() if ln.startswith("Note: treated")]
+    assert notes == [f"Note: treated {home}/runs as ~/runs, {home}/m/mace_cli as ~/m/mace_cli, {home}/proj as "
+                     "~/proj on the remote (your shell turned ~ into this computer's home folder; quote the ~, as "
+                     "'~/runs', to avoid this)."]
+    rcmd = shlex.split([ln for ln in r.stdout.splitlines() if ln.startswith("exec bash -lc ")][0])[-1]
+    assert 'cd -- "$HOME"/runs && exec "$HOME"/m/mace_cli ' in rcmd and '--root "$HOME"/proj' in rcmd
+    assert home not in r.stdout
+    saved = C.load_profiles(tmp_path / "cfg" / "mace" / "connect.toml")["profiles"]["p"]
+    assert saved["mace"] == "~/m/mace_cli" and saved["dir"] == "~/runs" and saved["roots"] == ["~/proj"]
+    assert "_localized" not in saved
+    # a profile saved earlier with the expanded path is fixed on the way out too
+    C.save_profiles({"defaults": {"profile": "old"}, "profiles": {"old": {"gateway": "me@gw", "node": "n1",
+                     "mace": f"{home}/m/mace_cli"}}}, tmp_path / "cfg" / "mace" / "connect.toml")
+    r = _cli(tmp_path, "--dry-run")
+    assert f"Note: treated {home}/m/mace_cli as ~/m/mace_cli on the remote" in r.stderr
+    assert '"$HOME"/m/mace_cli' in r.stdout and home not in r.stdout
+    # a quoted ~ (what the note asks for) needs no note
+    r = _cli(tmp_path, "--dry-run", "--mace", "~/m/mace_cli")
+    assert "Note: treated" not in r.stderr and '"$HOME"/m/mace_cli' in r.stdout
+
+
+def test_mace_not_found_names_the_rewritten_path(tmp_path):
+    fakebin = tmp_path / "fakebin"
+    fakebin.mkdir()
+    (fakebin / "ssh").write_text("#!/bin/sh\n[ \"$1\" = -G ] && exit 0\n"
+                                 "echo 'bash: line 1: /mnt/home/me/m/mace_cli: No such file or directory' >&2\n"
+                                 "exit 127\n")
+    (fakebin / "ssh").chmod(0o755)
+    home = str(tmp_path / "home")
+    r = _cli(tmp_path, "--no-open", "--gateway", "me@gw", "--node", "n1", "--hop", "jump", "--mace",
+             f"{home}/m/mace_cli", path=f"{fakebin}:/usr/bin:/bin")
+    assert r.returncode == 127
+    assert "did not find the mace command" in r.stdout
+    assert (f"{home}/m/mace_cli was a path on this computer (your shell expands an unquoted ~ here), so it was "
+            "tried as ~/m/mace_cli on n1: check that it exists there. Quote the ~ ('~/...')") in r.stdout
+    # without a rewrite, no such line
+    r = _cli(tmp_path, "--no-open", "--gateway", "me@gw", "--node", "n1", "--hop", "jump", "--mace", "~/m/mace_cli",
+             path=f"{fakebin}:/usr/bin:/bin")
+    assert r.returncode == 127 and "was a path on this computer" not in r.stdout
+
+
+# ---- the node hop of ssh -J gets the gateway's key settings (else ssh asks for the node's password)
+
+class _G:
+    def __init__(self, table):
+        self.table, self.calls = table, []
+
+    def __call__(self, argv, **kw):
+        self.calls.append(argv)
+        host = argv[-1]
+        return subprocess.CompletedProcess(argv, 0, stdout=self.table.get(host, "identityfile ~/.ssh/id_ed25519\n"))
+
+
+def test_node_key_options_carry_the_gateways_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / ".ssh").mkdir()
+    (tmp_path / ".ssh" / "id_cluster").write_text("k")
+    gw = ("user netid\nidentityfile ~/.ssh/id_cluster\nidentityfile ~/.ssh/missing\nidentityagent /run/a.sock\n"
+          "identitiesonly yes\n")
+    run = _G({"hpcc": gw})
+    assert C.node_key_options("hpcc", "netid@dev-node", run) == [
+        "-o", "IdentityFile=~/.ssh/id_cluster", "-o", "IdentityAgent=/run/a.sock", "-o", "IdentitiesOnly=yes"]
+    assert [c[:2] for c in run.calls] == [["ssh", "-G"], ["ssh", "-G"]]
+    # the node's config already names them: nothing to add
+    assert C.node_key_options("hpcc", "netid@dev-node", _G({"hpcc": gw, "netid@dev-node": gw})) == []
+    # a gateway on ssh's defaults: nothing to add
+    assert C.node_key_options("me@gw", "me@n", _G({})) == []
+    assert C.node_key_options("", "n", run) == []
+
+
+def test_node_keys_go_to_the_jump_hop_only():
+    keys = ["-o", "IdentityFile=~/.ssh/id_cluster"]
+    argv = C.build_ssh_argv({**PROF, "ssh_options": ["-v"]}, 8765, 40000, 40001, "jump", node_keys=keys)
+    assert argv[9:12] == keys + ["-v"] and argv[12:14] == ["-L", "127.0.0.1:8765:127.0.0.1:40000"]
+    assert "IdentityFile=~/.ssh/id_cluster" not in C.build_ssh_argv(PROF, 8765, 40000, 40001, "nested",
+                                                                     node_keys=keys)
+
+
+def test_node_refusal_points_to_the_password_doc():
+    kind, msg = C.classify_failure(255, ["netid@dev-node-01: Permission denied (publickey,password)."],
+                                   "dev-node-01", "netid@gw")
+    assert kind == "node-auth" and C.DOCS_NODE_PASSWORD in msg and "from this computer" in msg
+    doc = (Path(C.__file__).resolve().parents[2] / "docs" / "gui.md").read_text()
+    assert "\n### mace gui connect: the node asks for a password\n" in doc
+    assert C.DOCS_NODE_PASSWORD == "docs/gui.md#mace-gui-connect-the-node-asks-for-a-password"

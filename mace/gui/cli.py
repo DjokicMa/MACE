@@ -31,7 +31,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 DEFAULT_PORT = 8765
-GATEWAY_PLACEHOLDER = "<gateway>"
+# what the hint prints when no gateway is known: a word bash and PowerShell
+# take as is (a <gateway> is a redirect there), named in the note under it
+GATEWAY_PLACEHOLDER = "LOGIN_HOST"
+GATEWAY_RE = re.compile(r"^(?:[A-Za-z0-9._-]{1,64}@)?[A-Za-z0-9][A-Za-z0-9.-]{0,252}$")
 # a chosen token goes into a URL and a cookie as it is, and the session path
 # is derived from it: URL-safe characters only, and long enough not to guess
 TOKEN_RE = re.compile(r"[A-Za-z0-9._~-]{16,}")
@@ -108,7 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
                         "the same privately)")
     p.add_argument("--gateway", default=os.environ.get("MACE_GUI_GATEWAY", "").strip() or None,
                    help="your cluster's login host, shown in the port-forwarding hint "
-                        f"(default MACE_GUI_GATEWAY, else {GATEWAY_PLACEHOLDER})")
+                        f"(default MACE_GUI_GATEWAY, else [gui] gateway in site.toml, else {GATEWAY_PLACEHOLDER})")
     p.add_argument("--open", action="store_true", help="open a browser on this machine")
     p.add_argument("--gpu", type=int, metavar="N",
                    help="with --open: the NVIDIA GPU the browser that this starts renders on "
@@ -185,10 +188,27 @@ VSCODE_HINT = ["VS Code: this terminal forwards the port for you. Ctrl+click the
                "the bare address, which needs the token."]
 
 
+def default_gateway() -> Optional[str]:
+    """The cluster's login host for the hints: MACE_GUI_GATEWAY, else
+    ``[gui] gateway`` in site.toml (a cluster's group file can set it for
+    everyone). Only a plain host or user@host is used; anything else (or an
+    unreadable settings file) gives None."""
+    gw = (os.environ.get("MACE_GUI_GATEWAY") or "").strip()
+    if not gw:
+        try:
+            from mace.submission import site
+            tables, _, _ = site.load_tables()
+            val = (tables.get("gui") or {}).get("gateway")
+            gw = val.strip() if isinstance(val, str) else ""
+        except Exception:
+            gw = ""
+    return gw if gw and GATEWAY_RE.match(gw) else None
+
+
 def connect_line(gateway: Optional[str], root: Optional[str] = None) -> str:
     user = getpass.getuser()
     node, _ = node_name()
-    gw = gateway or GATEWAY_PLACEHOLDER
+    gw = gateway or default_gateway() or GATEWAY_PLACEHOLDER
     gw = gw if "@" in gw else f"{user}@{gw}"
     return f"mace gui connect --gateway {gw} --node {node}" + (f" --dir {_shq(root)}" if root else "")
 
@@ -203,20 +223,27 @@ def ssh_hint(port: int, gateway: Optional[str], root: Optional[str] = None) -> L
     connect one-liner, the plain ssh line, the hop note."""
     user = getpass.getuser()
     node, fqdn = node_name()
+    gateway = gateway or default_gateway()
     gw = gateway or GATEWAY_PLACEHOLDER
     gw = gw if "@" in gw else f"{user}@{gw}"
     lines = [
         f"This server runs on {node}. The tunnel must go to this exact node." + (f" ({fqdn})" if fqdn else ""),
         "From your computer, with MACE installed there:",
         f"  {connect_line(gateway, root)}",
+        "Without MACE there (MobaXterm's local terminal, Git Bash, PowerShell): make the standalone script here, copy",
+        "it to your computer and run it there (bash mace-gui-connect.sh; for PowerShell use --export-script powershell",
+        "-o mace-gui-connect.ps1 and run .\\mace-gui-connect.ps1):",
+        f"  {connect_line(gateway, root)} --export-script bash -o mace-gui-connect.sh",
         "Or with ssh alone (leave it running), then open the URL above:",
         f"  ssh -N -J {gw} -L {port}:127.0.0.1:{port} {user}@{node}",
         "(if the port is taken on your computer, change the first number and the URL's port)",
+        f"(it listens only on {node}'s 127.0.0.1: a tunnel must end at 127.0.0.1:{port} on {node}, as this line does;",
+        f"one that ends at {node}:{port} never reaches it and the browser keeps loading)",
         "If your cluster's nodes accept logins only from the login node, add --hop nested (see docs/gui.md).",
     ]
     if not gateway:
-        lines.append(f"({GATEWAY_PLACEHOLDER} is your cluster's login host; export MACE_GUI_GATEWAY=<host> "
-                     "or pass --gateway to fill it in)")
+        lines.append(f"(replace {GATEWAY_PLACEHOLDER} with your cluster's login host; export MACE_GUI_GATEWAY=host, "
+                     "pass --gateway, or set [gui] gateway in site.toml to fill it in)")
     return lines
 
 
@@ -226,6 +253,35 @@ def headless_ssh_node(env=None) -> bool:
     e = os.environ if env is None else env
     return (sys.platform.startswith("linux") and bool(e.get("SSH_CONNECTION"))
             and not any(e.get(k) for k in ("DISPLAY", "WAYLAND_DISPLAY", "BROWSER")))
+
+
+def x11_forwarded(env=None) -> bool:
+    """DISPLAY is ssh's X11 forwarding (MobaXterm turns it on by default):
+    an ssh session, a DISPLAY with a host part (localhost:10.0), no $BROWSER
+    (VS Code's opens on your computer)."""
+    e = os.environ if env is None else env
+    display = e.get("DISPLAY") or ""
+    return bool(e.get("SSH_CONNECTION")) and not e.get("BROWSER") and bool(re.match(r"^[^:/]+:\d", display))
+
+
+def browser_blocked_reason(env=None) -> Optional[str]:
+    """Why --open starts no browser here, or None."""
+    if headless_ssh_node(env):
+        return NO_BROWSER
+    if x11_forwarded(env):
+        return ("Not opening a browser on this node: DISPLAY is ssh's X11 forwarding, so it would draw on your "
+                "computer through X11, slowly. Open the URL on your computer through a tunnel (mace gui connect, "
+                "or the ssh line below).")
+    return None
+
+
+def server_environment() -> None:
+    """The server never draws through X: matplotlib (plots made in the
+    server and in its workers, which inherit this) uses Agg even when DISPLAY
+    is set by X11 forwarding or MPLBACKEND names an interactive backend. Set
+    after capture_login_env, so jobs submitted from the GUI keep the login
+    environment."""
+    os.environ["MPLBACKEND"] = "Agg"
 
 
 NO_BROWSER = ("No browser on this node: open the URL on your computer through a tunnel (mace gui connect, "
@@ -298,6 +354,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     from .childenv import capture_login_env
     capture_login_env()          # before the server: what jobs submitted from the GUI get (submit.py)
     args = build_parser().parse_args(argv)
+    server_environment()
     from . import diaglog
     diaglog.install()           # the last server log lines, for Copy Diagnostics
     root = Path(args.dir).expanduser()
@@ -569,8 +626,9 @@ def _serve(args, httpd, state, remember) -> int:
     if args.gpu is not None and not args.open:
         print("mace gui: --gpu applies with --open (the browser it starts)", file=sys.stderr)
     if args.open:
-        if headless_ssh_node():
-            print(NO_BROWSER, file=sys.stderr)
+        blocked = browser_blocked_reason()
+        if blocked:
+            print(blocked, file=sys.stderr)
         else:
             open_browser(state.mint_login_url(base), args.gpu)
     _guard_std_streams()

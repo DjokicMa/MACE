@@ -32,6 +32,8 @@ BLANK_I = "y\n\n\n\n\nn\n"
 def _norm(text, tmp):
     text = (text.replace(str(tmp), "@TMP@").replace(str(REPO_ROOT), "@REPO@")
             .replace(os.path.abspath(sys.executable), "@PY@"))
+    # the job script's checksum line covers the paths replaced above
+    text = re.sub(r"(cksum of the lines above: )\d+ \d+", r"\1@CKSUM@", text)
     # the module-discovery comment names the machine the test runs on
     return re.sub(r"does not load on \S+; using", "does not load on @HOST@; using", text)
 

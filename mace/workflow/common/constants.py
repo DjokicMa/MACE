@@ -57,7 +57,24 @@ WORKFLOW_TEMPLATES = {
     "combined_analysis": ["OPT", "SP", "BAND", "DOSS", "TRANSPORT"],
 }
 
-# Default SLURM resource allocations
+# The built-in MPI ranks of a properties job (BAND, DOSS, TRANSPORT,
+# CHARGE+POTENTIAL; Pproperties): the one place this number lives. The job
+# scripts (submit_prop.sh), the site settings, the planner, quick start and
+# `mace submit` all take it from here. Measured on MSU HPCC: BAND and DOSS
+# runs on 28 ranks kept 0.4-0.9 cores busy (1-3 %), and a work-based sizing
+# of 160+ properties runs asked for 8 or fewer ranks for most of them (12-19
+# only for the largest slabs). Pproperties does spread k-points over ranks,
+# so it is not 1; their memory is a total (--mem), not per rank, and stays.
+PROPERTIES_NTASKS = 8
+# The built-in memory of a properties job: a total (#SBATCH --mem), the same
+# for every properties type and every path (template, mace submit, planner,
+# quick start, workflow steps). Measured peaks stay under 0.6 GB per rank.
+PROPERTIES_MEMORY = "80G"
+
+# Default SLURM resource allocations: MACE's built-in values. A user's or
+# group's site settings replace them ([resources] ntasks, mem_per_cpu, ... in
+# ~/.config/mace/site.toml, or MACE_SLURM_NTASKS); `mace site` shows what
+# applies (docs/cli.md, "Change the default cores per job").
 SLURM_RESOURCE_DEFAULTS = {
     "OPT": {
         "ntasks": 32,
@@ -81,31 +98,31 @@ SLURM_RESOURCE_DEFAULTS = {
         "account": "mendoza_q",
     },
     "BAND": {
-        "ntasks": 28,
+        "ntasks": PROPERTIES_NTASKS,
         "nodes": 1,
         "walltime": "2:00:00",
-        "memory": "48G",  # Total memory, not per CPU
+        "memory": PROPERTIES_MEMORY,  # Total memory, not per CPU
         "account": "mendoza_q",
     },
     "DOSS": {
-        "ntasks": 28,
+        "ntasks": PROPERTIES_NTASKS,
         "nodes": 1,
         "walltime": "2:00:00",
-        "memory": "48G",  # Total memory, not per CPU
+        "memory": PROPERTIES_MEMORY,  # Total memory, not per CPU
         "account": "mendoza_q",
     },
     "TRANSPORT": {
-        "ntasks": 28,
+        "ntasks": PROPERTIES_NTASKS,
         "nodes": 1,
         "walltime": "2:00:00",
-        "memory": "80G",  # Total memory, not per CPU
+        "memory": PROPERTIES_MEMORY,  # Total memory, not per CPU
         "account": "mendoza_q",
     },
     "CHARGE+POTENTIAL": {
-        "ntasks": 28,
+        "ntasks": PROPERTIES_NTASKS,
         "nodes": 1,
         "walltime": "2:00:00",
-        "memory": "80G",  # Total memory, not per CPU
+        "memory": PROPERTIES_MEMORY,  # Total memory, not per CPU
         "account": "mendoza_q",
     },
 }

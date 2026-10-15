@@ -253,8 +253,7 @@ export function createTools(E, S, V) {
   function addHere(clientX, clientY) {
     const e = ed();
     if (!e || e.editBlock()) return null;
-    const r = document.getElementById("viewer-main").getBoundingClientRect();
-    return addAt(planePoint(clientX - r.left, clientY - r.top));
+    return addAt(planePoint(...window.maceZoom.point(document.getElementById("viewer-main"), clientX, clientY)));
   }
   let addPreview = null;
   const add = {

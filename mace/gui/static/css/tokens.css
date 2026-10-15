@@ -14,6 +14,22 @@
   --h-menubar: 32px; --h-toolbar: 40px; --h-tabs: 34px; --h-status: 24px;
   --h-row: 28px; --h-control: 28px; --icon: 16px; --icon-tb: 18px;
   --dur-1: 80ms; --dur-2: 140ms; --dur-3: 200ms; --ease: cubic-bezier(.2, 0, 0, 1);
+  /* The stacking order, lowest first: the only z-index values for anything
+   * that can overlap another part of the window. Inside a widget that isolates
+   * its own stack (a 3D view: isolation: isolate) small local numbers are fine.
+   * Menus and popovers outrank everything but tooltips and drag targets, and
+   * live in the overlay layer (ui.js overlayHost()), never inside a panel,
+   * so no panel's overflow or stacking context can hide them. */
+  --z-raised: 1;      /* sticky table headers, a focused cell over its neighbors */
+  --z-overlay: 3;     /* overlays on a 3D view or a plot: chips, badges, the axis triad, find results */
+  --z-split: 10;      /* the right editor group's frame, over the bottom panel's row */
+  --z-drawer: 30;     /* the inspector drawer below 1100px */
+  --z-float: 40;      /* floating tool panels, the Zen Mode exit chip */
+  --z-toast: 45;      /* notices: below an open menu, so they never cover one */
+  --z-menu: 50;       /* menus, context menus, popovers, the periodic table */
+  --z-tooltip: 70;
+  --z-drop: 900;      /* drag-and-drop targets over the whole window */
+  --z-blocker: 1000;  /* the page shown once the server has stopped */
 
   --bg: #f3f4f6; --surface: #ffffff; --surface-2: #f7f8fa; --surface-3: #eef0f4;
   --border: #e3e6eb; --border-strong: #848b97;

@@ -16,6 +16,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from mace.cluster import job_efficiency as job_eff
 
 from mace.cluster import render as R
 
@@ -252,10 +253,10 @@ def job_text(v) -> str:
         out.append(f"Expected start: {v['start']}")
     out.append(f"Resources: {v.get('ncpus') or '?'} cores, {v.get('nnodes') or '?'} node(s), "
                f"partition {v.get('partition') or '?'}, account {v.get('account') or '?'}")
-    eff = v.get("efficiency") or {}
-    out.append("CPU efficiency: " + (f"{eff['cpu']} %" if eff.get("cpu") is not None else eff.get("cpu_note", "")))
-    out.append("Memory: " + (f"{eff['memory']} % of the request (MaxRSS)" if eff.get("memory") is not None
-                             else eff.get("memory_note", "")))
+    eff = (v.get("live") or {}).get("efficiency") or v.get("efficiency") or {}
+    out += job_eff.lines(eff)
+    if eff.get("details"):
+        out.append("  Measured: " + ", ".join(eff["details"]))
     pr = v.get("progress")
     if pr:
         out.append(f"Progress ({pr.get('mode')}): {pr.get('summary') or ''}")
@@ -282,8 +283,8 @@ def job_text(v) -> str:
     if arr:
         by = ", ".join(f"{n} {st.lower()}" for st, n in sorted(arr["counts"].items()))
         out.append(f"Array {arr['array_job']}: {arr['total_in_queue']} task(s) in the queue" + (f" ({by})" if by else ""))
-    if v.get("live"):
-        out.append(f"Live use (sstat): {v['live']['rows']}")
+    if v.get("live") and not (v["live"].get("rows") or []):
+        out.append("Live use (sstat): " + ((v["live"].get("cache") or {}).get("error") or "no running steps"))
     out.append(f"More: {v['scontrol_command']}; in the GUI: Cluster view › Overview › Details.")
     return "\n".join(out)
 
@@ -446,13 +447,19 @@ def main(argv: Optional[List[str]] = None) -> int:
                  limits_text)
         elif cmd == "job":
             from mace.cluster import jobinfo
+            caveat_shown = False
             while True:
                 try:
                     v = jobinfo.job(args.id, refresh=args.refresh, live=args.live, tag="cli")
                 except jobinfo.NotYours as exc:
                     print(f"Job {args.id}: {exc}", file=sys.stderr)
                     return EXIT_NOT_FOUND
+                if caveat_shown:         # --follow: the CPU-efficiency caveat once, not every 60 s
+                    for e in (v.get("efficiency"), (v.get("live") or {}).get("efficiency")):
+                        if isinstance(e, dict):
+                            e["cpu_caveat"] = None
                 _out(args, v, job_text)
+                caveat_shown = True
                 if not args.follow:
                     break
                 try:

@@ -450,3 +450,25 @@ def test_clean_on_metal_shows_message(fresh):
     assert drv.execute_script("return window.__mace.viewport.models().ghost") == 0
     U.shot(drv, "clean_on_metal")
     U.keys(drv, Keys.ESCAPE)
+
+
+def test_supercell_dialog_on_a_slab_repeats_a_and_b(fresh):
+    """A SLAB output: n3 is 1 and fixed, the 2×2 build is made (a held view of a
+    slab), and a matrix that touches c says why it cannot be built."""
+    drv = fresh[0]
+    U.open_doc(drv, "outputs/graphene_slab_sp.out")
+    n0 = U.doc(drv)["n"]
+    assert n0 > 0
+    drv.execute_script("window.__mace.run('build.supercell')")
+    dialog_open(drv, "supercell")
+    vals = drv.execute_script("return [...document.querySelectorAll('.builder-dialog [data-n]')].map((i) => [i.value, i.disabled])")
+    assert vals == [["2", False], ["2", False], ["1", True]], vals
+    H.wait(drv, f"const f = window.__mace.builderFrame(); return f && f.readout.includes('{4 * n0} atoms')", 10)
+    assert frame(drv)["name"].endswith("_2x2x1")
+    drv.execute_script("document.querySelector('.builder-dialog [data-tab=matrix]').click()")
+    drv.execute_script("""const i = document.querySelector('.builder-dialog [data-m="02"]'); i.value = '1';
+        i.dispatchEvent(new Event('input', {bubbles: true}))""")
+    time.sleep(0.4)
+    f = frame(drv)
+    assert "periodic along a and b only" in f["error"] and f["goDisabled"], (f, drv.execute_script("return [...document.querySelectorAll('.builder-dialog [data-m]')].map((i) => i.value)"))
+    U.no_errors(drv)

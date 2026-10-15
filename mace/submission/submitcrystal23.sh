@@ -1,6 +1,14 @@
 #!/bin/bash --login
 # This script auto-generates and submits a SLURM batch file for CRYSTAL23 jobs, with queue management support
 
+# The job name becomes the SLURM job name, the file names and the JOB variable
+# of the script: one with a space or a shell character cannot be written.
+case "$1" in
+  ""|*[[:space:]\'\"\`\$\\\(\)\<\>\|\&\;\*\?\[\]\{\}]*)
+    echo "ERROR: \"$1\" cannot be a job name (no spaces or any of ' \" \` \$ \\ ( ) < > | & ; * ? [ ] { }); rename the deck" >&2
+    exit 1 ;;
+esac
+
 echo '#!/bin/bash --login' > $1.sh
 echo '#SBATCH -J '$1 >> $1.sh
 out=$1
@@ -31,7 +39,7 @@ if [ -z "$DIR" ]; then
 fi
 
 echo "submit directory: "
-echo $SLURM_SUBMIT_DIR
+echo "$SLURM_SUBMIT_DIR"
 
 module purge
 module load CRYSTAL/23-intel-2023a
@@ -123,6 +131,33 @@ if [ -z "$scratch" ]; then
   echo "  Not running CRYSTAL: it would read an empty INPUT." | tee -a "$DIR/$JOB.out"
   exit 1
 fi
+# ONE SCRATCH DIRECTORY PER DECK. $scratch/$JOB is named after the deck alone,
+# so two decks of the same name in different folders shared it: at the same
+# time they overwrote each other INPUT and fort.9, one after the other the
+# second restarted from the OPTINFO.DAT or fort.20 of the first. The folder
+# whose deck uses $scratch/$JOB is recorded in it (.mace_submit_dir); a deck of
+# the same name from another folder runs in
+# $scratch/.mace_by_dir/<checksum of its folder>/$JOB instead. A deck rerun
+# from its own folder keeps its directory (OPTGEOM RESTART and GUESSP read
+# OPTINFO.DAT and fort.20 there), and a directory with no record (an earlier
+# MACE, or a fort.20 staged by hand) belongs to the first deck that runs in it.
+MACE_DIR_REAL=$(cd "$DIR" 2>/dev/null && pwd -P)
+[ -n "$MACE_DIR_REAL" ] || MACE_DIR_REAL=$DIR
+( set -C; printf "%s\n" "$MACE_DIR_REAL" > "$scratch/$JOB/.mace_submit_dir" ) 2>/dev/null
+MACE_OWNER=$(head -n 1 "$scratch/$JOB/.mace_submit_dir" 2>/dev/null)
+if [ -n "$MACE_OWNER" ] && [ "$MACE_OWNER" != "$MACE_DIR_REAL" ]; then
+  MACE_BY_DIR=/.mace_by_dir/$(printf "%s" "$MACE_DIR_REAL" | cksum | cut -d" " -f1)
+  if mkdir -p "$scratch$MACE_BY_DIR/$JOB" 2>/dev/null; then
+    echo "scratch: $scratch/$JOB belongs to $JOB in $MACE_OWNER; this deck runs in $scratch$MACE_BY_DIR/$JOB"
+    scratch=$scratch$MACE_BY_DIR
+    MACE_SCRATCH_WANTED=$MACE_SCRATCH_WANTED$MACE_BY_DIR
+    MACE_SCRATCH_SUFFIX=$MACE_SCRATCH_SUFFIX$MACE_BY_DIR
+    printf "%s\n" "$MACE_DIR_REAL" > "$scratch/$JOB/.mace_submit_dir" 2>/dev/null
+  else
+    echo "scratch: cannot create $scratch$MACE_BY_DIR/$JOB - sharing $scratch/$JOB with $JOB in $MACE_OWNER"
+    MACE_SHARED=1
+  fi
+fi
 if [ "$scratch" != "$MACE_SCRATCH_WANTED" ]; then
   echo "scratch: using $scratch/$JOB instead of $MACE_SCRATCH_WANTED/$JOB"
 fi
@@ -133,8 +168,16 @@ echo "scratch directory: $scratch/$JOB"
 # OPTINFO.DAT (or this one has none), OPTINFO.DAT, fort.20 and fort.9 are
 # taken from it together, so the history and the density matrix always come
 # from the same run - one it lacks is removed here rather than left over from
-# an older run.
+# an older run. Only from a directory of the deck in this folder (or one with
+# no record): a directory that a same-named deck in another folder has
+# claimed since holds the files of that deck.
 MACE_SCRATCH_PREV=$(cat "$DIR/.$JOB.scratch" 2>/dev/null)
+MACE_PREV_OWNER=$(head -n 1 "$MACE_SCRATCH_PREV/.mace_submit_dir" 2>/dev/null)
+if [ -n "$MACE_PREV_OWNER" ] && [ "$MACE_PREV_OWNER" != "$MACE_DIR_REAL" ] \
+   && [ "$MACE_SCRATCH_PREV" != "$scratch/$JOB" ]; then
+  echo "scratch: not bringing restart files over from $MACE_SCRATCH_PREV - it now belongs to $JOB in $MACE_PREV_OWNER"
+  MACE_SCRATCH_PREV=
+fi
 if [ -n "$MACE_SCRATCH_PREV" ] && [ "$MACE_SCRATCH_PREV" != "$scratch/$JOB" ] \
    && [ -f "$MACE_SCRATCH_PREV/OPTINFO.DAT" ] \
    && [ "$MACE_SCRATCH_PREV/OPTINFO.DAT" -nt "$scratch/$JOB/OPTINFO.DAT" ]; then
@@ -148,8 +191,11 @@ if [ -n "$MACE_SCRATCH_PREV" ] && [ "$MACE_SCRATCH_PREV" != "$scratch/$JOB" ] \
   echo "scratch: brought OPTINFO.DAT, fort.20 and fort.9 over from the previous run in $MACE_SCRATCH_PREV"
 fi
 echo "$scratch/$JOB" > "$DIR/.$JOB.scratch" 2>/dev/null
-mkdir  -p $scratch/$JOB
-cp $DIR/$JOB.d12  $scratch/$JOB/INPUT
+mkdir -p "$scratch/$JOB"
+# The claim of this folder, written again every run (a purged scratch or a lost
+# record), unless the directory is shared with the deck that owns it.
+[ -n "$MACE_SHARED" ] || printf "%s\n" "$MACE_DIR_REAL" > "$scratch/$JOB/.mace_submit_dir" 2>/dev/null
+cp "$DIR/$JOB.d12" "$scratch/$JOB/INPUT"
 # OPTGEOM RESTART - a walltime-killed optimization continuing from its last
 # completed step. The recovery adds RESTART to the OPTGEOM block of the same
 # deck, so this job has the same $JOB name and therefore the same scratch
@@ -310,16 +356,22 @@ if [ -f "$DIR/$JOB.ext" ]; then
   cp "$DIR/$JOB.ext" "$scratch/$JOB/fort.34"
   echo "EXTERNAL: staged $JOB.ext as fort.34"
 fi
-cd $scratch/$JOB
+# files this run writes are newer than this marker (dated two seconds back:
+# file times can be coarser than the moment between it and a fast write)
+touch -d "2 seconds ago" "$scratch/$JOB/.mace_run_start" 2>/dev/null || touch "$scratch/$JOB/.mace_run_start"
+cd "$scratch/$JOB" || { echo "ERROR: cannot enter $scratch/$JOB. Not running CRYSTAL."; exit 1; }
 
-I_MPI_HYDRA_BOOTSTRAP="ssh" mpirun -n $SLURM_NTASKS $EBROOTCRYSTAL/bin/Pcrystal 2>&1 >& $DIR/${JOB}.out
-#srun Pcrystal 2>&1 >& $DIR/${JOB}.out
-cp fort.9 ${DIR}/${JOB}.f9 
+I_MPI_HYDRA_BOOTSTRAP="ssh" mpirun -n "$SLURM_NTASKS" "$EBROOTCRYSTAL/bin/Pcrystal" 2>&1 >& "$DIR/${JOB}.out"
+#srun Pcrystal 2>&1 >& "$DIR/${JOB}.out"
+# Only a fort.9 this run wrote: the one an earlier run left in $scratch/$JOB
+# (CRYSTAL stopped before writing its own) would replace $JOB.f9 with an old
+# wavefunction.
+[ fort.9 -nt .mace_run_start ] && cp fort.9 "$DIR/$JOB.f9"
 
 
 # ADDED: Auto-submit new jobs when this one completes
 # Check multiple possible locations for queue managers
-cd $DIR
+cd "$DIR" || echo "WARNING: cannot enter $DIR; the steps below use full paths"
 
 # SCRATCH FALLBACK CLEANUP. When the scratch guard had to fall back, the
 # output says where CRYSTAL ran. The submit-directory fallback (.mace_scratch)
@@ -376,19 +428,19 @@ fi
 
 # If still not found, check standard relative locations
 if [ -z "$QUEUE_MANAGER" ]; then
-    if [ -f $DIR/mace/queue/manager.py ]; then
+    if [ -f "$DIR/mace/queue/manager.py" ]; then
         QUEUE_MANAGER="$DIR/mace/queue/manager.py"
-    elif [ -f $DIR/../../../../mace/queue/manager.py ]; then
+    elif [ -f "$DIR/../../../../mace/queue/manager.py" ]; then
         QUEUE_MANAGER="$DIR/../../../../mace/queue/manager.py"
-    elif [ -f $DIR/../../../../../mace/queue/manager.py ]; then
+    elif [ -f "$DIR/../../../../../mace/queue/manager.py" ]; then
         QUEUE_MANAGER="$DIR/../../../../../mace/queue/manager.py"
-    elif [ -f $DIR/enhanced_queue_manager.py ]; then
+    elif [ -f "$DIR/enhanced_queue_manager.py" ]; then
         QUEUE_MANAGER="$DIR/enhanced_queue_manager.py"
-    elif [ -f $DIR/../../../../enhanced_queue_manager.py ]; then
+    elif [ -f "$DIR/../../../../enhanced_queue_manager.py" ]; then
         QUEUE_MANAGER="$DIR/../../../../enhanced_queue_manager.py"
-    elif [ -f $DIR/crystal_queue_manager.py ]; then
+    elif [ -f "$DIR/crystal_queue_manager.py" ]; then
         QUEUE_MANAGER="$DIR/crystal_queue_manager.py"
-    elif [ -f $DIR/../../../../crystal_queue_manager.py ]; then
+    elif [ -f "$DIR/../../../../crystal_queue_manager.py" ]; then
         QUEUE_MANAGER="$DIR/../../../../crystal_queue_manager.py"
     fi
 fi
@@ -413,6 +465,13 @@ else
     echo "  - Various relative paths from $DIR"
     echo "  Workflow progression may not continue automatically"
 fi' >> $1.sh
+# MACE MARKER (evaluated when the job script is generated): the cksum of the
+# job script written above. mace submit writes a script whose marker still
+# matches again when resource options are given, and never replaces one that
+# was edited (unless --overwrite-sh).
+if command -v cksum >/dev/null 2>&1; then
+  echo "# MACE-generated; cksum of the lines above: $(cksum < "$1.sh" | cut -d" " -f1-2)" >> "$1.sh"
+fi
 # NOTE: Job submission is now handled by the calling script (crystal.py)
 # This allows for proper handling of --nosubmit flag
 # sbatch $1.sh

@@ -30,9 +30,9 @@ def planner(tmp_path_factory):
     ({"walltime": "7-00:00:00", "memory_per_cpu": "5G"}, "FREQ",
      {"walltime": "7-00:00:00", "memory_per_cpu": "7G"}),        # int(5*1.5)
     ({"walltime": "2:00:00", "memory": "80G"}, "BAND",
-     {"walltime": "2:00:00", "memory": "48G"}),                  # 80G * 0.6
+     {"walltime": "2:00:00", "memory": "80G"}),                  # properties: the total as it is
     ({"walltime": "2:00:00", "memory": "80G"}, "BAND2",
-     {"walltime": "2:00:00", "memory": "48G"}),                  # BAND2 scales like BAND
+     {"walltime": "2:00:00", "memory": "80G"}),                  # BAND2 like BAND
     ({"walltime": "2:00:00", "memory": "80G"}, "TRANSPORT",
      {"walltime": "2:00:00", "memory": "80G"}),                  # unknown -> unchanged
 ])
@@ -49,7 +49,7 @@ def test_get_default_resources_memory_key_divergence(planner):
     assert sp["walltime"] == "3-00:00:00" and sp["memory_per_cpu"] == "4G"
 
     band = planner.get_default_resources("submit_prop.sh", "BAND")
-    assert band["ntasks"] == 28 and band["memory"] == "48G"
+    assert band["ntasks"] == 8 and band["memory"] == "80G"
     assert "memory_per_cpu" not in band              # submit_prop uses total 'memory'
 
     fb = planner.get_default_resources("unknown.sh", "OPT")

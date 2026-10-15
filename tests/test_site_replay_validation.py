@@ -42,7 +42,7 @@ def test_no_new_keys_without_settings(tmp_path):
 
 def test_replay_applies_every_key():
     out = site.customize_workflow_text(SCF.read_text(), dict(GOOD))
-    assert "srun --mpi=pmi2 -c $SLURM_CPUS_PER_TASK /opt/c23/bin/MPPcrystal" in out
+    assert 'srun --mpi=pmi2 -c "$SLURM_CPUS_PER_TASK" "/opt/c23/bin/MPPcrystal"' in out
     assert "export I_MPI_PMI_LIBRARY=/usr/lib64/libpmi2.so" in out
     assert 'if [ -d "/scratch/$MACE_USER" ]; then' in out
     assert "module load CRYSTAL/" not in out and site.PURGE_COMMENT in out
@@ -117,6 +117,6 @@ def test_workflow_end_to_end_replays_the_plan(tmp_path):
     assert stored and all(r.get("mpi", {}).get("launcher") == "srun" for r in stored)
     for c in sorted((d / "workflow_scripts").glob("*.sh")):
         t = c.read_text()
-        assert "  srun --mpi=pmix $EBROOTCRYSTAL/bin/Pcrystal" in t and "echo '#SBATCH --qos=normal' >> $1.sh" in t
+        assert '  srun --mpi=pmix "$EBROOTCRYSTAL/bin/Pcrystal"' in t and "echo '#SBATCH --qos=normal' >> $1.sh" in t
     scripts = [c["script_text"] for c in fake.calls("sbatch")]
     assert scripts and all("  srun --mpi=pmix " in s and "#SBATCH --qos=normal" in s for s in scripts)

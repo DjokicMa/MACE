@@ -15,6 +15,7 @@ login-url says to run it on the connect computer instead.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import socket
@@ -68,7 +69,7 @@ def new_link(d: Dict[str, Any]) -> Optional[str]:
     try:
         with opener.open(req, timeout=10) as r:
             code = json.loads(r.read()).get("code")
-    except (OSError, ValueError, urllib.error.URLError):
+    except (OSError, ValueError, urllib.error.URLError, http.client.HTTPException):
         return None
     return f"{d['base']}?login={code}" if code else None
 

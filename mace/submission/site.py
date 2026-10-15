@@ -20,10 +20,10 @@ With no setting of the user's own, MACE checks the built-in values against
 the cluster it runs on (``resolve``), so it works on any SLURM cluster and
 the cluster the built-ins come from keeps byte-identical scripts:
 
-* account: kept when the user is a member of it (``sacctmgr``, cached a day)
-  or when that cannot be checked (no SLURM accounting: a workstation, CI);
-  otherwise the ``#SBATCH -A`` line is dropped and SLURM charges the user's
-  default account (said once);
+* account: kept when the user is a member of it (``sacctmgr``, cached a day),
+  and where that cannot be checked only on MSU HPCC or on a host with no
+  SLURM at all (a workstation, CI); otherwise the ``#SBATCH -A`` line is
+  dropped and SLURM charges the user's default account (said once);
 * Python modules: kept when they load here (an Lmod/Tcl probe, cached) or
   when there is no module system; otherwise the job runs its completion
   step with the Python that runs MACE (``sys.executable``, said once);
@@ -79,6 +79,15 @@ except ImportError:          # pragma: no cover - imported as a bare module next
     _spec = _ilu.spec_from_file_location("envmodules", Path(__file__).resolve().parents[1] / "utils" / "envmodules.py")
     envmodules = _ilu.module_from_spec(_spec)
     _spec.loader.exec_module(envmodules)
+try:
+    from mace.workflow.common.constants import PROPERTIES_MEMORY, PROPERTIES_NTASKS
+except ImportError:          # pragma: no cover - imported as a bare module next to mace/workflow
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location("mace_constants", Path(__file__).resolve().parents[1] / "workflow" / "common" / "constants.py")
+    _constants = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_constants)
+    PROPERTIES_NTASKS = _constants.PROPERTIES_NTASKS
+    PROPERTIES_MEMORY = _constants.PROPERTIES_MEMORY
 
 SUBMISSION_DIR = Path(__file__).resolve().parent
 TEMPLATES = {"scf": SUBMISSION_DIR / "submitcrystal23.sh", "prop": SUBMISSION_DIR / "submit_prop.sh"}
@@ -139,8 +148,9 @@ KNOWN = {"slurm": {"account", "partition", "qos", "constraint", "extra"},
          "paths": {"scratch"},
          "crystal": {"bin_dir", "scf", "properties"}}
 RESOURCE_KEYS = ("ntasks", "nodes", "cpus_per_task", "mem", "mem_per_cpu")
-# the tables of the same file that `mace cluster` reads (mace/cluster/config.py)
-FOREIGN_TABLES = {"cluster", "quota", "scan", "devnodes"}
+# the tables of the same file that `mace cluster` reads (mace/cluster/config.py),
+# and [gui] (gateway: the login host `mace gui` names in its tunnel hint)
+FOREIGN_TABLES = {"cluster", "quota", "scan", "devnodes", "gui"}
 INVALID_ACCOUNT_TEXT = "Invalid account or account/partition combination"
 
 # ------------------------------------------------------------------ the layers
@@ -192,14 +202,22 @@ RESOURCE_LINES = {
             "nodes": "echo '#SBATCH -N 1' >> $1.sh",
             "memory": "echo '#SBATCH --mem-per-cpu=5G' >> $1.sh"},
     "prop": {"cpus_per_task": "echo '#SBATCH --cpus-per-task=1' >> $1.sh",
-             "ntasks": "echo '#SBATCH --ntasks=28' >> $1.sh",
+             "ntasks": f"echo '#SBATCH --ntasks={PROPERTIES_NTASKS}' >> $1.sh",
              "nodes": "echo '#SBATCH -N 1' >> $1.sh",
-             "memory": "echo '#SBATCH --mem=80G' >> $1.sh"}}
+             "memory": f"echo '#SBATCH --mem={PROPERTIES_MEMORY}' >> $1.sh"}}
 TEMPLATE_RESOURCES = {"scf": {"ntasks": 32, "nodes": 1, "cpus_per_task": 1, "mem_form": "mem_per_cpu", "mem": "5G"},
-                      "prop": {"ntasks": 28, "nodes": 1, "cpus_per_task": 1, "mem_form": "mem", "mem": "80G"}}
+                      "prop": {"ntasks": PROPERTIES_NTASKS, "nodes": 1, "cpus_per_task": 1, "mem_form": "mem", "mem": PROPERTIES_MEMORY}}
 # how the templates start CRYSTAL
-LAUNCH_LINES = {k: ('I_MPI_HYDRA_BOOTSTRAP="ssh" mpirun -n $SLURM_NTASKS $EBROOTCRYSTAL/bin/' + exe
-                    + " 2>&1 >& $DIR/${JOB}.out") for k, exe in (("scf", "Pcrystal"), ("prop", "Pproperties"))}
+LAUNCH_LINES = {k: ('I_MPI_HYDRA_BOOTSTRAP="ssh" mpirun -n "$SLURM_NTASKS" "$EBROOTCRYSTAL/bin/' + exe
+                    + '" 2>&1 >& "$DIR/${JOB}.out"') for k, exe in (("scf", "Pcrystal"), ("prop", "Pproperties"))}
+# the same line as earlier templates wrote it (a template copied into a
+# workflow folder by an earlier MACE still has it): unquoted before the 1.1.5
+# release, and before 1.1.5 with an unquoted output path too
+_UNQUOTED_LAUNCH = {k: l.replace('"$SLURM_NTASKS"', "$SLURM_NTASKS").replace('"$EBROOTCRYSTAL/bin/' + exe + '"',
+                                                                               "$EBROOTCRYSTAL/bin/" + exe)
+                    for (k, l), exe in zip(LAUNCH_LINES.items(), ("Pcrystal", "Pproperties"))}
+LEGACY_LAUNCH_LINES = {k: l.replace('"$DIR/${JOB}.out"', "$DIR/${JOB}.out") for k, l in _UNQUOTED_LAUNCH.items()}
+OLDER_LAUNCH_LINES = {k: (_UNQUOTED_LAUNCH[k], LEGACY_LAUNCH_LINES[k]) for k in LAUNCH_LINES}
 PURGE_LINE = "module purge"
 PURGE_COMMENT = "# MACE: module purge skipped ([modules] purge = false)"
 # the scratch guard's /mnt/scratch candidate (the site's own goes before it)
@@ -221,14 +239,14 @@ INIT_TEXT = """\
 # constraint = "epyc"                      # #SBATCH --constraint=...  (node features: sinfo -o "%P %f")
 # extra      = ["--exclusive"]             # more #SBATCH options, e.g. "--reservation=x", "--clusters=c2"
 [resources]
-# ntasks        = 32                       # #SBATCH --ntasks=...   (MPI ranks; built-in: 32, properties 28)
+# ntasks        = 32                       # #SBATCH --ntasks=...   (MPI ranks; built-in: 32, properties @PROP_NTASKS@)
 # nodes         = 1                        # #SBATCH -N ...         (above 1 needs [paths] scratch shared by all nodes)
 # cpus_per_task = 1                        # #SBATCH --cpus-per-task=...
 # mem_per_cpu   = "5G"                     # #SBATCH --mem-per-cpu=...  } set one of the two
-# mem           = "250G"                   # #SBATCH --mem=...          } (built-in: 5G per CPU, properties 80G)
+# mem           = "250G"                   # #SBATCH --mem=...          } (built-in: 5G per CPU, properties @PROP_MEM@)
 [resources.properties]
-# ntasks = 28                              # the same keys, for Pproperties jobs only
-# mem    = "80G"
+# ntasks = @PROP_NTASKS_PADDED@# the same keys, for Pproperties jobs only
+# mem    = "@PROP_MEM@"
 [mpi]
 # launcher = "mpirun"                      # or "srun" (srun reads the task count from SLURM)
 # srun_mpi = "pmix"                        # srun --mpi=...  (pmix, pmi2, pmix_v3, pmix_v4, none)
@@ -253,7 +271,7 @@ INIT_TEXT = """\
 # max_time = "4h"                          # longest mace run per deck (default: the node's ulimit -t; 1h55m on MSU HPCC)
 # gateway_message = "This is a login node ({reason}): CRYSTAL cannot run here. Log in to a compute or dev node first and rerun mace run."
 # module_message  = "the {module} module cannot be loaded on {host}; run mace run on a node where it loads"
-"""
+""".replace("@PROP_NTASKS_PADDED@", f"{PROPERTIES_NTASKS:<32}").replace("@PROP_NTASKS@", str(PROPERTIES_NTASKS)).replace("@PROP_MEM@", PROPERTIES_MEMORY)
 
 
 class SiteConfigError(ValueError):
@@ -1006,6 +1024,22 @@ def slurm_here(tool: str = "scontrol", env: Optional[Dict[str, str]] = None) -> 
     return shutil.which(tool, path=env.get("PATH")) is not None
 
 
+# what says SLURM is here (any of its client commands)
+SLURM_CLIENTS = ("sbatch", "squeue", "scontrol", "sacctmgr")
+# how a job script without an account line is described (mace site, the
+# warning, the GUI's Submit preview)
+NO_ACCOUNT_TEXT = ("no account line (SLURM's default account); set yours with MACE_SLURM_ACCOUNT "
+                   "or site.toml")
+
+
+def keeps_builtin_account(env: Optional[Dict[str, str]] = None) -> bool:
+    """Where membership of a built-in (MSU HPCC) account cannot be checked,
+    it is still written: on MSU HPCC, and on a host with no SLURM at all (a
+    workstation, CI: its scripts are MSU HPCC's). Any other host with SLURM
+    gets no account line (SLURM's default account)."""
+    return msu_hpcc(env) or not any(slurm_here(t, env) for t in SLURM_CLIENTS)
+
+
 def msu_choices(env: Optional[Dict[str, str]] = None) -> bool:
     """The MSU HPCC node-exclusion choices (AMD20 nodes, ...) apply: on MSU
     HPCC, and where there is no SLURM to ask (a workstation keeps them)."""
@@ -1128,8 +1162,9 @@ def submit_limit(account: Optional[str], env: Optional[Dict[str, str]] = None, r
 def resolve_account(site: Site, env: Optional[Dict[str, str]] = None) -> Tuple[Optional[str], str, str]:
     """(account or None for no -A line, status, note). A user's own account
     (env, site.toml) is used as given. The built-in one is kept for a member
-    of it and wherever membership cannot be checked; otherwise it is left
-    out, so SLURM charges the user's default account."""
+    of it, and where membership cannot be checked only on MSU HPCC or where
+    there is no SLURM (keeps_builtin_account); otherwise it is left out, so
+    SLURM charges the user's default account."""
     env = dict(os.environ if env is None else env)
     if site.sources.get("account", "built-in") != "built-in" or site.account != DEFAULTS["account"]:
         return site.account, "set", ""
@@ -1137,7 +1172,11 @@ def resolve_account(site: Site, env: Optional[Dict[str, str]] = None) -> Tuple[O
         return site.account, "member", ""
     assoc = slurm_associations(env)
     if assoc is None:
-        return site.account, "not checked", ""
+        if keeps_builtin_account(env):
+            return site.account, "not checked", ""
+        where = config_path(env) or "~/.config/mace/site.toml"
+        return None, "unreadable", (f"MACE: SLURM accounting cannot be read here, so job scripts get "
+                                    f"{NO_ACCOUNT_TEXT} ([slurm] account in {where}).")
     if site.account in assoc["accounts"]:
         return site.account, "member", ""
     dflt = assoc.get("default")
@@ -1325,6 +1364,39 @@ def resolve(site: Site, env: Optional[Dict[str, str]] = None, out=print) -> Site
     return site
 
 
+def default_walltime(kind: str, default: str, env: Optional[Dict[str, str]] = None, out=print) -> str:
+    """``default`` (the template's walltime for ``kind``), or the partition's
+    MaxTime when that is shorter - what the template's own -t line becomes
+    (customize_generator_text), for the job scripts `mace submit -i`,
+    --walltime and --exclude-* write with a literal -t line."""
+    try:
+        site = load(env)
+    except SiteConfigError:
+        return default
+    resolve(site, env, lambda t: out(f"  {t}"))
+    want = parse_walltime(default)
+    if site.walltime_cap and want and site.walltime_cap < want:
+        return walltime_text(site.walltime_cap)
+    return default
+
+
+def walltime_over_limit(value: str, env: Optional[Dict[str, str]] = None) -> Optional[str]:
+    """A warning when a walltime the user gave is longer than the partition
+    allows (it is written as given: SLURM decides), else None."""
+    secs = parse_walltime(value or "")
+    if secs is None or msu_hpcc(env):     # MSU HPCC routes jobs by walltime (see resolve)
+        return None
+    try:
+        site = load(env)
+    except SiteConfigError:
+        return None
+    cap, part = partition_limit(site.partition, env)
+    if cap is None or secs <= cap:
+        return None
+    return (f"Warning: walltime {value} is longer than partition {part} allows ({walltime_text(cap)}); "
+            f"written as given - SLURM may reject the job or leave it pending.")
+
+
 def _inherited(site: Site, env: Dict[str, str], parent_module: Optional[str]) -> Resolution:
     job = env.get("SLURM_JOB_ID", "")
     loaded = [m for m in (env.get("LOADEDMODULES") or "").split(":") if m]
@@ -1452,12 +1524,12 @@ def launch_block(kind: str, site: Site) -> Optional[List[str]]:
     out += [f"export {item}" for item in site.mpi_env]
     if cpt > 1:
         out.append("export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK")
-    mpirun = f'I_MPI_HYDRA_BOOTSTRAP="ssh" mpirun -n $SLURM_NTASKS {exe} 2>&1 >& $DIR/${{JOB}}.out'
+    mpirun = f'I_MPI_HYDRA_BOOTSTRAP="ssh" mpirun -n "$SLURM_NTASKS" "{exe}" 2>&1 >& "$DIR/${{JOB}}.out"'
     if site.launcher == "mpirun":
         out.append(mpirun)
     else:
         srun = ("srun" + (f" --mpi={site.srun_mpi}" if site.srun_mpi else "")
-                + (" -c $SLURM_CPUS_PER_TASK" if cpt > 1 else "") + f" {exe} 2>&1 >& $DIR/${{JOB}}.out")
+                + (' -c "$SLURM_CPUS_PER_TASK"' if cpt > 1 else "") + f' "{exe}" 2>&1 >& "$DIR/${{JOB}}.out"')
         out += ['if [ -n "$MACE_LOCAL_RUN" ] && [ -z "$SLURM_JOB_ID" ]; then', "  " + mpirun,
                 "else", "  " + srun, "fi"]
     return out
@@ -1622,7 +1694,7 @@ def customize_generator_text(text: str, kind: str, site: Site, resolution: Optio
     # [mpi] / [crystal] / cpus_per_task: how CRYSTAL is started
     block = launch_block(kind, site) if kind in LAUNCH_LINES else None
     if block and LAUNCH_COMMENT not in lines:
-        hits = [i for i, l in enumerate(lines) if l.rstrip() == LAUNCH_LINES[kind]]
+        hits = [i for i, l in enumerate(lines) if l.rstrip() in (LAUNCH_LINES[kind], *OLDER_LAUNCH_LINES[kind])]
         for i in reversed(hits):
             lines[i:i + 1] = block
         if hits:
@@ -1722,8 +1794,9 @@ def generator_for(path, kind: Optional[str] = None, work_dir=None, env: Optional
 def customize_file_in_place(path, kind: str = "scf", env: Optional[Dict[str, str]] = None, out=print,
                             owned: Tuple[str, ...] = ("ntasks", "memory")):
     """Apply the site values to a temporary generator MACE wrote itself in
-    this run (the ``-i``/walltime ``submitcrystal23_custom_<pid>.sh``): its
-    location, and so its install pin, stay as they are. The ``owned`` lines
+    this run (the ``-i``/walltime ``submitcrystal23_custom_<pid>.sh`` in its
+    private temp folder): its location, and so its install pin, stay as
+    they are. The ``owned`` lines
     (cores and memory) are the editor's: it already wrote the site's default
     or the user's answer there. Returns the resolution."""
     env = dict(os.environ if env is None else env)
@@ -1798,10 +1871,13 @@ def account_label(value: Optional[str]) -> str:
 
 
 def account_usable(name: str, env: Optional[Dict[str, str]] = None) -> bool:
-    """``name`` may be written into a job script: the user is a member of it,
-    or membership cannot be checked here."""
+    """``name`` (a built-in MSU HPCC account) may be written into a job
+    script: the user is a member of it, or membership cannot be checked and
+    the built-in account is kept here (keeps_builtin_account)."""
     assoc = slurm_associations(env)
-    return assoc is None or name in assoc["accounts"]
+    if assoc is None:
+        return keeps_builtin_account(env)
+    return name in assoc["accounts"]
 
 
 def safe_load(env: Optional[Dict[str, str]] = None) -> Site:
@@ -1835,7 +1911,9 @@ def describe(env: Optional[Dict[str, str]] = None, check_account: bool = False, 
                      "group": [{"path": str(g), "owner": site.group_owners.get(str(g))} for g in site.group_paths]}
     a_src = site.sources.get("account", "built-in")
     if site.account is None:
-        a_src = f"built-in {configured} left out: you are not a member"
+        a_src = ("built-in account left out: SLURM accounting cannot be read here"
+                 if site.checks.get("account") == "unreadable"
+                 else f"built-in {configured} left out: you are not a member")
     out["account"] = {"value": site.account, "source": a_src, "check": site.checks.get("account")}
     out["account"]["origin"] = site.origins.get("account")
     out["partition"] = {"value": site.partition, "source": site.sources.get("partition", "built-in"),
@@ -2051,12 +2129,14 @@ def forget_slurm_cache(env: Optional[Dict[str, str]] = None) -> int:
 
 def check_account_membership(acct: Optional[str], env: Optional[Dict[str, str]] = None,
                              refresh: bool = False) -> Dict[str, Any]:
-    """{status: member|not_member|default|not checked, accounts}: the account
-    against the user's SLURM associations (sacctmgr, cached a day); status
-    default when no account is written (SLURM charges the default one)."""
+    """{status: member|not_member|default|unreadable|not checked, accounts}:
+    the account against the user's SLURM associations (sacctmgr, cached a
+    day); status default when no account is written (SLURM charges the
+    default one), unreadable when none is written because the associations
+    cannot be read here."""
     assoc = slurm_associations(env, refresh=refresh)
     if not assoc:                     # no SLURM accounting here, or none recorded for this user
-        return {"status": "not checked", "accounts": []}
+        return {"status": "unreadable" if acct is None else "not checked", "accounts": []}
     if acct is None:
         return {"status": "default", "accounts": assoc["accounts"], "default": assoc.get("default")}
     return {"status": "member" if acct in assoc["accounts"] else "not_member", "accounts": assoc["accounts"]}

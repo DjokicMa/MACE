@@ -47,6 +47,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence
 
+try:
+    from mace.submission.external_geometry import fort34_source, missing_fort34_message
+except ImportError:  # run as a script from mace/submission/
+    from external_geometry import fort34_source, missing_fort34_message
+
 # --------------------------------------------------------------------------
 # Vocabulary
 # --------------------------------------------------------------------------
@@ -551,9 +556,14 @@ def preflight_deck(deck, *, runner, keep_dir=None) -> PreflightResult:
 
     # These are all "the harness cannot check this deck", never "this deck is
     # bad" - the explanation IS the reason, so it reaches the report table.
-    ext = deck.with_suffix(".ext")
+    # The file the job script stages as fort.34 for an EXTERNAL deck: <stem>.ext,
+    # or what a hand-written <stem>.sh copies there (mace submit reuses it).
+    ext = fort34_source(deck) or deck.with_suffix(".ext")
     blocked = uncheckable_reason(text, has_ext=ext.is_file())
     if blocked:
+        missing = missing_fort34_message(deck, text)
+        if missing:
+            blocked = f"{blocked}. {missing}"
         return PreflightResult(deck, ERROR, blocked)
 
     try:
@@ -569,7 +579,8 @@ def preflight_deck(deck, *, runner, keep_dir=None) -> PreflightResult:
     try:
         write_deck(workdir / "INPUT", prepared)
         if ext.is_file():
-            # Staged exactly as the job script does: <stem>.ext -> fort.34.
+            # Staged exactly as the job script does: <stem>.ext (or what
+            # its own <stem>.sh copies) -> fort.34.
             shutil.copyfile(ext, workdir / "fort.34")
         try:
             outcome = runner(workdir)

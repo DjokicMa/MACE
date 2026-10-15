@@ -25,6 +25,26 @@ BASE_COMMIT = "daa5468e"          # the 1.1.5 base before the GUI (reachable in 
 # properties the extraction-depth audit added (C11): not in the base tree's rows
 NEW_PROPS = ("space_group_number", "raman_intensities", "num_raman_modes")
 NEW_MARKS = ",".join("?" * len(NEW_PROPS))
+# properties the base tree stored wrongly and this tree no longer stores at all
+# (so a re-extraction removes their rows): a multi-point OPT's point-1 energy
+# components (155d83b1) and the DOS-only advanced gap/classification (a3308d9d)
+DROPPED_PROPS = tuple(f"{c}_energy_{u}" for c in ("kinetic", "electron_electron", "electron_nuclear",
+                                                   "nuclear_nuclear", "exchange", "correlation")
+                      for u in ("au", "ev")) + (
+    "band_gap_advanced_ev", "band_gap_advanced_ha", "electronic_classification_advanced")
+DROPPED = f"property_name IN ({','.join('?' * len(DROPPED_PROPS))})"
+# doubled geometry keys the base tree stored and this tree stores under their
+# single prefix (d6408ac5): the same values, so where the single name was stored
+# as well the row is gone, else it comes back under the single name
+RENAMED_PROPS = {"final_final_atomic_positions": "final_atomic_positions",
+                 "final_final_atoms_count": "final_atoms_count",
+                 "final_final_atomic_position_axes": "final_atomic_position_axes",
+                 "initial_initial_atomic_positions": "initial_atomic_positions",
+                 "initial_initial_atoms_count": "initial_atoms_count"}
+RENAMED = f"property_name IN ({','.join('?' * len(RENAMED_PROPS))})"
+# the rows both trees store under the same name (bind DROPPED_PROPS + tuple(RENAMED_PROPS))
+KEPT = f"NOT ({DROPPED}) AND NOT ({RENAMED})"
+GONE = DROPPED_PROPS + tuple(RENAMED_PROPS)
 DIA = {
     "OPT": ["OPT/1_dia_opt_rev1.out", "OPT/1_dia_opt_rev1.d12"],
     "SP": ["SP/1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized.out", "SP/1_dia_opt_rev1_sp_B3LYP-D3-D3_optimized.d12"],
@@ -114,12 +134,14 @@ def test_rows_from_the_old_tree_are_moved_not_deleted(tmp_path, base_tree):
     db = tmp_path / "materials.db"
     _populate(base_tree, tmp_path, d, db)
     _cli(base_tree, tmp_path, "--extract-properties", str(d), "--db-path", str(db))
-    before = _q(db, "SELECT count(*) FROM properties")[0][0]
+    before = _q(db, f"SELECT count(*) FROM properties WHERE {KEPT}", *GONE)[0][0]
     mats = {r[0] for r in _q(db, "SELECT material_id FROM materials")}
     old_ids = {r[0] for r in _q(db, "SELECT DISTINCT material_id FROM properties WHERE calc_id IS NOT NULL")} - mats
     assert old_ids, "the base tree filed tracked rows under file-name ids (the bug this fixes)"
     p = _cli(REPO_ROOT, tmp_path, "--extract-properties", str(d), "--db-path", str(db))
-    assert _q(db, "SELECT count(*) FROM properties")[0][0] >= before
+    assert _q(db, f"SELECT count(*) FROM properties WHERE {KEPT}", *GONE)[0][0] >= before
+    # the re-extraction replaced the doubled geometry keys by their single-prefix names
+    assert not _q(db, f"SELECT 1 FROM properties WHERE calc_id IS NOT NULL AND {RENAMED}", *RENAMED_PROPS)
     left = _q(db, f"SELECT count(*) FROM properties WHERE calc_id IS NOT NULL AND material_id IN "
                   f"({','.join('?' * len(old_ids))})", *old_ids)[0][0]
     assert left == 0
@@ -133,10 +155,13 @@ def test_untracked_folder_behaves_as_before(tmp_path, base_tree):
     a, b = tmp_path / "a.db", tmp_path / "b.db"
     _cli(base_tree, tmp_path, "--extract-properties", str(d), "--db-path", str(a))
     _cli(REPO_ROOT, tmp_path, "--extract-properties", str(d), "--db-path", str(b))
-    q = f"SELECT material_id, count(*) FROM properties WHERE property_name NOT IN ({NEW_MARKS}) GROUP BY 1 ORDER BY 1"
-    qa = _q(a, q, *NEW_PROPS)
-    qb = _q(b, q, *NEW_PROPS)
-    assert qa == qb
+    # the same properties; filed under the id a registration gives the outputs
+    # ("1_dia"), where the base tree split them by a one-suffix strip of each name
+    q = f"SELECT DISTINCT property_name FROM properties WHERE property_name NOT IN ({NEW_MARKS})"
+    assert {(RENAMED_PROPS.get(n, n),) for (n,) in _q(a, q, *NEW_PROPS)} == set(_q(b, q, *NEW_PROPS))
+    assert not _q(b, f"SELECT 1 FROM properties WHERE {RENAMED}", *RENAMED_PROPS)
+    assert len(_q(a, "SELECT DISTINCT material_id FROM properties")) > 1
+    assert _q(b, "SELECT DISTINCT material_id FROM properties") == [("1_dia",)]
 
 
 # ------------------------------------------------------------------ C9
@@ -160,12 +185,16 @@ def test_dry_run_classes(tmp_path):
     assert not db.exists() and not (tmp_path / "structures.db").exists() and not (d / "materials.db").exists()
     cls = _by_name(doc)
     failed = "3_dia3_opt_killed_signal9_oom.out"
-    assert cls.pop(failed) == "incomplete"
+    # a failed run no calculation records: listed, not extracted (its rows had no material)
+    assert cls.pop(failed) == "skipped"
     assert set(cls.values()) == {"new"}, cls
     # without --register on a fresh database: not tracked
-    assert set(_by_name(_dry(tmp_path, d, db)).values()) <= {"not tracked (always re-extracted)", "incomplete"}
+    # (the failed run is extracted then, as by a plain run: incomplete)
+    assert set(_by_name(_dry(tmp_path, d, db)).values()) <= {"not tracked (always re-extracted)", "skipped",
+                                                              "incomplete"}
     _cli(REPO_ROOT, tmp_path, "--extract-properties", str(d), "--db-path", str(db), "--register")
     cls = _by_name(_dry(tmp_path, d, db))
+    # without --register a failed run is extracted, as a plain run does
     assert cls.pop(failed) == "incomplete"
     assert set(cls.values()) == {"unchanged"}, cls
     opt = d / "1_dia_opt_rev1.out"
@@ -256,12 +285,28 @@ def test_without_the_new_flags_stdout_matches_the_base_tree(tmp_path, base_tree)
         t = re.sub(r"\d{4}-\d\d-\d\dT[\d:.]+", "<T>", t)
         # property counts grow by the properties C11 added (checked below)
         t = re.sub(r"(Extracted and saved|Total properties extracted:) \d+", r"\1 <N>", t)
+        # the advanced analysis' classification of diamond: the base tree's
+        # BAND.DAT edges (by eigenvalue sign) and DOSS.DAT rows were misread
+        # ("semimetal"); a3308d9d corrected it (checked below)
+        t = re.sub(r"(Advanced analysis:) \S+ (classification)", r"\1 <C> \2", t)
         # without ase the base tree printed its warning on stdout; it is on stderr now
         return [ln for ln in t.splitlines() if "Materials processed" not in ln and "ASE not available" not in ln]
     assert norm(a) == norm(b)
+    assert "Advanced analysis: insulator classification" in b
+    assert "Advanced analysis: semimetal" not in b
     total = lambda t: int(re.search(r"Total properties extracted: (\d+)", t).group(1))   # noqa: E731
     added = _q(tmp_path / "b.db", f"SELECT count(*) FROM properties WHERE property_name IN ({NEW_MARKS})", *NEW_PROPS)[0][0]
-    assert total(b) == total(a) + added
+    # rows of the properties this tree no longer stores (DROPPED_PROPS): in the
+    # base tree's database but not in this one
+    dropped = lambda db: _q(db, f"SELECT count(*) FROM properties WHERE {DROPPED}", *DROPPED_PROPS)[0][0]  # noqa: E731
+    lost = dropped(tmp_path / "a.db") - dropped(tmp_path / "b.db")
+    # rows of the doubled geometry keys (RENAMED_PROPS): each one is gone where the
+    # output also printed its single-prefix name, else it is printed under that name
+    doubled = lambda db: _q(db, f"SELECT count(*) FROM properties WHERE {RENAMED}", *RENAMED_PROPS)[0][0]  # noqa: E731
+    renamed = doubled(tmp_path / "a.db") - doubled(tmp_path / "b.db")
+    # the outputs of one material share its untracked rows now (one id), so the
+    # database holds each new property once while every output printed it
+    assert total(a) - lost - renamed + added <= total(b) <= total(a) - lost + added * len(DIA)
 
 
 def test_register_from_a_relative_folder_records_absolute_paths(tmp_path):

@@ -89,9 +89,11 @@ def test_default_bytes(tmp_path, kind, init):
 
 
 def test_default_bytes_array(tmp_path):
+    # MSU HPCC (SLURM whose accounting lists nothing here): its built-in
+    # account is kept; another cluster gets no -A line (test_site_account_unreadable)
     fake = FakeSlurm(tmp_path / "fs")
     env = _env(tmp_path, PATH=fake.env["PATH"], FAKE_SLURM_STATE=fake.env["FAKE_SLURM_STATE"],
-               FAKE_SLURM_LOG=fake.env["FAKE_SLURM_LOG"])
+               FAKE_SLURM_LOG=fake.env["FAKE_SLURM_LOG"], MACE_HOSTNAME="dev-amd20.hpcc.msu.edu")
     d = tmp_path / "decks"
     for n in ("a", "b"):
         _deck(d, f"{n}.d12")
@@ -140,11 +142,26 @@ BASE_TEMPLATE_SHA256 = {
 }
 
 
+# SHA-256 of the templates as they are now. Site settings are layered on top
+# of the templates, never written into them; the templates change only on
+# purpose, with the generated scripts (the goldens in tests/data/) reviewed.
+# Since daa5468e: the 1.1.5 job-script fixes (scratch directory per deck
+# folder, a clean properties scratch, only this run's files copied back), and
+# the properties built-in --ntasks=28 -> PROPERTIES_NTASKS (8); restart files
+# carried over only from this folder's scratch directory; the CRYSTAL launch
+# line quoted and the post-run cd checked (shellcheck SC2086, SC2164).
+TEMPLATE_SHA256 = {
+    "submitcrystal23.sh": "84f04f249cb46dec6d0f0ca76e855272ecf71410f9ef308be293b3f7d5e8e349",
+    "submit_prop.sh": "f55f9fbaac912e44f1f5457067430c3c1a14e2882a0c798a364e793b5001b7f6",
+}
+
+
 def test_templates_unchanged_since_base():
-    """The templates themselves are never edited (site settings are layered on top).
-    daa5468e is the 1.1.5 base before the GUI; the templates are unchanged since."""
+    """The templates are only edited on purpose (see TEMPLATE_SHA256)."""
+    from mace.workflow.common.constants import PROPERTIES_NTASKS
+    assert f"echo '#SBATCH --ntasks={PROPERTIES_NTASKS}' >> $1.sh" in PROP.read_text().splitlines()
     for t in (SCF, PROP):
-        assert hashlib.sha256(t.read_bytes()).hexdigest() == BASE_TEMPLATE_SHA256[t.name], t.name
+        assert hashlib.sha256(t.read_bytes()).hexdigest() == TEMPLATE_SHA256[t.name], t.name
 
 
 def test_frozen_template_digests_match_the_base_commit():
@@ -160,7 +177,8 @@ def test_frozen_template_digests_match_the_base_commit():
 
 # ---------------------------------------------------------------- D28
 def _diff_lines(a: bytes, b: bytes):
-    la, lb = a.decode().splitlines(), b.decode().splitlines()
+    # (the last line, the checksum of the script, differs whenever a line does)
+    la, lb = ([l for l in x.decode().splitlines() if not l.startswith("# MACE-generated; cksum")] for x in (a, b))
     return sorted(set(la) - set(lb)), sorted(set(lb) - set(la))
 
 
@@ -197,8 +215,9 @@ def test_site_values_reach_arrays(tmp_path):
 
 
 def test_walltime_custom_generator_gets_partition(tmp_path):
-    """--walltime makes crystal.py's temporary generator in mace/submission/;
-    the site values are applied to it in place (its install pin unchanged)."""
+    """--walltime makes crystal.py's temporary generator (in a private temp
+    folder); the site values are applied to it in place (its install pin
+    unchanged)."""
     env = _env(tmp_path)
     _toml(tmp_path)
     d = tmp_path / "decks"
@@ -227,9 +246,10 @@ def test_interactive_custom_location_and_pin(tmp_path, monkeypatch, rewrite):
            "account": crystal.get_default_d12_resources()["account"], "node_exclusion": None}
     custom = crystal.create_custom_slurm_script(SCF, res)
     try:
-        assert custom.parent == SUB                              # where it always was
+        # a private temp folder, not the install (which can be read-only)
+        assert not custom.is_relative_to(REPO_ROOT) and custom.parent.name.startswith("mace-generator-")
         site.customize_file_in_place(custom, "scf")
-        assert custom.parent == SUB and custom.exists()
+        assert custom.exists()
         text = custom.read_text()
         assert ("echo '#SBATCH -p a,b' >> $1.sh" in text) == rewrite
         assert ("echo '#SBATCH -A grp_example' >> $1.sh" in text) == rewrite
@@ -240,7 +260,8 @@ def test_interactive_custom_location_and_pin(tmp_path, monkeypatch, rewrite):
         pin = [l for l in (twin / "m.sh").read_text().splitlines() if l.startswith("MACE_SUBMIT_HOME=")]
         assert pin == [f"MACE_SUBMIT_HOME='{REPO_ROOT}'"]
     finally:
-        custom.unlink()
+        crystal.remove_custom_slurm_script(custom)
+    assert not custom.parent.exists()
 
 
 def test_interactive_blank_answers_use_the_site_account(tmp_path):

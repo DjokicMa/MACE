@@ -228,17 +228,20 @@ def build(root: Path, folder_arg: str, db_arg: str, opts: Dict[str, Any], ctx: A
 
 
 def summary(state: Dict[str, Any], args: List[str]) -> Dict[str, Any]:
+    """The build's result: counted and worded by the CLI's own functions
+    (db_build.summarize / summary_message), so the notification says what the
+    terminal says."""
+    from mace.utils import db_build
     files = state["files"]
-    by_class: Dict[str, int] = {}
-    for x in files:
-        if x.get("status") == "extracted":
-            by_class[x.get("class") or "extracted"] = by_class.get(x.get("class") or "extracted", 0) + 1
-    failed = [x["rel"] for x in files if x.get("status") in ("failed", "no properties")]
-    new = sum(v for k, v in by_class.items() if k in ("new", "not tracked (always re-extracted)", "incomplete"))
-    changed = by_class.get("changed", 0)
+    counted = db_build.summarize(files)
+    done = dict(state["done"] or {})
+    for k, v in (("new", counted["new"]), ("changed", counted["changed"]), ("reextracted", counted["reextracted"]),
+                 ("failed_outputs", len(counted["failed"])), ("skipped_outputs", counted["skipped"])):
+        done.setdefault(k, v)
     return {"done": state["done"] or {}, "files": files, "backup": state["backup"], "pruned": state["pruned"],
-            "new": new, "changed": changed, "failed": failed, "command": command_text(args[:-1]),
-            "message": f"Database updated: {new} new, {changed} changed, {len(failed)} failed"}
+            "new": counted["new"], "changed": counted["changed"], "failed": counted["failed"],
+            "skipped": counted["skipped"], "command": command_text(args[:-1]),
+            "message": done.get("message") or db_build.summary_message(done)}
 
 
 class BuildCanceled(Exception):

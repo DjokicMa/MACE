@@ -127,7 +127,7 @@ def test_band_plot_at_600_dpi(fresh):
     H.wait(drv, "const s = window.__mace.plotView && window.__mace.plotView.state(); return s && s.drawn", 60)
     # the plot toolbar's Export menu (plotkit) › Image…
     click(drv, drv.find_element(By.CSS_SELECTOR, '#plot-host .pk-export'))
-    click(drv, H.wait(drv, "return document.querySelector('#plot-host .pk-menu [data-v=image]')", 10))
+    click(drv, H.wait(drv, "return document.querySelector('.pk-menu [data-v=image]')", 10))
     d = H.wait(drv, "const d = document.getElementById('export-image'); return d && d.open && d", 10)
     Select(d.find_element(By.CSS_SELECTOR, '[data-k="size"]')).select_by_value("physical")
     pw = H.wait(drv, "const e = document.querySelector('#export-image [data-k=pw]'); return e && e.offsetWidth > 0 && e", 10)

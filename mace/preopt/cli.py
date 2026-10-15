@@ -62,10 +62,13 @@ def read_input(path: Path):
     import warnings
     suffix = path.suffix.lower()
     if suffix == ".cif":
-        import ase.io
+        from mace.utils.cif_symbols import read_cif
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            atoms = ase.io.read(str(path), format="cif")
+            atoms = read_cif(path)
+        # Fd-3m without listed operators: the origin cif2d12 writes, one rule.
+        from mace.gui.structures import cif_deck_origin
+        atoms = cif_deck_origin(path, atoms)
         return atoms, atoms.info.get("spacegroup"), atoms.arrays.get("spacegroup_kinds"), None
     if suffix == ".d12":
         from . import deckscan

@@ -131,6 +131,16 @@ def cube_header_ok(path: Path) -> bool:
     return True
 
 
+def cube_grid_shape(path: Path):
+    """The grid's point counts (n1, n2, n3) from a cube's header, or None."""
+    try:
+        with open(path, "rb") as fh:
+            lines = fh.read(4096).decode("utf-8", "replace").split("\n")
+        return tuple(abs(int(lines[k].split()[0])) for k in (3, 4, 5))
+    except (OSError, ValueError, IndexError):
+        return None
+
+
 def cube_type(name: str) -> str:
     """density / potential / spin / orbital from the name token CRYSTAL and
     MACE use; "" when the name does not tell (the cube's comment decides)."""

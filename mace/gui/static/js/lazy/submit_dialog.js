@@ -101,7 +101,9 @@ export async function open(H, { targets, where = "slurm", note = "", preset = nu
     const acct = s.account || {}, cr = s.crystal || {};
     const chk = s.account_check || {};
     const acctWord = chk.status === "member" ? "one of your accounts" : chk.status === "not_member" ? "not one of your accounts"
-      : chk.status === "default" ? `no -A line: SLURM charges your default account${chk.default ? ` (${chk.default})` : ""}` : "account not checked";
+      : chk.status === "default" ? `no -A line: SLURM charges your default account${chk.default ? ` (${chk.default})` : ""}`
+      : chk.status === "unreadable" ? "no account line (SLURM's default account); set yours with MACE_SLURM_ACCOUNT or site.toml"
+      : "account not checked";
     const crWord = { default: "built-in, loads here", "site.toml": "site.toml, loads here", unchecked: "not checked: no module system here",
       discovered: "discovered here", "not found here": "not found here" }[cr.source] || cr.source || "";
     let html = `<div class="sub-row"><span class="sub-k">Site</span><div class="sub-v" data-part="site">Account <b>${H.esc(acct.value || "(SLURM default)")}</b>
@@ -142,8 +144,10 @@ export async function open(H, { targets, where = "slurm", note = "", preset = nu
     if (ci.scf) rows.push(["Executables", `${H.esc(ci.bin_dir ? ci.bin_dir + "/" : "")}${H.esc(ci.scf)}, ${H.esc(ci.properties)}`
       + `${ci.bin_dir ? "" : ` <span class="muted">(from the CRYSTAL module)</span>`}${src(ci)}`]);
     if (!rows.length) return "";
+    // each <dt>/<dd> a child of the <dl> itself (no <div> per pair: older screen-reader and axe
+    // rules want the term and its value directly in the list); the <dl> is the two-column grid
     let html = `<dl class="sub-site" data-part="site-details">${rows.map(([k, v]) =>
-      `<div data-site="${H.esc(k.toLowerCase().replace(/ /g, "-"))}"><dt>${H.esc(k)}</dt><dd>${v}</dd></div>`).join("")}</dl>`;
+      `<dt data-site="${H.esc(k.toLowerCase().replace(/ /g, "-"))}">${H.esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>`;
     html += `<p class="sub-line"><button type="button" class="tb-btn-text sm" data-act="site-check"${state.siteCheck && state.siteCheck.running ? " disabled" : ""}>`
       + `${state.siteCheck && state.siteCheck.running ? "Checking…" : "Check"}</button>
       <span class="muted">runs <code>mace site check</code> here (with <code>sbatch --test-only</code>; nothing is submitted)</span></p>`;

@@ -86,10 +86,10 @@ function paint() {
     const user = C.isUserBound(r.c), on = recording && recording.id === r.id;
     html += `<div class="km-row${on ? " recording" : ""}" role="row" data-id="${H.esc(r.id)}" style="top:${k * ROW}px">` +
       `<span class="km-cmd" title="${H.esc(r.label)} (${H.esc(r.id)})">${H.esc(r.label)}</span>` +
-      `<span class="km-keyscell"><button class="km-keys" data-id="${H.esc(r.id)}" aria-label="Change the keybinding of ${H.esc(r.label)}">` +
+      `<span class="km-keyscell"><button class="km-keys" data-id="${H.esc(r.id)}" title="${H.esc(r.keys.join(", ") || "Unbound")}" aria-label="Change the keybinding of ${H.esc(r.label)}">` +
       (r.keys.length ? r.keys.map((k2) => `<kbd>${H.esc(k2)}</kbd>`).join("") : `<span class="muted">Unbound</span>`) + `</button>` +
       `<button class="km-add icon-btn sm" data-add="${H.esc(r.id)}" aria-label="Add a keybinding to ${H.esc(r.label)}">${H.icon("plus")}</button></span>` +
-      `<span class="km-when">${H.esc(readableWhen(r.c.when))}</span><span class="km-src">${user ? "User" : "Default"}</span>` +
+      `<span class="km-when" title="${H.esc(readableWhen(r.c.when))}">${H.esc(readableWhen(r.c.when))}</span><span class="km-src">${user ? "User" : "Default"}</span>` +
       `<button class="set-reset km-reset" data-reset-key="${H.esc(r.id)}"${user ? "" : " hidden"}>Reset</button></div>`;
   }
   list.innerHTML = html;
@@ -151,6 +151,7 @@ function onRecordKey(e) {
       && (e.key === "Enter" || e.key === " ")) return;
   const text = C.chordFromEvent(e);
   if (!text) return;
+  if (recording.reset && text !== "Esc") return;          // a Reset's question: its buttons answer it
   e.preventDefault(); e.stopPropagation();
   if (text === "Esc") { canceling = performance.now(); stopRecording(); return; }   // bare Esc cancels
   if (text === "Backspace") { setKeys(recording.id, []); stopRecording(); H.toast("Keybinding removed", "info"); return; }
@@ -216,7 +217,36 @@ function onListClick(e) {
   const k = e.target.closest(".km-keys"), a = e.target.closest("[data-add]"), r = e.target.closest("[data-reset-key]");
   if (k) startRecording(k.dataset.id, false);
   else if (a) startRecording(a.dataset.add, true);
-  else if (r) { const c = C.command(r.dataset.resetKey); setKeys(c.id, [...c.defaultKeys]); }
+  else if (r) resetRow(r.dataset.resetKey);
+}
+/* A row's Reset: its default keys back, after the same conflict check as a
+ * recorded key (another command may hold one of them now): Replace or Cancel. */
+function resetRow(id) {
+  const c = C.command(id), def = [...c.defaultKeys];
+  const taken = new Map();                   // other command -> its keys that are this one's defaults
+  for (const k of def) for (const o of C.conflicts(k, c.when, id)) taken.set(o, [...(taken.get(o) || []), k]);
+  if (!taken.size) { setKeys(id, def); return; }
+  recording = { id, add: false, reset: true };
+  rec.hidden = false;
+  rec.innerHTML = `<div class="km-rec-line"><span class="km-rec-title">Reset <b>${H.esc(c.title)}</b> to its default keys</span></div>
+    <div class="km-msg" role="alert"></div>`;
+  paint();
+  const parts = [...taken].map(([o, keys]) => {
+    const x = C.command(o);
+    const who = isPseudo(x) ? `the ${x.title.replace(/^Open the | Menu$/g, "")} menu` : x.title;
+    return `${keys.map((k) => C.formatChord(k)).join(" and ")} ${keys.length > 1 ? "are" : "is"} ${who}'s now`;
+  });
+  say(`${parts.join("; ")}. Give ${taken.size > 1 || [...taken.values()][0].length > 1 ? "them" : "it"} back to ${c.title}?`, "warning", [
+    ["Replace", () => {
+      for (const [o, keys] of taken) {
+        const ids = new Set(keys.map(C.chordId));
+        pending.set(o, C.command(o).keys.filter((k) => !ids.has(C.chordId(k))));
+      }
+      setKeys(id, def);
+      stopRecording();
+      H.toast(`${c.title}: back to its default keys`, "success");
+    }],
+    ["Cancel", stopRecording]]);
 }
 
 /* ---------------------------------------------------------------- saving */

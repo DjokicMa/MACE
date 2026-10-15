@@ -408,7 +408,7 @@ export function createJobView(host, H) {
       else prog += `<p class="small">${eta.low_s !== null && eta.low_s !== undefined ? "ETA: " : "ETA unknown: "}${esc(eta.basis || "")}</p>`;
       if (risk.note && !(risk.level && risk.level !== "ok")) prog += `<p class="small jbv-note">${esc(risk.note)}</p>`;
     } else if (j.progress_note) prog = `<h3>Progress</h3><p class="muted">${esc(j.progress_note)}</p>`;
-    const eff = j.efficiency || {};
+    const eff = (j.state === "RUNNING" && d._liveEff) || j.efficiency || {};
     const banner = risk.level && risk.level !== "ok" ? `<div class="jbv-risk ${risk.level === "tight" ? "warning" : "critical"}" role="alert">${icon("triangle-alert")}<div><b>${esc(risk.headline || (risk.level === "tight" ? "Walltime is tight" : "Likely to exceed the walltime"))}</b><div>${esc(risk.sentence || "")}</div></div></div>` : "";
     const files = (j.file_entries || []).map((f) => {
       let act = "";
@@ -426,8 +426,8 @@ export function createJobView(host, H) {
       <div class="jbv-time"><span class="small">Elapsed ${fmtDur(j.elapsed_s)} of ${fmtDur(j.limit_s)}</span><span class="clv-bar ${risk.level === "likely to exceed" ? "critical" : risk.level === "tight" ? "warning" : ""}" role="meter" aria-label="Elapsed of the walltime" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><i style="width:${pct}%"></i></span></div>
       ${banner}${prog}
       <h3>Resources</h3><p class="small">${esc(j.ncpus || "?")} cores on ${esc(j.nnodes || "?")} node(s), partition ${esc(j.partition || "?")}, account ${esc(j.account || "?")}</p>
-      <p class="small">CPU efficiency: ${eff.cpu !== null && eff.cpu !== undefined ? eff.cpu + " %" : esc(eff.cpu_note || "")} · Memory: ${eff.memory !== null && eff.memory !== undefined ? `${eff.memory} % of the request (MaxRSS)` : esc(eff.memory_note || "")}
-        <button type="button" class="tb-btn-text" data-act="live">Show Live Use</button><span class="jbv-live small"></span></p>
+      <div class="jbv-eff small">${effHtml(eff)}</div>
+      <p class="small">${j.state === "RUNNING" ? `<button type="button" class="tb-btn-text" data-act="live">${d._liveEff ? "Update Live Use" : "Show Live Use"}</button>` : ""}<span class="jbv-live small muted">${esc(d._liveNote || "")}</span></p>
       ${arrayTasks(j.array_tasks)}
       <h3>Files</h3><table class="data clv-table"><tbody>${files}</tbody></table>
       <p><button type="button" class="tb-btn-text" data-copy="${esc(j.scontrol_command)}">${icon("copy")}<span>Copy scontrol Command</span></button></p>`;
@@ -444,6 +444,15 @@ export function createJobView(host, H) {
     const thrLine = `<li>Thresholds: ${thr.length ? thr.join(", ") : "CRYSTAL23 defaults"}</li>`;
     return `<ol class="jbv-levels" aria-label="Progress and time left">${items}</ol>
       <details class="jbv-why"${d._whyOpen ? " open" : ""}><summary>Why this estimate</summary><ul class="small">${why}${thrLine}</ul></details>`;
+  }
+  // CPU and memory use as the server worded it (mace/cluster/job_efficiency.py);
+  // the measured values stay behind a toggle.
+  function effHtml(e) {
+    const caveat = e.cpu_caveat && e.cpu_line ? `<div class="muted">${esc(e.cpu_caveat)}</div>` : "";
+    const lines = (e.cpu_line ? `<div>${esc(e.cpu_line)}</div>` : "") + caveat + (e.memory_line ? `<div>${esc(e.memory_line)}</div>` : "");
+    const advice = (e.advice || []).map((a) => `<div class="jbv-advice">${esc(a)}</div>`).join("");
+    const det = (e.details || []).length ? `<details class="jbv-eff-details"><summary>Measured values</summary>${esc(e.details.join(", "))}</details>` : "";
+    return lines + advice + det;
   }
   function sci(v) {
     if (v === null || v === undefined) return "?";
@@ -474,8 +483,13 @@ export function createJobView(host, H) {
     if (!a) return;
     if (a.dataset.act === "refresh") load(d, true);
     if (a.dataset.act === "live") {
-      try { const r = await api("cluster/job/live", { body: { id: d.jobId } }); body.querySelector(".jbv-live").textContent = (r.rows || []).map((x) => `MaxRSS ${x.MaxRSS}, AveCPU ${x.AveCPU}`).join("; ") || (r.error ? r.error : "no live data"); }
-      catch (err) { toast(err.message, "error"); }
+      try {
+        const r = await api("cluster/job/live", { body: { id: d.jobId } });
+        if ((r.rows || []).length && r.efficiency) { d._liveEff = r.efficiency; d._liveNote = ""; }
+        else d._liveNote = r.error ? `sstat: ${r.error}` : "sstat lists no running steps for this job";
+        const el = body.querySelector(".jbv-eff"); if (el && d._liveEff) el.innerHTML = effHtml(d._liveEff);
+        const ln = body.querySelector(".jbv-live"); if (ln) ln.textContent = d._liveNote;
+      } catch (err) { toast(err.message, "error"); }
     }
   });
   return {

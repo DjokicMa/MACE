@@ -20,8 +20,9 @@ export function initContext(h) {
   // 3Dmol's own right-click report, set on every viewer (app.js calls it)
   M.onViewerContext = (atom, x, y, ev, v) => {
     viewerHandled = performance.now();
-    const r = v.getCanvas().getBoundingClientRect();
-    openViewport(atom ? atomArg(atom) : null, r.left + x, r.top + y);
+    // x, y: the viewer's own px (3Dmol's); the menu opens at the screen point
+    const cv = v.getCanvas(), r = cv.getBoundingClientRect(), z = window.maceZoom.of(cv);
+    openViewport(atom ? atomArg(atom) : null, r.left + x * z, r.top + y * z);
   };
   // the fallback, and any right-click 3Dmol did not report (another viewer, a label)
   document.addEventListener("contextmenu", (e) => {
@@ -74,10 +75,12 @@ export function hit(x, y) {
   if (!m) return null;
   const atoms = m.selectedAtoms({});
   if (atoms.length > MAX_HIT_ATOMS) return null;    // Phase 3 moves picking to the worker
+  // modelToScreen: the canvas's screen corner plus the viewer's own px, which the UI scale zooms
+  const cv = v.getCanvas(), r = cv.getBoundingClientRect(), z = window.maceZoom.of(cv);
   let best = null, bestD = HIT_PX;
   for (const a of atoms) {
     const p = v.modelToScreen({ x: a.x, y: a.y, z: a.z });
-    const d = Math.hypot(p.x - x, p.y - y);
+    const d = Math.hypot(r.left + (p.x - r.left) * z - x, r.top + (p.y - r.top) * z - y);
     if (d < bestD) { bestD = d; best = a; }
   }
   return best ? atomArg(best) : null;

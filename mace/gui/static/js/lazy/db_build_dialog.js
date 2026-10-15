@@ -5,7 +5,7 @@
 import { loadCss } from "./lazy_util.js";
 
 const CHIPS = [["new", "New"], ["changed", "Changed"], ["unchanged", "Unchanged"],
-  ["not tracked (always re-extracted)", "Not tracked"], ["unreadable", "Unreadable"], ["incomplete", "Incomplete"]];
+  ["not tracked (always re-extracted)", "Not tracked"], ["unreadable", "Unreadable"], ["incomplete", "Incomplete"], ["skipped", "Skipped"]];
 const ROW_H = 26, OVERSCAN = 8;
 const fmtSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`);
 const dirOf = (p) => (p && p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
@@ -61,7 +61,7 @@ export async function open(H, opts = {}) {
     register: $(".dbb-register").checked, skip_unchanged: $(".dbb-skip").checked && !$(".dbb-skip").disabled,
     backup: $(".dbb-backup").checked, keep: Number($(".dbb-keep").value) || 3 });
   const qs = (b) => new URLSearchParams({ folder: b.folder, ...(b.db ? { db: b.db } : {}), register: b.register ? "1" : "0",
-    skip: b.skip_unchanged ? "1" : "0", keep: String(b.keep) });
+    skip: b.skip_unchanged ? "1" : "0", backup: b.backup ? "1" : "0", keep: String(b.keep) });
 
   async function loadInfo() {
     const b = body();
@@ -112,7 +112,7 @@ export async function open(H, opts = {}) {
   function toRun() {
     if (!st.preview) return 0;
     const c = st.preview.counts, skip = body().skip_unchanged;
-    return Object.entries(c).reduce((t, [k, v]) => t + (k === "unreadable" || (skip && k === "unchanged") ? 0 : v), 0);
+    return Object.entries(c).reduce((t, [k, v]) => t + (k === "unreadable" || k === "skipped" || (skip && k === "unchanged") ? 0 : v), 0);
   }
   function renderGo() {
     const go = $(".dbb-go"), n = toRun(), i = st.info;

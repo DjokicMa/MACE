@@ -67,19 +67,19 @@ def test_freq_stores_vibrational_frequencies():
 
 
 def test_freq_detects_imaginary_mode():
-    """A FREQ output with a negative frequency reports an imaginary mode."""
+    """A FREQ output with a negative frequency beyond the noise reports an
+    imaginary mode (counted as test_imaginary_mode_count.py describes: the
+    -16.4 cm-1 mode of 1LiFSI-1FEC-conf2, used here before, is noise)."""
     props = _extract(
-        "FREQ/1LiFSI-1FEC-conf2_MOLECULE_OPT_symm_HSESOL3C*freq_HSESOL3C_optimized.out"
+        "FREQ/1LiFSI-1EMS-conf3_MOLECULE_OPT_symm_HSESOL3C*freq_HSESOL3C_optimized_temp.out"
     )
     freqs = props.get("vibrational_frequencies")
     assert isinstance(freqs, list) and len(freqs) > 0
 
-    # Imaginary modes are negative cm**-1 (no trailing 'i').
-    assert props.get("num_imaginary_frequencies", 0) >= 1
-    assert any(m["frequency_cm"] < 0 for m in freqs)
-    assert props["num_imaginary_frequencies"] == sum(
-        1 for m in freqs if m["frequency_cm"] < 0
-    )
+    # Imaginary modes are negative cm**-1 (no trailing 'i'): -23.89 and
+    # -13.69 cm-1, of which only the first is beyond the 20 cm-1 noise.
+    assert sorted(m["frequency_cm"] for m in freqs)[:2] == [-23.8935, -13.6892]
+    assert props["num_imaginary_frequencies"] == 1
 
 
 def test_freq_periodic_grouped_degenerate_modes():

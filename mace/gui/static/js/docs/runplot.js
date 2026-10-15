@@ -6,9 +6,12 @@
  * converged geometry after OPT END) sits at the last POINT, drawn as a ring.
  * frameOfPoint here is the twin of out_convergence.frame_of_point (it takes
  * the mapping the server computed with outindex's frame lines).
- * Energy surfaces (D6): a FINALRUN restart re-references the integrals, so
- * relative energies are taken within each segment; across segments only
- * CRYSTAL's printed DE is used.
+ * Energy surfaces (D6): a FINALRUN restart re-references the integrals.
+ * Segments "continuous" (the default) draws one curve with one reference
+ * across the restarts (dotted lines mark them); "separate" takes the
+ * relative energies within each segment. The twin of
+ * mace.utils.out_convergence.energy_along_run (`mace analyze --convergence
+ * FILE --energy [--segments separate]`).
  * The options are plotkit's (units, per, relative to, log, range, width),
  * kept per document; the defaults come from Settings › Plots. */
 import * as PK from "../plotkit.js";
@@ -44,6 +47,7 @@ export function createRunPlot(host, H) {
   const $ = (s) => host.querySelector(s);
   const el = $(".rp-plot");
   let doc = null, kit = null, building = false, again = false;
+  let legendBase = null;          // the margins without legends (fitLegends)
 
   /* ------------------------------------------------ options (per document) */
   const setting = (k, d) => { try { const v = H.setting ? H.setting(k) : undefined; return v === undefined || v === null || v === "" ? d : v; } catch (e) { return d; } };
@@ -52,7 +56,8 @@ export function createRunPlot(host, H) {
     const single = !d.compare;
     return {
       energy: { unit: setting("energyUnit", "eV") === "eV" ? "meV" : setting("energyUnit", "eV"), ylog: !!setting("plots.logDeltaE", false),
-        relTo: d.compare ? "final" : setting("plots.relTo", "final"), per: d.compare ? null : setting("plots.per", "cell"), single: false,
+        relTo: d.compare ? "final" : setting("plots.relTo", "final"), per: d.compare ? null : setting("plots.per", "cell"),
+        segments: setting("plots.segments", "continuous") === "separate" ? "separate" : "continuous",
         width: Number(setting("plots.lineWidth", 1.5)) || 1.5, xr: null, yr: null, xlog: false },
       convergence: { ylog: true, width: Number(setting("plots.lineWidth", 1.5)) || 1.5, xr: null, yr: null },
       scf: { ylog: true, width: 1.5, xr: null, yr: null },
@@ -67,6 +72,9 @@ export function createRunPlot(host, H) {
     const def = defaults(d);
     d.opts = {};
     for (const t of Object.keys(def)) d.opts[t] = t.startsWith("_") ? def[t] : { ...def[t], ...((saved && saved[t]) || {}) };
+    // the old per-segment checkbox (single: false was saved with every plot) gives way to Segments
+    if (saved && saved.energy && !saved.energy.segments) d.opts.energy.segments = def.energy.segments;
+    delete d.opts.energy.single;
     d.tab = d.tab || (saved && saved.tab) || "energy";
     d.tracks = d.tracks || (saved && saved.tracks) || [];
   }
@@ -74,6 +82,12 @@ export function createRunPlot(host, H) {
     try { localStorage.setItem(key(d), JSON.stringify({ ...d.opts, tab: d.tab, tracks: d.tracks.map((t) => ({ ...t, values: undefined })) })); } catch (e) { /* private */ }
   }
   const O = () => doc.opts[doc.tab];
+  function takeEnergy(d) {
+    if (!d.energyPatch || !d.opts) return;
+    Object.assign(d.opts.energy, d.energyPatch);
+    delete d.energyPatch;
+    persist(d);
+  }
   function set(patch, label) {
     Object.assign(O(), patch);
     persist(doc);
@@ -112,9 +126,11 @@ export function createRunPlot(host, H) {
   const css = (n) => cssVar(n);
   function base(o) {
     const grid = css("--line");
-    return { margin: { l: 70, r: 18, t: 18, b: 46 }, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+    // the legend above the plot, its margin sized to it as drawn (plotkit fitLegends); the labels of
+    // reference lines (thresholds, restarts, the stop) are legend entries of their own (key below)
+    return { margin: { l: 70, r: 18, t: 18, b: 46, autoexpand: false }, _keys: [], paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
       font: { color: css("--text"), size: 12, family: css("--font-sans") }, hovermode: "closest", showlegend: true,
-      legend: { orientation: "h", x: 0, y: 1.02, yanchor: "bottom", font: { size: 11 } },
+      legend: PK.legendTop(),
       modebar: { bgcolor: "rgba(0,0,0,0)", color: css("--text-2"), activecolor: css("--accent") },
       xaxis: { title: { text: XT }, gridcolor: grid, showline: true, mirror: true, linecolor: grid, zeroline: false,
         type: o.xlog ? "log" : "linear", range: o.xr || undefined, dtick: undefined },
@@ -132,13 +148,14 @@ export function createRunPlot(host, H) {
     if (x === null) return;
     lay.shapes.push({ type: "line", name: "selected", xref: "x", x0: x, x1: x, yref, y0: 0, y1: 1, line: { color: css("--sel"), width: 2 } });
   }
-  function segLines(r, lay) {
+  /* a legend entry naming a reference line, band or mark drawn as a shape (no box over the data) */
+  function refKey(lay, name, style) { lay._keys.push(PK.keyEntry(name, style, { legendrank: 900 + lay._keys.length })); }
+  function segLines(r, lay, separate = false) {
     for (const s of r.conv.segments.slice(1)) {
       const x = s.first_point - 0.5;
       lay.shapes.push({ type: "line", name: "finalrun", xref: "x", x0: x, x1: x, yref: "paper", y0: 0, y1: 1, line: { color: css("--text-3"), width: 1, dash: "dot" } });
-      lay.annotations.push({ x, y: 1, yref: "paper", xref: "x", text: "FINALRUN restart (re-referenced)", showarrow: false, textangle: -90,
-        font: { size: 10, color: css("--text-2") }, xanchor: "right", yanchor: "top" });
     }
+    if (r.conv.segments.length > 1) refKey(lay, separate ? "FINALRUN restart (re-referenced)" : "FINALRUN restart", { line: { color: css("--text-3"), width: 1, dash: "dot" } });
   }
 
   function energyFigure(d) {
@@ -153,25 +170,26 @@ export function createRunPlot(host, H) {
       const div = perDiv(r, o.per);
       const dash = ri ? "dot" : "solid";
       const name = runs.length > 1 ? r.name : "";
+      const sep = o.segments === "separate" && r.conv.segments.length > 1;
       if (o.ylog) {
-        // CRYSTAL's DE per point, and the distance to each segment's final energy
+        // CRYSTAL's DE per point, and the distance to the final energy (the run's, or each segment's)
         const dp = pts.filter((p) => p.de !== null && p.de !== undefined);
         traces.push({ x: dp.map((p) => p.x), y: dp.map((p) => Math.abs(p.de) * HA_EV * f / div), customdata: dp.map((p) => p.frame), mode: "lines+markers",
           type: "scatter", name: `${name ? name + ": " : ""}Energy change per point (CRYSTAL DE)`, meta: `de${ri}`,
           line: { color: pal[ri * 2 % 6], width: o.width, dash },
           marker: { size: 8, symbol: dp.map((p) => (p.de > 0 ? "triangle-up" : "circle")), color: dp.map((p) => (p.de > 0 ? css("--danger") : pal[ri * 2 % 6])) },
           hovertemplate: `POINT %{x}: |DE| %{y:.3e} ${esc(ul)}<extra></extra>` });
-        const ds = [], segFinal = {};
-        for (const p of pts) segFinal[p.seg] = p.e;
-        if (fin) segFinal[fin.seg] = fin.e;
+        const ds = [], segFinal = {}, g = (p) => (sep ? p.seg : 0);
+        for (const p of pts) segFinal[g(p)] = p.e;
+        if (fin) segFinal[g(fin)] = fin.e;
         // 1e-10 Ha: the printed precision (the OPT END energy repeats the last point's to 12 digits)
         for (const p of pts) {
-          const v = Math.abs(p.e - segFinal[p.seg]);
-          if (v > 1e-10) ds.push({ x: p.x, y: v * HA_EV * f / div, frame: p.frame, below: p.e < segFinal[p.seg] - 1e-10 });
+          const v = Math.abs(p.e - segFinal[g(p)]);
+          if (v > 1e-10) ds.push({ x: p.x, y: v * HA_EV * f / div, frame: p.frame, below: p.e < segFinal[g(p)] - 1e-10 });
         }
         below += ds.filter((p) => p.below).length;
         traces.push({ x: ds.map((p) => p.x), y: ds.map((p) => p.y), customdata: ds.map((p) => p.frame), mode: "lines+markers", type: "scatter",
-          name: `${name ? name + ": " : ""}Distance to the segment's final energy`, meta: `seg${ri}`,
+          name: `${name ? name + ": " : ""}Distance to the ${sep ? "segment's" : "run's"} final energy`, meta: `seg${ri}`,
           line: { color: pal[(ri * 2 + 1) % 6], width: o.width, dash },
           marker: { size: 7, symbol: ds.map((p) => (p.below ? "triangle-down" : "circle")), color: ds.map((p) => (p.below ? css("--danger") : pal[(ri * 2 + 1) % 6])) },
           hovertemplate: `POINT %{x}: %{y:.3e} ${esc(ul)}<extra></extra>` });
@@ -180,16 +198,15 @@ export function createRunPlot(host, H) {
           if (td) {
             const y = td.value * HA_EV * f / div;
             lay.shapes.push({ type: "line", name: "toldee", xref: "paper", x0: 0, x1: 1, yref: "y", y0: y, y1: y, line: { color: css("--text-2"), width: 1, dash: "dash" } });
-            lay.annotations.push({ xref: "paper", x: 1, y: Math.log10(y), yref: "y", text: `TOLDEE ${td.value.toExponential(0)} Ha (${SRC[td.source] || td.source})`,
-              showarrow: false, xanchor: "right", yanchor: "bottom", font: { size: 10, color: css("--text-2") } });
+            refKey(lay, `TOLDEE ${td.value.toExponential(0)} Ha<br>(${SRC[td.source] || td.source})`, { line: { color: css("--text-2"), width: 1, dash: "dash" } });
           }
         }
         lay.yaxis.title = { text: `|ΔE| (${ul})` };
       } else {
-        // linear: E - E_ref within each segment (or one reference for the whole run)
+        // linear: E - E_ref, one reference for the whole run (continuous) or one per FINALRUN segment (separate)
         const all = fin ? [...pts, fin] : pts;
         const ref = {};
-        const segOf = (p) => (o.single ? 0 : p.seg);
+        const segOf = (p) => (sep ? p.seg : 0);
         if (o.relTo === "first") for (const p of all) { if (!(segOf(p) in ref)) ref[segOf(p)] = p.e; }
         else if (o.relTo === "final") for (const p of all) ref[segOf(p)] = p.e;
         else if (o.relTo === "minimum") for (const p of all) ref[segOf(p)] = Math.min(ref[segOf(p)] ?? Infinity, p.e);
@@ -201,7 +218,7 @@ export function createRunPlot(host, H) {
           const bl = gp.map((p) => o.relTo !== "absolute" && p.e < ref[segOf(p)] - 1e-10);
           below += bl.filter(Boolean).length;
           traces.push({ x: gp.map((p) => p.x), y: gp.map(val), customdata: gp.map((p) => p.frame), mode: "lines+markers", type: "scatter",
-            name: `${name ? name + ": " : ""}${o.single || Object.keys(groups).length === 1 ? "E − E_ref" : `segment ${Number(sg) + 1}, relative to its ${o.relTo}`}`,
+            name: `${name ? name + ": " : ""}${Object.keys(groups).length === 1 ? "E − E_ref" : `segment ${Number(sg) + 1}, relative to its ${o.relTo}`}`,
             meta: `e${ri}_${sg}`, legendgroup: `r${ri}`, showlegend: gi === 0 || runs.length === 1,
             line: { color: pal[ri * 2 % 6], width: o.width, dash },
             marker: { size: 8, symbol: bl.map((b) => (b ? "triangle-down" : "circle")), color: bl.map((b) => (b ? css("--danger") : pal[ri * 2 % 6])) },
@@ -211,7 +228,7 @@ export function createRunPlot(host, H) {
           meta: `fin${ri}`, marker: { size: 13, symbol: "circle-open", color: pal[ri * 2 % 6], line: { width: 2 } }, hovertemplate: `final geometry: %{y:.4g} ${esc(ul)}<extra></extra>` });
         lay.yaxis.title = { text: `${o.relTo === "absolute" ? "E" : "ΔE"} (${ul})` };
       }
-      if (ri === 0) segLines(r, lay);
+      if (ri === 0) segLines(r, lay, sep);
     });
     selLine(d.run, lay);
     d.belowCount = below;
@@ -240,9 +257,7 @@ export function createRunPlot(host, H) {
           const t = r.conv.thresholds[tk];
           if (t) {
             lay.shapes.push({ type: "line", name: `thr-${k}`, xref: "paper", x0: 0, x1: 1, yref: "y", y0: t.value, y1: t.value, line: { color, width: 1, dash: "dash" } });
-            const right = k.endsWith("_disp");
-            lay.annotations.push({ xref: "paper", x: right ? 1 : 0, y: Math.log10(t.value), yref: "y", xanchor: right ? "right" : "left", yanchor: "bottom", showarrow: false,
-              text: `${label} ${t.value} (${SRC[t.source] || t.source}${t.manual_page ? ", manual p." + t.manual_page : ""})`, font: { size: 10, color } });
+            refKey(lay, `${label} ${t.value}<br>(${SRC[t.source] || t.source}${t.manual_page ? ", manual p." + t.manual_page : ""})`, { line: { color, width: 1, dash: "dash" } });
           }
         }
       });
@@ -254,8 +269,7 @@ export function createRunPlot(host, H) {
       const x = pts[pts.length - 1].point;
       lay.shapes.push({ type: "rect", name: "stop", xref: "x", x0: x - 0.4, x1: x + 0.4, yref: "paper", y0: 0, y1: 1,
         fillcolor: "rgba(128,128,128,0.12)", line: { width: 0 } });
-      lay.annotations.push({ x, xref: "x", y: 0.02, yref: "paper", text: REASON[end.reason] || end.reason, showarrow: false, textangle: -90,
-        xanchor: "center", yanchor: "bottom", font: { size: 10, color: css("--text-2") } });
+      refKey(lay, REASON[end.reason] || end.reason, { marker: { symbol: "square", size: 12, color: "rgba(128,128,128,0.35)" } });
     }
     segLines(r0, lay);
     selLine(r0, lay);
@@ -280,8 +294,7 @@ export function createRunPlot(host, H) {
         // the SCF MAXCYCLE line only when the bars come near it (1600 would flatten bars of 5)
         const top = Math.max(...pts.map((p) => p.scf_cycles || 0));
         if (mc.value <= 2 * top) lay.shapes.push({ type: "line", name: "scfmax", xref: "x domain", x0: 0, x1: 1, yref: "y", y0: mc.value, y1: mc.value, line: { color: css("--text-3"), dash: "dash", width: 1 } });
-        lay.annotations.push({ xref: "x domain", x: 1, yref: "y domain", y: 1, xanchor: "right", yanchor: "top", showarrow: false,
-          text: `SCF MAXCYCLE ${mc.value} (${SRC[mc.source] || mc.source})`, font: { size: 10, color: css("--text-2") } });
+        refKey(lay, `SCF MAXCYCLE ${mc.value}<br>(${SRC[mc.source] || mc.source})`, { line: { color: css("--text-3"), width: 1, dash: "dash" } });
       }
     }
     // the per-cycle detail CRYSTAL printed: the selected point's block, else the first
@@ -302,8 +315,7 @@ export function createRunPlot(host, H) {
       const t = conv.thresholds.toldee_scf;
       if (t) {
         lay.shapes.push({ type: "line", name: "toldee-scf", xref: "x2 domain", x0: 0, x1: 1, yref: "y2", y0: t.value, y1: t.value, line: { color: css("--text-2"), width: 1, dash: "dash" } });
-        lay.annotations.push({ xref: "x2 domain", x: 1, yref: "y2", y: Math.log10(t.value), xanchor: "right", yanchor: "bottom", showarrow: false,
-          text: `TOLDEE ${t.value.toExponential(0)} Ha (${SRC[t.source] || t.source})`, font: { size: 10, color: css("--text-2") } });
+        refKey(lay, `TOLDEE ${t.value.toExponential(0)} Ha<br>(${SRC[t.source] || t.source})`, { line: { color: css("--text-2"), width: 1, dash: "dash" } });
       }
       if (blk.ended === "too_many_cycles") d.scfNote = "The SCF of this point did not converge (TOO MANY CYCLES): see Problems.";
     } else {
@@ -318,6 +330,10 @@ export function createRunPlot(host, H) {
     const o = d.opts.cell, r = d.run;
     const lay = base(o);
     lay.shapes = []; lay.annotations = [];
+    // eight entries of very different widths (a, the restart key): plotly wraps plain rows into a
+    // grid as wide as the widest entry, one entry a row in a narrow pane; one group per entry
+    // (grouped order) wraps them as they are wide instead
+    lay.legend = PK.legendTop({ traceorder: "grouped", tracegroupgap: 0 });
     const pal = Array.from({ length: 6 }, (_, k) => css(`--plot-${k + 1}`));
     const pts = r.conv.points.filter((p) => p.cell);
     const pct = o.relTo === "first";
@@ -338,6 +354,7 @@ export function createRunPlot(host, H) {
     lay.yaxis2 = { title: { text: pct ? "α, β, γ (% from first)" : "α, β, γ (°)" }, domain: [0, 0.42], anchor: "x2", gridcolor: grid, showline: true, mirror: true, linecolor: grid };
     segLines(r, lay);
     selLine(r, lay);
+    [...traces, ...lay._keys].forEach((t, i) => { t.legendgroup = `g${i}`; });
     return { traces, layout: lay };
   }
 
@@ -389,17 +406,26 @@ export function createRunPlot(host, H) {
       const fig = ({ energy: energyFigure, convergence: convergenceFigure, scf: scfFigure, cell: cellFigure, tracked: trackedFigure })[doc.tab](doc);
       const config = { displaylogo: false, responsive: true, modeBarButtonsToRemove: ["lasso2d", "select2d"] };
       integerTicks(fig);
+      // the reference lines' legend entries after the data's; the margins kept from the last fit (fitLegends)
+      fig.traces.push(...(fig.layout._keys || []));
+      delete fig.layout._keys;
+      if (el.__sig === `${doc.id}|${doc.tab}` && el.layout && el.layout.margin) Object.assign(fig.layout.margin, { t: el.layout.margin.t, r: el.layout.margin.r });
       const sig = `${doc.id}|${doc.tab}`;
       // the note, the chips and the criteria strip first: the plot is then drawn
       // into the height they leave (drawn after, the strip covered the plot's x axis)
       const note = emptyText(doc);
       $(".pv-note").textContent = note || (doc.tab === "scf" ? doc.scfNote : doc.tab === "energy" && doc.opts.energy.ylog
-        ? "CRYSTAL's DE is relative to the optimizer's reference geometry; the second trace is the distance to each FINALRUN segment's final energy."
+        ? `CRYSTAL's DE is relative to the optimizer's reference geometry; the second trace is the distance to ${doc.opts.energy.segments === "separate" && doc.run.conv.segments.length > 1 ? "each FINALRUN segment's" : "the run's"} final energy.`
         : `${doc.run.conv.stop || ""}`);
+      // one line, the whole of it in the tooltip
+      $(".pv-note").title = $(".pv-note").textContent;
       chips();
       criteria();
       if (el.__sig !== sig) { if (el.__sig) window.Plotly.purge(el); el.__bound = false; await window.Plotly.newPlot(el, fig.traces, fig.layout, config); el.__sig = sig; }
       else await window.Plotly.react(el, fig.traces, fig.layout, config);
+      building = false;
+      legendBase = { t: 18, r: 18 };
+      await PK.fitLegends(el, legendBase);
       bind();
       el.dataset.drawn = `${doc.id}|${doc.tab}`;
     } catch (e) { $(".pv-note").textContent = e.message; } finally {
@@ -410,7 +436,7 @@ export function createRunPlot(host, H) {
   function chips() {
     const parts = [];
     if (doc.tab === "energy" && doc.belowCount) parts.push(`<span class="pv-chip rp-below-chip" title="Below their reference energy (red down-triangles)">${doc.belowCount} point${doc.belowCount === 1 ? "" : "s"} below ${doc.belowCount === 1 ? "its" : "their"} reference energy</span>`);
-    if (doc.tab === "energy" && doc.opts.energy.ylog && !doc.opts.energy.single) parts.push(`<span class="pv-chip" title="A log axis cannot show the reference point itself">the reference point has no value on a log axis</span>`);
+    if (doc.tab === "energy" && doc.opts.energy.ylog) parts.push(`<span class="pv-chip" title="A log axis cannot show the reference point itself">the reference point has no value on a log axis</span>`);
     if (doc.other) parts.push(`<span class="pv-chip">${esc(doc.run.name)} vs ${esc(doc.other.name)}</span>`);
     $(".pv-chips").innerHTML = parts.join("");
   }
@@ -426,6 +452,10 @@ export function createRunPlot(host, H) {
   function bind() {
     if (el.__bound) return;
     el.__bound = true;
+    el.on("plotly_legendclick", PK.keyClick);
+    el.on("plotly_legenddoubleclick", PK.keyClick);
+    // a resize redraws the legend: fit the margins to it again
+    el.on("plotly_afterplot", () => { if (legendBase && !el.__fitting && !building) requestAnimationFrame(() => PK.fitLegends(el, legendBase)); });
     el.on("plotly_click", (ev) => {
       if (!doc || !ev.points || !ev.points.length) return;
       const p = ev.points[0];
@@ -487,13 +517,14 @@ export function createRunPlot(host, H) {
         rows: Array.from({ length: n }, (_, k) => [pointOf[k] ?? "", k, eOf[k] ?? "", ...d.tracks.map((x) => (x.values || [])[k])]) };
     }
     // energy: one value column per run (its segments joined; the final-geometry ring left out),
-    // two per run in the log view (CRYSTAL's DE and the distance to the segment's final energy)
+    // two per run in the log view (CRYSTAL's DE and the distance to the final energy)
     const data = (el.data || []).filter((tr) => tr.meta && !String(tr.meta).startsWith("fin"));
     const o = d.opts.energy, ul = PK.unitText(o.unit, o.per || "cell");
     const runs = [d.run, ...(d.other ? [d.other] : [])];
     const groups = [];
     runs.forEach((r, ri) => {
-      const pre = o.ylog ? [[`de${ri}`, "|DE|"], [`seg${ri}`, "|E - E_seg_final|"]] : [[`e${ri}_`, o.relTo === "absolute" ? "E" : "dE"]];
+      const sep = o.segments === "separate" && r.conv.segments.length > 1;
+      const pre = o.ylog ? [[`de${ri}`, "|DE|"], [`seg${ri}`, sep ? "|E - E_seg_final|" : "|E - E_final|"]] : [[`e${ri}_`, o.relTo === "absolute" ? "E" : "dE"]];
       for (const [m, lab] of pre) {
         const trs = data.filter((tr) => String(tr.meta).startsWith(m) && (o.ylog ? String(tr.meta) === m : true));
         if (trs.length) groups.push({ label: `${runs.length > 1 ? r.name + " " : ""}${lab} (${ul})`, trs });
@@ -510,6 +541,7 @@ export function createRunPlot(host, H) {
       doc.run = await runData(doc.runPath);
       if (doc.compare) doc.other = await runData(doc.compare);
       await retrack();
+      if (kit) kit.refresh();          // the features follow the data (Segments only for a run with FINALRUN restarts)
       redraw();
     } catch (e) { $(".pv-note").textContent = e.message; }
   }
@@ -526,6 +558,7 @@ export function createRunPlot(host, H) {
     async open(d) {
       doc = d;
       load(d);
+      takeEnergy(d);
       $(".pv-title").textContent = d.title;
       $(".pv-note").innerHTML = `<span class="spinner"></span> Reading ${esc(d.runPath.split("/").pop())}…`;
       if (!kit) kit = PK.attach($(".pv-acts"), {
@@ -534,7 +567,7 @@ export function createRunPlot(host, H) {
         get features() {
           const t = doc ? doc.tab : "energy";
           return { logY: t !== "cell", logX: false, units: t === "energy" ? "energy" : null, per: t === "energy", relTo: t === "energy",
-            single: t === "energy", range: true, width: true, png: true, svg: true, csv: true, pub: false };
+            segments: t === "energy" && !!doc && !!doc.run && doc.run.conv.segments.length > 1, range: true, width: true, png: true, svg: true, csv: true, pub: false };
         },
         get disabled() {
           if (!doc || !doc.other || doc.tab !== "energy") return {};
@@ -560,6 +593,8 @@ export function createRunPlot(host, H) {
       }
     },
     close() { doc = null; },
+    /** the energy card's Open as Plot: the plot shows the card's data (reference, segments, unit, log) */
+    setEnergy(d, patch) { if (!d || !patch) return; d.energyPatch = patch; if (doc === d && d.opts) { takeEnergy(d); if (kit) kit.refresh(); redraw(); } },
     showTab: (t) => doc && showTab(t),
     track(measurement, label) {
       if (!doc) return;

@@ -20,7 +20,8 @@ Two ways to reach the node (the profile's ``hop``):
   login through the gateway.
 
 Profiles live in ``$XDG_CONFIG_HOME/mace/connect.toml`` (Windows:
-``%APPDATA%\\mace\\connect.toml``), mode 0600, no secrets.
+``%APPDATA%\\mace\\connect.toml``), no secrets; mode 0600 on Linux and macOS
+(on Windows the file has the access rights of your own AppData folder).
 
 Standard library only: this runs on your own computer, which needs Python 3
 and ssh but not MACE's scientific packages.
@@ -28,7 +29,11 @@ and ssh but not MACE's scientific packages.
 from __future__ import annotations
 
 import argparse
+import codecs
+import ctypes
+import fnmatch
 import getpass
+import http.client
 import json
 import os
 import queue
@@ -60,6 +65,7 @@ HOPS = ("auto", "jump", "nested")
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 DOCS_MANUAL = "docs/gui.md#run-it-on-a-cluster-and-view-it-on-your-computer"
 DOCS_WINDOWS = "docs/gui.md#windows-powershell"
+DOCS_NODE_PASSWORD = "docs/gui.md#mace-gui-connect-the-node-asks-for-a-password"
 HEADER = """\
 # mace gui connect profiles (mace gui connect --help). No passwords or tokens.
 # Fields: gateway (login host, e.g. "me@hpcc.example.edu" or an ~/.ssh/config Host),
@@ -94,15 +100,17 @@ def config_path(env: Optional[Dict[str, str]] = None) -> Path:
 
 
 def _unquote_basic(text: str) -> str:
+    """A TOML basic string's escapes, in one pass, as tomllib reads them."""
     out, i = [], 0
-    esc = {"n": "\n", "t": "\t", '"': '"', "\\": "\\", "r": "\r"}
+    esc = {"b": "\b", "t": "\t", "n": "\n", "f": "\f", "r": "\r", '"': '"', "\\": "\\"}
     while i < len(text):
         c = text[i]
         if c == "\\" and i + 1 < len(text):
             n = text[i + 1]
-            if n == "u" and i + 5 < len(text):
-                out.append(chr(int(text[i + 2:i + 6], 16)))
-                i += 6
+            width = {"u": 4, "U": 8}.get(n, 0)
+            if width and re.fullmatch(r"[0-9A-Fa-f]{%d}" % width, text[i + 2:i + 2 + width]):
+                out.append(chr(int(text[i + 2:i + 2 + width], 16)))
+                i += 2 + width
                 continue
             out.append(esc.get(n, n))
             i += 2
@@ -227,7 +235,9 @@ def save_profiles(data: Dict[str, Any], path: Optional[Path] = None) -> Path:
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(f".{p.name}.{os.getpid()}.tmp")
     fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    # LF on every system: the standalone scripts read this file too (a CRLF
+    # file from Windows' text mode broke mace-gui-connect.sh in MobaXterm)
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(dump_profiles(data))
     os.replace(tmp, p)
     try:
@@ -272,6 +282,46 @@ def effective_node_user(gateway: str, runner: Callable = subprocess.run) -> Opti
     return None
 
 
+def ssh_g(host: str, runner: Callable = subprocess.run) -> Dict[str, List[str]]:
+    """``ssh -G host``: the settings ssh would use for host, as {key: [values]}."""
+    out: Dict[str, List[str]] = {}
+    try:
+        r = runner(["ssh", "-G", host], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return out
+    for line in (r.stdout or "").splitlines():
+        k, _, v = line.partition(" ")
+        if k and v.strip():
+            out.setdefault(k.lower(), []).append(v.strip())
+    return out
+
+
+def node_key_options(gateway: str, target: str, runner: Callable = subprocess.run) -> List[str]:
+    """ssh options that give the node hop of ``ssh -J <gateway> <node>`` the
+    key setup your ssh config has for the gateway.
+
+    With -J, ssh logs in to the node from THIS computer, with the settings
+    ssh's config has for the NODE's name: an IdentityFile (or IdentityAgent,
+    IdentitiesOnly) set in the gateway's Host block (``Host hpcc``) does not
+    apply to it. Without an agent holding that key, the node is offered only
+    the default key files, refuses them, and ssh asks for the node's password.
+    The command line's ``-o`` options apply to the destination (the node)
+    only; the jump to the gateway keeps its own settings."""
+    if not gateway or not target:
+        return []
+    g, n = ssh_g(gateway, runner), ssh_g(target, runner)
+    opts: List[str] = []
+    for f in g.get("identityfile", []):
+        if f not in n.get("identityfile", []) and os.path.isfile(os.path.expanduser(f)):
+            opts += ["-o", f"IdentityFile={f}"]
+    agent = (g.get("identityagent") or [""])[0]
+    if agent and agent != (n.get("identityagent") or [""])[0]:
+        opts += ["-o", f"IdentityAgent={agent}"]
+    if (g.get("identitiesonly") or [""])[0] == "yes" and (n.get("identitiesonly") or [""])[0] != "yes":
+        opts += ["-o", "IdentitiesOnly=yes"]
+    return opts
+
+
 def pick_local_port(start: int, tries: int = PORT_TRIES, warn: Callable[[str], None] = say_line) -> int:
     for p in range(start, start + tries + 1):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -294,13 +344,86 @@ def random_port(rng=None) -> int:
     return r.randint(*RP_RANGE)
 
 
+# A leading // marks a literal absolute path on the node: never rewritten to
+# ~/... (one that sits under this computer's home folder too), sent with one
+# slash dropped. The scripts (scripts/mace-gui-connect.sh, .ps1) do the same.
+LITERAL = "//"
+
+
 def _home_path(text: str) -> str:
-    """A shell word for a path; "~" and "~/..." become "$HOME"-relative, the rest is literal."""
+    """A shell word for a path; "~" and "~/..." become "$HOME"-relative, the rest is literal
+    ("//abs" is a literal /abs, see LITERAL)."""
+    if text.startswith(LITERAL):
+        return shlex.quote(text[1:])
     if text == "~":
         return '"$HOME"'
     if text.startswith("~/"):
         return '"$HOME"/' + shlex.quote(text[2:])
     return shlex.quote(text)
+
+
+def _local_home_forms(home: Optional[str] = None) -> List[str]:
+    """This computer's home folder as a path prefix ("" when it is "/" or unknown)."""
+    h = os.path.expanduser("~") if home is None else home
+    forms = []
+    for f in (h, h.replace("\\", "/") if os.name == "nt" else h):
+        f = f.rstrip("/\\")
+        if f and f != "~" and f not in forms:
+            forms.append(f)
+    return forms
+
+
+def _localized(value: str, forms: Sequence[str]) -> Optional[str]:
+    """``~`` or ``~/rest`` for a path under this computer's home folder, else None."""
+    if value.startswith(LITERAL):
+        return None
+    seps = "/\\" if os.name == "nt" else "/"
+    for f in forms:
+        if value == f:
+            return "~"
+        if value.startswith(f) and len(value) > len(f) and value[len(f)] in seps:
+            rest = value[len(f) + 1:]
+            return "~/" + (rest.replace("\\", "/") if os.name == "nt" else rest)
+    return None
+
+
+def localize_home_paths(profile: Dict[str, Any], home: Optional[str] = None) -> List[Tuple[str, str]]:
+    """Paths on the node given as paths under THIS computer's home folder:
+    an unquoted ``~/x`` that the local shell expanded before MACE saw it
+    (``--mace ~/mace/mace_cli`` arrives as /home/you/mace/mace_cli, which the
+    node does not have when its home is elsewhere). Rewrites dir, the words
+    of mace, roots and conda to ``~/...`` in place (expanded on the node) and
+    returns the (before, after) pairs. ``setup`` is shell code the user
+    quotes, so the local shell never expands it: left alone. A path written
+    with a leading // is literal (LITERAL): left alone too."""
+    forms = _local_home_forms(home)
+    if not forms:
+        return []
+    done: List[Tuple[str, str]] = []
+
+    def one(v: str) -> str:
+        new = _localized(v, forms)
+        if new is None:
+            return v
+        done.append((v, new))
+        return new
+    for key in ("dir", "conda"):
+        if isinstance(profile.get(key), str) and profile[key]:
+            profile[key] = one(profile[key])
+    if isinstance(profile.get("mace"), str) and profile["mace"]:
+        # word by word, keeping the rest of the string as written (the scripts split it on blanks)
+        profile["mace"] = re.sub(r"\S+", lambda m: one(m.group(0)), profile["mace"])
+    if isinstance(profile.get("roots"), list):
+        profile["roots"] = [one(r) if isinstance(r, str) else r for r in profile["roots"]]
+    if done:
+        profile["_localized"] = list(done)
+    return done
+
+
+def localized_note(pairs: Sequence[Tuple[str, str]]) -> str:
+    what = ", ".join(f"{a} as {b}" for a, b in pairs)
+    return (f"Note: treated {what} on the remote (your shell turned ~ into this computer's home folder; quote the "
+            f"~, as '{pairs[0][1]}', to avoid this).")
 
 
 def remote_command(profile: Dict[str, Any], rp: int) -> str:
@@ -314,7 +437,7 @@ def remote_command(profile: Dict[str, Any], rp: int) -> str:
     if setup and str(setup).strip():
         parts.append(str(setup).strip().rstrip(";"))
     if profile.get("conda"):
-        parts.append("conda activate " + shlex.quote(str(profile["conda"])))
+        parts.append("conda activate " + _home_path(str(profile["conda"])))
     d = str(profile.get("dir") or "~")
     mace = shlex.split(str(profile.get("mace") or "mace")) or ["mace"]
     cmd = ["exec"]
@@ -360,9 +483,11 @@ def node_target(profile: Dict[str, Any], user_for_node: Optional[str]) -> str:
 
 
 def build_ssh_argv(profile: Dict[str, Any], lp: int, rp: int, gp: int, hop: str,
-                   user_for_node: Optional[str] = None, ssh: str = "ssh") -> List[str]:
+                   user_for_node: Optional[str] = None, ssh: str = "ssh",
+                   node_keys: Sequence[str] = ()) -> List[str]:
     """The one ssh command for a hop ("jump" or "nested"); no -n, no -t, so
-    stdin and its EOF pass through every hop to the server."""
+    stdin and its EOF pass through every hop to the server. node_keys: the
+    gateway's key options for the node hop of "jump" (node_key_options)."""
     gateway = str(profile.get("gateway") or "")
     jumps = [j.strip() for j in str(profile.get("jump") or "").split(",") if j.strip()]
     extra = [str(x) for x in (profile.get("ssh_options") or [])]
@@ -385,7 +510,7 @@ def build_ssh_argv(profile: Dict[str, Any], lp: int, rp: int, gp: int, hop: str,
             argv += ["-J", ",".join(jumps)]
         return argv + _base_opts() + extra + ["-L", f"127.0.0.1:{lp}:127.0.0.1:{gp}", gateway, inner]
     argv += ["-J", ",".join(jumps + [gateway])]
-    return argv + _base_opts() + extra + ["-L", f"127.0.0.1:{lp}:127.0.0.1:{rp}",
+    return argv + _base_opts() + list(node_keys) + extra + ["-L", f"127.0.0.1:{lp}:127.0.0.1:{rp}",
                                           node_target(profile, user_for_node), rcmd]
 
 
@@ -393,9 +518,60 @@ def _host_of(target: str) -> str:
     return target.split("@", 1)[-1] if target else ""
 
 
+# The node's shell could not change to --dir: bash ("cd: <dir>: No such file
+# or directory"), dash and sh ("cd: can't cd to <dir>"). Checked before the
+# missing-mace test, whose "No such file or directory" this line also holds.
+CD_FAILED_RE = re.compile(r"\bcd: (?:can't cd to (?P<a>.+?)\s*$|(?P<b>.+?): (?:No such file or directory|Not a "
+                          r"directory|Permission denied)\s*$)", re.M)
+
+
+def host_key_trust_command(profile: Dict[str, Any], hop: str, user_for_node: Optional[str]) -> str:
+    """The ssh line that asks once, in a terminal, to trust the host key(s)
+    this session needs: ``ssh -J <gateway> <node> true`` for the jump hop
+    (the gateway's key, then the node's), else ``ssh <gateway> true``."""
+    gateway = str(profile.get("gateway") or "")
+    jumps = [j.strip() for j in str(profile.get("jump") or "").split(",") if j.strip()]
+    node = profile.get("node")
+    if node and gateway and hop != "nested":
+        jumps = jumps + [gateway]
+        target = node_target(profile, user_for_node)
+    else:
+        target = gateway or (node_target(profile, user_for_node) if node else "")
+    argv = ["ssh"] + (["-J", ",".join(jumps)] if jumps else []) + [target, "true"]
+    return shlex.join(argv)
+
+
+# The host whose key ssh could not verify: named before "Host key
+# verification failed." (a prompt that got no yes, or a check with no
+# terminal to ask on). With -J the gateway leg is a separate ssh process
+# that checks the gateway's key against the real known_hosts (the command
+# line's -o options do not reach it), and it prints to the same stderr.
+HOST_KEY_HOST_RE = re.compile(r"The authenticity of host '\[?(?P<a>[^' \]]+)\]?(?::\d+)? \((?P<ip>[^)]*)\)'"
+                              r"|No \S+ host key is known for \[?(?P<b>[^ \]]+)\]?(?::\d+)? and")
+
+
+def host_key_leg(stderr_lines: Sequence[str], node: str, gateway: str, gateway_hostname: str = "") -> str:
+    """Which host's key failed: "node", "gateway" or "" (not named, or another host)."""
+    nh, gh = _host_of(node).lower(), _host_of(gateway).lower()
+    for ln in stderr_lines:
+        m = HOST_KEY_HOST_RE.search(ln)
+        if not m:
+            continue
+        h = (m.group("a") or m.group("b") or "").lower()
+        if node and (h == nh or (m.group("ip") or "") == "<no hostip for proxy command>"):
+            return "node"
+        if h and h in (gh, gateway_hostname.lower()):
+            return "gateway"
+    return ""
+
+
 def classify_failure(code: Optional[int], stderr_lines: Sequence[str], node: str = "", gateway: str = "",
-                     stdout_lines: Sequence[str] = ()) -> Tuple[str, str]:
-    """(kind, message) for a session that ended before the server was ready."""
+                     stdout_lines: Sequence[str] = (), hop: str = "", trust_cmd: str = "",
+                     gateway_cmd: str = "", gateway_hostname: str = "") -> Tuple[str, str]:
+    """(kind, message) for a session that ended before the server was ready.
+    hop: the hop this session used; trust_cmd: host_key_trust_command's line
+    for this hop; gateway_cmd: the same for the gateway alone (hop nested);
+    gateway_hostname: the gateway's HostName (ssh -G), which ssh's messages use."""
     err = "\n".join(stderr_lines)
     out = "\n".join(stdout_lines)
     both = err + "\n" + out
@@ -409,9 +585,47 @@ def classify_failure(code: Optional[int], stderr_lines: Sequence[str], node: str
         line = next((ln for ln in stderr_lines if "prohibited" in ln or "forwarding" in ln.lower()), "")
         return ("forwarding", f"{line.strip()}\nYour cluster turns off port forwarding on this host; ask your "
                               "administrators.")
-    if "Host key verification failed" in err or "REMOTE HOST IDENTIFICATION HAS CHANGED" in err:
-        return ("host-key", "ssh refused the host key (see ssh's message above). Check it, then run "
-                            "`ssh <host>` once in this terminal to accept the right one.")
+    if "REMOTE HOST IDENTIFICATION HAS CHANGED" in err or re.search(r"Host key for \S+ has changed", err):
+        return ("host-key", "ssh refused a host key that has CHANGED since this computer last connected (see "
+                            "ssh's message above). That can mean an attack, or that the host was reinstalled: ask "
+                            "your administrators before you remove the old key (ssh-keygen -R <host>).")
+    if "Host key verification failed" in err:
+        # never trusted silently (no automatic acceptance of new keys): the user checks and answers once
+        jump = bool(node and gateway and hop != "nested")
+        leg = host_key_leg(stderr_lines, node, gateway, gateway_hostname) if jump else ""
+        tail = ("in this terminal, compare the fingerprint with your cluster's, answer yes, and run mace gui "
+                "connect again.")
+        why = (", and nobody answered yes to ssh's question" +
+               (", or the question could not be shown here" if os.name == "nt" else "") + ". ")
+        gw_cmd = gateway_cmd or f"ssh {gateway} true"
+        if jump and leg == "gateway":
+            return ("host-key", f"ssh could not verify the gateway {gateway}'s host key (see ssh's message above): "
+                                "this computer has not connected to it before" + why +
+                                f"Check the key, then trust it once: run\n    {gw_cmd}\n" + tail)
+        if jump and not leg:
+            return ("host-key", "ssh could not verify a host key (see ssh's message above): this computer has not "
+                                "connected to that host before" + why + "With the jump hop this computer checks "
+                                "both keys itself, the gateway's first, then the node's. Check them, then trust "
+                                f"them once: run\n    {gw_cmd}\nthen\n    {trust_cmd or 'ssh -J <gateway> <node> true'}"
+                                "\n" + tail + " Or use --hop nested (the gateway then checks the node's key "
+                                "with its own list of known hosts; its own key is still checked here).")
+        what = f"{node}'s" if jump else "the"
+        msg = (f"ssh could not verify {what} host key (see ssh's message above): this computer has not connected "
+               "to it before" + why)
+        if jump:
+            msg += ("With the jump hop, this computer checks the node's key itself, so its known_hosts needs "
+                    "an entry for the node too. ")
+        cmd = trust_cmd or ("ssh <host> true")
+        msg += f"Check the key, then trust it once: run\n    {cmd}\n" + tail
+        if jump:
+            msg += (" Or use --hop nested: the gateway then logs in to the node and checks its key with the "
+                    "gateway's own list of known hosts.")
+        return ("host-key", msg)
+    m = CD_FAILED_RE.search(err)
+    if m:
+        folder = (m.group("a") or m.group("b") or "").strip()
+        return ("dir", f"The folder {folder} does not exist on {where} (the remote shell could not cd to it): "
+                       "check --dir, which is a path on the node (~/... is the node's home folder).")
     if code == 127 or re.search(r"(mace|mace_cli|python\S*): (command )?not found|No such file or directory", both):
         return ("mace-not-found", f"The remote login shell on {where} did not find the mace command. Pass "
                                   "--mace <full path to mace_cli or mace>, or a --setup line that puts it on PATH "
@@ -420,7 +634,10 @@ def classify_failure(code: Optional[int], stderr_lines: Sequence[str], node: str
         return ("dir", f"The folder does not exist on {where}, or the arguments were refused: check --dir "
                        "(and --setup / --mace).")
     if node_auth_refused(stderr_lines, node, gateway):
-        return ("node-auth", f"The node {node} did not accept a login through the gateway.")
+        return ("node-auth", f"The node {node} did not accept a login through the gateway: with ssh -J the node "
+                             f"checks your key from this computer, and refused it ({DOCS_NODE_PASSWORD}).")
+    if key_auth_failed(code, stderr_lines):
+        return ("key", KEY_HINT)
     if code == 255:
         return ("ssh", f"ssh could not connect: check the gateway name and that `ssh {gateway or where}` works "
                        "in this terminal.")
@@ -442,6 +659,64 @@ def node_auth_refused(stderr_lines: Sequence[str], node: str, gateway: str) -> b
     if gh and any(gh in ln.split(":")[0] for ln in denied):
         return False
     return any(nh and nh in ln.split(":")[0] for ln in denied)
+
+
+# ssh's own words when it could not log in with a key: the server refused
+# every key ("Permission denied (publickey...)"), or a key with a passphrase
+# could not be unlocked (no terminal to ask on, a wrong passphrase, the agent
+# declined). Only with ssh's exit code 255 (ssh itself failed).
+KEY_FAILURE_RE = re.compile(r"Permission denied \([^)]*publickey|Enter passphrase for key|read_passphrase: can't open"
+                            r"|incorrect passphrase supplied|agent refused operation")
+KEY_HINT = ("ssh could not log in with your key (see ssh's message above). If the key has a passphrase, ssh "
+            "cannot ask for it here: load it into an agent first, with eval \"$(ssh-agent)\" and ssh-add (on "
+            "Windows: start the OpenSSH Authentication Agent service, then run ssh-add), then run mace gui connect "
+            "again. A Host alias from ~/.ssh/config also works as the gateway.")
+
+
+def key_auth_failed(code: Optional[int], stderr_lines: Sequence[str]) -> bool:
+    """ssh failed (exit 255) because no key got it in (KEY_FAILURE_RE)."""
+    return code == 255 and any(KEY_FAILURE_RE.search(ln) for ln in stderr_lines)
+
+
+def ssh_config_hosts(path: Optional[Path] = None) -> List[str]:
+    """The Host patterns of ~/.ssh/config (negated ones and Include files left out)."""
+    p = path or Path(os.path.expanduser("~")) / ".ssh" / "config"
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    out: List[str] = []
+    for line in text.splitlines():
+        m = re.match(r"\s*Host(?:\s+|\s*=\s*)(.+)", line, re.I)
+        if m:
+            out += [w.strip('"') for w in m.group(1).split() if not w.startswith("!")]
+    return out
+
+
+def gateway_looks_like_email(gateway: str, hosts: Optional[Sequence[str]] = None) -> bool:
+    """A gateway such as user@university.edu: an email address, not a login host.
+
+    The heuristic: an email's domain is usually the bare registered name, two
+    labels (university.edu), while a login host has a host label in front
+    (login.university.edu, hpcc.example.edu). So user@<label>.<letters> is
+    flagged unless an ~/.ssh/config Host pattern matches it (an alias the user
+    chose). It misses emails at longer domains (me@cs.university.edu,
+    me@university.ac.uk) and flags a real login host named by two labels
+    (me@cluster.org); that is only a warning, which a Host alias silences."""
+    if "@" not in gateway:
+        return False
+    host = gateway.rsplit("@", 1)[1].lower()
+    if not re.fullmatch(r"[a-z0-9-]+\.[a-z]{2,}", host):
+        return False
+    pats = ssh_config_hosts() if hosts is None else hosts
+    return not any(fnmatch.fnmatchcase(t, pat.lower()) for pat in pats for t in (host, gateway.lower()))
+
+
+def email_gateway_warning(gateway: str, path: Path, name: Optional[str]) -> str:
+    return (f"Warning: the gateway {gateway} looks like an email address. It should be user@login-host (your "
+            "cluster's login node, e.g. netid@login.example.edu) or a Host alias from ~/.ssh/config. Connecting "
+            f"anyway; to fix the profile in {path}, run: mace gui connect {name + ' ' if name else ''}"
+            "--gateway <user@login-host> --save")
 
 
 def windows_ssh_too_old(version_text: str) -> bool:
@@ -483,7 +758,89 @@ def first_run_prompts(ask: Callable[[str], str], say: Callable[[str], None] = sa
     return prof
 
 
+# ----------------------------------------------------------------- Windows
+
+def on_windows() -> bool:
+    return os.name == "nt"
+
+
+def powershell_line(argv: Sequence[str]) -> str:
+    """argv as one line to paste into PowerShell (5.1 or 7): ``--%`` (the
+    stop-parsing token) hands the rest to ssh.exe as is, quoted by the
+    Microsoft C runtime rules ssh.exe parses (what subprocess passes too).
+    Not for cmd.exe, whose own quoting differs."""
+    return f"{argv[0]} --% {subprocess.list2cmdline(list(argv[1:]))}"
+
+
+class _IO_COUNTERS(ctypes.Structure):
+    _fields_ = [(n, ctypes.c_uint64) for n in ("ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+                                                "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+
+class _JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", ctypes.c_uint32), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", ctypes.c_uint32),
+                ("Affinity", ctypes.c_size_t), ("PriorityClass", ctypes.c_uint32), ("SchedulingClass", ctypes.c_uint32)]
+
+
+class _JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [("BasicLimitInformation", _JOBOBJECT_BASIC_LIMIT_INFORMATION), ("IoInfo", _IO_COUNTERS),
+                ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+
+_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+_JobObjectExtendedLimitInformation = 9
+
+
+def _kernel32():
+    k = ctypes.WinDLL("kernel32", use_last_error=True)      # type: ignore[attr-defined]
+    k.CreateJobObjectW.restype = ctypes.c_void_p
+    k.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+    k.SetInformationJobObject.restype = ctypes.c_int
+    k.SetInformationJobObject.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
+    k.AssignProcessToJobObject.restype = ctypes.c_int
+    k.AssignProcessToJobObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    k.CloseHandle.argtypes = [ctypes.c_void_p]
+    return k
+
+
+def kill_with_this_process(handle: int, os_name: Optional[str] = None, kernel32=None) -> Optional[int]:
+    """Windows: put a child process (ssh) in a new Job Object that kills it
+    when the job's last handle closes, which happens when this process ends,
+    also when it is killed (Task Manager, a closed window): ssh then does not
+    stay behind holding the tunnel. The handle is kept open on purpose. A
+    no-op elsewhere, and harmless when Windows refuses (None)."""
+    if (os_name or os.name) != "nt" or not handle:
+        return None
+    try:
+        k = kernel32 if kernel32 is not None else _kernel32()
+        job = k.CreateJobObjectW(None, None)
+        if not job:
+            return None
+        info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not (k.SetInformationJobObject(job, _JobObjectExtendedLimitInformation, ctypes.pointer(info),
+                                          ctypes.sizeof(info)) and k.AssignProcessToJobObject(job, handle)):
+            k.CloseHandle(job)
+            return None
+        return job
+    except Exception:
+        return None
+
+
 # ----------------------------------------------------------------- the session
+
+# A node's login profile that runs stty without a terminal (bash -l with no
+# tty, as every hop runs it) prints this; before READY it is noise, dropped
+# from the console but kept in stderr_lines. The scripts drop it too.
+STTY_NOISE_RE = re.compile(r"^stty: .*standard input.*: Inappropriate ioctl for device\s*$")
+# The local forward listens from the moment ssh connects (the jump hop: on
+# this computer, to the node's 127.0.0.1): a connection that comes before the
+# server listens, such as an old GUI tab retrying, makes ssh print this. Noise
+# until the tunnel answers (Session.tunnel_confirmed); a real problem after.
+REFUSED_NOISE_RE = re.compile(r"^channel \d+: open failed: connect failed: Connection refused\s*$")
 
 class Session:
     """One ssh process and the protocol it carries."""
@@ -507,19 +864,90 @@ class Session:
             kw["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         self.proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      env=env, **kw)
-        threading.Thread(target=self._read_err, daemon=True).start()
-        threading.Thread(target=self._read_out, daemon=True).start()
+        # Windows: ssh (and its -J helper) die with this process, even a killed one
+        self.job = kill_with_this_process(int(getattr(self.proc, "_handle", 0) or 0)) if os.name == "nt" else None
         self.lock = threading.Lock()
+        self._quiet = threading.Event()
+        self._ready = threading.Event()         # READY seen: stderr is shown as it is from then on
+        self._confirmed = threading.Event()     # the tunnel answered: refused channels are shown from then on
+        self._held = ""                          # a partial stderr line that may turn out to be noise
+        self._readers = [threading.Thread(target=self._read_err, name="mace-connect-stderr", daemon=True),
+                         threading.Thread(target=self._read_out, name="mace-connect-stdout", daemon=True)]
+        for t in self._readers:
+            t.start()
+
+    def finish_readers(self, timeout: float = 2.0) -> None:
+        """Wait (up to timeout) for both pipes to end, then silence the
+        readers: ssh's -J helper can keep stderr open after ssh exits, and a
+        daemon thread that writes to the console while Python shuts down
+        can abort it ("could not acquire lock for <stderr>")."""
+        end = time.monotonic() + timeout
+        for t in self._readers:
+            if t is not threading.current_thread():
+                t.join(max(0.0, end - time.monotonic()))
+        self._quiet.set()
+
+    def _echo_err(self, text: str) -> None:
+        if self._quiet.is_set() or not text:
+            return
+        try:
+            sys.stderr.write(text)
+            sys.stderr.flush()
+        except (OSError, ValueError):
+            pass
+
+    def tunnel_confirmed(self) -> None:
+        """The server answered through the tunnel (wait_ready)."""
+        self._confirmed.set()
+
+    def _is_noise(self, line: str) -> bool:
+        if STTY_NOISE_RE.match(line):
+            return not self._ready.is_set()
+        if REFUSED_NOISE_RE.match(line):
+            return not self._confirmed.is_set()
+        return False
+
+    def _without_noise(self, text: str) -> str:
+        """text without whole noise lines (the stty line before READY, refused
+        forward channels before the tunnel answers); a partial line that
+        starts like one waits for its newline, any other text shows at once
+        (a prompt has no newline)."""
+        text = self._held + text
+        self._held = ""
+        if self._confirmed.is_set():
+            return text
+        *lines, tail = text.split("\n")
+        out = [ln + "\n" for ln in lines if not self._is_noise(ln)]
+        if tail and any(w.startswith(tail[:len(w)]) for w in ("stty", "channel ")):
+            self._held = tail
+        else:
+            out.append(tail)
+        return "".join(out)
 
     def _read_err(self):
-        for raw in iter(self.proc.stderr.readline, b""):
-            line = raw.decode(errors="replace").rstrip("\r\n")
-            self.stderr_lines.append(line)
+        # chunks, not lines: a prompt ssh writes here without a newline shows at once
+        stream = self.proc.stderr
+        read = getattr(stream, "read1", None) or stream.read
+        dec = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        buf = ""
+        while True:
             try:
-                sys.stderr.write(line + "\n")
-                sys.stderr.flush()
+                chunk = read(4096)
             except (OSError, ValueError):
-                pass
+                break
+            if not chunk:
+                break
+            text = dec.decode(chunk)
+            self._echo_err(self._without_noise(text.replace("\r\n", "\n")))
+            buf += text
+            *done, buf = buf.split("\n")
+            self.stderr_lines.extend(ln.rstrip("\r") for ln in done)
+        buf += dec.decode(b"", final=True)
+        if self._held:
+            self._echo_err("" if self._is_noise(self._held) else self._held)
+            self._held = ""
+        if buf.rstrip("\r"):
+            self.stderr_lines.append(buf.rstrip("\r"))
 
     def _read_out(self):
         for raw in iter(self.proc.stdout.readline, b""):
@@ -527,12 +955,14 @@ class Session:
             self.stdout_lines.append(line)
             if line.startswith("MACE_GUI_"):
                 tag, _, rest = line.partition(" ")
+                if tag == "MACE_GUI_READY":
+                    self._ready.set()
                 try:
                     data = json.loads(rest) if rest.strip().startswith("{") else rest.strip()
                 except ValueError:
                     data = rest.strip()
                 self.events.put((tag, data))
-            elif line.strip():
+            elif line.strip() and not self._quiet.is_set():
                 self.say(f"remote: {line}")
         self.events.put(("EOF", None))
 
@@ -574,8 +1004,8 @@ def _http(url: str, token: str, timeout: float = 5.0, data: Optional[bytes] = No
             return resp.status, resp.read()
     except urllib.error.HTTPError as exc:
         return exc.code, b""
-    except (OSError, urllib.error.URLError):
-        return None
+    except (OSError, urllib.error.URLError, http.client.HTTPException):
+        return None           # HTTPException: a reply cut off (a stopping server, a tunnel closing)
 
 
 def wait_ready(base: str, token: str, limit: float = READY_POLL_S) -> bool:
@@ -638,6 +1068,10 @@ def run(profile: Dict[str, Any], args, say: Callable[[str], None] = say_line,
     hops = ["jump", "nested"] if hop == "auto" else [hop]
     lp = pick_local_port(int(profile.get("local_port") or DEFAULT_LOCAL_PORT), warn=say)
     user_for_node = effective_node_user(gateway) if (node and gateway and "@" not in node) else None
+    keys = node_key_options(gateway, node_target(profile, user_for_node)) if (node and gateway and "jump" in hops) \
+        else []
+    # the gateway's HostName (an alias's real name), which ssh's host-key messages use
+    gw_hostname = ((ssh_g(gateway).get("hostname") or [""])[0]) if (node and gateway and "jump" in hops) else ""
     if os.name == "nt" and (profile.get("jump") or (node and gateway and hop != "nested")):
         try:
             v = subprocess.run(["ssh", "-V"], capture_output=True, text=True, timeout=10)
@@ -651,17 +1085,28 @@ def run(profile: Dict[str, Any], args, say: Callable[[str], None] = say_line,
     while True:
         cur = hops[hop_i] if node and gateway else "jump"
         rp, gp = random_port(), random_port()
-        argv = build_ssh_argv(profile, lp, rp, gp, cur, user_for_node)
+        argv = build_ssh_argv(profile, lp, rp, gp, cur, user_for_node, node_keys=keys)
         via = f" through {gateway}" if node and gateway else ""
         say(f"Connecting to {where}{via}...")
         sess = Session(argv, say)
-        outcome = _drive(sess, profile, args, lp, where, say, ask)
+        try:
+            outcome = _drive(sess, profile, args, lp, where, say, ask,
+                             jump_node=node if (gateway and cur == "jump") else "", hop=cur,
+                             trust_cmd=host_key_trust_command(profile, cur, user_for_node),
+                             gateway_cmd=host_key_trust_command(profile, "nested", user_for_node),
+                             gateway_hostname=gw_hostname)
+        finally:
+            # the readers are daemon threads: none may write to the console while Python shuts down
+            sess.finish_readers()
         if isinstance(outcome, int):
             return outcome
         kind, msg = outcome
         if kind == "port-busy" and tries < 3:
             tries += 1
             continue
+        # auto falls back on the node's refusal of the login only: a host-key
+        # failure is a trust decision (or a changed key), which another hop
+        # must not paper over; classify_failure says how to trust it once
         if kind == "node-auth" and hop == "auto" and hop_i == 0 and len(hops) > 1:
             say("The node did not accept a login through the gateway; connecting through the gateway instead "
                 "(hop = nested). Save it with --save so this is not tried twice.")
@@ -669,6 +1114,10 @@ def run(profile: Dict[str, Any], args, say: Callable[[str], None] = say_line,
             hop_i = 1
             continue
         say(f"mace gui connect: {msg}")
+        if kind == "mace-not-found" and profile.get("_localized"):
+            a, b = profile["_localized"][0]
+            say(f"{a} was a path on this computer (your shell expands an unquoted ~ here), so it was tried as {b} on "
+                f"{where}: check that it exists there. Quote the ~ ('~/...') so that your shell passes it as is.")
         if kind == "node-auth":
             say("If your cluster's nodes accept logins only from the login node, use --hop nested.")
         if os.name == "nt" and kind in ("ssh", "ended") and not any(
@@ -678,7 +1127,20 @@ def run(profile: Dict[str, Any], args, say: Callable[[str], None] = say_line,
         return {"old-remote": 3, "mace-not-found": 127, "dir": 2}.get(kind, 1)
 
 
-def _drive(sess: Session, profile, args, lp: int, where: str, say, ask) -> Any:
+def waiting_note(jump_node: str = "") -> str:
+    """Shown once when nothing came back for SLOW_NOTE_S: ssh may be waiting
+    for an answer in this terminal (2FA, or the host-key question that a
+    node reached with ssh -J for the first time asks)."""
+    note = ("(waiting: approve the 2FA prompt if there is one. If ssh asks whether to continue connecting "
+            "(the host-key yes/no question), check the fingerprint and answer yes")
+    if jump_node:
+        note += (f". If ssh asks for {jump_node}'s password, your key is not accepted on {jump_node} from this "
+                 f"computer: see {DOCS_NODE_PASSWORD}")
+    return note + ")"
+
+
+def _drive(sess: Session, profile, args, lp: int, where: str, say, ask, jump_node: str = "",
+           hop: str = "", trust_cmd: str = "", gateway_cmd: str = "", gateway_hostname: str = "") -> Any:
     """Wait for READY, then serve; an int exit code, or (kind, message) on failure before READY."""
     t0 = time.monotonic()
     noted = False
@@ -690,7 +1152,7 @@ def _drive(sess: Session, profile, args, lp: int, where: str, say, ask) -> Any:
             tag, data = sess.events.get(timeout=1.0)
         except queue.Empty:
             if not noted and job is None and time.monotonic() - t0 > SLOW_NOTE_S:
-                say("(waiting: approve the 2FA prompt if there is one)")
+                say(waiting_note(jump_node))
                 noted = True
             continue
         except KeyboardInterrupt:
@@ -717,8 +1179,11 @@ def _drive(sess: Session, profile, args, lp: int, where: str, say, ask) -> Any:
             ready = data
         elif tag == "EOF":
             code = sess.proc.wait()
+            sess.finish_readers()        # every stderr line in, before it is classified
             return classify_failure(code, sess.stderr_lines, str(profile.get("node") or ""),
-                                    str(profile.get("gateway") or ""), sess.stdout_lines)
+                                    str(profile.get("gateway") or ""), sess.stdout_lines, hop=hop,
+                                    trust_cmd=trust_cmd, gateway_cmd=gateway_cmd,
+                                    gateway_hostname=gateway_hostname)
         elif tag == "MACE_GUI_ERROR":
             sess.end(3)
             return classify_failure(98 if "port-busy" in str(data) else 1, sess.stderr_lines,
@@ -727,7 +1192,13 @@ def _drive(sess: Session, profile, args, lp: int, where: str, say, ask) -> Any:
     prefix = str(ready.get("prefix") or "/")
     token = str(ready.get("token") or "")
     base = f"http://127.0.0.1:{lp}{prefix}"
-    if not wait_ready(base, token):
+    ok = wait_ready(base, token)
+    if ok:
+        sess.tunnel_confirmed()
+    if not ok:
+        refused = [ln for ln in sess.stderr_lines if REFUSED_NOISE_RE.match(ln)]
+        for ln in refused[-3:]:              # quiet while waiting; part of the diagnosis now
+            say(ln)
         say(f"mace gui connect: the server on {where} started, but the tunnel to port {lp} does not answer.")
         sess.send("stop")
         sess.end()
@@ -1012,6 +1483,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         prof.update(got)
         if args.save is None:
             args.save = new_name
+    moved = localize_home_paths(prof)
+    if moved:
+        print(localized_note(moved), file=sys.stderr)
     if not prof.get("slurm") and any(prof.get(k) not in (None, "", []) for k in SLURM_KEYS):
         print("mace gui connect: --time, --cpus, --mem, --partition, --account, --qos, --constraint, --gpus and "
               "--sbatch-arg go with --slurm", file=sys.stderr)
@@ -1043,16 +1517,25 @@ def main(argv: Optional[List[str]] = None) -> int:
         else:
             sys.stdout.write(text)
         return 0
+    if prof.get("gateway") and gateway_looks_like_email(str(prof["gateway"])):
+        print(email_gateway_warning(str(prof["gateway"]), path, args.save or name), file=sys.stderr)
     if args.dry_run:
         node, gateway = prof.get("node"), prof.get("gateway")
         hop = str(prof.get("hop") or "auto")
         lp = int(prof.get("local_port") or DEFAULT_LOCAL_PORT)
         unode = effective_node_user(str(gateway)) if (node and gateway and "@" not in str(node)) else None
+        keys = node_key_options(str(gateway), node_target(prof, unode)) if (node and gateway and hop != "nested") \
+            else []
         for h in (["jump", "nested"] if hop == "auto" else [hop]) if (node and gateway) else ["jump"]:
-            argv = build_ssh_argv(prof, lp, 40000, 40001, h, unode)
+            argv = build_ssh_argv(prof, lp, 40000, 40001, h, unode, node_keys=keys)
             label = f"hop {h}" if node and gateway else "no hop"
             print(f"# {label} (the remote port is random on a real run)")
+            if on_windows():
+                print("# for bash, zsh, Git Bash, MobaXterm or WSL (POSIX quoting):")
             print(shlex.join(argv))
+            if on_windows():
+                print("# for PowerShell 5.1 or 7 (--% passes the rest to ssh.exe as is; not for cmd.exe):")
+                print(powershell_line(argv))
         print("# remote command")
         print(remote_command(prof, 40000))
         return 0

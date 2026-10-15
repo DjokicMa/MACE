@@ -10,7 +10,6 @@ The block must be a no-op for every existing deck (none has a .ext), must sit
 outside the OPTGEOM-restart/GUESSP region that recovery/opt_restart.py copies
 into old scripts, and must run before Pcrystal.
 """
-import os
 import shutil
 import subprocess
 
@@ -44,12 +43,15 @@ def test_block_sits_after_guessp_and_before_crystal_runs(tmp_path):
     # Outside the region opt_restart.py lifts into old scripts ...
     assert script.index("# OPTGEOM RESTART") < script.index("# GUESSP restart") < ext
     # ... and before the job changes into scratch and starts CRYSTAL.
-    assert ext < script.index("cd $scratch/$JOB") < script.index("bin/Pcrystal")
+    assert ext < script.index('cd "$scratch/$JOB"') < script.index("bin/Pcrystal")
 
 
-def test_workflow_copy_is_still_a_symlink_to_the_submission_script():
-    assert WORKFLOW_SH.is_symlink()
-    assert os.readlink(WORKFLOW_SH) == "../submission/submitcrystal23.sh"
+def test_no_workflow_copy_of_the_submission_script():
+    """The job-script generators live in mace/submission only: the old
+    mace/workflow links broke on Windows zip extraction and on git checkouts
+    without symlinks (a text stub read as the template)."""
+    assert not WORKFLOW_SH.exists() and not WORKFLOW_SH.is_symlink()
+    assert not (WORKFLOW_SH.parent / "submit_prop.sh").exists()
 
 
 def _run_block(tmp_path, tag, ext_bytes):

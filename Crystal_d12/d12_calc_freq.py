@@ -1149,6 +1149,9 @@ def get_advanced_frequency_settings(parent_numderiv=None, parent_freq=None):
                         tol = 6
                     freq_settings["cphf_tolerance"] = tol
             
+            # IR intensities asked for (Raman sets "intensities" too: INTRAMAN needs INTENS)
+            ir_chosen = bool(freq_settings.get("intensities"))
+
             # Skip Raman prompt if already configured by template
             if "raman" not in freq_settings:
                 # Raman intensities (requires CPHF)
@@ -1170,7 +1173,7 @@ def get_advanced_frequency_settings(parent_numderiv=None, parent_freq=None):
                 print("\n=== SPECTRAL GENERATION OPTIONS ===")
                 
                 # Check if user wants minimal calculations
-                if freq_settings.get("intensities") and not freq_settings.get("raman"):
+                if ir_chosen:
                     print("\nIR spectrum plot generation:")
                     print("  Note: IR intensities are ALWAYS calculated when IR is selected")
                     print("  You're choosing whether to also generate a spectrum plot")
@@ -1181,7 +1184,9 @@ def get_advanced_frequency_settings(parent_numderiv=None, parent_freq=None):
                     print("  - Spectrum generation adds <1% to total calculation time")
                     print("  - Can be generated later from .out file if needed")
                     generate_ir_plot = yes_no_prompt("Generate IR spectrum plot?", "yes")
-                    if not generate_ir_plot:
+                    if generate_ir_plot:
+                        freq_settings["irspec"] = True
+                    else:
                         freq_settings["minimal_ir"] = True
                         freq_settings["irspec"] = False
                 
@@ -1196,80 +1201,58 @@ def get_advanced_frequency_settings(parent_numderiv=None, parent_freq=None):
                     print("  - Spectrum generation adds <1% to total calculation time")
                     print("  - Can be generated later from .out file if needed")
                     generate_raman_plot = yes_no_prompt("Generate Raman spectrum plot?", "yes")
-                    if not generate_raman_plot:
+                    if generate_raman_plot:
+                        freq_settings["ramspec"] = True
+                    else:
                         freq_settings["minimal_raman"] = True
                         freq_settings["ramspec"] = False
                 
-                # If not fully minimal, ask about spectrum parameters
-                if not (freq_settings.get("minimal_ir", True) and freq_settings.get("minimal_raman", True)):
-                    if "spec_range" not in freq_settings:
-                        print("\nSpectrum plotting settings:")
-                        custom_range = yes_no_prompt("Customize spectral range?", "no")
-                        if custom_range:
-                            min_freq = _nav_float("Minimum frequency (cm⁻¹) [0]: ", default=0)
-                            max_freq = _nav_float("Maximum frequency (cm⁻¹) [4000]: ", default=4000)
-                            freq_settings["spec_range"] = [min_freq, max_freq]
-                    
-                    if "resolution" not in freq_settings:
-                        resolution = _nav_int("Resolution for spectrum (cm⁻¹) [16]: ", default=16)
-                        freq_settings["resolution"] = resolution
-                    
-                    # Broadening
+                # A spectrum asked for: its IRSPEC/RAMSPEC settings (manual sec. 8.6-8.7).
+                # An answer at CRYSTAL's own default writes no keyword.
+                if freq_settings.get("irspec") or freq_settings.get("ramspec"):
+                    print("\nSpectrum plotting settings (Enter keeps CRYSTAL's defaults):")
+                    print("  Default range: 0 to the highest mode + 400 cm⁻¹ (IR), 0 to 1.3 x the highest mode (Raman)")
+                    custom_range = yes_no_prompt("Customize spectral range?", "no")
+                    if custom_range:
+                        min_freq = _nav_float("Minimum frequency (cm⁻¹) [0]: ", default=0)
+                        max_freq = _nav_float("Maximum frequency (cm⁻¹) [4000]: ", default=4000)
+                        freq_settings["spec_range"] = [min_freq, max_freq]
+
+                    # LENSTEP: the spacing of the spectrum's points
+                    step = _nav_float("Spectrum step size (cm⁻¹) [1]: ", default=1)
+                    if step != 1:
+                        freq_settings["spec_step"] = step
+
+                    # Line shape: IRSPEC GAUSS (the raw absorbance spectrum), RAMSPEC VOIGT 0
                     print("\nLine broadening type:")
                     print("1: Lorentzian (default)")
-                    print("2: Gaussian")
-                    broadening = _nav_read("Select broadening (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
-                    freq_settings["broadening"] = "LORENTZ" if broadening == "1" else "GAUSS"
-                    
-                    if "lorentz_width" not in freq_settings and broadening == "1":
+                    print("2: Gaussian (IR: absorbance spectrum only)")
+                    broadening = _read_choice("Select broadening (1-2) [1]: ", ("1", "2"), "1")
+                    gaussian = broadening == "2"
+                    if gaussian:
+                        if freq_settings.get("irspec"):
+                            freq_settings["spec_gaussian"] = True
+                        if freq_settings.get("ramspec"):
+                            freq_settings["raman_voigt"] = 0.0
+
+                    # DAMPFAC: the peak width (the FWHM of the Raman peaks)
+                    if gaussian:
+                        width = _nav_float("Gaussian FWHM (cm⁻¹) [8]: ", default=8)
+                    else:
                         width = _nav_float("Lorentzian FWHM (cm⁻¹) [8]: ", default=8)
-                        freq_settings["lorentz_width"] = width
-                    elif "gauss_width" not in freq_settings and broadening == "2":
-                        width = _nav_float("Gaussian FWHM (cm⁻¹) [10]: ", default=10)
-                        freq_settings["gauss_width"] = width
-                    
-                    # Raman-specific settings
-                    if freq_settings.get("raman") and not freq_settings.get("minimal_raman"):
-                        if "laser_wavelength" not in freq_settings:
-                            print("\nRaman excitation wavelength (nm):")
-                            print("Common values: 488, 514.5, 532, 633, 785, 1064")
-                            wavelength = _nav_float("Wavelength [532]: ", default=532)
-                            freq_settings["laser_wavelength"] = wavelength
-                        
-                        if "temperature" not in freq_settings:
-                            temp = _nav_float("Temperature for Raman (K) [298.15]: ", default=298.15)
-                            freq_settings["temperature"] = temp
-                        
-                        # RAMANEXP option
-                        use_ramanexp = yes_no_prompt("\nUse RAMANEXP for experimental conditions?", "no")
-                        if use_ramanexp:
-                            print("\nRAMANEXP takes into account experimental conditions")
-                            print("(temperature, incoming laser) in the calculation of Raman intensities")
-                            ramanexp_laser = _nav_float(f"Laser wavelength (nm) [{freq_settings.get('laser_wavelength', 532)}]: ", default=freq_settings.get('laser_wavelength', 532))
-                            ramanexp_temp = _nav_float(f"Temperature (K) [{freq_settings.get('temperature', 298.15)}]: ", default=freq_settings.get('temperature', 298.15))
-                            freq_settings["ramanexp"] = [ramanexp_temp, ramanexp_laser]
-                        
-                        # Raman units
-                        print("\nRaman intensity units:")
-                        print("1: Arbitrary units (default)")
-                        print("2: Absolute differential cross section")
-                        raman_units = _nav_read("Select units (1-2) [1]: ", valid_set={"_choice_"}).strip() or "1"
-                        if raman_units == "2":
-                            freq_settings["raman_absolute"] = True
-                
-                # Spectral output format
-                generate_spec = not (freq_settings.get("minimal_ir", True) and freq_settings.get("minimal_raman", True))
-                if generate_spec:
-                    print("\nSpectrum output formats:")
-                    print("1: DAT file only (2-column ASCII)")
-                    print("2: DAT + CSV")
-                    print("3: DAT + CSV + JCAMP-DX")
-                    output_format = _nav_read("Select output format (1-3) [1]: ", valid_set={"_choice_"}).strip() or "1"
-                    
-                    if output_format in ["2", "3"]:
-                        freq_settings["output_csv"] = True
-                    if output_format == "3":
-                        freq_settings["output_jcampdx"] = True
+                    if width != 8:
+                        freq_settings["spec_dampfac"] = width
+
+                # RAMANEXP: the experimental temperature and laser in the Raman intensities
+                if freq_settings.get("ramspec"):
+                    use_ramanexp = yes_no_prompt("\nUse RAMANEXP for experimental conditions?", "no")
+                    if use_ramanexp:
+                        print("\nRAMANEXP takes into account experimental conditions")
+                        print("(temperature, incoming laser) in the calculation of Raman intensities")
+                        print("Common laser wavelengths (nm): 488, 514.5, 532, 633, 785, 1064")
+                        ramanexp_temp = _nav_float("Temperature (K) [298.15]: ", default=298.15)
+                        ramanexp_laser = _nav_float("Laser wavelength (nm) [532]: ", default=532)
+                        freq_settings["ramanexp"] = [ramanexp_temp, ramanexp_laser]
         
         # Thermodynamic properties
         if freq_settings.get("mode") == "GAMMA":

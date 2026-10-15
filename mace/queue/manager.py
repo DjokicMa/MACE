@@ -39,6 +39,7 @@ from mace.database.materials_contextual import ContextualMaterialDatabase
 from mace.database import dbsafety
 from mace.workflow.context import get_current_context
 from mace.recovery import opt_restart, screened_hybrid
+from mace.utils import crystal_errors
 from mace.queue.slurm_ids import (
     ABSENT_WINDOW_SECONDS, Truncated, accounting_state_of_task, expand_queue_id,
     is_array_task_id, own_job_ids, own_rows, queue_states_of_array,
@@ -50,12 +51,12 @@ from mace.utils.calc_detection import (
 
 # Import lock manager for race condition prevention
 try:
-    from mace.queue.queue_lock_manager import QueueLockManager, CallbackThrottler
+    from mace.queue.queue_lock_manager import QueueLockManager, CallbackThrottler, QUEUE_STATE_LOCK
     LOCKING_AVAILABLE = True
 except ImportError:
     try:
         # Fallback to importing from current directory
-        from .queue_lock_manager import QueueLockManager, CallbackThrottler
+        from .queue_lock_manager import QueueLockManager, CallbackThrottler, QUEUE_STATE_LOCK
         LOCKING_AVAILABLE = True
     except ImportError:
         LOCKING_AVAILABLE = False
@@ -158,6 +159,7 @@ class EnhancedCrystalQueueManager:
         else:
             self.legacy_status_file = self.d12_dir / "crystal_job_status.json"
         self.legacy_job_status = self.load_legacy_status()
+        self._sacct_end = {}            # job id -> sacct End of a job that left the queue
         
         # Job monitoring
         self.early_failure_checks = 5  # Number of checks before considering early failure
@@ -513,7 +515,7 @@ class EnhancedCrystalQueueManager:
             print(f"Warning: Could not save legacy status: {e}")
             
     def create_calculation_folder(self, material_id: str, calc_type: str,
-                                  source_file=None) -> Path:
+                                  source_file=None, work_dir=None) -> Path:
         """
         Create organized folder structure for calculations.
 
@@ -522,8 +524,15 @@ class EnhancedCrystalQueueManager:
         - Standard (organize_outputs=True): base_dir/calc_type/material_id/
         - In-place (organize_outputs=False): the source file's own directory, with no
           new folders created (manual `mace manager` default). Requires source_file.
+
+        ``work_dir``: the folder recorded for the calculation being submitted
+        again (error recovery). In a workflow it is used as it is: a later
+        step's folder is named after its calculation (step_002_SP/A_sp), not
+        the material, and the current directory can be another job's.
         """
         if self.is_workflow_context and hasattr(self, 'workflow_root'):
+            if work_dir and Path(work_dir).is_dir():
+                return Path(work_dir)
             # In workflow context, don't create new folders
             # The workflow executor has already created the proper structure
             # Just return the current directory if we're already in the right place
@@ -545,10 +554,11 @@ class EnhancedCrystalQueueManager:
                                 if material_dir.exists():
                                     return material_dir
             
-            # If not found, fall back to creating in current directory
+            # If not found, fall back to the current directory
             # This shouldn't happen in normal workflow operation
-            print(f"Warning: Could not find workflow directory for {material_id}, using current directory")
-            return Path.cwd()
+            print(f"Warning: no folder of {material_id} under {workflow_outputs}; "
+                  f"submitting from the current directory ({cwd})")
+            return cwd
         else:
             if not self.organize_outputs and source_file is not None:
                 # In-place: submit the file where it already lives; no copying, no
@@ -612,7 +622,9 @@ class EnhancedCrystalQueueManager:
 
     def submit_calculation(self, d12_file: Path, calc_type: str = None,
                           material_id: str = None, prerequisite_calc_id: str = None,
-                          job_script_override: Path = None) -> Optional[str]:
+                          job_script_override: Path = None,
+                          carry_resources_from: Path = None,
+                          work_dir: Path = None) -> Optional[str]:
         """
         Submit a calculation with material tracking.
 
@@ -624,22 +636,30 @@ class EnhancedCrystalQueueManager:
             job_script_override: A ready-made SLURM script to submit directly
                 instead of regenerating one from the template. Used by error
                 recovery to honor a bumped --mem/--time script.
+            carry_resources_from: A job script whose SLURM resource lines
+                (ntasks, memory, walltime, partition, exclude, account, ...)
+                replace the template's in the generated script. Used by error
+                recovery so a fixed deck keeps the original job's resources.
+            work_dir: The folder recorded for the calculation submitted
+                again (error recovery; create_calculation_folder).
 
         Returns:
             calc_id if successful, None if failed
         """
         material_id, calc_type, calc_dir, calc_input_file, calc_id = self._prepare_calculation(
-            d12_file, calc_type, material_id, prerequisite_calc_id)
+            d12_file, calc_type, material_id, prerequisite_calc_id, work_dir=work_dir)
 
         # Submit to SLURM
+        extra = {'carry_resources_from': carry_resources_from} if carry_resources_from else {}
         slurm_job_id = self.submit_to_slurm(calc_input_file, calc_dir, calc_type,
-                                            submit_script_override=job_script_override)
+                                            submit_script_override=job_script_override, **extra)
 
         return self._record_submission(calc_id, calc_input_file, calc_dir, material_id,
                                        calc_type, slurm_job_id, job_script_override)
 
     def _prepare_calculation(self, d12_file: Path, calc_type: str = None,
-                             material_id: str = None, prerequisite_calc_id: str = None):
+                             material_id: str = None, prerequisite_calc_id: str = None,
+                             work_dir: Path = None):
         """Material row, calculation folder, input copy and calculation row of
         one submission: everything submit_calculation does before sbatch.
         Returns (material_id, calc_type, calc_dir, calc_input_file, calc_id)."""
@@ -668,7 +688,8 @@ class EnhancedCrystalQueueManager:
                 )
                 
         # Create calculation folder (organized) or resolve in-place directory.
-        calc_dir = self.create_calculation_folder(material_id, calc_type, source_file=d12_file)
+        calc_dir = self.create_calculation_folder(material_id, calc_type, source_file=d12_file,
+                                                  work_dir=work_dir)
 
         # Determine file extension based on calculation type
         is_d3_calc = calc_type.rstrip('0123456789') in ['BAND', 'DOSS', 'TRANSPORT', 'CHARGE+POTENTIAL']
@@ -809,6 +830,23 @@ class EnhancedCrystalQueueManager:
             return 'generated', generated_script
         finally:
             os.chdir(original_cwd)
+
+    @staticmethod
+    def _carry_resources(original_name: str, original_text: str, generated: Path) -> None:
+        """Put the SLURM resource lines of the failed job's script (its name
+        and text) into ``generated``, its recovery deck's fresh script; keep
+        the template's when that script is not one MACE can read."""
+        from mace.submission.job_resources import carry_resources
+        try:
+            text, carried = carry_resources(original_text, Path(generated).read_text())
+        except (OSError, UnicodeDecodeError):
+            text, carried = None, []
+        if text is None:
+            print(f"  {original_name} is not a job script MACE can read: "
+                  f"{Path(generated).name} keeps the template's resources")
+            return
+        Path(generated).write_text(text)
+        print(f"  Kept the resources of {original_name} ({', '.join(carried)})")
 
     def _sbatch_generated(self, script: Path, work_dir: Path) -> Optional[str]:
         """sbatch <job>.sh from its directory, as submit_to_slurm does."""
@@ -1041,7 +1079,8 @@ class EnhancedCrystalQueueManager:
             print(f"  Warning: could not record the database path in {job_script.name}: {e}")
 
     def submit_to_slurm(self, input_file: Path, work_dir: Path, calc_type: str,
-                        submit_script_override: Path = None) -> Optional[str]:
+                        submit_script_override: Path = None,
+                        carry_resources_from: Path = None) -> Optional[str]:
         """
         Submit job to SLURM using appropriate submission script.
 
@@ -1052,10 +1091,20 @@ class EnhancedCrystalQueueManager:
             submit_script_override: A ready-made SLURM script to submit directly,
                 bypassing template selection. Used by error recovery so a bumped
                 --mem/--time script is honored instead of being regenerated away.
+            carry_resources_from: A job script whose SLURM resource lines go
+                into the generated script (see submit_calculation).
 
         Returns:
             SLURM job ID if successful, None if failed
         """
+        # Read the script whose resources are carried now: the generator may
+        # write over it (a deck resubmitted under its own name).
+        carry = None
+        if carry_resources_from:
+            try:
+                carry = (Path(carry_resources_from).name, Path(carry_resources_from).read_text())
+            except (OSError, UnicodeDecodeError):
+                carry = (Path(carry_resources_from).name, "")
         # An error-recovery override (a concrete, already-bumped SLURM script)
         # takes precedence over the per-calc-type template.
         if submit_script_override and Path(submit_script_override).exists():
@@ -1115,6 +1164,8 @@ class EnhancedCrystalQueueManager:
                         generated_script = work_dir / f"{job_name}.sh"
                         if generated_script.exists():
                             print(f"  Found generated script: {generated_script}")
+                            if carry:
+                                self._carry_resources(carry[0], carry[1], generated_script)
                             self._export_db_path(generated_script)
                             cmd = ['sbatch', str(generated_script)]
                             result = subprocess.run(cmd, capture_output=True, text=True)
@@ -1331,6 +1382,7 @@ class EnhancedCrystalQueueManager:
                     # in-flight job failed from its half-written output.
                     # Confirm with sacct — authoritative — before classifying.
                     state = self._sacct_job_state(slurm_job_id)
+                    ended_at = self._sacct_end.get(str(slurm_job_id))
                     if state in ('RUNNING', 'COMPLETING', 'SUSPENDED'):
                         if calc['status'] != 'running':
                             self.db.update_calculation_status(
@@ -1340,7 +1392,8 @@ class EnhancedCrystalQueueManager:
                         continue
                     # terminal, unknown to sacct, or sacct unavailable:
                     # classify from the output file as before
-                    self.check_completed_or_failed_job(calc, slurm_state=state)
+                    self.check_completed_or_failed_job(
+                        calc, slurm_state=state, **({'ended_at': ended_at} if ended_at else {}))
 
             # Inside a MACE array task: the task's own row, found through
             # the array manifest even before the submission recorded its
@@ -1471,21 +1524,63 @@ class EnhancedCrystalQueueManager:
                 if result.returncode != 0:
                     return None
                 lines = [l.strip() for l in result.stdout.splitlines() if l.strip()]
-                return lines[-1].split()[0].rstrip('+') if lines else ''
+                return self._sacct_state_word(lines[-1]) if lines else ''
             except Exception:
                 return None
         try:
+            # -P: unpadded and never cut short (without it sacct cuts State
+            # at 10 characters: OUT_OF_MEMORY reads OUT_OF_ME+)
             result = subprocess.run(
-                ['sacct', '-j', str(job_id), '--format=State', '-n', '-X'],
+                ['sacct', '-j', str(job_id), '--format=State,End', '-n', '-X', '-P'],
                 capture_output=True, text=True, timeout=30, env=slurm_env()
             )
             if result.returncode != 0:
                 return None
             lines = [l.strip() for l in result.stdout.splitlines() if l.strip()]
-            # e.g. "CANCELLED by 12345" -> "CANCELLED"
-            return lines[0].split()[0].rstrip('+') if lines else ''
+            if not lines:
+                return ''
+            state, _, end = lines[0].partition('|')
+            try:
+                self._sacct_end[str(job_id)] = datetime.fromisoformat(end.strip())
+            except ValueError:
+                pass                    # Unknown, None: still running, or not recorded
+            return self._sacct_state_word(state)
         except Exception:
             return None
+
+    # A job that left the queue unseen and ended longer ago than this (sacct
+    # End) is recorded failed but not recovered automatically: after an
+    # upgrade, rows stuck 'submitted' since long-forgotten jobs must not be
+    # resubmitted. MACE_RECOVER_MAX_AGE_DAYS overrides it.
+    STALE_END_DAYS = 3.0
+
+    def _stale_end_days(self) -> float:
+        try:
+            return float(os.environ.get('MACE_RECOVER_MAX_AGE_DAYS') or self.STALE_END_DAYS)
+        except ValueError:
+            return self.STALE_END_DAYS
+
+    def _handle_failed_unless_stale(self, calc: Dict, state: str, ended_at=None):
+        """handle_failed_calculation (recovery, resubmission), unless the job
+        ended more than _stale_end_days() ago: then the failure is still
+        classified and recorded (so `mace recover` can prepare it), but no
+        recovery runs and one line says so."""
+        if ended_at is not None and datetime.now() - ended_at > timedelta(days=self._stale_end_days()):
+            if self.enable_tracking:
+                self._record_failure(calc['calc_id'], state)
+            name = Path(calc['input_file']).stem if calc.get('input_file') else calc['calc_id']
+            print(f"  job {calc.get('slurm_job_id')} ({name}) ended {state} on "
+                  f"{ended_at:%Y-%m-%d %H:%M}; not resubmitted automatically - run "
+                  f"`mace recover --db {self.db_path}` to retry")
+            return
+        self.handle_failed_calculation(calc['calc_id'], state)
+
+    @staticmethod
+    def _sacct_state_word(line: str) -> str:
+        """The state of a sacct State field: "CANCELLED by 12345" ->
+        "CANCELLED", "CANCELLED+" -> "CANCELLED"."""
+        words = line.split()
+        return words[0].rstrip('+') if words else ''
 
     def check_early_job_failure(self):
         """Check for jobs that are failing early and cancel them if needed."""
@@ -1711,7 +1806,26 @@ class EnhancedCrystalQueueManager:
             return
 
         print(f"Handling failed calculation: {calc_id} (SLURM state: {slurm_state})")
-        
+        calc, error_type, error_message = self._record_failure(calc['calc_id'], slurm_state, calc)
+
+        # Attempt automatic error recovery
+        if self.enable_error_recovery and self.error_recovery_engine:
+            recovery_success = self.attempt_error_recovery(calc, error_type, error_message)
+            if recovery_success:
+                print(f"✅ Error recovery successful for {calc_id} - job resubmitted")
+            else:
+                print(f"❌ Error recovery failed or not applicable for {calc_id}")
+        else:
+            print(f"Error analysis: {error_type} - {error_message}")
+
+    def _record_failure(self, calc_id: str, slurm_state: Optional[str], calc: Optional[Dict] = None):
+        """Classify a failed calculation and record it 'failed' with its
+        error type: the half of handle_failed_calculation that a stale job
+        (not recovered automatically) still needs, so that `mace recover`
+        finds it. Returns (calc, error_type, error_message)."""
+        if calc is None:
+            calc = self.db.get_calculation(calc_id) or {'calc_id': calc_id}
+
         # Analyze error type from output file
         error_type, error_message = self.analyze_calculation_error(calc)
 
@@ -1726,24 +1840,22 @@ class EnhancedCrystalQueueManager:
         timed_out = self._walltime_kill_evidence(calc, slurm_state)
         if timed_out and error_type != 'finalrun_loop':
             error_type, error_message = 'timeout_error', timed_out
-        
-        # Update database with error information
+        # A job SLURM killed for memory before CRYSTAL wrote its .out: SLURM's
+        # verdict is the only evidence, and it names a recoverable cause.
+        elif error_type == 'no_output' and str(slurm_state or '').upper().startswith('OUT_OF_MEMORY'):
+            error_type, error_message = 'memory_error', f"SLURM state OUT_OF_MEMORY; {error_message}"
+
+        # Update database with error information (and SLURM's end state,
+        # when it is one)
+        state_word = str(slurm_state or '').upper()
         self.db.update_calculation_status(
             calc_id, 'failed',
+            slurm_state=state_word if state_word in self._TERMINAL_SLURM_STATES else None,
             error_type=error_type,
             error_message=error_message
         )
-        
-        # Attempt automatic error recovery
-        if self.enable_error_recovery and self.error_recovery_engine:
-            recovery_success = self.attempt_error_recovery(calc, error_type, error_message)
-            if recovery_success:
-                print(f"✅ Error recovery successful for {calc_id} - job resubmitted")
-            else:
-                print(f"❌ Error recovery failed or not applicable for {calc_id}")
-        else:
-            print(f"Error analysis: {error_type} - {error_message}")
-        
+        return calc, error_type, error_message
+
     def _walltime_kill_evidence(self, calc: Dict, slurm_state: str) -> Optional[str]:
         """Why this job counts as killed by its walltime, or None."""
         if str(slurm_state or '').upper().startswith('TIMEOUT'):
@@ -1833,65 +1945,17 @@ class EnhancedCrystalQueueManager:
             if failed_end:
                 return "opt_unconverged_error", failed_end
 
-            # Common CRYSTAL error patterns (from updatelists2.py logic)
-            error_patterns = {
-                'shrink_error': [
-                    "SHRINK FACTOR TOO SMALL",
-                    "TOO SMALL SHRINK FACTOR"
-                ],
-                'memory_error': [
-                    "INSUFFICIENT MEMORY",
-                    "OUT OF MEMORY",
-                    "MEMORY ALLOCATION",
-                    "SEGMENTATION FAULT",
-                    # OOM-killer signature: MPI reports the rank SIGKILLed
-                    # while SLURM still records the job COMPLETED (real case:
-                    # 3_dia3 B3LYP OPT, job 12091685 — classified unknown and
-                    # left unrecovered though a memory bump is exactly the fix)
-                    "KILLED BY SIGNAL: 9"
-                ],
-                'convergence_error': [
-                    "SCF NOT CONVERGED",
-                    "CONVERGENCE NOT ACHIEVED",
-                    # CRYSTAL prints "TOO MANY CYCLES" (matches detector.py);
-                    # the old "TOO MANY SCF CYCLES" never matched real output.
-                    "TOO MANY CYCLES",
-                    # SCF blow-up (real case: diamond + B3LYP-D3 diverged over
-                    # 206 cycles then "ERROR **** ZERO **** FERMI ENERGY NOT
-                    # IN INTERVAL") — recoverable via the convergence handler
-                    "FERMI ENERGY NOT IN INTERVAL"
-                ],
-                'geometry_error': [
-                    "ATOMS TOO CLOSE",
-                    "GEOMETRY OPTIMIZATION FAILED",
-                    "SMALL DISTANCE BETWEEN ATOMS",
-                    # real CRYSTAL text is "DISTANCE BETWEEN ATOMS N M TOO
-                    # SMALL" + "ERROR **** NEIGHB ****" (matches detector.py)
-                    "**** NEIGHB ****"
-                ],
-                'timeout_error': [
-                    "DUE TO TIME LIMIT",
-                    "TIME LIMIT EXCEEDED"
-                ],
-                'disk_space_error': [
-                    "DISK FULL",
-                    "NO SPACE LEFT",
-                    "DISK QUOTA EXCEEDED"
-                ],
-                'io_error': [
-                    "I/O ERROR",
-                    "PERMISSION DENIED"
-                ]
-            }
-            
-            content_upper = content.upper()
-            if fort87:
-                content_upper += "\n" + fort87.upper()
-            
-            for error_type, patterns in error_patterns.items():
-                for pattern in patterns:
-                    if pattern in content_upper:
-                        return error_type, f"Detected: {pattern}"
+            # The shared classification (mace.utils.crystal_errors), in its
+            # priority order: an OOM kill ("KILLED BY SIGNAL: 9", job
+            # 12091685, which SLURM still recorded COMPLETED), then CRYSTAL's
+            # own errors, over the .out and the scratch fort.87. The generic
+            # MPI/SLURM lines name no cause: they fall through to the fort.87
+            # and CRYSTAL-message reporting below.
+            text = content if not fort87 else content + "\n" + fort87
+            match = crystal_errors.classify(text)
+            if match and match.key != "runtime":
+                return match.error_type, f"Detected: {match.pattern.upper()}"
+            content_upper = text.upper()
 
             # CRYSTAL said what stopped it, just not in a form handled above:
             # report its own words rather than "unknown".
@@ -1977,7 +2041,10 @@ class EnhancedCrystalQueueManager:
                               'opt_trust_radius_error', 'finalrun_loop',
                               'opt_unconverged_error']
         if error_type not in recoverable_errors:
-            print(f"⚠️  Error type '{error_type}' is not recoverable for {calc_id}")
+            why = next((c.no_recovery for c in crystal_errors.ERROR_CLASSES
+                        if c.error_type == error_type and c.no_recovery), None)
+            print(f"⚠️  Error type '{error_type}' is not recoverable for {calc_id}"
+                  + (f": {why}" if why else ""))
             return False
         
         # Check recovery attempt limits
@@ -2138,10 +2205,25 @@ class EnhancedCrystalQueueManager:
             # Submit the calculation using existing submit logic
             # (submit_single_calculation never existed on this class —
             # recovered jobs were silently never resubmitted)
+            # A fixed deck gets a fresh script from the template; it keeps the
+            # failed job's resources (the user's ntasks, memory, walltime,
+            # partition, exclude, account) from that job's script.
+            carry_from = None
+            if not fixed_job_script:
+                recorded_script = calc.get('job_script')
+                if recorded_script:
+                    carry_from = Path(recorded_script)
+                elif calc.get('input_file'):
+                    carry_from = Path(calc['input_file']).with_suffix('.sh')
+                if carry_from is not None and not carry_from.is_file():
+                    carry_from = None
             new_calc_id = self.submit_calculation(
                 d12_file, calc_type=calc.get('calc_type'),
                 material_id=calc.get('material_id'),
                 job_script_override=fixed_job_script,
+                carry_resources_from=carry_from,
+                # the failed calculation's own folder (a workflow step's)
+                work_dir=work_dir,
             )
             if new_calc_id is None:
                 print(f"❌ Resubmission produced no calculation for {calc_id}; "
@@ -2431,7 +2513,8 @@ class EnhancedCrystalQueueManager:
         return None
         
     def check_completed_or_failed_job(self, calc: Dict, slurm_state: Optional[str] = None,
-                                      own_job: bool = False, own_output_only: bool = False):
+                                      own_job: bool = False, own_output_only: bool = False,
+                                      ended_at: Optional[datetime] = None):
         """Check if a job that's not in queue has completed or failed.
 
         own_output_only (job array tasks): read only the calculation's own
@@ -2493,7 +2576,7 @@ class EnhancedCrystalQueueManager:
                         calc['calc_id'], 'failed',
                         output_file=str(output_file)
                     )
-                    self.handle_failed_calculation(calc['calc_id'], slurm_state or 'NOT_IN_QUEUE')
+                    self._handle_failed_unless_stale(calc, slurm_state or 'NOT_IN_QUEUE', ended_at)
 
             except Exception as e:
                 print(f"Error checking output file {output_file}: {e}")
@@ -2512,12 +2595,30 @@ class EnhancedCrystalQueueManager:
             self.db.update_calculation_status(
                 calc['calc_id'], 'failed', slurm_state=slurm_state,
                 error_type='no_output', error_message=message)
-            self.handle_failed_calculation(calc['calc_id'], state)
+            self._handle_failed_unless_stale(calc, state, ended_at)
 
     # SLURM end states: the job will not write anything more.
     _TERMINAL_SLURM_STATES = frozenset({
         'COMPLETED', 'FAILED', 'CANCELLED', 'TIMEOUT', 'NODE_FAIL',
         'OUT_OF_MEMORY', 'PREEMPTED', 'BOOT_FAIL', 'DEADLINE', 'REVOKED'})
+
+    def _queued_job_count(self) -> int:
+        """The user's jobs in the queue (running and pending, each array task
+        counted) for the max-jobs throttle: squeue, else this database's
+        active rows. Never crystal_job_status.json: its entries are never
+        pruned, and it was also read from ~ and the temp folder."""
+        try:
+            running, pending = self.check_queue()
+            return running + pending
+        except Exception as e:
+            print(f"  Could not read the queue ({e}); counting this database's active jobs")
+        if self.enable_tracking:
+            try:
+                return sum(len(self.db.get_calculations_by_status(status=s))
+                           for s in ('submitted', 'running'))
+            except Exception as e:
+                print(f"  Could not count the database's active jobs: {e}")
+        return 0
 
     def process_new_d12_files(self):
         """Process new .d12 files in the directory for submission."""
@@ -2530,6 +2631,7 @@ class EnhancedCrystalQueueManager:
         d12_files = list(set(d12_files))
         
         submitted_count = 0
+        queued = None
         
         for d12_file in d12_files:
             # Check if we've reached the submission limit for this callback
@@ -2547,8 +2649,11 @@ class EnhancedCrystalQueueManager:
                 if existing_calcs:
                     continue
                     
-            # Check queue capacity
-            current_jobs = len(self.legacy_job_status["submitted"])
+            # Check queue capacity: the jobs really in the queue, plus the
+            # ones this callback submitted
+            if queued is None:
+                queued = self._queued_job_count()
+            current_jobs = queued + submitted_count
             if current_jobs >= (self.max_jobs - self.reserve_slots):
                 print(f"Queue nearly full ({current_jobs}/{self.max_jobs}), skipping new submissions")
                 break
@@ -2623,7 +2728,8 @@ class EnhancedCrystalQueueManager:
         # Acquire distributed lock
         if self.lock_manager:
             import random
-            lock_name = f"queue_manager_{mode}"
+            # one lock for every mode: all of them change the queue state
+            lock_name = QUEUE_STATE_LOCK
             scale = self._array_lock_scale()
             db_retries = 0
             while True:
@@ -2713,7 +2819,7 @@ class EnhancedCrystalQueueManager:
         import random
         import sqlite3
         scale = self._array_lock_scale()
-        lock_name = f"queue_manager_{mode}"
+        lock_name = QUEUE_STATE_LOCK
         budget = self.ARRAY_LOCK_BUDGET * scale
         left_in_job = remaining_walltime_seconds()
         if left_in_job is not None:
@@ -2751,7 +2857,7 @@ class EnhancedCrystalQueueManager:
                 break
             time.sleep(min(wait * random.uniform(0.7, 1.3), remaining))
             wait = min(wait * self.ARRAY_LOCK_FACTOR, self.ARRAY_LOCK_CAP * scale)
-        print(f"⚠️  Array task {task_id}: the {mode} lock did not come free; "
+        print(f"⚠️  Array task {task_id}: the queue lock did not come free; "
               f"recording this task's own result without it")
         self.classify_own_row()
 
@@ -2866,6 +2972,17 @@ class EnhancedCrystalQueueManager:
             print(f"Database Stats: {stats['total_materials']} materials, "
                   f"{sum(stats.get('calculations_by_status', {}).values())} calculations")
 
+        # The plan's post-completion action (archive / export and delete),
+        # once this callback finds every step of the workflow finished. Last,
+        # since it can move the database this callback works on.
+        if mode == 'completion' and self.is_workflow_context and self.workflow_enabled:
+            try:
+                from mace.workflow.engine import WorkflowEngine
+                base_dir = str(getattr(self, 'workflow_root', None) or self.d12_dir)
+                WorkflowEngine(self.db_path, base_dir).finish_workflow_if_done(self.db_path)
+            except Exception as e:
+                print(f"  Could not check whether the workflow has finished: {e}")
+
         print("=== Callback Complete ===\n")
             
     def get_status_report(self) -> Dict:
@@ -2899,7 +3016,9 @@ class EnhancedCrystalQueueManager:
             # Find workflow configuration file if not provided
             if not workflow_config_file:
                 config_dir = Path.cwd() / "workflow_configs"
-                config_files = list(config_dir.glob("workflow_plan_*.json"))
+                # not the CIF-conversion copy, workflow_plan_<id>_updated.json
+                config_files = [p for p in config_dir.glob("workflow_plan_*.json")
+                                if not p.stem.endswith("_updated")]
                 if not config_files:
                     print("  ⚠️  No workflow configuration files found")
                     return
@@ -2990,7 +3109,7 @@ def main():
         "--max-jobs", 
         type=int, 
         default=250, 
-        help="Maximum number of jobs to maintain (default: 250)"
+        help="Maximum running+pending jobs of yours in the queue (default: 250)"
     )
     parser.add_argument(
         "--reserve", 

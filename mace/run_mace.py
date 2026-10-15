@@ -242,6 +242,9 @@ def run_quick_start_mode(args):
     print("Starting execution...")
     
     executor = WorkflowExecutor(args.work_dir, args.db_path)
+    # The plan carries no workflow_id; its file is named by the one minted
+    # for it, and the execution must use that same id (one plan file).
+    executor.default_workflow_id = "workflow_" + plan_file.stem[len("workflow_plan_"):]
     executor.execute_workflow_plan(plan_file)
 
 
@@ -265,12 +268,13 @@ def _get_quick_slurm_config(calc_type: str, step_num: int) -> Dict[str, Any]:
             "FREQ": {"ntasks": 32, "memory_per_cpu": "5G", "walltime": "7-00:00:00"}
         }
     else:  # D3 calculations
+        from mace.workflow.common.constants import PROPERTIES_MEMORY, PROPERTIES_NTASKS
         script_name = "submit_prop.sh"
         default_resources = {
-            "BAND": {"ntasks": 28, "memory_per_cpu": "80G", "walltime": "2:00:00"},
-            "DOSS": {"ntasks": 28, "memory_per_cpu": "80G", "walltime": "2:00:00"},
-            "TRANSPORT": {"ntasks": 28, "memory_per_cpu": "80G", "walltime": "2:00:00"},
-            "CHARGE+POTENTIAL": {"ntasks": 28, "memory_per_cpu": "80G", "walltime": "2:00:00"}
+            "BAND": {"ntasks": PROPERTIES_NTASKS, "memory": PROPERTIES_MEMORY, "walltime": "2:00:00"},
+            "DOSS": {"ntasks": PROPERTIES_NTASKS, "memory": PROPERTIES_MEMORY, "walltime": "2:00:00"},
+            "TRANSPORT": {"ntasks": PROPERTIES_NTASKS, "memory": PROPERTIES_MEMORY, "walltime": "2:00:00"},
+            "CHARGE+POTENTIAL": {"ntasks": PROPERTIES_NTASKS, "memory": PROPERTIES_MEMORY, "walltime": "2:00:00"}
         }
     
     resources = default_resources.get(base_type, default_resources.get("OPT"))

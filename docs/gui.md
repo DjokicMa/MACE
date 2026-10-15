@@ -1006,13 +1006,16 @@ mace analyze --extract-properties runs --db-path runs/materials.db --register --
   last 3 are kept (`--keep-backups`); the dialog lists them and says which one
   the update would prune.
 - **Preview** is the command's `--dry-run --json`: every output is New,
-  Changed, Unchanged, Not tracked (always re-extracted), Unreadable or
-  Incomplete; click a chip to list those files.
+  Changed, Unchanged, Not tracked (always re-extracted), Unreadable,
+  Incomplete or Skipped (a failed or unfinished run no calculation records,
+  or MACE's `X_temp.out` copy of the `X.out` beside it: not extracted); click
+  a chip to list those files.
 - **Run**: a task with progress, the current file, the elapsed time and
   Cancel. Extraction commits file by file, so a canceled build keeps what it
   wrote and names the backup. When it ends: "Database updated: 12 new, 3
-  changed, 0 failed · Open Database"; outputs that gave no properties are
-  listed under Problems.
+  changed, 0 failed outputs; 9 materials (4 new); 2 skipped · Open
+  Database" (the CLI's last line is the same sentence); outputs that gave no
+  properties are listed under Problems.
 - While a build runs, an open Database view of that database shows
   "Updating… (build in progress)" and reloads when it ends. A second build or
   a tracked submit of the same database from the GUI waits for it.
@@ -1049,15 +1052,25 @@ point number as the `.out` prints it) and draws point 1 on the same energy
 surface as the others: CRYSTAL prints point 1's `TOTAL ENERGY(DFT)` without
 its D3/gCP correction and compares later points with the corrected value, so
 the card uses the corrected one (the energy table's tooltip shows both). Its
-row has Log |ΔE|, Relative to (First or Final), Units, Copy TSV and **Open as
-Plot**.
+row has Log |ΔE|, Relative to (First or Final), Units, Segments (for a run
+with FINALRUN restarts), Copy TSV and **Open as Plot**. **Segments:
+Continuous** (the default, Settings › Plots › FINALRUN segments) draws every
+point as one curve relative to the run's first or final point, with a dotted
+line at each FINALRUN restart; **Separate** takes each FINALRUN segment
+relative to its own first or final point. Copy TSV (point, segment, frame,
+E in Ha, ΔE) and Open as Plot use the same choice, and so does the terminal:
+
+```bash
+mace analyze --convergence runs/mat1_opt.out --energy                       # continuous, relative to the final point, meV
+mace analyze --convergence runs/mat1_opt.out --energy --segments separate --relative-to first --unit eV
+```
 
 **Run Analysis** (Open as Plot, or Analysis › Run) is a plot document with
 five tabs:
 
 | Tab | Shows |
 |---|---|
-| Energy | E − E_ref per point (default: the final energy). A FINALRUN restart re-references the integrals, so each restart starts a segment with its own reference, marked by a dotted line. **Log Y** shows CRYSTAL's printed energy change per point (`DE`, red when it went up) and each point's distance to its segment's final energy, with the TOLDEE line. |
+| Energy | E − E_ref per point (default: the final energy), one curve across the FINALRUN restarts, each marked by a dotted line. A restart re-references the integrals: **Segments: Separate** (Plot Options) gives each segment its own reference instead. **Log Y** shows CRYSTAL's printed energy change per point (`DE`, red when it went up) and each point's distance to the final energy (the run's, or its segment's when Separate), with the TOLDEE line. |
 | Convergence | The maximum and RMS gradient and displacement per point on a log axis, each with its threshold (dashed) and where the threshold came from (the `.out`, the `.d12`, or the CRYSTAL23 default and its manual page). Filled markers met their criterion. Gradients and displacements are in CRYSTAL's internal coordinates for cell optimizations ("given without units", as CRYSTAL says). |
 | SCF | SCF cycles per point, and |ΔE| per SCF cycle where the `.out` prints it: CRYSTAL prints the cycles of the first point only and moves the rest to `SCFOUT.LOG`, which stays in the job's scratch directory. |
 | Cell | a, b, c, α, β, γ and the volume per point, absolute or in % of the first. |
@@ -1147,8 +1160,15 @@ run and the loop running inside the current one, as in
 [`mace cluster job`](cli.md#one-job-progress-eta-and-walltime)) with a "Why
 this estimate" disclosure (what each level is based on and any threshold that
 differs from CRYSTAL23's default; it stays open while the document
-refreshes), cores, memory and CPU efficiency (or "Not measured by SLURM
-for this job"), **Show Live Use** (one `sstat`), for an array task the
+refreshes), cores, CPU and memory efficiency in plain numbers ("CPU
+efficiency 62% (used about 20 of 32 cores on average)", "Memory peak 9.4 GiB
+of 64 GiB requested (15%)", a short hint when clearly over-requested, the
+measured values behind a toggle; a figure SLURM did not record says why; under
+the CPU line one note: MPI libraries such as Intel MPI keep waiting ranks busy,
+so CPU efficiency near 100% does not show that every core did useful work, and
+comparing run times at different core counts finds the useful size),
+**Show Live Use** for a running job (one `sstat` over its running steps:
+`sacct` has no CPU time or peak memory until a step ends), for an array task the
 array's tasks in the queue (each with **Details**), and the job's files. A file
 inside the served folder opens here; one in another folder of yours (your
 home, your scratch) gets "Open in a New Window Rooted at …" with the command
@@ -1175,7 +1195,7 @@ opens, once; nothing loads from another site.
 | Raman spectrum | `*_RAMSPEC.DAT`, Analysis › Raman Spectrum | as IR, plus the component: total, parallel, perpendicular or one of the six tensor components, or all |
 | Vibrational modes | a FREQ `.out`, Analysis › Vibrational Modes | the mode table (Modes panel), amplitude, speed, arrow scale, Play, Export Mode as XYZ |
 | IR/Raman from the modes | Modes › IR or Raman (or Analysis › IR/Raman Spectrum) on a FREQ output with intensities but no SPEC.DAT | peak width (FWHM), line shape (IR Lorentzian or Gaussian; Raman Lorentzian share η) |
-| Transport | `*.SEEBECK.dat` and its siblings | the quantity (tabs), temperature, tensor component (average of the diagonal, xx, yy, zz) |
+| Transport | `*.SEEBECK.dat` and its siblings | the quantity (tabs), temperature, tensor component (average of the diagonal, xx, yy, zz); KAPPA.dat is shown as κ₀: the manual's κₑ (Eq. 14.3) is the zero-field coefficient κ₀; MACE derives the electronic κₑ = κ₀ − T·σ·S² |
 | Convergence | Explorer › Compare Convergence | line width, logarithmic axis |
 
 The FREQ document animates one normal mode at a time in the viewport, at most
@@ -1370,7 +1390,18 @@ ghost; 35% opacity in light mode, 60% and lightened in dark mode so it stays
 visible on the dark viewport), **Two-tone** (initial and final each in one
 tone, element shading kept, with a legend), **Side by side** (two linked
 views), and **Displacement map** (the final structure colored by \|Δr\| on a
-viridis-like scale, with a legend in Å and scaled arrows).
+viridis-like scale, with a legend in Å or pm and scaled arrows).
+
+**Δr** (shown when the cell changed) picks the displacement the arrows, the
+map, the max/rms |Δr| and the Displacements table use: **With cell change**
+(the default then) is r_final − r_initial in Å with the cell's change
+included, each atom at the periodic image nearest its start and the mean
+shift removed, so it does not depend on the cell origin; **Relative to the
+cell** is the change of fractional coordinates in the final cell, which is
+zero for atoms that symmetry pins while only the cell relaxes (AB graphite
+along c). When no atom moved, the legend says so and lists the cell's change.
+The arrow note reads e.g. "arrows ×11, 1 Å drawn = 0.0909 Å moved"; Arrow ×
+starts where the largest arrow is 1.5 Å long.
 
 The Timeline panel's sub-tabs hold the energy chart, Δcell, Δbond,
 displacements and Δsymmetry ("Fm-3m (225) → Fm-3m (225)"). Click a header to
@@ -1575,18 +1606,23 @@ current browser with WebGL2 (Firefox, Chrome, Edge or Safari) and an OpenSSH
 client (it comes with macOS and Linux, and with Windows 10 and 11 as `ssh` in
 PowerShell).
 
+**SSH keys:** [docs/ssh-setup.md](ssh-setup.md) sets up a key with a
+passphrase, an agent (Linux, macOS Keychain, the Windows OpenSSH agent,
+MobaXterm's MobAgent, VS Code) and an `~/.ssh/config` for the gateway and the
+dev nodes, so you type the passphrase (and, on Linux and macOS, 2FA) once.
+
 **Which method should I use?**
 
 | You have | Use |
 |---|---|
 | MACE on your Linux or macOS computer (or WSL) | `mace gui connect` |
 | Linux or macOS without MACE | `mace-gui-connect.sh` |
-| Windows | `mace-gui-connect.ps1` (PowerShell). `py <MACE>\mace_cli gui connect` is expected to work too; checked by hand |
+| Windows | `mace-gui-connect.ps1` (PowerShell), or `mace gui connect` run as `python <MACE>\mace_cli gui connect` (`py` instead of `python` where the Python launcher is installed) |
 | MobaXterm | its local terminal + `mace-gui-connect.sh`, or MobaSSHTunnel |
 | VS Code Remote-SSH | `mace gui` in VS Code's terminal, then Ctrl+click the URL |
 | Nothing but ssh | the manual tunnel ([below](#run-it-on-a-cluster-and-view-it-on-your-computer)) |
 
-### mace gui connect (Linux, macOS, WSL)
+### mace gui connect (Linux, macOS, WSL, Windows)
 
 `mace gui connect` does everything in one ssh session: it logs in through
 your cluster's login host (the *gateway*) to the node you name, starts `mace
@@ -1598,19 +1634,40 @@ computer (none of MACE's scientific packages).
 mace gui connect --gateway me@hpcc.example.edu --node dev-node-01 --dir ~/runs
 ```
 
+**On Windows** (PowerShell, Windows' own `ssh`; OpenSSH 8.1 or newer for
+`-J`, see `ssh -V`) run it with the Python you have, from a copy of MACE's
+folder: `python <MACE>\mace_cli gui connect --gateway ...`. Anaconda and
+Miniconda install no `py` launcher, so use `python` there (from the Anaconda
+Prompt, or with Anaconda's `python.exe` on PATH); with the python.org
+installer `py <MACE>\mace_cli gui connect ...` works too. The flags, the
+profile and the messages are the same as below.
+
 - **The first run** with no profile asks for the gateway, a jump host (blank
   for none), the node (blank runs on the gateway itself, which is shared: a
   dev node is better), the folder, setup lines (e.g. `module load Python`),
   the `mace` command on the node and a profile name, and saves them in
-  `~/.config/mace/connect.toml` (Windows: `%APPDATA%\mace\connect.toml`, mode
-  0600, no passwords). Later runs need only `mace gui connect` (the default
-  profile) or `mace gui connect <name>`.
+  `~/.config/mace/connect.toml` (Windows: `%APPDATA%\mace\connect.toml`), with
+  no passwords. On Linux and macOS only you can read it (mode 0600); on
+  Windows it has the access rights of your AppData folder, which only you
+  (and the computer's administrators) can read. Later runs need only `mace
+  gui connect` (the default profile) or `mace gui connect <name>`.
 - **Flags override the profile** for one run: `--gateway`, `--jump`,
   `--node`, `--hop`, `--dir`, `--mace`, `--setup`, `--conda`,
   `--local-port`, `--ssh-option` (repeatable), `--root` (repeatable),
   `--no-open`. `--save [NAME]` writes them back; `--list` and
   `--forget NAME` manage the profiles; `--dry-run` prints the exact ssh
-  command and exits.
+  command and exits (see [dry-run quoting](#dry-run-quoting) for which
+  shell each printed form is for).
+- **Paths on the node under `~`**: your shell expands an unquoted `~`
+  before `mace gui connect` sees it, so `--mace ~/mace/mace_cli` arrives as
+  `/home/you/mace/mace_cli`, a path on *this* computer. When the node's home
+  is elsewhere (`/mnt/home/netid`), that path is not there. So a `--mace`,
+  `--dir`, `--root` or `--conda` value (or a saved profile value) under this
+  computer's home folder is sent as `~/...`, which the node expands to its
+  own home, and a note says so: "Note: treated /home/you/mace/mace_cli as
+  ~/mace/mace_cli on the remote ...". Quote the `~` (`--mace '~/mace/mace_cli'`)
+  to pass it as is. `--setup` is shell code you quote, so it is left alone.
+  The standalone scripts do the same.
 - **The ~/.ssh/config way** works too: a `Host hpcc` block for the gateway
   (with `User`), and `--gateway hpcc`. `mace gui connect` asks `ssh -G` which
   user that alias logs in as, and uses the same user on the node.
@@ -1628,6 +1685,62 @@ mace gui connect --gateway me@hpcc.example.edu --node dev-node-01 --dir ~/runs
 - **Your local port** is `--local-port` (default 8765), so your browser's
   drafts come back on the next run; when it is busy, the next free one is used
   and it says so.
+- **On Windows, closing or killing** `mace gui connect` also ends its `ssh`
+  (MACE puts ssh in a Windows job object that ends with it), so no stray
+  `ssh.exe` keeps the tunnel open. The PowerShell script does not do that:
+  if its PowerShell is killed (Task Manager) instead of stopped with Ctrl+C,
+  a leftover `ssh.exe` may keep the tunnel open; end it in Task Manager.
+
+#### Dry-run quoting
+
+`mace gui connect --dry-run` prints each ssh command as one line in POSIX
+shell quoting (with `'"'"'` for a quote inside quotes): paste it into bash,
+zsh, Git Bash, MobaXterm's terminal or WSL. On Windows it also prints a
+second line, `ssh --% ...`, to paste into PowerShell (5.1 or 7): `--%` makes
+PowerShell hand the rest of the line to `ssh.exe` unchanged, quoted the way
+`ssh.exe` reads its command line. Neither line is for `cmd.exe`, whose
+quoting differs. The scripts' `--dry-run` (`-DryRun`) print one argument per
+line, and `mace-gui-connect.ps1 -DryRun` adds the same `ssh --% ...` line.
+
+#### First use of a node with --hop jump
+
+With `--hop jump` (and the first try of `--hop auto`) your computer reaches
+the node through the gateway with `ssh -J`, and checks **two** host keys
+itself, against your own `known_hosts` (Windows:
+`C:\Users\<you>\.ssh\known_hosts`): the **gateway's** first, then the
+**node's**. The gateway leg runs as a separate ssh process that does not get
+the command line's `-o` options, so it always uses your real `known_hosts`.
+The first time, ssh asks in the terminal, once per host it has not seen:
+
+```
+The authenticity of host 'dev-node-01 (<no hostip for proxy command>)' can't be established.
+ED25519 key fingerprint is SHA256:....
+Are you sure you want to continue connecting (yes/no/[fingerprint])?
+```
+
+Compare the fingerprint with the one your cluster publishes, and type `yes`.
+`mace gui connect` waits for the answer, and after 15 s says "(waiting:
+approve the 2FA prompt if there is one. If ssh asks whether to continue
+connecting (the host-key yes/no question), check the fingerprint and answer
+yes ...)". When the question could not be answered (or was answered no),
+ssh says "Host key verification failed." and MACE prints the exact line to
+run once, then connect again. When ssh's message names the gateway, that is
+`ssh me@hpcc.example.edu true`; when it names the node, `ssh -J
+me@hpcc.example.edu dev-node-01 true`; when it names neither (or with
+`mace-gui-connect.ps1`, which leaves ssh's messages on the console), both, in
+this order:
+
+```
+ssh me@hpcc.example.edu true
+ssh -J me@hpcc.example.edu dev-node-01 true
+```
+
+Or use `--hop nested`, where the gateway checks the node's key with its own
+list of known hosts (the gateway's own key is still checked on your
+computer). MACE never turns host-key checking off or accepts a new
+key for you, and `--hop auto` does not switch to `nested` after a host-key
+failure: trusting a key is your decision. A key that has *changed* gets a
+different message: ask your administrators before you remove the old key.
 
 ### Windows (PowerShell)
 
@@ -1645,9 +1758,20 @@ powershell -ExecutionPolicy Bypass -File .\mace-gui-connect.ps1 -Gateway me@hpcc
 
 The parameters match the flags of `mace gui connect` (`-Jump`, `-Hop`,
 `-Mace`, `-Setup`, `-Conda`, `-LocalPort`, `-SshOption`, `-Root`, `-NoOpen`,
-`-DryRun`), and it reads the same `connect.toml`. If no password or 2FA
+`-DryRun`), and it reads the same `connect.toml`. Two differences: it has
+no `--slurm`, and `-Hop auto` (the default of a saved profile) works as
+`jump`: it does not retry with `nested` by itself when the node refuses the
+login (it says to pass `-Hop nested`). For either, run `mace gui connect`
+itself (`python <MACE>\mace_cli gui connect`, above). If no password or 2FA
 prompt appears and the connection ends, set up an ssh key or agent, or use
-`-Manual`, which prints the two-terminal commands of the manual tunnel. With
+`-Manual`, which prints the two-terminal commands of the manual tunnel.
+
+The `Unblock-File` and `-ExecutionPolicy Bypass` steps are for Windows'
+default execution policy (Restricted or RemoteSigned), and have not been
+tested on such a computer yet. `Get-ExecutionPolicy` shows yours: where it is
+already Bypass or Unrestricted, neither step is needed. Where your
+organization sets the policy, `-ExecutionPolicy Bypass` may be refused; run
+`mace gui connect` with Python then. With
 PuTTY instead, set the tunnel under Connection › SSH › Tunnels (source port
 8765, destination `127.0.0.1:8765`) and connect to the node through the
 gateway.
@@ -1660,11 +1784,84 @@ dev-node-01 --dir ~/runs`. Get the script with `mace gui connect
 --export-script bash -o mace-gui-connect.sh` on the cluster, or from MACE's
 `scripts/` folder.
 
-(b) Or with **MobaSSHTunnel** (Tunneling): a new local port forwarding with
-forwarded port 8765, SSH server the gateway (with your user), remote server
-`dev-node-01` and remote port 8765. Start it, then in a normal MobaXterm
-session on `dev-node-01` run `mace gui --dir ~/runs --port 8765` and open the
-link it prints.
+- **Profiles:** the script reads `~/.config/mace/connect.toml` in
+  MobaXterm's own home folder (its "persistent home directory", set under
+  Settings › Configuration › General). When that file is missing, it reads
+  `%APPDATA%\mace\connect.toml`, the file Windows' `mace gui connect --save`
+  writes, and says which file it read. Git Bash and Cygwin do the same.
+- **Keys:** MobaXterm keeps its own `~/.ssh` (keys, `config`,
+  `known_hosts`) in that home folder, separate from `C:\Users\<you>\.ssh`,
+  which Windows' `ssh`, PowerShell and VS Code use. A key, a Host alias or a
+  trusted host key in one is not seen by the other. So, the first time from
+  MobaXterm:
+  - ssh asks the **host-key questions again**, for the gateway and (with the
+    jump hop) for the node, even when Windows' `ssh` already trusts both
+    (see [First use of a node with --hop jump](#first-use-of-a-node-with---hop-jump));
+  - with the **jump hop**, the node checks a key from MobaXterm's `~/.ssh`
+    (or its agent): without one there, ssh asks for the **node's password**
+    (and the gateway's), even if Windows' `ssh` logs in with a key.
+
+  To use your Windows key in MobaXterm, either set MobaXterm's persistent
+  home directory (Settings › Configuration › General; MobaXterm's
+  documentation: "Choose a folder that MobaXterm will use as its HOME
+  directory ... so you can store your SSH keys in it") to your Windows user
+  folder, `C:\Users\<you>`, so that its `~/.ssh` is that `.ssh`; or copy
+  the key into MobaXterm's `~/.ssh` (MobaXterm shows drive C: as
+  `/drives/c`) and make it private, since ssh refuses a private key that
+  others can read:
+
+  ```
+  mkdir -p ~/.ssh
+  cp /drives/c/Users/YOU/.ssh/id_ed25519 /drives/c/Users/YOU/.ssh/id_ed25519.pub ~/.ssh/
+  chmod 600 ~/.ssh/id_ed25519
+  ```
+
+  (replace YOU with your Windows user name). Or name the key for one run:
+  `--ssh-option=-oIdentityFile=/drives/c/Users/<you>/.ssh/id_ed25519`.
+- **"stty: standard input: Inappropriate ioctl for device"** before the
+  link: a login profile on the node ran `stty` with no terminal (every hop
+  runs `bash -l` without one). It is harmless; `mace gui connect` and
+  `mace-gui-connect.sh` no longer show it before the server is ready, and
+  `mace-gui-connect.ps1` (which leaves ssh's messages on the console) may.
+- **"channel 2: open failed: connect failed: Connection refused"** before
+  the link (mostly with the jump hop): the tunnel's local port listens as
+  soon as ssh connects, and something connected to it before the server on
+  the node was listening, typically a browser tab left open from an earlier
+  session, which keeps retrying. Harmless; `mace gui connect` and
+  `mace-gui-connect.sh` hide it until the tunnel answers, and show it when
+  the tunnel never does. `mace-gui-connect.ps1` may show it.
+
+(b) Or, in a normal MobaXterm session on `dev-node-01`, run `mace gui
+--dir ~/runs` and paste the `ssh -N -J ... -L ...` line it prints into
+MobaXterm's **local terminal** (leave it running), then open the link it
+printed. Use that line as printed: it ends at `127.0.0.1` on the node.
+
+**MobaSSHTunnel** (Tools › MobaSSHTunnel) needs **two** tunnels for this,
+because `mace gui` listens only on the node's own `127.0.0.1`: a single
+tunnel with SSH server the gateway and remote server `dev-node-01` asks the
+gateway to connect to `dev-node-01:<port>`, which the server never sees (the
+browser then keeps loading and nothing appears). Chain them, as MobaXterm's
+own guide does for a host behind a jump host
+([Mobatek: SSH tunnels and port forwarding](https://blog.mobatek.net/post/ssh-tunnels-and-port-forwarding/)):
+
+1. A local tunnel with forwarded port `2222`, SSH server the gateway (your
+   user, port 22), remote server `dev-node-01`, remote port `22`.
+2. A second local tunnel with forwarded port `<port>`, SSH server
+   `localhost` port `2222` (your user: this logs in to `dev-node-01` through
+   the first tunnel), remote server `127.0.0.1`, remote port `<port>`.
+
+Start both, run `mace gui --dir ~/runs --port <port>` on `dev-node-01`, and
+open the link it prints. A dev node is shared, so a fixed port such as
+8765 may already be taken by someone else's server: pick your own, any port
+from 8000 to 60999 (`mace gui` says "cannot listen" when it is taken; then
+pick another), and keep it in `~/.bashrc` on the cluster as `export
+MACE_GUI_PORT=<port>`, so it stays the same and your browser drafts come
+back. `mace gui connect` and the scripts avoid this by choosing a random
+free port on the node themselves.
+
+**A browser that keeps loading** (no page, no error) means the tunnel does
+not reach the server: it ends on the wrong node, or at the node's name
+instead of its `127.0.0.1`. Check it against the line `mace gui` prints.
 
 ### VS Code Remote-SSH
 
@@ -1680,7 +1877,11 @@ Host <dev-node>
     User <user>
 ```
 
-where `<dev-node>` is the dev node you use (for example `dev-node-01`). Then
+where `<dev-node>` is the dev node you use (for example `dev-node-01`). On
+Windows, VS Code uses Windows' own `ssh` (its `ProxyJump` needs OpenSSH 8.1
+or newer: `ssh -V`) and that `C:\Users\<you>\.ssh` folder, not MobaXterm's;
+the first connection to the node asks the host-key question in VS Code's
+window. Then
 "Remote-SSH: Connect to Host..." `<dev-node>`, and in VS Code's
 integrated terminal run `mace gui --dir ~/runs`. **Ctrl+click the sign-in link
 it prints**: VS Code forwards the port and rewrites the link (a different
@@ -1688,6 +1889,19 @@ local port is fine). The Ports tab's "Open in Browser" opens the address
 without the link, which shows the sign-in page; use the link from the
 terminal (or `mace gui login-url`). `mace gui --open` uses VS Code's own
 `$BROWSER`, so it opens on your computer.
+
+- **Ctrl+click may open VS Code's integrated browser** (an editor tab)
+  instead of your own browser: recent VS Code versions open `localhost` and
+  `127.0.0.1` links there by default. To open them in your default browser,
+  turn off the setting `workbench.browser.openLocalhostLinks` (Settings,
+  search "open localhost links"); `workbench.externalBrowser` picks another
+  browser than the system default. A link the integrated browser opened is
+  used up (each works once): run `mace gui login-url` in the terminal for a
+  new one, then copy it into your browser or Ctrl+click it.
+- **Closing the browser tab does not stop the server.** It keeps running on
+  the node until you choose File › Sign Out and Stop Server… in MACE GUI
+  ([Sign out and stop the server](#sign-out-and-stop-the-server)) or press
+  Ctrl+C in the VS Code terminal that runs `mace gui`.
 
 ### Jump hosts and nodes that accept logins only from the login node
 
@@ -1730,9 +1944,14 @@ your computer.
    ```
    This server runs on dev-node-01. The tunnel must go to this exact node.
    From your computer, with MACE installed there:
-     mace gui connect --gateway you@<gateway> --node dev-node-01 --dir /mnt/scratch/you/my_calcs
+     mace gui connect --gateway you@LOGIN_HOST --node dev-node-01 --dir /mnt/scratch/you/my_calcs
+   Without MACE there (MobaXterm's local terminal, Git Bash, PowerShell): make the standalone script here, copy
+   it to your computer and run it there (...):
+     mace gui connect --gateway you@LOGIN_HOST --node dev-node-01 --dir /mnt/scratch/you/my_calcs --export-script bash -o mace-gui-connect.sh
    Or with ssh alone (leave it running), then open the URL above:
-     ssh -N -J you@<gateway> -L 8765:127.0.0.1:8765 you@dev-node-01
+     ssh -N -J you@LOGIN_HOST -L 8765:127.0.0.1:8765 you@dev-node-01
+   ...
+   (replace LOGIN_HOST with your cluster's login host; ...)
    ```
 
 2. On **your computer**, in a second terminal, run that `ssh -N -J ... -L ...`
@@ -1744,9 +1963,15 @@ your computer.
 If you have an `~/.ssh/config` entry for the gateway (for example `Host hpcc`),
 `ssh -N -J hpcc -L 8765:127.0.0.1:8765 dev-node-01` does the same thing. If port
 8765 is already in use on your computer, change the first number and use that
-port in the link. The hint prints `<gateway>` unless you name your cluster's
-login host with `export MACE_GUI_GATEWAY=<host>` (in `~/.bashrc`) or
-`--gateway <host>`. On a shared node pick a personal port so you do not collide
+port in the link. The hint prints `LOGIN_HOST` (a word you can paste and then
+replace; `<...>` would be a redirect in bash) unless it knows your cluster's
+login host: from `--gateway`, `export MACE_GUI_GATEWAY=login.example.edu` (in
+`~/.bashrc`), or `gateway = "login.example.edu"` in the `[gui]` table of
+`site.toml` (where a cluster's administrators can set it for everyone, in
+`/etc/mace/site.toml`). The script line is for a computer without MACE:
+`--export-script` writes the standalone script with these settings filled in;
+copy it over and run `bash mace-gui-connect.sh` (or use `--export-script
+powershell -o mace-gui-connect.ps1` and run `.\mace-gui-connect.ps1`). On a shared node pick a personal port so you do not collide
 with other users and your drafts stay on one port: `export MACE_GUI_PORT=8xxx`
 in `~/.bashrc`.
 
@@ -2104,10 +2329,11 @@ the DOS plotter reads).
 - The structure readers cover CIF, 3D `.d12` and CRYSTAL `.out`. SLAB, POLYMER
   and MOLECULE geometry is read from the `.out`. spglib symmetry is reported for
   3D cells only, because layer and rod groups come from CRYSTAL itself.
-- The before/after arrows show the atomic relaxation, which is the change in
-  fractional coordinates expressed in the final cell. The cell strain is listed
-  separately in the cell table, because a Cartesian difference would mix the
-  strain in, depending on where the cell origin is.
+- The before/after arrows show r_final − r_initial with the cell's change
+  included (**With cell change**, the default when the cell changed); **Relative
+  to the cell** shows the change of fractional coordinates in the final cell
+  instead, and the cell strain is listed separately in the cell table.
+  Molecules are compared in Cartesian coordinates with rigid motion removed.
 - The bond table and Clean count two atoms as bonded when they are closer
   than 1.2 × the sum of their covalent radii (`structures.BOND_SCALE`); the
   drawn bonds use Settings' bond tolerance (1.15 by default, which bonds the
@@ -2140,15 +2366,79 @@ the same text to edit, copy or save (`mace-gui-diagnostics.txt`), with a link
 to open an issue on GitHub. When the GUI does not start at all, `mace gui
 diagnostics --dir <folder>` prints the server's part.
 
+### mace gui connect: key passphrases and the gateway
+
+- **"ssh could not log in with your key"**: ssh ended with "Permission denied
+  (publickey)" or could not unlock a key. When your key has a passphrase,
+  ssh may have no terminal to ask for it on (often so on Windows, or when run
+  from a script). Load the key into an agent
+  once per login session, then run `mace gui connect` again:
+  `eval "$(ssh-agent)"` and `ssh-add` (Linux, macOS, MobaXterm), or on
+  Windows start the **OpenSSH Authentication Agent** service (in Services,
+  set its startup type to Manual and start it) and run `ssh-add`. A Host
+  alias from `~/.ssh/config` (with its `HostName`, `User` and
+  `IdentityFile`) works as the gateway too: `--gateway hpcc`.
+- **"the gateway … looks like an email address"**: the gateway is the login
+  host you `ssh` to, `user@login-host` (e.g. `netid@login.example.edu`) or a
+  Host alias from `~/.ssh/config`, not your email address
+  (`netid@university.edu`). The warning shows when the part after `@` is a
+  bare `name.tld` and no `Host` pattern in `~/.ssh/config` matches it; a real
+  login host of that form gets the warning too, which a Host alias for it
+  silences. MACE still connects. Fix the saved profile (in
+  `~/.config/mace/connect.toml`, on Windows `%APPDATA%\mace\connect.toml`)
+  with `mace gui connect [PROFILE] --gateway netid@login.example.edu --save`.
+  The standalone scripts warn the same way.
+
+### mace gui connect: the node asks for a password
+
+With the jump hop (`ssh -J`, the default), ssh logs in to the node *from
+your computer*, with the settings your `~/.ssh/config` has for the node's
+name. A `Host hpcc` block with an `IdentityFile` covers the gateway only: the
+node (`dev-node-01`) gets ssh's default key files (`~/.ssh/id_ed25519`,
+`~/.ssh/id_rsa`, ...). When your cluster key is a different file and no agent
+holds it, the node refuses the defaults and ssh asks for the node's password
+(the prompt names the node, `netid@dev-node-01`).
+
+`mace gui connect` (and the standalone scripts) now pass the gateway's
+`IdentityFile` (and `IdentityAgent`, `IdentitiesOnly`) for the node hop too:
+`--dry-run` shows them as `-o IdentityFile=...` after the `-o` options. If
+the node still asks, any one of these fixes it:
+
+- Name the key for the nodes too, in `~/.ssh/config` (the node names your
+  cluster uses; a pattern works):
+
+  ```
+  Host hpcc hpcc.example.edu dev-*
+      User netid
+      IdentityFile ~/.ssh/id_ed25519_cluster
+  ```
+
+- Load the key into an agent (`eval "$(ssh-agent)"` and
+  `ssh-add ~/.ssh/id_ed25519_cluster`): ssh offers an agent's keys to every
+  host, both hops included.
+- Pass it for this run: `--ssh-option=-oIdentityFile=~/.ssh/id_ed25519_cluster`
+  (with the jump hop, `--ssh-option` values apply to the node; the gateway
+  keeps its `Host` settings).
+- `--hop nested`: the gateway logs in to the node itself, with the cluster's
+  own keys there (no key of yours on the node hop).
+
+Your key must also be in `~/.ssh/authorized_keys` in your home on the
+cluster; most clusters share that home between the login and dev nodes.
+Setting up keys, agents and the config from scratch, per platform:
+[docs/ssh-setup.md](ssh-setup.md).
+
 ### Messages
 
-- **"3D view unavailable" where the structure should be:** this browser cannot
-  draw 3D here (WebGL is off or not supported, which is common in remote
-  desktops). Plots, text, the database and Setup still work; Export Image (PNG
-  and SVG) and the tools that pick atoms in 3D say "Needs 3D (WebGL)". Try
-  another browser, turn on hardware acceleration in the browser's settings,
-  or open MACE GUI from your own computer through an ssh tunnel. The status
-  bar shows "No 3D" while this is so.
+- **"3D view unavailable" ("3D view needs WebGL") where the structure should
+  be:** this browser cannot draw 3D here (WebGL is off or not supported, which
+  is common in remote desktops, or the browser gave the 3D view no WebGL
+  context). Plots, text, the database and Setup still work; Export Image (PNG
+  and SVG) and the tools that pick atoms in 3D say "Needs 3D (WebGL)". Turn on
+  hardware acceleration in the browser's settings (Chrome and Edge: Settings ›
+  System; Firefox: Settings › General › Performance), then reload the page. If
+  that does not help, try another browser, or open MACE GUI from your own
+  computer through an ssh tunnel. The status bar shows "No 3D" while this is
+  so.
 - **"cannot listen on 127.0.0.1:8765 … Address already in use"** (on the
   node): someone else, or another `mace gui` of yours, uses that port. Pick
   your own (`--port 8xxx`, or `export MACE_GUI_PORT=8xxx`); `--port 0` picks a
@@ -2176,9 +2466,19 @@ diagnostics --dir <folder>` prints the server's part.
 - **Wrong node:** a tunnel to another dev node behind the same gateway gives
   "connection refused" or "channel … open failed". `mace gui` names the node
   it runs on; the tunnel (or `--node`) must go to that exact node.
-- **2FA:** `mace gui connect` waits for your approval and says "(waiting:
-  approve the 2FA prompt if there is one)" after 15 s. With `--hop jump` a node
-  that asks for 2FA too means a second prompt.
+- **2FA or a host-key question:** `mace gui connect` waits for your answer
+  and says "(waiting: approve the 2FA prompt if there is one. If ssh asks
+  whether to continue connecting (the host-key yes/no question), check the
+  fingerprint and answer yes ...)" after 15 s. With `--hop jump` a node that
+  asks for 2FA too means a second prompt. See
+  [First use of a node with --hop jump](#first-use-of-a-node-with---hop-jump).
+- **"ssh could not verify dev-node-01's host key"**: this computer has never
+  connected to that node. Run the `ssh -J ... true` line it prints once,
+  check the fingerprint, answer yes, and connect again (or use `--hop
+  nested`).
+- **"The folder ... does not exist on dev-node-01"**: `--dir` names a folder
+  the node does not have (the remote shell's `cd` failed). It is a path on
+  the node; `~/...` is the node's home folder.
 - **"mace: command not found"** (from `mace gui connect`): the node's login
   shell does not find `mace`. Pass `--mace <full path to mace_cli>` or a
   `--setup` line that puts it on PATH.
@@ -2199,7 +2499,8 @@ diagnostics --dir <folder>` prints the server's part.
   cluster after the same `module load` lines).
 - **A blank or gray 3D view:** WebGL2 is off in the browser, often in a remote
   desktop or a virtual machine. Check `about:support` (Firefox) or
-  `chrome://gpu` (Chrome, Edge) for WebGL2.
+  `chrome://gpu` (Chrome, Edge) for WebGL2, turn on hardware acceleration, and
+  reload.
 - **"Lost the connection to the MACE server":** the ssh tunnel closed or the
   server stopped (the end of an `salloc`, Ctrl+C). Your edits are kept in the
   tab and saved as drafts; start the tunnel or the server again and open the

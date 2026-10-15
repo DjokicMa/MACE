@@ -113,12 +113,21 @@ def test_now_cancels_a_running_task(tmp_path):
     try:
         st, t, _ = s.req("api/test/task", {"seconds": 30, "job": "sleep", "wait": 0})
         assert st == 202
+        tid = t["task"]["id"]
         ev = H.SSE(f"http://127.0.0.1:{s.port}{s.prefix}")
+        ev.wait(lambda e: e[0] == "hello", 30)
+        end = time.time() + 30                         # the pool may start slowly on a busy runner
+        while next(x for x in s.req("api/tasks")[1]["tasks"] if x["id"] == tid)["state"] != "running":
+            assert time.time() < end, "the task never started"
+            time.sleep(0.05)
         st, _, _ = s.req("api/shutdown", {"mode": "now"})
         assert st == 202
-        ev.wait(lambda e: e[0] == "server-stopping" and e[1] == {"reason": "browser"}, 5)
-        ev.wait(lambda e: e[0] == "task" and e[1]["state"] == "canceled", 5)
-        assert s.gone(3) and s.p.returncode == 0
+        ev.wait(lambda e: e[0] == "server-stopping" and e[1] == {"reason": "browser"}, 15)
+        # the server exits only after the running task's cancel reached this stream
+        ev.wait(lambda e: e[0] == "task" and e[1]["id"] == tid and e[1]["state"] == "canceled", 15)
+        assert s.gone(15) and s.p.returncode == 0
+        late = [e for e in ev.of("task") if e[1]["id"] == tid]
+        assert late[-1][1]["state"] == "canceled", late
     finally:
         s.kill()
 
@@ -161,3 +170,106 @@ def test_managed_prints_the_reason(tmp_path):
         assert 'MACE_GUI_STOPPED {"reason": "browser"}' in "".join(s.lines)
     finally:
         s.kill()
+
+
+def test_stop_never_waits_past_its_bound(capsys):
+    """A canceled task that never ends, or a tab that never reads its
+    events, delays the stop by the bound at most; then it stops and says so."""
+    import types
+    from mace.gui import server as srv
+    from mace.gui.tasks import TaskManager
+
+    class Stuck:
+        done = threading.Event()                       # never set
+
+    tm = TaskManager(lambda m: None)
+    q = tm.subscribe()
+    tm.broadcast("task", {"id": "x"})                  # never written by a stream
+    stops = []
+    st = types.SimpleNamespace(tasks=tm, request_stop=stops.append)
+    t0 = time.monotonic()
+    srv._stop_when_canceled(st, [Stuck()], 0.0, bound=0.5)
+    assert stops == ["browser"] and time.monotonic() - t0 < 3
+    assert "had not stopped" in capsys.readouterr().err
+    srv._stop_when_canceled(st, [], 0.0, bound=0.3)    # the tab still has not read it
+    assert "had not reached every open tab" in capsys.readouterr().err
+    q.get_nowait()
+    q.task_done()
+    t0 = time.monotonic()
+    srv._stop_when_canceled(st, [], 0.0, bound=5)      # all sent: at once, nothing said
+    assert stops == ["browser"] * 3 and time.monotonic() - t0 < 1
+    assert capsys.readouterr().err == ""
+
+
+def test_a_cancel_while_the_pool_starts_is_not_lost():
+    """The pool's cancel flags exist only once its first job is submitted: a
+    cancel that lands in between is set again right after the submit."""
+    from concurrent.futures import Future
+    from mace.gui.tasks import TaskManager
+
+    class Pool:
+        def __init__(self):
+            self.flags = None                          # created by the first submit
+            self.tm = None
+
+        def acquire_slot(self):
+            return 0
+
+        def release_slot(self, s):
+            pass
+
+        def set_cancel(self, s):
+            if self.flags is not None:
+                self.flags.add(s)
+                self.fut.set_exception(RuntimeError("canceled in the worker"))
+
+        def submit(self, job, payload, slot):
+            self.tm.cancel(next(iter(self.tm.tasks)))  # Stop Server, while the executor starts
+            self.flags, self.fut = set(), Future()
+            return self.fut
+
+    pool = Pool()
+    tm = TaskManager(lambda m: pool)
+    pool.tm = tm
+    t = tm.submit("test", "Test task", "sleep", {})
+    assert t.done.wait(10) and t.state == "canceled" and pool.flags == {0}
+
+
+def test_no_pool_is_built_once_the_task_manager_stops():
+    """A first pool task dispatched while the server stops must not build a
+    fresh pool (and start a worker the exiting server leaves half started)."""
+    from mace.gui.tasks import TaskManager
+
+    built = []
+    tm = TaskManager(lambda m: built.append(m) or object())
+    tm.stop()
+    with pytest.raises(RuntimeError, match="stopping"):
+        tm.pool
+    t = tm.submit("test", "Test task", "sleep", {})
+    assert t.done.wait(10) and t.state == "failed" and "stopping" in (t.error or "")
+    assert built == [] and tm.pool_if_started() is None
+
+
+def test_closing_the_state_with_no_pool_refuses_a_later_pool(tmp_path):
+    """close() marks the tasks stopping even when no pool was started yet."""
+    from mace.gui import server
+
+    st = server.GuiState(tmp_path, "t")
+    st.close()
+    t = st.tasks.submit("test", "Test task", "sleep", {})
+    assert t.done.wait(10) and t.state == "failed"
+    assert st.tasks.pool_if_started() is None
+
+
+def test_the_server_stop_marks_the_tasks_stopping(tmp_path):
+    """The HTTP stop sets the flag at its start, before close() runs."""
+    from mace.gui import server
+
+    st = server.GuiState(tmp_path, "t")
+    try:
+        st.stopping.set()
+        assert not st.tasks.stopping
+        server._mark_stopping(st)
+        assert st.tasks.stopping
+    finally:
+        st.close()

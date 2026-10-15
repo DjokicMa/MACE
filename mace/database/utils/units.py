@@ -120,6 +120,8 @@ class UnitConverter:
         'c_lattice': LENGTH_CONVERSIONS,
         'bond_length': LENGTH_CONVERSIONS,
         'cell_volume': {k: v**3 for k, v in LENGTH_CONVERSIONS.items()},
+        'cell_area': {k: v**2 for k, v in LENGTH_CONVERSIONS.items()},    # a slab's cell
+        'cell_length': LENGTH_CONVERSIONS,                                # a polymer's cell
         
         # Angular properties
         'alpha': ANGLE_CONVERSIONS,
@@ -261,7 +263,7 @@ class UnitConverter:
                 return table
                 
         # Check derived units (like volume)
-        if property_name == 'cell_volume' and property_name in self.PROPERTY_UNITS:
+        if property_name in ('cell_volume', 'cell_area') and property_name in self.PROPERTY_UNITS:
             return self.PROPERTY_UNITS[property_name]
             
         return None

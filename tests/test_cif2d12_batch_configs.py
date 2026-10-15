@@ -245,9 +245,12 @@ def test_batch_never_reads_stdin_for_a_structure_with_no_reduction(tmp_path):
 
 
 def test_batch_mismatch_keeps_the_cif_space_group(tmp_path):
-    """The interactive prompt's default. CRYSTAL23 (mace preflight) folds the
-    equivalent atoms and reports the P1 deck's density; taking spglib's group
-    instead (the interactive option 2) is not offered in batch mode."""
+    """The interactive prompt's default: R-3c kept, and the deck lists the
+    CIF's own two records (Ag 12c, Br 18e), which CRYSTAL expands to the
+    30-atom hexagonal cell. Up to 1.1.5 the deck listed all 30 atoms and
+    relied on CRYSTAL23 folding the copies (mace preflight: the P1 deck's
+    density). Taking spglib's group instead (the interactive option 2) is not
+    offered in batch mode."""
     pytest.importorskip("ase")
     pytest.importorskip("spglib")
     _need_corpus(MISMATCH)
@@ -260,7 +263,12 @@ def test_batch_mismatch_keeps_the_cif_space_group(tmp_path):
     assert "EOF when reading" not in log
     deck = next(iter(decks.values())).splitlines()
     assert deck[3] == "167"
-    assert int(deck[5]) == 30  # every atom of the hexagonal cell
+    assert int(deck[5]) == 2  # the CIF's asymmetric unit
+    from mace.gui.structures import read_d12
+    path = tmp_path / "deck.d12"
+    path.write_text(next(iter(decks.values())))
+    cell = read_d12(path)  # the hexagonal cell CRYSTAL builds from the deck
+    assert sorted(cell["numbers"]) == [35] * 18 + [47] * 12
 
 
 def test_verify_does_not_prompt_when_not_interactive(monkeypatch):

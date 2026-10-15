@@ -63,7 +63,7 @@ def test_job_script_stages_f20_only_when_present():
     assert 'if [ -s "$DIR/$JOB.f20" ]' in text, "restore must be guarded"
     assert 'cp "$DIR/$JOB.f20" "$scratch/$JOB/fort.20"' in text
     # ...and the save side, which makes a predecessor's matrix available at all.
-    assert "cp fort.9 ${DIR}/${JOB}.f9" in text
+    assert 'cp fort.9 "$DIR/$JOB.f9"' in text
 
 
 def test_job_script_restore_happens_before_crystal_runs():

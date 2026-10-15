@@ -43,7 +43,7 @@ export const DEFAULTS = Object.freeze({
   // spec §9: 0 workers = auto (a quarter of the cores, at most 8); the cache cap in MB; the GPU future code may use
   max_workers: 0, cache_mb: 512, gpu_device: "0",
   // Plots and run analysis (PLAN_analysis C3): defaults for newly opened plots; a plot's own choices are kept per document
-  "plots.relTo": "final", "plots.logDeltaE": false, "plots.per": "cell", "plots.lineWidth": 1.5, "plots.exportScale": 2,
+  "plots.relTo": "final", "plots.segments": "continuous", "plots.logDeltaE": false, "plots.per": "cell", "plots.lineWidth": 1.5, "plots.exportScale": 2,
   "analysis.imagNoiseCm": 20,
   // Live files and databases (C17, C18) and File History (C20)
   "database.refreshSeconds": 30, "files.liveMinutes": 10,

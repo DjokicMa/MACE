@@ -342,6 +342,50 @@ def test_si_deck_expands_like_the_output_says():
     assert d12["symmetry"]["number"] == out["symmetry"]["number"] == 227
 
 
+
+@needs_ase
+def test_every_example_file_opens_on_first_click(served):
+    """Each structure file and output in the example folder opens; the SLAB
+    deck (which the viewer does not draw) points at its run's output, which
+    the GUI opens instead."""
+    _, base, _ = served
+    _, listing = _json(base, "api/files")
+    seen = 0
+    for f in listing["files"]:
+        if f["kind"] in ("cif", "d12", "xyz", "poscar"):
+            status, s = _json(base, "api/structure?path=" + f["path"])
+        elif f["kind"] == "out":
+            status, s = _json(base, "api/out/summary?path=" + f["path"])
+        else:
+            continue
+        seen += 1
+        if f["path"] == "outputs/graphene_slab_sp.d12":
+            assert status == 400 and s["open"] == "outputs/graphene_slab_sp.out", s
+            assert "SLAB" in s["error"] and "graphene_slab_sp.out" in s["error"]
+            continue
+        assert status == 200, (f["path"], s)
+    assert seen >= 12
+
+
+@needs_ase
+def test_a_low_dimensional_deck_without_its_output_keeps_the_message(tmp_path):
+    from mace.gui import structures as S
+    deck = tmp_path / "graphene.d12"
+    shutil.copy(EXAMPLES / "outputs" / "graphene_slab_sp.d12", deck)
+    with pytest.raises(ValueError) as exc:
+        S.read_structure(deck)
+    assert not isinstance(exc.value, S.OpenInstead)
+    assert "open the .out of a SLAB/POLYMER/MOLECULE run instead" in str(exc.value)
+    shutil.copy(EXAMPLES / "outputs" / "graphene_slab_sp.out", tmp_path / "graphene.out")
+    with pytest.raises(S.OpenInstead) as exc:
+        S.read_structure(deck)
+    assert exc.value.path == tmp_path / "graphene.out"
+
+
+def test_the_shell_opens_the_suggested_output():
+    shell = (REPO_ROOT / "mace" / "gui" / "static" / "js" / "shell.js").read_text()
+    assert "e.data && e.data.open" in shell and "return openDoc(e.data.open)" in shell
+
 # --- before / after ------------------------------------------------------------
 
 @needs_ase
