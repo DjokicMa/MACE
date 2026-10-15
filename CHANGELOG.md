@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.5] - 2026-10-14
+## [1.1.5] - 2026-10-15
 
 A preview of this release was tagged `v1.1.5-preview` on 2026-10-08. The
 final 1.1.5 is that preview plus the fixes listed first, under "Since the
